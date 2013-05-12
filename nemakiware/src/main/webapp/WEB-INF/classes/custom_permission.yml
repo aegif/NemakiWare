@@ -1,0 +1,6 @@
+- id: "nemaki:consumer"
+  description: Nemaki CONSUMER Permission
+  base:
+    - "cmis:write"
+  permissionMapping:
+   canApplyACL.Object: false

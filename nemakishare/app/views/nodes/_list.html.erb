@@ -1,0 +1,73 @@
+<% if @nodes %>
+<div id='node_list'>
+	<table class="table table-striped table-hover">
+		<thead>
+			<tr>
+				<th>Content</th>
+				<th><i class='icon-calendar'></i></th>
+				<th><i class='icon-user'></i></th>
+				<th>Action</th>
+			</tr>
+		</thead>
+		<tbody>
+			<% @nodes.each_with_index do|n,idx| %>
+			<tr>
+				<!--Content-->
+				<td>
+					<% if n.is_document? %>
+						<%= image_tag(icon_path(n)) %>
+						<%= link_to n.name, download_node_path(n.id) %>
+					<% else %>
+						<%= image_tag(icon_path(n)) %>
+						<%= link_to n.name, explore_node_path(n.id) %>
+					<% end %>
+				</td>
+				<td>
+					<%= simple_time_YMD(n.modified) %><br/>
+					<%= simple_time_HMS(n.modified) %>
+				</td>
+				<td>
+					<%= n.modifier %>
+				</td>
+				<!--Action-->
+				<td>
+					<%= link_to raw("<i class='icon-zoom-in'></i>"),
+					node_path(n.id),
+					:title => '詳細情報',
+					:class => 'popup btn'%>
+					
+					<% if n.allowable_actions['UpdateProperties'] %>
+					<%= link_to raw("<i class='icon-edit'></i>"),
+					edit_node_path(n.id),
+					:title => '属性編集',
+					:class => 'popup btn'%>
+					<% end %>
+					
+					
+					<% if n.is_document? && n.allowable_actions['CheckOut'] %>
+					<%= link_to raw("<i class='icon-circle-arrow-up'></i>"),
+					edit_upload_node_path(n.id),
+					:title => 'バージョン更新',
+					:class => 'popup btn'%>
+					<% end %>
+					
+					<% if n.allowable_actions['DeleteObject'] %>
+					<%= link_to raw("<i class='icon-remove'></i>"),
+					node_path(n.id),
+					:title => '削除',
+					:class => 'popup btn', :method => :delete, :confirm => '本当に削除しますか？'%>
+					<% end %>
+					
+					<% if n.allowable_actions['ApplyACL'] %>
+					<%= link_to raw("<i class='icon-cog'></i>"),
+					permission_node_path(n.id),
+					:title => '権限管理',
+					:class => 'popup btn'%>
+					<% end %>
+				</td>
+			</tr>
+			<% end %>
+		</tbody>
+	</table>
+</div>
+<% end %>

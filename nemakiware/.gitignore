@@ -1,0 +1,11 @@
+bin/
+build/
+doc/
+load_test/
+target/
+tmp/
+.classpath
+log4j.properties
+tags
+.DS_Store
+*.class

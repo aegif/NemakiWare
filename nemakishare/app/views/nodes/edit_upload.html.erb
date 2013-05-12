@@ -1,0 +1,32 @@
+<h3>コンテンツのアップロード</h3>
+<%= form_for :node , :url => {:action => :upload}, :html => {:method => :put, :class => 'form-horizontal'} do |f| %>
+<fieldset>
+<div class="control-group">
+	<%= f.label :name, :class => 'control-label' %></td>
+	<div class='controls'><%= @node.name %></div>
+</div>
+<hr/>
+
+<div class="control-group">
+	<label class='control-label'>Latest version</label>
+	<div class='controls'>
+		バージョン:<%= @node.version_label %><br/>
+		最終更新時刻:<%= simple_time(@node.modified) %><br/>
+		最終更新者: <%= @node.modifier %><br/>
+	</div>
+</div>
+<hr/>
+	
+<div class="control-group">
+	<% if @node.is_document? %>
+	<label for='file' class='control-label'>File</label>
+	<div class='controls'>
+		<%= f.file_field :file %>
+	</div>	
+	<% end %>
+</div>
+<hr/>
+<%= submit_tag 'アップロード'%>
+</div>
+</fieldset>
+<% end %>

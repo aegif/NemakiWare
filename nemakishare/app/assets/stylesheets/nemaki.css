@@ -1,0 +1,15 @@
+/*Main frame for a pop-up display*/
+div.popup{
+	border: 3px orange solid;
+	padding: 10px;
+	background-color: #ffd78c;
+	height:100%;
+}
+
+table.show td.key{
+	vertical-align: top;
+	white-space: nowrap;
+	border-right: 1px #0480BE solid;
+	padding: 0px, 5px, 0px, 0px;
+	font-weight: bolder;
+}

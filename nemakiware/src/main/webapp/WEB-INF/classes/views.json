@@ -1,0 +1,32 @@
+{
+    "language": "javascript",
+    "views": {
+        "documents": {
+            "map": "function(doc) { if (doc.type == 'document')  emit(null, doc) }"
+        },
+        "folders": {
+            "map": "function(doc) { if (doc.type == 'folder')  emit(null, doc) }"
+        },
+        "attachments": {
+            "map": "function(doc) { if (doc.type == 'attachment')  emit(null, doc) }"
+        },
+        "usersByName": {
+            "map": "function(doc) { if (doc.type == 'aegif:user')  emit(doc.name, doc) }"
+        },
+        "groupById": {
+            "map": "function(doc) { if (doc.type == 'group')  emit(null, doc) }"
+        },
+        "contentsByPath": {
+            "map": "function(doc) { if (doc.type == 'document' || doc.type == 'folder')  emit(doc.path, doc) }"
+        },
+        "childrenByFolderId": {
+            "map": "function(doc) { emit(doc.parentId, doc) }"
+        },
+        "children": {
+            "map": "function(doc) { if (doc.type == 'folder' || doc.type == 'document') emit(doc.parentId, doc) }"
+        },
+        "contentsById": {
+       		"map": "function(doc) { if (doc.type == 'folder' || doc.type == 'document')  emit(doc._id, doc) }"
+   }
+    }
+}

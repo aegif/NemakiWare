@@ -1,0 +1,17 @@
+<h1>Archive</h1>
+<% @archives.each do |archive| %>
+	<% if !archive['deletedWithParent'] %>
+	<div><%=archive['name'] %> : 
+		 <%=archive['id'] %> : 
+		 <%=link_to '復旧', restore_archive_path(archive['id']),:class => 'btn btn-primary', :method => :put%>
+	</div>
+	<% end %>
+<% end %>
+
+<script type="text/javascript">
+	$().ready(function() {
+		<% if params[:alert] == "true" %>
+			alert("復旧できませんでした");
+		<% end %>
+	});
+</script> 

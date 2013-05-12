@@ -1,0 +1,46 @@
+<div class="row-fluid">
+	<div class="span3">
+		<%= render :partial => 'nodes/site_menu' %>
+	</div>
+
+	<div class='span9'>
+		<!--Folder menu-->
+		<%= link_to raw("<i class='icon-plus'></i> 新規アップロード"),
+		{:controller => 'nodes', :action => 'new', :parent_id => @node.id, :type => 'document'},
+		:class => 'popup btn btn-primary btn-large'%>
+		<%= link_to raw("<i class='icon-folder-open'></i> 新規フォルダ作成"),
+		{:controller => 'nodes', :action => 'new', :parent_id => @node.id, :type => 'folder'},
+		:class => 'popup btn btn-primary btn-large'%>
+		<%= link_to raw("<i class='icon-home'></i> 新規サイト作成"),
+		{:controller => 'sites', :action => 'new'},
+		:class => 'popup btn btn-primary btn-large'%>
+	</div>
+</div>
+
+<p></p>
+
+<div class="row-fluid">
+	<div class="span3">
+		<div class="well sidebar-nav">
+			<%= render :partial => 'nodes/site_changes' %>
+		</div>
+	</div>
+	
+	<div class="span9">
+		<!--Breadcrumb-->
+		<ul class="breadcrumb">
+			<!-- 一時停止中
+			<% @breadcrumbs.each_with_index do |crumb,i| %>
+			<%= link_to crumb.name, explore_node_path(crumb.id) %>
+			<span class="divider">></span>
+			<% end %>
+			<li>
+			-->
+			Breadcrumb(閉塞中)
+		</ul>
+		
+		<!--Body of the list-->
+		<%= render :partial => 'nodes/list' %>
+	</div>
+	
+</div>

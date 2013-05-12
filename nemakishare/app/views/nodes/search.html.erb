@@ -1,0 +1,13 @@
+<h1>Nemaki Share</h1>
+
+<div>
+	検索ワード:<%= @query_word %>
+</div>
+<div>
+	ヒット件数：<%= @nodes.size %>
+</div>
+
+
+<%= render :partial => 'nodes/list' %>
+
+

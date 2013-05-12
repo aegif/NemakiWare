@@ -1,0 +1,5 @@
+nemaki_public:
+  server_url: "http://localhost:8180/Nemaki/atom/"
+  repository_id: books
+  server_login: admin                                
+  server_password: admin  

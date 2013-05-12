@@ -1,0 +1,60 @@
+/**
+ * This file is part of NemakiWare.
+ *
+ * NemakiWare is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * NemakiWare is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
+ */
+package jp.aegif.nemaki.service.cmis.impl;
+
+import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.service.cmis.AuthenticationService;
+import jp.aegif.nemaki.service.node.PrincipalService;
+
+import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.mindrot.jbcrypt.BCrypt;
+
+/**
+ * Authentication Service implementation.
+ */
+public class AuthenticationServiceImpl implements AuthenticationService {
+
+	private static final Log log = LogFactory
+			.getLog(AuthenticationServiceImpl.class);
+
+	private PrincipalService principalService;
+
+	public void login(String username, String password) {
+		User u = principalService.getUserById(username);
+		// succeeded
+		if (passwordMatches(password, u.getPasswordHash())) {
+			log.debug("Authentication succeeded");
+			return;
+		}
+		// failed
+		log.error("Authentication failed");
+		throw new CmisPermissionDeniedException("Authentication failed");
+	}
+
+	/**
+	 * Check whether a password matches a hash.
+	 */
+	private boolean passwordMatches(String candidate, String hashed) {
+		return BCrypt.checkpw(candidate, hashed);
+	}
+
+	public void setPrincipalService(PrincipalService principalService) {
+		this.principalService = principalService;
+	}
+}

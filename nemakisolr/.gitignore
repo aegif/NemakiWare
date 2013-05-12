@@ -1,0 +1,13 @@
+.classpath
+.project
+.settings
+.metadata/
+*.class
+javadoc-pdf.xml
+log4j.properties
+doc/
+load_tesat/
+target/
+solr/nemaki/data/
+*.DS_Store
+log/

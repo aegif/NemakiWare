@@ -1,0 +1,90 @@
+<div>
+	<h2><%= image_tag(icon_path(@node)) %> <span /> <%= @node.name%></h2>
+</div>
+
+<div class="row-fluid">
+<div class="span3">
+	<table class="show table-hover span3">
+	<tr>
+		<td class="key">id</td>
+		<td><%= @node.id %></td>
+	</tr>
+	<tr>
+		<td class="key">名前</td>
+		<td><%= @node.name %></td>
+	</tr>
+	<tr>
+		<td class="key">種類</td>
+		<td><%= @node.type %></td>
+	</tr>
+	<% if(@node.is_folder?)%>
+	<tr>
+		<td class="key">パス</td>
+		<td><%= @node.path %></td>
+	</tr>
+	<% end %>
+	<% if(@node.is_document?)%>
+	<tr>
+		<td class="key">サイズ</td>
+		<td><%= number_to_human_size(@node.size) %></td>
+	</tr>
+	<tr>
+		<td class="key">MIMEタイプ</td>
+		<td><%= @node.mimetype %></td>
+	</tr>
+	<% end %>
+	<tr>
+		<td class="key">作成者</td>
+		<td><%= @node.creator %></td>
+	</tr>
+	<tr>
+		<td class="key">作成日時</td>
+		<td><%= simple_time(@node.created) %></td>
+	</tr>
+	<tr>
+		<td class="key">変更射</td>
+		<td><%= @node.modifier %></td>
+	</tr>
+	<tr>
+		<td class="key">変更日時</td>
+		<td><%= simple_time(@node.modified) %></td>
+	</tr>
+	
+	<% if(@node.is_document?)%>
+	<tr>
+		<td class="key">ダウンロード</td>
+		<td><%= link_to 'download this file', download_node_path %></td>
+	</tr>
+	<tr>
+		<td class="key">バージョン履歴</td>
+		<td>
+			<% @versions.each_with_index do |version,idx| %>
+				<%= link_to version.version_label, download_node_path(version.id) %> <span class="divider">/</span>
+			<% end %>
+		</td>
+	</tr>
+	<% end %>
+	</table>
+	</td></tr>
+</table>
+</div>
+
+<div class="span4 offset3">
+	<table class="show table-hover">
+		<tr>
+		<td class="key">カスタム属性</td>
+		<td>
+			<% @aspects.each do |aspect| %>
+				<div>
+				<label>[<%= aspect.attributes['displayName'] %>]</label>
+				<% aspect.properties.each do |property| %>
+					<%= property.attributes['displayName'] %>:
+					<%= property.value %><br/>
+				<% end %>
+				</div>
+			<% end %>
+		</td>
+	</tr>
+	</table>
+</div>
+</div>

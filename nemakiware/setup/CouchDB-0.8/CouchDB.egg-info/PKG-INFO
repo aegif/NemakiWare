@@ -1,0 +1,18 @@
+Metadata-Version: 1.0
+Name: CouchDB
+Version: 0.8
+Summary: Python library for working with CouchDB
+Home-page: http://code.google.com/p/couchdb-python/
+Author: Christopher Lenz
+Author-email: cmlenz@gmx.de
+License: BSD
+Description: This is a Python library for CouchDB. It provides a convenient high level
+        interface for the CouchDB server.
+Platform: UNKNOWN
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: BSD License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python
+Classifier: Topic :: Database :: Front-Ends
+Classifier: Topic :: Software Development :: Libraries :: Python Modules

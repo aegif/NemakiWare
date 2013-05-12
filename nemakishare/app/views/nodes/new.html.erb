@@ -1,0 +1,35 @@
+
+<% if @document %> <h3>コンテンツをアップロードしてください</h3>
+<%else @folder %>
+<h3>新規フォルダを作成してください</h3>
+<% end %>
+
+<%= form_for @node, :url => {:action => :create} do |f| %>
+<div class="field">
+	<%= f.label :name %>
+	<br/>
+	<%= f.text_field :name %>
+</div>
+<% if @document %>
+<div class="field">
+	<label for='file'>File</label>
+	<%= f.file_field :file %>
+</div>
+<% end %>
+
+<%= hidden_field_tag :parent_id, @parent_id %>
+<%= hidden_field_tag :type, @type %>
+<%= submit_tag '新規作成' %>
+<% end %>
+
+<script type="text/javascript">
+  	$(document).ready(function(){
+		dom_file = $('#node_file');
+		dom_name = $('#node_name');
+		dom_file.change(function(){
+			dom_name.val(dom_file.val()) 
+		})
+	});
+</script>
+
+

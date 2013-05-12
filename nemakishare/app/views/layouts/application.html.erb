@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= content_for?(:title) ? yield(:title) : "Nemakishare" %></title>
+    <%= csrf_meta_tags %>
+    <%= stylesheet_link_tag "application", :media => "all" %>
+  </head>
+  <body>
+
+    <div class="navbar navbar-fluid-top">
+      <div class="navbar-inner">
+        <div class="container-fluid">
+    		<ul class="nav">
+    			<li>
+    				<%= link_to "NemakiWare", "/nodes/explore", :class => 'brand' %>
+				</li>
+    			<li>
+    				<%= form_for SearchForm.new, :url => {:controller => :nodes, :action => :search}, :html => {:method => :get, :class => 'navbar-search pull-left'} do |f| %>
+						<%= f.text_field :query, :class => 'search-query' %>
+						<button type="submit" class="btn btn-link">
+  							<i class="icon-search"></i>
+						</button>
+	　				<% end %>
+    			</li>
+				<li class='dropdown'>
+  					<div class="btn dropdown-toggle" data-toggle="dropdown">
+  						ユーザ：<%= @login_user.id %>
+    					<span class="caret"></span>
+  					</div>
+  					<ul class="dropdown-menu">
+  						<!--Profile-->
+  						<li><a href="#">プロフィール</a></li>
+  						<!--Admin Feature-->
+  						<% if @login_user.id == 'admin'%>
+  						<!--Archive-->
+  						<li class="divider"></li>
+  						<li><%= link_to "ゴミ箱", archives_path %></li>
+  						<!--Solr config-->
+  						<li class="divider"></li>
+  						<li><a href="http://localhost:8983/solr/admin/cores?core=nemaki&action=init">Solr初期化</a></li>
+						<li><a href="http://localhost:8983/solr/admin/cores?core=nemaki&action=index&tracking=FULL">Solrリインデクス</a></li>
+  						<% end %>
+  						<!--Log Out-->
+  						<li class="divider"></li>
+  						<li><%= link_to "ログアウト", logout_nodes_path, :confirm => 'ログアウトしますか？' %></li>
+  					</ul>
+				</li> 
+    		</ul>
+    			
+        	</div>
+      	</div>
+    </div>　<!-- navbar navbar-fluid-top -->
+
+    
+    
+ 	<div class="container-fluid">
+    	<%= yield %>
+		<footer>
+			<div class="span9 offset3">
+				<div align="right">
+					<%= image_tag('icon/NemakiWare_logo.jpg') %><br/>
+					<%= image_tag('icon/aegif.gif', :align => 'right') %>
+		 			<p>&copy; Aegif Corporation 2013</p>
+				</div>
+		</footer>
+    </div> <!-- /container -->
+
+    <!-- Javascripts
+    ================================================== -->
+    <!-- Placed at the end of the document so the pages load faster -->
+    
+    <%= javascript_include_tag "application" %>
+    
+    <script type="text/javascript">
+    
+		$(function() {
+			$('a.popup').colorbox({
+				left : 200,
+				width : 780,
+				opacity : 0,
+				overlayClose : true
+			});
+		});
+    </script>
+    
+  </body>
+</html>

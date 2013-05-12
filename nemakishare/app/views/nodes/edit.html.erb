@@ -1,0 +1,35 @@
+<h3>コンテンツの編集</h3>
+
+<%= form_for :node , :url => {:action => :update}, :html => {:method => :put, :class => 'form-horizontal'} do |f| %>
+<fieldset>
+	 <div class="control-group">
+	 	<%= f.label :name, '', :class => 'control-label' %>
+	 	<div class='controls'>
+	 		<%= f.text_field :name %>
+	 	</div>
+	</div>
+
+	<h4>カスタム属性</h4>
+	<div>TODO: 適用済みのカスタム属性しか編集画面に現れないバグの修正</div>
+	<% @aspects.each do |aspect| %>
+		<div class="control-group">
+			<label class="control-label"><%= aspect.attributes['displayName'] %></label>
+			<%= hidden_field_tag 'aspects[][id]',  aspect.id %>
+			<div class="controls">
+				<% aspect.properties.each do |property| %>
+					<div>
+						<%= property.attributes['displayName'] %><%= hidden_field_tag 'aspects[][properties][][key]', property.key%>:
+						<%= text_field_tag 'aspects[][properties][][value]', property.value%>
+					</div>
+			<% end %>
+		</div>
+	<% end %>
+<%= submit_tag "更新" %>
+	</div>
+
+</fieldset>
+
+<p></p>
+
+
+<% end %>

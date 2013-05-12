@@ -1,0 +1,25 @@
+aspects:
+  client_info:
+    attributes:
+      displayName: 顧客情報
+      description: 各書類ごとのクライアント情報
+      localName: client_info
+      localNameSpace: aegif
+      queryName: client_info
+    properties:
+      customer_name:
+          displayName: 顧客名
+          description: customer_name
+          datatype: string
+          cardinality: single
+          updatability: true
+          inherited: false
+          required: false
+      charged_person:
+          displayName: 担当者
+          description: charged_person
+          datatype: string
+          cardinality: single
+          updatability: true
+          inherited: false
+          required: false
