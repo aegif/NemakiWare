@@ -1,14 +1,14 @@
-Content-Type: multipart/mixed; boundary="==af01949387f448669d6f5ac40d4de35b=="
+Content-Type: multipart/mixed; boundary="==953e706e80544a59ba408664bd53e8c0=="
 
---==af01949387f448669d6f5ac40d4de35b==
+--==953e706e80544a59ba408664bd53e8c0==
 Content-ID: /
 Content-Length: 435
-Content-MD5: GYPF0CnCuW3YtZuQmc2d6Q==
+Content-MD5: 8Hwv6vOY2PS30i/xbGQZcw==
 Content-Type: application/json;charset=utf-8
-ETag: "1-6f92e431d4bdfd057d41fd3ef487cc88"
+ETag: "1-315f92f7f2cf54a0b3f1b7da348ecb91"
 
-{"_id": "/", "aspects": [], "name": "/", "created": "2013-01-01T00:00:00.000+0000", "_rev": "1-6f92e431d4bdfd057d41fd3ef487cc88", "creator": "admin", "modified": "2013-01-01T00:00:00.000+0000", "acl": {"entries": [{"permissions": ["cmis:all"], "direct": true, "principal": "admin"}, {"permissions": ["cmis:all"], "direct": true, "principal": "GROUP_EVERYONE"}]}, "modifier": "admin", "type": "cmis:folder", "objectType": "cmis:folder"}
---==af01949387f448669d6f5ac40d4de35b==
+{"_id": "/", "aspects": [], "name": "/", "creator": "admin", "_rev": "1-315f92f7f2cf54a0b3f1b7da348ecb91", "created": "2013-01-01T00:00:00.000+0000", "modified": "2013-01-01T00:00:00.000+0000", "acl": {"entries": [{"permissions": ["cmis:all"], "direct": true, "principal": "admin"}, {"permissions": ["cmis:all"], "direct": true, "principal": "GROUP_EVERYONE"}]}, "modifier": "admin", "type": "cmis:folder", "objectType": "cmis:folder"}
+--==953e706e80544a59ba408664bd53e8c0==
 Content-ID: _design/_repo
 Content-Length: 2918
 Content-MD5: Zl255Qq/KAVz+uTKTFM4sw==
@@ -16,20 +16,20 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-fc8df15ccb11811ffcca3317a831424b"
 
 {"_rev": "1-fc8df15ccb11811ffcca3317a831424b", "_id": "_design/_repo", "language": "javascript", "views": {"attachments": {"map": "function(doc) { if (doc.type == 'attachment')  emit(doc._id, doc) }"}, "childrenByFolderId": {"map": "function(doc) { emit(doc.parentId, doc) }"}, "children": {"map": "function(doc) { if (doc.type == 'cmis:folder' || doc.type == 'cmis:document' && doc.latestVersion) emit(doc.parentId, doc) }"}, "relationships": {"map": "function(doc) { if (doc.type == 'cmis:relationship')  emit(doc._id, doc) }"}, "usersByName": {"map": "function(doc) { if (doc.type == 'user')  emit(doc.name, doc) }"}, "groupsById": {"map": "function(doc) { if (doc.type == 'group')  emit(doc.groupId, doc) }"}, "documents": {"map": "function(doc) { if (doc.type == 'cmis:document')  emit(doc._id, doc) }"}, "privateWorkingCopies": {"map": "function(doc) { if (doc.type == 'cmis:document' && doc.privateWorkingCopy) emit(doc.parentId, doc) }"}, "childByName": {"map": "function(doc) { if (doc.type == 'cmis:folder' || doc.type == 'cmis:document' && doc.latestVersion) emit({parentId: doc.parentId, name:doc.name}, doc) }"}, "usersById": {"map": "function(doc) { if (doc.type == 'user')  emit(doc.userId, doc) }"}, "latestChange": {"map": "function(doc) { if (doc.type == 'change' && doc.latest)  emit(doc._id, doc) }"}, "folders": {"map": "function(doc) { if (doc.type == 'cmis:folder')  emit(doc._id, doc) }"}, "childrenFolder": {"map": "function(doc) { if (doc.type == 'cmis:folder') emit(doc.parentId, doc) }"}, "contentsById": {"map": "function(doc) { if (doc.type == 'cmis:folder' || doc.type == 'cmis:document' || doc.type == 'cmis:relationship' || doc.type == 'cmis:policy')  emit(doc._id, doc) }"}, "relationshipsByTarget": {"map": "function(doc) { if (doc.type == 'cmis:relationship') emit(doc.targetId, doc) }"}, "policiesByAppliedObject": {"map": "function(doc) { if (doc.type == 'cmis:policy') for(i in doc.appliedIds){emit(i, doc)} }"}, "groupsByName": {"map": "function(doc) { if (doc.type == 'group')  emit(doc.name, doc) }"}, "documentsByVersionSeriesId": {"map": "function(doc) { if (doc.type == 'cmis:document' && !doc.privateWorkingCopy) emit(doc.versionSeriesId, doc) }"}, "foldersByPath": {"map": "function(doc) { if (doc.type == 'cmis:folder')  emit(doc.path, doc) }"}, "relationshipsBySource": {"map": "function(doc) { if (doc.type == 'cmis:relationship') emit(doc.sourceId, doc) }"}, "renditions": {"map": "function(doc) { if (doc.type == 'rendition')  emit(doc._id, doc) }"}, "policies": {"map": "function(doc) { if (doc.type == 'cmis:policy')  emit(doc._id, doc) }"}, "latestVersions": {"map": "function(doc) { if (doc.type == 'cmis:document' && doc.latestVersion)  emit(doc.versionSeriesId, doc) }"}, "changesByToken": {"map": "function(doc) { if (doc.type == 'change') emit(doc.changeToken, doc) }"}, "changes": {"map": "function(doc) { if (doc.type == 'change')  emit(doc._id, doc) }"}}}
---==af01949387f448669d6f5ac40d4de35b==
+--==953e706e80544a59ba408664bd53e8c0==
 Content-ID: admin
 Content-Length: 392
-Content-MD5: 4mBN8QSQXyBlpwzk/RTkow==
+Content-MD5: QoVx6wKAYvy/3w3EmiW72A==
 Content-Type: application/json;charset=utf-8
-ETag: "1-e717910ba658a64ce6cda290721d2682"
+ETag: "1-63ba6931fad0a1c899079f2b6f7457da"
 
-{"passwordHash": "$2a$10$0goveaxLj.2UJAlVN1Ru2OmGID6q04ugln/HAkVpzb5bwvZ.kvEne", "name": "admin", "firstName": "admin", "creator": "admin", "lastName": "admin", "_rev": "1-e717910ba658a64ce6cda290721d2682", "created": "2013-01-01T00:00:00.000+0000", "userId": "admin", "modified": "2013-01-01T00:00:00.000+0000", "_id": "admin", "modifier": "admin", "type": "user", "email": "admin@aegif.jp"}
---==af01949387f448669d6f5ac40d4de35b==
+{"_id": "admin", "name": "admin", "firstName": "admin", "creator": "admin", "lastName": "admin", "_rev": "1-63ba6931fad0a1c899079f2b6f7457da", "passwordHash": "$2a$10$0goveaxLj.2UJAlVN1Ru2OmGID6q04ugln/HAkVpzb5bwvZ.kvEne", "userId": "admin", "modified": "2013-01-01T00:00:00.000+0000", "created": "2013-01-01T00:00:00.000+0000", "modifier": "admin", "type": "user", "email": "admin@aegif.jp"}
+--==953e706e80544a59ba408664bd53e8c0==
 Content-ID: sites
-Content-Length: 315
-Content-MD5: ORoEw1CDZzJUjdv1FpXTmA==
+Content-Length: 337
+Content-MD5: /bEP25g/bqnmRNrDmulqmA==
 Content-Type: application/json;charset=utf-8
-ETag: "1-5f2c2ee00246a0201e36b276cbe7fb10"
+ETag: "2-a2735a6835f2b671d34baf4b14102d92"
 
-{"_id": "sites", "aspects": [], "name": "sites", "created": "2013-01-01T00:00:00.000+0000", "_rev": "1-5f2c2ee00246a0201e36b276cbe7fb10", "creator": "admin", "modified": "2013-01-01T00:00:00.000+0000", "acl": {"entries": []}, "parentId": "/", "modifier": "admin", "type": "cmis:folder", "objectType": "cmis:folder"}
---==af01949387f448669d6f5ac40d4de35b==--
+{"_id": "sites", "aspects": [], "name": "sites", "creator": "admin", "_rev": "2-a2735a6835f2b671d34baf4b14102d92", "created": "2013-01-01T00:00:00.000+0000", "modified": "2013-01-01T00:00:00.000+0000", "acl": {"entries": []}, "aclInherited": true, "parentId": "/", "modifier": "admin", "type": "cmis:folder", "objectType": "cmis:folder"}
+--==953e706e80544a59ba408664bd53e8c0==--
