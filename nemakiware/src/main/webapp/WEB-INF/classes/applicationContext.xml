@@ -274,9 +274,6 @@
         <property name="permissionService">
             <ref bean="PermissionService"></ref>
         </property>
-        <property name="typeManager">
-            <ref bean="typeManager"></ref>
-        </property>
     </bean>
 	
     <bean id="permissionService" class="jp.aegif.nemaki.service.cmis.impl.PermissionServiceImpl">

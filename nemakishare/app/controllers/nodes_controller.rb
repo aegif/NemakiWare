@@ -6,6 +6,38 @@ class NodesController < ApplicationController
       if session[:nemaki_auth_info] != nil
          @nemaki_repository = NemakiRepository.new(session[:nemaki_auth_info])
       end
+      
+      if session[:breadcrumb].blank?
+        session[:breadcrumb] = []        
+      end
+  end
+  
+  def set_breadcrumb(node)
+    if node == nil
+      crumb = {:id => "/", :name => "/"}
+    else
+      crumb = {:id => node.id, :name => node.name}
+    end  
+    
+    if check_new_breadcrumb crumb
+      if session[:breadcrumb].size > 5
+        session[:breadcrumb].shift
+      end
+      
+      session[:breadcrumb] << crumb
+    end 
+  end
+
+  def check_new_breadcrumb(crumb)
+    if session[:breadcrumb].present?
+      if session[:breadcrumb].last[:id] == crumb[:id]
+        false
+      else
+        true
+      end
+    else !session[:breadcrumb].nil?
+      true
+    end
   end
   
   def index
@@ -177,7 +209,10 @@ class NodesController < ApplicationController
       #breadcrumbs
       puts "3.3"
       puts Time.now.instance_eval { '%s.%03d' % [strftime('%Y/%m/%d %H:%M:%S'), (usec / 1000.0).round] }
-      @breadcrumbs = @nemaki_repository.get_breadcrumbs(@node)
+      #@breadcrumbs = @nemaki_repository.get_breadcrumbs(@node)
+      set_breadcrumb(@node)
+      @breadcrumbs = session[:breadcrumb]
+      #session[:breadcrumb] = []
       
       puts "4"
       puts Time.now.instance_eval { '%s.%03d' % [strftime('%Y/%m/%d %H:%M:%S'), (usec / 1000.0).round] }

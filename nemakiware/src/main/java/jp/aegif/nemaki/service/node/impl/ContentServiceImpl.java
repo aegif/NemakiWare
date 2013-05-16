@@ -90,7 +90,6 @@ public class ContentServiceImpl implements ContentService {
 	private TypeManager typeManager;
 	private static final Log log = LogFactory
 			.getLog(ContentDaoServiceImpl.class);
-	final static String COPY_SUFFIX = " のコピー"; // FIXME I18N
 	final static int FIRST_TOKEN = 1;
 
 	/**
@@ -129,12 +128,8 @@ public class ContentServiceImpl implements ContentService {
 		if(splittedPath.size() <= 0){
 			return null;
 		}else if(splittedPath.size() == 1) {
-			Folder folder = contentDaoService.getFolderByPath(splittedPath.get(0));
-			if (folder == null) {
-				return null;
-			} else if(folder.isRoot()) {
-				return folder;
-			}
+			if(!splittedPath.get(0).equals("/")) return null;
+			return contentDaoService.getFolder("/");
 		}else if(splittedPath.size() >= 1){
 			Content content = contentDaoService.getFolder("/");
 			//Get the the leaf node

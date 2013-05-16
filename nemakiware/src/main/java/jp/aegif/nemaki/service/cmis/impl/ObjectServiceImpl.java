@@ -3,17 +3,13 @@ package jp.aegif.nemaki.service.cmis.impl;
 import java.io.InputStream;
 import java.math.BigInteger;
 import java.util.ArrayList;
-import java.util.GregorianCalendar;
 import java.util.List;
-import java.util.TimeZone;
 
-import jp.aegif.nemaki.model.Aspect;
 import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.Policy;
-import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.constant.DomainType;
@@ -28,7 +24,6 @@ import jp.aegif.nemaki.service.node.ContentService;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.AllowableActions;
-import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.FailedToDeleteData;
@@ -78,7 +73,7 @@ public class ObjectServiceImpl implements ObjectService {
 		//FIXME path is not preserved in db.
 		Content content = contentService.getContentByPath(path);
 		// TODO create objectNotFoundByPath method
-		//exceptionService.objectNotFound(DomainType.OBJECT, content, path);
+		exceptionService.objectNotFound(DomainType.OBJECT, content, path);
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_GET_PROPERTIES_OBJECT, content);
 

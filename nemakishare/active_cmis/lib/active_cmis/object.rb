@@ -23,7 +23,7 @@ module ActiveCMIS
       @data = data
 
       @updated_attributes = []
-      
+
       if @data.nil?
         # Creating a new type from scratch
         raise Error::Constraint.new("This type is not creatable") unless self.class.creatable
@@ -138,12 +138,12 @@ module ActiveCMIS
             puts n.text
             hash[n.node_name] = n.text
           end
-          hash  
+          hash
         end
       end
     end
     cache :change_event_info
-      
+
     #-aegif
 
     #aegif-
@@ -367,7 +367,7 @@ module ActiveCMIS
     # @param options
     # @yield [entry] Optional block to customize the rendered atom entry
     # @yieldparam [Nokogiri::XML::Builder] entry The entry XML builder element on which you can add additional tags (uses the NS::COMBINED namespaces)
-    
+
     #aegif-
     def render_atom_entry(properties = self.class.attributes, attributes = self.attributes, options = {}, extension = nil)
     #def render_atom_entry(properties = self.class.attributes, attributes = self.attributes, options = {})
@@ -394,14 +394,14 @@ module ActiveCMIS
                 str = extension.build_str(extension)
                 eval(str)
               end
-              #-aegif  
-            end           
-          end 
+              #-aegif
+            end
+          end
           yield(xml) if block_given?
         end
       end
       conn.logger.debug builder.to_xml
-      
+
       #aegif-
       return builder.to_xml
       #builder.to_xml
@@ -593,6 +593,15 @@ module ActiveCMIS
         data = repository.conn.get_atom_entry(url)
         from_atom_entry(repository, data, parameters)
       end
+
+      #aegif-
+      # @private
+      def from_parameters_by_path(repository, parameters)
+        url = repository.object_by_path_url(parameters)
+        data = repository.conn.get_atom_entry(url)
+        from_atom_entry(repository, data, parameters)
+      end
+      #-aegif
 
       # A list of all attributes defined on this object
       # @param [Boolean] inherited Nonfunctional

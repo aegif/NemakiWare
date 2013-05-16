@@ -61,7 +61,6 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 	private NemakiRepositoryInfoImpl repositoryInfo;
 	private RepositoryService repositoryService;
-	private TypeManager typeManager;
 	private ContentService contentService;
 	private PermissionService permissionService;
 
@@ -500,8 +499,11 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 		if (checkAddProperty(properties, typeId, filter,
 				PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS)) {
-			List<String> values = null;
-			if (!CollectionUtils.isEmpty(folder.getAllowedChildTypeIds())) {
+			List<String> values = new ArrayList<String>();
+			if (CollectionUtils.isEmpty(folder.getAllowedChildTypeIds())){
+				values.add(BaseTypeId.CMIS_DOCUMENT.value());
+				values.add(BaseTypeId.CMIS_FOLDER.value());
+			}else{
 				values = folder.getAllowedChildTypeIds();
 			}
 			PropertyData<String> pd = new PropertyIdImpl(
@@ -747,9 +749,5 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 	public void setPermissionService(PermissionService permissionService) {
 		this.permissionService = permissionService;
-	}
-
-	public void setTypeManager(TypeManager typeManager) {
-		this.typeManager = typeManager;
 	}
 }

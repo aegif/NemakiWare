@@ -7,7 +7,6 @@ import java.util.Set;
 import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
 
-import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.AllowableActions;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.data.ObjectList;

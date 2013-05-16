@@ -14,6 +14,9 @@
  * You should have received a copy of the GNU General Public License
  * along with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
  */
+
+
+
 package jp.aegif.nemaki.service.cmis.impl;
 
 import jp.aegif.nemaki.model.Content;

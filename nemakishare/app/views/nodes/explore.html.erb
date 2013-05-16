@@ -29,14 +29,12 @@
 	<div class="span9">
 		<!--Breadcrumb-->
 		<ul class="breadcrumb">
-			<!-- 一時停止中
-			<% @breadcrumbs.each_with_index do |crumb,i| %>
-			<%= link_to crumb.name, explore_node_path(crumb.id) %>
-			<span class="divider">></span>
+			<% @breadcrumbs.each_with_index do |crumb, idx|%>
+				<%= link_to crumb[:name], explore_nodes_path(crumb[:id]) %>
+				<% if idx + 1 != @breadcrumbs.size %>
+					<span>></span>
+				<% end %>	
 			<% end %>
-			<li>
-			-->
-			Breadcrumb(閉塞中)
 		</ul>
 		
 		<!--Body of the list-->

@@ -119,6 +119,19 @@ module ActiveCMIS
       url = fill_in_template(template, parameters)
     end
 
+    #aegif-
+    def object_by_path(path, parameters = {"renditionFilter" => "*", "includeAllowableActions" => "true", "includeACL" => true})
+      ActiveCMIS::Object.from_parameters_by_path(self, parameters.merge("path" => path))
+    end
+
+    # @private
+    def object_by_path_url(parameters)
+      template = pick_template("objectbypath")
+      raise "Repository does not define required URI-template 'objectbypath'" unless template
+      url = fill_in_template(template, parameters)
+    end
+    #-aegif
+
     # Finds the type with a given ID in the repository
     # @return [Class]
     def type_by_id(id)
