@@ -1,0 +1,59 @@
+Content-Type: multipart/mixed; boundary="==4f60846228554727929d3ab75959892e=="
+
+--==4f60846228554727929d3ab75959892e==
+Content-ID: /
+Content-Length: 369
+Content-MD5: TWWTuxaYy9zHQZP73o2KmA==
+Content-Type: application/json;charset=utf-8
+ETag: "3-a30cfc09d40c08b108b564f6371d92bd"
+
+{"_id": "/", "aspects": [], "name": "/", "created": "2013-01-01T00:00:00.000+0000", "_rev": "3-a30cfc09d40c08b108b564f6371d92bd", "creator": "system", "modified": "2013-01-01T00:00:00.000+0000", "acl": {"entries": [{"permissions": ["cmis:read"], "direct": true, "principal": "GROUP_EVERYONE"}]}, "modifier": "system", "type": "cmis:folder", "objectType": "cmis:folder"}
+--==4f60846228554727929d3ab75959892e==
+Content-ID: _design/_repo
+Content-Length: 2918
+Content-MD5: Zl255Qq/KAVz+uTKTFM4sw==
+Content-Type: application/json;charset=utf-8
+ETag: "1-fc8df15ccb11811ffcca3317a831424b"
+
+{"_rev": "1-fc8df15ccb11811ffcca3317a831424b", "_id": "_design/_repo", "language": "javascript", "views": {"attachments": {"map": "function(doc) { if (doc.type == 'attachment')  emit(doc._id, doc) }"}, "childrenByFolderId": {"map": "function(doc) { emit(doc.parentId, doc) }"}, "children": {"map": "function(doc) { if (doc.type == 'cmis:folder' || doc.type == 'cmis:document' && doc.latestVersion) emit(doc.parentId, doc) }"}, "relationships": {"map": "function(doc) { if (doc.type == 'cmis:relationship')  emit(doc._id, doc) }"}, "usersByName": {"map": "function(doc) { if (doc.type == 'user')  emit(doc.name, doc) }"}, "groupsById": {"map": "function(doc) { if (doc.type == 'group')  emit(doc.groupId, doc) }"}, "documents": {"map": "function(doc) { if (doc.type == 'cmis:document')  emit(doc._id, doc) }"}, "privateWorkingCopies": {"map": "function(doc) { if (doc.type == 'cmis:document' && doc.privateWorkingCopy) emit(doc.parentId, doc) }"}, "childByName": {"map": "function(doc) { if (doc.type == 'cmis:folder' || doc.type == 'cmis:document' && doc.latestVersion) emit({parentId: doc.parentId, name:doc.name}, doc) }"}, "usersById": {"map": "function(doc) { if (doc.type == 'user')  emit(doc.userId, doc) }"}, "latestChange": {"map": "function(doc) { if (doc.type == 'change' && doc.latest)  emit(doc._id, doc) }"}, "folders": {"map": "function(doc) { if (doc.type == 'cmis:folder')  emit(doc._id, doc) }"}, "childrenFolder": {"map": "function(doc) { if (doc.type == 'cmis:folder') emit(doc.parentId, doc) }"}, "contentsById": {"map": "function(doc) { if (doc.type == 'cmis:folder' || doc.type == 'cmis:document' || doc.type == 'cmis:relationship' || doc.type == 'cmis:policy')  emit(doc._id, doc) }"}, "relationshipsByTarget": {"map": "function(doc) { if (doc.type == 'cmis:relationship') emit(doc.targetId, doc) }"}, "policiesByAppliedObject": {"map": "function(doc) { if (doc.type == 'cmis:policy') for(i in doc.appliedIds){emit(i, doc)} }"}, "groupsByName": {"map": "function(doc) { if (doc.type == 'group')  emit(doc.name, doc) }"}, "documentsByVersionSeriesId": {"map": "function(doc) { if (doc.type == 'cmis:document' && !doc.privateWorkingCopy) emit(doc.versionSeriesId, doc) }"}, "foldersByPath": {"map": "function(doc) { if (doc.type == 'cmis:folder')  emit(doc.path, doc) }"}, "relationshipsBySource": {"map": "function(doc) { if (doc.type == 'cmis:relationship') emit(doc.sourceId, doc) }"}, "renditions": {"map": "function(doc) { if (doc.type == 'rendition')  emit(doc._id, doc) }"}, "policies": {"map": "function(doc) { if (doc.type == 'cmis:policy')  emit(doc._id, doc) }"}, "latestVersions": {"map": "function(doc) { if (doc.type == 'cmis:document' && doc.latestVersion)  emit(doc.versionSeriesId, doc) }"}, "changesByToken": {"map": "function(doc) { if (doc.type == 'change') emit(doc.changeToken, doc) }"}, "changes": {"map": "function(doc) { if (doc.type == 'change')  emit(doc._id, doc) }"}}}
+--==4f60846228554727929d3ab75959892e==
+Content-ID: admin
+Content-Length: 394
+Content-MD5: 0s6eRrwERdPiHtWw4hxEyg==
+Content-Type: application/json;charset=utf-8
+ETag: "2-ee0bd50838f1cb8e2896a89e2e7c9eb9"
+
+{"_id": "admin", "name": "admin", "firstName": "admin", "creator": "system", "lastName": "admin", "_rev": "2-ee0bd50838f1cb8e2896a89e2e7c9eb9", "passwordHash": "$2a$10$0goveaxLj.2UJAlVN1Ru2OmGID6q04ugln/HAkVpzb5bwvZ.kvEne", "userId": "admin", "modified": "2013-01-01T00:00:00.000+0000", "created": "2013-01-01T00:00:00.000+0000", "modifier": "system", "type": "user", "email": "admin@aegif.jp"}
+--==4f60846228554727929d3ab75959892e==
+Content-ID: b11bf1bf25317a8fa2941b8f140148b6
+Content-Length: 397
+Content-MD5: k9dkx1XniGP+fTwTGOeDCQ==
+Content-Type: application/json;charset=utf-8
+ETag: "2-fd1fa1d56c740a2da5d6146254a681d7"
+
+{"_id": "b11bf1bf25317a8fa2941b8f140148b6", "changeToken": 1, "name": "Sample Site", "created": "2013-06-03T06:43:31.322+0000", "_rev": "2-fd1fa1d56c740a2da5d6146254a681d7", "creator": "admin", "modified": "2013-06-03T06:43:31.322+0000", "acl": {"entries": []}, "secondaryIds": [], "aclInherited": true, "parentId": "sites", "modifier": "admin", "type": "cmis:folder", "objectType": "cmis:folder"}
+--==4f60846228554727929d3ab75959892e==
+Content-ID: b11bf1bf25317a8fa2941b8f14014d7e
+Content-Length: 478
+Content-MD5: AKMOKyBmEiF2KcatP23utw==
+Content-Type: application/json;charset=utf-8
+ETag: "1-7e74bda376f3318e1c3e9f6e3a18da04"
+
+{"creator": "admin", "_rev": "1-7e74bda376f3318e1c3e9f6e3a18da04", "policyIds": [], "objectType": "cmis:folder", "_id": "b11bf1bf25317a8fa2941b8f14014d7e", "changeToken": 1, "name": "Sample Site", "objectId": "b11bf1bf25317a8fa2941b8f140148b6", "baseType": "cmis:folder", "created": "2013-06-03T06:43:31.391+0000", "modified": "2013-06-03T06:43:31.391+0000", "time": "2013-06-03T06:43:31.391+0000", "modifier": "admin", "type": "change", "changeType": "CREATED", "latest": true}
+--==4f60846228554727929d3ab75959892e==
+Content-ID: sites
+Content-Length: 339
+Content-MD5: e9I9GKjyiCtpGw3bxsMorg==
+Content-Type: application/json;charset=utf-8
+ETag: "2-cc8f3615cb571f5c9128b8adaa03d15e"
+
+{"_id": "sites", "aspects": [], "name": "sites", "created": "2013-01-01T00:00:00.000+0000", "_rev": "2-cc8f3615cb571f5c9128b8adaa03d15e", "creator": "system", "modified": "2013-01-01T00:00:00.000+0000", "acl": {"entries": []}, "aclInherited": true, "parentId": "/", "modifier": "system", "type": "cmis:folder", "objectType": "cmis:folder"}
+--==4f60846228554727929d3ab75959892e==
+Content-ID: system
+Content-Length: 293
+Content-MD5: wZsqvPvXvNDSO4LxbQBQHw==
+Content-Type: application/json;charset=utf-8
+ETag: "1-3b992f3178a3e14fb30dd5c0f0b10111"
+
+{"_id": "system", "name": "system", "firstName": "", "creator": "system", "lastName": "", "_rev": "1-3b992f3178a3e14fb30dd5c0f0b10111", "created": "2013-01-01T00:00:00.000+0000", "userId": "system", "modified": "2013-01-01T00:00:00.000+0000", "modifier": "system", "type": "user", "email": ""}
+--==4f60846228554727929d3ab75959892e==--
