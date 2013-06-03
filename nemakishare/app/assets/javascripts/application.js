@@ -7,7 +7,11 @@
 //= require jquery
 //= require jquery_ujs
 //= require jquery.ui.all
-//= require colorbox/jquery.colorbox
 //= require bootstrap.min
+//= require colorbox/jquery.colorbox
 //= require jquery.jqGrid-4.4.4/js/i18n/grid.locale-en.js
 //= require jquery.jqGrid-4.4.4/js/jquery.jqGrid.min
+//= require jquery.validate
+//= require jquery.validate.additional-methods
+//= require bootstrapSwitch
+//= require thickbox

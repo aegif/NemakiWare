@@ -20,13 +20,13 @@ import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.VersionSeries;
+import jp.aegif.nemaki.model.constant.NemakiConstant;
 import jp.aegif.nemaki.repository.NemakiRepositoryInfoImpl;
 import jp.aegif.nemaki.repository.TypeManager;
 import jp.aegif.nemaki.service.cmis.CompileObjectService;
 import jp.aegif.nemaki.service.cmis.PermissionService;
 import jp.aegif.nemaki.service.cmis.RepositoryService;
 import jp.aegif.nemaki.service.node.ContentService;
-import jp.aegif.nemaki.util.NemakiConstants;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Acl;
@@ -56,6 +56,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl
 import org.apache.chemistry.opencmis.commons.impl.server.ObjectInfoImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.lang.StringUtils;
 
 public class CompileObjectServiceImpl implements CompileObjectService {
 
@@ -63,7 +64,6 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	private RepositoryService repositoryService;
 	private ContentService contentService;
 	private PermissionService permissionService;
-
 
 	/**
 	 * Builds a CMIS ObjectData from the given CouchDB content.
@@ -79,9 +79,6 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		result.setProperties(compileProperties(content, splitFilter(filter),
 				objectInfo));
 
-		//iaa = true;
-		//iacl = true;
-		
 		if (iaa) {
 			result.setAllowableActions(compileAllowableActions(context, content));
 		}
@@ -138,7 +135,6 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 		return list;
 	}
-	
 
 	@Override
 	public ObjectList compileChangeDataList(CallContext context,
@@ -148,21 +144,24 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		results.setObjects(new ArrayList<ObjectData>());
 
 		Map<String, Content> cachedContents = new HashMap<String, Content>();
-		for (Change change : changes) {
-			// Retrieve the content(using caches)
-			String objectId = change.getId();
-			Content content = new Content();
-			if (cachedContents.containsKey(objectId)) {
-				content = cachedContents.get(objectId);
-			} else {
-				content = contentService.getContentAsEachBaseType(objectId);
-				cachedContents.put(objectId, content);
+		if(changes != null && CollectionUtils.isNotEmpty(changes)){
+			for (Change change : changes) {
+				// Retrieve the content(using caches)
+				String objectId = change.getId();
+				Content content = new Content();
+				if (cachedContents.containsKey(objectId)) {
+					content = cachedContents.get(objectId);
+				} else {
+					content = contentService.getContentAsTheBaseType(objectId);
+					cachedContents.put(objectId, content);
+				}
+				// Compile a change object data depending on its type
+				results.getObjects().add(
+						compileChangeObjectData(change, content, includePolicyIds,
+								includeAcl));
 			}
-			// Compile a change object data depending on its type
-			results.getObjects().add(
-					compileChangeObjectData(change, content, includePolicyIds,
-							includeAcl));
 		}
+		
 		results.setNumItems(BigInteger.valueOf(results.getObjects().size()));
 
 		return results;
@@ -192,7 +191,8 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			Change change) {
 		props.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_ID, change
 				.getObjectId()));
-		props.addProperty(new PropertyIdImpl(PropertyIds.BASE_TYPE_ID, change.getBaseType()));
+		props.addProperty(new PropertyIdImpl(PropertyIds.BASE_TYPE_ID, change
+				.getBaseType()));
 		props.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, change
 				.getObjectType()));
 		props.addProperty(new PropertyIdImpl(PropertyIds.NAME, change.getName()));
@@ -243,7 +243,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		// Get parameters to calculate AllowableActions
 		jp.aegif.nemaki.model.Acl contentAcl = content.getAcl();
 		if (contentAcl == null)
-			return null; 
+			return null;
 		Acl acl = contentService.convertToCmisAcl(content, false);
 		Map<String, PermissionMapping> permissionMap = repositoryInfo
 				.getAclCapabilities().getPermissionMapping();
@@ -275,13 +275,14 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		PropertiesImpl properties = new PropertiesImpl();
 		if (content.isFolder()) {
 			Folder folder = (Folder) content;
-			//Root folder
-			if(folder.isRoot()){
-				properties = compileRootFolderProperties(folder, properties, typeId, filter);
-			//Other than root folder
-			}else{
-				properties = compileFolderProperties(folder, properties, typeId,
-						filter);
+			// Root folder
+			if (folder.isRoot()) {
+				properties = compileRootFolderProperties(folder, properties,
+						typeId, filter);
+				// Other than root folder
+			} else {
+				properties = compileFolderProperties(folder, properties,
+						typeId, filter);
 			}
 		} else if (content.isDocument()) {
 			Document document = (Document) content;
@@ -306,20 +307,20 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	}
 
 	private PropertiesImpl compileRootFolderProperties(Folder folder,
-			PropertiesImpl properties, String typeId, Set<String> filter){
+			PropertiesImpl properties, String typeId, Set<String> filter) {
 		typeId = TypeManager.FOLDER_TYPE_ID;
 		setCmisBasePropertiesWithoutParentId(properties, typeId, filter, folder);
-		//Add parentId property without value
+		// Add parentId property without value
 		PropertyIdImpl parentId = new PropertyIdImpl();
 		parentId.setId(PropertyIds.PARENT_ID);
 		parentId.setValue(null);
 		properties.addProperty(parentId);
-		
+
 		setCmisFolderProperties(properties, typeId, filter, folder);
 
 		return properties;
 	}
-	
+
 	private PropertiesImpl compileFolderProperties(Folder folder,
 			PropertiesImpl properties, String typeId, Set<String> filter) {
 		typeId = TypeManager.FOLDER_TYPE_ID;
@@ -337,8 +338,12 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 		AttachmentNode attachment = contentService.getAttachment(document
 				.getAttachmentNodeId());
-		setCmisAttachmentProperties(properties, typeId, filter, attachment,
-				document);
+		if(attachment != null){
+			setCmisAttachmentProperties(properties, typeId, filter, attachment,
+					document);
+		}else{
+			//TODO Logging
+		}
 
 		return properties;
 	}
@@ -396,7 +401,11 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 					(GregorianCalendar) value));
 			break;
 		case STRING:
-			props.addProperty(new PropertyStringImpl(id, String.valueOf(value)));
+			if(value == null){
+				props.addProperty(new PropertyStringImpl(id, ""));
+			}else{
+				props.addProperty(new PropertyStringImpl(id, String.valueOf(value)));
+			}
 			break;
 		case ID:
 			props.addProperty(new PropertyIdImpl(id, String.valueOf(value)));
@@ -441,14 +450,16 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 	private void setCmisBaseProperties(PropertiesImpl properties,
 			String typeId, Set<String> filter, Content content) {
-		setCmisBasePropertiesWithoutParentId(properties, typeId, filter, content);
+		setCmisBasePropertiesWithoutParentId(properties, typeId, filter,
+				content);
 		addPropertyBase(properties, typeId, filter, PropertyIds.PARENT_ID,
 				content.getParentId());
 
 	}
-	
-	private void setCmisBasePropertiesWithoutParentId(PropertiesImpl properties,
-			String typeId, Set<String> filter, Content content){
+
+	private void setCmisBasePropertiesWithoutParentId(
+			PropertiesImpl properties, String typeId, Set<String> filter,
+			Content content) {
 		addPropertyBase(properties, typeId, filter, PropertyIds.NAME,
 				content.getName());
 
@@ -495,15 +506,16 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		addPropertyBase(properties, typeId, filter, PropertyIds.OBJECT_TYPE_ID,
 				TypeManager.FOLDER_TYPE_ID);
 
-		addPropertyBase(properties, typeId, filter, PropertyIds.PATH, contentService.getPath(folder));
+		addPropertyBase(properties, typeId, filter, PropertyIds.PATH,
+				contentService.getPath(folder));
 
 		if (checkAddProperty(properties, typeId, filter,
 				PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS)) {
 			List<String> values = new ArrayList<String>();
-			if (CollectionUtils.isEmpty(folder.getAllowedChildTypeIds())){
+			if (CollectionUtils.isEmpty(folder.getAllowedChildTypeIds())) {
 				values.add(BaseTypeId.CMIS_DOCUMENT.value());
 				values.add(BaseTypeId.CMIS_FOLDER.value());
-			}else{
+			} else {
 				values = folder.getAllowedChildTypeIds();
 			}
 			PropertyData<String> pd = new PropertyIdImpl(
@@ -512,8 +524,6 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		}
 	}
 
-	
-	
 	private void setCmisDocumentProperties(PropertiesImpl properties,
 			String typeId, Set<String> filter, Document document) {
 
@@ -602,7 +612,6 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		final String ASTERISK = "*";
 		final String COMMA = ",";
 
-		
 		if (filter == null || filter.trim().length() == 0) {
 			return null;
 		}
@@ -628,29 +637,32 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	 * Build extension for outputting aspects
 	 */
 	private CmisExtensionElement buildAspectsExtension(List<Aspect> aspects) {
-		final String ns = repositoryInfo.getNameSpace();
+		final String ns = NemakiConstant.NAMESPACE_ASPECTS;
 
 		List<CmisExtensionElement> aspectsExtension = new ArrayList<CmisExtensionElement>();
 
 		for (int i = 0; i < aspects.size(); i++) {
 			Aspect aspect = aspects.get(i);
-			Map<String, String> attr = new HashMap<String, String>();
-			attr.put("id", aspect.getName());
+			Map<String, String> aspectAttr = new HashMap<String, String>();
+			aspectAttr.put(NemakiConstant.EXTATTR_ASPECT_ID, aspect.getName());
 
 			List<CmisExtensionElement> propsExtension = new ArrayList<CmisExtensionElement>();
 			List<Property> props = aspect.getProperties();
 			for (Property prop : props) {
-				propsExtension.add(new CmisExtensionElementImpl(ns, prop
-						.getKey(), null, prop.getValue().toString()));
+				Map<String, String> propAttr = new HashMap<String, String>();
+				propAttr.put(NemakiConstant.EXTATTR_ASPECT_ID, prop.getKey());
+				propsExtension.add(new CmisExtensionElementImpl(ns,
+						NemakiConstant.EXTNAME_ASPECT_PROPERTY, propAttr, prop
+								.getValue().toString()));
 			}
 
-			aspectsExtension.add(new CmisExtensionElementImpl(ns, "aspect",
-					attr, propsExtension));
+			aspectsExtension.add(new CmisExtensionElementImpl(ns,
+					NemakiConstant.EXTNAME_ASPECT, aspectAttr, propsExtension));
 
 		}
 
-		return new CmisExtensionElementImpl(ns, NemakiConstants.ASPECTS, null,
-				aspectsExtension);
+		return new CmisExtensionElementImpl(ns, NemakiConstant.EXTNAME_ASPECTS,
+				null, aspectsExtension);
 	}
 
 	private Action convertKeyToAction(String key) {

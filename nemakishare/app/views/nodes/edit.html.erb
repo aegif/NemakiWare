@@ -1,35 +1,79 @@
-<h3>コンテンツの編集</h3>
-
-<%= form_for :node , :url => {:action => :update}, :html => {:method => :put, :class => 'form-horizontal'} do |f| %>
-<fieldset>
-	 <div class="control-group">
-	 	<%= f.label :name, '', :class => 'control-label' %>
-	 	<div class='controls'>
-	 		<%= f.text_field :name %>
-	 	</div>
-	</div>
-
-	<h4>カスタム属性</h4>
-	<div>TODO: 適用済みのカスタム属性しか編集画面に現れないバグの修正</div>
-	<% @aspects.each do |aspect| %>
-		<div class="control-group">
-			<label class="control-label"><%= aspect.attributes['displayName'] %></label>
-			<%= hidden_field_tag 'aspects[][id]',  aspect.id %>
-			<div class="controls">
-				<% aspect.properties.each do |property| %>
-					<div>
-						<%= property.attributes['displayName'] %><%= hidden_field_tag 'aspects[][properties][][key]', property.key%>:
-						<%= text_field_tag 'aspects[][properties][][value]', property.value%>
-					</div>
-			<% end %>
-		</div>
-	<% end %>
-<%= submit_tag "更新" %>
-	</div>
-
-</fieldset>
-
-<p></p>
-
-
+<% content_for :javascript_includes do %>
+	<%= javascript_include_tag "node_edit_table" %>
+	<script type="text/javascript">
+		buildGridData(<%= raw @node.to_json %>, <%= raw @parent.to_json %>, <%= raw @aspects.to_json %>);	
+	</script>
 <% end %>
+
+<div class="row-fluid span11 nemaki_popup_header">
+	<h4>
+		<%= image_tag(icon_path(@node)) + @node.name %>
+	</h4>
+</div>
+
+<!--CONTENTS BODY-->
+<div class="nemaki_contents_body">
+	<div class="row-fluid span11">
+		<!--Common update-->
+		<div class="span6">
+			<!--Basic Property-->
+			<div id="basic_property">
+				<div class="nemaki_table_title">
+					<h4><u>基本属性の編集</u></h4>
+				</div>
+				<!--jqGrid-->
+				<div class="nemaki_jqgrid_container">
+					<table id="basicInfo"></table>
+				</div>
+			</div>
+			
+			<!--Custom Property-->
+			<div id="custom_property">
+				<div class="nemaki_table_title">
+					<h4><u>カスタム属性の編集</u></h4>
+				</div>
+				<!--jqGrid-->
+				<div class="nemaki_jqgrid_container">
+					<% @aspects.each do |aspect| %>
+						<table id="nemaki_table_aspect_<%=aspect.id%>"></table>
+					<% end %>
+				</div>
+			</div>
+			
+			<!--Update Button-->
+			<div>
+				<a href="#" class="btn btn btn-primary btn-large" onclick="update()"><i class='icon-repeat'></i> 更新</a>
+				
+				<%= form_tag({ :controller => :nodes, :action => :update, :id => @node.id }, { :id => 'update_form', :method => :put } ) do %>
+					<%= hidden_field_tag 'basic_properties' %>
+					<%= hidden_field_tag 'custom_properties' %>
+				<% end %>
+			</div>
+		</div>
+		
+		<!--Document specific update-->
+		<% if @node.is_document? %>
+		<div class="span5">
+			<!--Content Upload-->
+			<div id="upload">
+				<div class="nemaki_table_title">
+					<h4><u>新規バージョンをアップロード</u></h4>
+					<%= form_for :node , :url => {:action => :upload}, :html => {:method => :put} do |f| %>
+						<div class="control-group">
+							<div class='controls'>
+								<%= f.file_field :file %>
+							</div>	
+						</div>
+						<%= submit_tag 'アップロード', :class => 'btn btn-primary btn-large' %>
+					<% end %>
+				</div>
+			</div>
+			
+			<!--CheckOut/CheckIn-->
+			<div id="checkOutcheckIn">
+				<!--TODO:Implement-->
+			</div>
+		</div>
+		<% end %>
+	</div>
+</div>

@@ -71,6 +71,8 @@ public class CoreTracker extends CloseHook {
 	private final String PROP_CREATOR = "creator";
 	private final String PROP_MODIFIED = "modified";
 	private final String PROP_MODIFIER = "modifier";
+	private final String PROP_IS_LATEST_VERSION = "is_latest_version";
+	
 	public CoreTracker(NemakiCoreAdminHandler adminHandler, SolrCore core,
 			SolrServer server) {
 		super();
@@ -93,14 +95,13 @@ public class CoreTracker extends CloseHook {
 	 */
 	public void initCore() {
 		try {
-			// Init all documents in a core
+			// Initialize all documents
 			server.deleteByQuery("*:*");
 			server.commit();
 
 			logger.info(core.getName() + ":Successfully initialized!");
 
-			// Init the last seq number
-			// TODO Enable multiple cores
+			// Initialize the last sequence number
 			PropertyManager propertyManager = new PropertyManagerImpl(
 					PATH_TRACKING);
 			propertyManager.modifyValue("seq", "0");
@@ -116,11 +117,7 @@ public class CoreTracker extends CloseHook {
 	 * @param tracking
 	 */
 	public void indexNodes(String tracking) {
-		// Get user-customized MimeType list
-		// A file with its MIME-type included in the list will be tracked for FULL text search. 
 		List<String> mimetypes = getTrackingMimeType();
-
-		// Read the last seq from property file
 		PropertyManager propertyManager = new PropertyManagerImpl(PATH_TRACKING);
 		
 		// Get DocumentChanges, consisting of latest changes of each document
@@ -136,7 +133,7 @@ public class CoreTracker extends CloseHook {
 			Content content = dao.getContent(docId); // content
 
 			// Check whether to DELETE or UPDATE against Solr
-			// When "DELETED" DocumentChange: Execute deletion from Solr
+			// When "DELETED" DocumentChange: DELETE
 			if (dc.isDeleted()) {
 				try {
 					server.deleteById(docId);
@@ -150,7 +147,7 @@ public class CoreTracker extends CloseHook {
 				continue;
 			}
 
-			// When "CREATED" or "UPDATED" DocumentChange: Execute indexing
+			// When "CREATED" or "UPDATED" DocumentChange: INDEX
 			// First, Check the document has ContetStream or not.
 			boolean updateFile = false;
 			AttachmentInputStream inputStream = null;
@@ -316,7 +313,6 @@ public class CoreTracker extends CloseHook {
 			QueryResponse qrsp = server.query(params);
 			list = qrsp.getResults();
 		} catch (SolrServerException e1) {
-			// TODO 自動生成された catch ブロック
 			e1.printStackTrace();
 		}
 
@@ -331,8 +327,7 @@ public class CoreTracker extends CloseHook {
 	}
 
 	/**
-	 * Build update request with file to Solr using SolrCell(internally Apache
-	 * Tika etc.)
+	 * Build update request with file to Solr
 	 * @param content
 	 * @param inputStream
 	 * @return
@@ -371,7 +366,7 @@ public class CoreTracker extends CloseHook {
 	}
 	
 	/**
-	 * Build update request to Solr without file
+	 * Build an update request to Solr without file
 	 * 
 	 * @param content
 	 * @return
@@ -380,7 +375,7 @@ public class CoreTracker extends CloseHook {
 		UpdateRequest up = new UpdateRequest();
 		SolrInputDocument sid = new SolrInputDocument();
 		
-		//Set SOlrDocument parameters
+		//Set SolrDocument parameters
 		Iterator<String> iterator = map.keySet().iterator();
 		while(iterator.hasNext()){
 			String key = iterator.next();
@@ -397,8 +392,6 @@ public class CoreTracker extends CloseHook {
 	}
 	
 	/**
-	 * @see http
-	 *      ://www.mkyong.com/java/how-to-convert-inputstream-to-file-in-java/
 	 * @param inputStream
 	 * @return
 	 * @throws IOException
@@ -466,6 +459,10 @@ public class CoreTracker extends CloseHook {
 		map.put(PROP_TYPE, content.getType());
 		//ASPECT
 		map = setAspects(map, content);
+		//LATEST VERSION
+		if(content.isDocument()){
+			map.put(PROP_IS_LATEST_VERSION, content.isLatestVersion().toString());
+		}
 		
 		return map;
 	}

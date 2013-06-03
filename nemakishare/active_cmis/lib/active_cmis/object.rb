@@ -33,7 +33,13 @@ module ActiveCMIS
       else
         @key = parameters["id"] || attribute('cmis:objectId')
         @self_link = data.xpath("at:link[@rel = 'self']/@href", NS::COMBINED).first
-        @self_link = @self_link.text
+        #aegif-
+        #PURPOSE: ChangeEvent type atom has no self link if it's deleted
+        #@self_link = @self_link.text
+        if @self_link
+          @self_link = @self_link.text
+        end
+        #-aegif
       end
       @used_parameters = parameters
       # FIXME: decide? parameters to use?? always same ? or parameter with reload ?
@@ -133,9 +139,6 @@ module ActiveCMIS
         if !info.nil?
           hash = {}
           info.children.select do |n|
-            puts info
-            puts n.node_name
-            puts n.text
             hash[n.node_name] = n.text
           end
           hash
@@ -403,7 +406,7 @@ module ActiveCMIS
       conn.logger.debug builder.to_xml
 
       #aegif-
-      return builder.to_xml
+      builder.to_xml
       #builder.to_xml
       #-aegif
     end
@@ -423,7 +426,10 @@ module ActiveCMIS
           result << {:message => :save_folders, :parameters => [parent_folders]}
         end
       else
-        if !updated_attributes.empty?
+        #aegif-
+        #if !updated_attributes.empty?
+        if !updated_attributes.empty? || !updated_extension.nil?
+        #-aegif 
           #aegif-
           result << {:message => :save_attributes, :parameters => [updated_attributes, attributes, checkin, updated_extension]}
           #result << {:message => :save_attributes, :parameters => [updated_attributes, attributes, checkin]}
@@ -474,7 +480,10 @@ module ActiveCMIS
     def save_attributes(attributes, values, checkin = nil, updated_extension = nil)
     #def save_attributes(attributes, values, checkin = nil)
     #-aegif
-      if attributes.empty? && checkin.nil?
+      #aegif-
+      #if attributes.empty? && checkin.nil?
+      if (attributes.empty? && checkin.nil?) && updated_extension.nil?
+      #-aegif
         raise "Error: saving attributes but nothing to do"
       end
       #aegif-

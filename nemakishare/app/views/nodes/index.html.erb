@@ -1,18 +1,11 @@
-<p>
-(開発用)<br/>
-<a href="http://localhost:8983/solr/admin/cores?core=nemaki&action=init" class="'popup btn btn-primary">Solr初期化</a>
-<a href="http://localhost:8983/solr/admin/cores?core=nemaki&action=index&tracking=FULL" class="'popup btn btn-primary">Solrリインデクス</a>
-</p>
-
-<%= form_for @user, :url => {:action => :authenticate} do |f| %>
+<%= form_for User.new, :url => {:action => :authenticate} do |f| %>
 	<div>
 		<%= f.label :id %>
 		<%= f.text_field :id %>
 	</div>
 	<div>
 		<%= f.label :password %>
-		<%= f.text_field :password %>
+		<%= f.password_field :password %>
 	</div>
 	<%= submit_tag 'ログイン' %>
-	
 <% end %>

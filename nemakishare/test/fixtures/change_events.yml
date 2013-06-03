@@ -1,0 +1,25 @@
+# Read about fixtures at http://api.rubyonrails.org/classes/ActiveRecord/Fixtures.html
+
+one:
+  objectId: 
+  change_type: 
+  change_time: 
+  base_type_id: 
+  object_type_id: 
+  name: 
+  version_series: 
+  user: 
+  first_version: 
+  site: MyString
+
+two:
+  objectId: 
+  change_type: 
+  change_time: 
+  base_type_id: 
+  object_type_id: 
+  name: 
+  version_series: 
+  user: 
+  first_version: 
+  site: MyString

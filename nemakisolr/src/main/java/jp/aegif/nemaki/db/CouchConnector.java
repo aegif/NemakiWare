@@ -1,7 +1,7 @@
 package jp.aegif.nemaki.db;
 
-import java.util.ArrayList;
-import java.util.List;
+import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.impl.PropertyManagerImpl;
 
 import org.ektorp.CouchDbConnector;
 import org.ektorp.CouchDbInstance;
@@ -41,16 +41,14 @@ public class CouchConnector {
 	public CouchConnector() {
 		
 		//TODO Spring or プロパティファイルに外出し
-		host = "127.0.0.1";
-		repositoryId = "books";
-		maxConnections = 40;
-		
-		
+		PropertyManager manager = new PropertyManagerImpl("nemakisolr.properties");
+		host = manager.readValue("couchdb.server.url");
+		repositoryId = manager.readValue("couchdb.db.repository");
+		maxConnections = Integer.parseInt(manager.readValue("couchdb.maxconnection"));
 		
 		HttpClient httpClient = new StdHttpClient.Builder().host(host)
 				.maxConnections(maxConnections).build();
 		CouchDbInstance dbInstance = new StdCouchDbInstance(httpClient);
-
 		
 		String repo = "";		
 		try{

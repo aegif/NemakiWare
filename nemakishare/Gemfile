@@ -27,8 +27,6 @@ gem 'activemodel'
 
 gem 'rest-client'
 
-
-# CMIS
 gem 'active_cmis', '0.3.2'
 
 gem "twitter-bootstrap-rails"
@@ -37,7 +35,9 @@ gem "less-rails"
 
 gem 'nokogiri'
 
+gem 'jquery-validation-rails'
 
+gem 'rufus-scheduler'
 
 # To use ActiveModel has_secure_password
 # gem 'bcrypt-ruby', '~> 3.0.0'

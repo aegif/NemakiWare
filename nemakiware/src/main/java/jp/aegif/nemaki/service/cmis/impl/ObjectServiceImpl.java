@@ -91,7 +91,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequired("objectId", objectId);
-		Content content = contentService.getContentAsEachBaseType(objectId);
+		Content content = contentService.getContentAsTheBaseType(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_GET_PROPERTIES_OBJECT, content);
@@ -136,7 +136,7 @@ public class ObjectServiceImpl implements ObjectService {
 
 	// TODO Rendition and ContnetStream can be integrated as StreamNode class.
 	private ContentStream getRenditionStream(String objectId, String streamId) {
-		Content content = contentService.getContentAsEachBaseType(objectId);
+		Content content = contentService.getContentAsTheBaseType(objectId);
 		// TODO validation
 		if (!content.isDocument() || content.isFolder())
 			return null;
@@ -175,7 +175,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequired("objectId", objectId);
-		Content content = contentService.getContentAsEachBaseType(objectId);
+		Content content = contentService.getContentAsTheBaseType(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		// NOTE: The permission key doesn't exist according to CMIS
 		// specification.
@@ -219,7 +219,7 @@ public class ObjectServiceImpl implements ObjectService {
 		}
 
 		return compileObjectService.compileObjectData(callContext,
-				contentService.getContentAsEachBaseType(objectId), null, false, false);
+				contentService.getContentAsTheBaseType(objectId), null, false, false);
 	}
 
 	public String createFolder(CallContext callContext, Properties properties,
@@ -359,7 +359,7 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.invalidArgumentRequiredString("objectId", id);
 		exceptionService
 				.invalidArgumentRequired("contentStream", contentStream);
-		Document doc = (Document) contentService.getContentAsEachBaseType(id);
+		Document doc = (Document) contentService.getContentAsTheBaseType(id);
 		exceptionService.objectNotFound(DomainType.OBJECT, doc, id);
 		Properties properties = compileObjectService.compileProperties(doc,
 				compileObjectService.splitFilter(""), new ObjectInfoImpl());
@@ -413,13 +413,13 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.invalidArgumentRequiredCollection("properties", properties.getPropertyList());
 		String sourceId = getStringProperty(properties, PropertyIds.SOURCE_ID);
 		if(sourceId != null){
-			Content source = contentService.getContentAsEachBaseType(getStringProperty(properties, PropertyIds.SOURCE_ID));
+			Content source = contentService.getContentAsTheBaseType(getStringProperty(properties, PropertyIds.SOURCE_ID));
 			if(source == null) exceptionService.constraintAllowedSourceTypes(td, source);
 			exceptionService.permissionDenied(callContext, PermissionMapping.CAN_CREATE_RELATIONSHIP_SOURCE, source);
 		}
 		String targetId = getStringProperty(properties, PropertyIds.TARGET_ID);
 		if(targetId != null){
-			Content target = contentService.getContentAsEachBaseType(getStringProperty(properties, PropertyIds.TARGET_ID));
+			Content target = contentService.getContentAsTheBaseType(getStringProperty(properties, PropertyIds.TARGET_ID));
 			if(target == null) exceptionService.constraintAllowedTargetTypes(td, target);
 			exceptionService.permissionDenied(callContext, PermissionMapping.CAN_CREATE_RELATIONSHIP_TARGET, target);
 		}
@@ -452,11 +452,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequiredCollection("properties", properties.getPropertyList());
-		//NOTE: folderId is ignored because policy is not filable
-		 //exceptionService.invalidArgumentRequiredParentFolderId(folderId);
-		//Folder parent = contentService.getFolder(folderId);
-		//if(parent == null) exceptionService.constraint(folderId, "The specified parent folder does not exist");
-		//exceptionService.permissionDenied(callContext, "canCreatePolicy.Folder", parent);
+		//NOTE: folderId is ignored because policy is not filable in Nemaki
 		
 		// //////////////////
 		// Specific Exception
@@ -484,7 +480,8 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.invalidArgumentRequiredHolderString("objectId", objectId);
 		exceptionService.invalidArgumentRequiredCollection("properties",
 				properties.getPropertyList());
-		Content content = contentService.getContentAsEachBaseType(objectId.getValue());
+		//TODO CHeck constraintPropertyValue with objectId
+		Content content = contentService.getContentAsTheBaseType(objectId.getValue());
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId.getValue());
 		if(content.isDocument()){
 			Document d = (Document)content;
@@ -507,7 +504,7 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.invalidArgumentRequiredHolderString("objectId", objectId);
 		exceptionService.invalidArgumentRequiredString("sourceFolderId", sourceFolderId);
 		exceptionService.invalidArgumentRequiredString("targetFolderId", targetFolderId);
-		Content content = contentService.getContentAsEachBaseType(objectId.getValue());
+		Content content = contentService.getContentAsTheBaseType(objectId.getValue());
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId.getValue());
 		Folder source = contentService.getFolder(sourceFolderId);
 		exceptionService.objectNotFound(DomainType.OBJECT, source, sourceFolderId);
@@ -529,7 +526,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("objectId", objectId);
-		Content content = contentService.getContentAsEachBaseType(objectId);
+		Content content = contentService.getContentAsTheBaseType(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext, PermissionMapping.CAN_DELETE_OBJECT, content);
 		
@@ -576,6 +573,7 @@ public class ObjectServiceImpl implements ObjectService {
 					continueOnFailure, false);
 		} catch (Exception e) {
 			// do nothing
+			e.printStackTrace();
 		}
 
 		// Check FailedToDeleteData

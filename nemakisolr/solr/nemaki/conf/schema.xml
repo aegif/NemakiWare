@@ -112,6 +112,7 @@
    <field name="modified" type="date" indexed="true" stored="true" multiValued="false" />
    <field name="modifier" type="string" indexed="true" stored="true" multiValued="false" />
    <field name="type" type="string" indexed="true" stored="true" multiValued="false" />
+   <field name="is_latest_version" type="string" indexed="true" stored="true" multiValued="false" />
    
    <!-- Common metadata fields, named specifically to match up with
      SolrCell metadata when parsing rich documents such as Word, PDF.

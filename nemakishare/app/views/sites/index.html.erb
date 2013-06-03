@@ -1,5 +1,71 @@
-<div>
-	<%= @site_name %>
-	
-	
+<!--Header-->
+<div class="row-fluid">
+	<h4>
+		　サイト一覧
+	</h4>
 </div>
+
+<%= render :partial => "layouts/flash_display"%>
+
+<div class="nemaki_contents_body">
+	<%= form_for Site.new, :url => {:action => :create}, :html => {:class => 'form-inline'} do |f| %>
+	<table>
+		<tr valign="top">
+			<td>
+				<%= submit_tag "＋新規サイト作成", :class => 'btn btn-primary'%>
+			</td>
+			<td style="padding-left: 20px;">
+				<%= f.text_field :name, :placeholder => "サイト名を入力してください"%>		
+			</td>
+		</tr>
+	</table>
+	<% end %>
+	
+	<div class="nemaki_site_list">
+		<table class="table" style="background-color:white">
+			<thead>
+			<tr class="nemaki_table_header">
+				<th class="nemaki-sitelist-name">サイト名</th>
+				<th>アクション</th>
+			</tr>
+			</thead>
+
+			<% @sites.each do |n| %>
+			<tr>
+				<td>	
+					<%= link_to n.name, explore_node_path(n.id), :target => '_parent' %>
+				</td>
+				<td>
+					<!--SHOW-->
+					<%= link_to raw("<i class='icon-zoom-in'></i>"), node_path(n.id, @popup_param), 
+					:class => 'btn', :title => '詳細' %>
+					
+					<!--EDIT-->
+					<% if n.allowable_actions['UpdateProperties'] || 
+						  n.allowable_actions['SetContentStream'] %>
+					<%= link_to raw("<i class='icon-edit'></i>"), edit_node_path(n.id, @popup_param), 
+					:class => 'btn', :title => '編集' %>
+					<% end %>
+					
+					<!--PERMISSION-->
+					<% if n.allowable_actions['ApplyACL'] %>
+					<%= link_to raw("<i class='icon-user'></i>"),
+					edit_permission_node_path(n.id, @popup_param),
+					:class => 'btn', :title => '権限' %>
+					<% end %>
+					
+					<!--DELETE-->
+					<% if n.allowable_actions['DeleteObject'] %>
+					<%= link_to raw("<i class='icon-trash'></i>"),
+					node_path(n.id),
+					:title => '削除',
+					:class => 'btn', :method => :delete, :confirm => '本当に削除しますか？'%>
+					<% end %>
+				</td>
+			</tr>
+			<% end %>
+		</table>
+		
+	</div>
+</div>
+

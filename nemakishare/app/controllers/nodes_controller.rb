@@ -1,12 +1,9 @@
+# encoding: utf-8
 class NodesController < ApplicationController
   
-  before_filter :set_repository
+  before_filter :initialize_breadcrumb
   
-  def set_repository
-      if session[:nemaki_auth_info] != nil
-         @nemaki_repository = NemakiRepository.new(session[:nemaki_auth_info])
-      end
-      
+  def initialize_breadcrumb
       if session[:breadcrumb].blank?
         session[:breadcrumb] = []        
       end
@@ -20,7 +17,7 @@ class NodesController < ApplicationController
     end  
     
     if check_new_breadcrumb crumb
-      if session[:breadcrumb].size > 5
+      if session[:breadcrumb].size >= CONFIG['change_log']['display_number']
         session[:breadcrumb].shift
       end
       
@@ -44,19 +41,13 @@ class NodesController < ApplicationController
     if session[:nemaki_auth_info] != nil
       redirect_to :action => 'explore' 
     end
-    
-    @login_user = User.new
-    @user = User.new
   end
 
   def authenticate
     user = params[:user]
-    
-    cmis_config = Hash.new
-    cmis_config["repo_id"] = "books"
-    server = ActiveCMIS::Server.new("http://localhost:8180/Nemaki/atom/")
+    server = ActiveCMIS::Server.new(CONFIG['repository']['server_url'])
     nemaki = server.authenticate(:basic, user[:id], user[:password])
-    repo = nemaki.repository(cmis_config['repo_id'])
+    repo = nemaki.repository(CONFIG['repository']['repository_id'])
     session[:nemaki_auth_info] = user 
     
     redirect_to :action => 'explore'
@@ -68,7 +59,7 @@ class NodesController < ApplicationController
     if params[:type] == 'document'
       @document = true
       @type = "document"
-    else params[:type] == 'folder'
+    elsif params[:type] == 'folder'
       @folder = true
       @type = "folder"  
     end
@@ -79,68 +70,43 @@ class NodesController < ApplicationController
   def create
     if params[:type] == 'document'
       cmis_type = 'cmis:document' 
-    else params[:type] == 'folder'
+    elsif params[:type] == 'folder'
       cmis_type = 'cmis:folder'
     end
     
     @nemaki_repository.create(params[:node], params[:parent_id], cmis_type)    
     
     #TODO 失敗時の処理
-    redirect_to :action => 'explore', :id => params[:parent_id]        
+    redirect_to_parent(explore_node_path(params[:parent_id]))       
   end
 
-  #更新画面のレンダリング
   def edit
     @node = @nemaki_repository.find(params[:id])
-
     @aspects = @nemaki_repository.get_aspects_with_attributes(@node)
-    
     render :layout => 'popup'
   end 
   
-  #更新処理
   def update
-   original_node = @nemaki_repository.find(params[:id])
-   update_aspects = convert_to_aspects(original_node, params[:aspects]) 
+    node = @nemaki_repository.find(params[:id])
+   
+    update_properties = Hash.new
+    bps = JSON.parse(params[:basic_properties])
+      if !bps.nil? && !bps.empty?
+        bps.each do |bp|
+          puts 
+          update_properties[bp['key']] = bp['value']
+        end
+      end 
+     
+   update_aspects = @nemaki_repository.convert_input_to_aspects(node, JSON.parse(params[:custom_properties])) 
 
    #TODO CMIS属性の更新でdiffがあるときのみupdateになっているか確認 
-   @nemaki_repository.update(params[:id], params[:node], update_aspects)
+   @nemaki_repository.update(params[:id], update_properties, update_aspects)
 
-   node = @nemaki_repository.find(params[:id]) #TODO
     #TODO 失敗時の処理
-    redirect_to :action => 'explore', :id => node.parent_id #TODO pass via params?
-  end
-  
-  def convert_to_aspects(node, param_aspects) 
-    if param_aspects == nil
-      return []
-    end
     
-    aspects = []  #list of aspect
-    
-    param_aspects.each do |param_aspect|
-      aspect = Aspect.new
-      aspect.id = param_aspect[:id]
-      
-      #TODO original_aspectがnilの場合 
-      original_aspect = @nemaki_repository.get_aspect_by_id(node, aspect.id)   
-      
-      #convert
-      param_aspect[:properties].each do |param_property|
-        puts param_aspect[:properties]
-        property = Property.new
-        property.key = param_property[:key]
-        property.value = param_property[:value]
-        aspect.properties << property        
-      end
-      aspects << aspect
-    end
-    return aspects
-  end
-
-  def edit_upload
-    @node = @nemaki_repository.find(params[:id])
-    render :layout => 'popup'
+    parent = @nemaki_repository.get_parent(node)
+    redirect_to_parent(explore_node_path(parent.id))
   end
 
   #新規バージョンのアップロード処理
@@ -152,8 +118,26 @@ class NodesController < ApplicationController
 
   def show
     @node = @nemaki_repository.find(params[:id])
-    @aspects = @nemaki_repository.get_aspects_with_attributes(@node)
-    @versions = @nemaki_repository.get_all_versions(@node)
+    aspects_all = @nemaki_repository.get_aspects_with_attributes(@node)
+    
+    @aspects = []
+    if aspects_all != nil && !aspects_all.empty?
+      aspects_all.each do |a|
+        if a.implemented
+          @aspects << a  
+        end
+      end
+    end
+    
+    if @node.is_document?
+      @versions = @nemaki_repository.get_all_versions(@node)  
+    end
+    @parent = @nemaki_repository.get_parent @node
+    
+    #Navigation setting
+    site = @nemaki_repository.get_site_by_node_path(@node.path)
+    set_allowed_up(site)
+    
     render :layout => 'popup'  
   end
 
@@ -169,67 +153,116 @@ class NodesController < ApplicationController
   end
   
   def explore
-      puts "1"
-      puts Time.now.instance_eval { '%s.%03d' % [strftime('%Y/%m/%d %H:%M:%S'), (usec / 1000.0).round] }
-      #親フォルダ
-      if(params[:id])
-        @node = @nemaki_repository.find(params[:id])  
+      #Get the folder to be explored
+      if(params[:id] )
+        @node = @nemaki_repository.find(params[:id])
       else
-        @node = @nemaki_repository.find('/')
+        if is_admin_role?
+          @node = @nemaki_repository.find('/')
+        else
+          @node = @nemaki_repository.find(CONFIG['site']['root_id'])
+        end
       end
       
-      puts "2"
-      puts Time.now.instance_eval { '%s.%03d' % [strftime('%Y/%m/%d %H:%M:%S'), (usec / 1000.0).round] }
-      #親フォルダに含まれるノードリスト
+      #Get the children contained in the folder
       if @node.is_folder? 
-        @nodes = @nemaki_repository.get_children(@node) 
+        #Retrieve folder items
+        @maxItems = params[:maxItems].blank? ? CONFIG['paging']['maxItems'] + 1 : params[:maxItems].to_i + 1
+        @skipCount = params[:skipCount].blank? ? 0 : params[:skipCount]
+        @nodes = @nemaki_repository.get_children(@node, @maxItems, @skipCount)
+
+        #Check paging parameter      
+        @hasBeforePage = (@skipCount.blank? || @skipCount.to_i > 0) ? true : false 
+        if @nodes != nil && !@nodes.blank?
+          if @nodes.size > CONFIG['paging']['maxItems']
+            @hasNextPage = true
+            @nodes.pop
+          else
+            @hasnextPage = false
+          end
+        end 
+        if !@node.is_root?
+           @parent = @nemaki_repository.get_parent(@node)
+        end  
       else
         nil 
       end
       
-      puts "3"
-      puts Time.now.instance_eval { '%s.%03d' % [strftime('%Y/%m/%d %H:%M:%S'), (usec / 1000.0).round] }
-    
-      #現在のサイト
-      #親フォルダが属するサイトのノードを返す
-      #@site = @nemaki_repository.get_site(@node)
-      @site = @nemaki_repository.get_root_folder
-      
-      #サイトのリスト
-      puts "3.1"
-      puts Time.now.instance_eval { '%s.%03d' % [strftime('%Y/%m/%d %H:%M:%S'), (usec / 1000.0).round] }     
-      @site_list = @nemaki_repository.get_site_list
+      #Set the site name to which the node belongs
+      if @node.is_root?
+        @site_name = "Repository Root"
+      elsif @node.is_site_root?
+        @site_name = "サイト一覧"
+      else
+        @site_name = @nemaki_repository.get_site_name(@node)
+        if @site_name.nil?
+          @site_name = ""
+        end  
+      end
       
       #チェンジログ
       ##現在のサイトに属するものだけ抽出
-      puts "3.2"
-      puts Time.now.instance_eval { '%s.%03d' % [strftime('%Y/%m/%d %H:%M:%S'), (usec / 1000.0).round] }
-      @changes = @nemaki_repository.get_changes(@site.id)
-      
-      #breadcrumbs
-      puts "3.3"
-      puts Time.now.instance_eval { '%s.%03d' % [strftime('%Y/%m/%d %H:%M:%S'), (usec / 1000.0).round] }
-      #@breadcrumbs = @nemaki_repository.get_breadcrumbs(@node)
+      site = @nemaki_repository.get_site_by_node_path(@node.path)
+      if site != nil
+        @site_changes = ChangeEvent.where(:site => site.id).last(CONFIG['change_log']['display_number'])
+        @site_changes.reverse!  
+      end
+            
+      #Set breadcrumbs
       set_breadcrumb(@node)
       @breadcrumbs = session[:breadcrumb]
-      #session[:breadcrumb] = []
       
-      puts "4"
-      puts Time.now.instance_eval { '%s.%03d' % [strftime('%Y/%m/%d %H:%M:%S'), (usec / 1000.0).round] }
-      puts "end"
+      #Navigation setting
+      set_allowed_up(site)
+  end
+  
+  def set_allowed_up(site)
+    if site == nil
+      @is_allowed_up = @is_admin_role
+    else
+      @is_allowed_up = true  
+    end
   end
   
   def search
-    form = params[:search_form]
-    q = form[:query]
+    @search_form = SearchForm.new(params[:search_form])
+    if !@search_form.valid?
+      flash[:error] = "検索ワードを入力してください"
+      redirect_to :action => :explore, :id => "/"
+      return
+    end
+    
+    q = @search_form.query
 
     #TODO Search under a site
 
     #Build CMIS SQL Query statement
-    statement_document = "SELECT * FROM cmis:document WHERE cmis:name = '" + q + "' OR CONTAINS('" + q +  "')"
+    #NOTE: CMIS says CONTAINS() 'MAY' be allowed with AND.
+    statement_document = "SELECT * FROM cmis:document WHERE (cmis:name = '" + q + "' OR CONTAINS('" + q +  "')) AND cmis:isLatestVersion = true"
     @nodes = @nemaki_repository.search(statement_document)
     statement_folder = "SELECT * FROM cmis:folder WHERE cmis:name = '" + q + "'"
     @nodes = @nodes + @nemaki_repository.search(statement_folder)
+    
+    #Set site
+    @sites = Hash.new
+    sites_cache = Hash.new
+    site_root = @nemaki_repository.get_site_root
+    @nodes.each do |n|
+      p = @nemaki_repository.get_parent n
+      site_name = @nemaki_repository.get_site_name(p)
+      if site_name.blank?
+        @sites[n.id] = nil
+      else
+        if sites_cache[site_name].blank?
+          site_path = site_root.path + "/" + site_name
+          site = @nemaki_repository.find_by_path site_path
+          sites_cache[site_name] = site
+        end
+        @sites[n.id] = sites_cache[site_name]  
+      end
+    end
+    
+    #Set query word
     @query_word = q
   end
   
@@ -241,7 +274,7 @@ class NodesController < ApplicationController
     redirect_to :action => 'explore', :id => parent_id
   end
   
-  def permission
+  def edit_permission
     @node = @nemaki_repository.find(params[:id])  
     render :layout => 'popup'  
   end
@@ -249,22 +282,26 @@ class NodesController < ApplicationController
   def update_permission
     if params[:id]
       node = @nemaki_repository.find(params[:id]);
-      parent = @nemaki_repository.get_parent(node); 
     end
    
-    @nemaki_repository.update_permission(params[:id], params[:acl_json], params[:inheritance]);
+    @nemaki_repository.update_permission(params[:id], params[:acl][:entries], params[:acl][:inheritance]);
   
+    parent = @nemaki_repository.get_parent(node)
+    redirect_to_parent(explore_node_path(parent.id))
+  end
+  
+  def redirect_parent_id(node)
+    parent = @nemaki_repository.get_parent(node);
     if parent == nil
-      redirect_to :action => 'explore', :id => "/"  
+      parent_id = "/"  
     else  
-      redirect_to :action => 'explore', :id => parent.id
+      parent_id = parent.id
     end
+    return parent_id
   end
   
   def logout
     session[:nemaki_auth_info] = nil
-    #FIXME HARD-CODED
-    redirect_to 'http://127.0.0.1:3000/nodes/'
+    redirect_to :action => :index
   end
-  
 end

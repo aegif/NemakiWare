@@ -8,7 +8,6 @@ import java.util.Map;
 
 import org.codehaus.jackson.annotate.JsonIgnoreProperties;
 import org.ektorp.support.CouchDbDocument;
-import org.junit.Ignore;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Content extends CouchDbDocument{
@@ -83,6 +82,9 @@ public class Content extends CouchDbDocument{
 	 */
 	private List<Aspect> aspects = new ArrayList<Aspect>();
 
+	private Boolean latestVersion;
+	
+	
 	/*
 	 * Getters/Setters
 	 */
@@ -197,6 +199,14 @@ public class Content extends CouchDbDocument{
 	public void setAspects(List<Aspect> aspects) {
 		this.aspects = aspects;
 	}
+	
+	public Boolean isLatestVersion() {
+		return latestVersion;
+	}
+
+	public void setLatestVersion(Boolean latestVersion) {
+		this.latestVersion = latestVersion;
+	}
 
 	@Override
 	public String toString() {
@@ -231,6 +241,10 @@ public class Content extends CouchDbDocument{
 	@Override
 	public int hashCode() {
 		return this.getId().hashCode();
+	}
+	
+	public boolean isDocument(){
+		return (type.equals("cmis:document"))? true : false;
 	}
 
 }

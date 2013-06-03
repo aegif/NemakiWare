@@ -61,7 +61,6 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 		
 		// //////////////////
 		// Body of the method
-		// //////////////////
 		return queryProcessor.query(typeManager,
 				context, context.getUsername(), repositoryId, statement,
 				searchAllVersions, includeAllowableActions,

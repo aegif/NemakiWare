@@ -1,0 +1,58 @@
+#NemakiWare specific Settings
+
+#Repository
+repository:
+  server_url: 'http://localhost:8180/Nemaki/atom/'
+  repository_id: 'bedroom'
+  aspects_namespace: 'http://www.aegif.jp/Nemaki/feature/aspects/'
+  acl_inheritance_namespace: 'http://www.aegif.jp/Nemaki/feature/aclInheritance/'
+  user_rest_url: 'http://localhost:8180/Nemaki/rest/user/' 
+  group_rest_url: 'http://localhost:8180/Nemaki/rest/group/'
+  admin_id: 'admin'
+  admin_password: 'admin'
+  
+#Search Engine
+search_engine:
+  server_url: 'http://localhost:8983/solr'
+  
+#Site
+site:
+  root_id: 'sites'
+
+#Change Log
+change_log:
+  display_number: 5
+
+#Paging
+paging: 
+  maxItems: 10
+  
+#Validate
+validation:
+  user:
+    id:
+      required: true
+    name:
+      required: true
+    first_name:
+      required: true
+    password:
+      required: true
+      length:
+        min: 4
+    email:
+      email: true
+  group:
+    id:
+      required: true
+    name:
+      required: true
+
+#Layout
+layout:
+  popup:
+    thickbox:
+      url_param:
+        TB_iframe: true
+        width: 777
+        height: 600

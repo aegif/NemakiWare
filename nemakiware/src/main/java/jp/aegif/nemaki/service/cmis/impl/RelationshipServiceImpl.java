@@ -37,7 +37,7 @@ public class RelationshipServiceImpl implements RelationshipService{
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("objectId", objectId);
-		Content content = contentService.getContentAsEachBaseType(objectId);
+		Content content = contentService.getContentAsTheBaseType(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, content);

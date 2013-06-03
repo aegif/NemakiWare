@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import jp.aegif.nemaki.model.constant.NemakiConstant;
 import jp.aegif.nemaki.repository.NemakiRepositoryInfoImpl;
 import jp.aegif.nemaki.repository.TypeManager;
 import jp.aegif.nemaki.service.cmis.RepositoryService;
@@ -69,13 +70,12 @@ public class RepositoryServiceImpl implements RepositoryService,
 	 */
 	public void afterPropertiesSet() throws Exception {
 		repositoryInfo.setExtensions(buildAspectInfo());
-	
 	}
 
 	@SuppressWarnings("unchecked")
 	private List<CmisExtensionElement> buildAspectInfo() {
 		YamlManager manager = new YamlManager(ASPECT_FILE_PATH);
-		final String ns = repositoryInfo.getNameSpace();
+		final String ns = NemakiConstant.NAMESPACE_ASPECTS;
 
 		Map<String, Object> map = new HashMap<String, Object>();
 		try{
@@ -84,7 +84,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 			//TODO logging
 			e.printStackTrace();
 		}
-		Map<String, Object> aspects = (Map<String, Object>) map.get("aspects");
+		Map<String, Object> aspects = (Map<String, Object>) map.get(NemakiConstant.EXTNAME_ASPECTS);
 
 		List<CmisExtensionElement> aspectsList = new ArrayList<CmisExtensionElement>();
 		// set aspect
@@ -94,7 +94,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 
 			// set attributes
 			Map<String, Object> attributes = (Map<String, Object>) aspect
-					.get("attributes");
+					.get(NemakiConstant.EXTNAME_ASPECT_ATTRIBUTES);
 			List<CmisExtensionElement> attributeList = new ArrayList<CmisExtensionElement>();
 
 			for (Map.Entry<String, Object> attribute : attributes.entrySet()) {
@@ -104,11 +104,11 @@ public class RepositoryServiceImpl implements RepositoryService,
 				attributeList.add(attributeExtension);
 			}
 			CmisExtensionElement attributesExtension = new CmisExtensionElementImpl(
-					ns, "attributes", null, attributeList);
+					ns, NemakiConstant.EXTNAME_ASPECT_ATTRIBUTES, null, attributeList);
 
 			// set properties
 			Map<String, Object> properties = (Map<String, Object>) aspect
-					.get("properties");
+					.get(NemakiConstant.EXTNAME_ASPECT_PROPERTIES);
 			List<CmisExtensionElement> propertyList = new ArrayList<CmisExtensionElement>();
 			for (String propertyKey : properties.keySet()) {
 				Map<String, Object> property = (Map<String, Object>) properties
@@ -121,27 +121,27 @@ public class RepositoryServiceImpl implements RepositoryService,
 									.getValue().toString()));
 				}
 				Map<String, String> propId = new HashMap<String, String>();
-				propId.put("id", propertyKey);
+				propId.put(NemakiConstant.EXTATTR_ASPECT_PROPERTY_ID, propertyKey);
 				CmisExtensionElement propertyExtension = new CmisExtensionElementImpl(
-						ns, "property", propId, propertyAttrsExtension);
+						ns, NemakiConstant.EXTNAME_ASPECT_PROPERTY, propId, propertyAttrsExtension);
 				propertyList.add(propertyExtension);
 			}
 			CmisExtensionElement propertiesExtension = new CmisExtensionElementImpl(
-					ns, "properties", null, propertyList);
+					ns, NemakiConstant.EXTNAME_ASPECT_PROPERTIES, null, propertyList);
 
 			List<CmisExtensionElement> aspectList = new ArrayList<CmisExtensionElement>();
 			aspectList.add(attributesExtension);
 			aspectList.add(propertiesExtension);
 
 			Map<String, String> aspectId = new HashMap<String, String>();
-			aspectId.put("id", aspectKey);
+			aspectId.put(NemakiConstant.EXTATTR_ASPECT_ID, aspectKey);
 			CmisExtensionElement aspectExtension = new CmisExtensionElementImpl(
-					ns, "aspect", aspectId, aspectList);
+					ns, NemakiConstant.EXTNAME_ASPECT, aspectId, aspectList);
 			aspectsList.add(aspectExtension);
 		}
 
 		CmisExtensionElement aspectsExtension = new CmisExtensionElementImpl(
-				ns, "aspects", null, aspectsList);
+				ns, NemakiConstant.EXTNAME_ASPECTS, null, aspectsList);
 
 		List<CmisExtensionElement> result = new ArrayList<CmisExtensionElement>();
 		result.add(aspectsExtension);

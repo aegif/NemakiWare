@@ -28,16 +28,17 @@ import jp.aegif.nemaki.model.User;
 public interface PrincipalDaoService {
 
 	/**
-	 * 
+	 * Create a node
 	 */
-	void create(NodeBase node);
+	User createUser(User user);
+	Group createGroup(Group group);
 	
 	/**
 	 * Update a node
 	 * @param node
 	 */
-	void update(NodeBase node);
-
+	User updateUser(User user);
+	Group updateGroup(Group group);
 	/**
 	 * Delete a principal
 	 * @param clazz

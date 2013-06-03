@@ -1,6 +1,5 @@
 package jp.aegif.nemaki.model.couch;
 
-import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
@@ -28,7 +27,8 @@ public class CouchArchive extends CouchNodeBase{
 	private String attachmentNodeId;
 	private List<String> renditionIds;
 	private String versionSeriesId;
-	private Boolean isLatestVersion;
+	private Boolean latestVersion;
+	private String mimeType;
 	
 	public CouchArchive(){
 		super();
@@ -41,11 +41,11 @@ public class CouchArchive extends CouchNodeBase{
 		setName(a.getName());
 		setParentId(a.getParentId());
 		setDeletedWithParent(a.isDeletedWithParent());
-		setPath(a.getPath());
 		setAttachmentNodeId(a.getAttachmentNodeId());
 		setRenditionIds(a.getRenditionIds());
 		setVersionSeriesId(a.getVersionSeriesId());
-		setIsLatestVersion(a.getIsLatestVersion());
+		setLatestVersion(a.isLatestVersion());
+		setMimeType(a.getMimeType());
 	}
 	
 	/**
@@ -124,12 +124,20 @@ public class CouchArchive extends CouchNodeBase{
 		this.versionSeriesId = versionSeriesId;
 	}
 
-	public Boolean getIsLatestVersion() {
-		return isLatestVersion;
+	public Boolean isLatestVersion() {
+		return latestVersion;
 	}
 
-	public void setIsLatestVersion(Boolean isLatestVersion) {
-		this.isLatestVersion = isLatestVersion;
+	public void setLatestVersion(Boolean isLatestVersion) {
+		this.latestVersion = isLatestVersion;
+	}
+
+	public String getMimeType() {
+		return mimeType;
+	}
+
+	public void setMimeType(String mimeType) {
+		this.mimeType = mimeType;
 	}
 
 	@Override
@@ -146,7 +154,7 @@ public class CouchArchive extends CouchNodeBase{
 				if(getPath() != null) put("path", getPath());
 				if(getAttachmentNodeId() != null) put("nemakiAttachments", getAttachmentNodeId().toString());
 				if(getVersionSeriesId() != null) put("versionSeriesId", getVersionSeriesId());
-				if(getIsLatestVersion() != null) put("isLatestVersion", getIsLatestVersion());
+				if(isLatestVersion() != null) put("isLatestVersion", isLatestVersion());
 				if(getCreated() != null) put("created", convertToDateFormat(getCreated()));
 				if(getCreator() != null) put("creator", getCreator());
 			}
@@ -202,11 +210,11 @@ public class CouchArchive extends CouchNodeBase{
 		a.setName(getName());
 		a.setParentId(getParentId());
 		a.setDeletedWithParent(isDeletedWithParent());
-		a.setPath(getPath());
 		a.setAttachmentNodeId(getAttachmentNodeId());
 		a.setRenditionIds(getRenditionIds());
 		a.setVersionSeriesId(getVersionSeriesId());
-		a.setIsLatestVersion(getIsLatestVersion());
+		a.setIsLatestVersion(isLatestVersion());
+		a.setMimeType(getMimeType());
 		
 		return a;
 	}

@@ -111,7 +111,7 @@ public interface ContentDaoService {
 	/**
 	 * Get contents in the parent with parentId
 	 */
-	List<Content> getChildrenIndex(String parentId);
+	List<Content> getLatestChildrenIndex(String parentId);
 	
 	Content getChildByName(String parentId, String name);
 

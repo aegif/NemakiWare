@@ -14,7 +14,7 @@
       put 'upload'
       get 'download'
       put 'move'
-      get 'permission'
+      get 'edit_permission'
       post 'update_permission'
     end
   end
@@ -22,6 +22,23 @@
   resources :users do
     collection do
       get 'search'  
+    end
+    member do
+      get 'edit_password'
+      put 'update_password'
+    end    
+  end
+  
+  resources :groups do
+    collection do
+      get 'search'  
+    end
+    
+    member do
+      get 'edit_member_users'
+      put 'update_member_users'
+      get 'edit_member_groups'
+      put 'update_member_groups'
     end
   end
   
@@ -32,6 +49,10 @@
   end
 
   resources :sites
+  
+  resources :search_engine
+  
+  match 'principals/search' => 'principals#search'
   
 
   # The priority is based upon order of creation:

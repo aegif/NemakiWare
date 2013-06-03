@@ -49,6 +49,4 @@ public class NemakiRepositoryInfoImpl extends RepositoryInfoImpl {
 	public void setNameSpace(String nameSpace) {
 		this.nameSpace = nameSpace;
 	}
-	
-	
 }

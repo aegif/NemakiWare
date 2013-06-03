@@ -5,8 +5,9 @@ public enum NodeType {
 	CMIS_FOLDER("cmis:folder"),
 	CMIS_RELATIONSHIP("cmis:relationship"),
 	CMIS_POLICY("cmis:policy"),
-	CMIS_ITEM("item"),
+	CMIS_ITEM("cmis:item"),
 	ATTACHMENT("attachment"),
+	VERSION_SERIES("versionSeries"),
 	CHANGE("change"),
 	USER("user"),
 	GROUP("group");

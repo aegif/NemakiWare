@@ -87,12 +87,12 @@ public class PrincipalServiceImpl implements PrincipalService {
 
 	@Override
 	public void createUser(User user) {
-		principalDaoService.create(user);
+		principalDaoService.createUser(user);
 	}
 
 	@Override
 	public void updateUser(User user) {
-		principalDaoService.update(user);
+		principalDaoService.updateUser(user);
 	}
 
 	@Override
@@ -102,12 +102,12 @@ public class PrincipalServiceImpl implements PrincipalService {
 
 	@Override
 	public void createGroup(Group group) {
-		principalDaoService.create(group);
+		principalDaoService.createGroup(group);
 	}
 
 	@Override
 	public void updateGroup(Group group) {
-		principalDaoService.update(group);
+		principalDaoService.updateGroup(group);
 	}
 
 	@Override

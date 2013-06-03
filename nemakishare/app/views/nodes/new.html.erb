@@ -1,27 +1,21 @@
-
-<% if @document %> <h3>コンテンツをアップロードしてください</h3>
-<%else @folder %>
-<h3>新規フォルダを作成してください</h3>
-<% end %>
-
-<%= form_for @node, :url => {:action => :create} do |f| %>
-<div class="field">
-	<%= f.label :name %>
-	<br/>
-	<%= f.text_field :name %>
-</div>
-<% if @document %>
-<div class="field">
-	<label for='file'>File</label>
-	<%= f.file_field :file %>
-</div>
-<% end %>
-
-<%= hidden_field_tag :parent_id, @parent_id %>
-<%= hidden_field_tag :type, @type %>
-<%= submit_tag '新規作成' %>
-<% end %>
-
+<% content_for :javascript_includes do %>
+<!--Validation-->
+<script type="text/javascript">
+	$(function(){
+		var options = {
+			rules : {
+				"node[name]" : {
+					required: true
+				},
+				"node[file]" : {
+					required: true
+				}
+			}
+		}
+  		$("#create_form").validate(options);
+	});
+</script>
+<!--Ajax file name-->
 <script type="text/javascript">
   	$(document).ready(function(){
 		dom_file = $('#node_file');
@@ -31,5 +25,34 @@
 		})
 	});
 </script>
+<% end %>
 
+<!--Header-->
+<div class="row-fluid span11 nemaki_popup_header">
+	<% if @document %>
+		<h4><%= image_tag('icon/generic-file-32.png') %>新規ファイルのアップロード</h4>
+	<%elsif @folder %>
+		<h4><%= image_tag('icon/folder-icon-default.gif') %>新規フォルダの作成</h4>
+	<% end %>
+</div>
 
+<!--Contents body-->
+<div class="nemaki_contents_body">
+	<div class="row-fluid">
+		<%= form_for @node, :url => {:action => :create}, :html => {:id => 'create_form'} do |f| %>
+			<label><h5>名前</h5></label>	
+            <%= f.text_field :name %>
+      		
+      		<% if @document %>      
+            <label><h5>ファイルを選択してください</h5></label>
+            <%= f.file_field :file %>
+			<% end %>
+			
+			<%= hidden_field_tag :parent_id, @parent_id %>
+			<%= hidden_field_tag :type, @type %>
+			<div style="padding-top: 20px;">
+				<%= submit_tag "新規作成", :class => 'btn btn-primary btn-large' %>	
+			</div>
+		<% end %>
+	</div>
+</div>

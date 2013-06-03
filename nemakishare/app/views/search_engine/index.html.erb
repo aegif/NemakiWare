@@ -1,0 +1,16 @@
+<%= render :partial => "layouts/simple_title_bar"%>
+
+<!--Body of contents-->
+<div class="row-fluid">
+	<div style="padding-bottom: 20px;">
+		<h4>See <%=link_to "Solr Admin Console", @url_for_ui, :target => "_blank" %></h4>
+	</div>
+	<div style="padding-bottom: 40px;">
+		<%= link_to "Solr初期化", @url_for_initialize, :class => 'btn btn-large btn-primary' %>	
+	</div>
+	<div>
+		<%= link_to "Solrリインデクス", @url_for_reindex, :class => 'btn btn-large btn-primary' %>	
+	</div>
+	
+</div>
+

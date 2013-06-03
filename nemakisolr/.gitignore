@@ -11,3 +11,4 @@ target/
 solr/nemaki/data/
 *.DS_Store
 log/
+tracking.properties

@@ -82,7 +82,7 @@ public class NavigationServiceImpl implements NavigationService {
 			max = Integer.MAX_VALUE;
 		}
 
-		Folder folder = (Folder) contentService.getContentAsEachBaseType(folderId);
+		Folder folder = (Folder) contentService.getContentAsTheBaseType(folderId);
 		List<Content>aclFiltered = permissionService.getFiltered(callContext, contentService.getChildren(folder.getId()));
 		//Filtering with folderOnly flag
 		List<Content> contents = new ArrayList<Content>();
@@ -119,7 +119,13 @@ public class NavigationServiceImpl implements NavigationService {
 			}
 			result.getObjects().add(objectInFolder);
 		}
-		result.setNumItems(BigInteger.valueOf(contents.size()));
+		
+		//Set paging information
+		int numItems = result.getObjects().size();
+		Boolean hasMoreItems = (numItems < contents.size());
+		result.setNumItems(BigInteger.valueOf(numItems));
+		result.setHasMoreItems(hasMoreItems);
+		
 		return result;
 	}
 	
@@ -202,7 +208,7 @@ public class NavigationServiceImpl implements NavigationService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("folderId", folderId);
-		Folder folder = (Folder) contentService.getContentAsEachBaseType(folderId);
+		Folder folder = (Folder) contentService.getContentAsTheBaseType(folderId);
 		exceptionService.objectNotFound(DomainType.OBJECT, folder, folderId);
 		exceptionService.permissionDenied(callContext, PermissionMapping.CAN_GET_FOLDER_PARENT_OBJECT, folder);
 		
@@ -226,7 +232,7 @@ public class NavigationServiceImpl implements NavigationService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequired("objectId", objectId);
-		Content content = contentService.getContentAsEachBaseType(objectId);
+		Content content = contentService.getContentAsTheBaseType(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext, PermissionMapping.CAN_GET_PARENTS_FOLDER, content);
 		
@@ -236,7 +242,7 @@ public class NavigationServiceImpl implements NavigationService {
 		// return empty list if content is ROOT folder
 		if(content.isRoot()) return Collections.emptyList();
 		
-		Content parent = contentService.getContentAsEachBaseType(content.getParentId());
+		Content parent = contentService.getContentAsTheBaseType(content.getParentId());
 		if(parent == null) {
 			//TODO logging
 		}

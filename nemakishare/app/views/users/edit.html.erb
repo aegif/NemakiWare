@@ -1,0 +1,70 @@
+<% content_for :javascript_includes do %>
+<script type="text/javascript">
+	$(function(){
+		var options = {
+			rules : {
+				"user[id]" : {
+					required: <%=VALIDATION['user']['id']['required']%>
+				},
+				"user[name]" : {
+					required: <%=VALIDATION['user']['name']['required']%>
+				},
+				"user[first_name]" : {
+					required: <%=VALIDATION['user']['first_name']['required']%>
+				}
+			}
+		}
+  		$("#userForm").validate(options);
+	});
+</script>
+<% end %>
+
+<div class="row-fluid span11 nemaki_popup_header">
+	<h4>ユーザ情報の編集</h4>
+</div>
+
+<div class="nemaki_contents_body">
+<div class="row-fluid">
+<%= form_for :user , :url => {:action => :update}, :html => {:method => :put, :id => 'userForm', :class => 'form-horizontal'} do |f| %>
+	<!--ID-->
+	<div class="control-group">
+		<label class="control-label" for="inputEmail">ID</label>
+		<div class="controls">
+			<%= f.text_field :id %>
+		</div>
+	</div>
+	<!--Name-->
+	<div class="control-group">
+		<label class="control-label" for="inputEmail">Name</label>
+		<div class="controls">
+			<%= f.text_field :name %>
+		</div>
+	</div>
+	<!--First Name-->
+	<div class="control-group">
+		<label class="control-label" for="inputEmail">First Name</label>
+		<div class="controls">
+			<%= f.text_field :first_name %>
+		</div>
+	</div>
+	<!--Last Name-->
+	<div class="control-group">
+		<label class="control-label" for="inputEmail">Last Name</label>
+		<div class="controls">
+			<%= f.text_field :last_name %>
+		</div>
+	</div>
+	<!--Email-->
+	<div class="control-group">
+		<label class="control-label" for="inputEmail">Email</label>
+		<div class="controls">
+			<%= f.email_field :email %>
+		</div>
+	</div>
+	<!--Action-->
+	<div class="form-actions nemaki-form-actions">
+		<%= submit_tag "更新", :class => 'btn btn-primary btn-large' %>
+	</div>
+<% end %>
+</div>
+</div>

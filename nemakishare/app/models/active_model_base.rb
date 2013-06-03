@@ -11,4 +11,5 @@ class ActiveModelBase
   end
 
   def persisted? ; false ; end
+  
 end

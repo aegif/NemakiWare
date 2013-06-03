@@ -12,6 +12,7 @@ import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
 
 import jp.aegif.nemaki.model.Archive;
+import jp.aegif.nemaki.model.constant.NodeType;
 
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
@@ -34,17 +35,24 @@ public class ArchiveResource extends ResourceBase {
 			List<Archive> archives = contentService.getAllArchives();
 			for(Archive a : archives){
 				//Filter out Attachment & old Versions
-				if ("attachment".equals(a.getType())){
+				if (NodeType.ATTACHMENT.value().equals(a.getType())){
 					continue;
-				}else if ("document".equals(a.getType())){
-					if (!a.getIsLatestVersion()) continue;
+				}else if (NodeType.CMIS_DOCUMENT.value().equals(a.getType())){
+					boolean ilv = (a.isLatestVersion() != null) ? a.isLatestVersion() : false; 
+					if (!ilv) continue;
 				}
 
-				JSONObject o = buildArchiveJson(a.getId(), a.getType(), a.getName(), a.getParentId(), a.isDeletedWithParent(), a.getPath(), a.getCreated(), a.getCreator());
+				JSONObject o = buildArchiveJson(a.getId(), a.getType(), a.getName(), a.getParentId(), a.isDeletedWithParent(), a.getCreated(), a.getCreator());
+				
+				if(a.isDocument()){
+					o.put("mimeType", a.getMimeType());
+				}
+				
 				list.add(o);
 			}
 			result.put("archives", list);
 		}catch(Exception e){
+			e.printStackTrace();
 			status = false;
 			addErrMsg(errMsg, ITEM_ARCHIVE, ERR_GET_ARCHIVES);
 		}
@@ -72,17 +80,16 @@ public class ArchiveResource extends ResourceBase {
 	
 
 	@SuppressWarnings("unchecked")
-	private JSONObject buildArchiveJson(String objectId, String type, String name, String parentId, Boolean deletedWithParent,String path, GregorianCalendar created, String creator){
+	private JSONObject buildArchiveJson(String objectId, String type, String name, String parentId, Boolean deletedWithParent, GregorianCalendar created, String creator){
 		JSONObject archiveJson = new JSONObject();
 		archiveJson.put("id", objectId);
 		archiveJson.put("type", type);
 		archiveJson.put("name", name);
 		archiveJson.put("parentId", parentId);
-		archiveJson.put("deletedWithParent", deletedWithParent);
-		archiveJson.put("path", path);
+		archiveJson.put("isDeletedWithParent", deletedWithParent);
 		SimpleDateFormat sdf = new SimpleDateFormat(DATE_FORMAT);
-		archiveJson.put("modified", sdf.format(created.getTime()));
-		archiveJson.put("modifier", creator);
+		archiveJson.put("created", sdf.format(created.getTime()));
+		archiveJson.put("creator", creator);
 		return archiveJson;
 	}
 

@@ -1,0 +1,83 @@
+<% content_for :javascript_includes do %>
+<script type="text/javascript">
+	$(function(){
+		var options = {
+			rules : {
+				"user[id]" : {
+					required: <%=VALIDATION['user']['id']['required']%>
+				},
+				"user[name]" : {
+					required: <%=VALIDATION['user']['name']['required']%>
+				},
+				"user[first_name]" : {
+					required: <%=VALIDATION['user']['first_name']['required']%>
+				},
+				"user[password]" : {
+					required: <%=VALIDATION['user']['password']['required']%>,
+					minlength: <%=VALIDATION['user']['password']['length']['min']%>
+				}
+			}
+		}
+  		$("#userForm").validate(options);
+	});
+</script>
+<% end %>
+
+<!--HEADER-->
+<div class="row-fluid span11 nemaki_popup_header">
+	<h4>ユーザ情報</h4>
+</div>
+
+<!--Contents body-->
+<div class="nemaki_contents_body">
+	<div class="row-fluid">
+		<%= form_for :user , :url => {:action => :create}, :html => {:method => :post, :id => 'userForm', :class => 'form-horizontal'} do |f| %>
+			<!--ID-->
+			<div class="control-group">
+				<label class="control-label" for="inputEmail">ユーザID</label>
+				<div class="controls">
+					<%= f.text_field :id %>
+				</div>
+			</div>
+			<!--Display Name-->
+			<div class="control-group">
+				<label class="control-label" for="inputEmail">表示名</label>
+				<div class="controls">
+					<%= f.text_field :name %>
+				</div>
+			</div>
+			<!--First Name-->
+			<div class="control-group">
+				<label class="control-label" for="inputEmail">名</label>
+				<div class="controls">
+					<%= f.text_field :first_name %>
+				</div>
+			</div>
+			<!--Last Name-->
+			<div class="control-group">
+				<label class="control-label" for="inputEmail">姓</label>
+				<div class="controls">
+					<%= f.text_field :last_name %>
+				</div>
+			</div>
+			<!--Email-->
+			<div class="control-group">
+				<label class="control-label" for="inputEmail">Eメール</label>
+				<div class="controls">
+					<%= f.email_field :email %>
+				</div>
+			</div>
+			<!--Password -->
+			<div class="control-group">
+				<label class="control-label" for="inputPassword">パスワード</label>
+				<div class="controls">
+					<%= f.text_field :password %>
+				</div>
+			</div>
+			<!--Action-->
+			<div class="form-actions nemaki-form-actions">
+				<%= submit_tag "新規作成", :class => 'btn btn-primary btn-large' %>
+			</div>
+		<% end %>
+	</div>
+</div>

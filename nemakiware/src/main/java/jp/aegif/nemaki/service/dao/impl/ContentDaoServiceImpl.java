@@ -30,8 +30,6 @@ import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
-import jp.aegif.nemaki.model.IndexOfContent;
-import jp.aegif.nemaki.model.NodeBase;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
@@ -250,7 +248,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	 */
 	@Override
 	//TODO Content型で返せば他のサービスが正しく動作するか確認(Document/Folder型は必要？)
-	public List<Content> getChildrenIndex(String parentId){
+	public List<Content> getLatestChildrenIndex(String parentId){
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
 				.viewName("children").key(parentId);
 		List<CouchContent> list = connector.queryView(query, CouchContent.class);
@@ -419,24 +417,25 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	 */
 	@Override
 	public AttachmentNode getAttachment(String attachmentId) {
-		CouchAttachmentNode can = connector.get(CouchAttachmentNode.class, attachmentId);
-		
-		if(can == null){
-			log.debug("attachment is broken or missing");
+		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
+				.viewName("attachments").key(attachmentId);
+		List<CouchAttachmentNode> list = connector.queryView(query, CouchAttachmentNode.class);
+		if(CollectionUtils.isEmpty(list)){
 			return null;
+		}else{
+			CouchAttachmentNode can = list.get(0);
+			
+			Attachment a = can.getAttachments().get(ATTACHMENT_NAME);
+
+			AttachmentNode an = new AttachmentNode();
+			an.setId(attachmentId);
+			an.setMimeType(a.getContentType());
+			an.setLength(a.getContentLength());
+			an.setType(NodeType.ATTACHMENT.value());
+
+			an.setInputStream(connector.getAttachment(attachmentId, ATTACHMENT_NAME));
+			return an;
 		}
-		
-		Attachment a = can.getAttachments().get(ATTACHMENT_NAME);
-		
-		AttachmentNode an = new AttachmentNode();
-		an.setId(attachmentId);
-		an.setMimeType(a.getContentType());
-		an.setLength(a.getContentLength());
-		an.setType(NodeType.ATTACHMENT.value());
-		
-		an.setInputStream(connector.getAttachment(attachmentId, ATTACHMENT_NAME));
-		
-		return an;
 	}
 
 	@Override
@@ -484,13 +483,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Change> getLatestChanges(int startToken, int maxItems) {
 		Change latest = getLatestChange();
-		//TODO endKey should be greater than key with descending order
 		if(startToken <= 0) startToken = 0;
+		if(latest == null || startToken > latest.getChangeToken()) return null;
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
 				.viewName("changesByToken")
-				.descending(true)
-				.endKey(startToken)
-				.key(latest.getChangeToken());
+				.descending(false)
+				.key(startToken)
+				.endKey(latest.getChangeToken());
 		if(maxItems > 0) query.limit(maxItems);
 		
 		List<CouchChange> l = connector.queryView(query, CouchChange.class);
@@ -617,6 +616,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		AttachmentInputStream is =
 				connector.getAttachment(can.getId(), ATTACHMENT_NAME, archive.getLastRevision());
 		connector.createAttachment(can.getId(), can.getRevision(), is);
+		CouchAttachmentNode restored = connector.get(CouchAttachmentNode.class, can.getId());
+		restored.setType(NodeType.ATTACHMENT.value());
+		connector.update(restored);
+		
+		//can.setRevision(null);
+		//connector.update(can);
 	}
 	
 	/**

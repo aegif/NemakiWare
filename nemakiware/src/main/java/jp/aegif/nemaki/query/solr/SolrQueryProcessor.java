@@ -8,6 +8,7 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.query.QueryProcessor;
 import jp.aegif.nemaki.repository.TypeManager;
 import jp.aegif.nemaki.service.cmis.CompileObjectService;
+import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.cmis.PermissionService;
 import jp.aegif.nemaki.service.node.ContentService;
 
@@ -46,6 +47,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 	private ContentService contentService;
 	private PermissionService permissionService;
 	private CompileObjectService compileObjectService;
+	private ExceptionService exceptionService;
 	private SolrServer solrServer;
 	private QueryObject queryObject;
 	private static final Log log = LogFactory.getLog(SolrQueryProcessor.class);
@@ -80,8 +82,14 @@ public class SolrQueryProcessor implements QueryProcessor {
 		} else {
 			SolrPredicateWalker solrPredicateWalker = new SolrPredicateWalker(
 					queryObject);
-			Query whereQuery = solrPredicateWalker.walkPredicate(whereTree);
-			whereQueryString = whereQuery.toString();
+			try{
+				Query whereQuery = solrPredicateWalker.walkPredicate(whereTree);
+				whereQueryString = whereQuery.toString();
+			}catch(Exception e){
+				e.printStackTrace();
+				//TODO Output more detailed exception
+				exceptionService.invalidArgument("Invalid CMIS SQL statement!");
+			}
 		}
 
 		// "FROM" clause to Lucene query
@@ -89,7 +97,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 		TypeDefinition td = queryObject.getMainFromName();
 		String fromTable = td.getId();
-		Term t = new Term("type", SolrUtil.getSolrName(fromTable));
+		Term t = new Term("type", SolrUtil.getPropertyNameInSolr(fromTable));
 		fromQueryString = new TermQuery(t).toString();
 
 		// Execute query
@@ -113,7 +121,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 			List<Content> contents = new ArrayList<Content>();
 			for (SolrDocument doc : docs) {
 				String docId = (String) doc.getFieldValue("id");
-				Content c = contentService.getContentAsEachBaseType(docId);
+				Content c = contentService.getContentAsTheBaseType(docId);
 				contents.add(c);
 			}
 
@@ -152,5 +160,9 @@ public class SolrQueryProcessor implements QueryProcessor {
 	public void setCompileObjectService(
 			CompileObjectService compileObjectService) {
 		this.compileObjectService = compileObjectService;
+	}
+
+	public void setExceptionService(ExceptionService exceptionService) {
+		this.exceptionService = exceptionService;
 	}
 }

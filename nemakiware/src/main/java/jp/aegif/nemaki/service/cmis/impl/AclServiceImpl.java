@@ -21,6 +21,7 @@ package jp.aegif.nemaki.service.cmis.impl;
 
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.constant.DomainType;
+import jp.aegif.nemaki.repository.TypeManager;
 import jp.aegif.nemaki.service.cmis.AclService;
 import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.node.ContentService;
@@ -48,7 +49,7 @@ public class AclServiceImpl implements AclService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequired("objectId", objectId);
-		Content content = contentService.getContentAsEachBaseType(objectId);
+		Content content = contentService.getContentAsTheBaseType(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,PermissionMapping.CAN_GET_ACL_OBJECT, content);
 		
@@ -64,7 +65,7 @@ public class AclServiceImpl implements AclService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequired("objectId", objectId);
-		Content content = contentService.getContentAsEachBaseType(objectId);
+		Content content = contentService.getContentAsTheBaseType(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,PermissionMapping.CAN_APPLY_ACL_OBJECT, content);
 		

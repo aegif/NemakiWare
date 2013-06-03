@@ -1,7 +1,15 @@
 <div>
-	<p>最近の更新(閉塞中)</p>
-	
-	
+	<% if @site_changes %>
+		<% @site_changes.each do |change|%>
+			<div class="change_event">
+				<% (change.name.blank?) ? @name = 'Unknown Content' : @name = change.name %>
+				<% (change.user.blank?) ? @user = 'Unknown User' : @user = change.user %>
+				<%=link_to @name, node_path(change.objectId, @popup_param), :class => 'thickbox' %>
+				<br/>
+				<%= @user %>が<%= l10n_change_type change.change_type %><br/>
+				<%= simple_time(change.change_time.localtime) %>
+			</div>
+			<br/>
+		<% end %>
+	<% end %>
 </div>
-
-

@@ -1,0 +1,71 @@
+<% if @users %>
+<div id='user_list'>
+	<table class="table table-striped table-hover">
+		<thead>
+			<tr>
+				<th>
+					ユーザID
+					<!--Create Action -->
+					<%= link_to raw("<i class='icon-plus'></i> 新規ユーザ"),
+					new_user_path(@popup_param),
+					:class => 'thickbox btn btn-small btn-primary'%>
+				</th>
+				<th>
+					表示名
+				</th>
+				<th>
+					名
+				</th>
+				<th>
+					姓
+				</th>
+				<th>
+					Eメール
+				</th>
+				<th class="nemaki-explore-list-action">アクション</th>
+			</tr>
+		</thead>
+		<tbody>
+			<% @users.each do |u| %>
+			<tr>
+				<!--ID-->
+				<td>
+					<%= u.id%>
+				</td>
+				<!--Display Name-->
+				<td>
+					<%= u.name%>
+				</td>
+				<!--First Name-->
+				<td>
+					<%= u.first_name%>
+				</td>
+				<!--Last Name-->
+				<td>
+					<%= u.last_name%>
+				</td>
+				<!--Email-->
+				<td>
+					<%= mail_to u.email%>
+				</td>
+				<!--Action-->
+				<td>
+					<%= link_to raw("<i class='icon-edit'></i>"),
+					edit_user_path(u.id, @popup_param),
+					:title => '詳細編集',
+					:class => 'thickbox btn'%>
+					<%= link_to raw("<i class='icon-cog'></i>"),
+					edit_password_user_path(u.id, @popup_param),
+					:title => 'パスワード変更',
+					:class => 'thickbox btn'%>
+					<%= link_to raw("<i class='icon-remove'></i>"),
+					user_path(u.id),
+					:title => '削除',
+					:class => 'btn', :method => :delete, :confirm => '本当に削除しますか？'%>
+				</td>
+			</tr>
+			<% end %>
+		</tbody>
+	</table>
+</div>
+<% end %>

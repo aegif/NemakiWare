@@ -22,6 +22,7 @@ import java.util.List;
 import jp.aegif.nemaki.model.Group;
 import jp.aegif.nemaki.model.NodeBase;
 import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.model.couch.CouchDocument;
 import jp.aegif.nemaki.model.couch.CouchGroup;
 import jp.aegif.nemaki.model.couch.CouchUser;
 import jp.aegif.nemaki.service.dao.PrincipalDaoService;
@@ -49,29 +50,41 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 	 * 
 	 */
 	@Override
-	public void create(NodeBase node) {
-		if(node.getClass().equals(User.class)){
-			User u = (User)node;
-			CouchUser cu = new CouchUser(u);
-			connector.create(cu);
-		}else if(node.getClass().equals(Group.class)){
-			Group g = (Group)node;
-			CouchGroup cg = new CouchGroup(g);
-			connector.create(cg);
-		}
+	public User createUser(User user) {
+		CouchUser cu = new CouchUser(user);
+		connector.create(cu);
+		return cu.convert();
+	}
+
+	@Override
+	public Group createGroup(Group group) {
+		CouchGroup cg = new CouchGroup(group);
+		connector.create(cg);
+		return cg.convert();
+	}
+
+	@Override
+	public User updateUser(User user) {
+		CouchUser cd = connector.get(CouchUser.class, user.getId());
+		
+		//Set the latest revision for avoid conflict
+		CouchUser update = new CouchUser(user);
+		update.setRevision(cd.getRevision());
+
+		connector.update(update);
+		return update.convert();
 	}
 	
 	@Override
-	public void update(NodeBase node) {
-		if(node.getClass().equals(User.class)){
-			User u = (User)node;
-			CouchUser cu = new CouchUser(u);
-			connector.update(cu);
-		}else if(node.getClass().equals(Group.class)){
-			Group g = (Group)node;
-			CouchGroup cg = new CouchGroup(g);
-			connector.update(cg);
-		}
+	public Group updateGroup(Group group) {
+		CouchGroup cd = connector.get(CouchGroup.class, group.getId());
+		
+		//Set the latest revision for avoid conflict
+		CouchGroup update = new CouchGroup(group);
+		update.setRevision(cd.getRevision());
+
+		connector.update(update);
+		return update.convert();
 	}
 	
 	@Override

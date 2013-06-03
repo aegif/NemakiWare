@@ -1,0 +1,86 @@
+<% content_for :javascript_includes do %>
+	<%= javascript_include_tag "node_permission_table" %>
+	<script type="text/javascript">
+		buildGridData(<%= raw @node.acl.to_json %>, <%= @node.acl_inherited %>);
+	</script>
+<%end %>
+
+<!--HEADER-->
+<div class="row-fluid span11 nemaki_popup_header">
+	<h4>
+		<%= image_tag(icon_path(@node)) + @node.name %>
+	</h4>
+</div>
+
+<!--CONTENTS BODY-->
+<div class="nemaki_contents_body">
+	<!--Inherited permission-->
+	<div class="row-fluid nemaki_table_title">
+		<div class="span6">
+			<h4><u>継承した権限</u></h4>
+		</div>
+		<div class="span5">
+			<h4><u>&lt;&lt;権限の継承</u></h4>
+		</div>	
+	</div>
+	
+	<div class="row-fluid">
+		<div class="span6">
+			<!--jqGrid-->
+			<div class="nemaki_jqgrid_container">
+				<table id="inherited_acl_table"></table>
+				<div id = "inherited_acl_paager"></div>
+			</div>
+		</div>
+		<div class="span5">
+			<div>
+			    <div id="inheritance_button" class="switch">
+					<input type="checkbox" <%if @node.acl_inherited %>checked<%end%> />
+				</div>
+			</div>
+		</div>
+	</div>
+	
+	<!--Node specific permission-->
+	<div class="row-fluid nemaki_table_title">
+		<div class="span6">
+			<h4><u>ローカルで設定された権限</u></h4>
+		</div>
+		<div class="span5">
+			<h4><u>&lt;&lt;追加するユーザの検索</u></h4>
+		</div>	
+	</div>
+
+	<div class="row-fluid">
+		<div class="span6">
+			<!--jqGrid-->
+			<div class="nemaki_jqgrid_container">
+				<table id="local_acl_table"></table>
+				<div id = "local_acl_pager"></div>
+				<!--Remove Button-->
+				<a href="#" class="btn btn" onclick="delrow()"><i class='icon-minus'></i>削除</a>
+				<!--Update Button-->
+				<a href="#" class="btn btn btn-primary" onclick="update()"><i class='icon-repeat'></i>更新</a>
+				<%= form_tag({:action => 'update_permission'}, {:id => 'permission_form'}) do %>
+					<%= hidden_field_tag 'acl[entries]' %>
+					<%= hidden_field_tag 'acl[inheritance]', @node.acl_inherited %>
+				<% end %>
+			</div>
+		</div>
+		<!--User search-->
+		<div class="span5">
+			<div class="nemaki_jqgrid_container">
+				<!--jqGrid-->
+				<table id="user_table"></table>
+				<div id = "user_paager"></div>
+				<!--Add Button-->
+				<a href="#" class="btn" onclick="addPrincipalToAcl()"><i class='icon-plus'></i>権限を追加</a>
+				<!--Search form-->
+				<%= form_for SearchForm.new, :url => {:controller => :users , :action => :search}, :html => {:id => 'user_search', :method => :get}, :remote => true do |f| %>
+					<%= submit_tag "検索", :class => 'btn' %>
+					<%= f.text_field :query, :class => 'search-query' %>
+				<% end %>
+			</div>
+		</div>
+	</div>
+</div>

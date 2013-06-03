@@ -14,18 +14,43 @@ import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
+import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 
 import jp.aegif.nemaki.model.Group;
 import jp.aegif.nemaki.model.User;
 
+import org.apache.commons.lang.StringUtils;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.JSONValue;
 
 @Path("/group")
 public class GroupResource extends ResourceBase{
+	
+	
+	@SuppressWarnings("unchecked")
+	@GET
+	@Path("/search")
+	@Produces(MediaType.APPLICATION_JSON)
+	public String search(@QueryParam("query") String query){
+		boolean status = true;		
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+		JSONArray list = new JSONArray();
+		
+		Group group = principalService.getGroupById(query);
+		if(group == null){
+			status = false;
+			addErrMsg(errMsg, ITEM_GROUP, ERR_NOTFOUND);
+		}else{
+			list.add(convertGroupToJson(group));
+			result.put("groups", list);
+		}
+		makeResult(status, result, errMsg);
+		return result.toString();
+	}
 	
 	@SuppressWarnings("unchecked")
 	@GET
@@ -40,34 +65,8 @@ public class GroupResource extends ResourceBase{
 		List<Group> groupList;
 		try{
 			groupList = principalService.getGroups();
-			SimpleDateFormat sdf = new SimpleDateFormat(DATE_FORMAT);
 			for(Group group : groupList){
-				
-				String created = new String();
-				try{
-					created = sdf.format(group.getCreated().getTime());
-				}catch(Exception ex){
-					ex.printStackTrace();
-				}
-				String modified = new String();
-				try{
-					modified = sdf.format(group.getModified().getTime());
-				}catch(Exception ex){
-					ex.printStackTrace();
-				}
-				JSONObject groupJSON = new JSONObject();
-				groupJSON.put(ITEM_GROUPID, group.getGroupId());
-				groupJSON.put(ITEM_GROUPNAME, group.getName());
-				groupJSON.put(ITEM_CREATOR, group.getCreator());
-				groupJSON.put(ITEM_CREATED, created);
-				groupJSON.put(ITEM_MODIFIER, group.getModifier());
-				groupJSON.put(ITEM_MODIFIED, modified);
-				groupJSON.put(ITEM_TYPE, group.getType());
-				groupJSON.put(ITEM_MEMBER_USERS,  group.getUsers());
-				groupJSON.put(ITEM_MEMBER_USERSSIZE,  group.getUsers().size());
-				groupJSON.put(ITEM_MEMBER_GROUPS, group.getGroups());
-				groupJSON.put(ITEM_MEMBER_GROUPSSIZE, group.getGroups().size());
-				
+				JSONObject groupJSON = convertGroupToJson(group);
 				listJSON.add(groupJSON);
 			}
 			result.put(ITEM_ALLGROUPS, listJSON);
@@ -77,6 +76,26 @@ public class GroupResource extends ResourceBase{
 		}
 		result = makeResult(status, result, errMsg);
 		return result.toString();	
+	}
+	
+	@SuppressWarnings("unchecked")
+	@GET
+	@Path("/show/{id}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public String show(@PathParam("id") String groupId){
+		boolean status = true;		
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+		
+		Group group = principalService.getGroupById(groupId);
+		if(group == null){
+			status = false;
+			addErrMsg(errMsg, ITEM_GROUP, ERR_NOTFOUND);
+		}else{
+			result.put("group", convertGroupToJson(group));
+		}
+		makeResult(status, result, errMsg);
+		return result.toString();
 	}
 	
 	@SuppressWarnings("unchecked")
@@ -94,14 +113,7 @@ public class GroupResource extends ResourceBase{
 		JSONArray errMsg = new JSONArray();
 		
 		//Validation
-		if(!nonZeroString(groupId)){
-			status = false;
-			addErrMsg(errMsg, ITEM_GROUPID, ERR_MANDATORY);
-		}
-		if(!nonZeroString(name)){
-			status = false;
-			addErrMsg(errMsg, ITEM_GROUPNAME, ERR_MANDATORY);
-		}
+		status = validateNewGroup(status, errMsg, groupId, name);
 		
 		//Edit a group info
 		//Group group = new Group();
@@ -133,20 +145,16 @@ public class GroupResource extends ResourceBase{
 		boolean status = true;		
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
-		Group group = new Group();
 		
-		//Validation & Editing
-		if(!nonZeroString(name)){
-			status = false;
-			addErrMsg(errMsg,ITEM_GROUPNAME, ERR_MANDATORY);
-		}
-		try{
-			group = principalService.getGroupById(groupId);
-		}catch(Exception ex){
-			ex.printStackTrace();
+		//Existing group
+		Group group = principalService.getGroupById(groupId);
+		if(group == null){
 			status = false;
 			addErrMsg(errMsg, ITEM_GROUP, ERR_NOTFOUND);
 		}
+		
+		//Validation
+		status = validateGroup(status, errMsg, groupId, name);
 
 		//Edit & Update
 		if(status){
@@ -177,11 +185,9 @@ public class GroupResource extends ResourceBase{
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 		
-		//Validation
-		try{
-			principalService.getGroupById(groupId);
-		}catch(Exception ex){
-			ex.printStackTrace();
+		//Existing group
+		Group group = principalService.getGroupById(groupId);
+		if(group == null){
 			status = false;
 			addErrMsg(errMsg, ITEM_GROUP, ERR_NOTFOUND);
 		}
@@ -210,13 +216,16 @@ public class GroupResource extends ResourceBase{
 		boolean status = true;		
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
-		Group group = new Group();
-		JSONArray usersAry = new JSONArray();
-		JSONArray groupsAry = new JSONArray();
-		List<String> usersList = new ArrayList<String>();
-		List<String> groupsList = new ArrayList<String>();
+		
+		//Existing Group
+		Group group = principalService.getGroupById(groupId);	
+		if(group == null){
+			status = false;
+			addErrMsg(errMsg, ITEM_GROUP, ERR_NOTFOUND);
+		}
 		
 		//Parse JSON string from input parameter
+		JSONArray usersAry = new JSONArray();
 		if(users != null){
 			try{
 				usersAry = (JSONArray)JSONValue.parseWithException(users);	//JSON parse validation
@@ -227,6 +236,7 @@ public class GroupResource extends ResourceBase{
 			}
 		}
 		
+		JSONArray groupsAry = new JSONArray();
 		if(groups != null){
 			try{
 				groupsAry = (JSONArray)JSONValue.parseWithException(groups); //JSON parse validation
@@ -237,36 +247,27 @@ public class GroupResource extends ResourceBase{
 			}
 		}
 		
-		//Check whether the group to be modified exists
-		try{
-			group = principalService.getGroupById(groupId);	
-		}catch(Exception ex){
-			ex.printStackTrace();
-			status = false;
-			addErrMsg(errMsg, ITEM_GROUP, ERR_NOTFOUND);
-		}
-		
 		//Edit members info of the group
 		if(status){
-			//edit info of the group itself
+			//Group info
 			setModifiedSignature(getUserInfo(httpRequest), group);
 
-			//edit info of the group's members(users)
-			usersList = editUserMembers(usersAry, errMsg, apiType, group);
+			//Member(User) info
+			List<String> usersList = editUserMembers(usersAry, errMsg, apiType, group);
 			group.setUsers(usersList);
 			
-			//edit info of the group's members(groups)
-			groupsList = editGroupMembers(groupsAry, errMsg, apiType, group);
+			//Member(Group) info
+			List<String> groupsList = editGroupMembers(groupsAry, errMsg, apiType, group);
 			group.setGroups(groupsList);
 				
-			//Update the group
+			//Update
 			if(apiType.equals(API_ADD)){
 				try{
 					principalService.updateGroup(group);
 				}catch(Exception ex){
 					ex.printStackTrace();
 					status = false;
-					addErrMsg(errMsg, ITEM_GROUP, ERR_UPDATE);
+					addErrMsg(errMsg, ITEM_GROUP, ERR_UPDATEMEMBERS);
 				}
 			}else if(apiType.equals(API_REMOVE)){
 				try{
@@ -317,20 +318,18 @@ public class GroupResource extends ResourceBase{
 		List<String> ul = group.getUsers();
 		if(ul != null) usersList = ul;
 	
-		List<User> allUsersList = principalService.getUsers();
-		List<String> allUsersStringList = new ArrayList<String>();
-		for(final User u : allUsersList){
-			allUsersStringList.add(u.getId());
-		}
-
 		for(final Object obj : usersAry){
 			boolean notSkip = true;
 			JSONObject objJSON = (JSONObject)obj;
 			String userId = (String)objJSON.get(FORM_ID);			
 		
-			if(!allUsersStringList.contains(userId) && apiType.equals(API_ADD)){	//check only when "add" API 
-				notSkip = false;
-				addErrMsg(errMsg, ITEM_USER + ":" + userId, ERR_NOTFOUND);
+			//check only when "add" API
+			if(apiType.equals(API_ADD)){
+				User existingUser = principalService.getUserById(userId);
+				if(existingUser == null){
+					notSkip = false;
+					addErrMsg(errMsg, ITEM_USER + ":" + userId, ERR_NOTFOUND);
+				}
 			}
 			
 			if(notSkip){
@@ -379,8 +378,10 @@ public class GroupResource extends ResourceBase{
 			JSONObject objJSON = (JSONObject)obj;
 			String groupId = (String)objJSON.get(FORM_ID);
 			boolean notSkip = true;
-					
-			if(!allGroupsStringList.contains(groupId) && apiType.equals(API_ADD)){
+			
+			//Existance check
+			Group g = principalService.getGroupById(groupId);
+			if(g == null && apiType.equals(API_ADD)){
 				notSkip = false;
 				addErrMsg(errMsg, ITEM_GROUP + ":" + groupId, ERR_NOTFOUND);
 			}
@@ -411,5 +412,65 @@ public class GroupResource extends ResourceBase{
 			}
 		}
 		return groupsList;
+	}
+	
+	boolean validateNewGroup(boolean status, JSONArray errMsg, String groupId, String name){
+		if(StringUtils.isBlank(groupId)){
+			status = false;
+			addErrMsg(errMsg, ITEM_GROUPID, ERR_MANDATORY);
+		}
+		//groupID uniqueness
+		Group group = principalService.getGroupById(groupId);
+		if(group != null){
+			status = false;
+			addErrMsg(errMsg, ITEM_GROUPID, ERR_ALREADYEXISTS);
+		}
+		
+		if(StringUtils.isBlank(name)){
+			status = false;
+			addErrMsg(errMsg, ITEM_GROUPNAME, ERR_MANDATORY);
+		}
+		
+		return status;
+	}
+	
+	boolean validateGroup(boolean status, JSONArray errMsg, String groupId, String name){
+		if(StringUtils.isBlank(name)){
+			status = false;
+			addErrMsg(errMsg, ITEM_GROUPNAME, ERR_MANDATORY);
+		}
+		
+		return status;
+	}
+	
+	
+	private JSONObject convertGroupToJson(Group group) {
+		SimpleDateFormat sdf = new SimpleDateFormat(DATE_FORMAT);
+		String created = new String();
+		try{
+			created = sdf.format(group.getCreated().getTime());
+		}catch(Exception ex){
+			ex.printStackTrace();
+		}
+		String modified = new String();
+		try{
+			modified = sdf.format(group.getModified().getTime());
+		}catch(Exception ex){
+			ex.printStackTrace();
+		}
+		JSONObject groupJSON = new JSONObject();
+		groupJSON.put(ITEM_GROUPID, group.getGroupId());
+		groupJSON.put(ITEM_GROUPNAME, group.getName());
+		groupJSON.put(ITEM_CREATOR, group.getCreator());
+		groupJSON.put(ITEM_CREATED, created);
+		groupJSON.put(ITEM_MODIFIER, group.getModifier());
+		groupJSON.put(ITEM_MODIFIED, modified);
+		groupJSON.put(ITEM_TYPE, group.getType());
+		groupJSON.put(ITEM_MEMBER_USERS,  group.getUsers());
+		groupJSON.put(ITEM_MEMBER_USERSSIZE,  group.getUsers().size());
+		groupJSON.put(ITEM_MEMBER_GROUPS, group.getGroups());
+		groupJSON.put(ITEM_MEMBER_GROUPSSIZE, group.getGroups().size());
+		
+		return groupJSON;
 	}
 }

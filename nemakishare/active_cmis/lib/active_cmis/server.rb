@@ -90,6 +90,9 @@ module ActiveCMIS
     # @return [void]
     def clear_repositories
       @cached_repositories = {}
+      #aegif-
+      @repository_info = conn.get_xml(endpoint)
+      #-aegif-
     end
 
 

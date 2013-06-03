@@ -5,6 +5,8 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.antlr.runtime.tree.Tree;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
@@ -55,7 +57,7 @@ public class SolrPredicateWalker {
 
 		// JOIN is not supported!
 		TypeDefinition td = queryObject.getMainFromName();
-		Term t = new Term(SOLR_TYPE, SolrUtil.getSolrName(td.getId()));
+		Term t = new Term(SOLR_TYPE, SolrUtil.getPropertyNameInSolr(td.getId()));
 		this.tableQuery = new TermQuery(t);
 	}
 
@@ -158,7 +160,7 @@ public class SolrPredicateWalker {
 		Query q = new TermQuery(term);
 		return q;
 	}
-
+	
 	private Query walkNotEquals(Tree leftNode, Tree rightNode) {
 		BooleanQuery q = new BooleanQuery();
 		Query q1 = tableQuery;
@@ -197,6 +199,7 @@ public class SolrPredicateWalker {
 	}
 
 	/**
+	 * TODO Implement check for each kind of literal
 	 * Parse field name & condition value. Field name is prepared for Solr
 	 * query.
 	 * 
@@ -207,11 +210,9 @@ public class SolrPredicateWalker {
 	private HashMap<String, String> walkCompareInternal(Tree leftNode,
 			Tree rightNode) {
 		HashMap<String, String> map = new HashMap<String, String>();
-		//String left = (String) walkString(leftNode);
 		String left = leftNode.getChild(0).toString();
-		//String right = rightNode.toString();
-		String right = (String) walkString(rightNode);
-		map.put(FLD, SolrUtil.getSolrName(left));
+		String right = walkExpr(rightNode).toString(); 
+		map.put(FLD, SolrUtil.getPropertyNameInSolr(left));
 		map.put(CND, right);
 		return map;
 	}
@@ -240,7 +241,7 @@ public class SolrPredicateWalker {
 		}
 
 		// Build a statement
-		String field = SolrUtil.getSolrName(colRefName);
+		String field = SolrUtil.getPropertyNameInSolr(colRefName);
 		String pattern = translatePattern((String) rVal); // Solr wildcard
 															// expression
 		Term t = new Term(field, pattern);
@@ -272,7 +273,7 @@ public class SolrPredicateWalker {
 		// Build a statement
 		// Combine queries with "OR" because Solr doesn't have "IN" syntax
 		BooleanQuery q = new BooleanQuery();
-		String field = SolrUtil.getSolrName(colNode.toString());
+		String field = SolrUtil.getPropertyNameInSolr(colNode.toString());
 		List<?> list = (List<?>) walkExpr(listNode);
 		for (Object elm : list) {
 			Term t = new Term(field, elm.toString());
@@ -373,7 +374,6 @@ public class SolrPredicateWalker {
 			return bq;
 		}
 		return q;
-
 	}
 
 	private Query walkInTreeInternal(String folderId) {
@@ -635,7 +635,7 @@ public class SolrPredicateWalker {
 	 */
 	private String buildQualField(String alias) {
 		String cmisName = queryObject.getTypeQueryName(alias);
-		String solrName = SolrUtil.getSolrName(cmisName);
+		String solrName = SolrUtil.getPropertyNameInSolr(cmisName);
 		return solrName;
 	}
 
@@ -692,4 +692,5 @@ public class SolrPredicateWalker {
 		final String DOUBLE_QUOTE = "\"";
 		return DOUBLE_QUOTE + str + DOUBLE_QUOTE;
 	}
+	
 }

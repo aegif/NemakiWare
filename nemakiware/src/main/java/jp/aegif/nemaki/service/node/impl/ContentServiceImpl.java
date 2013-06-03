@@ -42,6 +42,7 @@ import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
+import jp.aegif.nemaki.model.constant.NemakiConstant;
 import jp.aegif.nemaki.model.constant.NodeType;
 import jp.aegif.nemaki.repository.TypeManager;
 import jp.aegif.nemaki.service.dao.ContentDaoService;
@@ -102,7 +103,7 @@ public class ContentServiceImpl implements ContentService {
 	 * 
 	 */
 	@Override
-	public Content getContentAsEachBaseType(String objectId) {
+	public Content getContentAsTheBaseType(String objectId) {
 		Content content = contentDaoService.getContent(objectId);
 		if(content == null) return null;
 		
@@ -128,31 +129,31 @@ public class ContentServiceImpl implements ContentService {
 		if(splittedPath.size() <= 0){
 			return null;
 		}else if(splittedPath.size() == 1) {
-			if(!splittedPath.get(0).equals("/")) return null;
-			return contentDaoService.getFolder("/");
+			if(!splittedPath.get(0).equals(NemakiConstant.PATH_SEPARATOR)) return null;
+			return contentDaoService.getFolder(NemakiConstant.PATH_SEPARATOR);
 		}else if(splittedPath.size() >= 1){
-			Content content = contentDaoService.getFolder("/");
+			Content content = contentDaoService.getFolder(NemakiConstant.PATH_SEPARATOR);
 			//Get the the leaf node
 			for(int i=1; i< splittedPath.size(); i++){
 				Content child = contentDaoService.getChildByName(content.getId(), splittedPath.get(i));
 				content = child;
 			}
-			return getContentAsEachBaseType(content.getId());
+			return getContentAsTheBaseType(content.getId());
 		}
 		return null;
 	}
 
 	private List<String> splitLeafPathSegment(String path) {
 		List<String> splitted = new LinkedList<String>();
-		if(path.equals("/")){
-			splitted.add("/");
+		if(path.equals(NemakiConstant.PATH_SEPARATOR)){
+			splitted.add(NemakiConstant.PATH_SEPARATOR);
 			return splitted;
 		}
 
 		//TODO validation for irregular path
-		splitted = new LinkedList<String>(Arrays.asList(path.split("/")));
+		splitted = new LinkedList<String>(Arrays.asList(path.split(NemakiConstant.PATH_SEPARATOR)));
 		splitted.remove(0);
-		splitted.add(0, "/");
+		splitted.add(0, NemakiConstant.PATH_SEPARATOR);
 		return splitted;
 	}
 	
@@ -160,7 +161,7 @@ public class ContentServiceImpl implements ContentService {
 	public String getPath(Content content){
 		List<String> path = getPathInternal(new ArrayList<String>(), content);
 		path.remove(0);
-		return "/" + StringUtils.join(path, "/");
+		return NemakiConstant.PATH_SEPARATOR + StringUtils.join(path, NemakiConstant.PATH_SEPARATOR);
 	}
 
 	private List<String> getPathInternal(List<String> path, Content content){
@@ -177,9 +178,8 @@ public class ContentServiceImpl implements ContentService {
 	
 	@Override
 	public Folder getParent(String objectId) {
-		// TODO cmis:parentId is only for cmis:folder
 		// As a model within Nemaki, content have the parentId?
-		Content content = getContentAsEachBaseType(objectId);
+		Content content = contentDaoService.getContent(objectId);
 		return getFolder(content.getParentId());
 	}
 
@@ -190,7 +190,7 @@ public class ContentServiceImpl implements ContentService {
 		List<Content> children = new ArrayList<Content>();
 		
 		List<Content> indices = contentDaoService
-				.getChildrenIndex(folderId);
+				.getLatestChildrenIndex(folderId);
 		if(CollectionUtils.isEmpty(indices)) return null;
 		
 		for (Content c : indices) {
@@ -213,7 +213,7 @@ public class ContentServiceImpl implements ContentService {
 
 	// if the root of the tree doesn't exists, return null
 	public List<Content> getDescendants(String folderId, int depth) {
-		//TODO move to ContentService#getContent?
+		//Content class is somehow abstract, but it's enough for DELETE.
 		Content content = contentDaoService.getContent(folderId);
 		if (content == null)
 			return null;
@@ -258,7 +258,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 	
 	public List<Document> getCheckedOutDocs(String folderId, String orderBy,ExtensionsData extension){
-		//NOTE "orderBy" is not supported under the capalibities at this time
+		//NOTE "orderBy" is not supported under the capabilities at this time
 		return contentDaoService.getCheckedOutDocuments(folderId);
 	}
 
@@ -274,6 +274,7 @@ public class ContentServiceImpl implements ContentService {
 
 	@SuppressWarnings("unchecked")
 	@Override
+	//TODO Subtypes of relationships can be correctly retrieved?
 	public List<Relationship> getRelationsipsOfObject(String objectId,
 			RelationshipDirection relationshipDirection) {
 		// Set default
@@ -289,7 +290,6 @@ public class ContentServiceImpl implements ContentService {
 					.getRelationshipsBySource(objectId);
 			List<Relationship> targets = contentDaoService
 					.getRelationshipsByTarget(objectId);
-			// TODO can successfully cast?
 			return (List<Relationship>) CollectionUtils.disjunction(sources,
 					targets);
 		default:
@@ -317,7 +317,7 @@ public class ContentServiceImpl implements ContentService {
 		contentDaoService.updatePolicy(policy);
 		
 		//Record the change event
-		Content content = getContentAsEachBaseType(objectId);
+		Content content = getContentAsTheBaseType(objectId);
 		writeChangeEvent(callContext, content, ChangeType.SECURITY);
 	}
 
@@ -331,7 +331,7 @@ public class ContentServiceImpl implements ContentService {
 		contentDaoService.updatePolicy(policy);
 		
 		//Record the change event
-		Content content = getContentAsEachBaseType(objectId);
+		Content content = getContentAsTheBaseType(objectId);
 		writeChangeEvent(callContext, content, ChangeType.SECURITY);
 	}
 
@@ -672,7 +672,7 @@ public class ContentServiceImpl implements ContentService {
 	private VersionSeries createVersionSeries(CallContext callContext,
 			VersioningState versioningState) {
 		VersionSeries vs = new VersionSeries();
-		vs.setType("versionSeries");
+		vs.setType(NodeType.VERSION_SERIES.value());
 		vs.setVersionSeriesCheckedOut(false);
 		setSignature(callContext, vs);
 
@@ -722,14 +722,6 @@ public class ContentServiceImpl implements ContentService {
 		
 		return folder;
 	}
-
-	/*private String buildPath(Folder parentFolder, String pathSegment) {
-		if (parentFolder.isRoot()) {
-			return parentFolder.getPath() + pathSegment;
-		} else {
-			return parentFolder.getPath() + "/" + pathSegment;
-		}
-	}*/
 
 	@Override
 	public Relationship createRelationship(CallContext callContext,
@@ -787,7 +779,7 @@ public class ContentServiceImpl implements ContentService {
 		content.setObjectType(getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID));
 		
 		//Name(Unique in a folder)
-		String uniqueName = buildUniqueName(getStringProperty(properties, PropertyIds.NAME), content.getParentId());
+		String uniqueName = buildUniqueName(getStringProperty(properties, PropertyIds.NAME), content.getParentId(), getIdProperty(properties, PropertyIds.OBJECT_ID));
 		content.setName(uniqueName);
 		
 		//Description
@@ -837,13 +829,13 @@ public class ContentServiceImpl implements ContentService {
 			PropertyDefinition<?> pd = map.get(p.getKey());
 			//CASE: READ&WRITE(ANYTIME)
 			if (pd.getUpdatability() == Updatability.READWRITE){
-				setPropertyValue(content, p.getValue(), properties);
+				setUpdatePropertyValue(content, p.getValue(), properties);
 			}
 			//CASE:WHEN CHECKED OUT
 			if(pd.getUpdatability() == Updatability.WHENCHECKEDOUT && content.isDocument()){
 				Document d = (Document)content;
 				if(d.isPrivateWorkingCopy()){
-					setPropertyValue(content, p.getValue(), properties);
+					setUpdatePropertyValue(content, p.getValue(), properties);
 				}
 			}
 		}
@@ -886,14 +878,17 @@ public class ContentServiceImpl implements ContentService {
 	 * @param propertyData
 	 * @param properties
 	 */
-	private void setPropertyValue(Content content, PropertyData<?> propertyData, Properties properties){
-		if(propertyData.getId() == PropertyIds.NAME){
-			String uniqueName = buildUniqueName(getStringProperty(properties, PropertyIds.NAME), content.getParentId());
-			content.setName(uniqueName);
+	private void setUpdatePropertyValue(Content content, PropertyData<?> propertyData, Properties properties){
+		if(propertyData.getId().equals(PropertyIds.NAME)){
+			if(getIdProperty(properties, PropertyIds.OBJECT_ID) != content.getId()){
+				String uniqueName = buildUniqueName(getStringProperty(properties, PropertyIds.NAME), content.getParentId(), getIdProperty(properties, PropertyIds.OBJECT_ID));
+				content.setName(uniqueName);
+			}
 		}
 		
-		if(propertyData.getId() == PropertyIds.DESCRIPTION)
+		if(propertyData.getId().equals(PropertyIds.DESCRIPTION)){
 			content.setDescription(getStringProperty(properties, propertyData.getId()));
+		}
 	}
 	
 	/**
@@ -902,7 +897,7 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public void move(Content content, String targetFolderId) {
 		content.setParentId(targetFolderId);
-		String uniqueName = buildUniqueName(content.getName(), targetFolderId);
+		String uniqueName = buildUniqueName(content.getName(), targetFolderId, null);
 		content.setName(uniqueName);
 		update(content);
 	}
@@ -910,7 +905,7 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public Archive createArchive(CallContext callContext, String objectId,
 			Boolean deletedWithParent) {
-		Content content = getContentAsEachBaseType(objectId);
+		Content content = getContentAsTheBaseType(objectId);
 
 		// Set base info
 		Archive a = new Archive();
@@ -929,12 +924,6 @@ public class ContentServiceImpl implements ContentService {
 			a.setAttachmentNodeId(document.getAttachmentNodeId());
 			a.setVersionSeriesId(document.getVersionSeriesId());
 			a.setIsLatestVersion(document.isLatestVersion());
-		}
-
-		// Set Folder archive specific info
-		if (content.isFolder()) {
-			Folder folder = (Folder) content;
-			//a.setPath(folder.getPath());
 		}
 
 		contentDaoService.createArchive(a, deletedWithParent);
@@ -960,7 +949,7 @@ public class ContentServiceImpl implements ContentService {
 	 */
 	public void delete(CallContext callContext, String objectId,
 			Boolean deletedWithParent) {
-		Content content = getContentAsEachBaseType(objectId);
+		Content content = getContentAsTheBaseType(objectId);
 		
 		//Record the change event(Before the content is deleted!)
 		writeChangeEvent(callContext, content, ChangeType.DELETED);	
@@ -978,7 +967,7 @@ public class ContentServiceImpl implements ContentService {
 
 	public void deleteDocument(CallContext callContext, String objectId,
 			Boolean allVersions, Boolean deleteWithParent) {
-		Document document = (Document) getContentAsEachBaseType(objectId);
+		Document document = (Document) getContentAsTheBaseType(objectId);
 
 		// Make the list of objects to be deleted
 		List<Document> versionList = new ArrayList<Document>();
@@ -1017,22 +1006,24 @@ public class ContentServiceImpl implements ContentService {
 			Boolean deletedWithParent) throws Exception {
 		// Delete children
 		List<Content> children = getChildren(folderId);
-		for (Content child : children) {
-			try {
-				if (child.isFolder()) {
-					deleteTree(callContext, child.getId(), allVersions,
-							continueOnFailure, true);
-				} else if (child.isDocument()) {
-					deleteDocument(callContext, child.getId(), allVersions,
-							true);
-				} else {
-					delete(callContext, child.getId(), true);
-				}
-			} catch (Exception e) {
-				if (continueOnFailure) {
-					continue;
-				} else {
-					throw e;
+		if (!CollectionUtils.isEmpty(children)){
+			for (Content child : children) {
+				try {
+					if (child.isFolder()) {
+						deleteTree(callContext, child.getId(), allVersions,
+								continueOnFailure, true);
+					} else if (child.isDocument()) {
+						deleteDocument(callContext, child.getId(), allVersions,
+								true);
+					} else {
+						delete(callContext, child.getId(), true);
+					}
+				} catch (Exception e) {
+					if (continueOnFailure) {
+						continue;
+					} else {
+						throw e;
+					}
 				}
 			}
 		}
@@ -1099,10 +1090,9 @@ public class ContentServiceImpl implements ContentService {
 		cmisAcl.setExact(true);
 
 		// Set "inherited" property, which is out of bounds to CMIS
-		// TODO Namespace should be on the common place except RepositoryService
-		String namespace = "http://www.aegif.jp/Nemaki";
+		String namespace = NemakiConstant.NAMESPACE_ACL_INHERITANCE;
 		CmisExtensionElementImpl inherited = new CmisExtensionElementImpl(
-				namespace, "inherited", null, content.isAclInherited()
+				namespace, NemakiConstant.EXTNAME_ACL_INHERITED, null, content.isAclInherited()
 						.toString());
 		List<CmisExtensionElement> exts = new ArrayList<CmisExtensionElement>();
 		exts.add(inherited);
@@ -1138,7 +1128,7 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public List<Rendition> getRenditions(String objectId) {
-		Content c = getContentAsEachBaseType(objectId);
+		Content c = getContentAsTheBaseType(objectId);
 		List<String> ids = new ArrayList<String>();
 		if (c.isDocument()) {
 			Document d = (Document) c;
@@ -1208,10 +1198,13 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public void restoreArchive(String archiveId) {
-		// TODO archiveが存在していなかった場合のエラー処理
 		Archive archive = contentDaoService.getArchive(archiveId);
-
-		// リストア先が存在しているかのチェックは、ここで行う。Folderでの再帰リストア含め、リストアは必ずここを通るので。
+		if (archive == null){
+			log.error("Archive does not exist!");
+			return;
+		}
+		
+		// リストア先が存在しているかのチェックは、ここで行う。Folderでの再帰リストア含め、リストアは必ずここを通る。
 		if (!restorationTargetExists(archive)) {
 			log.error("The destination of the restoration doesn't exist");
 			return;
@@ -1228,7 +1221,7 @@ public class ContentServiceImpl implements ContentService {
 			log.error("Only document or folder is supported for restoration");
 		}
 		
-		//TODO restore時のChange Event
+		//TODO What should be done about Change Event?
 	}
 
 	private void restoreDocument(Archive archive) {
@@ -1255,13 +1248,12 @@ public class ContentServiceImpl implements ContentService {
 	private void restoreFolder(Archive archive) {
 		contentDaoService.restoreContent(archive);
 
-		// 直近のchildren世代をまずrestore
+		// Restore direct children
 		List<Archive> children = contentDaoService.getChildArchives(archive);
 		if (children != null) {
 			for (Archive child : children) {
-				// restoreArchiveを呼び出すと、archiveのtypeによってrestoreDocuement /
-				// restoreFolder(再帰)が呼び出される
-				// ただし、呼び出していいかどうかは、deletedWithParentで判定。だめならそれ以降のそこの子孫は無視
+				//Restore descendants recursively
+				// NOTE: Restored only when deletedWithParent flag is true
 				if (child.isDeletedWithParent()) {
 					restoreArchive(child.getId());
 				}
@@ -1279,7 +1271,7 @@ public class ContentServiceImpl implements ContentService {
 		return typeManager.getType(typeId);
 	}
 
-	private String buildUniqueName(String originalName, String folderId) {
+	private String buildUniqueName(String originalName, String folderId, String existingId) {
 		List<Content> children = getChildren(folderId);
 
 		List<String> conflicts = new ArrayList<String>();
@@ -1288,8 +1280,11 @@ public class ContentServiceImpl implements ContentService {
 		}else{
 			//Get collection of conflict names
 			for(Content child : children){
-				if(nameConflicts(originalName, child.getName())){
-					conflicts.add(child.getName());
+				//Exclude update of existing content in the folder
+				if(existingId != null && !child.getId().equals(existingId)){
+					if(nameConflicts(originalName, child.getName())){
+						conflicts.add(child.getName());
+					}
 				}
 			}
 						
@@ -1431,36 +1426,43 @@ public class ContentServiceImpl implements ContentService {
 		List<CmisExtensionElement> exts = properties.getExtensions();
 		if (CollectionUtils.isEmpty(exts))
 			return null;
-
+		
+		CmisExtensionElement aspectsExt = extractAspectsExtension(exts);
 		List<Aspect> aspects = new ArrayList<Aspect>();
-		for (int i = 0; i < exts.size(); i++) {
-			CmisExtensionElement aspectsExt = exts.get(i);
 
-			// TODO correct validation
-			if (aspectsExt.getAttributes() != null
-					&& aspectsExt.getAttributes().get("id") != null
-					&& !aspectsExt.getAttributes().get("id").isEmpty()) {
-				System.out.println("Cusotm aspect must have the id attribute");
-				continue;
-			}
-
-			if (aspectsExt.getName().equals("aspects")) {
-				List<CmisExtensionElement> aspectsList = aspectsExt
-						.getChildren();
-				for (int j = 0; j < aspectsList.size(); j++) {
-					List<Property> props = new ArrayList<Property>();
-					CmisExtensionElement aspectExt = aspectsList.get(j);
-					List<CmisExtensionElement> propsList = aspectExt
-							.getChildren();
-					for (CmisExtensionElement p : propsList) {
-						props.add(new Property(p.getName(), p.getValue()));
-					}
-					aspects.add(new Aspect(aspectExt.getAttributes().get("id"),
-							props));
+		List<CmisExtensionElement> aspectsList = aspectsExt.getChildren();
+		if(aspectsList != null && CollectionUtils.isNotEmpty(aspectsList)){
+			//Aspect
+			for(CmisExtensionElement aspectExt : aspectsList){
+				if(aspectExt.getAttributes() == null ||
+						StringUtils.isBlank(aspectExt.getAttributes().get(NemakiConstant.EXTATTR_ASPECT_ID))){
+					log.equals("Cusotm aspect must have the id attribute");
+					continue;
 				}
+				//Property
+				List<Property> props = new ArrayList<Property>();
+				List<CmisExtensionElement> propsList = aspectExt.getChildren();
+				for (CmisExtensionElement propExt : propsList) {
+					if(propExt.getAttributes() == null ||
+							StringUtils.isBlank(propExt.getAttributes().get(NemakiConstant.EXTATTR_ASPECT_ID))){
+						log.equals("Cusotm aspect's property must have the id attribute");
+						continue;
+					}
+					props.add(new Property(propExt.getAttributes().get(NemakiConstant.EXTATTR_ASPECT_ID), propExt.getValue()));
+				}
+				aspects.add(new Aspect(aspectExt.getAttributes().get(NemakiConstant.EXTATTR_ASPECT_ID),props));
 			}
 		}
 		return aspects;
+	}
+	
+	private CmisExtensionElement extractAspectsExtension(List<CmisExtensionElement> list){
+		for(CmisExtensionElement ce : list){
+			if("aspects".equals(ce.getName())){
+				return ce;
+			}
+		}
+		return null;
 	}
 
 	private String increasedVersionLabel(Document document,

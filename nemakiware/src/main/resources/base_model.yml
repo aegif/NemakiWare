@@ -1,10 +1,26 @@
 aspects:
+  classification_info:
+    attributes:
+      displayName: 文書分類
+      description: Document classification
+      localName: classification_info
+      localNameSpace: nemaki
+      queryName: classification_info
+    properties:
+      class:
+          displayName: 文書種 
+          description: class
+          datatype: string
+          cardinality: single
+          updatability: true
+          inherited: false
+          required: false
   client_info:
     attributes:
       displayName: 顧客情報
-      description: 各書類ごとのクライアント情報
+      description: Client information
       localName: client_info
-      localNameSpace: aegif
+      localNameSpace: nemaki
       queryName: client_info
     properties:
       customer_name:
@@ -18,6 +34,38 @@ aspects:
       charged_person:
           displayName: 担当者
           description: charged_person
+          datatype: string
+          cardinality: single
+          updatability: true
+          inherited: false
+          required: false
+  review_info:
+    attributes:
+      displayName: レビュー状況
+      description: 簡易ワークフロー
+      localName: review_info
+      localNameSpace: nemaki
+      queryName: review_info
+    properties:
+      previous_reviewer:
+          displayName: 直前のレビュー者
+          description: 直前のレビュー者
+          datatype: string
+          cardinality: single
+          updatability: true
+          inherited: false
+          required: false
+      comment:
+          displayName: コメント
+          description: コメント
+          datatype: string
+          cardinality: single
+          updatability: true
+          inherited: false
+          required: false
+      next_reviewer:
+          displayName: 次のレビュー者
+          description: 次のレビュー者
           datatype: string
           cardinality: single
           updatability: true

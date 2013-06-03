@@ -31,6 +31,18 @@ public class AuthenticationFilter implements Filter {
 				.getBean("principalService");
 	}
 
+	public static UserInfo getUserInfo(HttpServletRequest httpRequest){
+		String auth = httpRequest.getHeader("Authorization");
+		String decoded = decodeAuthHeader(auth);
+
+		int pos = decoded.indexOf(":");
+		String username = decoded.substring(0, pos);
+		String password = decoded.substring(pos + 1);
+
+		UserInfo user = new UserInfo(username, password);
+		return user;
+	}
+	
 	@Override
 	public void doFilter(ServletRequest req, ServletResponse res,
 			FilterChain chain) throws IOException, ServletException {
@@ -88,7 +100,7 @@ public class AuthenticationFilter implements Filter {
 	}
 
 	@SuppressWarnings("restriction")
-	private String decodeAuthHeader(String header) {
+	public static String decodeAuthHeader(String header) {
 		String ret = "";
 
 		try {
@@ -114,27 +126,5 @@ public class AuthenticationFilter implements Filter {
 			u.roles = new String[] { "Users" };
 		}
 		return u;
-	}
-
-	
-	public class UserInfo {
-		public String userId;
-		public String password;
-		public String[] roles;
-
-		public UserInfo() {
-			userId = null;
-			password = null;
-			roles = null;
-		}
-
-		public boolean isInRole(String role) {
-			for (int i = 0; i < roles.length; i++) {
-				if (roles[i].equals(role)) {
-					return true;
-				}
-			}
-			return false;
-		}
 	}
 }

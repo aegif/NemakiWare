@@ -161,11 +161,6 @@ public class TypeManager implements
 				"Parent Id", "Parent Id", PropertyType.ID, Cardinality.SINGLE,
 				Updatability.READONLY, false, false));
 
-		// Nemaki specific(for document)
-		type.addPropertyDefinition(createPropDef(PropertyIds.PATH, "Path",
-				"Path", PropertyType.STRING, Cardinality.SINGLE,
-				Updatability.READONLY, false, false));
-
 		type.addPropertyDefinition(createPropDef(PropertyIds.CREATED_BY,
 				"Created By", "Created By", PropertyType.STRING,
 				Cardinality.SINGLE, Updatability.READONLY, false, true));
@@ -923,25 +918,7 @@ public class TypeManager implements
 		return secondaryType;
 	}
 
-	/*public String convertTypeToCmisType(String nemakiType) {
-		if ("cmis:document".equals(nemakiType))
-			return DOCUMENT_TYPE_ID;
-		if ("cmis:folder".equals(nemakiType))
-			return FOLDER_TYPE_ID;
-		if ("cmis:policy".equals(nemakiType))
-			return POLICY_TYPE_ID;
-		if ("cmis:relationship".equals(nemakiType))
-			return RELATIONSHIP_TYPE_ID;
-		if ("cmis:item".equals(nemakiType))
-			return ITEM_TYPE_ID;
-
-		return null;
-
-	}*/
-
 	public void setFixedTypeManager(FixedTypeManager fixedTypeManager) {
 		this.fixedTypeManager = fixedTypeManager;
 	}
-
-
 }

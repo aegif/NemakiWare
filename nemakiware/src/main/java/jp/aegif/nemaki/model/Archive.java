@@ -1,6 +1,5 @@
 package jp.aegif.nemaki.model;
 
-import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
@@ -25,12 +24,11 @@ public class Archive extends NodeBase {
 	private String name;
 	private String parentId;
 	private Boolean deletedWithParent;
-	private String path;
 	private String attachmentNodeId;
 	private List<String> renditionIds;
 	private String versionSeriesId;
-	private Boolean isLatestVersion;
-	private InputStream inputStream;
+	private Boolean latestVersion;
+	private String mimeType;
 
 	
 	public Archive() {
@@ -40,7 +38,7 @@ public class Archive extends NodeBase {
 	public Archive(String originalId, String lastRevision, String name,
 			String type, String parentId,Boolean deletedWithParent,String path,
 			String attachmentNodeId, List<String> nemakiAttachments,String versionSeriesId,
-			Boolean isLatestVersion, GregorianCalendar created, String creator) {
+			Boolean isLatestVersion, GregorianCalendar created, String creator, String mimeType) {
 		super();
 		this.originalId = originalId;
 		this.lastRevision = lastRevision;
@@ -48,12 +46,12 @@ public class Archive extends NodeBase {
 		this.type = type;
 		this.parentId = parentId;
 		this.deletedWithParent = deletedWithParent;
-		this.path = path;
 		this.attachmentNodeId = attachmentNodeId;
 		this.versionSeriesId = versionSeriesId;
-		this.isLatestVersion = isLatestVersion;
+		this.latestVersion = isLatestVersion;
 		this.created = created;
 		this.creator = creator;
+		this.mimeType = mimeType;
 	}
 
 	public Archive(NodeBase n){
@@ -109,14 +107,6 @@ public class Archive extends NodeBase {
 		this.deletedWithParent = deletedWithParent;
 	}
 
-	public String getPath() {
-		return path;
-	}
-
-	public void setPath(String path) {
-		this.path = path;
-	}
-
 	public String getAttachmentNodeId() {
 		return attachmentNodeId;
 	}
@@ -141,20 +131,20 @@ public class Archive extends NodeBase {
 		this.versionSeriesId = versionSeriesId;
 	}
 
-	public Boolean getIsLatestVersion() {
-		return isLatestVersion;
+	public Boolean isLatestVersion() {
+		return latestVersion;
 	}
 
-	public void setIsLatestVersion(Boolean isLatestVersion) {
-		this.isLatestVersion = isLatestVersion;
+	public void setIsLatestVersion(Boolean latestVersion) {
+		this.latestVersion = latestVersion;
 	}
 
-	public InputStream getInputStream() {
-		return inputStream;
+	public String getMimeType() {
+		return mimeType;
 	}
 
-	public void setInputStream(InputStream inputStream) {
-		this.inputStream = inputStream;
+	public void setMimeType(String mimeType) {
+		this.mimeType = mimeType;
 	}
 
 	@Override
@@ -168,10 +158,9 @@ public class Archive extends NodeBase {
 				if(getName() != null) put("name", getName());
 				if(getType() != null) put("type", getType());
 				if(getParentId() != null) put("parentId", getParentId());
-				if(getPath() != null) put("path", getPath());
 				if(getAttachmentNodeId() != null) put("nemakiAttachments", getAttachmentNodeId().toString());
 				if(getVersionSeriesId() != null) put("versionSeriesId", getVersionSeriesId());
-				if(getIsLatestVersion() != null) put("isLatestVersion", getIsLatestVersion());
+				if(isLatestVersion() != null) put("isLatestVersion", isLatestVersion());
 				if(getCreated() != null) put("created", convertToDateFormat(getCreated()));
 				if(getCreator() != null) put("creator", getCreator());
 			}

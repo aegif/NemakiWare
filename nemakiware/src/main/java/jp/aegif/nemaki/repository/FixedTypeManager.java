@@ -33,12 +33,13 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerDef
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyUriDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.RelationshipTypeDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.SecondaryTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.TypeDefinitionContainerImpl;
 import org.apache.commons.collections.CollectionUtils;
 
 public class FixedTypeManager {
 
+	private NemakiRepositoryInfoImpl repositoryInfo;
+	
 	/**
 	 * Pre-defined types.
 	 */
@@ -48,6 +49,7 @@ public class FixedTypeManager {
 	public final static String POLICY_TYPE_ID = "cmis:policy";
 	public final static String SECONDARY_TYPE_ID = "cmis:secondary";
 
+	
 	private final static boolean required = true;
 	private final static boolean queryable = true;
 	private final static boolean orderable = true;
@@ -55,7 +57,7 @@ public class FixedTypeManager {
 	/**
 	 * Types namespace.
 	 */
-	private static final String NAMESPACE = "http://aegif.jp/nemaki";
+	private static final String NAMESPACE = "http://www.aegif.jp/Nemaki";
 
 	/**
 	 * Map of all types.
@@ -84,21 +86,21 @@ public class FixedTypeManager {
 
 		// folder type
 		FolderTypeDefinitionImpl folderType = new FolderTypeDefinitionImpl();
-		folderType.setBaseTypeId(BaseTypeId.CMIS_FOLDER);
-		folderType.setIsControllableAcl(false);
-		folderType.setIsControllablePolicy(false);
-		folderType.setIsCreatable(true);
-		folderType.setDescription("Folder");
+		folderType.setId(FOLDER_TYPE_ID);
+		folderType.setLocalName("folder");
+		folderType.setLocalNamespace(NAMESPACE);
+		folderType.setQueryName(FOLDER_TYPE_ID);
 		folderType.setDisplayName("Folder");
+		folderType.setBaseTypeId(BaseTypeId.CMIS_FOLDER);
+		folderType.setDescription("Folder");
+		folderType.setIsCreatable(true);
 		folderType.setIsFileable(true);
+		folderType.setIsQueryable(true);
+		folderType.setIsControllablePolicy(false);
+		folderType.setIsControllableAcl(true);
 		folderType.setIsFulltextIndexed(false);
 		folderType.setIsIncludedInSupertypeQuery(true);
-		folderType.setLocalName("Folder");
-		folderType.setLocalNamespace(NAMESPACE);
-		folderType.setIsQueryable(true);
-		folderType.setQueryName("cmis:folder");
-		folderType.setId(FOLDER_TYPE_ID);
-
+		
 		addBasePropertyDefinitions(folderType);
 		addFolderPropertyDefinitions(folderType);
 
@@ -106,20 +108,20 @@ public class FixedTypeManager {
 
 		// document type
 		DocumentTypeDefinitionImpl documentType = new DocumentTypeDefinitionImpl();
-		documentType.setBaseTypeId(BaseTypeId.CMIS_DOCUMENT);
-		documentType.setIsControllableAcl(false);
-		documentType.setIsControllablePolicy(false);
-		documentType.setIsCreatable(true);
-		documentType.setDescription("Document");
-		documentType.setDisplayName("Document");
-		documentType.setIsFileable(true);
-		documentType.setIsFulltextIndexed(false);
-		documentType.setIsIncludedInSupertypeQuery(true);
-		documentType.setLocalName("Document");
-		documentType.setLocalNamespace(NAMESPACE);
-		documentType.setIsQueryable(true);
-		documentType.setQueryName("cmis:document");
 		documentType.setId(DOCUMENT_TYPE_ID);
+		documentType.setLocalName("document");
+		documentType.setLocalNamespace(NAMESPACE);
+		documentType.setQueryName(DOCUMENT_TYPE_ID);
+		documentType.setDisplayName("document");
+		documentType.setDescription("Document");
+		documentType.setBaseTypeId(BaseTypeId.CMIS_DOCUMENT);
+		documentType.setIsCreatable(true);
+		documentType.setIsFileable(true);
+		documentType.setIsQueryable(true);
+		documentType.setIsControllablePolicy(false);
+		documentType.setIsControllableAcl(true);
+		documentType.setIsIncludedInSupertypeQuery(true);
+		documentType.setIsFulltextIndexed(true);
 		documentType.setIsVersionable(true);
 		documentType.setContentStreamAllowed(ContentStreamAllowed.REQUIRED);
 
@@ -130,20 +132,21 @@ public class FixedTypeManager {
 
 		// relationship types
 		RelationshipTypeDefinitionImpl relationshipType = new RelationshipTypeDefinitionImpl();
-		relationshipType.setBaseTypeId(BaseTypeId.CMIS_RELATIONSHIP);
-		relationshipType.setIsControllableAcl(false);
-		relationshipType.setIsControllablePolicy(false);
-		relationshipType.setIsCreatable(false);
-		relationshipType.setDescription("Relationship");
-		relationshipType.setDisplayName("Relationship");
-		relationshipType.setIsFileable(false);
-		relationshipType.setIsIncludedInSupertypeQuery(true);
-		relationshipType.setLocalName("Relationship");
-		relationshipType.setLocalNamespace(NAMESPACE);
-		relationshipType.setIsQueryable(false);
-		relationshipType.setQueryName("cmis:relationship");
 		relationshipType.setId(RELATIONSHIP_TYPE_ID);
-		//TODO externalize
+		relationshipType.setLocalName("relationship");
+		relationshipType.setLocalNamespace(NAMESPACE);
+		relationshipType.setQueryName(RELATIONSHIP_TYPE_ID);
+		relationshipType.setDisplayName("relationship");
+		relationshipType.setBaseTypeId(BaseTypeId.CMIS_RELATIONSHIP);
+		relationshipType.setDescription("Relationship");
+		relationshipType.setIsCreatable(false);
+		relationshipType.setIsFileable(false);
+		relationshipType.setIsQueryable(false);
+		relationshipType.setIsControllablePolicy(false);
+		relationshipType.setIsControllableAcl(false);
+		relationshipType.setIsIncludedInSupertypeQuery(true);
+		relationshipType.setIsFulltextIndexed(false);
+
 		List<String> allowedTypes = new ArrayList<String>();
 		allowedTypes.add(DOCUMENT_TYPE_ID);
 		allowedTypes.add(FOLDER_TYPE_ID);
@@ -157,19 +160,20 @@ public class FixedTypeManager {
 
 		// policy type
 		PolicyTypeDefinitionImpl policyType = new PolicyTypeDefinitionImpl();
-		policyType.setBaseTypeId(BaseTypeId.CMIS_POLICY);
-		policyType.setIsControllableAcl(false);
-		policyType.setIsControllablePolicy(false);
-		policyType.setIsCreatable(false);
-		policyType.setDescription("Policy");
-		policyType.setDisplayName("Policy");
-		policyType.setIsFileable(false);
-		policyType.setIsIncludedInSupertypeQuery(true);
-		policyType.setLocalName("Policy");
-		policyType.setLocalNamespace(NAMESPACE);
-		policyType.setIsQueryable(false);
-		policyType.setQueryName("cmis:policy");
 		policyType.setId(POLICY_TYPE_ID);
+		policyType.setLocalName("policy");
+		policyType.setLocalNamespace(NAMESPACE);
+		policyType.setQueryName(POLICY_TYPE_ID);
+		policyType.setDisplayName("policy");
+		policyType.setBaseTypeId(BaseTypeId.CMIS_POLICY);
+		policyType.setDescription("Policy");
+		policyType.setIsCreatable(false);
+		policyType.setIsFileable(false);
+		policyType.setIsQueryable(false);
+		policyType.setIsControllablePolicy(false);
+		policyType.setIsControllableAcl(false);
+		policyType.setIsIncludedInSupertypeQuery(true);
+		relationshipType.setIsFulltextIndexed(false);
 
 		addBasePropertyDefinitions(policyType);
 		addPolicyPropertyDefinitions(policyType);
@@ -206,8 +210,8 @@ public class FixedTypeManager {
 				Updatability.READWRITE, required, queryable, orderable, null));
 
 		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.DESCRIPTION,
-				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
-				required, queryable, orderable, null));
+				PropertyType.STRING, Cardinality.SINGLE, Updatability.READWRITE,
+				!required, queryable, orderable, null));
 
 		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.OBJECT_ID,
 				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
@@ -721,7 +725,6 @@ public class FixedTypeManager {
 		// Set String-specific attributes
 		if (maxLength != null)
 			result.setMaxLength(maxLength);
-
 		return result;
 	}
 
@@ -752,4 +755,7 @@ public class FixedTypeManager {
 		return typesAsList;
 	}
 
+	public void setRepositoryInfo(NemakiRepositoryInfoImpl repositoryInfo) {
+		this.repositoryInfo = repositoryInfo;
+	}
 }

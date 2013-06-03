@@ -1,9 +1,10 @@
+# -*- encoding: utf-8 -*-
 require 'time'
 
 module ApplicationHelper
   def simple_time(time)
     t = Time.parse(time.to_s)
-    t.strftime("%Y-%m-%d %H:%M:%S")
+    t.strftime("%Y-%m-%d %H:%M")
   end
 
   def simple_time_YMD(time)
@@ -14,6 +15,29 @@ module ApplicationHelper
   def simple_time_HMS(time)
     t = Time.parse(time.to_s)
     t.strftime("%H:%M:%S")
+  end
+
+  def divide_path(path)
+    ary = path.split("/")
+    ary.delete_at(0)
+    ary
+  end
+  
+  #TODO implemented only Japanese 
+  def l10n_change_type(change_type, language_code=nil)
+    case change_type
+    when "created"
+      "作成"
+    when "updated"
+      "更新"
+    when "deleted"
+      "削除"
+    when "security"
+      "権限を変更"
+    when "version-updated"
+      "バージョンを更新"
+    else
+    end
   end
 
   def icon_path(node)
@@ -77,6 +101,17 @@ module ApplicationHelper
     #View uses image_tag('icon/xxx.xxx') which produces a link '/assets/icon/xxx.xxx'
     icon_path = "icon/" + filename
     return icon_path
-
+  end
+  
+  def simple_header(title)
+    html = 
+      "<div class='navbar-outer' style='padding-top:0;margin-top:0;'><div class='navbar navbar-fluid-top' style='padding-top:0;margin-top:0;'>
+        <div class='navbar-inner' style='padding-top:0;margin-top:0;'>
+          <div>
+            #{title}
+          </div>
+        </div>
+      </div></div>"
+      return html.html_safe
   end
 end

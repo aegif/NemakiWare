@@ -55,6 +55,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerDef
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.tools.ant.types.resources.selectors.InstanceOf;
@@ -172,7 +173,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 			Change change = contentService.getChangeEvent(changeLogToken
 					.getValue());
 			if (change == null)
-				invalidArgument("cahngeLogToken:" + changeLogToken.getValue()
+				invalidArgument("changeLogToken:" + changeLogToken.getValue()
 						+ " is no longer available");
 		}
 
@@ -215,7 +216,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 	@Override
 	public void permissionDenied(CallContext context, String key,
 			ObjectData object) {
-		Content content = contentService.getContentAsEachBaseType(object.getId());
+		Content content = contentService.getContentAsTheBaseType(object.getId());
 		permissionDeniedInternal(context, key, object.getAcl(),
 				getBaseTypeId(object.getProperties()), content);
 	}
@@ -357,6 +358,10 @@ public class ExceptionServiceImpl implements ExceptionService,
 		if (!(propertyData instanceof PropertyString))
 			return;
 		String val = ((PropertyString) propertyData).getFirstValue();
+		if (StringUtils.isBlank(val)){
+			constraint(objectId, msg);
+		}
+		
 		BigInteger length = BigInteger.valueOf(val.length());
 
 		BigInteger max = ((PropertyStringDefinition) definition).getMaxLength();
@@ -475,8 +480,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 	@Override
 	public void constraintAclPropagationDoesNotMatch(
 			AclPropagation aclPropagation) {
-		if (!repositoryInfo.getAclCapabilities().getAclPropagation()
-				.equals(aclPropagation))
+		if (aclPropagation == AclPropagation.OBJECTONLY)
 			throw new CmisConstraintException(
 					"The repository doesn't support this AclPropagation",
 					HTTP_STATUS_CODE_409);

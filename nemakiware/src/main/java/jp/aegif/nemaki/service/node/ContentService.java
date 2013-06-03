@@ -52,7 +52,7 @@ public interface ContentService {
 	 * @clazz Type of CMIS content expected, must inherit from Content.
 	 */
 
-	Content getContentAsEachBaseType(String objectId);
+	Content getContentAsTheBaseType(String objectId);
 
 	/**
 	 * Get the pieces of content available at that path.

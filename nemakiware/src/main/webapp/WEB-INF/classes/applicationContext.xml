@@ -15,7 +15,6 @@
 
     <!-- Repository Basic Beans -->
 
-	
     <bean id="connector" class="jp.aegif.nemaki.service.db.CouchConnector"
         init-method="init">
         <property name="repositoryId">
@@ -47,6 +46,9 @@
 	</bean>
 	
 	<bean id="fixedTypeManager" class="jp.aegif.nemaki.repository.FixedTypeManager" scope="singleton">
+		<property name="repositoryInfo">
+            <ref bean="RepositoryInfo"></ref>
+        </property>
 	</bean>
 	
 	<bean id="repositoryService" class="jp.aegif.nemaki.service.cmis.impl.RepositoryServiceImpl">
@@ -103,7 +105,7 @@
 			<value>0.1</value>
 		</property>
 		<property name="nameSpace">
-			<value>http://www.aegif.jp/Nemaki/books</value>
+			<value>http://www.aegif.jp/Nemaki/bedroom</value>
 		</property>
 		<property name="changesIncomplete">
 			<value>true</value>
@@ -240,6 +242,9 @@
         </property>
          <property name="compileObjectService">
             <ref bean="CompileObjectService"></ref>
+        </property>
+         <property name="exceptionService">
+            <ref bean="ExceptionService"></ref>
         </property>
      </bean>
      

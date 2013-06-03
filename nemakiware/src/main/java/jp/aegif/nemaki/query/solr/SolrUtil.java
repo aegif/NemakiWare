@@ -38,7 +38,7 @@ public class SolrUtil {
 	 * @param cmisColName
 	 * @return
 	 */
-	public static String getSolrName(String cmisColName){
+	public static String getPropertyNameInSolr(String cmisColName){
 		//Make hashmap with key:CMIS, val:Solr property name
 		HashMap<String,String>map = new HashMap<String, String>();
 		map.put("cmis:document", "cmis\\:document");
@@ -56,7 +56,7 @@ public class SolrUtil {
 		map.put("cmis:aspect", "aspect");
 		
 		map.put(PropertyIds.IS_IMMUTABLE, "is_imutable");
-		map.put(PropertyIds.IS_LATEST_VERSION, "is_latestversion");
+		map.put(PropertyIds.IS_LATEST_VERSION, "is_latest_version");
 		map.put(PropertyIds.IS_MAJOR_VERSION, "is_major_version");
 		map.put(PropertyIds.IS_LATEST_MAJOR_VERSION, "is_latest_major_version");
 		map.put(PropertyIds.IS_VERSION_SERIES_CHECKED_OUT, "is_version_series_checked_out");

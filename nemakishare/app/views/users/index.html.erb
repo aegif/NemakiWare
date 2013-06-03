@@ -1,0 +1,16 @@
+<%= render :partial => "layouts/simple_title_bar"%>
+<%= render :partial => "layouts/flash_display"%>
+
+<!--Body of contents-->
+<div class="row-fluid">
+	<!--User Search Form-->
+	<%= form_for @search_form, :url => {:controller => :users , :action => :index}, :html => {:id => 'user_search', :method => :get} do |f| %>
+		<%= f.text_field :query, :class => 'search-query' %>
+		<%= submit_tag "ユーザ検索"%>
+	<% end %>
+</div>
+
+<!--Body of the list-->
+<div class="row-fluid">
+<%= render :partial => 'users/list' %>
+</div>

@@ -190,7 +190,10 @@ module ActiveCMIS
       when :anonymous
         anonymous_user
       when :world
-        world
+        #aegif-
+        #world
+        world_user
+        #-aegif
       when anonymous_user
         :anonymous
       when world_user

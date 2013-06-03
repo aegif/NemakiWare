@@ -1,0 +1,25 @@
+<%= render :partial => "layouts/simple_title_bar"%>
+
+<!--Flash message fadeOut display -->
+<% [:notice, :error].each do |key| %>
+	<% if flash[key] %>
+		<div class="<%= key %>" id="flash">
+   			 <%= flash[key] %>
+   		</div>
+   	<% end %>
+<% end %>
+
+<!--Body of contents-->
+<div class="row-fluid">
+	<!--User Search Form-->
+	<%= form_for @search_form, :url => {:controller => :groups , :action => :index}, :html => {:id => 'group_search', :method => :get} do |f| %>
+		<%= f.text_field :query, :class => 'search-query' %>
+		<%= submit_tag "グループ検索"%>
+	<% end %>
+	
+</div>
+
+<!--Body of the list-->
+<div class="row-fluid">
+<%= render :partial => 'groups/list' %>
+</div>

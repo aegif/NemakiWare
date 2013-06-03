@@ -15,4 +15,6 @@
  *= require bootstrap.min.css
  *= require bootstrap_and_overrides.css.less
  *= require nemaki.css
+ *= require bootstrapSwitch.css
+ *= require thickbox.css
  * */

@@ -1,90 +1,67 @@
-<div>
-	<h2><%= image_tag(icon_path(@node)) %> <span /> <%= @node.name%></h2>
+<% content_for :javascript_includes do %>
+	<%= javascript_include_tag "node_show_table" %>
+	<script type="text/javascript">
+		buildGridData(<%= raw @node.to_json %>, <%= raw @parent.to_json %>, <%= raw @versions.to_json %>, <%= raw @aspects.to_json %>);	
+	</script>
+<% end %>
+
+<!--HEADER-->
+<div class="row-fluid span11 nemaki_popup_header">
+		<h4>
+			<%= image_tag(icon_path(@node)) + @node.name %>
+		</h4>
 </div>
 
-<div class="row-fluid">
-<div class="span3">
-	<table class="show table-hover span3">
-	<tr>
-		<td class="key">id</td>
-		<td><%= @node.id %></td>
-	</tr>
-	<tr>
-		<td class="key">名前</td>
-		<td><%= @node.name %></td>
-	</tr>
-	<tr>
-		<td class="key">種類</td>
-		<td><%= @node.type %></td>
-	</tr>
-	<% if(@node.is_folder?)%>
-	<tr>
-		<td class="key">パス</td>
-		<td><%= @node.path %></td>
-	</tr>
-	<% end %>
-	<% if(@node.is_document?)%>
-	<tr>
-		<td class="key">サイズ</td>
-		<td><%= number_to_human_size(@node.size) %></td>
-	</tr>
-	<tr>
-		<td class="key">MIMEタイプ</td>
-		<td><%= @node.mimetype %></td>
-	</tr>
-	<% end %>
-	<tr>
-		<td class="key">作成者</td>
-		<td><%= @node.creator %></td>
-	</tr>
-	<tr>
-		<td class="key">作成日時</td>
-		<td><%= simple_time(@node.created) %></td>
-	</tr>
-	<tr>
-		<td class="key">変更者</td>
-		<td><%= @node.modifier %></td>
-	</tr>
-	<tr>
-		<td class="key">変更日時</td>
-		<td><%= simple_time(@node.modified) %></td>
-	</tr>
-	
-	<% if(@node.is_document?)%>
-	<tr>
-		<td class="key">ダウンロード</td>
-		<td><%= link_to 'download this file', download_node_path %></td>
-	</tr>
-	<tr>
-		<td class="key">バージョン履歴</td>
-		<td>
-			<% @versions.each_with_index do |version,idx| %>
-				<%= link_to version.version_label, download_node_path(version.id) %> <span class="divider">/</span>
-			<% end %>
-		</td>
-	</tr>
-	<% end %>
-	</table>
-	</td></tr>
-</table>
-</div>
-
-<div class="span4 offset3">
-	<table class="show table-hover">
-		<tr>
-		<td class="key">カスタム属性</td>
-		<td>
-			<% @aspects.each do |aspect| %>
-				<div>
-				<label>[<%= aspect.attributes['displayName'] %>]</label>
-				<% aspect.properties.each do |property| %>
-					<%= property.attributes['displayName'] %>:
-					<%= property.value %><br/>
+<!--Contents body-->
+<div class="nemaki_contents_body">
+	<div class="row-fluid">
+		<div class="btn-toolbar">
+			<% if @is_allowed_up %>
+			<div class="btn-group">
+				<% @parent_url = (@parent.id == '/') ? explore_nodes_path : explore_node_path(@parent.id) %>
+	    		<%= link_to raw("<i class='icon-folder-close'></i> 親フォルダ"),
+				@parent_url, :class => 'btn btn-primary',  :target => '_parent'%>
+		    </div>
+		    <% end %>
+		    
+			<div class="btn-group">
+				<% if @node.is_document? %>
+				<%= link_to raw("<i class='icon-download-alt'></i> ダウンロード"),
+				download_node_path(@parent.id), :class => 'btn btn-primary',  :target => '_parent'%>
 				<% end %>
-				</div>
-			<% end %>
-		</td>
-	</tr>
-	</table>
-</div>
+			</div>
+	    </div>
+	</div>
+	
+	<div class="row-fluid">
+		<div class="span6">
+			<div class="nemaki_table_title">
+				<h4><u>基本属性</u></h4>
+			</div>
+		
+			<!--jqGrid: Basic Info-->
+			<div class="nemaki_jqgrid_container">
+				<table id="basicInfo"></table>
+			</div>
+			
+			<!--jqGrid: Version Info-->
+			<div class="nemaki_jqgrid_container">
+				<table id="versionInfo"></table>
+				<div id="versionInfo_pager"></div>
+			</div>
+		</div>
+		
+		<div class="span5">
+			<div class="nemaki_table_title">
+				<h4><u>カスタム属性</u></h4>
+			</div>
+			
+			<!--jqGrid: Aspect Info-->
+			<div class="nemaki_jqgrid_container">
+				<% @aspects.each do |aspect| %>
+					<table id="nemaki_table_aspect_<%=aspect.id%>"></table>
+				<% end %>
+			</div>
+		</div>
+	</div>
 </div>

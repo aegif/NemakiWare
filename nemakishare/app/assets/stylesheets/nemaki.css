@@ -1,15 +1,100 @@
-/*Main frame for a pop-up display*/
-div.popup{
-	border: 3px orange solid;
-	padding: 10px;
+body { padding-top: 30px; }
+@media screen and (max-width: 768px) {
+    body { padding-top: 0px; }
+}
+
+.navbar {
+    margin-bottom: 0;
+}
+
+body.popup{
 	background-color: #ffd78c;
-	height:100%;
+	margin: 0px;
+	padding: 0px;
+}
+
+#flash{
+	font-weight:bold;
+	color:red;
+}
+
+div.nemaki_contents_body{
+	padding-left: 20px;
+	padding-top: 10px;
+}
+
+
+.ui-jqgrid .ui-jqgrid-btable{
+    table-layout: auto;
+}
+
+div.nemaki_jqgrid_container{
+	padding-bottom: 10px;	
+}
+
+tr.nemaki_table_header{
+	background-color: #f5f5f5;
+}
+
+div.nemaki-form-actions{
+	background-color: #ffd78c;
 }
 
 table.show td.key{
 	vertical-align: top;
 	white-space: nowrap;
 	border-right: 1px #0480BE solid;
-	padding: 0px, 5px, 0px, 0px;
+	//padding: 0px, 5px, 0px, 0px;
 	font-weight: bolder;
 }
+
+th.nemaki-explore-list-name{
+	width:472px
+}	
+	
+
+th.nemaki-explore-list-calendar{
+	width:118px
+}
+
+th.nemaki-explore-list-user{
+	width:59px
+}
+
+th.nemaki-explore-list-action{
+	width: 354px;
+}
+
+div.nemaki_site_list{
+	width: 500px;
+}
+
+th.nemaki-sitelist-name{
+	width:270px
+}
+
+th.nemaki-sitelist-action{
+	
+}
+
+
+.form-vertical .form-horizontal .control-group > label {
+  text-align: left;
+}
+.form-horizontal .form-vertical .control-group > label {
+  float: none;
+  padding-top: 0;
+  text-align: left;
+}
+
+.form-horizontal .form-vertical .controls {
+  margin-left: 0;
+}
+.form-horizontal .form-vertical.form-actions,
+.form-horizontal .form-vertical .form-actions {
+  padding-left: 20px;
+}
+.control-group .control-group {
+  margin-bottom: 0;
+}
+

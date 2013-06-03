@@ -6,7 +6,6 @@ import java.util.TimeZone;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpSession;
 
-import jp.aegif.nemaki.api.resources.AuthenticationFilter.UserInfo;
 import jp.aegif.nemaki.model.NodeBase;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.service.node.ContentService;
@@ -14,6 +13,7 @@ import jp.aegif.nemaki.service.node.PrincipalService;
 import jp.aegif.nemaki.util.PasswordHasher;
 import jp.aegif.nemaki.util.PropertyManager;
 
+import org.apache.http.HttpRequest;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.springframework.context.ApplicationContext;
@@ -93,7 +93,9 @@ public class ResourceBase {
 	static final String ITEM_PROPERTIESFILE = "propertiesFile";
 	static final String ITEM_ARCHIVE = "archive";
 	
+	static final String ERR_NOTAUTHENTICATED = "notAuthenticated";
 	static final String ERR_MANDATORY = "mandatory";
+	static final String ERR_ALREADYEXISTS = "alreadyExists";
 	static final String ERR_ALREADYMEMBER = "alreadyMember";
 	static final String ERR_NOTMEMBER = "notMember";
 	static final String ERR_LIST = "failToList";
@@ -157,15 +159,15 @@ public class ResourceBase {
 	protected boolean isAdmin(String id, String password){
 		if(!nonZeroString(id) || !nonZeroString(password)) return false;
 		
-		String defaultAdminUserName = new String();
+		String defaultAdminUserId = new String();
 		try{
 			PropertyManager propertyManager = new PropertyManager(FILEPATH_PROPERTIESFILE);
-			defaultAdminUserName = propertyManager.readValue("defaultAdminUserName");
+			defaultAdminUserId = propertyManager.readHeadValue("principal.admin.id");
 		}catch(Exception ex){
 			ex.printStackTrace();
 		}
 		User user = principalService.getUserById(id);
-		if(user.getId().equals(defaultAdminUserName)){
+		if(user.getId().equals(defaultAdminUserId)){
 			//password check
 			boolean cmpPass = PasswordHasher.isCompared(password, user.getPasswordHash());
 			if(cmpPass) return true;
