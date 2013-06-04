@@ -69,11 +69,26 @@ $ cd <NemakiWare_Home>/nemakisolr
 $ mvn jetty:run
 ```
 
-* Install the client and kick it off  
+* Install the client and overwrite ActiveCMIS gem
 ```sh
 $ cd <NemakiWare_Home>/nemakishare
-$ bundle install
-$ rails s
+$ bundle install  
+```
+You have installed [ActiveCMIS](https://github.com/xaop/activecmis) gem.  
+NemakiWare needs some customizes of ActiveCMIS library but it's not yet pull requested,  
+so you have to overwrite them. This process will be unnecessary after they are took in to ActiveCMIS.  
+To overwrite ActiveCMIS,
+```sh
+$ gem which active_cmis
+```
+You get like 
+```sh
+...gems/ruby-1.9.3-p362/gems/active_cmis-0.3.2/lib/active_cmis.rb  
+```
+In this case, "active_cmis-0.3.2" is the gem folder.  
+Then, copy to the "lib" folder
+```sh
+$ cp -r <NemakiWare_Home>/nemakishare/activecmis_lib <path/to/active_cmis gem/>
 ```
 
 * Now, open the login  window  
