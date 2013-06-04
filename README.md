@@ -26,8 +26,11 @@ NemakiWare is a open source enterprise content management(ECM) system. It is:
 Prerequisite for installation
 ------
 * Java 1.6, Ruby 1.9.3p362, Rails 3.2.11
-* CouchDB 1.0.6, Maven 3.x
+* CouchDB 1.0.6
 * Platform: OSX 10.8.3 or CentOS 6 (Although Windows is not tested, NemakiWare is basically platform-agnostic).
+* Package management system: 
+    * Maven 3.x required
+    * yum(CentOS), Homebrew/Mac Port(Mac) as you like
 
 Installation
 ------
@@ -48,7 +51,6 @@ $ sudo yum install couchdb
 ```
 
 * Setup CouchDB (If it's not started, start it before setup)  
-CentOS  
 ```sh
 $ cd <NemakiWare_Home>/nemakiware/setup
 $ sh setup.sh
@@ -62,8 +64,7 @@ $ mvn jetty:run
 It will take a little time to download the dependent packages. 
 
 * Install the search engine(Solr) and kick it off  
-```
-sh
+```sh
 $ cd <NemakiWare_Home>/nemakisolr
 $ mvn jetty:run
 ```
@@ -75,11 +76,40 @@ $ bundle install
 $ rails s
 ```
 
-*Now, open the login  window   
-http://127.0.0.1:3000/nodes/
+* Now, open the login  window  
+    http://127.0.0.1:3000/nodes/  
+    * ID:admin
+    * Password admin
 
 
 That's all!
+
+
+Usage
+----------
+TBW  
+
+* Navigation
+* Show/Edit/Manage permission/Delete/Search
+* Site
+* Admin
+    *User/Group management
+    *Solr management
+    *Archive
+
+
+Configuration
+----------
+TBW
+
+Development
+----------
+TBW  
+
+To import projects of the server(nemakiware) and the search engine(nemakisolr) to Eclipse,
+```sh
+$ mvn eclipse:eclipse
+```
 
  
 License
