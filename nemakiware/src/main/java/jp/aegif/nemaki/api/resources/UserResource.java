@@ -1,11 +1,30 @@
+/*******************************************************************************
+ * Copyright (c) 2013 aegif.
+ * 
+ * This file is part of NemakiWare.
+ * 
+ * NemakiWare is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * NemakiWare is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License along with NemakiWare.
+ * If not, see <http://www.gnu.org/licenses/>.
+ * 
+ * Contributors:
+ *     linzhixing - initial API and implementation
+ ******************************************************************************/
 package jp.aegif.nemaki.api.resources;
 
 import java.text.SimpleDateFormat;
 import java.util.List;
 
 import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpSession;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.FormParam;

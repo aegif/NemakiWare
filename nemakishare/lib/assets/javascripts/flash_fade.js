@@ -19,21 +19,10 @@
  * Contributors:
  *     linzhixing - initial API and implementation
  ******************************************************************************/
-package jp.aegif.nemaki.query;
 
-import java.math.BigInteger;
-
-import jp.aegif.nemaki.repository.TypeManager;
-
-
-import org.apache.chemistry.opencmis.commons.data.ObjectList;
-import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
-import org.apache.chemistry.opencmis.commons.server.CallContext;
-
-public interface QueryProcessor {
-	ObjectList query(TypeManager typeManager, CallContext callContext, String username, String id,
-			String statement, Boolean searchAllVersions,
-			Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
-			BigInteger maxItems, BigInteger skipCount);
-}
+//flash fadeIn/fadeOut
+$(function() {
+   	$('#flash').delay(500).fadeIn('normal', function() {
+      	$(this).delay(3500).fadeOut();
+   	});
+});

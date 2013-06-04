@@ -1,29 +1,31 @@
-/**
+/*******************************************************************************
+ * Copyright (c) 2013 aegif.
+ * 
  * This file is part of NemakiWare.
- *
+ * 
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- *
+ * 
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
- */
+ * 
+ * You should have received a copy of the GNU General Public License along with NemakiWare.
+ * If not, see <http://www.gnu.org/licenses/>.
+ * 
+ * Contributors:
+ *     linzhixing - initial API and implementation
+ ******************************************************************************/
 package jp.aegif.nemaki.repository;
 
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 
-
 import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
-import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
-import org.apache.chemistry.opencmis.commons.server.CallContext;
 
 /**
  * Repository map for Nemaki
@@ -32,14 +34,9 @@ public class RepositoryMap {
 
 	private Map<String, NemakiRepository> repositories;
 
-	/**
-	 * Login pairs of user and password
-	 */
-	private Map<String, String> logins;
-
 	public RepositoryMap() {
 		repositories = new HashMap<String, NemakiRepository>();
-		logins = new HashMap<String, String>();
+		new HashMap<String, String>();
 	}
 
 	/**

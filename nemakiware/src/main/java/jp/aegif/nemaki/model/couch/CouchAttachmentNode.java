@@ -1,24 +1,39 @@
+/*******************************************************************************
+ * Copyright (c) 2013 aegif.
+ * 
+ * This file is part of NemakiWare.
+ * 
+ * NemakiWare is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * NemakiWare is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License along with NemakiWare. 
+ * If not, see <http://www.gnu.org/licenses/>.
+ * 
+ * Contributors:
+ *     linzhixing - initial API and implementation
+ ******************************************************************************/
 package jp.aegif.nemaki.model.couch;
-
-import java.io.InputStream;
 
 import jp.aegif.nemaki.model.AttachmentNode;
 
 import org.codehaus.jackson.annotate.JsonIgnoreProperties;
-import org.ektorp.Attachment;
 
 @JsonIgnoreProperties(ignoreUnknown=true)
 public class CouchAttachmentNode extends CouchNodeBase{
 	
 	private static final long serialVersionUID = 1984059866949665299L;
 	public static final String TYPE = "attachment"; 
-	private static final String ATTACHMENT_NAME = "content";
 
 	private String name;
 	private long length;
 	private String mimeType;
-	private InputStream inputStream;
-
 	
 	public CouchAttachmentNode(){
 		super();

@@ -1,28 +1,31 @@
-/**
+/*******************************************************************************
+ * Copyright (c) 2013 aegif.
+ * 
  * This file is part of NemakiWare.
- *
+ * 
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- *
+ * 
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
- */
+ * 
+ * You should have received a copy of the GNU General Public License along with NemakiWare.
+ * If not, see <http://www.gnu.org/licenses/>.
+ * 
+ * Contributors:
+ *     linzhixing - initial API and implementation
+ ******************************************************************************/
 package jp.aegif.nemaki.service.dao.impl;
 
 import java.util.ArrayList;
 import java.util.List;
 
 import jp.aegif.nemaki.model.Group;
-import jp.aegif.nemaki.model.NodeBase;
 import jp.aegif.nemaki.model.User;
-import jp.aegif.nemaki.model.couch.CouchDocument;
 import jp.aegif.nemaki.model.couch.CouchGroup;
 import jp.aegif.nemaki.model.couch.CouchUser;
 import jp.aegif.nemaki.service.dao.PrincipalDaoService;
@@ -106,7 +109,7 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 	@Override
 	public List<User> getUsers() {
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("usersByName");
+				.viewName("usersById");
 		List<CouchUser> l = connector.queryView(query, CouchUser.class);
 		
 		List<User>users = new ArrayList<User>();

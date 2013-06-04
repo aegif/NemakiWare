@@ -1,19 +1,24 @@
-/**
+/*******************************************************************************
+ * Copyright (c) 2013 aegif.
+ * 
  * This file is part of NemakiWare.
- *
+ * 
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- *
+ * 
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
- */
+ * 
+ * You should have received a copy of the GNU General Public License along with NemakiWare.
+ * If not, see <http://www.gnu.org/licenses/>.
+ * 
+ * Contributors:
+ *     linzhixing - initial API and implementation
+ ******************************************************************************/
 package jp.aegif.nemaki.repository;
 
 import java.math.BigInteger;
@@ -21,7 +26,6 @@ import java.util.List;
 
 import jp.aegif.nemaki.service.cmis.AclService;
 import jp.aegif.nemaki.service.cmis.DiscoveryService;
-import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.cmis.NavigationService;
 import jp.aegif.nemaki.service.cmis.NemakiCmisService;
 import jp.aegif.nemaki.service.cmis.ObjectService;
@@ -40,7 +44,6 @@ import org.apache.chemistry.opencmis.commons.data.ObjectInFolderContainer;
 import org.apache.chemistry.opencmis.commons.data.ObjectInFolderList;
 import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.data.ObjectParentData;
-import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.RenditionData;
 import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
@@ -70,7 +73,7 @@ public class NemakiRepository {
 	private VersioningService versioningService;
 	private PolicyService policyService;
 	private RelationshipService relationshipService;
-	private ExceptionService exceptionService;
+	
 
 	// -- Object Service
 
@@ -426,10 +429,6 @@ public class NemakiRepository {
 
 	public void setVersioningService(VersioningService versioningService) {
 		this.versioningService = versioningService;
-	}
-
-	public void setExceptionService(ExceptionService exceptionService) {
-		this.exceptionService = exceptionService;
 	}
 
 	public void setPolicyService(PolicyService policyService) {
