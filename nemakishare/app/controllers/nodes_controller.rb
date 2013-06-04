@@ -135,7 +135,7 @@ class NodesController < ApplicationController
     @parent = @nemaki_repository.get_parent @node
     
     #Navigation setting
-    site = @nemaki_repository.get_site_by_node_path(@node.path)
+    site = @nemaki_repository.get_site_by_node_path(@parent.path)
     set_allowed_up(site)
     
     render :layout => 'popup'  

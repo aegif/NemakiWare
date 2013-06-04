@@ -6,7 +6,7 @@ DUMP_DIR="./CouchDB_dump"
 COUCHDB_HOST="http://127.0.0.1:5984"
 DB_REPOSITORY="books"
 DB_ARCHIVE="archive"
-DEFAULT_DUMP_NAME_REPOSITORY="books_init.dump"
+DEFAULT_DUMP_NAME_REPOSITORY="bedroom_init.dump"
 DEFAULT_DUMP_NAME_ARCHIVE="archive_init.dump"
 
 #gem install rest-client
