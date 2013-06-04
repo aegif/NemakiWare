@@ -93,9 +93,9 @@ TBW
 * Show/Edit/Manage permission/Delete/Search
 * Site
 * Admin
-    *User/Group management
-    *Solr management
-    *Archive
+    * User/Group management
+    * Solr management
+    * Archive
 
 
 Configuration
