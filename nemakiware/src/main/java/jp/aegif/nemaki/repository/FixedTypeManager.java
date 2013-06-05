@@ -242,7 +242,7 @@ public class FixedTypeManager {
 
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.OBJECT_TYPE_ID, PropertyType.ID,
-				Cardinality.SINGLE, Updatability.READONLY, !required,
+				Cardinality.SINGLE, Updatability.ONCREATE, required,
 				queryable, orderable, null));
 		
 		/*type.addPropertyDefinition(createDefaultPropDef(
@@ -373,12 +373,12 @@ public class FixedTypeManager {
 	private void addRelationshipPropertyDefinitions(RelationshipTypeDefinitionImpl type) {
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.SOURCE_ID, PropertyType.ID,
-				Cardinality.SINGLE, Updatability.READONLY, !required,
+				Cardinality.SINGLE, Updatability.READONLY, required,
 				!queryable, !orderable, null));
 		
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.TARGET_ID, PropertyType.ID,
-				Cardinality.SINGLE, Updatability.READONLY, !required,
+				Cardinality.SINGLE, Updatability.READONLY, required,
 				!queryable, !orderable, null));
 	}
 	
