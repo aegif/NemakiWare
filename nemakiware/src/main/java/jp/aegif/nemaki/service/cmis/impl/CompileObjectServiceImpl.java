@@ -407,7 +407,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		if (!checkAddProperty(props, typeId, filter, id))
 			return;
 
-		switch (repositoryService.getTypeManager().getType(typeId)
+		switch (repositoryService.getTypeManager().getTypeDefinition(typeId)
 				.getPropertyDefinitions().get(id).getPropertyType()) {
 		case BOOLEAN:
 			props.addProperty(new PropertyBooleanImpl(id, (Boolean) value));
@@ -448,7 +448,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			throw new IllegalArgumentException("ID must not be null!");
 
 		TypeDefinition type = repositoryService.getTypeManager()
-				.getType(typeId);
+				.getTypeDefinition(typeId);
 
 		if (type == null)
 			throw new IllegalArgumentException("Unknown type: " + typeId);

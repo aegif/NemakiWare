@@ -267,7 +267,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 	public void constraintBaseTypeId(Properties properties,
 			BaseTypeId baseTypeId) {
 		String objectTypeId = getTypeId(properties);
-		TypeDefinition td = typeManager.getType(objectTypeId);
+		TypeDefinition td = typeManager.getTypeDefinition(objectTypeId);
 
 		if (!td.getBaseTypeId().equals(baseTypeId))
 			constraint(null,
@@ -299,7 +299,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 	public void constraintPropertyValue(Properties properties) {
 		String objectId = getObjectId(properties);
 		String objectTypeId = getObjectTypeId(properties);
-		Map<String, PropertyDefinition<?>> definitions = typeManager.getType(
+		Map<String, PropertyDefinition<?>> definitions = typeManager.getTypeDefinition(
 				objectTypeId).getPropertyDefinitions();
 		for (PropertyData<?> pd : properties.getPropertyList()) {
 			PropertyDefinition<?> definition = definitions.get(pd.getId());
@@ -471,7 +471,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 	@Override
 	public void constraintVersionable(String typeId) {
 		DocumentTypeDefinition type = (DocumentTypeDefinition) typeManager
-				.getType(typeId);
+				.getTypeDefinition(typeId);
 		if (!type.isVersionable()) {
 			String msg = "Object type: " + type.getId() + " is not versionbale";
 			throw new CmisConstraintException(msg, HTTP_STATUS_CODE_409);
@@ -504,7 +504,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 	@Override
 	public void constraintContentStreamRequired(Document document) {
 		String objectTypeId = document.getObjectType();
-		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager.getType(objectTypeId);
+		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager.getTypeDefinition(objectTypeId);
 		if(td.getContentStreamAllowed() == ContentStreamAllowed.REQUIRED){
 			if(document.getAttachmentNodeId() == null || 
 					contentService.getAttachment(document.getAttachmentNodeId()) == null){

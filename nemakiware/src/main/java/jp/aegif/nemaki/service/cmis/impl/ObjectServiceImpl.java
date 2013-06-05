@@ -215,7 +215,7 @@ public class ObjectServiceImpl implements ObjectService {
 
 		String typeId = getTypeId(properties);
 		TypeDefinition type = repositoryService.getTypeManager()
-				.getType(typeId);
+				.getTypeDefinition(typeId);
 		if (type == null) {
 			throw new CmisObjectNotFoundException("Type '" + typeId
 					+ "' is unknown!");
@@ -247,7 +247,7 @@ public class ObjectServiceImpl implements ObjectService {
 			String folderId, List<String> policies, Acl addAces,
 			Acl removeAces, ExtensionsData extension) {
 		FolderTypeDefinition td = (FolderTypeDefinition) typeManager
-				.getType(getTypeId(properties));
+				.getTypeDefinition(getTypeId(properties));
 		Folder parentFolder = contentService.getFolder(folderId);
 
 		// //////////////////
@@ -288,7 +288,7 @@ public class ObjectServiceImpl implements ObjectService {
 		String objectTypeId = getIdProperty(properties,
 				PropertyIds.OBJECT_TYPE_ID);
 		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
-				.getType(objectTypeId);
+				.getTypeDefinition(objectTypeId);
 		Folder parentFolder = contentService.getFolder(folderId);
 
 		// //////////////////
@@ -333,7 +333,7 @@ public class ObjectServiceImpl implements ObjectService {
 			VersioningState versioningState, List<String> policies, Acl addAces, Acl removeAces) {
 		Document original = contentService.getDocument(sourceId);
 		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
-				.getType(original.getObjectType());
+				.getTypeDefinition(original.getObjectType());
 		Folder parentFolder = contentService.getFolder(folderId);
 
 		// //////////////////
@@ -392,7 +392,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		exceptionService.contentAlreadyExists(doc, overwriteFlag);
 		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
-				.getType(getTypeId(properties));
+				.getTypeDefinition(getTypeId(properties));
 		exceptionService.streamNotSupported(td, contentStream);
 		exceptionService.versioning(doc);
 
@@ -427,7 +427,7 @@ public class ObjectServiceImpl implements ObjectService {
 		String objectTypeId = getIdProperty(properties,
 				PropertyIds.OBJECT_TYPE_ID);
 		RelationshipTypeDefinition td = (RelationshipTypeDefinition) typeManager
-				.getType(objectTypeId);
+				.getTypeDefinition(objectTypeId);
 		// //////////////////
 		// Exception
 		// //////////////////
@@ -481,7 +481,7 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.constraintBaseTypeId(properties, BaseTypeId.CMIS_POLICY);
 		exceptionService.constraintPropertyValue(properties);
 		//exceptionService.constraintAllowedChildObjectTypeId(parent, properties);
-		TypeDefinition td = typeManager.getType(getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID));
+		TypeDefinition td = typeManager.getTypeDefinition(getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID));
 		exceptionService.constraintCotrollablePolicies(td, policies, properties);
 		exceptionService.constraintCotrollableAcl(td, addAces, removeAces, properties);
 		//exceptionService.nameConstraintViolation(properties, parent);

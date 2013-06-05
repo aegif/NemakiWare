@@ -83,11 +83,6 @@ public class FixedTypeManager {
 	 */
 	private Map<String, TypeDefinitionContainer> types;
 
-	/**
-	 * List of all types. Contains the same information as the "types" Map, in a
-	 * different form.
-	 */
-	private List<TypeDefinitionContainer> typesAsList;
 
 	/**
 	 * Constructor.
@@ -95,13 +90,16 @@ public class FixedTypeManager {
 	public FixedTypeManager() {
 		setup();
 	}
+	
+	public Map<String, TypeDefinitionContainer> getTypes() {
+		return types;
+	}
 
 	/**
 	 * Creates the base types.
 	 */
 	private void setup() {
 		types = new HashMap<String, TypeDefinitionContainer>();
-		typesAsList = new ArrayList<TypeDefinitionContainer>();
 
 		// folder type
 		FolderTypeDefinitionImpl folderType = new FolderTypeDefinitionImpl();
@@ -471,7 +469,6 @@ public class FixedTypeManager {
 		}
 
 		types.put(type.getId(), tc);
-		typesAsList.add(tc);
 	}
 
 	private PropertyDefinition createPropBaseDef(
@@ -764,13 +761,5 @@ public class FixedTypeManager {
 		result.setDefaultValue(defaultValue);
 
 		return result;
-	}
-
-	public Map<String, TypeDefinitionContainer> getTypes() {
-		return types;
-	}
-
-	public List<TypeDefinitionContainer> getTypesAsList() {
-		return typesAsList;
 	}
 }

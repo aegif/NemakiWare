@@ -829,7 +829,7 @@ public class ContentServiceImpl implements ContentService {
 	public Content updateProperties(CallContext callContext, Properties properties, Content content) {
 
 		//Set updatable properties
-		TypeDefinition td = typeManager.getType(content.getType());
+		TypeDefinition td = typeManager.getTypeDefinition(content.getType());
 		Map<String, PropertyDefinition<?>> map =  td.getPropertyDefinitions(); 
 		for(Entry<String, PropertyData<?>> p : properties.getProperties().entrySet()){
 			PropertyDefinition<?> pd = map.get(p.getKey());
@@ -1274,7 +1274,7 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public TypeDefinition getTypeDefinition(Content content) {
 		String typeId = (content.getObjectType() == null) ? content.getType() : content.getObjectType();
-		return typeManager.getType(typeId);
+		return typeManager.getTypeDefinition(typeId);
 	}
 
 	private String buildUniqueName(String originalName, String folderId, String existingId) {

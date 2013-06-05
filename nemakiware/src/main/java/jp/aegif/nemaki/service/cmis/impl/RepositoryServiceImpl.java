@@ -83,7 +83,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 	//CMIS Service method
 	public TypeDefinition getTypeDefinition(CallContext callContext,
 			String typeId) {
-		return typeManager.getTypeDefinition(callContext, typeId);
+		return typeManager.getTypeDefinition(typeId);
 	}
 
 	/**
