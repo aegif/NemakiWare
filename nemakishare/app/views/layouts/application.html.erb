@@ -5,6 +5,7 @@
     <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><%= content_for?(:title) ? yield(:title) : "NemakiWare" %></title>
+    <%= favicon_link_tag '/favicon.gif', :type => 'image/vnd.microsoft.icon' %>
     <%= csrf_meta_tags %>
     <%= stylesheet_link_tag "application" %>
 	<%= javascript_include_tag "application" %>
