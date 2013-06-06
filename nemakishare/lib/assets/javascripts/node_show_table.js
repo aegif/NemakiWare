@@ -31,17 +31,15 @@ var aspects = [];
 var baseTableParams = {
 		data:[],
 		datatype : "local",
-		//colNames : ,
-		//colModel : ,
-		rowNum : 10,
+		colNames : [],
+		colModel : [],
+		rowNum : 11,
 		rowList : [1, 10, 20],
 		caption : "",
 		forceFit: true,
 		cellEdit: false,
 		cellsubmit: 'clientArray',
 		//pager : ,
-		
-		height: 'auto',
 		width: 360,
 		shrinkToFit : true,
 		viewrecords: true,
@@ -111,6 +109,7 @@ $(function() {
 		var tableParams_basicInfo = $.extend(true, {}, baseTableParams);
 		tableParams_basicInfo.caption = "コンテンツの基本情報";
 		tableParams_basicInfo.data = node;
+		tableParams_basicInfo.height = "auto";
 		tableParams_basicInfo.colNames = colNames_basicInfo;
 		tableParams_basicInfo.colModel = colModelSettings_basicInfo;
 		$(selector_basicInfo).jqGrid(tableParams_basicInfo);
@@ -135,9 +134,10 @@ $(function() {
 		var tableParams_versionInfo = $.extend(true, {}, baseTableParams);
 		tableParams_versionInfo.caption = "バージョン履歴";
 		tableParams_versionInfo.data = versions;
+		tableParams_versionInfo.height = 70;
 		tableParams_versionInfo.colNames = colNames_versionInfo;
 		tableParams_versionInfo.colModel = colModelSettings_versionInfo;
-		tableParams_versionInfo.pager = 'versionInfo_pager'; 
+		//tableParams_versionInfo.pager = '#versionInfo_pager'; 
 		$(selector_versionInfo).jqGrid(tableParams_versionInfo);
 	};
 	
@@ -163,6 +163,7 @@ $(function() {
 			var data = buildPropertyRecords(a.properties);
 			tableParams_aspectInfo.caption = a.attributes.displayName;
 			tableParams_aspectInfo.data = data;
+			tableParams_aspectInfo.height = "auto";
 			$(tableSelector).jqGrid(tableParams_aspectInfo);
 			
 			var gridState;

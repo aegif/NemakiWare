@@ -16,7 +16,7 @@ ruby create_db.rb ${COUCHDB_HOST}/${DB_REPOSITORY}
 ruby create_db.rb ${COUCHDB_HOST}/${DB_ARCHIVE}
 
 #Load dump files
-#sudo python ./CouchDB-0.8/setup.py install
+sudo python ./CouchDB-0.8/setup.py install
 if [ -n argv[0] ]; then
 	DUMP_NAME_REPOSITORY=${DEFAULT_DUMP_NAME_REPOSITORY}
 else
