@@ -19,7 +19,7 @@
 # If not, see <http://www.gnu.org/licenses/>.
 # 
 # Contributors:
-#     linzhixing - initial API and implementation
+#     linzhixing(https://github.com/linzhixing) - initial API and implementation
 # ******************************************************************************
 class Node  < ActiveModelBase
   @@attributes = [:id, :name, :description, :path, :parent_id, :type, :object_type, :acl, :acl_inherited, :allowable_actions, :mimetype, :size, :creator,:created, :modifier, :modified, :version_series_id, :version_label, :aspects, :change_type, :change_time]

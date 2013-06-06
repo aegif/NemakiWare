@@ -16,16 +16,11 @@
  * You should have received a copy of the GNU General Public License along with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
  * 
  * Contributors:
- *     linzhixing - initial API and implementation
+ *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
 package jp.aegif.nemaki.model;
 
-/**
- * TODO This class is under construction.
- * 
- * @author mryoshio
- * 
- */
+
 public class Property {
 
 	@SuppressWarnings("unused")

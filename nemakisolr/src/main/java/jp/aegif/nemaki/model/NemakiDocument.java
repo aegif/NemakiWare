@@ -17,7 +17,7 @@
  * If not, see <http://www.gnu.org/licenses/>.
  * 
  * Contributors:
- *     linzhixing - initial API and implementation
+ *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
 package jp.aegif.nemaki.model;
 
@@ -26,7 +26,6 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
 public class NemakiDocument {
-	//attachmentではなくドキュメント本体のid
 	@Field
 	String id;
 	
@@ -36,11 +35,9 @@ public class NemakiDocument {
 	@Field
 	JSONArray aspects;
 	
-	//最新のnemakiAttachment1件のid
 	@Field
 	String nemakiAttachment;
 	
-	//attachmentの本文
 	@Field
 	String content;
 	
@@ -94,7 +91,4 @@ public class NemakiDocument {
 	public void setContent(String content) {
 		this.content = content;
 	}
-	
-	
-	
 }
