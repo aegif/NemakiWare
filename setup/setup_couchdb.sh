@@ -9,7 +9,7 @@ DB_ARCHIVE="archive"
 DEFAULT_DUMP_NAME_REPOSITORY="bedroom_init.dump"
 DEFAULT_DUMP_NAME_ARCHIVE="archive_init.dump"
 
-#gem install rest-client
+gem install rest-client
 
 #Create CouchDB databases
 ruby create_db.rb ${COUCHDB_HOST}/${DB_REPOSITORY}
@@ -31,3 +31,5 @@ else
 fi
 echo "Importing ${DUMP_NAME_ARCHIVE}"
 python ${COUCHDB_PYTHON}/couchdb/tools/load.py ${COUCHDB_HOST}/${DB_ARCHIVE} < ${DUMP_DIR}/${DUMP_NAME_ARCHIVE}
+
+echo "Setup done successfully!"

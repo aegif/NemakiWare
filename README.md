@@ -35,7 +35,7 @@ Installation
 ------
 * Clone the repository
 ```sh
-$ git@github.com:NemakiWare/NemakiWare.git
+$ git clone git@github.com:NemakiWare/NemakiWare.git
 ```
 You get the folder `<NemakiWare_Home>` in the location you cloned, which includes three subfolders nemakiware, nemakisolr, nemakishare.
 
@@ -44,14 +44,15 @@ Mac(See [Wiki](http://wiki.apache.org/couchdb/Installing_on_OSX))
 ```sh
 $ sudo port install couchdb
 ```
-CentOS
+CentOS  
+Firstly [enable EPEL repository](http://wiki.apache.org/couchdb/Installing_on_RHEL5), then
 ```sh
 $ sudo yum install couchdb
 ```
 
-* Setup CouchDB (If it's not started, start it before setup)
+* Excecute setup script (If CouchDB has not started, start it before setup)
 ```sh
-$ cd <NemakiWare_Home>/nemakiware/setup
+$ cd <NemakiWare_Home>/setup
 $ sh setup.sh
 ```
 
