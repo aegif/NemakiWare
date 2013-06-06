@@ -188,7 +188,7 @@
 					</webAppConfig>
 					<connectors>
 						<connector implementation="org.eclipse.jetty.server.nio.SelectChannelConnector">
-							<port>8180</port>
+							<port>8080</port>
 						</connector>
 					</connectors>
 					<scanTargets>

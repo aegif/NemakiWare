@@ -35,7 +35,7 @@ class ArchivesController < ApplicationController
   def index(status=true)
     @title = "ゴミ箱" 
     
-    resource = RestClient::Resource.new('http://localhost:8180/Nemaki/rest/archive/index',@auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(CONFIG['repository']['archive_rest_url'] + 'index', @auth_info[:id], @auth_info[:password])
     json = resource.get()
     result = JSON.parse(json)
     

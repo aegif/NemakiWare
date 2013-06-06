@@ -31,4 +31,3 @@ echo "Create NemakiWare client's database"
 rake db:migrate
 
 echo "NemakiWare setup successfully done!"
-echo "Please don't forget to overwrite ActiveCMIS library. The location can be found by 'gem which active_cmis'".

@@ -59,28 +59,21 @@ $ cd <NemakiWare_Home>/setup
 $ sh sudo setup.sh
 ```
 
-* Install the server and kick it off
-```sh
-$ cd <NemakiWare_Home>/nemakiware
-$ mvn jetty:run
-```
-It will take a little time to download the dependent packages.
-
-* Install the search engine(Solr) and kick it off
-```sh
-$ cd <NemakiWare_Home>/nemakisolr
-$ mvn jetty:run
-```
-It will take a little time to download the dependent packages.  
-
-* Install the client
-```sh
-$ cd <NemakiWare_Home>/nemakishare
-$ bundle install
-```
-
 NOTE: The script have installed [ActiveCMIS](https://github.com/xaop/activecmis) gem.
 NemakiWare needs to overwrite some part of ActiveCMIS library but it's not yet pull requested.  
+
+* Start the applications
+```sh
+$ cd <NemakiWare_Home>/setup
+$ sh start.sh
+```
+It will take a little time to download the dependent packages.  
+Server(nemakiware), Solr(nemakisolr), CLient(nemakishare) have been now started.  
+
+* To stop the applications,  
+```sh
+$ sh stop.sh
+```
 
 * Now, open the login  window
     http://127.0.0.1:3000/nodes/
