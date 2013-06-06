@@ -4,7 +4,8 @@ NemakiWare Version GA1.0
 What is NemakiWare?
 ------
 
-NemakiWare is a open source enterprise content management(ECM) system. It is:
+NemakiWare is a open source enterprise content management(ECM) system.  
+It is:  
 * **Compliant with CMIS standard**
     * Integration or replacement with other existing/future CMIS compliant software can be done easily by the power of standard.
 
@@ -72,13 +73,14 @@ $ mvn jetty:run
 ```
 It will take a little time to download the dependent packages.  
 
-* Install the client and overwrite ActiveCMIS gem
+* Install the client
 ```sh
 $ cd <NemakiWare_Home>/nemakishare
 $ bundle install
 ```
+
 NOTE: The script have installed [ActiveCMIS](https://github.com/xaop/activecmis) gem.
-NemakiWare needs some customizes of ActiveCMIS library but it's not yet pull requested.  
+NemakiWare needs to overwrite some part of ActiveCMIS library but it's not yet pull requested.  
 
 * Now, open the login  window
     http://127.0.0.1:3000/nodes/
