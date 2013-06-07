@@ -22,7 +22,7 @@
 				<th>
 					<%=t('model.user.email')%>
 				</th>
-				<th class="nemaki-explore-list-action"><%=t('view.node_list.action')%></th>
+				<th class="nemaki-explore-list-action"><%=t('view.general.action')%></th>
 			</tr>
 		</thead>
 		<tbody>
@@ -52,7 +52,7 @@
 				<td>
 					<%= link_to raw("<i class='icon-edit'></i>"),
 					edit_user_path(u.id, @popup_param),
-					:title => t('view.node_list.show'),
+					:title => t('view.node.explore.edit'),
 					:class => 'thickbox btn'%>
 					<%= link_to raw("<i class='icon-cog'></i>"),
 					edit_password_user_path(u.id, @popup_param),
@@ -60,8 +60,8 @@
 					:class => 'thickbox btn'%>
 					<%= link_to raw("<i class='icon-remove'></i>"),
 					user_path(u.id),
-					:title => t('view.node_list.delete'),
-					:class => 'btn', :method => :delete, :confirm => t('view.node_list.delete_confirmation')%>
+					:title => t('view.node.explore.delete'),
+					:class => 'btn', :method => :delete, :confirm => t('view.node.explore.delete_confirmation')%>
 				</td>
 			</tr>
 			<% end %>

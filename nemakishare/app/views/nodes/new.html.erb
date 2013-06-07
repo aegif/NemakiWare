@@ -30,9 +30,9 @@
 <!--Header-->
 <div class="row-fluid span11 nemaki_popup_header">
 	<% if @document %>
-		<h4><%= image_tag('icon/generic-file-32.png') %><%=t('view.new.upload_new_file')%></h4>
+		<h4><%= image_tag('icon/generic-file-32.png') %><%=t('view.node.new.upload_new_file')%></h4>
 	<%elsif @folder %>
-		<h4><%= image_tag('icon/folder-icon-default.gif') %><%=t('view.new.upload_new_folder')%></h4>
+		<h4><%= image_tag('icon/folder-icon-default.gif') %><%=t('view.node.new.upload_new_folder')%></h4>
 	<% end %>
 </div>
 
@@ -40,18 +40,18 @@
 <div class="nemaki_contents_body">
 	<div class="row-fluid">
 		<%= form_for @node, :url => {:action => :create}, :html => {:id => 'create_form'} do |f| %>
-			<label><h5><%=t('view.new.name')%></h5></label>	
+			<label><h5><%=t('model.node.name')%></h5></label>	
             <%= f.text_field :name %>
       		
       		<% if @document %>      
-            <label><h5><%=t('view.new.select_file')%></h5></label>
+            <label><h5><%=t('view.node.new.select_file', :title => "yaho")%></h5></label>
             <%= f.file_field :file %>
 			<% end %>
 			
 			<%= hidden_field_tag :parent_id, @parent_id %>
 			<%= hidden_field_tag :type, @type %>
 			<div style="padding-top: 20px;">
-				<%= submit_tag t('view.new.create'), :class => 'btn btn-primary btn-large' %>	
+				<%= submit_tag t('view.general.create'), :class => 'btn btn-primary btn-large' %>	
 			</div>
 		<% end %>
 	</div>

@@ -34,11 +34,11 @@
 
 					<!--Add Button-->
 					<div>
-						<a href="#" class="popup btn btn-small " onclick="addSearchResult('member_table')"><i class='icon-plus'></i><%=t('view.group.edit_member.add_member_list')%></a>
+						<a href="#" class="popup btn btn-small " onclick="addSearchResult('member_table')"><i class='icon-plus'></i> <%=t('view.group.edit_member.add_member_list')%></a>
 					</div>
 					<!--User Search Form-->
 					<%= form_for SearchForm.new, :url => {:controller => :users , :action => :search}, :html => {:id => 'principal_search', :method => :get}, :remote => true do |f| %>
-						<%= submit_tag t('view.group.edit_member.search'), :class => 'btn' %>
+						<%= submit_tag t('view.general.search'), :class => 'btn' %>
 						<%= f.text_field :query, :class => 'search-query' %>
 					<% end %>
 								
@@ -50,9 +50,9 @@
 	<%= form_for @group, :url => {:action => 'update_member_users'}, :html => {:id => 'update_form', :method => :put} do %>
 		<%= hidden_field_tag "principals_json" %>
 		<!--Remove Button-->
-		<a href="#" class="btn btn-small" onclick="delrow('member_table')"><i class='icon-minus'></i><%=t('view.group.edit_member.delete')%></a>
+		<a href="#" class="btn btn-small" onclick="delrow('member_table')"><i class='icon-minus'></i> <%=t('view.general.delete')%></a>
 		<!--Update Button-->
-		<a href="#" class="btn btn-small btn-primary" onclick="update()"><i class='icon-repeat'></i><%=t('view.group.edit_member.update')%></a>
+		<a href="#" class="btn btn-small btn-primary" onclick="update()"><i class='icon-repeat'></i> <%=t('view.general.update')%></a>
 	<% end %>
 </div>
 

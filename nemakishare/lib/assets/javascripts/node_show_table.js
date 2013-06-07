@@ -100,14 +100,14 @@ $(function() {
 		{name:"value",index:"value",align:"left", sortable:false}
 	]
 	
-	var colNames_basicInfo = [I18n.t("view.show.property"), I18n.t("view.show.value")];
+	var colNames_basicInfo = [I18n.t("view.general.property"), I18n.t("view.general.value")];
 	//CREATE TABLE
 	if(node && node.length > 0){
 		createBasicInfoTable();
 	}
 	function createBasicInfoTable(){
 		var tableParams_basicInfo = $.extend(true, {}, baseTableParams);
-		tableParams_basicInfo.caption = I18n.t("view.show.content_basic_information");
+		tableParams_basicInfo.caption = I18n.t("view.node.show.content_basic_information");
 		tableParams_basicInfo.data = node;
 		tableParams_basicInfo.height = "auto";
 		tableParams_basicInfo.colNames = colNames_basicInfo;
@@ -132,7 +132,7 @@ $(function() {
 	}
 	function createVersionInfoTable(){
 		var tableParams_versionInfo = $.extend(true, {}, baseTableParams);
-		tableParams_versionInfo.caption = I18n.t("view.show.version_history");
+		tableParams_versionInfo.caption = I18n.t("view.node.show.version_history");
 		tableParams_versionInfo.data = versions;
 		tableParams_versionInfo.height = 70;
 		tableParams_versionInfo.colNames = colNames_versionInfo;
@@ -149,7 +149,7 @@ $(function() {
 		{name:"value",index:"value",align:"left", sortable:false}
 	]
 	
-	var colNames_aspectInfo = [I18n.t("view.show.property"), I18n.t("view.show.value")];
+	var colNames_aspectInfo = [I18n.t("view.node.show.property"), I18n.t("view.node.show.value")];
 	
 	var tableParams_aspectInfo = $.extend(true, {}, baseTableParams);
 	tableParams_aspectInfo.colNames = colNames_aspectInfo;
@@ -191,9 +191,9 @@ $(function() {
 ///////////////////////////////////
 function convertNodeTypeForUser(type){
 	if(type==="cmis:document"){
-		return I18n.t("view.show.file") + "(" + type + ")";
+		return I18n.t("view.node.show.file") + "(" + type + ")";
 	}else if(type==="cmis:folder"){
-		return I18n.t("view.show.folder") + "(" + type + ")";
+		return I18n.t("view.node.show.folder") + "(" + type + ")";
 	}
 }
 

@@ -30,7 +30,14 @@ ja:
       groups: "メンバ(グループ)"
   view: 
     general:
+      create: "新規作成"
       update: "更新"
+      upload: "アップロード"
+      search: "検索"
+      delete: "削除"
+      property: "プロパティ"
+      value: "値"
+      actions: "アクション"
     navigation: 
       user: "ユーザ"
       user_management: "ユーザ管理"
@@ -39,9 +46,62 @@ ja:
       search_engine_management: "検索エンジン管理"
       logout: "ログアウト"
       logout_confirmation: "ログアウトしますか？"
+      login: "ログイン"
       site: "サイト"  
       site_list: "サイト一覧"  
       folder: "フォルダ"  
+    node:
+      explore:
+        contents: "コンテンツ"
+        new_file: "新規ファイル"
+        new_folder: "新規フォルダ"
+        site: "サイト"
+        modified_time: "更新時刻"
+        modifier: "更新者"
+        actions: "アクション"
+        show: "詳細情報"
+        edit: "編集更新"
+        permission: "権限管理"
+        delete: "削除"
+        delete_confirmation: "本当に削除しますか？"
+      new:
+        upload_new_file: "新規ファイルのアップロード"
+        create_new_folder: "新規フォルダの作成"
+        select_file: "ファイルを選択してください"
+        create: "新規作成"
+      show:
+        parent_folder: "親フォルダ"
+        download: "ダウンロード"
+        basic_properties: "基本属性"
+        custom_properties: "カスタム属性"
+        property: "プロパティ"
+        value: "値"
+        file: "ファイル"
+        folder: "フォルダ"
+        content_basic_information: "コンテンツの基本情報"
+        version_history: "バージョン履歴"
+      edit:
+        edit_basic_properties: "基本属性の編集"
+        edit_custom_properties: "カスタム属性の編集"
+        upload_new_version: "新規バージョンをアップロード"
+        update: "更新"
+        upload: "アップロード"
+      permission:
+        inherited_permissions: "継承した権限"
+        inherit_permissions: "権限の継承"
+        local_permissions: "ローカルで設定された権限"
+        user_search_results: "ユーザ検索結果"
+        search_member: "追加するユーザの検索"
+        search: "Search"
+        delete: "削除"
+        update: "更新"
+        add_permission: "権限を追加"
+        user_and_group_id: "ユーザ/グループID"
+        permission: "権限"
+      delete:
+      search:
+        query_word: "検索ワード"
+        number_of_results: "ヒット件数"
     changelog:
       changes_in_the_site: "サイト内の更新"
       created: "が作成"
@@ -49,55 +109,6 @@ ja:
       version-updated: "がバージョンを更新"
       security: "が権限を変更"
       deleted: "が削除"          
-    node_list:
-      contents: "コンテンツ"
-      new_file: "新規ファイル"
-      new_folder: "新規フォルダ"
-      site: "サイト"
-      modified_time: "更新時刻"
-      modifier: "更新者"
-      actions: "アクション"
-      show: "詳細情報"
-      edit: "編集更新"
-      permission: "権限管理"
-      delete: "削除"
-      delete_confirmation: "本当に削除しますか？"
-    show:
-      parent_folder: "親フォルダ"
-      download: "ダウンロード"
-      basic_properties: "基本属性"
-      custom_properties: "カスタム属性"
-      property: "プロパティ"
-      value: "値"
-      file: "ファイル"
-      folder: "フォルダ"
-    edit:
-      edit_basic_properties: "基本属性の編集"
-      edit_custom_properties: "カスタム属性の編集"
-      upload_new_version: "新規バージョンをアップロード"
-      update: "更新"
-      upload: "アップロード"
-    permission:
-      inherited_permissions: "継承した権限"
-      inherit_permissions: "権限の継承"
-      local_permissions: "ローカルで設定された権限"
-      user_search_results: "ユーザ検索結果"
-      search_member: "追加するユーザの検索"
-      search: "Search"
-      delete: "削除"
-      update: "更新"
-      add_permission: "権限を追加"
-      user_and_group_id: "ユーザ/グループID"
-      permission: "権限"
-    new:
-      upload_new_file: "新規ファイルのアップロード"
-      create_new_folder: "新規フォルダの作成"
-      name: "名前"
-      select_file: "ファイルを選択してください"
-      create: "新規作成"
-    search:
-      query_word: "検索ワード"
-      number_of_results: "ヒット件数"
     site:
       site_list: "サイト一覧"
       create_new_site: "新規サイト作成"
@@ -105,9 +116,8 @@ ja:
       site_name: "サイト名"
     archive:
       archive: "ゴミ箱"
-      name: "名前"
       deleted_time: "削除時刻"
-      delete_user: "ユーザ"
+      delete_user: "削除したユーザ"
       restore: "ゴミ箱から戻す"
     user:
       index:
@@ -115,15 +125,13 @@ ja:
         search_users: "ユーザ検索"
         change_password: "パスワード変更"
       new:
-        user_info: "ユーザ情報"
-        create: "新規作成"
+        create_new_user: "Create a new user"
       edit:
         edit_user_info: "ユーザ情報の編集"
       edit_password:
         edit_password: "パスワード編集"
         user_id: "ユーザID"
         new_password: "新しいパスワード"
-        update: "更新"
     group:
       index:
         group_management: "グループ管理画面"
@@ -131,16 +139,37 @@ ja:
         new_group: "新規グループ"
         manage: "管理"
       new:
-        group_info: "グループ情報"
-        create: "新規作成"
+        create_new_group: "新規グループの作成"
       edit:
         edit_group_info: "グループ情報の編集"
-        update: "更新"
       edit_member:
+        member_list: "メンバ一覧"
+        user_and_group_search_results: "User/Group Search Results"
         add_member_list: "メンバ一覧に追加"
-        search: "検索"
-        delete: "削除"
-        update: "更新"
     search_engine:
       index:
         search_engine_management: "検索エンジン管理画面"
+  message:
+    validation:
+      general: "バリデーションエラー：正しい値を入力してください"
+      no_query_word: "検索ワードがありません。検索ワードを入力してください"
+    user:
+      create_success: "ユーザの新規作成に成功しました"
+      create_failure: "ユーザの新規作成に失敗しました"
+      update_success: "ユーザ情報の更新に成功しました"
+      update_failure: "ユーザ情報の更新に失敗しました"
+      update_password_success: "ユーザパスワードの更新に成功しました"
+      update_password_failure: "ユーザパスワードの更新に失敗しました"
+    group:
+      create_success: "グループの新規作成に成功しました"
+      create_failure: "グループの新規作成に失敗しました"
+      update_success: "グループ情報の更新に成功しました"
+      update_failure: "グルー情報の更新に失敗しました"
+      destroy_success: "グループの削除に成功しました"
+      destroy_failure: "グループの削除に失敗しました"
+    site:
+      create_success: "サイトの新規作成に成功しました"
+    archive:
+      restore_success: "コンテンツのリストアに成功しました"
+      restore_failure: "コンテンツのリストアに失敗しました"
+      cannot_display_archive: "ゴミ箱を表示できません"

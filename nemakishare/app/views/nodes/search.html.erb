@@ -2,14 +2,14 @@
       <div class="navbar-inner" style="padding-left: 0">
 			<div class="span3" style="padding-left: 0">
 				<h4>
-					<%=t('view.search.query_word')%>: <%= @query_word %>
+					<%=t('view.node.search.query_word')%>: <%= @query_word %>
 				</h4>
 			</div>
 	  </div>
 </div>
 
 <div>
-	<h5><%=t('view.search.number_of_results')%>： <%= @nodes.size %> 件</h5>
+	<h5><%=t('view.node.search.number_of_results')%>： <%= @nodes.size %> 件</h5>
 </div>
 
 <%= render :partial => 'nodes/list' %>

@@ -6,9 +6,8 @@
 	<!--User Search Form-->
 	<%= form_for @search_form, :url => {:controller => :groups , :action => :index}, :html => {:id => 'group_search', :method => :get} do |f| %>
 		<%= f.text_field :query, :class => 'search-query' %>
-		<%= submit_tag t('view.group.index.search_groups')%>
+		<%= submit_tag t('view.group.index.search_groups'), :class => "btn" %>
 	<% end %>
-	
 </div>
 
 <!--Body of the list-->

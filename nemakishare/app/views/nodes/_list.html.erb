@@ -4,27 +4,27 @@
 		<thead>
 			<tr>
 				<th class="nemaki-explore-list-name">
-					<%=t('view.node_list.contents')%>
+					<%=t('view.node.explore.contents')%>
 					<!--Folder Action -->
 					<% if !@node.nil? %>
 						<!--Thickbox iframe ignores parameters after TB_iframe-->
-						<%= link_to raw("<i class='icon-plus'></i> "+ t('view.node_list.new_file')),
+						<%= link_to raw("<i class='icon-plus'></i> "+ t('view.node.explore.new_file')),
 						new_node_path() + 
 						"?parent_id=" + @node.id + "&type=document&TB_iframe=nil&height=600&&width=777",
 						:class => 'thickbox btn btn-small btn-primary'%>
 						
-						<%= link_to raw("<i class='icon-plus'></i> " + t('view.node_list.new_folder')),
+						<%= link_to raw("<i class='icon-plus'></i> " + t('view.node.explore.new_folder')),
 						new_node_path() +
 						"?parent_id=" + @node.id + "&type=folder&TB_iframe=nil&height=600&&width=777",
 						:class => 'thickbox btn btn-small btn-primary'%>
 					<% end %>
 				</th>
 				<% if params[:controller] == 'nodes' && params[:action] == 'search' %>
-					<th class="nemaki-explore-list-site"><%=t('view.node_list.site')%></th>
+					<th class="nemaki-explore-list-site"><%=t('view.node.explore.site')%></th>
 				<% end %>
-				<th class="nemaki-explore-list-calendar"><%=t('view.node_list.modified')%></th>
-				<th class="nemaki-explore-list-user"><%=t('view.node_list.modifier')%></th>
-				<th class="nemaki-explore-list-action"><%=t('view.node_list.actions')%></th>
+				<th class="nemaki-explore-list-calendar"><%=t('view.node.explore.modified')%></th>
+				<th class="nemaki-explore-list-user"><%=t('view.node.explore.modifier')%></th>
+				<th class="nemaki-explore-list-action"><%=t('view.node.explore.actions')%></th>
 			</tr>
 		</thead>
 		<tbody>
@@ -63,28 +63,28 @@
 				<td>
 					<!--SHOW-->
 					<%= link_to raw("<i class='icon-zoom-in'></i>"), node_path(n.id, @popup_param), 
-					:class => 'thickbox btn', :title => t('view.node_list.show'), :target => '_parent' %>
+					:class => 'thickbox btn', :title => t('view.node.explore.show'), :target => '_parent' %>
 					
 					<!--EDIT-->
 					<% if n.allowable_actions['UpdateProperties'] || 
 						  n.allowable_actions['SetContentStream'] %>
 					<%= link_to raw("<i class='icon-edit'></i>"), edit_node_path(n.id, @popup_param), 
-					:class => 'thickbox btn', :title => t('view.node_list.edit'), :target => '_parent' %>
+					:class => 'thickbox btn', :title => t('view.node.explore.edit'), :target => '_parent' %>
 					<% end %>
 					
 					<!--PERMISSION-->
 					<% if n.allowable_actions['ApplyACL'] %>
 					<%= link_to raw("<i class='icon-user'></i>"),
 					edit_permission_node_path(n.id, @popup_param),
-					:class => 'thickbox btn', :title => t('view.node_list.permission') %>
+					:class => 'thickbox btn', :title => t('view.node.explore.permission') %>
 					<% end %>
 					
 					<!--DELETE-->
 					<% if n.allowable_actions['DeleteObject'] %>
 					<%= link_to raw("<i class='icon-trash'></i>"),
 					node_path(n.id),
-					:title => t('view.node_list.delete'),
-					:class => 'btn', :method => :delete, :confirm => t('view.node_list.delete_confirmation')%>
+					:title => t('view.node.explore.delete'),
+					:class => 'btn', :method => :delete, :confirm => t('view.node.explore.delete_confirmation')%>
 					<% end %>
 				</td>
 			</tr>

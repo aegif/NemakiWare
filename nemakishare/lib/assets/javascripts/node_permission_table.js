@@ -171,12 +171,12 @@ $(function() {
 		align : "left",
 		classes : "principal_class"
 	} ];
-	var userColNames = [ I18n.t("view.permission.user_and_group_id") ];
+	var userColNames = [ I18n.t("view.node.permission.user_and_group_id") ];
 	// CREATE
 	createUserTable();
 	function createUserTable() {
 		var tableParams_user = $.extend(true, {}, baseTableParams);
-		tableParams_user.caption = I18n.t("view.permission.user_search_results");
+		tableParams_user.caption = I18n.t("view.node.permission.user_search_results");
 		tableParams_user.data = users;
 		tableParams_user.colNames = userColNames;
 		tableParams_user.colModel = userColModelSettings;
@@ -215,13 +215,13 @@ $(function() {
 			}
 		}
 	} ];
-	var aclColNames = [I18n.t("view.permission.user_and_group_id"), I18n.t("view.permission.permission") ];
+	var aclColNames = [I18n.t("view.node.permission.user_and_group_id"), I18n.t("view.node.permission.permission") ];
 
 	// Inherited ACL Table
 	createInheritedAclTable();
 	function createInheritedAclTable() {
 		var tableParams_inheritedAcl = $.extend(true, {}, baseTableParams);
-		tableParams_inheritedAcl.caption = I18n.t("view.permission.inherited_permissions");
+		tableParams_inheritedAcl.caption = I18n.t("view.node.permission.inherited_permissions");
 		tableParams_inheritedAcl.data = inherited_acl;
 		tableParams_inheritedAcl.colNames = aclColNames;
 		tableParams_inheritedAcl.colModel = aclColModelSettings;
@@ -240,7 +240,7 @@ $(function() {
 		aclColModelSettings[1].editable = true;
 		
 		var tableParams_localAcl = $.extend(true, {}, baseTableParams);
-		tableParams_localAcl.caption = I18n.t("view.permission.local_permissions");
+		tableParams_localAcl.caption = I18n.t("view.node.permission.local_permissions");
 		tableParams_localAcl.data = local_acl;
 		tableParams_localAcl.colNames = aclColNames;
 		tableParams_localAcl.colModel = aclColModelSettings;

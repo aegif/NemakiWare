@@ -252,7 +252,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	 * 
 	 */
 	@Override
-	//TODO Content型で返せば他のサービスが正しく動作するか確認(Document/Folder型は必要？)
 	public List<Content> getLatestChildrenIndex(String parentId){
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
 				.viewName("children").key(parentId);
@@ -440,6 +439,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 			AttachmentInputStream ais = connector.getAttachment(attachmentId, ATTACHMENT_NAME);
 			an.setInputStream(ais);
+			
+			
 			return an;
 		}
 	}

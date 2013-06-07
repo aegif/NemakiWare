@@ -95,14 +95,14 @@ $(function() {
 		{name:"value",index:"value",align:"left", edittype:'text', editable:true, sortable:false}
 	]
 	
-	var colNames_basicInfo = ["ID", I18n.t("view.show.property"), I18n.t("view.show.value")];
+	var colNames_basicInfo = ["ID", I18n.t("view.general.property"), I18n.t("view.general.value")];
 	//CREATE TABLE
 	if(node && node.length > 0){
 		createBasicInfoTable();
 	}
 	function createBasicInfoTable(){
 		var tableParams_basicInfo = $.extend(true, {}, baseTableParams);
-		tableParams_basicInfo.caption = I18n.t("view.show.content_basic_information");
+		tableParams_basicInfo.caption = I18n.t("view.node.show.content_basic_information");
 		tableParams_basicInfo.data = node;
 		tableParams_basicInfo.colNames = colNames_basicInfo;
 		tableParams_basicInfo.colModel = colModelSettings_basicInfo;
@@ -118,7 +118,7 @@ $(function() {
 		{name:"value",index:"value",align:"left", sortable:false, editable:true, edittype:'text'}
 	]
 	
-	var colNames_aspectInfo = ["ID", "属性", "値"];
+	var colNames_aspectInfo = ["ID", I18n.t("view.general.property"), I18n.t("view.general.value")];
 	
 	var tableParams_aspectInfo = $.extend(true, {}, baseTableParams);
 	tableParams_aspectInfo.colNames = colNames_aspectInfo;

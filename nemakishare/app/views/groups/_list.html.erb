@@ -19,7 +19,7 @@
 					<%=t('model.group.groups')%>
 				</th>
 				
-				<th class="nemaki-explore-list-action"><%=t('view.node_list.actions')%></th>
+				<th class="nemaki-explore-list-action"><%=t('view.general.actions')%></th>
 			</tr>
 		</thead>
 		<% if @groups %>
@@ -37,9 +37,9 @@
 				<!--Member(User)-->
 				<td>
 					<%= g.users.size %>
-					<!--Add Member Users Action -->
 					<%= link_to raw("<i class='icon-cog'></i>" + t('view.group.index.manage')),
 					edit_member_users_group_path(g.id, @popup_param),
+					:title => t('view.group.index.manage'),
 					:class => 'thickbox btn btn-small btn-primary'%>
 				</td>
 				<!--Member(Group)-->
@@ -47,6 +47,7 @@
 					<%= g.groups.size %>
 					<%= link_to raw("<i class='icon-cog'></i>" + t('view.group.index.manage')),
 					edit_member_groups_group_path(g.id, @popup_param),
+					:title => t('view.group.index.manage'),
 					:class => 'thickbox btn btn-small btn-primary'%>
 				</td>
 				
@@ -54,12 +55,12 @@
 				<td>
 					<%= link_to raw("<i class='icon-edit'></i>"),
 					edit_group_path(g.id, @popup_param),
-					:title => t('view.node_list.edit'),
+					:title => t('view.node.explore.edit'),
 					:class => 'thickbox btn'%>
 					<%= link_to raw("<i class='icon-remove'></i>"),
 					group_path(g.id),
-					:title => t('view.node_list.delete'),
-					:class => 'btn', :method => :delete, :confirm => t('view.node_list.delete_confirmation')%>
+					:title => t('view.node.explore.delete'),
+					:class => 'btn', :method => :delete, :confirm => t('view.node.explore.delete_confirmation')%>
 				</td>
 			</tr>
 			<% end %>

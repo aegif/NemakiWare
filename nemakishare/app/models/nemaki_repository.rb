@@ -368,7 +368,7 @@ class NemakiRepository
   #
   def get_stream_data(node)
     obj = @repo.object_by_id(node.id)
-    obj.content_stream.get_data[:data]
+    return obj.content_stream.get_data[:data]
   end
 
   #

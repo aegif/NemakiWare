@@ -24,8 +24,6 @@
 class GroupsController < ApplicationController
 
   def index
-    @title = "グループ管理画面"
-    
     @search_form = SearchForm.new
     
     @groups = Array.new
@@ -74,12 +72,12 @@ class GroupsController < ApplicationController
     if @group.valid?
       result = @nemaki_repository.create_group @group
       if is_success?(result)
-        flash[:notice] = "グループが新規作成されました"
+        flash[:notice] = t('message.group.create_success')
       else
-        flash[:error] = "グループの新規作成に失敗しました"
+        flash[:error] = t('message.group.create_failure')
       end
     else
-      flash[:error] = "バリデーションエラー：正しい値を入力してください"
+      flash[:error] = t('message.validation.general')
     end
     redirect_to_parent(groups_path(:search_form => {:query => params[:groups][:id]}))
   end
@@ -94,12 +92,12 @@ class GroupsController < ApplicationController
     if @group.valid?
       result = @nemaki_repository.update_group @group
       if is_success?(result)
-        flash[:notice] = "グループの詳細編集に成功しました"
+        flash[:notice] = t('message.group.update_success')
       else
-        flash[:error] = "グループの詳細編集に失敗しました:" + result['error'].to_json
+        flash[:error] = t('message.group.update_failure') + ":" + result['error'].to_json
       end
     else
-      flash[:error] = "バリデーションエラー：正しい値を入力してください"
+      flash[:error] = t('message.validation.general')
     end
     redirect_to_parent(groups_path(:search_form => {:query => params[:id]}))
   end
@@ -107,9 +105,9 @@ class GroupsController < ApplicationController
   def destroy
     result = @nemaki_repository.delete_group params[:id]
     if is_success?(result)
-      flash[:notice] = "グループの削除に成功しました"
+      flash[:notice] = t('message.group.delete_success')
     else
-      flash[:error] = "グループの削除に失敗しました:" + result['error'].to_json
+      flash[:error] = t('message.group.delete_failure') + ":" + result['error'].to_json
     end
     redirect_to_parent(groups_path(:search_form => {:query => params[:id]}))
   end

@@ -17,10 +17,10 @@
 	<!--Inherited permission-->
 	<div class="row-fluid nemaki_table_title">
 		<div class="span6">
-			<h4><u><%=t('view.permission.inherited_permissions')%></u></h4>
+			<h4><u><%=t('view.node.permission.inherited_permissions')%></u></h4>
 		</div>
 		<div class="span5">
-			<h4><u>&lt;&lt;<%=t('view.permission.inherit_permissions')%></u></h4>
+			<h4><u>&lt;&lt;<%=t('view.node.permission.inherit_permissions')%></u></h4>
 		</div>	
 	</div>
 	
@@ -44,10 +44,10 @@
 	<!--Node specific permission-->
 	<div class="row-fluid nemaki_table_title">
 		<div class="span6">
-			<h4><u><%=t('view.permission.local_permissions')%></u></h4>
+			<h4><u><%=t('view.node.permission.local_permissions')%></u></h4>
 		</div>
 		<div class="span5">
-			<h4><u>&lt;&lt;<%=t('view.permission.search_member')%></u></h4>
+			<h4><u>&lt;&lt;<%=t('view.node.permission.search_member')%></u></h4>
 		</div>	
 	</div>
 
@@ -58,9 +58,9 @@
 				<table id="local_acl_table"></table>
 				<div id = "local_acl_pager"></div>
 				<!--Remove Button-->
-				<a href="#" class="btn btn" onclick="delrow()"><i class='icon-minus'></i> <%=t('view.permission.delete')%></a>
+				<a href="#" class="btn btn" onclick="delrow()"><i class='icon-minus'></i> <%=t('view.node.permission.delete')%></a>
 				<!--Update Button-->
-				<a href="#" class="btn btn btn-primary" onclick="update()"><i class='icon-repeat'></i> <%=t('view.permission.update')%></a>
+				<a href="#" class="btn btn btn-primary" onclick="update()"><i class='icon-repeat'></i> <%=t('view.node.permission.update')%></a>
 				<%= form_tag({:action => 'update_permission'}, {:id => 'permission_form'}) do %>
 					<%= hidden_field_tag 'acl[entries]' %>
 					<%= hidden_field_tag 'acl[inheritance]', @node.acl_inherited %>
@@ -74,10 +74,10 @@
 				<table id="user_table"></table>
 				<div id = "user_paager"></div>
 				<!--Add Button-->
-				<a href="#" class="btn" onclick="addPrincipalToAcl()"><i class='icon-plus'></i> <%=t('view.permission.add_permission')%></a>
+				<a href="#" class="btn" onclick="addPrincipalToAcl()"><i class='icon-plus'></i> <%=t('view.node.permission.add_permission')%></a>
 				<!--Search form-->
 				<%= form_for SearchForm.new, :url => {:controller => :users , :action => :search}, :html => {:id => 'user_search', :method => :get}, :remote => true do |f| %>
-					<%= submit_tag t('view.permission.search'), :class => 'btn' %>
+					<%= submit_tag t('view.general.search'), :class => 'btn' %>
 					<%= f.text_field :query, :class => 'search-query' %>
 				<% end %>
 			</div>

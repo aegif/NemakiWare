@@ -56,7 +56,7 @@ $(function() {
 			colModel : userColModelSettings,
 			rowNum : 4,
 			rowList : [1, 10, 20],
-			caption : "メンバ一覧",
+			caption : I18n.t("view.group.edit_member.member_list"),
 			height : 240,
 			width : 300,
 			cellEdit: false,

@@ -135,12 +135,11 @@ public class ObjectServiceImpl implements ObjectService {
 			return getRenditionStream(objectId, streamId);
 		}
 	}
-
-	// TODO Node Service に移す
+	
+	
 	private ContentStream getContentStreamInternal(String objectId) {
 		Document document = contentService.getDocument(objectId);
 		if (document == null) {
-			// TODO validation
 			return null;
 		}
 		AttachmentNode attachment = contentService.getAttachment(document
@@ -151,7 +150,9 @@ public class ObjectServiceImpl implements ObjectService {
 		String mimeType = attachment.getMimeType();
 		InputStream is = attachment.getInputStream();
 		ContentStream cs = new ContentStreamImpl("", length, mimeType, is);
+		
 		return cs;
+		
 	}
 
 	// TODO Rendition and ContnetStream can be integrated as StreamNode class.

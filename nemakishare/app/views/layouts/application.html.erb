@@ -57,7 +57,7 @@
   						<% end %>
   						<!--Log Out-->
   						<li class="divider"></li>
-  						<li><%= link_to t('view.navigation.logout'), logout_nodes_path, :confirm => 'ログアウトしますか？' %></li>
+  						<li><%= link_to t('view.navigation.logout'), logout_nodes_path, :confirm => t('view.navigation.logout_confirmation') %></li>
   					</ul>
 				</li>
 				<% end %>

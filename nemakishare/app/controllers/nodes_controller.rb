@@ -249,7 +249,7 @@ class NodesController < ApplicationController
   def search
     @search_form = SearchForm.new(params[:search_form])
     if !@search_form.valid?
-      flash[:error] = "検索ワードを入力してください"
+      flash[:error] = t('message.validation.no_query_word')
       redirect_to :action => :explore, :id => "/"
       return
     end
