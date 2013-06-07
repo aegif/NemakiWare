@@ -4,27 +4,27 @@
 		<thead>
 			<tr>
 				<th class="nemaki-explore-list-name">
-					コンテンツ
+					<%=t('view.node_list.contents')%>
 					<!--Folder Action -->
 					<% if !@node.nil? %>
 						<!--Thickbox iframe ignores parameters after TB_iframe-->
-						<%= link_to raw("<i class='icon-plus'></i> 新規ファイル"),
+						<%= link_to raw("<i class='icon-plus'></i> "+ t('view.node_list.new_file')),
 						new_node_path() + 
 						"?parent_id=" + @node.id + "&type=document&TB_iframe=nil&height=600&&width=777",
 						:class => 'thickbox btn btn-small btn-primary'%>
 						
-						<%= link_to raw("<i class='icon-plus'></i> 新規フォルダ"),
+						<%= link_to raw("<i class='icon-plus'></i> " + t('view.node_list.new_folder')),
 						new_node_path() +
 						"?parent_id=" + @node.id + "&type=folder&TB_iframe=nil&height=600&&width=777",
 						:class => 'thickbox btn btn-small btn-primary'%>
 					<% end %>
 				</th>
 				<% if params[:controller] == 'nodes' && params[:action] == 'search' %>
-					<th class="nemaki-explore-list-site">サイト</th>
+					<th class="nemaki-explore-list-site"><%=t('view.node_list.site')%></th>
 				<% end %>
-				<th class="nemaki-explore-list-calendar">更新時刻</th>
-				<th class="nemaki-explore-list-user">更新者</th>
-				<th class="nemaki-explore-list-action">アクション</th>
+				<th class="nemaki-explore-list-calendar"><%=t('view.node_list.modified')%></th>
+				<th class="nemaki-explore-list-user"><%=t('view.node_list.modifier')%></th>
+				<th class="nemaki-explore-list-action"><%=t('view.node_list.actions')%></th>
 			</tr>
 		</thead>
 		<tbody>
@@ -63,28 +63,28 @@
 				<td>
 					<!--SHOW-->
 					<%= link_to raw("<i class='icon-zoom-in'></i>"), node_path(n.id, @popup_param), 
-					:class => 'thickbox btn', :title => '詳細情報', :target => '_parent' %>
+					:class => 'thickbox btn', :title => t('view.node_list.show'), :target => '_parent' %>
 					
 					<!--EDIT-->
 					<% if n.allowable_actions['UpdateProperties'] || 
 						  n.allowable_actions['SetContentStream'] %>
 					<%= link_to raw("<i class='icon-edit'></i>"), edit_node_path(n.id, @popup_param), 
-					:class => 'thickbox btn', :title => '編集更新', :target => '_parent' %>
+					:class => 'thickbox btn', :title => t('view.node_list.edit'), :target => '_parent' %>
 					<% end %>
 					
 					<!--PERMISSION-->
 					<% if n.allowable_actions['ApplyACL'] %>
 					<%= link_to raw("<i class='icon-user'></i>"),
 					edit_permission_node_path(n.id, @popup_param),
-					:class => 'thickbox btn', :title => '権限管理' %>
+					:class => 'thickbox btn', :title => t('view.node_list.permission') %>
 					<% end %>
 					
 					<!--DELETE-->
 					<% if n.allowable_actions['DeleteObject'] %>
 					<%= link_to raw("<i class='icon-trash'></i>"),
 					node_path(n.id),
-					:title => '削除',
-					:class => 'btn', :method => :delete, :confirm => '本当に削除しますか？'%>
+					:title => t('view.node_list.delete'),
+					:class => 'btn', :method => :delete, :confirm => t('view.node_list.delete_confirmation')%>
 					<% end %>
 				</td>
 			</tr>

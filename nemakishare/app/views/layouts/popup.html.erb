@@ -4,6 +4,10 @@
 		<%= csrf_meta_tags %>
 		<%= stylesheet_link_tag "application" %>
 		<%= javascript_include_tag "application" %>
+		<script type="text/javascript">
+  			I18n.defaultLocale = "<%= I18n.default_locale %>";
+  			I18n.locale = "<%= I18n.locale %>";
+		</script>
 		<%= javascript_include_tag "flash_fade.js" %>
 		<!--Common messages for jQuery validator-->
 		<script type="text/javascript">

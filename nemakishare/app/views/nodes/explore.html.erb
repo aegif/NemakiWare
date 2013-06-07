@@ -2,9 +2,9 @@
       <div class="navbar-inner" style="padding-left: 0">
 			<div class="span8" style="padding-left: 0">
 				<h4>
-					<%= link_to raw("<i class='icon-list'></i> サイト"),
+					<%= link_to raw("<i class='icon-list'></i> " + t('view.navigation.site')),
 					sites_path(@popup_param),
-					:class => 'thickbox', :title => 'サイト一覧' %>
+					:class => 'thickbox', :title => t('view.navigation.site_list') %>
 					<%= @site_name %>
 				</h4>
 			</div>
@@ -28,7 +28,7 @@
 	<div class="span3">
 		<div class="navbar navbar-fluid-top">
 			<div class="navbar-inner">
-				<h4>サイト内の更新</h4>
+				<h4><%=t('view.changelog.changes_in_the_site') %></h4>
 			</div>
 			<p></p>
 		</div>
@@ -43,7 +43,7 @@
 		<div class="navbar navbar-fluid-top">
 			<div class="navbar-inner">
 				<div class="span7">
-					<h4>フォルダ: <%= @node.name %></h4>
+					<h4><%=t('view.navigation.folder')%>: <%= @node.name %></h4>
 				</div>
 
 				<!-- Paging navigation-->

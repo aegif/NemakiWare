@@ -1,7 +1,7 @@
 <!--Header-->
-<div class="row-fluid">
+<div class="row-fluid nemaki_popup_header" style="padding-left: 25px;">
 	<h4>
-		　サイト一覧
+		<%=t('view.site.site_list') %>
 	</h4>
 </div>
 
@@ -12,10 +12,10 @@
 	<table>
 		<tr valign="top">
 			<td>
-				<%= submit_tag "＋新規サイト作成", :class => 'btn btn-primary'%>
+				<%= submit_tag "＋" + t('view.site.create_new_site'), :class => 'btn btn-primary'%>
 			</td>
 			<td style="padding-left: 20px;">
-				<%= f.text_field :name, :placeholder => "サイト名を入力してください"%>		
+				<%= f.text_field :name, :placeholder => t('view.site.input_site_name')%>		
 			</td>
 		</tr>
 	</table>
@@ -25,8 +25,8 @@
 		<table class="table" style="background-color:white">
 			<thead>
 			<tr class="nemaki_table_header">
-				<th class="nemaki-sitelist-name">サイト名</th>
-				<th>アクション</th>
+				<th class="nemaki-sitelist-name"><%=t('view.site.site_name')%></th>
+				<th><%=t('view.node_list.actions')%></th>
 			</tr>
 			</thead>
 
@@ -38,28 +38,28 @@
 				<td>
 					<!--SHOW-->
 					<%= link_to raw("<i class='icon-zoom-in'></i>"), node_path(n.id, @popup_param), 
-					:class => 'btn', :title => '詳細' %>
+					:class => 'btn', :title => t('view.node_list.show') %>
 					
 					<!--EDIT-->
 					<% if n.allowable_actions['UpdateProperties'] || 
 						  n.allowable_actions['SetContentStream'] %>
 					<%= link_to raw("<i class='icon-edit'></i>"), edit_node_path(n.id, @popup_param), 
-					:class => 'btn', :title => '編集' %>
+					:class => 'btn', :title => t('view.node_list.edit') %>
 					<% end %>
 					
 					<!--PERMISSION-->
 					<% if n.allowable_actions['ApplyACL'] %>
 					<%= link_to raw("<i class='icon-user'></i>"),
 					edit_permission_node_path(n.id, @popup_param),
-					:class => 'btn', :title => '権限' %>
+					:class => 'btn', :title => t('view.node_list.permission') %>
 					<% end %>
 					
 					<!--DELETE-->
 					<% if n.allowable_actions['DeleteObject'] %>
 					<%= link_to raw("<i class='icon-trash'></i>"),
 					node_path(n.id),
-					:title => '削除',
-					:class => 'btn', :method => :delete, :confirm => '本当に削除しますか？'%>
+					:title => t('view.node_list.delete'),
+					:class => 'btn', :method => :delete, :confirm => t('view.node_list.delete_confirmation')%>
 					<% end %>
 				</td>
 			</tr>

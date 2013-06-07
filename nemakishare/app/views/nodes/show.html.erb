@@ -19,14 +19,14 @@
 			<% if @is_allowed_up %>
 			<div class="btn-group">
 				<% @parent_url = (@parent.id == '/') ? explore_nodes_path : explore_node_path(@parent.id) %>
-	    		<%= link_to raw("<i class='icon-folder-close'></i> 親フォルダ"),
+	    		<%= link_to raw("<i class='icon-folder-close'></i> " + t('view.show.parent_folder')),
 				@parent_url, :class => 'btn btn-primary',  :target => '_parent'%>
 		    </div>
 		    <% end %>
 		    
 			<div class="btn-group">
 				<% if @node.is_document? %>
-				<%= link_to raw("<i class='icon-download-alt'></i> ダウンロード"),
+				<%= link_to raw("<i class='icon-download-alt'></i> " + t('view.show.download')),
 				download_node_path(@parent.id), :class => 'btn btn-primary',  :target => '_parent'%>
 				<% end %>
 			</div>
@@ -36,7 +36,7 @@
 	<div class="row-fluid">
 		<div class="span6">
 			<div class="nemaki_table_title">
-				<h4><u>基本属性</u></h4>
+				<h4><u><%=t('view.show.basic_properties')%></u></h4>
 			</div>
 		
 			<!--jqGrid: Basic Info-->
@@ -53,7 +53,7 @@
 		
 		<div class="span5">
 			<div class="nemaki_table_title">
-				<h4><u>カスタム属性</u></h4>
+				<h4><u><%=t('view.show.custom_properties')%></u></h4>
 			</div>
 			
 			<!--jqGrid: Aspect Info-->

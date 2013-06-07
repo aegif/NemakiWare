@@ -2,4 +2,149 @@
 # See https://github.com/svenfuchs/rails-i18n/tree/master/rails%2Flocale for starting points.
 
 en:
-  hello: "Hello world"
+  model:
+    node:
+      id: "ID"
+      name: "Name"
+      type: "Type"
+      description: "Description"
+      creator: "Creator"
+      created_time: "Created Time"
+      modifier: "Modifier"
+      modified_time: "Modified Time"
+      path: "Path"
+      mimetype: "MIME Type"
+      filesize: "File Size"
+      version: "Version"
+    user:
+      id: "User ID"
+      name: "Display Name"
+      first_name: "First name"
+      last_name: "Last name"
+      email: "Email"
+      password: "Password"
+    group:
+      id: "Group ID"
+      name: "Display Name"
+      users: "Member(User)"
+      groups: "Member(Group)"
+  view:
+    general:
+      update: "Update"
+    navigation:
+      user: "User"
+      user_management: "User management"
+      group_management: "Group management"
+      archive: "Archive"
+      search_engine_management: "Search engine management"
+      logout: "Logout"
+      logout_confirmation: "Do you really want to logout?"
+      site: "Site"
+      site_list: "Site List"
+      folder: "Folder"
+    changelog:
+      changes_in_the_site: "Changes in the site"
+      created: "created"
+      updated: "updated"
+      version-updated: "version updated"
+      security: "changed permissions"
+      deleted: "deleted"
+    node_list:
+      contents: "Contents"
+      new_file: "New File"
+      new_folder: "New Folder"
+      site: "Site"
+      modified_time: "Modified"
+      modifier: "Modifier"
+      actions: "Actions"
+      show: "Detail"
+      edit: "Edit"
+      permission: "Permission"
+      delete: "Delete"
+      delete_confirmation: "Do you really want to delete the content?"
+    show:
+      parent_folder: "Parent"
+      download: "Download"
+      basic_properties: "Basic Properties"
+      custom_properties: "Custom Properties"
+      content_basic_information: "Content Basic Information"
+      version_history: "Version History"
+      property: "Property"
+      value: "Value"
+      file: "File"
+      folder: "Folder"
+    edit:
+      edit_basic_properties: "Edit basic properties"
+      edit_custom_properties: "Edit custom properties"
+      upload_new_version: "Upload a new version"
+      update: "Update"
+      upload: "Upload"
+    permission:
+      inherited_permissions: "Inherited Permissions"
+      inherit_permissions: "Inherit Permissions"
+      local_permissions: "Local Permissions"
+      user_search_results: "User Search Results"
+      search_member: "Search users to be added"
+      search: "Search"
+      delete: "Delete"
+      update: "Update"
+      add_permission: "Add permission"
+      user_and_group_id: "User/Group ID"
+      permission: "Permission"
+    new:
+      upload_new_file: "Upload a new file"
+      create_new_folder: "Create a new folder"
+      name: "Name"
+      create: "Create"
+    search:
+      query_word: "Query word"
+      number_of_results: "Number of results"
+    site:
+      site_list: "Site list"
+      create_new_site: "New site"
+      input_site_name: "Input the new site name"
+      site_name: "Site name"
+    archive:
+      archive: "Archive"
+      name: "Name"
+      deleted_time: "Deleted"
+      delete_user: "Delete User"
+      restore: "Restore"
+    user:
+      index: 
+        user_management: "User Management"
+        new_user: "New User"
+        search_users: "Search users"
+        change_password: "Change password"
+      new:
+        user_info: "User Info"
+        create: "Update"
+      edit:
+        edit_user_info: "Edit user info" 
+      edit_password:
+        edit_password: "Edit password"
+        user_id: "User ID"
+        new_password: "New password"
+        update: "Update"
+    group:
+      index:
+        group_management: "Group Management"
+        search_groups: "Search groups"
+        new_group: "New Group"
+        manage: "Manage"
+      new:
+        group_info: "グループ情報"
+        create: "新規作成"
+      edit:
+        edit_group_info: "Edit group info"
+        update: "Update"
+      edit_member:
+        add_member_list: "Add to member list"
+        search: "Search"
+        delete: "Delete"
+        update: "Update"
+    search_engine:
+      index:
+        search_engine_management: "Search Engine Management"
+        initiaize_solr: "Initialize Solr"
+        reindex_solr: "Reindex Solr"    

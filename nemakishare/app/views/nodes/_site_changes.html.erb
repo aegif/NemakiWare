@@ -6,7 +6,7 @@
 				<% (change.user.blank?) ? @user = 'Unknown User' : @user = change.user %>
 				<%=link_to @name, node_path(change.objectId, @popup_param), :class => 'thickbox' %>
 				<br/>
-				<%= @user %>が<%= l10n_change_type change.change_type %><br/>
+				<%= @user %> <%= l10n_change_type change.change_type %><br/>
 				<%= simple_time(change.change_time.localtime) %>
 			</div>
 			<br/>

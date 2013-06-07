@@ -1,4 +1,4 @@
-<%= render :partial => "layouts/simple_title_bar"%>
+<%=simple_header "<h4>" + t('view.user.index.user_management') + "</h4>"%>
 <%= render :partial => "layouts/flash_display"%>
 
 <!--Body of contents-->
@@ -6,7 +6,7 @@
 	<!--User Search Form-->
 	<%= form_for @search_form, :url => {:controller => :users , :action => :index}, :html => {:id => 'user_search', :method => :get} do |f| %>
 		<%= f.text_field :query, :class => 'search-query' %>
-		<%= submit_tag "ユーザ検索"%>
+		<%= submit_tag t('view.user.index.search_users'), :class => "btn" %>
 	<% end %>
 </div>
 

@@ -704,7 +704,7 @@ class NemakiRepository
     #Save to DB if there was no error
     if !caches.empty?
       caches.each do |c|
-        puts "[ChangeLog Subscription]" + cache.id + ":" + cache.change_type
+        puts "[ChangeLog Subscription]" + c.objectId + ":" + c.change_type
         c.save
       end
     end

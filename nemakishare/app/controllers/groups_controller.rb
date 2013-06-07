@@ -70,7 +70,7 @@ class GroupsController < ApplicationController
   end
 
   def create
-    @group = User.new(params[:group])
+    @group = Group.new(params[:groups])
     if @group.valid?
       result = @nemaki_repository.create_group @group
       if is_success?(result)
@@ -81,7 +81,7 @@ class GroupsController < ApplicationController
     else
       flash[:error] = "バリデーションエラー：正しい値を入力してください"
     end
-    redirect_to_parent(groups_path(:search_form => {:query => params[:group][:id]}))
+    redirect_to_parent(groups_path(:search_form => {:query => params[:groups][:id]}))
   end
   
   def edit

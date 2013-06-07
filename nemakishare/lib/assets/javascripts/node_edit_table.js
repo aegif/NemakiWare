@@ -54,8 +54,8 @@ var baseTableParams = {
 //////////////////////////////////////////
 function buildGridData(nodeJSON, parentJSON, aspectsJSON){
 	//Key MUST be the same as Rails Node classes field name
-	node.push({key:"name", name:"名前", value: nodeJSON.name});
-	node.push({key:"description", name: "説明", value: nodeJSON.description});
+	node.push({key:"name", name:I18n.t("model.node.name"), value: nodeJSON.name});
+	node.push({key:"description", name:I18n.t("model.node.description"), value: nodeJSON.description});
 
 	aspects = aspectsJSON;
 }
@@ -95,14 +95,14 @@ $(function() {
 		{name:"value",index:"value",align:"left", edittype:'text', editable:true, sortable:false}
 	]
 	
-	var colNames_basicInfo = ["ID", "属性", "値"];
+	var colNames_basicInfo = ["ID", I18n.t("view.show.property"), I18n.t("view.show.value")];
 	//CREATE TABLE
 	if(node && node.length > 0){
 		createBasicInfoTable();
 	}
 	function createBasicInfoTable(){
 		var tableParams_basicInfo = $.extend(true, {}, baseTableParams);
-		tableParams_basicInfo.caption = "コンテンツの基本情報";
+		tableParams_basicInfo.caption = I18n.t("view.show.content_basic_information");
 		tableParams_basicInfo.data = node;
 		tableParams_basicInfo.colNames = colNames_basicInfo;
 		tableParams_basicInfo.colModel = colModelSettings_basicInfo;

@@ -25,7 +25,7 @@
 
 <!--HEADER-->
 <div class="row-fluid span11 nemaki_popup_header">
-	<h4>ユーザ情報</h4>
+	<h4><%=t('view.user.new.user_info')%></h4>
 </div>
 
 <!--Contents body-->
@@ -34,49 +34,49 @@
 		<%= form_for :user , :url => {:action => :create}, :html => {:method => :post, :id => 'userForm', :class => 'form-horizontal'} do |f| %>
 			<!--ID-->
 			<div class="control-group">
-				<label class="control-label" for="inputEmail">ユーザID</label>
+				<label class="control-label" for="inputEmail"><%=t('model.user.id')%></label>
 				<div class="controls">
 					<%= f.text_field :id %>
 				</div>
 			</div>
 			<!--Display Name-->
 			<div class="control-group">
-				<label class="control-label" for="inputEmail">表示名</label>
+				<label class="control-label" for="inputEmail"><%=t('model.user.name')%></label>
 				<div class="controls">
 					<%= f.text_field :name %>
 				</div>
 			</div>
 			<!--First Name-->
 			<div class="control-group">
-				<label class="control-label" for="inputEmail">名</label>
+				<label class="control-label" for="inputEmail"><%=t('model.user.first_name')%></label>
 				<div class="controls">
 					<%= f.text_field :first_name %>
 				</div>
 			</div>
 			<!--Last Name-->
 			<div class="control-group">
-				<label class="control-label" for="inputEmail">姓</label>
+				<label class="control-label" for="inputEmail"><%=t('model.user.last_name')%></label>
 				<div class="controls">
 					<%= f.text_field :last_name %>
 				</div>
 			</div>
 			<!--Email-->
 			<div class="control-group">
-				<label class="control-label" for="inputEmail">Eメール</label>
+				<label class="control-label" for="inputEmail"><%=t('model.user.email')%></label>
 				<div class="controls">
 					<%= f.email_field :email %>
 				</div>
 			</div>
 			<!--Password -->
 			<div class="control-group">
-				<label class="control-label" for="inputPassword">パスワード</label>
+				<label class="control-label" for="inputPassword"><%=t('model.user.password')%></label>
 				<div class="controls">
-					<%= f.text_field :password %>
+					<%= f.password_field :password %>
 				</div>
 			</div>
 			<!--Action-->
 			<div class="form-actions nemaki-form-actions">
-				<%= submit_tag "新規作成", :class => 'btn btn-primary btn-large' %>
+				<%= submit_tag t('view.user.new.create'), :class => 'btn btn-primary btn-large' %>
 			</div>
 		<% end %>
 	</div>

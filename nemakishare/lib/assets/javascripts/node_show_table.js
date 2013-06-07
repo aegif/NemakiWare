@@ -19,7 +19,7 @@
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
-
+//alert(I18n.t("model.user.id"));
 var selector_basicInfo = "#basicInfo";
 var selector_versionInfo = "#versionInfo";
 
@@ -56,21 +56,21 @@ var baseTableParams = {
 //Build data for jqGrid from Ruby variable
 //////////////////////////////////////////
 function buildGridData(nodeJSON, parentJSON, versionsJSON, aspectsJSON){
-	node.push({property:"id", value: nodeJSON.id});
-	node.push({property:"名前", value: nodeJSON.name});
-	node.push({property:"種類", value: convertNodeTypeForUser(nodeJSON.type)});
-	node.push({property:"説明", value: nodeJSON.description});
-	node.push({property:"作成者", value: nodeJSON.creator});
-	node.push({property:"作成時刻", value: nodeJSON.created});
-	node.push({property:"変更者", value: nodeJSON.modifier});
-	node.push({property:"変更時刻", value: nodeJSON.modified});
+	node.push({property:I18n.t("model.node.id"), value: nodeJSON.id});
+	node.push({property:I18n.t("model.node.name"), value: nodeJSON.name});
+	node.push({property:I18n.t("model.node.type"), value: convertNodeTypeForUser(nodeJSON.type)});
+	node.push({property:I18n.t("model.node.description"), value: nodeJSON.description});
+	node.push({property:I18n.t("model.node.creator"), value: nodeJSON.creator});
+	node.push({property:I18n.t("model.node.created_time"), value: nodeJSON.created});
+	node.push({property:I18n.t("model.node.modifier"), value: nodeJSON.modifier});
+	node.push({property:I18n.t("model.node.modified_time"), value: nodeJSON.modified});
 	if(nodeJSON.type==="cmis:folder"){
-		node.push({property:"パス", value: nodeJSON.path});
+		node.push({property:I18n.t("model.node.path"), value: nodeJSON.path});
 	}
 	if(nodeJSON.type==="cmis:document"){
-		node.push({property:"パス", value: buildDocumentPath(nodeJSON.name, parentJSON.path)});
-		node.push({property:"MIMEタイプ", value: nodeJSON.mimetype});
-		node.push({property:"ファイルサイズ", value: readableFileSize(nodeJSON.size)});
+		node.push({property:I18n.t("model.node.path"), value: buildDocumentPath(nodeJSON.name, parentJSON.path)});
+		node.push({property:I18n.t("model.node.mimetype"), value: nodeJSON.mimetype});
+		node.push({property:I18n.t("model.node.filesize"), value: readableFileSize(nodeJSON.size)});
 		
 		//Set Versions
 		if(versionsJSON && versionsJSON.length > 0){
@@ -100,14 +100,14 @@ $(function() {
 		{name:"value",index:"value",align:"left", sortable:false}
 	]
 	
-	var colNames_basicInfo = ["属性", "値"];
+	var colNames_basicInfo = [I18n.t("view.show.property"), I18n.t("view.show.value")];
 	//CREATE TABLE
 	if(node && node.length > 0){
 		createBasicInfoTable();
 	}
 	function createBasicInfoTable(){
 		var tableParams_basicInfo = $.extend(true, {}, baseTableParams);
-		tableParams_basicInfo.caption = "コンテンツの基本情報";
+		tableParams_basicInfo.caption = I18n.t("view.show.content_basic_information");
 		tableParams_basicInfo.data = node;
 		tableParams_basicInfo.height = "auto";
 		tableParams_basicInfo.colNames = colNames_basicInfo;
@@ -125,14 +125,14 @@ $(function() {
 		{name:"user",index:"user",align:"left", width:150, sortable:false}
 	]
 	
-	var colNames_versionInfo = ["バージョン", "ID", "更新時", "更新者"];
+	var colNames_versionInfo = [I18n.t("model.node.version"), "ID", I18n.t("model.node.modified_time"), I18n.t("model.node.modifier")];
 	//CREATE TABLE
 	if(versions && versions.length > 0){
 		createVersionInfoTable();
 	}
 	function createVersionInfoTable(){
 		var tableParams_versionInfo = $.extend(true, {}, baseTableParams);
-		tableParams_versionInfo.caption = "バージョン履歴";
+		tableParams_versionInfo.caption = I18n.t("view.show.version_history");
 		tableParams_versionInfo.data = versions;
 		tableParams_versionInfo.height = 70;
 		tableParams_versionInfo.colNames = colNames_versionInfo;
@@ -149,7 +149,7 @@ $(function() {
 		{name:"value",index:"value",align:"left", sortable:false}
 	]
 	
-	var colNames_aspectInfo = ["属性", "値"];
+	var colNames_aspectInfo = [I18n.t("view.show.property"), I18n.t("view.show.value")];
 	
 	var tableParams_aspectInfo = $.extend(true, {}, baseTableParams);
 	tableParams_aspectInfo.colNames = colNames_aspectInfo;
@@ -191,9 +191,9 @@ $(function() {
 ///////////////////////////////////
 function convertNodeTypeForUser(type){
 	if(type==="cmis:document"){
-		return "ファイル(" + type + ")";
+		return I18n.t("view.show.file") + "(" + type + ")";
 	}else if(type==="cmis:folder"){
-		return "フォルダ(" + type + ")";
+		return I18n.t("view.show.folder") + "(" + type + ")";
 	}
 }
 
