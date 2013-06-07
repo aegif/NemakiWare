@@ -58,9 +58,9 @@
 				<table id="local_acl_table"></table>
 				<div id = "local_acl_pager"></div>
 				<!--Remove Button-->
-				<a href="#" class="btn btn" onclick="delrow()"><i class='icon-minus'></i> <%=t('view.node.permission.delete')%></a>
+				<a href="#" class="btn btn" onclick="delrow()"><i class='icon-minus'></i> <%=t('view.general.delete')%></a>
 				<!--Update Button-->
-				<a href="#" class="btn btn btn-primary" onclick="update()"><i class='icon-repeat'></i> <%=t('view.node.permission.update')%></a>
+				<a href="#" class="btn btn btn-primary" onclick="update()"><i class='icon-repeat'></i> <%=t('view.general.update')%></a>
 				<%= form_tag({:action => 'update_permission'}, {:id => 'permission_form'}) do %>
 					<%= hidden_field_tag 'acl[entries]' %>
 					<%= hidden_field_tag 'acl[inheritance]', @node.acl_inherited %>

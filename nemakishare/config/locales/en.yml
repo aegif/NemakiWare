@@ -90,9 +90,6 @@ en:
         local_permissions: "Local Permissions"
         user_search_results: "User Search Results"
         search_member: "Search users to be added"
-        search: "Search"
-        delete: "Delete"
-        update: "Update"
         add_permission: "Add permission"
         user_and_group_id: "User/Group ID"
         permission: "Permission"
@@ -135,7 +132,7 @@ en:
         group_management: "Group Management"
         search_groups: "Search groups"
         new_group: "New Group"
-        manage: "Manage"
+        manage: "Member management"
       new:
         create_new_group: "Create a new group"
       edit:

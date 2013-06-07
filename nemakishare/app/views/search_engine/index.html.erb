@@ -1,13 +1,13 @@
-<%=simple_header "<h4>" + t('view.search_engine.search_engine_management') + "</h4>"%>
+　<%=simple_header "<h4>" + t('view.search_engine.index.search_engine_management') + "</h4>"%>
 <!--Body of contents-->
 <div class="row-fluid">
 	<div style="padding-bottom: 20px;">
 		<h4>See <%=link_to "Solr Admin Console", @url_for_ui, :target => "_blank" %></h4>
 	</div>
 	<div style="padding-bottom: 40px;">
-		<%= link_to t('view.search_engine.initiaize_solr'), @url_for_initialize, :class => 'btn btn-large btn-primary' %>	
+		<%= link_to t('view.search_engine.index.initiaize_solr'), @url_for_initialize, :class => 'btn btn-large btn-primary' %>	
 	</div>
 	<div>
-		<%= link_to t('view.search_engine.reindex_solr'), @url_for_reindex, :class => 'btn btn-large btn-primary' %>	
+		<%= link_to t('view.search_engine.index.reindex_solr'), @url_for_reindex, :class => 'btn btn-large btn-primary' %>	
 	</div>
 </div>

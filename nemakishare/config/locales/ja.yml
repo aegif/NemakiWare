@@ -92,9 +92,6 @@ ja:
         local_permissions: "ローカルで設定された権限"
         user_search_results: "ユーザ検索結果"
         search_member: "追加するユーザの検索"
-        search: "Search"
-        delete: "削除"
-        update: "更新"
         add_permission: "権限を追加"
         user_and_group_id: "ユーザ/グループID"
         permission: "権限"
@@ -122,10 +119,11 @@ ja:
     user:
       index:
         user_management: "ユーザ管理画面"
+        new_user: "新規ユーザ"
         search_users: "ユーザ検索"
         change_password: "パスワード変更"
       new:
-        create_new_user: "Create a new user"
+        create_new_user: "新規ユーザの作成"
       edit:
         edit_user_info: "ユーザ情報の編集"
       edit_password:
@@ -137,18 +135,20 @@ ja:
         group_management: "グループ管理画面"
         search_groups: "グループ検索"
         new_group: "新規グループ"
-        manage: "管理"
+        manage: "メンバ管理"
       new:
         create_new_group: "新規グループの作成"
       edit:
         edit_group_info: "グループ情報の編集"
       edit_member:
         member_list: "メンバ一覧"
-        user_and_group_search_results: "User/Group Search Results"
+        user_and_group_search_results: "ユーザ/グループ検索結果"
         add_member_list: "メンバ一覧に追加"
     search_engine:
       index:
         search_engine_management: "検索エンジン管理画面"
+        initiaize_solr: "Solr初期化"
+        reindex_solr: "Solrインデクス再作成"
   message:
     validation:
       general: "バリデーションエラー：正しい値を入力してください"
