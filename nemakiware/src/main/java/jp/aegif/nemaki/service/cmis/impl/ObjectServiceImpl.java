@@ -21,6 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.service.cmis.impl;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigInteger;
 import java.util.ArrayList;
@@ -149,9 +150,7 @@ public class ObjectServiceImpl implements ObjectService {
 		BigInteger length = BigInteger.valueOf(attachment.getLength());
 		String mimeType = attachment.getMimeType();
 		InputStream is = attachment.getInputStream();
-
 		ContentStream cs = new ContentStreamImpl("", length, mimeType, is);
-
 		return cs;
 	}
 

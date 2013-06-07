@@ -414,11 +414,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		
 		AttachmentInputStream ais = new AttachmentInputStream(ATTACHMENT_NAME, cs.getStream(), cs.getMimeType(),cs.getLength());
 		connector.createAttachment(ca.getId(), ca.getRevision(), ais);
-		try {
-			ais.close();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
 		return ca.getId();
 	}
 	
@@ -445,12 +440,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 			AttachmentInputStream ais = connector.getAttachment(attachmentId, ATTACHMENT_NAME);
 			an.setInputStream(ais);
-			try {
-				ais.close();
-			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
 			return an;
 		}
 	}
@@ -636,12 +625,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		CouchAttachmentNode restored = connector.get(CouchAttachmentNode.class, can.getId());
 		restored.setType(NodeType.ATTACHMENT.value());
 		connector.update(restored);
-		try {
-			is.close();
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
 	}
 	
 	/**
