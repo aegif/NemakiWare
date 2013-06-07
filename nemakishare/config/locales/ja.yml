@@ -48,7 +48,8 @@ ja:
       logout_confirmation: "ログアウトしますか？"
       login: "ログイン"
       site: "サイト"  
-      site_list: "サイト一覧"  
+      site_list: "サイト一覧" 
+      repository_root: "Repository Root" 
       folder: "フォルダ"  
     node:
       explore:

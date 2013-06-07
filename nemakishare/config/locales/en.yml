@@ -48,6 +48,7 @@ en:
       login: "Log in"
       site: "Site"
       site_list: "Site List"
+      repository_root: "Repository Root"
       folder: "Folder"
     node:
       explore:

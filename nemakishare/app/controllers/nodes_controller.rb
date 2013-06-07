@@ -212,9 +212,9 @@ class NodesController < ApplicationController
       
       #Set the site name to which the node belongs
       if @node.is_root?
-        @site_name = "Repository Root"
+        @site_name = t('view.navigation.repository_root')
       elsif @node.is_site_root?
-        @site_name = "サイト一覧"
+        @site_name = t('view.navigation.site_list')
       else
         @site_name = @nemaki_repository.get_site_name(@node)
         if @site_name.nil?
