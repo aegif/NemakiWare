@@ -561,7 +561,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	/**
 	 * 
 	 */
-	//TODO 具体的なロジックはなるべくcontentServiceに移す
 	@Override
 	public void createArchive(Archive archive, Boolean deletedWithParent){
 		CouchNodeBase cnb = connector.get(CouchNodeBase.class, archive.getOriginalId());
