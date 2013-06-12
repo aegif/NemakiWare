@@ -38,7 +38,7 @@ Installation
 ------
 * Clone the repository
 ```sh
-$ git clone git@github.com:NemakiWare/NemakiWare.git
+$ git clone https://github.com/NemakiWare/NemakiWare.git
 ```
 You get the folder `<NemakiWare_Home>` in the location you cloned, which includes three subfolders nemakiware, nemakisolr, nemakishare.
 
