@@ -74,6 +74,7 @@ import org.apache.chemistry.opencmis.commons.server.ObjectInfoHandler;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.springframework.util.CollectionUtils;
 
 public class ObjectServiceImpl implements ObjectService {
 
@@ -559,7 +560,7 @@ public class ObjectServiceImpl implements ObjectService {
 					allVersions, false);
 		} else if (content.isFolder()) {
 			List<Content> children = contentService.getChildren(objectId);
-			if (children == null || children.isEmpty()) {
+			if (!CollectionUtils.isEmpty(children)) {
 				exceptionService
 						.constraint(objectId,
 								"deleteObject method is invoked on a folder containing objects.");
