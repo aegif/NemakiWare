@@ -26,7 +26,7 @@ You can relax and enjoy your happy enterprise time as you are lying on the couch
 
 Prerequisite for installation
 ------
-* Java 1.6, Ruby 1.9.3p362, Rails 3.2.11, sqlite 3.6.16+, python2.7.2
+* Java 1.6, Ruby 1.9.3+, Rails 3.2.11+, sqlite 3.7.x, python2.7.2
   * Server and Solr is written in Java, and the client in RoR.
   * Python is needed only for setup data importing.
 * Platform: OSX 10.8.3 or CentOS 6 (Although Windows is not tested, NemakiWare is basically platform-agnostic).
