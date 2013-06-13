@@ -329,7 +329,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	private PropertiesImpl compileRootFolderProperties(Folder folder,
 			PropertiesImpl properties, String typeId, Set<String> filter) {
 		typeId = TypeManager.FOLDER_TYPE_ID;
-		setCmisBasePropertiesWithoutParentId(properties, typeId, filter, folder);
+		setCmisBaseProperties(properties, typeId, filter, folder);
 		// Add parentId property without value
 		PropertyIdImpl parentId = new PropertyIdImpl();
 		parentId.setId(PropertyIds.PARENT_ID);
@@ -345,6 +345,8 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			PropertiesImpl properties, String typeId, Set<String> filter) {
 		typeId = TypeManager.FOLDER_TYPE_ID;
 		setCmisBaseProperties(properties, typeId, filter, folder);
+		addPropertyBase(properties, typeId, filter, PropertyIds.PARENT_ID,
+				folder.getParentId());
 		setCmisFolderProperties(properties, typeId, filter, folder);
 
 		return properties;
@@ -468,16 +470,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		return true;
 	}
 
-	private void setCmisBaseProperties(PropertiesImpl properties,
-			String typeId, Set<String> filter, Content content) {
-		setCmisBasePropertiesWithoutParentId(properties, typeId, filter,
-				content);
-		addPropertyBase(properties, typeId, filter, PropertyIds.PARENT_ID,
-				content.getParentId());
-
-	}
-
-	private void setCmisBasePropertiesWithoutParentId(
+	private void setCmisBaseProperties(
 			PropertiesImpl properties, String typeId, Set<String> filter,
 			Content content) {
 		addPropertyBase(properties, typeId, filter, PropertyIds.NAME,
