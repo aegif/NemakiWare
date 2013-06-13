@@ -53,15 +53,20 @@ public class AuthenticationFilter implements Filter {
 	}
 
 	public static UserInfo getUserInfo(HttpServletRequest httpRequest){
-		String auth = httpRequest.getHeader("Authorization");
-		String decoded = decodeAuthHeader(auth);
+//		String auth = httpRequest.getHeader("Authorization");
+//		String decoded = decodeAuthHeader(auth);
+//
+//		int pos = decoded.indexOf(":");
+//		String username = decoded.substring(0, pos);
+//		String password = decoded.substring(pos + 1);
+//
+//		UserInfo user = new UserInfo(username, password);
+//
+//		return user;
+		return (UserInfo)httpRequest.getSession().getAttribute("USER_INFO");
+		
+		
 
-		int pos = decoded.indexOf(":");
-		String username = decoded.substring(0, pos);
-		String password = decoded.substring(pos + 1);
-
-		UserInfo user = new UserInfo(username, password);
-		return user;
 	}
 	
 	@Override
@@ -74,7 +79,8 @@ public class AuthenticationFilter implements Filter {
 
 		if (session.getAttribute("USER_INFO") == null) {
 			String auth = hreq.getHeader("Authorization");
-			if (auth == null) {
+			
+			if (auth == null) {			
 				requireAuth(hres);
 				return;
 			} else {
