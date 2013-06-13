@@ -1,0 +1,7 @@
+- For {ActiveCMIS::Rendition#get_file Rendition#get_file}:
+  * filename should be optional, a temporary file should be created (e.g. in /tmp) if no filename is given
+- For {ActiveCMIS::Type::ClassMethods#attributes Type::ClassMethods#attributes}: inherited parameter is misleading (+ default is wrong, some other code depends on it being true by default if it would work)
+- improve use of correct Exceptions:
+  * don't throw RuntimeError anymore (except perhaps where the library code is the only code that could cause the exception)
+  * try to use correct exceptions when receiving errors from server (may need some wrapper with repository specific code)
+- improve support for queries (i.e. allow interface such as the with_ATTR_NAME way of ActiveDCTM, allow select to return only a few attributes, ...)

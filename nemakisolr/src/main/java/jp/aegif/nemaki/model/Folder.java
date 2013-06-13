@@ -17,7 +17,7 @@
  * If not, see <http://www.gnu.org/licenses/>.
  * 
  * Contributors:
- *     linzhixing - initial API and implementation
+ *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
 package jp.aegif.nemaki.model;
 
@@ -27,8 +27,8 @@ import java.util.Map;
 
 import org.codehaus.jackson.annotate.JsonIgnoreProperties;
 
+@JsonIgnoreProperties(ignoreUnknown=true)
 public class Folder extends Content{
-
 	private static final long serialVersionUID = 6163910273366541497L;
 	public static final String TYPE = "folder";
 

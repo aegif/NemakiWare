@@ -17,7 +17,7 @@
  * If not, see <http://www.gnu.org/licenses/>.
  * 
  * Contributors:
- *     linzhixing - initial API and implementation
+ *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
 
 //////////////////////////////////////////////////////////////////
@@ -28,7 +28,6 @@
  *@tableName: name of the destination table 
  */
 function addSearchResult(tableName){
-	//ユーザjqGrid上で選択済みのユーザを取得
 	selectedIds = $("#search_table").getGridParam('selarrrow');
 	for(i=0; i < selectedIds.length; i++){
 		row = $("#search_table").getRowData(selectedIds[i]);
@@ -108,7 +107,7 @@ $(function() {
 			colModel : userColModelSettings,
 			rowNum : 4,
 			rowList : [1, 10, 20],
-			caption : "ユーザ/グループ検索結果",
+			caption : I18n.t("view.group.edit_member.user_and_group_search_results"),
 			height : 60,
 			width : 300,
 			cellEdit: false,

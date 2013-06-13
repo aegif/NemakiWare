@@ -4,16 +4,16 @@
 		<thead>
 			<tr>
 				<th>
-					名前
+					<%=t('model.node.name')%>
 				</th>
 				<th>
-					削除時刻
+					<%=t('view.archive.deleted_time')%>
 				</th>
 				<th>
-					削除したユーザ
+					<%=t('view.archive.delete_user')%>
 				</th>
 				<th class="nemaki-explore-list-action">
-					アクション
+					<%=t('view.general.actions')%>
 				</th>
 			</tr>
 		</thead>
@@ -36,7 +36,7 @@
 				</td>
 				<!--Action-->
 				<td>
-					<%=link_to 'ゴミ箱から戻す', restore_archive_path(a.id),:class => 'btn btn-primary', :method => :put%>
+					<%=link_to t('view.archive.restore'), restore_archive_path(a.id),:class => 'btn btn-primary', :method => :put%>
 				</td>
 			</tr>
 			<% end %>

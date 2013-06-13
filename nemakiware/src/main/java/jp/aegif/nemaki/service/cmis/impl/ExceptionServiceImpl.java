@@ -13,10 +13,11 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  * 
- * You should have received a copy of the GNU General Public Licensealong with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU General Public Licensealong with NemakiWare. 
+ * If not, see <http://www.gnu.org/licenses/>.
  * 
  * Contributors:
- *     linzhixing - initial API and implementation
+ *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
 package jp.aegif.nemaki.service.cmis.impl;
 

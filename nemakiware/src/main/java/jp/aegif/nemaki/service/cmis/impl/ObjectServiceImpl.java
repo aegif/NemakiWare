@@ -17,10 +17,11 @@
  * If not, see <http://www.gnu.org/licenses/>.
  * 
  * Contributors:
- *     linzhixing - initial API and implementation
+ *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
 package jp.aegif.nemaki.service.cmis.impl;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigInteger;
 import java.util.ArrayList;
@@ -73,6 +74,7 @@ import org.apache.chemistry.opencmis.commons.server.ObjectInfoHandler;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.springframework.util.CollectionUtils;
 
 public class ObjectServiceImpl implements ObjectService {
 
@@ -134,12 +136,11 @@ public class ObjectServiceImpl implements ObjectService {
 			return getRenditionStream(objectId, streamId);
 		}
 	}
-
-	// TODO Node Service に移す
+	
+	
 	private ContentStream getContentStreamInternal(String objectId) {
 		Document document = contentService.getDocument(objectId);
 		if (document == null) {
-			// TODO validation
 			return null;
 		}
 		AttachmentNode attachment = contentService.getAttachment(document
@@ -149,10 +150,10 @@ public class ObjectServiceImpl implements ObjectService {
 		BigInteger length = BigInteger.valueOf(attachment.getLength());
 		String mimeType = attachment.getMimeType();
 		InputStream is = attachment.getInputStream();
-
 		ContentStream cs = new ContentStreamImpl("", length, mimeType, is);
-
+		
 		return cs;
+		
 	}
 
 	// TODO Rendition and ContnetStream can be integrated as StreamNode class.
@@ -559,7 +560,7 @@ public class ObjectServiceImpl implements ObjectService {
 					allVersions, false);
 		} else if (content.isFolder()) {
 			List<Content> children = contentService.getChildren(objectId);
-			if (children == null || children.isEmpty()) {
+			if (!CollectionUtils.isEmpty(children)) {
 				exceptionService
 						.constraint(objectId,
 								"deleteObject method is invoked on a folder containing objects.");

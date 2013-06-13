@@ -18,7 +18,7 @@
 
 <!--HEADER-->
 <div class="row-fluid span11 nemaki_popup_header">
-	<h4>グループ情報</h4>
+	<h4><%=t('view.group.new.create_new_group')%></h4>
 </div>
 
 <!--Contents body-->
@@ -27,14 +27,14 @@
 		<%= form_for :groups , :url => {:action => :create}, :html => {:method => :post, :id => 'userForm', :class => 'form-horizontal'} do |f| %>
 			<!--ID-->
 			<div class="control-group">
-				<label class="control-label" for="inputEmail">グループID</label>
+				<label class="control-label" for="inputEmail"><%=t('model.group.id')%></label>
 				<div class="controls">
 					<%= f.text_field :id %>
 				</div>
 			</div>
 			<!--Display Name-->
 			<div class="control-group">
-				<label class="control-label" for="inputEmail">表示名</label>
+				<label class="control-label" for="inputEmail"><%=t('model.group.name')%></label>
 				<div class="controls">
 					<%= f.text_field :name %>
 				</div>
@@ -42,7 +42,7 @@
 			
 			<!--Action-->
 			<div class="form-actions nemaki-form-actions">
-				<%= submit_tag "新規作成", :class => 'btn btn-primary btn-large' %>
+				<%= submit_tag t('view.general.create'), :class => 'btn btn-primary btn-large' %>
 			</div>
 		<% end %>
 	</div>

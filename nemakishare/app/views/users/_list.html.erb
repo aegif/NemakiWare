@@ -4,25 +4,25 @@
 		<thead>
 			<tr>
 				<th>
-					ユーザID
+					<%=t('model.user.id')%>
 					<!--Create Action -->
-					<%= link_to raw("<i class='icon-plus'></i> 新規ユーザ"),
+					<%= link_to raw("<i class='icon-plus'></i> " + t('view.user.index.new_user')),
 					new_user_path(@popup_param),
 					:class => 'thickbox btn btn-small btn-primary'%>
 				</th>
 				<th>
-					表示名
+					<%=t('model.user.name')%>
 				</th>
 				<th>
-					名
+					<%=t('model.user.first_name')%>
 				</th>
 				<th>
-					姓
+					<%=t('model.user.last_name')%>
 				</th>
 				<th>
-					Eメール
+					<%=t('model.user.email')%>
 				</th>
-				<th class="nemaki-explore-list-action">アクション</th>
+				<th class="nemaki-explore-list-action"><%=t('view.general.actions')%></th>
 			</tr>
 		</thead>
 		<tbody>
@@ -52,16 +52,16 @@
 				<td>
 					<%= link_to raw("<i class='icon-edit'></i>"),
 					edit_user_path(u.id, @popup_param),
-					:title => '詳細編集',
+					:title => t('view.node.explore.edit'),
 					:class => 'thickbox btn'%>
 					<%= link_to raw("<i class='icon-cog'></i>"),
 					edit_password_user_path(u.id, @popup_param),
-					:title => 'パスワード変更',
+					:title => t('view.user.index.change_password'),
 					:class => 'thickbox btn'%>
 					<%= link_to raw("<i class='icon-remove'></i>"),
 					user_path(u.id),
-					:title => '削除',
-					:class => 'btn', :method => :delete, :confirm => '本当に削除しますか？'%>
+					:title => t('view.node.explore.delete'),
+					:class => 'btn', :method => :delete, :confirm => t('view.node.explore.delete_confirmation')%>
 				</td>
 			</tr>
 			<% end %>

@@ -19,13 +19,11 @@
 # If not, see <http://www.gnu.org/licenses/>.
 # 
 # Contributors:
-#     linzhixing - initial API and implementation
+#     linzhixing(https://github.com/linzhixing) - initial API and implementation
 # ******************************************************************************
 class UsersController < ApplicationController
 
   def index
-    @title = "ユーザ管理画面"
-    
     @search_form = SearchForm.new
     
     @users = Array.new
@@ -89,12 +87,12 @@ class UsersController < ApplicationController
     if @user.valid?
       result = @nemaki_repository.create_user @user
       if is_success?(result)
-        flash[:notice] = "ユーザが新規作成されました"
+        flash[:notice] = t('message.user.create_success')
       else
-        flash[:error] = "ユーザの新規作成に失敗しました"
+        flash[:error] = t('message.user.create_failure')
       end
     else
-      flash[:error] = "バリデーションエラー：正しい値を入力してください"  
+      flash[:error] = t('message.validation.general')  
     end
     redirect_to_parent(users_path(:search_form => {:query => params[:user][:id]}))
   end
@@ -109,12 +107,12 @@ class UsersController < ApplicationController
     if @user.valid?
       result = @nemaki_repository.update_user @user
       if is_success?(result)
-        flash[:notice] = "ユーザ情報が更新されました"
+        flash[:notice] = t('message.user.update_success')
       else
-        flash[:error] = "ユーザ情報の更新に失敗しました"
+        flash[:error] = t('message.user.update_failure')
       end
     else
-      flash[:error] = "バリデーションエラー：正しい値を入力してください"  
+      flash[:error] = t('message.validation.general')  
     end
     
     redirect_to_parent(users_path(:search_form => {:query => params[:id]}))
@@ -125,12 +123,12 @@ class UsersController < ApplicationController
     if @user.valid?
       result = @nemaki_repository.update_user_password @user
       if is_success?(result)
-        flash[:notice] = "ユーザのパスワードが更新されました"
+        flash[:notice] = t('message.user.update_password_success')
       else
-        flash[:error] = "パスワードの更新に失敗しました"
+        flash[:error] = t('message.user.update_password_failure')
       end
     else
-      flash[:notice] = "バリデーションエラー：正しい値を入力してください"  
+      flash[:notice] = t('message.validation.general')  
     end
     redirect_to_parent(users_path(:search_form => {:query => params[:id]}))
   end

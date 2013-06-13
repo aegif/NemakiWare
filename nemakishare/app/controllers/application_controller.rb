@@ -19,7 +19,7 @@
 # If not, see <http://www.gnu.org/licenses/>.
 # 
 # Contributors:
-#     linzhixing - initial API and implementation
+#     linzhixing(https://github.com/linzhixing) - initial API and implementation
 # ******************************************************************************
 require 'rubygems'
 require 'active_cmis'
@@ -27,7 +27,7 @@ require 'active_cmis'
 class ApplicationController < ActionController::Base
   protect_from_forgery
   
-  before_filter :check_authentication, :set_popup_param
+  before_filter :check_authentication, :set_popup_param, :set_locale
   
   def check_authentication
     if session[:nemaki_auth_info] != nil
@@ -56,4 +56,14 @@ class ApplicationController < ActionController::Base
   def redirect_to_parent(path)
     render text: "<html><body><script type='text/javascript' charset='utf-8'>window.parent.document.location.href = '" + path+ "';</script></body></html>", content_type: :html
   end
+  
+  def set_locale
+    I18n.locale = extract_locale_from_accept_language_header
+  end
+  
+  private
+  def extract_locale_from_accept_language_header
+    request.env['HTTP_ACCEPT_LANGUAGE'].scan(/^[a-z]{2}/).first
+  end
+
 end

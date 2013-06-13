@@ -17,7 +17,7 @@
  * If not, see <http://www.gnu.org/licenses/>.
  * 
  * Contributors:
- *     linzhixing - initial API and implementation
+ *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
 package jp.aegif.nemaki.query.solr;
 
@@ -56,12 +56,6 @@ import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
 
-/**
- * QueryProcessor class for Solr
- * 
- * @author linzhixing
- * 
- */
 public class SolrQueryProcessor implements QueryProcessor {
 
 	private ContentService contentService;

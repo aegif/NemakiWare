@@ -17,7 +17,7 @@
  * If not, see <http://www.gnu.org/licenses/>.
  * 
  * Contributors:
- *     linzhixing - initial API and implementation
+ *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
 package jp.aegif.nemaki.util.impl;
 
@@ -38,8 +38,6 @@ import jp.aegif.nemaki.util.PropertyManager;
 import org.apache.commons.lang3.StringUtils;
 
 import ucar.unidata.util.StringUtil;
-
-
 
 public class PropertyManagerImpl implements PropertyManager{
 

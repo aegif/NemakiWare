@@ -17,7 +17,7 @@
 <% end %>
 
 <div class="row-fluid span11 nemaki_popup_header">
-	<h4>グループ情報の編集</h4>
+	<h4><%=t('view.group.edit.edit_group_info')%></h4>
 </div>
 
 <div class="nemaki_contents_body">
@@ -25,14 +25,14 @@
 <%= form_for :group ,:url => {:action => :update}, :html => {:method => :put, :id => 'groupForm', :class => 'form-horizontal'} do |f| %>
 	<!--ID-->
 	<div class="control-group">
-		<label class="control-label" for="inputEmail">ID</label>
+		<label class="control-label" for="inputEmail"><%=t('model.group.id')%></label>
 		<div class="controls">
 			<%= f.text_field :id %>
 		</div>
 	</div>
 	<!--Name-->
 	<div class="control-group">
-		<label class="control-label" for="inputEmail">Name</label>
+		<label class="control-label" for="inputEmail"><%=t('model.group.name')%></label>
 		<div class="controls">
 			<%= f.text_field :name %>
 		</div>
@@ -40,7 +40,7 @@
 	
 	<!--Action-->
 	<div class="form-actions nemaki-form-actions">
-		<%= submit_tag "更新", :class => 'btn btn-primary btn-large' %>
+		<%= submit_tag t('view.general.update'), :class => 'btn btn-primary btn-large' %>
 	</div>
 <% end %>
 </div>

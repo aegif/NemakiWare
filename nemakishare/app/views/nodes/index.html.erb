@@ -1,11 +1,21 @@
-<%= form_for User.new, :url => {:action => :authenticate} do |f| %>
-	<div>
-		<%= f.label :id %>
-		<%= f.text_field :id %>
+<div style="padding-top: 50px;">
+
+<%= form_for User.new, :url => {:action => :authenticate}, :html => {:class => 'form-horizontal'} do |f| %>
+	<div class="control-group">
+		<label class="control-label" for="inputEmail"><%=t('model.user.id')%></label>
+		<div class="controls">
+			<%= f.text_field :id %>
+		</div>
 	</div>
-	<div>
-		<%= f.label :password %>
-		<%= f.password_field :password %>
+	<div class="control-group">
+		<label class="control-label" for="inputEmail"><%=t('model.user.password')%></label>
+		<div class="controls">
+			<%= f.password_field :password %>
+		</div>
 	</div>
-	<%= submit_tag 'ログイン' %>
+	<div class="form-actions nemaki-form-actions">
+		<%= submit_tag t('view.navigation.login'), :class => "btn btn-primary" %>
+	</div>
 <% end %>
+
+</div>

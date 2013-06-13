@@ -17,7 +17,7 @@
  * If not, see <http://www.gnu.org/licenses/>.
  * 
  * Contributors:
- *     linzhixing - initial API and implementation
+ *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
 package jp.aegif.nemaki.service.node.impl;
 
@@ -1210,7 +1210,7 @@ public class ContentServiceImpl implements ContentService {
 			return;
 		}
 		
-		// リストア先が存在しているかのチェックは、ここで行う。Folderでの再帰リストア含め、リストアは必ずここを通る。
+		// Check whether the destination does still extist.
 		if (!restorationTargetExists(archive)) {
 			log.error("The destination of the restoration doesn't exist");
 			return;

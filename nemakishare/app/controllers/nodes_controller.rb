@@ -19,7 +19,7 @@
 # If not, see <http://www.gnu.org/licenses/>.
 # 
 # Contributors:
-#     linzhixing - initial API and implementation
+#     linzhixing(https://github.com/linzhixing) - initial API and implementation
 # ******************************************************************************
 class NodesController < ApplicationController
   
@@ -212,9 +212,9 @@ class NodesController < ApplicationController
       
       #Set the site name to which the node belongs
       if @node.is_root?
-        @site_name = "Repository Root"
+        @site_name = t('view.navigation.repository_root')
       elsif @node.is_site_root?
-        @site_name = "サイト一覧"
+        @site_name = t('view.navigation.site_list')
       else
         @site_name = @nemaki_repository.get_site_name(@node)
         if @site_name.nil?
@@ -249,7 +249,7 @@ class NodesController < ApplicationController
   def search
     @search_form = SearchForm.new(params[:search_form])
     if !@search_form.valid?
-      flash[:error] = "検索ワードを入力してください"
+      flash[:error] = t('message.validation.no_query_word')
       redirect_to :action => :explore, :id => "/"
       return
     end

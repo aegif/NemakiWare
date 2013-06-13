@@ -19,7 +19,7 @@
 # If not, see <http://www.gnu.org/licenses/>.
 # 
 # Contributors:
-#     linzhixing - initial API and implementation
+#     linzhixing(https://github.com/linzhixing) - initial API and implementation
 # ******************************************************************************
 class ChangeEvent < ActiveRecord::Base
   attr_accessible :base_type_id, :change_time, :change_type, :first_version, :name, :objectId, :object_type_id, :site, :user, :version_series

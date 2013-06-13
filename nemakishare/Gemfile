@@ -29,6 +29,8 @@ gem 'rest-client'
 
 gem 'active_cmis', '0.3.2'
 
+gem "i18n-js"
+
 gem "twitter-bootstrap-rails"
 gem "therubyracer"
 gem "less-rails"

@@ -1,22 +1,13 @@
-<%= render :partial => "layouts/simple_title_bar"%>
-
-<!--Flash message fadeOut display -->
-<% [:notice, :error].each do |key| %>
-	<% if flash[key] %>
-		<div class="<%= key %>" id="flash">
-   			 <%= flash[key] %>
-   		</div>
-   	<% end %>
-<% end %>
+<%=simple_header "<h4>" + t('view.group.index.group_management') + "</h4>"%>
+<%= render :partial => "layouts/flash_display"%>
 
 <!--Body of contents-->
 <div class="row-fluid">
 	<!--User Search Form-->
 	<%= form_for @search_form, :url => {:controller => :groups , :action => :index}, :html => {:id => 'group_search', :method => :get} do |f| %>
 		<%= f.text_field :query, :class => 'search-query' %>
-		<%= submit_tag "グループ検索"%>
+		<%= submit_tag t('view.group.index.search_groups'), :class => "btn" %>
 	<% end %>
-	
 </div>
 
 <!--Body of the list-->

@@ -3,23 +3,23 @@
 		<thead>
 			<tr>
 				<th>
-					グループID
+					<%=t('model.group.id')%>
 					<!--Create Action-->
-					<%= link_to raw("<i class='icon-plus'></i> 新規グループ"),
+					<%= link_to raw("<i class='icon-plus'></i> " + t('view.group.index.new_group')),
 					new_group_path(@popup_param),
 					:class => 'thickbox btn btn-small btn-primary'%>
 				</th>
 				<th>
-					表示名
+					<%=t('model.group.name')%>
 				</th>
 				<th>
-					メンバ(ユーザ)
+					<%=t('model.group.users')%>
 				</th>
 				<th>
-					メンバ(グループ)
+					<%=t('model.group.groups')%>
 				</th>
 				
-				<th class="nemaki-explore-list-action">アクション</th>
+				<th class="nemaki-explore-list-action"><%=t('view.general.actions')%></th>
 			</tr>
 		</thead>
 		<% if @groups %>
@@ -37,16 +37,17 @@
 				<!--Member(User)-->
 				<td>
 					<%= g.users.size %>
-					<!--Add Member Users Action -->
-					<%= link_to raw("<i class='icon-cog'></i>管理"),
+					<%= link_to raw("<i class='icon-cog'></i>" + t('view.group.index.manage')),
 					edit_member_users_group_path(g.id, @popup_param),
+					:title => t('view.group.index.manage'),
 					:class => 'thickbox btn btn-small btn-primary'%>
 				</td>
 				<!--Member(Group)-->
 				<td>
 					<%= g.groups.size %>
-					<%= link_to raw("<i class='icon-cog'></i>管理"),
+					<%= link_to raw("<i class='icon-cog'></i>" + t('view.group.index.manage')),
 					edit_member_groups_group_path(g.id, @popup_param),
+					:title => t('view.group.index.manage'),
 					:class => 'thickbox btn btn-small btn-primary'%>
 				</td>
 				
@@ -54,12 +55,12 @@
 				<td>
 					<%= link_to raw("<i class='icon-edit'></i>"),
 					edit_group_path(g.id, @popup_param),
-					:title => '詳細編集',
+					:title => t('view.node.explore.edit'),
 					:class => 'thickbox btn'%>
 					<%= link_to raw("<i class='icon-remove'></i>"),
 					group_path(g.id),
-					:title => '削除',
-					:class => 'btn', :method => :delete, :confirm => '本当に削除しますか？'%>
+					:title => t('view.node.explore.delete'),
+					:class => 'btn', :method => :delete, :confirm => t('view.node.explore.delete_confirmation')%>
 				</td>
 			</tr>
 			<% end %>

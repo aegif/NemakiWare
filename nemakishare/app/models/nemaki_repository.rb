@@ -19,7 +19,7 @@
 # If not, see <http://www.gnu.org/licenses/>.
 # 
 # Contributors:
-#     linzhixing - initial API and implementation
+#     linzhixing(https://github.com/linzhixing) - initial API and implementation
 # ******************************************************************************
 require 'json'
 require 'nokogiri'
@@ -138,7 +138,8 @@ class NemakiRepository
       end
       n = Node.new(attr)
       if item.nil?
-        puts "nil!"
+        #TODO logging
+        next
       end
 
       n.allowable_actions = item.allowable_actions
@@ -367,7 +368,7 @@ class NemakiRepository
   #
   def get_stream_data(node)
     obj = @repo.object_by_id(node.id)
-    obj.content_stream.get_data[:data]
+    return obj.content_stream.get_data[:data]
   end
 
   #
@@ -624,9 +625,8 @@ class NemakiRepository
     params = {'includeAcl' => true, 'includeProperties' => true}
     
     if !force && !latest_token.nil?
-      puts @repo.latest_changelog_token
         if @repo.latest_changelog_token == latest_token
-          puts 'do nothing because there is no change'
+          #TODO logging: puts 'do nothing because there is no change'
           return
         else
           params['changeLogToken'] = latest_token.to_i  
@@ -685,9 +685,6 @@ class NemakiRepository
       
       if object.attribute("cmis:baseTypeId") == "cmis:document"
           cache.version_series = object.attribute("cmis:versionSeriesId")
-          
-          puts cache.change_type
-          
         if cache.change_type == 'created'
           if !check_first_version(object) 
             cache.change_type = 'version-updated'
@@ -707,6 +704,7 @@ class NemakiRepository
     #Save to DB if there was no error
     if !caches.empty?
       caches.each do |c|
+        puts "[ChangeLog Subscription]" + c.objectId + ":" + c.change_type
         c.save
       end
     end

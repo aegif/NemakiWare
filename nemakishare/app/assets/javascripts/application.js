@@ -8,7 +8,8 @@
 //= require jquery_ujs
 //= require jquery.ui.all
 //= require bootstrap.min
-//= require colorbox/jquery.colorbox
+//= require i18n
+//= require i18n/translations
 //= require jquery.jqGrid-4.4.4/js/i18n/grid.locale-en.js
 //= require jquery.jqGrid-4.4.4/js/jquery.jqGrid.min
 //= require jquery.validate

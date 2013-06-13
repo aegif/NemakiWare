@@ -19,7 +19,7 @@
 # If not, see <http://www.gnu.org/licenses/>.
 # 
 # Contributors:
-#     linzhixing - initial API and implementation
+#     linzhixing(https://github.com/linzhixing) - initial API and implementation
 # ******************************************************************************
 class ArchivesController < ApplicationController
   
@@ -33,9 +33,8 @@ class ArchivesController < ApplicationController
   end
   
   def index(status=true)
-    @title = "ゴミ箱" 
     
-    resource = RestClient::Resource.new('http://localhost:8180/Nemaki/rest/archive/index',@auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(CONFIG['repository']['archive_rest_url'] + 'index', @auth_info[:id], @auth_info[:password])
     json = resource.get()
     result = JSON.parse(json)
     
@@ -49,14 +48,13 @@ class ArchivesController < ApplicationController
       
       if !params[:restore_status].blank?
         if params[:restore_status] == "success"
-          flash[:notice] = "リストアに成功しました"
+          flash[:notice] = t('message.archive.restore_success')
         else
-          flash[:error] = "リストアに失敗しました"
+          flash[:error] = t('message.archive.restore_failure')
         end  
       end
-      
     else
-      flash[:error] = "ゴミ箱が表示できません:" + result["error"].to_s
+      flash[:error] = t('message.archive.cannot_display_archive') + ":" + result["error"].to_s
       redirect_to explore_node_path("/")
     end  
   end
@@ -77,9 +75,9 @@ class ArchivesController < ApplicationController
   end
   
   def restore
-    uri = 'http://localhost:8180/Nemaki/rest/archive/restore/' + params[:id]
-    resource = RestClient::Resource.new(uri,@auth_info[:id], @auth_info[:password])
-    json = resource.put("")
+    #uri = CONFIG['repository']['archive_rest_url'] + "restore/" + params[:id]
+    resource = RestClient::Resource.new(CONFIG['repository']['archive_rest_url'], @auth_info[:id], @auth_info[:password])
+    json = resource["restore"][params[:id]].put("")
     _status = JSON.parse(json)['status']
     
     redirect_to :action => :index, :restore_status => _status

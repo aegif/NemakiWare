@@ -31,7 +31,7 @@
     <bean id="archiveConnector" class="jp.aegif.nemaki.service.db.CouchConnector"
         init-method="init">
         <property name="repositoryId">
-            <value>${nemakiware.archive.repository}</value>
+            <value>${nemakiware.repository.archive}</value>
         </property>
         <property name="host">
             <value>${db.host}</value>
@@ -63,10 +63,10 @@
 	<bean id="RepositoryInfo" class="jp.aegif.nemaki.repository.NemakiRepositoryInfoImpl"
 		scope="singleton" init-method="setup">
 		<property name="id">
-			<value>${nemakiware.info.repository}</value>
+			<value>${nemakiware.repository.main}</value>
 		</property>
 		<property name="name">
-			<value>${nemakiware.info.repository}</value>
+			<value>${nemakiware.repository.main}</value>
 		</property>
 		<property name="description">
 			<value>Nemaki, Lightweight CMIS Server</value>

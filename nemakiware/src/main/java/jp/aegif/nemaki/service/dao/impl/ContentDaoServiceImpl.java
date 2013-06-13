@@ -17,7 +17,7 @@
  * If not, see <http://www.gnu.org/licenses/>.
  * 
  * Contributors:
- *     linzhixing - initial API and implementation
+ *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
 package jp.aegif.nemaki.service.dao.impl;
 
@@ -252,7 +252,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	 * 
 	 */
 	@Override
-	//TODO Content型で返せば他のサービスが正しく動作するか確認(Document/Folder型は必要？)
 	public List<Content> getLatestChildrenIndex(String parentId){
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
 				.viewName("children").key(parentId);
@@ -414,11 +413,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		
 		AttachmentInputStream ais = new AttachmentInputStream(ATTACHMENT_NAME, cs.getStream(), cs.getMimeType(),cs.getLength());
 		connector.createAttachment(ca.getId(), ca.getRevision(), ais);
-		try {
-			ais.close();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
 		return ca.getId();
 	}
 	
@@ -445,12 +439,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 			AttachmentInputStream ais = connector.getAttachment(attachmentId, ATTACHMENT_NAME);
 			an.setInputStream(ais);
-			try {
-				ais.close();
-			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
+			
+			
 			return an;
 		}
 	}
@@ -571,7 +561,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	/**
 	 * 
 	 */
-	//TODO 具体的なロジックはなるべくcontentServiceに移す
 	@Override
 	public void createArchive(Archive archive, Boolean deletedWithParent){
 		CouchNodeBase cnb = connector.get(CouchNodeBase.class, archive.getOriginalId());
@@ -636,12 +625,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		CouchAttachmentNode restored = connector.get(CouchAttachmentNode.class, can.getId());
 		restored.setType(NodeType.ATTACHMENT.value());
 		connector.update(restored);
-		try {
-			is.close();
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
 	}
 	
 	/**

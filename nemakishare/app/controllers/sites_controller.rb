@@ -19,7 +19,7 @@
 # If not, see <http://www.gnu.org/licenses/>.
 # 
 # Contributors:
-#     linzhixing - initial API and implementation
+#     linzhixing(https://github.com/linzhixing) - initial API and implementation
 # ******************************************************************************
 class SitesController < ApplicationController
   
@@ -39,7 +39,7 @@ class SitesController < ApplicationController
 
   def create
     @nemaki_repository.create_site(params[:site][:name])
-    flash[:notice] = "新規サイトを作成しました"
+    flash[:notice] = t('message.site.create_success')
     redirect_to :controller => 'sites', :action => 'index'
   end
 
@@ -50,5 +50,4 @@ class SitesController < ApplicationController
       @can_create_site = sites_root.allowable_actions['CreateFolder'] && sites_root.allowable_actions['ApplyACL']
     end 
   end
-  
 end

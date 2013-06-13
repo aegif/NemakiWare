@@ -20,7 +20,7 @@
 <% end %>
 
 <div class="row-fluid span11 nemaki_popup_header">
-	<h4>ユーザ情報の編集</h4>
+	<h4><%=t('view.user.edit.edit_user_info')%></h4>
 </div>
 
 <div class="nemaki_contents_body">
@@ -28,42 +28,42 @@
 <%= form_for :user , :url => {:action => :update}, :html => {:method => :put, :id => 'userForm', :class => 'form-horizontal'} do |f| %>
 	<!--ID-->
 	<div class="control-group">
-		<label class="control-label" for="inputEmail">ID</label>
+		<label class="control-label"><%=t('model.user.id')%></label>
 		<div class="controls">
 			<%= f.text_field :id %>
 		</div>
 	</div>
 	<!--Name-->
 	<div class="control-group">
-		<label class="control-label" for="inputEmail">Name</label>
+		<label class="control-label"><%=t('model.user.name')%></label>
 		<div class="controls">
 			<%= f.text_field :name %>
 		</div>
 	</div>
 	<!--First Name-->
 	<div class="control-group">
-		<label class="control-label" for="inputEmail">First Name</label>
+		<label class="control-label"><%=t('model.user.first_name')%></label>
 		<div class="controls">
 			<%= f.text_field :first_name %>
 		</div>
 	</div>
 	<!--Last Name-->
 	<div class="control-group">
-		<label class="control-label" for="inputEmail">Last Name</label>
+		<label class="control-label"><%=t('model.user.last_name')%></label>
 		<div class="controls">
 			<%= f.text_field :last_name %>
 		</div>
 	</div>
 	<!--Email-->
 	<div class="control-group">
-		<label class="control-label" for="inputEmail">Email</label>
+		<label class="control-label" for="inputEmail"><%=t('model.user.email')%></label>
 		<div class="controls">
 			<%= f.email_field :email %>
 		</div>
 	</div>
 	<!--Action-->
 	<div class="form-actions nemaki-form-actions">
-		<%= submit_tag "更新", :class => 'btn btn-primary btn-large' %>
+		<%= submit_tag t('view.general.update'), :class => 'btn btn-primary btn-large' %>
 	</div>
 <% end %>
 </div>

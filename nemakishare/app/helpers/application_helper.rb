@@ -19,7 +19,7 @@
 # If not, see <http://www.gnu.org/licenses/>.
 # 
 # Contributors:
-#     linzhixing - initial API and implementation
+#     linzhixing(https://github.com/linzhixing) - initial API and implementation
 # ******************************************************************************
 require 'time'
 
@@ -49,15 +49,15 @@ module ApplicationHelper
   def l10n_change_type(change_type, language_code=nil)
     case change_type
     when "created"
-      "作成"
+      t('view.changelog.created')
     when "updated"
-      "更新"
+      t('view.changelog.updated')
     when "deleted"
-      "削除"
+      t('view.changelog.deleted')
     when "security"
       "権限を変更"
     when "version-updated"
-      "バージョンを更新"
+      t('view.changelog.version-update')
     else
     end
   end

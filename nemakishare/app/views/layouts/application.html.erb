@@ -9,6 +9,10 @@
     <%= csrf_meta_tags %>
     <%= stylesheet_link_tag "application" %>
 	<%= javascript_include_tag "application" %>
+	<script type="text/javascript">
+  		I18n.defaultLocale = "<%= I18n.default_locale %>";
+  		I18n.locale = "<%= I18n.locale %>";
+	</script>
     <%= javascript_include_tag "flash_fade.js" %>
     <script type="text/javascript">
 		<%= yield :javascript_includes %>
@@ -35,25 +39,25 @@
     			</li>
 				<li class='dropdown'>
   					<div data-toggle="dropdown" class="btn dropdown-toggle">
-  						ユーザ：<%= @login_user.id %>
+  						<%=t('view.navigation.user')%>：<%= @login_user.id %>
     					<span class="caret"></span>
   					</div>
   					<ul class="dropdown-menu">
   						<!--Admin Feature-->
   						<% if @login_user.id == 'admin'%>
   						<!--User/Group management-->
-						<li><%= link_to "ユーザ管理", users_path %></li>
-						<li><%= link_to "グループ管理", groups_path %></li>
+						<li><%= link_to t('view.navigation.user_management'), users_path %></li>
+						<li><%= link_to t('view.navigation.group_management'), groups_path %></li>
   						<!--Archive-->
   						<li class="divider"></li>
-  						<li><%= link_to "ゴミ箱", archives_path %></li>
+  						<li><%= link_to t('view.navigation.archive'), archives_path %></li>
   						<!--Solr config-->
   						<li class="divider"></li>
-  						<li><%=link_to "検索エンジン管理", search_engine_index_path %></li>
+  						<li><%=link_to t('view.navigation.search_engine_management'), search_engine_index_path %></li>
   						<% end %>
   						<!--Log Out-->
   						<li class="divider"></li>
-  						<li><%= link_to "ログアウト", logout_nodes_path, :confirm => 'ログアウトしますか？' %></li>
+  						<li><%= link_to t('view.navigation.logout'), logout_nodes_path, :confirm => t('view.navigation.logout_confirmation') %></li>
   					</ul>
 				</li>
 				<% end %>

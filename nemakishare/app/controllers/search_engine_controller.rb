@@ -19,11 +19,10 @@
 # If not, see <http://www.gnu.org/licenses/>.
 # 
 # Contributors:
-#     linzhixing - initial API and implementation
+#     linzhixing(https://github.com/linzhixing) - initial API and implementation
 # ******************************************************************************
 class SearchEngineController < ApplicationController
   def index
-    @title = "検索エンジン(Solr)管理画面"
     server_url = CONFIG['search_engine']['server_url']
     @url_for_ui = server_url + "/" + "#/"
     @url_for_initialize = server_url + "/" + "admin/cores?core=nemaki&action=init"

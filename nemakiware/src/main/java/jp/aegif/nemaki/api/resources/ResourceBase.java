@@ -17,7 +17,7 @@
  * If not, see <http://www.gnu.org/licenses/>.
  * 
  * Contributors:
- *     linzhixing - initial API and implementation
+ *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
 package jp.aegif.nemaki.api.resources;
 
@@ -53,7 +53,7 @@ public class ResourceBase {
 	static final String DOCNAME_VIEW="_design/_repo";
 	static final String FILEPATH_PROPERTIESFILE = "nemakiware.properties";
 	static final String PROPERTY_REPOSITORIES = "nemakiware.repositories";
-	static final String PROPERTY_INFO_REPOSITORY = "nemakiware.info.repository";
+	static final String PROPERTY_INFO_REPOSITORY = "nemakiware.repository.main";
 	static final String PROPERTY_DBHOST = "db.host";
 	static final String PROPERTY_DBPORT = "db.port";
 	static final String PROPERTY_DBPROTOCOL = "db.protocol";

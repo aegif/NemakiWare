@@ -17,13 +17,14 @@
  * If not, see <http://www.gnu.org/licenses/>.
  * 
  * Contributors:
- *     linzhixing - initial API and implementation
+ *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
 package jp.aegif.nemaki.service.cmis.impl;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
 import jp.aegif.nemaki.model.Content;
@@ -119,6 +120,9 @@ public class NavigationServiceImpl implements NavigationService {
 			result.setNumItems(BigInteger.ZERO);
 			return result;
 		}
+		
+		//Sort children by cmis:name
+		Collections.sort(contents, new ContentComparator());
 		
 		// iterate through children
 		for (Content content : contents) {
@@ -303,6 +307,13 @@ public class NavigationServiceImpl implements NavigationService {
 		// //////////////////
 		List<Document> checkedOuts = contentService.getCheckedOutDocs(folderId, orderBy, extension);
 		return compileObjectService.compileObjectDataList(callContext, checkedOuts, renditionFilter, includeAllowableActions, true, maxItems, skipCount);
+	}
+	
+	private class ContentComparator implements Comparator<Content>{
+		@Override
+		public int compare(Content c1, Content c2) {
+			return c1.getName().compareTo(c2.getName());
+		}
 	}
 
 	public void setContentService(ContentService contentService) {
