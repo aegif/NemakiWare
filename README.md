@@ -26,28 +26,32 @@ You can relax and enjoy your happy enterprise time as you are lying on the couch
 
 Prerequisite for installation
 ------
-* Java 1.6(JDK), Ruby 1.9.x, Rails 3.2.x, sqlite 3.7.x, python 2.7.x
+* Java 1.6(JDK), Maven 3.x, Ruby 1.9.x, Rails 3.2.x, sqlite 3.7.x, python 2.7.x
   * Server and Solr is written in Java, and the client in RoR.
   * Python is needed only for setup data importing.
 * Platform: OSX 10.8.3+ or CentOS 6+, Ubunt 12.10+ (Although Windows is not tested, NemakiWare is basically platform-agnostic).
-* Package management system:
-    * Maven 3.x required
-    * yum(CentOS), Homebrew/Mac Port(Mac), apt-get(Ubuntu) as you like
+* Package management system, yum(CentOS), Homebrew/Mac Port(Mac), apt-get(Ubuntu) as you like
 
 Installation
 ------
-* Clone the repository
+### Clone the repository
+
 ```sh
 $ git clone https://github.com/NemakiWare/NemakiWare.git
 ```
 You get the folder `<NemakiWare_Home>` in the location you cloned, which includes three subfolders nemakiware, nemakisolr, nemakishare.
 
-* Install CouchDB (version 1.0.4 or higher is desirable)  
-** Mac(See [Wiki](http://wiki.apache.org/couchdb/Installing_on_OSX))
+### Install CouchDB 
+Version 1.0.4 or higher is desirable.
+
+#### Mac
+(See [Wiki](http://wiki.apache.org/couchdb/Installing_on_OSX))
 ```sh
 $ sudo port install couchdb
 ```
-** CentOS(See [Wiki](http://wiki.apache.org/couchdb/Installing_on_RHEL5))
+
+#### CentOS
+(See [Wiki](http://wiki.apache.org/couchdb/Installing_on_RHEL5))
 Firstly [enable EPEL repository](http://wiki.apache.org/couchdb/Installing_on_RHEL5), then
 ```sh
 $ sudo yum install couchdb
@@ -60,12 +64,16 @@ $sudo service couchdb start
 ```sh
 $sudo chkconfig --level 345 couchdb on
 ```
-** Ubuntu(See  [Wiki](http://wiki.apache.org/couchdb/Installing_on_Ubuntu))
+
+#### Ubuntu
+(See  [Wiki](http://wiki.apache.org/couchdb/Installing_on_Ubuntu))
 ```sh
 $ sudo apt-get install couchdb
 ```
 
-* Excecute setup script (If CouchDB has not started, start it before setup)
+### Excecute setup script 
+If CouchDB has not started, start it before setup.
+
 ```sh
 $ cd <NemakiWare_Home>/setup
 $ sudo sh setup.sh
@@ -74,7 +82,7 @@ $ sudo sh setup.sh
   NOTE: The script have installed [ActiveCMIS](https://github.com/xaop/activecmis) gem.
 NemakiWare needs to overwrite some part of ActiveCMIS library but it's not yet pull requested.
 
-* Start the applications
+### Start the applications
 ```sh
 $ cd <NemakiWare_Home>/setup
 $ sh start.sh
@@ -82,12 +90,13 @@ $ sh start.sh
 It will take a little time to download the dependent packages.
 Server(nemakiware), Solr(nemakisolr), CLient(nemakishare) have been now started.
 
-* To stop the applications,
+To stop the applications,
 ```sh
 $ sh stop.sh
 ```
 
-* Now, open the login  window
+### Login 
+Now, open the login  window
     http://127.0.0.1:3000/nodes/
     * ID:admin
     * Password admin
