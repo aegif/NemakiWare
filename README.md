@@ -26,13 +26,13 @@ You can relax and enjoy your happy enterprise time as you are lying on the couch
 
 Prerequisite for installation
 ------
-* Java 1.6, Ruby 1.9.3+, Rails 3.2.11+, sqlite 3.7.x, python2.7.2
+* Java 1.6(JDK), Ruby 1.9.x, Rails 3.2.x, sqlite 3.7.x, python 2.7.x
   * Server and Solr is written in Java, and the client in RoR.
   * Python is needed only for setup data importing.
-* Platform: OSX 10.8.3 or CentOS 6 (Although Windows is not tested, NemakiWare is basically platform-agnostic).
+* Platform: OSX 10.8.3+ or CentOS 6+, Ubunt 12.10+ (Although Windows is not tested, NemakiWare is basically platform-agnostic).
 * Package management system:
     * Maven 3.x required
-    * yum(CentOS), Homebrew/Mac Port(Mac) as you like
+    * yum(CentOS), Homebrew/Mac Port(Mac), apt-get(Ubuntu) as you like
 
 Installation
 ------
@@ -43,20 +43,32 @@ $ git clone https://github.com/NemakiWare/NemakiWare.git
 You get the folder `<NemakiWare_Home>` in the location you cloned, which includes three subfolders nemakiware, nemakisolr, nemakishare.
 
 * Install CouchDB (version 1.0.4 or higher is desirable)  
-Mac(See [Wiki](http://wiki.apache.org/couchdb/Installing_on_OSX))
+** Mac(See [Wiki](http://wiki.apache.org/couchdb/Installing_on_OSX))
 ```sh
 $ sudo port install couchdb
 ```
-CentOS(See [Wiki](http://wiki.apache.org/couchdb/Installing_on_RHEL5))
+** CentOS(See [Wiki](http://wiki.apache.org/couchdb/Installing_on_RHEL5))
 Firstly [enable EPEL repository](http://wiki.apache.org/couchdb/Installing_on_RHEL5), then
 ```sh
 $ sudo yum install couchdb
+```
+Start CouchDB
+```sh
+$sudo service couchdb start
+```
+(Option)Set it to start automatically on reboots
+```sh
+$sudo chkconfig --level 345 couchdb on
+```
+** Ubuntu(See  [Wiki](http://wiki.apache.org/couchdb/Installing_on_Ubuntu))
+```sh
+$ sudo apt-get install couchdb
 ```
 
 * Excecute setup script (If CouchDB has not started, start it before setup)
 ```sh
 $ cd <NemakiWare_Home>/setup
-$ sh sudo setup.sh
+$ sudo sh setup.sh
 ```
 
   NOTE: The script have installed [ActiveCMIS](https://github.com/xaop/activecmis) gem.
