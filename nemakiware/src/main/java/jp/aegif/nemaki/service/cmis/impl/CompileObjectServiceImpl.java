@@ -21,6 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.service.cmis.impl;
 
+import java.io.IOException;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.GregorianCalendar;
@@ -363,6 +364,13 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		if(attachment != null){
 			setCmisAttachmentProperties(properties, typeId, filter, attachment,
 					document);
+			
+			try {
+				attachment.getInputStream().close();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+			
 		}else{
 			//TODO Logging
 		}
