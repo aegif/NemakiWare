@@ -125,10 +125,14 @@ public class NavigationServiceImpl implements NavigationService {
 		Collections.sort(contents, new ContentComparator());
 		
 		// iterate through children
+		int count = 0;
 		for (Content content : contents) {
-			if (skip-- > 0) // Skip as many of the first results as asked by
-							// skipCount
+			//Skip until specified number of items 
+			if(count < skip){
+				count++;
 				continue;
+			}
+				
 			if (result.getObjects().size() >= max) {
 				result.setHasMoreItems(true);
 				continue;
@@ -137,7 +141,7 @@ public class NavigationServiceImpl implements NavigationService {
 			ObjectInFolderDataImpl objectInFolder = new ObjectInFolderDataImpl();
 			objectInFolder.setObject(compileObjectService.compileObjectData(
 					callContext, content, filter, includeAllowableActions,
-					includeAcl));
+					includeAcl, null));
 			if (includePathSegments) {
 				String name = content.getName();
 				objectInFolder.setPathSegment(name);
@@ -146,10 +150,12 @@ public class NavigationServiceImpl implements NavigationService {
 		}
 		
 		//Set paging information
-		int numItems = result.getObjects().size();
-		Boolean hasMoreItems = (numItems < contents.size());
+		int numItems = contents.size();
 		result.setNumItems(BigInteger.valueOf(numItems));
+		
+		Boolean hasMoreItems = (skip + max < numItems);
 		result.setHasMoreItems(hasMoreItems);
+		
 		
 		return result;
 	}
@@ -159,7 +165,7 @@ public class NavigationServiceImpl implements NavigationService {
 			CallContext callContext, String folderId, BigInteger depth,
 			String filter, Boolean includeAllowableActions,
 			Boolean includePathSegment, boolean foldersOnly) {
-
+		
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -186,7 +192,7 @@ public class NavigationServiceImpl implements NavigationService {
 				.booleanValue());
 
 		// get the tree.
-		return getDescendantsInternal(callContext, folderId, filter, iaa,false, IncludeRelationships.NONE, null, ips, 0, d, false);
+		return getDescendantsInternal(callContext, folderId, filter, iaa,false, IncludeRelationships.NONE, null, ips, 0, d, foldersOnly);
 	}
 
 	private List<ObjectInFolderContainer> getDescendantsInternal(
@@ -196,14 +202,20 @@ public class NavigationServiceImpl implements NavigationService {
 			Boolean includePathSegments, int level, int maxLevels,
 			boolean folderOnly) {
 
-		List<ObjectInFolderContainer> childrenOfFolderId = null;
+		List<ObjectInFolderContainer> childrenOfFolder = new ArrayList<ObjectInFolderContainer>();
+		//Check specified folderId is folder(if not, it's a leaf node)
+		Content c = contentService.getContentAsTheBaseType(folderId);
+		if(!c.isFolder()){
+			return childrenOfFolder;
+		}
+		
 		if (maxLevels == -1 || level < maxLevels) {
 			ObjectInFolderList children = getChildrenInternal(callContext,
 					folderId, filter, includeAllowableActions, includeAcl,
 					includePathSegments, BigInteger.valueOf(Integer.MAX_VALUE),
 					BigInteger.valueOf(0), folderOnly);
 
-			childrenOfFolderId = new ArrayList<ObjectInFolderContainer>();
+			childrenOfFolder = new ArrayList<ObjectInFolderContainer>();
 			if (null != children) {
 
 				for (ObjectInFolderData child : children.getObjects()) {
@@ -219,11 +231,11 @@ public class NavigationServiceImpl implements NavigationService {
 					oifc.setObject(child);
 					if (null != subChildren)
 						oifc.setChildren(subChildren);
-					childrenOfFolderId.add(oifc);
+					childrenOfFolder.add(oifc);
 				}
 			}
 		}
-		return childrenOfFolderId;
+		return childrenOfFolder;
 	}
 	
 	@Override
@@ -246,7 +258,7 @@ public class NavigationServiceImpl implements NavigationService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		return compileObjectService.compileObjectData(callContext, parent, filter, true, true);
+		return compileObjectService.compileObjectData(callContext, parent, filter, true, true, null);
 	}
 
 	@Override
@@ -273,7 +285,7 @@ public class NavigationServiceImpl implements NavigationService {
 		}
 		
 		ObjectParentDataImpl result = new ObjectParentDataImpl();
-		ObjectData o = compileObjectService.compileObjectData(callContext, parent, filter, includeAllowableActions, true);
+		ObjectData o = compileObjectService.compileObjectData(callContext, parent, filter, includeAllowableActions, true, null);
 		result.setObject(o);
 		boolean irps = (includeRelativePathSegment == null ? false
 				: includeRelativePathSegment.booleanValue());

@@ -85,6 +85,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 	private ContentService contentService;
 	private PermissionService permissionService;
 	private NemakiRepositoryInfoImpl repositoryInfo;
+	private static final Log log = LogFactory
+			.getLog(ExceptionServiceImpl.class);
 
 	private final BigInteger HTTP_STATUS_CODE_400 = BigInteger.valueOf(400);
 	private final BigInteger HTTP_STATUS_CODE_403 = BigInteger.valueOf(403);
@@ -92,10 +94,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 	private final BigInteger HTTP_STATUS_CODE_405 = BigInteger.valueOf(405);
 	private final BigInteger HTTP_STATUS_CODE_409 = BigInteger.valueOf(409);
 	private final BigInteger HTTP_STATUS_CODE_500 = BigInteger.valueOf(500);
-
-	private static final Log logger = LogFactory
-			.getLog(ObjectServiceImpl.class);
-
+	
 	@Override
 	public void invalidArgument(String msg) {
 		throw new CmisInvalidArgumentException(msg, HTTP_STATUS_CODE_400);
@@ -374,14 +373,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 		if (!(propertyData instanceof PropertyString))
 			return;
 		String val = ((PropertyString) propertyData).getFirstValue();
-		if (StringUtils.isBlank(val)){
-			constraint(objectId, msg);
-		}
-		
+		if(StringUtils.isEmpty(val)) return;
 		BigInteger length = BigInteger.valueOf(val.length());
-
 		BigInteger max = ((PropertyStringDefinition) definition).getMaxLength();
-
 		if (max != null && max.compareTo(length) < 0) {
 			constraint(objectId, msg);
 		}
@@ -496,10 +490,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 	@Override
 	public void constraintAclPropagationDoesNotMatch(
 			AclPropagation aclPropagation) {
-		if (aclPropagation == AclPropagation.OBJECTONLY)
-			throw new CmisConstraintException(
-					"The repository doesn't support this AclPropagation",
-					HTTP_STATUS_CODE_409);
+		//Do nothing
 	}
 
 	@Override
@@ -546,6 +537,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 		}
 	}
 
+	
 	/**
 	 * 
 	 */

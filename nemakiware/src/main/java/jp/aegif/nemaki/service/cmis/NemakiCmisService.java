@@ -28,6 +28,7 @@ import java.util.List;
 import jp.aegif.nemaki.repository.NemakiRepository;
 import jp.aegif.nemaki.repository.RepositoryMap;
 
+import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.AllowableActions;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
@@ -39,6 +40,7 @@ import org.apache.chemistry.opencmis.commons.data.ObjectInFolderList;
 import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.data.ObjectParentData;
 import org.apache.chemistry.opencmis.commons.data.Properties;
+import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.data.RenditionData;
 import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
@@ -258,9 +260,13 @@ public class NemakiCmisService extends AbstractCmisService {
 	public void deleteObjectOrCancelCheckOut(String repositoryId,
 			String objectId, Boolean allVersions, ExtensionsData extension) {
 		//TODO When checkOut implemented, implement switching the two methods
-		
-		getRepository(repositoryId).deleteObject(getCallContext(), objectId, allVersions);
-		
+		ObjectData o = getObject(repositoryId, objectId, null, false, IncludeRelationships.NONE, null, null, null, null);
+		PropertyData<?> isPWC = o.getProperties().getProperties().get(PropertyIds.IS_PRIVATE_WORKING_COPY);
+		if(isPWC != null && isPWC.getFirstValue().equals(true)){
+			getRepository(repositoryId).cancelCheckOut(getCallContext(), objectId, null);
+		}else{
+			getRepository(repositoryId).deleteObject(getCallContext(), objectId, allVersions);
+		}
 		
 	}
 

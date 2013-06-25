@@ -161,6 +161,7 @@ public class CouchDocument extends CouchContent {
 		d.setRenditionIds(getRenditionIds());
 		d.setLatestVersion(isLatestVersion());
 		d.setMajorVersion(isMajorVersion());
+		d.setLatestMajorVersion(isLatestMajorVersion());
 		d.setVersionSeriesId(getVersionSeriesId());
 		d.setVersionLabel(getVersionLabel());
 		d.setPrivateWorkingCopy(isPrivateWorkingCopy());

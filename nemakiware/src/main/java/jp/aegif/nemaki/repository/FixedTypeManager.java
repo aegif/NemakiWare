@@ -272,12 +272,16 @@ public class FixedTypeManager {
 				Cardinality.SINGLE, Updatability.READONLY, !required,
 				!queryable, !orderable, null));
 		
-		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.PARENT_ID,
+		/*type.addPropertyDefinition(createDefaultPropDef(PropertyIds.PARENT_ID,
 				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
-				!required, queryable, !orderable, null));
+				!required, queryable, !orderable, null));*/
 	}
 
 	private void addFolderPropertyDefinitions(FolderTypeDefinitionImpl type) {
+		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.PARENT_ID,
+				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
+				!required, queryable, !orderable, null));
+		
 		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.PATH,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
 				!required, !queryable, !orderable, null));

@@ -47,7 +47,7 @@ public class NemakiCapabilitiesImpl extends RepositoryCapabilitiesImpl {
 
 		// Filling Capabilities
 		setSupportsMultifiling(false);
-		setSupportsUnfiling(true);
+		setSupportsUnfiling(false);
 		setSupportsVersionSpecificFiling(false);
 
 		// Versioning Capabilities

@@ -33,7 +33,6 @@ import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
-import org.apache.chemistry.opencmis.server.support.query.CalendarHelper;
 import org.apache.chemistry.opencmis.server.support.query.CmisQlStrictLexer;
 import org.apache.chemistry.opencmis.server.support.query.CmisSelector;
 import org.apache.chemistry.opencmis.server.support.query.ColumnReference;
@@ -231,6 +230,7 @@ public class SolrPredicateWalker {
 		HashMap<String, String> map = new HashMap<String, String>();
 		String left = leftNode.getChild(0).toString();
 		String right = walkExpr(rightNode).toString(); 
+		
 		map.put(FLD, SolrUtil.getPropertyNameInSolr(left));
 		map.put(CND, right);
 		return map;
@@ -283,16 +283,11 @@ public class SolrPredicateWalker {
 	private Query walkIn(Tree colNode, Tree listNode) {
 		// Check for CMIS SQL specification
 		ColumnReference colRef = getColumnReference(colNode);
-		PropertyDefinition<?> pd = colRef.getPropertyDefinition();
-		if (pd.getCardinality() != Cardinality.SINGLE) {
-			throw new IllegalStateException(
-					"Operator IN only is allowed on single-value properties ");
-		}
 
 		// Build a statement
 		// Combine queries with "OR" because Solr doesn't have "IN" syntax
 		BooleanQuery q = new BooleanQuery();
-		String field = SolrUtil.getPropertyNameInSolr(colNode.toString());
+		String field = SolrUtil.getPropertyNameInSolr(colRef.getPropertyQueryName().toString());
 		List<?> list = (List<?>) walkExpr(listNode);
 		for (Object elm : list) {
 			Term t = new Term(field, elm.toString());
@@ -541,7 +536,7 @@ public class SolrPredicateWalker {
 	private Object walkTimestamp(Tree node) {
 		String s = node.getText();
 		s = s.substring(s.indexOf('\'') + 1, s.length() - 1);
-		return CalendarHelper.fromString(s);
+		return s;
 	}
 
 	private Object walkList(Tree node) {

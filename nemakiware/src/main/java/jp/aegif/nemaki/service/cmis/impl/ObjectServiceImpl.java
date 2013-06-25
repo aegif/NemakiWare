@@ -104,7 +104,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// Body of the method
 		// //////////////////
 		return compileObjectService.compileObjectData(callContext, content,
-				filter, includeAllowableActions, includeAcl);
+				filter, includeAllowableActions, includeAcl, null);
 	}
 
 	public ObjectData getObject(CallContext callContext, String objectId,
@@ -123,7 +123,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// Body of the method
 		// //////////////////
 		ObjectData object = compileObjectService.compileObjectData(callContext,
-				content, filter, includeAllowableActions, includeAcl);
+				content, filter, includeAllowableActions, includeAcl, null);
 
 		return object;
 	}
@@ -241,7 +241,7 @@ public class ObjectServiceImpl implements ObjectService {
 		}
 
 		return compileObjectService.compileObjectData(callContext,
-				contentService.getContentAsTheBaseType(objectId), null, false, false);
+				contentService.getContentAsTheBaseType(objectId), null, false, false, null);
 	}
 
 	public String createFolder(CallContext callContext, Properties properties,

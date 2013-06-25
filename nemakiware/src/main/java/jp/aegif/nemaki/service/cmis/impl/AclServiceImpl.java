@@ -20,6 +20,9 @@
  ******************************************************************************/
 package jp.aegif.nemaki.service.cmis.impl;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.constant.DomainType;
 import jp.aegif.nemaki.service.cmis.AclService;
@@ -33,6 +36,7 @@ import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.springframework.util.CollectionUtils;
 
 /**
  * Discovery Service implementation for CouchDB.
@@ -81,13 +85,16 @@ public class AclServiceImpl implements AclService {
 		// Body of the method
 		// //////////////////
 		//Check ACL inheritance
-		Boolean inherited = true;	//Inheritance defaults to true if nothing input
-		for(CmisExtensionElement ext : acl.getExtensions()){
-			if(ext.getName().equals("inherited")){
-				inherited = Boolean.valueOf(ext.getValue());
+		boolean inherited = true;	//Inheritance defaults to true if nothing input
+		List<CmisExtensionElement> exts = acl.getExtensions();
+		if(!CollectionUtils.isEmpty(exts)){
+			for(CmisExtensionElement ext : exts){
+				if(ext.getName().equals("inherited")){
+					inherited = Boolean.valueOf(ext.getValue());
+				}
 			}
+			if(!content.isAclInherited().equals(inherited)) content.setAclInherited(inherited);
 		}
-		if(!content.isAclInherited().equals(inherited)) content.setAclInherited(inherited);
 		
 		jp.aegif.nemaki.model.Acl nemakiAcl = new jp.aegif.nemaki.model.Acl();
 		//REPOSUTORYDETERMINED or PROPAGATE is considered as PROPAGATE

@@ -78,7 +78,8 @@ public class VersioningServiceImpl implements VersioningService {
 		// Body of the method
 		// //////////////////
 		boolean copied = (contentCopied != null && contentCopied.getValue() != null) ? contentCopied.getValue() : true;
-		contentService.checkOut(callContext, id, extension, copied);
+		Document pwc = contentService.checkOut(callContext, id, extension, copied);
+		objectId.setValue(pwc.getId());
 	}
 
 	@Override
@@ -96,7 +97,6 @@ public class VersioningServiceImpl implements VersioningService {
 		// Specific Exception
 		// //////////////////
 		exceptionService.constraintVersionable(document.getObjectType());
-		exceptionService.versioning(document);
 		
 		// //////////////////
 		// Body of the method
@@ -128,8 +128,8 @@ public class VersioningServiceImpl implements VersioningService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		//TODO id? objectId?
-		contentService.checkIn(callContext, objectId, major, properties, contentStream, checkinComment, policies, addAces, removeAces, extension);
+		Document checkedIn = contentService.checkIn(callContext, objectId, major, properties, contentStream, checkinComment, policies, addAces, removeAces, extension);
+		objectId.setValue(checkedIn.getId());
 	}
 
 	@Override
@@ -155,7 +155,7 @@ public class VersioningServiceImpl implements VersioningService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		ObjectData objectData = compileObjectService.compileObjectData(context, document, filter, includeAllowableActions, includeAcl);
+		ObjectData objectData = compileObjectService.compileObjectData(context, document, filter, includeAllowableActions, includeAcl, null);
 		return objectData;
 	}
 
@@ -184,7 +184,7 @@ public class VersioningServiceImpl implements VersioningService {
 		// //////////////////
 		List<ObjectData> result = new ArrayList<ObjectData>();
 		for(Content content : allVersions){
-			ObjectData objectData = compileObjectService.compileObjectData(context, content, filter, includeAllowableActions, true);
+			ObjectData objectData = compileObjectService.compileObjectData(context, content, filter, includeAllowableActions, true, null);
 			result.add(objectData);
 		}
 		

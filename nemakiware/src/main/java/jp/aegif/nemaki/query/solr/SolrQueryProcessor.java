@@ -23,7 +23,9 @@ package jp.aegif.nemaki.query.solr;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.query.QueryProcessor;
@@ -44,6 +46,7 @@ import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.server.support.query.CmisQueryWalker;
 import org.apache.chemistry.opencmis.server.support.query.QueryObject;
 import org.apache.chemistry.opencmis.server.support.query.QueryUtil;
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.lucene.index.Term;
@@ -87,7 +90,6 @@ public class SolrQueryProcessor implements QueryProcessor {
 		// If statement is invalid, trhow exception
 		walker = util
 				.traverseStatementAndCatchExc(statement, queryObject, null);
-
 		// "WHERE" clause to Lucene query
 		String whereQueryString = "";
 		Tree whereTree = walker.getWherePredicateTree();
@@ -148,11 +150,22 @@ public class SolrQueryProcessor implements QueryProcessor {
 			}
 
 			// Filter return value with SELECT clause
+			Map<String, String>m = queryObject.getRequestedPropertiesByAlias();
+			Map<String, String> aliases = new HashMap<String, String>();
+			for(String alias : m.keySet()){
+				aliases.put(m.get(alias), alias);
+			}
+			
+			String filter = null;
+			if(!aliases.keySet().contains("*")){
+				filter = StringUtils.join(aliases.keySet(), ",");
+			}
+			
 			for (Content c : filtered) {
 				// FIXME parameter is hard-fixed.
 				ObjectDataImpl data = (ObjectDataImpl) compileObjectService
-						.compileObjectData(callContext, c, null,
-								includeAllowableActions, true);
+						.compileObjectData(callContext, c, filter,
+								includeAllowableActions, true, aliases);
 				dataList.add(data);
 			}
 			// Add an ObjectData to the list

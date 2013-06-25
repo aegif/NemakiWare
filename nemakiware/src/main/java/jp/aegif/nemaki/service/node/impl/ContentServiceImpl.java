@@ -536,6 +536,7 @@ public class ContentServiceImpl implements ContentService {
 		vs.setVersionSeriesCheckedOut(false);
 		vs.setVersionSeriesCheckedOutBy("");
 		vs.setVersionSeriesCheckedOutId("");
+		contentDaoService.updateVersionSeries(vs);
 	}
 
 	@Override
@@ -545,8 +546,9 @@ public class ContentServiceImpl implements ContentService {
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension) {
 		String id = objectId.getValue();
 		Document pwc = getDocument(id);
-		
 		Document checkedIn = buildCopyDocumentWithBasicProperties(callContext, pwc);
+
+		Document latest = getDocumentOfLatestVersion(pwc.getVersionSeriesId());
 		
 		//When PWCUpdatable is true
 		if(contentStream == null){
@@ -557,13 +559,14 @@ public class ContentServiceImpl implements ContentService {
 		}
 		
 		//Set updated properties
-		updateProperties(callContext, properties, checkedIn);
+		//updateProperties(callContext, properties, checkedIn);
+		modifyProperties(callContext, properties, checkedIn);
 		setSignature(callContext, checkedIn);
 		checkedIn.setCheckinComment(checkinComment);
 		
 		//update version information
 		VersioningState versioningState = (major) ? VersioningState.MAJOR : VersioningState.MINOR;
-		updateVersionProperties(callContext, versioningState, checkedIn, pwc);
+		updateVersionProperties(callContext, versioningState, checkedIn, latest);
 		
 		//TODO set policies & ACEs
 		
@@ -628,12 +631,21 @@ public class ContentServiceImpl implements ContentService {
 			d.setLatestMajorVersion(false);
 			d.setPrivateWorkingCopy(true);
 			break;
-		default:
+		case MAJOR:
 			d.setLatestVersion(true);
 			d.setMajorVersion(true);
 			d.setLatestMajorVersion(true);
 			d.setVersionLabel("1.0");
 			d.setPrivateWorkingCopy(false);
+			break;
+		case MINOR:
+			d.setLatestVersion(true);
+			d.setMajorVersion(false);
+			d.setLatestMajorVersion(false);
+			d.setVersionLabel("0.1");
+			d.setPrivateWorkingCopy(false);
+			break;
+		default:
 			break;
 		}
 		
@@ -822,39 +834,45 @@ public class ContentServiceImpl implements ContentService {
 		return contentDaoService.getVersionSeries(versionSeriesId);
 	}
 
+	private Content modifyProperties(CallContext callContext, Properties properties, Content content) {
+		//Set updatable properties
+				TypeDefinition td = typeManager.getTypeDefinition(content.getType());
+				Map<String, PropertyDefinition<?>> map =  td.getPropertyDefinitions(); 
+				for(Entry<String, PropertyData<?>> p : properties.getProperties().entrySet()){
+					PropertyDefinition<?> pd = map.get(p.getKey());
+					//CASE: READ&WRITE(ANYTIME)
+					if (pd.getUpdatability() == Updatability.READWRITE){
+						setUpdatePropertyValue(content, p.getValue(), properties);
+					}
+					//CASE:WHEN CHECKED OUT
+					if(pd.getUpdatability() == Updatability.WHENCHECKEDOUT && content.isDocument()){
+						Document d = (Document)content;
+						if(d.isPrivateWorkingCopy()){
+							setUpdatePropertyValue(content, p.getValue(), properties);
+						}
+					}
+				}
+				
+				//Set custom properties
+				List<Aspect> aspects = buildAspects(properties);
+				if (aspects != null)
+					content.setAspects(aspects);
+				
+				//Set modified signature
+				setModifiedSignature(callContext, content);
+				
+				return content;
+	}
+	
 	/**
 	 * Update one content.
 	 */
 	// FIXME Refine the logic
 	public Content updateProperties(CallContext callContext, Properties properties, Content content) {
 
-		//Set updatable properties
-		TypeDefinition td = typeManager.getTypeDefinition(content.getType());
-		Map<String, PropertyDefinition<?>> map =  td.getPropertyDefinitions(); 
-		for(Entry<String, PropertyData<?>> p : properties.getProperties().entrySet()){
-			PropertyDefinition<?> pd = map.get(p.getKey());
-			//CASE: READ&WRITE(ANYTIME)
-			if (pd.getUpdatability() == Updatability.READWRITE){
-				setUpdatePropertyValue(content, p.getValue(), properties);
-			}
-			//CASE:WHEN CHECKED OUT
-			if(pd.getUpdatability() == Updatability.WHENCHECKEDOUT && content.isDocument()){
-				Document d = (Document)content;
-				if(d.isPrivateWorkingCopy()){
-					setUpdatePropertyValue(content, p.getValue(), properties);
-				}
-			}
-		}
+		Content modified = modifyProperties(callContext, properties, content);
 		
-		//Set custom properties
-		List<Aspect> aspects = buildAspects(properties);
-		if (aspects != null)
-			content.setAspects(aspects);
-		
-		//Set modified signature
-		setModifiedSignature(callContext, content);
-		
-		Content result = update(content);
+		Content result = update(modified);
 		
 		//Record the change event
 		writeChangeEvent(callContext, result, ChangeType.UPDATED);
@@ -999,7 +1017,11 @@ public class ContentServiceImpl implements ContentService {
 		// Move up the latest version
 		if (!allVersions) {
 			Document latestVersion = getDocumentOfLatestVersion(versionSeriesId);
-			latestVersion.setLatestVersion(true);
+			if(latestVersion != null){
+				latestVersion.setLatestVersion(true);
+				latestVersion.setLatestMajorVersion(latestVersion.isMajorVersion());
+				contentDaoService.updateDocument(latestVersion);
+			}
 		}
 	}
 

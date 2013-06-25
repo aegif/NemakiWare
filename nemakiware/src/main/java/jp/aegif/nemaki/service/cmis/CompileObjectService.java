@@ -23,6 +23,7 @@ package jp.aegif.nemaki.service.cmis;
 
 import java.math.BigInteger;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import jp.aegif.nemaki.model.Change;
@@ -38,7 +39,7 @@ import org.apache.chemistry.opencmis.commons.server.CallContext;
 public interface CompileObjectService {
 	public ObjectData compileObjectData(CallContext context,
 			Content content, String filter, Boolean includeAllowableActions,
-			Boolean includeAcl);
+			Boolean includeAcl, Map<String, String> aliases);
 	
 	public <T> ObjectList compileObjectDataList(CallContext callContext,
 			List<T> contents, String filter, Boolean includeAllowableActions,

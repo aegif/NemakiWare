@@ -113,7 +113,7 @@ public class PolicyServiceImpl implements PolicyService {
 		List<Policy> policies = contentService.getAppliedPolicies(objectId, extension);
 		List<ObjectData> objects = new ArrayList<ObjectData>();
 		for(Policy policy : policies){
-			objects.add(compileObjectService.compileObjectData(callContext, policy, filter, true, true));
+			objects.add(compileObjectService.compileObjectData(callContext, policy, filter, true, true, null));
 		}
 		return objects;
 	}

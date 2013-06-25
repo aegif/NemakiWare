@@ -63,6 +63,7 @@ import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.Action;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.ChangeType;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyData;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AllowableActionsImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ChangeEventInfoDataImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.CmisExtensionElementImpl;
@@ -85,16 +86,19 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	private RepositoryService repositoryService;
 	private ContentService contentService;
 	private PermissionService permissionService;
+	
+	private Map<String,String>aliases;
 
 	/**
 	 * Builds a CMIS ObjectData from the given CouchDB content.
 	 */
 	public ObjectData compileObjectData(CallContext context, Content content,
-			String filter, Boolean includeAllowableActions, Boolean includeAcl) {
+			String filter, Boolean includeAllowableActions, Boolean includeAcl, Map<String, String> aliases) {
 		Boolean iaa = (includeAllowableActions == null ? false
 				: includeAllowableActions.booleanValue());
 		Boolean iacl = (includeAcl == null ? false : includeAcl.booleanValue());
-
+		this.aliases = aliases;
+		
 		ObjectDataImpl result = new ObjectDataImpl();
 		ObjectInfoImpl objectInfo = new ObjectInfoImpl();
 		result.setProperties(compileProperties(content, splitFilter(filter),
@@ -140,7 +144,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			if (content instanceof Content) {
 				ObjectData o = compileObjectData(callContext,
 						(Content) content, filter, includeAllowableActions,
-						includeAcl);
+						includeAcl, null);
 				list.getObjects().add(o);
 			} else {
 				continue;
@@ -274,8 +278,16 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		Set<Action> actionSet = new HashSet<Action>();
 		for (Entry<String, PermissionMapping> mappingEntry : permissionMap
 				.entrySet()) {
-			Boolean allowable = permissionService.checkPermission(callContext,
+			boolean allowable = permissionService.checkPermission(callContext,
 					mappingEntry.getKey(), acl, baseType, content);
+			
+			//Check Content-specific allowable actions
+			if(content.isDocument()){
+				Document d = (Document)content;
+				allowable = isAllowableActionForDocument(allowable, d, mappingEntry.getKey());
+			}
+			
+			//Add an allowable action
 			if (allowable) {
 				String key = mappingEntry.getValue().getKey();
 				actionSet.add(convertKeyToAction(key));
@@ -286,6 +298,19 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		return allowableActions;
 	}
 
+	private boolean isAllowableActionForDocument(boolean allowable, Document document, String permissionMappingKey){
+		VersionSeries vs = contentService.getVersionSeries(document.getVersionSeriesId());
+		if (permissionMappingKey.equals(PermissionMapping.CAN_CHECKOUT_DOCUMENT)){
+			allowable = allowable && !vs.isVersionSeriesCheckedOut();
+		}else if(permissionMappingKey.equals(PermissionMapping.CAN_CHECKIN_DOCUMENT)){
+			allowable = allowable && document.isPrivateWorkingCopy();
+		}else if(permissionMappingKey.equals(PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT)){
+			allowable = allowable && document.isPrivateWorkingCopy();
+		}
+		return allowable;
+	}
+	
+	
 	/**
 	 * Compiles properties of a piece of content.
 	 */
@@ -414,37 +439,67 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	 */
 	private void addPropertyBase(PropertiesImpl props, String typeId,
 			Set<String> filter, String id, Object value) {
+		String nullString = null;
+		
 		if (!checkAddProperty(props, typeId, filter, id))
 			return;
 
 		switch (repositoryService.getTypeManager().getTypeDefinition(typeId)
 				.getPropertyDefinitions().get(id).getPropertyType()) {
 		case BOOLEAN:
+			PropertyBooleanImpl propBoolean = new PropertyBooleanImpl(id, (Boolean) value);
+			setCommonAttributesOfProperty(propBoolean, id);
 			props.addProperty(new PropertyBooleanImpl(id, (Boolean) value));
 			break;
 		case INTEGER:
-			props.addProperty(new PropertyIntegerImpl(id, BigInteger
-					.valueOf((Long) value)));
+			PropertyIntegerImpl propInteger = new PropertyIntegerImpl(id, BigInteger
+					.valueOf((Long) value));
+			setCommonAttributesOfProperty(propInteger, id);
+			props.addProperty(propInteger);
 			break;
 		case DATETIME:
-			props.addProperty(new PropertyDateTimeImpl(id,
-					(GregorianCalendar) value));
+			PropertyDateTimeImpl propDate = new PropertyDateTimeImpl(id,
+					(GregorianCalendar) value);
+			setCommonAttributesOfProperty(propDate, id);
+			props.addProperty(propDate);
 			break;
 		case STRING:
+			PropertyStringImpl propString = new PropertyStringImpl();
+			propString.setId(id);
+			setCommonAttributesOfProperty(propString, id);
 			if(value == null){
-				props.addProperty(new PropertyStringImpl(id, ""));
+				propString.setValue(nullString);
 			}else{
-				props.addProperty(new PropertyStringImpl(id, String.valueOf(value)));
+				propString.setValue(String.valueOf(value));
 			}
+			props.addProperty(propString);
 			break;
 		case ID:
-			props.addProperty(new PropertyIdImpl(id, String.valueOf(value)));
+			PropertyIdImpl propId = new PropertyIdImpl();
+			propId.setId(id);
+			setCommonAttributesOfProperty(propId, id);
+			if(value == null){
+				propId.setValue(nullString);
+			}else{
+				propId.setValue(String.valueOf(value));
+			}
+			props.addProperty(propId);
 			break;
 
 		default:
 		}
 	}
 
+	private <T> void setCommonAttributesOfProperty(AbstractPropertyData<T> p, String id){
+		p.setLocalName(id);
+		
+		if(aliases != null && aliases.get(id) != null){
+			p.setQueryName(aliases.get(id));
+		}else{
+			p.setQueryName(id);
+		}
+	}
+	
 	/**
 	 * Verifies that parameters are safe.
 	 */
@@ -555,6 +610,8 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		addPropertyBase(properties, typeId, filter, PropertyIds.IS_IMMUTABLE,
 				false);
 		addPropertyBase(properties, typeId, filter,
+				PropertyIds.IS_PRIVATE_WORKING_COPY, document.isPrivateWorkingCopy());
+		addPropertyBase(properties, typeId, filter,
 				PropertyIds.IS_LATEST_VERSION, document.isLatestVersion());
 		addPropertyBase(properties, typeId, filter,
 				PropertyIds.IS_MAJOR_VERSION, document.isMajorVersion());
@@ -573,12 +630,21 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		addPropertyBase(properties, typeId, filter,
 				PropertyIds.IS_VERSION_SERIES_CHECKED_OUT,
 				vs.isVersionSeriesCheckedOut());
-		addPropertyBase(properties, typeId, filter,
-				PropertyIds.VERSION_SERIES_CHECKED_OUT_ID,
-				vs.getVersionSeriesCheckedOutId());
-		addPropertyBase(properties, typeId, filter,
-				PropertyIds.VERSION_SERIES_CHECKED_OUT_BY,
-				vs.getVersionSeriesCheckedOutBy());
+		if(vs.isVersionSeriesCheckedOut()){
+			addPropertyBase(properties, typeId, filter,
+					PropertyIds.VERSION_SERIES_CHECKED_OUT_ID,
+					vs.getVersionSeriesCheckedOutId());
+			addPropertyBase(properties, typeId, filter,
+					PropertyIds.VERSION_SERIES_CHECKED_OUT_BY,
+					vs.getVersionSeriesCheckedOutBy());
+		}else{
+			addPropertyBase(properties, typeId, filter,
+					PropertyIds.VERSION_SERIES_CHECKED_OUT_ID,
+					null);
+			addPropertyBase(properties, typeId, filter,
+					PropertyIds.VERSION_SERIES_CHECKED_OUT_BY,
+					null);
+		}
 	}
 
 	private void setCmisAttachmentProperties(PropertiesImpl properties,
