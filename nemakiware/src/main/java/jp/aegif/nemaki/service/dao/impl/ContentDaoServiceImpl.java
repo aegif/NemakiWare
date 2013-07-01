@@ -438,10 +438,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			an.setLength(a.getContentLength());
 			an.setType(NodeType.ATTACHMENT.value());
 
-			AttachmentInputStream ais = connector.getAttachment(attachmentId, ATTACHMENT_NAME);
+			AttachmentInputStream ais = connector.getAttachment(attachmentId, ATTACHMENT_NAME); 
 			an.setInputStream(ais);
-			
-			
+		
 			return an;
 		}
 	}

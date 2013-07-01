@@ -116,9 +116,11 @@ public interface ObjectService {
 	 * Gets the content stream for the specified document object, or gets a
 	 * rendition stream for a specified rendition of a document or folder
 	 * object.
+	 * @param offset TODO
+	 * @param length TODO
 	 */
 	public abstract ContentStream getContentStream(CallContext callContext,
-			String objectId, String streamId);
+			String objectId, String streamId, BigInteger offset, BigInteger length);
 
 	/**
 	 * Gets the specified information for the object specified by path.

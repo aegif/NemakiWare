@@ -48,6 +48,10 @@
 			<param-name>callContextHandler</param-name>
 			<param-value>jp.aegif.nemaki.repository.DefaultContextHandler</param-value>
 		</init-param>
+		<init-param>
+ 			<param-name>cmisVersion</param-name>
+ 			<param-value>1.1</param-value>
+ 		</init-param>
 		<load-on-startup>2</load-on-startup>
 	</servlet>
 	<filter>

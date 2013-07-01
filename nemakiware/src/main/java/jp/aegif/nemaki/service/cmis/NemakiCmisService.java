@@ -306,7 +306,7 @@ public class NemakiCmisService extends AbstractCmisService {
 			String streamId, BigInteger offset, BigInteger length,
 			ExtensionsData extension) {
 		return getRepository(repositoryId).getContentStream(getCallContext(),
-				objectId, streamId);
+				objectId, streamId, offset, length);
 	}
 
 	/**

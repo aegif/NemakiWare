@@ -128,20 +128,34 @@ public class ObjectServiceImpl implements ObjectService {
 	}
 
 	public ContentStream getContentStream(CallContext callContext,
-			String objectId, String streamId) {
+			String objectId, String streamId, BigInteger offset, BigInteger length) {
+		// //////////////////
+		// General Exception
+		// //////////////////
+		exceptionService.invalidArgumentRequired("objectId", objectId);
+		Content content = contentService.getContentAsTheBaseType(objectId);
+		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
+		exceptionService.permissionDenied(callContext,
+				PermissionMapping.CAN_GET_PROPERTIES_OBJECT, content);
+		
+		// //////////////////
+		// Body of the method
+		// //////////////////
 		if (streamId == null) {
-			return getContentStreamInternal(objectId);
+			return getContentStreamInternal(content, offset, length);
 		} else {
-			return getRenditionStream(objectId, streamId);
+			return getRenditionStream(content, streamId);
 		}
 	}
 	
 	
-	private ContentStream getContentStreamInternal(String objectId) {
-		Document document = contentService.getDocument(objectId);
-		if (document == null) {
-			return null;
+	//TODO Implement HTTP range(offset and length of stream), though it is not obligatory. 
+	private ContentStream getContentStreamInternal(Content content, BigInteger rangeOffset, BigInteger rangeLength) {
+		if(!content.isDocument()){
+			exceptionService.constraint(content.getId(), "getContentStream cannnot be invoked to other than document type.");
 		}
+		Document document = (Document)content;
+		
 		AttachmentNode attachment = contentService.getAttachment(document
 				.getAttachmentNodeId());
 
@@ -156,11 +170,10 @@ public class ObjectServiceImpl implements ObjectService {
 	}
 
 	// TODO Rendition and ContnetStream can be integrated as StreamNode class.
-	private ContentStream getRenditionStream(String objectId, String streamId) {
-		Content content = contentService.getContentAsTheBaseType(objectId);
-		// TODO validation
-		if (!content.isDocument() || content.isFolder())
-			return null;
+	private ContentStream getRenditionStream(Content content, String streamId) {
+		if (!content.isDocument() || content.isFolder()){
+			exceptionService.constraint(content.getId(), "getRenditionStream cannnot be invoked to other than document or folder type.");
+		}
 
 		Rendition rendition = contentService.getRendition(streamId);
 

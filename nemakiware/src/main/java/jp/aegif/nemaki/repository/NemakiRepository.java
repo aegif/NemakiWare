@@ -134,9 +134,9 @@ public class NemakiRepository {
 	}
 
 	public ContentStream getContentStream(CallContext callContext,
-			String objectId, String streamId) {
+			String objectId, String streamId, BigInteger offset, BigInteger length) {
 
-		return objectService.getContentStream(callContext, objectId, streamId);
+		return objectService.getContentStream(callContext, objectId, streamId, offset, length);
 	}
 
 	public ObjectData getObjectByPath(CallContext callContext, String path,

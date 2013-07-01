@@ -90,7 +90,7 @@
 			<value>GROUP_EVERYONE</value>
 		</property>
 		<property name="thinClientUri">
-			<value></value>
+			<value>http://localhost:3000/nodes</value>
 		</property>
 		<property name="vendorName">
 			<value>aegif</value>
@@ -99,7 +99,7 @@
 			<value>NemakiWare</value>
 		</property>
 		<property name="productVersion">
-			<value>0.1</value>
+			<value>1.0GA</value>
 		</property>
 		<property name="nameSpace">
 			<value>http://www.aegif.jp/Nemaki/bedroom</value>

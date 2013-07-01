@@ -108,7 +108,6 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			result.setAllowableActions(compileAllowableActions(context, content));
 		}
 
-		iacl = true;
 		if (iacl) {
 			Acl acl = contentService.convertToCmisAcl(content, false);
 			result.setAcl(acl);
@@ -455,8 +454,9 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 				.getPropertyDefinitions().get(id).getPropertyType()) {
 		case BOOLEAN:
 			PropertyBooleanImpl propBoolean = new PropertyBooleanImpl(id, (Boolean) value);
+
 			setCommonAttributesOfProperty(propBoolean, id);
-			props.addProperty(new PropertyBooleanImpl(id, (Boolean) value));
+			props.addProperty(propBoolean);
 			break;
 		case INTEGER:
 			PropertyIntegerImpl propInteger = new PropertyIntegerImpl(id, BigInteger
