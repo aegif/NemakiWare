@@ -31,6 +31,7 @@ import jp.aegif.nemaki.repository.RepositoryMap;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.AllowableActions;
+import org.apache.chemistry.opencmis.commons.data.BulkUpdateObjectIdAndChangeToken;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.FailedToDeleteData;
@@ -631,6 +632,66 @@ public class NemakiCmisService extends AbstractCmisService {
 		}
 		throw new CmisObjectNotFoundException("Unknown repository '"
 				+ repositoryId + "'!");
+	}
+
+	@Override
+	public void appendContentStream(String repositoryId,
+			Holder<String> objectId, Holder<String> changeToken,
+			ContentStream contentStream, boolean isLastChunk,
+			ExtensionsData extension) {
+		// TODO Auto-generated method stub
+		super.appendContentStream(repositoryId, objectId, changeToken, contentStream,
+				isLastChunk, extension);
+	}
+
+	@Override
+	public Acl applyAcl(String repositoryId, String objectId, Acl addAces,
+			Acl removeAces, AclPropagation aclPropagation,
+			ExtensionsData extension) {
+		// TODO Auto-generated method stub
+		return super.applyAcl(repositoryId, objectId, addAces, removeAces,
+				aclPropagation, extension);
+	}
+
+	@Override
+	public List<BulkUpdateObjectIdAndChangeToken> bulkUpdateProperties(
+			String repositoryId,
+			List<BulkUpdateObjectIdAndChangeToken> objectIdAndChangeToken,
+			Properties properties, List<String> addSecondaryTypeIds,
+			List<String> removeSecondaryTypeIds, ExtensionsData extension) {
+		// TODO Auto-generated method stub
+		return super.bulkUpdateProperties(repositoryId, objectIdAndChangeToken,
+				properties, addSecondaryTypeIds, removeSecondaryTypeIds, extension);
+	}
+
+	@Override
+	public String createItem(String repositoryId, Properties properties,
+			String folderId, List<String> policies, Acl addAces,
+			Acl removeAces, ExtensionsData extension) {
+		// TODO Auto-generated method stub
+		return super.createItem(repositoryId, properties, folderId, policies, addAces,
+				removeAces, extension);
+	}
+
+	@Override
+	public TypeDefinition createType(String repositoryId, TypeDefinition type,
+			ExtensionsData extension) {
+		// TODO Auto-generated method stub
+		return super.createType(repositoryId, type, extension);
+	}
+
+	@Override
+	public void deleteType(String repositoryId, String typeId,
+			ExtensionsData extension) {
+		// TODO Auto-generated method stub
+		super.deleteType(repositoryId, typeId, extension);
+	}
+
+	@Override
+	public TypeDefinition updateType(String repositoryId, TypeDefinition type,
+			ExtensionsData extension) {
+		// TODO Auto-generated method stub
+		return super.updateType(repositoryId, type, extension);
 	}
 
 	/*

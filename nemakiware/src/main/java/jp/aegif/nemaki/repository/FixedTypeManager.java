@@ -190,7 +190,7 @@ public class FixedTypeManager {
 		policyType.setIsControllablePolicy(false);
 		policyType.setIsControllableAcl(false);
 		policyType.setIsIncludedInSupertypeQuery(true);
-		relationshipType.setIsFulltextIndexed(false);
+		policyType.setIsFulltextIndexed(false);
 
 		addBasePropertyDefinitions(policyType);
 		addPolicyPropertyDefinitions(policyType);

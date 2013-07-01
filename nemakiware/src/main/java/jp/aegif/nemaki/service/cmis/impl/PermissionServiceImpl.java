@@ -239,12 +239,11 @@ public class PermissionServiceImpl implements PermissionService {
 	@Override
 	public Boolean checkPermission(CallContext callContext, String key, Acl acl,
 			String baseType, Content content) {
-	
 		// Admin always pass a permission check
 		// TODO externalize Admin ID
 		if (callContext.getUsername().equals("admin"))
 			return isAllowableBaseType(key, baseType, content);
-
+		
 		if (acl == null)
 			return false;
 

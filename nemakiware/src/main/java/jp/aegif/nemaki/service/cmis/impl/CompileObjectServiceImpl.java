@@ -278,10 +278,18 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		Set<Action> actionSet = new HashSet<Action>();
 		for (Entry<String, PermissionMapping> mappingEntry : permissionMap
 				.entrySet()) {
+			String key = mappingEntry.getValue().getKey();
+			
 			boolean allowable = permissionService.checkPermission(callContext,
 					mappingEntry.getKey(), acl, baseType, content);
 			
 			//Check Content-specific allowable actions
+			if(content.isRoot()){
+				if(convertKeyToAction(key).equals(Action.CAN_MOVE_OBJECT)){
+					continue;
+				}
+			}
+			
 			if(content.isDocument()){
 				Document d = (Document)content;
 				allowable = isAllowableActionForDocument(allowable, d, mappingEntry.getKey());
@@ -289,7 +297,6 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			
 			//Add an allowable action
 			if (allowable) {
-				String key = mappingEntry.getValue().getKey();
 				actionSet.add(convertKeyToAction(key));
 			}
 		}

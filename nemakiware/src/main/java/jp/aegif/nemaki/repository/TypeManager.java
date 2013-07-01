@@ -34,7 +34,8 @@ import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionList;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
-import org.apache.chemistry.opencmis.commons.impl.Converter;
+
+import org.apache.chemistry.opencmis.commons.impl.WSConverter;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyDefinition;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.TypeDefinitionContainerImpl;
@@ -348,7 +349,7 @@ public class TypeManager implements
 	}
 
 	private TypeDefinition copyTypeDefinition(TypeDefinition type) {
-		return Converter.convert(Converter.convert(type));
+		return WSConverter.convert(WSConverter.convert(type));
 	}
 
 	private static boolean isRootType(TypeDefinitionContainer c) {

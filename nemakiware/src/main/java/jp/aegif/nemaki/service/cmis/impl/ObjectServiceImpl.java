@@ -21,7 +21,6 @@
  ******************************************************************************/
 package jp.aegif.nemaki.service.cmis.impl;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigInteger;
 import java.util.ArrayList;
