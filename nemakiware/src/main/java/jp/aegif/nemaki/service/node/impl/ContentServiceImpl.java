@@ -494,19 +494,19 @@ public class ContentServiceImpl implements ContentService {
 	
 	@Override
 	public Document checkOut(CallContext callContext, String objectId,
-			ExtensionsData extension, boolean contentCopied) {
+			ExtensionsData extension) {
 		Document latest = getDocument(objectId);
 		Document pwc = buildCopyDocumentWithBasicProperties(callContext, latest);
 		
-		if (contentCopied) {
-			// Create PWC attachment
-			String attachmentId = copyAttachment(callContext, latest.getAttachmentNodeId());
-			pwc.setAttachmentNodeId(attachmentId);
-			
-			// Create PWC renditions
-			copyRenditions(callContext, latest.getRenditionIds());
+		
+		// Create PWC attachment
+		String attachmentId = copyAttachment(callContext, latest.getAttachmentNodeId());
+		pwc.setAttachmentNodeId(attachmentId);
+		
+		// Create PWC renditions
+		copyRenditions(callContext, latest.getRenditionIds());
 
-		}
+		
 
 		//Set other properties
 		updateVersionProperties(callContext, VersioningState.CHECKEDOUT, pwc, latest);

@@ -77,9 +77,10 @@ public class VersioningServiceImpl implements VersioningService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		boolean copied = (contentCopied != null && contentCopied.getValue() != null) ? contentCopied.getValue() : true;
-		Document pwc = contentService.checkOut(callContext, id, extension, copied);
+		Document pwc = contentService.checkOut(callContext, id, extension);
 		objectId.setValue(pwc.getId());
+		Holder<Boolean> copied = new Holder<Boolean>(true);
+		contentCopied = copied;
 	}
 
 	@Override

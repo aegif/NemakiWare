@@ -128,7 +128,7 @@ public interface ContentService {
 	
 	Document createDocumentWithNewStream(CallContext callContext, Document original, ContentStream contentStream);
 
-	Document checkOut(CallContext callContext, String objectId, ExtensionsData extension, boolean contentCopied);
+	Document checkOut(CallContext callContext, String objectId, ExtensionsData extension);
 	
 	void cancelCheckOut(CallContext callContext, String objectId,ExtensionsData extension);
 	
