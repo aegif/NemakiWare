@@ -353,7 +353,7 @@ public class SolrPredicateWalker {
 
 		// Build a statement
 		String folderId = (String) walkExpr(paramNode);
-		Term t = new Term(SOLR_PARENTID, wrapupFieldValue(folderId));
+		Term t = new Term(SOLR_PARENTID, folderId);
 		Query q = new TermQuery(t);
 		if (qualNode != null) { // When a table alias exists
 			String qualifier = walkExpr(qualNode).toString();
@@ -402,7 +402,7 @@ public class SolrPredicateWalker {
 		BooleanQuery q = new BooleanQuery();
 		while (iterator.hasNext()) {
 			String descendantId = iterator.next();
-			Term t = new Term(SOLR_PARENTID, wrapupFieldValue(descendantId));
+			Term t = new Term(SOLR_PARENTID, descendantId);
 			TermQuery q1 = new TermQuery(t);
 			q.add(q1, Occur.SHOULD);
 		}
@@ -667,7 +667,7 @@ public class SolrPredicateWalker {
 		list.add(folderId); // Add oneself to the list in advance
 
 		SolrQuery query = new SolrQuery();
-		query.setQuery(SOLR_PARENTID + wrapupFieldValue(folderId) + " AND "
+		query.setQuery(SOLR_PARENTID + folderId + " AND "
 				+ SOLR_TYPE + "folder"); // only "folder" nodes
 
 		// Connect to SolrServer and add subfolder ids to the list
@@ -695,16 +695,4 @@ public class SolrPredicateWalker {
 			return null;
 		}
 	}
-
-	/**
-	 * Enclose string with double quotations
-	 * 
-	 * @param str
-	 * @return
-	 */
-	private static String wrapupFieldValue(String str) {
-		final String DOUBLE_QUOTE = "\"";
-		return DOUBLE_QUOTE + str + DOUBLE_QUOTE;
-	}
-	
 }
