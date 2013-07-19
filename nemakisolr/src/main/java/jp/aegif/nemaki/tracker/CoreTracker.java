@@ -504,18 +504,19 @@ public class CoreTracker extends CloseHook {
 	 * Return a map with a key like "aspect:<aspectName>:<keyName>" and its value 
 	 */
 	private Map<String,String>setAspects(Map<String,String>map, Content content){
-		final String separator = ":";
+		final String separator = ".";
 
 		List<Aspect> aspects = content.getAspects();
 		Iterator<Aspect> iterator = aspects.iterator();
 		while (iterator.hasNext()) {
 			Aspect aspect = iterator.next();
-			String field = "aspect" + separator + aspect.getName() + separator;
+			String type = "aspect" + separator + aspect.getName() + separator;
 			List<Property> properties = aspect.getProperties();
 			Iterator<Property> propIterator = properties.iterator();
 			while(propIterator.hasNext()){
 				Property property = propIterator.next();
-				field += property.getKey();		//QueryName?
+				//TODO Retreive query name in place of property id 
+				String field = type + property.getKey();
 				map.put(field, property.getValue().toString());
 			}
 		}

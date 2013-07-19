@@ -100,12 +100,31 @@ module ActiveCMIS
       attributes[name]
     end
 
+    def secondary_attributes_definition
+      definitions = Hash.new
+      ids = attributes['cmis:secondaryObjectTypeIds']
+      if !ids.nil?
+        ids.each do |id|
+          type = @repository.type_by_id(id)
+          definitions.merge!(type.attributes)  
+        end
+      end
+      definitions
+    end
+
     # Attribute getter for the CMIS attributes of an object
     # @return [Hash{String => ::Object}] All attributes, the keys are the property ids of the attributes
     def attributes
-      self.class.attributes.inject({}) do |hash, (key, attr)|
+      #aegif-
+      primary_attributes = self.class.attributes
+      review_info = @repository.type_by_id('review_info')
+      secondary_attributes = review_info.attributes
+      attrs = primary_attributes.merge(secondary_attributes)
+      #self.class.attributes.inject({}) do |hash, (key, attr)|
+      attrs.inject({}) do |hash, (key, attr)|
+      #-aegif
         if data.nil?
-          if key == "cmis:objectTypeId"
+          if key == "cmis:objectTypeId" 
             hash[key] = self.class.id
           else
             hash[key] = nil
@@ -146,7 +165,6 @@ module ActiveCMIS
       end
     end
     cache :change_event_info
-
     #-aegif
 
     #aegif-
@@ -163,7 +181,10 @@ module ActiveCMIS
     # @return [{String => ::Object}] The updated attributes hash
     def update(attributes)
       attributes.each do |key, value|
-        if (property = self.class.attributes[key.to_s]).nil?
+        #aegif-
+        #if (property = self.class.attributes[key.to_s]).nil?
+        if (property = self.class.attributes[key.to_s]).nil? && (property = secondary_attributes_definition[key.to_s]).nil? 
+        #-aegif
           raise Error::Constraint.new("You are trying to add an unknown attribute (#{key})")
         else
           property.validate_ruby_value(value)
@@ -477,6 +498,13 @@ module ActiveCMIS
     end
 
     #aegif-
+    def attributes_definition
+      definitions = Hash.new
+      definitions = self.class.attributes.merge(secondary_attributes_definition)
+    end
+    #-aegif
+
+    #aegif-
     def save_attributes(attributes, values, checkin = nil, updated_extension = nil)
     #def save_attributes(attributes, values, checkin = nil)
     #-aegif
@@ -488,7 +516,8 @@ module ActiveCMIS
       end
       #aegif-
       #properties = self.class.attributes.reject {|key,_| !updated_attributes.include?(key)}
-      properties = self.class.attributes.reject {|key,_| !updated_attributes.include?(key) && key != 'cmis:changeToken'}
+      #properties = self.class.attributes.reject {|key,_| !updated_attributes.include?(key) && key != 'cmis:changeToken'}
+      properties = attributes_definition.reject {|key,_| !updated_attributes.include?(key) && key != 'cmis:changeToken'}
       #-aegif
 
       #aegif-

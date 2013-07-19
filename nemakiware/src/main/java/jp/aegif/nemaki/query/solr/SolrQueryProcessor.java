@@ -36,12 +36,9 @@ import jp.aegif.nemaki.service.cmis.PermissionService;
 import jp.aegif.nemaki.service.node.ContentService;
 
 import org.antlr.runtime.tree.Tree;
-import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectDataImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectListImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.server.support.query.CmisQueryWalker;
 import org.apache.chemistry.opencmis.server.support.query.QueryObject;
@@ -78,9 +75,6 @@ public class SolrQueryProcessor implements QueryProcessor {
 			Boolean searchAllVersions, Boolean includeAllowableActions,
 			IncludeRelationships includeRelationships, String renditionFilter,
 			BigInteger maxItems, BigInteger skipCount) {
-
-		ObjectListImpl objectList = new ObjectListImpl();
-		objectList.setObjects(new ArrayList<ObjectData>());
 
 		// queryObject includes the SQL information
 		queryObject = new QueryObject(typeManager);
@@ -132,7 +126,6 @@ public class SolrQueryProcessor implements QueryProcessor {
 		if (resp != null & resp.getResults() != null
 				&& resp.getResults().getNumFound() != 0) {
 			SolrDocumentList docs = resp.getResults();
-			List<ObjectData> dataList = new ArrayList<ObjectData>();
 
 			List<Content> contents = new ArrayList<Content>();
 			for (SolrDocument doc : docs) {
@@ -142,12 +135,8 @@ public class SolrQueryProcessor implements QueryProcessor {
 			}
 
 			// Filter out by permissions
-			List<Content> filtered = permissionService.getFiltered(callContext,
+			List<Content> permitted = permissionService.getFiltered(callContext,
 					contents);
-			if (filtered == null) {
-				objectList.setNumItems(BigInteger.ZERO);
-				return objectList;
-			}
 
 			// Filter return value with SELECT clause
 			Map<String, String>m = queryObject.getRequestedPropertiesByAlias();
@@ -161,19 +150,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 				filter = StringUtils.join(aliases.keySet(), ",");
 			}
 			
-			for (Content c : filtered) {
-				// FIXME parameter is hard-fixed.
-				ObjectDataImpl data = (ObjectDataImpl) compileObjectService
-						.compileObjectData(callContext, c, filter,
-								includeAllowableActions, true, aliases);
-				dataList.add(data);
-			}
-			// Add an ObjectData to the list
-			objectList.getObjects().addAll(dataList);
+			return compileObjectService.compileObjectDataList(callContext, permitted, filter, includeAllowableActions, true, maxItems, skipCount);
+		}else{
+			return null;
 		}
-		objectList.setNumItems(BigInteger.valueOf(objectList.getObjects()
-				.size()));
-		return objectList;
 	}
 
 	public void setContentService(ContentService contentService) {

@@ -1,6 +1,25 @@
+#If two object-types each contain property definitions with the same id, the basic property definitions (property type, query name, cardinality) MUST be the same
 aspects:
+  commentable: 
+    attributes:
+      parentId: cmis:secondary
+      displayName: コメント可能対象
+      description: commentable
+      localName: commentable
+      localNameSpace: nemaki
+      queryName: commentable
+    properties:
+      comment:
+          displayName: コメント 
+          description: comment on a node
+          datatype: string
+          cardinality: single
+          updatability: readwrite
+          inherited: false
+          required: false
   classification_info:
     attributes:
+      parentId: cmis:secondary
       displayName: Document classification
       description: Document classification
       localName: classification_info
@@ -12,11 +31,12 @@ aspects:
           description: class
           datatype: string
           cardinality: single
-          updatability: true
+          updatability: readwrite
           inherited: false
           required: false
   client_info:
     attributes:
+      parentId: cmis:secondary
       displayName: 顧客情報
       description: Client information
       localName: client_info
@@ -28,7 +48,7 @@ aspects:
           description: Customer name
           datatype: string
           cardinality: single
-          updatability: true
+          updatability: readwrite
           inherited: false
           required: false
       charged_person:
@@ -36,11 +56,12 @@ aspects:
           description: Charged person
           datatype: string
           cardinality: single
-          updatability: true
+          updatability: readwrite
           inherited: false
           required: false
   review_info:
     attributes:
+      parentId: cmis:secondary
       displayName: レビュー状況
       description: 簡易ワークフロー
       localName: review_info
@@ -52,7 +73,7 @@ aspects:
           description: Previous reviewer
           datatype: string
           cardinality: single
-          updatability: true
+          updatability: readwrite
           inherited: false
           required: false
       comment:
@@ -60,7 +81,7 @@ aspects:
           description: Comment
           datatype: string
           cardinality: single
-          updatability: true
+          updatability: readwrite
           inherited: false
           required: false
       next_reviewer:
@@ -68,6 +89,6 @@ aspects:
           description: Next reviewer
           datatype: string
           cardinality: single
-          updatability: true
+          updatability: readwrite
           inherited: false
           required: false

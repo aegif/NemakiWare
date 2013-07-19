@@ -15,6 +15,9 @@ require_relative 'active_cmis/document'
 require_relative 'active_cmis/folder'
 require_relative 'active_cmis/policy'
 require_relative 'active_cmis/relationship'
+#aegif-
+require_relative 'active_cmis/secondary'
+#-aegif
 require_relative 'active_cmis/type'
 require_relative 'active_cmis/atomic_types'
 require_relative 'active_cmis/property_definition'

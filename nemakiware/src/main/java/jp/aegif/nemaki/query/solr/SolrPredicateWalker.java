@@ -38,6 +38,7 @@ import org.apache.chemistry.opencmis.server.support.query.CmisSelector;
 import org.apache.chemistry.opencmis.server.support.query.ColumnReference;
 import org.apache.chemistry.opencmis.server.support.query.QueryObject;
 import org.apache.chemistry.opencmis.server.support.query.TextSearchLexer;
+import org.apache.commons.lang.StringUtils;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery;
@@ -174,6 +175,7 @@ public class SolrPredicateWalker {
 	// //////////////////////////////////////////////////////////////////////////////
 	private Query walkEquals(Tree leftNode, Tree rightNode) {
 		HashMap<String, String> map = walkCompareInternal(leftNode, rightNode);
+		System.out.println(leftNode);
 		Term term = new Term(map.get(FLD), map.get(CND));
 		Query q = new TermQuery(term);
 		return q;
@@ -228,7 +230,8 @@ public class SolrPredicateWalker {
 	private HashMap<String, String> walkCompareInternal(Tree leftNode,
 			Tree rightNode) {
 		HashMap<String, String> map = new HashMap<String, String>();
-		String left = leftNode.getChild(0).toString();
+		
+		String left = SolrUtil.convertToString(leftNode);
 		String right = walkExpr(rightNode).toString(); 
 		
 		map.put(FLD, SolrUtil.getPropertyNameInSolr(left));
@@ -260,7 +263,8 @@ public class SolrPredicateWalker {
 		}
 
 		// Build a statement
-		String field = SolrUtil.getPropertyNameInSolr(colRefName);
+		//String field = SolrUtil.getPropertyNameInSolr(colRefName);
+		String field = SolrUtil.getPropertyNameInSolr(SolrUtil.convertToString(colNode));
 		String pattern = translatePattern((String) rVal); // Solr wildcard
 															// expression
 		Term t = new Term(field, pattern);
