@@ -33,6 +33,7 @@ import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
+import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.model.constant.DomainType;
 import jp.aegif.nemaki.repository.TypeManager;
 import jp.aegif.nemaki.service.cmis.CompileObjectService;
@@ -114,6 +115,13 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		exceptionService.invalidArgumentRequired("objectId", objectId);
 		Content content = contentService.getContentAsTheBaseType(objectId);
+		//WORK AROUND: getObject(versionSeriesId) is interpreted as getDocumentOflatestVersion 
+		if(content == null){
+			VersionSeries versionSeries = contentService.getVersionSeries(objectId);
+			if(versionSeries != null){
+				content = contentService.getDocumentOfLatestVersion(objectId);
+			}
+		}
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_GET_PROPERTIES_OBJECT, content);

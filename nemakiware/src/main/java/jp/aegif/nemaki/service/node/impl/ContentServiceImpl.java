@@ -27,7 +27,6 @@ import java.util.Arrays;
 import java.util.GregorianCalendar;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.Map.Entry;
 import java.util.TimeZone;
 import java.util.regex.Matcher;
@@ -54,7 +53,6 @@ import jp.aegif.nemaki.repository.TypeManager;
 import jp.aegif.nemaki.service.dao.ContentDaoService;
 import jp.aegif.nemaki.service.dao.impl.ContentDaoServiceImpl;
 import jp.aegif.nemaki.service.node.ContentService;
-
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
@@ -98,13 +96,7 @@ public class ContentServiceImpl implements ContentService {
 	private static final Log log = LogFactory
 			.getLog(ContentDaoServiceImpl.class);
 	final static int FIRST_TOKEN = 1;
-
-	/**
-	 * Get one piece of CMIS content.
-	 * 
-	 * @clazz Type of CMIS content expected, must inherit from Content.
-	 */
-
+	
 	/**
 	 * 
 	 */
@@ -834,34 +826,136 @@ public class ContentServiceImpl implements ContentService {
 		return contentDaoService.getVersionSeries(versionSeriesId);
 	}
 
-	private Content modifyProperties(CallContext callContext, Properties properties, Content content) {
-		//Set updatable properties
-				TypeDefinition td = typeManager.getTypeDefinition(content.getType());
-				Map<String, PropertyDefinition<?>> map =  td.getPropertyDefinitions(); 
-				for(Entry<String, PropertyData<?>> p : properties.getProperties().entrySet()){
-					PropertyDefinition<?> pd = map.get(p.getKey());
-					//CASE: READ&WRITE(ANYTIME)
-					if (pd.getUpdatability() == Updatability.READWRITE){
-						setUpdatePropertyValue(content, p.getValue(), properties);
-					}
-					//CASE:WHEN CHECKED OUT
-					if(pd.getUpdatability() == Updatability.WHENCHECKEDOUT && content.isDocument()){
+	private List<String> getSecondaryTypeIds(Content content){
+		List<String> result = new ArrayList<String>();
+		List<Aspect> aspects = content.getAspects();
+		for(Aspect aspect : aspects){
+			result.add(aspect.getName());
+		}
+		return result;
+	}
+	
+	private List<Aspect> buildSecondaryTypes(Properties properties, Content content){
+		List<Aspect> aspects = new ArrayList<Aspect>();
+		PropertyData secondaryTypeIds = properties.getProperties().get(PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
+		
+		//TODO ここ確認。secondaryTypeの適用とそのプロパティ設定を同時に行ってよいかどうか
+		List<String> ids = new ArrayList<String>();
+		if(secondaryTypeIds == null){
+			ids = getSecondaryTypeIds(content);
+		}else{
+			ids = secondaryTypeIds.getValues();
+		}
+		
+		for(String secondaryTypeId : ids){
+			TypeDefinition td = typeManager.getTypeDefinition(secondaryTypeId);
+			Aspect aspect = new Aspect();
+			aspect.setName(secondaryTypeId);
+			
+			List<Property>props = new ArrayList<Property>();
+			for(Entry<String, PropertyDefinition<?>> entry : td.getPropertyDefinitions().entrySet()){
+				PropertyDefinition<?> pd = entry.getValue();
+				
+				switch(pd.getUpdatability()){
+				case READONLY:
+					continue;
+				case READWRITE:
+					break;
+				case WHENCHECKEDOUT:
+					if(!content.isDocument()){
+						continue;
+					}else{
 						Document d = (Document)content;
-						if(d.isPrivateWorkingCopy()){
-							setUpdatePropertyValue(content, p.getValue(), properties);
+						if(!d.isPrivateWorkingCopy()){
+							continue;
 						}
 					}
+					break;
+				default:
+					continue;
 				}
 				
-				//Set custom properties
-				List<Aspect> aspects = buildAspects(properties);
-				if (aspects != null)
-					content.setAspects(aspects);
-				
-				//Set modified signature
-				setModifiedSignature(callContext, content);
-				
-				return content;
+				PropertyData<?> property = properties.getProperties().get(entry.getKey());
+				if(property == null) continue;
+				Property p = new Property();
+				p.setKey(property.getId());
+				switch(entry.getValue().getCardinality()){
+				case SINGLE:
+					p.setValue(property.getFirstValue());
+					break;
+				case MULTI:
+					p.setValue(property.getValues());
+					break;
+				default:
+					break;
+				}
+				props.add(p);
+			}
+
+			aspect.setProperties(props);
+			aspects.add(aspect);
+		}
+		return aspects;
+	}
+	
+	private Content modifyProperties(CallContext callContext, Properties properties, Content content) {
+		//Primary
+		TypeDefinition td = typeManager.getTypeDefinition(content.getType());
+		for(PropertyData<?> p : properties.getPropertyList()){
+			PropertyDefinition pd = td.getPropertyDefinitions().get(p.getId());
+			if(pd == null) continue;
+			
+			//CASE: READ&WRITE(ANYTIME)
+			if (pd.getUpdatability() == Updatability.READWRITE){
+				setUpdatePropertyValue(content, p, properties);
+			}
+			//CASE:WHEN CHECKED OUT
+			if(pd.getUpdatability() == Updatability.WHENCHECKEDOUT && content.isDocument()){
+				Document d = (Document)content;
+				if(d.isPrivateWorkingCopy()){
+					setUpdatePropertyValue(content, p, properties);
+				}
+			}
+		}
+		
+		//Secondary
+		List<Aspect> secondary = buildSecondaryTypes(properties, content);
+		if (secondary != null){
+			content.setAspects(secondary);
+		}
+		
+		
+		
+		///////
+		
+		
+		
+		/*for(Entry<String, PropertyData<?>> p : properties.getProperties().entrySet()){
+			PropertyDefinition<?> pd;
+			pd = map.get(p.getKey());
+			
+			//CASE: READ&WRITE(ANYTIME)
+			if (pd.getUpdatability() == Updatability.READWRITE){
+				setUpdatePropertyValue(content, p.getValue(), properties);
+			}
+			//CASE:WHEN CHECKED OUT
+			if(pd.getUpdatability() == Updatability.WHENCHECKEDOUT && content.isDocument()){
+				Document d = (Document)content;
+				if(d.isPrivateWorkingCopy()){
+					setUpdatePropertyValue(content, p.getValue(), properties);
+				}
+			}
+		}
+		
+		//Set custom properties
+		List<Aspect> aspects = buildAspects(properties);
+		if (aspects != null)
+			content.setAspects(aspects);*/
+		
+		//Set modified signature
+		setModifiedSignature(callContext, content);
+		
+		return content;
 	}
 	
 	/**
@@ -902,7 +996,7 @@ public class ContentServiceImpl implements ContentService {
 	 * @param propertyData
 	 * @param properties
 	 */
-	private void setUpdatePropertyValue(Content content, PropertyData<?> propertyData, Properties properties){
+	public void setUpdatePropertyValue(Content content, PropertyData<?> propertyData, Properties properties){
 		if(propertyData.getId().equals(PropertyIds.NAME)){
 			if(getIdProperty(properties, PropertyIds.OBJECT_ID) != content.getId()){
 				String uniqueName = buildUniqueName(getStringProperty(properties, PropertyIds.NAME), content.getParentId(), getIdProperty(properties, PropertyIds.OBJECT_ID));
@@ -912,6 +1006,10 @@ public class ContentServiceImpl implements ContentService {
 		
 		if(propertyData.getId().equals(PropertyIds.DESCRIPTION)){
 			content.setDescription(getStringProperty(properties, propertyData.getId()));
+		}
+		
+		if(propertyData.getId().equals(PropertyIds.SECONDARY_OBJECT_TYPE_IDS)){
+			content.setSecondaryIds(getStringListProperty(properties, PropertyIds.SECONDARY_OBJECT_TYPE_IDS));
 		}
 	}
 	
@@ -1332,7 +1430,6 @@ public class ContentServiceImpl implements ContentService {
 		}
 	}
 	
-	
 	private boolean nameConflicts(String originalName, String targetName) {
 		String[] original = splitFileName(originalName);
 		String[] target = splitFileName(targetName);
@@ -1536,5 +1633,4 @@ public class ContentServiceImpl implements ContentService {
 	public void setTypeManager(TypeManager typeManager) {
 		this.typeManager = typeManager;
 	}
-	
 }

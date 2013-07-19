@@ -21,11 +21,15 @@
  ******************************************************************************/
 package jp.aegif.nemaki.query.solr;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 
 import jp.aegif.nemaki.util.PropertyManager;
 
+import org.antlr.runtime.tree.Tree;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
+import org.apache.commons.lang.StringUtils;
 import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.client.solrj.impl.HttpSolrServer;
 
@@ -74,7 +78,6 @@ public class SolrUtil {
 		map.put(PropertyIds.LAST_MODIFICATION_DATE, "modified");
 		map.put(PropertyIds.LAST_MODIFIED_BY, "modifier");
 		map.put(PropertyIds.CONTENT_STREAM_ID, "attachment");
-		map.put("cmis:aspect", "aspect");
 		
 		map.put(PropertyIds.IS_IMMUTABLE, "is_imutable");
 		map.put(PropertyIds.IS_LATEST_VERSION, "is_latest_version");
@@ -86,7 +89,20 @@ public class SolrUtil {
 		map.put(PropertyIds.CONTENT_STREAM_MIME_TYPE, "content_type");	//SolrCell default
 		
 		String val = map.get(cmisColName);
+		
+		if (val == null){
+			val = "aspect." + cmisColName;
+		}
+		
 		return val;
+	}
+	
+	public static String convertToString(Tree propertyNode){
+		List<String> _string = new ArrayList<String>();
+		for(int i=0; i<propertyNode.getChildCount(); i++){
+			_string.add(propertyNode.getChild(i).toString());
+		}
+		return StringUtils.join(_string, ".");
 	}
 
 }

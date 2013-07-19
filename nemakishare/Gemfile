@@ -27,7 +27,7 @@ gem 'activemodel'
 
 gem 'rest-client'
 
-gem 'active_cmis', '0.3.2'
+gem 'active_cmis'
 
 gem "i18n-js"
 

@@ -1,67 +1,65 @@
 # encoding: utf-8
-
 # *******************************************************************************
 # Copyright (c) 2013 aegif.
-# 
+#
 # This file is part of NemakiWare.
-# 
+#
 # NemakiWare is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-# 
+#
 # NemakiWare is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU General Public License along with NemakiWare.
 # If not, see <http://www.gnu.org/licenses/>.
-# 
+#
 # Contributors:
 #     linzhixing(https://github.com/linzhixing) - initial API and implementation
 # ******************************************************************************
 class NodesController < ApplicationController
-  
+
   before_filter :initialize_breadcrumb
-  
   def initialize_breadcrumb
-      if session[:breadcrumb].blank?
-        session[:breadcrumb] = []        
-      end
+    if session[:breadcrumb].blank?
+      session[:breadcrumb] = []
+    end
   end
-  
+
   def set_breadcrumb(node)
     if node == nil
       crumb = {:id => "/", :name => "/"}
     else
       crumb = {:id => node.id, :name => node.name}
-    end  
-    
+    end
+
     if check_new_breadcrumb crumb
       if session[:breadcrumb].size >= CONFIG['change_log']['display_number']
         session[:breadcrumb].shift
       end
-      
+
       session[:breadcrumb] << crumb
-    end 
+    end
   end
 
   def check_new_breadcrumb(crumb)
     if session[:breadcrumb].present?
       if session[:breadcrumb].last[:id] == crumb[:id]
-        false
+      false
       else
-        true
+      true
       end
     else !session[:breadcrumb].nil?
-      true
+    true
     end
   end
-  
+
   def index
     if session[:nemaki_auth_info] != nil
-      redirect_to :action => 'explore' 
+      redirect_to :action => 'explore'
     end
   end
 
@@ -70,8 +68,8 @@ class NodesController < ApplicationController
     server = ActiveCMIS::Server.new(CONFIG['repository']['server_url'])
     nemaki = server.authenticate(:basic, user[:id], user[:password])
     repo = nemaki.repository(CONFIG['repository']['repository_id'])
-    session[:nemaki_auth_info] = user 
-    
+    session[:nemaki_auth_info] = user
+
     redirect_to :action => 'explore'
   end
 
@@ -83,50 +81,62 @@ class NodesController < ApplicationController
       @type = "document"
     elsif params[:type] == 'folder'
       @folder = true
-      @type = "folder"  
+      @type = "folder"
     end
-    
+
     render :layout => 'popup'
   end
 
   def create
     if params[:type] == 'document'
-      cmis_type = 'cmis:document' 
+      cmis_type = 'cmis:document'
     elsif params[:type] == 'folder'
       cmis_type = 'cmis:folder'
     end
-    
-    @nemaki_repository.create(params[:node], params[:parent_id], cmis_type)    
-    
+
+    @nemaki_repository.create(params[:node], params[:parent_id], cmis_type)
+
     #TODO 失敗時の処理
-    redirect_to_parent(explore_node_path(params[:parent_id]))       
+    redirect_to_parent(explore_node_path(params[:parent_id]))
   end
 
   def edit
     @node = @nemaki_repository.find(params[:id])
     @aspects = @nemaki_repository.get_aspects_with_attributes(@node)
     render :layout => 'popup'
-  end 
-  
+  end
+
   def update
     node = @nemaki_repository.find(params[:id])
-   
+
     update_properties = Hash.new
     bps = JSON.parse(params[:basic_properties])
-      if !bps.nil? && !bps.empty?
-        bps.each do |bp|
-          puts 
-          update_properties[bp['key']] = bp['value']
+    if !bps.nil? && !bps.empty?
+      bps.each do |bp|
+        update_properties[bp['key']] = bp['value']
+      end
+    end
+    
+    secondary_types = JSON.parse(params[:custom_properties])
+    update_properties['cmis:secondaryObjectTypeIds'] = Array.new
+    if !secondary_types.nil? && !secondary_types.empty?
+      secondary_types.each do |sec|
+        update_properties['cmis:secondaryObjectTypeIds'] << sec['id']
+        
+        sec_props = sec['properties']
+        sec_props.each do |sec_prop|
+          update_properties[sec_prop['key']] = sec_prop['value']
         end
-      end 
-     
-   update_aspects = @nemaki_repository.convert_input_to_aspects(node, JSON.parse(params[:custom_properties])) 
+      end
+    end
 
-   #TODO CMIS属性の更新でdiffがあるときのみupdateになっているか確認 
-   @nemaki_repository.update(params[:id], update_properties, update_aspects)
+    update_aspects = @nemaki_repository.convert_input_to_aspects(node, JSON.parse(params[:custom_properties]))
+
+    #TODO CMIS属性の更新でdiffがあるときのみupdateになっているか確認
+    @nemaki_repository.update(params[:id], update_properties, update_aspects)
 
     #TODO 失敗時の処理
-    
+
     parent = @nemaki_repository.get_parent(node)
     redirect_to_parent(explore_node_path(parent.id))
   end
@@ -141,26 +151,26 @@ class NodesController < ApplicationController
   def show
     @node = @nemaki_repository.find(params[:id])
     aspects_all = @nemaki_repository.get_aspects_with_attributes(@node)
-    
+
     @aspects = []
     if aspects_all != nil && !aspects_all.empty?
       aspects_all.each do |a|
         if a.implemented
-          @aspects << a  
+        @aspects << a
         end
       end
     end
-    
+
     if @node.is_document?
-      @versions = @nemaki_repository.get_all_versions(@node)  
+      @versions = @nemaki_repository.get_all_versions(@node)
     end
     @parent = @nemaki_repository.get_parent @node
-    
+
     #Navigation setting
     site = @nemaki_repository.get_site_by_node_path(@parent.path)
     set_allowed_up(site)
-    
-    render :layout => 'popup'  
+
+    render :layout => 'popup'
   end
 
   def download
@@ -169,91 +179,91 @@ class NodesController < ApplicationController
       send_data @nemaki_repository.get_stream_data(@node), :filename => @node.name, :type => @node.mimetype
     end
   end
-  
+
   def move
-    
+
   end
-  
+
   def explore
-      #Get the folder to be explored
-      if(params[:id] )
-        @node = @nemaki_repository.find(params[:id])
+    #Get the folder to be explored
+    if(params[:id] )
+      @node = @nemaki_repository.find(params[:id])
+    else
+      if is_admin_role?
+        @node = @nemaki_repository.find('/')
       else
-        if is_admin_role?
-          @node = @nemaki_repository.find('/')
+        @node = @nemaki_repository.find(CONFIG['site']['root_id'])
+      end
+    end
+
+    #Get the children contained in the folder
+    if @node.is_folder?
+      #Retrieve folder items
+      @maxItems = params[:maxItems].blank? ? CONFIG['paging']['maxItems'] + 1 : params[:maxItems].to_i + 1
+      @skipCount = params[:skipCount].blank? ? 0 : params[:skipCount]
+      @nodes = @nemaki_repository.get_children(@node, @maxItems, @skipCount)
+
+      #Check paging parameter
+      @hasBeforePage = (@skipCount.blank? || @skipCount.to_i > 0) ? true : false
+      if @nodes != nil && !@nodes.blank?
+        if @nodes.size > CONFIG['paging']['maxItems']
+          @hasNextPage = true
+        @nodes.pop
         else
-          @node = @nemaki_repository.find(CONFIG['site']['root_id'])
+          @hasnextPage = false
         end
       end
-      
-      #Get the children contained in the folder
-      if @node.is_folder? 
-        #Retrieve folder items
-        @maxItems = params[:maxItems].blank? ? CONFIG['paging']['maxItems'] + 1 : params[:maxItems].to_i + 1
-        @skipCount = params[:skipCount].blank? ? 0 : params[:skipCount]
-        @nodes = @nemaki_repository.get_children(@node, @maxItems, @skipCount)
+      if !@node.is_root?
+        @parent = @nemaki_repository.get_parent(@node)
+      end
+    else
+      nil
+    end
 
-        #Check paging parameter      
-        @hasBeforePage = (@skipCount.blank? || @skipCount.to_i > 0) ? true : false 
-        if @nodes != nil && !@nodes.blank?
-          if @nodes.size > CONFIG['paging']['maxItems']
-            @hasNextPage = true
-            @nodes.pop
-          else
-            @hasnextPage = false
-          end
-        end 
-        if !@node.is_root?
-           @parent = @nemaki_repository.get_parent(@node)
-        end  
-      else
-        nil 
+    #Set the site name to which the node belongs
+    if @node.is_root?
+      @site_name = t('view.navigation.repository_root')
+    elsif @node.is_site_root?
+      @site_name = t('view.navigation.site_list')
+    else
+      @site_name = @nemaki_repository.get_site_name(@node)
+      if @site_name.nil?
+        @site_name = ""
       end
-      
-      #Set the site name to which the node belongs
-      if @node.is_root?
-        @site_name = t('view.navigation.repository_root')
-      elsif @node.is_site_root?
-        @site_name = t('view.navigation.site_list')
-      else
-        @site_name = @nemaki_repository.get_site_name(@node)
-        if @site_name.nil?
-          @site_name = ""
-        end  
-      end
-      
-      #チェンジログ
-      ##現在のサイトに属するものだけ抽出
-      site = @nemaki_repository.get_site_by_node_path(@node.path)
-      if site != nil
-        @site_changes = ChangeEvent.where(:site => site.id).last(CONFIG['change_log']['display_number'])
-        @site_changes.reverse!  
-      end
-            
-      #Set breadcrumbs
-      set_breadcrumb(@node)
-      @breadcrumbs = session[:breadcrumb]
-      
-      #Navigation setting
-      set_allowed_up(site)
+    end
+
+    #チェンジログ
+    ##現在のサイトに属するものだけ抽出
+    site = @nemaki_repository.get_site_by_node_path(@node.path)
+    if site != nil
+      @site_changes = ChangeEvent.where(:site => site.id).last(CONFIG['change_log']['display_number'])
+    @site_changes.reverse!
+    end
+
+    #Set breadcrumbs
+    set_breadcrumb(@node)
+    @breadcrumbs = session[:breadcrumb]
+
+    #Navigation setting
+    set_allowed_up(site)
   end
-  
+
   def set_allowed_up(site)
     if site == nil
       @is_allowed_up = @is_admin_role
     else
-      @is_allowed_up = true  
+      @is_allowed_up = true
     end
   end
-  
+
   def search
     @search_form = SearchForm.new(params[:search_form])
     if !@search_form.valid?
       flash[:error] = t('message.validation.no_query_word')
       redirect_to :action => :explore, :id => "/"
-      return
+    return
     end
-    
+
     q = @search_form.query
 
     #TODO Search under a site
@@ -264,7 +274,7 @@ class NodesController < ApplicationController
     @nodes = @nemaki_repository.search(statement_document)
     statement_folder = "SELECT * FROM cmis:folder WHERE cmis:name = '" + q + "'"
     @nodes = @nodes + @nemaki_repository.search(statement_folder)
-    
+
     #Set site
     @sites = Hash.new
     sites_cache = Hash.new
@@ -277,17 +287,17 @@ class NodesController < ApplicationController
       else
         if sites_cache[site_name].blank?
           site_path = site_root.path + "/" + site_name
-          site = @nemaki_repository.find_by_path site_path
-          sites_cache[site_name] = site
+        site = @nemaki_repository.find_by_path site_path
+        sites_cache[site_name] = site
         end
-        @sites[n.id] = sites_cache[site_name]  
+      @sites[n.id] = sites_cache[site_name]
       end
     end
-    
+
     #Set query word
     @query_word = q
   end
-  
+
   def destroy
     if params[:id]
       parent_id = @nemaki_repository.delete(params[:id])
@@ -295,33 +305,33 @@ class NodesController < ApplicationController
     #TODO rootだった場合の処理
     redirect_to :action => 'explore', :id => parent_id
   end
-  
+
   def edit_permission
-    @node = @nemaki_repository.find(params[:id])  
-    render :layout => 'popup'  
+    @node = @nemaki_repository.find(params[:id])
+    render :layout => 'popup'
   end
-  
+
   def update_permission
     if params[:id]
       node = @nemaki_repository.find(params[:id]);
     end
-   
+
     @nemaki_repository.update_permission(params[:id], params[:acl][:entries], params[:acl][:inheritance]);
-  
+
     parent = @nemaki_repository.get_parent(node)
     redirect_to_parent(explore_node_path(parent.id))
   end
-  
+
   def redirect_parent_id(node)
     parent = @nemaki_repository.get_parent(node);
     if parent == nil
-      parent_id = "/"  
-    else  
-      parent_id = parent.id
+      parent_id = "/"
+    else
+    parent_id = parent.id
     end
     return parent_id
   end
-  
+
   def logout
     session[:nemaki_auth_info] = nil
     redirect_to :action => :index

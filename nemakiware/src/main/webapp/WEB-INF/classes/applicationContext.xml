@@ -276,13 +276,16 @@
         <property name="permissionService">
             <ref bean="PermissionService"></ref>
         </property>
+        <property name="typeManager">
+            <ref bean="typeManager"></ref>
+        </property>
     </bean>
 	
     <bean id="permissionService" class="jp.aegif.nemaki.service.cmis.impl.PermissionServiceImpl">
         <property name="principalService">
             <ref bean="PrincipalService"></ref>
         </property>
-         <property name="contentService">
+        <property name="contentService">
             <ref bean="ContentService"></ref>
         </property>
         <property name="typeManager">

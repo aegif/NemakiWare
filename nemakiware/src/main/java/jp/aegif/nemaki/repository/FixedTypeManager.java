@@ -21,41 +21,26 @@
  ******************************************************************************/
 package jp.aegif.nemaki.repository;
 
-import java.math.BigDecimal;
-import java.math.BigInteger;
 import java.util.ArrayList;
-import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
-import org.apache.chemistry.opencmis.commons.definitions.Choice;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
-import org.apache.chemistry.opencmis.commons.enums.DateTimeResolution;
-import org.apache.chemistry.opencmis.commons.enums.DecimalPrecision;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyDefinition;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.DocumentTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.FolderTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PolicyTypeDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyBooleanDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDecimalDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyHtmlDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyUriDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.RelationshipTypeDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.SecondaryTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.TypeDefinitionContainerImpl;
-import org.apache.commons.collections.CollectionUtils;
 
 public class FixedTypeManager {
 
@@ -81,7 +66,7 @@ public class FixedTypeManager {
 	/**
 	 * Map of all types.
 	 */
-	private Map<String, TypeDefinitionContainer> types;
+	public Map<String, TypeDefinitionContainer> types;
 
 
 	/**
@@ -107,7 +92,7 @@ public class FixedTypeManager {
 		folderType.setLocalName("folder");
 		folderType.setLocalNamespace(NAMESPACE);
 		folderType.setQueryName(FOLDER_TYPE_ID);
-		folderType.setDisplayName("Folder");
+		folderType.setDisplayName("folder");
 		folderType.setBaseTypeId(BaseTypeId.CMIS_FOLDER);
 		folderType.setDescription("Folder");
 		folderType.setIsCreatable(true);
@@ -121,8 +106,9 @@ public class FixedTypeManager {
 		addBasePropertyDefinitions(folderType);
 		addFolderPropertyDefinitions(folderType);
 
-		addTypeInternal(folderType);
-
+		//addTypeInternal(folderType);
+		TypeManagerUtil.addTypeInternal(types, folderType);
+		
 		// document type
 		DocumentTypeDefinitionImpl documentType = new DocumentTypeDefinitionImpl();
 		documentType.setId(DOCUMENT_TYPE_ID);
@@ -145,8 +131,9 @@ public class FixedTypeManager {
 		addBasePropertyDefinitions(documentType);
 		addDocumentPropertyDefinitions(documentType);
 
-		addTypeInternal(documentType);
-
+		//addTypeInternal(documentType);
+		TypeManagerUtil.addTypeInternal(types, documentType);
+		
 		// relationship types
 		RelationshipTypeDefinitionImpl relationshipType = new RelationshipTypeDefinitionImpl();
 		relationshipType.setId(RELATIONSHIP_TYPE_ID);
@@ -173,8 +160,9 @@ public class FixedTypeManager {
 		addBasePropertyDefinitions(relationshipType);
 		addRelationshipPropertyDefinitions(relationshipType);
 		
-		addTypeInternal(relationshipType);
-
+		//addTypeInternal(relationshipType);
+		TypeManagerUtil.addTypeInternal(types, relationshipType);
+		
 		// policy type
 		PolicyTypeDefinitionImpl policyType = new PolicyTypeDefinitionImpl();
 		policyType.setId(POLICY_TYPE_ID);
@@ -195,30 +183,31 @@ public class FixedTypeManager {
 		addBasePropertyDefinitions(policyType);
 		addPolicyPropertyDefinitions(policyType);
 		
-		addTypeInternal(policyType);
+		//addTypeInternal(policyType);
+		TypeManagerUtil.addTypeInternal(types, policyType);
+		
+		
+		// secondary type
+		SecondaryTypeDefinitionImpl secondaryType = new SecondaryTypeDefinitionImpl();
+		secondaryType.setId(SECONDARY_TYPE_ID);
+		secondaryType.setLocalName("secondary");
+		secondaryType.setLocalNamespace(NAMESPACE);
+		secondaryType.setQueryName(SECONDARY_TYPE_ID);
+		secondaryType.setDisplayName("secondary");
+		secondaryType.setBaseTypeId(BaseTypeId.CMIS_SECONDARY);
+		secondaryType.setDescription("Secondary");
+		secondaryType.setIsCreatable(false);
+		secondaryType.setIsFileable(false);
+		secondaryType.setIsQueryable(true);
+		secondaryType.setIsControllablePolicy(false);
+		secondaryType.setIsControllableAcl(false);
+		secondaryType.setIsIncludedInSupertypeQuery(true);
+		secondaryType.setIsFulltextIndexed(true);
+		secondaryType.setPropertyDefinitions(new HashMap<String, PropertyDefinition<?>>());
 
-		/*
-		 * //secondary type(Parent type) SecondaryTypeDefinitionImpl
-		 * secondaryType = new SecondaryTypeDefinitionImpl();
-		 * secondaryType.setBaseTypeId(BaseTypeId.CMIS_SECONDARY);
-		 * secondaryType.setIsControllableAcl(false);
-		 * secondaryType.setIsControllablePolicy(false);
-		 * secondaryType.setIsCreatable(false);
-		 * secondaryType.setDescription("Secondary");
-		 * secondaryType.setDisplayName("Secondary");
-		 * secondaryType.setIsFileable(false);
-		 * secondaryType.setIsIncludedInSupertypeQuery(true);
-		 * secondaryType.setLocalName("Secondary");
-		 * secondaryType.setLocalNamespace(NAMESPACE);
-		 * secondaryType.setIsQueryable(false);
-		 * secondaryType.setQueryName("cmis:secondary");
-		 * secondaryType.setId(SECONDARY_TYPE_ID);
-		 * 
-		 * addBasePropertyDefinitions(secondaryType);
-		 * 
-		 * addTypeInternal(secondaryType);
-		 */
-
+		
+		//addTypeInternal(policyType);
+		TypeManagerUtil.addTypeInternal(types, secondaryType);
 	}
 
 	private void addBasePropertyDefinitions(AbstractTypeDefinition type) {
@@ -243,10 +232,10 @@ public class FixedTypeManager {
 				Cardinality.SINGLE, Updatability.ONCREATE, required,
 				queryable, orderable, null));
 		
-		/*type.addPropertyDefinition(createDefaultPropDef(
+		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.SECONDARY_OBJECT_TYPE_IDS, PropertyType.ID,
-				Cardinality.MULTI, Updatability.READONLY, !required, queryable,
-				!orderable, null));*/
+				Cardinality.MULTI, Updatability.READWRITE, !required, queryable,
+				!orderable, null));
 
 		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.CREATED_BY,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
@@ -271,10 +260,6 @@ public class FixedTypeManager {
 				PropertyIds.CHANGE_TOKEN, PropertyType.STRING,
 				Cardinality.SINGLE, Updatability.READONLY, !required,
 				!queryable, !orderable, null));
-		
-		/*type.addPropertyDefinition(createDefaultPropDef(PropertyIds.PARENT_ID,
-				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
-				!required, queryable, !orderable, null));*/
 	}
 
 	private void addFolderPropertyDefinitions(FolderTypeDefinitionImpl type) {
@@ -392,61 +377,9 @@ public class FixedTypeManager {
 	}
 	
 	/**
-	 * Creates a property definition object.
-	 */
-	private PropertyDefinition<?> createPropDef(String id, String displayName,
-			String description, PropertyType datatype, Cardinality cardinality,
-			Updatability updateability, boolean inherited, boolean required) {
-		AbstractPropertyDefinition<?> result = null;
-
-		switch (datatype) {
-		case BOOLEAN:
-			result = new PropertyBooleanDefinitionImpl();
-			break;
-		case DATETIME:
-			result = new PropertyDateTimeDefinitionImpl();
-			break;
-		case DECIMAL:
-			result = new PropertyDecimalDefinitionImpl();
-			break;
-		case HTML:
-			result = new PropertyHtmlDefinitionImpl();
-			break;
-		case ID:
-			result = new PropertyIdDefinitionImpl();
-			break;
-		case INTEGER:
-			result = new PropertyIntegerDefinitionImpl();
-			break;
-		case STRING:
-			result = new PropertyStringDefinitionImpl();
-			break;
-		case URI:
-			result = new PropertyUriDefinitionImpl();
-			break;
-		default:
-			throw new RuntimeException("Unknown datatype! Spec change?");
-		}
-
-		result.setId(id);
-		result.setLocalName(id);
-		result.setDisplayName(displayName);
-		result.setDescription(description);
-		result.setPropertyType(datatype);
-		result.setCardinality(cardinality);
-		result.setUpdatability(updateability);
-		result.setIsInherited(inherited);
-		result.setIsRequired(required);
-		result.setIsQueryable(false);
-		result.setQueryName(id);
-
-		return result;
-	}
-
-	/**
 	 * Adds a type to collection.
 	 */
-	private void addTypeInternal(AbstractTypeDefinition type) {
+	public void addTypeInternal(AbstractTypeDefinition type) {
 		if (type == null) {
 			return;
 		}
@@ -475,52 +408,7 @@ public class FixedTypeManager {
 		types.put(type.getId(), tc);
 	}
 
-	private PropertyDefinition createPropBaseDef(
-			AbstractPropertyDefinition<?> result, String id, String localName,
-			String localNameSpace, String queryName, String displayName,
-			String description, PropertyType datatype, Cardinality cardinality,
-			Updatability updatability, boolean inherited, boolean required,
-			boolean queryable, boolean orderable, boolean openChoice) {
-		// Set default value if not set(null)
-		if (localName == null)
-			localName = id;
-		if (localNameSpace == null)
-			localName = id;
-		if (queryName == null)
-			localName = id;
-		if (displayName == null)
-			localName = id;
-		if (description == null)
-			localName = id;
-		// Set base attributes
-		result.setId(id);
-		result.setLocalName(localName);
-		result.setLocalNamespace(localNameSpace);
-		result.setQueryName(queryName);
-		result.setDisplayName(displayName);
-		result.setDescription(description);
-		result.setPropertyType(datatype);
-		result.setCardinality(cardinality);
-		result.setUpdatability(updatability);
-		result.setIsInherited(inherited);
-		result.setIsRequired(required);
-		result.setIsQueryable(queryable);
-		result.setIsOrderable(orderable);
-		result.setIsOpenChoice(openChoice);
-		return result;
-	}
-
-	private <T> List<T> convertListType(final Class<T> clazz, List<?> list) {
-		if (CollectionUtils.isEmpty(list))
-			return null;
-		List<T> result = new ArrayList<T>();
-		for (Object o : list) {
-			result.add(clazz.cast(o));
-		}
-		return result;
-	}
-
-	private PropertyDefinition<?> createDefaultPropDef(String id,
+	public PropertyDefinition<?> createDefaultPropDef(String id,
 			PropertyType datatype, Cardinality cardinality,
 			Updatability updatability, boolean required, boolean queryable,
 			boolean orderable, List<?> defaultValue) {
@@ -535,235 +423,9 @@ public class FixedTypeManager {
 		boolean inherited = false;
 		boolean openChoice = false;
 
-		switch (datatype) {
-		case BOOLEAN:
-			result = createPropBooleanTimeDef(id, localName, localNameSpace,
-					queryName, displayName, description, datatype, cardinality,
-					updatability, inherited, required, queryable, orderable,
-					null, openChoice,
-					convertListType(String.class, defaultValue));
-			break;
-		case DATETIME:
-
-			result = createPropDateTimeDef(id, localName, localNameSpace,
-					queryName, displayName, description, datatype, cardinality,
-					updatability, inherited, required, queryable, orderable,
-					null, openChoice,
-					convertListType(GregorianCalendar.class, defaultValue),
-					DateTimeResolution.TIME);
-			break;
-		case DECIMAL:
-			result = createPropDecimalDef(id, localName, localNameSpace,
-					queryName, displayName, description, datatype, cardinality,
-					updatability, inherited, required, queryable, orderable,
-					null, openChoice,
-					convertListType(BigDecimal.class, defaultValue),
-					DecimalPrecision.BITS64, null, null);
-			break;
-		case HTML:
-			result = createPropHtmlDef(id, localName, localNameSpace,
-					queryName, displayName, description, datatype, cardinality,
-					updatability, inherited, required, queryable, orderable,
-					null, openChoice,
-					convertListType(String.class, defaultValue));
-			break;
-		case ID:
-			result = createPropIdDef(id, localName, localNameSpace, queryName,
-					displayName, description, datatype, cardinality,
-					updatability, inherited, required, queryable, orderable,
-					null, openChoice,
-					convertListType(String.class, defaultValue));
-			break;
-		case INTEGER:
-			result = createPropIntegerDef(id, localName, localNameSpace,
-					queryName, displayName, description, datatype, cardinality,
-					updatability, inherited, required, queryable, orderable,
-					null, openChoice,
-					convertListType(BigInteger.class, defaultValue), null, null);
-			break;
-		case STRING:
-			result = createPropStringDef(id, localName, localNameSpace,
-					queryName, displayName, description, datatype, cardinality,
-					updatability, inherited, required, queryable, orderable,
-					null, openChoice,
-					convertListType(String.class, defaultValue), null);
-			break;
-		case URI:
-			result = createPropUriDef(id, localName, localNameSpace, queryName,
-					displayName, description, datatype, cardinality,
-					updatability, inherited, required, queryable, orderable,
-					null, openChoice,
-					convertListType(String.class, defaultValue));
-			break;
-		default:
-			throw new RuntimeException("Unknown datatype! Spec change?");
-		}
+		result = TypeManagerUtil.createPropDef(id, localName, localNameSpace, queryName, displayName, description, datatype, cardinality, updatability, required, queryable, inherited, openChoice, orderable, defaultValue);
+		
 		return result;
 
-	}
-
-	private PropertyDefinition<?> createPropBooleanTimeDef(String id,
-			String localName, String localNameSpace, String queryName,
-			String displayName, String description, PropertyType datatype,
-			Cardinality cardinality, Updatability updatability,
-			boolean inherited, boolean required, boolean queryable,
-			boolean orderable, List<Choice<String>> choiceList,
-			boolean openChoice, List<String> defaultValue) {
-		// Set base attributes
-		PropertyStringDefinitionImpl result = new PropertyStringDefinitionImpl();
-		result = (PropertyStringDefinitionImpl) createPropBaseDef(result, id,
-				localName, localNameSpace, queryName, displayName, description,
-				datatype, cardinality, updatability, inherited, required,
-				queryable, orderable, openChoice);
-		result.setChoices(choiceList);
-		result.setDefaultValue(defaultValue);
-
-		return result;
-	}
-
-	private PropertyDefinition<?> createPropDateTimeDef(String id,
-			String localName, String localNameSpace, String queryName,
-			String displayName, String description, PropertyType datatype,
-			Cardinality cardinality, Updatability updatability,
-			boolean inherited, boolean required, boolean queryable,
-			boolean orderable, List<Choice<GregorianCalendar>> choiceList,
-			boolean openChoice, List<GregorianCalendar> defaultValue,
-			DateTimeResolution resolution) {
-		// Set base attributes
-		PropertyDateTimeDefinitionImpl result = new PropertyDateTimeDefinitionImpl();
-		result = (PropertyDateTimeDefinitionImpl) createPropBaseDef(result, id,
-				localName, localNameSpace, queryName, displayName, description,
-				datatype, cardinality, updatability, inherited, required,
-				queryable, orderable, openChoice);
-		result.setChoices(choiceList);
-		result.setDefaultValue(defaultValue);
-		// Set DateTime-specific attributes
-		result.setDateTimeResolution(resolution);
-
-		return result;
-	}
-
-	private PropertyDefinition<?> createPropDecimalDef(String id,
-			String localName, String localNameSpace, String queryName,
-			String displayName, String description, PropertyType datatype,
-			Cardinality cardinality, Updatability updatability,
-			boolean inherited, boolean required, boolean queryable,
-			boolean orderable, List<Choice<BigDecimal>> choiceList,
-			boolean openChoice, List<BigDecimal> defaultValue,
-			DecimalPrecision precision, BigDecimal minValue, BigDecimal maxValue) {
-		// Set base attributes
-		PropertyDecimalDefinitionImpl result = new PropertyDecimalDefinitionImpl();
-		result = (PropertyDecimalDefinitionImpl) createPropBaseDef(result, id,
-				localName, localNameSpace, queryName, displayName, description,
-				datatype, cardinality, updatability, inherited, required,
-				queryable, orderable, openChoice);
-		result.setChoices(choiceList);
-		result.setDefaultValue(defaultValue);
-		// Set Decimal-specific attributes
-		result.setMinValue(minValue);
-		result.setMaxValue(maxValue);
-
-		return result;
-	}
-
-	private PropertyDefinition<?> createPropHtmlDef(String id,
-			String localName, String localNameSpace, String queryName,
-			String displayName, String description, PropertyType datatype,
-			Cardinality cardinality, Updatability updatability,
-			boolean inherited, boolean required, boolean queryable,
-			boolean orderable, List<Choice<String>> choiceList,
-			boolean openChoice, List<String> defaultValue) {
-		// Set base attributes
-		PropertyHtmlDefinitionImpl result = new PropertyHtmlDefinitionImpl();
-		result = (PropertyHtmlDefinitionImpl) createPropBaseDef(result, id,
-				localName, localNameSpace, queryName, displayName, description,
-				datatype, cardinality, updatability, inherited, required,
-				queryable, orderable, openChoice);
-		result.setChoices(choiceList);
-		result.setDefaultValue(defaultValue);
-
-		return result;
-	}
-
-	private PropertyDefinition<?> createPropIdDef(String id, String localName,
-			String localNameSpace, String queryName, String displayName,
-			String description, PropertyType datatype, Cardinality cardinality,
-			Updatability updatability, boolean inherited, boolean required,
-			boolean queryable, boolean orderable,
-			List<Choice<String>> choiceList, boolean openChoice,
-			List<String> defaultValue) {
-		// Set base attributes
-		PropertyIdDefinitionImpl result = new PropertyIdDefinitionImpl();
-		result = (PropertyIdDefinitionImpl) createPropBaseDef(result, id,
-				localName, localNameSpace, queryName, displayName, description,
-				datatype, cardinality, updatability, inherited, required,
-				queryable, orderable, openChoice);
-		result.setChoices(choiceList);
-		result.setDefaultValue(defaultValue);
-
-		return result;
-	}
-
-	private PropertyDefinition<?> createPropIntegerDef(String id,
-			String localName, String localNameSpace, String queryName,
-			String displayName, String description, PropertyType datatype,
-			Cardinality cardinality, Updatability updatability,
-			boolean inherited, boolean required, boolean queryable,
-			boolean orderable, List<Choice<BigInteger>> choiceList,
-			boolean openChoice, List<BigInteger> defaultValue,
-			BigInteger minValue, BigInteger maxValue) {
-		// Set base attributes
-		PropertyIntegerDefinitionImpl result = new PropertyIntegerDefinitionImpl();
-		result = (PropertyIntegerDefinitionImpl) createPropBaseDef(result, id,
-				localName, localNameSpace, queryName, displayName, description,
-				datatype, cardinality, updatability, inherited, required,
-				queryable, orderable, openChoice);
-		result.setChoices(choiceList);
-		result.setDefaultValue(defaultValue);
-		// Set Integer-specific attributes
-		result.setMinValue(minValue);
-		result.setMaxValue(maxValue);
-
-		return result;
-	}
-
-	private PropertyDefinition<?> createPropStringDef(String id,
-			String localName, String localNameSpace, String queryName,
-			String displayName, String description, PropertyType datatype,
-			Cardinality cardinality, Updatability updatability,
-			boolean inherited, boolean required, boolean queryable,
-			boolean orderable, List<Choice<String>> choiceList,
-			boolean openChoice, List<String> defaultValue, BigInteger maxLength) {
-		// Set base attributes
-		PropertyStringDefinitionImpl result = new PropertyStringDefinitionImpl();
-		result = (PropertyStringDefinitionImpl) createPropBaseDef(result, id,
-				localName, localNameSpace, queryName, displayName, description,
-				datatype, cardinality, updatability, inherited, required,
-				queryable, orderable, openChoice);
-		result.setChoices(choiceList);
-		result.setDefaultValue(defaultValue);
-		// Set String-specific attributes
-		if (maxLength != null)
-			result.setMaxLength(maxLength);
-		return result;
-	}
-
-	private PropertyDefinition<?> createPropUriDef(String id, String localName,
-			String localNameSpace, String queryName, String displayName,
-			String description, PropertyType datatype, Cardinality cardinality,
-			Updatability updatability, boolean inherited, boolean required,
-			boolean queryable, boolean orderable,
-			List<Choice<String>> choiceList, boolean openChoice,
-			List<String> defaultValue) {
-		// Set base attributes
-		PropertyUriDefinitionImpl result = new PropertyUriDefinitionImpl();
-		result = (PropertyUriDefinitionImpl) createPropBaseDef(result, id,
-				localName, localNameSpace, queryName, displayName, description,
-				datatype, cardinality, updatability, inherited, required,
-				queryable, orderable, openChoice);
-		result.setChoices(choiceList);
-		result.setDefaultValue(defaultValue);
-
-		return result;
 	}
 }
