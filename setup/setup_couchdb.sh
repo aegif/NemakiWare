@@ -21,7 +21,7 @@ ruby create_db.rb ${COUCHDB_HOST}/${DB_ARCHIVE}
 cd ./distribute-0.6.45
 sudo python setup.py install
 cd ../${COUCHDB_PYTHON}
-sudo python ${COUCHDB_PYTHON}/setup.py install
+sudo python setup.py install
 if [ -n argv[0] ]; then
 	DUMP_NAME_REPOSITORY=${DEFAULT_DUMP_NAME_REPOSITORY}
 else

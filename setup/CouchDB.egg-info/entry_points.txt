@@ -1,6 +1,0 @@
-[console_scripts]
-couchdb-dump = couchdb.tools.dump:main
-couchpy = couchdb.view:main
-couchdb-load = couchdb.tools.load:main
-couchdb-replicate = couchdb.tools.replicate:main
-

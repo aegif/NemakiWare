@@ -33,10 +33,3 @@ couchdb/tools/__init__.py
 couchdb/tools/dump.py
 couchdb/tools/load.py
 couchdb/tools/replicate.py
-doc/changes.rst
-doc/client.rst
-doc/conf.py
-doc/getting-started.rst
-doc/index.rst
-doc/mapping.rst
-doc/views.rst
