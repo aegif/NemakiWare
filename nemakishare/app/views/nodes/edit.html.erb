@@ -1,14 +1,11 @@
 <% content_for :javascript_includes do %>
-	<%= javascript_include_tag "node_edit_table" %>
-	<script type="text/javascript">
-		buildGridData(<%= raw @node.to_json %>, <%= raw @parent.to_json %>, <%= raw @aspects.to_json %>);	
-	</script>
+<%= javascript_include_tag "node_edit_table" %>
+<script type="text/javascript">
+buildGridData(<%= raw @node.to_json %>,<%= raw @parent.to_json %>,<%= raw @aspects.to_json %>);</script>
 <% end %>
 
 <div class="row-fluid span11 nemaki_popup_header">
-	<h4>
-		<%= image_tag(icon_path(@node)) + @node.name %>
-	</h4>
+	<h4> <%= image_tag(icon_path(@node)) + @node.name %> </h4>
 </div>
 
 <!--CONTENTS BODY-->
@@ -19,55 +16,55 @@
 			<!--Basic Property-->
 			<div id="basic_property">
 				<div class="nemaki_table_title">
-					<h4><u><%=t('view.node.edit.edit_basic_properties')%></u></h4>
+					<h4><u><%= t('view.node.edit.edit_basic_properties')%></u></h4>
 				</div>
 				<!--jqGrid-->
 				<div class="nemaki_jqgrid_container">
 					<table id="basicInfo"></table>
 				</div>
 			</div>
-			
+
 			<!--Custom Property-->
 			<div id="custom_property">
 				<div class="nemaki_table_title">
-					<h4><u><%=t('view.node.edit.edit_custom_properties')%></u></h4>
+					<h4><u><%= t('view.node.edit.edit_custom_properties')%></u></h4>
 				</div>
 				<!--jqGrid-->
 				<div class="nemaki_jqgrid_container">
 					<% @aspects.each do |aspect| %>
-						<table id="nemaki_table_aspect_<%=aspect.id%>"></table>
+					<table id="nemaki_table_aspect_<%= aspect.id%>"></table>
 					<% end %>
 				</div>
 			</div>
-			
+
 			<!--Update Button-->
 			<div>
-				<a href="#" class="btn btn btn-primary btn-large" onclick="update()"><i class='icon-repeat'></i> <%=t('view.node.edit.update')%></a>
+				<a href="#" class="btn btn btn-primary btn-large" onclick="update()"><i class='icon-repeat'></i> <%= t('view.node.edit.update')%></a>
 				<%= form_tag({ :controller => :nodes, :action => :update, :id => @node.id }, { :id => 'update_form', :method => :put } ) do %>
-					<%= hidden_field_tag 'basic_properties' %>
-					<%= hidden_field_tag 'custom_properties' %>
+				<%= hidden_field_tag 'basic_properties' %>
+				<%= hidden_field_tag 'custom_properties' %>
 				<% end %>
 			</div>
 		</div>
-		
+
 		<!--Document specific update-->
 		<% if @node.is_document? %>
 		<div class="span5">
 			<!--Content Upload-->
 			<div id="upload">
 				<div class="nemaki_table_title">
-					<h4><u><%=t('view.node.edit.upload_new_version')%></u></h4>
+					<h4><u><%= t('view.node.edit.upload_new_version')%></u></h4>
 					<%= form_for :node , :url => {:action => :upload}, :html => {:method => :put} do |f| %>
-						<div class="control-group">
-							<div class='controls'>
-								<%= f.file_field :file, :title => "Select" %>
-							</div>	
+					<div class="control-group">
+						<div class='controls'>
+							<%= f.file_field :file, :title => "Select" %>
 						</div>
-						<%= submit_tag t('view.general.upload'), :class => 'btn btn-primary btn-large' %>
+					</div>
+					<%= submit_tag t('view.general.upload'), :class => 'btn btn-primary btn-large' %>
 					<% end %>
 				</div>
 			</div>
-			
+
 			<!--CheckOut/CheckIn-->
 			<div id="checkOutcheckIn">
 				<!--TODO:Implement-->

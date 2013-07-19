@@ -59,6 +59,7 @@ import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
+import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.Action;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
@@ -86,6 +87,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	private RepositoryService repositoryService;
 	private ContentService contentService;
 	private PermissionService permissionService;
+	private TypeManager typeManager;
 	
 	private Map<String,String>aliases;
 
@@ -124,6 +126,12 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		ObjectListImpl list = new ObjectListImpl();
 		list.setObjects(new ArrayList<ObjectData>());
 
+		if(CollectionUtils.isEmpty(contents)){
+			list.setNumItems(BigInteger.ZERO);
+			list.setHasMoreItems(false);
+			return list;
+		}
+		
 		// Convert skip and max to integer
 		int skip = (skipCount == null ? 0 : skipCount.intValue());
 		if (skip < 0) {
@@ -350,11 +358,6 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 					filter);
 		}
 
-		// Set Extension
-		List<CmisExtensionElement> extensions = new ArrayList<CmisExtensionElement>();
-		extensions.add(buildAspectsExtension(content.getAspects()));
-		properties.setExtensions(extensions);
-
 		return properties;
 	}
 
@@ -377,7 +380,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			PropertiesImpl properties, String typeId, Set<String> filter) {
 		typeId = TypeManager.FOLDER_TYPE_ID;
 		setCmisBaseProperties(properties, typeId, filter, folder);
-		addPropertyBase(properties, typeId, filter, PropertyIds.PARENT_ID,
+		addProperty(properties, typeId, filter, PropertyIds.PARENT_ID,
 				folder.getParentId());
 		setCmisFolderProperties(properties, typeId, filter, folder);
 
@@ -427,171 +430,63 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		return properties;
 	}
 
-	// TODO Add/Remove multiple value of a property
-
-	/**
-	 * Adds specified property in property set.
-	 * 
-	 * @param props
-	 *            property set
-	 * @param typeId
-	 *            object type (e.g. cmis:document)
-	 * @param filter
-	 *            filter string set
-	 * @param id
-	 *            property ID
-	 * @param value
-	 *            actual property value
-	 */
-	private void addPropertyBase(PropertiesImpl props, String typeId,
-			Set<String> filter, String id, Object value) {
-		String nullString = null;
-		
-		if (!checkAddProperty(props, typeId, filter, id))
-			return;
-
-		switch (repositoryService.getTypeManager().getTypeDefinition(typeId)
-				.getPropertyDefinitions().get(id).getPropertyType()) {
-		case BOOLEAN:
-			PropertyBooleanImpl propBoolean = new PropertyBooleanImpl(id, (Boolean) value);
-
-			setCommonAttributesOfProperty(propBoolean, id);
-			props.addProperty(propBoolean);
-			break;
-		case INTEGER:
-			PropertyIntegerImpl propInteger = new PropertyIntegerImpl(id, BigInteger
-					.valueOf((Long) value));
-			setCommonAttributesOfProperty(propInteger, id);
-			props.addProperty(propInteger);
-			break;
-		case DATETIME:
-			PropertyDateTimeImpl propDate = new PropertyDateTimeImpl(id,
-					(GregorianCalendar) value);
-			setCommonAttributesOfProperty(propDate, id);
-			props.addProperty(propDate);
-			break;
-		case STRING:
-			PropertyStringImpl propString = new PropertyStringImpl();
-			propString.setId(id);
-			setCommonAttributesOfProperty(propString, id);
-			if(value == null){
-				propString.setValue(nullString);
-			}else{
-				propString.setValue(String.valueOf(value));
-			}
-			props.addProperty(propString);
-			break;
-		case ID:
-			PropertyIdImpl propId = new PropertyIdImpl();
-			propId.setId(id);
-			setCommonAttributesOfProperty(propId, id);
-			if(value == null){
-				propId.setValue(nullString);
-			}else{
-				propId.setValue(String.valueOf(value));
-			}
-			props.addProperty(propId);
-			break;
-
-		default:
-		}
-	}
-
-	private <T> void setCommonAttributesOfProperty(AbstractPropertyData<T> p, String id){
-		p.setLocalName(id);
-		
-		if(aliases != null && aliases.get(id) != null){
-			p.setQueryName(aliases.get(id));
-		}else{
-			p.setQueryName(id);
-		}
-	}
 	
-	/**
-	 * Verifies that parameters are safe.
-	 */
-	private boolean checkAddProperty(Properties properties, String typeId,
-			Set<String> filter, String id) {
-
-		if ((properties == null) || (properties.getProperties() == null))
-			throw new IllegalArgumentException("Properties must not be null!");
-
-		if (id == null)
-			throw new IllegalArgumentException("ID must not be null!");
-
-		TypeDefinition type = repositoryService.getTypeManager()
-				.getTypeDefinition(typeId);
-
-		if (type == null)
-			throw new IllegalArgumentException("Unknown type: " + typeId);
-
-		if (!type.getPropertyDefinitions().containsKey(id))
-			throw new IllegalArgumentException("Unknown property: " + id);
-
-		String queryName = type.getPropertyDefinitions().get(id).getQueryName();
-
-		if ((queryName != null) && (filter != null)) {
-			if (!filter.contains(queryName)) {
-				return false;
-			} else {
-				filter.remove(queryName);
-			}
-		}
-		return true;
-	}
 
 	private void setCmisBaseProperties(
 			PropertiesImpl properties, String typeId, Set<String> filter,
 			Content content) {
-		addPropertyBase(properties, typeId, filter, PropertyIds.NAME,
+		addProperty(properties, typeId, filter, PropertyIds.NAME,
 				content.getName());
 
-		addPropertyBase(properties, typeId, filter, PropertyIds.DESCRIPTION,
+		addProperty(properties, typeId, filter, PropertyIds.DESCRIPTION,
 				content.getDescription());
 
-		addPropertyBase(properties, typeId, filter, PropertyIds.OBJECT_ID,
+		addProperty(properties, typeId, filter, PropertyIds.OBJECT_ID,
 				content.getId());
 
 		if (content.getCreated() != null)
-			addPropertyBase(properties, typeId, filter,
+			addProperty(properties, typeId, filter,
 					PropertyIds.CREATION_DATE, content.getCreated());
 
 		if (content.getCreator() != null)
-			addPropertyBase(properties, typeId, filter, PropertyIds.CREATED_BY,
+			addProperty(properties, typeId, filter, PropertyIds.CREATED_BY,
 					content.getCreator());
 
 		if (content.getModified() != null) {
-			addPropertyBase(properties, typeId, filter,
+			addProperty(properties, typeId, filter,
 					PropertyIds.LAST_MODIFICATION_DATE, content.getModified());
 		} else {
-			addPropertyBase(properties, typeId, filter,
+			addProperty(properties, typeId, filter,
 					PropertyIds.LAST_MODIFICATION_DATE, content.getCreated());
 		}
 
 		if (content.getModifier() != null) {
-			addPropertyBase(properties, typeId, filter,
+			addProperty(properties, typeId, filter,
 					PropertyIds.LAST_MODIFIED_BY, content.getModifier());
 		} else {
-			addPropertyBase(properties, typeId, filter,
+			addProperty(properties, typeId, filter,
 					PropertyIds.LAST_MODIFIED_BY, content.getCreator());
 		}
 
-		addPropertyBase(properties, typeId, filter, PropertyIds.CHANGE_TOKEN,
+		addProperty(properties, typeId, filter, PropertyIds.CHANGE_TOKEN,
 				String.valueOf(content.getChangeToken()));
+		
+		setCmisSecondaryTypes(properties, content.getAspects());
 	}
 
 	private void setCmisFolderProperties(PropertiesImpl properties,
 			String typeId, Set<String> filter, Folder folder) {
 
-		addPropertyBase(properties, typeId, filter, PropertyIds.BASE_TYPE_ID,
+		addProperty(properties, typeId, filter, PropertyIds.BASE_TYPE_ID,
 				BaseTypeId.CMIS_FOLDER.value());
 
-		addPropertyBase(properties, typeId, filter, PropertyIds.OBJECT_TYPE_ID,
+		addProperty(properties, typeId, filter, PropertyIds.OBJECT_TYPE_ID,
 				TypeManager.FOLDER_TYPE_ID);
 
-		addPropertyBase(properties, typeId, filter, PropertyIds.PATH,
+		addProperty(properties, typeId, filter, PropertyIds.PATH,
 				contentService.getPath(folder));
 
+		//TODO checkAddPropertyをまとめる
 		if (checkAddProperty(properties, typeId, filter,
 				PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS)) {
 			List<String> values = new ArrayList<String>();
@@ -610,45 +505,45 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	private void setCmisDocumentProperties(PropertiesImpl properties,
 			String typeId, Set<String> filter, Document document) {
 
-		addPropertyBase(properties, typeId, filter, PropertyIds.BASE_TYPE_ID,
+		addProperty(properties, typeId, filter, PropertyIds.BASE_TYPE_ID,
 				BaseTypeId.CMIS_DOCUMENT.value());
-		addPropertyBase(properties, typeId, filter, PropertyIds.OBJECT_TYPE_ID,
+		addProperty(properties, typeId, filter, PropertyIds.OBJECT_TYPE_ID,
 				TypeManager.DOCUMENT_TYPE_ID);
-		addPropertyBase(properties, typeId, filter, PropertyIds.IS_IMMUTABLE,
+		addProperty(properties, typeId, filter, PropertyIds.IS_IMMUTABLE,
 				false);
-		addPropertyBase(properties, typeId, filter,
+		addProperty(properties, typeId, filter,
 				PropertyIds.IS_PRIVATE_WORKING_COPY, document.isPrivateWorkingCopy());
-		addPropertyBase(properties, typeId, filter,
+		addProperty(properties, typeId, filter,
 				PropertyIds.IS_LATEST_VERSION, document.isLatestVersion());
-		addPropertyBase(properties, typeId, filter,
+		addProperty(properties, typeId, filter,
 				PropertyIds.IS_MAJOR_VERSION, document.isMajorVersion());
-		addPropertyBase(properties, typeId, filter,
+		addProperty(properties, typeId, filter,
 				PropertyIds.IS_LATEST_MAJOR_VERSION,
 				document.isLatestMajorVersion());
-		addPropertyBase(properties, typeId, filter, PropertyIds.VERSION_LABEL,
+		addProperty(properties, typeId, filter, PropertyIds.VERSION_LABEL,
 				document.getVersionLabel());
-		addPropertyBase(properties, typeId, filter,
+		addProperty(properties, typeId, filter,
 				PropertyIds.VERSION_SERIES_ID, document.getVersionSeriesId());
-		addPropertyBase(properties, typeId, filter,
+		addProperty(properties, typeId, filter,
 				PropertyIds.CHECKIN_COMMENT, document.getCheckinComment());
 
 		VersionSeries vs = contentService.getVersionSeries(document
 				.getVersionSeriesId());
-		addPropertyBase(properties, typeId, filter,
+		addProperty(properties, typeId, filter,
 				PropertyIds.IS_VERSION_SERIES_CHECKED_OUT,
 				vs.isVersionSeriesCheckedOut());
 		if(vs.isVersionSeriesCheckedOut()){
-			addPropertyBase(properties, typeId, filter,
+			addProperty(properties, typeId, filter,
 					PropertyIds.VERSION_SERIES_CHECKED_OUT_ID,
 					vs.getVersionSeriesCheckedOutId());
-			addPropertyBase(properties, typeId, filter,
+			addProperty(properties, typeId, filter,
 					PropertyIds.VERSION_SERIES_CHECKED_OUT_BY,
 					vs.getVersionSeriesCheckedOutBy());
 		}else{
-			addPropertyBase(properties, typeId, filter,
+			addProperty(properties, typeId, filter,
 					PropertyIds.VERSION_SERIES_CHECKED_OUT_ID,
 					null);
-			addPropertyBase(properties, typeId, filter,
+			addProperty(properties, typeId, filter,
 					PropertyIds.VERSION_SERIES_CHECKED_OUT_BY,
 					null);
 		}
@@ -657,43 +552,172 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	private void setCmisAttachmentProperties(PropertiesImpl properties,
 			String typeId, Set<String> filter, AttachmentNode attachment,
 			Content document) {
-		addPropertyBase(properties, typeId, filter,
+		addProperty(properties, typeId, filter,
 				PropertyIds.CONTENT_STREAM_LENGTH, attachment.getLength());
-		addPropertyBase(properties, typeId, filter,
+		addProperty(properties, typeId, filter,
 				PropertyIds.CONTENT_STREAM_MIME_TYPE, attachment.getMimeType());
-		addPropertyBase(properties, typeId, filter,
+		addProperty(properties, typeId, filter,
 				PropertyIds.CONTENT_STREAM_FILE_NAME, document.getName());
-		addPropertyBase(properties, typeId, filter,
+		addProperty(properties, typeId, filter,
 				PropertyIds.CONTENT_STREAM_ID, attachment.getId());
 	}
 
 	private void setCmisRelationshipProperties(PropertiesImpl properties,
 			String typeId, Set<String> filter, Relationship relationship) {
 
-		addPropertyBase(properties, typeId, filter, PropertyIds.BASE_TYPE_ID,
+		addProperty(properties, typeId, filter, PropertyIds.BASE_TYPE_ID,
 				BaseTypeId.CMIS_RELATIONSHIP.value());
 
-		addPropertyBase(properties, typeId, filter, PropertyIds.OBJECT_TYPE_ID,
+		addProperty(properties, typeId, filter, PropertyIds.OBJECT_TYPE_ID,
 				TypeManager.RELATIONSHIP_TYPE_ID);
 
-		addPropertyBase(properties, typeId, filter, PropertyIds.SOURCE_ID,
+		addProperty(properties, typeId, filter, PropertyIds.SOURCE_ID,
 				relationship.getSourceId());
-		addPropertyBase(properties, typeId, filter, PropertyIds.TARGET_ID,
+		addProperty(properties, typeId, filter, PropertyIds.TARGET_ID,
 				relationship.getSourceId());
 	}
 
 	private void setCmisPolicyProperties(PropertiesImpl properties,
 			String typeId, Set<String> filter, Policy policy) {
-		addPropertyBase(properties, typeId, filter, PropertyIds.BASE_TYPE_ID,
+		addProperty(properties, typeId, filter, PropertyIds.BASE_TYPE_ID,
 				BaseTypeId.CMIS_POLICY.value());
 
-		addPropertyBase(properties, typeId, filter, PropertyIds.OBJECT_TYPE_ID,
+		addProperty(properties, typeId, filter, PropertyIds.OBJECT_TYPE_ID,
 				TypeManager.POLICY_TYPE_ID);
 
-		addPropertyBase(properties, typeId, filter, PropertyIds.POLICY_TEXT,
+		addProperty(properties, typeId, filter, PropertyIds.POLICY_TEXT,
 				policy.getPolicyText());
 	}
 
+	private void setCmisSecondaryTypes(PropertiesImpl props, List<Aspect>aspects){
+		Map<String, Object> map = typeManager.getCustomModelInfo();
+		map.get(NemakiConstant.EXTNAME_ASPECTS);
+		
+		List<String> secondaryIds = new ArrayList<String>();
+		for(Aspect aspect : aspects){
+			TypeDefinition tdf = typeManager.getTypeDefinition(aspect.getName());
+			
+			//TODO null check
+			for(Property property : aspect.getProperties()){
+				addProperty(props, tdf.getId(), null, property.getKey(), property.getValue());
+			}
+
+			secondaryIds.add(aspect.getName());
+		}
+
+		PropertyData pd = new PropertyIdImpl(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondaryIds);
+		props.addProperty(pd);
+	}
+	
+	/**
+	 * Verifies that parameters are safe.
+	 */
+	private boolean checkAddProperty(Properties properties, String typeId,
+			Set<String> filter, String id) {
+
+		if ((properties == null) || (properties.getProperties() == null))
+			throw new IllegalArgumentException("Properties must not be null!");
+
+		if (id == null)
+			throw new IllegalArgumentException("ID must not be null!");
+
+		TypeDefinition type = repositoryService.getTypeManager().getTypeDefinition(typeId);
+		
+		if (type == null)
+			throw new IllegalArgumentException("Unknown type: " + type.getId());
+
+		if (!type.getPropertyDefinitions().containsKey(id))
+			throw new IllegalArgumentException("Unknown property: " + id);
+
+		String queryName = type.getPropertyDefinitions().get(id).getQueryName();
+
+		if ((queryName != null) && (filter != null)) {
+			if (!filter.contains(queryName)) {
+				return false;
+			} else {
+				filter.remove(queryName);
+			}
+		}
+		return true;
+	}
+
+	// TODO Add/Remove multiple value of a property
+
+		/**
+		 * Adds specified property in property set.
+		 * 
+		 * @param props
+		 *            property set
+		 * @param typeId
+		 *            object type (e.g. cmis:document)
+		 * @param filter
+		 *            filter string set
+		 * @param id
+		 *            property ID
+		 * @param value
+		 *            actual property value
+		 */
+		private void addProperty(PropertiesImpl props, String typeId,
+				Set<String> filter, String id, Object value) {
+			String nullString = null;
+			
+			PropertyDefinition pdf = repositoryService.getTypeManager().getTypeDefinition(typeId)
+					.getPropertyDefinitions().get(id);
+			
+			if (!checkAddProperty(props, typeId, filter, id))
+				return;
+
+			switch (pdf.getPropertyType()) {
+			case BOOLEAN:
+				PropertyBooleanImpl propBoolean = new PropertyBooleanImpl(id, (Boolean) value);
+				addPropertyBase(props, id, propBoolean, pdf);
+				break;
+			case INTEGER:
+				PropertyIntegerImpl propInteger = new PropertyIntegerImpl(id, BigInteger
+						.valueOf((Long) value));
+				addPropertyBase(props, id, propInteger, pdf);
+				break;
+			case DATETIME:
+				PropertyDateTimeImpl propDate = new PropertyDateTimeImpl(id,
+						(GregorianCalendar) value);
+				addPropertyBase(props, id, propDate, pdf);
+				break;
+			case STRING:
+				PropertyStringImpl propString = new PropertyStringImpl();
+				propString.setId(id);
+				if(value == null){
+					propString.setValue(nullString);
+				}else{
+					propString.setValue(String.valueOf(value));
+				}
+				addPropertyBase(props, id, propString, pdf);
+				break;
+			case ID:
+				PropertyIdImpl propId = new PropertyIdImpl();
+				propId.setId(id);
+				if(value == null){
+					propId.setValue(nullString);
+				}else{
+					propId.setValue(String.valueOf(value));
+				}
+				addPropertyBase(props, id, propId, pdf);
+				break;
+			default:
+			}
+		}
+		
+		private <T> void addPropertyBase(PropertiesImpl props,String id,AbstractPropertyData<T> p, PropertyDefinition pdf){
+			p.setDisplayName(pdf.getDisplayName());
+			p.setLocalName(id);
+			if(aliases != null && aliases.get(id) != null){
+				p.setQueryName(aliases.get(id));
+			}else{
+				p.setQueryName(pdf.getQueryName());
+			}
+			
+			props.addProperty(p);
+		}
+	
 	/**
 	 * Separates filter string with ','. If filter is null or empty, it means
 	 * all properties can go.
@@ -724,39 +748,6 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		filters.add(PropertyIds.OBJECT_TYPE_ID);
 		filters.add(PropertyIds.BASE_TYPE_ID);
 		return filters;
-	}
-
-	// FIXME move to AspectService
-	/**
-	 * Build extension for outputting aspects
-	 */
-	private CmisExtensionElement buildAspectsExtension(List<Aspect> aspects) {
-		final String ns = NemakiConstant.NAMESPACE_ASPECTS;
-
-		List<CmisExtensionElement> aspectsExtension = new ArrayList<CmisExtensionElement>();
-
-		for (int i = 0; i < aspects.size(); i++) {
-			Aspect aspect = aspects.get(i);
-			Map<String, String> aspectAttr = new HashMap<String, String>();
-			aspectAttr.put(NemakiConstant.EXTATTR_ASPECT_ID, aspect.getName());
-
-			List<CmisExtensionElement> propsExtension = new ArrayList<CmisExtensionElement>();
-			List<Property> props = aspect.getProperties();
-			for (Property prop : props) {
-				Map<String, String> propAttr = new HashMap<String, String>();
-				propAttr.put(NemakiConstant.EXTATTR_ASPECT_ID, prop.getKey());
-				propsExtension.add(new CmisExtensionElementImpl(ns,
-						NemakiConstant.EXTNAME_ASPECT_PROPERTY, propAttr, prop
-								.getValue().toString()));
-			}
-
-			aspectsExtension.add(new CmisExtensionElementImpl(ns,
-					NemakiConstant.EXTNAME_ASPECT, aspectAttr, propsExtension));
-
-		}
-
-		return new CmisExtensionElementImpl(ns, NemakiConstant.EXTNAME_ASPECTS,
-				null, aspectsExtension);
 	}
 
 	private Action convertKeyToAction(String key) {
@@ -855,5 +846,9 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 	public void setPermissionService(PermissionService permissionService) {
 		this.permissionService = permissionService;
+	}
+
+	public void setTypeManager(TypeManager typeManager) {
+		this.typeManager = typeManager;
 	}
 }

@@ -22,6 +22,7 @@ package jp.aegif.nemaki.service.node;
 
 import java.math.BigInteger;
 import java.util.List;
+import java.util.Map;
 
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Archive;
@@ -248,7 +249,4 @@ public interface ContentService {
 	// Type
 	// //////////////////////////////////////////////////////////////////////////////
 	public TypeDefinition getTypeDefinition(Content content);
-	
-	
-	
 }
