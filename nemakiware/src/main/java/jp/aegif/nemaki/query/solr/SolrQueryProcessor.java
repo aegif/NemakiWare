@@ -39,6 +39,7 @@ import org.antlr.runtime.tree.Tree;
 import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectListImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.server.support.query.CmisQueryWalker;
 import org.apache.chemistry.opencmis.server.support.query.QueryObject;
@@ -152,7 +153,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 			
 			return compileObjectService.compileObjectDataList(callContext, permitted, filter, includeAllowableActions, true, maxItems, skipCount);
 		}else{
-			return null;
+			ObjectListImpl nullList = new ObjectListImpl();
+			nullList.setHasMoreItems(false);
+			nullList.setNumItems(BigInteger.ZERO);
+			return nullList;
 		}
 	}
 
