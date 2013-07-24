@@ -171,6 +171,8 @@ ja:
     site:
       create_success: "サイトの新規作成に成功しました"
       create_error: "サイトの新規作成に失敗しました"
+      delete_success: "サイトの削除に成功しました"
+      update_success: "サイト情報の更新に成功しました"
     archive:
       restore_success: "コンテンツのリストアに成功しました"
       restore_failure: "コンテンツのリストアに失敗しました"

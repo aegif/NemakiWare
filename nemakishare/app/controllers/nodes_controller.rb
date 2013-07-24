@@ -134,11 +134,9 @@ class NodesController < ApplicationController
 
     #TODO CMIS属性の更新でdiffがあるときのみupdateになっているか確認
     @nemaki_repository.update(params[:id], update_properties, update_aspects)
-
-    #TODO 失敗時の処理
-
+   
     parent = @nemaki_repository.get_parent(node)
-    redirect_to_parent(explore_node_path(parent.id))
+    redirect_to_parent(explore_node_path(parent.id))  
   end
 
   #新規バージョンのアップロード処理
@@ -302,8 +300,13 @@ class NodesController < ApplicationController
     if params[:id]
       parent_id = @nemaki_repository.delete(params[:id])
     end
-    #TODO rootだった場合の処理
-    redirect_to :action => 'explore', :id => parent_id
+    
+    if params[:from_site_controller]
+      flash[:notice] = t('message.site.delete_success')
+      redirect_to :controller => 'sites', :action => 'index'
+    else
+      redirect_to :action => 'explore', :id => parent_id  
+    end
   end
 
   def edit_permission

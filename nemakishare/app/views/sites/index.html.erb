@@ -53,27 +53,27 @@
 				</td>
 				<td>
 					<!--SHOW-->
-					<%= link_to raw("<i class='icon-zoom-in'></i>"), node_path(n.id, @popup_param), 
+					<%= link_to raw("<i class='icon-zoom-in'></i>"), node_path(n.id), 
 					:class => 'btn', :title => t('view.node.explore.show') %>
 					
 					<!--EDIT-->
 					<% if n.allowable_actions['UpdateProperties'] || 
 						  n.allowable_actions['SetContentStream'] %>
-					<%= link_to raw("<i class='icon-edit'></i>"), edit_node_path(n.id, @popup_param), 
+					<%= link_to raw("<i class='icon-edit'></i>"), edit_node_path(n.id), 
 					:class => 'btn', :title => t('view.node.explore.edit') %>
 					<% end %>
 					
 					<!--PERMISSION-->
 					<% if n.allowable_actions['ApplyACL'] %>
 					<%= link_to raw("<i class='icon-user'></i>"),
-					edit_permission_node_path(n.id, @popup_param),
+					edit_permission_node_path(n.id),
 					:class => 'btn', :title => t('view.node.explore.permission') %>
 					<% end %>
 					
-					<!--DELETE-->
+					<!--DELETE--> 
 					<% if n.allowable_actions['DeleteObject'] %>
 					<%= link_to raw("<i class='icon-trash'></i>"),
-					node_path(n.id),
+					node_path(n.id, {:from_site_controller => true}),
 					:title => t('view.node.explore.delete'),
 					:class => 'btn', :method => :delete, :confirm => t('view.node.explore.delete_confirmation')%>
 					<% end %>
@@ -84,4 +84,3 @@
 		
 	</div>
 </div>
-

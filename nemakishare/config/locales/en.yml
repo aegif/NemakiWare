@@ -168,6 +168,8 @@ en:
     site:
       create_success: "Site has been created successfully."
       create_error: "Failed to create a site."
+      delete_success: "Site has been deleted suuccessfully."
+      update_success: "Site has been updated successfully."
     archive:
       restore_success: "Content has been restored successfully."
       restore_failure: "Failed to restore the content."
