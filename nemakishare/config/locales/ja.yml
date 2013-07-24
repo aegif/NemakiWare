@@ -170,6 +170,7 @@ ja:
       destroy_failure: "グループの削除に失敗しました"
     site:
       create_success: "サイトの新規作成に成功しました"
+      create_error: "サイトの新規作成に失敗しました"
     archive:
       restore_success: "コンテンツのリストアに成功しました"
       restore_failure: "コンテンツのリストアに失敗しました"

@@ -1,3 +1,19 @@
+<% content_for :javascript_includes do %>
+<!--Validation-->
+<script type="text/javascript">
+	$(function(){
+		var options = {
+			rules : {
+				"site[name]" : {
+					required: true
+				}
+			}
+		}
+  		$("#new_site").validate(options);
+	});
+</script>
+<% end %>
+
 <!--Header-->
 <div class="row-fluid nemaki_popup_header" style="padding-left: 25px;">
 	<h4>

@@ -167,6 +167,7 @@ en:
       destroy_failure: "Failed to delete the group."
     site:
       create_success: "Site has been created successfully."
+      create_error: "Failed to create a site."
     archive:
       restore_success: "Content has been restored successfully."
       restore_failure: "Failed to restore the content."

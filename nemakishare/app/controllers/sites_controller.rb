@@ -38,9 +38,14 @@ class SitesController < ApplicationController
   end
 
   def create
-    @nemaki_repository.create_site(params[:site][:name])
-    flash[:notice] = t('message.site.create_success')
-    redirect_to :controller => 'sites', :action => 'index'
+    if params[:site][:name].empty?
+      flash[:error] = t("message.site.create_error")
+      redirect_to :controller => 'sites', :action => 'index'
+    else
+      @nemaki_repository.create_site(params[:site][:name])
+      flash[:notice] = t('message.site.create_success')
+      redirect_to :controller => 'sites', :action => 'index'    
+    end
   end
 
   def check_site_create_permission
