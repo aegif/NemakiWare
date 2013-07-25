@@ -36,6 +36,7 @@ import java.util.Properties;
 import jp.aegif.nemaki.util.PropertyManager;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.solr.core.SolrResourceLoader;
 
 import ucar.unidata.util.StringUtil;
 
@@ -44,7 +45,7 @@ public class PropertyManagerImpl implements PropertyManager{
 	private final String PATH = "tracking.properties"; 
 	private String propertiesFile;
 	private Properties config;
-	
+
 	/**
 	 *Constructor setting default properties file and config object
 	 * @param propertiesFile
@@ -52,7 +53,7 @@ public class PropertyManagerImpl implements PropertyManager{
 	 */
 	public PropertyManagerImpl(){
 		this.propertiesFile = PATH;
-		
+
 		Properties config = new Properties();
 		InputStream inputStream = Thread.currentThread().getContextClassLoader().getResourceAsStream(propertiesFile);
 		if(inputStream != null){
@@ -70,7 +71,7 @@ public class PropertyManagerImpl implements PropertyManager{
 			this.setConfig(config);
 		}
 	}
-	
+
 	/**
 	 * Constructor setting specified properties file and config object
 	 * @param propertiesFile
@@ -79,23 +80,26 @@ public class PropertyManagerImpl implements PropertyManager{
 		this.setPropertiesFile(propertiesFile);
 
 		Properties config = new Properties();
-		InputStream inputStream = Thread.currentThread().getContextClassLoader().getResourceAsStream(propertiesFile);
-		if(inputStream != null){
-			try {
+		SolrResourceLoader loader = new SolrResourceLoader(null);
+		try {
+			InputStream inputStream = loader.openResource(propertiesFile);
+			//InputStream inputStream = Thread.currentThread().getContextClassLoader().getResourceAsStream(propertiesFile);
+			if(inputStream != null){
 				config.load(inputStream);
-			} catch (IOException e) {
-				e.printStackTrace();
+				this.setConfig(config);
 			}
-			this.setConfig(config);
+		}
+		catch(Exception e) {
+			e.printStackTrace();
 		}
 	}
-	
+
 	@Override
 	public String readValue(String key){
 		String val = config.getProperty(key);
 		return val;
 	}
-	
+
 	@Override
 	public List<String> readValues(String key){
 		final String delimiter = ",";
@@ -106,7 +110,7 @@ public class PropertyManagerImpl implements PropertyManager{
 	@Override
 	public void modifyValue(String key, String value) {
 		config.setProperty(key, value);
-		
+
 		ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
 		URL url = classLoader.getResource(propertiesFile);
 		try {
@@ -121,7 +125,7 @@ public class PropertyManagerImpl implements PropertyManager{
 			// TODO 自動生成された catch ブロック
 			e.printStackTrace();
 		}
-		
+
 	}
 
 	@Override
@@ -130,11 +134,11 @@ public class PropertyManagerImpl implements PropertyManager{
 		String[] currentVals = currentVal.split(","); 
 		List<String>valList = new ArrayList<String>();
 		Collections.addAll(valList, currentVals);
-		
+
 		valList.add(0,value);		
 		String newVal = StringUtils.join(valList.toArray(), ",");
 		config.setProperty(key, newVal);
-		
+
 		ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
 		URL url = classLoader.getResource(propertiesFile);
 		try {
@@ -149,7 +153,7 @@ public class PropertyManagerImpl implements PropertyManager{
 			// TODO 自動生成された catch ブロック
 			e.printStackTrace();
 		}
-		
+
 	}
 
 	@Override
@@ -158,12 +162,12 @@ public class PropertyManagerImpl implements PropertyManager{
 		String[] currentVals = currentVal.split(","); 
 		List<String>valList = new ArrayList<String>();
 		Collections.addAll(valList, currentVals);
-		
+
 		boolean success = valList.remove(value);
 		if(success){
 			String newVal = StringUtils.join(valList.toArray(), ",");
 			config.setProperty(key, newVal);
-			
+
 			ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
 			URL url = classLoader.getResource(propertiesFile);
 			try {
@@ -187,7 +191,7 @@ public class PropertyManagerImpl implements PropertyManager{
 		String[] currentVals = currentVal.split(","); 
 		return currentVals[0];
 	}
-	
+
 	/*
 	 * Getter & Setter
 	 */
@@ -206,5 +210,5 @@ public class PropertyManagerImpl implements PropertyManager{
 	public void setConfig(Properties config) {
 		this.config = config;
 	}
-	
+
 }
