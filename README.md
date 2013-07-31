@@ -4,20 +4,20 @@ NemakiWare Version 1.0GA
 What is NemakiWare?
 ------
 
-NemakiWare is a open source enterprise content management(ECM) system.
+NemakiWare is an open source Enterprise Content Management (ECM) system.
 It is:
-* **Compliant with CMIS standard**
-    * Integration or replacement with other existing/future CMIS compliant software can be done easily by the power of standard.
+* **Compliant with the CMIS standard**
+    * Integration or replacement with other existing/future CMIS-compliant software can be done easily thanks to the standard.
 
 
-* **All-in-One package(Server, Client, Full-text search engine, archive feature etc.)**
+* **All-in-One package (Server, Client, Full-text search engine, archive feature etc.)**
     * CMIS defines just the core of ECM. You need some peripheral components/feature, and here it is.
-    * Not only the server but the client and the search engine are (going to be) connected by CMIS interface.
+    * Not only the server but the client and the search engine are connected via the CMIS interface.
 
 
 * **NoSQL CouchDB backend**
-    * Simple document based NoSQL database is suitable for DMS.
-    * Database management and replication can be easily done.
+    * Simple document-based NoSQL database, suitable for DMS.
+    * Easy Database management and replication.
 
 
 "Nemaki" derives from Japanese word "寝巻き" which means night clothes.
