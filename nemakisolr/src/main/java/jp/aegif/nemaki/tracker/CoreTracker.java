@@ -52,6 +52,7 @@ import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.impl.PropertyManagerImpl;
 
 import org.apache.log4j.Logger;
+import org.apache.lucene.util.CollectionUtil;
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.client.solrj.SolrServerException;
@@ -93,6 +94,7 @@ public class CoreTracker extends CloseHook {
 	private final String PROP_MODIFIED = "modified";
 	private final String PROP_MODIFIER = "modifier";
 	private final String PROP_IS_LATEST_VERSION = "is_latest_version";
+	private final String separator = ".";
 	
 	public CoreTracker(NemakiCoreAdminHandler adminHandler, SolrCore core,
 			SolrServer server) {
@@ -478,6 +480,8 @@ public class CoreTracker extends CloseHook {
 		map.put(PROP_MODIFIER, content.getModifier());
 		//TYPE
 		map.put(PROP_TYPE, content.getType());
+		//SUBTYPE SPECIFIC PROPERTIES
+		map = setSubTypeProperties(map, content);
 		//ASPECT
 		map = setAspects(map, content);
 		//LATEST VERSION
@@ -504,13 +508,11 @@ public class CoreTracker extends CloseHook {
 	 * Return a map with a key like "aspect:<aspectName>:<keyName>" and its value 
 	 */
 	private Map<String,String>setAspects(Map<String,String>map, Content content){
-		final String separator = ".";
-
 		List<Aspect> aspects = content.getAspects();
 		Iterator<Aspect> iterator = aspects.iterator();
 		while (iterator.hasNext()) {
 			Aspect aspect = iterator.next();
-			String type = "aspect" + separator + aspect.getName() + separator;
+			String type = "dynamic.property." + aspect.getName() + separator;
 			List<Property> properties = aspect.getProperties();
 			Iterator<Property> propIterator = properties.iterator();
 			while(propIterator.hasNext()){
@@ -522,5 +524,14 @@ public class CoreTracker extends CloseHook {
 		}
 		return map;
 	}
-
+	
+	private Map<String,String>setSubTypeProperties(Map<String,String>map, Content content){
+		List<Property> subTypeProperties = content.getSubTypeProperties();
+		for(Property prop : subTypeProperties){
+			String field = "dynamic.property." + prop.getKey();
+			//TODO cardinality=MULTIPLEの場合
+			map.put(field, prop.getValue().toString());
+		}
+		return map;
+	}
 }
