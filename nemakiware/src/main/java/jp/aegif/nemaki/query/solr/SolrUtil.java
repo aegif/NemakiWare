@@ -91,7 +91,7 @@ public class SolrUtil {
 		String val = map.get(cmisColName);
 		
 		if (val == null){
-			val = "aspect." + cmisColName;
+			val = "dynamic.property." + cmisColName;
 		}
 		
 		return val;
