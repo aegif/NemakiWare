@@ -339,4 +339,40 @@ class NodesController < ApplicationController
     session[:nemaki_auth_info] = nil
     redirect_to :action => :index
   end
+
+  # logging method calls
+  if logger.level == Logger::DEBUG
+
+    alias :original_authenticate :authenticate
+    wrap_by_log :original_authenticate, :authenticate
+    
+    alias :original_create :create
+    wrap_by_log :original_create, :create
+
+    alias :original_update :update
+    wrap_by_log :original_update, :update
+
+    alias :original_upload :upload
+    wrap_by_log :original_upload, :upload
+
+    alias :original_show :show
+    wrap_by_log :original_show, :show
+
+    alias :original_download :download
+    wrap_by_log :original_download, :download
+
+    alias :original_explore :explore
+    wrap_by_log :original_explore, :explore
+
+    alias :original_search :search
+    wrap_by_log :original_search, :search
+
+    alias :original_destroy :destroy
+    wrap_by_log :original_destroy, :destroy
+
+    alias :original_update_persmission :update_permission
+    wrap_by_log :original_update_permission, :update_permission
+
+  end
+  
 end

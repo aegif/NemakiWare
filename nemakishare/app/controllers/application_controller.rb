@@ -60,6 +60,22 @@ class ApplicationController < ActionController::Base
   def set_locale
     I18n.locale = extract_locale_from_accept_language_header
   end
+
+  # for logging
+  if logger.level == Logger::DEBUG
+    def self.wrap_by_log(original_method, method) 
+      define_method(method) do |*args, &block|
+        logger.debug "** [#{method}] start"
+        result = self.send original_method, *args, &block
+        logger.debug "** [#{method}] end"
+        result
+      end
+    end
+
+    alias :original_check_authenticate :check_authenticate
+    wrap_by_log :original_check_authenticate, :check_authenticate    
+
+  end
   
   private
   def extract_locale_from_accept_language_header
