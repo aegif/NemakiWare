@@ -150,4 +150,26 @@ class UsersController < ApplicationController
     redirect_to_parent(users_path(:search_form => {:query => params[:id]}))
   end
   
+  if logger.level == Logger::DEBUG 
+
+    alias :original_index :index
+    wrap_by_log :original_index, :index
+
+    alias :original_create :create
+    wrap_by_log :original_create, :create
+
+    alias :original_update :update
+    wrap_by_log :original_update, :update
+
+    alias :original_update_password :update_password
+    wrap_by_log :original_update_password, :update_password
+
+    alias :original_search :search
+    wrap_by_log :original_search, :update_search
+
+    alias :original_destroy :destroy
+    wrap_by_log :original_destroy, :destroy
+
+  end
+
 end
