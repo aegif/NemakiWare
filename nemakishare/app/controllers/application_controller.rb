@@ -62,7 +62,9 @@ class ApplicationController < ActionController::Base
   end
 
   # for logging
+  p logger.level
   if logger.level == Logger::DEBUG
+
     def self.wrap_by_log(original_method, method) 
       define_method(method) do |*args, &block|
         logger.debug "** [#{method}] start"
@@ -71,9 +73,6 @@ class ApplicationController < ActionController::Base
         result
       end
     end
-
-    alias :original_check_authenticate :check_authenticate
-    wrap_by_log :original_check_authenticate, :check_authenticate    
 
   end
   
