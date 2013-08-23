@@ -111,10 +111,18 @@ public class PropertyManagerImpl implements PropertyManager{
 	public void modifyValue(String key, String value) {
 		config.setProperty(key, value);
 
-		ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+		SolrResourceLoader loader = new SolrResourceLoader(null);
+		ClassLoader classLoader = loader.getClassLoader();
 		URL url = classLoader.getResource(propertiesFile);
+
 		try {
+		    if ( url == null ) {
+			config.store(new FileOutputStream(new File(loader.locateSolrHome() + "/conf/" + propertiesFile)), null);
+		    }
+		    else {
 			config.store(new FileOutputStream(new File(url.toURI())), null);
+		    }
+
 		} catch (FileNotFoundException e) {
 			// TODO 自動生成された catch ブロック
 			e.printStackTrace();
