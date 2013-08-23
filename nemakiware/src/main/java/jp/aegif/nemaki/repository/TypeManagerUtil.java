@@ -1,5 +1,10 @@
 package jp.aegif.nemaki.repository;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
@@ -29,11 +34,24 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.TypeDefinitionCont
 import org.apache.commons.collections.CollectionUtils;
 
 public class TypeManagerUtil {
-	
+	//TODO Move to NemakiConstant class
 	private static final String NAMESPACE = "http://www.aegif.jp/Nemaki";
 	
+	public static Object deepCopy(Object o) throws IOException, ClassNotFoundException {
+		ByteArrayOutputStream baos = new ByteArrayOutputStream();
+		ObjectOutputStream oos = new ObjectOutputStream(baos);
+		oos.writeObject(o);
+
+		byte[] buff = baos.toByteArray();
+		
+		ByteArrayInputStream bais = new ByteArrayInputStream(buff);
+		ObjectInputStream os = new ObjectInputStream(bais);
+		Object copy = os.readObject();
+		return copy;
+	}
+	
 	/**
-	 * NOTE addする順序も重要(parentが追加されてない状態で実行するとエラー)
+	 * NOTE: CN add a new type only after the parent type is added.
 	 * Adds a type to collection.
 	 */
 	public static void addTypeInternal(Map<String, TypeDefinitionContainer> types, AbstractTypeDefinition type) {
@@ -285,7 +303,7 @@ public class TypeManagerUtil {
 		return result;
 	}
 
-	private static PropertyDefinition<?> createPropStringDef(String id,
+	public static PropertyDefinition<?> createPropStringDef(String id,
 			String localName, String localNameSpace, String queryName,
 			String displayName, String description, PropertyType datatype,
 			Cardinality cardinality, Updatability updatability,

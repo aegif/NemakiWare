@@ -1,3 +1,41 @@
+subtypes:
+  nemaki_document:
+    attributes:
+      id: nemaki:document
+      baseTypeId: cmis:document
+      displayName: nemaki:document
+      description: nemaki:document
+      localName: nemaki:document
+      queryName: nemaki:document
+    properties:
+      tag:
+          id: nemaki:tag
+          queryName: nemaki:tag
+          displayName: nemaki:tag 
+          description: nemaki:tag
+          datatype: string
+          cardinality: multiple
+          updatability: readwrite
+          required: false
+  nemaki_subdocument:
+    attributes:
+      id: nemaki:subdocument
+      baseTypeId: nemaki:document
+      displayName: nemaki:subdocument
+      description: nemaki:subdocument
+      localName: nemaki:subdocument
+      queryName: nemaki:subdocument
+    properties:
+      subtag:
+          id: nemaki:subtag
+          queryName: nemaki:subtag
+          displayName: nemaki:subtag 
+          description: nemaki:subtag
+          datatype: string
+          cardinality: multiple
+          updatability: readwrite
+          required: false
+
 #If two object-types each contain property definitions with the same id, the basic property definitions (property type, query name, cardinality) MUST be the same
 aspects:
   commentable: 

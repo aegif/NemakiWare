@@ -37,6 +37,7 @@ public class Relationship extends Content {
 		setParentId(c.getParentId());
 		setAcl(c.getAcl());
 		setAclInherited(c.isAclInherited());
+		setSubTypeProperties(c.getSubTypeProperties());
 		setAspects(c.getAspects());
 		setSecondaryIds(c.getSecondaryIds());
 		setObjectType(c.getObjectType());

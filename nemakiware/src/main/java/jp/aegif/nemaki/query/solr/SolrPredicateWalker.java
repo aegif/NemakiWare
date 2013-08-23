@@ -50,6 +50,7 @@ import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.response.QueryResponse;
+import org.apache.solr.client.solrj.util.ClientUtils;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
 
@@ -175,7 +176,6 @@ public class SolrPredicateWalker {
 	// //////////////////////////////////////////////////////////////////////////////
 	private Query walkEquals(Tree leftNode, Tree rightNode) {
 		HashMap<String, String> map = walkCompareInternal(leftNode, rightNode);
-		System.out.println(leftNode);
 		Term term = new Term(map.get(FLD), map.get(CND));
 		Query q = new TermQuery(term);
 		return q;
@@ -234,7 +234,7 @@ public class SolrPredicateWalker {
 		String left = SolrUtil.convertToString(leftNode);
 		String right = walkExpr(rightNode).toString(); 
 		
-		map.put(FLD, SolrUtil.getPropertyNameInSolr(left));
+		map.put(FLD, ClientUtils.escapeQueryChars(SolrUtil.getPropertyNameInSolr(left)));
 		map.put(CND, right);
 		return map;
 	}
@@ -534,7 +534,7 @@ public class SolrPredicateWalker {
 	private Object walkString(Tree node) {
 		String s = node.getText();
 		s = s.substring(1, s.length() - 1);
-		return "\"" + s + "\"";
+		return "\"" + ClientUtils.escapeQueryChars(s) + "\"";
 	}
 
 	private Object walkTimestamp(Tree node) {

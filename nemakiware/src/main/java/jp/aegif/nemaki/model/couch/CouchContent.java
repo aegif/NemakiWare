@@ -28,6 +28,7 @@ import jp.aegif.nemaki.model.Ace;
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Aspect;
 import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.model.Property;
 
 import org.codehaus.jackson.annotate.JsonIgnoreProperties;
 import org.json.simple.JSONArray;
@@ -41,6 +42,7 @@ public class CouchContent extends CouchNodeBase{
 	private String parentId;
 	private CouchAcl acl;
 	private Boolean aclInherited = true;	//TODO Deault to false. Is this place adequate?
+	private List<Property> subTypeProperties = new ArrayList<Property>();
 	private List<Aspect> aspects = new ArrayList<Aspect>();
 	private List<String> secondaryIds = new ArrayList<String>();
 	private String objectType;
@@ -107,6 +109,14 @@ public class CouchContent extends CouchNodeBase{
 		this.aclInherited = aclInherited;
 	}
 	
+	public List<Property> getSubTypeProperties() {
+		return subTypeProperties;
+	}
+
+	public void setSubTypeProperties(List<Property> subTypeProperties) {
+		this.subTypeProperties = subTypeProperties;
+	}
+
 	public List<Aspect> getAspects() {
 		return aspects;
 	}
@@ -160,6 +170,7 @@ public class CouchContent extends CouchNodeBase{
 		c.setDescription(getDescription());
 		c.setParentId(getParentId());
 		c.setAclInherited(isAclInherited());
+		c.setSubTypeProperties(getSubTypeProperties());
 		c.setAspects(getAspects());
 		c.setSecondaryIds(getSecondaryIds());
 		c.setObjectType(getObjectType());

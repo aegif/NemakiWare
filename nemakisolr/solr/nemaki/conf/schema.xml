@@ -172,6 +172,7 @@
    <!--dynamicField name="*" type="ignored" multiValued="true" /-->
    
    <dynamicField name="aspect.*" type="string"/>
+   <dynamicField name="dynamic.*" type="string"/>
    <dynamicField name="ignored_*" type="ignored"/>
    
  </fields>
