@@ -92,8 +92,7 @@ public class TypeManager implements
 		//Add SecondaryTypes
 		addSecondaryTypes();
 	}
-
-
+	
 	private void addSecondaryTypes(){
 		Map<String, Object>map = getCustomModelInfo();
 		Map<String, Object> aspects = (Map<String, Object>) map.get(NemakiConstant.EXTNAME_ASPECTS);

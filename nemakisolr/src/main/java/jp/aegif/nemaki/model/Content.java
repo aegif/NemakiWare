@@ -95,9 +95,10 @@ public class Content extends CouchDbDocument{
 	 */
 	private String mimeType;
 
-	// TODO should be tested for thread safety
 	private Role role = Role.CONSUMER;
 
+	private List<Property> subTypeProperties = new ArrayList<Property>();
+	
 	/**
 	 * Aspect for this content
 	 */
@@ -211,6 +212,14 @@ public class Content extends CouchDbDocument{
 
 	public void setMimeType(String mimeType) {
 		this.mimeType = mimeType;
+	}
+
+	public List<Property> getSubTypeProperties() {
+		return subTypeProperties;
+	}
+
+	public void setSubTypeProperties(List<Property> subTypeProperties) {
+		this.subTypeProperties = subTypeProperties;
 	}
 
 	public List<Aspect> getAspects() {

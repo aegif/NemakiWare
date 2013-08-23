@@ -21,10 +21,18 @@
  ******************************************************************************/
 package jp.aegif.nemaki.repository;
 
+import java.io.IOException;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
+
+import jp.aegif.nemaki.service.dao.impl.ContentDaoServiceImpl;
+import jp.aegif.nemaki.util.YamlManager;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
@@ -41,9 +49,14 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.PolicyTypeDefiniti
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.RelationshipTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.SecondaryTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.TypeDefinitionContainerImpl;
+import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 public class FixedTypeManager {
 
+	private static final Log log = LogFactory.getLog(ContentDaoServiceImpl.class);
+	
 	/**
 	 * Pre-defined types.
 	 */
@@ -74,12 +87,98 @@ public class FixedTypeManager {
 	 */
 	public FixedTypeManager() {
 		setup();
+		
+		//Add SubType-specific Properties
+		addsubTypeProperties();
 	}
 	
 	public Map<String, TypeDefinitionContainer> getTypes() {
 		return types;
 	}
+	
+	private void addsubTypeProperties(){
+		YamlManager ymlMgr = new YamlManager("base_model.yml");
+		Map<String, Object> yml = (Map<String, Object>) ymlMgr.loadYml();
+		Map<String, Object> ymlAllSubTypes =  (Map<String, Object>) yml.get("subtypes");
+		
+		
+		Set<String> baseTypeChildrenIds = new HashSet<String>();
+		
+		baseTypeChildrenIds.add(BaseTypeId.CMIS_DOCUMENT.value());
+		baseTypeChildrenIds.add(BaseTypeId.CMIS_FOLDER.value());
+		baseTypeChildrenIds.add(BaseTypeId.CMIS_RELATIONSHIP.value());
+		baseTypeChildrenIds.add(BaseTypeId.CMIS_POLICY.value());
+		baseTypeChildrenIds.add(BaseTypeId.CMIS_ITEM.value());
+		baseTypeChildrenIds.add(BaseTypeId.CMIS_SECONDARY.value());
+		
+		addSubTypeInternal(baseTypeChildrenIds, ymlAllSubTypes);
+		
+	}	
+	
+	private void addSubTypeInternal(Set<String> parentTypeIds, Map<String,Object>ymlAllSubTypes){
+		if(ymlAllSubTypes.size() == 0 || CollectionUtils.isEmpty(parentTypeIds)){
+			return; //再帰呼び出し終了
+		}
+		
+		Set<String> childrenTypeIds = new HashSet<String>();
+		
+		//Yml型hashmapから、今回指定されたparentTypeIdsの直下にあるタイプ定義だけを抜き出す
+		Map<String, Object> ymlSubTypes = new HashMap<String, Object>();
+		for(Entry<String, Object> entry : ymlAllSubTypes.entrySet()){
+			Map<String, String> attrs = (Map<String, String>) ((Map<String, Object>) entry.getValue()).get("attributes");
+			String baseTypeId = attrs.get("baseTypeId");
+			if(parentTypeIds.contains(baseTypeId)){
+				ymlSubTypes.put(entry.getKey(), entry.getValue());
+				childrenTypeIds.add(attrs.get("id"));
+			}
+		}
 
+		for(String key : ymlSubTypes.keySet()){
+			ymlAllSubTypes.remove(key);
+		}
+		
+		//抜き出されたtype定義たちを元に、typedefinitionを作成
+		for(Entry<String, Object> ymlSubType : ymlSubTypes.entrySet()){
+			//Subtype's attributes
+			Map<String, String>attributes = (Map<String, String>) ((Map<String, Object>)ymlSubType.getValue()).get("attributes");
+			
+			TypeDefinitionContainerImpl tdc = (TypeDefinitionContainerImpl) types.get(attributes.get("baseTypeId"));
+			AbstractTypeDefinition tdf = (AbstractTypeDefinition) tdc.getTypeDefinition();
+			
+			DocumentTypeDefinitionImpl subType = new DocumentTypeDefinitionImpl();
+			try {
+				subType = (DocumentTypeDefinitionImpl) TypeManagerUtil.deepCopy(tdf);
+			} catch (IOException e) {
+				log.error("Failed to copy a type definition:" + tdf.getId(), e);
+			} catch (ClassNotFoundException e) {
+				log.error("Failed to copy a type definition:" + tdf.getId(), e);
+			}
+			
+			//Subtype-specific config
+			//TODO Set & Sanitize the values
+			subType.setId(attributes.get("id"));
+			subType.setQueryName(attributes.get("queryName"));
+			subType.setParentTypeId(BaseTypeId.CMIS_DOCUMENT.value());
+			
+			Map<String, PropertyDefinition<?>>properties = subType.getPropertyDefinitions();
+			Map<String, Object>ymlProperties = (Map<String, Object>) ((Map<String, Object>)ymlSubType.getValue()).get("properties");
+			for(Entry<String, Object> ymlProperty : ymlProperties.entrySet()){
+				Map<String, String> ymlPropAttrs = (Map<String, String>) ymlProperty.getValue();
+				PropertyDefinition<?> tagPropertyDefinition = TypeManagerUtil.
+						createPropStringDef(ymlPropAttrs.get("id"), ymlPropAttrs.get("id"), NAMESPACE, ymlPropAttrs.get("queryName"), ymlPropAttrs.get("displayName"), ymlPropAttrs.get("description"), PropertyType.STRING, Cardinality.MULTI, Updatability.READWRITE, false, false, true, true, null, false, null, BigInteger.ZERO);
+				properties.put(ymlPropAttrs.get("id"), tagPropertyDefinition);
+			}
+			
+			//Add to types & the parent type
+			TypeDefinitionContainerImpl subTypeContainer = new TypeDefinitionContainerImpl(subType);
+			tdc.getChildren().add(subTypeContainer);
+			
+			types.put(subType.getId(), subTypeContainer);
+		}
+		
+		addSubTypeInternal(childrenTypeIds, ymlAllSubTypes);
+	}
+	
 	/**
 	 * Creates the base types.
 	 */

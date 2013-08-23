@@ -65,6 +65,7 @@ public class Document extends Content {
 		setParentId(c.getParentId());
 		setAcl(c.getAcl());
 		setAclInherited(c.isAclInherited());
+		setSubTypeProperties(c.getSubTypeProperties());
 		setAspects(c.getAspects());
 		setSecondaryIds(c.getSecondaryIds());
 		setObjectType(c.getObjectType());
@@ -145,15 +146,6 @@ public class Document extends Content {
 		this.checkinComment = checkinComment;
 	}
 
-	/*public Boolean getUpdateSkip() {
-		return updateSkip;
-	}
-
-	public void setUpdateSkip(Boolean updateSkip) {
-		this.updateSkip = updateSkip;
-	}*/
-	
-	
 	@Override
 	public String toString() {
 		@SuppressWarnings("serial")
