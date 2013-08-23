@@ -208,22 +208,12 @@
 			      <scanTarget>src/main/webapp</scanTarget>
 			    </scanTargets>
 
-			    <systemproperties>
-			      <systemproperty>
-				<name>org.apache.commons.logging.Log</name>
-				<value>
-				  org.apache.commons.logging.impl.Log4JLogger
-				</value>
-			      </systemproperty>
-			      <systemproperty>
-				<name>slf4j</name>
-				<value>false</value>
-			      </systemproperty>
-			      <systemproperty>
+			    <systemProperties>
+			      <systemProperty>
 				<name>log4j.configuration</name>
-				<value>file:./src/main/webapp/WEB-INF/classes/log4j.properties</value>
-			      </systemproperty>
-			    </systemproperties>
+				<value>file:///${basedir}/src/main/webapp/WEB-INF/classes/log4j.properties</value>
+			      </systemProperty>
+			    </systemProperties>
 			  </configuration>
 			</plugin>
 			<plugin>
