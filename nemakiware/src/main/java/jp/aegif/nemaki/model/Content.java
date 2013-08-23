@@ -57,6 +57,7 @@ public class Content extends NodeBase {
 	private String parentId; // Pure CMIS demands this only for Folder
 	private Acl acl;
 	private Boolean aclInherited;
+	private List<Property> subTypeProperties = new ArrayList<Property>();
 	private List<Aspect> aspects = new ArrayList<Aspect>();
 	private List<String> secondaryIds = new ArrayList<String>();
 	private String objectType;
@@ -116,6 +117,14 @@ public class Content extends NodeBase {
 
 	public void setAclInherited(Boolean aclInherited) {
 		this.aclInherited = aclInherited;
+	}
+	
+	public List<Property> getSubTypeProperties() {
+		return subTypeProperties;
+	}
+
+	public void setSubTypeProperties(List<Property> subTypeProperties) {
+		this.subTypeProperties = subTypeProperties;
 	}
 
 	public List<Aspect> getAspects() {

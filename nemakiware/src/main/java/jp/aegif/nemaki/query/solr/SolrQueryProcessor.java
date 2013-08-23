@@ -54,9 +54,11 @@ import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.response.QueryResponse;
+import org.apache.solr.client.solrj.util.ClientUtils;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
 
+@SuppressWarnings("deprecation")
 public class SolrQueryProcessor implements QueryProcessor {
 
 	private ContentService contentService;
@@ -109,7 +111,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 		TypeDefinition td = queryObject.getMainFromName();
 		String fromTable = td.getId();
 		Term t = new Term("type", SolrUtil.getPropertyNameInSolr(fromTable));
-		fromQueryString = new TermQuery(t).toString();
+		fromQueryString = ClientUtils.escapeQueryChars(new TermQuery(t).toString());
 
 		// Execute query
 		SolrQuery solrQuery = new SolrQuery();

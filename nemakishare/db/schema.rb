@@ -28,11 +28,4 @@ ActiveRecord::Schema.define(:version => 20130521112957) do
     t.datetime "updated_at",     :null => false
   end
 
-  create_table "search_forms", :force => true do |t|
-    t.string   "type"
-    t.string   "query"
-    t.datetime "created_at", :null => false
-    t.datetime "updated_at", :null => false
-  end
-
 end
