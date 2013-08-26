@@ -57,14 +57,8 @@ class SitesController < ApplicationController
   end
 
   if logger.level == Logger::DEBUG
-
-    alias :original_index :index
-    wrap_by_log :original_index, :index
-
-    alias :original_create :create
-    wrap_by_log :original_create, :create
-
-    alias :original_check_site_create_permission :check_site_create_permission
-    wrap_by_log :original_check_site_create_permission, :check_site_create_permission
+    wrap_by_log :index
+    wrap_by_log :create
+    wrap_by_log :check_site_create_permission
   end
 end

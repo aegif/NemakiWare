@@ -65,15 +65,18 @@ class ApplicationController < ActionController::Base
   p logger.level
   if logger.level == Logger::DEBUG
 
-    def self.wrap_by_log(original_method, method) 
+    def self.wrap_by_log(method) 
+      original_method_s = ( "original_" + method.to_s ).to_sym
+      alias_method original_method_s, method
       define_method(method) do |*args, &block|
         logger.debug "** [#{method}] start"
-        result = self.send original_method, *args, &block
+        result = self.send original_method_s, *args, &block
         logger.debug "** [#{method}] end"
         result
       end
     end
 
+   wrap_by_log :check_authentication
   end
   
   private
