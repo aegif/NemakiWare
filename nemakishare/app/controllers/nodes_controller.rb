@@ -116,7 +116,7 @@ class NodesController < ApplicationController
         update_properties[bp['key']] = bp['value']
       end
     end
-    
+=begin    
     secondary_types = JSON.parse(params[:custom_properties])
     update_properties['cmis:secondaryObjectTypeIds'] = Array.new
     if !secondary_types.nil? && !secondary_types.empty?
@@ -129,7 +129,7 @@ class NodesController < ApplicationController
         end
       end
     end
-
+=end
     update_aspects = @nemaki_repository.convert_input_to_aspects(node, JSON.parse(params[:custom_properties]))
 
     #TODO CMIS属性の更新でdiffがあるときのみupdateになっているか確認
