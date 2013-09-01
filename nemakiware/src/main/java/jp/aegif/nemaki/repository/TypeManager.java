@@ -21,33 +21,61 @@
  ******************************************************************************/
 package jp.aegif.nemaki.repository;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
-import jp.aegif.nemaki.model.constant.NemakiConstant;
-import jp.aegif.nemaki.util.YamlManager;
+import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.model.NemakiPropertyDefinition;
+import jp.aegif.nemaki.model.NemakiTypeDefinition;
+import jp.aegif.nemaki.service.dao.ContentDaoService;
 
+import org.apache.chemistry.opencmis.commons.PropertyIds;
+import org.apache.chemistry.opencmis.commons.definitions.Choice;
+import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
+import org.apache.chemistry.opencmis.commons.definitions.FolderTypeDefinition;
+import org.apache.chemistry.opencmis.commons.definitions.ItemTypeDefinition;
+import org.apache.chemistry.opencmis.commons.definitions.PolicyTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
+import org.apache.chemistry.opencmis.commons.definitions.RelationshipTypeDefinition;
+import org.apache.chemistry.opencmis.commons.definitions.SecondaryTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionList;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
+import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
+import org.apache.chemistry.opencmis.commons.enums.DateTimeResolution;
+import org.apache.chemistry.opencmis.commons.enums.DecimalPrecision;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
 import org.apache.chemistry.opencmis.commons.impl.WSConverter;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyDefinition;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.DocumentTypeDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.FolderTypeDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.ItemTypeDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PolicyTypeDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDecimalDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyHtmlDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyUriDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.RelationshipTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.SecondaryTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.TypeDefinitionContainerImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.TypeDefinitionListImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.TypeMutabilityImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
-import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.util.CollectionUtils;
@@ -59,148 +87,688 @@ public class TypeManager implements
 		org.apache.chemistry.opencmis.server.support.TypeManager {
 
 	private static final Log log = LogFactory.getLog(TypeManager.class);
+	
 	/**
-	* Pre-defined types.
-	*/
+	 * Spring bean
+	 */
+	private ContentDaoService contentDaoService;
+	
+	/**
+	 * Constant
+	 */
 	public final static String DOCUMENT_TYPE_ID = BaseTypeId.CMIS_DOCUMENT.value();
 	public final static String FOLDER_TYPE_ID = BaseTypeId.CMIS_FOLDER.value();
 	public final static String RELATIONSHIP_TYPE_ID = BaseTypeId.CMIS_RELATIONSHIP.value();
 	public final static String POLICY_TYPE_ID = BaseTypeId.CMIS_POLICY.value();
 	public final static String ITEM_TYPE_ID = BaseTypeId.CMIS_ITEM.value();
 	public final static String SECONDARY_TYPE_ID = BaseTypeId.CMIS_SECONDARY.value();
+	private static final String NAMESPACE = "http://www.aegif.jp/Nemaki";
+	private final static boolean REQUIRED = true;
+	private final static boolean QUERYABLE = true;
+	private final static boolean ORDERABLE = true;
 
-	private FixedTypeManager fixedTypeManager;
-	private final String ASPECT_FILE_PATH = "base_model.yml";
-	
 	/**
-	 * Map of all types. It is abbreviation of fixedTypeManager.getTypes()
+	 * Map of all types. 
 	 */
 	private Map<String, TypeDefinitionContainer> types;
 	
-	public TypeManager() {
-	}
-
-	public TypeManager(FixedTypeManager fixedTypeManager) {
-		setFixedTypeManager(fixedTypeManager);
+	/**
+	 * Map of all basetypes. 
+	 */
+	private Map<String, TypeDefinitionContainer> basetypes;
+	
+	
+	// /////////////////////////////////////////////////
+	// Constructor
+	// /////////////////////////////////////////////////
+	public TypeManager(ContentDaoService contentDaoService) {
+		setContentDaoService(contentDaoService);
 		
-		//Copy baseTypes
 		types = new HashMap<String, TypeDefinitionContainer>();
-		for(Entry<String, TypeDefinitionContainer>entry : fixedTypeManager.getTypes().entrySet()){
-			types.put(entry.getKey(), entry.getValue());
-		}
+		basetypes = new HashMap<String, TypeDefinitionContainer>();
+		
+		// Generate basetypes
+		addDocumentType();
+		addFolderType();
+		addRelationshipType();
+		addPolicyType();
+		addItemType();
+		addSecondayType();
 
-		//Add SecondaryTypes
-		addSecondaryTypes();
+		// Generate subtypes
+		addSubTypes();
 	}
-	
-	private void addSecondaryTypes(){
-		Map<String, Object>map = getCustomModelInfo();
-		Map<String, Object> aspects = (Map<String, Object>) map.get(NemakiConstant.EXTNAME_ASPECTS);
-	
-		// set aspect
-		List<String> parentIds = new ArrayList<String>();
-		//初期値
-		parentIds.add("cmis:secondary");
-		
-		addSecondryTypesnternal(parentIds, aspects);
-		
-	}
-	
-	@SuppressWarnings("unchecked")
-	private void addSecondryTypesnternal(List<String> parentIds, Map<String,Object> aspects){
-		List<String>list = new ArrayList<String>();
-		
-		for(Entry<String, Object> entry : aspects.entrySet()){
-			Map<String, Object> aspect = (Map<String, Object>) entry.getValue();
-			Map<String, Object> attributes = (Map<String, Object>) aspect.get(NemakiConstant.EXTNAME_ASPECT_ATTRIBUTES);
-			String parentId = (String) attributes.get("parentId");
-			
-			if(parentIds.contains(parentId)){
-				//Build SecondaryTypeDefinition from yaml
-				addSecondaryType(attributes, entry.getKey(), aspect);
-				//ループ用変数に追加
-				list.add(entry.getKey());
-			}
-		}
-		
-		if(CollectionUtils.isEmpty(list)){
-			return;
-		}else{
-			addSecondryTypesnternal(list, aspects);
-		}
-	}
-	
-	
-	@SuppressWarnings("unchecked")
-	private void addSecondaryType(Map<String, Object> attributes, String aspectKey, Map<String, Object> aspect){
-		
-		SecondaryTypeDefinitionImpl type = new SecondaryTypeDefinitionImpl();
-		
-		// set attributes
-		
-		type.setId(aspectKey);
-		type.setBaseTypeId(BaseTypeId.CMIS_SECONDARY);
-		String parentId = (attributes.get("parentId") == null)? BaseTypeId.CMIS_SECONDARY.value() : (String)attributes.get("parentId");
-		type.setParentTypeId(parentId);
-		
-		//TODO なんか他にもいろいろattribute設定しないといけないはず
-		
-		for (Map.Entry<String, Object> attribute : attributes.entrySet()) {
-			//displayNameとか
-			String attrVal = (String)attribute.getValue();
-			if(attribute.getKey().equals("displayName")){
-				type.setDisplayName(attrVal);
-			}else if(attribute.getKey().equals("description")){
-				type.setDescription(attrVal);
-			}else if(attribute.getKey().equals("localName")){
-				type.setLocalName(attrVal);
-			}else if(attribute.getKey().equals("localNameSpace")){
-				type.setLocalNamespace(attrVal);
-			}else if(attribute.getKey().equals("queryName")){
-				type.setQueryName(attrVal);
-			}
-		}
 
-		// set properties
-		Map<String, Object> properties = (Map<String, Object>) aspect
-				.get(NemakiConstant.EXTNAME_ASPECT_PROPERTIES);
+	// /////////////////////////////////////////////////
+	// BaseType Generating Methods
+	// /////////////////////////////////////////////////
+	private void addDocumentType() {
+		DocumentTypeDefinitionImpl documentType = new DocumentTypeDefinitionImpl();
+		documentType.setId(DOCUMENT_TYPE_ID);
+		documentType.setLocalName("document");
+		documentType.setLocalNamespace(NAMESPACE);
+		documentType.setQueryName(DOCUMENT_TYPE_ID);
+		documentType.setDisplayName("document");
+		documentType.setDescription("Document");
+		documentType.setBaseTypeId(BaseTypeId.CMIS_DOCUMENT);
+		documentType.setIsCreatable(true);
+		documentType.setIsFileable(true);
+		documentType.setIsQueryable(true);
+		documentType.setIsControllablePolicy(false);
+		documentType.setIsControllableAcl(true);
+		documentType.setIsIncludedInSupertypeQuery(true);
+		documentType.setIsFulltextIndexed(true);
+		documentType.setIsVersionable(true);
+		documentType.setContentStreamAllowed(ContentStreamAllowed.REQUIRED);
 
-		for (String propertyKey : properties.keySet()) {
-			Map<String, Object> property = (Map<String, Object>) properties
-					.get(propertyKey);
-			
-			PropertyType datatype = PropertyType.fromValue((String)property.get("datatype"));
-			Cardinality cardinality = Cardinality.fromValue((String)property.get("cardinality"));
-			Updatability updatability = Updatability.fromValue((String)property.get("updatability"));
-			Boolean inherited = ((Boolean)property.get("inherited") == null)? false:(Boolean)property.get("inherited");
-			Boolean required = ((Boolean)property.get("required") == null)? false:(Boolean)property.get("required");
-			Boolean queryable = ((Boolean)property.get("queryable") == null)? false:(Boolean)property.get("queryable");
-			Boolean orderable = ((Boolean)property.get("orderable") == null)? false:(Boolean)property.get("orderable");
-			Boolean openChoice = ((Boolean)property.get("openChoice") == null)? false:(Boolean)property.get("openChoice");
-			
-			type.addPropertyDefinition(
-					createSecondaryTypePropDef(aspectKey, propertyKey, (String)property.get("localName"), (String)property.get("localNameSpace"), (String)property.get("queryName"), (String)property.get("displayName"), (String)property.get("description"), datatype, cardinality, updatability, required, queryable, inherited, openChoice, orderable, null));
-		}
-		
-		TypeManagerUtil.addTypeInternal(types, type);
+		TypeMutabilityImpl typeMutability = new TypeMutabilityImpl();
+		typeMutability.setCanCreate(true);
+		typeMutability.setCanUpdate(false);
+		typeMutability.setCanDelete(false);
+		documentType.setTypeMutability(typeMutability);
+
+		addBasePropertyDefinitions(documentType);
+		addDocumentPropertyDefinitions(documentType);
+
+		addTypeInternal(types, documentType);
+		addTypeInternal(basetypes, documentType);
 	}
-	
-	private PropertyDefinition createSecondaryTypePropDef(String typeId, String id,String localName, String localNameSpace, String queryName, String displayName, String description,
+
+	private void addFolderType() {
+		FolderTypeDefinitionImpl folderType = new FolderTypeDefinitionImpl();
+		folderType.setId(FOLDER_TYPE_ID);
+		folderType.setLocalName("folder");
+		folderType.setLocalNamespace(NAMESPACE);
+		folderType.setQueryName(FOLDER_TYPE_ID);
+		folderType.setDisplayName("folder");
+		folderType.setBaseTypeId(BaseTypeId.CMIS_FOLDER);
+		folderType.setDescription("Folder");
+		folderType.setIsCreatable(true);
+		folderType.setIsFileable(true);
+		folderType.setIsQueryable(true);
+		folderType.setIsControllablePolicy(false);
+		folderType.setIsControllableAcl(true);
+		folderType.setIsFulltextIndexed(false);
+		folderType.setIsIncludedInSupertypeQuery(true);
+
+		TypeMutabilityImpl typeMutability = new TypeMutabilityImpl();
+		typeMutability.setCanCreate(true);
+		typeMutability.setCanUpdate(false);
+		typeMutability.setCanDelete(false);
+		folderType.setTypeMutability(typeMutability);
+
+		addBasePropertyDefinitions(folderType);
+		addFolderPropertyDefinitions(folderType);
+
+		addTypeInternal(types, folderType);
+		addTypeInternal(basetypes, folderType);
+	}
+
+	private void addRelationshipType() {
+		RelationshipTypeDefinitionImpl relationshipType = new RelationshipTypeDefinitionImpl();
+		relationshipType.setId(RELATIONSHIP_TYPE_ID);
+		relationshipType.setLocalName("relationship");
+		relationshipType.setLocalNamespace(NAMESPACE);
+		relationshipType.setQueryName(RELATIONSHIP_TYPE_ID);
+		relationshipType.setDisplayName("relationship");
+		relationshipType.setBaseTypeId(BaseTypeId.CMIS_RELATIONSHIP);
+		relationshipType.setDescription("Relationship");
+		relationshipType.setIsCreatable(false);
+		relationshipType.setIsFileable(false);
+		relationshipType.setIsQueryable(false);
+		relationshipType.setIsControllablePolicy(false);
+		relationshipType.setIsControllableAcl(false);
+		relationshipType.setIsIncludedInSupertypeQuery(true);
+		relationshipType.setIsFulltextIndexed(false);
+
+		TypeMutabilityImpl typeMutability = new TypeMutabilityImpl();
+		typeMutability.setCanCreate(false);
+		typeMutability.setCanUpdate(false);
+		typeMutability.setCanDelete(false);
+		relationshipType.setTypeMutability(typeMutability);
+
+		List<String> allowedTypes = new ArrayList<String>();
+		allowedTypes.add(DOCUMENT_TYPE_ID);
+		allowedTypes.add(FOLDER_TYPE_ID);
+		relationshipType.setAllowedSourceTypes(allowedTypes);
+		relationshipType.setAllowedTargetTypes(allowedTypes);
+
+		addBasePropertyDefinitions(relationshipType);
+		addRelationshipPropertyDefinitions(relationshipType);
+
+		addTypeInternal(types, relationshipType);
+		addTypeInternal(basetypes, relationshipType);
+	}
+
+	private void addPolicyType() {
+		PolicyTypeDefinitionImpl policyType = new PolicyTypeDefinitionImpl();
+		policyType.setId(POLICY_TYPE_ID);
+		policyType.setLocalName("policy");
+		policyType.setLocalNamespace(NAMESPACE);
+		policyType.setQueryName(POLICY_TYPE_ID);
+		policyType.setDisplayName("policy");
+		policyType.setBaseTypeId(BaseTypeId.CMIS_POLICY);
+		policyType.setDescription("Policy");
+		policyType.setIsCreatable(false);
+		policyType.setIsFileable(false);
+		policyType.setIsQueryable(false);
+		policyType.setIsControllablePolicy(false);
+		policyType.setIsControllableAcl(false);
+		policyType.setIsIncludedInSupertypeQuery(true);
+		policyType.setIsFulltextIndexed(false);
+
+		TypeMutabilityImpl typeMutability = new TypeMutabilityImpl();
+		typeMutability.setCanCreate(false);
+		typeMutability.setCanUpdate(false);
+		typeMutability.setCanDelete(false);
+		policyType.setTypeMutability(typeMutability);
+
+		addBasePropertyDefinitions(policyType);
+		addPolicyPropertyDefinitions(policyType);
+
+		addTypeInternal(types, policyType);
+		addTypeInternal(basetypes, policyType);
+	}
+
+	private void addItemType() {
+		ItemTypeDefinitionImpl itemType = new ItemTypeDefinitionImpl();
+		itemType.setId(ITEM_TYPE_ID);
+		itemType.setLocalName("item");
+		itemType.setLocalNamespace(NAMESPACE);
+		itemType.setQueryName(ITEM_TYPE_ID);
+		itemType.setDisplayName("item");
+		itemType.setBaseTypeId(BaseTypeId.CMIS_POLICY);
+		itemType.setDescription("Item");
+		itemType.setIsCreatable(false);
+		itemType.setIsFileable(false);
+		itemType.setIsQueryable(false);
+		itemType.setIsControllablePolicy(false);
+		itemType.setIsControllableAcl(false);
+		itemType.setIsIncludedInSupertypeQuery(true);
+		itemType.setIsFulltextIndexed(false);
+
+		TypeMutabilityImpl typeMutability = new TypeMutabilityImpl();
+		typeMutability.setCanCreate(false);
+		typeMutability.setCanUpdate(false);
+		typeMutability.setCanDelete(false);
+		itemType.setTypeMutability(typeMutability);
+
+		addBasePropertyDefinitions(itemType);
+
+		addTypeInternal(types, itemType);
+		addTypeInternal(basetypes, itemType);
+	}
+
+	private void addSecondayType() {
+		SecondaryTypeDefinitionImpl secondaryType = new SecondaryTypeDefinitionImpl();
+		secondaryType.setId(SECONDARY_TYPE_ID);
+		secondaryType.setLocalName("secondary");
+		secondaryType.setLocalNamespace(NAMESPACE);
+		secondaryType.setQueryName(SECONDARY_TYPE_ID);
+		secondaryType.setDisplayName("secondary");
+		secondaryType.setBaseTypeId(BaseTypeId.CMIS_SECONDARY);
+		secondaryType.setDescription("Secondary");
+		secondaryType.setIsCreatable(false);
+		secondaryType.setIsFileable(false);
+		secondaryType.setIsQueryable(true);
+		secondaryType.setIsControllablePolicy(false);
+		secondaryType.setIsControllableAcl(false);
+		secondaryType.setIsIncludedInSupertypeQuery(true);
+		secondaryType.setIsFulltextIndexed(true);
+		secondaryType
+				.setPropertyDefinitions(new HashMap<String, PropertyDefinition<?>>());
+
+		TypeMutabilityImpl typeMutability = new TypeMutabilityImpl();
+		typeMutability.setCanCreate(true);
+		typeMutability.setCanUpdate(false);
+		typeMutability.setCanDelete(false);
+		secondaryType.setTypeMutability(typeMutability);
+
+		secondaryType.setPropertyDefinitions(new HashMap<String, PropertyDefinition<?>>());
+		
+		addTypeInternal(types, secondaryType);
+		addTypeInternal(basetypes, secondaryType);
+	}
+
+	private void addBasePropertyDefinitions(AbstractTypeDefinition type) {
+		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.NAME,
+				PropertyType.STRING, Cardinality.SINGLE,
+				Updatability.READWRITE, REQUIRED, QUERYABLE, ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(
+				PropertyIds.DESCRIPTION, PropertyType.STRING,
+				Cardinality.SINGLE, Updatability.READWRITE, !REQUIRED,
+				QUERYABLE, ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.OBJECT_ID,
+				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
+				!REQUIRED, QUERYABLE, ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(
+				PropertyIds.BASE_TYPE_ID, PropertyType.ID, Cardinality.SINGLE,
+				Updatability.READONLY, !REQUIRED, QUERYABLE, ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(
+				PropertyIds.OBJECT_TYPE_ID, PropertyType.ID,
+				Cardinality.SINGLE, Updatability.ONCREATE, REQUIRED, QUERYABLE,
+				ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(
+				PropertyIds.SECONDARY_OBJECT_TYPE_IDS, PropertyType.ID,
+				Cardinality.MULTI, Updatability.READWRITE, !REQUIRED,
+				QUERYABLE, !ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.CREATED_BY,
+				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
+				!REQUIRED, QUERYABLE, ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(
+				PropertyIds.CREATION_DATE, PropertyType.DATETIME,
+				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
+				QUERYABLE, ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(
+				PropertyIds.LAST_MODIFIED_BY, PropertyType.STRING,
+				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
+				QUERYABLE, ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(
+				PropertyIds.LAST_MODIFICATION_DATE, PropertyType.DATETIME,
+				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
+				QUERYABLE, ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(
+				PropertyIds.CHANGE_TOKEN, PropertyType.STRING,
+				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
+				!QUERYABLE, !ORDERABLE, null));
+	}
+
+	private void addFolderPropertyDefinitions(FolderTypeDefinitionImpl type) {
+		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.PARENT_ID,
+				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
+				!REQUIRED, QUERYABLE, !ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.PATH,
+				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
+				!REQUIRED, !QUERYABLE, !ORDERABLE, null));
+
+		List<String> defaults = new ArrayList<String>();
+		defaults.add(BaseTypeId.CMIS_FOLDER.value());
+		defaults.add(BaseTypeId.CMIS_DOCUMENT.value());
+		type.addPropertyDefinition(createDefaultPropDef(
+				PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS, PropertyType.ID,
+				Cardinality.MULTI, Updatability.READONLY, !REQUIRED,
+				!QUERYABLE, !ORDERABLE, defaults));
+	}
+
+	private void addDocumentPropertyDefinitions(DocumentTypeDefinitionImpl type) {
+		type.addPropertyDefinition(createDefaultPropDef(
+				PropertyIds.IS_IMMUTABLE, PropertyType.BOOLEAN,
+				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
+				!QUERYABLE, !ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(
+				PropertyIds.IS_LATEST_VERSION, PropertyType.BOOLEAN,
+				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
+				!QUERYABLE, !ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(
+				PropertyIds.IS_MAJOR_VERSION, PropertyType.BOOLEAN,
+				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
+				!QUERYABLE, !ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(
+				PropertyIds.IS_LATEST_MAJOR_VERSION, PropertyType.BOOLEAN,
+				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
+				!QUERYABLE, !ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(
+				PropertyIds.IS_PRIVATE_WORKING_COPY, PropertyType.BOOLEAN,
+				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
+				QUERYABLE, ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(
+				PropertyIds.VERSION_LABEL, PropertyType.STRING,
+				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
+				QUERYABLE, ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(
+				PropertyIds.VERSION_SERIES_ID, PropertyType.ID,
+				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
+				QUERYABLE, ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(
+				PropertyIds.IS_VERSION_SERIES_CHECKED_OUT,
+				PropertyType.BOOLEAN, Cardinality.SINGLE,
+				Updatability.READONLY, !REQUIRED, QUERYABLE, ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(
+				PropertyIds.VERSION_SERIES_CHECKED_OUT_BY, PropertyType.STRING,
+				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
+				!QUERYABLE, !ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(
+				PropertyIds.VERSION_SERIES_CHECKED_OUT_ID, PropertyType.ID,
+				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
+				!QUERYABLE, !ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(
+				PropertyIds.CHECKIN_COMMENT, PropertyType.STRING,
+				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
+				!QUERYABLE, !ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(
+				PropertyIds.CONTENT_STREAM_LENGTH, PropertyType.INTEGER,
+				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
+				!QUERYABLE, !ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(
+				PropertyIds.CONTENT_STREAM_MIME_TYPE, PropertyType.STRING,
+				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
+				!QUERYABLE, !ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(
+				PropertyIds.CONTENT_STREAM_FILE_NAME, PropertyType.STRING,
+				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
+				!QUERYABLE, !ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(
+				PropertyIds.CONTENT_STREAM_ID, PropertyType.ID,
+				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
+				!QUERYABLE, !ORDERABLE, null));
+	}
+
+	private void addRelationshipPropertyDefinitions(
+			RelationshipTypeDefinitionImpl type) {
+		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.SOURCE_ID,
+				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
+				REQUIRED, !QUERYABLE, !ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.TARGET_ID,
+				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
+				REQUIRED, !QUERYABLE, !ORDERABLE, null));
+	}
+
+	private void addPolicyPropertyDefinitions(PolicyTypeDefinitionImpl type) {
+		type.addPropertyDefinition(createDefaultPropDef(
+				PropertyIds.POLICY_TEXT, PropertyType.STRING,
+				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
+				!QUERYABLE, !ORDERABLE, null));
+	}
+
+	private PropertyDefinition<?> createDefaultPropDef(String id,
 			PropertyType datatype, Cardinality cardinality,
 			Updatability updatability, boolean required, boolean queryable,
-			boolean inherited, boolean openChoice, boolean orderable, List<?> defaultValue){
-		//String _queryName = (StringUtils.isEmpty(queryName))? typeId + "." + id : typeId + "." + queryName;
-		String _localName = (StringUtils.isEmpty(localName))? id : localName;
-		String _localNameSpace = (StringUtils.isEmpty(localNameSpace))? NemakiConstant.NAMESPACE_ASPECTS : localNameSpace;
-		String _displayName = (StringUtils.isEmpty(displayName))? id : displayName;
+			boolean orderable, List<?> defaultValue) {
+		PropertyDefinition<?> result = null;
+
+		// Default values
+		String localName = id;
+		String localNameSpace = NAMESPACE;
+		String queryName = id;
+		String displayName = id;
+		String description = id;
+		boolean inherited = false;
+		boolean openChoice = false;
+
+		result = createPropDef(id, localName, localNameSpace,
+				queryName, displayName, description, datatype, cardinality,
+				updatability, required, queryable, inherited, openChoice,
+				orderable, defaultValue);
+
+		return result;
+	}
+
+	// /////////////////////////////////////////////////
+	// SubType Generating Methods
+	// /////////////////////////////////////////////////
+	private List<NemakiTypeDefinition> getNemakiTypeDefinitions() {
+		return contentDaoService.getTypeDefinitions();
+	}
+
+	/**
+	 * Build Subtypes
+	 */
+	private void addSubTypes() {
+		List<NemakiTypeDefinition> subtypes = getNemakiTypeDefinitions();
+		List<NemakiTypeDefinition> firstGeneration = new ArrayList<NemakiTypeDefinition>();
+		for (NemakiTypeDefinition subtype : subtypes) {
+			if (subtype.getBaseId().value().equals(subtype.getParentId())) {
+				firstGeneration.add(subtype);
+			}
+		}
+
+		for (NemakiTypeDefinition type : firstGeneration) {
+			addSubTypesInternal(subtypes, type);
+		}
+		return;
+	}
+
+	private void addSubTypesInternal(List<NemakiTypeDefinition> subtypes,
+			NemakiTypeDefinition type) {
+		TypeDefinitionContainerImpl container = new TypeDefinitionContainerImpl();
+		container.setTypeDefinition(buildTypeDefinitionFromDB(type));
+		container.setChildren(new ArrayList<TypeDefinitionContainer>());
+		if(types.get(type.getTypeId()) == null){
+			types.put(type.getTypeId(), container);
+		}else{
+			//TODO logging: can't overwrite the type
+		}
+
+		List<NemakiTypeDefinition> children = new ArrayList<NemakiTypeDefinition>();
+		for (NemakiTypeDefinition subtype : subtypes) {
+			if (subtype.getParentId().equals(type.getTypeId())) {
+				children.add(subtype);
+			}
+		}
+
+		if (!CollectionUtils.isEmpty(children)) {
+			for (NemakiTypeDefinition child : children) {
+				addSubTypesInternal(subtypes, child);
+			}
+		}
+
+		TypeDefinitionContainer parentContainer = types.get(type.getParentId());
+		parentContainer.getChildren().add(container);
+		return;
+	}
+
+	private TypeDefinition buildTypeDefinitionFromDB(
+			NemakiTypeDefinition nemakiType) {
+
+		switch (nemakiType.getBaseId()) {
+		case CMIS_DOCUMENT:
+			return buildDocumentTypeDefinitionFromDB(nemakiType);
+		case CMIS_FOLDER:
+			return buildFolderTypeDefinitionFromDB(nemakiType);
+		case CMIS_RELATIONSHIP:
+			return buildRelationshipTypeDefinitionFromDB(nemakiType);
+		case CMIS_POLICY:
+			return buildPolicyTypeDefinitionFromDB(nemakiType);
+		case CMIS_ITEM:
+			return buildItemTypeDefinitionFromDB(nemakiType);
+		case CMIS_SECONDARY:
+			return buildSecondaryTypeDefinitionFromDB(nemakiType);
+		default:
+			break;
+		}
+
+		return null;
+	}
+
+	private void buildTypeDefinitionBaseFromDB(AbstractTypeDefinition type,
+			AbstractTypeDefinition parentType, NemakiTypeDefinition nemakiType) {
+		type.setId(nemakiType.getTypeId());
+		type.setLocalName(nemakiType.getLocalName());
+		type.setLocalNamespace(nemakiType.getLocalNameSpace());
+		type.setQueryName(nemakiType.getQueryName());
+		type.setDisplayName(nemakiType.getDisplayName());
+		type.setBaseTypeId(nemakiType.getBaseId());
+		type.setParentTypeId(nemakiType.getParentId());
+		type.setDescription(nemakiType.getDescription());
+
+		boolean creatable = (nemakiType.isCreatable() == null) ? parentType
+				.isCreatable() : nemakiType.isCreatable();
+		type.setIsCreatable(creatable);
+		boolean filable = (nemakiType.isFilable() == null) ? parentType
+				.isFileable() : nemakiType.isFilable();
+		type.setIsFileable(filable);
+		boolean queryable = (nemakiType.isQueryable() == null) ? parentType
+				.isQueryable() : nemakiType.isQueryable();
+		type.setIsQueryable(queryable);
+		boolean controllablePolicy = (nemakiType.isControllablePolicy() == null) ? parentType
+				.isControllablePolicy() : nemakiType.isControllablePolicy();
+		type.setIsControllablePolicy(controllablePolicy);
+		boolean controllableACL = (nemakiType.isControllableACL() == null) ? parentType
+				.isControllableAcl() : nemakiType.isControllableACL();
+		type.setIsControllableAcl(controllableACL);
+		boolean fulltextIndexed = (nemakiType.isFulltextIndexed() == null) ? parentType
+				.isFulltextIndexed() : nemakiType.isFulltextIndexed();
+		type.setIsFulltextIndexed(fulltextIndexed);
+		boolean includedInSupertypeQuery = (nemakiType
+				.isIncludedInSupertypeQuery() == null) ? parentType
+				.isIncludedInSupertypeQuery() : nemakiType
+				.isIncludedInSupertypeQuery();
+		type.setIsIncludedInSupertypeQuery(includedInSupertypeQuery);
+
+		// Type Mutability
+		boolean create = (nemakiType.isTypeMutabilityCreate() == null) ? parentType
+				.getTypeMutability().canCreate() : nemakiType
+				.isTypeMutabilityCreate();
+		boolean update = (nemakiType.isTypeMutabilityUpdate() == null) ? parentType
+				.getTypeMutability().canUpdate() : nemakiType
+				.isTypeMutabilityUpdate();
+		boolean delete = (nemakiType.isTypeMutabilityDelete() == null) ? parentType
+				.getTypeMutability().canDelete() : nemakiType
+				.isTypeMutabilityDelete();
+		TypeMutabilityImpl typeMutability = new TypeMutabilityImpl();
+		typeMutability.setCanCreate(create);
+		typeMutability.setCanUpdate(update);
+		typeMutability.setCanDelete(delete);
+		type.setTypeMutability(typeMutability);
+
+		// Inherit parent's properties
+		TypeDefinition copied = copyTypeDefinition(parentType);
+		Map<String,PropertyDefinition<?>> parentProperties = copied.getPropertyDefinitions();
+		if(CollectionUtils.isEmpty(parentProperties)){
+			parentProperties = new HashMap<String,PropertyDefinition<?>>();
+		}
+		type.setPropertyDefinitions(parentProperties);
 		
-		return TypeManagerUtil.createPropDef(id, _localName, _localNameSpace, queryName, _displayName, description, datatype, cardinality, updatability, required, queryable, inherited, openChoice, orderable, defaultValue);
-		
+		// Add specific properties
+		Map<String, PropertyDefinition<?>> properties = type
+				.getPropertyDefinitions();
+		for (String propertyId : nemakiType.getProperties()) {
+			NemakiPropertyDefinition p = contentDaoService
+					.getPropertyDefinition(propertyId);
+			PropertyDefinition<?> property = createPropDef(
+					p.getPropertyId(), p.getLocalName(), p.getLocalNameSpace(),
+					p.getQueryName(), p.getDisplayName(), p.getDescription(),
+					p.getPropertyType(), p.getCardinality(),
+					p.getUpdatability(), p.isRequired(), p.isQueryable(),
+					false, p.isOpenChoice(), p.isOrderable(),
+					p.getDefaultValue());
+			properties.put(p.getPropertyId(), property);
+		}
+
 	}
 	
-	/**
-	 * For internal(Chemistry) use
-	 */
+	
+	private DocumentTypeDefinition buildDocumentTypeDefinitionFromDB(
+			NemakiTypeDefinition nemakiType) {
+		DocumentTypeDefinitionImpl type = new DocumentTypeDefinitionImpl();
+		DocumentTypeDefinitionImpl parentType = (DocumentTypeDefinitionImpl) types
+				.get(nemakiType.getParentId()).getTypeDefinition();
+
+		// Set base attributes, and properties(with specific properties
+		// included)
+		buildTypeDefinitionBaseFromDB(type, parentType, nemakiType);
+
+		// Add specific attributes
+		ContentStreamAllowed contentStreamAllowed = (nemakiType
+				.getContentStreamAllowed() == null) ? parentType
+				.getContentStreamAllowed() : nemakiType
+				.getContentStreamAllowed();
+		type.setContentStreamAllowed(contentStreamAllowed);
+		boolean versionable = (nemakiType.isVersionable() == null) ? parentType
+				.isVersionable() : nemakiType.isVersionable();
+		type.setIsVersionable(versionable);
+
+		return type;
+	}
+
+	private FolderTypeDefinition buildFolderTypeDefinitionFromDB(
+			NemakiTypeDefinition nemakiType) {
+		FolderTypeDefinitionImpl type = new FolderTypeDefinitionImpl();
+		FolderTypeDefinitionImpl parentType = (FolderTypeDefinitionImpl) types
+				.get(nemakiType.getParentId()).getTypeDefinition();
+
+		// Set base attributes, and properties(with specific properties
+		// included)
+		buildTypeDefinitionBaseFromDB(type, parentType, nemakiType);
+
+		return type;
+	}
+
+	private RelationshipTypeDefinition buildRelationshipTypeDefinitionFromDB(
+			NemakiTypeDefinition nemakiType) {
+		RelationshipTypeDefinitionImpl type = new RelationshipTypeDefinitionImpl();
+		RelationshipTypeDefinitionImpl parentType = (RelationshipTypeDefinitionImpl) types
+				.get(nemakiType.getParentId()).getTypeDefinition();
+
+		// Set base attributes, and properties(with specific properties
+		// included)
+		buildTypeDefinitionBaseFromDB(type, parentType, nemakiType);
+
+		// Set specific attributes
+		type.setAllowedSourceTypes(nemakiType.getAllowedSourceTypes());
+		type.setAllowedTargetTypes(nemakiType.getAllowedTargetTypes());
+
+		return type;
+	}
+
+	private PolicyTypeDefinition buildPolicyTypeDefinitionFromDB(
+			NemakiTypeDefinition nemakiType) {
+		PolicyTypeDefinitionImpl type = new PolicyTypeDefinitionImpl();
+		PolicyTypeDefinitionImpl parentType = (PolicyTypeDefinitionImpl) types
+				.get(nemakiType.getParentId()).getTypeDefinition();
+
+		// Set base attributes, and properties(with specific properties
+		// included)
+		buildTypeDefinitionBaseFromDB(type, parentType, nemakiType);
+
+		return type;
+	}
+
+	private ItemTypeDefinition buildItemTypeDefinitionFromDB(
+			NemakiTypeDefinition nemakiType) {
+		ItemTypeDefinitionImpl type = new ItemTypeDefinitionImpl();
+		ItemTypeDefinitionImpl parentType = (ItemTypeDefinitionImpl) types.get(
+				nemakiType.getParentId()).getTypeDefinition();
+
+		// Set base attributes, and properties(with specific properties
+		// included)
+		buildTypeDefinitionBaseFromDB(type, parentType, nemakiType);
+
+		return type;
+	}
+
+	private SecondaryTypeDefinition buildSecondaryTypeDefinitionFromDB(
+			NemakiTypeDefinition nemakiType) {
+		SecondaryTypeDefinitionImpl type = new SecondaryTypeDefinitionImpl();
+		SecondaryTypeDefinitionImpl parentType = (SecondaryTypeDefinitionImpl) types
+				.get(nemakiType.getParentId()).getTypeDefinition();
+
+		// Set base attributes, and properties(with specific properties
+		// included)
+		buildTypeDefinitionBaseFromDB(type, parentType, nemakiType);
+
+		return type;
+	}
+
+	// /////////////////////////////////////////////////
+	// Type Service Methods
+	// /////////////////////////////////////////////////
 	@Override
 	public TypeDefinitionContainer getTypeById(String typeId) {
 		return types.get(typeId);
@@ -215,7 +783,7 @@ public class TypeManager implements
 		}
 		return null;
 	}
-	
+
 	@Override
 	public Collection<TypeDefinitionContainer> getTypeDefinitionList() {
 		List<TypeDefinitionContainer> typeRoots = new ArrayList<TypeDefinitionContainer>();
@@ -227,26 +795,23 @@ public class TypeManager implements
 		}
 		return typeRoots;
 	}
-	
+
 	@Override
 	public List<TypeDefinitionContainer> getRootTypes() {
-		// just take first repository
 		List<TypeDefinitionContainer> rootTypes = new ArrayList<TypeDefinitionContainer>();
-		for (TypeDefinitionContainer type : types.values()) {
-			if (isRootType(type)) {
-				rootTypes.add(type);
-			}
+		for(String key : basetypes.keySet()){
+			rootTypes.add(basetypes.get(key));
 		}
 		return rootTypes;
 	}
-	
+
 	@Override
 	public String getPropertyIdForQueryName(TypeDefinition typeDefinition,
 			String propQueryName) {
 		// TODO Auto-generated method stub
 		return null;
 	}
-	
+
 	/**
 	 * For Nemaki use
 	 */
@@ -258,10 +823,10 @@ public class TypeManager implements
 
 		return tc.getTypeDefinition();
 	}
-	
+
 	/**
-	 * CMIS getTypesChildren.
-	 * If parent type id is not specified, return only base types.
+	 * CMIS getTypesChildren. If parent type id is not specified, return only
+	 * base types.
 	 */
 	public TypeDefinitionList getTypesChildren(CallContext context,
 			String typeId, boolean includePropertyDefinitions,
@@ -281,18 +846,16 @@ public class TypeManager implements
 
 		if (typeId == null) {
 			int count = skip;
-			Map<String, TypeDefinitionContainer> t = fixedTypeManager.types;
-			Map<String, TypeDefinitionContainer> baseTypes = fixedTypeManager.getTypes();
-			for(String key : baseTypes.keySet()){
-				count --;
-				if(count >= 0) continue;
-				
-				TypeDefinitionContainer type = baseTypes.get(key);
+			for (String key : basetypes.keySet()) {
+				count--;
+				if (count >= 0)
+					continue;
+				TypeDefinitionContainer type = basetypes.get(key);
 				result.getList().add(copyTypeDefinition(type.getTypeDefinition()));
 			}
 
 			result.setHasMoreItems((result.getList().size() + skip) < max);
-			result.setNumItems(BigInteger.valueOf(baseTypes.size()));
+			result.setNumItems(BigInteger.valueOf(basetypes.size()));
 		} else {
 			TypeDefinitionContainer tc = types.get(typeId);
 			if ((tc == null) || (tc.getChildren() == null)) {
@@ -305,8 +868,7 @@ public class TypeManager implements
 					continue;
 				}
 
-				result.getList().add(
-						copyTypeDefinition(child.getTypeDefinition()));
+				result.getList().add(child.getTypeDefinition());
 
 				max--;
 				if (max == 0) {
@@ -321,14 +883,15 @@ public class TypeManager implements
 
 		if (!includePropertyDefinitions) {
 			for (TypeDefinition type : result.getList()) {
-				try{
-					if(type.getPropertyDefinitions() != null){
-						type.getPropertyDefinitions().clear();
+				try {
+					if (type.getPropertyDefinitions() != null) {
+						//TODO clear() destroys PropertyDefinitions of "types"
+						//type.getPropertyDefinitions().clear();
 					}
-				}catch(Exception e){
+				} catch (Exception e) {
 					System.out.print(e);
 				}
-				
+
 			}
 		}
 
@@ -353,16 +916,16 @@ public class TypeManager implements
 				: includePropertyDefinitions.booleanValue());
 
 		if (typeId == null) {
-			result.add(getTypesDescendants(d, types.get(FOLDER_TYPE_ID), ipd));
-			result.add(getTypesDescendants(d, types.get(DOCUMENT_TYPE_ID), ipd));
-			result.add(getTypesDescendants(d, types.get(RELATIONSHIP_TYPE_ID),
-					includePropertyDefinitions));
-			result.add(getTypesDescendants(d, types.get(POLICY_TYPE_ID),
-					includePropertyDefinitions));
+			result.add(getTypesDescendantsInternal(d, types.get(FOLDER_TYPE_ID), ipd));
+			result.add(getTypesDescendantsInternal(d, types.get(DOCUMENT_TYPE_ID), ipd));
+			result.add(getTypesDescendantsInternal(d, types.get(RELATIONSHIP_TYPE_ID), ipd));
+			result.add(getTypesDescendantsInternal(d, types.get(POLICY_TYPE_ID), ipd));
+			result.add(getTypesDescendantsInternal(d, types.get(ITEM_TYPE_ID), ipd));
+			result.add(getTypesDescendantsInternal(d, types.get(SECONDARY_TYPE_ID), ipd));
 		} else {
 			TypeDefinitionContainer tc = types.get(typeId);
 			if (tc != null) {
-				result.add(getTypesDescendants(d, tc, ipd));
+				result.add(getTypesDescendantsInternal(d, tc, ipd));
 			}
 		}
 
@@ -370,15 +933,58 @@ public class TypeManager implements
 	}
 
 	/**
-	 * Adds a type to collection.
+	 * Gathers the type descendants tree.
 	 */
-	private void addTypeInternal(AbstractTypeDefinition type) {
+	private TypeDefinitionContainer getTypesDescendantsInternal(int depth,
+			TypeDefinitionContainer tc, boolean includePropertyDefinitions) {
+		TypeDefinitionContainerImpl result = new TypeDefinitionContainerImpl();
+
+		TypeDefinition type = copyTypeDefinition(tc.getTypeDefinition());
+		if (!includePropertyDefinitions) {
+			//TODO clear() destroys PropertyDefinitions of "types"
+			//type.getPropertyDefinitions().clear();
+		}
+
+		result.setTypeDefinition(type);
+
+		if (depth != 0) {
+			if (tc.getChildren() != null) {
+				result.setChildren(new ArrayList<TypeDefinitionContainer>());
+				for (TypeDefinitionContainer tdc : tc.getChildren()) {
+					result.getChildren().add(
+							getTypesDescendantsInternal(depth < 0 ? -1 : depth - 1,
+									tdc, includePropertyDefinitions));
+				}
+			}
+		}
+
+		return result;
+	}
+	
+	public TypeDefinition getTypeDefinition(Content content) {
+		String typeId = (content.getObjectType() == null) ? content.getType()
+				: content.getObjectType();
+		return getTypeDefinition(typeId);
+	}
+	
+	
+	// //////////////////////////////////////////////////////////////////////////////
+	// Utility
+	// //////////////////////////////////////////////////////////////////////////////
+	private TypeDefinition copyTypeDefinition(TypeDefinition type) {
+		return WSConverter.convert(WSConverter.convert(type));
+	}
+
+	public static void addTypeInternal(
+			Map<String, TypeDefinitionContainer> types,
+			AbstractTypeDefinition type) {
 		if (type == null) {
 			return;
 		}
 
 		if (types.containsKey(type.getId())) {
-			log.warn("Can't overwrite a type");
+			// TODO Logging
+			// log.warn("Can't overwrite a type");
 			return;
 		}
 
@@ -393,68 +999,310 @@ public class TypeManager implements
 				if (tdc.getChildren() == null) {
 					tdc.setChildren(new ArrayList<TypeDefinitionContainer>());
 				}
-				tdc.getChildren().add(tc);
+
+				if (!isDuplicateChild(tdc, type)) {
+					tdc.getChildren().add(tc);
+				}
 			}
 		}
 
 		types.put(type.getId(), tc);
 	}
 
-	/**
-	 * Gathers the type descendants tree.
-	 */
-	private TypeDefinitionContainer getTypesDescendants(int depth,
-			TypeDefinitionContainer tc, boolean includePropertyDefinitions) {
-		TypeDefinitionContainerImpl result = new TypeDefinitionContainerImpl();
-
-		TypeDefinition type = copyTypeDefinition(tc.getTypeDefinition());
-		if (!includePropertyDefinitions) {
-			type.getPropertyDefinitions().clear();
-		}
-
-		result.setTypeDefinition(type);
-
-		if (depth != 0) {
-			if (tc.getChildren() != null) {
-				result.setChildren(new ArrayList<TypeDefinitionContainer>());
-				for (TypeDefinitionContainer tdc : tc.getChildren()) {
-					result.getChildren().add(
-							getTypesDescendants(depth < 0 ? -1 : depth - 1,
-									tdc, includePropertyDefinitions));
-				}
+	private static boolean isDuplicateChild(TypeDefinitionContainer parent,
+			TypeDefinition type) {
+		for (TypeDefinitionContainer child : parent.getChildren()) {
+			if (child.getTypeDefinition().getId().equals(type.getId())) {
+				return true;
 			}
 		}
+		return false;
+	}
+	
+	public static PropertyDefinition<?> createPropDef(String id,
+			String localName, String localNameSpace, String queryName,
+			String displayName, String description, PropertyType datatype,
+			Cardinality cardinality, Updatability updatability,
+			boolean required, boolean queryable, boolean inherited,
+			boolean openChoice, boolean orderable, List<?> defaultValue) {
+		PropertyDefinition<?> result = null;
+		switch (datatype) {
+		case BOOLEAN:
+			result = createPropBooleanTimeDef(id, localName, localNameSpace,
+					queryName, displayName, description, datatype, cardinality,
+					updatability, inherited, required, queryable, orderable,
+					null, openChoice,
+					convertListType(String.class, defaultValue));
+			break;
+		case DATETIME:
+
+			result = createPropDateTimeDef(id, localName, localNameSpace,
+					queryName, displayName, description, datatype, cardinality,
+					updatability, inherited, required, queryable, orderable,
+					null, openChoice,
+					convertListType(GregorianCalendar.class, defaultValue),
+					DateTimeResolution.TIME);
+			break;
+		case DECIMAL:
+			result = createPropDecimalDef(id, localName, localNameSpace,
+					queryName, displayName, description, datatype, cardinality,
+					updatability, inherited, required, queryable, orderable,
+					null, openChoice,
+					convertListType(BigDecimal.class, defaultValue),
+					DecimalPrecision.BITS64, null, null);
+			break;
+		case HTML:
+			result = createPropHtmlDef(id, localName, localNameSpace,
+					queryName, displayName, description, datatype, cardinality,
+					updatability, inherited, required, queryable, orderable,
+					null, openChoice,
+					convertListType(String.class, defaultValue));
+			break;
+		case ID:
+			result = createPropIdDef(id, localName, localNameSpace, queryName,
+					displayName, description, datatype, cardinality,
+					updatability, inherited, required, queryable, orderable,
+					null, openChoice,
+					convertListType(String.class, defaultValue));
+			break;
+		case INTEGER:
+			result = createPropIntegerDef(id, localName, localNameSpace,
+					queryName, displayName, description, datatype, cardinality,
+					updatability, inherited, required, queryable, orderable,
+					null, openChoice,
+					convertListType(BigInteger.class, defaultValue), null, null);
+			break;
+		case STRING:
+			result = createPropStringDef(id, localName, localNameSpace,
+					queryName, displayName, description, datatype, cardinality,
+					updatability, inherited, required, queryable, orderable,
+					null, openChoice,
+					convertListType(String.class, defaultValue), null);
+			break;
+		case URI:
+			result = createPropUriDef(id, localName, localNameSpace, queryName,
+					displayName, description, datatype, cardinality,
+					updatability, inherited, required, queryable, orderable,
+					null, openChoice,
+					convertListType(String.class, defaultValue));
+			break;
+		default:
+			throw new RuntimeException("Unknown datatype! Spec change?");
+		}
+		return result;
+	}
+
+	private static <T> List<T> convertListType(final Class<T> clazz,
+			List<?> list) {
+		if (CollectionUtils.isEmpty(list))
+			return null;
+		List<T> result = new ArrayList<T>();
+		for (Object o : list) {
+			result.add(clazz.cast(o));
+		}
+		return result;
+	}
+
+	private static PropertyDefinition<?> createPropBooleanTimeDef(String id,
+			String localName, String localNameSpace, String queryName,
+			String displayName, String description, PropertyType datatype,
+			Cardinality cardinality, Updatability updatability,
+			boolean inherited, boolean required, boolean queryable,
+			boolean orderable, List<Choice<String>> choiceList,
+			boolean openChoice, List<String> defaultValue) {
+		// Set base attributes
+		PropertyStringDefinitionImpl result = new PropertyStringDefinitionImpl();
+		result = (PropertyStringDefinitionImpl) createPropBaseDef(result, id,
+				localName, localNameSpace, queryName, displayName, description,
+				datatype, cardinality, updatability, inherited, required,
+				queryable, orderable, openChoice);
+		result.setChoices(choiceList);
+		result.setDefaultValue(defaultValue);
+		return result;
+	}
+
+	private static PropertyDefinition<?> createPropDateTimeDef(String id,
+			String localName, String localNameSpace, String queryName,
+			String displayName, String description, PropertyType datatype,
+			Cardinality cardinality, Updatability updatability,
+			boolean inherited, boolean required, boolean queryable,
+			boolean orderable, List<Choice<GregorianCalendar>> choiceList,
+			boolean openChoice, List<GregorianCalendar> defaultValue,
+			DateTimeResolution resolution) {
+		// Set base attributes
+		PropertyDateTimeDefinitionImpl result = new PropertyDateTimeDefinitionImpl();
+		result = (PropertyDateTimeDefinitionImpl) createPropBaseDef(result, id,
+				localName, localNameSpace, queryName, displayName, description,
+				datatype, cardinality, updatability, inherited, required,
+				queryable, orderable, openChoice);
+		result.setChoices(choiceList);
+		result.setDefaultValue(defaultValue);
+		// Set DateTime-specific attributes
+		result.setDateTimeResolution(resolution);
 
 		return result;
 	}
+
+	private static PropertyDefinition<?> createPropDecimalDef(String id,
+			String localName, String localNameSpace, String queryName,
+			String displayName, String description, PropertyType datatype,
+			Cardinality cardinality, Updatability updatability,
+			boolean inherited, boolean required, boolean queryable,
+			boolean orderable, List<Choice<BigDecimal>> choiceList,
+			boolean openChoice, List<BigDecimal> defaultValue,
+			DecimalPrecision precision, BigDecimal minValue, BigDecimal maxValue) {
+		// Set base attributes
+		PropertyDecimalDefinitionImpl result = new PropertyDecimalDefinitionImpl();
+		result = (PropertyDecimalDefinitionImpl) createPropBaseDef(result, id,
+				localName, localNameSpace, queryName, displayName, description,
+				datatype, cardinality, updatability, inherited, required,
+				queryable, orderable, openChoice);
+		result.setChoices(choiceList);
+		result.setDefaultValue(defaultValue);
+		// Set Decimal-specific attributes
+		result.setMinValue(minValue);
+		result.setMaxValue(maxValue);
+
+		return result;
+	}
+
+	private static PropertyDefinition<?> createPropHtmlDef(String id,
+			String localName, String localNameSpace, String queryName,
+			String displayName, String description, PropertyType datatype,
+			Cardinality cardinality, Updatability updatability,
+			boolean inherited, boolean required, boolean queryable,
+			boolean orderable, List<Choice<String>> choiceList,
+			boolean openChoice, List<String> defaultValue) {
+		// Set base attributes
+		PropertyHtmlDefinitionImpl result = new PropertyHtmlDefinitionImpl();
+		result = (PropertyHtmlDefinitionImpl) createPropBaseDef(result, id,
+				localName, localNameSpace, queryName, displayName, description,
+				datatype, cardinality, updatability, inherited, required,
+				queryable, orderable, openChoice);
+		result.setChoices(choiceList);
+		result.setDefaultValue(defaultValue);
+
+		return result;
+	}
+
+	private static PropertyDefinition<?> createPropIdDef(String id,
+			String localName, String localNameSpace, String queryName,
+			String displayName, String description, PropertyType datatype,
+			Cardinality cardinality, Updatability updatability,
+			boolean inherited, boolean required, boolean queryable,
+			boolean orderable, List<Choice<String>> choiceList,
+			boolean openChoice, List<String> defaultValue) {
+		// Set base attributes
+		PropertyIdDefinitionImpl result = new PropertyIdDefinitionImpl();
+		result = (PropertyIdDefinitionImpl) createPropBaseDef(result, id,
+				localName, localNameSpace, queryName, displayName, description,
+				datatype, cardinality, updatability, inherited, required,
+				queryable, orderable, openChoice);
+		result.setChoices(choiceList);
+		result.setDefaultValue(defaultValue);
+
+		return result;
+	}
+
+	private static PropertyDefinition<?> createPropIntegerDef(String id,
+			String localName, String localNameSpace, String queryName,
+			String displayName, String description, PropertyType datatype,
+			Cardinality cardinality, Updatability updatability,
+			boolean inherited, boolean required, boolean queryable,
+			boolean orderable, List<Choice<BigInteger>> choiceList,
+			boolean openChoice, List<BigInteger> defaultValue,
+			BigInteger minValue, BigInteger maxValue) {
+		// Set base attributes
+		PropertyIntegerDefinitionImpl result = new PropertyIntegerDefinitionImpl();
+		result = (PropertyIntegerDefinitionImpl) createPropBaseDef(result, id,
+				localName, localNameSpace, queryName, displayName, description,
+				datatype, cardinality, updatability, inherited, required,
+				queryable, orderable, openChoice);
+		result.setChoices(choiceList);
+		result.setDefaultValue(defaultValue);
+		// Set Integer-specific attributes
+		result.setMinValue(minValue);
+		result.setMaxValue(maxValue);
+
+		return result;
+	}
+
+	private static PropertyDefinition<?> createPropStringDef(String id,
+			String localName, String localNameSpace, String queryName,
+			String displayName, String description, PropertyType datatype,
+			Cardinality cardinality, Updatability updatability,
+			boolean inherited, boolean required, boolean queryable,
+			boolean orderable, List<Choice<String>> choiceList,
+			boolean openChoice, List<String> defaultValue, BigInteger maxLength) {
+		// Set base attributes
+		PropertyStringDefinitionImpl result = new PropertyStringDefinitionImpl();
+		result = (PropertyStringDefinitionImpl) createPropBaseDef(result, id,
+				localName, localNameSpace, queryName, displayName, description,
+				datatype, cardinality, updatability, inherited, required,
+				queryable, orderable, openChoice);
+		result.setChoices(choiceList);
+		result.setDefaultValue(defaultValue);
+		// Set String-specific attributes
+		if (maxLength != null)
+			result.setMaxLength(maxLength);
+		return result;
+	}
+
+	private static PropertyDefinition<?> createPropUriDef(String id,
+			String localName, String localNameSpace, String queryName,
+			String displayName, String description, PropertyType datatype,
+			Cardinality cardinality, Updatability updatability,
+			boolean inherited, boolean required, boolean queryable,
+			boolean orderable, List<Choice<String>> choiceList,
+			boolean openChoice, List<String> defaultValue) {
+		// Set base attributes
+		PropertyUriDefinitionImpl result = new PropertyUriDefinitionImpl();
+		result = (PropertyUriDefinitionImpl) createPropBaseDef(result, id,
+				localName, localNameSpace, queryName, displayName, description,
+				datatype, cardinality, updatability, inherited, required,
+				queryable, orderable, openChoice);
+		result.setChoices(choiceList);
+		result.setDefaultValue(defaultValue);
+
+		return result;
+	}
+
+	private static PropertyDefinition<?> createPropBaseDef(
+			AbstractPropertyDefinition<?> result, String id, String localName,
+			String localNameSpace, String queryName, String displayName,
+			String description, PropertyType datatype, Cardinality cardinality,
+			Updatability updatability, boolean inherited, boolean required,
+			boolean queryable, boolean orderable, boolean openChoice) {
+		// Set default value if not set(null)
+		localName = (localName == null) ? id : localName;
+		localNameSpace = (localNameSpace == null)?NAMESPACE:localNameSpace;
+		queryName = (queryName == null) ? id : queryName;
+		displayName = (displayName == null) ? id : displayName;
+		description = (description == null) ? id : description;
+		
+		// Set base attributes
+		result.setId(id);
+		result.setLocalName(localName);
+		result.setLocalNamespace(localNameSpace);
+		result.setQueryName(queryName);
+		result.setDisplayName(displayName);
+		result.setDescription(description);
+		result.setPropertyType(datatype);
+		result.setCardinality(cardinality);
+		result.setUpdatability(updatability);
+		result.setIsInherited(inherited);
+		result.setIsRequired(required);
+		result.setIsQueryable(queryable);
+		result.setIsOrderable(orderable);
+		result.setIsOpenChoice(openChoice);
+		return result;
+	}
 	
-	// //////////////////////////////////////////////////////////////////////////////
-	// Internal Use
-	// //////////////////////////////////////////////////////////////////////////////
-	public Map<String,Object> getCustomModelInfo(){
-		YamlManager manager = new YamlManager(ASPECT_FILE_PATH);
-				
-		Map<String, Object> map = new HashMap<String, Object>();
-		try{
-			map = (Map<String, Object>) manager.loadYml();
-		}catch(Exception e){
-			//TODO logging
-			e.printStackTrace();
-		}
-		return map;
-	}
-
-	private TypeDefinition copyTypeDefinition(TypeDefinition type) {
-		return WSConverter.convert(WSConverter.convert(type));
-	}
-
-	private static boolean isRootType(TypeDefinitionContainer c) {
-		log.debug("c.getTypeDefinition(): " + c.getTypeDefinition());
-
-		return false;
-	}
-
-	public void setFixedTypeManager(FixedTypeManager fixedTypeManager) {
-		this.fixedTypeManager = fixedTypeManager;
+	
+	// /////////////////////////////////////////////////
+	// Spring Injection
+	// /////////////////////////////////////////////////
+	public void setContentDaoService(ContentDaoService contentDaoService) {
+		this.contentDaoService = contentDaoService;
 	}
 }

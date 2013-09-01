@@ -27,6 +27,7 @@ import java.util.List;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.constant.DomainType;
+import jp.aegif.nemaki.repository.TypeManager;
 import jp.aegif.nemaki.service.cmis.CompileObjectService;
 import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.cmis.PolicyService;
@@ -43,6 +44,7 @@ public class PolicyServiceImpl implements PolicyService {
 	private ContentService contentService;
 	private CompileObjectService compileObjectService;
 	private ExceptionService exceptionService;
+	private TypeManager typeManager;
 	
 	@Override
 	public void applyPolicy(CallContext callContext, String policyId,
@@ -64,7 +66,7 @@ public class PolicyServiceImpl implements PolicyService {
 		// //////////////////
 		// Specific Exception
 		// //////////////////		
-		TypeDefinition td = contentService.getTypeDefinition(content);
+		TypeDefinition td = typeManager.getTypeDefinition(content);
 		if(!td.isControllablePolicy()) exceptionService.constraint(objectId, "appyPolicy cannot be performed on the object whose controllablePolicy = false");
 		
 		// //////////////////
@@ -133,5 +135,8 @@ public class PolicyServiceImpl implements PolicyService {
 	public void setExceptionService(ExceptionService exceptionService) {
 		this.exceptionService = exceptionService;
 	}
-	
+
+	public void setTypeManager(TypeManager typeManager) {
+		this.typeManager = typeManager;
+	}
 }

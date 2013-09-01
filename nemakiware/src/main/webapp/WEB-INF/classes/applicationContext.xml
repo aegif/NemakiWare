@@ -44,11 +44,8 @@
         </property>
     </bean>
 	
-	<bean id="typeManager" class="jp.aegif.nemaki.repository.TypeManager" scope="prototype">
-		<constructor-arg><ref bean="fixedTypeManager"/></constructor-arg>
-	</bean>
-	
-	<bean id="fixedTypeManager" class="jp.aegif.nemaki.repository.FixedTypeManager" scope="singleton">
+	<bean id="typeManager" class="jp.aegif.nemaki.repository.TypeManager" scope="singleton">
+		<constructor-arg><ref bean="contentDaoService"/></constructor-arg>
 	</bean>
 	
 	<bean id="repositoryService" class="jp.aegif.nemaki.service.cmis.impl.RepositoryServiceImpl">
@@ -156,6 +153,10 @@
         <property name="exceptionService">
             <ref bean="ExceptionService"></ref>
         </property>
+        <property name="typeManager">
+            <ref bean="typeManager"></ref>
+        </property>
+        
     </bean>
 	
     <bean id="authenticationService" class="jp.aegif.nemaki.service.cmis.impl.AuthenticationServiceImpl">
