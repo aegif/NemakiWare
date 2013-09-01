@@ -22,7 +22,6 @@ package jp.aegif.nemaki.service.node;
 
 import java.math.BigInteger;
 import java.util.List;
-import java.util.Map;
 
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Archive;
@@ -39,7 +38,6 @@ import jp.aegif.nemaki.model.VersionSeries;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.Properties;
-import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
@@ -244,9 +242,4 @@ public interface ContentService {
 	 * @param archiveId
 	 */
 	void restoreArchive(String archiveId);
-	
-	// //////////////////////////////////////////////////////////////////////////////
-	// Type
-	// //////////////////////////////////////////////////////////////////////////////
-	public TypeDefinition getTypeDefinition(Content content);
 }

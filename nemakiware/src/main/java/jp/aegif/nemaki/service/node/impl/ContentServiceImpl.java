@@ -62,8 +62,6 @@ import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.data.PropertyId;
 import org.apache.chemistry.opencmis.commons.data.PropertyString;
-import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
-import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
@@ -848,13 +846,13 @@ public class ContentServiceImpl implements ContentService {
 		}
 		
 		for(String secondaryTypeId : ids){
-			TypeDefinition td = typeManager.getTypeDefinition(secondaryTypeId);
+			org.apache.chemistry.opencmis.commons.definitions.TypeDefinition td = typeManager.getTypeDefinition(secondaryTypeId);
 			Aspect aspect = new Aspect();
 			aspect.setName(secondaryTypeId);
 			
 			List<Property>props = new ArrayList<Property>();
-			for(Entry<String, PropertyDefinition<?>> entry : td.getPropertyDefinitions().entrySet()){
-				PropertyDefinition<?> pd = entry.getValue();
+			for(Entry<String, org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?>> entry : td.getPropertyDefinitions().entrySet()){
+				org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?> pd = entry.getValue();
 				
 				switch(pd.getUpdatability()){
 				case READONLY:
@@ -900,9 +898,9 @@ public class ContentServiceImpl implements ContentService {
 	
 	private Content modifyProperties(CallContext callContext, Properties properties, Content content) {
 		//Primary
-		TypeDefinition td = typeManager.getTypeDefinition(content.getType());
+		org.apache.chemistry.opencmis.commons.definitions.TypeDefinition td = typeManager.getTypeDefinition(content.getType());
 		for(PropertyData<?> p : properties.getPropertyList()){
-			PropertyDefinition pd = td.getPropertyDefinitions().get(p.getId());
+			org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition pd = td.getPropertyDefinitions().get(p.getId());
 			if(pd == null) continue;
 			
 			//CASE: READ&WRITE(ANYTIME)
@@ -923,34 +921,6 @@ public class ContentServiceImpl implements ContentService {
 		if (secondary != null){
 			content.setAspects(secondary);
 		}
-		
-		
-		
-		///////
-		
-		
-		
-		/*for(Entry<String, PropertyData<?>> p : properties.getProperties().entrySet()){
-			PropertyDefinition<?> pd;
-			pd = map.get(p.getKey());
-			
-			//CASE: READ&WRITE(ANYTIME)
-			if (pd.getUpdatability() == Updatability.READWRITE){
-				setUpdatePropertyValue(content, p.getValue(), properties);
-			}
-			//CASE:WHEN CHECKED OUT
-			if(pd.getUpdatability() == Updatability.WHENCHECKEDOUT && content.isDocument()){
-				Document d = (Document)content;
-				if(d.isPrivateWorkingCopy()){
-					setUpdatePropertyValue(content, p.getValue(), properties);
-				}
-			}
-		}
-		
-		//Set custom properties
-		List<Aspect> aspects = buildAspects(properties);
-		if (aspects != null)
-			content.setAspects(aspects);*/
 		
 		//Set modified signature
 		setModifiedSignature(callContext, content);
@@ -1386,15 +1356,6 @@ public class ContentServiceImpl implements ContentService {
 			}
 		}
 		contentDaoService.deleteArchive(archive.getId());
-	}
-
-	// //////////////////////////////////////////////////////////////////////////////
-	// Type
-	// //////////////////////////////////////////////////////////////////////////////
-	@Override
-	public TypeDefinition getTypeDefinition(Content content) {
-		String typeId = (content.getObjectType() == null) ? content.getType() : content.getObjectType();
-		return typeManager.getTypeDefinition(typeId);
 	}
 
 	private String buildUniqueName(String originalName, String folderId, String existingId) {

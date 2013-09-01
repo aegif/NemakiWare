@@ -117,7 +117,7 @@ module ActiveCMIS
     def attributes
       #aegif-
       primary_attributes = self.class.attributes
-      review_info = @repository.type_by_id('review_info')
+      review_info = @repository.type_by_id('nemaki:reviewInfo')
       secondary_attributes = review_info.attributes
       attrs = primary_attributes.merge(secondary_attributes)
       #self.class.attributes.inject({}) do |hash, (key, attr)|

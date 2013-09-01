@@ -42,7 +42,6 @@ import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.VersionSeries;
-import jp.aegif.nemaki.model.constant.NemakiConstant;
 import jp.aegif.nemaki.repository.NemakiRepositoryInfoImpl;
 import jp.aegif.nemaki.repository.TypeManager;
 import jp.aegif.nemaki.service.cmis.CompileObjectService;
@@ -587,10 +586,16 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 	private void setCmisSecondaryTypes(PropertiesImpl props,
 			List<Aspect> aspects) {
-		Map<String, Object> map = typeManager.getCustomModelInfo();
-		map.get(NemakiConstant.EXTNAME_ASPECTS);
-
 		List<String> secondaryIds = new ArrayList<String>();
+
+		for (Aspect aspect : aspects) {
+			secondaryIds.add(aspect.getName());
+		}
+		
+		PropertyData<?> pd = new PropertyIdImpl(
+				PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondaryIds);
+		props.addProperty(pd);
+		
 		for (Aspect aspect : aspects) {
 			TypeDefinition tdf = typeManager
 					.getTypeDefinition(aspect.getName());
@@ -600,13 +605,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 				addProperty(props, tdf.getId(), null, property.getKey(),
 						property.getValue());
 			}
-
-			secondaryIds.add(aspect.getName());
 		}
-
-		PropertyData pd = new PropertyIdImpl(
-				PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondaryIds);
-		props.addProperty(pd);
 	}
 
 	/**
