@@ -159,7 +159,7 @@ $(function() {
 	function createAspectInfoTables(aspects){
 		for(var i=0; i<aspects.length; i++){
 			var a = aspects[i];
-			var tableSelector = "#nemaki_table_aspect_" + a.id;
+			var tableSelector = "#nemaki_table_aspect_" + escapeColon(a.id);
 			var data = buildPropertyRecords(a.properties);
 			tableParams_aspectInfo.caption = a.attributes.displayName;
 			tableParams_aspectInfo.data = data;
@@ -209,4 +209,8 @@ function readableFileSize(size) {
 
 function returnMyLink(celldata, options, rowdata, action){
 	return "<a href='" + rowdata.id + "/download'>" + "<i class='icon-download-alt'></i>" + rowdata.version + "</a>";
+}
+
+function escapeColon(string){
+	return string.split(":").join("\\:");
 }

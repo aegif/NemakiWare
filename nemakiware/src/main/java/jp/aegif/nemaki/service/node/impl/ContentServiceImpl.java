@@ -961,6 +961,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	/**
+	 * TODO Enable to deal with various property
 	 * As of now, updatable properties are name, description and secondary object types. 
 	 * @param content
 	 * @param propertyData
@@ -979,7 +980,7 @@ public class ContentServiceImpl implements ContentService {
 		}
 		
 		if(propertyData.getId().equals(PropertyIds.SECONDARY_OBJECT_TYPE_IDS)){
-			content.setSecondaryIds(getStringListProperty(properties, PropertyIds.SECONDARY_OBJECT_TYPE_IDS));
+			content.setSecondaryIds(getIdListProperty(properties, PropertyIds.SECONDARY_OBJECT_TYPE_IDS));
 		}
 	}
 	
