@@ -17,7 +17,7 @@ cd ../nemakishare
 bundle install
 
 #Overwrite ActiveCMIS library
-gem install active_cmis
+gem install active_cmis -v 0.3.2
 GEMWHICH=`gem which active_cmis`
 GEM_LIB_LOCATION=${GEMWHICH%/*}
 GEM_LOCATION=${GEM_LIB_LOCATION%/*}

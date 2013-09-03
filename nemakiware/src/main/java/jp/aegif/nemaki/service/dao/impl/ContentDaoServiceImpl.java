@@ -24,7 +24,6 @@ package jp.aegif.nemaki.service.dao.impl;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
-import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -37,8 +36,10 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.Policy;
+import jp.aegif.nemaki.model.NemakiPropertyDefinition;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
+import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.model.constant.NodeType;
 import jp.aegif.nemaki.model.couch.CouchArchive;
@@ -49,8 +50,10 @@ import jp.aegif.nemaki.model.couch.CouchDocument;
 import jp.aegif.nemaki.model.couch.CouchFolder;
 import jp.aegif.nemaki.model.couch.CouchNodeBase;
 import jp.aegif.nemaki.model.couch.CouchPolicy;
+import jp.aegif.nemaki.model.couch.CouchPropertyDefinition;
 import jp.aegif.nemaki.model.couch.CouchRelationship;
 import jp.aegif.nemaki.model.couch.CouchRendition;
+import jp.aegif.nemaki.model.couch.CouchTypeDefinition;
 import jp.aegif.nemaki.model.couch.CouchVersionSeries;
 import jp.aegif.nemaki.service.dao.ContentDaoService;
 import jp.aegif.nemaki.service.db.CouchConnector;
@@ -80,6 +83,86 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	private static final Log log = LogFactory.getLog(ContentDaoServiceImpl.class);
 	
 	private static final String ATTACHMENT_NAME = "content";
+
+	
+	@Override
+	public List<NemakiTypeDefinition> getTypeDefinitions() {
+		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
+				.viewName("typeDefinitions");
+		List<CouchTypeDefinition> l = connector.queryView(query, CouchTypeDefinition.class);
+		
+		if(CollectionUtils.isEmpty(l)){
+			return null;
+		}else{
+			List<NemakiTypeDefinition> result = new ArrayList<NemakiTypeDefinition>();
+			for(CouchTypeDefinition ct : l){
+				result.add(ct.convert());
+			}
+			return result;
+		}
+	}
+
+	@Override
+	public NemakiTypeDefinition getTypeDefinition(String typeId) {
+		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
+				.viewName("typeDefinitions").key(typeId);
+		List<CouchTypeDefinition> l = connector.queryView(query, CouchTypeDefinition.class);
+		
+		if(CollectionUtils.isEmpty(l)){
+			return null;
+		}else{
+			return l.get(0).convert();
+		}
+	}
+
+	@Override
+	public NemakiTypeDefinition createTypeDefinition(NemakiTypeDefinition typeDefinition) {
+		CouchTypeDefinition ct = new CouchTypeDefinition(typeDefinition);
+		connector.create(ct);
+		return ct.convert();
+	}
+
+	@Override
+	public NemakiTypeDefinition updateTypeDefinition(NemakiTypeDefinition typeDefinition) {
+		CouchTypeDefinition cp = connector.get(CouchTypeDefinition.class, typeDefinition.getId());
+		CouchTypeDefinition update = new CouchTypeDefinition(typeDefinition);
+		update.setRevision(cp.getRevision());
+		
+		connector.update(update);
+		return update.convert();
+	}
+
+	@Override
+	public NemakiPropertyDefinition getPropertyDefinition(String nodeId) {
+		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
+				.viewName("propertyDefinitions").key(nodeId);
+		List<CouchPropertyDefinition> l = connector.queryView(query, CouchPropertyDefinition.class);
+		
+		if(CollectionUtils.isEmpty(l)){
+			return null;
+		}else{
+			return l.get(0).convert();
+		}
+	}
+
+	@Override
+	public NemakiPropertyDefinition createPropertyDefinition(
+			NemakiPropertyDefinition propertyDefinition) {
+		CouchPropertyDefinition cp = new CouchPropertyDefinition(propertyDefinition);
+		connector.create(cp);
+		return cp.convert();
+	}
+
+	@Override
+	public NemakiPropertyDefinition updatePropertyDefinition(
+			NemakiPropertyDefinition propertyDefinition) {
+		CouchPropertyDefinition cp = connector.get(CouchPropertyDefinition.class, propertyDefinition.getId());
+		CouchPropertyDefinition update = new CouchPropertyDefinition(propertyDefinition);
+		update.setRevision(cp.getRevision());
+		
+		connector.update(update);
+		return update.convert();
+	}
 
 	/**
 	 * get Document/Folder(not Attachment)
@@ -121,8 +204,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	//TODO Use view
 	@Override
 	public VersionSeries getVersionSeries(String nodeId) {
-		CouchVersionSeries cvs = connector.get(CouchVersionSeries.class, nodeId);
-		return cvs.convert();
+		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
+				.viewName("versionSeries").key(nodeId);
+		List<CouchVersionSeries> l = connector.queryView(query, CouchVersionSeries.class);
+		
+		if(CollectionUtils.isEmpty(l)){
+			return null;
+		}else{
+			return l.get(0).convert();
+		}
 	}
 
 	@Override
@@ -591,7 +681,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 	
 	/**
-	 *daoServiceではrestoreするだけ。archiveのdeleteは別メソッドで用意しており、archiveのrestoreとdeleteをセットで考える責務はnodeServiceにある 
+	 *daoService������restore���������������archive���delete������������������������������������������archive���restore���delete���������������������������������nodeService��������� 
 	 */
 	@SuppressWarnings("deprecation")
 	@Override
