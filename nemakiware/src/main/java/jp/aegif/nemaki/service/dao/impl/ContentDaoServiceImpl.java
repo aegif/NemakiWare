@@ -204,8 +204,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	//TODO Use view
 	@Override
 	public VersionSeries getVersionSeries(String nodeId) {
-		CouchVersionSeries cvs = connector.get(CouchVersionSeries.class, nodeId);
-		return cvs.convert();
+		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
+				.viewName("versionSeries").key(nodeId);
+		List<CouchVersionSeries> l = connector.queryView(query, CouchVersionSeries.class);
+		
+		if(CollectionUtils.isEmpty(l)){
+			return null;
+		}else{
+			return l.get(0).convert();
+		}
 	}
 
 	@Override
@@ -674,7 +681,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 	
 	/**
-	 *daoServiceではrestoreするだけ。archiveのdeleteは別メソッドで用意しており、archiveのrestoreとdeleteをセットで考える責務はnodeServiceにある 
+	 *daoService������restore���������������archive���delete������������������������������������������archive���restore���delete���������������������������������nodeService��������� 
 	 */
 	@SuppressWarnings("deprecation")
 	@Override
