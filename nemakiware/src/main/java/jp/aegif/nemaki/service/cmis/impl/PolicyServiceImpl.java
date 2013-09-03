@@ -38,6 +38,7 @@ import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.commons.collections.CollectionUtils;
 
 public class PolicyServiceImpl implements PolicyService {
 
@@ -114,8 +115,10 @@ public class PolicyServiceImpl implements PolicyService {
 		// //////////////////
 		List<Policy> policies = contentService.getAppliedPolicies(objectId, extension);
 		List<ObjectData> objects = new ArrayList<ObjectData>();
-		for(Policy policy : policies){
-			objects.add(compileObjectService.compileObjectData(callContext, policy, filter, true, true, null));
+		if(!CollectionUtils.isEmpty(policies)){
+			for(Policy policy : policies){
+				objects.add(compileObjectService.compileObjectData(callContext, policy, filter, true, true, null));
+			}
 		}
 		return objects;
 	}
