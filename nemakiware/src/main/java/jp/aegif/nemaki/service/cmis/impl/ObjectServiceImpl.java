@@ -522,7 +522,7 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.invalidArgumentRequiredHolderString("objectId", objectId);
 		exceptionService.invalidArgumentRequiredCollection("properties",
 				properties.getPropertyList());
-		//TODO CHeck constraintPropertyValue with objectId
+		//TODO Check constraintPropertyValue with objectId
 		Content content = contentService.getContentAsTheBaseType(objectId.getValue());
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId.getValue());
 		if(content.isDocument()){
