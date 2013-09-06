@@ -30,8 +30,10 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.Policy;
+import jp.aegif.nemaki.model.NemakiPropertyDefinition;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
+import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.model.VersionSeries;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
@@ -43,7 +45,16 @@ import org.apache.chemistry.opencmis.commons.data.ContentStream;
  * 
  */
 public interface ContentDaoService {
-
+	
+	List<NemakiTypeDefinition> getTypeDefinitions();
+	NemakiTypeDefinition getTypeDefinition(String typeId);
+	NemakiTypeDefinition createTypeDefinition(NemakiTypeDefinition typeDefinition);
+	NemakiTypeDefinition updateTypeDefinition(NemakiTypeDefinition typeDefinition);
+	
+	NemakiPropertyDefinition getPropertyDefinition(String nodeId);
+	NemakiPropertyDefinition createPropertyDefinition(NemakiPropertyDefinition propertyDefinition);
+	NemakiPropertyDefinition updatePropertyDefinition(NemakiPropertyDefinition propertyDefinition);
+	
 	/**
 	 * Get a content by id
 	 * Return Document/Folder as Content class

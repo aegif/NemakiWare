@@ -117,11 +117,17 @@ module ActiveCMIS
     def attributes
       #aegif-
       primary_attributes = self.class.attributes
-      review_info = @repository.type_by_id('review_info')
-      secondary_attributes = review_info.attributes
-      attrs = primary_attributes.merge(secondary_attributes)
-      #self.class.attributes.inject({}) do |hash, (key, attr)|
+      attrs = {}
+      attrs.merge!(primary_attributes)
+      ids = secondary_ids
+      if !ids.nil? && ids.size != 0
+        ids.each do |id|
+          secondary = @repository.type_by_id(id)
+          attrs = attrs.merge!(secondary.attributes)
+        end  
+      end
       attrs.inject({}) do |hash, (key, attr)|
+      #self.class.attributes.inject({}) do |hash, (key, attr)|
       #-aegif
         if data.nil?
           if key == "cmis:objectTypeId" 
@@ -150,6 +156,24 @@ module ActiveCMIS
       end
     end
     cache :attributes
+
+    #aegif-
+    def secondary_ids
+      if(data == nil)
+        return []
+      else
+        properties = data.xpath("cra:object/c:properties", NS::COMBINED)
+        ids = self.class.attributes["cmis:secondaryObjectTypeIds"]
+        if(ids == nil)
+          return []
+        end
+        values = ids.extract_property(properties)
+        values.map do |value|
+          ids.property_type.cmis2rb(value)
+        end
+      end
+    end
+    #-aegif
 
     #aegif-
     def change_event_info

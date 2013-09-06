@@ -21,6 +21,9 @@
  ******************************************************************************/
 package jp.aegif.nemaki.repository;
 
+import java.util.HashSet;
+import java.util.Set;
+
 import org.apache.chemistry.opencmis.commons.enums.CapabilityAcl;
 import org.apache.chemistry.opencmis.commons.enums.CapabilityChanges;
 import org.apache.chemistry.opencmis.commons.enums.CapabilityContentStreamUpdates;
@@ -28,6 +31,9 @@ import org.apache.chemistry.opencmis.commons.enums.CapabilityJoin;
 import org.apache.chemistry.opencmis.commons.enums.CapabilityOrderBy;
 import org.apache.chemistry.opencmis.commons.enums.CapabilityQuery;
 import org.apache.chemistry.opencmis.commons.enums.CapabilityRenditions;
+import org.apache.chemistry.opencmis.commons.enums.PropertyType;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.CreatablePropertyTypesImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.NewTypeSettableAttributesImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.RepositoryCapabilitiesImpl;
 
 public class NemakiCapabilitiesImpl extends RepositoryCapabilitiesImpl {
@@ -64,5 +70,35 @@ public class NemakiCapabilitiesImpl extends RepositoryCapabilitiesImpl {
 		
 		// ACL Capabilities
 		setCapabilityAcl(CapabilityAcl.MANAGE);
+		
+		//Type Mutability
+		CreatablePropertyTypesImpl creatablePropertyTypes = new CreatablePropertyTypesImpl();
+		Set<PropertyType> propertyTypes = new HashSet<PropertyType>();
+		propertyTypes.add(PropertyType.BOOLEAN);
+		propertyTypes.add(PropertyType.DATETIME);
+		propertyTypes.add(PropertyType.DECIMAL);
+		propertyTypes.add(PropertyType.HTML);
+		propertyTypes.add(PropertyType.ID);
+		propertyTypes.add(PropertyType.INTEGER);
+		propertyTypes.add(PropertyType.STRING);
+		propertyTypes.add(PropertyType.URI);
+		creatablePropertyTypes.setCanCreate(propertyTypes);
+		setCreatablePropertyTypes(creatablePropertyTypes);
+		
+		NewTypeSettableAttributesImpl newTypeSetableAttributes = new NewTypeSettableAttributesImpl();
+		newTypeSetableAttributes.setCanSetControllableAcl(false);
+		newTypeSetableAttributes.setCanSetControllablePolicy(false);
+		newTypeSetableAttributes.setCanSetCreatable(true);
+		newTypeSetableAttributes.setCanSetDescription(true);
+		newTypeSetableAttributes.setCanSetDisplayName(true);
+		newTypeSetableAttributes.setCanSetFileable(false);
+		newTypeSetableAttributes.setCanSetFulltextIndexed(true);
+		newTypeSetableAttributes.setCanSetId(true);
+		newTypeSetableAttributes.setCanSetIncludedInSupertypeQuery(true);
+		newTypeSetableAttributes.setCanSetLocalName(true);
+		newTypeSetableAttributes.setCanSetLocalNamespace(true);
+		newTypeSetableAttributes.setCanSetQueryable(true);
+		newTypeSetableAttributes.setCanSetQueryName(true);
+		setNewTypeSettableAttributes(newTypeSetableAttributes);
 	}
 }

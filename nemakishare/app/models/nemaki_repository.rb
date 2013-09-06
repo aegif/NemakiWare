@@ -155,14 +155,14 @@ class NemakiRepository
   def get_aspects(object)
     types = @repo.types
     secondary_type_ids = object.attributes['cmis:secondaryObjectTypeIds']
-    
+
     aspects = Array.new
-    
+
     secondary_type_ids.each do |type_id|
-      #Look up from types
+    #Look up from types
       types.each do |type|
         if type.id == type_id
-          
+
           properties = Array.new
           #TODO attributesがnilの場合に対応
           type.attributes.each do |k,v|
@@ -171,15 +171,15 @@ class NemakiRepository
             property.value = object.attributes[k]
             properties << property
           end
-          
+
           aspect = Aspect.new
-          aspect.id = type_id
-          aspect.properties = properties
-          
-          aspects << aspect
-          
+        aspect.id = type_id
+        aspect.properties = properties
+
+        aspects << aspect
+
         end
-        
+
       end
     end
 
@@ -420,53 +420,46 @@ class NemakiRepository
   #Update a CMIS object
   #
   def update(id, update_info, update_aspects=nil)
-    update_hash = Hash.new
-
-    #review_info = @repo.type_by_id('review_info')
-    #sec_props = review_info.attributes
-
-	update_hash['cmis:secondaryObjectTypeIds'] = []
-	if !update_aspects.nil?
-		update_aspects.each do |a|
-			if aspect_value_exists?(a)
-		   		update_hash['cmis:secondaryObjectTypeIds'] << a.id
-		    end
-		end
-	end
-
     obj = @repo.object_by_id(id)
     attr = obj.attributes
+    
+    update_hash = Hash.new
 
+    if !update_aspects.nil?
+      update_hash['cmis:secondaryObjectTypeIds'] = attr['cmis:secondaryObjectTypeIds']
+      update_aspects.each do |a|
+        if aspect_value_exists?(a)
+          if attr['cmis:secondaryObjectTypeIds'].nil? || !attr['cmis:secondaryObjectTypeIds'].include?(a.id)
+              if(update_hash['cmis:secondaryObjectTypeIds'].nil?)
+                update_hash['cmis:secondaryObjectTypeIds'] = []
+              end
+              update_hash['cmis:secondaryObjectTypeIds'] << a.id  
+          end
+        end
+      end
+    end
+    
     if check_property_diff "cmis:name", obj, update_info['name']
       update_hash['cmis:name'] = update_info['name']
-    #obj.update({"cmis:name" => update_info['name']})
     end
 
     if check_property_diff "cmis:description", obj, update_info['description']
       update_hash['cmis:description'] = update_info['description']
-    #obj.update({"cmis:description" => update_info['description']})
     end
-
-    definitions = obj.secondary_attributes_definition
     obj.update(update_hash)
-	obj.save
-	
-	
-	#Custom Properties
-	obj = @repo.object_by_id(id)  
-  update_secondary_hash = Hash.new
 
-	if !update_aspects.nil?
-		update_aspects.each do |a|
-			if aspect_value_exists?(a)
-				a.properties.each do |p|
-				  puts p.key
-				  puts update_info[p.key]
-					update_secondary_hash[p.key] = update_info[p.key]
-				end
-			end
-		end
-	end
+    #Custom Properties
+    update_secondary_hash = Hash.new
+
+    if !update_aspects.nil?
+      update_aspects.each do |a|
+        if aspect_value_exists?(a)
+          a.properties.each do |p|
+            update_secondary_hash[p.key] = p.value
+          end
+        end
+      end
+    end
 
     #Remove aspects with all values nil
     removed_update_aspects = []

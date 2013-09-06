@@ -20,11 +20,11 @@
  ******************************************************************************/
 package jp.aegif.nemaki.service.cmis.impl;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.constant.DomainType;
+import jp.aegif.nemaki.repository.TypeManager;
 import jp.aegif.nemaki.service.cmis.AclService;
 import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.node.ContentService;
@@ -46,6 +46,7 @@ public class AclServiceImpl implements AclService {
 
 	private ContentService contentService;
 	private ExceptionService exceptionService;
+	private TypeManager typeManager;
 
 	public Acl getAcl(CallContext callContext, String objectId,
 			Boolean onlyBasicPermissions) {
@@ -76,7 +77,7 @@ public class AclServiceImpl implements AclService {
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		TypeDefinition td = contentService.getTypeDefinition(content);
+		TypeDefinition td = typeManager.getTypeDefinition(content);
 		if(!td.isControllableAcl()) exceptionService.constraint(objectId, "applyAcl cannot be performed on the object whose controllableAcl = false");
 		exceptionService.constraintAclPropagationDoesNotMatch(aclPropagation);
 		exceptionService.constraintPermissionDefined(acl, objectId);
@@ -118,5 +119,9 @@ public class AclServiceImpl implements AclService {
 
 	public void setExceptionService(ExceptionService exceptionService) {
 		this.exceptionService = exceptionService;
+	}
+
+	public void setTypeManager(TypeManager typeManager) {
+		this.typeManager = typeManager;
 	}	
 }
