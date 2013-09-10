@@ -53,6 +53,7 @@ import jp.aegif.nemaki.repository.TypeManager;
 import jp.aegif.nemaki.service.dao.ContentDaoService;
 import jp.aegif.nemaki.service.dao.impl.ContentDaoServiceImpl;
 import jp.aegif.nemaki.service.node.ContentService;
+
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
@@ -62,6 +63,7 @@ import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.data.PropertyId;
 import org.apache.chemistry.opencmis.commons.data.PropertyString;
+import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
@@ -780,11 +782,14 @@ public class ContentServiceImpl implements ContentService {
 
 	private void setBaseProperties(CallContext callContext,
 			Properties properties, Content content) {
-		//Base Type
-		content.setType(getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID));
-
 		//Object Type
-		content.setObjectType(getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID));
+		String objectTypeId = getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID);
+		content.setObjectType(objectTypeId);
+		
+		//Base Type
+		TypeDefinition typeDefinition = typeManager.getTypeDefinition(objectTypeId);
+		BaseTypeId baseTypeId = typeDefinition.getBaseTypeId();
+		content.setType(baseTypeId.value());
 		
 		//Name(Unique in a folder)
 		String uniqueName = buildUniqueName(getStringProperty(properties, PropertyIds.NAME), content.getParentId(), getIdProperty(properties, PropertyIds.OBJECT_ID));
@@ -837,7 +842,7 @@ public class ContentServiceImpl implements ContentService {
 		List<Aspect> aspects = new ArrayList<Aspect>();
 		PropertyData secondaryTypeIds = properties.getProperties().get(PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
 		
-		//TODO ここ確認。secondaryTypeの適用とそのプロパティ設定を同時に行ってよいかどうか
+		//TODO ���������������secondaryType������������������������������������������������������������������������������
 		List<String> ids = new ArrayList<String>();
 		if(secondaryTypeIds == null){
 			ids = getSecondaryTypeIds(content);
@@ -944,7 +949,7 @@ public class ContentServiceImpl implements ContentService {
 		return result;
 	}
 	
-	//TODO private化　& updateACLは別に作る & setModifiedSignatureなどはContentService内で処理する
+	//TODO private������& updateACL��������������� & setModifiedSignature���������ContentService������������������
 	@Override
 	public Content update(Content content) {
 		if(content instanceof Document){
@@ -1096,7 +1101,7 @@ public class ContentServiceImpl implements ContentService {
 
 
 
-	// 中のdelete系メソッドは、基本的にはdeletedWithParent=true。ただしObjectServiceからこのメソッドを最初に呼び出すときだけfalse
+	// ������delete������������������������������������deletedWithParent=true������������ObjectService������������������������������������������������������������false
 	@Override
 	public void deleteTree(CallContext callContext, String folderId,
 			Boolean allVersions, Boolean continueOnFailure,
@@ -1138,7 +1143,7 @@ public class ContentServiceImpl implements ContentService {
 	// //////////////////////////////////////////////////////////////////////////////
 	// Acl
 	// //////////////////////////////////////////////////////////////////////////////
-	// NavigationServiceでObjectDataを出力する場合の取り扱いは別途考える
+	// NavigationService���ObjectData������������������������������������������������������
 	public Acl getInheritedAcl(Content content) {
 		Acl acl = content.getAcl();
 		if (content.isRoot())
@@ -1314,7 +1319,7 @@ public class ContentServiceImpl implements ContentService {
 			return;
 		}
 
-		// Switch　an operation depending on archive
+		// Switch���an operation depending on archive
 		if (archive.isFolder()) {
 			restoreFolder(archive);
 		} else if (archive.isDocument()) {
