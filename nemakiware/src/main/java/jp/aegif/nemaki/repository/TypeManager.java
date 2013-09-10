@@ -653,6 +653,10 @@ public class TypeManager implements
 		if(CollectionUtils.isEmpty(parentProperties)){
 			parentProperties = new HashMap<String,PropertyDefinition<?>>();
 		}
+		for(String key : parentProperties.keySet()){
+			PropertyDefinition<?> parentProperty = parentProperties.get(key);
+			setInheritedToTrue((AbstractPropertyDefinition<?>)parentProperty);
+		}
 		type.setPropertyDefinitions(parentProperties);
 		
 		// Add specific properties
@@ -672,7 +676,11 @@ public class TypeManager implements
 		}
 
 	}
-	
+
+	private AbstractPropertyDefinition<?> setInheritedToTrue(AbstractPropertyDefinition<?> property){
+		property.setIsInherited(true);
+		return property;
+	}
 	
 	private DocumentTypeDefinition buildDocumentTypeDefinitionFromDB(
 			NemakiTypeDefinition nemakiType) {
