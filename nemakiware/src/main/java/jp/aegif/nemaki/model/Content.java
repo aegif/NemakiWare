@@ -221,6 +221,14 @@ public class Content extends NodeBase {
 		}
 	}
 	
+	public Boolean isItem(){
+		if (NodeType.CMIS_ITEM.value().equals(type)) {
+			return true;
+		} else {
+			return false;
+		}
+	}
+	
 	public Boolean isRoot(){
 		return (getId().equals("/")) ? true : false;
 	}
