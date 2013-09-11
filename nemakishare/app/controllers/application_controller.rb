@@ -32,7 +32,8 @@ class ApplicationController < ActionController::Base
   def check_authentication
     if session[:nemaki_auth_info] != nil
            
-      @nemaki_repository = NemakiRepository.new(session[:nemaki_auth_info])
+      @nemaki_repository = NemakiRepository.new(session[:nemaki_auth_info], logger)
+
       @login_user = User.new
       @login_user.id = session[:nemaki_auth_info][:id]
       @login_user.password = session[:nemaki_auth_info][:password]

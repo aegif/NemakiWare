@@ -26,10 +26,10 @@ require 'nokogiri'
 require 'rest_client'
 
 class NemakiRepository
-  def initialize(auth_info_param=nil)
+  def initialize(auth_info_param=nil, logger=nil)
     @auth_info = auth_info_param
-    @server = ActiveCMIS::Server.new(CONFIG['repository']['server_url']).authenticate(:basic, @auth_info[:id], @auth_info[:password])
-    @repo = @server.repository(CONFIG['repository']['repository_id'])
+    @server = ActiveCMIS::Server.new(CONFIG['repository']['server_url'], logger).authenticate(:basic, @auth_info[:id], @auth_info[:password])
+    @repo = @server.repository(CONFIG['repository']['repository_id'], [:basic, @auth_info[:id], @auth_info[:password] ])
   end
 
   def reset_repository
