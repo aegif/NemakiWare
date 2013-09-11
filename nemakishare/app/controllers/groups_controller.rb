@@ -197,4 +197,14 @@ class GroupsController < ApplicationController
    puts result['status']
     result['status'] == "success" 
   end
+
+  if logger.level == Logger::DEBUG
+    wrap_by_log :create
+    wrap_by_log :update
+    wrap_by_log :destroy
+    wrap_by_log :search
+    wrap_by_log :update_member_users
+    wrap_by_log :update_member_groups
+  end
+
 end

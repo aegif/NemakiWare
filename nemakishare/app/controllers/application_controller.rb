@@ -32,7 +32,8 @@ class ApplicationController < ActionController::Base
   def check_authentication
     if session[:nemaki_auth_info] != nil
            
-      @nemaki_repository = NemakiRepository.new(session[:nemaki_auth_info])
+      @nemaki_repository = NemakiRepository.new(session[:nemaki_auth_info], logger)
+
       @login_user = User.new
       @login_user.id = session[:nemaki_auth_info][:id]
       @login_user.password = session[:nemaki_auth_info][:password]
@@ -59,6 +60,24 @@ class ApplicationController < ActionController::Base
   
   def set_locale
     I18n.locale = extract_locale_from_accept_language_header
+  end
+
+  # for logging
+  p logger.level
+  if logger.level == Logger::DEBUG
+
+    def self.wrap_by_log(method) 
+      original_method_s = ( "original_" + method.to_s ).to_sym
+      alias_method original_method_s, method
+      define_method(method) do |*args, &block|
+        logger.debug "** [#{method}] start"
+        result = self.send original_method_s, *args, &block
+        logger.debug "** [#{method}] end"
+        result
+      end
+    end
+
+   wrap_by_log :check_authentication
   end
   
   private
