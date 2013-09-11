@@ -152,12 +152,26 @@
 			<artifactId>lucene-queries</artifactId>
 			<version>4.0.0</version>
 		</dependency>
-		
+
 		<dependency>
-            <groupId>org.codehaus.mojo</groupId>
-            <artifactId>cobertura-maven-plugin</artifactId>
-            <version>2.5.2</version>
-        </dependency>
+		  <groupId>commons-logging</groupId>
+		  <artifactId>commons-logging</artifactId>
+		  <version>1.1</version>
+		  <type>jar</type>
+		</dependency>
+
+		<dependency>
+		  <groupId>log4j</groupId>
+		  <artifactId>log4j</artifactId>
+		  <version>1.2.13</version>
+		  <type>jar</type>
+		</dependency>		
+
+		<dependency>
+		  <groupId>org.codehaus.mojo</groupId>
+		  <artifactId>cobertura-maven-plugin</artifactId>
+		  <version>2.5.2</version>
+		</dependency>
 	</dependencies>
 
 	<build>
@@ -174,25 +188,32 @@
 			</plugin>
 
 			<plugin>
-				<groupId>org.mortbay.jetty</groupId>
-				<artifactId>jetty-maven-plugin</artifactId>
-				<version>7.0.1.v20091125</version>
-				<configuration>
-					<scanIntervalSeconds>1</scanIntervalSeconds>
-					<stopPort>9966</stopPort>
-					<stopKey>foo</stopKey>
-					<webAppConfig>
-						<contextPath>/Nemaki</contextPath>
-					</webAppConfig>
-					<connectors>
-						<connector implementation="org.eclipse.jetty.server.nio.SelectChannelConnector">
-							<port>8080</port>
-						</connector>
-					</connectors>
-					<scanTargets>
-						<scanTarget>src/main/webapp</scanTarget>
-					</scanTargets>
-				</configuration>
+			  <groupId>org.mortbay.jetty</groupId>
+			  <artifactId>jetty-maven-plugin</artifactId>
+			  <version>7.0.1.v20091125</version>
+			  <configuration>
+			    <scanIntervalSeconds>1</scanIntervalSeconds>
+			    <stopPort>9966</stopPort>
+			    <stopKey>foo</stopKey>
+			    <webAppConfig>
+			      <contextPath>/NemakiWare</contextPath>
+			    </webAppConfig>
+			    <connectors>
+			      <connector implementation="org.eclipse.jetty.server.nio.SelectChannelConnector">
+				<port>8080</port>
+			      </connector>
+			    </connectors>
+			    <scanTargets>
+			      <scanTarget>src/main/webapp</scanTarget>
+			    </scanTargets>
+
+			    <systemProperties>
+			      <systemProperty>
+				<name>log4j.configuration</name>
+				<value>file:///${basedir}/log4j-jetty.properties</value>
+			      </systemProperty>
+			    </systemProperties>
+			  </configuration>
 			</plugin>
 			<plugin>
               <groupId>org.codehaus.mojo</groupId>

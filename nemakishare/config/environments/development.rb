@@ -64,4 +64,7 @@ Nemakishare::Application.configure do
     "folder" => "/nemaki_images/generic-folder-32.png"
   }
   
+  config.logger = Logger.new(config.paths['log'].first) 
+  config.logger.formatter = Logger::Formatter.new
+
 end

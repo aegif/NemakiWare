@@ -339,4 +339,21 @@ class NodesController < ApplicationController
     session[:nemaki_auth_info] = nil
     redirect_to :action => :index
   end
+
+  # logging method calls
+  if logger.level == Logger::DEBUG
+
+    wrap_by_log :authenticate
+    wrap_by_log :create
+    wrap_by_log :update
+    wrap_by_log :upload
+    wrap_by_log :show
+    wrap_by_log :download
+    wrap_by_log :explore
+    wrap_by_log :search
+    wrap_by_log :destroy
+    wrap_by_log :update_permission
+
+  end
+  
 end
