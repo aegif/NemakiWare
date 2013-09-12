@@ -339,39 +339,37 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	public Properties compileProperties(Content content, Set<String> filter,
 			ObjectInfoImpl objectInfo) {
 
-		String typeId = null;
 		PropertiesImpl properties = new PropertiesImpl();
 		if (content.isFolder()) {
 			Folder folder = (Folder) content;
 			// Root folder
 			if (folder.isRoot()) {
 				properties = compileRootFolderProperties(folder, properties,
-						typeId, filter);
+						filter);
 				// Other than root folder
 			} else {
 				properties = compileFolderProperties(folder, properties,
-						typeId, filter);
+						filter);
 			}
 		} else if (content.isDocument()) {
 			Document document = (Document) content;
 			properties = compileDocumentProperties(document, properties,
-					typeId, filter);
+					filter);
 		} else if (content.isRelationship()) {
 			Relationship relationship = (Relationship) content;
 			properties = compileRelationshipProperties(relationship,
-					properties, typeId, filter);
+					properties, filter);
 		} else if (content.isPolicy()) {
 			Policy policy = (Policy) content;
-			properties = compilePolicyProperties(policy, properties, typeId,
-					filter);
+			properties = compilePolicyProperties(policy, properties, filter);
 		}
 
 		return properties;
 	}
 
 	private PropertiesImpl compileRootFolderProperties(Folder folder,
-			PropertiesImpl properties, String typeId, Set<String> filter) {
-		typeId = TypeManager.FOLDER_TYPE_ID;
+			PropertiesImpl properties, Set<String> filter) {
+		String typeId = TypeManager.FOLDER_TYPE_ID;
 		setCmisBaseProperties(properties, typeId, filter, folder);
 		// Add parentId property without value
 		PropertyIdImpl parentId = new PropertyIdImpl();
@@ -385,8 +383,8 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	}
 
 	private PropertiesImpl compileFolderProperties(Folder folder,
-			PropertiesImpl properties, String typeId, Set<String> filter) {
-		typeId = TypeManager.FOLDER_TYPE_ID;
+			PropertiesImpl properties, Set<String> filter) {
+		String typeId = folder.getObjectType();
 		setCmisBaseProperties(properties, typeId, filter, folder);
 		addProperty(properties, typeId, filter, PropertyIds.PARENT_ID,
 				folder.getParentId());
@@ -396,8 +394,8 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	}
 
 	private PropertiesImpl compileDocumentProperties(Document document,
-			PropertiesImpl properties, String typeId, Set<String> filter) {
-		typeId = TypeManager.DOCUMENT_TYPE_ID;
+			PropertiesImpl properties, Set<String> filter) {
+		String typeId = document.getObjectType();
 		setCmisBaseProperties(properties, typeId, filter, document);
 		setCmisDocumentProperties(properties, typeId, filter, document);
 
@@ -417,16 +415,16 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	// TODO make enable to cope with dynamic sub type
 	private PropertiesImpl compileRelationshipProperties(
 			Relationship relationship, PropertiesImpl properties,
-			String typeId, Set<String> filter) {
-		typeId = TypeManager.RELATIONSHIP_TYPE_ID;
+			Set<String> filter) {
+		String typeId = relationship.getObjectType();
 		setCmisBaseProperties(properties, typeId, filter, relationship);
 		setCmisRelationshipProperties(properties, typeId, filter, relationship);
 		return properties;
 	}
 
 	private PropertiesImpl compilePolicyProperties(Policy policy,
-			PropertiesImpl properties, String typeId, Set<String> filter) {
-		typeId = TypeManager.RELATIONSHIP_TYPE_ID;
+			PropertiesImpl properties, Set<String> filter) {
+		String typeId = policy.getObjectType();
 		setCmisBaseProperties(properties, typeId, filter, policy);
 		setCmisPolicyProperties(properties, typeId, filter, policy);
 		return properties;
@@ -474,17 +472,39 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		addProperty(properties, typeId, filter, PropertyIds.CHANGE_TOKEN,
 				String.valueOf(content.getChangeToken()));
 
+		//TODO If subType properties is not registered in DB, return void properties via CMIS
 		// SubType properties
-		List<Property> subTypeProperties = content.getSubTypeProperties();
-		for (Property subTypeProperty : subTypeProperties) {
-			addProperty(properties, content.getObjectType(), filter,
-					subTypeProperty.getKey(), subTypeProperty.getValue());
+		List<PropertyDefinition<?>> specificPropertyDefinitions = typeManager.getSpecificPropertyDefinitions(typeId);
+		if(!CollectionUtils.isEmpty(specificPropertyDefinitions)){
+			for(PropertyDefinition<?> propertyDefinition : specificPropertyDefinitions){
+				Property property = extractSubTypeProperty(content, propertyDefinition.getId());
+				Object value = (property == null) ?  null : property.getValue();
+				addProperty(properties, content.getObjectType(), filter,
+						propertyDefinition.getId(), value);
+			}
 		}
+		
+//		
+//		List<Property> subTypeProperties = content.getSubTypeProperties();
+//		for (Property subTypeProperty : subTypeProperties) {
+//			addProperty(properties, content.getObjectType(), filter,
+//					subTypeProperty.getKey(), subTypeProperty.getValue());
+//		}
 
 		// Secondary properties
-		setCmisSecondaryTypes(properties, content.getAspects());
+		setCmisSecondaryTypes(properties, content);
 	}
 
+	private Property extractSubTypeProperty(Content content, String propertyId){
+		List<Property> subTypeProperties = content.getSubTypeProperties();
+		for (Property subTypeProperty : subTypeProperties) {
+			if(subTypeProperty.getKey().equals(propertyId)){
+				return subTypeProperty;
+			}
+		}
+		return null;
+	}
+	
 	private void setCmisFolderProperties(PropertiesImpl properties,
 			String typeId, Set<String> filter, Folder folder) {
 
@@ -583,27 +603,52 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	}
 
 	private void setCmisSecondaryTypes(PropertiesImpl props,
-			List<Aspect> aspects) {
+			Content content) {
+		List<Aspect> aspects = content.getAspects();
 		List<String> secondaryIds = new ArrayList<String>();
 
-		for (Aspect aspect : aspects) {
-			secondaryIds.add(aspect.getName());
+		//cmis:secondaryObjectTypeIds
+		for(String secondaryId : content.getSecondaryIds()){
+			secondaryIds.add(secondaryId);
 		}
 		
 		PropertyData<?> pd = new PropertyIdImpl(
 				PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondaryIds);
 		props.addProperty(pd);
 		
-		for (Aspect aspect : aspects) {
-			TypeDefinition tdf = typeManager
-					.getTypeDefinition(aspect.getName());
-
-			// TODO null check
-			for (Property property : aspect.getProperties()) {
-				addProperty(props, tdf.getId(), null, property.getKey(),
-						property.getValue());
+		//each secondary properties
+		for(String secondaryId : secondaryIds){
+			List<PropertyDefinition<?>> secondaryPropertyDefinitions = typeManager.getSpecificPropertyDefinitions(secondaryId);
+			if(CollectionUtils.isEmpty(secondaryPropertyDefinitions)) continue;
+			
+			Aspect aspect = extractAspect(aspects, secondaryId);
+			List<Property> properties = (aspect == null) ? new ArrayList<Property>() : aspect.getProperties();
+			
+			for(PropertyDefinition<?> secondaryPropertyDefinition : secondaryPropertyDefinitions){
+				Property property = extractProperty(properties, secondaryPropertyDefinition.getId());
+				Object value = (property == null) ? null : property.getValue();
+				addProperty(props, secondaryId, null, secondaryPropertyDefinition.getId(), value);
 			}
 		}
+	}
+	
+	//TODO Desirable to change List<Aspect> (and List<Properties>) in Content class to HashMap, but it may need costs.  
+	private Aspect extractAspect(List<Aspect> aspects, String aspectId){
+		for(Aspect aspect : aspects){
+			if(aspect.getName().equals(aspectId)){
+				return aspect;
+			}
+		}
+		return null;
+	}
+	
+	private Property extractProperty(List<Property> properties, String propertyId){
+		for(Property property : properties){
+			if(property.getKey().equals(propertyId)){
+				return property;
+			}
+		}
+		return null;
 	}
 
 	/**

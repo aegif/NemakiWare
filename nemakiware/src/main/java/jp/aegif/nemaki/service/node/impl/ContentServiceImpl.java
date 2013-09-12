@@ -24,6 +24,7 @@ package jp.aegif.nemaki.service.node.impl;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.GregorianCalendar;
 import java.util.LinkedList;
 import java.util.List;
@@ -63,6 +64,7 @@ import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.data.PropertyId;
 import org.apache.chemistry.opencmis.commons.data.PropertyString;
+import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.ChangeType;
@@ -838,11 +840,58 @@ public class ContentServiceImpl implements ContentService {
 		return result;
 	}
 	
+	
+	
+	private Content modifyProperties(CallContext callContext, Properties properties, Content content) {
+		//Primary
+		org.apache.chemistry.opencmis.commons.definitions.TypeDefinition td = typeManager.getTypeDefinition(content.getObjectType());
+		for(PropertyData<?> p : properties.getPropertyList()){
+			org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition pd = td.getPropertyDefinitions().get(p.getId());
+			if(pd == null) continue;
+			
+			//CASE: READ&WRITE(ANYTIME)
+			if (pd.getUpdatability() == Updatability.READWRITE){
+				setUpdatePropertyValue(content, p, properties);
+			}
+			//CASE:WHEN CHECKED OUT
+			if(pd.getUpdatability() == Updatability.WHENCHECKEDOUT && content.isDocument()){
+				Document d = (Document)content;
+				if(d.isPrivateWorkingCopy()){
+					setUpdatePropertyValue(content, p, properties);
+				}
+			}
+		}
+		
+		//TODO
+		//Subtype specific
+		List<Property> subTypeProperties = buildSubTypeProperties(properties, content);
+		if(!CollectionUtils.isEmpty(subTypeProperties)){
+			content.setSubTypeProperties(subTypeProperties);
+		}
+		
+		//Secondary
+		List<Aspect> secondary = buildSecondaryTypes(properties, content);
+		if (!CollectionUtils.isEmpty(secondary)){
+			content.setAspects(secondary);
+		}
+		
+		//Set modified signature
+		setModifiedSignature(callContext, content);
+		
+		return content;
+	}
+	
+	private List<Property> buildSubTypeProperties(Properties properties, Content content){
+		List<PropertyDefinition<?>> subTypePropertyDefinitions = typeManager.getSpecificPropertyDefinitions(content.getObjectType());
+		if(CollectionUtils.isEmpty(subTypePropertyDefinitions)) return (new ArrayList<Property>());
+		
+		return injectPropertyValue(subTypePropertyDefinitions, properties, content);
+	}
+	
 	private List<Aspect> buildSecondaryTypes(Properties properties, Content content){
 		List<Aspect> aspects = new ArrayList<Aspect>();
 		PropertyData secondaryTypeIds = properties.getProperties().get(PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
 		
-		//TODO ���������������secondaryType������������������������������������������������������������������������������
 		List<String> ids = new ArrayList<String>();
 		if(secondaryTypeIds == null){
 			ids = getSecondaryTypeIds(content);
@@ -855,7 +904,11 @@ public class ContentServiceImpl implements ContentService {
 			Aspect aspect = new Aspect();
 			aspect.setName(secondaryTypeId);
 			
-			List<Property>props = new ArrayList<Property>();
+
+			List<Property>props = injectPropertyValue(td.getPropertyDefinitions().values(), properties, content);
+			
+			/*
+			
 			for(Entry<String, org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?>> entry : td.getPropertyDefinitions().entrySet()){
 				org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?> pd = entry.getValue();
 				
@@ -893,7 +946,7 @@ public class ContentServiceImpl implements ContentService {
 					break;
 				}
 				props.add(p);
-			}
+			}*/
 
 			aspect.setProperties(props);
 			aspects.add(aspect);
@@ -901,36 +954,46 @@ public class ContentServiceImpl implements ContentService {
 		return aspects;
 	}
 	
-	private Content modifyProperties(CallContext callContext, Properties properties, Content content) {
-		//Primary
-		org.apache.chemistry.opencmis.commons.definitions.TypeDefinition td = typeManager.getTypeDefinition(content.getType());
-		for(PropertyData<?> p : properties.getPropertyList()){
-			org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition pd = td.getPropertyDefinitions().get(p.getId());
-			if(pd == null) continue;
-			
-			//CASE: READ&WRITE(ANYTIME)
-			if (pd.getUpdatability() == Updatability.READWRITE){
-				setUpdatePropertyValue(content, p, properties);
-			}
-			//CASE:WHEN CHECKED OUT
-			if(pd.getUpdatability() == Updatability.WHENCHECKEDOUT && content.isDocument()){
-				Document d = (Document)content;
-				if(d.isPrivateWorkingCopy()){
-					setUpdatePropertyValue(content, p, properties);
+	private List<Property> injectPropertyValue(Collection<PropertyDefinition<?>> propertyDefnitions, Properties properties, Content content){
+		List<Property> props = new ArrayList<Property>();
+		for(PropertyDefinition<?> pd : propertyDefnitions){
+			switch(pd.getUpdatability()){
+			case READONLY:
+				continue;
+			case READWRITE:
+				break;
+			case WHENCHECKEDOUT:
+				if(!content.isDocument()){
+					continue;
+				}else{
+					Document d = (Document)content;
+					if(!d.isPrivateWorkingCopy()){
+						continue;
+					}
 				}
+				break;
+			default:
+				continue;
 			}
+			
+			PropertyData<?> property = properties.getProperties().get(pd.getId());
+			if(property == null) continue;
+			Property p = new Property();
+			p.setKey(property.getId());
+			switch(pd.getCardinality()){
+			case SINGLE:
+				p.setValue(property.getFirstValue());
+				break;
+			case MULTI:
+				p.setValue(property.getValues());
+				break;
+			default:
+				break;
+			}
+			props.add(p);
 		}
 		
-		//Secondary
-		List<Aspect> secondary = buildSecondaryTypes(properties, content);
-		if (secondary != null){
-			content.setAspects(secondary);
-		}
-		
-		//Set modified signature
-		setModifiedSignature(callContext, content);
-		
-		return content;
+		return props;
 	}
 	
 	/**
@@ -1101,7 +1164,7 @@ public class ContentServiceImpl implements ContentService {
 
 
 
-	// ������delete������������������������������������deletedWithParent=true������������ObjectService������������������������������������������������������������false
+	// deletedWithParent flag controls whether it's deleted with the parent all together. 
 	@Override
 	public void deleteTree(CallContext callContext, String folderId,
 			Boolean allVersions, Boolean continueOnFailure,
