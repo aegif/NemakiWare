@@ -280,7 +280,7 @@ public class TypeManager implements
 		itemType.setLocalNamespace(NAMESPACE);
 		itemType.setQueryName(ITEM_TYPE_ID);
 		itemType.setDisplayName("item");
-		itemType.setBaseTypeId(BaseTypeId.CMIS_POLICY);
+		itemType.setBaseTypeId(BaseTypeId.CMIS_ITEM);
 		itemType.setDescription("Item");
 		itemType.setIsCreatable(false);
 		itemType.setIsFileable(false);
