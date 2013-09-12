@@ -906,47 +906,6 @@ public class ContentServiceImpl implements ContentService {
 			
 
 			List<Property>props = injectPropertyValue(td.getPropertyDefinitions().values(), properties, content);
-			
-			/*
-			
-			for(Entry<String, org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?>> entry : td.getPropertyDefinitions().entrySet()){
-				org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?> pd = entry.getValue();
-				
-				switch(pd.getUpdatability()){
-				case READONLY:
-					continue;
-				case READWRITE:
-					break;
-				case WHENCHECKEDOUT:
-					if(!content.isDocument()){
-						continue;
-					}else{
-						Document d = (Document)content;
-						if(!d.isPrivateWorkingCopy()){
-							continue;
-						}
-					}
-					break;
-				default:
-					continue;
-				}
-				
-				PropertyData<?> property = properties.getProperties().get(entry.getKey());
-				if(property == null) continue;
-				Property p = new Property();
-				p.setKey(property.getId());
-				switch(entry.getValue().getCardinality()){
-				case SINGLE:
-					p.setValue(property.getFirstValue());
-					break;
-				case MULTI:
-					p.setValue(property.getValues());
-					break;
-				default:
-					break;
-				}
-				props.add(p);
-			}*/
 
 			aspect.setProperties(props);
 			aspects.add(aspect);
@@ -1012,7 +971,6 @@ public class ContentServiceImpl implements ContentService {
 		return result;
 	}
 	
-	//TODO private������& updateACL��������������� & setModifiedSignature���������ContentService������������������
 	@Override
 	public Content update(Content content) {
 		if(content instanceof Document){
