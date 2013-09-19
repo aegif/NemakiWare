@@ -23,6 +23,7 @@ package jp.aegif.nemaki.service.dao.impl;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import jp.aegif.nemaki.model.Group;
 import jp.aegif.nemaki.model.User;
@@ -30,6 +31,10 @@ import jp.aegif.nemaki.model.couch.CouchGroup;
 import jp.aegif.nemaki.model.couch.CouchUser;
 import jp.aegif.nemaki.service.dao.PrincipalDaoService;
 import jp.aegif.nemaki.service.db.CouchConnector;
+
+import net.sf.ehcache.Cache;
+import net.sf.ehcache.CacheManager;
+import net.sf.ehcache.Element;
 
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.logging.Log;
@@ -49,9 +54,20 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 	private CouchDbConnector connector;
 	private static final Log log = LogFactory.getLog(PrincipalDaoServiceImpl.class);
 	
+	private CacheManager cacheManager;
+	
 	/**
 	 * 
 	 */
+	
+	public PrincipalDaoServiceImpl() {
+		cacheManager = CacheManager.newInstance();
+		Cache userCache = new Cache("userCache", 10000, false, false, 60 * 60 , 60 * 60);
+		Cache groupCache = new Cache("groupCache", 10000, false, false, 60 * 60 , 60 * 60);
+		cacheManager.addCache(userCache);
+		cacheManager.addCache(groupCache);
+	}
+	
 	@Override
 	public User createUser(User user) {
 		CouchUser cu = new CouchUser(user);
@@ -75,7 +91,11 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 		update.setRevision(cd.getRevision());
 
 		connector.update(update);
-		return update.convert();
+		User u = update.convert();
+		Cache userCache = cacheManager.getCache("userCache");
+		userCache.put(new Element(u.getId(), u));
+		
+		return u;
 	}
 	
 	@Override
@@ -87,7 +107,11 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 		update.setRevision(cd.getRevision());
 
 		connector.update(update);
-		return update.convert();
+		Group g = update.convert();
+		Cache groupCache = cacheManager.getCache("groupCache");
+		groupCache.put(new Element(g.getId(), g));
+		
+		return g;
 	}
 	
 	@Override
@@ -95,9 +119,13 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 		if(clazz.equals(User.class)){
 			CouchUser cu = getUserByIdInternal(principalId);
 			connector.delete(cu);
+			Cache userCache = cacheManager.getCache("userCache");
+			userCache.remove(principalId);
 		}else if(clazz.equals(Group.class)){
 			CouchGroup cg = getGroupByIdInternal(principalId);
 			connector.delete(cg);
+			Cache groupCache = cacheManager.getCache("groupCache");
+			groupCache.remove(principalId);
 		}else{
 			log.error("Cannot delete other than user or group");
 		}
@@ -108,14 +136,29 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 	 */
 	@Override
 	public List<User> getUsers() {
+		
+		Cache userCache = cacheManager.getCache("userCache");
+		Map<Object, Element> caches = userCache.getAll(userCache.getKeys());
+		
+		List<User> users = new ArrayList<User>();
+		for(Element el: caches.values()) {
+			users.add((User)el.getObjectValue());
+		}
+		
+		if ( !users.isEmpty() ) {
+			return users;
+		}
+		
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
 				.viewName("usersById");
 		List<CouchUser> l = connector.queryView(query, CouchUser.class);
 		
-		List<User>users = new ArrayList<User>();
 		for(CouchUser c : l){
-			users.add(c.convert());
+			User u = c.convert();
+			users.add(u);
+			userCache.put(new Element(c.getId(), u));
 		}
+		
 		return users;
 	}
 	
@@ -124,15 +167,26 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 	 */
 	@Override
 	public User getUserById(String userId) {
+		
+		Cache userCache = cacheManager.getCache("userCache");
+		Element e = userCache.get(userId);
+		
+		if ( e != null ) {
+			return (User)e.getObjectValue();
+		}
+		
 		CouchUser cu = getUserByIdInternal(userId);
 		if(cu == null){
 			return null;
 		}else{
-			return cu.convert();
+			User u = cu.convert();
+			userCache.put(new Element(u.getId(), u));
+			return u;
 		}
 	}
 	
 	private CouchUser getUserByIdInternal(String userId){
+		
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
 				.viewName("usersById").key(userId);
 		List<CouchUser> l = connector.queryView(query, CouchUser.class);
@@ -159,6 +213,7 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 	 */
 	@Override
 	public Group getGroupById(String groupId) {
+		//TODO use ehCache
 		CouchGroup cg = getGroupByIdInternal(groupId);
 		if(cg == null){
 			return null;
@@ -191,14 +246,31 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 	 */
 	@Override
 	public List<Group> getGroups() {
+		
+		Cache groupCache = cacheManager.getCache("groupCache");
+		Map<Object, Element> caches = groupCache.getAll(groupCache.getKeys());
+		
+		List<Group> groups = new ArrayList<Group>();
+		
+		for(Element el: caches.values()) {
+			groups.add((Group)el.getObjectValue());
+		}
+		
+		if ( !groups.isEmpty() ) {
+			return groups;
+		}
+		
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
 				.viewName("groupsById");
 		
 		List<CouchGroup>l = connector.queryView(query, CouchGroup.class);
-		List<Group>groups = new ArrayList<Group>();
+		
 		for(CouchGroup c : l){
-			groups.add(c.convert());
+			Group g = c.convert();
+			groups.add(g);
+			groupCache.put(new Element(g.getId(), g));
 		}
+		
 		return groups;
 	}
 	

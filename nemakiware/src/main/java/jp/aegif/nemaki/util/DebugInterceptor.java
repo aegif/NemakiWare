@@ -47,7 +47,7 @@ public class DebugInterceptor implements MethodBeforeAdvice,
 			throws Throwable {
 		try {
 			log.debug(sdf.format(new Date()) + " " +  method.getDeclaringClass().getSimpleName() + "#"
-					+ method.getName() + " " + Arrays.asList(args));
+					+ method.getName() + " " /* + Arrays.asList(args) */);
 		} catch (Exception e) {
 			log.warn(e);
 		}
@@ -57,7 +57,7 @@ public class DebugInterceptor implements MethodBeforeAdvice,
 			Object[] args, Object target) throws Throwable {
 		try {
 			log.debug(sdf.format(new Date()) + " " +  method.getDeclaringClass().getSimpleName() + "#"
-					+ method.getName() + " returned " + returnValue);
+					+ method.getName() + " returned "  /*+ returnValue */);
 		} catch (Exception e) {
 			log.warn(e);
 		}

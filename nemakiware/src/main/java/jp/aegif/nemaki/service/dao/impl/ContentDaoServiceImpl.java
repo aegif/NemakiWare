@@ -55,8 +55,13 @@ import jp.aegif.nemaki.model.couch.CouchRelationship;
 import jp.aegif.nemaki.model.couch.CouchRendition;
 import jp.aegif.nemaki.model.couch.CouchTypeDefinition;
 import jp.aegif.nemaki.model.couch.CouchVersionSeries;
+import jp.aegif.nemaki.repository.RequestDurationCacheBean;
 import jp.aegif.nemaki.service.dao.ContentDaoService;
 import jp.aegif.nemaki.service.db.CouchConnector;
+
+import net.sf.ehcache.Cache;
+import net.sf.ehcache.CacheManager;
+import net.sf.ehcache.Element;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.commons.logging.Log;
@@ -80,17 +85,43 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	private CouchDbConnector connector;
 	private CouchDbConnector archiveConnector;
+	private RequestDurationCacheBean requestDurationCache;
 	private static final Log log = LogFactory.getLog(ContentDaoServiceImpl.class);
-	
+
 	private static final String ATTACHMENT_NAME = "content";
 
-	
+	private CacheManager cacheManager;
+
+	public ContentDaoServiceImpl() {
+		cacheManager = CacheManager.newInstance();
+		Cache typeCache = new Cache("typeCache", 1, false, false, 60 * 60 , 60 * 60);
+		Cache contentCache = new Cache("contentCache", 10000, false, false, 60 * 60 , 60 * 60);
+		Cache documentCache = new Cache("documentCache", 10000, false, false, 60 * 60 , 60 * 60);
+		Cache folderCache = new Cache("folderCache", 10000, false, false, 60 * 60 , 60 * 60);
+		Cache versionSeriesCache = new Cache("versionSeriesCache", 10000, false, false, 60 * 60, 60 * 60);
+		Cache attachmentCache = new Cache("attachmentCache", 10000, false, false, 60 * 60, 60 * 60);
+		cacheManager.addCache(typeCache);
+		cacheManager.addCache(contentCache);
+		cacheManager.addCache(documentCache);
+		cacheManager.addCache(folderCache);
+		cacheManager.addCache(versionSeriesCache);
+		cacheManager.addCache(attachmentCache);
+	}
+
 	@Override
 	public List<NemakiTypeDefinition> getTypeDefinitions() {
+
+		Cache typeCache = cacheManager.getCache("typeCache");
+		Element v = typeCache.get("typedefs");
+
+		if ( v != null ) {
+			return (List<NemakiTypeDefinition>)v.getObjectValue();
+		}
+
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("typeDefinitions");
+		.viewName("typeDefinitions");
 		List<CouchTypeDefinition> l = connector.queryView(query, CouchTypeDefinition.class);
-		
+
 		if(CollectionUtils.isEmpty(l)){
 			return null;
 		}else{
@@ -98,27 +129,50 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			for(CouchTypeDefinition ct : l){
 				result.add(ct.convert());
 			}
+			typeCache.put(new Element("typedefs", result));
 			return result;
 		}
+
 	}
 
 	@Override
 	public NemakiTypeDefinition getTypeDefinition(String typeId) {
-		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("typeDefinitions").key(typeId);
-		List<CouchTypeDefinition> l = connector.queryView(query, CouchTypeDefinition.class);
-		
-		if(CollectionUtils.isEmpty(l)){
-			return null;
-		}else{
-			return l.get(0).convert();
+
+		Cache typeCache = cacheManager.getCache("typeCache");
+		Element v = typeCache.get("typedefs");
+
+		List<NemakiTypeDefinition> typeDefs = null;
+		if ( v == null ) {
+			typeDefs = this.getTypeDefinitions();
 		}
+		else {
+			typeDefs = (List<NemakiTypeDefinition>)v.getObjectValue();
+		}
+
+		for(NemakiTypeDefinition def : typeDefs) {
+			if ( def.getTypeId().equals(typeId)) {
+				return def;
+			}
+		}
+		return null;
+
+		//		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
+		//		.viewName("typeDefinitions").key(typeId);
+		//		List<CouchTypeDefinition> l = connector.queryView(query, CouchTypeDefinition.class);
+		//
+		//		if(CollectionUtils.isEmpty(l)){
+		//			return null;
+		//		}else{
+		//			return l.get(0).convert();
+		//		}
 	}
 
 	@Override
 	public NemakiTypeDefinition createTypeDefinition(NemakiTypeDefinition typeDefinition) {
 		CouchTypeDefinition ct = new CouchTypeDefinition(typeDefinition);
 		connector.create(ct);
+		Cache typeCache = cacheManager.getCache("typeCache");
+		typeCache.remove("typedefs");
 		return ct.convert();
 	}
 
@@ -127,17 +181,19 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		CouchTypeDefinition cp = connector.get(CouchTypeDefinition.class, typeDefinition.getId());
 		CouchTypeDefinition update = new CouchTypeDefinition(typeDefinition);
 		update.setRevision(cp.getRevision());
-		
+
 		connector.update(update);
+		Cache typeCache = cacheManager.getCache("typeCache");
+		typeCache.remove("typedefs");
 		return update.convert();
 	}
 
 	@Override
 	public NemakiPropertyDefinition getPropertyDefinition(String nodeId) {
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("propertyDefinitions").key(nodeId);
+		.viewName("propertyDefinitions").key(nodeId);
 		List<CouchPropertyDefinition> l = connector.queryView(query, CouchPropertyDefinition.class);
-		
+
 		if(CollectionUtils.isEmpty(l)){
 			return null;
 		}else{
@@ -150,6 +206,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			NemakiPropertyDefinition propertyDefinition) {
 		CouchPropertyDefinition cp = new CouchPropertyDefinition(propertyDefinition);
 		connector.create(cp);
+		Cache typeCache = cacheManager.getCache("typeCache");
+		typeCache.remove("typedefs");
 		return cp.convert();
 	}
 
@@ -159,8 +217,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		CouchPropertyDefinition cp = connector.get(CouchPropertyDefinition.class, propertyDefinition.getId());
 		CouchPropertyDefinition update = new CouchPropertyDefinition(propertyDefinition);
 		update.setRevision(cp.getRevision());
-		
+
 		connector.update(update);
+
+		Cache typeCache = cacheManager.getCache("typeCache");
+		typeCache.remove("typedefs");
+
 		return update.convert();
 	}
 
@@ -171,28 +233,50 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	 */
 	@Override
 	public Content getContent(String objectId) {
+
+		Cache contentCache = cacheManager.getCache("contentCache");
+		Element v = contentCache.get(objectId);
+
+		if ( v != null ) {
+			return (Content)v.getObjectValue();
+		}
+
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("contentsById").key(objectId);
+		.viewName("contentsById").key(objectId);
 		List<CouchContent> l = connector.queryView(query, CouchContent.class);
-		
+
 		if(CollectionUtils.isEmpty(l)) return null;
-		return l.get(0).convert();
+
+		Content content = l.get(0).convert();
+		contentCache.put(new Element(objectId, content));
+
+		return content;
+
 	}
 
 	//TODO Use view
 	@Override
 	public Document getDocument(String objectId) {
+		Cache documentCache = cacheManager.getCache("documentCache");
+		Element v = documentCache.get(objectId);
+
+		if ( v != null ) {
+			return (Document)v.getObjectValue();
+		}
+
 		CouchDocument cd = connector.get(CouchDocument.class, objectId);
-		return cd.convert();
+		Document doc = cd.convert();
+		documentCache.put(new Element(objectId, doc));
+		return doc;
 	}
 
 	@Override
 	public List<Document> getCheckedOutDocuments(String parentFolderId){
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("privateWorkingCopies");
+		.viewName("privateWorkingCopies");
 		if(parentFolderId != null) query.key(parentFolderId);	
 		List<CouchDocument> l = connector.queryView(query, CouchDocument.class);
-		
+
 		if(CollectionUtils.isEmpty(l)) return null;
 		List<Document> results = new ArrayList<Document>();
 		for(CouchDocument cd : l){
@@ -200,33 +284,54 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		}
 		return results;
 	}
-	
-	//TODO Use view
+
 	@Override
 	public VersionSeries getVersionSeries(String nodeId) {
+
+		Cache versionSeriesCache = cacheManager.getCache("versionSeriesCache");
+		Element v = versionSeriesCache.get(nodeId);
+
+		if ( v != null ) {
+			return (VersionSeries)v.getObjectValue();
+		}
+
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("versionSeries").key(nodeId);
+		.viewName("versionSeries").key(nodeId);
 		List<CouchVersionSeries> l = connector.queryView(query, CouchVersionSeries.class);
-		
+
 		if(CollectionUtils.isEmpty(l)){
 			return null;
 		}else{
-			return l.get(0).convert();
+			VersionSeries st = l.get(0).convert();
+			versionSeriesCache.put(new Element(nodeId, st));
+			return st;
 		}
+
 	}
 
 	@Override
 	public Folder getFolder(String objectId) {
+		Cache folderCache = cacheManager.getCache("folderCache");
+		Element v = folderCache.get(objectId);
+
+		if ( v != null ) {
+			return (Folder)v.getObjectValue();
+		}
+		
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("folders").key(objectId);
+		.viewName("folders").key(objectId);
 		List<CouchFolder> list = connector.queryView(query, CouchFolder.class);
+
 		if(CollectionUtils.isEmpty(list)){
 			return null;
 		}else{
+			Folder folder = list.get(0).convert();
+			folderCache.put(new Element(objectId, folder));
 			return list.get(0).convert();
 		}
+
 	}
-	
+
 	@Override
 	public Relationship getRelationship(String objectId) {
 		CouchRelationship cr = connector.get(CouchRelationship.class, objectId);
@@ -236,9 +341,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Relationship> getRelationshipsBySource(String sourceId) {
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("relationshipsBySource").key(sourceId);
+		.viewName("relationshipsBySource").key(sourceId);
 		List<CouchRelationship> crs = connector.queryView(query, CouchRelationship.class);
-		
+
 		List<Relationship> result = new ArrayList<Relationship>();
 		if(crs != null && !crs.isEmpty()){
 			for(CouchRelationship cr : crs){
@@ -251,9 +356,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Relationship> getRelationshipsByTarget(String targetId) {
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("relationshipsByTarget").key(targetId);
+		.viewName("relationshipsByTarget").key(targetId);
 		List<CouchRelationship> crs = connector.queryView(query, CouchRelationship.class);
-		
+
 		List<Relationship> result = new ArrayList<Relationship>();
 		if(crs != null && !crs.isEmpty()){
 			for(CouchRelationship cr : crs){
@@ -266,7 +371,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Policy getPolicy(String objectId) {
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("policies").key(objectId);
+		.viewName("policies").key(objectId);
 		List<CouchPolicy> cps = connector.queryView(query, CouchPolicy.class);
 		if(!CollectionUtils.isEmpty(cps)){
 			return cps.get(0).convert();
@@ -278,7 +383,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Policy> getAppliedPolicies(String objectId) {
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("policiesByAppliedObject").key(objectId);
+		.viewName("policiesByAppliedObject").key(objectId);
 		List<CouchPolicy> cps = connector.queryView(query, CouchPolicy.class);
 		if(!CollectionUtils.isEmpty(cps)){
 			List<Policy> policies = new ArrayList<Policy>();
@@ -297,8 +402,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Document> getAllVersions(String versionSeriesId) {
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("documentsByVersionSeriesId").key(versionSeriesId);
-		
+		.viewName("documentsByVersionSeriesId").key(versionSeriesId);
+
 		List<CouchDocument> cds = connector.queryView(query, CouchDocument.class);
 		if(CollectionUtils.isEmpty(cds)) return null;
 		List<Document> list = new ArrayList<Document>();
@@ -306,9 +411,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			list.add(cd.convert());
 		}
 		return list;
-		
+
 	}
-	
+
 	/**
 	 * 
 	 */
@@ -316,9 +421,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public Document getDocumentOfLatestVersion(String versionSeriesId) {
 		if (versionSeriesId == null) return null;
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("latestVersions").key(versionSeriesId);
+		.viewName("latestVersions").key(versionSeriesId);
 		List<CouchDocument> list = connector.queryView(query, CouchDocument.class);
-		
+
 		if(list.size() == 1){
 			return list.get(0).convert();
 		}else if(list.size() > 1){
@@ -328,13 +433,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			return null;
 		}
 	}
-	
+
 	@Override
 	public Folder getFolderByPath(String path) {
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("foldersByPath").key(path);
+		.viewName("foldersByPath").key(path);
 		List<CouchFolder> l = connector.queryView(query, CouchFolder.class);
-		
+
 		if(CollectionUtils.isEmpty(l)) return null;
 		return l.get(0).convert();
 	}
@@ -345,9 +450,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Content> getLatestChildrenIndex(String parentId){
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("children").key(parentId);
+		.viewName("children").key(parentId);
 		List<CouchContent> list = connector.queryView(query, CouchContent.class);
-		
+
 		if(list != null && !list.isEmpty()){
 			List<Content> contents = new ArrayList<Content>();
 			for(CouchContent cc : list){
@@ -365,38 +470,49 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		json.put("parentId", parentId);
 		json.put("name", name);
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("childByName").key(json);
+		.viewName("childByName").key(json);
 		List<CouchContent> list = connector.queryView(query, CouchContent.class);
-		
+
 		if(CollectionUtils.isEmpty(list)) return null;
 		return list.get(0).convert();
 	}
 
 	@Override
 	public Document create(Document document) {
+		
 		CouchDocument cd = new CouchDocument(document);
 		connector.create(cd);
-		return cd.convert();
+		
+		Document d = cd.convert();
+		Cache documentCache = cacheManager.getCache("documentCache");
+		documentCache.put(new Element(d.getId(), d));
+		
+		return d;
 	}
 
 	@Override
 	public VersionSeries createVersionSeries(VersionSeries versionSeries) {
 		CouchVersionSeries cvs = new CouchVersionSeries(versionSeries);
 		connector.create(cvs);
-		return cvs.convert();
+		
+		VersionSeries vs = cvs.convert();
+		Cache versionSeriesCache = cacheManager.getCache("versionSeriesCache");
+		versionSeriesCache.put(new Element(vs.getId(), vs));
+		
+		return vs;
 	}
-	
+
 	@Override
 	public Change create(Change change) {
 		CouchChange cc = new CouchChange(change);
 		connector.create(cc);
 		return cc.convert();
 	}
-	
+
 	@Override
 	public Change updateChange(Change change) {
 		CouchChange cc = connector.get(CouchChange.class, change.getId());
-		
+
 		//Set the latest revision for avoid conflict
 		CouchChange update = new CouchChange(change);
 		update.setRevision(cc.getRevision());
@@ -407,9 +523,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Folder create(Folder folder) {
+		
 		CouchFolder cf = new CouchFolder(folder);
 		connector.create(cf);
-		return cf.convert();
+		
+		Folder f = cf.convert();
+		Cache folderCache = cacheManager.getCache("folderCache");
+		folderCache.put(new Element(f.getId(), f));
+		
+		return f;
 	}
 
 	@Override
@@ -418,7 +540,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		connector.create(cr);
 		return cr.convert();
 	}
-	
+
 	@Override
 	public Policy create(Policy policy) {
 		CouchPolicy cp = new CouchPolicy(policy);
@@ -429,12 +551,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public VersionSeries updateVersionSeries(VersionSeries versionSeries) {
 		CouchVersionSeries cvs = connector.get(CouchVersionSeries.class, versionSeries.getId());
-		
+
 		//Set the latest revision for avoid conflict
 		CouchVersionSeries update = new CouchVersionSeries(versionSeries);
 		update.setRevision(cvs.getRevision());
 
 		connector.update(update);
+		VersionSeries vs = update.convert();
+		Cache versionSeriesCache = cacheManager.getCache("versionSeriesCache");
+		versionSeriesCache.put(new Element(vs.getId(), vs));
+		
 		return update.convert();
 	}
 
@@ -444,15 +570,19 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Document updateDocument(Document document) {
 		CouchDocument cd = connector.get(CouchDocument.class, document.getId());
-		
+
 		//Set the latest revision for avoid conflict
 		CouchDocument update = new CouchDocument(document);
 		update.setRevision(cd.getRevision());
 
 		connector.update(update);
-		return update.convert();
+		Document d = update.convert();
+		Cache documentCache = cacheManager.getCache("documentCache");
+		documentCache.put(new Element(d.getId(), d));
+		
+		return d;
 	}
-	
+
 	/**
 	 * Should return an instance with updated value 
 	 */
@@ -464,6 +594,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		update.setRevision(cf.getRevision());
 
 		connector.update(update);
+		
+		Folder f = update.convert();
+		Cache folderCache = cacheManager.getCache("folderCache");
+		folderCache.put(new Element(f.getId(), f));
+		
 		return update.convert();
 	}
 
@@ -495,50 +630,91 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public void delete(String objectId) {
 		CouchNodeBase cnb = connector.get(CouchNodeBase.class, objectId);
-		connector.delete(cnb);
+		
+		//remove from cache
+		String id = cnb.getId();
+		Cache folderCache = cacheManager.getCache("folderCache");
+		Cache contentCache = cacheManager.getCache("contentCache");
+		Cache documentCache = cacheManager.getCache("documentCache");
+		Cache versionSeriesCache = cacheManager.getCache("versionSeriesCache");
+		Cache attachmentCache = cacheManager.getCache("attachmentCache");
+
+		contentCache.remove(id);
+		folderCache.remove(id);
+		
+		if ( cnb.isDocument()) {
+			Document d = this.getDocument(objectId);
+			//we can delete versionSeries or not?
+			versionSeriesCache.remove(d.getVersionSeriesId());
+			attachmentCache.remove(d.getAttachmentNodeId());
+			documentCache.remove(id);	
+		}
+		
+		if ( cnb.isAttachment()) {
+			attachmentCache.remove(id);
+		}
+		
+		connector.delete(cnb);	
 	}
 
 	public String createAttachment(AttachmentNode attachment, ContentStream cs){
 		CouchAttachmentNode ca = new CouchAttachmentNode(attachment);
 		connector.create(ca);
-		
+
 		AttachmentInputStream ais = new AttachmentInputStream(ATTACHMENT_NAME, cs.getStream(), cs.getMimeType(),cs.getLength());
 		connector.createAttachment(ca.getId(), ca.getRevision(), ais);
+				
 		return ca.getId();
 	}
-	
+
 	/**
 	 * 
 	 */
 	@Override
-	public AttachmentNode getAttachment(String attachmentId) {
-		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("attachments").key(attachmentId);
-		List<CouchAttachmentNode> list = connector.queryView(query, CouchAttachmentNode.class);
-		if(CollectionUtils.isEmpty(list)){
-			return null;
-		}else{
-			CouchAttachmentNode can = list.get(0);
-			
-			Attachment a = can.getAttachments().get(ATTACHMENT_NAME);
+	public AttachmentNode getAttachment(String attachmentId, boolean includeStream) {
 
-			AttachmentNode an = new AttachmentNode();
-			an.setId(attachmentId);
-			an.setMimeType(a.getContentType());
-			an.setLength(a.getContentLength());
-			an.setType(NodeType.ATTACHMENT.value());
+		Cache attachmentCache = cacheManager.getCache("attachmentCache");
+		Element v = attachmentCache.get(attachmentId);
 
+		CouchAttachmentNode can = null;
+		if ( v != null ) {
+			can = (CouchAttachmentNode)v.getObjectValue();
+		}
+		else {
+
+			ViewQuery query = new ViewQuery().designDocId("_design/_repo")
+			.viewName("attachments").key(attachmentId);
+			List<CouchAttachmentNode> list = connector.queryView(query, CouchAttachmentNode.class);
+
+			if(CollectionUtils.isEmpty(list)){
+				return null;
+			}else{
+				can = list.get(0);
+				attachmentCache.put(new Element(attachmentId, can));
+			}
+		}
+
+		Attachment a = can.getAttachments().get(ATTACHMENT_NAME);
+
+		AttachmentNode an = new AttachmentNode();
+		an.setId(attachmentId);
+		an.setMimeType(a.getContentType());
+		an.setLength(a.getContentLength());
+		an.setType(NodeType.ATTACHMENT.value());
+
+		if ( includeStream ) {
 			AttachmentInputStream ais = connector.getAttachment(attachmentId, ATTACHMENT_NAME); 
 			an.setInputStream(ais);
-		
-			return an;
 		}
+
+		return an;
+
 	}
 
 	@Override
 	public Rendition getRendition(String objectId) {
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("renditions").key(objectId);
+		.viewName("renditions").key(objectId);
 		List<CouchRendition> crnds = connector.queryView(query, CouchRendition.class);
 		if(!CollectionUtils.isEmpty(crnds)){
 			CouchRendition crnd = crnds.get(0);
@@ -557,9 +733,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				//TODO logging
 				//do nothing
 			}
-			
+
 			return rnd;
-			
+
 		}else{
 			return null;
 		}
@@ -570,11 +746,20 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	////////////////////////////////////////////////////////////////////////////////
 	@Override
 	public Change getLatestChange() {
+
+		Change change = this.requestDurationCache.getLatestChangeCache().get("lc");
+		if ( change != null ) {
+			return change;
+		}
+
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("latestChange");
+		.viewName("latestChange");
 		List<CouchChange> l = connector.queryView(query, CouchChange.class);
 		if (CollectionUtils.isEmpty(l)) return null;
-		return l.get(0).convert();
+		change = l.get(0).convert();
+		this.requestDurationCache.getLatestChangeCache().set("lc", change);
+
+		return change;
 	}
 
 	@Override
@@ -583,12 +768,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		if(startToken <= 0) startToken = 0;
 		if(latest == null || startToken > latest.getChangeToken()) return null;
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("changesByToken")
-				.descending(false)
-				.key(startToken)
-				.endKey(latest.getChangeToken());
+		.viewName("changesByToken")
+		.descending(false)
+		.key(startToken)
+		.endKey(latest.getChangeToken());
 		if(maxItems > 0) query.limit(maxItems);
-		
+
 		List<CouchChange> l = connector.queryView(query, CouchChange.class);
 		if (CollectionUtils.isEmpty(l)) return null;
 		List<Change> result = new ArrayList<Change>();
@@ -597,13 +782,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		}
 		return result;
 	}
-	
+
 	@Override
 	public Change getChangeEvent(String token) {
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("changesByToken").key(Integer.valueOf(token));
+		.viewName("changesByToken").key(Integer.valueOf(token));
 		List<CouchChange> l = connector.queryView(query, CouchChange.class);
-		
+
 		if(CollectionUtils.isEmpty(l)) return null;
 		return l.get(0).convert();
 	}
@@ -618,15 +803,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public List<Archive> getAllArchives(){
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo").viewName("all");
 		List<CouchArchive> list = archiveConnector.queryView(query, CouchArchive.class);
-		
+
 		List<Archive> archives = new ArrayList<Archive>();
 		for(CouchArchive ca : list){
 			archives.add(ca.convert());
 		}
-		
+
 		return archives;
 	}
-	
+
 	/**
 	 * 
 	 */
@@ -635,7 +820,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		CouchArchive ca = archiveConnector.get(CouchArchive.class, archiveId);
 		return ca.convert();
 	}
-	
+
 	@Override
 	public Archive getArchiveByOriginalId(String originalId) {
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo").viewName("all").key(originalId);
@@ -647,7 +832,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			return null;
 		}
 	}
-	
+
 	/**
 	 * 
 	 */
@@ -656,7 +841,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		CouchNodeBase cnb = connector.get(CouchNodeBase.class, archive.getOriginalId());
 		CouchArchive ca = new CouchArchive(archive);
 		ca.setLastRevision(cnb.getRevision());
-		
+
 		//Write to DB
 		try{
 			archiveConnector.create(ca);
@@ -664,7 +849,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			log.error(buildLogMsg(archive.getId(), "can't create an archive meta-data"), e);
 		}
 	}
-	
+
 	/**
 	 * 
 	 */
@@ -679,7 +864,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			return;
 		}
 	}
-	
+
 	/**
 	 *daoService������restore���������������archive���delete������������������������������������������archive���restore���delete���������������������������������nodeService��������� 
 	 */
@@ -699,7 +884,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			//TODO Do nothing?
 		}
 	}
-	
+
 	/**
 	 * 
 	 */
@@ -710,13 +895,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		CouchAttachmentNode can = connector.get(CouchAttachmentNode.class, archive.getOriginalId(), archive.getLastRevision());
 		can.setRevision(null);
 		AttachmentInputStream is =
-				connector.getAttachment(can.getId(), ATTACHMENT_NAME, archive.getLastRevision());
+			connector.getAttachment(can.getId(), ATTACHMENT_NAME, archive.getLastRevision());
 		connector.createAttachment(can.getId(), can.getRevision(), is);
 		CouchAttachmentNode restored = connector.get(CouchAttachmentNode.class, can.getId());
 		restored.setType(NodeType.ATTACHMENT.value());
 		connector.update(restored);
 	}
-	
+
 	/**
 	 * 
 	 */
@@ -725,9 +910,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		if(!archive.isDocument()) return null;
 		String attachmentId = archive.getAttachmentNodeId();
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("attachments").key(attachmentId);
+		.viewName("attachments").key(attachmentId);
 		List<CouchArchive> list = archiveConnector.queryView(query, CouchArchive.class);
-		
+
 		if(list != null && !list.isEmpty()){
 			return list.get(0).convert();
 		}else{
@@ -740,7 +925,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		CouchArchive ca = new CouchArchive(archive);
 		CouchNodeBase cnb = connector.get(CouchNodeBase.class, archive.getOriginalId());
 		ca.setLastRevision(cnb.getRevision());
-		
+
 		archiveConnector.create(ca);
 		return ca.convert();
 	}
@@ -751,9 +936,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Archive> getChildArchives(Archive archive){
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("children").key(archive.getOriginalId());
+		.viewName("children").key(archive.getOriginalId());
 		List<CouchArchive> list = archiveConnector.queryView(query, CouchArchive.class);
-		
+
 		if(list != null && !list.isEmpty()){
 			List<Archive> archives = new ArrayList<Archive>();
 			for(CouchArchive ca : list){
@@ -764,16 +949,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			return null;
 		}
 	}
-	
+
 	/**
 	 * 
 	 */
 	@Override
 	public List<Archive> getArchivesOfVersionSeries(String versionSeriesId){
 		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("versionSeries").key(versionSeriesId);
+		.viewName("versionSeries").key(versionSeriesId);
 		List<CouchArchive> list = archiveConnector.queryView(query, CouchArchive.class);
-		
+
 		if(list != null && !list.isEmpty()){
 			List<Archive> archives = new ArrayList<Archive>();
 			for(CouchArchive ca : list){
@@ -784,11 +969,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			return null;
 		}
 	}
-	
+
 	private String buildLogMsg(String objectId, String msg){
 		return "[objectId:" + objectId + "]" + msg;
 	}
-	
+
 	public void setConnector(CouchConnector connector) {
 		this.connector = connector.getConnection();
 	}
@@ -796,4 +981,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public void setArchiveConnector(CouchConnector archiveConnector) {
 		this.archiveConnector = archiveConnector.getConnection();
 	}
+
+	public void setRequestDurationCache(
+			RequestDurationCacheBean requestDurationCache) {
+		this.requestDurationCache = requestDurationCache;
+	}
+
+
+
 }

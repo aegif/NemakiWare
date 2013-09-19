@@ -38,11 +38,22 @@ import org.apache.chemistry.opencmis.commons.enums.SupportedPermissions;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AclCapabilitiesDataImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PermissionDefinitionDataImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PermissionMappingDataImpl;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.slf4j.LoggerFactory;
 
 class NemakiAclCapabilitiesDataImpl extends AclCapabilitiesDataImpl {
 
 	private static final long serialVersionUID = 8654484629504222836L;
+	private static final Log log = LogFactory.getLog(NemakiAclCapabilitiesDataImpl.class);
+	
+	private	List<PermissionMapping> permissionMappings;
+	private LinkedHashMap<String, PermissionMapping> permissionMappingsMap;
 
+	public NemakiAclCapabilitiesDataImpl() {
+		preparePermissionMaps();
+	}
+	
 	public void setup() {
 		setSupportedPermissions(SupportedPermissions.BOTH);
 		setAclPropagation(AclPropagation.PROPAGATE);
@@ -99,110 +110,117 @@ class NemakiAclCapabilitiesDataImpl extends AclCapabilitiesDataImpl {
 	// //////////////////////////////////////////////////////////////////////////
 	// Permission Mappings
 	// //////////////////////////////////////////////////////////////////////////
-	/**
-	 * Mapping permission group to elemental permission (repository static)
-	 */
-	// FIXME externalize configuration
-	public Map<String, PermissionMapping> getPermissionMap() {
-		List<PermissionMapping> list = new ArrayList<PermissionMapping>();
-
+	public void preparePermissionMaps() {
+		// FIXME externalize configuration
+		
+		permissionMappings = new ArrayList<PermissionMapping>();
+		
 		// Navigation Services
-		list.add(createPermissionMapping(
+		permissionMappings.add(createPermissionMapping(
 				PermissionMapping.CAN_GET_DESCENDENTS_FOLDER,
 				CmisPermission.READ));
-		list.add(createPermissionMapping(
+		permissionMappings.add(createPermissionMapping(
 				PermissionMapping.CAN_GET_CHILDREN_FOLDER, CmisPermission.READ));
-		list.add(createPermissionMapping(
+		permissionMappings.add(createPermissionMapping(
 				PermissionMapping.CAN_GET_FOLDER_PARENT_OBJECT,
 				CmisPermission.READ));
-		list.add(createPermissionMapping(
+		permissionMappings.add(createPermissionMapping(
 				PermissionMapping.CAN_GET_PARENTS_FOLDER, CmisPermission.READ));
 
 		// Object Services
-		list.add(createPermissionMapping(
+		permissionMappings.add(createPermissionMapping(
 				PermissionMapping.CAN_CREATE_DOCUMENT_FOLDER,
 				CmisPermission.READ));
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_CREATE_FOLDER_FOLDER, CmisPermission.READ));
+		permissionMappings.add(createPermissionMapping(
+				PermissionMapping.CAN_CREATE_FOLDER_FOLDER,
+				CmisPermission.READ));
 		/*
 		 * list.add(createPermissionMapping( "canCreatePolicy.Folder", //FIXME
-		 * OpenCMIS has no constant CmisPermission.READ));
+		 * OpenCMIS has no constant CMIS_READ_PERMISSION));
 		 */
-		list.add(createPermissionMapping(
+		permissionMappings.add(createPermissionMapping(
 				PermissionMapping.CAN_CREATE_RELATIONSHIP_SOURCE,
 				CmisPermission.READ));
-		list.add(createPermissionMapping(
+		permissionMappings.add(createPermissionMapping(
 				PermissionMapping.CAN_CREATE_RELATIONSHIP_TARGET,
 				CmisPermission.READ));
-		list.add(createPermissionMapping(
+		permissionMappings.add(createPermissionMapping(
 				PermissionMapping.CAN_GET_PROPERTIES_OBJECT,
 				CmisPermission.READ));
-		list.add(createPermissionMapping(
+		permissionMappings.add(createPermissionMapping(
 				PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT,
 				CmisPermission.WRITE));
-		list.add(createPermissionMapping(PermissionMapping.CAN_MOVE_OBJECT,
+		permissionMappings.add(createPermissionMapping(PermissionMapping.CAN_MOVE_OBJECT,
 				CmisPermission.WRITE));
-		list.add(createPermissionMapping(PermissionMapping.CAN_MOVE_TARGET,
+		permissionMappings.add(createPermissionMapping(PermissionMapping.CAN_MOVE_TARGET,
 				CmisPermission.WRITE));
-		list.add(createPermissionMapping(PermissionMapping.CAN_MOVE_SOURCE,
+		permissionMappings.add(createPermissionMapping(PermissionMapping.CAN_MOVE_SOURCE,
 				CmisPermission.READ));
-		list.add(createPermissionMapping(PermissionMapping.CAN_DELETE_OBJECT,
+		permissionMappings.add(createPermissionMapping(PermissionMapping.CAN_DELETE_OBJECT,
 				CmisPermission.ALL));
-		list.add(createPermissionMapping(
+		permissionMappings.add(createPermissionMapping(
 				PermissionMapping.CAN_VIEW_CONTENT_OBJECT, CmisPermission.READ));
-		list.add(createPermissionMapping(
+		permissionMappings.add(createPermissionMapping(
 				PermissionMapping.CAN_SET_CONTENT_DOCUMENT,
 				CmisPermission.WRITE));
-		list.add(createPermissionMapping(
+		permissionMappings.add(createPermissionMapping(
 				PermissionMapping.CAN_DELETE_CONTENT_DOCUMENT,
 				CmisPermission.WRITE));
-		list.add(createPermissionMapping(
+		permissionMappings.add(createPermissionMapping(
 				PermissionMapping.CAN_DELETE_TREE_FOLDER, CmisPermission.WRITE));
 
 		// Filing Services
 		// Nemaki doesn't support Filing Services
 
 		// Versioning Services
-		list.add(createPermissionMapping(
+		permissionMappings.add(createPermissionMapping(
 				PermissionMapping.CAN_CHECKOUT_DOCUMENT, CmisPermission.WRITE));
-		list.add(createPermissionMapping(
+		permissionMappings.add(createPermissionMapping(
 				PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT,
 				CmisPermission.WRITE));
-		list.add(createPermissionMapping(
+		permissionMappings.add(createPermissionMapping(
 				PermissionMapping.CAN_CHECKIN_DOCUMENT, CmisPermission.WRITE));
-		list.add(createPermissionMapping(
+		permissionMappings.add(createPermissionMapping(
 				PermissionMapping.CAN_GET_ALL_VERSIONS_VERSION_SERIES,
 				CmisPermission.READ));
 
 		// Relationship Services
-		list.add(createPermissionMapping(
+		permissionMappings.add(createPermissionMapping(
 				PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT,
 				CmisPermission.READ));
 
 		// Policy Services
-		list.add(createPermissionMapping(
+		permissionMappings.add(createPermissionMapping(
 				PermissionMapping.CAN_ADD_POLICY_OBJECT, CmisPermission.READ));
-		list.add(createPermissionMapping(
+		permissionMappings.add(createPermissionMapping(
 				PermissionMapping.CAN_ADD_POLICY_POLICY, CmisPermission.READ));
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_REMOVE_POLICY_OBJECT, CmisPermission.READ));
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_REMOVE_POLICY_POLICY, CmisPermission.READ));
-		list.add(createPermissionMapping(
+		permissionMappings.add(createPermissionMapping(
+				PermissionMapping.CAN_REMOVE_POLICY_OBJECT,
+				CmisPermission.READ));
+		permissionMappings.add(createPermissionMapping(
+				PermissionMapping.CAN_REMOVE_POLICY_POLICY,
+				CmisPermission.READ));
+		permissionMappings.add(createPermissionMapping(
 				PermissionMapping.CAN_GET_APPLIED_POLICIES_OBJECT,
 				CmisPermission.READ));
 
 		// ACL Services
-		list.add(createPermissionMapping(PermissionMapping.CAN_GET_ACL_OBJECT,
+		permissionMappings.add(createPermissionMapping(PermissionMapping.CAN_GET_ACL_OBJECT,
 				CmisPermission.READ));
-		list.add(createPermissionMapping(
+		permissionMappings.add(createPermissionMapping(
 				PermissionMapping.CAN_APPLY_ACL_OBJECT, CmisPermission.WRITE));
-
-		Map<String, PermissionMapping> map = new LinkedHashMap<String, PermissionMapping>();
-		for (PermissionMapping pm : list) {
-			map.put(pm.getKey(), pm);
+	
+		permissionMappingsMap = new LinkedHashMap<String, PermissionMapping>();
+		for (PermissionMapping pm : permissionMappings) {
+			permissionMappingsMap.put(pm.getKey(), pm);
 		}
-		return map;
+	}
+	/**
+	 * Mapping permission group to elemental permission (repository static)
+	 */
+	// FIXME externalize configuration
+	public Map<String, PermissionMapping> getPermissionMap() {
+		return permissionMappingsMap;
 	}
 
 	/**
