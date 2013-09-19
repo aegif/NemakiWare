@@ -1,13 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <beans xmlns="http://www.springframework.org/schema/beans"
-	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:aop="http://www.springframework.org/schema/aop"
-	xsi:schemaLocation="http://www.springframework.org/schema/beans
-         http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
-         http://www.springframework.org/schema/aop
-         http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:aop="http://www.springframework.org/schema/aop"
+xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
 
-	<bean id="propertyConfigurer"
-		class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+	<bean id="propertyConfigurer" class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
 		<property name="locations">
 			<list>
 				<value>classpath:nemakiware.properties</value>
@@ -29,7 +25,7 @@
 	<!-- Repository Basic Beans -->
 
 	<bean id="connector" class="jp.aegif.nemaki.service.db.CouchConnector"
-		init-method="init">
+	init-method="init">
 		<property name="repositoryId">
 			<value>${nemakiware.repositories}</value>
 		</property>
@@ -42,7 +38,7 @@
 	</bean>
 
 	<bean id="archiveConnector" class="jp.aegif.nemaki.service.db.CouchConnector"
-		init-method="init">
+	init-method="init">
 		<property name="repositoryId">
 			<value>${nemakiware.repository.archive}</value>
 		</property>
@@ -54,8 +50,7 @@
 		</property>
 	</bean>
 
-	<bean id="typeManager" class="jp.aegif.nemaki.repository.TypeManager"
-		scope="singleton">
+	<bean id="typeManager" class="jp.aegif.nemaki.repository.TypeManager" scope="singleton">
 		<constructor-arg>
 			<ref bean="contentDaoService" />
 		</constructor-arg>
@@ -74,7 +69,7 @@
 	</bean>
 
 	<bean id="RepositoryInfo" class="jp.aegif.nemaki.repository.NemakiRepositoryInfoImpl"
-		scope="singleton" init-method="setup">
+	scope="singleton" init-method="setup">
 		<property name="id">
 			<value>${nemakiware.repository.main}</value>
 		</property>
@@ -85,7 +80,7 @@
 			<value>Nemaki, Lightweight CMIS Server</value>
 		</property>
 		<property name="cmisVersionSupported">
-			<value>1.0</value>
+			<value>1.1</value>
 		</property>
 		<property name="capabilities">
 			<ref bean="capabilities"></ref>
@@ -122,14 +117,9 @@
 		</property>
 	</bean>
 
-	<bean id="capabilities" class="jp.aegif.nemaki.repository.NemakiCapabilitiesImpl"
-		init-method="setup">
-	</bean>
+	<bean id="capabilities" class="jp.aegif.nemaki.repository.NemakiCapabilitiesImpl" init-method="setup"></bean>
 
-	<bean id="aclCapabilities"
-		class="jp.aegif.nemaki.repository.NemakiAclCapabilitiesDataImpl"
-		init-method="setup">
-	</bean>
+	<bean id="aclCapabilities" class="jp.aegif.nemaki.repository.NemakiAclCapabilitiesDataImpl" init-method="setup"></bean>
 
 	<bean id="nemakiRepository" class="jp.aegif.nemaki.repository.NemakiRepository">
 		<property name="aclService">
@@ -160,8 +150,6 @@
 
 
 	<!-- Service Beans -->
-
-
 	<bean id="aclService" class="jp.aegif.nemaki.service.cmis.impl.AclServiceImpl">
 		<property name="contentService">
 			<ref bean="ContentService"></ref>
@@ -175,8 +163,7 @@
 
 	</bean>
 
-	<bean id="authenticationService"
-		class="jp.aegif.nemaki.service.cmis.impl.AuthenticationServiceImpl">
+	<bean id="authenticationService" class="jp.aegif.nemaki.service.cmis.impl.AuthenticationServiceImpl">
 		<property name="principalService">
 			<ref bean="PrincipalService"></ref>
 		</property>
@@ -197,8 +184,7 @@
 	<bean id="requestDurationCache" class="jp.aegif.nemaki.repository.RequestDurationCacheBean">
 	</bean>
 
-	<bean id="principalDaoService"
-		class="jp.aegif.nemaki.service.dao.impl.PrincipalDaoServiceImpl">
+	<bean id="principalDaoService" class="jp.aegif.nemaki.service.dao.impl.PrincipalDaoServiceImpl">
 		<property name="connector">
 			<ref bean="connector"></ref>
 		</property>
@@ -343,8 +329,7 @@
 		</property>
 	</bean>
 
-	<bean id="relationshipService"
-		class="jp.aegif.nemaki.service.cmis.impl.RelationshipServiceImpl">
+	<bean id="relationshipService" class="jp.aegif.nemaki.service.cmis.impl.RelationshipServiceImpl">
 		<property name="typeManager">
 			<ref bean="typeManager"></ref>
 		</property>
