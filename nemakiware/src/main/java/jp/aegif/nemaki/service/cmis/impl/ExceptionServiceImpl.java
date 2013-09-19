@@ -576,7 +576,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 				//Do nothing
 				//TODO logging? 
 			} else {
-				if (String.valueOf(latestOfContent).equals(changeToken))
+				if (!String.valueOf(latestOfContent).equals(changeToken.getValue()))
 					throw new CmisUpdateConflictException(
 							"Cannot update because the changeToken conflicts",
 							HTTP_STATUS_CODE_409);
