@@ -23,6 +23,7 @@
 # ******************************************************************************
 require 'rubygems'
 require 'active_cmis'
+require 'active_cmis_custom'
 
 class ApplicationController < ActionController::Base
   protect_from_forgery
