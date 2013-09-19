@@ -412,6 +412,10 @@ module ActiveCMIS
   class Secondary < ActiveCMIS::Object    
   end
 
+  #Introuce Item Type Class
+  class Item < ActiveCMIS::Object
+  end
+
   class Server
     def clear_repositories
       @cached_repositories = {}
