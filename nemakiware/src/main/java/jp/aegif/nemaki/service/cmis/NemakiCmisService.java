@@ -384,7 +384,7 @@ public class NemakiCmisService extends AbstractCmisService {
 			Boolean overwriteFlag, Holder<String> changeToken,
 			ContentStream contentStream, ExtensionsData extension) {
 		getRepository(repositoryId).setContentStream(getCallContext(),
-				objectId, overwriteFlag, contentStream);
+				objectId, overwriteFlag, changeToken, contentStream);
 	}
 
 	/**

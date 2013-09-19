@@ -88,10 +88,10 @@ public class NemakiRepository {
 
 	public void setContentStream(CallContext callContext,
 			Holder<String> objectId, boolean overwriteFlag,
-			ContentStream contentStream) {
+			Holder<String> changeToken, ContentStream contentStream) {
 
 		objectService.setContentStream(callContext, objectId, overwriteFlag,
-				contentStream);
+				contentStream, changeToken);
 	}
 	
 	public void deleteContentStream(CallContext callContext,
