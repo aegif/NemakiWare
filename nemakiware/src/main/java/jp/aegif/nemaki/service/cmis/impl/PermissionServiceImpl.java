@@ -40,6 +40,7 @@ import jp.aegif.nemaki.util.YamlManager;
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
+import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
 import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PermissionDefinitionDataImpl;
@@ -60,6 +61,7 @@ public class PermissionServiceImpl implements PermissionService {
 	private PrincipalService principalService;
 	private ContentService contentService;
 	private TypeManager typeManager;
+	private RepositoryInfo repositoryInfo;
 
 	// //////////////////////////////////////////////////////////////////////////
 	// Permission Definitions
@@ -110,121 +112,8 @@ public class PermissionServiceImpl implements PermissionService {
 	/**
 	 * Mapping permission group to elemental permission (repository static)
 	 */
-	// FIXME externalize configuration
 	public Map<String, PermissionMapping> getPermissionMap() {
-		List<PermissionMapping> list = new ArrayList<PermissionMapping>();
-
-		// Navigation Services
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_GET_DESCENDENTS_FOLDER,
-				CMIS_READ_PERMISSION));
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_GET_CHILDREN_FOLDER, CMIS_READ_PERMISSION));
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_GET_FOLDER_PARENT_OBJECT,
-				CMIS_READ_PERMISSION));
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_GET_PARENTS_FOLDER, CMIS_READ_PERMISSION));
-
-		// Object Services
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_CREATE_DOCUMENT_FOLDER,
-				CMIS_READ_PERMISSION));
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_CREATE_FOLDER_FOLDER,
-				CMIS_READ_PERMISSION));
-		/*
-		 * list.add(createPermissionMapping( "canCreatePolicy.Folder", //FIXME
-		 * OpenCMIS has no constant CMIS_READ_PERMISSION));
-		 */
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_CREATE_RELATIONSHIP_SOURCE,
-				CMIS_READ_PERMISSION));
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_CREATE_RELATIONSHIP_TARGET,
-				CMIS_READ_PERMISSION));
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_GET_PROPERTIES_OBJECT,
-				CMIS_READ_PERMISSION));
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT,
-				CMIS_WRITE_PERMISSION));
-		list.add(createPermissionMapping(PermissionMapping.CAN_MOVE_OBJECT,
-				CMIS_WRITE_PERMISSION));
-		list.add(createPermissionMapping(PermissionMapping.CAN_MOVE_TARGET,
-				CMIS_WRITE_PERMISSION));
-		list.add(createPermissionMapping(PermissionMapping.CAN_MOVE_SOURCE,
-				CMIS_READ_PERMISSION));
-		list.add(createPermissionMapping(PermissionMapping.CAN_DELETE_OBJECT,
-				CMIS_ALL_PERMISSION));
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_VIEW_CONTENT_OBJECT, CMIS_READ_PERMISSION));
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_SET_CONTENT_DOCUMENT,
-				CMIS_WRITE_PERMISSION));
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_DELETE_CONTENT_DOCUMENT,
-				CMIS_WRITE_PERMISSION));
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_DELETE_TREE_FOLDER, CMIS_WRITE_PERMISSION));
-
-		// Filing Services
-		// Nemaki doesn't support Filing Services
-
-		// Versioning Services
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_CHECKOUT_DOCUMENT, CMIS_WRITE_PERMISSION));
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT,
-				CMIS_WRITE_PERMISSION));
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_CHECKIN_DOCUMENT, CMIS_WRITE_PERMISSION));
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_GET_ALL_VERSIONS_VERSION_SERIES,
-				CMIS_READ_PERMISSION));
-
-		// Relationship Services
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT,
-				CMIS_READ_PERMISSION));
-
-		// Policy Services
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_ADD_POLICY_OBJECT, CMIS_READ_PERMISSION));
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_ADD_POLICY_POLICY, CMIS_READ_PERMISSION));
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_REMOVE_POLICY_OBJECT,
-				CMIS_READ_PERMISSION));
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_REMOVE_POLICY_POLICY,
-				CMIS_READ_PERMISSION));
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_GET_APPLIED_POLICIES_OBJECT,
-				CMIS_READ_PERMISSION));
-
-		// ACL Services
-		list.add(createPermissionMapping(PermissionMapping.CAN_GET_ACL_OBJECT,
-				CMIS_READ_PERMISSION));
-		list.add(createPermissionMapping(
-				PermissionMapping.CAN_APPLY_ACL_OBJECT, CMIS_WRITE_PERMISSION));
-
-		Map<String, PermissionMapping> map = new LinkedHashMap<String, PermissionMapping>();
-		for (PermissionMapping pm : list) {
-			map.put(pm.getKey(), pm);
-		}
-		return map;
-	}
-
-	/**
-	 * Create a new permission mapping.
-	 */
-	private PermissionMapping createPermissionMapping(String key,
-			String permission) {
-		PermissionMappingDataImpl pm = new PermissionMappingDataImpl();
-		pm.setKey(key);
-		pm.setPermissions(Collections.singletonList(permission));
-		return pm;
+		return this.repositoryInfo.getAclCapabilities().getPermissionMapping();
 	}
 
 	// //////////////////////////////////////////////////////////////////////////
@@ -565,4 +454,9 @@ public class PermissionServiceImpl implements PermissionService {
 	public void setTypeManager(TypeManager typeManager) {
 		this.typeManager = typeManager;
 	}
+
+	public void setRepositoryInfo(RepositoryInfo repositoryInfo) {
+		this.repositoryInfo = repositoryInfo;
+	}
+	
 }

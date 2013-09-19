@@ -1205,7 +1205,14 @@ public class ContentServiceImpl implements ContentService {
 	 * Get an attachment.
 	 */
 	public AttachmentNode getAttachment(String attachmentId) {
-		return contentDaoService.getAttachment(attachmentId);
+		return contentDaoService.getAttachment(attachmentId, true);
+	}
+	
+	/**
+	 * Get an attachment ref(without stream)
+	 */
+	public AttachmentNode getAttachmentRef(String attachmentId) {
+		return contentDaoService.getAttachment(attachmentId, false);
 	}
 
 	/**

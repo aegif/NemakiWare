@@ -48,6 +48,7 @@ import jp.aegif.nemaki.service.cmis.CompileObjectService;
 import jp.aegif.nemaki.service.cmis.PermissionService;
 import jp.aegif.nemaki.service.cmis.RepositoryService;
 import jp.aegif.nemaki.service.node.ContentService;
+import jp.aegif.nemaki.util.DebugInterceptor;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Acl;
@@ -77,8 +78,12 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl
 import org.apache.chemistry.opencmis.commons.impl.server.ObjectInfoImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 public class CompileObjectServiceImpl implements CompileObjectService {
+	
+	private static final Log log = LogFactory.getLog(CompileObjectServiceImpl.class);
 
 	private NemakiRepositoryInfoImpl repositoryInfo;
 	private RepositoryService repositoryService;
@@ -284,7 +289,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		for (Entry<String, PermissionMapping> mappingEntry : permissionMap
 				.entrySet()) {
 			String key = mappingEntry.getValue().getKey();
-
+						
 			boolean allowable = permissionService.checkPermission(callContext,
 					mappingEntry.getKey(), acl, baseType, content);
 
@@ -396,17 +401,11 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		setCmisBaseProperties(properties, typeId, filter, document);
 		setCmisDocumentProperties(properties, typeId, filter, document);
 
-		AttachmentNode attachment = contentService.getAttachment(document
+		AttachmentNode attachment = contentService.getAttachmentRef(document
 				.getAttachmentNodeId());
 		if (attachment != null) {
 			setCmisAttachmentProperties(properties, typeId, filter, attachment,
 					document);
-
-			try {
-				attachment.getInputStream().close();
-			} catch (IOException e) {
-				e.printStackTrace();
-			}
 
 		} else {
 			// TODO Logging
@@ -494,7 +493,6 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		addProperty(properties, typeId, filter, PropertyIds.PATH,
 				contentService.getPath(folder));
 
-		// TODO Put checkAddProperty together
 		if (checkAddProperty(properties, typeId, filter,
 				PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS)) {
 			List<String> values = new ArrayList<String>();
@@ -626,6 +624,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		if (type == null)
 			throw new IllegalArgumentException("Unknown type: " + type.getId());
 
+		//TODO :performance
 		if (!type.getPropertyDefinitions().containsKey(id))
 			throw new IllegalArgumentException("Unknown property: " + id);
 
