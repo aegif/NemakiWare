@@ -190,6 +190,7 @@ module ActiveCMIS
         hash
       end
     end
+    cache :attributes
 
     #aegif-
     def secondary_ids
@@ -384,12 +385,14 @@ module ActiveCMIS
 
     #aegif-
     # @private
-    def from_parameters_by_path(repository, parameters)
-      url = repository.object_by_path_url(parameters)
-      data = repository.conn.get_atom_entry(url)
-      from_atom_entry(repository, data, parameters)
+    class << self
+      def from_parameters_by_path(repository, parameters)
+        url = repository.object_by_path_url(parameters)
+        data = repository.conn.get_atom_entry(url)
+        from_atom_entry(repository, data, parameters)
+      end
+      #-aegif    
     end
-    #-aegif    
     
   end
 
