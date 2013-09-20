@@ -30,6 +30,7 @@ class NemakiRepository
     @auth_info = auth_info_param
     @server = ActiveCMIS::Server.new(CONFIG['repository']['server_url'], logger).authenticate(:basic, @auth_info[:id], @auth_info[:password])
     @repo = @server.repository(CONFIG['repository']['repository_id'], [:basic, @auth_info[:id], @auth_info[:password] ])
+    @logger = logger
   end
 
   def reset_repository
@@ -405,7 +406,8 @@ class NemakiRepository
   #
   def create(node_info, parent_id, cmis_type)
     wanted_type = @repo.type_by_id(cmis_type)
-    node = wanted_type.new("cmis:name" => node_info[:name])
+    node = wanted_type.new({"cmis:name" => node_info[:name]})
+
     if cmis_type == 'cmis:document'
       file = node_info[:file]
       node.set_content_stream({:file => file.original_filename, :data => file.read, :mime_type => file.content_type})
