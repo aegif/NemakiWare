@@ -352,6 +352,7 @@ class NodesController < ApplicationController
     wrap_by_log :explore
     wrap_by_log :search
     wrap_by_log :destroy
+    wrap_by_log :edit_permission
     wrap_by_log :update_permission
 
   end
