@@ -55,4 +55,10 @@ class SitesController < ApplicationController
       @can_create_site = sites_root.allowable_actions['CreateFolder'] && sites_root.allowable_actions['ApplyACL']
     end 
   end
+
+  if logger.level == Logger::DEBUG
+    wrap_by_log :index
+    wrap_by_log :create
+    wrap_by_log :check_site_create_permission
+  end
 end

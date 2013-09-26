@@ -30,7 +30,9 @@ import org.apache.chemistry.opencmis.commons.impl.server.AbstractServiceFactory;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.server.CmisService;
 import org.apache.chemistry.opencmis.server.support.CmisServiceWrapper;
+import org.springframework.beans.BeansException;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationContextAware;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 
 /**
@@ -46,6 +48,12 @@ public class NemakiCmisServiceFactory extends AbstractServiceFactory {
 			.valueOf(200);
 	private static final BigInteger DEFAULT_DEPTH_OBJECTS = BigInteger
 			.valueOf(10);
+	
+	private NemakiRepository nemakiRepository;	
+
+	public void setNemakiRepository(NemakiRepository nemakiRepository) {
+		this.nemakiRepository = nemakiRepository;
+	}
 
 	/**
 	 * Repository reference to all repositories.
@@ -63,10 +71,11 @@ public class NemakiCmisServiceFactory extends AbstractServiceFactory {
 	@Override
 	public void init(Map<String, String> parameters) {
 		repositoryMap = new RepositoryMap();
-		ApplicationContext context = new ClassPathXmlApplicationContext(
-				"applicationContext.xml");
-		NemakiRepository nemakiRepository = context.getBean("nemakiRepository",
-				NemakiRepository.class);
+//		ApplicationContext context = new ClassPathXmlApplicationContext(
+//				"applicationContext.xml");
+//		
+//		NemakiRepository nemakiRepository = context.getBean("nemakiRepository",
+//				NemakiRepository.class);
 		repositoryMap.addRepository(nemakiRepository);
 	}
 

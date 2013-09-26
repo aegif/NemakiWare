@@ -48,13 +48,18 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.JSONValue;
 import org.json.simple.parser.ParseException;
+import org.springframework.beans.BeansException;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationContextAware;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
 
 
 @Component
 @Path("/db")
-public class RepositoryResource extends ResourceBase {
+public class RepositoryResource extends ResourceBase implements ApplicationContextAware {
+	
+	private ApplicationContext context;
 	
 	private String host;
 	
@@ -403,5 +408,11 @@ public void createDesignDoc(String dbId, String docName) throws Exception{
 	//Setter
 	public void setHost(String host) {
 		this.host = host;
+	}
+
+	@Override
+	public void setApplicationContext(ApplicationContext context)
+			throws BeansException {
+		this.context = context; 
 	}
 }
