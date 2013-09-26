@@ -69,6 +69,27 @@ module ActiveCMIS
       end
     end
 
+    #########################
+    #### added method #######
+    #########################    
+
+    attr_reader :data
+    def set_extension(namespace, name, attr={}, value)
+      root_ext = ActiveCMIS::Extension.new
+      root_ext.name = name
+      root_ext.attributes = attr
+      root_ext.value = value
+      @extensions << root_ext
+    end
+
+    #ActiveCMIS converts CMIS ANYONE user to :world,
+    #but it's not convenient when applying ACL,
+    #and more, it could be cause principal conflicts in the server.
+    #So, Nemaki decided to invalidate the method.
+    def convert_principal(principal)
+      principal
+    end
+
   end
 
   class Document < ActiveCMIS::Object
@@ -92,6 +113,7 @@ module ActiveCMIS
 
   class Folder < ActiveCMIS::Object
     def items(option={})
+      conn.logger.debug "items is called"
       item_feed = Internal::Utils.extract_links(data, 'down', 'application/atom+xml','type' => 'feed')
       #aegif-
       link = Internal::Utils.append_parameters(item_feed.first, option)
@@ -109,9 +131,14 @@ module ActiveCMIS
   class PagedCollection < ActiveCMIS::Collection
     def length
       receive_page
-      @length
+      @elements.length
     end
     cache :length
+
+    def sanitize_index(index)
+      index < 0 ? length + index : index
+    end
+
   end
 
   class Object
@@ -403,6 +430,31 @@ module ActiveCMIS
       end
       #-aegif    
     end
+
+    #########################
+    #### added method #######
+    #########################
+    def parse_atom_data(query, namespace)
+      data = @data
+      return data.xpath(query, namespace)
+    end
+
+    def resource_url_with_id(resource_name)
+      endpoint = @repository.server.endpoint.to_s
+      repository_id = @repository.key.to_s
+      url = endpoint + repository_id + "/" + resource_name + "?id=" + @attributes['cmis:objectId']
+    end
+
+    def delete_descendants
+      resource_name = "descendants"
+      url = resource_url_with_id(resource_name)
+      conn.delete(url)
+    end
+
+    def build_update_atom
+      atom = render_atom_entry
+      return atom
+    end
     
   end
 
@@ -496,6 +548,91 @@ module ActiveCMIS
         raise ActiveCMIS::Error.new("ActiveCMIS only works with CMIS 1.1, requested version was #{version}")
       end
     end
+  end
+
+  #####################################################################
+  ### added classes                                                 ###
+  #####################################################################
+  class QueryResult
+    # @return [Hash{String => Boolean,String}] A hash containing all actions allowed on this object for the current user
+    def allowable_actions
+      actions = {}
+      _allowable_actions.children.map do |node|
+        actions[node.name.sub("can", "")] = case t = node.text
+        when "true", "1"; true
+        when "false", "0"; false
+        else t
+        end
+      end
+      actions
+    end
+
+    def _allowable_actions
+      if actions = @atom_entry.xpath('cra:object/c:allowableActions', NS::COMBINED).first
+      actions
+      else
+        links = @atom_entry.xpath("at:link[@rel = '#{Rel[repository.cmis_version][:allowableactions]}']/@href", NS::COMBINED)
+        if link = links.first
+          conn.get_xml(link.text)
+        else
+          nil
+        end
+      end
+    end
+  end
+
+  #####################################################################
+  class Extension
+    attr_accessor :name, :namespace, :attributes, :children, :value
+    def initialize
+      @attributes = {}
+      @children = []
+    end
+
+    #TODO validation: children XOR value
+
+    def wrap_par(str)
+      return "{" + str + "}"
+    end
+
+    def build_str(extension)
+      children = extension.children
+      value = extension.value
+      attributes = extension.attributes
+
+      if attributes.empty?
+        attr = ""
+      else
+        attr = "(" + attributes.to_s + ")"
+      end
+
+      str = "xml." + extension.name  + attr + " "
+      if !children.empty?
+        tmp = ""
+        children.each do |child|
+          tmp += build_str(child) + " \n "
+        end
+        tmp = wrap_par(tmp)
+      str += tmp
+      elsif !value.nil?
+        str += "{xml.text " + "'" + value.to_s + "'}"
+      end
+
+      return str
+    end
+
+    def to_xml
+      str = build_str(self)
+      builder = Nokogiri::XML::Builder.new { |xml|
+        eval(str)
+      }
+      return builder.to_xml
+    end
+  end
+
+  #######
+  class Repository
+    attr_accessor :data
   end
 
 end
