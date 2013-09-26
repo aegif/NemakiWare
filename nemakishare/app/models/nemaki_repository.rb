@@ -64,6 +64,15 @@ class NemakiRepository
     {:cmis => 'cmis:versionLabel', :node => :version_label}
   ]
 
+  # Extract or get CMIS Object from node
+  def get_cmis_object(node)
+    if node.inner_cmis_obj != nil then
+      node.inner_cmis_obj
+    else
+      @repo.object_by_id(node.id)
+    end
+  end
+
   #
   #Convert to a Node instance
   #
@@ -75,6 +84,7 @@ class NemakiRepository
     node.aspects = get_aspects(object)
     #Set allowable actions
     node.allowable_actions = object.allowable_actions
+    node.inner_cmis_obj = object
 
     return node
   end
@@ -392,7 +402,8 @@ class NemakiRepository
   #Get all version nodes of a node
   #
   def get_all_versions(node)
-    obj = @repo.object_by_id(node.id)
+    #obj = @repo.object_by_id(node.id)
+    obj = get_cmis_object(node)
     if node.is_document?
       all_versions = obj.versions
       #TODO Error Handling: skip an error. When an error occurs, all_versions isn't nil
@@ -623,7 +634,8 @@ class NemakiRepository
 
   def get_parent(node)
     if !node.is_root?
-      obj = @repo.object_by_id(node.id)
+      #obj = @repo.object_by_id(node.id)
+      obj = get_cmis_object(node)  
       parent_obj = obj.parent_folders.first
       attr = extract_attr(parent_obj.attributes, nil)
       parent = Node.new(attr)
@@ -632,7 +644,8 @@ class NemakiRepository
 
   def get_children(parent_node, maxItems=nil, skipCount=0)
     if parent_node.is_folder?
-      obj =  @repo.object_by_id(parent_node.id)
+      #obj =  @repo.object_by_id(parent_node.id)
+      obj = get_cmis_object(parent_node)  
       items = obj.items({"includeAllowableActions" => true, "maxItems" => maxItems, "skipCount" => skipCount})
       @children = cast_from_cmis_collection(items)
     return @children

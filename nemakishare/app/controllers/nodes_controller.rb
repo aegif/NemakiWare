@@ -348,6 +348,7 @@ class NodesController < ApplicationController
     wrap_by_log :update
     wrap_by_log :upload
     wrap_by_log :show
+    wrap_by_log :edit
     wrap_by_log :download
     wrap_by_log :explore
     wrap_by_log :search

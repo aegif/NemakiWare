@@ -99,9 +99,19 @@ module ActiveCMIS
       raise "No child feed link for folder" if item_feed.empty?
       #aegif-
       #Collection.new(repository, item_feed.first)
-      Collection.new(repository, link)
+      #Collection.new(repository, link)
+      PagedCollection.new(repository, link)
       #-aegif
     end    
+  end
+
+  # Page scoped Collection
+  class PagedCollection < ActiveCMIS::Collection
+    def length
+      receive_page
+      @length
+    end
+    cache :length
   end
 
   class Object
