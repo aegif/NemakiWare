@@ -27,6 +27,8 @@ class Node  < ActiveModelBase
   
   validates_presence_of :name
   validates_length_of :name, :minimum => 1
+
+  attr_accessor :inner_cmis_obj
   
   def to_hash
     hash = Hash.new

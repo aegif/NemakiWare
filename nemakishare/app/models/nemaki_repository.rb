@@ -26,10 +26,11 @@ require 'nokogiri'
 require 'rest_client'
 
 class NemakiRepository
-  def initialize(auth_info_param=nil)
+  def initialize(auth_info_param=nil, logger=nil)
     @auth_info = auth_info_param
-    @server = ActiveCMIS::Server.new(CONFIG['repository']['server_url']).authenticate(:basic, @auth_info[:id], @auth_info[:password])
-    @repo = @server.repository(CONFIG['repository']['repository_id'])
+    @server = ActiveCMIS::Server.new(CONFIG['repository']['server_url'], logger).authenticate(:basic, @auth_info[:id], @auth_info[:password])
+    @repo = @server.repository(CONFIG['repository']['repository_id'], [:basic, @auth_info[:id], @auth_info[:password] ])
+    @logger = logger
   end
 
   def reset_repository
@@ -63,6 +64,15 @@ class NemakiRepository
     {:cmis => 'cmis:versionLabel', :node => :version_label}
   ]
 
+  # Extract or get CMIS Object from node
+  def get_cmis_object(node)
+    if node.inner_cmis_obj != nil then
+      node.inner_cmis_obj
+    else
+      @repo.object_by_id(node.id)
+    end
+  end
+
   #
   #Convert to a Node instance
   #
@@ -74,6 +84,7 @@ class NemakiRepository
     node.aspects = get_aspects(object)
     #Set allowable actions
     node.allowable_actions = object.allowable_actions
+    node.inner_cmis_obj = object
 
     return node
   end
@@ -124,7 +135,8 @@ class NemakiRepository
     nodes = []
     attr = {}
 
-    cmis_collection.each_with_index do |item, idx|
+    #cmis_collection.each_with_index do |item, idx|
+    cmis_collection.each do |item|
       if item.nil?
       next
       end
@@ -391,7 +403,8 @@ class NemakiRepository
   #Get all version nodes of a node
   #
   def get_all_versions(node)
-    obj = @repo.object_by_id(node.id)
+    #obj = @repo.object_by_id(node.id)
+    obj = get_cmis_object(node)
     if node.is_document?
       all_versions = obj.versions
       #TODO Error Handling: skip an error. When an error occurs, all_versions isn't nil
@@ -405,7 +418,8 @@ class NemakiRepository
   #
   def create(node_info, parent_id, cmis_type)
     wanted_type = @repo.type_by_id(cmis_type)
-    node = wanted_type.new("cmis:name" => node_info[:name])
+    node = wanted_type.new({"cmis:name" => node_info[:name]})
+
     if cmis_type == 'cmis:document'
       file = node_info[:file]
       node.set_content_stream({:file => file.original_filename, :data => file.read, :mime_type => file.content_type})
@@ -621,7 +635,8 @@ class NemakiRepository
 
   def get_parent(node)
     if !node.is_root?
-      obj = @repo.object_by_id(node.id)
+      #obj = @repo.object_by_id(node.id)
+      obj = get_cmis_object(node)  
       parent_obj = obj.parent_folders.first
       attr = extract_attr(parent_obj.attributes, nil)
       parent = Node.new(attr)
@@ -630,7 +645,8 @@ class NemakiRepository
 
   def get_children(parent_node, maxItems=nil, skipCount=0)
     if parent_node.is_folder?
-      obj =  @repo.object_by_id(parent_node.id)
+      #obj =  @repo.object_by_id(parent_node.id)
+      obj = get_cmis_object(parent_node)  
       items = obj.items({"includeAllowableActions" => true, "maxItems" => maxItems, "skipCount" => skipCount})
       @children = cast_from_cmis_collection(items)
     return @children
@@ -970,136 +986,4 @@ class NemakiRepository
     user_id == 'admin'
   end
 #Class end
-end
-
-#####################################################################
-#Add method for Nemaki Aspects to ActiveCMIS framework
-#####################################################################
-module ActiveCMIS
-  class Object
-    def parse_atom_data(query, namespace)
-      data = @data
-      return data.xpath(query, namespace)
-    end
-
-    def resource_url_with_id(resource_name)
-      endpoint = @repository.server.endpoint.to_s
-      repository_id = @repository.key.to_s
-      url = endpoint + repository_id + "/" + resource_name + "?id=" + @attributes['cmis:objectId']
-    end
-
-    def delete_descendants
-      resource_name = "descendants"
-      url = resource_url_with_id(resource_name)
-      conn.delete(url)
-    end
-
-    def build_update_atom
-      atom = render_atom_entry
-      return atom
-    end
-  end
-
-  #####################################################################
-  class Acl
-    attr_reader :data
-    def set_extension(namespace, name, attr={}, value)
-      root_ext = ActiveCMIS::Extension.new
-      root_ext.name = name
-      root_ext.attributes = attr
-      root_ext.value = value
-      @extensions << root_ext
-    end
-
-    #ActiveCMIS converts CMIS ANYONE user to :world,
-    #but it's not convenient when applying ACL,
-    #and more, it could be cause principal conflicts in the server.
-    #So, Nemaki decided to invalidate the method.
-    def convert_principal(principal)
-      principal
-    end
-  end
-
-  #####################################################################
-  class QueryResult
-    # @return [Hash{String => Boolean,String}] A hash containing all actions allowed on this object for the current user
-    def allowable_actions
-      actions = {}
-      _allowable_actions.children.map do |node|
-        actions[node.name.sub("can", "")] = case t = node.text
-        when "true", "1"; true
-        when "false", "0"; false
-        else t
-        end
-      end
-      actions
-    end
-
-    def _allowable_actions
-      if actions = @atom_entry.xpath('cra:object/c:allowableActions', NS::COMBINED).first
-      actions
-      else
-        links = @atom_entry.xpath("at:link[@rel = '#{Rel[repository.cmis_version][:allowableactions]}']/@href", NS::COMBINED)
-        if link = links.first
-          conn.get_xml(link.text)
-        else
-          nil
-        end
-      end
-    end
-  end
-
-  #####################################################################
-  class Extension
-    attr_accessor :name, :namespace, :attributes, :children, :value
-    def initialize
-      @attributes = {}
-      @children = []
-    end
-
-    #TODO validation: children XOR value
-
-    def wrap_par(str)
-      return "{" + str + "}"
-    end
-
-    def build_str(extension)
-      children = extension.children
-      value = extension.value
-      attributes = extension.attributes
-
-      if attributes.empty?
-        attr = ""
-      else
-        attr = "(" + attributes.to_s + ")"
-      end
-
-      str = "xml." + extension.name  + attr + " "
-      if !children.empty?
-        tmp = ""
-        children.each do |child|
-          tmp += build_str(child) + " \n "
-        end
-        tmp = wrap_par(tmp)
-      str += tmp
-      elsif !value.nil?
-        str += "{xml.text " + "'" + value.to_s + "'}"
-      end
-
-      return str
-    end
-
-    def to_xml
-      str = build_str(self)
-      builder = Nokogiri::XML::Builder.new { |xml|
-        eval(str)
-      }
-      return builder.to_xml
-    end
-  end
-
-  #######
-  class Repository
-    attr_accessor :data
-  end
 end

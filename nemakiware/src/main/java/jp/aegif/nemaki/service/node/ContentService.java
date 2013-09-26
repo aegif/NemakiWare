@@ -192,6 +192,11 @@ public interface ContentService {
 	 * Get an attachment.
 	 */
 	AttachmentNode getAttachment(String attachmentId);
+	
+	/**
+	 *Get an attachment Ref (without Stream) 
+	 */
+	AttachmentNode getAttachmentRef(String attachmentId); 
 
 	/**
 	 * Create a new attachment.

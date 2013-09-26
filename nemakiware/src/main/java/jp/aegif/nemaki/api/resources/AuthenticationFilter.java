@@ -35,6 +35,8 @@ import javax.servlet.http.HttpSession;
 
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
+import org.springframework.web.context.WebApplicationContext;
+import org.springframework.web.context.support.WebApplicationContextUtils;
 
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.service.node.PrincipalService;
@@ -45,11 +47,11 @@ public class AuthenticationFilter implements Filter {
 	private PrincipalService principalService;
 
 	@Override
-	public void init(FilterConfig arg0) throws ServletException {
-		ApplicationContext context = new ClassPathXmlApplicationContext(
-				"applicationContext.xml");
+	public void init(FilterConfig filterConfig) throws ServletException {
+		
+		WebApplicationContext context = WebApplicationContextUtils.getWebApplicationContext(filterConfig.getServletContext());
 		principalService = (PrincipalService) context
-				.getBean("principalService");
+		.getBean("principalService");
 	}
 
 	public static UserInfo getUserInfo(HttpServletRequest httpRequest){

@@ -139,7 +139,7 @@ public interface ContentDaoService {
 	/**
 	 * Get a NemakiAttachment
 	 */
-	AttachmentNode getAttachment(String attachmentId);
+	AttachmentNode getAttachment(String attachmentId, boolean includeStream);
 
 	
 	Change getChangeEvent(String token);

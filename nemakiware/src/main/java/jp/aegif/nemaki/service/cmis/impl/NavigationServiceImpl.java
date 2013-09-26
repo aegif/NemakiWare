@@ -51,6 +51,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectInFolderData
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectInFolderListImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectParentDataImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.commons.collections.CollectionUtils;
 
 
 public class NavigationServiceImpl implements NavigationService {
@@ -109,8 +110,10 @@ public class NavigationServiceImpl implements NavigationService {
 		//Filtering with folderOnly flag
 		List<Content> contents = new ArrayList<Content>();
 		if(folderOnly){
-			for(Content c : aclFiltered){
-				if(c.isFolder()) contents.add((Folder)c);
+			if(!CollectionUtils.isEmpty(aclFiltered)){
+				for(Content c : aclFiltered){
+					if(c.isFolder()) contents.add((Folder)c);
+				}
 			}
 		}else{
 			contents = aclFiltered;

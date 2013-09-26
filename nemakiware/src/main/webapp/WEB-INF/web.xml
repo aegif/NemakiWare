@@ -24,11 +24,6 @@
 		<param-value>classpath:applicationContext.xml</param-value>
 	</context-param>
 
-
-	<listener>
-		<listener-class>org.apache.chemistry.opencmis.server.impl.CmisRepositoryContextListener</listener-class>
-	</listener>
-
 	<listener>
 		<listener-class>com.sun.xml.ws.transport.http.servlet.WSServletContextListener</listener-class>
 	</listener>
@@ -64,7 +59,7 @@
 	</filter-mapping>	
 	<servlet>
         <servlet-name>Jersey Web Application</servlet-name>
-		<servlet-class>com.sun.jersey.spi.container.servlet.ServletContainer</servlet-class>
+		<servlet-class>com.sun.jersey.spi.spring.container.servlet.SpringServlet</servlet-class>
         <init-param>
             <param-name>com.sun.jersey.config.property.packages</param-name>
             <param-value>jp.aegif.nemaki.api.resources</param-value>
