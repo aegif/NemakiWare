@@ -53,10 +53,11 @@ public interface ObjectService {
 
 	/**
 	 * Sets the content stream for the specified document object.
+	 * @param changeToken TODO
 	 */
 	public abstract void setContentStream(CallContext callContext,
 			Holder<String> objectId, boolean overwriteFlag,
-			ContentStream contentStream);
+			ContentStream contentStream, Holder<String> changeToken);
 	
 	public void deleteContentStream(CallContext callContext,
 			Holder<String> objectId, Holder<String> changeToken,

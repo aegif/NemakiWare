@@ -108,14 +108,16 @@ public class TypeManager implements
 	private final static boolean ORDERABLE = true;
 
 	/**
-	 * Map of all types. 
+	 * Global variables containing type information 
 	 */
+	//Map of all types
 	private Map<String, TypeDefinitionContainer> types;
 	
-	/**
-	 * Map of all basetypes. 
-	 */
+	//Map of all base types
 	private Map<String, TypeDefinitionContainer> basetypes;
+	
+	//Map of subtype-specific property
+	private Map<String, List<PropertyDefinition<?>>> subTypeProperties;
 	
 	
 	// /////////////////////////////////////////////////
@@ -126,6 +128,7 @@ public class TypeManager implements
 		
 		types = new HashMap<String, TypeDefinitionContainer>();
 		basetypes = new HashMap<String, TypeDefinitionContainer>();
+		subTypeProperties = new HashMap<String, List<PropertyDefinition<?>>>();
 		
 		// Generate basetypes
 		addDocumentType();
@@ -277,7 +280,7 @@ public class TypeManager implements
 		itemType.setLocalNamespace(NAMESPACE);
 		itemType.setQueryName(ITEM_TYPE_ID);
 		itemType.setDisplayName("item");
-		itemType.setBaseTypeId(BaseTypeId.CMIS_POLICY);
+		itemType.setBaseTypeId(BaseTypeId.CMIS_ITEM);
 		itemType.setDescription("Item");
 		itemType.setIsCreatable(false);
 		itemType.setIsFileable(false);
@@ -391,7 +394,7 @@ public class TypeManager implements
 		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.PATH,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
 				!REQUIRED, !QUERYABLE, !ORDERABLE, null));
-
+		
 		List<String> defaults = new ArrayList<String>();
 		defaults.add(BaseTypeId.CMIS_FOLDER.value());
 		defaults.add(BaseTypeId.CMIS_DOCUMENT.value());
@@ -549,6 +552,7 @@ public class TypeManager implements
 		TypeDefinitionContainerImpl container = new TypeDefinitionContainerImpl();
 		container.setTypeDefinition(buildTypeDefinitionFromDB(type));
 		container.setChildren(new ArrayList<TypeDefinitionContainer>());
+		
 		if(types.get(type.getTypeId()) == null){
 			types.put(type.getTypeId(), container);
 		}else{
@@ -653,11 +657,16 @@ public class TypeManager implements
 		if(CollectionUtils.isEmpty(parentProperties)){
 			parentProperties = new HashMap<String,PropertyDefinition<?>>();
 		}
+		for(String key : parentProperties.keySet()){
+			PropertyDefinition<?> parentProperty = parentProperties.get(key);
+			setInheritedToTrue((AbstractPropertyDefinition<?>)parentProperty);
+		}
 		type.setPropertyDefinitions(parentProperties);
 		
 		// Add specific properties
 		Map<String, PropertyDefinition<?>> properties = type
 				.getPropertyDefinitions();
+		List<PropertyDefinition<?>> specificProperties = new ArrayList<PropertyDefinition<?>>();
 		for (String propertyId : nemakiType.getProperties()) {
 			NemakiPropertyDefinition p = contentDaoService
 					.getPropertyDefinition(propertyId);
@@ -669,10 +678,26 @@ public class TypeManager implements
 					false, p.isOpenChoice(), p.isOrderable(),
 					p.getDefaultValue());
 			properties.put(p.getPropertyId(), property);
+			
+			//for subTypeProperties
+			specificProperties.add(property);
 		}
-
+		
+		//for subTypeProperties
+		if(subTypeProperties.containsKey(type.getParentTypeId())){
+			List<PropertyDefinition<?>> parentSpecificProperties = subTypeProperties.get(type.getParentTypeId());
+			subTypeProperties.put(type.getId(), specificProperties);
+			specificProperties.addAll(parentSpecificProperties);
+			subTypeProperties.put(type.getId(), specificProperties);
+		}else{
+			subTypeProperties.put(type.getId(), specificProperties);
+		}
 	}
-	
+
+	private AbstractPropertyDefinition<?> setInheritedToTrue(AbstractPropertyDefinition<?> property){
+		property.setIsInherited(true);
+		return property;
+	}
 	
 	private DocumentTypeDefinition buildDocumentTypeDefinitionFromDB(
 			NemakiTypeDefinition nemakiType) {
@@ -765,7 +790,7 @@ public class TypeManager implements
 
 		return type;
 	}
-
+	
 	// /////////////////////////////////////////////////
 	// Type Service Methods
 	// /////////////////////////////////////////////////
@@ -824,6 +849,10 @@ public class TypeManager implements
 		return tc.getTypeDefinition();
 	}
 
+	public List<PropertyDefinition<?>>getSpecificPropertyDefinitions(String typeId){
+		return subTypeProperties.get(typeId);
+	}
+	
 	/**
 	 * CMIS getTypesChildren. If parent type id is not specified, return only
 	 * base types.

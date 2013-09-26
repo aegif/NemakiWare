@@ -41,9 +41,9 @@ import org.springframework.context.support.ClassPathXmlApplicationContext;
 
 public class ResourceBase {
 	
-	protected ApplicationContext context;
+	//protected ApplicationContext context;
 	protected PrincipalService principalService;
-	protected ContentService contentService;
+	//protected ContentService contentService;
 
 	static final String DATE_FORMAT = "yyyy:MM:dd HH:mm:ss z";
 	static final String TYPE_GROUP = "group";
@@ -136,12 +136,18 @@ public class ResourceBase {
 	static final String ERR_GET_ARCHIVES = "failToGetArchives";
 	static final String ERR_RESTORE = "failToRestore";
 	
+	
+	
+	public void setPrincipalService(PrincipalService principalService) {
+		this.principalService = principalService;
+	}
+
 	//Set daoService
 	public ResourceBase(){
 		//Inject beans
-		context = new ClassPathXmlApplicationContext("applicationContext.xml");
-	    principalService = (PrincipalService)context.getBean("PrincipalService");
-	    contentService = (ContentService)context.getBean("ContentService");
+		//context = new ClassPathXmlApplicationContext("applicationContext.xml");
+	    //principalService = (PrincipalService)context.getBean("PrincipalService");
+	    //contentService = (ContentService)context.getBean("ContentService");
 	}
 
 	//Utility methods

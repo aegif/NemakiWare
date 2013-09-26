@@ -26,12 +26,15 @@ import java.util.Map;
 import javax.servlet.http.HttpServletRequest;
 
 import jp.aegif.nemaki.service.cmis.AuthenticationService;
+import jp.aegif.nemaki.service.dao.impl.ContentDaoServiceImpl;
 
 import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.server.shared.BasicAuthCallContextHandler;
-import org.springframework.context.ApplicationContext;
-import org.springframework.context.support.ClassPathXmlApplicationContext;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.springframework.web.context.WebApplicationContext;
+import org.springframework.web.context.support.WebApplicationContextUtils;
 
 /**
  * Context handler class to do basic authentication
@@ -39,20 +42,12 @@ import org.springframework.context.support.ClassPathXmlApplicationContext;
 public class DefaultContextHandler extends BasicAuthCallContextHandler {
 
 	private static final long serialVersionUID = -8877261669069241258L;
-
-	/**
-	 * Authentication service, that allows to login a user.
-	 */
-	private AuthenticationService authenticationService;
+	private static final Log log = LogFactory.getLog(DefaultContextHandler.class);
 
 	/**
 	 * Constructor. Initialize authenticationService here.
 	 */
 	public DefaultContextHandler() {
-		ApplicationContext context = new ClassPathXmlApplicationContext(
-				"applicationContext.xml");
-		authenticationService = (AuthenticationService) context
-				.getBean("AuthenticationService");
 	}
 
 	/**
@@ -67,8 +62,15 @@ public class DefaultContextHandler extends BasicAuthCallContextHandler {
 		if (null == ctxMap)
 			throw new CmisPermissionDeniedException("Authentication required");
 
+		WebApplicationContext context = WebApplicationContextUtils.getWebApplicationContext(request.getServletContext());
+		AuthenticationService authenticationService = context.getBean("AuthenticationService", AuthenticationService.class);
 		authenticationService.login(ctxMap.get(CallContext.USERNAME),
 				ctxMap.get(CallContext.PASSWORD));
+		
+		//clear latest change cache
+		RequestDurationCacheBean rdc = context.getBean("requestDurationCache", RequestDurationCacheBean.class);
+		rdc.getLatestChangeCache().clear();
+		
 		return ctxMap;
 	}
 

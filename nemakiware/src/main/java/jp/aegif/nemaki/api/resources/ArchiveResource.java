@@ -34,6 +34,7 @@ import javax.ws.rs.core.MediaType;
 
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.constant.NodeType;
+import jp.aegif.nemaki.service.node.ContentService;
 
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
@@ -41,6 +42,12 @@ import org.json.simple.JSONObject;
 @Path("/archive")
 public class ArchiveResource extends ResourceBase {
 	
+	private ContentService contentService;
+	
+	public void setContentService(ContentService contentService) {
+		this.contentService = contentService;
+	}
+
 	//FIXME Attachment should always be got out of the output on this layer
 	@SuppressWarnings("unchecked")
 	@GET

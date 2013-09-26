@@ -22,7 +22,9 @@
 package jp.aegif.nemaki.util;
 
 import java.lang.reflect.Method;
+import java.text.SimpleDateFormat;
 import java.util.Arrays;
+import java.util.Date;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -39,12 +41,13 @@ public class DebugInterceptor implements MethodBeforeAdvice,
 		AfterReturningAdvice {
 
 	private static final Log log = LogFactory.getLog(DebugInterceptor.class);
+	private static final SimpleDateFormat sdf = new SimpleDateFormat("hh:mm:ss.S");
 
 	public void before(Method method, Object[] args, Object target)
 			throws Throwable {
 		try {
-			log.debug(method.getDeclaringClass().getSimpleName() + "#"
-					+ method.getName() + " " + Arrays.asList(args));
+			log.debug(sdf.format(new Date()) + " " +  method.getDeclaringClass().getSimpleName() + "#"
+					+ method.getName() + " " /* + Arrays.asList(args) */);
 		} catch (Exception e) {
 			log.warn(e);
 		}
@@ -53,11 +56,12 @@ public class DebugInterceptor implements MethodBeforeAdvice,
 	public void afterReturning(Object returnValue, Method method,
 			Object[] args, Object target) throws Throwable {
 		try {
-			log.debug(method.getDeclaringClass().getSimpleName() + "#"
-					+ method.getName() + " returned " + returnValue);
+			log.debug(sdf.format(new Date()) + " " +  method.getDeclaringClass().getSimpleName() + "#"
+					+ method.getName() + " returned "  /*+ returnValue */);
 		} catch (Exception e) {
 			log.warn(e);
 		}
 	}
 
 }
+	

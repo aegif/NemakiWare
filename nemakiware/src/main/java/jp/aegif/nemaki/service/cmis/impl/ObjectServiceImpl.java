@@ -393,7 +393,7 @@ public class ObjectServiceImpl implements ObjectService {
 	
 	public void setContentStream(CallContext callContext,
 			Holder<String> objectId, boolean overwriteFlag,
-			ContentStream contentStream) {
+			ContentStream contentStream, Holder<String> changeToken) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -415,6 +415,7 @@ public class ObjectServiceImpl implements ObjectService {
 		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
 				.getTypeDefinition(getTypeId(properties));
 		exceptionService.streamNotSupported(td, contentStream);
+		exceptionService.updateConflict(doc, changeToken);
 		exceptionService.versioning(doc);
 
 		// //////////////////
