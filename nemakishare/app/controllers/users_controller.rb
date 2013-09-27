@@ -156,7 +156,6 @@ class UsersController < ApplicationController
     wrap_by_log :create
     wrap_by_log :update
     wrap_by_log :update_password
-    wrap_by_log :update_search
     wrap_by_log :destroy
 
   end
