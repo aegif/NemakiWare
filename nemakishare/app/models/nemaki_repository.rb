@@ -212,6 +212,7 @@ class NemakiRepository
     secondary_types.each do |type|
       aspect = Aspect.new
 
+      isMulti = false;
       #set attributes
       aspect.id = type.id
       aspect.attributes['localName'] = type.local_name
@@ -242,9 +243,17 @@ class NemakiRepository
         property.attributes['cardinality'] = v.cardinality
 
         aspect.properties << property
+
+        if v.cardinality == 'multi'
+          isMulti = true;
+        end
+
       end
 
-      aspects << aspect
+      if  !isMulti 
+        aspects << aspect
+      end
+
     end
     return aspects
   end
