@@ -24,6 +24,8 @@
 require 'json'
 require 'nokogiri'
 require 'rest_client'
+require 'active_cmis'
+require 'active_cmis_custom'
 
 class NemakiRepository
   def initialize(auth_info_param=nil, logger=nil)
