@@ -107,7 +107,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 			<value>NemakiWare</value>
 		</property>
 		<property name="productVersion">
-			<value>1.0GA</value>
+			<value>1.0GA2</value>
 		</property>
 		<property name="nameSpace">
 			<value>http://www.aegif.jp/Nemaki/bedroom</value>
