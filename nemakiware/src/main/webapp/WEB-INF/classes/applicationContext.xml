@@ -642,6 +642,10 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		<property name="principalService" ref="PrincipalService" />
 		<property name="ContentService" ref="ContentService" />
 	</bean>
+
+	<bean id="userResource" class="jp.aegif.nemaki.api.resources.UserResource">
+		<property name="principalService" ref="PrincipalService" />
+	</bean>
 	
 	<bean id="groupResource" class="jp.aegif.nemaki.api.resources.GroupResource">
 		<property name="principalService" ref="PrincipalService" />	
