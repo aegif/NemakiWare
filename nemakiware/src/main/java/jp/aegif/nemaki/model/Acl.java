@@ -48,13 +48,13 @@ public class Acl {
 	}
 	
 	public List<Ace> getAllAces(){
-		List<Ace> merged = inheritedAces;
+		List<Ace> merged = new ArrayList<Ace>(inheritedAces);
 		merged.addAll(localAces);
 		return merged;
 	}
 	
 	public List<Ace>getPropagatingAces(){
-		List<Ace> merged = inheritedAces;
+		List<Ace> merged = new ArrayList<Ace>(inheritedAces);
 		for(Ace ace : localAces){
 			if(!ace.isObjectOnly()) merged.add(ace);
 		}
