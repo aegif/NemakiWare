@@ -65,6 +65,26 @@ function buildGridData(aclJSON, inheritance) {
 	aclInheritance = inheritance;
 }
 
+/** 
+ * Convert Input Tag to content value string
+ *
+ */
+function convertSelectToValue(value) {
+    //begin with <input
+    if ( value.lastIndexOf('<select',0) === 0 ) {
+        inputObj = $.parseHTML(value);
+        return $('#' + inputObj[0].id + ' option:selected').text();
+    }
+    return value;
+}
+function convertSelectToValues(values) {
+    for(key in values) {
+	values[key].permissions = convertSelectToValue(values[key].permissions);
+    }
+    return values;
+}
+
+
 
 /**
  * ユーザをACL jqGridに追加
@@ -126,6 +146,7 @@ function update() {
 
 	// グリッド内のデータをhiddenタグにJSONで格納
 	var aclValues = $("#local_acl_table").jqGrid('getRowData');
+        aclValues = convertSelectToValues(aclValues);
 	var acl_json = JSON.stringify(aclValues);
 	$("#acl_entries").val(acl_json);
 	$('#permission_form').submit();
