@@ -124,7 +124,7 @@ public class UserResource extends ResourceBase {
 		JSONArray queriedUsers = new JSONArray();
 		users = principalService.getUsers();
 		for (User user : users) {
-			if (user.getUserId().equals(query)) {
+			if (user.getUserId().startsWith(query) || user.getName().startsWith(query)) {
 				JSONObject userJSON = convertUserToJson(user);
 				queriedUsers.add(userJSON);
 			}

@@ -60,14 +60,35 @@ function buildGridData(nodeJSON, parentJSON, aspectsJSON){
 	aspects = aspectsJSON;
 }
 
+/** 
+ * Convert Input Tag to content value string
+ *
+ */
+function convertInputToValue(value) {
+    //begin with <input
+    if ( value.lastIndexOf('<input',0) === 0 ) {
+        inputObj = $.parseHTML(value);
+        return $('#' + inputObj[0].id).val();
+    }
+    return value;
+}
+function convertInputToValues(values) {
+    for(key in values) {
+	values[key].value = convertInputToValue(values[key].value);
+    }
+    return values;
+}
+
 /**
  * Update
  * @returns {Boolean}
  */
 function update() {
 	// Update basic properties via hidden tag
-	var basicValues = $("#basicInfo").jqGrid('getRowData');
+	var basicValues = $(selector_basicInfo).jqGrid('getRowData');
+        basicValues = convertInputToValues(basicValues);
 	var basicJSON = JSON.stringify(basicValues);
+
 	$("#basic_properties").val(basicJSON);
 	
 	// Update custom properties via hidden tag
@@ -76,6 +97,7 @@ function update() {
 		for(var i=0; i<aspects.length; i++){
 			var a = aspects[i];
 			var properties =  $("#" + aspect_table_prefix + escapeColon(a.id)).jqGrid('getRowData')
+                        properties = convertInputToValues(properties);
 			var aspect = {"id": a.id, "properties": properties};
 			editedAspects.push(aspect);
 		}
