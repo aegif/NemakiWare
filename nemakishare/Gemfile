@@ -24,6 +24,7 @@ end
 
 gem 'jquery-rails', '3.0.4'
 gem 'jquery-validation-rails', '1.11.1'
+gem 'pnotify-rails', '1.2.2'
 
 gem 'activemodel', '3.2.9'
 
