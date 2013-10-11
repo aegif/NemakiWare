@@ -174,3 +174,11 @@ en:
       restore_success: "Content has been restored successfully."
       restore_failure: "Failed to restore the content."
       cannot_display_archive: "Cannot display archive list."
+    general:
+      general_title_error: "Error"
+      general_title_info: "Info"
+      general_title_success: "Success"
+    node:
+      error_text_node_not_found: "Specified folder or content does not exist or has already deleted."
+      success_text_create: "Creation succeeded"
+      error_text_create: "Creation failed"
