@@ -185,7 +185,18 @@ class NodesController < ApplicationController
   def explore
     #Get the folder to be explored
     if(params[:id] )
-      @node = @nemaki_repository.find(params[:id])
+      begin
+        @node = @nemaki_repository.find(params[:id])
+      rescue
+        # node not found so we move to the last breadcrumb with messsage
+        begin
+          @node = @nemaki_repository.find(session[:breadcrumb].last[:id])
+        rescue
+          @node = @nemaki_repository.find(CONFIG['site']['root_id'])
+        end
+        # TODO multi-language
+        @message = "selected folder does not exist now.";
+      end
     else
       if is_admin_role?
         @node = @nemaki_repository.find('/')
