@@ -57,6 +57,12 @@ class NodesController < ApplicationController
     end
   end
 
+  def remove_from_breadcrumb(node_id)
+    logger.debug "remove from breadcrumb" + node_id
+    new_breadcrumb =  session[:breadcrumb].select!{|crumb| crumb[:id] != node_id}
+    session[:breadcrumb] = new_breadcrumb
+  end
+
   def index
     if session[:nemaki_auth_info] != nil
       redirect_to :action => 'explore'
@@ -94,10 +100,17 @@ class NodesController < ApplicationController
       cmis_type = 'cmis:folder'
     end
 
-    @nemaki_repository.create(params[:node], params[:parent_id], cmis_type)
+    begin
+      @nemaki_repository.create(params[:node], params[:parent_id], cmis_type)
+      #TODO リダイレクトするのでエラーメッセージが戻らない
+      addInfoMessage("message.node.success_text_create")
+      redirect_to_parent(explore_node_path(params[:parent_id]))
+    rescue
+      #TODO 失敗時の処理
+      addErrorMessage("message.node.error_text_create")
+    end
 
-    #TODO 失敗時の処理
-    redirect_to_parent(explore_node_path(params[:parent_id]))
+
   end
 
   def edit
@@ -147,28 +160,33 @@ class NodesController < ApplicationController
   end
 
   def show
-    @node = @nemaki_repository.find(params[:id])
-    aspects_all = @nemaki_repository.get_aspects_with_attributes(@node)
+    begin
+      @node = @nemaki_repository.find(params[:id])
+      aspects_all = @nemaki_repository.get_aspects_with_attributes(@node)
 
-    @aspects = []
-    if aspects_all != nil && !aspects_all.empty?
-      aspects_all.each do |a|
-        if a.implemented
-        @aspects << a
+      @aspects = []
+      if aspects_all != nil && !aspects_all.empty?
+        aspects_all.each do |a|
+          if a.implemented
+            @aspects << a
+          end
         end
       end
+
+      if @node.is_document?
+        @versions = @nemaki_repository.get_all_versions(@node)
+      end
+      @parent = @nemaki_repository.get_parent @node
+
+      #Navigation setting
+      site = @nemaki_repository.get_site_by_node_path(@parent.path)
+      set_allowed_up(site)
+
+      render :layout => 'popup'
+    rescue
+      addErrorMessage("message.node.error_text_node_not_found");
+      render :layout => 'iframe_close', :text => ""
     end
-
-    if @node.is_document?
-      @versions = @nemaki_repository.get_all_versions(@node)
-    end
-    @parent = @nemaki_repository.get_parent @node
-
-    #Navigation setting
-    site = @nemaki_repository.get_site_by_node_path(@parent.path)
-    set_allowed_up(site)
-
-    render :layout => 'popup'
   end
 
   def download
@@ -185,7 +203,18 @@ class NodesController < ApplicationController
   def explore
     #Get the folder to be explored
     if(params[:id] )
-      @node = @nemaki_repository.find(params[:id])
+      begin
+        @node = @nemaki_repository.find(params[:id])
+      rescue
+        # node not found so we move to the last breadcrumb with messsage
+        begin
+          remove_from_breadcrumb(params[:id])
+          addErrorMessage "message.node.error_text_node_not_found"
+          @node = @nemaki_repository.find(session[:breadcrumb].last[:id])
+        rescue
+           @node = @nemaki_repository.find(CONFIG['site']['root_id'])
+        end
+      end
     else
       if is_admin_role?
         @node = @nemaki_repository.find('/')

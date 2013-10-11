@@ -177,3 +177,11 @@ ja:
       restore_success: "コンテンツのリストアに成功しました"
       restore_failure: "コンテンツのリストアに失敗しました"
       cannot_display_archive: "ゴミ箱を表示できません"
+    general:
+      general_title_error: "エラー"
+      general_title_info: "通知"
+      general_title_success: "完了"
+    node:
+      error_text_node_not_found: "指定されたコンテンツもしくはフォルダは存在しないか削除されました"
+      success_text_create: "作成に成功しました"
+      error_text_create: "作成に失敗しました"

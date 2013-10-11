@@ -8,12 +8,27 @@
     <%= favicon_link_tag '/favicon.gif', :type => 'image/vnd.microsoft.icon' %>
     <%= csrf_meta_tags %>
     <%= stylesheet_link_tag "application" %>
-	<%= javascript_include_tag "application" %>
+    <%= javascript_include_tag "application" %>
 	<script type="text/javascript">
   		I18n.defaultLocale = "<%= I18n.default_locale %>";
   		I18n.locale = "<%= I18n.locale %>";
 	</script>
     <%= javascript_include_tag "flash_fade.js" %>
+    <script type="text/javascript">
+$(
+  function() {
+    <% unless @notified_messages.nil? 
+       @notified_messages.each do |message| %>
+      $.pnotify({
+        title: '<%= message.title %>',
+        text:  '<%= message.text %>',
+        type: '<%= message.category %>'
+      });
+      <% end 
+     end %>
+  }
+)();
+    </script>
     <script type="text/javascript">
 		<%= yield :javascript_includes %>
     </script>

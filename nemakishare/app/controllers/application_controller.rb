@@ -28,7 +28,7 @@ require 'active_cmis_custom'
 class ApplicationController < ActionController::Base
   protect_from_forgery
   
-  before_filter :check_authentication, :set_popup_param, :set_locale
+  before_filter :check_authentication, :set_popup_param, :set_locale, :show_stacked_message
   
   def check_authentication
     if session[:nemaki_auth_info] != nil
@@ -56,11 +56,36 @@ class ApplicationController < ActionController::Base
   end
   
   def redirect_to_parent(path)
+    session[:messages] = @notified_messages
     render text: "<html><body><script type='text/javascript' charset='utf-8'>window.parent.document.location.href = '" + path+ "';</script></body></html>", content_type: :html
   end
   
   def set_locale
     I18n.locale = extract_locale_from_accept_language_header
+  end
+
+  def addErrorMessage(text_label, title_label = "message.general.general_title_error")
+    addMessage(title_label, text_label, "error")
+  end
+
+  def addInfoMessage(text_label, title_label = "message.general.general_title_info")
+    addMessage(title_label, text_label, "info")
+  end
+
+  def addSuccessMessage(text_label, title_label = "message.general.general_title_success")
+    addMessage(title_label, text_label, "success")
+  end
+
+
+  def addMessage(title_label, text_label, category)
+    (@notified_messages ||= []).push(NotifiedMessage.new(I18n.t(title_label), I18n.t(text_label), category))
+  end
+
+  def show_stacked_message()
+    unless session[:messages].nil?
+      @notified_messages = session[:messages]
+      session[:messages] = nil
+    end
   end
 
   # for logging

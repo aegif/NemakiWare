@@ -4,7 +4,11 @@
 			<div class="change_event">
 				<% (change.name.blank?) ? @name = 'Unknown Content' : @name = change.name %>
 				<% (change.user.blank?) ? @user = 'Unknown User' : @user = change.user %>
+				<% unless change.change_type == "deleted" %>
 				<%=link_to @name, node_path(change.objectId, @popup_param), :class => 'thickbox' %>
+				<% else %>
+				<%= @name %>
+				<% end %>
 				<br/>
 				<%= @user %> <%= l10n_change_type change.change_type %><br/>
 				<%= simple_time(change.change_time.localtime) %>
