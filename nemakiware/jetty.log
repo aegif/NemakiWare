@@ -1,0 +1,52 @@
+2013-10-12 10:39:38,012 DEBUG [main] jp.aegif.nemaki.util.DebugInterceptor: 10:39:38.11 RepositoryService#getRepositoryInfo 
+2013-10-12 10:39:38,012 DEBUG [main] jp.aegif.nemaki.util.DebugInterceptor: 10:39:38.12 ContentService#getLatestChangeToken 
+2013-10-12 10:39:38,013 DEBUG [main] jp.aegif.nemaki.util.DebugInterceptor: 10:39:38.13 ContentDaoService#getLatestChange 
+2013-10-12 10:39:38,067 DEBUG [main] jp.aegif.nemaki.util.DebugInterceptor: 10:39:38.67 ContentDaoService#getLatestChange returned 
+2013-10-12 10:39:38,067 DEBUG [main] jp.aegif.nemaki.util.DebugInterceptor: 10:39:38.67 ContentService#getLatestChangeToken returned 
+2013-10-12 10:39:38,067 DEBUG [main] jp.aegif.nemaki.util.DebugInterceptor: 10:39:38.67 RepositoryService#getRepositoryInfo returned 
+2013-10-12 10:39:38,067 DEBUG [main] jp.aegif.nemaki.util.DebugInterceptor: 10:39:38.67 RepositoryService#getRepositoryInfo 
+2013-10-12 10:39:38,067 DEBUG [main] jp.aegif.nemaki.util.DebugInterceptor: 10:39:38.67 ContentService#getLatestChangeToken 
+2013-10-12 10:39:38,068 DEBUG [main] jp.aegif.nemaki.util.DebugInterceptor: 10:39:38.68 ContentDaoService#getLatestChange 
+2013-10-12 10:39:38,068 DEBUG [main] jp.aegif.nemaki.util.DebugInterceptor: 10:39:38.68 ContentDaoService#getLatestChange returned 
+2013-10-12 10:39:38,068 DEBUG [main] jp.aegif.nemaki.util.DebugInterceptor: 10:39:38.68 ContentService#getLatestChangeToken returned 
+2013-10-12 10:39:38,068 DEBUG [main] jp.aegif.nemaki.util.DebugInterceptor: 10:39:38.68 RepositoryService#getRepositoryInfo returned 
+2013-10-12 11:00:41,219 DEBUG [qtp1528640157-35] jp.aegif.nemaki.util.DebugInterceptor: 11:00:41.218 AuthenticationService#login 
+2013-10-12 11:00:41,220 DEBUG [qtp1528640157-35] jp.aegif.nemaki.util.DebugInterceptor: 11:00:41.220 PrincipalService#getUserById 
+2013-10-12 11:00:41,220 DEBUG [qtp1528640157-35] jp.aegif.nemaki.util.DebugInterceptor: 11:00:41.220 PrincipalDaoService#getUserById 
+2013-10-12 11:00:41,246 DEBUG [qtp1528640157-35] jp.aegif.nemaki.util.DebugInterceptor: 11:00:41.246 PrincipalDaoService#getUserById returned 
+2013-10-12 11:00:41,246 DEBUG [qtp1528640157-35] jp.aegif.nemaki.util.DebugInterceptor: 11:00:41.246 PrincipalService#getUserById returned 
+2013-10-12 11:00:41,396 DEBUG [qtp1528640157-35] jp.aegif.nemaki.service.cmis.impl.AuthenticationServiceImpl: Authentication succeeded
+2013-10-12 11:00:41,397 DEBUG [qtp1528640157-35] jp.aegif.nemaki.util.DebugInterceptor: 11:00:41.397 AuthenticationService#login returned 
+2013-10-12 11:00:41,403 DEBUG [qtp1528640157-35] org.apache.chemistry.opencmis.server.shared.Dispatcher: null / , GET -> org.apache.chemistry.opencmis.server.impl.atompub.RepositoryService$GetRepositories
+2013-10-12 11:00:41,404 DEBUG [qtp1528640157-35] jp.aegif.nemaki.util.DebugInterceptor: 11:00:41.404 RepositoryService#getRepositoryInfo 
+2013-10-12 11:00:41,404 DEBUG [qtp1528640157-35] jp.aegif.nemaki.util.DebugInterceptor: 11:00:41.404 ContentService#getLatestChangeToken 
+2013-10-12 11:00:41,404 DEBUG [qtp1528640157-35] jp.aegif.nemaki.util.DebugInterceptor: 11:00:41.404 ContentDaoService#getLatestChange 
+2013-10-12 11:00:41,410 DEBUG [qtp1528640157-35] jp.aegif.nemaki.util.DebugInterceptor: 11:00:41.410 ContentDaoService#getLatestChange returned 
+2013-10-12 11:00:41,410 DEBUG [qtp1528640157-35] jp.aegif.nemaki.util.DebugInterceptor: 11:00:41.410 ContentService#getLatestChangeToken returned 
+2013-10-12 11:00:41,410 DEBUG [qtp1528640157-35] jp.aegif.nemaki.util.DebugInterceptor: 11:00:41.410 RepositoryService#getRepositoryInfo returned 
+2013-10-12 11:09:55,548 DEBUG [main] jp.aegif.nemaki.util.DebugInterceptor: 11:09:55.547 RepositoryService#getRepositoryInfo 
+2013-10-12 11:09:55,548 DEBUG [main] jp.aegif.nemaki.util.DebugInterceptor: 11:09:55.548 ContentService#getLatestChangeToken 
+2013-10-12 11:09:55,548 DEBUG [main] jp.aegif.nemaki.util.DebugInterceptor: 11:09:55.548 ContentDaoService#getLatestChange 
+2013-10-12 11:09:55,588 DEBUG [main] jp.aegif.nemaki.util.DebugInterceptor: 11:09:55.588 ContentDaoService#getLatestChange returned 
+2013-10-12 11:09:55,588 DEBUG [main] jp.aegif.nemaki.util.DebugInterceptor: 11:09:55.588 ContentService#getLatestChangeToken returned 
+2013-10-12 11:09:55,588 DEBUG [main] jp.aegif.nemaki.util.DebugInterceptor: 11:09:55.588 RepositoryService#getRepositoryInfo returned 
+2013-10-12 11:09:55,588 DEBUG [main] jp.aegif.nemaki.util.DebugInterceptor: 11:09:55.588 RepositoryService#getRepositoryInfo 
+2013-10-12 11:09:55,588 DEBUG [main] jp.aegif.nemaki.util.DebugInterceptor: 11:09:55.588 ContentService#getLatestChangeToken 
+2013-10-12 11:09:55,589 DEBUG [main] jp.aegif.nemaki.util.DebugInterceptor: 11:09:55.589 ContentDaoService#getLatestChange 
+2013-10-12 11:09:55,589 DEBUG [main] jp.aegif.nemaki.util.DebugInterceptor: 11:09:55.589 ContentDaoService#getLatestChange returned 
+2013-10-12 11:09:55,589 DEBUG [main] jp.aegif.nemaki.util.DebugInterceptor: 11:09:55.589 ContentService#getLatestChangeToken returned 
+2013-10-12 11:09:55,589 DEBUG [main] jp.aegif.nemaki.util.DebugInterceptor: 11:09:55.589 RepositoryService#getRepositoryInfo returned 
+2013-10-12 11:09:58,906 DEBUG [qtp2072674516-36] jp.aegif.nemaki.util.DebugInterceptor: 11:09:58.906 AuthenticationService#login 
+2013-10-12 11:09:58,907 DEBUG [qtp2072674516-36] jp.aegif.nemaki.util.DebugInterceptor: 11:09:58.907 PrincipalService#getUserById 
+2013-10-12 11:09:58,908 DEBUG [qtp2072674516-36] jp.aegif.nemaki.util.DebugInterceptor: 11:09:58.908 PrincipalDaoService#getUserById 
+2013-10-12 11:09:58,931 DEBUG [qtp2072674516-36] jp.aegif.nemaki.util.DebugInterceptor: 11:09:58.931 PrincipalDaoService#getUserById returned 
+2013-10-12 11:09:58,932 DEBUG [qtp2072674516-36] jp.aegif.nemaki.util.DebugInterceptor: 11:09:58.932 PrincipalService#getUserById returned 
+2013-10-12 11:09:59,090 DEBUG [qtp2072674516-36] jp.aegif.nemaki.service.cmis.impl.AuthenticationServiceImpl: Authentication succeeded
+2013-10-12 11:09:59,091 DEBUG [qtp2072674516-36] jp.aegif.nemaki.util.DebugInterceptor: 11:09:59.91 AuthenticationService#login returned 
+2013-10-12 11:09:59,097 DEBUG [qtp2072674516-36] org.apache.chemistry.opencmis.server.shared.Dispatcher: null / , GET -> org.apache.chemistry.opencmis.server.impl.atompub.RepositoryService$GetRepositories
+2013-10-12 11:09:59,097 DEBUG [qtp2072674516-36] jp.aegif.nemaki.util.DebugInterceptor: 11:09:59.97 RepositoryService#getRepositoryInfo 
+2013-10-12 11:09:59,097 DEBUG [qtp2072674516-36] jp.aegif.nemaki.util.DebugInterceptor: 11:09:59.97 ContentService#getLatestChangeToken 
+2013-10-12 11:09:59,097 DEBUG [qtp2072674516-36] jp.aegif.nemaki.util.DebugInterceptor: 11:09:59.97 ContentDaoService#getLatestChange 
+2013-10-12 11:09:59,103 DEBUG [qtp2072674516-36] jp.aegif.nemaki.util.DebugInterceptor: 11:09:59.103 ContentDaoService#getLatestChange returned 
+2013-10-12 11:09:59,103 DEBUG [qtp2072674516-36] jp.aegif.nemaki.util.DebugInterceptor: 11:09:59.103 ContentService#getLatestChangeToken returned 
+2013-10-12 11:09:59,103 DEBUG [qtp2072674516-36] jp.aegif.nemaki.util.DebugInterceptor: 11:09:59.103 RepositoryService#getRepositoryInfo returned 
