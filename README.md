@@ -71,6 +71,27 @@ $sudo chkconfig --level 345 couchdb on
 $ sudo apt-get install couchdb
 ```
 
+### [Install Applications For Production Environment(tomcat)]
+```sh
+$ <NeakiWare_Home>/installer/nemakiware_installer.bin
+$ <NeakiWare_Home>/installer/nemakisolr_installer.bin
+$ <NeakiWare_Home>/installer/nemakishare_installer.bin
+```
+
+### Start the applications
+```sh
+$ sh <NemakiWare/Installed/Path>/tomcat/bin/startup.sh
+$ cd <NemakiWare/Installed/Path>/nemakishare
+$ rails s
+```
+
+To stop the applications,
+```sh
+$ <NemakiWare/Installed/Path>/tomcat/bin/shutdown.sh
+```
+
+### [Install Applications For Development Environment(jetty)]
+
 ### Excecute setup script 
 If CouchDB has not started, start it before setup.
 
@@ -97,7 +118,7 @@ $ sh stop.sh
 
 ### Login 
 Now, open the login  window
-    http://127.0.0.1:3000/nodes/
+    http://127.0.0.1:3000/nodes/(default)
     * ID:admin
     * Password admin
 
@@ -109,9 +130,13 @@ Usage
 ----------
 * Show/Edit/Manage permission/Delete/Search
   * There are action buttons next to a content in the explore list. There actions may be different for each content and each user because an action requires its permission.
-  * Custom properties(or Aspects) are available in addition to CMIS basic properties. Administrator defines custom properties in the server `<NemakiWare_Home>/nemakiware/src/main/resources/base_model.yml` and user can attach them to an object as he/she likes.
-  * Edit page shows updatable properties and new version upload for a document. CheckOut/CheckIn is not available now (although, in fact, it is implemented in the server as beta version).
-  * NemakiWare implements permissions for each content as ACL, which is supported by CMIS. CMIS default permission is `cmis:read`, `cmis:write` and `cmis:all`. In addtion, NemakiWare allows custom permissions described in `<NemakiWare_Home>/nemakiware/src/main/resources/custom_permission.yml`. Specify the "base" permission and modify it by adding custom allowable actions in "permissionMapping". As custom permission feature is still beta version, it might not work as expected.
+  * Custom properties(or Aspects) are available in addition to CMIS basic properties.  
+   Administrator can define custom properties and user can attach them to an object as he/she likes.  
+   But there is not now any other way to define the custom modesl other than registering them directly onto the DB. 
+  * Edit page shows updatable properties and new version upload for a document.  
+   CheckOut/CheckIn is not available now (although, in fact, it is implemented in the server as beta version).
+  * NemakiWare implements permissions for each content as ACL, which is supported by CMIS. CMIS default permission is `cmis:read`, `cmis:write` and `cmis:all`.  
+   In addtion, NemakiWare allows custom permissions described in `<NemakiWare_Home>/nemakiware/src/main/resources/custom_permission.yml`. Specify the "base" permission and modify it by adding custom allowable actions in "permissionMapping". As custom permission feature is still beta version, it might not work as expected.
   * Search form is situated on the top of the window. Only simple search is supported now. A query goes to search name and full text for both document and folder.
 
 * Navigation
@@ -138,16 +163,17 @@ Configuration
 * CouchDB
   CouchDB may be working on "http://localhost:5984/".
 
-  * If you have change the address or port,
-   In `<NemakiWare_Home>/nemakiware/src/main/webapp/WEB-INF/classes/nemakiware.properties`
-  modify `db.protocol`, `db.host`, `db.port` (and also `db.maxConnections`).
-   In `<NemakiWare_Home>/nemakisolr/src/main/webapp/WEB-INF/classes/nemakisolr.properties`
-  modify `couchdb.server.url`, `couchdb.db.repository`, `couchdb.maxconnection`.
+  * If you have changed the address or port,
+   In `<NemakiWare_Home>/nemakiware/src/main/webapp/WEB-INF/classes/nemakiware.properties`  
+   modify `db.protocol`, `db.host`, `db.port` (and also `db.maxConnections`).  
+   In `<NemakiWare_Home>/nemakisolr/src/main/webapp/WEB-INF/classes/nemakisolr.properties`  
+   modify `couchdb.server.url`, `couchdb.db.repository`, `couchdb.maxconnection`.
 
   * Secure connection to CouchDB(Basic Auth, Reverse Proxy etc.) is not supported by NemakiWare for the present.
   * If you want to manage CouchDB directly, Futon UI "http://localhost:5984/_utils/" is useful.
   CouchDB database `bedroom` contains all of the data except for deleted(archived) data in `archive`.
-  These database names are configured by `nemakiware.repository.main` and `nemakiware.repository.archive` in `<NemakiWare_Home>/nemakiware/src/main/webapp/WEB-INF/classes/nemakiware.properties`.  `nemakiware.repository.main` is also used as the CMIS serever repository id.
+  These database names are configured by `nemakiware.repository.main` and `nemakiware.repository.archive` in `<NemakiWare_Home>/nemakiware/src/main/webapp/WEB-INF/classes/nemakiware.properties`.  
+   `nemakiware.repository.main` is also used as the CMIS serever repository id.
 
 * Solr
   Solr may be working on "http://localhost:8983/solr".
@@ -168,8 +194,6 @@ Configuration
   *  If you have change the address or port,
   In `<NemakiWare_Home>/nemakishare/config/nemakiware_config.yml`
   modify URLs in `repository` key.
-
-  * Admin user info is going to be configurable, but now it's hard coded partly and configuration will now wokr properly.
 
   * `site: root_id` specifies "Site Root" folder object id. Its subfolders are treated as a site in NemakiWare client.
 
