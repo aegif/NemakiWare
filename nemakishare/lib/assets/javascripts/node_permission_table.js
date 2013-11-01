@@ -175,6 +175,7 @@ $(function() {
 	$('#user_search').bind('ajax:success', function(xhr, data, status) {
 		// jqGridを一旦消去
 		$("#user_table").GridUnload();
+	        users = [];
 		// 更新データの作成
 		for (i = 0; i < data.length; i++) {
 			users.push({principal : data[i].userId});
