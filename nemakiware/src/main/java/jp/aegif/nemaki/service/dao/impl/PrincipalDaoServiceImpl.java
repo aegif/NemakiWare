@@ -43,6 +43,18 @@ import org.ektorp.CouchDbConnector;
 import org.ektorp.ViewQuery;
 import org.springframework.stereotype.Component;
 
+import java.util.Hashtable;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import javax.naming.Context;
+import javax.naming.NamingEnumeration;
+import javax.naming.NamingException;
+import javax.naming.directory.Attribute;
+import javax.naming.directory.DirContext;
+import javax.naming.directory.InitialDirContext;
+import javax.naming.directory.SearchControls;
+import javax.naming.directory.SearchResult;
+
 /**
  * Dao Service for Principal(User/Group)
  * Implementation for CouchDB
@@ -76,22 +88,24 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 	public User createUser(User user) {
 		CouchUser cu = new CouchUser(user);
 		connector.create(cu);
+		User created = cu.convert();
 		Cache userCache = cacheManager.getCache("userCache");
-		userCache.put(new Element(user.getId(), user));
+		userCache.put(new Element(created.getId(), created));
 		Cache usersCache = cacheManager.getCache("usersCache");
 		usersCache.removeAll();
-		return user;
+		return created;
 	}
 
 	@Override
 	public Group createGroup(Group group) {
 		CouchGroup cg = new CouchGroup(group);
 		connector.create(cg);
+		Group created = cg.convert();
 		Cache groupCache = cacheManager.getCache("groupCache");
-		groupCache.put(new Element(group.getId(), group));
+		groupCache.put(new Element(created.getId(), created));
 		Cache groupsCache = cacheManager.getCache("groupsCache");
 		groupsCache.removeAll();		
-		return group;
+		return created;
 	}
 
 	@Override
@@ -157,7 +171,6 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 	 */
 	@Override
 	public List<User> getUsers() {
-		
 		Cache usersCache = cacheManager.getCache("usersCache");
 		Element userEl = usersCache.get("users");
 		
