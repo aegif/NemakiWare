@@ -27,15 +27,13 @@ import static org.apache.solr.handler.extraction.ExtractingParams.UNKNOWN_FIELD_
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -43,66 +41,158 @@ import java.util.Set;
 import java.util.TimeZone;
 
 import jp.aegif.nemaki.NemakiCoreAdminHandler;
-import jp.aegif.nemaki.model.Aspect;
-import jp.aegif.nemaki.model.Content;
-import jp.aegif.nemaki.model.Property;
-import jp.aegif.nemaki.service.DaoService;
-import jp.aegif.nemaki.service.impl.CouchDaoServiceImpl;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.impl.PropertyManagerImpl;
 
+import org.apache.chemistry.opencmis.client.api.ChangeEvent;
+import org.apache.chemistry.opencmis.client.api.ChangeEvents;
+import org.apache.chemistry.opencmis.client.api.CmisObject;
+import org.apache.chemistry.opencmis.client.api.OperationContext;
+import org.apache.chemistry.opencmis.client.api.SecondaryType;
+import org.apache.chemistry.opencmis.client.api.Session;
+import org.apache.chemistry.opencmis.client.api.SessionFactory;
+import org.apache.chemistry.opencmis.client.runtime.ObjectIdImpl;
+import org.apache.chemistry.opencmis.client.runtime.SessionFactoryImpl;
+import org.apache.chemistry.opencmis.commons.PropertyIds;
+import org.apache.chemistry.opencmis.commons.SessionParameter;
+import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
+import org.apache.chemistry.opencmis.commons.enums.BindingType;
+import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
-import org.apache.lucene.util.CollectionUtil;
-import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.request.AbstractUpdateRequest;
 import org.apache.solr.client.solrj.request.ContentStreamUpdateRequest;
 import org.apache.solr.client.solrj.request.UpdateRequest;
-import org.apache.solr.client.solrj.response.QueryResponse;
-import org.apache.solr.common.SolrDocument;
-import org.apache.solr.common.SolrDocumentList;
 import org.apache.solr.common.SolrInputDocument;
-import org.apache.solr.common.params.SolrParams;
+import org.apache.solr.common.params.ModifiableSolrParams;
 import org.apache.solr.core.CloseHook;
 import org.apache.solr.core.SolrCore;
-import org.ektorp.AttachmentInputStream;
-import org.ektorp.changes.DocumentChange;
 
 /**
  * Index tracking class
+ * 
  * @author linzhixing
- *
+ * 
  */
 public class CoreTracker extends CloseHook {
 
 	private final String PATH_TRACKING = "tracking.properties";
+	private final String PATH_CMIS = "cmis.properties";
 	Logger logger = Logger.getLogger(CoreTracker.class);
-	
 	NemakiCoreAdminHandler adminHandler;
 	SolrCore core;
 	SolrServer server;
-	DaoService dao;
+	Session cmisSession;
 
-	private final String PROP_TYPE = "type";
-	private final String PROP_ID = "id";
-	private final String PROP_NAME = "name";
-	private final String PROP_PARENT_ID = "parentid";
-	private final String PROP_PATH = "path";
-	private final String PROP_CREATED = "created";
-	private final String PROP_CREATOR = "creator";
-	private final String PROP_MODIFIED = "modified";
-	private final String PROP_MODIFIER = "modifier";
-	private final String PROP_IS_LATEST_VERSION = "is_latest_version";
-	private final String separator = ".";
+	private final String MODE_FULL = "FULL";
 	
+	private final String PROP_TOKEN = "changeToken";
+	private final String PROP_USER = "user";
+	private final String PROP_PASSWORD = "password";
+	private final String PROP_URL = "url";
+	private final String PROP_REPOSITORY = "repository";
+	private final String PROP_ITEMS = "changelog.items";
+	private final String PROP_COUNTRY = "locale.country";
+	private final String PROP_LANGUAGE = "locale.language";
+	
+	private final String FIELD_ID = "id";
+	private final String FIELD_NAME = "name";
+	private final String FIELD_DESCRIPTION = "cmis_description";
+	private final String FIELD_BASE_TYPE = "basetype";
+	private final String FIELD_OBJECT_TYPE = "objecttype";
+	private final String FIELD_SECONDARY_OBJECT_TYPE_IDS = "secondary_object_type_ids";
+	private final String FIELD_CREATED = "created";
+	private final String FIELD_CREATOR = "creator";
+	private final String FIELD_MODIFIED = "modified";
+	private final String FIELD_MODIFIER = "modifier";
+
+	private final String FIELD_CONTENT_ID = "content_id";
+	private final String FIELD_CONTENT_NAME = "content_name";
+	private final String FIELD_CONTENT_MIMETYPE = "content_mimetype";
+	private final String FIELD_CONTENT_LENGTH = "content_length";
+	private final String FIELD_IS_MAJOR_VEERSION = "is_major_version";
+	private final String FIELD_IS_PRIVATE_WORKING_COPY = "is_pwc";
+	private final String FIELD_IS_CHECKEDOUT = "is_checkedout";
+	private final String FIELD_CHECKEDOUT_BY = "checkedout_by";
+	private final String FIELD_CHECKEDOUT_ID = "checkedout_id";
+	private final String FIELD_CHECKIN_COMMENT = "checkein_comment";
+	private final String FIELD_VERSION_LABEL = "version_label";
+	private final String FIELD_VERSION_SERIES_ID = "version_series_id";
+
+	private final String FIELD_PARENT_ID = "parent_id";
+	private final String FIELD_PATH = "path";
+
+	private final String separator = ".";
+
 	public CoreTracker(NemakiCoreAdminHandler adminHandler, SolrCore core,
 			SolrServer server) {
 		super();
+
 		this.adminHandler = adminHandler;
 		this.core = core;
 		this.server = server;
-		this.dao = (DaoService) new CouchDaoServiceImpl();
+
+		setupCmisSession();
+	}
+
+	public void setupCmisSession() {
+		PropertyManager pm = new PropertyManagerImpl(PATH_CMIS);
+		String user = pm.readValue(PROP_USER);
+		String password = pm.readValue(PROP_PASSWORD);
+		String url = sanitizeUrl(pm.readValue(PROP_URL));
+		String repository = pm.readValue(PROP_REPOSITORY);
+		String country = pm.readValue(PROP_COUNTRY);
+		String language = pm.readValue(PROP_LANGUAGE);
+
+		SessionFactory f = SessionFactoryImpl.newInstance();
+		Map<String, String> parameter = new HashMap<String, String>();
+
+		// user credentials
+		parameter.put(SessionParameter.USER, user);
+		parameter.put(SessionParameter.PASSWORD, password);
+
+		// session locale
+		parameter.put(SessionParameter.LOCALE_ISO3166_COUNTRY, country);
+		parameter.put(SessionParameter.LOCALE_ISO639_LANGUAGE, language);
+
+		// repository
+		parameter.put(SessionParameter.REPOSITORY_ID, repository);
+
+		// WebServices ports
+		parameter.put(SessionParameter.BINDING_TYPE,
+				BindingType.WEBSERVICES.value());
+
+		parameter.put(SessionParameter.WEBSERVICES_ACL_SERVICE, url
+				+ "ACLService?wsdl");
+		parameter.put(SessionParameter.WEBSERVICES_DISCOVERY_SERVICE, url
+				+ "DiscoveryService?wsdl");
+		parameter.put(SessionParameter.WEBSERVICES_MULTIFILING_SERVICE, url
+				+ "MultiFilingService?wsdl");
+		parameter.put(SessionParameter.WEBSERVICES_NAVIGATION_SERVICE, url
+				+ "NavigationService?wsdl");
+		parameter.put(SessionParameter.WEBSERVICES_OBJECT_SERVICE, url
+				+ "ObjectService?wsdl");
+		parameter.put(SessionParameter.WEBSERVICES_POLICY_SERVICE, url
+				+ "PolicyService?wsdl");
+		parameter.put(SessionParameter.WEBSERVICES_RELATIONSHIP_SERVICE, url
+				+ "RelationshipService?wsdl");
+		parameter.put(SessionParameter.WEBSERVICES_REPOSITORY_SERVICE, url
+				+ "RepositoryService?wsdl");
+		parameter.put(SessionParameter.WEBSERVICES_VERSIONING_SERVICE, url
+				+ "VersioningService?wsdl");
+
+		// create session
+		try {
+			cmisSession = f.createSession(parameter);
+			OperationContext context = cmisSession.createOperationContext(null,
+					false, false, false, null, null, false, null, true, 100);
+			cmisSession.setDefaultContext(context);
+		} catch (Exception e) {
+			logger.error("Failed to create a session to CMIS server", e);
+		}
 	}
 
 	@Override
@@ -127,259 +217,220 @@ public class CoreTracker extends CloseHook {
 			// Initialize the last sequence number
 			PropertyManager propertyManager = new PropertyManagerImpl(
 					PATH_TRACKING);
-			propertyManager.modifyValue("seq", "0");
+			propertyManager.modifyValue(PROP_TOKEN, "");
 		} catch (SolrServerException e) {
-			e.printStackTrace();
+			logger.error(core.getName() + ":Initialization failed!", e);
 		} catch (IOException e) {
-			e.printStackTrace();
+			logger.error(core.getName() + ":Initialization failed!", e);
 		}
 	}
 
 	/**
-	 * Execute index tracking
-	 * @param tracking
-	 */
-	public void indexNodes(String tracking) {
-		List<String> mimetypes = getTrackingMimeType();
-		PropertyManager propertyManager = new PropertyManagerImpl(PATH_TRACKING);
-		
-		// Get DocumentChanges, consisting of latest changes of each document
-		List<DocumentChange> dcs = getFilteredChanges(tracking);
-		// Sort by ascending sequence
-		Collections.sort(dcs, new DocumentChangeComparator());
-
-		//Execute indexing by iterating DocumentChange 
-		Iterator<DocumentChange> iterator = dcs.iterator();
-		while (iterator.hasNext()) {
-			DocumentChange dc = iterator.next();
-			String docId = dc.getId();
-			Content content = dao.getContent(docId); // content
-
-			// Check whether to DELETE or UPDATE against Solr
-			// When "DELETED" DocumentChange: DELETE
-			if (dc.isDeleted()) {
-				try {
-					server.deleteById(docId);
-					server.commit();
-					logger.info("Successfully deleted from Solr");
-				} catch (SolrServerException e) {
-					e.printStackTrace();
-				} catch (IOException e) {
-					e.printStackTrace();
-				}
-				continue;
-			}
-
-			// When "CREATED" or "UPDATED" DocumentChange: INDEX
-			// First, Check the document has ContetStream or not.
-			boolean updateFile = false;
-			AttachmentInputStream inputStream = null;
-			if (content.getType().equals("cmis:document")) { // Only for document type
-				String latestId = dao.getLatestAttachment(docId).getId();
-				if (!latestId.equals(getSolrAttachmentId(docId))) {
-					//Retrieve inputStream when it exists
-					inputStream = dao.getInlineAttachment(latestId);
-					//Check inputStream is included in the user-customized MIME-types
-					if (mimetypes.contains(inputStream.getContentType())) {
-						updateFile = true;
-					}
-				}
-			}
-
-			// Build an update request depending on the existence of ContentStream
-			// If you want to change tracked properties, 
-			// dont't forget to modify both methods!!
-			Map<String, String>map = buildParamMap(content);
-			
-			AbstractUpdateRequest update;
-			if (updateFile) {
-				// update request by SolrCell
-				update = buildUpdateRequestWithFile(map, inputStream);
-			} else {
-				//update request without SolrCell
-				update = buildUpdateRequest(map);
-			}
-
-			// Send a request to Solr
-			try {
-				server.request(update);
-			} catch (SolrServerException e) {
-				e.printStackTrace();
-			} catch (IOException e) {
-				e.printStackTrace();
-			}
-
-			// Save the sequence number to the property file
-			propertyManager
-					.modifyValue("seq", String.valueOf(dc.getSequence()));
-			logger.info("[Registerd]" + "seq:" + dc.getSequence() +  ", id:" + docId);
-		}
-	}
-
-	/**
+	 * Read CMIS change logs and Index them
 	 * 
-	 * @return
+	 * @param trackingType
 	 */
-	private List<String> getTrackingMimeType() {
-		PropertyManager pm = new PropertyManagerImpl("nemakisolr.properties");
-		return pm.readValues("tracking.mimetype");
-	}
-	
-	/**
-	 * Filter CouchDB changes log to be indexed
-	 * @param tracking
-	 * @return
-	 */
-	private List<DocumentChange> getFilteredChanges(String tracking) {
-		PropertyManager propertyManager = new PropertyManagerImpl(PATH_TRACKING);
-		String seq = propertyManager.readValue("seq");
-		int lastIndexed = Integer.parseInt(seq);
+	public void index(String trackingType) {
+		ChangeEvents changeEvents = getCmisChangeLog(trackingType);
+		List<ChangeEvent> list = changeEvents.getChangeEvents();
 
-		// When tracking mode is FULL: init seq from which index will be tracked.
-		if (tracking.equals("FULL")) {
-			lastIndexed = 0;
-			propertyManager.modifyValue("seq", String.valueOf(lastIndexed));
-		}
-
-		Set<String> documents = new HashSet<String>();
-		List<DocumentChange> dcs = new ArrayList<DocumentChange>();
-
-		// Retrieve change logs from CouchDB
-		List<DocumentChange> changes = dao.getChangeLog(lastIndexed);
-		Iterator<DocumentChange> iterator = changes.iterator();
-
-		// Make a set of all changed document's id without duplication
-		while (iterator.hasNext()) {
-			DocumentChange dc = iterator.next();
-			documents.add(dc.getId());
-		}
-
-		// Extract the indexing DocumentChange of each changed document
-		Iterator<String> docIterator = documents.iterator();
-		while (docIterator.hasNext()) {
-			String id = docIterator.next();
-
-			// Make a collection of same id DocumentChange
-			List<DocumentChange> sameIdDcs = new ArrayList<DocumentChange>();
-			for (DocumentChange dc : changes) {
-				if (id.equals(dc.getId())) {
-					sameIdDcs.add(dc);
-				}
-			}
-
-			// Sort by ascending order of document id
-			Collections.sort(sameIdDcs, new DocumentChangeComparator());
-
-			// Get the latest DocumentChange
-			DocumentChange lastDc = sameIdDcs.get(sameIdDcs.size() - 1);
-
-			// Filtering
-			// For "DELETED" type DocumentChange
-			if (lastDc.isDeleted()) {
-				// When DELETED from Solr: add it to the list to be deleted from
-				// the index
-				if (existInSolr(lastDc.getId())) {
-					dcs.add(lastDc);
-				} else {
-					continue;
-				}
-				// For "CREATED" or "UPDATED" type DocumentChange
-			} else {
-				Content content = dao.getContent(lastDc.getId());
-				// Filer it to the Document or Folder type
-				if (content != null
-						&& content.getType() != null
-						&& (content.getType().equals("cmis:document") || content
-								.getType().equals("cmis:folder"))) {
-					dcs.add(lastDc);
-				} else {
-					continue;
-				}
+		// After 2nd crawling, discard the first item
+		// Because the specs say that it's included in the results
+		PropertyManager trackingMgr = new PropertyManagerImpl(PATH_TRACKING);
+		String token = trackingMgr.readValue(PROP_TOKEN);
+		if (!StringUtils.isEmpty(token)) {
+			if (!org.apache.commons.collections.CollectionUtils.isEmpty(list)) {
+				list.remove(0);
 			}
 		}
-		return dcs;
+
+		for (ChangeEvent ce : list) {
+			switch (ce.getChangeType()) {
+			case CREATED:
+				registerSolrDocument(ce);
+				break;
+			case UPDATED:
+				registerSolrDocument(ce);
+				break;
+			case DELETED:
+				deleteSolrDocument(ce);
+				continue;
+			default:
+				break;
+			}
+		}
+
+		// Save the latest token
+		trackingMgr.modifyValue(PROP_TOKEN, changeEvents.getLatestChangeLogToken());
 	}
 
 	/**
-	 * Check existence of the given id in Solr
-	 * @param docId
+	 * Get CMIS change logs
+	 * 
+	 * @param trackingType
 	 * @return
 	 */
-	private boolean existInSolr(String docId) {
-		SolrParams params = new SolrQuery("id:" + docId);
+	private ChangeEvents getCmisChangeLog(String trackingType) {
+		PropertyManager trackingMgr = new PropertyManagerImpl(PATH_TRACKING);
+		PropertyManager cmisMgr = new PropertyManagerImpl(PATH_CMIS);
 
-		SolrDocumentList list = new SolrDocumentList();
+		String _latestToken = trackingMgr.readValue(PROP_TOKEN);
+		String latestToken = (trackingType.equals(MODE_FULL) || StringUtils
+				.isEmpty(_latestToken)) ? null : _latestToken;
+
+		String _numItems = cmisMgr.readValue(PROP_ITEMS);
+		long numItems = (StringUtils.isEmpty(_numItems)) ? 100 : Long
+				.valueOf(_numItems);
+
+		ChangeEvents changeEvents = cmisSession.getContentChanges(latestToken,
+				false, numItems);
+
+		// No need for Sorting
+		// (Specification requires they are returned by ASCENDING)
+
+		return changeEvents;
+	}
+
+	/**
+	 * Create/Update Solr document
+	 * 
+	 * @param ce
+	 */
+	private void registerSolrDocument(ChangeEvent ce) {
+		CmisObject obj = cmisSession.getObject(ce.getObjectId());
+
+		AbstractUpdateRequest req = null;
+		Map<String, Object> map = buildParamMap(obj);
+		switch (obj.getBaseTypeId()) {
+		case CMIS_DOCUMENT:
+			ContentStream cs = cmisSession.getContentStream(new ObjectIdImpl(
+					obj.getId()));
+			req = buildUpdateRequestWithFile(map, cs);
+			break;
+		case CMIS_FOLDER:
+			req = buildUpdateRequest(map);
+			break;
+		default:
+			break;
+		}
+
+		String successMsg = "";
+		String errMsg = "";
+		switch (ce.getChangeType()) {
+		case CREATED:
+			successMsg = "Successfully created";
+			errMsg = "Failed to create";
+			break;
+		case UPDATED:
+			successMsg = "Successfully updated";
+			errMsg = "Failed to update";
+			break;
+		default:
+			break;
+		}
+
+		// Send a request to Solr
 		try {
-			QueryResponse qrsp = server.query(params);
-			list = qrsp.getResults();
-		} catch (SolrServerException e) {
-			e.printStackTrace();
-		}
-
-		if (list.getNumFound() > 0) {
-			return true;
-		} else {
-			return false;
+			server.request(req);
+			logger.info(logPrefix(ce) + successMsg);
+		} catch (Exception e) {
+			logger.error(logPrefix(ce) + errMsg, e);
 		}
 	}
 
 	/**
-	 * Get attachement id from a Solr document of given id
-	 * @param docId
-	 * @return
+	 * Delete Solr document
+	 * 
+	 * @param ce
 	 */
-	private String getSolrAttachmentId(String docId) {
-		SolrParams params = new SolrQuery("id:" + docId);
-
-		SolrDocumentList list = new SolrDocumentList();
+	private void deleteSolrDocument(ChangeEvent ce) {
 		try {
-			QueryResponse qrsp = server.query(params);
-			list = qrsp.getResults();
-		} catch (SolrServerException e1) {
-			e1.printStackTrace();
+			server.deleteById(ce.getObjectId());
+			server.commit();
+			logger.info(logPrefix(ce) + "Successfully deleted");
+		} catch (Exception e) {
+			logger.error(logPrefix(ce) + "Failed to ", e);
 		}
+	}
 
-		String sa = null;
-		if (list.getNumFound() != 0) {
-			SolrDocument sd = list.get(0);
-			if (sd.get("attachment") != null) {
-				sa = (String) sd.get("attachment");
-			}
-		}
-		return sa;
+	private String logPrefix(ChangeEvent ce) {
+		return "[objectId=" + ce.getObjectId() + "]";
 	}
 
 	/**
 	 * Build update request with file to Solr
+	 * 
 	 * @param content
 	 * @param inputStream
 	 * @return
 	 */
 	// NOTION: SolrCell seems not to accept a capital property name.
 	// For example, "parentId" doesn't work.
-	private AbstractUpdateRequest buildUpdateRequestWithFile(Map<String, String> map,
-			AttachmentInputStream inputStream) {
+	private AbstractUpdateRequest buildUpdateRequestWithFile(
+			Map<String, Object> map, ContentStream inputStream) {
 		ContentStreamUpdateRequest up = new ContentStreamUpdateRequest(
 				"/update/extract");
-		
-		up.setParam("lowernames", "false");		//for a field with capital letters 
-		
+
 		// Set File Stream
 		try {
-			File file = convertInputStreamToFile(inputStream);
-			up.addFile(file, inputStream.getContentType());
+			File file = convertInputStreamToFile(inputStream.getStream());
+			up.addFile(file, inputStream.getMimeType());
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
 
-		// Set SolrDocument parameters
+		// Set field values
+		// NOTION: 
+		// Cast to String works on the assumption they are already String
+		// so that ModifiableSolrParams can have an argument Map<String, String[]>.
+		// Any other better way?
+		Map<String, String[]> m = new HashMap<String, String[]>();
+		// for a field with capital letters
+		m.put("lowernames", new String[] { "false)" });
+		// Ignored(for schema.xml, ignoring some SolrCell meta fields)
+		m.put(UNKNOWN_FIELD_PREFIX, new String[] { "ignored_" });
+
 		Set<String> keys = map.keySet();
 		Iterator<String> iterator = keys.iterator();
-		while(iterator.hasNext()){
-			String key  = iterator.next();
-			up.setParam(LITERALS_PREFIX + key, map.get(key));
+		while (iterator.hasNext()) {
+			String key = iterator.next();
+			// Multi value
+			Object val = map.get(key);
+			if (val instanceof List<?>) {
+				m.put(LITERALS_PREFIX + key,
+						((List<String>) val).toArray(new String[0]));
+				// Single value
+			} else if (val instanceof String) {
+				String[] _val = { (String) val };
+				m.put(LITERALS_PREFIX + key, _val);
+			}
 		}
-		
+
+		up.setParams(new ModifiableSolrParams(m));
+
+		up.setAction(AbstractUpdateRequest.ACTION.COMMIT, true, true);
+		return (AbstractUpdateRequest) up;
+	}
+
+	/**
+	 * Build an update request to Solr without file
+	 * 
+	 * @param content
+	 * @return
+	 */
+	private AbstractUpdateRequest buildUpdateRequest(Map<String, Object> map) {
+		UpdateRequest up = new UpdateRequest();
+		SolrInputDocument sid = new SolrInputDocument();
+
+		// Set SolrDocument parameters
+		Iterator<String> iterator = map.keySet().iterator();
+		while (iterator.hasNext()) {
+			String key = iterator.next();
+			sid.addField(key, map.get(key));
+		}
+
+		// Set UpdateRequest
+		up.add(sid);
 		// Ignored(for schema.xml, ignoring some SolrCell meta fields)
 		up.setParam(UNKNOWN_FIELD_PREFIX, "ignored_");
 
@@ -387,39 +438,13 @@ public class CoreTracker extends CloseHook {
 		up.setAction(AbstractUpdateRequest.ACTION.COMMIT, true, true);
 		return (AbstractUpdateRequest) up;
 	}
-	
-	/**
-	 * Build an update request to Solr without file
-	 * 
-	 * @param content
-	 * @return
-	 */
-	private AbstractUpdateRequest buildUpdateRequest(Map<String,String>map) {
-		UpdateRequest up = new UpdateRequest();
-		SolrInputDocument sid = new SolrInputDocument();
-		
-		//Set SolrDocument parameters
-		Iterator<String> iterator = map.keySet().iterator();
-		while(iterator.hasNext()){
-			String key = iterator.next();
-			sid.addField(key, map.get(key));
-		}
-		
-		//Set UpdateRequest
-		up.add(sid);
-		// Ignored(for schema.xml, ignoring some SolrCell meta fields)
-		//up.setParam(UNKNOWN_FIELD_PREFIX, "ignored_");
-		up.setAction(AbstractUpdateRequest.ACTION.COMMIT, true, true);
 
-		return (AbstractUpdateRequest) up;
-	}
-	
 	/**
 	 * @param inputStream
 	 * @return
 	 * @throws IOException
 	 */
-	private File convertInputStreamToFile(AttachmentInputStream inputStream)
+	private File convertInputStreamToFile(InputStream inputStream)
 			throws IOException {
 
 		File file = File.createTempFile(
@@ -437,7 +462,6 @@ public class CoreTracker extends CloseHook {
 			inputStream.close();
 			out.flush();
 			out.close();
-			System.out.println("New file created!");
 		} catch (IOException e) {
 			System.out.println(e.getMessage());
 		}
@@ -445,51 +469,126 @@ public class CoreTracker extends CloseHook {
 	}
 
 	/**
-	 * Inner Class for comparing DocumentChange by seq
-	 */
-	private class DocumentChangeComparator implements Comparator<DocumentChange> {
-		public int compare(DocumentChange dc1, DocumentChange dc2) {
-			return dc1.getSequence() - dc2.getSequence();
-		}
-	}
-	
-	/**
 	 * 
 	 * @param content
 	 * @return
 	 */
-	private Map<String,String>buildParamMap(Content content){
-		Map <String, String> map = new HashMap<String, String>();
-		//ID
-		map.put(PROP_ID, content.getId());
-		//NAME
-		map.put(PROP_NAME, content.getName());
-		//PARENT ID
-		map.put(PROP_PARENT_ID, content.getParentId());
-		//PATH
-		map.put(PROP_PATH, content.getPath());
-		//CREATION DATE
-		GregorianCalendar gcCreated = content.getCreated();
-		map.put(PROP_CREATED, getUTC(gcCreated));
-		//CREATOR
-		map.put(PROP_CREATOR, content.getCreator());
-		//MODIFICATION DATE
-		GregorianCalendar gcModified = (content.getModified() == null) ? content.getCreated() : content.getModified();
-		map.put(PROP_MODIFIED, getUTC(gcModified));
-		//MODIFIER
-		map.put(PROP_MODIFIER, content.getModifier());
-		//TYPE
-		map.put(PROP_TYPE, content.getType());
-		//SUBTYPE SPECIFIC PROPERTIES
-		map = setSubTypeProperties(map, content);
-		//ASPECT
-		map = setAspects(map, content);
-		//LATEST VERSION
-		if(content.isDocument()){
-			map.put(PROP_IS_LATEST_VERSION, content.isLatestVersion().toString());
+	private Map<String, Object> buildParamMap(CmisObject object) {
+		Map<String, Object> map = new HashMap<String, Object>();
+
+		buildBaseParamMap(map, object);
+
+		// BaseType specific property
+		switch (object.getBaseTypeId()) {
+		case CMIS_DOCUMENT:
+			map.put(FIELD_CONTENT_ID,
+					object.getPropertyValue(PropertyIds.CONTENT_STREAM_ID));
+			map.put(FIELD_CONTENT_NAME, object
+					.getPropertyValue(PropertyIds.CONTENT_STREAM_FILE_NAME));
+			map.put(FIELD_CONTENT_MIMETYPE, object
+					.getPropertyValue(PropertyIds.CONTENT_STREAM_MIME_TYPE));
+			map.put(FIELD_CONTENT_LENGTH,
+					object.getPropertyValue(PropertyIds.CONTENT_STREAM_LENGTH)
+							.toString());
+			map.put(FIELD_VERSION_LABEL,
+					object.getPropertyValue(PropertyIds.VERSION_LABEL));
+			String isMajorVersion = (object.getPropertyValue(PropertyIds.IS_MAJOR_VERSION) == null) ? null : object.getPropertyValue(PropertyIds.IS_MAJOR_VERSION).toString();
+			map.put(FIELD_IS_MAJOR_VEERSION, isMajorVersion);
+			map.put(FIELD_VERSION_SERIES_ID,
+					object.getPropertyValue(PropertyIds.VERSION_SERIES_ID));
+			String isCheckedOut = (object.getPropertyValue(PropertyIds.IS_VERSION_SERIES_CHECKED_OUT) == null) ? null : object.getPropertyValue(PropertyIds.IS_VERSION_SERIES_CHECKED_OUT).toString();
+			map.put(FIELD_IS_CHECKEDOUT, isCheckedOut);
+			map.put(FIELD_CHECKEDOUT_ID,
+					object.getPropertyValue(PropertyIds.VERSION_SERIES_CHECKED_OUT_ID));
+			map.put(FIELD_CHECKEDOUT_BY,
+					object.getPropertyValue(PropertyIds.VERSION_SERIES_CHECKED_OUT_BY));
+			map.put(FIELD_CHECKIN_COMMENT,
+					object.getPropertyValue(PropertyIds.CHECKIN_COMMENT));
+			String isPrivateWorkingCopy = (object.getPropertyValue(PropertyIds.IS_PRIVATE_WORKING_COPY) == null) ? null : object.getPropertyValue(PropertyIds.IS_PRIVATE_WORKING_COPY).toString();
+			map.put(FIELD_IS_PRIVATE_WORKING_COPY, isPrivateWorkingCopy);
+			break;
+		case CMIS_FOLDER:
+			map.put(FIELD_PARENT_ID,
+					object.getPropertyValue(PropertyIds.PARENT_ID));
+			map.put(FIELD_PATH, object.getPropertyValue(PropertyIds.PATH));
+		default:
+			break;
 		}
-		
+
+		// SubType & Secondary property
+		buildDynamicParamMap(map, object);
+
 		return map;
+	}
+
+	private void buildBaseParamMap(Map<String, Object> map, CmisObject object) {
+		map.put(FIELD_NAME, object.getName());
+		map.put(FIELD_DESCRIPTION, object.getDescription());
+		map.put(FIELD_ID, object.getId());
+		map.put(FIELD_BASE_TYPE, object.getBaseTypeId().value());
+		map.put(FIELD_OBJECT_TYPE, object.getType().getQueryName());
+		map.put(FIELD_SECONDARY_OBJECT_TYPE_IDS, getSecondaryIds(object));
+		map.put(FIELD_CREATED, getUTC(object.getCreationDate()));
+		map.put(FIELD_CREATOR, object.getCreatedBy());
+		map.put(FIELD_MODIFIED, getUTC(object.getLastModificationDate()));
+		map.put(FIELD_MODIFIER, object.getLastModifiedBy());
+	}
+
+	private List<String> getSecondaryIds(CmisObject object) {
+		List<SecondaryType> secondaryTypes = object.getSecondaryTypes();
+		if (CollectionUtils.isEmpty(secondaryTypes)) {
+			return new ArrayList<String>();
+		} else {
+			List<String> list = new ArrayList<String>();
+			Iterator<SecondaryType> iterator = secondaryTypes.iterator();
+			while (iterator.hasNext()) {
+				list.add(iterator.next().getId());
+			}
+			return list;
+		}
+	}
+
+	/**
+	 * For properties other than those of baseType. They are indexed regardless
+	 * of its "queryable" flag in case the flag is changed later.
+	 * 
+	 * @param map
+	 * @param object
+	 */
+	private void buildDynamicParamMap(Map<String, Object> map, CmisObject object) {
+		Map<String, PropertyDefinition<?>> propDefs = object.getType()
+				.getPropertyDefinitions();
+		Map<String, PropertyDefinition<?>> basePropDefs = object.getBaseType()
+				.getPropertyDefinitions();
+
+		for (String propId : propDefs.keySet()) {
+			if (!basePropDefs.containsKey(propId)) {
+				boolean isSecondary = false;
+
+				// Secondary type
+				List<SecondaryType> secs = object.getSecondaryTypes();
+				if (CollectionUtils.isNotEmpty(secs)) {
+					for (SecondaryType sec : secs) {
+						Map<String, PropertyDefinition<?>> secondaryPropDefs = sec
+								.getPropertyDefinitions();
+						// Secondary specific property
+						if (secondaryPropDefs.containsKey(propId)) {
+							String type = "dynamic.property."
+									+ sec.getQueryName() + separator + propId;
+							map.put(type, object.getPropertyValue(propId));
+							isSecondary = true;
+							break;
+						}
+					}
+				}
+
+				// Non-Secondary type
+				if (!isSecondary) {
+					String type = "dynamic.property." + propId;
+					map.put(type, object.getPropertyValue(propId));
+				}
+			}
+		}
 	}
 
 	/**
@@ -497,41 +596,19 @@ public class CoreTracker extends CloseHook {
 	 * @param cal
 	 * @return
 	 */
-	private String getUTC(GregorianCalendar cal){
+	private String getUTC(GregorianCalendar cal) {
 		DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
 		df.setTimeZone(TimeZone.getTimeZone("UTC"));
 		String timestamp = df.format(cal.getTime());
 		return timestamp;
 	}
-	
-	/**
-	 * Return a map with a key like "aspect:<aspectName>:<keyName>" and its value 
-	 */
-	private Map<String,String>setAspects(Map<String,String>map, Content content){
-		List<Aspect> aspects = content.getAspects();
-		Iterator<Aspect> iterator = aspects.iterator();
-		while (iterator.hasNext()) {
-			Aspect aspect = iterator.next();
-			String type = "dynamic.property." + aspect.getName() + separator;
-			List<Property> properties = aspect.getProperties();
-			Iterator<Property> propIterator = properties.iterator();
-			while(propIterator.hasNext()){
-				Property property = propIterator.next();
-				//TODO Retreive query name in place of property id 
-				String field = type + property.getKey();
-				map.put(field, property.getValue().toString());
-			}
+
+	private String sanitizeUrl(String url) {
+		String end = url.substring(url.length() - 1, url.length() - 1);
+		if (end.equals("/")) {
+			return url;
+		} else {
+			return url + "/";
 		}
-		return map;
-	}
-	
-	private Map<String,String>setSubTypeProperties(Map<String,String>map, Content content){
-		List<Property> subTypeProperties = content.getSubTypeProperties();
-		for(Property prop : subTypeProperties){
-			String field = "dynamic.property." + prop.getKey();
-			//TODO cardinality=MULTIPLEの場合
-			map.put(field, prop.getValue().toString());
-		}
-		return map;
 	}
 }

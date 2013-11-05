@@ -28,7 +28,6 @@ import java.util.Collection;
 import java.util.GregorianCalendar;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map.Entry;
 import java.util.TimeZone;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -1285,7 +1284,7 @@ public class ContentServiceImpl implements ContentService {
 			Holder<String> changeLogToken, Boolean includeProperties,
 			String filter, Boolean includePolicyIds, Boolean includeAcl,
 			BigInteger maxItems, ExtensionsData extension){
-		int latestChangeLogToken = FIRST_TOKEN;
+		int latestChangeLogToken = 0;
 		if(changeLogToken != null && changeLogToken.getValue() != null && NumberUtils.isNumber(changeLogToken.getValue()))
 			latestChangeLogToken = Integer.parseInt(changeLogToken.getValue()); 
 		

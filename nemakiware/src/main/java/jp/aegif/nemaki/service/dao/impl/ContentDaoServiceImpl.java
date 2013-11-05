@@ -757,6 +757,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		List<CouchChange> l = connector.queryView(query, CouchChange.class);
 		if (CollectionUtils.isEmpty(l)) return null;
 		change = l.get(0).convert();
+		
 		this.requestDurationCache.getLatestChangeCache().set("lc", change);
 
 		return change;

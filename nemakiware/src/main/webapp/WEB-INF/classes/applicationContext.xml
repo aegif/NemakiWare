@@ -254,6 +254,12 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		<property name="exceptionService">
 			<ref bean="ExceptionService"></ref>
 		</property>
+		<property name="solrUtil">
+			<ref bean="solrUtil"></ref>
+		</property>
+	</bean>
+	
+	<bean id="solrUtil" class="jp.aegif.nemaki.query.solr.SolrUtil" scope="singleton">
 	</bean>
 
 	<bean id="objectService" class="jp.aegif.nemaki.service.cmis.impl.ObjectServiceImpl">
