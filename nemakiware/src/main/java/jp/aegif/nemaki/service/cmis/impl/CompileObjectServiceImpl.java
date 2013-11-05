@@ -77,6 +77,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerImp
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
 import org.apache.chemistry.opencmis.commons.impl.server.ObjectInfoImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -173,8 +174,8 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 	@Override
 	public ObjectList compileChangeDataList(CallContext context,
-			List<Change> changes, Boolean includeProperties, String filter,
-			Boolean includePolicyIds, Boolean includeAcl) {
+			List<Change> changes, Holder<String> changeLogToken, Boolean includeProperties,
+			String filter, Boolean includePolicyIds, Boolean includeAcl) {
 		ObjectListImpl results = new ObjectListImpl();
 		results.setObjects(new ArrayList<ObjectData>());
 
@@ -197,8 +198,16 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			}
 		}
 
+		
 		results.setNumItems(BigInteger.valueOf(results.getObjects().size()));
-
+		
+		String latestInRepository = repositoryService.getRepositoryInfo().getLatestChangeLogToken();
+		String latestInResults = changeLogToken.getValue();
+		if(latestInResults.equals(latestInRepository)){
+			results.setHasMoreItems(false);
+		}else{
+			results.setHasMoreItems(true);
+		}
 		return results;
 	}
 

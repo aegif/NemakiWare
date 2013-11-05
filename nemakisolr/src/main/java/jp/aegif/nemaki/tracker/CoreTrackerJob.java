@@ -21,6 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.tracker;
 
+import org.apache.log4j.Logger;
 import org.quartz.Job;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
@@ -32,14 +33,24 @@ import org.quartz.JobExecutionException;
  */
 public class CoreTrackerJob implements Job{
 	
+	private final String MODE_AUTO = "AUTO";
+	
+	Logger logger = Logger.getLogger(CoreTrackerJob.class);
+	
 	public CoreTrackerJob(){
 		super();
 	}
 	
 	public void execute(JobExecutionContext jec) throws JobExecutionException{
 		CoreTracker coreTracker = (CoreTracker) jec.getJobDetail().getJobDataMap().get("TRACKER");
-		//TODO When using multi threads Job, kind of exclusive control will be required. 
-		coreTracker.indexNodes("AUTO");
+		
+		if(coreTracker.cmisSession == null){
+			coreTracker.setupCmisSession();
+		}
+		if(coreTracker.cmisSession == null){
+			logger.error("Tracking is not executed because the session to the CMIS server is not established.");
+		}else{
+			coreTracker.index(MODE_AUTO);
+		}
 	}
-	
 }

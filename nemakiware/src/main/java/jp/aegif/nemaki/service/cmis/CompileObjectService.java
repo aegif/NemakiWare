@@ -35,6 +35,7 @@ import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.impl.server.ObjectInfoImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.chemistry.opencmis.commons.spi.Holder;
 
 public interface CompileObjectService {
 	public ObjectData compileObjectData(CallContext context,
@@ -46,8 +47,8 @@ public interface CompileObjectService {
 			Boolean includeAcl, BigInteger maxItems, BigInteger skipCount);
 	
 	public ObjectList compileChangeDataList(CallContext context, List<Change> changes,
-			Boolean includeProperties, String filter, Boolean includePolicyIds,
-			Boolean includeAcl);
+			Holder<String> changeLogToken, Boolean includeProperties, String filter,
+			Boolean includePolicyIds, Boolean includeAcl);
 	
 	public Properties compileProperties(Content content, Set<String> filter,
 			ObjectInfoImpl objectInfo);

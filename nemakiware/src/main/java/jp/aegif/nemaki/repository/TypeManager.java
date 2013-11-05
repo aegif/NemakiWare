@@ -80,6 +80,8 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.util.CollectionUtils;
 
+import com.sun.xml.ws.org.objectweb.asm.Type;
+
 /**
  * Type Manager class, defines document/folder/relationship/policy
  */
@@ -418,7 +420,7 @@ public class TypeManager implements
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.IS_MAJOR_VERSION, PropertyType.BOOLEAN,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				!QUERYABLE, !ORDERABLE, null));
+				QUERYABLE, !ORDERABLE, null));
 
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.IS_LATEST_MAJOR_VERSION, PropertyType.BOOLEAN,
@@ -448,27 +450,27 @@ public class TypeManager implements
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.VERSION_SERIES_CHECKED_OUT_BY, PropertyType.STRING,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				!QUERYABLE, !ORDERABLE, null));
+				QUERYABLE, !ORDERABLE, null));
 
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.VERSION_SERIES_CHECKED_OUT_ID, PropertyType.ID,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				!QUERYABLE, !ORDERABLE, null));
+				QUERYABLE, !ORDERABLE, null));
 
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.CHECKIN_COMMENT, PropertyType.STRING,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				!QUERYABLE, !ORDERABLE, null));
+				QUERYABLE, !ORDERABLE, null));
 
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.CONTENT_STREAM_LENGTH, PropertyType.INTEGER,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				!QUERYABLE, !ORDERABLE, null));
+				QUERYABLE, !ORDERABLE, null));
 
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.CONTENT_STREAM_MIME_TYPE, PropertyType.STRING,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				!QUERYABLE, !ORDERABLE, null));
+				QUERYABLE, !ORDERABLE, null));
 
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.CONTENT_STREAM_FILE_NAME, PropertyType.STRING,
@@ -938,6 +940,8 @@ public class TypeManager implements
 		int d = (depth == null ? -1 : depth.intValue());
 		if (d == 0) {
 			throw new CmisInvalidArgumentException("Depth must not be 0!");
+		}else if(d < -1){
+			throw new CmisInvalidArgumentException("Depth must be positive(except for -1, that means infinity!");
 		}
 
 		// set property definition flag to default value if not set
@@ -945,20 +949,37 @@ public class TypeManager implements
 				: includePropertyDefinitions.booleanValue());
 
 		if (typeId == null) {
-			result.add(getTypesDescendantsInternal(d, types.get(FOLDER_TYPE_ID), ipd));
-			result.add(getTypesDescendantsInternal(d, types.get(DOCUMENT_TYPE_ID), ipd));
-			result.add(getTypesDescendantsInternal(d, types.get(RELATIONSHIP_TYPE_ID), ipd));
-			result.add(getTypesDescendantsInternal(d, types.get(POLICY_TYPE_ID), ipd));
-			result.add(getTypesDescendantsInternal(d, types.get(ITEM_TYPE_ID), ipd));
-			result.add(getTypesDescendantsInternal(d, types.get(SECONDARY_TYPE_ID), ipd));
+			flattenTypeDefinitionContainer(types.get(FOLDER_TYPE_ID), result, d, ipd);
+			flattenTypeDefinitionContainer(types.get(DOCUMENT_TYPE_ID), result, d, ipd);
+			flattenTypeDefinitionContainer(types.get(RELATIONSHIP_TYPE_ID), result, d, ipd);
+			flattenTypeDefinitionContainer(types.get(POLICY_TYPE_ID), result, d, ipd);
+			flattenTypeDefinitionContainer(types.get(ITEM_TYPE_ID), result, d, ipd);
+			flattenTypeDefinitionContainer(types.get(SECONDARY_TYPE_ID), result, d, ipd);
 		} else {
-			TypeDefinitionContainer tc = types.get(typeId);
-			if (tc != null) {
-				result.add(getTypesDescendantsInternal(d, tc, ipd));
-			}
+			TypeDefinitionContainer tdc = types.get(typeId);
+			flattenTypeDefinitionContainer(tdc, result, d, ipd);
 		}
 
 		return result;
+	}
+	
+	/**
+	 * TODO includePropertyDefinitions flag doesn't work
+	 * TODO and type.getPropertyDefinitions().clear() destroys PropertyDefinitions of "types" 
+	 * @param tdc
+	 * @param result
+	 * @param includePropertyDefinitions
+	 */
+	private void flattenTypeDefinitionContainer(TypeDefinitionContainer tdc, List<TypeDefinitionContainer> result, int depth, boolean includePropertyDefinitions){
+		if(depth == 0) return;
+		
+		result.add(tdc);
+		List<TypeDefinitionContainer> children = tdc.getChildren();
+		if(!CollectionUtils.isEmpty(children)){
+			for(TypeDefinitionContainer child : children){
+				flattenTypeDefinitionContainer(child, result, depth -1, includePropertyDefinitions);
+			}
+		}
 	}
 
 	/**

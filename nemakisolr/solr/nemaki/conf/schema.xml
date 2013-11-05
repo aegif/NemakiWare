@@ -99,21 +99,32 @@
    
    <!-- NemakiWare CMIS properties -->     
    <field name="id" type="string" indexed="true" stored="true" required="true" multiValued="false" />
-   <field name="name" type="text_ja" indexed="true" stored="true" multiValued="false" />
-   <field name="attachment" type="string" indexed="true" stored="true" multiValued="false" />
-   <field name="length" type="long" indexed="true" stored="true" multiValued="false" />
-   <field name="mimetype" type="text_general" indexed="true" stored="true" multiValued="false" />
-   <field name="permission" type="text_general" indexed="true" stored="true" multiValued="true" />
-   <field name="aspects" type="text_general" indexed="true" stored="true" multiValued="false" />
-   <field name="parentid" type="string" indexed="true" stored="true" multiValued="false" />
-   <field name="path" type="string" indexed="true" stored="true" multiValued="false" />
+   <field name="name" type="string" indexed="true" stored="true" multiValued="false" />
+   <field name="cmis_description" type="string" indexed="true" stored="true"/>
    <field name="created" type="date" indexed="true" stored="true" multiValued="false" />
    <field name="creator" type="string" indexed="true" stored="true" multiValued="false" />
    <field name="modified" type="date" indexed="true" stored="true" multiValued="false" />
    <field name="modifier" type="string" indexed="true" stored="true" multiValued="false" />
-   <field name="type" type="string" indexed="true" stored="true" multiValued="false" />
-   <field name="is_latest_version" type="string" indexed="true" stored="true" multiValued="false" />
+   <field name="basetype" type="string" indexed="true" stored="true" multiValued="false" />
+   <field name="objecttype" type="string" indexed="true" stored="true" multiValued="false" />
+   <field name="secondary_object_type_ids" type="string" indexed="true" stored="true" multiValued="true" />
    
+   <field name="is_major_version" type="boolean" indexed="true" stored="true" multiValued="false" />
+   <field name="is_pwc" type="boolean" indexed="true" stored="true" multiValued="false" />
+   <field name="is_checkedout" type="boolean" indexed="true" stored="true" multiValued="false" />
+   <field name="checkedout_id" type="string" indexed="true" stored="true" multiValued="false" />
+   <field name="checkedout_by" type="string" indexed="true" stored="true" multiValued="false" />
+   <field name="checkein_comment" type="string" indexed="true" stored="true" multiValued="false" />
+   <field name="version_label" type="string" indexed="true" stored="true" multiValued="false" />
+   <field name="version_series_id" type="string" indexed="true" stored="true" multiValued="false" />
+   <field name="content_name" type="string" indexed="true" stored="true" multiValued="false" />
+   <field name="content_id" type="string" indexed="true" stored="true" multiValued="false" />
+   <field name="content_length" type="long" indexed="true" stored="true" multiValued="false" />
+   <field name="content_mimetype" type="string" indexed="true" stored="true" multiValued="false" />
+   
+   <field name="parent_id" type="string" indexed="true" stored="true" multiValued="false" />
+   <field name="path" type="string" indexed="true" stored="true" multiValued="false" />
+
    <!-- Common metadata fields, named specifically to match up with
      SolrCell metadata when parsing rich documents such as Word, PDF.
      Some fields are multiValued only because Tika currently may return
@@ -170,9 +181,7 @@
         alternately, change the type="ignored" to some other type e.g. "text" if you want 
         unknown fields indexed and/or stored by default --> 
    <!--dynamicField name="*" type="ignored" multiValued="true" /-->
-   
-   <dynamicField name="aspect.*" type="string"/>
-   <dynamicField name="dynamic.*" type="string"/>
+   <dynamicField name="dynamic.*" type="string" indexed="true" stored="true" multiValued="true"/>
    <dynamicField name="ignored_*" type="ignored"/>
    
  </fields>
