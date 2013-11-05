@@ -185,6 +185,12 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 	</bean>
 
 	<bean id="principalDaoService" class="jp.aegif.nemaki.service.dao.impl.PrincipalDaoServiceImpl">
+		<property name="nonCachedPrincipalDaoService">
+			<ref bean="nonCachedPrincipalDaoService"></ref>
+		</property>
+	</bean>
+
+	<bean id="nonCachedPrincipalDaoService" class="jp.aegif.nemaki.service.dao.impl.CouchPrincipalDaoServiceImpl">
 		<property name="connector">
 			<ref bean="connector"></ref>
 		</property>
