@@ -23,7 +23,6 @@ package jp.aegif.nemaki.service.dao.impl;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 import jp.aegif.nemaki.model.Group;
 import jp.aegif.nemaki.model.User;
@@ -31,7 +30,6 @@ import jp.aegif.nemaki.model.couch.CouchGroup;
 import jp.aegif.nemaki.model.couch.CouchUser;
 import jp.aegif.nemaki.service.dao.PrincipalDaoService;
 import jp.aegif.nemaki.service.db.CouchConnector;
-
 import net.sf.ehcache.Cache;
 import net.sf.ehcache.CacheManager;
 import net.sf.ehcache.Element;
@@ -42,18 +40,6 @@ import org.apache.commons.logging.LogFactory;
 import org.ektorp.CouchDbConnector;
 import org.ektorp.ViewQuery;
 import org.springframework.stereotype.Component;
-
-import java.util.Hashtable;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import javax.naming.Context;
-import javax.naming.NamingEnumeration;
-import javax.naming.NamingException;
-import javax.naming.directory.Attribute;
-import javax.naming.directory.DirContext;
-import javax.naming.directory.InitialDirContext;
-import javax.naming.directory.SearchControls;
-import javax.naming.directory.SearchResult;
 
 /**
  * Dao Service for Principal(User/Group)
@@ -311,16 +297,6 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 		groupsCache.put(new Element("groups", groups));
 		
 		return groups;
-	}
-	
-	/**
-	 * 
-	 * @param objectId
-	 * @param msg
-	 * @return
-	 */
-	private String buildLogMsg(String id, String msg){
-		return "[ID:" + id + "]" + msg;
 	}
 	
 	public void setConnector(CouchConnector connector) {
