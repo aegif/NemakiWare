@@ -599,7 +599,7 @@ public class ContentServiceImpl implements ContentService {
 	private Document buildNewBasicDocument(CallContext callContext,
 			Properties properties, Folder parentFolder) {
 		Document d = new Document();
-		setBaseProperties(callContext, properties, d);
+		setBaseProperties(callContext, properties, d, parentFolder.getId());
 		d.setParentId(parentFolder.getId());
 		setSignature(callContext, d);
 		// Aspect
@@ -730,7 +730,7 @@ public class ContentServiceImpl implements ContentService {
 	public Folder createFolder(CallContext callContext, Properties properties,
 			Folder parentFolder) {
 		Folder f = new Folder();
-		setBaseProperties(callContext, properties, f);
+		setBaseProperties(callContext, properties, f, parentFolder.getId());
 		f.setParentId(parentFolder.getId());
 		//Defaults to document & folder if not specified
 		List<String> allowedTypes = getIdListProperty(properties,PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS);
@@ -763,7 +763,7 @@ public class ContentServiceImpl implements ContentService {
 			ExtensionsData extension) {
 
 		Relationship rel = new Relationship();
-		setBaseProperties(callContext, properties, rel);
+		setBaseProperties(callContext, properties, rel, null);
 		rel.setSourceId(getIdProperty(properties, PropertyIds.SOURCE_ID));
 		rel.setTargetId(getIdProperty(properties, PropertyIds.TARGET_ID));
 		// Set ACL
@@ -780,13 +780,12 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public Policy createPolicy(CallContext callContext, Properties properties,
-			String folderId, List<String> policies,
-			org.apache.chemistry.opencmis.commons.data.Acl addAces,
+			List<String> policies, org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces,
 			ExtensionsData extension) {
 
 		Policy p = new Policy();
-		setBaseProperties(callContext, properties, p);
+		setBaseProperties(callContext, properties, p, null);
 		p.setPolicyText(getStringProperty(properties, PropertyIds.POLICY_TEXT));
 		p.setAppliedIds(new ArrayList<String>());
 
@@ -803,7 +802,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	private void setBaseProperties(CallContext callContext,
-			Properties properties, Content content) {
+			Properties properties, Content content, String parentFolderId) {
 		//Object Type
 		String objectTypeId = getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID);
 		content.setObjectType(objectTypeId);
@@ -814,7 +813,7 @@ public class ContentServiceImpl implements ContentService {
 		content.setType(baseTypeId.value());
 		
 		//Name(Unique in a folder)
-		String uniqueName = buildUniqueName(getStringProperty(properties, PropertyIds.NAME), content.getParentId(), getIdProperty(properties, PropertyIds.OBJECT_ID));
+		String uniqueName = buildUniqueName(getStringProperty(properties, PropertyIds.NAME), parentFolderId, null);
 		content.setName(uniqueName);
 		
 		//Description
@@ -854,12 +853,13 @@ public class ContentServiceImpl implements ContentService {
 	private List<String> getSecondaryTypeIds(Content content){
 		List<String> result = new ArrayList<String>();
 		List<Aspect> aspects = content.getAspects();
-		for(Aspect aspect : aspects){
-			result.add(aspect.getName());
+		if(CollectionUtils.isNotEmpty(aspects)){
+			for(Aspect aspect : aspects){
+				result.add(aspect.getName());
+			}
 		}
 		return result;
 	}
-	
 	
 	
 	private Content modifyProperties(CallContext callContext, Properties properties, Content content) {
@@ -1016,7 +1016,7 @@ public class ContentServiceImpl implements ContentService {
 	public void setUpdatePropertyValue(Content content, PropertyData<?> propertyData, Properties properties){
 		if(propertyData.getId().equals(PropertyIds.NAME)){
 			if(getIdProperty(properties, PropertyIds.OBJECT_ID) != content.getId()){
-				String uniqueName = buildUniqueName(getStringProperty(properties, PropertyIds.NAME), content.getParentId(), getIdProperty(properties, PropertyIds.OBJECT_ID));
+				String uniqueName = buildUniqueName(getStringProperty(properties, PropertyIds.NAME), content.getParentId(), content.getId());
 				content.setName(uniqueName);
 			}
 		}
@@ -1429,13 +1429,13 @@ public class ContentServiceImpl implements ContentService {
 			//Get collection of conflict names
 			for(Content child : children){
 				//Exclude update of existing content in the folder
-				if(existingId != null && !child.getId().equals(existingId)){
-					if(nameConflicts(originalName, child.getName())){
+				if(nameConflicts(originalName, child.getName())){
+					if(!child.getId().equals(existingId)){
 						conflicts.add(child.getName());
 					}
 				}
 			}
-						
+
 			if(CollectionUtils.isEmpty(conflicts)){
 				return originalName;
 			}else{

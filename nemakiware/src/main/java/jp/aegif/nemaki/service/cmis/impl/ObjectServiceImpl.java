@@ -253,8 +253,8 @@ public class ObjectServiceImpl implements ObjectService {
 			objectId = createRelationship(callContext, properties, policies,
 					null, null, extension);
 		} else if (type.getBaseTypeId() == BaseTypeId.CMIS_POLICY) {
-			objectId = createPolicy(callContext, properties, folderId,
-					policies, null, null, extension);
+			objectId = createPolicy(callContext, properties, policies,
+					null, null, extension);
 		} else {
 			throw new CmisObjectNotFoundException(
 					"Cannot create object of type '" + typeId + "'!");
@@ -489,8 +489,8 @@ public class ObjectServiceImpl implements ObjectService {
 
 	@Override
 	public String createPolicy(CallContext callContext, Properties properties,
-			String folderId, List<String> policies, Acl addAces,
-			Acl removeAces, ExtensionsData extension) {
+			List<String> policies, Acl addAces, Acl removeAces,
+			ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -511,7 +511,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		Policy policy = contentService.createPolicy(callContext, properties, folderId, policies, addAces, removeAces, extension);
+		Policy policy = contentService.createPolicy(callContext, properties, policies, addAces, removeAces, extension);
 		return policy.getId();
 	}
 

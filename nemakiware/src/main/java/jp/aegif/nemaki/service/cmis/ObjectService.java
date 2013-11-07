@@ -186,7 +186,7 @@ public interface ObjectService {
 			Acl addAces, Acl removeAces, ExtensionsData extension);	
 	
 	public abstract String createPolicy(CallContext callContext, Properties properties,
-			String folderId, List<String> policies, Acl addAces,
-			Acl removeAces, ExtensionsData extension);
+			List<String> policies, Acl addAces, Acl removeAces,
+			ExtensionsData extension);
 
 }
