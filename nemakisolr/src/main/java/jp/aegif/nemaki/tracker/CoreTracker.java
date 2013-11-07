@@ -36,6 +36,7 @@ import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.ListIterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.TimeZone;
@@ -58,16 +59,22 @@ import org.apache.chemistry.opencmis.commons.SessionParameter;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BindingType;
+import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
+import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.request.AbstractUpdateRequest;
 import org.apache.solr.client.solrj.request.ContentStreamUpdateRequest;
 import org.apache.solr.client.solrj.request.UpdateRequest;
+import org.apache.solr.client.solrj.response.QueryResponse;
+import org.apache.solr.common.SolrDocumentList;
 import org.apache.solr.common.SolrInputDocument;
 import org.apache.solr.common.params.ModifiableSolrParams;
+import org.apache.solr.common.params.SolrParams;
+import org.apache.solr.common.util.Hash;
 import org.apache.solr.core.CloseHook;
 import org.apache.solr.core.SolrCore;
 
@@ -232,18 +239,20 @@ public class CoreTracker extends CloseHook {
 	 */
 	public void index(String trackingType) {
 		ChangeEvents changeEvents = getCmisChangeLog(trackingType);
-		List<ChangeEvent> list = changeEvents.getChangeEvents();
+		List<ChangeEvent> events = changeEvents.getChangeEvents();
 
 		// After 2nd crawling, discard the first item
 		// Because the specs say that it's included in the results
 		PropertyManager trackingMgr = new PropertyManagerImpl(PATH_TRACKING);
 		String token = trackingMgr.readValue(PROP_TOKEN);
 		if (!StringUtils.isEmpty(token)) {
-			if (!org.apache.commons.collections.CollectionUtils.isEmpty(list)) {
-				list.remove(0);
+			if (!org.apache.commons.collections.CollectionUtils.isEmpty(events)) {
+				events.remove(0);
 			}
 		}
 
+		//When an object is finally deleted, no need of UPDATED event
+		List<ChangeEvent> list = removeChangeEventsOfDeletedObject(events);
 		for (ChangeEvent ce : list) {
 			switch (ce.getChangeType()) {
 			case CREATED:
@@ -264,6 +273,8 @@ public class CoreTracker extends CloseHook {
 		trackingMgr.modifyValue(PROP_TOKEN, changeEvents.getLatestChangeLogToken());
 	}
 
+	
+	
 	/**
 	 * Get CMIS change logs
 	 * 
@@ -291,6 +302,60 @@ public class CoreTracker extends CloseHook {
 		return changeEvents;
 	}
 
+	/**
+	 * On the assumpion that the list is sorted by ascending time
+	 * @param events
+	 * @return
+	 */
+	private List<ChangeEvent> removeChangeEventsOfDeletedObject(List<ChangeEvent> events){
+		List<ChangeEvent> list = new ArrayList<ChangeEvent>();
+		HashMap<String, Boolean> deletedFlags = new HashMap<String, Boolean>();
+		
+		Iterator<ChangeEvent> iterator = events.iterator();
+		while(iterator.hasNext()){
+			ChangeEvent event = iterator.next();
+			
+			boolean deleted = false;
+			if(deletedFlags.get(event.getObjectId()) == null){
+				deleted = checkDeleted(event.getObjectId(), events);
+				deletedFlags.put(event.getObjectId(), deleted);
+			}else{
+				deleted = deletedFlags.get(event.getObjectId());
+			}
+			 
+			if(deleted && event.getChangeType() != ChangeType.DELETED){
+				continue;
+			}else{
+				list.add(event);
+			}
+		}
+		
+		return list;
+	}
+	
+	/**
+	 * On the assumption that the list is sorted by ascending time
+	 * @param objectId
+	 * @param events
+	 * @return
+	 */
+	private boolean checkDeleted(String objectId, List<ChangeEvent> events){
+		boolean deleted = false;
+		int size = events.size();
+		ListIterator<ChangeEvent> iterator = events.listIterator(size);
+		while(iterator.hasPrevious()){
+			ChangeEvent event = iterator.previous();
+			if(event.getObjectId().equals(objectId)){
+				if(event.getChangeType() == ChangeType.DELETED){
+					deleted = true;
+				}
+				break;
+			}
+		}
+		
+		return deleted;
+	}
+	
 	/**
 	 * Create/Update Solr document
 	 * 
@@ -345,6 +410,20 @@ public class CoreTracker extends CloseHook {
 	 */
 	private void deleteSolrDocument(ChangeEvent ce) {
 		try {
+			//Check if the SolrDocument exists
+			SolrQuery solrQuery = new SolrQuery();
+			solrQuery.setQuery(FIELD_ID + ":" + ce.getObjectId());
+			QueryResponse resp = server.query(solrQuery);
+			if (resp != null && resp.getResults() != null){
+				if(resp.getResults().getNumFound() == 0){
+					logger.info(logPrefix(ce) + "DELETED type change event is skipped because there is no SolrDocument");
+					return;
+				}
+			}else{
+				logger.error(core.getName()+ ":Something wrong in the connection to Solr server");
+			}
+			
+			//Delete
 			server.deleteById(ce.getObjectId());
 			server.commit();
 			logger.info(logPrefix(ce) + "Successfully deleted");
