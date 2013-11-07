@@ -32,8 +32,10 @@ import java.io.OutputStream;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.ListIterator;
@@ -250,9 +252,11 @@ public class CoreTracker extends CloseHook {
 				events.remove(0);
 			}
 		}
-
-		//When an object is finally deleted, no need of UPDATED event
-		List<ChangeEvent> list = removeChangeEventsOfDeletedObject(events);
+		
+		if(events.isEmpty()) return;
+		
+		//Extract only the last events of each objectId
+		List<ChangeEvent> list = extractChangeEvent(events);
 		for (ChangeEvent ce : list) {
 			switch (ce.getChangeType()) {
 			case CREATED:
@@ -272,8 +276,6 @@ public class CoreTracker extends CloseHook {
 		// Save the latest token
 		trackingMgr.modifyValue(PROP_TOKEN, changeEvents.getLatestChangeLogToken());
 	}
-
-	
 	
 	/**
 	 * Get CMIS change logs
@@ -303,57 +305,28 @@ public class CoreTracker extends CloseHook {
 	}
 
 	/**
-	 * On the assumpion that the list is sorted by ascending time
+	 * 
 	 * @param events
 	 * @return
 	 */
-	private List<ChangeEvent> removeChangeEventsOfDeletedObject(List<ChangeEvent> events){
+	private List<ChangeEvent> extractChangeEvent(List<ChangeEvent> events){
 		List<ChangeEvent> list = new ArrayList<ChangeEvent>();
-		HashMap<String, Boolean> deletedFlags = new HashMap<String, Boolean>();
+		Set<String> objectIds = new HashSet<String>();
 		
-		Iterator<ChangeEvent> iterator = events.iterator();
-		while(iterator.hasNext()){
-			ChangeEvent event = iterator.next();
-			
-			boolean deleted = false;
-			if(deletedFlags.get(event.getObjectId()) == null){
-				deleted = checkDeleted(event.getObjectId(), events);
-				deletedFlags.put(event.getObjectId(), deleted);
-			}else{
-				deleted = deletedFlags.get(event.getObjectId());
-			}
-			 
-			if(deleted && event.getChangeType() != ChangeType.DELETED){
-				continue;
-			}else{
-				list.add(event);
-			}
-		}
-		
-		return list;
-	}
-	
-	/**
-	 * On the assumption that the list is sorted by ascending time
-	 * @param objectId
-	 * @param events
-	 * @return
-	 */
-	private boolean checkDeleted(String objectId, List<ChangeEvent> events){
-		boolean deleted = false;
 		int size = events.size();
 		ListIterator<ChangeEvent> iterator = events.listIterator(size);
 		while(iterator.hasPrevious()){
 			ChangeEvent event = iterator.previous();
-			if(event.getObjectId().equals(objectId)){
-				if(event.getChangeType() == ChangeType.DELETED){
-					deleted = true;
-				}
-				break;
+			if(objectIds.contains(event.getObjectId())){
+				continue;
+			}else{
+				objectIds.add(event.getObjectId());
+				list.add(event);
 			}
 		}
-		
-		return deleted;
+
+		Collections.reverse(list);
+		return list;
 	}
 	
 	/**
