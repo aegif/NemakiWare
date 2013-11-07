@@ -21,16 +21,35 @@
  ******************************************************************************/
 package jp.aegif.nemaki.service.node.impl;
 
+import java.io.InputStream;
 import java.math.BigInteger;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Enumeration;
+import java.util.EventListener;
 import java.util.GregorianCalendar;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.TimeZone;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import javax.servlet.Filter;
+import javax.servlet.FilterRegistration;
+import javax.servlet.RequestDispatcher;
+import javax.servlet.Servlet;
+import javax.servlet.ServletContext;
+import javax.servlet.ServletException;
+import javax.servlet.ServletRegistration;
+import javax.servlet.SessionCookieConfig;
+import javax.servlet.SessionTrackingMode;
+import javax.servlet.FilterRegistration.Dynamic;
+import javax.servlet.descriptor.JspConfigDescriptor;
 
 import jp.aegif.nemaki.model.Ace;
 import jp.aegif.nemaki.model.Acl;
@@ -67,6 +86,7 @@ import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.ChangeType;
+import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
 import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
@@ -78,6 +98,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.CmisExtensionEleme
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
+import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.math.NumberUtils;
@@ -1339,21 +1360,24 @@ public class ContentServiceImpl implements ContentService {
 			return;
 		}
 
-		// Switch���an operation depending on archive
+		CallContextImpl dummyContext = new CallContextImpl(null, null, null, null, null, null, null, null);
+		dummyContext.put(dummyContext.USERNAME, "system");
+		
+		// Switch over the operation depending on the type of archive
 		if (archive.isFolder()) {
-			restoreFolder(archive);
+			Folder restored = restoreFolder(archive);
+			writeChangeEvent(dummyContext, restored, ChangeType.CREATED); 
 		} else if (archive.isDocument()) {
-			restoreDocument(archive);
+			Document restored = restoreDocument(archive);
+			writeChangeEvent(dummyContext, restored, ChangeType.CREATED);
 		} else if (archive.isAttachment()) {
 			log.error("Attachment can't be restored alone");
 		} else {
 			log.error("Only document or folder is supported for restoration");
 		}
-		
-		//TODO What should be done about Change Event?
 	}
 
-	private void restoreDocument(Archive archive) {
+	private Document restoreDocument(Archive archive) {
 		try {
 			// Get archives of the same version series
 			List<Archive> versions = contentDaoService
@@ -1372,9 +1396,11 @@ public class ContentServiceImpl implements ContentService {
 		} catch (Exception e) {
 			log.error("fail to restore a document", e);
 		}
+		
+		return getDocument(archive.getOriginalId());
 	}
 
-	private void restoreFolder(Archive archive) {
+	private Folder restoreFolder(Archive archive) {
 		contentDaoService.restoreContent(archive);
 
 		// Restore direct children
@@ -1389,6 +1415,8 @@ public class ContentServiceImpl implements ContentService {
 			}
 		}
 		contentDaoService.deleteArchive(archive.getId());
+		
+		return getFolder(archive.getOriginalId());
 	}
 
 	private String buildUniqueName(String originalName, String folderId, String existingId) {
