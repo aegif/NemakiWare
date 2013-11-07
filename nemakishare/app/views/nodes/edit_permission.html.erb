@@ -70,16 +70,24 @@
 		<!--User search-->
 		<div class="span6">
 			<div class="nemaki_jqgrid_container">
+
+				<!--Search form-->
+				<%= form_for SearchForm.new, :url => {:controller => :users , :action => :search}, :html => {:id => 'user_search', :method => :get}, :remote => true do |f| %>
+					<%= submit_tag t('view.user.index.search_users'), :class => 'btn' %>
+					<%= f.text_field :query, :class => 'search-query' %>
+				<% end %>
+
+				<%= form_for SearchForm.new, :url => {:controller => :groups , :action => :search}, :html => {:id => 'group_search', :method => :get}, :remote => true do |f| %>
+					<%= submit_tag t('view.group.index.search_groups'), :class => 'btn' %>
+					<%= f.text_field :query, :class => 'search-query' %>
+				<% end %>
+
 				<!--jqGrid-->
 				<table id="user_table"></table>
 				<div id = "user_paager"></div>
 				<!--Add Button-->
 				<a href="#" class="btn" onclick="addPrincipalToAcl()"><i class='icon-plus'></i> <%=t('view.node.permission.add_permission')%></a>
-				<!--Search form-->
-				<%= form_for SearchForm.new, :url => {:controller => :users , :action => :search}, :html => {:id => 'user_search', :method => :get}, :remote => true do |f| %>
-					<%= submit_tag t('view.general.search'), :class => 'btn' %>
-					<%= f.text_field :query, :class => 'search-query' %>
-				<% end %>
+
 			</div>
 		</div>
 	</div>
