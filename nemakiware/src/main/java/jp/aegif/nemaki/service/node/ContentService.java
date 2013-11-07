@@ -143,8 +143,8 @@ public interface ContentService {
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension);
 	
 	Policy createPolicy(CallContext callContext, Properties properties,
-			String folderId, List<String> policies, org.apache.chemistry.opencmis.commons.data.Acl addAces,
-			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension);
+			List<String> policies, org.apache.chemistry.opencmis.commons.data.Acl addAces, org.apache.chemistry.opencmis.commons.data.Acl removeAces,
+			ExtensionsData extension);
 
 	Archive createArchive(CallContext callContext, String objectId, Boolean deletedWithParent);
 	Archive createAttachmentArchive(CallContext callContext, String attachmentId);
