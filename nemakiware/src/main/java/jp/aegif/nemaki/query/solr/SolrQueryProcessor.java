@@ -141,7 +141,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 		}
 
 		// Output search results to ObjectList
-		if (resp != null & resp.getResults() != null
+		if (resp != null && resp.getResults() != null
 				&& resp.getResults().getNumFound() != 0) {
 			SolrDocumentList docs = resp.getResults();
 
