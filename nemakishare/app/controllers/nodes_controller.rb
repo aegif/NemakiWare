@@ -297,7 +297,7 @@ class NodesController < ApplicationController
 
     #Build CMIS SQL Query statement
     #NOTE: CMIS says CONTAINS() 'MAY' be allowed with AND.
-    statement_document = "SELECT * FROM cmis:document WHERE (cmis:name = '" + q + "' OR CONTAINS('" + q +  "')) AND cmis:isLatestVersion = true"
+    statement_document = "SELECT * FROM cmis:document WHERE cmis:name = '" + q + "' OR CONTAINS('" + q +  "')"
     @nodes = @nemaki_repository.search(statement_document)
     statement_folder = "SELECT * FROM cmis:folder WHERE cmis:name = '" + q + "'"
     @nodes = @nodes + @nemaki_repository.search(statement_folder)
