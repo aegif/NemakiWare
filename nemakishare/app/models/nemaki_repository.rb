@@ -939,7 +939,7 @@ class NemakiRepository
   end
 
   def search_groups(id)
-    resource = RestClient::Resource.new(CONFIG['repository']['group_rest_url'] + 'search',@auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(CONFIG['repository']['group_rest_url'] + 'list',@auth_info[:id], @auth_info[:password])
     json = resource.get({:params => {:query => id}})
     result = JSON.parse(json)
   end

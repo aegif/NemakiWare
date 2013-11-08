@@ -34,12 +34,12 @@ class GroupsController < ApplicationController
       @search_form.query = query
       json = @nemaki_repository.search_groups query
       if json['status'] == 'success'
-          results = json['groups']
-          if results != nil && !results.blank?
-            results.each do |result|
-              @groups << convert_group_from_json(result)
-            end
-          end  
+        results = json['groups']
+        if results != nil && !results.blank?
+          results.each do |result|
+            @groups << convert_group_from_json(result)
+          end
+        end  
       end
     end
   end
@@ -113,9 +113,11 @@ class GroupsController < ApplicationController
   end
   
   def search
+    logger.debug("### search is called")
     result = @nemaki_repository.search_groups(params[:search_form][:query])
     if result['status'] == 'success'
       groups = result['groups']
+      logger.debug("### result is success")
     end
     render :json => groups
   end
