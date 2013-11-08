@@ -177,9 +177,16 @@ $(function() {
 		$("#user_table").GridUnload();
 	        users = [];
 		// 更新データの作成
-		for (i = 0; i < data.length; i++) {
-			users.push({principal : data[i].userId});
+                if ( $('#search_target').val() == 'user' ) {
+  		  for (i = 0; i < data.length; i++) {
+		  	  users.push({principal : data[i].userId});
+		  }
 		}
+                else {
+  		  for (i = 0; i < data.length; i++) {
+		  	  users.push({principal : data[i].groupId});
+		  }		  
+                }
 		// jqGridの再描画
 		createUserTable();
 	});

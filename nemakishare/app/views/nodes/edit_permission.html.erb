@@ -72,14 +72,10 @@
 			<div class="nemaki_jqgrid_container">
 
 				<!--Search form-->
-				<%= form_for SearchForm.new, :url => {:controller => :users , :action => :search}, :html => {:id => 'user_search', :method => :get}, :remote => true do |f| %>
-					<%= submit_tag t('view.user.index.search_users'), :class => 'btn' %>
+				<%= form_for SearchForm.new, :url => {:controller => :users , :action => :search_both}, :html => {:id => 'user_search', :method => :get}, :remote => true do |f| %>
+				        <%= select_tag 'search_target', options_for_select([[t('model.user.user'),"user"],[t('model.group.group'),"group"]]) %>
 					<%= f.text_field :query, :class => 'search-query' %>
-				<% end %>
-
-				<%= form_for SearchForm.new, :url => {:controller => :groups , :action => :search}, :html => {:id => 'group_search', :method => :get}, :remote => true do |f| %>
-					<%= submit_tag t('view.group.index.search_groups'), :class => 'btn' %>
-					<%= f.text_field :query, :class => 'search-query' %>
+					<%= submit_tag t('view.general.search'), :class => 'btn' %>
 				<% end %>
 
 				<!--jqGrid-->
