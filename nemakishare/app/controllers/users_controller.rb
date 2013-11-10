@@ -148,11 +148,7 @@ class UsersController < ApplicationController
       render :json => users
     else
       # copy from group controller
-      result = @nemaki_repository.search_groups(params[:search_form][:query])
-      logger.debug "##" + result['status'].to_s
-      if result['status'] == 'success'
-        groups = result['groups']
-      end
+      groups = @nemaki_repository.search_groups(params[:search_form][:query])
       render :json => groups
     end
   end

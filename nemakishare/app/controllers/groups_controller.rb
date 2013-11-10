@@ -33,13 +33,8 @@ class GroupsController < ApplicationController
       query = params[:search_form][:query]
       @search_form.query = query
       json = @nemaki_repository.search_groups query
-      if json['status'] == 'success'
-        results = json['groups']
-        if results != nil && !results.blank?
-          results.each do |result|
-            @groups << convert_group_from_json(result)
-          end
-        end  
+      json.each do |result|
+        @groups << convert_group_from_json(result)
       end
     end
   end
