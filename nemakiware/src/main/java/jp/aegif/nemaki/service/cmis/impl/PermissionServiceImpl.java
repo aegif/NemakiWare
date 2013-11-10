@@ -159,7 +159,7 @@ public class PermissionServiceImpl implements PermissionService {
 		}
 
 		// Check mapping between the user and the content
-		return isAllowableBaseType(key, baseType, content) && calcPermissions(key, userPermissions);
+		return isAllowableBaseType(key, baseType, content) && checkCalculatedPermissions(key, userPermissions);
 	}
 
 	// TODO User permission is inherited from Group permission.
@@ -169,7 +169,7 @@ public class PermissionServiceImpl implements PermissionService {
 	 * @param userPermissions
 	 * @return
 	 */
-	private Boolean calcPermissions(String key, Set<String> userPermissions) {
+	private Boolean checkCalculatedPermissions(String key, Set<String> userPermissions) {
 		// CMIS default permission mapping
 		Map<String, PermissionMapping> map = getPermissionMap();
 		// Check allowable key
@@ -183,7 +183,7 @@ public class PermissionServiceImpl implements PermissionService {
 
 		// Customize the permission mapping of the key
 		Set<String> extend = new HashSet<String>();
-		Boolean customAllowable = false;
+		//Boolean customAllowable = false;
 		for (String userPermission : userPermissions) {
 			// if cmis:all, return true without condition
 			if (userPermission.equals("cmis:all")) {
@@ -203,7 +203,10 @@ public class PermissionServiceImpl implements PermissionService {
 				// custom permission mapping
 				Map<String, Boolean> pm = cp.getPermissionMapping();
 				if (pm.containsKey(key)) {
-					customAllowable = customAllowable || pm.get(key);
+					//customAllowable = customAllowable || pm.get(key);
+					if ( pm.get(key)) {
+						return true;
+					}
 				}
 			}
 		}
@@ -213,10 +216,6 @@ public class PermissionServiceImpl implements PermissionService {
 			// If a user base permission is allowed
 			if (mappedPermissions.contains(up)) {
 				return true;
-				// Check custom mapping
-			} else {
-				if (customAllowable)
-					return true;
 			}
 		}
 

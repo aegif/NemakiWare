@@ -17,6 +17,7 @@ en:
       filesize: "File Size"
       version: "Version"
     user:
+      user: "User"
       id: "User ID"
       name: "Display Name"
       first_name: "First name"
@@ -24,6 +25,7 @@ en:
       email: "Email"
       password: "Password"
     group:
+      group: "Group"
       id: "Group ID"
       name: "Display Name"
       users: "Member(User)"
