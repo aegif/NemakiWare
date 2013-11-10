@@ -942,6 +942,11 @@ class NemakiRepository
     resource = RestClient::Resource.new(CONFIG['repository']['group_rest_url'] + 'search',@auth_info[:id], @auth_info[:password])
     json = resource.get({:params => {:query => id}})
     result = JSON.parse(json)
+    if result['status'] == 'success'
+      return result['result']
+    else
+      return Array.new
+    end
   end
 
   def get_group_by_id(id)

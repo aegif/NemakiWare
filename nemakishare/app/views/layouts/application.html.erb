@@ -15,19 +15,20 @@
 	</script>
     <%= javascript_include_tag "flash_fade.js" %>
     <script type="text/javascript">
+<% unless @notified_messages.nil? %>
 $(
   function() {
-    <% unless @notified_messages.nil? 
-       @notified_messages.each do |message| %>
+     <% @notified_messages.each do |message| %>
       $.pnotify({
         title: '<%= message.title %>',
         text:  '<%= message.text %>',
         type: '<%= message.category %>'
       });
-      <% end 
-     end %>
+      <% end %>
+
   }
 )();
+<% end %>
     </script>
     <script type="text/javascript">
 		<%= yield :javascript_includes %>

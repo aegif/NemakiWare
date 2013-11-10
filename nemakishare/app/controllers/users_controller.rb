@@ -141,6 +141,17 @@ class UsersController < ApplicationController
   def search_internal(query)
     users = @nemaki_repository.search_users(query)
   end
+
+  def search_both
+    if params[:search_target] == 'user'
+      users = search_internal(params[:search_form][:query])
+      render :json => users
+    else
+      # copy from group controller
+      groups = @nemaki_repository.search_groups(params[:search_form][:query])
+      render :json => groups
+    end
+  end
   
   def destroy
     result = @nemaki_repository.delete_user params[:id]

@@ -17,6 +17,7 @@ ja:
       filesize: "ファイルサイズ"
       version: "バージョン"
     user:
+      user: "ユーザ"
       id: "ユーザID"
       name: "表示名"
       first_name: "名"
@@ -24,6 +25,7 @@ ja:
       email: "Eメール"
       password: "パスワード"
     group:
+      group: "グループ"
       id: "グループID"
       name: "表示名"
       users: "メンバ(ユーザ)"
