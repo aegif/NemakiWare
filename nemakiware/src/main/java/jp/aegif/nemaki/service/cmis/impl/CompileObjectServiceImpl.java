@@ -492,7 +492,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		}
 		
 		// Secondary properties
-		setCmisSecondaryTypes(properties, content);
+		setCmisSecondaryTypes(properties, content, typeId, filter);
 	}
 
 	private Property extractSubTypeProperty(Content content, String propertyId){
@@ -603,7 +603,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	}
 
 	private void setCmisSecondaryTypes(PropertiesImpl props,
-			Content content) {
+			Content content, String typeId, Set<String> filter) {
 		List<Aspect> aspects = content.getAspects();
 		List<String> secondaryIds = new ArrayList<String>();
 
@@ -614,7 +614,8 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		
 		PropertyData<?> pd = new PropertyIdImpl(
 				PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondaryIds);
-		props.addProperty(pd);
+		addProperty(props, typeId, filter, PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondaryIds);
+		
 		
 		//each secondary properties
 		for(String secondaryId : secondaryIds){
