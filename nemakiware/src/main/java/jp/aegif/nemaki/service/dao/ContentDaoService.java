@@ -45,128 +45,75 @@ import org.apache.chemistry.opencmis.commons.data.ContentStream;
  * 
  */
 public interface ContentDaoService {
-	
+	// ///////////////////////////////////////
+	// Type & Property definition
+	// ///////////////////////////////////////
 	List<NemakiTypeDefinition> getTypeDefinitions();
 	NemakiTypeDefinition getTypeDefinition(String typeId);
 	NemakiTypeDefinition createTypeDefinition(NemakiTypeDefinition typeDefinition);
 	NemakiTypeDefinition updateTypeDefinition(NemakiTypeDefinition typeDefinition);
-	
 	NemakiPropertyDefinition getPropertyDefinition(String nodeId);
 	NemakiPropertyDefinition createPropertyDefinition(NemakiPropertyDefinition propertyDefinition);
 	NemakiPropertyDefinition updatePropertyDefinition(NemakiPropertyDefinition propertyDefinition);
 	
-	/**
-	 * Get a content by id
-	 * Return Document/Folder as Content class
-	 */
+	// ///////////////////////////////////////
+	// Content
+	// ///////////////////////////////////////
 	Content getContent(String objectId);
-	
-	List<Document> getCheckedOutDocuments(String parentFolderId);
-	
-	Folder getFolderByPath(String path);
-	
 	Document getDocument(String objectId);
-	
+	List<Document> getCheckedOutDocuments(String parentFolderId);
 	VersionSeries getVersionSeries(String nodeId);
-	
+	Document getDocumentOfLatestVersion(String versionSeriesId);
+	List<Document> getAllVersions(String versionSeriesId);
 	Folder getFolder(String objectId);
-	
+	Folder getFolderByPath(String path);
+	List<Content> getLatestChildrenIndex(String parentId);
+	Content getChildByName(String parentId, String name);
 	Relationship getRelationship(String objectId);
-	
 	List<Relationship> getRelationshipsBySource(String sourceId);
-	
 	List<Relationship> getRelationshipsByTarget(String targetId);
-	
 	Policy getPolicy(String objectId);
-	
 	List<Policy> getAppliedPolicies(String objectId);
-	
-	
-	/**
-	 * Create a content
-	 */
-
 	Document create(Document document);
-	VersionSeries createVersionSeries(VersionSeries versionSeries);
-	
+	VersionSeries create(VersionSeries versionSeries);
 	Folder create(Folder folder);
-	
 	Relationship create(Relationship relationship);
-	
 	Policy create(Policy policy);
-	
-	Change create(Change change);
-	
-	Change getLatestChange();
-	
-	/**
-	 * @param latestChangeToken: "<= 0" means "From the start of the change log" 
-	 * @param maxItems: "<= 0" means "Without a limited number to retrieve"s
-	 * @return: Return results with descending order
-	 */
-	List<Change> getLatestChanges(int startToken, int maxItems);
-	
-	Change updateChange(Change change);
-	
-
 	Document updateDocument(Document document);
-	
 	VersionSeries updateVersionSeries(VersionSeries versionSeries);
-	
 	Folder updateFolder(Folder folder);
-	
-	Policy updatePolicy(Policy policy);
-	
 	Relationship updateRelationship(Relationship relationship);
-	
-	/**
-	 * Delete a content
-	 */
+	Policy updatePolicy(Policy policy);
 	void delete(String objectId);
 	
-	/**
-	 * Get contents in the parent with parentId
-	 */
-	List<Content> getLatestChildrenIndex(String parentId);
-	
-	Content getChildByName(String parentId, String name);
-
-	/**
-	 * Create attachment
-	 */
-	String createAttachment(AttachmentNode attachment, ContentStream cs);
-	
-	/**
-	 * Get a NemakiAttachment
-	 */
+	// ///////////////////////////////////////
+	// Attachment
+	// ///////////////////////////////////////
 	AttachmentNode getAttachment(String attachmentId, boolean includeStream);
-
+	Rendition getRendition(String objectId);
+	String createAttachment(AttachmentNode attachment, ContentStream cs);	
 	
+	// ///////////////////////////////////////
+	// Change event
+	// ///////////////////////////////////////
 	Change getChangeEvent(String token);
+	Change getLatestChange();
+	List<Change> getLatestChanges(int startToken, int maxItems);
+	Change create(Change change);
+	Change update(Change change);
 	
-	/**
-	 * Get documents with the same versionSeriesId
-	 */
-	List<Document> getAllVersions(String versionSeriesId);
-	
-	/**
-	 * Get the latest version of a document 
-	 */
-	Document getDocumentOfLatestVersion(String versionSeriesId);
-	
-	/////////
-	//Archive
-	/////////
+	// ///////////////////////////////////////
+	// Archive
+	// ///////////////////////////////////////
 	Archive getArchive(String archiveId);
 	Archive getArchiveByOriginalId(String originalId);
 	Archive getAttachmentArchive(Archive archive);
-	Archive createAttachmentArchive(Archive archive);
-	Rendition getRendition(String objectId);
 	List<Archive> getChildArchives(Archive archive);
 	List<Archive> getArchivesOfVersionSeries(String versionSeriesId);
-	void deleteArchive(String archiveId);
-	void createArchive(Archive archive, Boolean deleteWithParent);
 	List<Archive> getAllArchives();
+	Archive createArchive(Archive archive, Boolean deleteWithParent);
+	Archive createAttachmentArchive(Archive archive);
+	void deleteArchive(String archiveId);
 	void restoreContent(Archive archive);
 	void restoreAttachment(Archive archive);
 }

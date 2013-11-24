@@ -21,7 +21,6 @@
  ******************************************************************************/
 package jp.aegif.nemaki.service.cmis.impl;
 
-import java.io.IOException;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.GregorianCalendar;
@@ -48,7 +47,6 @@ import jp.aegif.nemaki.service.cmis.CompileObjectService;
 import jp.aegif.nemaki.service.cmis.PermissionService;
 import jp.aegif.nemaki.service.cmis.RepositoryService;
 import jp.aegif.nemaki.service.node.ContentService;
-import jp.aegif.nemaki.util.DebugInterceptor;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Acl;
@@ -240,7 +238,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		props.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, change
 				.getObjectType()));
 		props.addProperty(new PropertyIdImpl(PropertyIds.NAME, change.getName()));
-		if (change.isDocument()) {
+		if (change.isOnDocument()) {
 			props.addProperty(new PropertyIdImpl(PropertyIds.VERSION_SERIES_ID,
 					change.getVersionSeriesId()));
 			props.addProperty(new PropertyStringImpl(PropertyIds.VERSION_LABEL,
@@ -493,13 +491,6 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			}
 		}
 		
-//		
-//		List<Property> subTypeProperties = content.getSubTypeProperties();
-//		for (Property subTypeProperty : subTypeProperties) {
-//			addProperty(properties, content.getObjectType(), filter,
-//					subTypeProperty.getKey(), subTypeProperty.getValue());
-//		}
-
 		// Secondary properties
 		setCmisSecondaryTypes(properties, content);
 	}

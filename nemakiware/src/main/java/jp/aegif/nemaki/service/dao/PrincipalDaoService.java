@@ -30,52 +30,15 @@ import jp.aegif.nemaki.model.User;
  * DAO Service interface.
  */
 public interface PrincipalDaoService {
-
-	/**
-	 * Create a node
-	 */
+	User getUserById(String userId);
+	User getUserByName(String name);
+	List<User> getUsers();
+	Group getGroupById(String groupId);
+	Group getGroupByName(String name);
+	List<Group> getGroups();
 	User createUser(User user);
 	Group createGroup(Group group);
-	
-	/**
-	 * Update a node
-	 * @param node
-	 */
 	User updateUser(User user);
 	Group updateGroup(Group group);
-	/**
-	 * Delete a principal
-	 * @param clazz
-	 * @param id
-	 */
 	void delete(Class<?> clazz, String id);
-	
-	/**
-	 * Get all users from DB
-	 */
-	List<User> getUsers();
-
-	/**
-	 * Get an user with id
-	 */
-	User getUserById(String userId);
-	
-	/**
-	 * Get an user with user name
-	 */
-	User getUserByName(String name);
-
-	/**
-	 * Get a group, given its id
-	 */
-	Group getGroupById(String groupId);
-
-	Group getGroupByName(String name);
-	
-	/**
-	 * Get all groups
-	 */
-	List<Group> getGroups();
-		
-	
 }

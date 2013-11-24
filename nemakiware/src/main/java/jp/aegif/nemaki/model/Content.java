@@ -189,46 +189,6 @@ public class Content extends NodeBase {
 		return this.getId().hashCode();
 	}
 
-	public Boolean isFolder() {
-		if (NodeType.CMIS_FOLDER.value().equals(type)) {
-			return true;
-		} else {
-			return false;
-		}
-	}
-
-	public Boolean isDocument() {
-		if (NodeType.CMIS_DOCUMENT.value().equals(type)) {
-			return true;
-		} else {
-			return false;
-		}
-	}
-	
-	public Boolean isRelationship() {
-		if (NodeType.CMIS_RELATIONSHIP.value().equals(type)) {
-			return true;
-		} else {
-			return false;
-		}
-	}
-	
-	public Boolean isPolicy() {
-		if (NodeType.CMIS_POLICY.value().equals(type)) {
-			return true;
-		} else {
-			return false;
-		}
-	}
-	
-	public Boolean isItem(){
-		if (NodeType.CMIS_ITEM.value().equals(type)) {
-			return true;
-		} else {
-			return false;
-		}
-	}
-	
 	public Boolean isRoot(){
 		return (getId().equals("/")) ? true : false;
 	}

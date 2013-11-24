@@ -21,35 +21,16 @@
  ******************************************************************************/
 package jp.aegif.nemaki.service.node.impl;
 
-import java.io.InputStream;
 import java.math.BigInteger;
-import java.net.MalformedURLException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Enumeration;
-import java.util.EventListener;
 import java.util.GregorianCalendar;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.TimeZone;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import javax.servlet.Filter;
-import javax.servlet.FilterRegistration;
-import javax.servlet.RequestDispatcher;
-import javax.servlet.Servlet;
-import javax.servlet.ServletContext;
-import javax.servlet.ServletException;
-import javax.servlet.ServletRegistration;
-import javax.servlet.SessionCookieConfig;
-import javax.servlet.SessionTrackingMode;
-import javax.servlet.FilterRegistration.Dynamic;
-import javax.servlet.descriptor.JspConfigDescriptor;
 
 import jp.aegif.nemaki.model.Ace;
 import jp.aegif.nemaki.model.Acl;
@@ -86,7 +67,6 @@ import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.ChangeType;
-import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
 import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
@@ -413,7 +393,7 @@ public class ContentServiceImpl implements ContentService {
 		contentDaoService.create(change);
 		if(latest != null){
 			latest.setLatest(false);
-			contentDaoService.updateChange(latest);
+			contentDaoService.update(latest);
 		}
 		
 		//Update change token of the content
@@ -708,7 +688,7 @@ public class ContentServiceImpl implements ContentService {
 		vs.setVersionSeriesCheckedOut(false);
 		setSignature(callContext, vs);
 
-		VersionSeries versionSeries = contentDaoService.createVersionSeries(vs);
+		VersionSeries versionSeries = contentDaoService.create(vs);
 		return versionSeries;
 	}
 	
@@ -825,13 +805,19 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	private String copyAttachment(CallContext callContext, String attachmentId) {
-		AttachmentNode attachment = getAttachment(attachmentId);
-		ContentStream cs = new ContentStreamImpl(attachment.getName(),
-				BigInteger.valueOf(attachment.getLength()),
-				attachment.getMimeType(), attachment.getInputStream());
-		setSignature(callContext, attachment);
-		attachment.setId(null);
-		return contentDaoService.createAttachment(attachment, cs);
+		AttachmentNode original = getAttachment(attachmentId);
+		ContentStream cs = new ContentStreamImpl(original.getName(),
+				BigInteger.valueOf(original.getLength()),
+				original.getMimeType(), original.getInputStream());
+		
+		AttachmentNode copy = new AttachmentNode();
+		copy.setName(original.getName());
+		copy.setLength(original.getLength());
+		copy.setMimeType(original.getMimeType());
+		copy.setType(NodeType.ATTACHMENT.value());
+		setSignature(callContext, copy);
+
+		return contentDaoService.createAttachment(copy, cs);
 	}
 
 	private List<String> copyRenditions(CallContext callContext,
@@ -1065,9 +1051,7 @@ public class ContentServiceImpl implements ContentService {
 			a.setIsLatestVersion(document.isLatestVersion());
 		}
 
-		contentDaoService.createArchive(a, deletedWithParent);
-		// TODO return a result archive
-		return null;
+		return contentDaoService.createArchive(a, deletedWithParent);
 	}
 
 	@Override
