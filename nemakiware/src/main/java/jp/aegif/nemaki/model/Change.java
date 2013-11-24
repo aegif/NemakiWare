@@ -140,7 +140,7 @@ public class Change extends NodeBase{
 		this.latest = latest;
 	}
 	
-	public boolean isDocument(){
+	public boolean isOnDocument(){
 		return baseType.equals(NodeType.CMIS_DOCUMENT.value()) ? true : false;
 	}
 }

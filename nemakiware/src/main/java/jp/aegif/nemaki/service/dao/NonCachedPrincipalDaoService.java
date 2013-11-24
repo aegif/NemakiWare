@@ -7,28 +7,83 @@ import jp.aegif.nemaki.model.User;
 
 public interface NonCachedPrincipalDaoService {
 
-	public abstract User createUser(User user);
+	/**
+	 * Get a user
+	 * @param userId
+	 * @return
+	 */
+	User getUserById(String userId);
 
-	public abstract Group createGroup(Group group);
+	/**
+	 * Get a user by name
+	 * @param userName
+	 * @return
+	 */
+	User getUserByName(String userName);
 
-	public abstract User updateUser(User user);
-
-	public abstract Group updateGroup(Group group);
-
-	public abstract void deleteUser(String principalId);
+	/**
+	 * Get a user
+	 * @return
+	 */
+	List<User> getUsers();
 	
-	public abstract void deleteGroup(String principalId);
+	/**
+	 * Get a group
+	 * @param groupId
+	 * @return
+	 */
+	Group getGroupById(String groupId);
+
+	/**
+	 * Get a group by name
+	 * @param groupName
+	 * @return
+	 */
+	Group getGroupByName(String groupName);
+
+	/**
+	 * Get all the groups
+	 * @return
+	 */
+	List<Group> getGroups();
 	
-	public abstract List<User> getUsers();
+	/**
+	 * Create a user
+	 * @param user
+	 * @return newly created user
+	 */
+	User createUser(User user);
 
-	public abstract User getUserById(String userId);
+	/**
+	 * Create a group
+	 * @param group
+	 * @return newly created group
+	 */
+	Group createGroup(Group group);
 
-	public abstract User getUserByName(String userName);
+	/**
+	 * Update a user
+	 * @param user
+	 * @return updated user
+	 */
+	User updateUser(User user);
 
-	public abstract Group getGroupById(String groupId);
+	/**
+	 * Update a group
+	 * @param group
+	 * @return updated group
+	 */
+	Group updateGroup(Group group);
 
-	public abstract Group getGroupByName(String groupName);
-
-	public abstract List<Group> getGroups();
-
+	/**
+	 * Delete a user
+	 * @param principalId
+	 */
+	void deleteUser(String principalId);
+	
+	/**
+	 * Delete a group
+	 * @param principalId
+	 */
+	void deleteGroup(String principalId);
 }

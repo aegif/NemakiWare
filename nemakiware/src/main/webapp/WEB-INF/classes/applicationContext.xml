@@ -170,17 +170,23 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 	</bean>
 
 	<bean id="contentDaoService" class="jp.aegif.nemaki.service.dao.impl.ContentDaoServiceImpl">
-		<property name="connector">
-			<ref bean="connector"></ref>
-		</property>
-		<property name="archiveConnector">
-			<ref bean="archiveConnector"></ref>
+		<property name="nonCachedContentDaoService">
+			<ref bean="nonCachedContentDaoService"></ref>
 		</property>
 		<property name="requestDurationCache">
 			<ref bean="requestDurationCache" />
 		</property>
 	</bean>
 	
+	<bean id="nonCachedContentDaoService" class="jp.aegif.nemaki.service.dao.impl.CouchContentDaoServiceImpl">
+		<property name="connector">
+			<ref bean="connector"></ref>
+		</property>
+		<property name="archiveConnector">
+			<ref bean="archiveConnector"></ref>
+		</property>
+	</bean>
+		
 	<bean id="requestDurationCache" class="jp.aegif.nemaki.repository.RequestDurationCacheBean">
 	</bean>
 
