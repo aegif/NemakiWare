@@ -36,6 +36,7 @@ import jp.aegif.nemaki.service.cmis.VersioningService;
 
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.AllowableActions;
+import org.apache.chemistry.opencmis.commons.data.BulkUpdateObjectIdAndChangeToken;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.FailedToDeleteData;
@@ -131,6 +132,13 @@ public class NemakiRepository {
 			Holder<String> objectId, Holder<String> changeToken, Properties properties) {
 
 		objectService.updateProperties(callContext, objectId, properties, changeToken);
+	}
+	
+	public List<BulkUpdateObjectIdAndChangeToken> bulkUpdateProperties(CallContext callContext,
+			List<BulkUpdateObjectIdAndChangeToken> objectIdAndChangeToken,
+			Properties properties, List<String> addSecondaryTypeIds,
+			List<String> removeSecondaryTypeIds, ExtensionsData extension) {
+		return objectService.bulkUpdateProperties(callContext, objectIdAndChangeToken, properties, addSecondaryTypeIds, removeSecondaryTypeIds, extension);
 	}
 
 	public ContentStream getContentStream(CallContext callContext,

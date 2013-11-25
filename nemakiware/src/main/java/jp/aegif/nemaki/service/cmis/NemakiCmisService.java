@@ -397,7 +397,7 @@ public class NemakiCmisService extends AbstractCmisService {
 		getRepository(repositoryId).updateProperties(getCallContext(),
 				objectId, changeToken, properties);
 	}
-
+	
 	// --- Versioning Service Implementation ---
 	@Override
 	public void checkOut(String repositoryId, Holder<String> objectId,
@@ -659,9 +659,7 @@ public class NemakiCmisService extends AbstractCmisService {
 			List<BulkUpdateObjectIdAndChangeToken> objectIdAndChangeToken,
 			Properties properties, List<String> addSecondaryTypeIds,
 			List<String> removeSecondaryTypeIds, ExtensionsData extension) {
-		// TODO Auto-generated method stub
-		return super.bulkUpdateProperties(repositoryId, objectIdAndChangeToken,
-				properties, addSecondaryTypeIds, removeSecondaryTypeIds, extension);
+		return getRepository(repositoryId).bulkUpdateProperties(getCallContext(), objectIdAndChangeToken, properties, addSecondaryTypeIds, removeSecondaryTypeIds, extension);
 	}
 
 	@Override
