@@ -24,8 +24,11 @@ package jp.aegif.nemaki.service.cmis;
 import java.math.BigInteger;
 import java.util.List;
 
+import jp.aegif.nemaki.model.Content;
+
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.AllowableActions;
+import org.apache.chemistry.opencmis.commons.data.BulkUpdateObjectIdAndChangeToken;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.FailedToDeleteData;
@@ -109,10 +112,17 @@ public interface ObjectService {
 	 * "last modified" date. Custom properties(Aspect) is passed as
 	 * CmisExtensionElement
 	 * @param changeToken TODO
+	 * @return TODO
 	 */
-	public abstract void updateProperties(CallContext callContext,
+	public abstract Content updateProperties(CallContext callContext,
 			Holder<String> objectId, Properties properties, Holder<String> changeToken);
 
+	public abstract List<BulkUpdateObjectIdAndChangeToken> bulkUpdateProperties(CallContext callContext,
+			List<BulkUpdateObjectIdAndChangeToken> objectIdAndChangeToken,
+			Properties properties, List<String> addSecondaryTypeIds,
+			List<String> removeSecondaryTypeIds, ExtensionsData extension);
+		
+	
 	/**
 	 * Gets the content stream for the specified document object, or gets a
 	 * rendition stream for a specified rendition of a document or folder

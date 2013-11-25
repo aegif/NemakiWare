@@ -23,6 +23,7 @@ package jp.aegif.nemaki.service.cmis.impl;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -56,6 +57,7 @@ import org.apache.chemistry.opencmis.commons.definitions.PropertyIntegerDefiniti
 import org.apache.chemistry.opencmis.commons.definitions.PropertyStringDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.RelationshipTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
+import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.CapabilityOrderBy;
@@ -72,6 +74,7 @@ import org.apache.chemistry.opencmis.commons.exceptions.CmisVersioningException;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -192,6 +195,29 @@ public class ExceptionServiceImpl implements ExceptionService,
 						+ " is no longer available");
 		}
 
+	}
+	
+	@Override
+	public void invalidSecondaryTypeIds(Properties properties) {
+		if(properties == null) return;
+		Map<String, PropertyData<?>> map = properties.getProperties();
+		if(MapUtils.isEmpty(map)) return;
+		
+		List<String> results = new ArrayList<String>();
+		PropertyData<?> ids = map.get(PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
+		if(ids == null || CollectionUtils.isEmpty(ids.getValues())) return;
+		for(Object _id : ids.getValues()){
+			String id = (String)_id;
+			TypeDefinitionContainer tdc = typeManager.getTypeById(id);
+			if(tdc == null){
+				results.add(id);
+			}
+		}
+		
+		if(CollectionUtils.isNotEmpty(results)){
+			String msg = "Invalid cmis:SecondaryObjectTypeIds are provided:" + StringUtils.join(results, ",");
+			invalidArgument(msg);
+		}
 	}
 
 	@Override

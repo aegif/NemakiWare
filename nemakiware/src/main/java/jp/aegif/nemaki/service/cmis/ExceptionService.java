@@ -60,6 +60,7 @@ public interface ExceptionService {
 	public void invalidArgumentRootFolder(Folder folder);
 	public void invalidArgumentDepth(BigInteger depth);
 	public void invalidArgumentChangeEventNotAvailable(Holder<String> changeLogToken);
+	public void invalidSecondaryTypeIds(Properties properties);
 	public void objectNotFound(DomainType type, Object object, String id, String msg);
 	public void objectNotFound(DomainType type, Object object, String id);
 	public void objectNotFoundVersionSeries(String id, Collection collection);
