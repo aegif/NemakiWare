@@ -591,7 +591,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		addProperty(properties, typeId, filter, PropertyIds.SOURCE_ID,
 				relationship.getSourceId());
 		addProperty(properties, typeId, filter, PropertyIds.TARGET_ID,
-				relationship.getSourceId());
+				relationship.getTargetId());
 	}
 
 	private void setCmisPolicyProperties(PropertiesImpl properties,
