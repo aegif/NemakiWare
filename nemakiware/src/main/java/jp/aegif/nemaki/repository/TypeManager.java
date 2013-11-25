@@ -218,7 +218,7 @@ public class TypeManager implements
 		relationshipType.setDisplayName("relationship");
 		relationshipType.setBaseTypeId(BaseTypeId.CMIS_RELATIONSHIP);
 		relationshipType.setDescription("Relationship");
-		relationshipType.setIsCreatable(false);
+		relationshipType.setIsCreatable(true);
 		relationshipType.setIsFileable(false);
 		relationshipType.setIsQueryable(false);
 		relationshipType.setIsControllablePolicy(false);
@@ -486,11 +486,11 @@ public class TypeManager implements
 	private void addRelationshipPropertyDefinitions(
 			RelationshipTypeDefinitionImpl type) {
 		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.SOURCE_ID,
-				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
+				PropertyType.ID, Cardinality.SINGLE, Updatability.READWRITE,
 				REQUIRED, !QUERYABLE, !ORDERABLE, null));
 
 		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.TARGET_ID,
-				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
+				PropertyType.ID, Cardinality.SINGLE, Updatability.READWRITE,
 				REQUIRED, !QUERYABLE, !ORDERABLE, null));
 	}
 

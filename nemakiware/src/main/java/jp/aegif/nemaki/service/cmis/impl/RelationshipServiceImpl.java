@@ -94,9 +94,7 @@ public class RelationshipServiceImpl implements RelationshipService{
 		}
 		
 		//Compile to ObjectData
-		compileObjectService.compileObjectDataList(callContext, extracted, filter, includeAllowableActions, false, maxItems, skipCount);
-		
-		return null;
+		return compileObjectService.compileObjectDataList(callContext, extracted, filter, includeAllowableActions, false, maxItems, skipCount);
 	}
 
 	public void setTypeManager(TypeManager typeManager) {
