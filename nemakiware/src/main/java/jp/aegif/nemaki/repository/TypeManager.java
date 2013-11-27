@@ -21,6 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.repository;
 
+import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
@@ -33,6 +34,8 @@ import java.util.Map.Entry;
 
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.NemakiPropertyDefinition;
+import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
+import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.service.dao.ContentDaoService;
 
@@ -76,11 +79,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.TypeDefinitionCont
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.TypeDefinitionListImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.TypeMutabilityImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.springframework.util.CollectionUtils;
-
-import com.sun.xml.ws.org.objectweb.asm.Type;
 
 /**
  * Type Manager class, defines document/folder/relationship/policy
@@ -88,50 +87,54 @@ import com.sun.xml.ws.org.objectweb.asm.Type;
 public class TypeManager implements
 		org.apache.chemistry.opencmis.server.support.TypeManager {
 
-	private static final Log log = LogFactory.getLog(TypeManager.class);
-	
 	/**
 	 * Spring bean
 	 */
 	private ContentDaoService contentDaoService;
-	
+
 	/**
 	 * Constant
 	 */
-	public final static String DOCUMENT_TYPE_ID = BaseTypeId.CMIS_DOCUMENT.value();
+	public final static String DOCUMENT_TYPE_ID = BaseTypeId.CMIS_DOCUMENT
+			.value();
 	public final static String FOLDER_TYPE_ID = BaseTypeId.CMIS_FOLDER.value();
-	public final static String RELATIONSHIP_TYPE_ID = BaseTypeId.CMIS_RELATIONSHIP.value();
+	public final static String RELATIONSHIP_TYPE_ID = BaseTypeId.CMIS_RELATIONSHIP
+			.value();
 	public final static String POLICY_TYPE_ID = BaseTypeId.CMIS_POLICY.value();
 	public final static String ITEM_TYPE_ID = BaseTypeId.CMIS_ITEM.value();
-	public final static String SECONDARY_TYPE_ID = BaseTypeId.CMIS_SECONDARY.value();
+	public final static String SECONDARY_TYPE_ID = BaseTypeId.CMIS_SECONDARY
+			.value();
 	private static final String NAMESPACE = "http://www.aegif.jp/Nemaki";
 	private final static boolean REQUIRED = true;
 	private final static boolean QUERYABLE = true;
 	private final static boolean ORDERABLE = true;
 
 	/**
-	 * Global variables containing type information 
+	 * Global variables containing type information
 	 */
-	//Map of all types
+	// Map of all types
 	private Map<String, TypeDefinitionContainer> types;
-	
-	//Map of all base types
+
+	// Map of all base types
 	private Map<String, TypeDefinitionContainer> basetypes;
-	
-	//Map of subtype-specific property
+
+	// Map of subtype-specific property
 	private Map<String, List<PropertyDefinition<?>>> subTypeProperties;
-	
-	
+
 	// /////////////////////////////////////////////////
 	// Constructor
 	// /////////////////////////////////////////////////
 	public TypeManager(ContentDaoService contentDaoService) {
 		setContentDaoService(contentDaoService);
-		
+
 		types = new HashMap<String, TypeDefinitionContainer>();
 		basetypes = new HashMap<String, TypeDefinitionContainer>();
 		subTypeProperties = new HashMap<String, List<PropertyDefinition<?>>>();
-		
+
+		generate();
+	}
+
+	private void generate() {
 		// Generate basetypes
 		addDocumentType();
 		addFolderType();
@@ -142,6 +145,17 @@ public class TypeManager implements
 
 		// Generate subtypes
 		addSubTypes();
+	}
+
+	// /////////////////////////////////////////////////
+	// Refresh global variables from DB
+	// /////////////////////////////////////////////////
+	public void refreshTypes() {
+		types.clear();
+		basetypes.clear();
+		subTypeProperties.clear();
+
+		generate();
 	}
 
 	// /////////////////////////////////////////////////
@@ -329,8 +343,9 @@ public class TypeManager implements
 		typeMutability.setCanDelete(false);
 		secondaryType.setTypeMutability(typeMutability);
 
-		secondaryType.setPropertyDefinitions(new HashMap<String, PropertyDefinition<?>>());
-		
+		secondaryType
+				.setPropertyDefinitions(new HashMap<String, PropertyDefinition<?>>());
+
 		addTypeInternal(types, secondaryType);
 		addTypeInternal(basetypes, secondaryType);
 	}
@@ -396,7 +411,7 @@ public class TypeManager implements
 		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.PATH,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
 				!REQUIRED, !QUERYABLE, !ORDERABLE, null));
-		
+
 		List<String> defaults = new ArrayList<String>();
 		defaults.add(BaseTypeId.CMIS_FOLDER.value());
 		defaults.add(BaseTypeId.CMIS_DOCUMENT.value());
@@ -516,10 +531,10 @@ public class TypeManager implements
 		boolean inherited = false;
 		boolean openChoice = false;
 
-		result = createPropDef(id, localName, localNameSpace,
-				queryName, displayName, description, datatype, cardinality,
-				updatability, required, queryable, inherited, openChoice,
-				orderable, defaultValue);
+		result = createPropDef(id, localName, localNameSpace, queryName,
+				displayName, description, datatype, cardinality, updatability,
+				required, queryable, inherited, openChoice, orderable,
+				defaultValue);
 
 		return result;
 	}
@@ -554,11 +569,11 @@ public class TypeManager implements
 		TypeDefinitionContainerImpl container = new TypeDefinitionContainerImpl();
 		container.setTypeDefinition(buildTypeDefinitionFromDB(type));
 		container.setChildren(new ArrayList<TypeDefinitionContainer>());
-		
-		if(types.get(type.getTypeId()) == null){
+
+		if (types.get(type.getTypeId()) == null) {
 			types.put(type.getTypeId(), container);
-		}else{
-			//TODO logging: can't overwrite the type
+		} else {
+			// TODO logging: can't overwrite the type
 		}
 
 		List<NemakiTypeDefinition> children = new ArrayList<NemakiTypeDefinition>();
@@ -579,7 +594,7 @@ public class TypeManager implements
 		return;
 	}
 
-	private TypeDefinition buildTypeDefinitionFromDB(
+	public AbstractTypeDefinition buildTypeDefinitionFromDB(
 			NemakiTypeDefinition nemakiType) {
 
 		switch (nemakiType.getBaseId()) {
@@ -655,53 +670,65 @@ public class TypeManager implements
 
 		// Inherit parent's properties
 		TypeDefinition copied = copyTypeDefinition(parentType);
-		Map<String,PropertyDefinition<?>> parentProperties = copied.getPropertyDefinitions();
-		if(CollectionUtils.isEmpty(parentProperties)){
-			parentProperties = new HashMap<String,PropertyDefinition<?>>();
+		Map<String, PropertyDefinition<?>> parentProperties = copied
+				.getPropertyDefinitions();
+		if (CollectionUtils.isEmpty(parentProperties)) {
+			parentProperties = new HashMap<String, PropertyDefinition<?>>();
 		}
-		for(String key : parentProperties.keySet()){
+		for (String key : parentProperties.keySet()) {
 			PropertyDefinition<?> parentProperty = parentProperties.get(key);
-			setInheritedToTrue((AbstractPropertyDefinition<?>)parentProperty);
+			setInheritedToTrue((AbstractPropertyDefinition<?>) parentProperty);
 		}
 		type.setPropertyDefinitions(parentProperties);
-		
+
 		// Add specific properties
 		Map<String, PropertyDefinition<?>> properties = type
 				.getPropertyDefinitions();
 		List<PropertyDefinition<?>> specificProperties = new ArrayList<PropertyDefinition<?>>();
-		for (String propertyId : nemakiType.getProperties()) {
-			NemakiPropertyDefinition p = contentDaoService
-					.getPropertyDefinition(propertyId);
-			PropertyDefinition<?> property = createPropDef(
-					p.getPropertyId(), p.getLocalName(), p.getLocalNameSpace(),
-					p.getQueryName(), p.getDisplayName(), p.getDescription(),
-					p.getPropertyType(), p.getCardinality(),
-					p.getUpdatability(), p.isRequired(), p.isQueryable(),
-					false, p.isOpenChoice(), p.isOrderable(),
-					p.getDefaultValue());
-			properties.put(p.getPropertyId(), property);
-			
-			//for subTypeProperties
-			specificProperties.add(property);
+		if (!CollectionUtils.isEmpty(nemakiType.getProperties())) {
+			for (String propertyId : nemakiType.getProperties()) {
+				NemakiPropertyDefinitionDetail detail = contentDaoService
+						.getPropertyDefinitionDetail(propertyId);
+				NemakiPropertyDefinitionCore core = contentDaoService
+						.getPropertyDefinitionCore(detail.getCoreNodeId());
+
+				NemakiPropertyDefinition p = new NemakiPropertyDefinition(core,
+						detail);
+
+				PropertyDefinition<?> property = createPropDef(
+						p.getPropertyId(), p.getLocalName(),
+						p.getLocalNameSpace(), p.getQueryName(),
+						p.getDisplayName(), p.getDescription(),
+						p.getPropertyType(), p.getCardinality(),
+						p.getUpdatability(), p.isRequired(), p.isQueryable(),
+						false, p.isOpenChoice(), p.isOrderable(),
+						p.getDefaultValue());
+				properties.put(p.getPropertyId(), property);
+
+				// for subTypeProperties
+				specificProperties.add(property);
+			}
 		}
-		
-		//for subTypeProperties
-		if(subTypeProperties.containsKey(type.getParentTypeId())){
-			List<PropertyDefinition<?>> parentSpecificProperties = subTypeProperties.get(type.getParentTypeId());
+
+		// for subTypeProperties
+		if (subTypeProperties.containsKey(type.getParentTypeId())) {
+			List<PropertyDefinition<?>> parentSpecificProperties = subTypeProperties
+					.get(type.getParentTypeId());
 			subTypeProperties.put(type.getId(), specificProperties);
 			specificProperties.addAll(parentSpecificProperties);
 			subTypeProperties.put(type.getId(), specificProperties);
-		}else{
+		} else {
 			subTypeProperties.put(type.getId(), specificProperties);
 		}
 	}
 
-	private AbstractPropertyDefinition<?> setInheritedToTrue(AbstractPropertyDefinition<?> property){
+	private AbstractPropertyDefinition<?> setInheritedToTrue(
+			AbstractPropertyDefinition<?> property) {
 		property.setIsInherited(true);
 		return property;
 	}
-	
-	private DocumentTypeDefinition buildDocumentTypeDefinitionFromDB(
+
+	private DocumentTypeDefinitionImpl buildDocumentTypeDefinitionFromDB(
 			NemakiTypeDefinition nemakiType) {
 		DocumentTypeDefinitionImpl type = new DocumentTypeDefinitionImpl();
 		DocumentTypeDefinitionImpl parentType = (DocumentTypeDefinitionImpl) types
@@ -724,7 +751,7 @@ public class TypeManager implements
 		return type;
 	}
 
-	private FolderTypeDefinition buildFolderTypeDefinitionFromDB(
+	private FolderTypeDefinitionImpl buildFolderTypeDefinitionFromDB(
 			NemakiTypeDefinition nemakiType) {
 		FolderTypeDefinitionImpl type = new FolderTypeDefinitionImpl();
 		FolderTypeDefinitionImpl parentType = (FolderTypeDefinitionImpl) types
@@ -737,7 +764,7 @@ public class TypeManager implements
 		return type;
 	}
 
-	private RelationshipTypeDefinition buildRelationshipTypeDefinitionFromDB(
+	private RelationshipTypeDefinitionImpl buildRelationshipTypeDefinitionFromDB(
 			NemakiTypeDefinition nemakiType) {
 		RelationshipTypeDefinitionImpl type = new RelationshipTypeDefinitionImpl();
 		RelationshipTypeDefinitionImpl parentType = (RelationshipTypeDefinitionImpl) types
@@ -754,7 +781,7 @@ public class TypeManager implements
 		return type;
 	}
 
-	private PolicyTypeDefinition buildPolicyTypeDefinitionFromDB(
+	private PolicyTypeDefinitionImpl buildPolicyTypeDefinitionFromDB(
 			NemakiTypeDefinition nemakiType) {
 		PolicyTypeDefinitionImpl type = new PolicyTypeDefinitionImpl();
 		PolicyTypeDefinitionImpl parentType = (PolicyTypeDefinitionImpl) types
@@ -767,7 +794,7 @@ public class TypeManager implements
 		return type;
 	}
 
-	private ItemTypeDefinition buildItemTypeDefinitionFromDB(
+	private ItemTypeDefinitionImpl buildItemTypeDefinitionFromDB(
 			NemakiTypeDefinition nemakiType) {
 		ItemTypeDefinitionImpl type = new ItemTypeDefinitionImpl();
 		ItemTypeDefinitionImpl parentType = (ItemTypeDefinitionImpl) types.get(
@@ -780,7 +807,7 @@ public class TypeManager implements
 		return type;
 	}
 
-	private SecondaryTypeDefinition buildSecondaryTypeDefinitionFromDB(
+	private SecondaryTypeDefinitionImpl buildSecondaryTypeDefinitionFromDB(
 			NemakiTypeDefinition nemakiType) {
 		SecondaryTypeDefinitionImpl type = new SecondaryTypeDefinitionImpl();
 		SecondaryTypeDefinitionImpl parentType = (SecondaryTypeDefinitionImpl) types
@@ -792,7 +819,19 @@ public class TypeManager implements
 
 		return type;
 	}
-	
+
+	public NemakiTypeDefinition convertTypeDefinition(
+			TypeDefinition typeDefinition) {
+		return null;
+	}
+
+	// TODO コンストラクタにする
+	public NemakiPropertyDefinition convertPropertyDefinition(
+			PropertyDefinition<?> propertyDefinition) {
+
+		return null;
+	}
+
 	// /////////////////////////////////////////////////
 	// Type Service Methods
 	// /////////////////////////////////////////////////
@@ -826,7 +865,7 @@ public class TypeManager implements
 	@Override
 	public List<TypeDefinitionContainer> getRootTypes() {
 		List<TypeDefinitionContainer> rootTypes = new ArrayList<TypeDefinitionContainer>();
-		for(String key : basetypes.keySet()){
+		for (String key : basetypes.keySet()) {
 			rootTypes.add(basetypes.get(key));
 		}
 		return rootTypes;
@@ -851,10 +890,11 @@ public class TypeManager implements
 		return tc.getTypeDefinition();
 	}
 
-	public List<PropertyDefinition<?>>getSpecificPropertyDefinitions(String typeId){
+	public List<PropertyDefinition<?>> getSpecificPropertyDefinitions(
+			String typeId) {
 		return subTypeProperties.get(typeId);
 	}
-	
+
 	/**
 	 * CMIS getTypesChildren. If parent type id is not specified, return only
 	 * base types.
@@ -882,7 +922,8 @@ public class TypeManager implements
 				if (count >= 0)
 					continue;
 				TypeDefinitionContainer type = basetypes.get(key);
-				result.getList().add(copyTypeDefinition(type.getTypeDefinition()));
+				result.getList().add(
+						copyTypeDefinition(type.getTypeDefinition()));
 			}
 
 			result.setHasMoreItems((result.getList().size() + skip) < max);
@@ -916,8 +957,8 @@ public class TypeManager implements
 			for (TypeDefinition type : result.getList()) {
 				try {
 					if (type.getPropertyDefinitions() != null) {
-						//TODO clear() destroys PropertyDefinitions of "types"
-						//type.getPropertyDefinitions().clear();
+						// TODO clear() destroys PropertyDefinitions of "types"
+						// type.getPropertyDefinitions().clear();
 					}
 				} catch (Exception e) {
 					System.out.print(e);
@@ -940,8 +981,9 @@ public class TypeManager implements
 		int d = (depth == null ? -1 : depth.intValue());
 		if (d == 0) {
 			throw new CmisInvalidArgumentException("Depth must not be 0!");
-		}else if(d < -1){
-			throw new CmisInvalidArgumentException("Depth must be positive(except for -1, that means infinity!");
+		} else if (d < -1) {
+			throw new CmisInvalidArgumentException(
+					"Depth must be positive(except for -1, that means infinity!");
 		}
 
 		// set property definition flag to default value if not set
@@ -949,12 +991,18 @@ public class TypeManager implements
 				: includePropertyDefinitions.booleanValue());
 
 		if (typeId == null) {
-			flattenTypeDefinitionContainer(types.get(FOLDER_TYPE_ID), result, d, ipd);
-			flattenTypeDefinitionContainer(types.get(DOCUMENT_TYPE_ID), result, d, ipd);
-			flattenTypeDefinitionContainer(types.get(RELATIONSHIP_TYPE_ID), result, d, ipd);
-			flattenTypeDefinitionContainer(types.get(POLICY_TYPE_ID), result, d, ipd);
-			flattenTypeDefinitionContainer(types.get(ITEM_TYPE_ID), result, d, ipd);
-			flattenTypeDefinitionContainer(types.get(SECONDARY_TYPE_ID), result, d, ipd);
+			flattenTypeDefinitionContainer(types.get(FOLDER_TYPE_ID), result,
+					d, ipd);
+			flattenTypeDefinitionContainer(types.get(DOCUMENT_TYPE_ID), result,
+					d, ipd);
+			flattenTypeDefinitionContainer(types.get(RELATIONSHIP_TYPE_ID),
+					result, d, ipd);
+			flattenTypeDefinitionContainer(types.get(POLICY_TYPE_ID), result,
+					d, ipd);
+			flattenTypeDefinitionContainer(types.get(ITEM_TYPE_ID), result, d,
+					ipd);
+			flattenTypeDefinitionContainer(types.get(SECONDARY_TYPE_ID),
+					result, d, ipd);
 		} else {
 			TypeDefinitionContainer tdc = types.get(typeId);
 			flattenTypeDefinitionContainer(tdc, result, d, ipd);
@@ -962,22 +1010,28 @@ public class TypeManager implements
 
 		return result;
 	}
-	
+
 	/**
-	 * TODO includePropertyDefinitions flag doesn't work
-	 * TODO and type.getPropertyDefinitions().clear() destroys PropertyDefinitions of "types" 
+	 * TODO includePropertyDefinitions flag doesn't work TODO and
+	 * type.getPropertyDefinitions().clear() destroys PropertyDefinitions of
+	 * "types"
+	 * 
 	 * @param tdc
 	 * @param result
 	 * @param includePropertyDefinitions
 	 */
-	private void flattenTypeDefinitionContainer(TypeDefinitionContainer tdc, List<TypeDefinitionContainer> result, int depth, boolean includePropertyDefinitions){
-		if(depth == 0) return;
-		
+	private void flattenTypeDefinitionContainer(TypeDefinitionContainer tdc,
+			List<TypeDefinitionContainer> result, int depth,
+			boolean includePropertyDefinitions) {
+		if (depth == 0)
+			return;
+
 		result.add(tdc);
 		List<TypeDefinitionContainer> children = tdc.getChildren();
-		if(!CollectionUtils.isEmpty(children)){
-			for(TypeDefinitionContainer child : children){
-				flattenTypeDefinitionContainer(child, result, depth -1, includePropertyDefinitions);
+		if (!CollectionUtils.isEmpty(children)) {
+			for (TypeDefinitionContainer child : children) {
+				flattenTypeDefinitionContainer(child, result, depth - 1,
+						includePropertyDefinitions);
 			}
 		}
 	}
@@ -991,8 +1045,8 @@ public class TypeManager implements
 
 		TypeDefinition type = copyTypeDefinition(tc.getTypeDefinition());
 		if (!includePropertyDefinitions) {
-			//TODO clear() destroys PropertyDefinitions of "types"
-			//type.getPropertyDefinitions().clear();
+			// TODO clear() destroys PropertyDefinitions of "types"
+			// type.getPropertyDefinitions().clear();
 		}
 
 		result.setTypeDefinition(type);
@@ -1002,26 +1056,54 @@ public class TypeManager implements
 				result.setChildren(new ArrayList<TypeDefinitionContainer>());
 				for (TypeDefinitionContainer tdc : tc.getChildren()) {
 					result.getChildren().add(
-							getTypesDescendantsInternal(depth < 0 ? -1 : depth - 1,
-									tdc, includePropertyDefinitions));
+							getTypesDescendantsInternal(depth < 0 ? -1
+									: depth - 1, tdc,
+									includePropertyDefinitions));
 				}
 			}
 		}
 
 		return result;
 	}
-	
+
+	/**
+	 * Get a type definition Internal Use
+	 * 
+	 * @param content
+	 * @return
+	 */
 	public TypeDefinition getTypeDefinition(Content content) {
 		String typeId = (content.getObjectType() == null) ? content.getType()
 				: content.getObjectType();
 		return getTypeDefinition(typeId);
 	}
-	
-	
+
+	/**
+	 * List up specification-default property ids
+	 * 
+	 * @return
+	 */
+	public List<String> getSystemPropertyIds() {
+		List<String> ids = new ArrayList<String>();
+
+		Field[] fields = PropertyIds.class.getDeclaredFields();
+		for (Field field : fields) {
+			try {
+				String cmisId = (String) (field.get(null));
+				ids.add(cmisId);
+			} catch (IllegalArgumentException e) {
+				e.printStackTrace();
+			} catch (IllegalAccessException e) {
+				e.printStackTrace();
+			}
+		}
+		return ids;
+	}
+
 	// //////////////////////////////////////////////////////////////////////////////
 	// Utility
 	// //////////////////////////////////////////////////////////////////////////////
-	private TypeDefinition copyTypeDefinition(TypeDefinition type) {
+	public TypeDefinition copyTypeDefinition(TypeDefinition type) {
 		return WSConverter.convert(WSConverter.convert(type));
 	}
 
@@ -1068,7 +1150,7 @@ public class TypeManager implements
 		}
 		return false;
 	}
-	
+
 	public static PropertyDefinition<?> createPropDef(String id,
 			String localName, String localNameSpace, String queryName,
 			String displayName, String description, PropertyType datatype,
@@ -1325,11 +1407,11 @@ public class TypeManager implements
 			boolean queryable, boolean orderable, boolean openChoice) {
 		// Set default value if not set(null)
 		localName = (localName == null) ? id : localName;
-		localNameSpace = (localNameSpace == null)?NAMESPACE:localNameSpace;
+		localNameSpace = (localNameSpace == null) ? NAMESPACE : localNameSpace;
 		queryName = (queryName == null) ? id : queryName;
 		displayName = (displayName == null) ? id : displayName;
 		description = (description == null) ? id : description;
-		
+
 		// Set base attributes
 		result.setId(id);
 		result.setLocalName(localName);
@@ -1347,8 +1429,7 @@ public class TypeManager implements
 		result.setIsOpenChoice(openChoice);
 		return result;
 	}
-	
-	
+
 	// /////////////////////////////////////////////////
 	// Spring Injection
 	// /////////////////////////////////////////////////

@@ -65,6 +65,8 @@ public class CouchTypeDefinition extends CouchNodeBase {
 		setTypeMutabilityUpdate(t.isTypeMutabilityUpdate());
 		setTypeMutabilityDelete(t.isTypeMutabilityDelete());
 		
+		setProperties(t.getProperties());
+		
 		setContentStreamAllowed(t.getContentStreamAllowed());
 		setVersionable(t.isVersionable());
 		setAllowedSourceTypes(t.getAllowedSourceTypes());

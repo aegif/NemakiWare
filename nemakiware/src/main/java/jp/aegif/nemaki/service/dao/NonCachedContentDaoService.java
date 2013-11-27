@@ -29,12 +29,14 @@ import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.NemakiPropertyDefinition;
+import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
+import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
+import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.model.NodeBase;
 import jp.aegif.nemaki.model.Policy;
-import jp.aegif.nemaki.model.NemakiPropertyDefinition;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
-import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.model.VersionSeries;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
@@ -71,32 +73,78 @@ public interface NonCachedContentDaoService {
 	 */
 	NemakiTypeDefinition updateTypeDefinition(
 			NemakiTypeDefinition typeDefinition);
+	
+	/**
+	 * Delete a user-defined type definition
+	 * 
+	 * @param typeDefinition
+	 * @return
+	 */
+	void deleteTypeDefinition(String nodeId);
+	
 
 	/**
-	 * Get a user-defined property definition
-	 * 
+	 * List up user-defined property definitions
+	 * @return
+	 */
+	List<NemakiPropertyDefinitionCore> getPropertyDefinitionCores();
+	
+	/**
+	 * Get the core of user-defined property definition
+	 * That is, propertyId, proeprtyType, queryName, cardinality
+	 * @param nodeId
+	 * @return
+	 */
+	NemakiPropertyDefinitionCore getPropertyDefinitionCore(String nodeId);
+	
+	/**
+	 * Get the core of user-defined property definition by proeprtyId
+	 * That is, propertyId, proeprtyType, queryName, cardinality
+	 * @param nodeId
+	 * @return
+	 */
+	NemakiPropertyDefinitionCore getPropertyDefinitionCoreByPropertyId(String propertyId);
+	
+	/**
+	 * Get a user-defined property definition detail
+	 * That is, all the other attributes than core
 	 * @param nodeId
 	 * @return if nothing found, return null
 	 */
-	NemakiPropertyDefinition getPropertyDefinition(String nodeId);
-
+	NemakiPropertyDefinitionDetail getPropertyDefinitionDetail(String nodeId);
+	
 	/**
-	 * Create a user-defined property definition
-	 * 
-	 * @param propertyDefinition
+	 * Get a user-defined property definition detail by coreNodeId
+	 * That is, all the other attributes than core
+	 * @param nodeId
+	 * @return if nothing found, return null
+	 */
+	List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetailByCoreNodeId(String coreNodeId);
+	
+	/**
+	 * Create a user-defined property definition core
+	 * @param propertyDefinitionCore
 	 * @return
 	 */
-	NemakiPropertyDefinition createPropertyDefinition(
-			NemakiPropertyDefinition propertyDefinition);
+	NemakiPropertyDefinitionCore createPropertyDefinitionCore(
+			NemakiPropertyDefinitionCore propertyDefinitionCore);
 
+	/**
+	 * Create a user-defined property definition detail
+	 * @param propertyDefinitionDetail
+	 * @return
+	 */
+	NemakiPropertyDefinitionDetail createPropertyDefinitionDetail(
+			NemakiPropertyDefinitionDetail propertyDefinitionDetail);
+	
 	/**
 	 * Update a user-defined property definition
 	 * 
 	 * @param propertyDefinition
 	 * @return
 	 */
-	NemakiPropertyDefinition updatePropertyDefinition(
-			NemakiPropertyDefinition propertyDefinition);
+	NemakiPropertyDefinitionDetail updatePropertyDefinitionDetail(
+			NemakiPropertyDefinitionDetail propertyDefinitionDetail);
 
 	// ///////////////////////////////////////
 	// Content
@@ -117,6 +165,13 @@ public interface NonCachedContentDaoService {
 	 */
 	Content getContent(String objectId);
 
+	/**
+	 * Check if there are any object of the specified object type
+	 * @param objectTypeId
+	 * @return
+	 */
+	boolean existContent(String objectTypeId);
+	
 	/**
 	 * Get a document
 	 * 
@@ -230,7 +285,7 @@ public interface NonCachedContentDaoService {
 	 * @return if nothing found, return null
 	 */
 	List<Policy> getAppliedPolicies(String objectId);
-
+	
 	/**
 	 * Create a document
 	 * 
@@ -351,7 +406,8 @@ public interface NonCachedContentDaoService {
 	 * @param contentStream
 	 * @return a created attachment's node id
 	 */
-	String createAttachment(AttachmentNode attachment, ContentStream contentStream);
+	String createAttachment(AttachmentNode attachment,
+			ContentStream contentStream);
 
 	// ///////////////////////////////////////
 	// Change event

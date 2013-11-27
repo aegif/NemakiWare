@@ -128,4 +128,16 @@ public class NodeBase{
 	public Boolean isAttachment(){
 		return (NodeType.ATTACHMENT.value().equals(type)) ? true : false;
 	}
+	
+	public Boolean isTypeDefinition(){
+		return (NodeType.TYPE_DEFINITION.value().equals(type)) ? true : false;
+	}
+	
+	public Boolean isPropertyDefinitionCore(){
+		return (NodeType.PROPERTY_DEFINITION_CORE.value().equals(type)) ? true : false;
+	}
+	
+	public Boolean isPropertyDefinitionDetail(){
+		return (NodeType.PROPERTY_DEFINITION_DETAIL.value().equals(type)) ? true : false;
+	}
 }

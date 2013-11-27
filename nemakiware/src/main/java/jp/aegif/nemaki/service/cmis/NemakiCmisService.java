@@ -674,22 +674,19 @@ public class NemakiCmisService extends AbstractCmisService {
 	@Override
 	public TypeDefinition createType(String repositoryId, TypeDefinition type,
 			ExtensionsData extension) {
-		// TODO Auto-generated method stub
-		return super.createType(repositoryId, type, extension);
+		return getRepository(repositoryId).createType(getCallContext(), type, extension);
 	}
 
 	@Override
 	public void deleteType(String repositoryId, String typeId,
 			ExtensionsData extension) {
-		// TODO Auto-generated method stub
-		super.deleteType(repositoryId, typeId, extension);
+		getRepository(repositoryId).deleteType(getCallContext(), typeId, extension);
 	}
 
 	@Override
 	public TypeDefinition updateType(String repositoryId, TypeDefinition type,
 			ExtensionsData extension) {
-		// TODO Auto-generated method stub
-		return super.updateType(repositoryId, type, extension);
+		return getRepository(repositoryId).updateType(getCallContext(), type, extension);
 	}
 
 	/*

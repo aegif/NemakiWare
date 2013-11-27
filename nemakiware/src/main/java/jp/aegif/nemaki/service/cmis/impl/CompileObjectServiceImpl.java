@@ -186,7 +186,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 				if (cachedContents.containsKey(objectId)) {
 					content = cachedContents.get(objectId);
 				} else {
-					content = contentService.getContentAsTheBaseType(objectId);
+					content = contentService.getContent(objectId);
 					cachedContents.put(objectId, content);
 				}
 				// Compile a change object data depending on its type
@@ -608,8 +608,10 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		List<String> secondaryIds = new ArrayList<String>();
 
 		//cmis:secondaryObjectTypeIds
-		for(String secondaryId : content.getSecondaryIds()){
-			secondaryIds.add(secondaryId);
+		if(CollectionUtils.isNotEmpty(content.getSecondaryIds())){
+			for(String secondaryId : content.getSecondaryIds()){
+				secondaryIds.add(secondaryId);
+			}
 		}
 		
 		PropertyData<?> pd = new PropertyIdImpl(

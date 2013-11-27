@@ -74,13 +74,9 @@ import org.apache.chemistry.opencmis.commons.impl.server.ObjectInfoImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.server.ObjectInfoHandler;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.springframework.util.CollectionUtils;
 
 public class ObjectServiceImpl implements ObjectService {
-
-	private static final Log log = LogFactory.getLog(ObjectServiceImpl.class);
 
 	private TypeManager typeManager;
 	private ContentService contentService;
@@ -116,7 +112,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequired("objectId", objectId);
-		Content content = contentService.getContentAsTheBaseType(objectId);
+		Content content = contentService.getContent(objectId);
 		// WORK AROUND: getObject(versionSeriesId) is interpreted as
 		// getDocumentOflatestVersion
 		if (content == null) {
@@ -146,7 +142,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequired("objectId", objectId);
-		Content content = contentService.getContentAsTheBaseType(objectId);
+		Content content = contentService.getContent(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_GET_PROPERTIES_OBJECT, content);
@@ -227,7 +223,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequired("objectId", objectId);
-		Content content = contentService.getContentAsTheBaseType(objectId);
+		Content content = contentService.getContent(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		// NOTE: The permission key doesn't exist according to CMIS
 		// specification.
@@ -271,7 +267,7 @@ public class ObjectServiceImpl implements ObjectService {
 		}
 
 		return compileObjectService.compileObjectData(callContext,
-				contentService.getContentAsTheBaseType(objectId), null, false,
+				contentService.getContent(objectId), null, false,
 				false, null);
 	}
 
@@ -415,7 +411,7 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.invalidArgumentRequiredString("objectId", id);
 		exceptionService
 				.invalidArgumentRequired("contentStream", contentStream);
-		Document doc = (Document) contentService.getContentAsTheBaseType(id);
+		Document doc = (Document) contentService.getContent(id);
 		exceptionService.objectNotFound(DomainType.OBJECT, doc, id);
 		Properties properties = compileObjectService.compileProperties(doc,
 				compileObjectService.splitFilter(""), new ObjectInfoImpl());
@@ -475,7 +471,7 @@ public class ObjectServiceImpl implements ObjectService {
 		String sourceId = getStringProperty(properties, PropertyIds.SOURCE_ID);
 		if (sourceId != null) {
 			Content source = contentService
-					.getContentAsTheBaseType(getStringProperty(properties,
+					.getContent(getStringProperty(properties,
 							PropertyIds.SOURCE_ID));
 			if (source == null)
 				exceptionService.constraintAllowedSourceTypes(td, source);
@@ -485,7 +481,7 @@ public class ObjectServiceImpl implements ObjectService {
 		String targetId = getStringProperty(properties, PropertyIds.TARGET_ID);
 		if (targetId != null) {
 			Content target = contentService
-					.getContentAsTheBaseType(getStringProperty(properties,
+					.getContent(getStringProperty(properties,
 							PropertyIds.TARGET_ID));
 			if (target == null)
 				exceptionService.constraintAllowedTargetTypes(td, target);
@@ -576,7 +572,7 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.invalidArgumentRequiredCollection("properties",
 				properties.getPropertyList());
 		// TODO Check constraintPropertyValue with objectId
-		Content content = contentService.getContentAsTheBaseType(objectId
+		Content content = contentService.getContent(objectId
 				.getValue());
 		exceptionService.objectNotFound(DomainType.OBJECT, content,
 				objectId.getValue());
@@ -600,8 +596,9 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// General Exception
 		// //////////////////
+		//Each permission is checked at each execution
 		exceptionService.invalidArgumentRequiredCollection("objectIdAndChangeToken", objectIdAndChangeToken);
-		exceptionService.invalidSecondaryTypeIds(properties);
+		exceptionService.invalidArgumentSecondaryTypeIds(properties);
 		
 		// //////////////////
 		// Body of the method
@@ -636,7 +633,7 @@ public class ObjectServiceImpl implements ObjectService {
 				sourceFolderId);
 		exceptionService.invalidArgumentRequiredString("targetFolderId",
 				targetFolderId);
-		Content content = contentService.getContentAsTheBaseType(objectId
+		Content content = contentService.getContent(objectId
 				.getValue());
 		exceptionService.objectNotFound(DomainType.OBJECT, content,
 				objectId.getValue());
@@ -665,7 +662,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("objectId", objectId);
-		Content content = contentService.getContentAsTheBaseType(objectId);
+		Content content = contentService.getContent(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_DELETE_OBJECT, content);
@@ -731,9 +728,6 @@ public class ObjectServiceImpl implements ObjectService {
 		return fdd;
 	}
 
-	/**
-	 * Gets the type id from a set of properties.
-	 */
 	private String getTypeId(Properties properties) {
 		PropertyData<?> typeProperty = properties.getProperties().get(
 				PropertyIds.OBJECT_TYPE_ID);

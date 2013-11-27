@@ -22,12 +22,15 @@
 package jp.aegif.nemaki.service.dao.impl;
 
 import java.util.List;
+
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
+import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
 import jp.aegif.nemaki.model.NodeBase;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.NemakiPropertyDefinition;
@@ -43,8 +46,6 @@ import net.sf.ehcache.CacheManager;
 import net.sf.ehcache.Element;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
 
@@ -59,9 +60,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	private NonCachedContentDaoService nonCachedContentDaoService;
 	private RequestDurationCacheBean requestDurationCache;
-	private static final Log log = LogFactory
-			.getLog(ContentDaoServiceImpl.class);
-
 	private CacheManager cacheManager;
 
 	public ContentDaoServiceImpl() {
@@ -152,30 +150,69 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public NemakiPropertyDefinition getPropertyDefinition(String nodeId) {
-		return nonCachedContentDaoService.getPropertyDefinition(nodeId);
+	public void deleteTypeDefinition(String nodeId) {
+		nonCachedContentDaoService.deleteTypeDefinition(nodeId);
+
+		Cache typeCache = cacheManager.getCache("typeCache");
+		typeCache.remove("typedefs");
+	}
+	
+	@Override
+	public List<NemakiPropertyDefinitionCore> getPropertyDefinitionCores() {
+		return nonCachedContentDaoService.getPropertyDefinitionCores();
 	}
 
 	@Override
-	public NemakiPropertyDefinition createPropertyDefinition(
-			NemakiPropertyDefinition propertyDefinition) {
-		NemakiPropertyDefinition np = nonCachedContentDaoService
-				.createPropertyDefinition(propertyDefinition);
+	public NemakiPropertyDefinitionCore getPropertyDefinitionCore(String nodeId) {
+		return nonCachedContentDaoService.getPropertyDefinitionCore(nodeId);
+	}
+
+	@Override
+	public NemakiPropertyDefinitionCore getPropertyDefinitionCoreByPropertyId(
+			String propertyId) {
+		return nonCachedContentDaoService.getPropertyDefinitionCoreByPropertyId(propertyId);
+	}
+
+	@Override
+	public NemakiPropertyDefinitionDetail getPropertyDefinitionDetail(String nodeId) {
+		return nonCachedContentDaoService.getPropertyDefinitionDetail(nodeId);
+	}
+
+	@Override
+	public List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetailByCoreNodeId(
+			String coreNodeId) {
+		return nonCachedContentDaoService.getPropertyDefinitionDetailByCoreNodeId(coreNodeId);
+	}
+
+	@Override
+	public NemakiPropertyDefinitionCore createPropertyDefinitionCore(
+			NemakiPropertyDefinitionCore propertyDefinitionCore) {
+		return nonCachedContentDaoService.createPropertyDefinitionCore(propertyDefinitionCore);
+	}
+
+	@Override
+	public NemakiPropertyDefinitionDetail createPropertyDefinitionDetail(
+			NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
+		return nonCachedContentDaoService.createPropertyDefinitionDetail(propertyDefinitionDetail);
+	}
+
+	@Override
+	public NemakiPropertyDefinitionDetail updatePropertyDefinitionDetail(
+			NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
+		NemakiPropertyDefinitionDetail np = nonCachedContentDaoService
+				.updatePropertyDefinitionDetail(propertyDefinitionDetail);
 		Cache typeCache = cacheManager.getCache("typeCache");
 		typeCache.remove("typedefs");
 		return np;
 	}
 
 	@Override
-	public NemakiPropertyDefinition updatePropertyDefinition(
-			NemakiPropertyDefinition propertyDefinition) {
-		NemakiPropertyDefinition np = nonCachedContentDaoService
-				.updatePropertyDefinition(propertyDefinition);
-		Cache typeCache = cacheManager.getCache("typeCache");
-		typeCache.remove("typedefs");
-		return np;
+	public void deletePropertyDefinition(
+			String propertyId) {
+		// TODO Auto-generated method stub
+		
 	}
-
+	
 	// ///////////////////////////////////////
 	// Content
 	// ///////////////////////////////////////
@@ -201,6 +238,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		}
 
 		return content;
+	}
+
+	@Override
+	public boolean existContent(String objectTypeId) {
+		return nonCachedContentDaoService.existContent(objectTypeId);
 	}
 
 	@Override
@@ -368,7 +410,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	 * Should return an instance with updated value
 	 */
 	@Override
-	public Document updateDocument(Document document) {
+	public Document update(Document document) {
 		Document updated = nonCachedContentDaoService.update(document);
 		Cache documentCache = cacheManager.getCache("documentCache");
 		documentCache.put(new Element(updated.getId(), updated));
@@ -376,7 +418,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public VersionSeries updateVersionSeries(VersionSeries versionSeries) {
+	public VersionSeries update(VersionSeries versionSeries) {
 		VersionSeries updated = nonCachedContentDaoService
 				.update(versionSeries);
 		Cache versionSeriesCache = cacheManager.getCache("versionSeriesCache");
@@ -388,7 +430,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	 * Should return an instance with updated value
 	 */
 	@Override
-	public Folder updateFolder(Folder folder) {
+	public Folder update(Folder folder) {
 		Folder updated = nonCachedContentDaoService.update(folder);
 		Cache folderCache = cacheManager.getCache("folderCache");
 		folderCache.put(new Element(updated.getId(), updated));
@@ -396,12 +438,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public Relationship updateRelationship(Relationship relationship) {
+	public Relationship update(Relationship relationship) {
 		return nonCachedContentDaoService.update(relationship);
 	}
 
 	@Override
-	public Policy updatePolicy(Policy policy) {
+	public Policy update(Policy policy) {
 		return nonCachedContentDaoService.update(policy);
 	}
 

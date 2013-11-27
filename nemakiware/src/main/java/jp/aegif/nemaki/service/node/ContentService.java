@@ -30,6 +30,10 @@ import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.NemakiPropertyDefinition;
+import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
+import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
+import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
@@ -43,206 +47,552 @@ import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 
-/**
- * Node Service interface.
- */
 public interface ContentService {
 
+	// ///////////////////////////////////////
+	// Type & Property definition
+	// ///////////////////////////////////////
+	List<NemakiTypeDefinition> getTypeDefinitions();
+
+	NemakiTypeDefinition getTypeDefinition(String typeId);
+
+	NemakiTypeDefinition createTypeDefinition(
+			NemakiTypeDefinition typeDefinition);
+
+	NemakiTypeDefinition updateTypeDefinition(
+			NemakiTypeDefinition typeDefinition);
+
+	void deleteTypeDefinition(String typeId);
+
+	NemakiPropertyDefinition getPropertyDefinition(String detailNodeId);
+
+	List<NemakiPropertyDefinitionCore> getPropertyDefinitionCores();
+
+	NemakiPropertyDefinitionCore getPropertyDefinitionCore(String nodeId);
+	
+	NemakiPropertyDefinitionCore getPropertyDefinitionCoreByPropertyId(String propertyId);
+
+	NemakiPropertyDefinitionDetail getPropertyDefinitionDetail(String nodeId);
+
+	NemakiPropertyDefinitionDetail createPropertyDefinition(
+			NemakiPropertyDefinition propertyDefinition);
+
+	NemakiPropertyDefinitionDetail updatePropertyDefinitionDetail(
+			NemakiPropertyDefinitionDetail propertyDefinitionDetail);
+
+	void deletePropertyDefinition(String propertyId);
+
+	// ///////////////////////////////////////
+	// Content
+	// ///////////////////////////////////////
+	boolean existContent(String objectTypeId);
+
 	/**
-	 * Get one piece of CMIS content.
+	 * Get a content(without type-specified)
 	 * 
-	 * @clazz Type of CMIS content expected, must inherit from Content.
+	 * @param objectId
+	 * @return
 	 */
-
-	Content getContentAsTheBaseType(String objectId);
+	Content getContent(String objectId);
 
 	/**
-	 * Get the pieces of content available at that path.
+	 * Get a fileable content by path
+	 * 
+	 * @param path
+	 * @return
 	 */
 	Content getContentByPath(String path);
 
 	/**
-	 * Get child contents in a given folder
+	 * Get the parent folder
+	 * 
+	 * @param objectId
+	 * @return
+	 */
+	Folder getParent(String objectId);
+	
+	/**
+	 * Get children under a folder
 	 * 
 	 * @param objectId
 	 * @return
 	 */
 	List<Content> getChildren(String folderId);
 
-	Folder getParent(String objectId);
-	
 	/**
-	 * Get descendant contents in a given folder
+	 * Get descendant contents in a folder
 	 * 
 	 * @param objectId
 	 * @param depth
-	 * @return
+	 *            -1 means infinity.
+	 * @return descendants are returned in a flatten list.
 	 */
 	List<Content> getDescendants(String folderId, int depth);
 
-	Document getDocument(String objectId);
-	
-	List<Document> getCheckedOutDocs(String folderId, String orderBy,ExtensionsData extension);
-	
-	Folder getFolder(String objectId);
-	
-	String getPath(Content content);
-	
 	/**
+	 * Get a document
+	 * 
+	 * @param objectId
+	 * @return
+	 */
+	Document getDocument(String objectId);
+
+	/**
+	 * Get the latest version document of a given versionSeries
 	 * 
 	 * @param versionSeriesId
 	 * @return
 	 */
 	Document getDocumentOfLatestVersion(String versionSeriesId);
-
-	List<Relationship> getRelationsipsOfObject(String objectId, RelationshipDirection relationshipDirection);
-	Relationship getRelationship(String objectId);
-	Policy getPolicy(String objectId);
-	void applyPolicy(CallContext callContext, String policyId,
-			String objectId, ExtensionsData extension);
-	void removePolicy(CallContext callContext, String policyId,
-			String objectId, ExtensionsData extension);
-	List<Policy> getAppliedPolicies(String objectId, ExtensionsData extension);
-	
-	
 	
 	/**
+	 * Get all versions of a document
 	 * 
 	 * @param versionSeriesId
 	 * @return
 	 */
 	List<Document> getAllVersions(String versionSeriesId);
-
+	
 	/**
-	 * Create one content
+	 * Get checkout documents in a folder
 	 * 
-	 * @return TODO
+	 * @param folderId
+	 * @param orderBy
+	 * @param extension
+	 * @return
 	 */
-	Document createDocument(CallContext callContext,Properties properties, Folder parentFolder,
-			ContentStream contentStream, VersioningState versioningState, String versionSeriesId);
-	
-	Document createDocumentFromSource(CallContext callContext,
-			Properties properties, String folderId,
-			Document original, VersioningState versioningState, List<String> policies, org.apache.chemistry.opencmis.commons.data.Acl addAces, org.apache.chemistry.opencmis.commons.data.Acl removeAces);
-	
-	Document createDocumentWithNewStream(CallContext callContext, Document original, ContentStream contentStream);
-
-	Document checkOut(CallContext callContext, String objectId, ExtensionsData extension);
-	
-	void cancelCheckOut(CallContext callContext, String objectId,ExtensionsData extension);
-	
-	Document checkIn(CallContext callContext, Holder<String> objectId,
-			Boolean major, Properties properties, ContentStream contentStream,
-			String checkinComment, List<String> policies, org.apache.chemistry.opencmis.commons.data.Acl addAces,
-			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension); 
-	
-	Folder createFolder(CallContext callContext, Properties properties, Folder parentFolder);
-	
-	Relationship createRelationship(CallContext callContext,
-			Properties properties, List<String> policies, org.apache.chemistry.opencmis.commons.data.Acl addAces,
-			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension);
-	
-	Policy createPolicy(CallContext callContext, Properties properties,
-			List<String> policies, org.apache.chemistry.opencmis.commons.data.Acl addAces, org.apache.chemistry.opencmis.commons.data.Acl removeAces,
+	List<Document> getCheckedOutDocs(String folderId, String orderBy,
 			ExtensionsData extension);
 
-	Archive createArchive(CallContext callContext, String objectId, Boolean deletedWithParent);
-	Archive createAttachmentArchive(CallContext callContext, String attachmentId);
-	
-	
+	/**
+	 * Get a version series
+	 * 
+	 * @param versionSeriesId
+	 * @return
+	 */
 	VersionSeries getVersionSeries(String versionSeriesId);
 	
-	
 	/**
-	 * Update one content
+	 * Get a folder
 	 * 
-	 * @return TODO
+	 * @param objectId
+	 * @return
 	 */
-	Content updateProperties(CallContext callContext, Properties properties, Content content);
-	Content update(Content content);
-	
+	Folder getFolder(String objectId);
+
 	/**
-	 * Move a Content
+	 * Get a path string
+	 * 
+	 * @param content
+	 * @return
+	 */
+	String getPath(Content content);
+
+	
+
+	/**
+	 * Get a relationship
+	 * 
+	 * @param objectId
+	 * @return
+	 */
+	Relationship getRelationship(String objectId);
+
+	/**
+	 * Search relationships by the edge node
+	 * 
+	 * @param objectId
+	 * @param relationshipDirection
+	 * @return
+	 */
+	List<Relationship> getRelationsipsOfObject(String objectId,
+			RelationshipDirection relationshipDirection);
+
+	/**
+	 * Get a policy
+	 * 
+	 * @param objectId
+	 * @return
+	 */
+	Policy getPolicy(String objectId);
+
+	/**
+	 * Create a document
+	 * 
+	 * @param callContext
+	 * @param properties
+	 * @param parentFolder
+	 * @param contentStream
+	 * @param versioningState
+	 * @param versionSeriesId
+	 * @return
+	 */
+	Document createDocument(CallContext callContext, Properties properties,
+			Folder parentFolder, ContentStream contentStream,
+			VersioningState versioningState, String versionSeriesId);
+
+	/**
+	 * Copy a document
+	 * 
+	 * @param callContext
+	 * @param properties
+	 * @param folderId
+	 * @param original
+	 * @param versioningState
+	 * @param policies
+	 * @param addAces
+	 * @param removeAces
+	 * @return
+	 */
+	Document createDocumentFromSource(CallContext callContext,
+			Properties properties, String folderId, Document original,
+			VersioningState versioningState, List<String> policies,
+			org.apache.chemistry.opencmis.commons.data.Acl addAces,
+			org.apache.chemistry.opencmis.commons.data.Acl removeAces);
+
+	/**
+	 * Copy a document setting new content stream
+	 * 
+	 * @param callContext
+	 * @param original
+	 * @param contentStream
+	 * @return
+	 */
+	Document createDocumentWithNewStream(CallContext callContext,
+			Document original, ContentStream contentStream);
+
+	/**
+	 * Check out and create PWC
+	 * 
+	 * @param callContext
+	 * @param objectId
+	 * @param extension
+	 * @return
+	 */
+	Document checkOut(CallContext callContext, String objectId,
+			ExtensionsData extension);
+
+	/**
+	 * Cancel checking out
+	 * 
+	 * @param callContext
+	 * @param objectId
+	 * @param extension
+	 */
+	void cancelCheckOut(CallContext callContext, String objectId,
+			ExtensionsData extension);
+
+	/**
+	 * Check in and delete PWC
+	 * 
+	 * @param callContext
+	 * @param objectId
+	 * @param major
+	 * @param properties
+	 * @param contentStream
+	 * @param checkinComment
+	 * @param policies
+	 * @param addAces
+	 * @param removeAces
+	 * @param extension
+	 * @return
+	 */
+	Document checkIn(CallContext callContext, Holder<String> objectId,
+			Boolean major, Properties properties, ContentStream contentStream,
+			String checkinComment, List<String> policies,
+			org.apache.chemistry.opencmis.commons.data.Acl addAces,
+			org.apache.chemistry.opencmis.commons.data.Acl removeAces,
+			ExtensionsData extension);
+
+	/**
+	 * Create a folder
+	 * 
+	 * @param callContext
+	 * @param properties
+	 * @param parentFolder
+	 * @return
+	 */
+	Folder createFolder(CallContext callContext, Properties properties,
+			Folder parentFolder);
+
+	/**
+	 * Create a relationship
+	 * 
+	 * @param callContext
+	 * @param properties
+	 * @param policies
+	 * @param addAces
+	 * @param removeAces
+	 * @param extension
+	 * @return
+	 */
+	Relationship createRelationship(CallContext callContext,
+			Properties properties, List<String> policies,
+			org.apache.chemistry.opencmis.commons.data.Acl addAces,
+			org.apache.chemistry.opencmis.commons.data.Acl removeAces,
+			ExtensionsData extension);
+
+	/**
+	 * Create a policy
+	 * 
+	 * @param callContext
+	 * @param properties
+	 * @param policies
+	 * @param addAces
+	 * @param removeAces
+	 * @param extension
+	 * @return
+	 */
+	Policy createPolicy(CallContext callContext, Properties properties,
+			List<String> policies,
+			org.apache.chemistry.opencmis.commons.data.Acl addAces,
+			org.apache.chemistry.opencmis.commons.data.Acl removeAces,
+			ExtensionsData extension);
+
+	/**
+	 * Update a content(for general-purpose)
+	 * 
+	 * @param content
+	 * @return
+	 */
+	Content update(Content content);
+
+	/**
+	 * Update properties of a content
+	 * 
+	 * @param callContext
+	 * @param properties
+	 * @param content
+	 * @return
+	 */
+	Content updateProperties(CallContext callContext, Properties properties,
+			Content content);
+
+	/**
+	 * Move a content
+	 * 
+	 * @param content
+	 * @param targetFolderId
 	 */
 	void move(Content content, String targetFolderId);
+	
+	/**
+	 * Apply a policy from a content
+	 * 
+	 * @param callContext
+	 * @param policyId
+	 * @param objectId
+	 * @param extension
+	 */
+	void applyPolicy(CallContext callContext, String policyId, String objectId,
+			ExtensionsData extension);
 
 	/**
-	 * Delete Content
-	 * @param callContext TODO
+	 * Remove a policy from a content
+	 * 
+	 * @param callContext
+	 * @param policyId
+	 * @param objectId
+	 * @param extension
 	 */
-	void delete(CallContext callContext, String objectId, Boolean deletedWithParent);
+	void removePolicy(CallContext callContext, String policyId,
+			String objectId, ExtensionsData extension);
 
+	List<Policy> getAppliedPolicies(String objectId, ExtensionsData extension);
+
+
+	/**
+	 * Delete a content(for general-purpose)
+	 * 
+	 * @param callContext
+	 * @param objectId
+	 * @param deletedWithParent
+	 */
+	void delete(CallContext callContext, String objectId,
+			Boolean deletedWithParent);
+
+	/**
+	 * Delete a document (and also its versions)
+	 * 
+	 * @param callContext
+	 * @param objectId
+	 * @param allVersions
+	 * @param deleteWithParent
+	 */
 	void deleteDocument(CallContext callContext, String objectId,
 			Boolean allVersions, Boolean deleteWithParent);
-	
-	void deleteAttachment(CallContext callContext, String attachmentId); 
 
+	/**
+	 * Delete an attachment node
+	 * 
+	 * @param callContext
+	 * @param attachmentId
+	 */
+	void deleteAttachment(CallContext callContext, String attachmentId);
+
+	/**
+	 * Delete a whole folder tree
+	 * 
+	 * @param context
+	 * @param folderId
+	 * @param allVersions
+	 * @param continueOnFailure
+	 * @param deletedWithParent
+	 * @throws Exception
+	 */
 	void deleteTree(CallContext context, String folderId, Boolean allVersions,
 			Boolean continueOnFailure, Boolean deletedWithParent)
 			throws Exception;
 
-	
-	public Acl getInheritedAcl(Content content);
-	public org.apache.chemistry.opencmis.commons.data.Acl convertToCmisAcl(Content content, Boolean onlyBasicPermissions);
-	
-	// //////////////////////////////////////////////////////////////////////////////
-	// Attachment
-	// //////////////////////////////////////////////////////////////////////////////
+	// ///////////////////////////////////////
+	// Acl
+	// ///////////////////////////////////////
 	/**
-	 * Get an attachment.
+	 * Merge inherited ACL
+	 * 
+	 * @param content
+	 * @return
 	 */
-	AttachmentNode getAttachment(String attachmentId);
-	
-	/**
-	 *Get an attachment Ref (without Stream) 
-	 */
-	AttachmentNode getAttachmentRef(String attachmentId); 
+	public Acl mergeInheritedAcl(Content content);
 
 	/**
-	 * Create a new attachment.
-	 * @param attachment TODO
+	 * Convert Nemaki ACL to OpenCMIS ACL
+	 * 
+	 * @param content
+	 * @param onlyBasicPermissions
+	 * @return
+	 */
+	public org.apache.chemistry.opencmis.commons.data.Acl convertToCmisAcl(
+			Content content, Boolean onlyBasicPermissions);
+
+	// ///////////////////////////////////////
+	// Attachment
+	// ///////////////////////////////////////
+	/**
+	 * Get an attachment
+	 * 
+	 * @param attachmentId
+	 * @return
+	 */
+	AttachmentNode getAttachment(String attachmentId);
+
+	/**
+	 * Get an attachment without stream
+	 * 
+	 * @param attachmentId
+	 * @return
+	 */
+	AttachmentNode getAttachmentRef(String attachmentId);
+
+	/**
+	 * Create an attachment
+	 * 
+	 * @param callContext
+	 * @param contentStream
+	 * @return
 	 */
 	String createAttachment(CallContext callContext, ContentStream contentStream);
-	
-	Rendition getRendition(String streamId);
-	List<Rendition> getRenditions(String objectId);
-	
-	// //////////////////////////////////////////////////////////////////////////////
-	// Change
-	// //////////////////////////////////////////////////////////////////////////////
+
 	/**
+	 * Get a rendition
 	 * 
-	 * @param  
-	 * @param
+	 * @param streamId
+	 * @return
+	 */
+	Rendition getRendition(String streamId);
+
+	/**
+	 * Get renditions of a content
+	 * 
+	 * @param objectId
+	 * @return
+	 */
+	List<Rendition> getRenditions(String objectId);
+
+	// ///////////////////////////////////////
+	// Change event
+	// ///////////////////////////////////////
+	/**
+	 * Get a change event
+	 * 
+	 * @param token
+	 * @return
+	 */
+	Change getChangeEvent(String token);
+
+	/**
+	 * Get latest change events in the change log
+	 * 
+	 * @param context
+	 * @param changeLogToken
+	 * @param includeProperties
+	 * @param filter
+	 * @param includePolicyIds
+	 * @param includeAcl
+	 * @param maxItems
+	 * @param extension
 	 * @return
 	 */
 	List<Change> getLatestChanges(CallContext context,
 			Holder<String> changeLogToken, Boolean includeProperties,
 			String filter, Boolean includePolicyIds, Boolean includeAcl,
 			BigInteger maxItems, ExtensionsData extension);
-	
-	
+
 	/**
-	 * Get a latest ChangeToken
+	 * Get the latest change token in the repository
+	 * 
+	 * @return
 	 */
 	String getLatestChangeToken();
-	
-	Change getChangeEvent(String token);
 
-	// //////////////////////////////////////////////////////////////////////////////
+	// ///////////////////////////////////////
 	// Archive
-	// //////////////////////////////////////////////////////////////////////////////
+	// ///////////////////////////////////////
 	/**
+	 * Get all archives in the repository
 	 * 
 	 * @return
 	 */
 	List<Archive> getAllArchives();
 
+	/**
+	 * Get an archive
+	 * 
+	 * @param archiveId
+	 * @return
+	 */
 	Archive getArchive(String archiveId);
-	
+
+	/**
+	 * Get an archive by its original content's id
+	 * 
+	 * @param archiveId
+	 * @return
+	 */
 	Archive getArchiveByOriginalId(String archiveId);
 	
 	/**
+	 * Create an archive of a content
+	 * 
+	 * @param callContext
+	 * @param objectId
+	 * @param deletedWithParent
+	 * @return
+	 */
+	Archive createArchive(CallContext callContext, String objectId,
+			Boolean deletedWithParent);
+
+	/**
+	 * Create an archive of an attachment
+	 * 
+	 * @param callContext
+	 * @param attachmentId
+	 * @return
+	 */
+	Archive createAttachmentArchive(CallContext callContext, String attachmentId);
+
+	/**
+	 * Restore a content from an archive
 	 * 
 	 * @param archiveId
 	 */

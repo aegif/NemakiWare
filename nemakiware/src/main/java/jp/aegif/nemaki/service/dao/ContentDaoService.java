@@ -29,6 +29,8 @@ import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
+import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.NemakiPropertyDefinition;
 import jp.aegif.nemaki.model.Relationship;
@@ -52,14 +54,22 @@ public interface ContentDaoService {
 	NemakiTypeDefinition getTypeDefinition(String typeId);
 	NemakiTypeDefinition createTypeDefinition(NemakiTypeDefinition typeDefinition);
 	NemakiTypeDefinition updateTypeDefinition(NemakiTypeDefinition typeDefinition);
-	NemakiPropertyDefinition getPropertyDefinition(String nodeId);
-	NemakiPropertyDefinition createPropertyDefinition(NemakiPropertyDefinition propertyDefinition);
-	NemakiPropertyDefinition updatePropertyDefinition(NemakiPropertyDefinition propertyDefinition);
+	void deleteTypeDefinition(String nodeId);
+	List<NemakiPropertyDefinitionCore> getPropertyDefinitionCores();
+	NemakiPropertyDefinitionCore getPropertyDefinitionCore(String nodeId);
+	NemakiPropertyDefinitionCore getPropertyDefinitionCoreByPropertyId(String propertyId);
+	NemakiPropertyDefinitionDetail getPropertyDefinitionDetail(String nodeId);
+	List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetailByCoreNodeId(String coreNodeId);
+	NemakiPropertyDefinitionCore createPropertyDefinitionCore(NemakiPropertyDefinitionCore propertyDefinitionCore);
+	NemakiPropertyDefinitionDetail createPropertyDefinitionDetail(NemakiPropertyDefinitionDetail propertyDefinitionDetail);
+	NemakiPropertyDefinitionDetail updatePropertyDefinitionDetail(NemakiPropertyDefinitionDetail propertyDefinitionDetail);
+	void deletePropertyDefinition(String propertyId);
 	
 	// ///////////////////////////////////////
 	// Content
 	// ///////////////////////////////////////
 	Content getContent(String objectId);
+	boolean existContent(String objectTypeId);
 	Document getDocument(String objectId);
 	List<Document> getCheckedOutDocuments(String parentFolderId);
 	VersionSeries getVersionSeries(String nodeId);
@@ -79,11 +89,11 @@ public interface ContentDaoService {
 	Folder create(Folder folder);
 	Relationship create(Relationship relationship);
 	Policy create(Policy policy);
-	Document updateDocument(Document document);
-	VersionSeries updateVersionSeries(VersionSeries versionSeries);
-	Folder updateFolder(Folder folder);
-	Relationship updateRelationship(Relationship relationship);
-	Policy updatePolicy(Policy policy);
+	Document update(Document document);
+	VersionSeries update(VersionSeries versionSeries);
+	Folder update(Folder folder);
+	Relationship update(Relationship relationship);
+	Policy update(Policy policy);
 	void delete(String objectId);
 	
 	// ///////////////////////////////////////

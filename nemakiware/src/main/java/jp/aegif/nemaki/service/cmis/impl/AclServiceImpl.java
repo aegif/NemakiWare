@@ -54,7 +54,7 @@ public class AclServiceImpl implements AclService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequired("objectId", objectId);
-		Content content = contentService.getContentAsTheBaseType(objectId);
+		Content content = contentService.getContent(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,PermissionMapping.CAN_GET_ACL_OBJECT, content);
 		
@@ -70,7 +70,7 @@ public class AclServiceImpl implements AclService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequired("objectId", objectId);
-		Content content = contentService.getContentAsTheBaseType(objectId);
+		Content content = contentService.getContent(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,PermissionMapping.CAN_APPLY_ACL_OBJECT, content);
 		

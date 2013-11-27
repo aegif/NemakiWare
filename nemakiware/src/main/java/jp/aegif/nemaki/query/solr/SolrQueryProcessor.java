@@ -148,7 +148,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 			List<Content> contents = new ArrayList<Content>();
 			for (SolrDocument doc : docs) {
 				String docId = (String) doc.getFieldValue("id");
-				Content c = contentService.getContentAsTheBaseType(docId);
+				Content c = contentService.getContent(docId);
 				contents.add(c);
 			}
 

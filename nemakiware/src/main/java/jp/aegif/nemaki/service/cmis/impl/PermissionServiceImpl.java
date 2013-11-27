@@ -22,9 +22,7 @@
 package jp.aegif.nemaki.service.cmis.impl;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -44,7 +42,6 @@ import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
 import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PermissionDefinitionDataImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PermissionMappingDataImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -269,8 +266,7 @@ public class PermissionServiceImpl implements PermissionService {
 			return BaseTypeId.CMIS_FOLDER.value().equals(baseType);
 		if (PermissionMapping.CAN_CREATE_FOLDER_FOLDER.equals(key))
 			return BaseTypeId.CMIS_FOLDER.value().equals(baseType);
-		if ("canCreatePolicy.Folder".equals(key)) // FIXME the constant already
-													// implemented?
+		if (PermissionMapping.CAN_CREATE_POLICY_FOLDER.equals(key))
 			return BaseTypeId.CMIS_FOLDER.value().equals(baseType);
 		if (PermissionMapping.CAN_CREATE_RELATIONSHIP_SOURCE.equals(key))
 			return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)

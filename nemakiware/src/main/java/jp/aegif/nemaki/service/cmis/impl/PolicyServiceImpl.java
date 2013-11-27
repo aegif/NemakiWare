@@ -55,7 +55,7 @@ public class PolicyServiceImpl implements PolicyService {
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("objectId", objectId);
 		exceptionService.invalidArgumentRequiredString("policyId", policyId);
-		Content content = contentService.getContentAsTheBaseType(objectId);
+		Content content = contentService.getContent(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_ADD_POLICY_OBJECT, content);
@@ -84,7 +84,7 @@ public class PolicyServiceImpl implements PolicyService {
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("objectId", objectId);		
 		exceptionService.invalidArgumentRequiredString("policyId", policyId);
-		Content content = contentService.getContentAsTheBaseType(objectId);
+		Content content = contentService.getContent(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_REMOVE_POLICY_OBJECT, content);
@@ -106,7 +106,7 @@ public class PolicyServiceImpl implements PolicyService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("objectId", objectId);
-		Content content = contentService.getContentAsTheBaseType(objectId);
+		Content content = contentService.getContent(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext, PermissionMapping.CAN_GET_APPLIED_POLICIES_OBJECT, content);
 		

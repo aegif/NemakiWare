@@ -13,10 +13,12 @@ import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.lucene.document.DateTools.Resolution;
 
-public class CouchPropertyDefinition extends CouchNodeBase {
+public class CouchPropertyDefinitionDetail extends CouchNodeBase {
 
 	private static final long serialVersionUID = 4477156425295443676L;
 
+	private String coreNodeId;
+	
 	// Attributes common
 	private String propertyId;
 	private String localName;
@@ -48,20 +50,17 @@ public class CouchPropertyDefinition extends CouchNodeBase {
 	// Attributes specific to String
 	private long maxLength;
 
-	public CouchPropertyDefinition(){
+	public CouchPropertyDefinitionDetail(){
 		super();
 	}
 	
-	public CouchPropertyDefinition(NemakiPropertyDefinition p){
+	public CouchPropertyDefinitionDetail(NemakiPropertyDefinitionDetail p){
 		super(p);
-		setPropertyId(p.getPropertyId());
+		setCoreNodeId(p.getCoreNodeId());
 		setLocalName(p.getLocalName());
 		setLocalNameSpace(p.getLocalNameSpace());
-		setQueryName(p.getQueryName());
 		setDisplayName(p.getDisplayName());
 		setDescription(p.getDescription());
-		setPropertyType(p.getPropertyType());
-		setCardinality(p.getCardinality());
 		setUpdatability(p.getUpdatability());
 		setRequired(p.isRequired());
 		setQueryable(p.isQueryable());
@@ -84,6 +83,14 @@ public class CouchPropertyDefinition extends CouchNodeBase {
 	 */
 	public String getPropertyId() {
 		return propertyId;
+	}
+
+	public String getCoreNodeId() {
+		return coreNodeId;
+	}
+
+	public void setCoreNodeId(String coreNodeId) {
+		this.coreNodeId = coreNodeId;
 	}
 
 	public void setPropertyId(String propertyId) {
@@ -258,16 +265,14 @@ public class CouchPropertyDefinition extends CouchNodeBase {
 		this.maxLength = maxLength;
 	}
 	
-	public NemakiPropertyDefinition convert(){
-		NemakiPropertyDefinition p = new NemakiPropertyDefinition(super.convert());
-		p.setPropertyId(getPropertyId());
+	public NemakiPropertyDefinitionDetail convert(){
+		NemakiPropertyDefinitionDetail p = new NemakiPropertyDefinitionDetail(super.convert());
+		
+		p.setCoreNodeId(getCoreNodeId());
 		p.setLocalName(getLocalName());
 		p.setLocalNameSpace(getLocalNameSpace());
-		p.setQueryName(getQueryName());
 		p.setDisplayName(getDisplayName());
 		p.setDescription(getDescription());
-		p.setPropertyType(getPropertyType());
-		p.setCardinality(getCardinality());
 		p.setUpdatability(getUpdatability());
 		p.setRequired(isRequired());
 		p.setQueryable(isQueryable());
