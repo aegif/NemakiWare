@@ -22,6 +22,9 @@
 package jp.aegif.nemaki.model.constant;
 
 public enum NodeType {
+	TYPE_DEFINITION("typeDefinition"),
+	PROPERTY_DEFINITION_CORE("proeprtyDefinitionCore"),
+	PROPERTY_DEFINITION_DETAIL("proeprtyDefinitionDetail"),
 	CMIS_DOCUMENT("cmis:document"), 
 	CMIS_FOLDER("cmis:folder"),
 	CMIS_RELATIONSHIP("cmis:relationship"),

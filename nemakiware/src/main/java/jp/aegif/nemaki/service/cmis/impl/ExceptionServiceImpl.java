@@ -58,6 +58,7 @@ import org.apache.chemistry.opencmis.commons.definitions.PropertyStringDefinitio
 import org.apache.chemistry.opencmis.commons.definitions.RelationshipTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
+import org.apache.chemistry.opencmis.commons.definitions.TypeMutability;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.CapabilityOrderBy;
@@ -198,7 +199,73 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 	
 	@Override
-	public void invalidSecondaryTypeIds(Properties properties) {
+	public void invalidArgumentCreatableType(TypeDefinition type) {
+		String msg = "";
+		
+		String parentId = type.getParentTypeId();
+		if (typeManager.getTypeById(parentId) == null) {
+			msg = "Specified parent type does not exist";
+		} else {
+			TypeDefinition parent = typeManager.getTypeById(parentId)
+					.getTypeDefinition();
+			if (parent.getTypeMutability() == null) {
+				msg = "Specified parent type does not have TypeMutability";
+			} else {
+				boolean canCreate = (parent.getTypeMutability() == null) ? false
+						: true;
+				if (!canCreate) {
+					msg = "Specified parent type has TypeMutability.canCreate = false";
+				}
+			}
+		}
+		
+		if(!StringUtils.isEmpty(msg)){
+			msg = msg + " [objectTypeId = " + type.getId() + "]";
+			invalidArgument(msg);
+		}
+	}
+	
+	@Override
+	public void invalidArgumentUpdatableType(TypeDefinition type) {
+		String msg = "";
+		TypeMutability typeMutability = type.getTypeMutability();
+		boolean canUpdate = (typeMutability.canUpdate() == null) ? false : typeMutability.canUpdate();
+		if(!canUpdate){
+			msg = "Specified type is not updatable";
+			msg = msg + " [objectTypeId = " + type.getId() + "]";
+			invalidArgument(msg);
+		}
+	}
+	
+	@Override
+	public void invalidArgumentDeletableType(String typeId) {
+		TypeDefinition type = typeManager.getTypeDefinition(typeId);
+		
+		String msg = "";
+		TypeMutability typeMutability = type.getTypeMutability();
+		boolean canUpdate = (typeMutability.canDelete() == null) ? true : typeMutability.canDelete();
+		if(!canUpdate){
+			msg = "Specified type is not deletable";
+			msg = msg + " [objectTypeId = " + type.getId() + "]";
+			invalidArgument(msg);
+		}
+		
+	}
+	
+	@Override
+	public void invalidArgumentDoesNotExistType(String typeId) {
+		String msg = "";
+		
+		TypeDefinition type = typeManager.getTypeDefinition(typeId);
+		if(type == null){
+			msg = "Specified type does not exist";
+			msg = msg + " [objectTypeId = " + type.getId() + "]";
+			invalidArgument(msg);
+		}
+	}
+
+	@Override
+	public void invalidArgumentSecondaryTypeIds(Properties properties) {
 		if(properties == null) return;
 		Map<String, PropertyData<?>> map = properties.getProperties();
 		if(MapUtils.isEmpty(map)) return;
@@ -257,7 +324,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 	@Override
 	public void permissionDenied(CallContext context, String key,
 			ObjectData object) {
-		Content content = contentService.getContentAsTheBaseType(object.getId());
+		Content content = contentService.getContent(object.getId());
 		permissionDeniedInternal(context, key, object.getAcl(),
 				getBaseTypeId(object.getProperties()), content);
 	}
@@ -275,6 +342,16 @@ public class ExceptionServiceImpl implements ExceptionService,
 		if (!permissionService.checkPermission(callContext, key, acl,
 				baseTypeId, content)) {
 			String msg = "Permission Denied!";
+			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
+		}
+	}
+
+	@Override
+	public void perimissionAdmin(CallContext context) {
+		//TODO hard coding
+		final String admin = "admin";
+		if(!admin.equals(context.getUsername())){
+			String msg = "This operation if permitted only for administrator";
 			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
 		}
 	}
@@ -531,6 +608,23 @@ public class ExceptionServiceImpl implements ExceptionService,
 		}
 	}
 
+	@Override
+	public void constaintOnlyLeafTypeDefinition(String objectTypeId) {
+		TypeDefinitionContainer tdc = typeManager.getTypeById(objectTypeId);
+		if (!CollectionUtils.isEmpty(tdc.getChildren())) {
+			String msg = "Cannot delete a type definition which has sub types" + " [objectTypeId = " + objectTypeId + "]";
+			throw new CmisConstraintException(msg,HTTP_STATUS_CODE_409);
+		}
+	}
+
+	@Override
+	public void constraintObjectsStillExist(String objectTypeId) {
+		if (contentService.existContent(objectTypeId)){
+			String msg = "There still exists objects of the specified object type" + " [objectTypeId = " + objectTypeId + "]";
+			throw new CmisConstraintException(msg,HTTP_STATUS_CODE_409);
+		}
+	}
+	
 	/**
 	 * 	
 	 */

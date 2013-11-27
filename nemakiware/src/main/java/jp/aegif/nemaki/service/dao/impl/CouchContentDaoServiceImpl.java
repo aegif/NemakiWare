@@ -35,12 +35,14 @@ import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.NemakiPropertyDefinition;
+import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
+import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
+import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.model.NodeBase;
 import jp.aegif.nemaki.model.Policy;
-import jp.aegif.nemaki.model.NemakiPropertyDefinition;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
-import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.model.constant.NodeType;
 import jp.aegif.nemaki.model.couch.CouchArchive;
@@ -52,12 +54,15 @@ import jp.aegif.nemaki.model.couch.CouchFolder;
 import jp.aegif.nemaki.model.couch.CouchNodeBase;
 import jp.aegif.nemaki.model.couch.CouchPolicy;
 import jp.aegif.nemaki.model.couch.CouchPropertyDefinition;
+import jp.aegif.nemaki.model.couch.CouchPropertyDefinitionCore;
+import jp.aegif.nemaki.model.couch.CouchPropertyDefinitionDetail;
 import jp.aegif.nemaki.model.couch.CouchRelationship;
 import jp.aegif.nemaki.model.couch.CouchRendition;
 import jp.aegif.nemaki.model.couch.CouchTypeDefinition;
 import jp.aegif.nemaki.model.couch.CouchVersionSeries;
 import jp.aegif.nemaki.service.dao.NonCachedContentDaoService;
 import jp.aegif.nemaki.service.db.CouchConnector;
+
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -65,6 +70,8 @@ import org.ektorp.Attachment;
 import org.ektorp.AttachmentInputStream;
 import org.ektorp.CouchDbConnector;
 import org.ektorp.ViewQuery;
+import org.ektorp.ViewResult;
+import org.ektorp.ViewResult.Row;
 import org.json.simple.JSONObject;
 import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
@@ -133,11 +140,34 @@ public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
 	}
 
 	@Override
-	public NemakiPropertyDefinition getPropertyDefinition(String nodeId) {
+	public void deleteTypeDefinition(String nodeId) {
+		delete(nodeId);
+	}
+
+	@Override
+	public List<NemakiPropertyDefinitionCore> getPropertyDefinitionCores() {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("propertyDefinitions").key(nodeId);
-		List<CouchPropertyDefinition> l = connector.queryView(query,
-				CouchPropertyDefinition.class);
+				.viewName("propertyDefinitionCores");
+		List<CouchPropertyDefinitionCore> l = connector.queryView(query,
+				CouchPropertyDefinitionCore.class);
+		
+		if (CollectionUtils.isEmpty(l)) {
+			return null;
+		} else {
+			List<NemakiPropertyDefinitionCore> result = new ArrayList<NemakiPropertyDefinitionCore>();
+			for(CouchPropertyDefinitionCore cpdc : l){
+				result.add(cpdc.convert());
+			}
+			return result;
+		}
+	}
+
+	@Override
+	public NemakiPropertyDefinitionCore getPropertyDefinitionCore(String nodeId) {
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
+				.viewName("propertyDefinitionCores").key(nodeId);
+		List<CouchPropertyDefinitionCore> l = connector.queryView(query,
+				CouchPropertyDefinitionCore.class);
 
 		if (CollectionUtils.isEmpty(l)) {
 			return null;
@@ -147,22 +177,82 @@ public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
 	}
 
 	@Override
-	public NemakiPropertyDefinition createPropertyDefinition(
-			NemakiPropertyDefinition propertyDefinition) {
-		CouchPropertyDefinition cp = new CouchPropertyDefinition(
-				propertyDefinition);
-		connector.create(cp);
-		return cp.convert();
+	public NemakiPropertyDefinitionCore getPropertyDefinitionCoreByPropertyId(
+			String propertyId) {
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
+				.viewName("propertyDefinitionCoresByPropertyId").key(propertyId);
+		List<CouchPropertyDefinitionCore> l = connector.queryView(query,
+				CouchPropertyDefinitionCore.class);
+
+		if (CollectionUtils.isEmpty(l)) {
+			return null;
+		} else {
+			return l.get(0).convert();
+		}
 	}
 
 	@Override
-	public NemakiPropertyDefinition updatePropertyDefinition(
-			NemakiPropertyDefinition propertyDefinition) {
-		CouchPropertyDefinition cp = connector.get(
-				CouchPropertyDefinition.class, propertyDefinition.getId());
-		CouchPropertyDefinition update = new CouchPropertyDefinition(
-				propertyDefinition);
-		update.setRevision(cp.getRevision());
+	public NemakiPropertyDefinitionDetail getPropertyDefinitionDetail(String nodeId) {
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
+				.viewName("propertyDefinitionDetails").key(nodeId);
+		List<CouchPropertyDefinitionDetail> l = connector.queryView(query,
+				CouchPropertyDefinitionDetail.class);
+
+		if (CollectionUtils.isEmpty(l)) {
+			return null;
+		} else {
+			return l.get(0).convert();
+		}
+	}
+
+	@Override
+	public List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetailByCoreNodeId(
+			String coreNodeId) {
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
+				.viewName("propertyDefinitionDetailsByCoreNodeId").key(coreNodeId);
+		List<CouchPropertyDefinitionDetail> l = connector.queryView(query,
+				CouchPropertyDefinitionDetail.class);
+
+		if (CollectionUtils.isEmpty(l)) {
+			return null;
+		} else {
+			List<NemakiPropertyDefinitionDetail> result = new ArrayList<NemakiPropertyDefinitionDetail>();
+			for(CouchPropertyDefinitionDetail cpdd : l){
+				result.add(cpdd.convert());
+			}
+			return result;
+		}
+	}
+	
+	@Override
+	public NemakiPropertyDefinitionCore createPropertyDefinitionCore(
+			NemakiPropertyDefinitionCore propertyDefinitionCore) {
+		CouchPropertyDefinitionCore cpc = new CouchPropertyDefinitionCore(
+				propertyDefinitionCore);
+		connector.create(cpc);
+		return cpc.convert();
+	}
+	
+	@Override
+	public NemakiPropertyDefinitionDetail createPropertyDefinitionDetail(
+			NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
+		CouchPropertyDefinitionDetail cpd = new CouchPropertyDefinitionDetail(
+				propertyDefinitionDetail);
+		connector.create(cpd);
+		return cpd.convert();
+	}
+
+	@Override
+	public NemakiPropertyDefinitionDetail updatePropertyDefinitionDetail(
+			NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
+		
+		
+		CouchPropertyDefinitionDetail cpd = connector.get(
+				CouchPropertyDefinitionDetail.class, propertyDefinitionDetail.getId());
+		
+		
+		CouchPropertyDefinitionDetail update = new CouchPropertyDefinitionDetail(propertyDefinitionDetail);
+		update.setRevision(cpd.getRevision());
 
 		connector.update(update);
 		return update.convert();
@@ -195,6 +285,28 @@ public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
 		CouchDocument cd = connector.get(CouchDocument.class, objectId);
 		Document doc = cd.convert();
 		return doc;
+	}
+	
+	public boolean existContent(String objectTypeId){
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
+				.viewName("countByObjectType").key(objectTypeId);
+		ViewResult l = connector.queryView(query);
+		List<Row> rows = l.getRows();
+		if(CollectionUtils.isEmpty(rows)){
+			return false;
+		}else{
+			for(Row row : rows){
+				if(objectTypeId.equals(row.getKey())){
+					int count = row.getValueAsInt();
+					if(count == 0){
+						return false;
+					}else{
+						return true;
+					}
+				}	
+			}
+		}
+		return false;
 	}
 
 	@Override

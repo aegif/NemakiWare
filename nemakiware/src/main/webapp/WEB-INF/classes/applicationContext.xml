@@ -66,6 +66,9 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		<property name="contentService">
 			<ref bean="ContentService"></ref>
 		</property>
+		<property name="exceptionService">
+			<ref bean="ExceptionService"></ref>
+		</property>	
 	</bean>
 
 	<bean id="RepositoryInfo" class="jp.aegif.nemaki.repository.NemakiRepositoryInfoImpl"
