@@ -708,6 +708,19 @@ public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
 
 		return ca.getId();
 	}
+	
+	@Override
+	public void updateAttachment(AttachmentNode attachment, ContentStream contentStream) {
+		CouchAttachmentNode ca = connector.get(CouchAttachmentNode.class, attachment.getId());
+		CouchAttachmentNode update = new CouchAttachmentNode(attachment);
+		// Set the latest revision for avoid conflict
+		update.setRevision(ca.getRevision());
+
+		String revisionAfterDeleted = connector.deleteAttachment(ca.getId(), ca.getRevision(), ATTACHMENT_NAME);
+		
+		AttachmentInputStream ais = new AttachmentInputStream(ATTACHMENT_NAME, contentStream.getStream(), contentStream.getMimeType());
+		connector.createAttachment(attachment.getId(), revisionAfterDeleted, ais);
+	}
 
 	// ///////////////////////////////////////
 	// Change event

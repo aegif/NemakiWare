@@ -21,6 +21,8 @@
  ******************************************************************************/
 package jp.aegif.nemaki.service.node.impl;
 
+import java.io.InputStream;
+import java.io.SequenceInputStream;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -1414,9 +1416,7 @@ public class ContentServiceImpl implements ContentService {
 	public AttachmentNode getAttachmentRef(String attachmentId) {
 		return contentDaoService.getAttachment(attachmentId, false);
 	}
-
-	@Override
-	public String createAttachment(CallContext callContext,
+	private String createAttachment(CallContext callContext,
 			ContentStream contentStream) {
 		AttachmentNode a = new AttachmentNode();
 		a.setType(AttachmentNode.TYPE);
@@ -1424,6 +1424,23 @@ public class ContentServiceImpl implements ContentService {
 		return contentDaoService.createAttachment(a, contentStream);
 	}
 
+	@Override
+	public void appendAttachment(CallContext callContext, Holder<String> objectId, Holder<String> changeToken,
+			ContentStream contentStream, boolean isLastChunk,
+			ExtensionsData extension) {
+		Document document = contentDaoService.getDocument(objectId.getValue());
+		AttachmentNode attachment = getAttachment(document.getAttachmentNodeId());
+		InputStream is = attachment.getInputStream();
+		//Append
+		SequenceInputStream sis = new SequenceInputStream(is, contentStream.getStream());
+		// appendStream will be used for a huge file, so avoid reading stream
+		long length = attachment.getLength() + contentStream.getLength();
+		ContentStream cs = new ContentStreamImpl("content", BigInteger.valueOf(length), attachment.getMimeType(), sis);
+		contentDaoService.updateAttachment(attachment, cs);
+		
+		writeChangeEvent(callContext, document, ChangeType.UPDATED);
+	}
+	
 	@Override
 	public Rendition getRendition(String streamId) {
 		return contentDaoService.getRendition(streamId);

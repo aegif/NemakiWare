@@ -506,15 +506,21 @@ public interface ContentService {
 	 * @return
 	 */
 	AttachmentNode getAttachmentRef(String attachmentId);
-
+	
 	/**
-	 * Create an attachment
+	 * 
+	 * 
 	 * 
 	 * @param callContext
+	 * @param objectId
+	 * @param changeToken
 	 * @param contentStream
-	 * @return
+	 * @param isLastChunk
+	 * @param extension
 	 */
-	String createAttachment(CallContext callContext, ContentStream contentStream);
+	void appendAttachment(CallContext callContext, Holder<String> objectId, Holder<String> changeToken,
+			ContentStream contentStream, boolean isLastChunk,
+			ExtensionsData extension);
 
 	/**
 	 * Get a rendition

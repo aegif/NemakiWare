@@ -528,6 +528,18 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		return nonCachedContentDaoService.createAttachment(attachment, cs);
 	}
 
+	@Override
+	public void updateAttachment(AttachmentNode attachment,
+			ContentStream contentStream) {
+		Cache attachmentCache = cacheManager.getCache("attachmentCache");
+		Element v = attachmentCache.get(attachment.getId());
+		if(v != null){
+			attachmentCache.remove(attachment.getId());
+		}
+		nonCachedContentDaoService.updateAttachment(attachment, contentStream);
+		
+	}
+
 	// //////////////////////////////////////////////////////////////////////////////
 	// Change events
 	// //////////////////////////////////////////////////////////////////////////////

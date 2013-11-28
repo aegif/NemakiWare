@@ -42,6 +42,7 @@ import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.cmis.NemakiCmisService;
 import jp.aegif.nemaki.service.cmis.ObjectService;
 import jp.aegif.nemaki.service.cmis.RepositoryService;
+import jp.aegif.nemaki.service.dao.impl.ContentDaoServiceImpl;
 import jp.aegif.nemaki.service.node.ContentService;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
@@ -456,6 +457,12 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.constraintContentStreamRequired(document);
 
 		// NOTE: Nemaki does't support documents without content stream
+	}
+	
+	public void appendContentStream(CallContext callContext, Holder<String> objectId, Holder<String> changeToken,
+			ContentStream contentStream, boolean isLastChunk,
+			ExtensionsData extension){
+		contentService.appendAttachment(callContext, objectId, changeToken, contentStream, isLastChunk, extension);		
 	}
 
 	@Override

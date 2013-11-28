@@ -66,6 +66,10 @@ public interface ObjectService {
 			Holder<String> objectId, Holder<String> changeToken,
 			ExtensionsData extension);
 
+	public void appendContentStream(CallContext callContext, Holder<String> objectId, Holder<String> changeToken,
+			ContentStream contentStream, boolean isLastChunk,
+			ExtensionsData extension);
+	
 	/**
 	 * Deletes the specified folder object and all of its child- and
 	 * descendant-objects.
