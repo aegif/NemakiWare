@@ -639,9 +639,7 @@ public class NemakiCmisService extends AbstractCmisService {
 			Holder<String> objectId, Holder<String> changeToken,
 			ContentStream contentStream, boolean isLastChunk,
 			ExtensionsData extension) {
-		// TODO Auto-generated method stub
-		super.appendContentStream(repositoryId, objectId, changeToken, contentStream,
-				isLastChunk, extension);
+		getRepository(repositoryId).appendContentStream(getCallContext(), objectId, changeToken, contentStream, isLastChunk, extension);;
 	}
 
 	@Override

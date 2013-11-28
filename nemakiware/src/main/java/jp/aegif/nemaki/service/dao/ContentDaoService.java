@@ -106,6 +106,7 @@ public interface ContentDaoService {
 	AttachmentNode getAttachment(String attachmentId, boolean includeStream);
 	Rendition getRendition(String objectId);
 	String createAttachment(AttachmentNode attachment, ContentStream cs);	
+	void updateAttachment(AttachmentNode attachment, ContentStream contentStream);
 	
 	// ///////////////////////////////////////
 	// Change event

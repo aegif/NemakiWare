@@ -433,6 +433,15 @@ public interface NonCachedContentDaoService {
 	String createAttachment(AttachmentNode attachment,
 			ContentStream contentStream);
 
+	/**
+	 * Update an attachment
+	 * (replace an existing attachment)
+	 * 
+	 * @param attachment
+	 * @param contentStream
+	 */
+	void updateAttachment(AttachmentNode attachment, ContentStream contentStream);
+	
 	// ///////////////////////////////////////
 	// Change event
 	// ///////////////////////////////////////

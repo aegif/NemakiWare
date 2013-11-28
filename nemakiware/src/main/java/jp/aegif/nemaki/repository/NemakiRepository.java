@@ -99,6 +99,13 @@ public class NemakiRepository {
 			ExtensionsData extension) {
 
 	}
+	
+	public void appendContentStream(CallContext callContext, Holder<String> objectId, Holder<String> changeToken,
+			ContentStream contentStream, boolean isLastChunk,
+			ExtensionsData extension){
+		objectService.appendContentStream(callContext, objectId, changeToken, contentStream, isLastChunk, extension);
+		
+	}
 
 	public FailedToDeleteData deleteTree(CallContext callContext,
 			String folderId, Boolean allVersions, UnfileObject unfileObjects,
