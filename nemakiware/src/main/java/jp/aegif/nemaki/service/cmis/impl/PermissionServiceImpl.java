@@ -257,8 +257,7 @@ public class PermissionServiceImpl implements PermissionService {
 				return false;
 			}else{
 				return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType) || BaseTypeId.CMIS_FOLDER.value().equals(baseType)
-						|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM
-							.equals(baseType));
+						|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM.value().equals(baseType));
 			}
 			
 		// Object Services
@@ -365,7 +364,7 @@ public class PermissionServiceImpl implements PermissionService {
 			return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)
 					|| BaseTypeId.CMIS_FOLDER.value().equals(baseType)
 					|| BaseTypeId.CMIS_RELATIONSHIP.value().equals(baseType)
-					|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM
+					|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM.value()
 						.equals(baseType));
 		if (PermissionMapping.CAN_REMOVE_POLICY_POLICY.equals(key))
 			return BaseTypeId.CMIS_POLICY.value().equals(baseType);
@@ -373,20 +372,20 @@ public class PermissionServiceImpl implements PermissionService {
 			return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)
 					|| BaseTypeId.CMIS_FOLDER.value().equals(baseType)
 					|| BaseTypeId.CMIS_RELATIONSHIP.value().equals(baseType)
-					|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM
+					|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM.value()
 						.equals(baseType));
 		// ACL Services
 		if (PermissionMapping.CAN_GET_ACL_OBJECT.equals(key))
 			return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)
 					|| BaseTypeId.CMIS_FOLDER.value().equals(baseType)
 					|| BaseTypeId.CMIS_RELATIONSHIP.value().equals(baseType)
-					|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM
+					|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM.value()
 						.equals(baseType));
 		if (PermissionMapping.CAN_APPLY_ACL_OBJECT.equals(key))
 			return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)
 					|| BaseTypeId.CMIS_FOLDER.value().equals(baseType)
 					|| BaseTypeId.CMIS_RELATIONSHIP.value().equals(baseType)
-					|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM
+					|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM.value()
 						.equals(baseType));
 
 		return false;

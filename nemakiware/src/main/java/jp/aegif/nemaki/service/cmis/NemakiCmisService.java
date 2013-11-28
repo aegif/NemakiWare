@@ -666,9 +666,7 @@ public class NemakiCmisService extends AbstractCmisService {
 	public String createItem(String repositoryId, Properties properties,
 			String folderId, List<String> policies, Acl addAces,
 			Acl removeAces, ExtensionsData extension) {
-		// TODO Auto-generated method stub
-		return super.createItem(repositoryId, properties, folderId, policies, addAces,
-				removeAces, extension);
+		return getRepository(repositoryId).createItem(getCallContext(), properties, folderId, policies, addAces, removeAces, extension);
 	}
 
 	@Override

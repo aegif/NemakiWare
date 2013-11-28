@@ -35,7 +35,7 @@ import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
-import jp.aegif.nemaki.model.NemakiPropertyDefinition;
+import jp.aegif.nemaki.model.Item;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
@@ -51,9 +51,9 @@ import jp.aegif.nemaki.model.couch.CouchChange;
 import jp.aegif.nemaki.model.couch.CouchContent;
 import jp.aegif.nemaki.model.couch.CouchDocument;
 import jp.aegif.nemaki.model.couch.CouchFolder;
+import jp.aegif.nemaki.model.couch.CouchItem;
 import jp.aegif.nemaki.model.couch.CouchNodeBase;
 import jp.aegif.nemaki.model.couch.CouchPolicy;
-import jp.aegif.nemaki.model.couch.CouchPropertyDefinition;
 import jp.aegif.nemaki.model.couch.CouchPropertyDefinitionCore;
 import jp.aegif.nemaki.model.couch.CouchPropertyDefinitionDetail;
 import jp.aegif.nemaki.model.couch.CouchRelationship;
@@ -339,6 +339,43 @@ public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
 			return l.get(0).convert();
 		}
 	}
+	
+	@Override
+	public List<Document> getAllVersions(String versionSeriesId) {
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
+				.viewName("documentsByVersionSeriesId").key(versionSeriesId);
+
+		List<CouchDocument> cds = connector.queryView(query,
+				CouchDocument.class);
+		if (CollectionUtils.isEmpty(cds))
+			return null;
+		List<Document> list = new ArrayList<Document>();
+		for (CouchDocument cd : cds) {
+			list.add(cd.convert());
+		}
+		return list;
+
+	}
+
+	@Override
+	public Document getDocumentOfLatestVersion(String versionSeriesId) {
+		if (versionSeriesId == null)
+			return null;
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
+				.viewName("latestVersions").key(versionSeriesId);
+		List<CouchDocument> list = connector.queryView(query,
+				CouchDocument.class);
+
+		if (list.size() == 1) {
+			return list.get(0).convert();
+		} else if (list.size() > 1) {
+			log.warn("The latest version of [" + versionSeriesId
+					+ "] is duplicate.");
+			return list.get(0).convert();
+		} else {
+			return null;
+		}
+	}
 
 	@Override
 	public Folder getFolder(String objectId) {
@@ -462,39 +499,14 @@ public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
 			return null;
 		}
 	}
-
+	
 	@Override
-	public List<Document> getAllVersions(String versionSeriesId) {
+	public Item getItem(String objectId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("documentsByVersionSeriesId").key(versionSeriesId);
-
-		List<CouchDocument> cds = connector.queryView(query,
-				CouchDocument.class);
-		if (CollectionUtils.isEmpty(cds))
-			return null;
-		List<Document> list = new ArrayList<Document>();
-		for (CouchDocument cd : cds) {
-			list.add(cd.convert());
-		}
-		return list;
-
-	}
-
-	@Override
-	public Document getDocumentOfLatestVersion(String versionSeriesId) {
-		if (versionSeriesId == null)
-			return null;
-		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("latestVersions").key(versionSeriesId);
-		List<CouchDocument> list = connector.queryView(query,
-				CouchDocument.class);
-
-		if (list.size() == 1) {
-			return list.get(0).convert();
-		} else if (list.size() > 1) {
-			log.warn("The latest version of [" + versionSeriesId
-					+ "] is duplicate.");
-			return list.get(0).convert();
+				.viewName("items").key(objectId);
+		List<CouchItem> cpi = connector.queryView(query, CouchItem.class);
+		if (!CollectionUtils.isEmpty(cpi)) {
+			return cpi.get(0).convert();
 		} else {
 			return null;
 		}
@@ -533,6 +545,13 @@ public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
 		CouchPolicy cp = new CouchPolicy(policy);
 		connector.create(cp);
 		return cp.convert();
+	}
+
+	@Override
+	public Item create(Item item) {
+		CouchItem ci = new CouchItem(item);
+		connector.create(ci);
+		return ci.convert();
 	}
 
 	@Override
@@ -590,6 +609,17 @@ public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
 		// Set the latest revision for avoid conflict
 		CouchPolicy update = new CouchPolicy(policy);
 		update.setRevision(cp.getRevision());
+
+		connector.update(update);
+		return update.convert();
+	}
+	
+	@Override
+	public Item update(Item item) {
+		CouchItem ci = connector.get(CouchItem.class, item.getId());
+		// Set the latest revision for avoid conflict
+		CouchItem update = new CouchItem(item);
+		update.setRevision(ci.getRevision());
 
 		connector.update(update);
 		return update.convert();

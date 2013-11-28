@@ -29,6 +29,7 @@ import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.Item;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
 import jp.aegif.nemaki.model.NodeBase;
@@ -359,6 +360,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public Item getItem(String objectId) {
+		return nonCachedContentDaoService.getItem(objectId);
+	}
+
+	@Override
 	public Document create(Document document) {
 		Document d = nonCachedContentDaoService.create(document);
 		Cache documentCache = cacheManager.getCache("documentCache");
@@ -406,9 +412,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		return created;
 	}
 
-	/**
-	 * Should return an instance with updated value
-	 */
+	@Override
+	public Item create(Item item) {
+		return nonCachedContentDaoService.create(item);
+	}
+	
 	@Override
 	public Document update(Document document) {
 		Document updated = nonCachedContentDaoService.update(document);
@@ -426,9 +434,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		return updated;
 	}
 
-	/**
-	 * Should return an instance with updated value
-	 */
 	@Override
 	public Folder update(Folder folder) {
 		Folder updated = nonCachedContentDaoService.update(folder);
@@ -445,6 +450,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Policy update(Policy policy) {
 		return nonCachedContentDaoService.update(policy);
+	}
+
+	@Override
+	public Item update(Item item) {
+		return nonCachedContentDaoService.update(item);
 	}
 
 	@Override

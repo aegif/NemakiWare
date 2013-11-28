@@ -198,5 +198,9 @@ public interface ObjectService {
 	public abstract String createPolicy(CallContext callContext, Properties properties,
 			List<String> policies, Acl addAces, Acl removeAces,
 			ExtensionsData extension);
+	
+	public abstract String createItem(CallContext callContext, Properties properties,
+			String folderId, List<String> policies, Acl addAces,
+			Acl removeAces, ExtensionsData extension);
 
 }

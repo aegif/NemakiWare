@@ -30,6 +30,7 @@ import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.Item;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
@@ -249,6 +250,7 @@ public class ObjectServiceImpl implements ObjectService {
 		}
 
 		String objectId = null;
+		//TODO ACE can be set ! 
 		if (type.getBaseTypeId() == BaseTypeId.CMIS_DOCUMENT) {
 			objectId = createDocument(callContext, properties, folderId,
 					contentStream, versioningState, null, null, null);
@@ -261,14 +263,15 @@ public class ObjectServiceImpl implements ObjectService {
 		} else if (type.getBaseTypeId() == BaseTypeId.CMIS_POLICY) {
 			objectId = createPolicy(callContext, properties, policies, null,
 					null, extension);
+		}else if(type.getBaseTypeId() == BaseTypeId.CMIS_ITEM){
+			objectId = createItem(callContext, properties, folderId, policies, null, null, extension);
 		} else {
 			throw new CmisObjectNotFoundException(
 					"Cannot create object of type '" + typeId + "'!");
 		}
 
 		return compileObjectService.compileObjectData(callContext,
-				contentService.getContent(objectId), null, false,
-				false, null);
+				contentService.getContent(objectId), null, false, false, null);
 	}
 
 	public String createFolder(CallContext callContext, Properties properties,
@@ -470,9 +473,8 @@ public class ObjectServiceImpl implements ObjectService {
 				properties.getPropertyList());
 		String sourceId = getStringProperty(properties, PropertyIds.SOURCE_ID);
 		if (sourceId != null) {
-			Content source = contentService
-					.getContent(getStringProperty(properties,
-							PropertyIds.SOURCE_ID));
+			Content source = contentService.getContent(getStringProperty(
+					properties, PropertyIds.SOURCE_ID));
 			if (source == null)
 				exceptionService.constraintAllowedSourceTypes(td, source);
 			exceptionService.permissionDenied(callContext,
@@ -480,9 +482,8 @@ public class ObjectServiceImpl implements ObjectService {
 		}
 		String targetId = getStringProperty(properties, PropertyIds.TARGET_ID);
 		if (targetId != null) {
-			Content target = contentService
-					.getContent(getStringProperty(properties,
-							PropertyIds.TARGET_ID));
+			Content target = contentService.getContent(getStringProperty(
+					properties, PropertyIds.TARGET_ID));
 			if (target == null)
 				exceptionService.constraintAllowedTargetTypes(td, target);
 			exceptionService.permissionDenied(callContext,
@@ -545,14 +546,45 @@ public class ObjectServiceImpl implements ObjectService {
 	}
 
 	@Override
+	public String createItem(CallContext callContext, Properties properties,
+			String folderId, List<String> policies, Acl addAces,
+			Acl removeAces, ExtensionsData extension) {
+		// //////////////////
+		// General Exception
+		// //////////////////
+		exceptionService.invalidArgumentRequiredCollection("properties",
+				properties.getPropertyList());
+		
+		// //////////////////
+		// Specific Exception
+		// //////////////////
+		exceptionService.constraintBaseTypeId(properties,
+				BaseTypeId.CMIS_ITEM);
+		exceptionService.constraintPropertyValue(properties);
+		TypeDefinition td = typeManager.getTypeDefinition(getIdProperty(
+				properties, PropertyIds.OBJECT_TYPE_ID));
+		exceptionService
+				.constraintCotrollablePolicies(td, policies, properties);
+		exceptionService.constraintCotrollableAcl(td, addAces, removeAces,
+				properties);
+		
+		// //////////////////
+		// Body of the method
+		// //////////////////
+		Item item = contentService.createItem(callContext, properties, folderId, policies, addAces, removeAces, extension);
+		return item.getId();
+	}
+
+	@Override
 	public Content updateProperties(CallContext callContext,
 			Holder<String> objectId, Properties properties,
 			Holder<String> changeToken) {
-		
+
 		// //////////////////
 		// Exception
 		// //////////////////
-		Content content = checkExceptionBeforeUpdateProperties(callContext, objectId, properties, changeToken);
+		Content content = checkExceptionBeforeUpdateProperties(callContext,
+				objectId, properties, changeToken);
 
 		// //////////////////
 		// Body of the method
@@ -561,9 +593,9 @@ public class ObjectServiceImpl implements ObjectService {
 				.updateProperties(callContext, properties, content);
 	}
 
-	private Content checkExceptionBeforeUpdateProperties(CallContext callContext,
-			Holder<String> objectId, Properties properties,
-			Holder<String> changeToken) {
+	private Content checkExceptionBeforeUpdateProperties(
+			CallContext callContext, Holder<String> objectId,
+			Properties properties, Holder<String> changeToken) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -572,8 +604,7 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.invalidArgumentRequiredCollection("properties",
 				properties.getPropertyList());
 		// TODO Check constraintPropertyValue with objectId
-		Content content = contentService.getContent(objectId
-				.getValue());
+		Content content = contentService.getContent(objectId.getValue());
 		exceptionService.objectNotFound(DomainType.OBJECT, content,
 				objectId.getValue());
 		if (content.isDocument()) {
@@ -583,7 +614,7 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT, content);
 		exceptionService.updateConflict(content, changeToken);
-		
+
 		return content;
 	}
 
@@ -596,25 +627,32 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// General Exception
 		// //////////////////
-		//Each permission is checked at each execution
-		exceptionService.invalidArgumentRequiredCollection("objectIdAndChangeToken", objectIdAndChangeToken);
+		// Each permission is checked at each execution
+		exceptionService.invalidArgumentRequiredCollection(
+				"objectIdAndChangeToken", objectIdAndChangeToken);
 		exceptionService.invalidArgumentSecondaryTypeIds(properties);
-		
+
 		// //////////////////
 		// Body of the method
 		// //////////////////
 		List<BulkUpdateObjectIdAndChangeToken> results = new ArrayList<BulkUpdateObjectIdAndChangeToken>();
-		
+
 		for (BulkUpdateObjectIdAndChangeToken idAndToken : objectIdAndChangeToken) {
-			try{
-				Content content = checkExceptionBeforeUpdateProperties(callContext, new Holder<String>(idAndToken.getId()), properties, new Holder<String>(idAndToken.getChangeToken()));
-				contentService.updateProperties(callContext, properties, content);
-				
-				BulkUpdateObjectIdAndChangeToken result = new BulkUpdateObjectIdAndChangeTokenImpl(idAndToken.getId(), content.getId(), String.valueOf(content.getChangeToken()));
+			try {
+				Content content = checkExceptionBeforeUpdateProperties(
+						callContext, new Holder<String>(idAndToken.getId()),
+						properties,
+						new Holder<String>(idAndToken.getChangeToken()));
+				contentService.updateProperties(callContext, properties,
+						content);
+
+				BulkUpdateObjectIdAndChangeToken result = new BulkUpdateObjectIdAndChangeTokenImpl(
+						idAndToken.getId(), content.getId(),
+						String.valueOf(content.getChangeToken()));
 				results.add(result);
-			}catch(Exception e){
-				//Don't throw an error
-				//Don't return any BulkUpdateObjectIdAndChangetoken
+			} catch (Exception e) {
+				// Don't throw an error
+				// Don't return any BulkUpdateObjectIdAndChangetoken
 			}
 		}
 
@@ -633,8 +671,7 @@ public class ObjectServiceImpl implements ObjectService {
 				sourceFolderId);
 		exceptionService.invalidArgumentRequiredString("targetFolderId",
 				targetFolderId);
-		Content content = contentService.getContent(objectId
-				.getValue());
+		Content content = contentService.getContent(objectId.getValue());
 		exceptionService.objectNotFound(DomainType.OBJECT, content,
 				objectId.getValue());
 		Folder source = contentService.getFolder(sourceFolderId);
