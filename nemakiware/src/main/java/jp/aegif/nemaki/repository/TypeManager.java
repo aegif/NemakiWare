@@ -41,13 +41,7 @@ import jp.aegif.nemaki.service.dao.ContentDaoService;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.definitions.Choice;
-import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
-import org.apache.chemistry.opencmis.commons.definitions.FolderTypeDefinition;
-import org.apache.chemistry.opencmis.commons.definitions.ItemTypeDefinition;
-import org.apache.chemistry.opencmis.commons.definitions.PolicyTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
-import org.apache.chemistry.opencmis.commons.definitions.RelationshipTypeDefinition;
-import org.apache.chemistry.opencmis.commons.definitions.SecondaryTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionList;
@@ -79,7 +73,8 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.TypeDefinitionCont
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.TypeDefinitionListImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.TypeMutabilityImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
-import org.springframework.util.CollectionUtils;
+import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections.MapUtils;
 
 /**
  * Type Manager class, defines document/folder/relationship/policy
@@ -672,7 +667,7 @@ public class TypeManager implements
 		TypeDefinition copied = copyTypeDefinition(parentType);
 		Map<String, PropertyDefinition<?>> parentProperties = copied
 				.getPropertyDefinitions();
-		if (CollectionUtils.isEmpty(parentProperties)) {
+		if (MapUtils.isEmpty(parentProperties)) {
 			parentProperties = new HashMap<String, PropertyDefinition<?>>();
 		}
 		for (String key : parentProperties.keySet()) {
@@ -939,8 +934,8 @@ public class TypeManager implements
 					skip--;
 					continue;
 				}
-
-				result.getList().add(child.getTypeDefinition());
+				
+				result.getList().add(copyTypeDefinition(child.getTypeDefinition()));
 
 				max--;
 				if (max == 0) {
@@ -957,8 +952,7 @@ public class TypeManager implements
 			for (TypeDefinition type : result.getList()) {
 				try {
 					if (type.getPropertyDefinitions() != null) {
-						// TODO clear() destroys PropertyDefinitions of "types"
-						// type.getPropertyDefinitions().clear();
+						type.getPropertyDefinitions().clear();
 					}
 				} catch (Exception e) {
 					System.out.print(e);
@@ -1011,58 +1005,46 @@ public class TypeManager implements
 		return result;
 	}
 
-	/**
-	 * TODO includePropertyDefinitions flag doesn't work TODO and
-	 * type.getPropertyDefinitions().clear() destroys PropertyDefinitions of
-	 * "types"
-	 * 
-	 * @param tdc
-	 * @param result
-	 * @param includePropertyDefinitions
-	 */
 	private void flattenTypeDefinitionContainer(TypeDefinitionContainer tdc,
 			List<TypeDefinitionContainer> result, int depth,
 			boolean includePropertyDefinitions) {
 		if (depth == 0)
 			return;
-
-		result.add(tdc);
+		if(includePropertyDefinitions){
+			result.add(tdc);
+		}else{
+			result.add(removeProeprtyDefinition(tdc));
+		}
+		
 		List<TypeDefinitionContainer> children = tdc.getChildren();
-		if (!CollectionUtils.isEmpty(children)) {
+		if (CollectionUtils.isNotEmpty(children)) {
 			for (TypeDefinitionContainer child : children) {
 				flattenTypeDefinitionContainer(child, result, depth - 1,
 						includePropertyDefinitions);
 			}
 		}
 	}
-
-	/**
-	 * Gathers the type descendants tree.
-	 */
-	private TypeDefinitionContainer getTypesDescendantsInternal(int depth,
-			TypeDefinitionContainer tc, boolean includePropertyDefinitions) {
-		TypeDefinitionContainerImpl result = new TypeDefinitionContainerImpl();
-
-		TypeDefinition type = copyTypeDefinition(tc.getTypeDefinition());
-		if (!includePropertyDefinitions) {
-			// TODO clear() destroys PropertyDefinitions of "types"
-			// type.getPropertyDefinitions().clear();
+	
+	private TypeDefinitionContainer removeProeprtyDefinition(TypeDefinitionContainer tdc){
+		//Remove from its own typeDefinition
+		TypeDefinition tdf = tdc.getTypeDefinition();
+		TypeDefinition copy = copyTypeDefinition(tdf);
+		Map<String, PropertyDefinition<?>> propDefs = copy.getPropertyDefinitions();
+		if(MapUtils.isNotEmpty(propDefs)){
+			propDefs.clear();
 		}
-
-		result.setTypeDefinition(type);
-
-		if (depth != 0) {
-			if (tc.getChildren() != null) {
-				result.setChildren(new ArrayList<TypeDefinitionContainer>());
-				for (TypeDefinitionContainer tdc : tc.getChildren()) {
-					result.getChildren().add(
-							getTypesDescendantsInternal(depth < 0 ? -1
-									: depth - 1, tdc,
-									includePropertyDefinitions));
-				}
+		TypeDefinitionContainerImpl result = new TypeDefinitionContainerImpl(copy);
+		
+		//Remove from children recursively
+		List<TypeDefinitionContainer> children = tdc.getChildren();
+		if(CollectionUtils.isNotEmpty(children)){
+			List<TypeDefinitionContainer> l = new ArrayList<TypeDefinitionContainer>();
+			for(TypeDefinitionContainer child : children){
+				l.add(removeProeprtyDefinition(child));
 			}
+			result.setChildren(l);
 		}
-
+		
 		return result;
 	}
 
