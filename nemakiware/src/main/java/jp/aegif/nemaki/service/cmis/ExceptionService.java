@@ -88,6 +88,7 @@ public interface ExceptionService {
 	void constraintContentStreamRequired(Document document);
 	void constaintOnlyLeafTypeDefinition(String objectTypeId);
 	void constraintObjectsStillExist(String objectTypeId);
+	void constraintDuplicateProeprtyDefinition(TypeDefinition typeDefinition);
 	void contentAlreadyExists(Content content, Boolean overwriteFlag);
 	void streamNotSupported(DocumentTypeDefinition documentTypeDefinition, ContentStream contentStream);
 	void nameConstraintViolation(Properties properties, Folder parentFolder);

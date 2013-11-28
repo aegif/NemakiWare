@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
@@ -625,9 +626,26 @@ public class ExceptionServiceImpl implements ExceptionService,
 		}
 	}
 	
-	/**
-	 * 	
-	 */
+	@Override
+	public void constraintDuplicateProeprtyDefinition(
+			TypeDefinition typeDefinition) {
+		Map<String,PropertyDefinition<?>> props = typeDefinition.getPropertyDefinitions();
+		if(MapUtils.isNotEmpty(props)){
+			Set<String> keys = props.keySet(); 
+			TypeDefinition parent = typeManager.getTypeDefinition(typeDefinition.getParentTypeId());
+			Map<String,PropertyDefinition<?>> parentProps = parent.getPropertyDefinitions();
+			if(MapUtils.isNotEmpty(parentProps)){
+				Set<String> parentKeys = parentProps.keySet();
+				for(String key : keys){
+					if(parentKeys.contains(key)){
+						String msg = "Duplicate property definition with parent type definition" + " [property id = " + key + "]";
+						throw new CmisConstraintException(msg,HTTP_STATUS_CODE_409);
+					}
+				}
+			}
+		}
+	}
+
 	@Override
 	public void contentAlreadyExists(Content content, Boolean overwriteFlag) {
 		if (!overwriteFlag) {
@@ -643,9 +661,6 @@ public class ExceptionServiceImpl implements ExceptionService,
 		}
 	}
 
-	/**
-	 * 
-	 */
 	@Override
 	public void streamNotSupported(
 			DocumentTypeDefinition documentTypeDefinition,
