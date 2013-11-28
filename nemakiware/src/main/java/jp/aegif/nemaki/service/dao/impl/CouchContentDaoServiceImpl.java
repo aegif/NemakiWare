@@ -74,7 +74,7 @@ import org.ektorp.ViewResult;
 import org.ektorp.ViewResult.Row;
 import org.json.simple.JSONObject;
 import org.springframework.stereotype.Component;
-import org.springframework.util.CollectionUtils;
+import org.apache.commons.collections.CollectionUtils;
 
 /**
  * Dao Service implementation for CouchDB.

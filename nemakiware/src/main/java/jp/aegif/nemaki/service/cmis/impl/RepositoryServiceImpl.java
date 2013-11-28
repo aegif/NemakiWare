@@ -23,7 +23,6 @@ package jp.aegif.nemaki.service.cmis.impl;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -49,9 +48,8 @@ import org.apache.chemistry.opencmis.commons.definitions.TypeMutability;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.collections.MapUtils;
-import org.apache.solr.common.util.Hash;
 import org.springframework.beans.factory.InitializingBean;
-import org.springframework.util.CollectionUtils;
+import org.apache.commons.collections.CollectionUtils;
 
 public class RepositoryServiceImpl implements RepositoryService,
 		InitializingBean {
@@ -126,7 +124,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 				.getPropertyDefinitions();
 
 		ntd.setProperties(new ArrayList<String>());
-		if (!CollectionUtils.isEmpty(propDefs)) {
+		if (MapUtils.isNotEmpty(propDefs)) {
 			for (String key : propDefs.keySet()) {
 				PropertyDefinition<?> propDef = propDefs.get(key);
 				if (!systemIds.contains(key)) {
@@ -197,7 +195,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 				.getPropertyDefinitions();
 
 		ntd.setProperties(new ArrayList<String>());
-		if (!CollectionUtils.isEmpty(propDefs)) {
+		if (MapUtils.isNotEmpty(propDefs)) {
 			for (String key : propDefs.keySet()) {
 				PropertyDefinition<?> propDef = propDefs.get(key);
 				if (systemIds.contains(key))
