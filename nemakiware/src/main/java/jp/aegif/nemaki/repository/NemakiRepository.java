@@ -235,8 +235,7 @@ public class NemakiRepository {
 	public String createItem(CallContext callContext, Properties properties,
 			String folderId, List<String> policies, Acl addAces,
 			Acl removeAces, ExtensionsData extension) {
-		return objectService.createRelationship(callContext, properties,
-				policies, addAces, removeAces, extension);
+		return objectService.createItem(callContext, properties, folderId, policies, addAces, removeAces, extension);
 	}
 
 	// --- Navigation Service

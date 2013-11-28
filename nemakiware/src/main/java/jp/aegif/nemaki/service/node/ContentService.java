@@ -30,6 +30,7 @@ import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.Item;
 import jp.aegif.nemaki.model.NemakiPropertyDefinition;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
@@ -217,6 +218,13 @@ public interface ContentService {
 	Policy getPolicy(String objectId);
 
 	/**
+	 * Get an item
+	 * @param objectId
+	 * @return
+	 */
+	Item getItem(String objectId);
+	
+	/**
 	 * Create a document
 	 * 
 	 * @param callContext
@@ -348,7 +356,22 @@ public interface ContentService {
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces,
 			ExtensionsData extension);
-
+	
+	/**
+	 * Create an item
+	 * @param callContext
+	 * @param properties
+	 * @param folderId
+	 * @param policies
+	 * @param addAces
+	 * @param removeAces
+	 * @param extension
+	 * @return
+	 */
+	Item createItem(CallContext callContext, Properties properties,
+			String folderId, List<String> policies, org.apache.chemistry.opencmis.commons.data.Acl addAces,
+			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension);
+	
 	/**
 	 * Update a content(for general-purpose)
 	 * 

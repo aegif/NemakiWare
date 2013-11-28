@@ -29,6 +29,7 @@ import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.Item;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
 import jp.aegif.nemaki.model.Policy;
@@ -84,16 +85,19 @@ public interface ContentDaoService {
 	List<Relationship> getRelationshipsByTarget(String targetId);
 	Policy getPolicy(String objectId);
 	List<Policy> getAppliedPolicies(String objectId);
+	Item getItem(String objectId);
 	Document create(Document document);
 	VersionSeries create(VersionSeries versionSeries);
 	Folder create(Folder folder);
 	Relationship create(Relationship relationship);
 	Policy create(Policy policy);
+	Item create(Item item);
 	Document update(Document document);
 	VersionSeries update(VersionSeries versionSeries);
 	Folder update(Folder folder);
 	Relationship update(Relationship relationship);
 	Policy update(Policy policy);
+	Item update(Item item);
 	void delete(String objectId);
 	
 	// ///////////////////////////////////////

@@ -37,6 +37,7 @@ import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.Item;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.Relationship;
@@ -77,6 +78,7 @@ import org.apache.chemistry.opencmis.commons.impl.server.ObjectInfoImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -369,6 +371,9 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		} else if (content.isPolicy()) {
 			Policy policy = (Policy) content;
 			properties = compilePolicyProperties(policy, properties, filter);
+		}else if (content.isItem()) {
+			Item item = (Item) content;
+			properties = compileItemProperties(item, properties, filter);
 		}
 
 		return properties;
@@ -419,7 +424,6 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		return properties;
 	}
 
-	// TODO make enable to cope with dynamic sub type
 	private PropertiesImpl compileRelationshipProperties(
 			Relationship relationship, PropertiesImpl properties,
 			Set<String> filter) {
@@ -436,8 +440,15 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		setCmisPolicyProperties(properties, typeId, filter, policy);
 		return properties;
 	}
+	
+	private PropertiesImpl compileItemProperties(Item item,
+			PropertiesImpl properties, Set<String> filter) {
+		String typeId = item.getObjectType();
+		setCmisBaseProperties(properties, typeId, filter, item);
+		setCmisItemProperties(properties, typeId, filter, item);
+		return properties;
+	}
 
-	// TODO: Is typeId really needed?
 	private void setCmisBaseProperties(PropertiesImpl properties,
 			String typeId, Set<String> filter, Content content) {
 		addProperty(properties, typeId, filter, PropertyIds.NAME,
@@ -519,6 +530,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			if (CollectionUtils.isEmpty(folder.getAllowedChildTypeIds())) {
 				values.add(BaseTypeId.CMIS_DOCUMENT.value());
 				values.add(BaseTypeId.CMIS_FOLDER.value());
+				values.add(BaseTypeId.CMIS_ITEM.value());
 			} else {
 				values = folder.getAllowedChildTypeIds();
 			}
@@ -600,6 +612,12 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 				BaseTypeId.CMIS_POLICY.value());
 		addProperty(properties, typeId, filter, PropertyIds.POLICY_TEXT,
 				policy.getPolicyText());
+	}
+	
+	private void setCmisItemProperties(PropertiesImpl properties,
+			String typeId, Set<String> filter, Item item) {
+		addProperty(properties, typeId, filter, PropertyIds.BASE_TYPE_ID,
+				BaseTypeId.CMIS_ITEM.value());
 	}
 
 	private void setCmisSecondaryTypes(PropertiesImpl props,

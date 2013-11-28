@@ -22,44 +22,22 @@
 
 package jp.aegif.nemaki.model;
 
-import java.util.List;
-
-public class Choice {
-	private String displayName;
-	private List<Object> value;
-	private List<Choice> children;
-	
-	public Choice(){
-		
+public class Item extends Content{
+	public Item(){
+		super();
 	}
 	
-	public Choice(String displayname, List<Object> value, List<Choice> children){
-		setDisplayName(displayname);
-		setValue(value);
-		setChildren(children);
-	}
-	
-	public String getDisplayName() {
-		return displayName;
-	}
-	
-	public void setDisplayName(String displayName) {
-		this.displayName = displayName;
-	}
-	
-	public List<Object> getValue() {
-		return value;
-	}
-
-	public void setValue(List<Object> value) {
-		this.value = value;
-	}
-
-	public List<Choice> getChildren() {
-		return children;
-	}
-	
-	public void setChildren(List<Choice> children) {
-		this.children = children;
+	public Item(Content c){
+		super(c);
+		setName(c.getName());
+		setDescription(c.getDescription());
+		setParentId(c.getParentId());
+		setAcl(c.getAcl());
+		setAclInherited(c.isAclInherited());
+		setSubTypeProperties(c.getSubTypeProperties());
+		setAspects(c.getAspects());
+		setSecondaryIds(c.getSecondaryIds());
+		setObjectType(c.getObjectType());
+		setChangeToken(c.getChangeToken());
 	}
 }

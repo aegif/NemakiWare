@@ -29,7 +29,7 @@ import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
-import jp.aegif.nemaki.model.NemakiPropertyDefinition;
+import jp.aegif.nemaki.model.Item;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
@@ -287,6 +287,14 @@ public interface NonCachedContentDaoService {
 	List<Policy> getAppliedPolicies(String objectId);
 	
 	/**
+	 * Get a item
+	 * 
+	 * @param objectId
+	 * @return if nothing found, return null
+	 */
+	Item getItem(String objectId);
+	
+	/**
 	 * Create a document
 	 * 
 	 * @param document
@@ -325,6 +333,14 @@ public interface NonCachedContentDaoService {
 	 * @return the newly created policy
 	 */
 	Policy create(Policy policy);
+	
+	/**
+	 * Create an item
+	 * 
+	 * @param policy
+	 * @return the newly created item
+	 */
+	Item create(Item item);
 
 	/**
 	 * Update a document
@@ -365,6 +381,14 @@ public interface NonCachedContentDaoService {
 	 * @return the newly updated policy
 	 */
 	Policy update(Policy policy);
+	
+	/**
+	 * Update a item
+	 * 
+	 * @param policy
+	 * @return the newly updated item
+	 */
+	Item update(Item item);
 
 	/**
 	 * Delete a content

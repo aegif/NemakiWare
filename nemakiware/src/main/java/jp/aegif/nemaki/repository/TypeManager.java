@@ -298,8 +298,8 @@ public class TypeManager implements
 		itemType.setDisplayName("item");
 		itemType.setBaseTypeId(BaseTypeId.CMIS_ITEM);
 		itemType.setDescription("Item");
-		itemType.setIsCreatable(false);
-		itemType.setIsFileable(false);
+		itemType.setIsCreatable(true);
+		itemType.setIsFileable(true);
 		itemType.setIsQueryable(false);
 		itemType.setIsControllablePolicy(false);
 		itemType.setIsControllableAcl(false);

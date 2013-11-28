@@ -43,6 +43,7 @@ import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.Item;
 import jp.aegif.nemaki.model.NemakiPropertyDefinition;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
@@ -252,6 +253,8 @@ public class ContentServiceImpl implements ContentService {
 			return contentDaoService.getRelationship(content.getId());
 		} else if (content.isPolicy()) {
 			return contentDaoService.getPolicy(content.getId());
+		}else if(content.isItem()){
+			return contentDaoService.getItem(content.getId());
 		} else {
 			return null;
 		}
@@ -327,8 +330,8 @@ public class ContentServiceImpl implements ContentService {
 				Policy p = contentDaoService.getPolicy(c.getId());
 				children.add(p);
 			} else if (c.isItem()) {
-				//Relationship r = contentDaoService.getRelationship(c.getId());
-				//children.add(r);
+				Item i = contentDaoService.getItem(c.getId());
+				children.add(i);
 			}
 		}
 		return children;
@@ -459,6 +462,11 @@ public class ContentServiceImpl implements ContentService {
 	public List<Policy> getAppliedPolicies(String objectId,
 			ExtensionsData extension) {
 		return contentDaoService.getAppliedPolicies(objectId);
+	}
+	
+	@Override
+	public Item getItem(String objectId) {
+		return contentDaoService.getItem(objectId);
 	}
 
 	private int writeChangeEvent(CallContext callContext, Content content,
@@ -920,6 +928,30 @@ public class ContentServiceImpl implements ContentService {
 		return policy;
 	}
 
+	@Override
+	public Item createItem(CallContext callContext, Properties properties,
+			String folderId, List<String> policies, org.apache.chemistry.opencmis.commons.data.Acl addAces,
+			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension) {
+		Item i = new Item();
+		setBaseProperties(callContext, properties, i, null);
+		String objectTypeId = getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID);
+		TypeDefinition tdf = typeManager.getTypeDefinition(objectTypeId);
+		if(tdf.isFileable()){
+			i.setParentId(folderId);
+		}
+		
+		// Set ACL
+		i.setAclInherited(true);
+		i.setAcl(new Acl());
+
+		Item item = contentDaoService.create(i);
+
+		// Record the change event
+		writeChangeEvent(callContext, item, ChangeType.CREATED);
+
+		return item;
+	}
+
 	private void setBaseProperties(CallContext callContext,
 			Properties properties, Content content, String parentFolderId) {
 		// Object Type
@@ -1129,6 +1161,8 @@ public class ContentServiceImpl implements ContentService {
 			return contentDaoService.update((Relationship) content);
 		} else if (content instanceof Policy) {
 			return contentDaoService.update((Policy) content);
+		} else if (content instanceof Item) {
+			return contentDaoService.update((Item) content);
 		} else {
 			return null;
 		}
