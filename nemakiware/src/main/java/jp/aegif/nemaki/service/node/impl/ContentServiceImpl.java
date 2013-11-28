@@ -203,6 +203,8 @@ public class ContentServiceImpl implements ContentService {
 		}
 		String coreNodeId = "";
 		if (!corePropertyIds.containsKey(_core.getPropertyId())) {
+			//propertyId uniqueness
+			_core.setPropertyId(buildUniquePropertyId(_core.getPropertyId()));
 			// Create a property core
 			NemakiPropertyDefinitionCore core = contentDaoService
 					.createPropertyDefinitionCore(_core);
@@ -220,6 +222,27 @@ public class ContentServiceImpl implements ContentService {
 				.createPropertyDefinitionDetail(_detail);
 
 		return detail;
+	}
+	
+	private String buildUniquePropertyId(String propertyId){
+		if(isUniquePropertyIdInRepository(propertyId)){
+			return propertyId;
+		}else{
+			return propertyId + "_" + String.valueOf(System.currentTimeMillis());
+		}
+	}
+	
+	private boolean isUniquePropertyIdInRepository(String propertyId){
+		//propertyId uniqueness
+		List<String> list = typeManager.getSystemPropertyIds();
+		List<NemakiPropertyDefinitionCore>cores = getPropertyDefinitionCores();
+		if(CollectionUtils.isNotEmpty(cores)){
+			for(NemakiPropertyDefinitionCore core: cores){
+				list.add(core.getPropertyId());
+			}
+		}
+		
+		return !list.contains(propertyId);
 	}
 
 	@Override

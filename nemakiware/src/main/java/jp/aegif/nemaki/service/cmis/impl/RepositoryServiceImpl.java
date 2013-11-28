@@ -203,11 +203,13 @@ public class RepositoryServiceImpl implements RepositoryService,
 				if (systemIds.contains(key))
 					continue;
 
-				List<String> existingPropertyIds = (CollectionUtils
+				List<String> existingPropertyNodeIds = (CollectionUtils
 						.isEmpty(existingType.getProperties())) ? new ArrayList<String>()
 						: existingType.getProperties();
 
-				if (existingPropertyIds.contains(key)) {
+				String propNodeId = contentService.getPropertyDefinitionCoreByPropertyId(key).getId(); 		
+				
+				if (existingPropertyNodeIds.contains(propNodeId)) {
 					// update
 					NemakiPropertyDefinition _update = new NemakiPropertyDefinition(
 							propDef);
@@ -236,7 +238,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 		// Sort
 		return sortPropertyDefinitions(updated, type);
 	}
-
+	
 	private NemakiTypeDefinition setNemakiTypeDefinitionAttributes(
 			TypeDefinition typeDefinition) {
 		NemakiTypeDefinition ntd = new NemakiTypeDefinition();

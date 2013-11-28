@@ -25,7 +25,6 @@ import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -66,6 +65,7 @@ import jp.aegif.nemaki.service.dao.NonCachedContentDaoService;
 import jp.aegif.nemaki.service.db.CouchConnector;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.ektorp.Attachment;
@@ -76,7 +76,6 @@ import org.ektorp.ViewResult;
 import org.ektorp.ViewResult.Row;
 import org.json.simple.JSONObject;
 import org.springframework.stereotype.Component;
-import org.apache.commons.collections.CollectionUtils;
 
 /**
  * Dao Service implementation for CouchDB.
