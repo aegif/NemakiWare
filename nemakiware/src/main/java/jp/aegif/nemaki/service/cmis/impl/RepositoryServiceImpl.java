@@ -111,6 +111,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 		exceptionService.perimissionAdmin(callContext);
 		exceptionService.invalidArgumentRequired("typeDefinition", type);
 		exceptionService.invalidArgumentCreatableType(type);
+		exceptionService.constraintDuplicateProeprtyDefinition(type);
 
 		// //////////////////
 		// Body of the method
@@ -179,6 +180,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 		exceptionService.invalidArgumentDoesNotExistType(type.getId());
 		exceptionService.invalidArgumentUpdatableType(type);
 		exceptionService.constaintOnlyLeafTypeDefinition(type.getId());
+		exceptionService.constraintDuplicateProeprtyDefinition(type);
 
 		// //////////////////
 		// Body of the method
@@ -201,11 +203,11 @@ public class RepositoryServiceImpl implements RepositoryService,
 				if (systemIds.contains(key))
 					continue;
 
-				List<String> existingPropertyids = (CollectionUtils
+				List<String> existingPropertyIds = (CollectionUtils
 						.isEmpty(existingType.getProperties())) ? new ArrayList<String>()
 						: existingType.getProperties();
 
-				if (existingPropertyids.contains(key)) {
+				if (existingPropertyIds.contains(key)) {
 					// update
 					NemakiPropertyDefinition _update = new NemakiPropertyDefinition(
 							propDef);
