@@ -25,14 +25,13 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
-
 import jp.aegif.nemaki.model.Group;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.service.dao.PrincipalDaoService;
-import jp.aegif.nemaki.service.dao.impl.PrincipalDaoServiceImpl;
 import jp.aegif.nemaki.service.node.PrincipalService;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 /**
  * Principal(User / Group) Service implementation.
