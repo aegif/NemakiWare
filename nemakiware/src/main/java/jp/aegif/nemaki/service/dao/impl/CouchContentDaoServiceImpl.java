@@ -25,6 +25,8 @@ import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import javax.imageio.ImageIO;
@@ -741,9 +743,17 @@ public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("latestChange");
 		List<CouchChange> l = connector.queryView(query, CouchChange.class);
-		if (CollectionUtils.isEmpty(l))
+		if (CollectionUtils.isEmpty(l)){
 			return null;
-		return l.get(0).convert();
+		}else{
+			if(l.size() != 1){
+				log.warn("There are more than one documents with latest flag in CouchDB.");
+				Collections.sort(l);
+				return l.get(0).convert();
+			}else{
+				return l.get(0).convert();
+			}
+		}
 	}
 
 	@Override
