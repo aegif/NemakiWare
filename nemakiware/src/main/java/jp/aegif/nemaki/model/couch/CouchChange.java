@@ -29,7 +29,7 @@ import jp.aegif.nemaki.model.Change;
 
 import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 
-public class CouchChange extends CouchNodeBase{
+public class CouchChange extends CouchNodeBase implements Comparable<CouchChange>{
 	/**
 	 * 
 	 */
@@ -176,7 +176,14 @@ public class CouchChange extends CouchNodeBase{
 		this.latest = latest;
 	}
 
-	
+	/**
+	 * descending by created time
+	 */
+	@Override
+	public int compareTo(CouchChange o) {
+		int asc = this.created.compareTo(o.getCreated());
+		return -asc;
+	}
 
 	public Change convert(){
 		Change change = new Change(super.convert());
