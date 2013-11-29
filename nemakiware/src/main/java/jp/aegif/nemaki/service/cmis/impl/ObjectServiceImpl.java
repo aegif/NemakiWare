@@ -296,7 +296,7 @@ public class ObjectServiceImpl implements ObjectService {
 				BaseTypeId.CMIS_FOLDER);
 		exceptionService.constraintAllowedChildObjectTypeId(parentFolder,
 				properties);
-		exceptionService.constraintPropertyValue(properties);
+		exceptionService.constraintPropertyValue(td, properties, getIdProperty(properties, PropertyIds.OBJECT_ID));
 		exceptionService
 				.constraintCotrollablePolicies(td, policies, properties);
 		exceptionService.constraintCotrollableAcl(td, addAces, removeAces,
@@ -339,7 +339,7 @@ public class ObjectServiceImpl implements ObjectService {
 				BaseTypeId.CMIS_DOCUMENT);
 		exceptionService.constraintAllowedChildObjectTypeId(parentFolder,
 				properties);
-		exceptionService.constraintPropertyValue(properties);
+		exceptionService.constraintPropertyValue(td, properties, getIdProperty(properties, PropertyIds.OBJECT_ID));
 		exceptionService.constraintControllableVersionable(td, versioningState,
 				null);
 		exceptionService
@@ -385,7 +385,7 @@ public class ObjectServiceImpl implements ObjectService {
 				BaseTypeId.CMIS_DOCUMENT);
 		exceptionService.constraintAllowedChildObjectTypeId(parentFolder,
 				properties);
-		exceptionService.constraintPropertyValue(properties);
+		exceptionService.constraintPropertyValue(td, properties, getIdProperty(properties, PropertyIds.OBJECT_ID));
 		exceptionService.constraintControllableVersionable(td, versioningState,
 				null);
 		exceptionService
@@ -499,7 +499,7 @@ public class ObjectServiceImpl implements ObjectService {
 
 		exceptionService.constraintBaseTypeId(properties,
 				BaseTypeId.CMIS_RELATIONSHIP);
-		exceptionService.constraintPropertyValue(properties);
+		exceptionService.constraintPropertyValue(td, properties, getIdProperty(properties, PropertyIds.OBJECT_ID));
 		exceptionService
 				.constraintCotrollablePolicies(td, policies, properties);
 		exceptionService.constraintCotrollableAcl(td, addAces, removeAces,
@@ -527,17 +527,17 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.invalidArgumentRequiredCollection("properties",
 				properties.getPropertyList());
 		// NOTE: folderId is ignored because policy is not filable in Nemaki
-
+		TypeDefinition td = typeManager.getTypeDefinition(getIdProperty(
+				properties, PropertyIds.OBJECT_TYPE_ID));
+		exceptionService.constraintPropertyValue(td, properties, getIdProperty(properties, PropertyIds.OBJECT_ID));
+		
 		// //////////////////
 		// Specific Exception
 		// //////////////////
 		exceptionService.constraintBaseTypeId(properties,
 				BaseTypeId.CMIS_POLICY);
-		exceptionService.constraintPropertyValue(properties);
 		// exceptionService.constraintAllowedChildObjectTypeId(parent,
 		// properties);
-		TypeDefinition td = typeManager.getTypeDefinition(getIdProperty(
-				properties, PropertyIds.OBJECT_TYPE_ID));
 		exceptionService
 				.constraintCotrollablePolicies(td, policies, properties);
 		exceptionService.constraintCotrollableAcl(td, addAces, removeAces,
@@ -559,6 +559,9 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// General Exception
 		// //////////////////
+		TypeDefinition td = typeManager.getTypeDefinition(getTypeId(properties));
+		Folder parentFolder = contentService.getFolder(folderId);
+		exceptionService.objectNotFoundParentFolder(folderId, parentFolder);
 		exceptionService.invalidArgumentRequiredCollection("properties",
 				properties.getPropertyList());
 		
@@ -567,9 +570,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		exceptionService.constraintBaseTypeId(properties,
 				BaseTypeId.CMIS_ITEM);
-		exceptionService.constraintPropertyValue(properties);
-		TypeDefinition td = typeManager.getTypeDefinition(getIdProperty(
-				properties, PropertyIds.OBJECT_TYPE_ID));
+		exceptionService.constraintPropertyValue(td, properties, getIdProperty(properties, PropertyIds.OBJECT_ID));
 		exceptionService
 				.constraintCotrollablePolicies(td, policies, properties);
 		exceptionService.constraintCotrollableAcl(td, addAces, removeAces,
@@ -610,7 +611,6 @@ public class ObjectServiceImpl implements ObjectService {
 				objectId);
 		exceptionService.invalidArgumentRequiredCollection("properties",
 				properties.getPropertyList());
-		// TODO Check constraintPropertyValue with objectId
 		Content content = contentService.getContent(objectId.getValue());
 		exceptionService.objectNotFound(DomainType.OBJECT, content,
 				objectId.getValue());
@@ -621,6 +621,8 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT, content);
 		exceptionService.updateConflict(content, changeToken);
+		TypeDefinition tdf = typeManager.getTypeDefinition(content);
+		exceptionService.constraintPropertyValue(tdf, properties, objectId.getValue());
 
 		return content;
 	}

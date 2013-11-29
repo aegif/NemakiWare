@@ -25,6 +25,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -47,10 +48,12 @@ import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.data.Properties;
+import org.apache.chemistry.opencmis.commons.data.PropertyBoolean;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.data.PropertyDecimal;
 import org.apache.chemistry.opencmis.commons.data.PropertyId;
 import org.apache.chemistry.opencmis.commons.data.PropertyString;
+import org.apache.chemistry.opencmis.commons.definitions.Choice;
 import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDecimalDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
@@ -63,6 +66,7 @@ import org.apache.chemistry.opencmis.commons.definitions.TypeMutability;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.CapabilityOrderBy;
+import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException;
@@ -400,42 +404,86 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void constraintPropertyValue(Properties properties) {
-		String objectId = getObjectId(properties);
-		String objectTypeId = getObjectTypeId(properties);
-		Map<String, PropertyDefinition<?>> definitions = typeManager.getTypeDefinition(
-				objectTypeId).getPropertyDefinitions();
-		for (PropertyData<?> pd : properties.getPropertyList()) {
-			PropertyDefinition<?> definition = definitions.get(pd.getId());
+	public <T> void constraintPropertyValue(TypeDefinition typeDefinition, Properties properties, String objectId) {
+		Map<String, PropertyDefinition<?>> propertyDefinitions = typeDefinition.getPropertyDefinitions();
+		for (PropertyData<?> _pd : properties.getPropertyList()) {
+			PropertyData<T> pd = (PropertyData<T>) _pd;
+			PropertyDefinition<T> propertyDefinition = (PropertyDefinition<T>) propertyDefinitions.get(pd.getId());
 			// If an input property is not defined one, output error.
-			if (definition == null)
+			if (propertyDefinition == null)
 				constraint(objectId, "An undefined property is provided!");
 
-			// Check for "required" flag
-			if (definition.isRequired()
+			// Check "required" flag
+			if (propertyDefinition.isRequired()
 					&& CollectionUtils.isEmpty(pd.getValues()))
 				constraint(objectId, "An required property is not provided!");
 
-			// Check for min/max length
-			switch (definition.getPropertyType()) {
+			//Check choices
+			constaintChoices(propertyDefinition, pd, objectId);
+			
+			// Check min/max length
+			switch (propertyDefinition.getPropertyType()) {
 			case STRING:
-				constraintStringPropertyValue(definition, pd, objectId);
+				constraintStringPropertyValue(propertyDefinition, pd, objectId);
 				break;
 			case DECIMAL:
-				constraintDecimalPropertyValue(definition, pd, objectId);
+				constraintDecimalPropertyValue(propertyDefinition, pd, objectId);
 			case INTEGER:
-				constraintIntegerPropertyValue(definition, pd, objectId);
+				constraintIntegerPropertyValue(propertyDefinition, pd, objectId);
 				break;
 			default:
 				break;
 			}
 		}
 	}
+	
+	private <T> void constaintChoices(PropertyDefinition<T> definition, PropertyData<T> propertyData,
+			String objectId){
+		//Check OpenChoice
+		boolean openChoice = (definition.isOpenChoice() == null) ? true : false;
+		if(openChoice) return;
+		
+		List<T> data = propertyData.getValues();
+		List<Choice<T>> choices = definition.getChoices();
+		if(CollectionUtils.isEmpty(choices) || CollectionUtils.isEmpty(data)) return;
+		
+		boolean included = false;
+		
+		if(definition.getCardinality() == Cardinality.SINGLE){
+			T d = data.get(0);
+			for(Choice<T> choice : choices){
+				List<T> value = choice.getValue();
+					T v = value.get(0);
+					if(v.equals(d)){
+						included = true;
+						break;
+					}
+			}
+		}else if(definition.getCardinality() == Cardinality.MULTI){
+			List<T> values = new ArrayList<T>();
+			for(Choice<T>choice : choices){
+				values.addAll(choice.getValue());
+			}
+			
+			for(T d : data){
+				if(values.contains(d)){
+					included = true;
+				}else{
+					included = false;
+					break;
+				}
+			}
+		}
+		
+		if(!included){
+			constraint(objectId, propertyData.getId() + " property value must be one of choices");
+		}
+	}
 
 	private void constraintIntegerPropertyValue(
 			PropertyDefinition<?> definition, PropertyData<?> propertyData,
 			String objectId) {
-		final String msg = "An INTEGER property violates the range constraints";
+		final String msg = "AN INTEGER property violates the range constraints";
 		BigInteger val = BigInteger
 				.valueOf((Long) propertyData.getFirstValue());
 
@@ -761,6 +809,15 @@ public class ExceptionServiceImpl implements ExceptionService,
 		}
 
 		return ((PropertyId) property).getFirstValue();
+	}
+	
+	private Boolean getBooleanProperty(Properties properties, String name) {
+		PropertyData<?> property = properties.getProperties().get(name);
+		if (!(property instanceof PropertyBoolean)) {
+			return null;
+		}
+
+		return ((PropertyBoolean) property).getFirstValue();
 	}
 
 	private String getObjectId(Properties properties) {

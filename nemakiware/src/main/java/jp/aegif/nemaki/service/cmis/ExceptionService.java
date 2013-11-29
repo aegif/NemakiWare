@@ -75,7 +75,7 @@ public interface ExceptionService {
 	void constraint(String objectId, String msg);
 	void constraintBaseTypeId(Properties properties, BaseTypeId baseTypeId);
 	void constraintAllowedChildObjectTypeId(Folder folder, Properties childProperties);
-	void constraintPropertyValue(Properties properties);
+	<T>void constraintPropertyValue(TypeDefinition typeDefinition, Properties properties, String objectId);
 	void constraintControllableVersionable(DocumentTypeDefinition documentTypeDefinition, VersioningState versioningState, String objectId);
 	void constraintCotrollablePolicies(TypeDefinition typeDefinition, List<String> policies, Properties properties);
 	void constraintCotrollableAcl(TypeDefinition typeDefinition, Acl addAces, Acl removeAces, Properties properties);
