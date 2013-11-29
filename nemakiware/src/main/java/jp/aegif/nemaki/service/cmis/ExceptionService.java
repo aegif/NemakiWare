@@ -35,6 +35,7 @@ import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
+import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.RelationshipTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
@@ -89,6 +90,7 @@ public interface ExceptionService {
 	void constaintOnlyLeafTypeDefinition(String objectTypeId);
 	void constraintObjectsStillExist(String objectTypeId);
 	void constraintDuplicateProeprtyDefinition(TypeDefinition typeDefinition);
+	PropertyDefinition<?> constraintUpdatePropertyDefinition(PropertyDefinition<?> update,PropertyDefinition<?> old);
 	void contentAlreadyExists(Content content, Boolean overwriteFlag);
 	void streamNotSupported(DocumentTypeDefinition documentTypeDefinition, ContentStream contentStream);
 	void nameConstraintViolation(Properties properties, Folder parentFolder);
