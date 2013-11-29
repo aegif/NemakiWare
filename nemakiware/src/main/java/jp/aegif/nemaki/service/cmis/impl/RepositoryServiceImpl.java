@@ -111,7 +111,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 		exceptionService.perimissionAdmin(callContext);
 		exceptionService.invalidArgumentRequired("typeDefinition", type);
 		exceptionService.invalidArgumentCreatableType(type);
-		exceptionService.constraintDuplicateProeprtyDefinition(type);
+		exceptionService.constraintDuplicatePropertyDefinition(type);
 
 		// //////////////////
 		// Body of the method
@@ -129,6 +129,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 			for (String key : propDefs.keySet()) {
 				PropertyDefinition<?> propDef = propDefs.get(key);
 				if (!systemIds.contains(key)) {
+					exceptionService.constraintQueryName(propDef);
 					NemakiPropertyDefinition create = new NemakiPropertyDefinition(
 							propDef);
 					NemakiPropertyDefinitionDetail created = contentService
@@ -180,7 +181,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 		exceptionService.invalidArgumentDoesNotExistType(type.getId());
 		exceptionService.invalidArgumentUpdatableType(type);
 		exceptionService.constaintOnlyLeafTypeDefinition(type.getId());
-		exceptionService.constraintDuplicateProeprtyDefinition(type);
+		exceptionService.constraintDuplicatePropertyDefinition(type);
 
 		// //////////////////
 		// Body of the method
@@ -212,6 +213,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 					// update
 					PropertyDefinition<?> oldPropDef = typeManager.getTypeDefinition(existingType.getTypeId()).getPropertyDefinitions().get(propNodeId);
 					exceptionService.constraintUpdatePropertyDefinition(propDef, oldPropDef);
+					exceptionService.constraintQueryName(propDef);
 					
 					NemakiPropertyDefinition _update = new NemakiPropertyDefinition(
 							propDef);
@@ -220,6 +222,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 					contentService.updatePropertyDefinitionDetail(update);
 				} else {
 					// create
+					exceptionService.constraintQueryName(propDef);
 					NemakiPropertyDefinition create = new NemakiPropertyDefinition(
 							propDef);
 					NemakiPropertyDefinitionDetail created = contentService
