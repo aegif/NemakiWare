@@ -701,7 +701,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void constraintDuplicateProeprtyDefinition(
+	public void constraintDuplicatePropertyDefinition(
 			TypeDefinition typeDefinition) {
 		Map<String, PropertyDefinition<?>> props = typeDefinition
 				.getPropertyDefinitions();
@@ -726,8 +726,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public  PropertyDefinition<?> constraintUpdatePropertyDefinition(PropertyDefinition<?> update, PropertyDefinition<?>old) {
-		return constraintUpdatePropertyDefinitionHelper(update,old);
+	public  void constraintUpdatePropertyDefinition(PropertyDefinition<?> update, PropertyDefinition<?>old) {
+		constraintUpdatePropertyDefinitionHelper(update,old);
 	}
 		 
 	private  <T> PropertyDefinition<T> constraintUpdatePropertyDefinitionHelper(
@@ -902,9 +902,41 @@ public class ExceptionServiceImpl implements ExceptionService,
 			constraint(msg);
 		}
 	}
-	
-	
 
+	@Override
+	public void constraintQueryName(PropertyDefinition<?> propertyDefinition) {
+		
+		String msg = propertyDefinition.getId() + ":";
+		String queryName = propertyDefinition.getQueryName();
+
+		if(StringUtils.isEmpty(queryName)) constraint(msg + "'queryName' is null");
+		
+		final String space = " ";
+		final String comma = ",";
+		final String dubleQuotation = "\"";
+		final String singleQuotaion = "\'";
+		final String backslash = "\\\\";
+		final String period = "\\.";
+		final String openParenthesis = "\\(";
+		final String closeParenthesis = "\\)";
+		
+		if(queryName.matches(buildContainRegEx(space)) 
+		|| queryName.matches(buildContainRegEx(comma))
+		|| queryName.matches(buildContainRegEx(dubleQuotation))
+		|| queryName.matches(buildContainRegEx(singleQuotaion))
+		|| queryName.matches(buildContainRegEx(backslash))
+		|| queryName.matches(buildContainRegEx(period))
+		|| queryName.matches(buildContainRegEx(openParenthesis))
+		|| queryName.matches(buildContainRegEx(closeParenthesis))
+		){
+			constraint(msg + "invalid character for 'queryName'. See spec 2.1.2.1.3");
+		}
+	}
+
+	private String buildContainRegEx(String contained){
+		return ".*" + contained + ".*";
+	}
+	
 	@Override
 	public void contentAlreadyExists(Content content, Boolean overwriteFlag) {
 		if (!overwriteFlag) {
