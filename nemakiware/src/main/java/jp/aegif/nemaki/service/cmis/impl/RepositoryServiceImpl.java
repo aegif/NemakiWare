@@ -206,11 +206,13 @@ public class RepositoryServiceImpl implements RepositoryService,
 				List<String> existingPropertyNodeIds = (CollectionUtils
 						.isEmpty(existingType.getProperties())) ? new ArrayList<String>()
 						: existingType.getProperties();
-
-				String propNodeId = contentService.getPropertyDefinitionCoreByPropertyId(key).getId(); 		
 				
+				String propNodeId = contentService.getPropertyDefinitionCoreByPropertyId(key).getId(); 		
 				if (existingPropertyNodeIds.contains(propNodeId)) {
 					// update
+					PropertyDefinition<?> oldPropDef = typeManager.getTypeDefinition(existingType.getTypeId()).getPropertyDefinitions().get(propNodeId);
+					exceptionService.constraintUpdatePropertyDefinition(propDef, oldPropDef);
+					
 					NemakiPropertyDefinition _update = new NemakiPropertyDefinition(
 							propDef);
 					NemakiPropertyDefinitionCore core = contentService.getPropertyDefinitionCoreByPropertyId(_update.getPropertyId());

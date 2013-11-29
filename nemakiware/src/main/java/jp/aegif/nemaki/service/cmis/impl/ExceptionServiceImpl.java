@@ -52,6 +52,7 @@ import org.apache.chemistry.opencmis.commons.data.PropertyBoolean;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.data.PropertyDecimal;
 import org.apache.chemistry.opencmis.commons.data.PropertyId;
+import org.apache.chemistry.opencmis.commons.data.PropertyInteger;
 import org.apache.chemistry.opencmis.commons.data.PropertyString;
 import org.apache.chemistry.opencmis.commons.definitions.Choice;
 import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
@@ -68,6 +69,7 @@ import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.CapabilityOrderBy;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
+import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisContentAlreadyExistsException;
@@ -77,6 +79,8 @@ import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedExce
 import org.apache.chemistry.opencmis.commons.exceptions.CmisStreamNotSupportedException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisUpdateConflictException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisVersioningException;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyDefinition;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.commons.collections.CollectionUtils;
@@ -103,7 +107,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 	private final BigInteger HTTP_STATUS_CODE_405 = BigInteger.valueOf(405);
 	private final BigInteger HTTP_STATUS_CODE_409 = BigInteger.valueOf(409);
 	private final BigInteger HTTP_STATUS_CODE_500 = BigInteger.valueOf(500);
-	
+
 	@Override
 	public void invalidArgument(String msg) {
 		throw new CmisInvalidArgumentException(msg, HTTP_STATUS_CODE_400);
@@ -202,11 +206,11 @@ public class ExceptionServiceImpl implements ExceptionService,
 		}
 
 	}
-	
+
 	@Override
 	public void invalidArgumentCreatableType(TypeDefinition type) {
 		String msg = "";
-		
+
 		String parentId = type.getParentTypeId();
 		if (typeManager.getTypeById(parentId) == null) {
 			msg = "Specified parent type does not exist";
@@ -223,46 +227,48 @@ public class ExceptionServiceImpl implements ExceptionService,
 				}
 			}
 		}
-		
-		if(!StringUtils.isEmpty(msg)){
+
+		if (!StringUtils.isEmpty(msg)) {
 			msg = msg + " [objectTypeId = " + type.getId() + "]";
 			invalidArgument(msg);
 		}
 	}
-	
+
 	@Override
 	public void invalidArgumentUpdatableType(TypeDefinition type) {
 		String msg = "";
 		TypeMutability typeMutability = type.getTypeMutability();
-		boolean canUpdate = (typeMutability.canUpdate() == null) ? false : typeMutability.canUpdate();
-		if(!canUpdate){
+		boolean canUpdate = (typeMutability.canUpdate() == null) ? false
+				: typeMutability.canUpdate();
+		if (!canUpdate) {
 			msg = "Specified type is not updatable";
 			msg = msg + " [objectTypeId = " + type.getId() + "]";
 			invalidArgument(msg);
 		}
 	}
-	
+
 	@Override
 	public void invalidArgumentDeletableType(String typeId) {
 		TypeDefinition type = typeManager.getTypeDefinition(typeId);
-		
+
 		String msg = "";
 		TypeMutability typeMutability = type.getTypeMutability();
-		boolean canUpdate = (typeMutability.canDelete() == null) ? true : typeMutability.canDelete();
-		if(!canUpdate){
+		boolean canUpdate = (typeMutability.canDelete() == null) ? true
+				: typeMutability.canDelete();
+		if (!canUpdate) {
 			msg = "Specified type is not deletable";
 			msg = msg + " [objectTypeId = " + type.getId() + "]";
 			invalidArgument(msg);
 		}
-		
+
 	}
-	
+
 	@Override
 	public void invalidArgumentDoesNotExistType(String typeId) {
 		String msg = "";
-		
+
 		TypeDefinition type = typeManager.getTypeDefinition(typeId);
-		if(type == null){
+		if (type == null) {
 			msg = "Specified type does not exist";
 			msg = msg + " [objectTypeId = " + type.getId() + "]";
 			invalidArgument(msg);
@@ -271,23 +277,27 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void invalidArgumentSecondaryTypeIds(Properties properties) {
-		if(properties == null) return;
+		if (properties == null)
+			return;
 		Map<String, PropertyData<?>> map = properties.getProperties();
-		if(MapUtils.isEmpty(map)) return;
-		
+		if (MapUtils.isEmpty(map))
+			return;
+
 		List<String> results = new ArrayList<String>();
 		PropertyData<?> ids = map.get(PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
-		if(ids == null || CollectionUtils.isEmpty(ids.getValues())) return;
-		for(Object _id : ids.getValues()){
-			String id = (String)_id;
+		if (ids == null || CollectionUtils.isEmpty(ids.getValues()))
+			return;
+		for (Object _id : ids.getValues()) {
+			String id = (String) _id;
 			TypeDefinitionContainer tdc = typeManager.getTypeById(id);
-			if(tdc == null){
+			if (tdc == null) {
 				results.add(id);
 			}
 		}
-		
-		if(CollectionUtils.isNotEmpty(results)){
-			String msg = "Invalid cmis:SecondaryObjectTypeIds are provided:" + StringUtils.join(results, ",");
+
+		if (CollectionUtils.isNotEmpty(results)) {
+			String msg = "Invalid cmis:SecondaryObjectTypeIds are provided:"
+					+ StringUtils.join(results, ",");
 			invalidArgument(msg);
 		}
 	}
@@ -353,9 +363,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void perimissionAdmin(CallContext context) {
-		//TODO hard coding
+		// TODO hard coding
 		final String admin = "admin";
-		if(!admin.equals(context.getUsername())){
+		if (!admin.equals(context.getUsername())) {
 			String msg = "This operation if permitted only for administrator";
 			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
 		}
@@ -369,6 +379,10 @@ public class ExceptionServiceImpl implements ExceptionService,
 	public void constraint(String objectId, String msg) {
 		throw new CmisConstraintException(buildMsgWithId(msg, objectId),
 				HTTP_STATUS_CODE_409);
+	}
+	
+	private void constraint(String msg) {
+		throw new CmisConstraintException(msg, HTTP_STATUS_CODE_409);
 	}
 
 	@Override
@@ -404,11 +418,14 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public <T> void constraintPropertyValue(TypeDefinition typeDefinition, Properties properties, String objectId) {
-		Map<String, PropertyDefinition<?>> propertyDefinitions = typeDefinition.getPropertyDefinitions();
+	public <T> void constraintPropertyValue(TypeDefinition typeDefinition,
+			Properties properties, String objectId) {
+		Map<String, PropertyDefinition<?>> propertyDefinitions = typeDefinition
+				.getPropertyDefinitions();
 		for (PropertyData<?> _pd : properties.getPropertyList()) {
 			PropertyData<T> pd = (PropertyData<T>) _pd;
-			PropertyDefinition<T> propertyDefinition = (PropertyDefinition<T>) propertyDefinitions.get(pd.getId());
+			PropertyDefinition<T> propertyDefinition = (PropertyDefinition<T>) propertyDefinitions
+					.get(pd.getId());
 			// If an input property is not defined one, output error.
 			if (propertyDefinition == null)
 				constraint(objectId, "An undefined property is provided!");
@@ -418,9 +435,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 					&& CollectionUtils.isEmpty(pd.getValues()))
 				constraint(objectId, "An required property is not provided!");
 
-			//Check choices
+			// Check choices
 			constaintChoices(propertyDefinition, pd, objectId);
-			
+
 			// Check min/max length
 			switch (propertyDefinition.getPropertyType()) {
 			case STRING:
@@ -436,47 +453,50 @@ public class ExceptionServiceImpl implements ExceptionService,
 			}
 		}
 	}
-	
-	private <T> void constaintChoices(PropertyDefinition<T> definition, PropertyData<T> propertyData,
-			String objectId){
-		//Check OpenChoice
+
+	private <T> void constaintChoices(PropertyDefinition<T> definition,
+			PropertyData<T> propertyData, String objectId) {
+		// Check OpenChoice
 		boolean openChoice = (definition.isOpenChoice() == null) ? true : false;
-		if(openChoice) return;
-		
+		if (openChoice)
+			return;
+
 		List<T> data = propertyData.getValues();
 		List<Choice<T>> choices = definition.getChoices();
-		if(CollectionUtils.isEmpty(choices) || CollectionUtils.isEmpty(data)) return;
-		
+		if (CollectionUtils.isEmpty(choices) || CollectionUtils.isEmpty(data))
+			return;
+
 		boolean included = false;
-		
-		if(definition.getCardinality() == Cardinality.SINGLE){
+
+		if (definition.getCardinality() == Cardinality.SINGLE) {
 			T d = data.get(0);
-			for(Choice<T> choice : choices){
+			for (Choice<T> choice : choices) {
 				List<T> value = choice.getValue();
-					T v = value.get(0);
-					if(v.equals(d)){
-						included = true;
-						break;
-					}
+				T v = value.get(0);
+				if (v.equals(d)) {
+					included = true;
+					break;
+				}
 			}
-		}else if(definition.getCardinality() == Cardinality.MULTI){
+		} else if (definition.getCardinality() == Cardinality.MULTI) {
 			List<T> values = new ArrayList<T>();
-			for(Choice<T>choice : choices){
+			for (Choice<T> choice : choices) {
 				values.addAll(choice.getValue());
 			}
-			
-			for(T d : data){
-				if(values.contains(d)){
+
+			for (T d : data) {
+				if (values.contains(d)) {
 					included = true;
-				}else{
+				} else {
 					included = false;
 					break;
 				}
 			}
 		}
-		
-		if(!included){
-			constraint(objectId, propertyData.getId() + " property value must be one of choices");
+
+		if (!included) {
+			constraint(objectId, propertyData.getId()
+					+ " property value must be one of choices");
 		}
 	}
 
@@ -525,7 +545,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 		if (!(propertyData instanceof PropertyString))
 			return;
 		String val = ((PropertyString) propertyData).getFirstValue();
-		if(StringUtils.isEmpty(val)) return;
+		if (StringUtils.isEmpty(val))
+			return;
 		BigInteger length = BigInteger.valueOf(val.length());
 		BigInteger max = ((PropertyStringDefinition) definition).getMaxLength();
 		if (max != null && max.compareTo(length) < 0) {
@@ -642,17 +663,20 @@ public class ExceptionServiceImpl implements ExceptionService,
 	@Override
 	public void constraintAclPropagationDoesNotMatch(
 			AclPropagation aclPropagation) {
-		//Do nothing
+		// Do nothing
 	}
 
 	@Override
 	public void constraintContentStreamRequired(Document document) {
 		String objectTypeId = document.getObjectType();
-		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager.getTypeDefinition(objectTypeId);
-		if(td.getContentStreamAllowed() == ContentStreamAllowed.REQUIRED){
-			if(document.getAttachmentNodeId() == null || 
-					contentService.getAttachment(document.getAttachmentNodeId()) == null){
-				constraint(document.getId(), "This document type does not allow no content stream");
+		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
+				.getTypeDefinition(objectTypeId);
+		if (td.getContentStreamAllowed() == ContentStreamAllowed.REQUIRED) {
+			if (document.getAttachmentNodeId() == null
+					|| contentService.getAttachment(document
+							.getAttachmentNodeId()) == null) {
+				constraint(document.getId(),
+						"This document type does not allow no content stream");
 			}
 		}
 	}
@@ -661,38 +685,225 @@ public class ExceptionServiceImpl implements ExceptionService,
 	public void constaintOnlyLeafTypeDefinition(String objectTypeId) {
 		TypeDefinitionContainer tdc = typeManager.getTypeById(objectTypeId);
 		if (!CollectionUtils.isEmpty(tdc.getChildren())) {
-			String msg = "Cannot delete a type definition which has sub types" + " [objectTypeId = " + objectTypeId + "]";
-			throw new CmisConstraintException(msg,HTTP_STATUS_CODE_409);
+			String msg = "Cannot delete a type definition which has sub types"
+					+ " [objectTypeId = " + objectTypeId + "]";
+			throw new CmisConstraintException(msg, HTTP_STATUS_CODE_409);
 		}
 	}
 
 	@Override
 	public void constraintObjectsStillExist(String objectTypeId) {
-		if (contentService.existContent(objectTypeId)){
-			String msg = "There still exists objects of the specified object type" + " [objectTypeId = " + objectTypeId + "]";
-			throw new CmisConstraintException(msg,HTTP_STATUS_CODE_409);
+		if (contentService.existContent(objectTypeId)) {
+			String msg = "There still exists objects of the specified object type"
+					+ " [objectTypeId = " + objectTypeId + "]";
+			throw new CmisConstraintException(msg, HTTP_STATUS_CODE_409);
 		}
 	}
-	
+
 	@Override
 	public void constraintDuplicateProeprtyDefinition(
 			TypeDefinition typeDefinition) {
-		Map<String,PropertyDefinition<?>> props = typeDefinition.getPropertyDefinitions();
-		if(MapUtils.isNotEmpty(props)){
-			Set<String> keys = props.keySet(); 
-			TypeDefinition parent = typeManager.getTypeDefinition(typeDefinition.getParentTypeId());
-			Map<String,PropertyDefinition<?>> parentProps = parent.getPropertyDefinitions();
-			if(MapUtils.isNotEmpty(parentProps)){
+		Map<String, PropertyDefinition<?>> props = typeDefinition
+				.getPropertyDefinitions();
+		if (MapUtils.isNotEmpty(props)) {
+			Set<String> keys = props.keySet();
+			TypeDefinition parent = typeManager
+					.getTypeDefinition(typeDefinition.getParentTypeId());
+			Map<String, PropertyDefinition<?>> parentProps = parent
+					.getPropertyDefinitions();
+			if (MapUtils.isNotEmpty(parentProps)) {
 				Set<String> parentKeys = parentProps.keySet();
-				for(String key : keys){
-					if(parentKeys.contains(key)){
-						String msg = "Duplicate property definition with parent type definition" + " [property id = " + key + "]";
-						throw new CmisConstraintException(msg,HTTP_STATUS_CODE_409);
+				for (String key : keys) {
+					if (parentKeys.contains(key)) {
+						String msg = "Duplicate property definition with parent type definition"
+								+ " [property id = " + key + "]";
+						throw new CmisConstraintException(msg,
+								HTTP_STATUS_CODE_409);
 					}
 				}
 			}
 		}
 	}
+
+	@Override
+	public  PropertyDefinition<?> constraintUpdatePropertyDefinition(PropertyDefinition<?> update, PropertyDefinition<?>old) {
+		return constraintUpdatePropertyDefinitionHelper(update,old);
+	}
+		 
+	private  <T> PropertyDefinition<T> constraintUpdatePropertyDefinitionHelper(
+			PropertyDefinition<T> update, PropertyDefinition<?>old) {
+		String msg = "";
+		// objField.setName(field.getName());
+		// objField.setValue(field.getValue());
+		//return objField;
+		if(!old.isInherited().equals(update.isInherited())){
+			msg += "'inherited' cannot be modified";
+		}
+		
+		if(typeManager.getSystemPropertyIds().contains(update.getId())){
+			msg += "CMIS-defined property definition cannot be modified";
+		}
+		
+		if (Boolean.FALSE.equals(old.isRequired())
+				&& Boolean.TRUE.equals(update.isRequired())) {
+			msg += "'required' cannot be modified from Optional to Required";
+			constraint(msg);
+		}
+
+		if (Boolean.TRUE.equals(old.isOpenChoice())
+				&& Boolean.FALSE.equals(update.isOpenChoice())) {
+			msg += "'openChoice' cannot be modified from true to false";
+			constraint(msg);
+		}
+		
+		if (Boolean.FALSE.equals(update.isOpenChoice())) {
+			constraintChoicesRestriction(update, old);
+		}
+		
+		constraintRestrictedValidation(update, old);
+		
+		if (!old.getPropertyType().equals(update.getPropertyType())) {
+			msg += "'property type' cannot be modified";
+			constraint(msg);
+		}
+
+		if (!old.getCardinality().equals(update.getCardinality())) {
+			msg += "'cardinality' cannot be modified";
+			constraint(msg);
+		}
+		return update;
+	}
+	
+	private void constraintChoicesRestriction(PropertyDefinition<?>update,PropertyDefinition<?>old){
+		 String msg = update.getId() + ":";
+		 
+		List<?> updateValues = flattenChoiceValues(update.getChoices());
+		List<?> oldValues = flattenChoiceValues(old.getChoices());
+		if (!updateValues.containsAll(oldValues)) {
+			msg += "'choices' values must not be removed if 'openChoice' is false";
+			constraint(msg);
+		}
+	}
+	
+	private <T> List<T> flattenChoiceValues(List<Choice<T>> choices) {
+		if (CollectionUtils.isEmpty(choices))
+			return null;
+
+		List<T> result = new ArrayList<T>();
+		for (Choice<T> choice : choices) {
+			List<T> value = choice.getValue();
+			if (CollectionUtils.isEmpty(value))
+				continue;
+			for (T v : value) {
+				result.add(v);
+			}
+
+			result.addAll(flattenChoiceValues(choice.getChoice()));
+		}
+		return result;
+	}
+
+	private void constraintRestrictedValidation(
+			PropertyDefinition<?> update, PropertyDefinition<?> old) {
+		switch (update.getPropertyType()) {
+		case BOOLEAN:
+			break;
+		case DATETIME:
+			break;
+		case DECIMAL:
+			constraintRestrictedDecimalValidation(update, old);
+			break;
+		case HTML:
+			break;
+		case ID:
+			break;
+		case INTEGER:
+			constraintRestrictedIntegerValidation(update, old);
+			break;
+		case STRING:
+			constraintRestrictedStringValidation(update, old);
+			break;
+		case URI:
+			break;
+		default:
+			break;
+		}
+	}
+	private void constraintRestrictedDecimalValidation(
+			PropertyDefinition<?> update, PropertyDefinition<?> old) {
+		PropertyDecimalDefinition _update = (PropertyDecimalDefinition) update;
+		PropertyDecimalDefinition _old = (PropertyDecimalDefinition) old;
+		// When minValue is restricted, throw an error
+		minRestriction(_update.getMinValue(), _old.getMinValue(), _update.getId());
+		// When minValue is restricted, throw an error
+		maxRestriction(_update.getMaxValue(), _old.getMaxValue(), _update.getId(), null);
+	}
+	
+	private void constraintRestrictedIntegerValidation(
+			PropertyDefinition<?> update, PropertyDefinition<?> old) {
+		PropertyIntegerDefinition _update = (PropertyIntegerDefinition) update;
+		PropertyIntegerDefinition _old = (PropertyIntegerDefinition) old;
+		// When minValue is restricted, throw an error
+		minRestriction(_update.getMinValue(), _old.getMinValue(), _update.getId());
+		// When minValue is restricted, throw an error
+		maxRestriction(_update.getMaxValue(), _old.getMaxValue(), _update.getId(), _update.getPropertyType());
+	}
+
+	private void constraintRestrictedStringValidation(
+			PropertyDefinition<?> update, PropertyDefinition<?> old) {
+		PropertyStringDefinition _update = (PropertyStringDefinition) update;
+		PropertyStringDefinition _old = (PropertyStringDefinition) old;
+		// When minValue is restricted, throw an error
+		maxRestriction(_update.getMaxLength(), _old.getMaxLength(), _update.getId(), _update.getPropertyType());
+	}
+
+	private void minRestriction(Comparable update, Comparable old, String propertyId) {
+		// When minValue is restricted, throw an error
+		boolean flag = false;
+		String msg = propertyId + ":";
+		if (old == null) {
+			if (update != null) {
+				flag = true;
+			}
+		} else {
+			if (update != null) {
+				if (old.compareTo(update) < 0) {
+					flag = true;
+				}
+			}
+		}
+		if (flag) {
+			msg += "'minValue' cannot be further restricted";
+			constraint(msg);
+		}
+	}
+	
+	private void maxRestriction(Comparable update, Comparable old, String propertyId, PropertyType propertyType) {
+		// When minValue is restricted, throw an error
+		boolean flag = false;
+		String msg = propertyId + ":";
+		if (old == null) {
+			if (update != null) {
+				flag = true;
+			}
+		} else {
+			if (update != null) {
+				if (old.compareTo(update) > 0) {
+					flag = true;
+				}
+			}
+		}
+		if (flag) {
+			if(propertyType.equals(PropertyType.STRING)){
+				msg += "'maxLength' cannot be further restricted";
+			}else{
+				msg += "'maxValue' cannot be further restricted";
+			}
+			constraint(msg);
+		}
+	}
+	
+	
 
 	@Override
 	public void contentAlreadyExists(Content content, Boolean overwriteFlag) {
@@ -720,7 +931,6 @@ public class ExceptionServiceImpl implements ExceptionService,
 		}
 	}
 
-	
 	/**
 	 * 
 	 */
@@ -749,17 +959,19 @@ public class ExceptionServiceImpl implements ExceptionService,
 	@Override
 	public void updateConflict(Content content, Holder<String> changeToken) {
 		int latestOfContent = content.getChangeToken();
-		
-		if ((changeToken == null || changeToken.getValue() == null) && latestOfContent != 0) {
+
+		if ((changeToken == null || changeToken.getValue() == null)
+				&& latestOfContent != 0) {
 			throw new CmisUpdateConflictException(
 					"Change token is required to update", HTTP_STATUS_CODE_409);
 		} else {
 			// NOTE: 0 means somewhat "not set" for system use
 			if (latestOfContent == 0) {
-				//Do nothing
-				//TODO logging? 
+				// Do nothing
+				// TODO logging?
 			} else {
-				if (!String.valueOf(latestOfContent).equals(changeToken.getValue()))
+				if (!String.valueOf(latestOfContent).equals(
+						changeToken.getValue()))
 					throw new CmisUpdateConflictException(
 							"Cannot update because the changeToken conflicts",
 							HTTP_STATUS_CODE_409);
@@ -773,7 +985,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 			objectId = "";
 		return msg + " [cmis:objectId = " + objectId + "]";
 	}
-
+	
 	/**
 	 * Gets the type id from a set of properties.
 	 */
@@ -810,7 +1022,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 		return ((PropertyId) property).getFirstValue();
 	}
-	
+
 	private Boolean getBooleanProperty(Properties properties, String name) {
 		PropertyData<?> property = properties.getProperties().get(name);
 		if (!(property instanceof PropertyBoolean)) {
