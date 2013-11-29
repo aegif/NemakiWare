@@ -885,16 +885,17 @@ public class ContentServiceImpl implements ContentService {
 		Folder f = new Folder();
 		setBaseProperties(callContext, properties, f, parentFolder.getId());
 		f.setParentId(parentFolder.getId());
-		// Defaults to document & folder if not specified
+		// Defaults to document / folder / item if not specified
 		List<String> allowedTypes = getIdListProperty(properties,
 				PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS);
 		if (CollectionUtils.isEmpty(allowedTypes)) {
-			f.setAllowedChildTypeIds(allowedTypes);
-		} else {
 			List<String> l = new ArrayList<String>();
 			l.add(BaseTypeId.CMIS_FOLDER.value());
 			l.add(BaseTypeId.CMIS_DOCUMENT.value());
+			l.add(BaseTypeId.CMIS_ITEM.value());
 			f.setAllowedChildTypeIds(l);
+		} else {
+			f.setAllowedChildTypeIds(allowedTypes);
 		}
 		setSignature(callContext, f);
 		f.setAclInherited(true);
