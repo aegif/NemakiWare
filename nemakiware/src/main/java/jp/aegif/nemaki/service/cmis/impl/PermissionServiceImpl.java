@@ -33,6 +33,7 @@ import jp.aegif.nemaki.repository.TypeManager;
 import jp.aegif.nemaki.service.cmis.PermissionService;
 import jp.aegif.nemaki.service.node.ContentService;
 import jp.aegif.nemaki.service.node.PrincipalService;
+import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.YamlManager;
 
 import org.apache.chemistry.opencmis.commons.data.Ace;
@@ -59,6 +60,9 @@ public class PermissionServiceImpl implements PermissionService {
 	private ContentService contentService;
 	private TypeManager typeManager;
 	private RepositoryInfo repositoryInfo;
+	
+	static final String FILEPATH_PROPERTIESFILE = "nemakiware.properties";
+	static final String PROP_PRINCIPAL_ADMIN_ID = "principal.admin.id";
 
 	// //////////////////////////////////////////////////////////////////////////
 	// Permission Definitions
@@ -126,8 +130,15 @@ public class PermissionServiceImpl implements PermissionService {
 	public Boolean checkPermission(CallContext callContext, String key, Acl acl,
 			String baseType, Content content) {
 		// Admin always pass a permission check
-		// TODO externalize Admin ID
-		if (callContext.getUsername().equals("admin"))
+		String admin = new String();
+		try {
+			PropertyManager propertyManager = new PropertyManager(FILEPATH_PROPERTIESFILE);
+			admin = propertyManager.readHeadValue(PROP_PRINCIPAL_ADMIN_ID);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		
+		if (callContext.getUsername().equals(admin))
 			return isAllowableBaseType(key, baseType, content);
 		
 		if (acl == null)

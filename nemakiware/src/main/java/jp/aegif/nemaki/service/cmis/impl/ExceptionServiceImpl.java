@@ -25,7 +25,6 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -41,6 +40,7 @@ import jp.aegif.nemaki.repository.TypeManager;
 import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.cmis.PermissionService;
 import jp.aegif.nemaki.service.node.ContentService;
+import jp.aegif.nemaki.util.PropertyManager;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Ace;
@@ -52,7 +52,6 @@ import org.apache.chemistry.opencmis.commons.data.PropertyBoolean;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.data.PropertyDecimal;
 import org.apache.chemistry.opencmis.commons.data.PropertyId;
-import org.apache.chemistry.opencmis.commons.data.PropertyInteger;
 import org.apache.chemistry.opencmis.commons.data.PropertyString;
 import org.apache.chemistry.opencmis.commons.definitions.Choice;
 import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
@@ -79,8 +78,6 @@ import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedExce
 import org.apache.chemistry.opencmis.commons.exceptions.CmisStreamNotSupportedException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisUpdateConflictException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisVersioningException;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyDefinition;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.commons.collections.CollectionUtils;
@@ -100,7 +97,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 	private NemakiRepositoryInfoImpl repositoryInfo;
 	private static final Log log = LogFactory
 			.getLog(ExceptionServiceImpl.class);
-
+	
 	private final BigInteger HTTP_STATUS_CODE_400 = BigInteger.valueOf(400);
 	private final BigInteger HTTP_STATUS_CODE_403 = BigInteger.valueOf(403);
 	private final BigInteger HTTP_STATUS_CODE_404 = BigInteger.valueOf(404);
@@ -108,6 +105,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 	private final BigInteger HTTP_STATUS_CODE_409 = BigInteger.valueOf(409);
 	private final BigInteger HTTP_STATUS_CODE_500 = BigInteger.valueOf(500);
 
+	static final String FILEPATH_PROPERTIESFILE = "nemakiware.properties";
+	static final String PROP_PRINCIPAL_ADMIN_ID = "principal.admin.id";
+	
 	@Override
 	public void invalidArgument(String msg) {
 		throw new CmisInvalidArgumentException(msg, HTTP_STATUS_CODE_400);
@@ -363,8 +363,14 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void perimissionAdmin(CallContext context) {
-		// TODO hard coding
-		final String admin = "admin";
+		String admin = new String();
+		try {
+			PropertyManager propertyManager = new PropertyManager(FILEPATH_PROPERTIESFILE);
+			admin = propertyManager.readHeadValue(PROP_PRINCIPAL_ADMIN_ID);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		
 		if (!admin.equals(context.getUsername())) {
 			String msg = "This operation if permitted only for administrator";
 			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
