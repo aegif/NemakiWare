@@ -56,10 +56,12 @@ import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentExcep
 import org.apache.chemistry.opencmis.commons.impl.WSConverter;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyDefinition;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.ChoiceImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.DocumentTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.FolderTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ItemTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PolicyTypeDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyBooleanDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDecimalDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyHtmlDefinitionImpl;
@@ -528,7 +530,7 @@ public class TypeManager implements
 
 		result = createPropDef(id, localName, localNameSpace, queryName,
 				displayName, description, datatype, cardinality, updatability,
-				required, queryable, inherited, openChoice, orderable,
+				required, queryable, inherited, null, openChoice, orderable,
 				defaultValue);
 
 		return result;
@@ -696,7 +698,7 @@ public class TypeManager implements
 						p.getDisplayName(), p.getDescription(),
 						p.getPropertyType(), p.getCardinality(),
 						p.getUpdatability(), p.isRequired(), p.isQueryable(),
-						false, p.isOpenChoice(), p.isOrderable(),
+						false, p.getChoices(), p.isOpenChoice(), p.isOrderable(),
 						p.getDefaultValue());
 				properties.put(p.getPropertyId(), property);
 
@@ -1133,11 +1135,11 @@ public class TypeManager implements
 		return false;
 	}
 
-	public static PropertyDefinition<?> createPropDef(String id,
+	public  PropertyDefinition<?> createPropDef(String id,
 			String localName, String localNameSpace, String queryName,
 			String displayName, String description, PropertyType datatype,
 			Cardinality cardinality, Updatability updatability,
-			boolean required, boolean queryable, boolean inherited,
+			boolean required, boolean queryable, boolean inherited, List<jp.aegif.nemaki.model.Choice>choices,
 			boolean openChoice, boolean orderable, List<?> defaultValue) {
 		PropertyDefinition<?> result = null;
 		switch (datatype) {
@@ -1145,15 +1147,15 @@ public class TypeManager implements
 			result = createPropBooleanTimeDef(id, localName, localNameSpace,
 					queryName, displayName, description, datatype, cardinality,
 					updatability, inherited, required, queryable, orderable,
-					null, openChoice,
-					convertListType(String.class, defaultValue));
+					choices, openChoice,
+					convertListType(Boolean.class, defaultValue));
 			break;
 		case DATETIME:
 
 			result = createPropDateTimeDef(id, localName, localNameSpace,
 					queryName, displayName, description, datatype, cardinality,
 					updatability, inherited, required, queryable, orderable,
-					null, openChoice,
+					choices, openChoice,
 					convertListType(GregorianCalendar.class, defaultValue),
 					DateTimeResolution.TIME);
 			break;
@@ -1161,7 +1163,7 @@ public class TypeManager implements
 			result = createPropDecimalDef(id, localName, localNameSpace,
 					queryName, displayName, description, datatype, cardinality,
 					updatability, inherited, required, queryable, orderable,
-					null, openChoice,
+					choices, openChoice,
 					convertListType(BigDecimal.class, defaultValue),
 					DecimalPrecision.BITS64, null, null);
 			break;
@@ -1169,35 +1171,35 @@ public class TypeManager implements
 			result = createPropHtmlDef(id, localName, localNameSpace,
 					queryName, displayName, description, datatype, cardinality,
 					updatability, inherited, required, queryable, orderable,
-					null, openChoice,
+					choices, openChoice,
 					convertListType(String.class, defaultValue));
 			break;
 		case ID:
 			result = createPropIdDef(id, localName, localNameSpace, queryName,
 					displayName, description, datatype, cardinality,
 					updatability, inherited, required, queryable, orderable,
-					null, openChoice,
+					choices, openChoice,
 					convertListType(String.class, defaultValue));
 			break;
 		case INTEGER:
 			result = createPropIntegerDef(id, localName, localNameSpace,
 					queryName, displayName, description, datatype, cardinality,
 					updatability, inherited, required, queryable, orderable,
-					null, openChoice,
+					choices, openChoice,
 					convertListType(BigInteger.class, defaultValue), null, null);
 			break;
 		case STRING:
 			result = createPropStringDef(id, localName, localNameSpace,
 					queryName, displayName, description, datatype, cardinality,
 					updatability, inherited, required, queryable, orderable,
-					null, openChoice,
+					choices, openChoice,
 					convertListType(String.class, defaultValue), null);
 			break;
 		case URI:
 			result = createPropUriDef(id, localName, localNameSpace, queryName,
 					displayName, description, datatype, cardinality,
 					updatability, inherited, required, queryable, orderable,
-					null, openChoice,
+					choices, openChoice,
 					convertListType(String.class, defaultValue));
 			break;
 		default:
@@ -1216,31 +1218,63 @@ public class TypeManager implements
 		}
 		return result;
 	}
+	
+	private <T> List<Choice<T>>convertChoices(Class<T> clazz, List<jp.aegif.nemaki.model.Choice>choices){
+		if(CollectionUtils.isEmpty(choices)){
+			return null;
+		}else{
+			
+			List<Choice<T>> results = new ArrayList<Choice<T>>();
+			for(jp.aegif.nemaki.model.Choice choice : choices){
+				ChoiceImpl<T>cmisChoice = new ChoiceImpl<T>();
+				//displayName
+				cmisChoice.setDisplayName(choice.getDisplayName());
 
-	private static PropertyDefinition<?> createPropBooleanTimeDef(String id,
+				//value
+				List<Object>value = choice.getValue();
+				List<T> convertedValue = new ArrayList<T>();
+				for(Object obj : value){
+					convertedValue.add((T) obj);
+				}
+				cmisChoice.setValue(convertedValue);
+				
+				//children
+				List<jp.aegif.nemaki.model.Choice> children = choice.getChildren();
+				List<Choice<T>> convertedChildren = convertChoices(clazz, children);
+				cmisChoice.setChoice(convertedChildren);
+				
+				results.add(cmisChoice);
+			}
+			
+			return results;
+		}
+	}
+
+	private PropertyDefinition<?> createPropBooleanTimeDef(String id,
 			String localName, String localNameSpace, String queryName,
 			String displayName, String description, PropertyType datatype,
 			Cardinality cardinality, Updatability updatability,
 			boolean inherited, boolean required, boolean queryable,
-			boolean orderable, List<Choice<String>> choiceList,
-			boolean openChoice, List<String> defaultValue) {
+			boolean orderable, List<jp.aegif.nemaki.model.Choice>choices,
+			boolean openChoice, List<Boolean> defaultValue) {
 		// Set base attributes
-		PropertyStringDefinitionImpl result = new PropertyStringDefinitionImpl();
-		result = (PropertyStringDefinitionImpl) createPropBaseDef(result, id,
+		PropertyBooleanDefinitionImpl result = new PropertyBooleanDefinitionImpl();
+		result = (PropertyBooleanDefinitionImpl) createPropBaseDef(result, id,
 				localName, localNameSpace, queryName, displayName, description,
 				datatype, cardinality, updatability, inherited, required,
 				queryable, orderable, openChoice);
-		result.setChoices(choiceList);
+		
+		result.setChoices(convertChoices(Boolean.class, choices));
 		result.setDefaultValue(defaultValue);
 		return result;
 	}
 
-	private static PropertyDefinition<?> createPropDateTimeDef(String id,
+	private PropertyDefinition<?> createPropDateTimeDef(String id,
 			String localName, String localNameSpace, String queryName,
 			String displayName, String description, PropertyType datatype,
 			Cardinality cardinality, Updatability updatability,
 			boolean inherited, boolean required, boolean queryable,
-			boolean orderable, List<Choice<GregorianCalendar>> choiceList,
+			boolean orderable, List<jp.aegif.nemaki.model.Choice>choices,
 			boolean openChoice, List<GregorianCalendar> defaultValue,
 			DateTimeResolution resolution) {
 		// Set base attributes
@@ -1249,7 +1283,7 @@ public class TypeManager implements
 				localName, localNameSpace, queryName, displayName, description,
 				datatype, cardinality, updatability, inherited, required,
 				queryable, orderable, openChoice);
-		result.setChoices(choiceList);
+		result.setChoices(convertChoices(GregorianCalendar.class, choices));
 		result.setDefaultValue(defaultValue);
 		// Set DateTime-specific attributes
 		result.setDateTimeResolution(resolution);
@@ -1257,12 +1291,12 @@ public class TypeManager implements
 		return result;
 	}
 
-	private static PropertyDefinition<?> createPropDecimalDef(String id,
+	private PropertyDefinition<?> createPropDecimalDef(String id,
 			String localName, String localNameSpace, String queryName,
 			String displayName, String description, PropertyType datatype,
 			Cardinality cardinality, Updatability updatability,
 			boolean inherited, boolean required, boolean queryable,
-			boolean orderable, List<Choice<BigDecimal>> choiceList,
+			boolean orderable, List<jp.aegif.nemaki.model.Choice>choices,
 			boolean openChoice, List<BigDecimal> defaultValue,
 			DecimalPrecision precision, BigDecimal minValue, BigDecimal maxValue) {
 		// Set base attributes
@@ -1271,7 +1305,7 @@ public class TypeManager implements
 				localName, localNameSpace, queryName, displayName, description,
 				datatype, cardinality, updatability, inherited, required,
 				queryable, orderable, openChoice);
-		result.setChoices(choiceList);
+		result.setChoices(convertChoices(BigDecimal.class, choices));
 		result.setDefaultValue(defaultValue);
 		// Set Decimal-specific attributes
 		result.setMinValue(minValue);
@@ -1280,12 +1314,12 @@ public class TypeManager implements
 		return result;
 	}
 
-	private static PropertyDefinition<?> createPropHtmlDef(String id,
+	private PropertyDefinition<?> createPropHtmlDef(String id,
 			String localName, String localNameSpace, String queryName,
 			String displayName, String description, PropertyType datatype,
 			Cardinality cardinality, Updatability updatability,
 			boolean inherited, boolean required, boolean queryable,
-			boolean orderable, List<Choice<String>> choiceList,
+			boolean orderable, List<jp.aegif.nemaki.model.Choice>choices,
 			boolean openChoice, List<String> defaultValue) {
 		// Set base attributes
 		PropertyHtmlDefinitionImpl result = new PropertyHtmlDefinitionImpl();
@@ -1293,18 +1327,18 @@ public class TypeManager implements
 				localName, localNameSpace, queryName, displayName, description,
 				datatype, cardinality, updatability, inherited, required,
 				queryable, orderable, openChoice);
-		result.setChoices(choiceList);
+		result.setChoices(convertChoices(String.class, choices));
 		result.setDefaultValue(defaultValue);
 
 		return result;
 	}
 
-	private static PropertyDefinition<?> createPropIdDef(String id,
+	private PropertyDefinition<?> createPropIdDef(String id,
 			String localName, String localNameSpace, String queryName,
 			String displayName, String description, PropertyType datatype,
 			Cardinality cardinality, Updatability updatability,
 			boolean inherited, boolean required, boolean queryable,
-			boolean orderable, List<Choice<String>> choiceList,
+			boolean orderable, List<jp.aegif.nemaki.model.Choice>choices,
 			boolean openChoice, List<String> defaultValue) {
 		// Set base attributes
 		PropertyIdDefinitionImpl result = new PropertyIdDefinitionImpl();
@@ -1312,18 +1346,18 @@ public class TypeManager implements
 				localName, localNameSpace, queryName, displayName, description,
 				datatype, cardinality, updatability, inherited, required,
 				queryable, orderable, openChoice);
-		result.setChoices(choiceList);
+		result.setChoices(convertChoices(String.class, choices));
 		result.setDefaultValue(defaultValue);
 
 		return result;
 	}
 
-	private static PropertyDefinition<?> createPropIntegerDef(String id,
+	private PropertyDefinition<?> createPropIntegerDef(String id,
 			String localName, String localNameSpace, String queryName,
 			String displayName, String description, PropertyType datatype,
 			Cardinality cardinality, Updatability updatability,
 			boolean inherited, boolean required, boolean queryable,
-			boolean orderable, List<Choice<BigInteger>> choiceList,
+			boolean orderable, List<jp.aegif.nemaki.model.Choice>choices,
 			boolean openChoice, List<BigInteger> defaultValue,
 			BigInteger minValue, BigInteger maxValue) {
 		// Set base attributes
@@ -1332,7 +1366,7 @@ public class TypeManager implements
 				localName, localNameSpace, queryName, displayName, description,
 				datatype, cardinality, updatability, inherited, required,
 				queryable, orderable, openChoice);
-		result.setChoices(choiceList);
+		result.setChoices(convertChoices(BigInteger.class, choices));
 		result.setDefaultValue(defaultValue);
 		// Set Integer-specific attributes
 		result.setMinValue(minValue);
@@ -1341,12 +1375,12 @@ public class TypeManager implements
 		return result;
 	}
 
-	private static PropertyDefinition<?> createPropStringDef(String id,
+	private PropertyDefinition<?> createPropStringDef(String id,
 			String localName, String localNameSpace, String queryName,
 			String displayName, String description, PropertyType datatype,
 			Cardinality cardinality, Updatability updatability,
 			boolean inherited, boolean required, boolean queryable,
-			boolean orderable, List<Choice<String>> choiceList,
+			boolean orderable, List<jp.aegif.nemaki.model.Choice>choices,
 			boolean openChoice, List<String> defaultValue, BigInteger maxLength) {
 		// Set base attributes
 		PropertyStringDefinitionImpl result = new PropertyStringDefinitionImpl();
@@ -1354,7 +1388,7 @@ public class TypeManager implements
 				localName, localNameSpace, queryName, displayName, description,
 				datatype, cardinality, updatability, inherited, required,
 				queryable, orderable, openChoice);
-		result.setChoices(choiceList);
+		result.setChoices(convertChoices(String.class, choices));
 		result.setDefaultValue(defaultValue);
 		// Set String-specific attributes
 		if (maxLength != null)
@@ -1362,12 +1396,12 @@ public class TypeManager implements
 		return result;
 	}
 
-	private static PropertyDefinition<?> createPropUriDef(String id,
+	private PropertyDefinition<?> createPropUriDef(String id,
 			String localName, String localNameSpace, String queryName,
 			String displayName, String description, PropertyType datatype,
 			Cardinality cardinality, Updatability updatability,
 			boolean inherited, boolean required, boolean queryable,
-			boolean orderable, List<Choice<String>> choiceList,
+			boolean orderable, List<jp.aegif.nemaki.model.Choice>choices,
 			boolean openChoice, List<String> defaultValue) {
 		// Set base attributes
 		PropertyUriDefinitionImpl result = new PropertyUriDefinitionImpl();
@@ -1375,13 +1409,13 @@ public class TypeManager implements
 				localName, localNameSpace, queryName, displayName, description,
 				datatype, cardinality, updatability, inherited, required,
 				queryable, orderable, openChoice);
-		result.setChoices(choiceList);
+		result.setChoices(convertChoices(String.class, choices));
 		result.setDefaultValue(defaultValue);
 
 		return result;
 	}
 
-	private static PropertyDefinition<?> createPropBaseDef(
+	private PropertyDefinition<?> createPropBaseDef(
 			AbstractPropertyDefinition<?> result, String id, String localName,
 			String localNameSpace, String queryName, String displayName,
 			String description, PropertyType datatype, Cardinality cardinality,
