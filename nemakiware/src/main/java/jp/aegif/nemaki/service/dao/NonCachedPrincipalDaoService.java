@@ -37,13 +37,6 @@ public interface NonCachedPrincipalDaoService {
 	User getUserById(String userId);
 
 	/**
-	 * Get a user by name
-	 * @param userName
-	 * @return
-	 */
-	User getUserByName(String userName);
-
-	/**
 	 * Get a user
 	 * @return
 	 */
@@ -55,13 +48,6 @@ public interface NonCachedPrincipalDaoService {
 	 * @return
 	 */
 	Group getGroupById(String groupId);
-
-	/**
-	 * Get a group by name
-	 * @param groupName
-	 * @return
-	 */
-	Group getGroupByName(String groupName);
 
 	/**
 	 * Get all the groups
