@@ -51,11 +51,6 @@ public interface PrincipalService {
 	Set<String> getGroupIdsContainingUser(String username);
 
 	/**
-	 * Get a user, given its name.
-	 */
-	User getUserByName(String username);
-	
-	/**
 	 * Get a user, given its id.
 	 */
 	User getUserById(String userId);

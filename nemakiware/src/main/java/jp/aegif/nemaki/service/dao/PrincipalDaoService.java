@@ -31,10 +31,8 @@ import jp.aegif.nemaki.model.User;
  */
 public interface PrincipalDaoService {
 	User getUserById(String userId);
-	User getUserByName(String name);
 	List<User> getUsers();
 	Group getGroupById(String groupId);
-	Group getGroupByName(String name);
 	List<Group> getGroups();
 	User createUser(User user);
 	Group createGroup(Group group);

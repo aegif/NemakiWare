@@ -50,6 +50,7 @@ public class CouchPrincipalDaoServiceImpl implements
 	private CouchDbConnector connector;
 	private static final Log logger = LogFactory
 			.getLog(CouchPrincipalDaoServiceImpl.class);
+	private static final String DESIGN_DOCUMENT = "_design/_repo";
 
 	public CouchPrincipalDaoServiceImpl() {
 
@@ -67,8 +68,8 @@ public class CouchPrincipalDaoServiceImpl implements
 	}
 
 	private CouchUser getUserByIdInternal(String userId) {
-		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("usersById").key(userId);
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
+				.viewName("users").key(userId);
 		List<CouchUser> l = connector.queryView(query, CouchUser.class);
 
 		if (CollectionUtils.isEmpty(l))
@@ -77,22 +78,11 @@ public class CouchPrincipalDaoServiceImpl implements
 	}
 
 	@Override
-	public User getUserByName(String userName) {
-		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("usersByName").key(userName);
-		List<CouchUser> l = connector.queryView(query, CouchUser.class);
-
-		if (CollectionUtils.isEmpty(l))
-			return null;
-		return l.get(0).convert();
-	}
-
-	@Override
 	public List<User> getUsers() {
 		List<User> users = new ArrayList<User>();
 
-		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("usersById");
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
+				.viewName("users");
 		List<CouchUser> l = connector.queryView(query, CouchUser.class);
 
 		for (CouchUser c : l) {
@@ -115,8 +105,8 @@ public class CouchPrincipalDaoServiceImpl implements
 	}
 
 	private CouchGroup getGroupByIdInternal(String groupId) {
-		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("groupsById").key(groupId);
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
+				.viewName("groups").key(groupId);
 		List<CouchGroup> l = connector.queryView(query, CouchGroup.class);
 
 		if (CollectionUtils.isEmpty(l))
@@ -125,22 +115,11 @@ public class CouchPrincipalDaoServiceImpl implements
 	}
 
 	@Override
-	public Group getGroupByName(String groupName) {
-		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("groupsByName").key(groupName);
-		List<CouchGroup> l = connector.queryView(query, CouchGroup.class);
-
-		if (CollectionUtils.isEmpty(l))
-			return null;
-		return l.get(0).convert();
-	}
-
-	@Override
 	public List<Group> getGroups() {
 		List<Group> groups = new ArrayList<Group>();
 
-		ViewQuery query = new ViewQuery().designDocId("_design/_repo")
-				.viewName("groupsById");
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
+				.viewName("groups");
 
 		List<CouchGroup> l = connector.queryView(query, CouchGroup.class);
 

@@ -84,11 +84,6 @@ public class PrincipalServiceImpl implements PrincipalService {
 	}
 
 	@Override
-	public User getUserByName(String username) {
-		return principalDaoService.getUserByName(username);
-	}
-
-	@Override
 	public Group getGroupById(String groupId) {
 		return principalDaoService.getGroupById(groupId);
 	}

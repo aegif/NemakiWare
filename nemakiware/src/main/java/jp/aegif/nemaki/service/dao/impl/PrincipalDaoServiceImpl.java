@@ -177,14 +177,6 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 	 * 
 	 */
 	@Override
-	public User getUserByName(String userName) {
-		return nonCachedPrincipalDaoService.getUserByName(userName);
-	}
-	
-	/**
-	 * 
-	 */
-	@Override
 	public Group getGroupById(String groupId) {
 		Cache groupCache = cacheManager.getCache("groupCache");
 		Element groupEl = groupCache.get(groupId);
@@ -199,11 +191,6 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 		}
 		
 		return group;
-	}
-	
-	@Override
-	public Group getGroupByName(String groupName) {
-		return nonCachedPrincipalDaoService.getGroupByName(groupName);
 	}
 
 	/**
