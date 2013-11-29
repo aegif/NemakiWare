@@ -69,6 +69,7 @@ import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.Principal;
 import org.apache.chemistry.opencmis.commons.data.Properties;
+import org.apache.chemistry.opencmis.commons.data.PropertyBoolean;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.data.PropertyId;
 import org.apache.chemistry.opencmis.commons.data.PropertyString;
@@ -749,6 +750,7 @@ public class ContentServiceImpl implements ContentService {
 		Document d = new Document();
 		setBaseProperties(callContext, properties, d, parentFolder.getId());
 		d.setParentId(parentFolder.getId());
+		d.setImmutable(getBooleanProperty(properties, PropertyIds.IS_IMMUTABLE));
 		setSignature(callContext, d);
 		// Aspect
 		List<Aspect> aspects = buildAspects(properties);
@@ -768,13 +770,14 @@ public class ContentServiceImpl implements ContentService {
 		copy.setObjectType(original.getObjectType());
 		copy.setName(original.getName());
 		copy.setDescription(original.getDescription());
-		setSignature(callContext, copy);
 		copy.setParentId(original.getParentId());
+		copy.setImmutable(original.isImmutable());
 		copy.setAclInherited(original.isAclInherited());
 		copy.setAcl(original.getAcl());
 		copy.setAspects(original.getAspects());
 		copy.setSecondaryIds(original.getSecondaryIds());
-
+		
+		setSignature(callContext, copy);
 		return copy;
 	}
 
@@ -1773,6 +1776,15 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		return ((PropertyId) property).getFirstValue();
+	}
+	
+	private Boolean getBooleanProperty(Properties properties, String name) {
+		PropertyData<?> property = properties.getProperties().get(name);
+		if (!(property instanceof PropertyBoolean)) {
+			return null;
+		}
+
+		return ((PropertyBoolean) property).getFirstValue();
 	}
 
 	private List<String> getIdListProperty(Properties properties, String name) {

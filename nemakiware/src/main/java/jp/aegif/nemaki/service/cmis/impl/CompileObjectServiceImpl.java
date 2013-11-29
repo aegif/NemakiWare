@@ -544,7 +544,8 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 		addProperty(properties, typeId, filter, PropertyIds.BASE_TYPE_ID,
 				BaseTypeId.CMIS_DOCUMENT.value());
-		addProperty(properties, typeId, filter, PropertyIds.IS_IMMUTABLE, false);
+		Boolean isImmutable = (document.isImmutable() == null) ?  (Boolean)typeManager.getSingleDefaultValue(PropertyIds.IS_IMMUTABLE, typeId) : document.isImmutable(); 
+		addProperty(properties, typeId, filter, PropertyIds.IS_IMMUTABLE, isImmutable);
 		addProperty(properties, typeId, filter,
 				PropertyIds.IS_PRIVATE_WORKING_COPY,
 				document.isPrivateWorkingCopy());
@@ -652,7 +653,6 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		}
 	}
 	
-	//TODO Desirable to change List<Aspect> (and List<Properties>) in Content class to HashMap, but it may need costs.  
 	private Aspect extractAspect(List<Aspect> aspects, String aspectId){
 		for(Aspect aspect : aspects){
 			if(aspect.getName().equals(aspectId)){
