@@ -42,7 +42,6 @@ import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.cmis.NemakiCmisService;
 import jp.aegif.nemaki.service.cmis.ObjectService;
 import jp.aegif.nemaki.service.cmis.RepositoryService;
-import jp.aegif.nemaki.service.dao.impl.ContentDaoServiceImpl;
 import jp.aegif.nemaki.service.node.ContentService;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
@@ -412,6 +411,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// General Exception
 		// //////////////////
 		String id = objectId.getValue();
+		
 		exceptionService.invalidArgumentRequiredString("objectId", id);
 		exceptionService
 				.invalidArgumentRequired("contentStream", contentStream);
@@ -421,13 +421,14 @@ public class ObjectServiceImpl implements ObjectService {
 				compileObjectService.splitFilter(""), new ObjectInfoImpl());
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_SET_CONTENT_DOCUMENT, doc);
+		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
+				.getTypeDefinition(getTypeId(properties));
+		exceptionService.constraintImmutable(doc, td);
 
 		// //////////////////
 		// Specific Exception
 		// //////////////////
 		exceptionService.contentAlreadyExists(doc, overwriteFlag);
-		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
-				.getTypeDefinition(getTypeId(properties));
 		exceptionService.streamNotSupported(td, contentStream);
 		exceptionService.updateConflict(doc, changeToken);
 		exceptionService.versioning(doc);
@@ -462,6 +463,34 @@ public class ObjectServiceImpl implements ObjectService {
 	public void appendContentStream(CallContext callContext, Holder<String> objectId, Holder<String> changeToken,
 			ContentStream contentStream, boolean isLastChunk,
 			ExtensionsData extension){
+		// //////////////////
+		// General Exception
+		// //////////////////
+		String id = objectId.getValue();
+		
+		exceptionService.invalidArgumentRequiredString("objectId", id);
+		exceptionService
+				.invalidArgumentRequired("contentStream", contentStream);
+		Document doc = (Document) contentService.getContent(id);
+		exceptionService.objectNotFound(DomainType.OBJECT, doc, id);
+		Properties properties = compileObjectService.compileProperties(doc,
+				compileObjectService.splitFilter(""), new ObjectInfoImpl());
+		exceptionService.permissionDenied(callContext,
+				PermissionMapping.CAN_SET_CONTENT_DOCUMENT, doc);
+		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
+				.getTypeDefinition(getTypeId(properties));
+		exceptionService.constraintImmutable(doc, td);
+
+		// //////////////////
+		// Specific Exception
+		// //////////////////
+		exceptionService.streamNotSupported(td, contentStream);
+		exceptionService.updateConflict(doc, changeToken);
+		exceptionService.versioning(doc);
+		
+		// //////////////////
+		// Body of the method
+		// //////////////////
 		contentService.appendAttachment(callContext, objectId, changeToken, contentStream, isLastChunk, extension);		
 	}
 
@@ -617,6 +646,8 @@ public class ObjectServiceImpl implements ObjectService {
 		if (content.isDocument()) {
 			Document d = (Document) content;
 			exceptionService.constraintAlreadyCheckedOut(d);
+			TypeDefinition typeDef = typeManager.getTypeDefinition(d);
+			exceptionService.constraintImmutable(d, typeDef);
 		}
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT, content);

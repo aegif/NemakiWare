@@ -25,6 +25,7 @@ import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
@@ -422,8 +423,8 @@ public class TypeManager implements
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.IS_IMMUTABLE, PropertyType.BOOLEAN,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				!QUERYABLE, !ORDERABLE, null));
-
+				!QUERYABLE, !ORDERABLE, Arrays.asList(false)));
+		
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.IS_LATEST_VERSION, PropertyType.BOOLEAN,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
@@ -1144,7 +1145,7 @@ public class TypeManager implements
 		PropertyDefinition<?> result = null;
 		switch (datatype) {
 		case BOOLEAN:
-			result = createPropBooleanTimeDef(id, localName, localNameSpace,
+			result = createPropBooleanDef(id, localName, localNameSpace,
 					queryName, displayName, description, datatype, cardinality,
 					updatability, inherited, required, queryable, orderable,
 					choices, openChoice,
@@ -1250,7 +1251,7 @@ public class TypeManager implements
 		}
 	}
 
-	private PropertyDefinition<?> createPropBooleanTimeDef(String id,
+	private PropertyDefinition<?> createPropBooleanDef(String id,
 			String localName, String localNameSpace, String queryName,
 			String displayName, String description, PropertyType datatype,
 			Cardinality cardinality, Updatability updatability,
@@ -1446,6 +1447,12 @@ public class TypeManager implements
 		return result;
 	}
 
+	public Object getSingleDefaultValue(String propertyId, String typeId){
+		TypeDefinition typeDef = getTypeDefinition(typeId);
+		PropertyDefinition<?> propertyDefiniton = typeDef.getPropertyDefinitions().get(propertyId);
+		return propertyDefiniton.getDefaultValue().get(0);
+	}
+	
 	// /////////////////////////////////////////////////
 	// Spring Injection
 	// /////////////////////////////////////////////////

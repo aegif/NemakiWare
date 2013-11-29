@@ -938,6 +938,27 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 	
 	@Override
+	public void constraintImmutable(Document document,
+			TypeDefinition typeDefinition) {
+		Boolean defaultVal = (Boolean)typeManager.getSingleDefaultValue(PropertyIds.IS_IMMUTABLE, typeDefinition.getId());
+		
+		boolean flag = false;
+		if(document.isImmutable() == null){
+			if(defaultVal != null && defaultVal){
+				flag = true;
+			}
+		}else{
+			if(document.isImmutable()){
+				flag = true;
+			}
+		}
+		
+		if(flag){
+			constraint(document.getId(), "Immutable document cannot be updated/deleted");
+		}
+	}
+
+	@Override
 	public void contentAlreadyExists(Content content, Boolean overwriteFlag) {
 		if (!overwriteFlag) {
 			Document document = (Document) content; // FIXME

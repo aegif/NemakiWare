@@ -41,17 +41,14 @@ public class CouchDocument extends CouchContent {
 	private String versionSeriesId;
 	private Boolean latestVersion;
 	private Boolean latestMajorVersion;
-	
-	
 	private Boolean majorVersion;
 	private String checkinComment;
 	private String versionLabel;
-	
 	//The following properties should be moved away to VersionSeries object
 	private Boolean privateWorkingCopy;
 
-	private Boolean updateSkip;	//FIXME Modify to go without it
-
+	private Boolean immutable;
+	
 	public CouchDocument(){
 		super();
 	}
@@ -67,7 +64,7 @@ public class CouchDocument extends CouchContent {
 		setLatestMajorVersion(d.isLatestMajorVersion());
 		setCheckinComment(d.getCheckinComment());
 		setPrivateWorkingCopy(d.isPrivateWorkingCopy());
-		//setUpdateSkip(d.getUpdateSkip());
+		setImmutable(d.isImmutable());
 	}
 	
 	/**
@@ -147,14 +144,14 @@ public class CouchDocument extends CouchContent {
 		this.checkinComment = checkinComment;
 	}
 
-	public Boolean getUpdateSkip() {
-		return updateSkip;
+	public Boolean isImmutable(){
+		return immutable;
 	}
-
-	public void setUpdateSkip(Boolean updateSkip) {
-		this.updateSkip = updateSkip;
+	
+	public void setImmutable(Boolean immutable){
+		this.immutable = immutable;
 	}
-
+	
 	public Document convert() {
 		Document d = new Document(super.convert());
 		d.setAttachmentNodeId(getAttachmentNodeId());
@@ -165,7 +162,7 @@ public class CouchDocument extends CouchContent {
 		d.setVersionSeriesId(getVersionSeriesId());
 		d.setVersionLabel(getVersionLabel());
 		d.setPrivateWorkingCopy(isPrivateWorkingCopy());
-		//d.setUpdateSkip(getUpdateSkip());
+		d.setImmutable(isImmutable());
 
 		return d;
 	}
