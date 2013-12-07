@@ -162,6 +162,7 @@ public class CouchDocument extends CouchContent {
 		d.setVersionSeriesId(getVersionSeriesId());
 		d.setVersionLabel(getVersionLabel());
 		d.setPrivateWorkingCopy(isPrivateWorkingCopy());
+		d.setCheckinComment(getCheckinComment());
 		d.setImmutable(isImmutable());
 
 		return d;
