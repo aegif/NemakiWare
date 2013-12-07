@@ -90,6 +90,7 @@ import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.math.NumberUtils;
 import org.apache.commons.logging.Log;
@@ -1041,6 +1042,10 @@ public class ContentServiceImpl implements ContentService {
 
 	private Content modifyProperties(CallContext callContext,
 			Properties properties, Content content) {
+		if(properties == null || MapUtils.isEmpty(properties.getProperties())){
+			return content;
+		}
+		
 		// Primary
 		org.apache.chemistry.opencmis.commons.definitions.TypeDefinition td = typeManager
 				.getTypeDefinition(content.getObjectType());
