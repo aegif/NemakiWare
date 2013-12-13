@@ -61,7 +61,7 @@ import jp.aegif.nemaki.model.couch.CouchRelationship;
 import jp.aegif.nemaki.model.couch.CouchRendition;
 import jp.aegif.nemaki.model.couch.CouchTypeDefinition;
 import jp.aegif.nemaki.model.couch.CouchVersionSeries;
-import jp.aegif.nemaki.service.dao.NonCachedContentDaoService;
+import jp.aegif.nemaki.service.dao.ContentDaoService;
 import jp.aegif.nemaki.service.db.CouchConnector;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
@@ -84,7 +84,7 @@ import org.springframework.stereotype.Component;
  * 
  */
 @Component
-public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
+public class CouchContentDaoServiceImpl implements ContentDaoService {
 
 	private CouchDbConnector connector;
 	private CouchDbConnector archiveConnector;
@@ -121,6 +121,13 @@ public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
 	}
 
 	@Override
+	public NemakiTypeDefinition getTypeDefinition(String typeId) {
+		throw new UnsupportedOperationException(
+				Thread.currentThread().getStackTrace()[0].getMethodName()
+						+ ":this method is only for cahced service. No need for implementation.");
+	}
+
+	@Override
 	public NemakiTypeDefinition createTypeDefinition(
 			NemakiTypeDefinition typeDefinition) {
 		CouchTypeDefinition ct = new CouchTypeDefinition(typeDefinition);
@@ -151,12 +158,12 @@ public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
 				.viewName("propertyDefinitionCores");
 		List<CouchPropertyDefinitionCore> l = connector.queryView(query,
 				CouchPropertyDefinitionCore.class);
-		
+
 		if (CollectionUtils.isEmpty(l)) {
 			return null;
 		} else {
 			List<NemakiPropertyDefinitionCore> result = new ArrayList<NemakiPropertyDefinitionCore>();
-			for(CouchPropertyDefinitionCore cpdc : l){
+			for (CouchPropertyDefinitionCore cpdc : l) {
 				result.add(cpdc.convert());
 			}
 			return result;
@@ -181,7 +188,8 @@ public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
 	public NemakiPropertyDefinitionCore getPropertyDefinitionCoreByPropertyId(
 			String propertyId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("propertyDefinitionCoresByPropertyId").key(propertyId);
+				.viewName("propertyDefinitionCoresByPropertyId")
+				.key(propertyId);
 		List<CouchPropertyDefinitionCore> l = connector.queryView(query,
 				CouchPropertyDefinitionCore.class);
 
@@ -193,7 +201,8 @@ public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
 	}
 
 	@Override
-	public NemakiPropertyDefinitionDetail getPropertyDefinitionDetail(String nodeId) {
+	public NemakiPropertyDefinitionDetail getPropertyDefinitionDetail(
+			String nodeId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("propertyDefinitionDetails").key(nodeId);
 		List<CouchPropertyDefinitionDetail> l = connector.queryView(query,
@@ -210,7 +219,8 @@ public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
 	public List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetailByCoreNodeId(
 			String coreNodeId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("propertyDefinitionDetailsByCoreNodeId").key(coreNodeId);
+				.viewName("propertyDefinitionDetailsByCoreNodeId")
+				.key(coreNodeId);
 		List<CouchPropertyDefinitionDetail> l = connector.queryView(query,
 				CouchPropertyDefinitionDetail.class);
 
@@ -218,13 +228,13 @@ public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
 			return null;
 		} else {
 			List<NemakiPropertyDefinitionDetail> result = new ArrayList<NemakiPropertyDefinitionDetail>();
-			for(CouchPropertyDefinitionDetail cpdd : l){
+			for (CouchPropertyDefinitionDetail cpdd : l) {
 				result.add(cpdd.convert());
 			}
 			return result;
 		}
 	}
-	
+
 	@Override
 	public NemakiPropertyDefinitionCore createPropertyDefinitionCore(
 			NemakiPropertyDefinitionCore propertyDefinitionCore) {
@@ -233,7 +243,7 @@ public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
 		connector.create(cpc);
 		return cpc.convert();
 	}
-	
+
 	@Override
 	public NemakiPropertyDefinitionDetail createPropertyDefinitionDetail(
 			NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
@@ -246,13 +256,13 @@ public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
 	@Override
 	public NemakiPropertyDefinitionDetail updatePropertyDefinitionDetail(
 			NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
-		
-		
+
 		CouchPropertyDefinitionDetail cpd = connector.get(
-				CouchPropertyDefinitionDetail.class, propertyDefinitionDetail.getId());
-		
-		
-		CouchPropertyDefinitionDetail update = new CouchPropertyDefinitionDetail(propertyDefinitionDetail);
+				CouchPropertyDefinitionDetail.class,
+				propertyDefinitionDetail.getId());
+
+		CouchPropertyDefinitionDetail update = new CouchPropertyDefinitionDetail(
+				propertyDefinitionDetail);
 		update.setRevision(cpd.getRevision());
 
 		connector.update(update);
@@ -287,24 +297,24 @@ public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
 		Document doc = cd.convert();
 		return doc;
 	}
-	
-	public boolean existContent(String objectTypeId){
+
+	public boolean existContent(String objectTypeId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("countByObjectType").key(objectTypeId);
 		ViewResult l = connector.queryView(query);
 		List<Row> rows = l.getRows();
-		if(CollectionUtils.isEmpty(rows)){
+		if (CollectionUtils.isEmpty(rows)) {
 			return false;
-		}else{
-			for(Row row : rows){
-				if(objectTypeId.equals(row.getKey())){
+		} else {
+			for (Row row : rows) {
+				if (objectTypeId.equals(row.getKey())) {
 					int count = row.getValueAsInt();
-					if(count == 0){
+					if (count == 0) {
 						return false;
-					}else{
+					} else {
 						return true;
 					}
-				}	
+				}
 			}
 		}
 		return false;
@@ -340,7 +350,7 @@ public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
 			return l.get(0).convert();
 		}
 	}
-	
+
 	@Override
 	public List<Document> getAllVersions(String versionSeriesId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
@@ -500,7 +510,7 @@ public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
 			return null;
 		}
 	}
-	
+
 	@Override
 	public Item getItem(String objectId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
@@ -614,7 +624,7 @@ public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
 		connector.update(update);
 		return update.convert();
 	}
-	
+
 	@Override
 	public Item update(Item item) {
 		CouchItem ci = connector.get(CouchItem.class, item.getId());
@@ -635,6 +645,15 @@ public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
 	// ///////////////////////////////////////
 	// Attachment
 	// ///////////////////////////////////////
+
+	@Override
+	public AttachmentNode getAttachment(String attachmentId,
+			boolean includeStream) {
+		throw new UnsupportedOperationException(
+				Thread.currentThread().getStackTrace()[0].getMethodName()
+						+ ":this method is only for cahced service. No need for implementation.");
+	}
+
 	@Override
 	public AttachmentNode getAttachment(String attachmentId) {
 
@@ -649,7 +668,7 @@ public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
 			CouchAttachmentNode can = list.get(0);
 
 			Attachment a = can.getAttachments().get(ATTACHMENT_NAME);
-			
+
 			AttachmentNode an = new AttachmentNode();
 			an.setId(can.getId());
 			an.setMimeType(a.getContentType());
@@ -699,28 +718,35 @@ public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
 	}
 
 	@Override
-	public String createAttachment(AttachmentNode attachment, ContentStream contentStream) {
+	public String createAttachment(AttachmentNode attachment,
+			ContentStream contentStream) {
 		CouchAttachmentNode ca = new CouchAttachmentNode(attachment);
 		connector.create(ca);
 
 		AttachmentInputStream ais = new AttachmentInputStream(ATTACHMENT_NAME,
-				contentStream.getStream(), contentStream.getMimeType(), contentStream.getLength());
+				contentStream.getStream(), contentStream.getMimeType(),
+				contentStream.getLength());
 		connector.createAttachment(ca.getId(), ca.getRevision(), ais);
 
 		return ca.getId();
 	}
-	
+
 	@Override
-	public void updateAttachment(AttachmentNode attachment, ContentStream contentStream) {
-		CouchAttachmentNode ca = connector.get(CouchAttachmentNode.class, attachment.getId());
+	public void updateAttachment(AttachmentNode attachment,
+			ContentStream contentStream) {
+		CouchAttachmentNode ca = connector.get(CouchAttachmentNode.class,
+				attachment.getId());
 		CouchAttachmentNode update = new CouchAttachmentNode(attachment);
 		// Set the latest revision for avoid conflict
 		update.setRevision(ca.getRevision());
 
-		String revisionAfterDeleted = connector.deleteAttachment(ca.getId(), ca.getRevision(), ATTACHMENT_NAME);
-		
-		AttachmentInputStream ais = new AttachmentInputStream(ATTACHMENT_NAME, contentStream.getStream(), contentStream.getMimeType());
-		connector.createAttachment(attachment.getId(), revisionAfterDeleted, ais);
+		String revisionAfterDeleted = connector.deleteAttachment(ca.getId(),
+				ca.getRevision(), ATTACHMENT_NAME);
+
+		AttachmentInputStream ais = new AttachmentInputStream(ATTACHMENT_NAME,
+				contentStream.getStream(), contentStream.getMimeType());
+		connector.createAttachment(attachment.getId(), revisionAfterDeleted,
+				ais);
 	}
 
 	// ///////////////////////////////////////
@@ -742,14 +768,14 @@ public class CouchContentDaoServiceImpl implements NonCachedContentDaoService {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("latestChange");
 		List<CouchChange> l = connector.queryView(query, CouchChange.class);
-		if (CollectionUtils.isEmpty(l)){
+		if (CollectionUtils.isEmpty(l)) {
 			return null;
-		}else{
-			if(l.size() != 1){
+		} else {
+			if (l.size() != 1) {
 				log.warn("There are more than one documents with latest flag in CouchDB.");
 				Collections.sort(l);
 				return l.get(0).convert();
-			}else{
+			} else {
 				return l.get(0).convert();
 			}
 		}

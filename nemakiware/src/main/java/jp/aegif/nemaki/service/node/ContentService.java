@@ -81,8 +81,6 @@ public interface ContentService {
 	NemakiPropertyDefinitionDetail updatePropertyDefinitionDetail(
 			NemakiPropertyDefinitionDetail propertyDefinitionDetail);
 
-	void deletePropertyDefinition(String propertyId);
-
 	// ///////////////////////////////////////
 	// Content
 	// ///////////////////////////////////////
