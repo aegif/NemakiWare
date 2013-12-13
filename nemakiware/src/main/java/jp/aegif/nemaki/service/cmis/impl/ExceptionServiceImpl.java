@@ -406,19 +406,18 @@ public class ExceptionServiceImpl implements ExceptionService,
 	@Override
 	public void constraintAllowedChildObjectTypeId(Folder folder,
 			Properties childProperties) {
-
 		List<String> allowedTypes = folder.getAllowedChildTypeIds();
 		if (!CollectionUtils.isEmpty(allowedTypes)) {
 			// NOTE: Elements of allowedTypes must be like "cmis:folder", not
 			// "folder"
-			String childType = getStringProperty(childProperties,
+			String childType = getIdProperty(childProperties,
 					PropertyIds.OBJECT_TYPE_ID);
 			if (!allowedTypes.contains(childType)) {
-				String objectId = getStringProperty(childProperties,
+				String objectId = getIdProperty(childProperties,
 						PropertyIds.OBJECT_ID);
 				constraint(
 						objectId,
-						"cmis:objectTypeId property value is NOT in the list of AllowedChildOb-jectTypeIds of the parent-folder");
+						"cmis:objectTypeId property value is NOT in the list of AllowedChildObjectTypeIds of the parent-folder");
 			}
 		}
 	}
