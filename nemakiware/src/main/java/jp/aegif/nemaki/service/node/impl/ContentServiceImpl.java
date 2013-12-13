@@ -253,11 +253,6 @@ public class ContentServiceImpl implements ContentService {
 		return contentDaoService.updatePropertyDefinitionDetail(propertyDefinitionDetail);
 	}
 
-	@Override
-	public void deletePropertyDefinition(String propertyId) {
-		contentDaoService.deletePropertyDefinition(propertyId);
-	}
-
 	// ///////////////////////////////////////
 	// Content
 	// ///////////////////////////////////////

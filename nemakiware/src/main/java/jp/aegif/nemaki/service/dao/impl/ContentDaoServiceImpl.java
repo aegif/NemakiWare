@@ -32,16 +32,14 @@ import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.Item;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
+import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.model.NodeBase;
 import jp.aegif.nemaki.model.Policy;
-import jp.aegif.nemaki.model.NemakiPropertyDefinition;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
-import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.repository.RequestDurationCacheBean;
 import jp.aegif.nemaki.service.dao.ContentDaoService;
-import jp.aegif.nemaki.service.dao.NonCachedContentDaoService;
 import net.sf.ehcache.Cache;
 import net.sf.ehcache.CacheManager;
 import net.sf.ehcache.Element;
@@ -59,7 +57,7 @@ import org.springframework.util.CollectionUtils;
 @Component
 public class ContentDaoServiceImpl implements ContentDaoService {
 
-	private NonCachedContentDaoService nonCachedContentDaoService;
+	private ContentDaoService nonCachedContentDaoService;
 	private RequestDurationCacheBean requestDurationCache;
 	private CacheManager cacheManager;
 
@@ -206,17 +204,14 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		typeCache.remove("typedefs");
 		return np;
 	}
-
-	@Override
-	public void deletePropertyDefinition(
-			String propertyId) {
-		// TODO Auto-generated method stub
-		
-	}
 	
 	// ///////////////////////////////////////
 	// Content
 	// ///////////////////////////////////////
+	public NodeBase getNodeBase(String objectId) {
+		return nonCachedContentDaoService.getNodeBase(objectId);
+	}
+	
 	/**
 	 * get Document/Folder(not Attachment) Return Document/Folder class FIXME
 	 * devide this method into getDcoument & getFolder
@@ -527,6 +522,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public AttachmentNode getAttachment(String attachmentId) {
+		throw new UnsupportedOperationException(Thread.currentThread().getStackTrace()[0].getMethodName() + ":this method is only for non-cahced service.");
+	}
+
+	@Override
+	public void setStream(AttachmentNode attachmentNode) {
+		throw new UnsupportedOperationException(Thread.currentThread().getStackTrace()[0].getMethodName() + ":this method is only for non-cahced service.");
+	}
+
+	@Override
 	public Rendition getRendition(String objectId) {
 		return nonCachedContentDaoService.getRendition(objectId);
 	}
@@ -646,7 +651,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	public void setNonCachedContentDaoService(
-			NonCachedContentDaoService nonCachedContentDaoService) {
+			ContentDaoService nonCachedContentDaoService) {
 		this.nonCachedContentDaoService = nonCachedContentDaoService;
 	}
 

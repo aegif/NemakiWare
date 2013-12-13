@@ -27,8 +27,9 @@ import java.util.List;
 import jp.aegif.nemaki.model.Group;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.couch.CouchGroup;
+import jp.aegif.nemaki.model.couch.CouchNodeBase;
 import jp.aegif.nemaki.model.couch.CouchUser;
-import jp.aegif.nemaki.service.dao.NonCachedPrincipalDaoService;
+import jp.aegif.nemaki.service.dao.PrincipalDaoService;
 import jp.aegif.nemaki.service.db.CouchConnector;
 
 import org.apache.commons.collections.CollectionUtils;
@@ -45,7 +46,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class CouchPrincipalDaoServiceImpl implements
-		NonCachedPrincipalDaoService {
+		PrincipalDaoService {
 
 	private CouchDbConnector connector;
 	private static final Log logger = LogFactory
@@ -174,17 +175,11 @@ public class CouchPrincipalDaoServiceImpl implements
 
 		return g;
 	}
-
+	
 	@Override
-	public void deleteUser(String principalId) {
-		CouchUser cu = getUserByIdInternal(principalId);
-		connector.delete(cu);
-	}
-
-	@Override
-	public void deleteGroup(String principalId) {
-		CouchGroup cg = getGroupByIdInternal(principalId);
-		connector.delete(cg);
+	public void delete(Class<?> clazz, String principalId){
+		CouchNodeBase cnb = connector.get(CouchNodeBase.class, principalId);
+		connector.delete(cnb);
 	}
 
 	public void setConnector(CouchConnector connector) {
