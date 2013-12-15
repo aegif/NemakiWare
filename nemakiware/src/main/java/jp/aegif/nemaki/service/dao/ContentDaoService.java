@@ -405,14 +405,6 @@ public interface ContentDaoService {
 	// ///////////////////////////////////////
 	/**
 	 * Get an attachment(without InputStream)
-	 * for internal use(cached service) only
-	 * @param attachmentId
-	 * @return if nothing found, return null
-	 */
-	AttachmentNode getAttachment(String attachmentId, boolean includeStream);
-	
-	/**
-	 * Get an attachment(without InputStream)
 	 * for non-cached service only
 	 * @param attachmentId
 	 * @return if nothing found, return null

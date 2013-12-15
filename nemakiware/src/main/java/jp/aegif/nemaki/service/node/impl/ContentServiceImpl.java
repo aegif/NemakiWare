@@ -1435,13 +1435,17 @@ public class ContentServiceImpl implements ContentService {
 	// ///////////////////////////////////////
 	@Override
 	public AttachmentNode getAttachment(String attachmentId) {
-		return contentDaoService.getAttachment(attachmentId, true);
+		AttachmentNode an = contentDaoService.getAttachment(attachmentId);
+		contentDaoService.setStream(an);
+		return an;
 	}
 
 	@Override
 	public AttachmentNode getAttachmentRef(String attachmentId) {
-		return contentDaoService.getAttachment(attachmentId, false);
+		AttachmentNode an = contentDaoService.getAttachment(attachmentId);
+		return an;
 	}
+	
 	private String createAttachment(CallContext callContext,
 			ContentStream contentStream) {
 		AttachmentNode a = new AttachmentNode();
