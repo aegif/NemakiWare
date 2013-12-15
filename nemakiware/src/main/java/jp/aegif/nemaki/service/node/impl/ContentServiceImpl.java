@@ -518,7 +518,6 @@ public class ContentServiceImpl implements ContentService {
 			change.setChangeToken(latest.getChangeToken() + 1);
 		}
 
-		change.setLatest(true);
 		change.setType(NodeType.CHANGE.value());
 		change.setName(content.getName());
 		change.setBaseType(content.getType());
@@ -542,11 +541,11 @@ public class ContentServiceImpl implements ContentService {
 
 		// Modify old change event
 		contentDaoService.create(change);
-		if (latest != null) {
+		/*if (latest != null) {
 			latest.setLatest(false);
 			contentDaoService.update(latest);
 		}
-
+*/
 		// Update change token of the content
 		content.setChangeToken(change.getChangeToken());
 		update(content);

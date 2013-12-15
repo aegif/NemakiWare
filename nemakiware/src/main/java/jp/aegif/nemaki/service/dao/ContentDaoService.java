@@ -489,14 +489,6 @@ public interface ContentDaoService {
 	 */
 	Change create(Change change);
 	
-	/**
-	 * Update a change
-	 * 
-	 * @param change
-	 * @return a newly updated change event
-	 */
-	Change update(Change change);
-	
 	// ///////////////////////////////////////
 	// Archive
 	// ///////////////////////////////////////

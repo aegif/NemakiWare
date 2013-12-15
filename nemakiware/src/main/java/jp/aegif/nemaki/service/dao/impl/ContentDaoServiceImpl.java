@@ -378,21 +378,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Change create(Change change) {
 		Change created = nonCachedContentDaoService.create(change);
-		Change cachedLatest = this.requestDurationCache.getLatestChangeCache().get("lc");
-		if(cachedLatest != null){
-			this.requestDurationCache.getLatestChangeCache().set("lc", created);
-		}
+		this.requestDurationCache.getLatestChangeCache().clear();
+		Change latest = nonCachedContentDaoService.getLatestChange();
+		this.requestDurationCache.getLatestChangeCache().set("lc", latest);
 		return created;
-	}
-
-	@Override
-	public Change update(Change change) {
-		Change updated = nonCachedContentDaoService.update(change);
-		Change cachedLatest = this.requestDurationCache.getLatestChangeCache().get("lc");
-		if(cachedLatest != null){
-			this.requestDurationCache.getLatestChangeCache().set("lc", updated);
-		}
-		return updated;
 	}
 
 	@Override
