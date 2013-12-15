@@ -25,7 +25,6 @@ import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 import javax.imageio.ImageIO;
@@ -297,7 +296,8 @@ public class CouchContentDaoServiceImpl implements ContentDaoService {
 		Document doc = cd.convert();
 		return doc;
 	}
-
+	
+	@Override
 	public boolean existContent(String objectTypeId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("countByObjectType").key(objectTypeId);
@@ -645,15 +645,6 @@ public class CouchContentDaoServiceImpl implements ContentDaoService {
 	// ///////////////////////////////////////
 	// Attachment
 	// ///////////////////////////////////////
-
-	@Override
-	public AttachmentNode getAttachment(String attachmentId,
-			boolean includeStream) {
-		throw new UnsupportedOperationException(
-				Thread.currentThread().getStackTrace()[0].getMethodName()
-						+ ":this method is only for cahced service. No need for implementation.");
-	}
-
 	@Override
 	public AttachmentNode getAttachment(String attachmentId) {
 
@@ -679,6 +670,7 @@ public class CouchContentDaoServiceImpl implements ContentDaoService {
 		}
 	}
 
+	@Override
 	public void setStream(AttachmentNode attachmentNode) {
 		AttachmentInputStream ais = connector.getAttachment(
 				attachmentNode.getId(), ATTACHMENT_NAME);

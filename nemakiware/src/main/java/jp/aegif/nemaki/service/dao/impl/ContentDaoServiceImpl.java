@@ -484,9 +484,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	// Attachment
 	// ///////////////////////////////////////
 	@Override
-	public AttachmentNode getAttachment(String attachmentId,
-			boolean includeStream) {
-		
+	public AttachmentNode getAttachment(String attachmentId) {
 		Cache attachmentCache = cacheManager.getCache("attachmentCache");
 		Element v = attachmentCache.get(attachmentId);
 
@@ -502,22 +500,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				attachmentCache.put(new Element(attachmentId, an));
 			}
 		}
-		
-		if(includeStream){
-			nonCachedContentDaoService.setStream(an);
-		}
-		
-		return an;
-	}
 
-	@Override
-	public AttachmentNode getAttachment(String attachmentId) {
-		throw new UnsupportedOperationException(Thread.currentThread().getStackTrace()[0].getMethodName() + ":this method is only for non-cahced service.");
+		return an;
+		//throw new UnsupportedOperationException(Thread.currentThread().getStackTrace()[0].getMethodName() + ":this method is only for non-cahced service.");
 	}
 
 	@Override
 	public void setStream(AttachmentNode attachmentNode) {
-		throw new UnsupportedOperationException(Thread.currentThread().getStackTrace()[0].getMethodName() + ":this method is only for non-cahced service.");
+		nonCachedContentDaoService.setStream(attachmentNode);
+		
+		//throw new UnsupportedOperationException(Thread.currentThread().getStackTrace()[0].getMethodName() + ":this method is only for non-cahced service.");
 	}
 
 	@Override
