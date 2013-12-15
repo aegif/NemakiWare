@@ -51,7 +51,7 @@ public class ThreadLocalCache<K,V> {
     };
     
     public V get(K key) {
-        return localCaches.get().get(key);
+    	return localCaches.get().get(key);
     }
     
     public void set(K key, V value) {

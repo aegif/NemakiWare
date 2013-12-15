@@ -766,18 +766,12 @@ public class CouchContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Change getLatestChange() {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("latestChange");
+				.viewName("changesByCreated").descending(true).limit(1);
 		List<CouchChange> l = connector.queryView(query, CouchChange.class);
 		if (CollectionUtils.isEmpty(l)) {
 			return null;
 		} else {
-			if (l.size() != 1) {
-				log.warn("There are more than one documents with latest flag in CouchDB.");
-				Collections.sort(l);
-				return l.get(0).convert();
-			} else {
-				return l.get(0).convert();
-			}
+			return l.get(0).convert();
 		}
 	}
 
@@ -789,7 +783,7 @@ public class CouchContentDaoServiceImpl implements ContentDaoService {
 		if (latest == null || startToken > latest.getChangeToken())
 			return null;
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("changesByToken").descending(false).key(startToken)
+				.viewName("changesByCreated").descending(false).key(startToken)
 				.endKey(latest.getChangeToken());
 		if (maxItems > 0)
 			query.limit(maxItems);
@@ -809,18 +803,6 @@ public class CouchContentDaoServiceImpl implements ContentDaoService {
 		CouchChange cc = new CouchChange(change);
 		connector.create(cc);
 		return cc.convert();
-	}
-
-	@Override
-	public Change update(Change change) {
-		CouchChange cc = connector.get(CouchChange.class, change.getId());
-
-		// Set the latest revision for avoid conflict
-		CouchChange update = new CouchChange(change);
-		update.setRevision(cc.getRevision());
-
-		connector.update(update);
-		return update.convert();
 	}
 
 	// ///////////////////////////////////////
