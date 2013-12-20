@@ -775,7 +775,7 @@ public class CouchContentDaoServiceImpl implements ContentDaoService {
 		if (latest == null || startToken > latest.getChangeToken())
 			return null;
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("changesByCreated").descending(false).key(startToken)
+				.viewName("changesByToken").descending(false).key(startToken)
 				.endKey(latest.getChangeToken());
 		if (maxItems > 0)
 			query.limit(maxItems);
