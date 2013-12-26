@@ -1,4 +1,4 @@
-NemakiWare Version 1.0GA
+NemakiWare Version 1.0GA3
 ======================
 
 What is NemakiWare?
