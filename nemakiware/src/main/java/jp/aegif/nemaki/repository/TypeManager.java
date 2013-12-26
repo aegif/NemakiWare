@@ -21,9 +21,11 @@
  ******************************************************************************/
 package jp.aegif.nemaki.repository;
 
+import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
@@ -33,18 +35,14 @@ import java.util.Map.Entry;
 
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.NemakiPropertyDefinition;
+import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
+import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.service.dao.ContentDaoService;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.definitions.Choice;
-import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
-import org.apache.chemistry.opencmis.commons.definitions.FolderTypeDefinition;
-import org.apache.chemistry.opencmis.commons.definitions.ItemTypeDefinition;
-import org.apache.chemistry.opencmis.commons.definitions.PolicyTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
-import org.apache.chemistry.opencmis.commons.definitions.RelationshipTypeDefinition;
-import org.apache.chemistry.opencmis.commons.definitions.SecondaryTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionList;
@@ -59,10 +57,12 @@ import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentExcep
 import org.apache.chemistry.opencmis.commons.impl.WSConverter;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyDefinition;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.ChoiceImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.DocumentTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.FolderTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ItemTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PolicyTypeDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyBooleanDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDecimalDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyHtmlDefinitionImpl;
@@ -76,9 +76,8 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.TypeDefinitionCont
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.TypeDefinitionListImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.TypeMutabilityImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
-import org.springframework.util.CollectionUtils;
+import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections.MapUtils;
 
 /**
  * Type Manager class, defines document/folder/relationship/policy
@@ -86,50 +85,54 @@ import org.springframework.util.CollectionUtils;
 public class TypeManager implements
 		org.apache.chemistry.opencmis.server.support.TypeManager {
 
-	private static final Log log = LogFactory.getLog(TypeManager.class);
-	
 	/**
 	 * Spring bean
 	 */
 	private ContentDaoService contentDaoService;
-	
+
 	/**
 	 * Constant
 	 */
-	public final static String DOCUMENT_TYPE_ID = BaseTypeId.CMIS_DOCUMENT.value();
+	public final static String DOCUMENT_TYPE_ID = BaseTypeId.CMIS_DOCUMENT
+			.value();
 	public final static String FOLDER_TYPE_ID = BaseTypeId.CMIS_FOLDER.value();
-	public final static String RELATIONSHIP_TYPE_ID = BaseTypeId.CMIS_RELATIONSHIP.value();
+	public final static String RELATIONSHIP_TYPE_ID = BaseTypeId.CMIS_RELATIONSHIP
+			.value();
 	public final static String POLICY_TYPE_ID = BaseTypeId.CMIS_POLICY.value();
 	public final static String ITEM_TYPE_ID = BaseTypeId.CMIS_ITEM.value();
-	public final static String SECONDARY_TYPE_ID = BaseTypeId.CMIS_SECONDARY.value();
+	public final static String SECONDARY_TYPE_ID = BaseTypeId.CMIS_SECONDARY
+			.value();
 	private static final String NAMESPACE = "http://www.aegif.jp/Nemaki";
 	private final static boolean REQUIRED = true;
 	private final static boolean QUERYABLE = true;
 	private final static boolean ORDERABLE = true;
 
 	/**
-	 * Global variables containing type information 
+	 * Global variables containing type information
 	 */
-	//Map of all types
+	// Map of all types
 	private Map<String, TypeDefinitionContainer> types;
-	
-	//Map of all base types
+
+	// Map of all base types
 	private Map<String, TypeDefinitionContainer> basetypes;
-	
-	//Map of subtype-specific property
+
+	// Map of subtype-specific property
 	private Map<String, List<PropertyDefinition<?>>> subTypeProperties;
-	
-	
+
 	// /////////////////////////////////////////////////
 	// Constructor
 	// /////////////////////////////////////////////////
 	public TypeManager(ContentDaoService contentDaoService) {
 		setContentDaoService(contentDaoService);
-		
+
 		types = new HashMap<String, TypeDefinitionContainer>();
 		basetypes = new HashMap<String, TypeDefinitionContainer>();
 		subTypeProperties = new HashMap<String, List<PropertyDefinition<?>>>();
-		
+
+		generate();
+	}
+
+	private void generate() {
 		// Generate basetypes
 		addDocumentType();
 		addFolderType();
@@ -140,6 +143,17 @@ public class TypeManager implements
 
 		// Generate subtypes
 		addSubTypes();
+	}
+
+	// /////////////////////////////////////////////////
+	// Refresh global variables from DB
+	// /////////////////////////////////////////////////
+	public void refreshTypes() {
+		types.clear();
+		basetypes.clear();
+		subTypeProperties.clear();
+
+		generate();
 	}
 
 	// /////////////////////////////////////////////////
@@ -216,7 +230,7 @@ public class TypeManager implements
 		relationshipType.setDisplayName("relationship");
 		relationshipType.setBaseTypeId(BaseTypeId.CMIS_RELATIONSHIP);
 		relationshipType.setDescription("Relationship");
-		relationshipType.setIsCreatable(false);
+		relationshipType.setIsCreatable(true);
 		relationshipType.setIsFileable(false);
 		relationshipType.setIsQueryable(false);
 		relationshipType.setIsControllablePolicy(false);
@@ -282,8 +296,8 @@ public class TypeManager implements
 		itemType.setDisplayName("item");
 		itemType.setBaseTypeId(BaseTypeId.CMIS_ITEM);
 		itemType.setDescription("Item");
-		itemType.setIsCreatable(false);
-		itemType.setIsFileable(false);
+		itemType.setIsCreatable(true);
+		itemType.setIsFileable(true);
 		itemType.setIsQueryable(false);
 		itemType.setIsControllablePolicy(false);
 		itemType.setIsControllableAcl(false);
@@ -327,8 +341,9 @@ public class TypeManager implements
 		typeMutability.setCanDelete(false);
 		secondaryType.setTypeMutability(typeMutability);
 
-		secondaryType.setPropertyDefinitions(new HashMap<String, PropertyDefinition<?>>());
-		
+		secondaryType
+				.setPropertyDefinitions(new HashMap<String, PropertyDefinition<?>>());
+
 		addTypeInternal(types, secondaryType);
 		addTypeInternal(basetypes, secondaryType);
 	}
@@ -394,7 +409,7 @@ public class TypeManager implements
 		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.PATH,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
 				!REQUIRED, !QUERYABLE, !ORDERABLE, null));
-		
+
 		List<String> defaults = new ArrayList<String>();
 		defaults.add(BaseTypeId.CMIS_FOLDER.value());
 		defaults.add(BaseTypeId.CMIS_DOCUMENT.value());
@@ -408,8 +423,8 @@ public class TypeManager implements
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.IS_IMMUTABLE, PropertyType.BOOLEAN,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				!QUERYABLE, !ORDERABLE, null));
-
+				!QUERYABLE, !ORDERABLE, Arrays.asList(false)));
+		
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.IS_LATEST_VERSION, PropertyType.BOOLEAN,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
@@ -418,7 +433,7 @@ public class TypeManager implements
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.IS_MAJOR_VERSION, PropertyType.BOOLEAN,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				!QUERYABLE, !ORDERABLE, null));
+				QUERYABLE, !ORDERABLE, null));
 
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.IS_LATEST_MAJOR_VERSION, PropertyType.BOOLEAN,
@@ -448,27 +463,27 @@ public class TypeManager implements
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.VERSION_SERIES_CHECKED_OUT_BY, PropertyType.STRING,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				!QUERYABLE, !ORDERABLE, null));
+				QUERYABLE, !ORDERABLE, null));
 
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.VERSION_SERIES_CHECKED_OUT_ID, PropertyType.ID,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				!QUERYABLE, !ORDERABLE, null));
+				QUERYABLE, !ORDERABLE, null));
 
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.CHECKIN_COMMENT, PropertyType.STRING,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				!QUERYABLE, !ORDERABLE, null));
+				QUERYABLE, !ORDERABLE, null));
 
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.CONTENT_STREAM_LENGTH, PropertyType.INTEGER,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				!QUERYABLE, !ORDERABLE, null));
+				QUERYABLE, !ORDERABLE, null));
 
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.CONTENT_STREAM_MIME_TYPE, PropertyType.STRING,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				!QUERYABLE, !ORDERABLE, null));
+				QUERYABLE, !ORDERABLE, null));
 
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.CONTENT_STREAM_FILE_NAME, PropertyType.STRING,
@@ -484,11 +499,11 @@ public class TypeManager implements
 	private void addRelationshipPropertyDefinitions(
 			RelationshipTypeDefinitionImpl type) {
 		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.SOURCE_ID,
-				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
+				PropertyType.ID, Cardinality.SINGLE, Updatability.READWRITE,
 				REQUIRED, !QUERYABLE, !ORDERABLE, null));
 
 		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.TARGET_ID,
-				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
+				PropertyType.ID, Cardinality.SINGLE, Updatability.READWRITE,
 				REQUIRED, !QUERYABLE, !ORDERABLE, null));
 	}
 
@@ -514,10 +529,10 @@ public class TypeManager implements
 		boolean inherited = false;
 		boolean openChoice = false;
 
-		result = createPropDef(id, localName, localNameSpace,
-				queryName, displayName, description, datatype, cardinality,
-				updatability, required, queryable, inherited, openChoice,
-				orderable, defaultValue);
+		result = createPropDef(id, localName, localNameSpace, queryName,
+				displayName, description, datatype, cardinality, updatability,
+				required, queryable, inherited, null, openChoice, orderable,
+				defaultValue);
 
 		return result;
 	}
@@ -552,11 +567,11 @@ public class TypeManager implements
 		TypeDefinitionContainerImpl container = new TypeDefinitionContainerImpl();
 		container.setTypeDefinition(buildTypeDefinitionFromDB(type));
 		container.setChildren(new ArrayList<TypeDefinitionContainer>());
-		
-		if(types.get(type.getTypeId()) == null){
+
+		if (types.get(type.getTypeId()) == null) {
 			types.put(type.getTypeId(), container);
-		}else{
-			//TODO logging: can't overwrite the type
+		} else {
+			// TODO logging: can't overwrite the type
 		}
 
 		List<NemakiTypeDefinition> children = new ArrayList<NemakiTypeDefinition>();
@@ -577,7 +592,7 @@ public class TypeManager implements
 		return;
 	}
 
-	private TypeDefinition buildTypeDefinitionFromDB(
+	public AbstractTypeDefinition buildTypeDefinitionFromDB(
 			NemakiTypeDefinition nemakiType) {
 
 		switch (nemakiType.getBaseId()) {
@@ -653,53 +668,65 @@ public class TypeManager implements
 
 		// Inherit parent's properties
 		TypeDefinition copied = copyTypeDefinition(parentType);
-		Map<String,PropertyDefinition<?>> parentProperties = copied.getPropertyDefinitions();
-		if(CollectionUtils.isEmpty(parentProperties)){
-			parentProperties = new HashMap<String,PropertyDefinition<?>>();
+		Map<String, PropertyDefinition<?>> parentProperties = copied
+				.getPropertyDefinitions();
+		if (MapUtils.isEmpty(parentProperties)) {
+			parentProperties = new HashMap<String, PropertyDefinition<?>>();
 		}
-		for(String key : parentProperties.keySet()){
+		for (String key : parentProperties.keySet()) {
 			PropertyDefinition<?> parentProperty = parentProperties.get(key);
-			setInheritedToTrue((AbstractPropertyDefinition<?>)parentProperty);
+			setInheritedToTrue((AbstractPropertyDefinition<?>) parentProperty);
 		}
 		type.setPropertyDefinitions(parentProperties);
-		
+
 		// Add specific properties
 		Map<String, PropertyDefinition<?>> properties = type
 				.getPropertyDefinitions();
 		List<PropertyDefinition<?>> specificProperties = new ArrayList<PropertyDefinition<?>>();
-		for (String propertyId : nemakiType.getProperties()) {
-			NemakiPropertyDefinition p = contentDaoService
-					.getPropertyDefinition(propertyId);
-			PropertyDefinition<?> property = createPropDef(
-					p.getPropertyId(), p.getLocalName(), p.getLocalNameSpace(),
-					p.getQueryName(), p.getDisplayName(), p.getDescription(),
-					p.getPropertyType(), p.getCardinality(),
-					p.getUpdatability(), p.isRequired(), p.isQueryable(),
-					false, p.isOpenChoice(), p.isOrderable(),
-					p.getDefaultValue());
-			properties.put(p.getPropertyId(), property);
-			
-			//for subTypeProperties
-			specificProperties.add(property);
+		if (!CollectionUtils.isEmpty(nemakiType.getProperties())) {
+			for (String propertyId : nemakiType.getProperties()) {
+				NemakiPropertyDefinitionDetail detail = contentDaoService
+						.getPropertyDefinitionDetail(propertyId);
+				NemakiPropertyDefinitionCore core = contentDaoService
+						.getPropertyDefinitionCore(detail.getCoreNodeId());
+
+				NemakiPropertyDefinition p = new NemakiPropertyDefinition(core,
+						detail);
+
+				PropertyDefinition<?> property = createPropDef(
+						p.getPropertyId(), p.getLocalName(),
+						p.getLocalNameSpace(), p.getQueryName(),
+						p.getDisplayName(), p.getDescription(),
+						p.getPropertyType(), p.getCardinality(),
+						p.getUpdatability(), p.isRequired(), p.isQueryable(),
+						false, p.getChoices(), p.isOpenChoice(), p.isOrderable(),
+						p.getDefaultValue());
+				properties.put(p.getPropertyId(), property);
+
+				// for subTypeProperties
+				specificProperties.add(property);
+			}
 		}
-		
-		//for subTypeProperties
-		if(subTypeProperties.containsKey(type.getParentTypeId())){
-			List<PropertyDefinition<?>> parentSpecificProperties = subTypeProperties.get(type.getParentTypeId());
+
+		// for subTypeProperties
+		if (subTypeProperties.containsKey(type.getParentTypeId())) {
+			List<PropertyDefinition<?>> parentSpecificProperties = subTypeProperties
+					.get(type.getParentTypeId());
 			subTypeProperties.put(type.getId(), specificProperties);
 			specificProperties.addAll(parentSpecificProperties);
 			subTypeProperties.put(type.getId(), specificProperties);
-		}else{
+		} else {
 			subTypeProperties.put(type.getId(), specificProperties);
 		}
 	}
 
-	private AbstractPropertyDefinition<?> setInheritedToTrue(AbstractPropertyDefinition<?> property){
+	private AbstractPropertyDefinition<?> setInheritedToTrue(
+			AbstractPropertyDefinition<?> property) {
 		property.setIsInherited(true);
 		return property;
 	}
-	
-	private DocumentTypeDefinition buildDocumentTypeDefinitionFromDB(
+
+	private DocumentTypeDefinitionImpl buildDocumentTypeDefinitionFromDB(
 			NemakiTypeDefinition nemakiType) {
 		DocumentTypeDefinitionImpl type = new DocumentTypeDefinitionImpl();
 		DocumentTypeDefinitionImpl parentType = (DocumentTypeDefinitionImpl) types
@@ -722,7 +749,7 @@ public class TypeManager implements
 		return type;
 	}
 
-	private FolderTypeDefinition buildFolderTypeDefinitionFromDB(
+	private FolderTypeDefinitionImpl buildFolderTypeDefinitionFromDB(
 			NemakiTypeDefinition nemakiType) {
 		FolderTypeDefinitionImpl type = new FolderTypeDefinitionImpl();
 		FolderTypeDefinitionImpl parentType = (FolderTypeDefinitionImpl) types
@@ -735,7 +762,7 @@ public class TypeManager implements
 		return type;
 	}
 
-	private RelationshipTypeDefinition buildRelationshipTypeDefinitionFromDB(
+	private RelationshipTypeDefinitionImpl buildRelationshipTypeDefinitionFromDB(
 			NemakiTypeDefinition nemakiType) {
 		RelationshipTypeDefinitionImpl type = new RelationshipTypeDefinitionImpl();
 		RelationshipTypeDefinitionImpl parentType = (RelationshipTypeDefinitionImpl) types
@@ -752,7 +779,7 @@ public class TypeManager implements
 		return type;
 	}
 
-	private PolicyTypeDefinition buildPolicyTypeDefinitionFromDB(
+	private PolicyTypeDefinitionImpl buildPolicyTypeDefinitionFromDB(
 			NemakiTypeDefinition nemakiType) {
 		PolicyTypeDefinitionImpl type = new PolicyTypeDefinitionImpl();
 		PolicyTypeDefinitionImpl parentType = (PolicyTypeDefinitionImpl) types
@@ -765,7 +792,7 @@ public class TypeManager implements
 		return type;
 	}
 
-	private ItemTypeDefinition buildItemTypeDefinitionFromDB(
+	private ItemTypeDefinitionImpl buildItemTypeDefinitionFromDB(
 			NemakiTypeDefinition nemakiType) {
 		ItemTypeDefinitionImpl type = new ItemTypeDefinitionImpl();
 		ItemTypeDefinitionImpl parentType = (ItemTypeDefinitionImpl) types.get(
@@ -778,7 +805,7 @@ public class TypeManager implements
 		return type;
 	}
 
-	private SecondaryTypeDefinition buildSecondaryTypeDefinitionFromDB(
+	private SecondaryTypeDefinitionImpl buildSecondaryTypeDefinitionFromDB(
 			NemakiTypeDefinition nemakiType) {
 		SecondaryTypeDefinitionImpl type = new SecondaryTypeDefinitionImpl();
 		SecondaryTypeDefinitionImpl parentType = (SecondaryTypeDefinitionImpl) types
@@ -790,7 +817,19 @@ public class TypeManager implements
 
 		return type;
 	}
-	
+
+	public NemakiTypeDefinition convertTypeDefinition(
+			TypeDefinition typeDefinition) {
+		return null;
+	}
+
+	// TODO コンストラクタにする
+	public NemakiPropertyDefinition convertPropertyDefinition(
+			PropertyDefinition<?> propertyDefinition) {
+
+		return null;
+	}
+
 	// /////////////////////////////////////////////////
 	// Type Service Methods
 	// /////////////////////////////////////////////////
@@ -824,7 +863,7 @@ public class TypeManager implements
 	@Override
 	public List<TypeDefinitionContainer> getRootTypes() {
 		List<TypeDefinitionContainer> rootTypes = new ArrayList<TypeDefinitionContainer>();
-		for(String key : basetypes.keySet()){
+		for (String key : basetypes.keySet()) {
 			rootTypes.add(basetypes.get(key));
 		}
 		return rootTypes;
@@ -849,10 +888,11 @@ public class TypeManager implements
 		return tc.getTypeDefinition();
 	}
 
-	public List<PropertyDefinition<?>>getSpecificPropertyDefinitions(String typeId){
+	public List<PropertyDefinition<?>> getSpecificPropertyDefinitions(
+			String typeId) {
 		return subTypeProperties.get(typeId);
 	}
-	
+
 	/**
 	 * CMIS getTypesChildren. If parent type id is not specified, return only
 	 * base types.
@@ -880,7 +920,8 @@ public class TypeManager implements
 				if (count >= 0)
 					continue;
 				TypeDefinitionContainer type = basetypes.get(key);
-				result.getList().add(copyTypeDefinition(type.getTypeDefinition()));
+				result.getList().add(
+						copyTypeDefinition(type.getTypeDefinition()));
 			}
 
 			result.setHasMoreItems((result.getList().size() + skip) < max);
@@ -896,8 +937,8 @@ public class TypeManager implements
 					skip--;
 					continue;
 				}
-
-				result.getList().add(child.getTypeDefinition());
+				
+				result.getList().add(copyTypeDefinition(child.getTypeDefinition()));
 
 				max--;
 				if (max == 0) {
@@ -914,8 +955,7 @@ public class TypeManager implements
 			for (TypeDefinition type : result.getList()) {
 				try {
 					if (type.getPropertyDefinitions() != null) {
-						//TODO clear() destroys PropertyDefinitions of "types"
-						//type.getPropertyDefinitions().clear();
+						type.getPropertyDefinitions().clear();
 					}
 				} catch (Exception e) {
 					System.out.print(e);
@@ -938,6 +978,9 @@ public class TypeManager implements
 		int d = (depth == null ? -1 : depth.intValue());
 		if (d == 0) {
 			throw new CmisInvalidArgumentException("Depth must not be 0!");
+		} else if (d < -1) {
+			throw new CmisInvalidArgumentException(
+					"Depth must be positive(except for -1, that means infinity!");
 		}
 
 		// set property definition flag to default value if not set
@@ -945,62 +988,107 @@ public class TypeManager implements
 				: includePropertyDefinitions.booleanValue());
 
 		if (typeId == null) {
-			result.add(getTypesDescendantsInternal(d, types.get(FOLDER_TYPE_ID), ipd));
-			result.add(getTypesDescendantsInternal(d, types.get(DOCUMENT_TYPE_ID), ipd));
-			result.add(getTypesDescendantsInternal(d, types.get(RELATIONSHIP_TYPE_ID), ipd));
-			result.add(getTypesDescendantsInternal(d, types.get(POLICY_TYPE_ID), ipd));
-			result.add(getTypesDescendantsInternal(d, types.get(ITEM_TYPE_ID), ipd));
-			result.add(getTypesDescendantsInternal(d, types.get(SECONDARY_TYPE_ID), ipd));
+			flattenTypeDefinitionContainer(types.get(FOLDER_TYPE_ID), result,
+					d, ipd);
+			flattenTypeDefinitionContainer(types.get(DOCUMENT_TYPE_ID), result,
+					d, ipd);
+			flattenTypeDefinitionContainer(types.get(RELATIONSHIP_TYPE_ID),
+					result, d, ipd);
+			flattenTypeDefinitionContainer(types.get(POLICY_TYPE_ID), result,
+					d, ipd);
+			flattenTypeDefinitionContainer(types.get(ITEM_TYPE_ID), result, d,
+					ipd);
+			flattenTypeDefinitionContainer(types.get(SECONDARY_TYPE_ID),
+					result, d, ipd);
 		} else {
-			TypeDefinitionContainer tc = types.get(typeId);
-			if (tc != null) {
-				result.add(getTypesDescendantsInternal(d, tc, ipd));
-			}
+			TypeDefinitionContainer tdc = types.get(typeId);
+			flattenTypeDefinitionContainer(tdc, result, d, ipd);
 		}
 
+		return result;
+	}
+
+	private void flattenTypeDefinitionContainer(TypeDefinitionContainer tdc,
+			List<TypeDefinitionContainer> result, int depth,
+			boolean includePropertyDefinitions) {
+		if (depth == 0)
+			return;
+		if(includePropertyDefinitions){
+			result.add(tdc);
+		}else{
+			result.add(removeProeprtyDefinition(tdc));
+		}
+		
+		List<TypeDefinitionContainer> children = tdc.getChildren();
+		if (CollectionUtils.isNotEmpty(children)) {
+			for (TypeDefinitionContainer child : children) {
+				flattenTypeDefinitionContainer(child, result, depth - 1,
+						includePropertyDefinitions);
+			}
+		}
+	}
+	
+	private TypeDefinitionContainer removeProeprtyDefinition(TypeDefinitionContainer tdc){
+		//Remove from its own typeDefinition
+		TypeDefinition tdf = tdc.getTypeDefinition();
+		TypeDefinition copy = copyTypeDefinition(tdf);
+		Map<String, PropertyDefinition<?>> propDefs = copy.getPropertyDefinitions();
+		if(MapUtils.isNotEmpty(propDefs)){
+			propDefs.clear();
+		}
+		TypeDefinitionContainerImpl result = new TypeDefinitionContainerImpl(copy);
+		
+		//Remove from children recursively
+		List<TypeDefinitionContainer> children = tdc.getChildren();
+		if(CollectionUtils.isNotEmpty(children)){
+			List<TypeDefinitionContainer> l = new ArrayList<TypeDefinitionContainer>();
+			for(TypeDefinitionContainer child : children){
+				l.add(removeProeprtyDefinition(child));
+			}
+			result.setChildren(l);
+		}
+		
 		return result;
 	}
 
 	/**
-	 * Gathers the type descendants tree.
+	 * Get a type definition Internal Use
+	 * 
+	 * @param content
+	 * @return
 	 */
-	private TypeDefinitionContainer getTypesDescendantsInternal(int depth,
-			TypeDefinitionContainer tc, boolean includePropertyDefinitions) {
-		TypeDefinitionContainerImpl result = new TypeDefinitionContainerImpl();
-
-		TypeDefinition type = copyTypeDefinition(tc.getTypeDefinition());
-		if (!includePropertyDefinitions) {
-			//TODO clear() destroys PropertyDefinitions of "types"
-			//type.getPropertyDefinitions().clear();
-		}
-
-		result.setTypeDefinition(type);
-
-		if (depth != 0) {
-			if (tc.getChildren() != null) {
-				result.setChildren(new ArrayList<TypeDefinitionContainer>());
-				for (TypeDefinitionContainer tdc : tc.getChildren()) {
-					result.getChildren().add(
-							getTypesDescendantsInternal(depth < 0 ? -1 : depth - 1,
-									tdc, includePropertyDefinitions));
-				}
-			}
-		}
-
-		return result;
-	}
-	
 	public TypeDefinition getTypeDefinition(Content content) {
 		String typeId = (content.getObjectType() == null) ? content.getType()
 				: content.getObjectType();
 		return getTypeDefinition(typeId);
 	}
-	
-	
+
+	/**
+	 * List up specification-default property ids
+	 * 
+	 * @return
+	 */
+	public List<String> getSystemPropertyIds() {
+		List<String> ids = new ArrayList<String>();
+
+		Field[] fields = PropertyIds.class.getDeclaredFields();
+		for (Field field : fields) {
+			try {
+				String cmisId = (String) (field.get(null));
+				ids.add(cmisId);
+			} catch (IllegalArgumentException e) {
+				e.printStackTrace();
+			} catch (IllegalAccessException e) {
+				e.printStackTrace();
+			}
+		}
+		return ids;
+	}
+
 	// //////////////////////////////////////////////////////////////////////////////
 	// Utility
 	// //////////////////////////////////////////////////////////////////////////////
-	private TypeDefinition copyTypeDefinition(TypeDefinition type) {
+	public TypeDefinition copyTypeDefinition(TypeDefinition type) {
 		return WSConverter.convert(WSConverter.convert(type));
 	}
 
@@ -1047,28 +1135,28 @@ public class TypeManager implements
 		}
 		return false;
 	}
-	
-	public static PropertyDefinition<?> createPropDef(String id,
+
+	public  PropertyDefinition<?> createPropDef(String id,
 			String localName, String localNameSpace, String queryName,
 			String displayName, String description, PropertyType datatype,
 			Cardinality cardinality, Updatability updatability,
-			boolean required, boolean queryable, boolean inherited,
+			boolean required, boolean queryable, boolean inherited, List<jp.aegif.nemaki.model.Choice>choices,
 			boolean openChoice, boolean orderable, List<?> defaultValue) {
 		PropertyDefinition<?> result = null;
 		switch (datatype) {
 		case BOOLEAN:
-			result = createPropBooleanTimeDef(id, localName, localNameSpace,
+			result = createPropBooleanDef(id, localName, localNameSpace,
 					queryName, displayName, description, datatype, cardinality,
 					updatability, inherited, required, queryable, orderable,
-					null, openChoice,
-					convertListType(String.class, defaultValue));
+					choices, openChoice,
+					convertListType(Boolean.class, defaultValue));
 			break;
 		case DATETIME:
 
 			result = createPropDateTimeDef(id, localName, localNameSpace,
 					queryName, displayName, description, datatype, cardinality,
 					updatability, inherited, required, queryable, orderable,
-					null, openChoice,
+					choices, openChoice,
 					convertListType(GregorianCalendar.class, defaultValue),
 					DateTimeResolution.TIME);
 			break;
@@ -1076,7 +1164,7 @@ public class TypeManager implements
 			result = createPropDecimalDef(id, localName, localNameSpace,
 					queryName, displayName, description, datatype, cardinality,
 					updatability, inherited, required, queryable, orderable,
-					null, openChoice,
+					choices, openChoice,
 					convertListType(BigDecimal.class, defaultValue),
 					DecimalPrecision.BITS64, null, null);
 			break;
@@ -1084,35 +1172,35 @@ public class TypeManager implements
 			result = createPropHtmlDef(id, localName, localNameSpace,
 					queryName, displayName, description, datatype, cardinality,
 					updatability, inherited, required, queryable, orderable,
-					null, openChoice,
+					choices, openChoice,
 					convertListType(String.class, defaultValue));
 			break;
 		case ID:
 			result = createPropIdDef(id, localName, localNameSpace, queryName,
 					displayName, description, datatype, cardinality,
 					updatability, inherited, required, queryable, orderable,
-					null, openChoice,
+					choices, openChoice,
 					convertListType(String.class, defaultValue));
 			break;
 		case INTEGER:
 			result = createPropIntegerDef(id, localName, localNameSpace,
 					queryName, displayName, description, datatype, cardinality,
 					updatability, inherited, required, queryable, orderable,
-					null, openChoice,
+					choices, openChoice,
 					convertListType(BigInteger.class, defaultValue), null, null);
 			break;
 		case STRING:
 			result = createPropStringDef(id, localName, localNameSpace,
 					queryName, displayName, description, datatype, cardinality,
 					updatability, inherited, required, queryable, orderable,
-					null, openChoice,
+					choices, openChoice,
 					convertListType(String.class, defaultValue), null);
 			break;
 		case URI:
 			result = createPropUriDef(id, localName, localNameSpace, queryName,
 					displayName, description, datatype, cardinality,
 					updatability, inherited, required, queryable, orderable,
-					null, openChoice,
+					choices, openChoice,
 					convertListType(String.class, defaultValue));
 			break;
 		default:
@@ -1131,31 +1219,63 @@ public class TypeManager implements
 		}
 		return result;
 	}
+	
+	private <T> List<Choice<T>>convertChoices(Class<T> clazz, List<jp.aegif.nemaki.model.Choice>choices){
+		if(CollectionUtils.isEmpty(choices)){
+			return null;
+		}else{
+			
+			List<Choice<T>> results = new ArrayList<Choice<T>>();
+			for(jp.aegif.nemaki.model.Choice choice : choices){
+				ChoiceImpl<T>cmisChoice = new ChoiceImpl<T>();
+				//displayName
+				cmisChoice.setDisplayName(choice.getDisplayName());
 
-	private static PropertyDefinition<?> createPropBooleanTimeDef(String id,
+				//value
+				List<Object>value = choice.getValue();
+				List<T> convertedValue = new ArrayList<T>();
+				for(Object obj : value){
+					convertedValue.add((T) obj);
+				}
+				cmisChoice.setValue(convertedValue);
+				
+				//children
+				List<jp.aegif.nemaki.model.Choice> children = choice.getChildren();
+				List<Choice<T>> convertedChildren = convertChoices(clazz, children);
+				cmisChoice.setChoice(convertedChildren);
+				
+				results.add(cmisChoice);
+			}
+			
+			return results;
+		}
+	}
+
+	private PropertyDefinition<?> createPropBooleanDef(String id,
 			String localName, String localNameSpace, String queryName,
 			String displayName, String description, PropertyType datatype,
 			Cardinality cardinality, Updatability updatability,
 			boolean inherited, boolean required, boolean queryable,
-			boolean orderable, List<Choice<String>> choiceList,
-			boolean openChoice, List<String> defaultValue) {
+			boolean orderable, List<jp.aegif.nemaki.model.Choice>choices,
+			boolean openChoice, List<Boolean> defaultValue) {
 		// Set base attributes
-		PropertyStringDefinitionImpl result = new PropertyStringDefinitionImpl();
-		result = (PropertyStringDefinitionImpl) createPropBaseDef(result, id,
+		PropertyBooleanDefinitionImpl result = new PropertyBooleanDefinitionImpl();
+		result = (PropertyBooleanDefinitionImpl) createPropBaseDef(result, id,
 				localName, localNameSpace, queryName, displayName, description,
 				datatype, cardinality, updatability, inherited, required,
 				queryable, orderable, openChoice);
-		result.setChoices(choiceList);
+		
+		result.setChoices(convertChoices(Boolean.class, choices));
 		result.setDefaultValue(defaultValue);
 		return result;
 	}
 
-	private static PropertyDefinition<?> createPropDateTimeDef(String id,
+	private PropertyDefinition<?> createPropDateTimeDef(String id,
 			String localName, String localNameSpace, String queryName,
 			String displayName, String description, PropertyType datatype,
 			Cardinality cardinality, Updatability updatability,
 			boolean inherited, boolean required, boolean queryable,
-			boolean orderable, List<Choice<GregorianCalendar>> choiceList,
+			boolean orderable, List<jp.aegif.nemaki.model.Choice>choices,
 			boolean openChoice, List<GregorianCalendar> defaultValue,
 			DateTimeResolution resolution) {
 		// Set base attributes
@@ -1164,7 +1284,7 @@ public class TypeManager implements
 				localName, localNameSpace, queryName, displayName, description,
 				datatype, cardinality, updatability, inherited, required,
 				queryable, orderable, openChoice);
-		result.setChoices(choiceList);
+		result.setChoices(convertChoices(GregorianCalendar.class, choices));
 		result.setDefaultValue(defaultValue);
 		// Set DateTime-specific attributes
 		result.setDateTimeResolution(resolution);
@@ -1172,12 +1292,12 @@ public class TypeManager implements
 		return result;
 	}
 
-	private static PropertyDefinition<?> createPropDecimalDef(String id,
+	private PropertyDefinition<?> createPropDecimalDef(String id,
 			String localName, String localNameSpace, String queryName,
 			String displayName, String description, PropertyType datatype,
 			Cardinality cardinality, Updatability updatability,
 			boolean inherited, boolean required, boolean queryable,
-			boolean orderable, List<Choice<BigDecimal>> choiceList,
+			boolean orderable, List<jp.aegif.nemaki.model.Choice>choices,
 			boolean openChoice, List<BigDecimal> defaultValue,
 			DecimalPrecision precision, BigDecimal minValue, BigDecimal maxValue) {
 		// Set base attributes
@@ -1186,7 +1306,7 @@ public class TypeManager implements
 				localName, localNameSpace, queryName, displayName, description,
 				datatype, cardinality, updatability, inherited, required,
 				queryable, orderable, openChoice);
-		result.setChoices(choiceList);
+		result.setChoices(convertChoices(BigDecimal.class, choices));
 		result.setDefaultValue(defaultValue);
 		// Set Decimal-specific attributes
 		result.setMinValue(minValue);
@@ -1195,12 +1315,12 @@ public class TypeManager implements
 		return result;
 	}
 
-	private static PropertyDefinition<?> createPropHtmlDef(String id,
+	private PropertyDefinition<?> createPropHtmlDef(String id,
 			String localName, String localNameSpace, String queryName,
 			String displayName, String description, PropertyType datatype,
 			Cardinality cardinality, Updatability updatability,
 			boolean inherited, boolean required, boolean queryable,
-			boolean orderable, List<Choice<String>> choiceList,
+			boolean orderable, List<jp.aegif.nemaki.model.Choice>choices,
 			boolean openChoice, List<String> defaultValue) {
 		// Set base attributes
 		PropertyHtmlDefinitionImpl result = new PropertyHtmlDefinitionImpl();
@@ -1208,18 +1328,18 @@ public class TypeManager implements
 				localName, localNameSpace, queryName, displayName, description,
 				datatype, cardinality, updatability, inherited, required,
 				queryable, orderable, openChoice);
-		result.setChoices(choiceList);
+		result.setChoices(convertChoices(String.class, choices));
 		result.setDefaultValue(defaultValue);
 
 		return result;
 	}
 
-	private static PropertyDefinition<?> createPropIdDef(String id,
+	private PropertyDefinition<?> createPropIdDef(String id,
 			String localName, String localNameSpace, String queryName,
 			String displayName, String description, PropertyType datatype,
 			Cardinality cardinality, Updatability updatability,
 			boolean inherited, boolean required, boolean queryable,
-			boolean orderable, List<Choice<String>> choiceList,
+			boolean orderable, List<jp.aegif.nemaki.model.Choice>choices,
 			boolean openChoice, List<String> defaultValue) {
 		// Set base attributes
 		PropertyIdDefinitionImpl result = new PropertyIdDefinitionImpl();
@@ -1227,18 +1347,18 @@ public class TypeManager implements
 				localName, localNameSpace, queryName, displayName, description,
 				datatype, cardinality, updatability, inherited, required,
 				queryable, orderable, openChoice);
-		result.setChoices(choiceList);
+		result.setChoices(convertChoices(String.class, choices));
 		result.setDefaultValue(defaultValue);
 
 		return result;
 	}
 
-	private static PropertyDefinition<?> createPropIntegerDef(String id,
+	private PropertyDefinition<?> createPropIntegerDef(String id,
 			String localName, String localNameSpace, String queryName,
 			String displayName, String description, PropertyType datatype,
 			Cardinality cardinality, Updatability updatability,
 			boolean inherited, boolean required, boolean queryable,
-			boolean orderable, List<Choice<BigInteger>> choiceList,
+			boolean orderable, List<jp.aegif.nemaki.model.Choice>choices,
 			boolean openChoice, List<BigInteger> defaultValue,
 			BigInteger minValue, BigInteger maxValue) {
 		// Set base attributes
@@ -1247,7 +1367,7 @@ public class TypeManager implements
 				localName, localNameSpace, queryName, displayName, description,
 				datatype, cardinality, updatability, inherited, required,
 				queryable, orderable, openChoice);
-		result.setChoices(choiceList);
+		result.setChoices(convertChoices(BigInteger.class, choices));
 		result.setDefaultValue(defaultValue);
 		// Set Integer-specific attributes
 		result.setMinValue(minValue);
@@ -1256,12 +1376,12 @@ public class TypeManager implements
 		return result;
 	}
 
-	private static PropertyDefinition<?> createPropStringDef(String id,
+	private PropertyDefinition<?> createPropStringDef(String id,
 			String localName, String localNameSpace, String queryName,
 			String displayName, String description, PropertyType datatype,
 			Cardinality cardinality, Updatability updatability,
 			boolean inherited, boolean required, boolean queryable,
-			boolean orderable, List<Choice<String>> choiceList,
+			boolean orderable, List<jp.aegif.nemaki.model.Choice>choices,
 			boolean openChoice, List<String> defaultValue, BigInteger maxLength) {
 		// Set base attributes
 		PropertyStringDefinitionImpl result = new PropertyStringDefinitionImpl();
@@ -1269,7 +1389,7 @@ public class TypeManager implements
 				localName, localNameSpace, queryName, displayName, description,
 				datatype, cardinality, updatability, inherited, required,
 				queryable, orderable, openChoice);
-		result.setChoices(choiceList);
+		result.setChoices(convertChoices(String.class, choices));
 		result.setDefaultValue(defaultValue);
 		// Set String-specific attributes
 		if (maxLength != null)
@@ -1277,12 +1397,12 @@ public class TypeManager implements
 		return result;
 	}
 
-	private static PropertyDefinition<?> createPropUriDef(String id,
+	private PropertyDefinition<?> createPropUriDef(String id,
 			String localName, String localNameSpace, String queryName,
 			String displayName, String description, PropertyType datatype,
 			Cardinality cardinality, Updatability updatability,
 			boolean inherited, boolean required, boolean queryable,
-			boolean orderable, List<Choice<String>> choiceList,
+			boolean orderable, List<jp.aegif.nemaki.model.Choice>choices,
 			boolean openChoice, List<String> defaultValue) {
 		// Set base attributes
 		PropertyUriDefinitionImpl result = new PropertyUriDefinitionImpl();
@@ -1290,13 +1410,13 @@ public class TypeManager implements
 				localName, localNameSpace, queryName, displayName, description,
 				datatype, cardinality, updatability, inherited, required,
 				queryable, orderable, openChoice);
-		result.setChoices(choiceList);
+		result.setChoices(convertChoices(String.class, choices));
 		result.setDefaultValue(defaultValue);
 
 		return result;
 	}
 
-	private static PropertyDefinition<?> createPropBaseDef(
+	private PropertyDefinition<?> createPropBaseDef(
 			AbstractPropertyDefinition<?> result, String id, String localName,
 			String localNameSpace, String queryName, String displayName,
 			String description, PropertyType datatype, Cardinality cardinality,
@@ -1304,11 +1424,11 @@ public class TypeManager implements
 			boolean queryable, boolean orderable, boolean openChoice) {
 		// Set default value if not set(null)
 		localName = (localName == null) ? id : localName;
-		localNameSpace = (localNameSpace == null)?NAMESPACE:localNameSpace;
+		localNameSpace = (localNameSpace == null) ? NAMESPACE : localNameSpace;
 		queryName = (queryName == null) ? id : queryName;
 		displayName = (displayName == null) ? id : displayName;
 		description = (description == null) ? id : description;
-		
+
 		// Set base attributes
 		result.setId(id);
 		result.setLocalName(localName);
@@ -1326,7 +1446,12 @@ public class TypeManager implements
 		result.setIsOpenChoice(openChoice);
 		return result;
 	}
-	
+
+	public Object getSingleDefaultValue(String propertyId, String typeId){
+		TypeDefinition typeDef = getTypeDefinition(typeId);
+		PropertyDefinition<?> propertyDefiniton = typeDef.getPropertyDefinitions().get(propertyId);
+		return propertyDefiniton.getDefaultValue().get(0);
+	}
 	
 	// /////////////////////////////////////////////////
 	// Spring Injection

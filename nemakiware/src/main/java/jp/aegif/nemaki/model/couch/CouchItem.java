@@ -19,9 +19,25 @@
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
-package jp.aegif.nemaki.model;
+package jp.aegif.nemaki.model.couch;
 
-public class NemakiAttachment extends Content {
-	private static final long serialVersionUID = 1151327914145719025L;
-	public static final String TYPE = "attachment";
+import jp.aegif.nemaki.model.Item;
+
+public class CouchItem extends CouchContent{
+	
+	private static final long serialVersionUID = 5431775285043659123L;
+
+	public CouchItem(){
+		super();
+	}
+	
+	public CouchItem(Item i){
+		super(i);
+	}
+
+	public Item convert(){
+		Item i = new Item(super.convert());
+	
+		return i;
+	}
 }

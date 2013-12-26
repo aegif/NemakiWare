@@ -19,50 +19,47 @@
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
+
 package jp.aegif.nemaki.model;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
-import org.codehaus.jackson.annotate.JsonIgnoreProperties;
-
-@JsonIgnoreProperties(ignoreUnknown=true)
-public class Folder extends Content{
-	private static final long serialVersionUID = 6163910273366541497L;
-	public static final String TYPE = "folder";
-
-	/**
-	 * Documents this folder includes.
-	 */
-	private List<String> documents;
-
-	public List<String> getDocuments() {
-		return documents;
+public class Choice {
+	private String displayName;
+	private List<Object> value;
+	private List<Choice> children;
+	
+	public Choice(){
+		
+	}
+	
+	public Choice(String displayname, List<Object> value, List<Choice> children){
+		setDisplayName(displayname);
+		setValue(value);
+		setChildren(children);
+	}
+	
+	public String getDisplayName() {
+		return displayName;
+	}
+	
+	public void setDisplayName(String displayName) {
+		this.displayName = displayName;
+	}
+	
+	public List<Object> getValue() {
+		return value;
 	}
 
-	public void setDocuments(List<String> documents) {
-		this.documents = documents;
+	public void setValue(List<Object> value) {
+		this.value = value;
 	}
 
-	@Override
-	public String toString() {
-		@SuppressWarnings("serial")
-		Map<String, Object> m = new HashMap<String, Object>() {
-			{
-				put("id", getId());
-				put("revision", getRevision());
-				put("name", getName());
-				put("type", getType());
-				put("creator", getCreator());
-				put("created", getCreated());
-				put("modifier", getModifier());
-				put("modified", getModified());
-				put("parentId", getParentId());
-				put("path", getPath());
-				put("documents", getDocuments());
-			}
-		};
-		return m.toString();
+	public List<Choice> getChildren() {
+		return children;
+	}
+	
+	public void setChildren(List<Choice> children) {
+		this.children = children;
 	}
 }

@@ -397,7 +397,7 @@ public class NemakiCmisService extends AbstractCmisService {
 		getRepository(repositoryId).updateProperties(getCallContext(),
 				objectId, changeToken, properties);
 	}
-
+	
 	// --- Versioning Service Implementation ---
 	@Override
 	public void checkOut(String repositoryId, Holder<String> objectId,
@@ -639,9 +639,7 @@ public class NemakiCmisService extends AbstractCmisService {
 			Holder<String> objectId, Holder<String> changeToken,
 			ContentStream contentStream, boolean isLastChunk,
 			ExtensionsData extension) {
-		// TODO Auto-generated method stub
-		super.appendContentStream(repositoryId, objectId, changeToken, contentStream,
-				isLastChunk, extension);
+		getRepository(repositoryId).appendContentStream(getCallContext(), objectId, changeToken, contentStream, isLastChunk, extension);;
 	}
 
 	@Override
@@ -659,39 +657,32 @@ public class NemakiCmisService extends AbstractCmisService {
 			List<BulkUpdateObjectIdAndChangeToken> objectIdAndChangeToken,
 			Properties properties, List<String> addSecondaryTypeIds,
 			List<String> removeSecondaryTypeIds, ExtensionsData extension) {
-		// TODO Auto-generated method stub
-		return super.bulkUpdateProperties(repositoryId, objectIdAndChangeToken,
-				properties, addSecondaryTypeIds, removeSecondaryTypeIds, extension);
+		return getRepository(repositoryId).bulkUpdateProperties(getCallContext(), objectIdAndChangeToken, properties, addSecondaryTypeIds, removeSecondaryTypeIds, extension);
 	}
 
 	@Override
 	public String createItem(String repositoryId, Properties properties,
 			String folderId, List<String> policies, Acl addAces,
 			Acl removeAces, ExtensionsData extension) {
-		// TODO Auto-generated method stub
-		return super.createItem(repositoryId, properties, folderId, policies, addAces,
-				removeAces, extension);
+		return getRepository(repositoryId).createItem(getCallContext(), properties, folderId, policies, addAces, removeAces, extension);
 	}
 
 	@Override
 	public TypeDefinition createType(String repositoryId, TypeDefinition type,
 			ExtensionsData extension) {
-		// TODO Auto-generated method stub
-		return super.createType(repositoryId, type, extension);
+		return getRepository(repositoryId).createType(getCallContext(), type, extension);
 	}
 
 	@Override
 	public void deleteType(String repositoryId, String typeId,
 			ExtensionsData extension) {
-		// TODO Auto-generated method stub
-		super.deleteType(repositoryId, typeId, extension);
+		getRepository(repositoryId).deleteType(getCallContext(), typeId, extension);
 	}
 
 	@Override
 	public TypeDefinition updateType(String repositoryId, TypeDefinition type,
 			ExtensionsData extension) {
-		// TODO Auto-generated method stub
-		return super.updateType(repositoryId, type, extension);
+		return getRepository(repositoryId).updateType(getCallContext(), type, extension);
 	}
 
 	/*

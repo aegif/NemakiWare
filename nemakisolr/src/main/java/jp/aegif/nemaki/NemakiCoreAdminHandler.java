@@ -75,13 +75,10 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 		super(coreContainer);
 
 		String cname = "nemaki";
-		// Get SolrServer specifying a core
 		SolrServer server = new EmbeddedSolrServer(coreContainer, cname);
-		// Get a core
 		SolrCore core = getCoreContainer().getCore(cname);
-		// Create an instance of tracking class
 		CoreTracker tracker = new CoreTracker(this, core, server);
-		logger.info("NemakiCoreAdminHandler sccessfully instantiated");
+		logger.info("NemakiCoreAdminHandler successfully instantiated");
 
 		PropertyManager propertyManager = new PropertyManagerImpl(
 				"nemakisolr.properties");
@@ -97,7 +94,7 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 					.usingJobData(jobDataMap).build();
 
 			// Configure Trigger
-			// Cron expression can be set in a property file
+			// Cron expression is set in a property file
 			String cron = propertyManager.readValue("tracking.cron.expression");
 			Trigger trigger = newTrigger().withIdentity("TrackTrigger", "Solr")
 					.withSchedule(CronScheduleBuilder.cronSchedule(cron)).build();
@@ -105,12 +102,10 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 			// Configure Scheduler
 			StdSchedulerFactory factory = new StdSchedulerFactory();
 			Properties properties = new Properties();
-
 			properties.setProperty("org.quartz.scheduler.instanceName",
 					"NemakiSolrTrackerScheduler");
 			properties.setProperty("org.quartz.threadPool.class",
 					"org.quartz.simpl.SimpleThreadPool");
-			//TODO Use MuliThread?
 			properties.setProperty("org.quartz.threadPool.threadCount", "1");
 			properties.setProperty("org.quartz.threadPool.makeThreadsDaemons",
 					"true");
@@ -159,7 +154,7 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 
 		// INDEX tracking
 		if (a.equalsIgnoreCase("INDEX")) {
-			tracker.indexNodes(tracking);
+			tracker.index(tracking);
 			// TODO Action結果を出力
 			rsp.add("Result", "Successfully tracked!");
 

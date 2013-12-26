@@ -21,7 +21,6 @@
  ******************************************************************************/
 package jp.aegif.nemaki.service.cmis.impl;
 
-import java.io.IOException;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.GregorianCalendar;
@@ -38,6 +37,7 @@ import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.Item;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.Relationship;
@@ -48,7 +48,6 @@ import jp.aegif.nemaki.service.cmis.CompileObjectService;
 import jp.aegif.nemaki.service.cmis.PermissionService;
 import jp.aegif.nemaki.service.cmis.RepositoryService;
 import jp.aegif.nemaki.service.node.ContentService;
-import jp.aegif.nemaki.util.DebugInterceptor;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Acl;
@@ -77,6 +76,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerImp
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
 import org.apache.chemistry.opencmis.commons.impl.server.ObjectInfoImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -173,8 +173,8 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 	@Override
 	public ObjectList compileChangeDataList(CallContext context,
-			List<Change> changes, Boolean includeProperties, String filter,
-			Boolean includePolicyIds, Boolean includeAcl) {
+			List<Change> changes, Holder<String> changeLogToken, Boolean includeProperties,
+			String filter, Boolean includePolicyIds, Boolean includeAcl) {
 		ObjectListImpl results = new ObjectListImpl();
 		results.setObjects(new ArrayList<ObjectData>());
 
@@ -187,7 +187,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 				if (cachedContents.containsKey(objectId)) {
 					content = cachedContents.get(objectId);
 				} else {
-					content = contentService.getContentAsTheBaseType(objectId);
+					content = contentService.getContent(objectId);
 					cachedContents.put(objectId, content);
 				}
 				// Compile a change object data depending on its type
@@ -197,8 +197,16 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			}
 		}
 
+		
 		results.setNumItems(BigInteger.valueOf(results.getObjects().size()));
-
+		
+		String latestInRepository = repositoryService.getRepositoryInfo().getLatestChangeLogToken();
+		String latestInResults = changeLogToken.getValue();
+		if(latestInResults.equals(latestInRepository)){
+			results.setHasMoreItems(false);
+		}else{
+			results.setHasMoreItems(true);
+		}
 		return results;
 	}
 
@@ -231,7 +239,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		props.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, change
 				.getObjectType()));
 		props.addProperty(new PropertyIdImpl(PropertyIds.NAME, change.getName()));
-		if (change.isDocument()) {
+		if (change.isOnDocument()) {
 			props.addProperty(new PropertyIdImpl(PropertyIds.VERSION_SERIES_ID,
 					change.getVersionSeriesId()));
 			props.addProperty(new PropertyStringImpl(PropertyIds.VERSION_LABEL,
@@ -362,6 +370,9 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		} else if (content.isPolicy()) {
 			Policy policy = (Policy) content;
 			properties = compilePolicyProperties(policy, properties, filter);
+		}else if (content.isItem()) {
+			Item item = (Item) content;
+			properties = compileItemProperties(item, properties, filter);
 		}
 
 		return properties;
@@ -412,7 +423,6 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		return properties;
 	}
 
-	// TODO make enable to cope with dynamic sub type
 	private PropertiesImpl compileRelationshipProperties(
 			Relationship relationship, PropertiesImpl properties,
 			Set<String> filter) {
@@ -429,8 +439,15 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		setCmisPolicyProperties(properties, typeId, filter, policy);
 		return properties;
 	}
+	
+	private PropertiesImpl compileItemProperties(Item item,
+			PropertiesImpl properties, Set<String> filter) {
+		String typeId = item.getObjectType();
+		setCmisBaseProperties(properties, typeId, filter, item);
+		setCmisItemProperties(properties, typeId, filter, item);
+		return properties;
+	}
 
-	// TODO: Is typeId really needed?
 	private void setCmisBaseProperties(PropertiesImpl properties,
 			String typeId, Set<String> filter, Content content) {
 		addProperty(properties, typeId, filter, PropertyIds.NAME,
@@ -484,15 +501,8 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			}
 		}
 		
-//		
-//		List<Property> subTypeProperties = content.getSubTypeProperties();
-//		for (Property subTypeProperty : subTypeProperties) {
-//			addProperty(properties, content.getObjectType(), filter,
-//					subTypeProperty.getKey(), subTypeProperty.getValue());
-//		}
-
 		// Secondary properties
-		setCmisSecondaryTypes(properties, content);
+		setCmisSecondaryTypes(properties, content, typeId, filter);
 	}
 
 	private Property extractSubTypeProperty(Content content, String propertyId){
@@ -519,6 +529,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			if (CollectionUtils.isEmpty(folder.getAllowedChildTypeIds())) {
 				values.add(BaseTypeId.CMIS_DOCUMENT.value());
 				values.add(BaseTypeId.CMIS_FOLDER.value());
+				values.add(BaseTypeId.CMIS_ITEM.value());
 			} else {
 				values = folder.getAllowedChildTypeIds();
 			}
@@ -533,7 +544,8 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 		addProperty(properties, typeId, filter, PropertyIds.BASE_TYPE_ID,
 				BaseTypeId.CMIS_DOCUMENT.value());
-		addProperty(properties, typeId, filter, PropertyIds.IS_IMMUTABLE, false);
+		Boolean isImmutable = (document.isImmutable() == null) ?  (Boolean)typeManager.getSingleDefaultValue(PropertyIds.IS_IMMUTABLE, typeId) : document.isImmutable(); 
+		addProperty(properties, typeId, filter, PropertyIds.IS_IMMUTABLE, isImmutable);
 		addProperty(properties, typeId, filter,
 				PropertyIds.IS_PRIVATE_WORKING_COPY,
 				document.isPrivateWorkingCopy());
@@ -591,7 +603,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		addProperty(properties, typeId, filter, PropertyIds.SOURCE_ID,
 				relationship.getSourceId());
 		addProperty(properties, typeId, filter, PropertyIds.TARGET_ID,
-				relationship.getSourceId());
+				relationship.getTargetId());
 	}
 
 	private void setCmisPolicyProperties(PropertiesImpl properties,
@@ -601,20 +613,29 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		addProperty(properties, typeId, filter, PropertyIds.POLICY_TEXT,
 				policy.getPolicyText());
 	}
+	
+	private void setCmisItemProperties(PropertiesImpl properties,
+			String typeId, Set<String> filter, Item item) {
+		addProperty(properties, typeId, filter, PropertyIds.BASE_TYPE_ID,
+				BaseTypeId.CMIS_ITEM.value());
+	}
 
 	private void setCmisSecondaryTypes(PropertiesImpl props,
-			Content content) {
+			Content content, String typeId, Set<String> filter) {
 		List<Aspect> aspects = content.getAspects();
 		List<String> secondaryIds = new ArrayList<String>();
 
 		//cmis:secondaryObjectTypeIds
-		for(String secondaryId : content.getSecondaryIds()){
-			secondaryIds.add(secondaryId);
+		if(CollectionUtils.isNotEmpty(content.getSecondaryIds())){
+			for(String secondaryId : content.getSecondaryIds()){
+				secondaryIds.add(secondaryId);
+			}
 		}
 		
 		PropertyData<?> pd = new PropertyIdImpl(
 				PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondaryIds);
-		props.addProperty(pd);
+		addProperty(props, typeId, filter, PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondaryIds);
+		
 		
 		//each secondary properties
 		for(String secondaryId : secondaryIds){
@@ -632,7 +653,6 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		}
 	}
 	
-	//TODO Desirable to change List<Aspect> (and List<Properties>) in Content class to HashMap, but it may need costs.  
 	private Aspect extractAspect(List<Aspect> aspects, String aspectId){
 		for(Aspect aspect : aspects){
 			if(aspect.getName().equals(aspectId)){

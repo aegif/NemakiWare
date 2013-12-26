@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.antlr.runtime.tree.Tree;
+import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
@@ -38,7 +39,6 @@ import org.apache.chemistry.opencmis.server.support.query.CmisSelector;
 import org.apache.chemistry.opencmis.server.support.query.ColumnReference;
 import org.apache.chemistry.opencmis.server.support.query.QueryObject;
 import org.apache.chemistry.opencmis.server.support.query.TextSearchLexer;
-import org.apache.commons.lang.StringUtils;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery;
@@ -62,23 +62,15 @@ import org.apache.solr.common.SolrDocumentList;
  */
 public class SolrPredicateWalker {
 
+	private SolrUtil solrUtil;
 	private QueryObject queryObject;
-	private Query tableQuery;
-
-	public static final String SOLR_TYPE = "type";
-	public static final String SOLR_PARENTID = "parentid";
-	public static final String SOLR_TEXT = "text";
 
 	public static final String FLD = "field";
 	public static final String CND = "cond";
-
-	public SolrPredicateWalker(QueryObject queryObject) {
+	
+	public SolrPredicateWalker(QueryObject queryObject, SolrUtil solrUtil) {
 		this.queryObject = queryObject;
-
-		// JOIN is not supported!
-		TypeDefinition td = queryObject.getMainFromName();
-		Term t = new Term(SOLR_TYPE, SolrUtil.getPropertyNameInSolr(td.getId()));
-		this.tableQuery = new TermQuery(t);
+		this.solrUtil = solrUtil;
 	}
 
 	public Query walkPredicate(Tree node) {
@@ -150,10 +142,7 @@ public class SolrPredicateWalker {
 	// //////////////////////////////////////////////////////////////////////////////
 	private BooleanQuery walkNot(Tree node) {
 		BooleanQuery q = new BooleanQuery();
-		Query q1 = tableQuery;
-		Query q2 = walkPredicate(node);
-		q.add(q1, Occur.SHOULD);
-		q.add(q2, Occur.MUST_NOT);
+		q.add(walkPredicate(node), Occur.MUST_NOT);
 		return q;
 	}
 
@@ -183,10 +172,7 @@ public class SolrPredicateWalker {
 	
 	private Query walkNotEquals(Tree leftNode, Tree rightNode) {
 		BooleanQuery q = new BooleanQuery();
-		Query q1 = tableQuery;
-		Query q2 = walkEquals(leftNode, rightNode);
-		q.add(q1, Occur.SHOULD);
-		q.add(q2, Occur.MUST_NOT);
+		q.add(walkEquals(leftNode, rightNode), Occur.MUST_NOT);
 		return q;
 	}
 
@@ -231,10 +217,10 @@ public class SolrPredicateWalker {
 			Tree rightNode) {
 		HashMap<String, String> map = new HashMap<String, String>();
 		
-		String left = SolrUtil.convertToString(leftNode);
+		String left = solrUtil.convertToString(leftNode);
 		String right = walkExpr(rightNode).toString(); 
 		
-		map.put(FLD, ClientUtils.escapeQueryChars(SolrUtil.getPropertyNameInSolr(left)));
+		map.put(FLD, ClientUtils.escapeQueryChars(solrUtil.getPropertyNameInSolr(left)));
 		map.put(CND, right);
 		return map;
 	}
@@ -263,8 +249,7 @@ public class SolrPredicateWalker {
 		}
 
 		// Build a statement
-		//String field = SolrUtil.getPropertyNameInSolr(colRefName);
-		String field = SolrUtil.getPropertyNameInSolr(SolrUtil.convertToString(colNode));
+		String field = solrUtil.getPropertyNameInSolr(solrUtil.convertToString(colNode));
 		String pattern = translatePattern((String) rVal); // Solr wildcard
 															// expression
 		Term t = new Term(field, pattern);
@@ -274,10 +259,7 @@ public class SolrPredicateWalker {
 
 	private Query walkNotLike(Tree colNode, Tree stringNode) {
 		BooleanQuery q = new BooleanQuery();
-		Query q1 = tableQuery;
-		Query q2 = walkLike(colNode, stringNode);
-		q.add(q1, Occur.MUST);
-		q.add(q2, Occur.MUST);
+		q.add(walkLike(colNode, stringNode), Occur.MUST);
 		return q;
 	}
 
@@ -291,7 +273,7 @@ public class SolrPredicateWalker {
 		// Build a statement
 		// Combine queries with "OR" because Solr doesn't have "IN" syntax
 		BooleanQuery q = new BooleanQuery();
-		String field = SolrUtil.getPropertyNameInSolr(colRef.getPropertyQueryName().toString());
+		String field = solrUtil.getPropertyNameInSolr(colRef.getPropertyQueryName().toString());
 		List<?> list = (List<?>) walkExpr(listNode);
 		for (Object elm : list) {
 			Term t = new Term(field, elm.toString());
@@ -303,7 +285,6 @@ public class SolrPredicateWalker {
 
 	private Query walkNotIn(Tree colNode, Tree listNode) {
 		BooleanQuery q = new BooleanQuery();
-		q.add(tableQuery, Occur.MUST);
 		q.add(walkIn(colNode, listNode), Occur.MUST_NOT);
 		return q;
 	}
@@ -333,7 +314,6 @@ public class SolrPredicateWalker {
 		String field = walkExpr(colNode).toString();
 		BooleanQuery q = new BooleanQuery();
 		TermRangeQuery q1 = new TermRangeQuery(field, null, null, false, false);
-		q.add(tableQuery, Occur.MUST);
 		q.add(q1, Occur.MUST_NOT);
 		return q;
 	}
@@ -357,7 +337,7 @@ public class SolrPredicateWalker {
 
 		// Build a statement
 		String folderId = (String) walkExpr(paramNode);
-		Term t = new Term(SOLR_PARENTID, folderId);
+		Term t = new Term(solrUtil.getPropertyNameInSolr(PropertyIds.PARENT_ID), folderId);
 		Query q = new TermQuery(t);
 		if (qualNode != null) { // When a table alias exists
 			String qualifier = walkExpr(qualNode).toString();
@@ -396,7 +376,7 @@ public class SolrPredicateWalker {
 
 	private Query walkInTreeInternal(String folderId) {
 		// Solr server setting
-		SolrServer solrServer = SolrUtil.getSolrServer();
+		SolrServer solrServer = solrUtil.getSolrServer();
 
 		// Get all the subfolder ids
 		List<String> descendantIds = getDescendantFolderId(folderId, solrServer);
@@ -406,7 +386,7 @@ public class SolrPredicateWalker {
 		BooleanQuery q = new BooleanQuery();
 		while (iterator.hasNext()) {
 			String descendantId = iterator.next();
-			Term t = new Term(SOLR_PARENTID, descendantId);
+			Term t = new Term(solrUtil.getPropertyNameInSolr(PropertyIds.PARENT_ID), descendantId);
 			TermQuery q1 = new TermQuery(t);
 			q.add(q1, Occur.SHOULD);
 		}
@@ -417,16 +397,16 @@ public class SolrPredicateWalker {
 	// //////////////////////////////////////////////////////////////////////////////
 	// Definition of full-text search type walk
 	// //////////////////////////////////////////////////////////////////////////////
-	// TODO ワイルドカードにも対応する
+	// Wildcards of CONTAINS() is the same as those of Solr, so leave them as they are.
 	private Query walkContains(Tree qualNode, Tree queryNode) {
 		if (qualNode != null) {
-			String qualifier = walkExpr(qualNode).toString();
-
-			Term tQual = new Term("type", buildQualField(qualifier));
-			Query qQual = new TermQuery(tQual);
+			//Qualifier isn't needed as long as JOIN isn't supported
+			//String qualifier = walkExpr(qualNode).toString();
+			//Term tQual = new Term("type", buildQualField(qualifier));
+			//Query qQual = new TermQuery(tQual);
 
 			BooleanQuery q = new BooleanQuery();
-			q.add(qQual, Occur.MUST);
+			//q.add(qQual, Occur.MUST);
 			q.add(walkSearchExpr(queryNode), Occur.MUST);
 
 			return q;
@@ -474,7 +454,6 @@ public class SolrPredicateWalker {
 		BooleanQuery q = new BooleanQuery();
 		for (int i = 0; i < node.getChildCount(); i++) {
 			Tree child = node.getChild(i);
-			q.add(tableQuery, Occur.MUST);
 			q.add(walkSearchExpr(child), Occur.MUST);
 		}
 		return q;
@@ -534,7 +513,8 @@ public class SolrPredicateWalker {
 	private Object walkString(Tree node) {
 		String s = node.getText();
 		s = s.substring(1, s.length() - 1);
-		return "\"" + ClientUtils.escapeQueryChars(s) + "\"";
+		//return "\"" + ClientUtils.escapeQueryChars(s) + "\"";
+		return ClientUtils.escapeQueryChars(s);
 	}
 
 	private Object walkTimestamp(Tree node) {
@@ -653,7 +633,7 @@ public class SolrPredicateWalker {
 	 */
 	private String buildQualField(String alias) {
 		String cmisName = queryObject.getTypeQueryName(alias);
-		String solrName = SolrUtil.getPropertyNameInSolr(cmisName);
+		String solrName = solrUtil.getPropertyNameInSolr(cmisName);
 		return solrName;
 	}
 
@@ -671,8 +651,8 @@ public class SolrPredicateWalker {
 		list.add(folderId); // Add oneself to the list in advance
 
 		SolrQuery query = new SolrQuery();
-		query.setQuery(SOLR_PARENTID + folderId + " AND "
-				+ SOLR_TYPE + "folder"); // only "folder" nodes
+		query.setQuery(solrUtil.getPropertyNameInSolr(PropertyIds.PARENT_ID) + folderId + " AND "
+				+ solrUtil.getPropertyNameInSolr(PropertyIds.BASE_TYPE_ID) + "cmis:folder"); // only "folder" nodes
 
 		// Connect to SolrServer and add subfolder ids to the list
 		try {

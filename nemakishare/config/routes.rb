@@ -21,7 +21,8 @@
   
   resources :users do
     collection do
-      get 'search'  
+      get 'search'
+      get 'search_both'
     end
     member do
       get 'edit_password'

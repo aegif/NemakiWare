@@ -66,6 +66,9 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		<property name="contentService">
 			<ref bean="ContentService"></ref>
 		</property>
+		<property name="exceptionService">
+			<ref bean="ExceptionService"></ref>
+		</property>	
 	</bean>
 
 	<bean id="RepositoryInfo" class="jp.aegif.nemaki.repository.NemakiRepositoryInfoImpl"
@@ -170,21 +173,33 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 	</bean>
 
 	<bean id="contentDaoService" class="jp.aegif.nemaki.service.dao.impl.ContentDaoServiceImpl">
-		<property name="connector">
-			<ref bean="connector"></ref>
-		</property>
-		<property name="archiveConnector">
-			<ref bean="archiveConnector"></ref>
+		<property name="nonCachedContentDaoService">
+			<ref bean="nonCachedContentDaoService"></ref>
 		</property>
 		<property name="requestDurationCache">
 			<ref bean="requestDurationCache" />
 		</property>
 	</bean>
 	
+	<bean id="nonCachedContentDaoService" class="jp.aegif.nemaki.service.dao.impl.CouchContentDaoServiceImpl">
+		<property name="connector">
+			<ref bean="connector"></ref>
+		</property>
+		<property name="archiveConnector">
+			<ref bean="archiveConnector"></ref>
+		</property>
+	</bean>
+		
 	<bean id="requestDurationCache" class="jp.aegif.nemaki.repository.RequestDurationCacheBean">
 	</bean>
 
 	<bean id="principalDaoService" class="jp.aegif.nemaki.service.dao.impl.PrincipalDaoServiceImpl">
+		<property name="nonCachedPrincipalDaoService">
+			<ref bean="nonCachedPrincipalDaoService"></ref>
+		</property>
+	</bean>
+
+	<bean id="nonCachedPrincipalDaoService" class="jp.aegif.nemaki.service.dao.impl.CouchPrincipalDaoServiceImpl">
 		<property name="connector">
 			<ref bean="connector"></ref>
 		</property>
@@ -254,6 +269,12 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		<property name="exceptionService">
 			<ref bean="ExceptionService"></ref>
 		</property>
+		<property name="solrUtil">
+			<ref bean="solrUtil"></ref>
+		</property>
+	</bean>
+	
+	<bean id="solrUtil" class="jp.aegif.nemaki.query.solr.SolrUtil" scope="singleton">
 	</bean>
 
 	<bean id="objectService" class="jp.aegif.nemaki.service.cmis.impl.ObjectServiceImpl">

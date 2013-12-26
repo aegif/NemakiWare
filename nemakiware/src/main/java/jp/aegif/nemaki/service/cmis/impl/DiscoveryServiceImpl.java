@@ -37,6 +37,7 @@ import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
+import org.apache.commons.collections.CollectionUtils;
 
 /**
  * Discovery Service implementation for CouchDB.
@@ -94,7 +95,12 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 		// Body of the method
 		// //////////////////
 		List<Change> changes = contentService.getLatestChanges(context, changeLogToken, includeProperties, filter, includePolicyIds, includeAcl, maxItems, extension);
-		return compileObjectService.compileChangeDataList(context, changes, includeProperties, filter, includePolicyIds, includeAcl);
+		if(!CollectionUtils.isEmpty(changes)){
+			String latestToken = String.valueOf(changes.get(changes.size()-1).getChangeToken());
+			changeLogToken.setValue(latestToken);
+		}
+		
+		return compileObjectService.compileChangeDataList(context, changes, changeLogToken, includeProperties, filter, includePolicyIds, includeAcl);
 	}
 	
 	public void setQueryProcessor(QueryProcessor queryProcessor) {

@@ -20,21 +20,25 @@
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
 
-package jp.aegif.nemaki.model;
+package jp.aegif.nemaki.model.couch;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
+import jp.aegif.nemaki.model.Choice;
+import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
+
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.DecimalPrecision;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.lucene.document.DateTools.Resolution;
 
-public class NemakiPropertyDefinition extends NodeBase {
-	private String detailNodeId;
+public class CouchPropertyDefinitionDetail extends CouchNodeBase {
+
+	private static final long serialVersionUID = 4477156425295443676L;
+
+	private String coreNodeId;
 	
 	// Attributes common
 	private String propertyId;
@@ -52,7 +56,6 @@ public class NemakiPropertyDefinition extends NodeBase {
 	private List<Choice> choices;
 	private boolean openChoice;
 	private List<Object> defaultValue;
-
 	// Attributes specific to Integer
 	private long minValue;
 	private long maxValue;
@@ -68,98 +71,47 @@ public class NemakiPropertyDefinition extends NodeBase {
 	// Attributes specific to String
 	private long maxLength;
 
-	public NemakiPropertyDefinition() {
+	public CouchPropertyDefinitionDetail(){
 		super();
 	}
-
-	public NemakiPropertyDefinition(NodeBase n) {
-		setId(n.getId());
-		setType(n.getType());
-		setCreated(n.getCreated());
-		setCreator(n.getCreator());
-		setModified(n.getModified());
-		setModifier(n.getModifier());
+	
+	public CouchPropertyDefinitionDetail(NemakiPropertyDefinitionDetail p){
+		super(p);
+		setCoreNodeId(p.getCoreNodeId());
+		setLocalName(p.getLocalName());
+		setLocalNameSpace(p.getLocalNameSpace());
+		setDisplayName(p.getDisplayName());
+		setDescription(p.getDescription());
+		setUpdatability(p.getUpdatability());
+		setRequired(p.isRequired());
+		setQueryable(p.isQueryable());
+		setOrderable(p.isOrderable());
+		setChoices(p.getChoices());
+		setOpenChoice(p.isOpenChoice());
+		setDefaultValue(p.getDefaultValue());
+		
+		setMinValue(p.getMinValue());
+		setMaxValue(p.getMaxValue());
+		setResolution(p.getResolution());
+		setDecimalPrecision(p.getDecimalPrecision());
+		setDecimalMinValue(p.getDecimalMinValue());
+		setDecimalMaxValue(p.getDecimalMaxValue());
+		setMaxLength(p.getMaxLength());
 	}
 	
-	public NemakiPropertyDefinition(NemakiPropertyDefinitionCore core, NemakiPropertyDefinitionDetail detail){
-		//TODO coreとdetailがマッチしないときはエラー
-		
-		setId(detail.getId());
-		setType("propertyDefinition");
-		setCreated(detail.getCreated());
-		setCreator(detail.getCreator());
-		setModified(detail.getModified());
-		setModifier(detail.getModifier());
-		
-		setDetailNodeId(detail.getId());
-		
-		setPropertyId(core.getPropertyId());
-		setLocalName(detail.getLocalName());
-		setLocalNameSpace(detail.getLocalNameSpace());
-		setQueryName(core.getQueryName());
-		setDisplayName(detail.getDisplayName());
-		setPropertyType(core.getPropertyType());
-		setCardinality(core.getCardinality());
-		setUpdatability(detail.getUpdatability());
-		setQueryable(detail.isQueryable());
-		setOrderable(detail.isOrderable());
-		setChoices(detail.getChoices());
-		setOpenChoice(detail.isOpenChoice());
-		setDefaultValue(detail.getDefaultValue());
-		
-		setMinValue(detail.getMinValue());
-		setMaxValue(detail.getMaxValue());
-		setResolution(detail.getResolution());
-		setDecimalPrecision(detail.getDecimalPrecision());
-		setDecimalMinValue(detail.getDecimalMinValue());
-		setDecimalMaxValue(detail.getDecimalMaxValue());
-		setMaxLength(detail.getMaxLength());
-	}
-
-	public NemakiPropertyDefinition(PropertyDefinition<?> propertyDefinition) {
-		// Inheritedはproperty自体の性質ではなく、そのpropertyをもつtypeによって決まる?
-		setPropertyId(propertyDefinition.getId());
-		setLocalName(propertyDefinition.getLocalName());
-		setLocalNameSpace(propertyDefinition.getLocalNamespace());
-		setQueryName(propertyDefinition.getQueryName());
-		setDisplayName(propertyDefinition.getQueryName());
-		setPropertyType(propertyDefinition.getPropertyType());
-		setCardinality(propertyDefinition.getCardinality());
-		setUpdatability(propertyDefinition.getUpdatability());
-		setQueryable(propertyDefinition.isQueryable());
-		setOrderable(propertyDefinition.isOrderable());
-		setChoices(buildChoices(propertyDefinition.getChoices()));
-		setOpenChoice(propertyDefinition.isOpenChoice());
-		setDefaultValue(new ArrayList<Object>(propertyDefinition.getDefaultValue()));
-		
-		
-	}
-
-	private <T> List<Choice> buildChoices(List<org.apache.chemistry.opencmis.commons.definitions.Choice<T>> choices){
-		List<Choice> list = new ArrayList<Choice>();
-		if(org.apache.commons.collections.CollectionUtils.isNotEmpty(choices)){
-			for(org.apache.chemistry.opencmis.commons.definitions.Choice<T> choice : choices){
-				List<Object> values = new ArrayList<Object>(choice.getValue());
-				Choice c = new Choice(choice.getDisplayName(), values, buildChoices(choice.getChoice())); 
-				list.add(c);
-			}
-		}
-		return list;
-	}
-
 	/**
-	 * Getter & Setter
+	 * Getter & Setter 
 	 */
 	public String getPropertyId() {
 		return propertyId;
 	}
 
-	public String getDetailNodeId() {
-		return detailNodeId;
+	public String getCoreNodeId() {
+		return coreNodeId;
 	}
 
-	public void setDetailNodeId(String detailNodeId) {
-		this.detailNodeId = detailNodeId;
+	public void setCoreNodeId(String coreNodeId) {
+		this.coreNodeId = coreNodeId;
 	}
 
 	public void setPropertyId(String propertyId) {
@@ -333,5 +285,31 @@ public class NemakiPropertyDefinition extends NodeBase {
 	public void setMaxLength(long maxLength) {
 		this.maxLength = maxLength;
 	}
+	
+	public NemakiPropertyDefinitionDetail convert(){
+		NemakiPropertyDefinitionDetail p = new NemakiPropertyDefinitionDetail(super.convert());
+		
+		p.setCoreNodeId(getCoreNodeId());
+		p.setLocalName(getLocalName());
+		p.setLocalNameSpace(getLocalNameSpace());
+		p.setDisplayName(getDisplayName());
+		p.setDescription(getDescription());
+		p.setUpdatability(getUpdatability());
+		p.setRequired(isRequired());
+		p.setQueryable(isQueryable());
+		p.setOrderable(isOrderable());
+		p.setChoices(getChoices());
+		p.setOpenChoice(isOpenChoice());
+		p.setDefaultValue(getDefaultValue());
+		
+		p.setMinValue(getMinValue());
+		p.setMaxLength(getMaxValue());
+		p.setResolution(getResolution());
+		p.setDecimalPrecision(getDecimalPrecision());
+		p.setDecimalMinValue(getDecimalMinValue());
+		p.setDecimalMaxValue(getDecimalMaxValue());
+		p.setMaxLength(getMaxLength());
 
+		return p;
+	}
 }

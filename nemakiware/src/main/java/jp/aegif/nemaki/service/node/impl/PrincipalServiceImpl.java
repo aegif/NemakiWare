@@ -30,11 +30,16 @@ import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.service.dao.PrincipalDaoService;
 import jp.aegif.nemaki.service.node.PrincipalService;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
 /**
  * Principal(User / Group) Service implementation.
  * 
  */
 public class PrincipalServiceImpl implements PrincipalService {
+	
+	private static final Log log = LogFactory.getLog(PrincipalServiceImpl.class);
 
 	private PrincipalDaoService principalDaoService;
 
@@ -57,16 +62,25 @@ public class PrincipalServiceImpl implements PrincipalService {
 		Set<String> groupIds = new HashSet<String>();
 		List<Group> groups = getGroups();
 		for (Group g : groups) {
-			if (g.getUsers().contains(userId))
+			if ( cnotainsUserInGroup(userId, g) ) {
 				groupIds.add(g.getGroupId());
+			}
 		}
 		groupIds.add(PrincipalService.GROUP_EVERYONE);
 		return groupIds;
 	}
-
-	@Override
-	public User getUserByName(String username) {
-		return principalDaoService.getUserByName(username);
+	
+	private boolean cnotainsUserInGroup(String userId, Group group) {
+		log.debug("$$ group:" + group.getName());
+		if ( group.getUsers().contains(userId)) 
+			return true;
+		for(String groupId: group.getGroups() ) {
+			log.debug("$$ subgroup: " + groupId);
+			Group g = this.getGroupById(groupId);
+			boolean result = cnotainsUserInGroup(userId, g);
+			if ( result ) return true;
+		}
+		return false;
 	}
 
 	@Override

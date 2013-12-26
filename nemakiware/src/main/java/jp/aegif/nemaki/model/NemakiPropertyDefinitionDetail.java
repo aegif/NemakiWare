@@ -1,36 +1,50 @@
-package jp.aegif.nemaki.model.couch;
+/*******************************************************************************
+ * Copyright (c) 2013 aegif.
+ * 
+ * This file is part of NemakiWare.
+ * 
+ * NemakiWare is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * NemakiWare is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License along with NemakiWare.
+ * If not, see <http://www.gnu.org/licenses/>.
+ * 
+ * Contributors:
+ *     linzhixing(https://github.com/linzhixing) - initial API and implementation
+ ******************************************************************************/
+
+package jp.aegif.nemaki.model;
 
 import java.math.BigDecimal;
 import java.util.List;
 
-import jp.aegif.nemaki.model.NemakiPropertyDefinition;
-
-import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.DecimalPrecision;
-import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.lucene.document.DateTools.Resolution;
 
-public class CouchPropertyDefinition extends CouchNodeBase {
-
-	private static final long serialVersionUID = 4477156425295443676L;
-
+public class NemakiPropertyDefinitionDetail extends NodeBase {
+	private String coreNodeId;
+	
 	// Attributes common
-	private String propertyId;
 	private String localName;
 	private String localNameSpace;
-	private String queryName;
 	private String displayName;
 	private String description;
-	private PropertyType propertyType;
-	private Cardinality cardinality;
 	private Updatability updatability;
 	private boolean required;
 	private boolean queryable;
 	private boolean orderable;
-	private List<Object> choices;
+	private List<Choice> choices;
 	private boolean openChoice;
 	private List<Object> defaultValue;
+
 	// Attributes specific to Integer
 	private long minValue;
 	private long maxValue;
@@ -46,46 +60,52 @@ public class CouchPropertyDefinition extends CouchNodeBase {
 	// Attributes specific to String
 	private long maxLength;
 
-	public CouchPropertyDefinition(){
+	public NemakiPropertyDefinitionDetail() {
 		super();
 	}
+
+	public NemakiPropertyDefinitionDetail(NodeBase n) {
+		setId(n.getId());
+		setType(n.getType());
+		setCreated(n.getCreated());
+		setCreator(n.getCreator());
+		setModified(n.getModified());
+		setModifier(n.getModifier());
+	}
 	
-	public CouchPropertyDefinition(NemakiPropertyDefinition p){
-		super(p);
-		setPropertyId(p.getPropertyId());
+	public NemakiPropertyDefinitionDetail(NemakiPropertyDefinition p, String coreNodeId){
+		setType("propertyDefinitionDetail");
+		
+		setCoreNodeId(coreNodeId);
+		
 		setLocalName(p.getLocalName());
 		setLocalNameSpace(p.getLocalNameSpace());
-		setQueryName(p.getQueryName());
 		setDisplayName(p.getDisplayName());
 		setDescription(p.getDescription());
-		setPropertyType(p.getPropertyType());
-		setCardinality(p.getCardinality());
 		setUpdatability(p.getUpdatability());
 		setRequired(p.isRequired());
-		setQueryable(p.isQueryable());
+		setQueryable(p.isRequired());
 		setOrderable(p.isOrderable());
 		setChoices(p.getChoices());
 		setOpenChoice(p.isOpenChoice());
 		setDefaultValue(p.getDefaultValue());
-		
 		setMinValue(p.getMinValue());
 		setMaxValue(p.getMaxValue());
 		setResolution(p.getResolution());
-		setDecimalPrecision(p.getDecimalPrecision());
 		setDecimalMinValue(p.getDecimalMinValue());
 		setDecimalMaxValue(p.getDecimalMaxValue());
 		setMaxLength(p.getMaxLength());
 	}
-	
+
 	/**
-	 * Getter & Setter 
+	 * Getter & Setter
 	 */
-	public String getPropertyId() {
-		return propertyId;
+	public String getCoreNodeId() {
+		return coreNodeId;
 	}
 
-	public void setPropertyId(String propertyId) {
-		this.propertyId = propertyId;
+	public void setCoreNodeId(String coreNodeId) {
+		this.coreNodeId = coreNodeId;
 	}
 
 	public String getLocalName() {
@@ -104,14 +124,6 @@ public class CouchPropertyDefinition extends CouchNodeBase {
 		this.localNameSpace = localNameSpace;
 	}
 
-	public String getQueryName() {
-		return queryName;
-	}
-
-	public void setQueryName(String queryName) {
-		this.queryName = queryName;
-	}
-
 	public String getDisplayName() {
 		return displayName;
 	}
@@ -126,22 +138,6 @@ public class CouchPropertyDefinition extends CouchNodeBase {
 
 	public void setDescription(String description) {
 		this.description = description;
-	}
-
-	public PropertyType getPropertyType() {
-		return propertyType;
-	}
-
-	public void setPropertyType(PropertyType propertyType) {
-		this.propertyType = propertyType;
-	}
-
-	public Cardinality getCardinality() {
-		return cardinality;
-	}
-
-	public void setCardinality(Cardinality cardinality) {
-		this.cardinality = cardinality;
 	}
 
 	public Updatability getUpdatability() {
@@ -176,11 +172,11 @@ public class CouchPropertyDefinition extends CouchNodeBase {
 		this.orderable = orderable;
 	}
 
-	public List<Object> getChoices() {
+	public List<Choice> getChoices() {
 		return choices;
 	}
 
-	public void setChoices(List<Object> choices) {
+	public void setChoices(List<Choice> choices) {
 		this.choices = choices;
 	}
 
@@ -255,33 +251,5 @@ public class CouchPropertyDefinition extends CouchNodeBase {
 	public void setMaxLength(long maxLength) {
 		this.maxLength = maxLength;
 	}
-	
-	public NemakiPropertyDefinition convert(){
-		NemakiPropertyDefinition p = new NemakiPropertyDefinition(super.convert());
-		p.setPropertyId(getPropertyId());
-		p.setLocalName(getLocalName());
-		p.setLocalNameSpace(getLocalNameSpace());
-		p.setQueryName(getQueryName());
-		p.setDisplayName(getDisplayName());
-		p.setDescription(getDescription());
-		p.setPropertyType(getPropertyType());
-		p.setCardinality(getCardinality());
-		p.setUpdatability(getUpdatability());
-		p.setRequired(isRequired());
-		p.setQueryable(isQueryable());
-		p.setOrderable(isOrderable());
-		p.setChoices(getChoices());
-		p.setOpenChoice(isOpenChoice());
-		p.setDefaultValue(getDefaultValue());
-		
-		p.setMinValue(getMinValue());
-		p.setMaxLength(getMaxValue());
-		p.setResolution(getResolution());
-		p.setDecimalPrecision(getDecimalPrecision());
-		p.setDecimalMinValue(getDecimalMinValue());
-		p.setDecimalMaxValue(getDecimalMaxValue());
-		p.setMaxLength(getMaxLength());
 
-		return p;
-	}
 }

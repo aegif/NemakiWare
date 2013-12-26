@@ -36,16 +36,6 @@ public class PasswordHasher {
 	public static String hash(String password) {
 		return BCrypt.hashpw(password, BCrypt.gensalt());
 	}
-
-	/**
-	 * Hashed passwords for a few test users. More can be created using the
-	 * "bcrypt" UNIX command line tool.
-	 */
-	public static void main(String[] args) {
-		System.out.println(PasswordHasher.hash("jiro"));
-		System.out.println(PasswordHasher.hash("saburo"));
-		System.out.println(PasswordHasher.hash("admin"));
-	}
 	
 	public static Boolean isCompared(String password, String hash){
 		return BCrypt.checkpw(password, hash);

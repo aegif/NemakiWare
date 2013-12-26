@@ -9,3 +9,4 @@ log4j.properties
 tags
 .DS_Store
 *.class
+jetty.log

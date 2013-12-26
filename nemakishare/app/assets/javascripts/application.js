@@ -16,3 +16,4 @@
 //= require jquery.validate.additional-methods
 //= require bootstrapSwitch
 //= require thickbox
+//= require pnotify

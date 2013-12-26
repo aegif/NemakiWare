@@ -19,30 +19,25 @@
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
-package jp.aegif.nemaki.service;
 
-import java.util.List;
+package jp.aegif.nemaki.model;
 
-import jp.aegif.nemaki.model.Content;
-import jp.aegif.nemaki.model.NemakiAttachment;
-
-import org.ektorp.AttachmentInputStream;
-import org.ektorp.changes.DocumentChange;
-
-public interface DaoService {
-
-	public Content getContent(String id);
+public class Item extends Content{
+	public Item(){
+		super();
+	}
 	
-	public NemakiAttachment getAttachment(String id);
-	
-	public NemakiAttachment getLatestAttachment(String id);
-	
-	public List<DocumentChange> getChangeLog(long since);
-	
-	public AttachmentInputStream getInlineAttachment(String id);
-	
-	public List<String> getAllDocIds();
-	
-	public boolean contentExist(String id);
-	
+	public Item(Content c){
+		super(c);
+		setName(c.getName());
+		setDescription(c.getDescription());
+		setParentId(c.getParentId());
+		setAcl(c.getAcl());
+		setAclInherited(c.isAclInherited());
+		setSubTypeProperties(c.getSubTypeProperties());
+		setAspects(c.getAspects());
+		setSecondaryIds(c.getSecondaryIds());
+		setObjectType(c.getObjectType());
+		setChangeToken(c.getChangeToken());
+	}
 }

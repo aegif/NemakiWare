@@ -23,6 +23,8 @@ package jp.aegif.nemaki.model;
 
 import java.util.GregorianCalendar;
 
+import jp.aegif.nemaki.model.constant.NodeType;
+
 import org.codehaus.jackson.annotate.JsonIgnoreProperties;
 
 @JsonIgnoreProperties(ignoreUnknown=true)
@@ -81,5 +83,61 @@ public class NodeBase{
 
 	public void setModifier(String modifier) {
 		this.modifier = modifier;
+	}
+	
+	public Boolean isFolder() {
+		if (NodeType.CMIS_FOLDER.value().equals(type)) {
+			return true;
+		} else {
+			return false;
+		}
+	}
+
+	public Boolean isDocument() {
+		if (NodeType.CMIS_DOCUMENT.value().equals(type)) {
+			return true;
+		} else {
+			return false;
+		}
+	}
+	
+	public Boolean isRelationship() {
+		if (NodeType.CMIS_RELATIONSHIP.value().equals(type)) {
+			return true;
+		} else {
+			return false;
+		}
+	}
+	
+	public Boolean isPolicy() {
+		if (NodeType.CMIS_POLICY.value().equals(type)) {
+			return true;
+		} else {
+			return false;
+		}
+	}
+	
+	public Boolean isItem(){
+		if (NodeType.CMIS_ITEM.value().equals(type)) {
+			return true;
+		} else {
+			return false;
+		}
+	}
+	
+	public Boolean isAttachment(){
+		return (NodeType.ATTACHMENT.value().equals(type)) ? true : false;
+	}
+	
+	public Boolean isTypeDefinition(){
+		return (NodeType.TYPE_DEFINITION.value().equals(type)) ? true : false;
+	}
+	
+	public Boolean isPropertyDefinitionCore(){
+		return (NodeType.PROPERTY_DEFINITION_CORE.value().equals(type)) ? true : false;
+	}
+	
+	public Boolean isPropertyDefinitionDetail(){
+		return (NodeType.PROPERTY_DEFINITION_DETAIL.value().equals(type)) ? true : false;
 	}
 }

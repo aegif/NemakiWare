@@ -30,52 +30,64 @@ import jp.aegif.nemaki.model.User;
  * DAO Service interface.
  */
 public interface PrincipalDaoService {
+	/**
+	 * Get a user
+	 * @param userId
+	 * @return
+	 */
+	User getUserById(String userId);
 
 	/**
-	 * Create a node
+	 * Get a user
+	 * @return
 	 */
-	User createUser(User user);
-	Group createGroup(Group group);
+	List<User> getUsers();
 	
 	/**
-	 * Update a node
-	 * @param node
+	 * Get a group
+	 * @param groupId
+	 * @return
+	 */
+	Group getGroupById(String groupId);
+
+	/**
+	 * Get all the groups
+	 * @return
+	 */
+	List<Group> getGroups();
+	
+	/**
+	 * Create a user
+	 * @param user
+	 * @return newly created user
+	 */
+	User createUser(User user);
+
+	/**
+	 * Create a group
+	 * @param group
+	 * @return newly created group
+	 */
+	Group createGroup(Group group);
+
+	/**
+	 * Update a user
+	 * @param user
+	 * @return updated user
 	 */
 	User updateUser(User user);
-	Group updateGroup(Group group);
+
 	/**
-	 * Delete a principal
+	 * Update a group
+	 * @param group
+	 * @return updated group
+	 */
+	Group updateGroup(Group group);
+
+	/**
+	 * Delete a user / group
 	 * @param clazz
 	 * @param id
 	 */
 	void delete(Class<?> clazz, String id);
-	
-	/**
-	 * Get all users from DB
-	 */
-	List<User> getUsers();
-
-	/**
-	 * Get an user with id
-	 */
-	User getUserById(String userId);
-	
-	/**
-	 * Get an user with user name
-	 */
-	User getUserByName(String name);
-
-	/**
-	 * Get a group, given its id
-	 */
-	Group getGroupById(String groupId);
-
-	Group getGroupByName(String name);
-	
-	/**
-	 * Get all groups
-	 */
-	List<Group> getGroups();
-		
-	
 }
