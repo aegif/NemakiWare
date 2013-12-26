@@ -29,7 +29,7 @@ import jp.aegif.nemaki.model.Change;
 
 import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 
-public class CouchChange extends CouchNodeBase{
+public class CouchChange extends CouchNodeBase implements Comparable<CouchChange>{
 	/**
 	 * 
 	 */
@@ -48,7 +48,6 @@ public class CouchChange extends CouchNodeBase{
 	private int changeToken;
 	private ChangeType changeType;
 	private GregorianCalendar time;
-	private boolean latest;
 	
 	public CouchChange(){
 		super();
@@ -60,7 +59,6 @@ public class CouchChange extends CouchNodeBase{
 		setChangeToken(c.getChangeToken());
 		setChangeType(c.getChangeType());
 		setTime(c.getCreated());
-		setLatest(c.isLatest());
 		setType(c.getType());
 		setName(c.getName());
 		setBaseType(c.getBaseType());
@@ -167,16 +165,15 @@ public class CouchChange extends CouchNodeBase{
 	public void setTime(GregorianCalendar time) {
 		this.time = time;
 	}
-	
-	public boolean isLatest() {
-		return latest;
-	}
 
-	public void setLatest(boolean latest) {
-		this.latest = latest;
+	/**
+	 * descending by created time
+	 */
+	@Override
+	public int compareTo(CouchChange o) {
+		int asc = this.created.compareTo(o.getCreated());
+		return -asc;
 	}
-
-	
 
 	public Change convert(){
 		Change change = new Change(super.convert());
@@ -184,7 +181,6 @@ public class CouchChange extends CouchNodeBase{
 		change.setTime(getTime());
 		change.setObjectId(getObjectId());
 		change.setChangeToken(getChangeToken());
-		change.setLatest(isLatest());
 		change.setType(getType());
 		
 		change.setName(getName());

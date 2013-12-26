@@ -105,7 +105,7 @@ public class NavigationServiceImpl implements NavigationService {
 			max = Integer.MAX_VALUE;
 		}
 
-		Folder folder = (Folder) contentService.getContentAsTheBaseType(folderId);
+		Folder folder = (Folder) contentService.getContent(folderId);
 		List<Content>aclFiltered = permissionService.getFiltered(callContext, contentService.getChildren(folder.getId()));
 		//Filtering with folderOnly flag
 		List<Content> contents = new ArrayList<Content>();
@@ -207,7 +207,7 @@ public class NavigationServiceImpl implements NavigationService {
 
 		List<ObjectInFolderContainer> childrenOfFolder = new ArrayList<ObjectInFolderContainer>();
 		//Check specified folderId is folder(if not, it's a leaf node)
-		Content c = contentService.getContentAsTheBaseType(folderId);
+		Content c = contentService.getContent(folderId);
 		if(!c.isFolder()){
 			return childrenOfFolder;
 		}
@@ -248,7 +248,7 @@ public class NavigationServiceImpl implements NavigationService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("folderId", folderId);
-		Folder folder = (Folder) contentService.getContentAsTheBaseType(folderId);
+		Folder folder = (Folder) contentService.getContent(folderId);
 		exceptionService.objectNotFound(DomainType.OBJECT, folder, folderId);
 		exceptionService.permissionDenied(callContext, PermissionMapping.CAN_GET_FOLDER_PARENT_OBJECT, folder);
 		
@@ -272,7 +272,7 @@ public class NavigationServiceImpl implements NavigationService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequired("objectId", objectId);
-		Content content = contentService.getContentAsTheBaseType(objectId);
+		Content content = contentService.getContent(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext, PermissionMapping.CAN_GET_PARENTS_FOLDER, content);
 		
@@ -282,7 +282,7 @@ public class NavigationServiceImpl implements NavigationService {
 		// return empty list if content is ROOT folder
 		if(content.isRoot()) return Collections.emptyList();
 		
-		Content parent = contentService.getContentAsTheBaseType(content.getParentId());
+		Content parent = contentService.getContent(content.getParentId());
 		if(parent == null) {
 			//TODO logging
 		}

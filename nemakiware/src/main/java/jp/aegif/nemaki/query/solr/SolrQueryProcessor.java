@@ -24,6 +24,7 @@ package jp.aegif.nemaki.query.solr;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -36,8 +37,10 @@ import jp.aegif.nemaki.service.cmis.PermissionService;
 import jp.aegif.nemaki.service.node.ContentService;
 
 import org.antlr.runtime.tree.Tree;
+import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
+import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectListImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
@@ -54,7 +57,6 @@ import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.response.QueryResponse;
-import org.apache.solr.client.solrj.util.ClientUtils;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
 
@@ -65,12 +67,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 	private PermissionService permissionService;
 	private CompileObjectService compileObjectService;
 	private ExceptionService exceptionService;
-	private SolrServer solrServer;
-	private QueryObject queryObject;
-	private static final Log log = LogFactory.getLog(SolrQueryProcessor.class);
+	private SolrUtil solrUtil;
+	private static final Log logger = LogFactory.getLog(SolrQueryProcessor.class);
 
 	public SolrQueryProcessor() {
-		solrServer = SolrUtil.getSolrServer();
+		
 	}
 
 	public ObjectList query(TypeManager typeManager, CallContext callContext,
@@ -78,9 +79,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 			Boolean searchAllVersions, Boolean includeAllowableActions,
 			IncludeRelationships includeRelationships, String renditionFilter,
 			BigInteger maxItems, BigInteger skipCount) {
+		
+		SolrServer solrServer = solrUtil.getSolrServer();
 
 		// queryObject includes the SQL information
-		queryObject = new QueryObject(typeManager);
+		QueryObject queryObject = new QueryObject(typeManager);
 		QueryUtil util = new QueryUtil();
 		CmisQueryWalker walker = null;
 
@@ -94,7 +97,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 			whereQueryString = "*:*";
 		} else {
 			SolrPredicateWalker solrPredicateWalker = new SolrPredicateWalker(
-					queryObject);
+					queryObject, solrUtil);
 			try{
 				Query whereQuery = solrPredicateWalker.walkPredicate(whereTree);
 				whereQueryString = whereQuery.toString();
@@ -109,9 +112,21 @@ public class SolrQueryProcessor implements QueryProcessor {
 		String fromQueryString = "";
 
 		TypeDefinition td = queryObject.getMainFromName();
-		String fromTable = td.getId();
-		Term t = new Term("type", SolrUtil.getPropertyNameInSolr(fromTable));
-		fromQueryString = ClientUtils.escapeQueryChars(new TermQuery(t).toString());
+		//includedInSupertypeQuery
+		List<TypeDefinitionContainer> typeDescendants = typeManager.getTypesDescendants(td.getId(), BigInteger.valueOf(-1), false);
+		Iterator<TypeDefinitionContainer> iterator = typeDescendants.iterator();
+		List<String> tables = new ArrayList<String>();
+		while(iterator.hasNext()){
+			TypeDefinition descendant = iterator.next().getTypeDefinition();
+			if(td.getId() != descendant.getId()){
+				boolean isq = (descendant.isIncludedInSupertypeQuery() == null) ? false : descendant.isIncludedInSupertypeQuery();
+				if(!isq) continue;
+			}
+			String table = descendant.getQueryName();
+			tables.add(table.replaceAll(":", "\\\\:"));
+		}
+		Term t = new Term(solrUtil.getPropertyNameInSolr(PropertyIds.OBJECT_TYPE_ID), StringUtils.join(tables, " "));
+		fromQueryString = new TermQuery(t).toString();
 
 		// Execute query
 		SolrQuery solrQuery = new SolrQuery();
@@ -126,14 +141,14 @@ public class SolrQueryProcessor implements QueryProcessor {
 		}
 
 		// Output search results to ObjectList
-		if (resp != null & resp.getResults() != null
+		if (resp != null && resp.getResults() != null
 				&& resp.getResults().getNumFound() != 0) {
 			SolrDocumentList docs = resp.getResults();
 
 			List<Content> contents = new ArrayList<Content>();
 			for (SolrDocument doc : docs) {
 				String docId = (String) doc.getFieldValue("id");
-				Content c = contentService.getContentAsTheBaseType(docId);
+				Content c = contentService.getContent(docId);
 				contents.add(c);
 			}
 
@@ -178,4 +193,9 @@ public class SolrQueryProcessor implements QueryProcessor {
 	public void setExceptionService(ExceptionService exceptionService) {
 		this.exceptionService = exceptionService;
 	}
+	
+	public void setSolrUtil(SolrUtil solrUtil) {
+		this.solrUtil = solrUtil;
+	}
+	
 }

@@ -12,3 +12,4 @@ solr/nemaki/data/
 *.DS_Store
 log/
 tracking.properties
+log4j.log

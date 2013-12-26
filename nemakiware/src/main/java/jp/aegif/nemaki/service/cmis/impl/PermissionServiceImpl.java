@@ -22,9 +22,7 @@
 package jp.aegif.nemaki.service.cmis.impl;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -35,6 +33,7 @@ import jp.aegif.nemaki.repository.TypeManager;
 import jp.aegif.nemaki.service.cmis.PermissionService;
 import jp.aegif.nemaki.service.node.ContentService;
 import jp.aegif.nemaki.service.node.PrincipalService;
+import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.YamlManager;
 
 import org.apache.chemistry.opencmis.commons.data.Ace;
@@ -44,7 +43,6 @@ import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
 import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PermissionDefinitionDataImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PermissionMappingDataImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -62,6 +60,9 @@ public class PermissionServiceImpl implements PermissionService {
 	private ContentService contentService;
 	private TypeManager typeManager;
 	private RepositoryInfo repositoryInfo;
+	
+	static final String FILEPATH_PROPERTIESFILE = "nemakiware.properties";
+	static final String PROP_PRINCIPAL_ADMIN_ID = "principal.admin.id";
 
 	// //////////////////////////////////////////////////////////////////////////
 	// Permission Definitions
@@ -129,8 +130,15 @@ public class PermissionServiceImpl implements PermissionService {
 	public Boolean checkPermission(CallContext callContext, String key, Acl acl,
 			String baseType, Content content) {
 		// Admin always pass a permission check
-		// TODO externalize Admin ID
-		if (callContext.getUsername().equals("admin"))
+		String admin = new String();
+		try {
+			PropertyManager propertyManager = new PropertyManager(FILEPATH_PROPERTIESFILE);
+			admin = propertyManager.readHeadValue(PROP_PRINCIPAL_ADMIN_ID);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		
+		if (callContext.getUsername().equals(admin))
 			return isAllowableBaseType(key, baseType, content);
 		
 		if (acl == null)
@@ -159,7 +167,7 @@ public class PermissionServiceImpl implements PermissionService {
 		}
 
 		// Check mapping between the user and the content
-		return isAllowableBaseType(key, baseType, content) && calcPermissions(key, userPermissions);
+		return isAllowableBaseType(key, baseType, content) && checkCalculatedPermissions(key, userPermissions);
 	}
 
 	// TODO User permission is inherited from Group permission.
@@ -169,7 +177,7 @@ public class PermissionServiceImpl implements PermissionService {
 	 * @param userPermissions
 	 * @return
 	 */
-	private Boolean calcPermissions(String key, Set<String> userPermissions) {
+	private Boolean checkCalculatedPermissions(String key, Set<String> userPermissions) {
 		// CMIS default permission mapping
 		Map<String, PermissionMapping> map = getPermissionMap();
 		// Check allowable key
@@ -183,7 +191,7 @@ public class PermissionServiceImpl implements PermissionService {
 
 		// Customize the permission mapping of the key
 		Set<String> extend = new HashSet<String>();
-		Boolean customAllowable = false;
+		//Boolean customAllowable = false;
 		for (String userPermission : userPermissions) {
 			// if cmis:all, return true without condition
 			if (userPermission.equals("cmis:all")) {
@@ -203,7 +211,10 @@ public class PermissionServiceImpl implements PermissionService {
 				// custom permission mapping
 				Map<String, Boolean> pm = cp.getPermissionMapping();
 				if (pm.containsKey(key)) {
-					customAllowable = customAllowable || pm.get(key);
+					//customAllowable = customAllowable || pm.get(key);
+					if ( pm.get(key)) {
+						return true;
+					}
 				}
 			}
 		}
@@ -213,10 +224,6 @@ public class PermissionServiceImpl implements PermissionService {
 			// If a user base permission is allowed
 			if (mappedPermissions.contains(up)) {
 				return true;
-				// Check custom mapping
-			} else {
-				if (customAllowable)
-					return true;
 			}
 		}
 
@@ -261,8 +268,7 @@ public class PermissionServiceImpl implements PermissionService {
 				return false;
 			}else{
 				return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType) || BaseTypeId.CMIS_FOLDER.value().equals(baseType)
-						|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM
-							.equals(baseType));
+						|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM.value().equals(baseType));
 			}
 			
 		// Object Services
@@ -270,8 +276,7 @@ public class PermissionServiceImpl implements PermissionService {
 			return BaseTypeId.CMIS_FOLDER.value().equals(baseType);
 		if (PermissionMapping.CAN_CREATE_FOLDER_FOLDER.equals(key))
 			return BaseTypeId.CMIS_FOLDER.value().equals(baseType);
-		if ("canCreatePolicy.Folder".equals(key)) // FIXME the constant already
-													// implemented?
+		if (PermissionMapping.CAN_CREATE_POLICY_FOLDER.equals(key))
 			return BaseTypeId.CMIS_FOLDER.value().equals(baseType);
 		if (PermissionMapping.CAN_CREATE_RELATIONSHIP_SOURCE.equals(key))
 			return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)
@@ -370,7 +375,7 @@ public class PermissionServiceImpl implements PermissionService {
 			return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)
 					|| BaseTypeId.CMIS_FOLDER.value().equals(baseType)
 					|| BaseTypeId.CMIS_RELATIONSHIP.value().equals(baseType)
-					|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM
+					|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM.value()
 						.equals(baseType));
 		if (PermissionMapping.CAN_REMOVE_POLICY_POLICY.equals(key))
 			return BaseTypeId.CMIS_POLICY.value().equals(baseType);
@@ -378,20 +383,20 @@ public class PermissionServiceImpl implements PermissionService {
 			return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)
 					|| BaseTypeId.CMIS_FOLDER.value().equals(baseType)
 					|| BaseTypeId.CMIS_RELATIONSHIP.value().equals(baseType)
-					|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM
+					|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM.value()
 						.equals(baseType));
 		// ACL Services
 		if (PermissionMapping.CAN_GET_ACL_OBJECT.equals(key))
 			return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)
 					|| BaseTypeId.CMIS_FOLDER.value().equals(baseType)
 					|| BaseTypeId.CMIS_RELATIONSHIP.value().equals(baseType)
-					|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM
+					|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM.value()
 						.equals(baseType));
 		if (PermissionMapping.CAN_APPLY_ACL_OBJECT.equals(key))
 			return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)
 					|| BaseTypeId.CMIS_FOLDER.value().equals(baseType)
 					|| BaseTypeId.CMIS_RELATIONSHIP.value().equals(baseType)
-					|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM
+					|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM.value()
 						.equals(baseType));
 
 		return false;

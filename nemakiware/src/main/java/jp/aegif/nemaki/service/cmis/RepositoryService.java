@@ -26,6 +26,7 @@ import java.util.List;
 
 import jp.aegif.nemaki.repository.TypeManager;
 
+import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
@@ -67,4 +68,34 @@ public interface RepositoryService {
 	 */
 	public abstract TypeDefinition getTypeDefinition(CallContext callContext,
 			String typeId);
+
+	/**
+	 * Create a type
+	 * @param callContext TODO
+	 * @param type
+	 * @param extension
+	 * 
+	 * @return
+	 */
+	public TypeDefinition createType(CallContext callContext,
+			TypeDefinition type, ExtensionsData extension);
+
+	/**
+	 * Delete a type
+	 * @param callContext TODO
+	 * @param typeId
+	 * @param extension
+	 */
+	public void deleteType(CallContext callContext, String typeId, ExtensionsData extension);
+
+	/**
+	 * Update a type
+	 * @param callContext TODO
+	 * @param type
+	 * @param extension
+	 * 
+	 * @return
+	 */
+	public TypeDefinition updateType(CallContext callContext,
+			TypeDefinition type, ExtensionsData extension);
 }

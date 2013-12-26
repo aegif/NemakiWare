@@ -48,12 +48,11 @@ public class Document extends Content {
 		private Boolean latestMajorVersion;
 		private String checkinComment;
 		private String versionLabel;
-		
 		//The following properties should be moved away to VersionSeries object
 		private Boolean privateWorkingCopy;
 
-		private Boolean updateSkip;	//FIXME Modify to go without it
-	
+		private Boolean immutable;
+		
 	public Document(){
 		super();
 	}
@@ -144,6 +143,14 @@ public class Document extends Content {
 
 	public void setCheckinComment(String checkinComment) {
 		this.checkinComment = checkinComment;
+	}
+	
+	public Boolean isImmutable(){
+		return immutable;
+	}
+	
+	public void setImmutable(Boolean immutable){
+		this.immutable = immutable;
 	}
 
 	@Override

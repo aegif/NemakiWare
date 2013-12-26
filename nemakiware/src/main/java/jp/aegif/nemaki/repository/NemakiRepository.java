@@ -36,6 +36,7 @@ import jp.aegif.nemaki.service.cmis.VersioningService;
 
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.AllowableActions;
+import org.apache.chemistry.opencmis.commons.data.BulkUpdateObjectIdAndChangeToken;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.FailedToDeleteData;
@@ -73,7 +74,6 @@ public class NemakiRepository {
 	private VersioningService versioningService;
 	private PolicyService policyService;
 	private RelationshipService relationshipService;
-	
 
 	// -- Object Service
 
@@ -93,10 +93,17 @@ public class NemakiRepository {
 		objectService.setContentStream(callContext, objectId, overwriteFlag,
 				contentStream, changeToken);
 	}
-	
+
 	public void deleteContentStream(CallContext callContext,
 			Holder<String> objectId, Holder<String> changeToken,
+			ExtensionsData extension) {
+
+	}
+	
+	public void appendContentStream(CallContext callContext, Holder<String> objectId, Holder<String> changeToken,
+			ContentStream contentStream, boolean isLastChunk,
 			ExtensionsData extension){
+		objectService.appendContentStream(callContext, objectId, changeToken, contentStream, isLastChunk, extension);
 		
 	}
 
@@ -114,7 +121,8 @@ public class NemakiRepository {
 	}
 
 	public void moveObject(CallContext callContext, Holder<String> objectId,
-			String sourceFolderId, String targetFolderId, NemakiCmisService couchCmisService) {
+			String sourceFolderId, String targetFolderId,
+			NemakiCmisService couchCmisService) {
 		objectService.moveObject(callContext, objectId, sourceFolderId,
 				targetFolderId, couchCmisService);
 	}
@@ -128,15 +136,29 @@ public class NemakiRepository {
 	}
 
 	public void updateProperties(CallContext callContext,
-			Holder<String> objectId, Holder<String> changeToken, Properties properties) {
+			Holder<String> objectId, Holder<String> changeToken,
+			Properties properties) {
 
-		objectService.updateProperties(callContext, objectId, properties, changeToken);
+		objectService.updateProperties(callContext, objectId, properties,
+				changeToken);
+	}
+
+	public List<BulkUpdateObjectIdAndChangeToken> bulkUpdateProperties(
+			CallContext callContext,
+			List<BulkUpdateObjectIdAndChangeToken> objectIdAndChangeToken,
+			Properties properties, List<String> addSecondaryTypeIds,
+			List<String> removeSecondaryTypeIds, ExtensionsData extension) {
+		return objectService.bulkUpdateProperties(callContext,
+				objectIdAndChangeToken, properties, addSecondaryTypeIds,
+				removeSecondaryTypeIds, extension);
 	}
 
 	public ContentStream getContentStream(CallContext callContext,
-			String objectId, String streamId, BigInteger offset, BigInteger length) {
+			String objectId, String streamId, BigInteger offset,
+			BigInteger length) {
 
-		return objectService.getContentStream(callContext, objectId, streamId, offset, length);
+		return objectService.getContentStream(callContext, objectId, streamId,
+				offset, length);
 	}
 
 	public ObjectData getObjectByPath(CallContext callContext, String path,
@@ -216,6 +238,12 @@ public class NemakiRepository {
 		return objectService.createRelationship(callContext, properties,
 				policies, addAces, removeAces, extension);
 	}
+	
+	public String createItem(CallContext callContext, Properties properties,
+			String folderId, List<String> policies, Acl addAces,
+			Acl removeAces, ExtensionsData extension) {
+		return objectService.createItem(callContext, properties, folderId, policies, addAces, removeAces, extension);
+	}
 
 	// --- Navigation Service
 
@@ -292,6 +320,21 @@ public class NemakiRepository {
 	public TypeDefinition getTypeDefinition(CallContext callContext,
 			String typeId) {
 		return repositoryService.getTypeDefinition(callContext, typeId);
+	}
+
+	public TypeDefinition createType(CallContext callContext, TypeDefinition type,
+			ExtensionsData extension) {
+		return repositoryService.createType(callContext, type, extension);
+	}
+
+	public void deleteType(CallContext callContext, String typeId,
+			ExtensionsData extension) {
+		repositoryService.deleteType(callContext, typeId, extension);
+	}
+
+	public TypeDefinition updateType(CallContext callContext, TypeDefinition type,
+			ExtensionsData extension) {
+		return repositoryService.updateType(callContext, type, extension);
 	}
 
 	// --- ACL Service
@@ -395,16 +438,20 @@ public class NemakiRepository {
 		return policyService.getAppliedPolicies(callContext, objectId, filter,
 				extension);
 	}
-	
+
 	// --- Multi-filing Service Implementation ---
 	public void addObjectToFolder(CallContext callContext, String objectId,
-			String folderId, Boolean allVersions, ExtensionsData extension){
-		throw new CmisNotSupportedException("Multi-filing service is not supported", BigInteger.valueOf(405));
+			String folderId, Boolean allVersions, ExtensionsData extension) {
+		throw new CmisNotSupportedException(
+				"Multi-filing service is not supported",
+				BigInteger.valueOf(405));
 	}
-	
-	public void removeObjectFromFolder(CallContext callContext, String objectId,
-			String folderId, ExtensionsData extension){
-		throw new CmisNotSupportedException("Multi-filing service is not supported", BigInteger.valueOf(405));
+
+	public void removeObjectFromFolder(CallContext callContext,
+			String objectId, String folderId, ExtensionsData extension) {
+		throw new CmisNotSupportedException(
+				"Multi-filing service is not supported",
+				BigInteger.valueOf(405));
 	}
 
 	public void setAclService(AclService aclService) {

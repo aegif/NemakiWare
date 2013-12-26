@@ -43,7 +43,6 @@ public class Change extends NodeBase{
 	private int changeToken;
 	private ChangeType changeType;
 	private GregorianCalendar time;
-	private boolean latest;
 
 	
 	public Change() {
@@ -133,14 +132,8 @@ public class Change extends NodeBase{
 	public void setTime(GregorianCalendar time) {
 		this.time = time;
 	}
-	public boolean isLatest() {
-		return latest;
-	}
-	public void setLatest(boolean latest) {
-		this.latest = latest;
-	}
 	
-	public boolean isDocument(){
+	public boolean isOnDocument(){
 		return baseType.equals(NodeType.CMIS_DOCUMENT.value()) ? true : false;
 	}
 }

@@ -1,8 +1,32 @@
+/*******************************************************************************
+ * Copyright (c) 2013 aegif.
+ * 
+ * This file is part of NemakiWare.
+ * 
+ * NemakiWare is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * NemakiWare is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License along with NemakiWare.
+ * If not, see <http://www.gnu.org/licenses/>.
+ * 
+ * Contributors:
+ *     linzhixing(https://github.com/linzhixing) - initial API and implementation
+ ******************************************************************************/
+
 package jp.aegif.nemaki.model;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 
+import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.DecimalPrecision;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
@@ -10,7 +34,9 @@ import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.lucene.document.DateTools.Resolution;
 
 public class NemakiPropertyDefinition extends NodeBase {
-	//Attributes common
+	private String detailNodeId;
+	
+	// Attributes common
 	private String propertyId;
 	private String localName;
 	private String localNameSpace;
@@ -23,30 +49,30 @@ public class NemakiPropertyDefinition extends NodeBase {
 	private boolean required;
 	private boolean queryable;
 	private boolean orderable;
-	private List<Object> choices;
+	private List<Choice> choices;
 	private boolean openChoice;
 	private List<Object> defaultValue;
-	
-	//Attributes specific to Integer
+
+	// Attributes specific to Integer
 	private long minValue;
 	private long maxValue;
-	
-	//Attributes specific to DateTime
+
+	// Attributes specific to DateTime
 	private Resolution resolution;
-	
-	//Attributes specific to Decimal
+
+	// Attributes specific to Decimal
 	private DecimalPrecision decimalPrecision;
 	private BigDecimal decimalMinValue;
 	private BigDecimal decimalMaxValue;
-	
-	//Attributes specific to String
+
+	// Attributes specific to String
 	private long maxLength;
 
-	public NemakiPropertyDefinition(){
+	public NemakiPropertyDefinition() {
 		super();
 	}
-	
-	public NemakiPropertyDefinition(NodeBase n){
+
+	public NemakiPropertyDefinition(NodeBase n) {
 		setId(n.getId());
 		setType(n.getType());
 		setCreated(n.getCreated());
@@ -55,11 +81,85 @@ public class NemakiPropertyDefinition extends NodeBase {
 		setModifier(n.getModifier());
 	}
 	
+	public NemakiPropertyDefinition(NemakiPropertyDefinitionCore core, NemakiPropertyDefinitionDetail detail){
+		//TODO coreとdetailがマッチしないときはエラー
+		
+		setId(detail.getId());
+		setType("propertyDefinition");
+		setCreated(detail.getCreated());
+		setCreator(detail.getCreator());
+		setModified(detail.getModified());
+		setModifier(detail.getModifier());
+		
+		setDetailNodeId(detail.getId());
+		
+		setPropertyId(core.getPropertyId());
+		setLocalName(detail.getLocalName());
+		setLocalNameSpace(detail.getLocalNameSpace());
+		setQueryName(core.getQueryName());
+		setDisplayName(detail.getDisplayName());
+		setPropertyType(core.getPropertyType());
+		setCardinality(core.getCardinality());
+		setUpdatability(detail.getUpdatability());
+		setQueryable(detail.isQueryable());
+		setOrderable(detail.isOrderable());
+		setChoices(detail.getChoices());
+		setOpenChoice(detail.isOpenChoice());
+		setDefaultValue(detail.getDefaultValue());
+		
+		setMinValue(detail.getMinValue());
+		setMaxValue(detail.getMaxValue());
+		setResolution(detail.getResolution());
+		setDecimalPrecision(detail.getDecimalPrecision());
+		setDecimalMinValue(detail.getDecimalMinValue());
+		setDecimalMaxValue(detail.getDecimalMaxValue());
+		setMaxLength(detail.getMaxLength());
+	}
+
+	public NemakiPropertyDefinition(PropertyDefinition<?> propertyDefinition) {
+		// Inheritedはproperty自体の性質ではなく、そのpropertyをもつtypeによって決まる?
+		setPropertyId(propertyDefinition.getId());
+		setLocalName(propertyDefinition.getLocalName());
+		setLocalNameSpace(propertyDefinition.getLocalNamespace());
+		setQueryName(propertyDefinition.getQueryName());
+		setDisplayName(propertyDefinition.getQueryName());
+		setPropertyType(propertyDefinition.getPropertyType());
+		setCardinality(propertyDefinition.getCardinality());
+		setUpdatability(propertyDefinition.getUpdatability());
+		setQueryable(propertyDefinition.isQueryable());
+		setOrderable(propertyDefinition.isOrderable());
+		setChoices(buildChoices(propertyDefinition.getChoices()));
+		setOpenChoice(propertyDefinition.isOpenChoice());
+		setDefaultValue(new ArrayList<Object>(propertyDefinition.getDefaultValue()));
+		
+		
+	}
+
+	private <T> List<Choice> buildChoices(List<org.apache.chemistry.opencmis.commons.definitions.Choice<T>> choices){
+		List<Choice> list = new ArrayList<Choice>();
+		if(org.apache.commons.collections.CollectionUtils.isNotEmpty(choices)){
+			for(org.apache.chemistry.opencmis.commons.definitions.Choice<T> choice : choices){
+				List<Object> values = new ArrayList<Object>(choice.getValue());
+				Choice c = new Choice(choice.getDisplayName(), values, buildChoices(choice.getChoice())); 
+				list.add(c);
+			}
+		}
+		return list;
+	}
+
 	/**
 	 * Getter & Setter
 	 */
 	public String getPropertyId() {
 		return propertyId;
+	}
+
+	public String getDetailNodeId() {
+		return detailNodeId;
+	}
+
+	public void setDetailNodeId(String detailNodeId) {
+		this.detailNodeId = detailNodeId;
 	}
 
 	public void setPropertyId(String propertyId) {
@@ -154,11 +254,11 @@ public class NemakiPropertyDefinition extends NodeBase {
 		this.orderable = orderable;
 	}
 
-	public List<Object> getChoices() {
+	public List<Choice> getChoices() {
 		return choices;
 	}
 
-	public void setChoices(List<Object> choices) {
+	public void setChoices(List<Choice> choices) {
 		this.choices = choices;
 	}
 
@@ -215,7 +315,7 @@ public class NemakiPropertyDefinition extends NodeBase {
 	}
 
 	public void setDecimalMinValue(BigDecimal decimalMinValue) {
-		decimalMinValue = decimalMinValue;
+		this.decimalMinValue = decimalMinValue;
 	}
 
 	public BigDecimal getDecimalMaxValue() {
@@ -223,7 +323,7 @@ public class NemakiPropertyDefinition extends NodeBase {
 	}
 
 	public void setDecimalMaxValue(BigDecimal decimalMaxValue) {
-		decimalMaxValue = decimalMaxValue;
+		this.decimalMaxValue = decimalMaxValue;
 	}
 
 	public long getMaxLength() {
@@ -233,6 +333,5 @@ public class NemakiPropertyDefinition extends NodeBase {
 	public void setMaxLength(long maxLength) {
 		this.maxLength = maxLength;
 	}
-	
-	
+
 }

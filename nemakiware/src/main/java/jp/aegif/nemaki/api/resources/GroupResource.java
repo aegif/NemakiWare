@@ -59,17 +59,25 @@ public class GroupResource extends ResourceBase{
 		boolean status = true;		
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
-		JSONArray list = new JSONArray();
 		
-		Group group = principalService.getGroupById(query);
-		if(group == null){
+		List<Group> groups = this.principalService.getGroups();
+		JSONArray queriedGroups = new JSONArray();
+		
+		for(Group g : groups) {
+			if ( g.getId().startsWith(query)|| g.getName().startsWith(query)) {
+				queriedGroups.add(this.convertGroupToJson(g));
+			}
+		}
+			
+		if( queriedGroups.size() == 0 ){
 			status = false;
 			addErrMsg(errMsg, ITEM_GROUP, ERR_NOTFOUND);
-		}else{
-			list.add(convertGroupToJson(group));
-			result.put("groups", list);
 		}
-		makeResult(status, result, errMsg);
+		else {
+			result.put("result", queriedGroups);
+		}
+		
+		result = makeResult(status, result, errMsg);
 		return result.toString();
 	}
 	

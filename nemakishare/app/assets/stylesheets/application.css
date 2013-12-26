@@ -17,4 +17,6 @@
  *= require nemaki.css
  *= require bootstrapSwitch.css
  *= require thickbox.css
+ *= require jquery.pnotify.default
+ *= require jquery.pnotify.default.icons
  * */

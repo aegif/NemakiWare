@@ -58,7 +58,7 @@ public class RelationshipServiceImpl implements RelationshipService{
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("objectId", objectId);
-		Content content = contentService.getContentAsTheBaseType(objectId);
+		Content content = contentService.getContent(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, content);
@@ -94,9 +94,7 @@ public class RelationshipServiceImpl implements RelationshipService{
 		}
 		
 		//Compile to ObjectData
-		compileObjectService.compileObjectDataList(callContext, extracted, filter, includeAllowableActions, false, maxItems, skipCount);
-		
-		return null;
+		return compileObjectService.compileObjectDataList(callContext, extracted, filter, includeAllowableActions, false, maxItems, skipCount);
 	}
 
 	public void setTypeManager(TypeManager typeManager) {
