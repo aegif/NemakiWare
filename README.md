@@ -27,10 +27,10 @@ You can relax and enjoy your happy enterprise time as you are lying on the couch
 Prerequisite for installation
 ------
 * Java 1.6(JDK), Maven 3.x, Ruby 1.9.x, Rails 3.2.x, sqlite 3.7.x, python 2.7.x
-  * Server and Solr is written in Java, and the client in RoR.
-  * Python is needed only for setup data importing.
-* Platform: OSX 10.8.3+ or CentOS 6+, Ubunt 12.10+ (Although Windows is not tested, NemakiWare is basically platform-agnostic).
-* Package management system, yum(CentOS), Homebrew/Mac Port(Mac), apt-get(Ubuntu) as you like
+  * The server and Solr are written in Java, and the client in RoR.
+  * Python is needed only for importing data during setup.
+* Platform: OSX 10.8.3+ or CentOS 6+, Ubuntu 12.10+ (Although Windows is not tested, NemakiWare is basically platform-agnostic).
+* Package management system, yum (CentOS), Homebrew/Mac Port (Mac), apt-get (Ubuntu) as you like
 
 Installation
 ------
@@ -73,9 +73,9 @@ $ sudo apt-get install couchdb
 
 ### [Install Applications For Production Environment(tomcat)]
 ```sh
-$ <NeakiWare_Home>/installer/nemakiware_installer.bin
-$ <NeakiWare_Home>/installer/nemakisolr_installer.bin
-$ <NeakiWare_Home>/installer/nemakishare_installer.bin
+$ <NemakiWare_Home>/installer/nemakiware_installer.bin
+$ <NemakiWare_Home>/installer/nemakisolr_installer.bin
+$ <NemakiWare_Home>/installer/nemakishare_installer.bin
 ```
 
 ### Start the applications
@@ -92,7 +92,7 @@ $ <NemakiWare/Installed/Path>/tomcat/bin/shutdown.sh
 
 ### [Install Applications For Development Environment(jetty)]
 
-### Excecute setup script 
+### Execute setup script 
 If CouchDB has not started, start it before setup.
 
 ```sh
@@ -109,7 +109,7 @@ $ cd <NemakiWare_Home>/setup
 $ sh start.sh
 ```
 It will take a little time to download the dependent packages.
-Server(nemakiware), Solr(nemakisolr), CLient(nemakishare) have been now started.
+Server (nemakiware), Solr (nemakisolr), Client (nemakishare) have been now started.
 
 To stop the applications,
 ```sh
@@ -117,11 +117,10 @@ $ sh stop.sh
 ```
 
 ### Login 
-Now, open the login  window
-    http://127.0.0.1:3000/nodes/(default)
-    * ID:admin
-    * Password admin
-
+Now, open the login window at http://127.0.0.1:3000/nodes/(default)
+
+* ID:admin
+* Password admin
 
 That's all!
 
