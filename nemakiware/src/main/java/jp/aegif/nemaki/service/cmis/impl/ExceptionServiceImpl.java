@@ -41,6 +41,7 @@ import jp.aegif.nemaki.repository.TypeManager;
 import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.cmis.PermissionService;
 import jp.aegif.nemaki.service.node.ContentService;
+import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
@@ -397,7 +398,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 	@Override
 	public void constraintBaseTypeId(Properties properties,
 			BaseTypeId baseTypeId) {
-		String objectTypeId = getTypeId(properties);
+		String objectTypeId = DataUtil.getTypeId(properties);
 		TypeDefinition td = typeManager.getTypeDefinition(objectTypeId);
 
 		if (!td.getBaseTypeId().equals(baseTypeId))
@@ -413,10 +414,10 @@ public class ExceptionServiceImpl implements ExceptionService,
 		if (!CollectionUtils.isEmpty(allowedTypes)) {
 			// NOTE: Elements of allowedTypes must be like "cmis:folder", not
 			// "folder"
-			String childType = getIdProperty(childProperties,
+			String childType = DataUtil.getIdProperty(childProperties,
 					PropertyIds.OBJECT_TYPE_ID);
 			if (!allowedTypes.contains(childType)) {
-				String objectId = getIdProperty(childProperties,
+				String objectId = DataUtil.getIdProperty(childProperties,
 						PropertyIds.OBJECT_ID);
 				constraint(
 						objectId,
@@ -432,7 +433,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 				.getPropertyDefinitions();
 		
 		//Adding secondary types and its properties MAY be done in the same operation
-		List<String> secIds = getIdListProperty(properties, PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
+		List<String> secIds = DataUtil.getIdListProperty(properties, PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
 		if(CollectionUtils.isNotEmpty(secIds)){
 			for(String secId : secIds){
 				TypeDefinition sec = typeManager.getTypeById(secId).getTypeDefinition();
@@ -1061,71 +1062,12 @@ public class ExceptionServiceImpl implements ExceptionService,
 		return msg + " [cmis:objectId = " + objectId + "]";
 	}
 	
-	/**
-	 * Gets the type id from a set of properties.
-	 */
-	private String getTypeId(Properties properties) {
-		PropertyData<?> typeProperty = properties.getProperties().get(
-				PropertyIds.OBJECT_TYPE_ID);
-		if (!(typeProperty instanceof PropertyId)) {
-			throw new CmisInvalidArgumentException("Type id must be set!");
-		}
-		String typeId = ((PropertyId) typeProperty).getFirstValue();
-		if (typeId == null) {
-			throw new CmisInvalidArgumentException("Type id must be set!");
-		}
-		return typeId;
-	}
-
-	/**
-	 * Reads a given property from a set of properties.
-	 */
-	private String getStringProperty(Properties properties, String name) {
-		PropertyData<?> property = properties.getProperties().get(name);
-		if (!(property instanceof PropertyString)) {
-			return null;
-		}
-
-		return ((PropertyString) property).getFirstValue();
-	}
-
-	private String getIdProperty(Properties properties, String name) {
-		PropertyData<?> property = properties.getProperties().get(name);
-		if (!(property instanceof PropertyId)) {
-			return null;
-		}
-
-		return ((PropertyId) property).getFirstValue();
-	}
-	
-	private List<String> getIdListProperty(Properties properties, String name) {
-		PropertyData<?> property = properties.getProperties().get(name);
-		if (!(property instanceof PropertyId)) {
-			return null;
-		}
-
-		return ((PropertyId) property).getValues();
-	}
-
-	private Boolean getBooleanProperty(Properties properties, String name) {
-		PropertyData<?> property = properties.getProperties().get(name);
-		if (!(property instanceof PropertyBoolean)) {
-			return null;
-		}
-
-		return ((PropertyBoolean) property).getFirstValue();
-	}
-
 	private String getObjectId(Properties properties) {
-		return getIdProperty(properties, PropertyIds.OBJECT_ID);
-	}
-
-	private String getObjectTypeId(Properties properties) {
-		return getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID);
+		return DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID);
 	}
 
 	private String getBaseTypeId(Properties properties) {
-		return getIdProperty(properties, PropertyIds.BASE_TYPE_ID);
+		return DataUtil.getIdProperty(properties, PropertyIds.BASE_TYPE_ID);
 	}
 
 	/**

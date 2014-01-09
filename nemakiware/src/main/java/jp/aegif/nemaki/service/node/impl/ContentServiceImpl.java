@@ -32,7 +32,6 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.TimeZone;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -62,6 +61,7 @@ import jp.aegif.nemaki.repository.TypeManager;
 import jp.aegif.nemaki.service.dao.ContentDaoService;
 import jp.aegif.nemaki.service.dao.impl.ContentDaoServiceImpl;
 import jp.aegif.nemaki.service.node.ContentService;
+import jp.aegif.nemaki.util.DataUtil;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
@@ -69,10 +69,7 @@ import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.Principal;
 import org.apache.chemistry.opencmis.commons.data.Properties;
-import org.apache.chemistry.opencmis.commons.data.PropertyBoolean;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
-import org.apache.chemistry.opencmis.commons.data.PropertyId;
-import org.apache.chemistry.opencmis.commons.data.PropertyString;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
@@ -745,7 +742,7 @@ public class ContentServiceImpl implements ContentService {
 		Document d = new Document();
 		setBaseProperties(callContext, properties, d, parentFolder.getId());
 		d.setParentId(parentFolder.getId());
-		d.setImmutable(getBooleanProperty(properties, PropertyIds.IS_IMMUTABLE));
+		d.setImmutable(DataUtil.getBooleanProperty(properties, PropertyIds.IS_IMMUTABLE));
 		setSignature(callContext, d);
 		// Aspect
 		List<Aspect> aspects = buildAspects(properties);
@@ -881,7 +878,7 @@ public class ContentServiceImpl implements ContentService {
 		setBaseProperties(callContext, properties, f, parentFolder.getId());
 		f.setParentId(parentFolder.getId());
 		// Defaults to document / folder / item if not specified
-		List<String> allowedTypes = getIdListProperty(properties,
+		List<String> allowedTypes = DataUtil.getIdListProperty(properties,
 				PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS);
 		if (CollectionUtils.isEmpty(allowedTypes)) {
 			List<String> l = new ArrayList<String>();
@@ -914,8 +911,8 @@ public class ContentServiceImpl implements ContentService {
 
 		Relationship rel = new Relationship();
 		setBaseProperties(callContext, properties, rel, null);
-		rel.setSourceId(getIdProperty(properties, PropertyIds.SOURCE_ID));
-		rel.setTargetId(getIdProperty(properties, PropertyIds.TARGET_ID));
+		rel.setSourceId(DataUtil.getIdProperty(properties, PropertyIds.SOURCE_ID));
+		rel.setTargetId(DataUtil.getIdProperty(properties, PropertyIds.TARGET_ID));
 		// Set ACL
 		rel.setAclInherited(true);
 		rel.setAcl(new Acl());
@@ -937,7 +934,7 @@ public class ContentServiceImpl implements ContentService {
 
 		Policy p = new Policy();
 		setBaseProperties(callContext, properties, p, null);
-		p.setPolicyText(getStringProperty(properties, PropertyIds.POLICY_TEXT));
+		p.setPolicyText(DataUtil.getStringProperty(properties, PropertyIds.POLICY_TEXT));
 		p.setAppliedIds(new ArrayList<String>());
 
 		// Set ACL
@@ -958,7 +955,7 @@ public class ContentServiceImpl implements ContentService {
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension) {
 		Item i = new Item();
 		setBaseProperties(callContext, properties, i, null);
-		String objectTypeId = getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID);
+		String objectTypeId = DataUtil.getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID);
 		TypeDefinition tdf = typeManager.getTypeDefinition(objectTypeId);
 		if(tdf.isFileable()){
 			i.setParentId(folderId);
@@ -979,7 +976,7 @@ public class ContentServiceImpl implements ContentService {
 	private void setBaseProperties(CallContext callContext,
 			Properties properties, Content content, String parentFolderId) {
 		// Object Type
-		String objectTypeId = getIdProperty(properties,
+		String objectTypeId = DataUtil.getIdProperty(properties,
 				PropertyIds.OBJECT_TYPE_ID);
 		content.setObjectType(objectTypeId);
 
@@ -991,16 +988,16 @@ public class ContentServiceImpl implements ContentService {
 
 		// Name(Unique in a folder)
 		String uniqueName = buildUniqueName(
-				getStringProperty(properties, PropertyIds.NAME),
+				DataUtil.getStringProperty(properties, PropertyIds.NAME),
 				parentFolderId, null);
 		content.setName(uniqueName);
 
 		// Description
-		content.setDescription(getStringProperty(properties,
+		content.setDescription(DataUtil.getStringProperty(properties,
 				PropertyIds.DESCRIPTION));
 
 		// Secondary Type IDs
-		content.setSecondaryIds(getIdListProperty(properties,
+		content.setSecondaryIds(DataUtil.getIdListProperty(properties,
 				PropertyIds.SECONDARY_OBJECT_TYPE_IDS));
 
 		// Signature
@@ -1214,22 +1211,22 @@ public class ContentServiceImpl implements ContentService {
 	private void setUpdatePropertyValue(Content content,
 			PropertyData<?> propertyData, Properties properties) {
 		if (propertyData.getId().equals(PropertyIds.NAME)) {
-			if (getIdProperty(properties, PropertyIds.OBJECT_ID) != content
+			if (DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID) != content
 					.getId()) {
 				String uniqueName = buildUniqueName(
-						getStringProperty(properties, PropertyIds.NAME),
+						DataUtil.getStringProperty(properties, PropertyIds.NAME),
 						content.getParentId(), content.getId());
 				content.setName(uniqueName);
 			}
 		}
 
 		if (propertyData.getId().equals(PropertyIds.DESCRIPTION)) {
-			content.setDescription(getStringProperty(properties,
+			content.setDescription(DataUtil.getStringProperty(properties,
 					propertyData.getId()));
 		}
 
 		if (propertyData.getId().equals(PropertyIds.SECONDARY_OBJECT_TYPE_IDS)) {
-			content.setSecondaryIds(getIdListProperty(properties,
+			content.setSecondaryIds(DataUtil.getIdListProperty(properties,
 					PropertyIds.SECONDARY_OBJECT_TYPE_IDS));
 		}
 	}
@@ -1757,49 +1754,6 @@ public class ContentServiceImpl implements ContentService {
 		}
 	}
 
-	private GregorianCalendar millisToCalendar(long millis) {
-		GregorianCalendar calendar = new GregorianCalendar();
-		calendar.setTimeZone(TimeZone.getTimeZone("GMT"));
-		calendar.setTimeInMillis(millis);
-		return calendar;
-	}
-
-	private String getStringProperty(Properties properties, String name) {
-		PropertyData<?> property = properties.getProperties().get(name);
-		if (!(property instanceof PropertyString)) {
-			return null;
-		}
-
-		return ((PropertyString) property).getFirstValue();
-	}
-
-	private String getIdProperty(Properties properties, String name) {
-		PropertyData<?> property = properties.getProperties().get(name);
-		if (!(property instanceof PropertyId)) {
-			return null;
-		}
-
-		return ((PropertyId) property).getFirstValue();
-	}
-	
-	private Boolean getBooleanProperty(Properties properties, String name) {
-		PropertyData<?> property = properties.getProperties().get(name);
-		if (!(property instanceof PropertyBoolean)) {
-			return null;
-		}
-
-		return ((PropertyBoolean) property).getFirstValue();
-	}
-
-	private List<String> getIdListProperty(Properties properties, String name) {
-		PropertyData<?> property = properties.getProperties().get(name);
-		if (!(property instanceof PropertyId)) {
-			return null;
-		}
-
-		return ((PropertyId) property).getValues();
-	}
-
 	/**
 	 * Parse CMIS extension to Nemaki Aspect model
 	 * 
@@ -1892,7 +1846,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 	
 	private GregorianCalendar getTimeStamp() {
-		return millisToCalendar(System.currentTimeMillis());
+		return DataUtil.millisToCalendar(System.currentTimeMillis());
 	}
 
 	public void setContentDaoService(ContentDaoService contentDaoService) {
