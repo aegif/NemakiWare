@@ -24,7 +24,9 @@ package jp.aegif.nemaki.service.cmis.impl;
 import java.io.InputStream;
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Content;
@@ -70,6 +72,7 @@ import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundExcept
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.BulkUpdateObjectIdAndChangeTokenImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.FailedToDeleteDataImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.RenditionDataImpl;
 import org.apache.chemistry.opencmis.commons.impl.server.ObjectInfoImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
@@ -652,6 +655,18 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT, content);
 		exceptionService.updateConflict(content, changeToken);
+		
+		/*//If secondaryObjectTypeIds are changed, update them in advance
+		List<String> secIds = getIdListProperty(properties, PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
+		if(!compareList(secIds, content.getSecondaryIds())){
+			PropertiesImpl pi = new PropertiesImpl();
+			pi.addProperty(properties.getProperties().get(PropertyIds.SECONDARY_OBJECT_TYPE_IDS));
+			
+			content = null;
+			content = updateProperties(callContext, objectId, pi, changeToken);
+		}*/
+		
+		
 		TypeDefinition tdf = typeManager.getTypeDefinition(content);
 		exceptionService.constraintPropertyValue(tdf, properties, objectId.getValue());
 
@@ -845,6 +860,28 @@ public class ObjectServiceImpl implements ObjectService {
 			ids.add(c.getId());
 		}
 		return ids;
+	}
+	
+	private List<String> getIdListProperty(Properties properties, String name) {
+		PropertyData<?> property = properties.getProperties().get(name);
+		if (!(property instanceof PropertyId)) {
+			return null;
+		}
+
+		return ((PropertyId) property).getValues();
+	}
+	
+	
+	private boolean compareList(List<String>l1, List<String>l2){
+		if(CollectionUtils.isEmpty(l1) && CollectionUtils.isEmpty(l2)){
+			return true;
+		}else if(CollectionUtils.isEmpty(l1) || CollectionUtils.isEmpty(l2)){
+			return false;
+		}
+		
+		Set<String> s1 = new HashSet<String>(l1);
+		Set<String> s2 = new HashSet<String>(l2);
+		return s1.equals(s2);
 	}
 
 	public void setContentService(ContentService contentService) {

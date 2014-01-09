@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 
 import jp.aegif.nemaki.model.Change;
@@ -78,8 +79,10 @@ import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedExce
 import org.apache.chemistry.opencmis.commons.exceptions.CmisStreamNotSupportedException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisUpdateConflictException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisVersioningException;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
+import org.apache.chemistry.opencmis.server.impl.browser.RepositoryService.GetLastResult;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang.StringUtils;
@@ -427,6 +430,20 @@ public class ExceptionServiceImpl implements ExceptionService,
 			Properties properties, String objectId) {
 		Map<String, PropertyDefinition<?>> propertyDefinitions = typeDefinition
 				.getPropertyDefinitions();
+		
+		//Adding secondary types and its properties MAY be done in the same operation
+		List<String> secIds = getIdListProperty(properties, PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
+		if(CollectionUtils.isNotEmpty(secIds)){
+			for(String secId : secIds){
+				TypeDefinition sec = typeManager.getTypeById(secId).getTypeDefinition();
+				for(Entry<String, PropertyDefinition<?>> entry : sec.getPropertyDefinitions().entrySet()){
+					if(!propertyDefinitions.containsKey(entry.getKey())){
+						propertyDefinitions.put(entry.getKey(), entry.getValue());
+					}
+				}
+			}
+		}
+		
 		for (PropertyData<?> _pd : properties.getPropertyList()) {
 			PropertyData<T> pd = (PropertyData<T>) _pd;
 			PropertyDefinition<T> propertyDefinition = (PropertyDefinition<T>) propertyDefinitions
@@ -1079,6 +1096,15 @@ public class ExceptionServiceImpl implements ExceptionService,
 		}
 
 		return ((PropertyId) property).getFirstValue();
+	}
+	
+	private List<String> getIdListProperty(Properties properties, String name) {
+		PropertyData<?> property = properties.getProperties().get(name);
+		if (!(property instanceof PropertyId)) {
+			return null;
+		}
+
+		return ((PropertyId) property).getValues();
 	}
 
 	private Boolean getBooleanProperty(Properties properties, String name) {
