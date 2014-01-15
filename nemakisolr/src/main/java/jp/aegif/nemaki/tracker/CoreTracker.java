@@ -144,7 +144,6 @@ public class CoreTracker extends CloseHook {
 		this.core = core;
 		this.server = server;
 
-		setupCmisSession();
 	}
 
 	public void setupCmisSession() {
@@ -202,6 +201,10 @@ public class CoreTracker extends CloseHook {
 		} catch (Exception e) {
 			logger.error("Failed to create a session to CMIS server", e);
 		}
+	}
+	
+	public boolean isConnectionSetup() {
+		return (this.cmisSession != null);
 	}
 
 	@Override
