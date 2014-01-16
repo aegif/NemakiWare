@@ -183,7 +183,7 @@ Content-MD5: Cc0mhuEYb9yNe+kE/215Xg==
 Content-Type: application/json;charset=utf-8
 ETag: "1-ef5fbb1367353ad9bef9993b9e195f47"
 
-{"displayName": "Charged person", "description": "Charged person", "creator": "system", "type": "propertyDefinitionDetail", "_rev": "1-ef5fbb1367353ad9bef9993b9e195f47", "required": false, "created": "2013-01-01T00:00:00.000+0000", "localName": "nemaki:chargedPerson", "updatability": "READWRITE", "orderable": false, "_id": "ceeea12ac47d659d88c0d46e67003985", "coreNodeId": "18d9eb1d9a6c624a63013e9e2a2cd09f", "queryable": true}
+{"displayName": "Person in charge", "description": "Person in charge", "creator": "system", "type": "propertyDefinitionDetail", "_rev": "1-ef5fbb1367353ad9bef9993b9e195f47", "required": false, "created": "2013-01-01T00:00:00.000+0000", "localName": "nemaki:chargedPerson", "updatability": "READWRITE", "orderable": false, "_id": "ceeea12ac47d659d88c0d46e67003985", "coreNodeId": "18d9eb1d9a6c624a63013e9e2a2cd09f", "queryable": true}
 --==b66c76606df14c2281a84ee2f5de1358==
 Content-ID: ceeea12ac47d659d88c0d46e670046de
 Content-Length: 426
