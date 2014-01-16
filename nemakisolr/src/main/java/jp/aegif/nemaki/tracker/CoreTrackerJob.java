@@ -44,6 +44,10 @@ public class CoreTrackerJob implements Job{
 	public void execute(JobExecutionContext jec) throws JobExecutionException{
 		CoreTracker coreTracker = (CoreTracker) jec.getJobDetail().getJobDataMap().get("TRACKER");
 		
+		if ( !coreTracker.isConnectionSetup() ) {
+			coreTracker.setupCmisSession();
+		}
+		
 		if(coreTracker.cmisSession == null){
 			coreTracker.setupCmisSession();
 		}
