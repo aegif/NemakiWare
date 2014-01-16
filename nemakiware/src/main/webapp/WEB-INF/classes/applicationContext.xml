@@ -25,7 +25,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 	<!-- Repository Basic Beans -->
 
 	<bean id="connector" class="jp.aegif.nemaki.service.db.CouchConnector"
-	init-method="init">
+	init-method="init" scope="singleton">
 		<property name="repositoryId">
 			<value>${nemakiware.repositories}</value>
 		</property>
@@ -38,7 +38,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 	</bean>
 
 	<bean id="archiveConnector" class="jp.aegif.nemaki.service.db.CouchConnector"
-	init-method="init">
+	init-method="init" scope="singleton">
 		<property name="repositoryId">
 			<value>${nemakiware.repository.archive}</value>
 		</property>
@@ -56,7 +56,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		</constructor-arg>
 	</bean>
 
-	<bean id="repositoryService" class="jp.aegif.nemaki.service.cmis.impl.RepositoryServiceImpl">
+	<bean id="repositoryService" class="jp.aegif.nemaki.service.cmis.impl.RepositoryServiceImpl" scope="singleton">
 		<property name="repositoryInfo">
 			<ref bean="RepositoryInfo"></ref>
 		</property>
@@ -120,11 +120,11 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		</property>
 	</bean>
 
-	<bean id="capabilities" class="jp.aegif.nemaki.repository.NemakiCapabilitiesImpl" init-method="setup"></bean>
+	<bean id="capabilities" class="jp.aegif.nemaki.repository.NemakiCapabilitiesImpl" init-method="setup" scope="singleton"></bean>
 
-	<bean id="aclCapabilities" class="jp.aegif.nemaki.repository.NemakiAclCapabilitiesDataImpl" init-method="setup"></bean>
+	<bean id="aclCapabilities" class="jp.aegif.nemaki.repository.NemakiAclCapabilitiesDataImpl" init-method="setup" scope="singleton"></bean>
 
-	<bean id="nemakiRepository" class="jp.aegif.nemaki.repository.NemakiRepository">
+	<bean id="nemakiRepository" class="jp.aegif.nemaki.repository.NemakiRepository" scope="singleton">
 		<property name="aclService">
 			<ref bean="AclService"></ref>
 		</property>
@@ -153,7 +153,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 
 
 	<!-- Service Beans -->
-	<bean id="aclService" class="jp.aegif.nemaki.service.cmis.impl.AclServiceImpl">
+	<bean id="aclService" class="jp.aegif.nemaki.service.cmis.impl.AclServiceImpl" scope="singleton">
 		<property name="contentService">
 			<ref bean="ContentService"></ref>
 		</property>
@@ -166,13 +166,13 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 
 	</bean>
 
-	<bean id="authenticationService" class="jp.aegif.nemaki.service.cmis.impl.AuthenticationServiceImpl">
+	<bean id="authenticationService" class="jp.aegif.nemaki.service.cmis.impl.AuthenticationServiceImpl" scope="singleton">
 		<property name="principalService">
 			<ref bean="PrincipalService"></ref>
 		</property>
 	</bean>
 
-	<bean id="contentDaoService" class="jp.aegif.nemaki.service.dao.impl.ContentDaoServiceImpl">
+	<bean id="contentDaoService" class="jp.aegif.nemaki.service.dao.impl.ContentDaoServiceImpl" scope="singleton">
 		<property name="nonCachedContentDaoService">
 			<ref bean="nonCachedContentDaoService"></ref>
 		</property>
@@ -181,7 +181,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		</property>
 	</bean>
 	
-	<bean id="nonCachedContentDaoService" class="jp.aegif.nemaki.service.dao.impl.CouchContentDaoServiceImpl">
+	<bean id="nonCachedContentDaoService" class="jp.aegif.nemaki.service.dao.impl.CouchContentDaoServiceImpl" scope="singleton">
 		<property name="connector">
 			<ref bean="connector"></ref>
 		</property>
@@ -193,19 +193,19 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 	<bean id="requestDurationCache" class="jp.aegif.nemaki.repository.RequestDurationCacheBean">
 	</bean>
 
-	<bean id="principalDaoService" class="jp.aegif.nemaki.service.dao.impl.PrincipalDaoServiceImpl">
+	<bean id="principalDaoService" class="jp.aegif.nemaki.service.dao.impl.PrincipalDaoServiceImpl" scope="singleton">
 		<property name="nonCachedPrincipalDaoService">
 			<ref bean="nonCachedPrincipalDaoService"></ref>
 		</property>
 	</bean>
 
-	<bean id="nonCachedPrincipalDaoService" class="jp.aegif.nemaki.service.dao.impl.CouchPrincipalDaoServiceImpl">
+	<bean id="nonCachedPrincipalDaoService" class="jp.aegif.nemaki.service.dao.impl.CouchPrincipalDaoServiceImpl" scope="singleton">
 		<property name="connector">
 			<ref bean="connector"></ref>
 		</property>
 	</bean>
 
-	<bean id="discoveryService" class="jp.aegif.nemaki.service.cmis.impl.DiscoveryServiceImpl">
+	<bean id="discoveryService" class="jp.aegif.nemaki.service.cmis.impl.DiscoveryServiceImpl" scope="singleton">
 		<property name="queryProcessor">
 			<ref bean="QueryProcessor"></ref>
 		</property>
@@ -220,7 +220,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		</property>
 	</bean>
 
-	<bean id="versioningService" class="jp.aegif.nemaki.service.cmis.impl.VersioningServiceImpl">
+	<bean id="versioningService" class="jp.aegif.nemaki.service.cmis.impl.VersioningServiceImpl" scope="singleton">
 		<property name="contentService">
 			<ref bean="ContentService"></ref>
 		</property>
@@ -232,7 +232,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		</property>
 	</bean>
 
-	<bean id="navigationService" class="jp.aegif.nemaki.service.cmis.impl.NavigationServiceImpl">
+	<bean id="navigationService" class="jp.aegif.nemaki.service.cmis.impl.NavigationServiceImpl" scope="singleton">
 		<property name="contentService">
 			<ref bean="ContentService"></ref>
 		</property>
@@ -247,7 +247,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		</property>
 	</bean>
 
-	<bean id="contentService" class="jp.aegif.nemaki.service.node.impl.ContentServiceImpl">
+	<bean id="contentService" class="jp.aegif.nemaki.service.node.impl.ContentServiceImpl" scope="singleton">
 		<property name="contentDaoService">
 			<ref bean="ContentDaoService"></ref>
 		</property>
@@ -256,7 +256,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		</property>
 	</bean>
 
-	<bean id="solrQueryProcessor" class="jp.aegif.nemaki.query.solr.SolrQueryProcessor">
+	<bean id="solrQueryProcessor" class="jp.aegif.nemaki.query.solr.SolrQueryProcessor" scope="singleton">
 		<property name="contentService">
 			<ref bean="ContentService"></ref>
 		</property>
@@ -277,7 +277,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 	<bean id="solrUtil" class="jp.aegif.nemaki.query.solr.SolrUtil" scope="singleton">
 	</bean>
 
-	<bean id="objectService" class="jp.aegif.nemaki.service.cmis.impl.ObjectServiceImpl">
+	<bean id="objectService" class="jp.aegif.nemaki.service.cmis.impl.ObjectServiceImpl" scope="singleton">
 		<property name="typeManager">
 			<ref bean="typeManager"></ref>
 		</property>
@@ -296,7 +296,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 	</bean>
 
 	<bean id="compileObjectService"
-		class="jp.aegif.nemaki.service.cmis.impl.CompileObjectServiceImpl">
+		class="jp.aegif.nemaki.service.cmis.impl.CompileObjectServiceImpl" scope="singleton">
 		<property name="repositoryInfo">
 			<ref bean="RepositoryInfo"></ref>
 		</property>
@@ -314,7 +314,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		</property>
 	</bean>
 
-	<bean id="permissionService" class="jp.aegif.nemaki.service.cmis.impl.PermissionServiceImpl">
+	<bean id="permissionService" class="jp.aegif.nemaki.service.cmis.impl.PermissionServiceImpl" scope="singleton">
 		<property name="principalService">
 			<ref bean="PrincipalService"></ref>
 		</property>
@@ -329,7 +329,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		</property>
 	</bean>
 
-	<bean id="exceptionService" class="jp.aegif.nemaki.service.cmis.impl.ExceptionServiceImpl">
+	<bean id="exceptionService" class="jp.aegif.nemaki.service.cmis.impl.ExceptionServiceImpl" scope="singleton">
 		<property name="repositoryInfo">
 			<ref bean="RepositoryInfo"></ref>
 		</property>
@@ -344,13 +344,13 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		</property>
 	</bean>
 
-	<bean id="principalService" class="jp.aegif.nemaki.service.node.impl.PrincipalServiceImpl">
+	<bean id="principalService" class="jp.aegif.nemaki.service.node.impl.PrincipalServiceImpl" scope="singleton">
 		<property name="principalDaoService">
 			<ref bean="PrincipalDaoService"></ref>
 		</property>
 	</bean>
 
-	<bean id="relationshipService" class="jp.aegif.nemaki.service.cmis.impl.RelationshipServiceImpl">
+	<bean id="relationshipService" class="jp.aegif.nemaki.service.cmis.impl.RelationshipServiceImpl" scope="singleton">
 		<property name="typeManager">
 			<ref bean="typeManager"></ref>
 		</property>
@@ -365,7 +365,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		</property>
 	</bean>
 
-	<bean id="policyService" class="jp.aegif.nemaki.service.cmis.impl.PolicyServiceImpl">
+	<bean id="policyService" class="jp.aegif.nemaki.service.cmis.impl.PolicyServiceImpl" scope="singleton">
 		<property name="contentService">
 			<ref bean="ContentService"></ref>
 		</property>
@@ -380,7 +380,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 	<!-- Service Interceptor Beans -->
 
 
-	<bean id="AclService" class="org.springframework.aop.framework.ProxyFactoryBean">
+	<bean id="AclService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
 		<property name="proxyInterfaces">
 			<list>
 				<value>jp.aegif.nemaki.service.cmis.AclService</value>
@@ -396,7 +396,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		</property>
 	</bean>
 
-	<bean id="AuthenticationService" class="org.springframework.aop.framework.ProxyFactoryBean">
+	<bean id="AuthenticationService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
 		<property name="proxyInterfaces">
 			<list>
 				<value>jp.aegif.nemaki.service.cmis.AuthenticationService</value>
@@ -412,7 +412,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		</property>
 	</bean>
 
-	<bean id="ContentDaoService" class="org.springframework.aop.framework.ProxyFactoryBean">
+	<bean id="ContentDaoService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
 		<property name="proxyInterfaces">
 			<list>
 				<value>jp.aegif.nemaki.service.dao.ContentDaoService</value>
@@ -428,7 +428,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		</property>
 	</bean>
 
-	<bean id="PrincipalDaoService" class="org.springframework.aop.framework.ProxyFactoryBean">
+	<bean id="PrincipalDaoService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
 		<property name="proxyInterfaces">
 			<list>
 				<value>jp.aegif.nemaki.service.dao.PrincipalDaoService</value>
@@ -444,7 +444,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		</property>
 	</bean>
 
-	<bean id="DiscoveryService" class="org.springframework.aop.framework.ProxyFactoryBean">
+	<bean id="DiscoveryService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
 		<property name="proxyInterfaces">
 			<list>
 				<value>jp.aegif.nemaki.service.cmis.DiscoveryService</value>
@@ -460,7 +460,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		</property>
 	</bean>
 
-	<bean id="NavigationService" class="org.springframework.aop.framework.ProxyFactoryBean">
+	<bean id="NavigationService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
 		<property name="proxyInterfaces">
 			<list>
 				<value>jp.aegif.nemaki.service.cmis.NavigationService</value>
@@ -476,7 +476,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		</property>
 	</bean>
 
-	<bean id="VersioningService" class="org.springframework.aop.framework.ProxyFactoryBean">
+	<bean id="VersioningService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
 		<property name="proxyInterfaces">
 			<list>
 				<value>jp.aegif.nemaki.service.cmis.VersioningService</value>
@@ -493,7 +493,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 	</bean>
 
 
-	<bean id="ContentService" class="org.springframework.aop.framework.ProxyFactoryBean">
+	<bean id="ContentService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
 		<property name="proxyInterfaces">
 			<list>
 				<value>jp.aegif.nemaki.service.node.ContentService</value>
@@ -509,7 +509,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		</property>
 	</bean>
 
-	<bean id="ObjectService" class="org.springframework.aop.framework.ProxyFactoryBean">
+	<bean id="ObjectService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
 		<property name="proxyInterfaces">
 			<list>
 				<value>jp.aegif.nemaki.service.cmis.ObjectService</value>
@@ -525,7 +525,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		</property>
 	</bean>
 
-	<bean id="CompileObjectService" class="org.springframework.aop.framework.ProxyFactoryBean">
+	<bean id="CompileObjectService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
 		<property name="proxyInterfaces">
 			<list>
 				<value>jp.aegif.nemaki.service.cmis.CompileObjectService</value>
@@ -542,7 +542,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 	</bean>
 
 
-	<bean id="PermissionService" class="org.springframework.aop.framework.ProxyFactoryBean">
+	<bean id="PermissionService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
 		<property name="proxyInterfaces">
 			<list>
 				<value>jp.aegif.nemaki.service.cmis.PermissionService</value>
@@ -558,7 +558,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		</property>
 	</bean>
 
-	<bean id="ExceptionService" class="org.springframework.aop.framework.ProxyFactoryBean">
+	<bean id="ExceptionService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
 		<property name="proxyInterfaces">
 			<list>
 				<value>jp.aegif.nemaki.service.cmis.ExceptionService</value>
@@ -574,7 +574,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		</property>
 	</bean>
 
-	<bean id="QueryProcessor" class="org.springframework.aop.framework.ProxyFactoryBean">
+	<bean id="QueryProcessor" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
 		<property name="proxyInterfaces">
 			<list>
 				<value>jp.aegif.nemaki.query.QueryProcessor</value>
@@ -590,7 +590,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		</property>
 	</bean>
 
-	<bean id="RepositoryService" class="org.springframework.aop.framework.ProxyFactoryBean">
+	<bean id="RepositoryService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
 		<property name="proxyInterfaces">
 			<list>
 				<value>jp.aegif.nemaki.service.cmis.RepositoryService</value>
@@ -606,7 +606,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		</property>
 	</bean>
 
-	<bean id="PrincipalService" class="org.springframework.aop.framework.ProxyFactoryBean">
+	<bean id="PrincipalService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
 		<property name="proxyInterfaces">
 			<list>
 				<value>jp.aegif.nemaki.service.node.PrincipalService</value>
@@ -622,7 +622,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		</property>
 	</bean>
 
-	<bean id="RelationshipService" class="org.springframework.aop.framework.ProxyFactoryBean">
+	<bean id="RelationshipService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
 		<property name="proxyInterfaces">
 			<list>
 				<value>jp.aegif.nemaki.service.cmis.RelationshipService</value>
@@ -638,7 +638,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 		</property>
 	</bean>
 
-	<bean id="PolicyService" class="org.springframework.aop.framework.ProxyFactoryBean">
+	<bean id="PolicyService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
 		<property name="proxyInterfaces">
 			<list>
 				<value>jp.aegif.nemaki.service.cmis.PolicyService</value>
@@ -656,23 +656,23 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
 	
 	<!-- Interceptor for Debugging -->
 
-	<bean id="debugInterceptor" class="jp.aegif.nemaki.util.DebugInterceptor" />
+	<bean id="debugInterceptor" class="jp.aegif.nemaki.util.DebugInterceptor" scope="singleton"/>
 	
 	<!-- Extra Rest API implemented by Jersey -->
-	<bean id="archiveResource" class="jp.aegif.nemaki.api.resources.ArchiveResource">
+	<bean id="archiveResource" class="jp.aegif.nemaki.api.resources.ArchiveResource" scope="singleton">
 		<property name="principalService" ref="PrincipalService" />
 		<property name="ContentService" ref="ContentService" />
 	</bean>
 
-	<bean id="userResource" class="jp.aegif.nemaki.api.resources.UserResource">
+	<bean id="userResource" class="jp.aegif.nemaki.api.resources.UserResource" scope="singleton">
 		<property name="principalService" ref="PrincipalService" />
 	</bean>
 	
-	<bean id="groupResource" class="jp.aegif.nemaki.api.resources.GroupResource">
+	<bean id="groupResource" class="jp.aegif.nemaki.api.resources.GroupResource" scope="singleton">
 		<property name="principalService" ref="PrincipalService" />	
 	</bean>
 	
-	<bean id="RepositoryResource" class="jp.aegif.nemaki.api.resources.GroupResource">
+	<bean id="RepositoryResource" class="jp.aegif.nemaki.api.resources.GroupResource" scope="singleton">
 		<property name="principalService" ref="PrincipalService" />	
 	</bean>
 	
