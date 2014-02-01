@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -32,6 +32,7 @@ import jp.aegif.nemaki.tracker.CoreTrackerJob;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.impl.PropertyManagerImpl;
 
+import org.apache.log4j.Logger;
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.client.solrj.SolrServerException;
@@ -53,11 +54,9 @@ import org.quartz.SchedulerException;
 import org.quartz.Trigger;
 import org.quartz.impl.StdSchedulerFactory;
 
-import org.apache.log4j.*;
-
 /**
  * Solr core handler classs
- * Called on server start up & user request via RESTful  
+ * Called on server start up & user request via RESTful
  * @author linzhixing
  *
  */
@@ -82,7 +81,7 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 
 		PropertyManager propertyManager = new PropertyManagerImpl(
 				"nemakisolr.properties");
-		
+
 		String  jobEnabled = propertyManager.readValue("tracking.cron.enabled");
 		if(jobEnabled.equals("true")){
 			// Configure Job
@@ -128,10 +127,11 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 
 	/**
 	 * Switch actions on REST API
-	 * 
+	 *
 	 * Boolean return value is used as "doPersist" parameter,
 	 * which relate to the persistence of action results to the core.
 	 */
+	@Override
 	protected boolean handleCustomAction(SolrQueryRequest req,
 			SolrQueryResponse rsp) {
 
@@ -154,6 +154,7 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 
 		// INDEX tracking
 		if (a.equalsIgnoreCase("INDEX")) {
+			tracker.setupCmisSession();
 			tracker.index(tracking);
 			// TODO Action結果を出力
 			rsp.add("Result", "Successfully tracked!");
