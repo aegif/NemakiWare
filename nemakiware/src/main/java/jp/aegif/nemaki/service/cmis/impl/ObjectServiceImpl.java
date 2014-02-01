@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -81,6 +81,7 @@ public class ObjectServiceImpl implements ObjectService {
 	private ExceptionService exceptionService;
 	private CompileObjectService compileObjectService;
 
+	@Override
 	public ObjectData getObjectByPath(CallContext callContext, String path,
 			String filter, Boolean includeAllowableActions, Boolean includeAcl,
 			ObjectInfoHandler objectInfos) {
@@ -102,6 +103,7 @@ public class ObjectServiceImpl implements ObjectService {
 				filter, includeAllowableActions, includeAcl, null);
 	}
 
+	@Override
 	public ObjectData getObject(CallContext callContext, String objectId,
 			String filter, Boolean includeAllowableActions, Boolean includeAcl,
 			ObjectInfoHandler objectInfos) {
@@ -132,6 +134,7 @@ public class ObjectServiceImpl implements ObjectService {
 		return object;
 	}
 
+	@Override
 	public ContentStream getContentStream(CallContext callContext,
 			String objectId, String streamId, BigInteger offset,
 			BigInteger length) {
@@ -198,6 +201,7 @@ public class ObjectServiceImpl implements ObjectService {
 		return cs;
 	}
 
+	@Override
 	public List<RenditionData> getRenditions(CallContext callContext,
 			String objectId, String renditionFilter, BigInteger maxItems,
 			BigInteger skipCount, ExtensionsData extension) {
@@ -215,6 +219,7 @@ public class ObjectServiceImpl implements ObjectService {
 		return results;
 	}
 
+	@Override
 	public AllowableActions getAllowableActions(CallContext callContext,
 			String objectId) {
 		// //////////////////
@@ -233,6 +238,7 @@ public class ObjectServiceImpl implements ObjectService {
 				content);
 	}
 
+	@Override
 	public ObjectData create(CallContext callContext, Properties properties,
 			String folderId, ContentStream contentStream,
 			VersioningState versioningState, List<String> policies,
@@ -247,7 +253,7 @@ public class ObjectServiceImpl implements ObjectService {
 		}
 
 		String objectId = null;
-		//TODO ACE can be set ! 
+		//TODO ACE can be set !
 		if (type.getBaseTypeId() == BaseTypeId.CMIS_DOCUMENT) {
 			objectId = createDocument(callContext, properties, folderId,
 					contentStream, versioningState, null, null, null);
@@ -271,6 +277,7 @@ public class ObjectServiceImpl implements ObjectService {
 				contentService.getContent(objectId), null, false, false, null);
 	}
 
+	@Override
 	public String createFolder(CallContext callContext, Properties properties,
 			String folderId, List<String> policies, Acl addAces,
 			Acl removeAces, ExtensionsData extension) {
@@ -309,6 +316,7 @@ public class ObjectServiceImpl implements ObjectService {
 		return folder.getId();
 	}
 
+	@Override
 	public String createDocument(CallContext callContext,
 			Properties properties, String folderId,
 			ContentStream contentStream, VersioningState versioningState,
@@ -363,7 +371,7 @@ public class ObjectServiceImpl implements ObjectService {
 		Document original = contentService.getDocument(sourceId);
 		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
 				.getTypeDefinition(original.getObjectType());
-		
+
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -401,6 +409,7 @@ public class ObjectServiceImpl implements ObjectService {
 		return document.getId();
 	}
 
+	@Override
 	public void setContentStream(CallContext callContext,
 			Holder<String> objectId, boolean overwriteFlag,
 			ContentStream contentStream, Holder<String> changeToken) {
@@ -408,7 +417,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// General Exception
 		// //////////////////
 		String id = objectId.getValue();
-		
+
 		exceptionService.invalidArgumentRequiredString("objectId", id);
 		exceptionService
 				.invalidArgumentRequired("contentStream", contentStream);
@@ -456,7 +465,8 @@ public class ObjectServiceImpl implements ObjectService {
 
 		// NOTE: Nemaki does't support documents without content stream
 	}
-	
+
+	@Override
 	public void appendContentStream(CallContext callContext, Holder<String> objectId, Holder<String> changeToken,
 			ContentStream contentStream, boolean isLastChunk,
 			ExtensionsData extension){
@@ -464,7 +474,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// General Exception
 		// //////////////////
 		String id = objectId.getValue();
-		
+
 		exceptionService.invalidArgumentRequiredString("objectId", id);
 		exceptionService
 				.invalidArgumentRequired("contentStream", contentStream);
@@ -484,11 +494,11 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.streamNotSupported(td, contentStream);
 		exceptionService.updateConflict(doc, changeToken);
 		exceptionService.versioning(doc);
-		
+
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		contentService.appendAttachment(callContext, objectId, changeToken, contentStream, isLastChunk, extension);		
+		contentService.appendAttachment(callContext, objectId, changeToken, contentStream, isLastChunk, extension);
 	}
 
 	@Override
@@ -556,7 +566,7 @@ public class ObjectServiceImpl implements ObjectService {
 		TypeDefinition td = typeManager.getTypeDefinition(DataUtil.getIdProperty(
 				properties, PropertyIds.OBJECT_TYPE_ID));
 		exceptionService.constraintPropertyValue(td, properties, DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
-		
+
 		// //////////////////
 		// Specific Exception
 		// //////////////////
@@ -590,7 +600,7 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.objectNotFoundParentFolder(folderId, parentFolder);
 		exceptionService.invalidArgumentRequiredCollection("properties",
 				properties.getPropertyList());
-		
+
 		// //////////////////
 		// Specific Exception
 		// //////////////////
@@ -601,7 +611,7 @@ public class ObjectServiceImpl implements ObjectService {
 				.constraintCotrollablePolicies(td, policies, properties);
 		exceptionService.constraintCotrollableAcl(td, addAces, removeAces,
 				properties);
-		
+
 		// //////////////////
 		// Body of the method
 		// //////////////////
@@ -649,18 +659,18 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT, content);
 		exceptionService.updateConflict(content, changeToken);
-		
+
 		/*//If secondaryObjectTypeIds are changed, update them in advance
 		List<String> secIds = getIdListProperty(properties, PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
 		if(!compareList(secIds, content.getSecondaryIds())){
 			PropertiesImpl pi = new PropertiesImpl();
 			pi.addProperty(properties.getProperties().get(PropertyIds.SECONDARY_OBJECT_TYPE_IDS));
-			
+
 			content = null;
 			content = updateProperties(callContext, objectId, pi, changeToken);
 		}*/
-		
-		
+
+
 		TypeDefinition tdf = typeManager.getTypeDefinition(content);
 		exceptionService.constraintPropertyValue(tdf, properties, objectId.getValue());
 
@@ -708,6 +718,7 @@ public class ObjectServiceImpl implements ObjectService {
 		return results;
 	}
 
+	@Override
 	public void moveObject(CallContext callContext, Holder<String> objectId,
 			String sourceFolderId, String targetFolderId) {
 		// //////////////////
@@ -741,6 +752,7 @@ public class ObjectServiceImpl implements ObjectService {
 		contentService.move(content, target);
 	}
 
+	@Override
 	public void deleteObject(CallContext callContext, String objectId,
 			Boolean allVersions) {
 		// //////////////////
@@ -771,6 +783,7 @@ public class ObjectServiceImpl implements ObjectService {
 		}
 	}
 
+	@Override
 	public FailedToDeleteData deleteTree(CallContext callContext,
 			String folderId, Boolean allVersions, UnfileObject unfileObjects,
 			Boolean continueOnFailure, ExtensionsData extension) {

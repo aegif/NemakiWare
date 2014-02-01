@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -50,16 +50,16 @@ import org.springframework.util.CollectionUtils;
 
 /**
  * Dao Service implementation for CouchDB.
- * 
+ *
  * @author linzhixing
- * 
+ *
  */
 @Component
 public class ContentDaoServiceImpl implements ContentDaoService {
 
 	private ContentDaoService nonCachedContentDaoService;
 	private RequestDurationCacheBean requestDurationCache;
-	private CacheManager cacheManager;
+	private final CacheManager cacheManager;
 
 	public ContentDaoServiceImpl() {
 		cacheManager = CacheManager.newInstance();
@@ -155,7 +155,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		Cache typeCache = cacheManager.getCache("typeCache");
 		typeCache.remove("typedefs");
 	}
-	
+
 	@Override
 	public List<NemakiPropertyDefinitionCore> getPropertyDefinitionCores() {
 		return nonCachedContentDaoService.getPropertyDefinitionCores();
@@ -169,30 +169,35 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public NemakiPropertyDefinitionCore getPropertyDefinitionCoreByPropertyId(
 			String propertyId) {
-		return nonCachedContentDaoService.getPropertyDefinitionCoreByPropertyId(propertyId);
+		return nonCachedContentDaoService
+				.getPropertyDefinitionCoreByPropertyId(propertyId);
 	}
 
 	@Override
-	public NemakiPropertyDefinitionDetail getPropertyDefinitionDetail(String nodeId) {
+	public NemakiPropertyDefinitionDetail getPropertyDefinitionDetail(
+			String nodeId) {
 		return nonCachedContentDaoService.getPropertyDefinitionDetail(nodeId);
 	}
 
 	@Override
 	public List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetailByCoreNodeId(
 			String coreNodeId) {
-		return nonCachedContentDaoService.getPropertyDefinitionDetailByCoreNodeId(coreNodeId);
+		return nonCachedContentDaoService
+				.getPropertyDefinitionDetailByCoreNodeId(coreNodeId);
 	}
 
 	@Override
 	public NemakiPropertyDefinitionCore createPropertyDefinitionCore(
 			NemakiPropertyDefinitionCore propertyDefinitionCore) {
-		return nonCachedContentDaoService.createPropertyDefinitionCore(propertyDefinitionCore);
+		return nonCachedContentDaoService
+				.createPropertyDefinitionCore(propertyDefinitionCore);
 	}
 
 	@Override
 	public NemakiPropertyDefinitionDetail createPropertyDefinitionDetail(
 			NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
-		return nonCachedContentDaoService.createPropertyDefinitionDetail(propertyDefinitionDetail);
+		return nonCachedContentDaoService
+				.createPropertyDefinitionDetail(propertyDefinitionDetail);
 	}
 
 	@Override
@@ -204,14 +209,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		typeCache.remove("typedefs");
 		return np;
 	}
-	
+
 	// ///////////////////////////////////////
 	// Content
 	// ///////////////////////////////////////
+	@Override
 	public NodeBase getNodeBase(String objectId) {
 		return nonCachedContentDaoService.getNodeBase(objectId);
 	}
-	
+
 	/**
 	 * get Document/Folder(not Attachment) Return Document/Folder class FIXME
 	 * devide this method into getDcoument & getFolder
@@ -293,6 +299,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public Document getDocumentOfLatestVersion(String versionSeriesId) {
 		return nonCachedContentDaoService
 				.getDocumentOfLatestVersion(versionSeriesId);
+	}
+
+	@Override
+	public Document getDocumentOfLatestMajorVersion(String versionSeriesId) {
+		return nonCachedContentDaoService
+				.getDocumentOfLatestMajorVersion(versionSeriesId);
 	}
 
 	@Override
@@ -408,7 +420,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public Item create(Item item) {
 		return nonCachedContentDaoService.create(item);
 	}
-	
+
 	@Override
 	public Document update(Document document) {
 		Document updated = nonCachedContentDaoService.update(document);
@@ -491,7 +503,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		AttachmentNode an = null;
 		if (v != null) {
 			an = (AttachmentNode) v.getObjectValue();
-			
+
 		} else {
 			an = nonCachedContentDaoService.getAttachment(attachmentId);
 			if (an == null) {
@@ -502,14 +514,18 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		}
 
 		return an;
-		//throw new UnsupportedOperationException(Thread.currentThread().getStackTrace()[0].getMethodName() + ":this method is only for non-cahced service.");
+		// throw new
+		// UnsupportedOperationException(Thread.currentThread().getStackTrace()[0].getMethodName()
+		// + ":this method is only for non-cahced service.");
 	}
 
 	@Override
 	public void setStream(AttachmentNode attachmentNode) {
 		nonCachedContentDaoService.setStream(attachmentNode);
-		
-		//throw new UnsupportedOperationException(Thread.currentThread().getStackTrace()[0].getMethodName() + ":this method is only for non-cahced service.");
+
+		// throw new
+		// UnsupportedOperationException(Thread.currentThread().getStackTrace()[0].getMethodName()
+		// + ":this method is only for non-cahced service.");
 	}
 
 	@Override
@@ -527,11 +543,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			ContentStream contentStream) {
 		Cache attachmentCache = cacheManager.getCache("attachmentCache");
 		Element v = attachmentCache.get(attachment.getId());
-		if(v != null){
+		if (v != null) {
 			attachmentCache.remove(attachment.getId());
 		}
 		nonCachedContentDaoService.updateAttachment(attachment, contentStream);
-		
+
 	}
 
 	// //////////////////////////////////////////////////////////////////////////////
@@ -600,7 +616,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Archive createArchive(Archive archive, Boolean deletedWithParent) {
-		return nonCachedContentDaoService.createArchive(archive, deletedWithParent);
+		return nonCachedContentDaoService.createArchive(archive,
+				deletedWithParent);
 	}
 
 	@Override

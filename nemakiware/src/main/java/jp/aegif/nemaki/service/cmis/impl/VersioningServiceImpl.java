@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -50,7 +50,7 @@ public class VersioningServiceImpl implements VersioningService {
 	private ContentService contentService;
 	private CompileObjectService compileObjectService;
 	private ExceptionService exceptionService;
-	
+
 	@Override
 	/**
 	 * Repository only allow the latest version to be checked out
@@ -65,7 +65,7 @@ public class VersioningServiceImpl implements VersioningService {
 		Document document = contentService.getDocument(id);
 		exceptionService.objectNotFound(DomainType.OBJECT, document, id);
 		exceptionService.permissionDenied(callContext, PermissionMapping.CAN_CHECKOUT_DOCUMENT, document);
-		
+
 		// //////////////////
 		// Specific Exception
 		// //////////////////
@@ -73,7 +73,7 @@ public class VersioningServiceImpl implements VersioningService {
 		exceptionService.constraintAlreadyCheckedOut(document);
 		exceptionService.constraintVersionable(document.getObjectType());
 		exceptionService.versioning(document);
-		
+
 		// //////////////////
 		// Body of the method
 		// //////////////////
@@ -93,15 +93,15 @@ public class VersioningServiceImpl implements VersioningService {
 		Document document = contentService.getDocument(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, document, objectId);
 		exceptionService.permissionDenied(callContext, PermissionMapping.CAN_CHECKIN_DOCUMENT, document);
-		
+
 		// //////////////////
 		// Specific Exception
 		// //////////////////
 		exceptionService.constraintVersionable(document.getObjectType());
-		
+
 		// //////////////////
 		// Body of the method
-		// //////////////////		
+		// //////////////////
 		contentService.cancelCheckOut(callContext, objectId, extension);
 	}
 
@@ -117,15 +117,15 @@ public class VersioningServiceImpl implements VersioningService {
 		exceptionService.invalidArgumentRequiredString("objectId", id);
 		Document document = contentService.getDocument(id);
 		exceptionService.objectNotFound(DomainType.OBJECT, document, id);
-		exceptionService.permissionDenied(callContext, PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT, document);		
-		
+		exceptionService.permissionDenied(callContext, PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT, document);
+
 		// //////////////////
 		// Specific Exception
 		// //////////////////
 		exceptionService.constraintVersionable(document.getObjectType());
 		//TODO implement
 		//exceptionService.streamNotSupported(documentTypeDefinition, contentStream);
-		
+
 		// //////////////////
 		// Body of the method
 		// //////////////////
@@ -149,10 +149,18 @@ public class VersioningServiceImpl implements VersioningService {
 			Document d = contentService.getDocument(objectId);
 			versionSeriesId = d.getVersionSeriesId();
 		}
-		Document document = contentService.getDocumentOfLatestVersion(versionSeriesId);
+
+		//Default to false
+		Boolean _major = (major == null)? false : major;
+		Document document = null;
+		if(_major){
+			document = contentService.getDocumentOfLatestMajorVersion(versionSeriesId);
+		}else{
+			document = contentService.getDocumentOfLatestVersion(versionSeriesId);
+		}
 		exceptionService.objectNotFound(DomainType.OBJECT, document, versionSeriesId);
 		exceptionService.permissionDenied(context, PermissionMapping.CAN_GET_PROPERTIES_OBJECT, document);
-		
+
 		// //////////////////
 		// Body of the method
 		// //////////////////
@@ -178,7 +186,7 @@ public class VersioningServiceImpl implements VersioningService {
 		//Sort by the descending order
 		Collections.sort(allVersions, new VersionComparator());
 		exceptionService.permissionDenied(context, PermissionMapping.CAN_GET_ALL_VERSIONS_VERSION_SERIES, allVersions.get(0));
-		
+
 
 		// //////////////////
 		// Body of the method
@@ -188,20 +196,21 @@ public class VersioningServiceImpl implements VersioningService {
 			ObjectData objectData = compileObjectService.compileObjectData(context, content, filter, includeAllowableActions, true, null);
 			result.add(objectData);
 		}
-		
+
 		return result;
 	}
-	
+
 	/**
-	 * Descending order by cmis:creationDate 
+	 * Descending order by cmis:creationDate
 	 * @author linzhixing
 	 */
 	private class VersionComparator implements Comparator<Content>{
+		@Override
 		public int compare(Content content0, Content content1) {
 			//TODO when created time is not set
 			GregorianCalendar created0 = content0.getCreated();
 			GregorianCalendar created1 = content1.getCreated();
-			
+
 			if(created0.before(created1)){
 				return 1;
 			}else if(created0.after(created1)){
