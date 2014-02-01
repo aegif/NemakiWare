@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -83,9 +83,9 @@ import org.apache.commons.logging.LogFactory;
 
 /**
  * Node Service implementation
- * 
+ *
  * @author linzhixing
- * 
+ *
  */
 public class ContentServiceImpl implements ContentService {
 
@@ -127,6 +127,7 @@ public class ContentServiceImpl implements ContentService {
 	/**
 	 * Get the pieces of content available at that path.
 	 */
+	@Override
 	public Content getContentByPath(String path) {
 		List<String> splittedPath = splitLeafPathSegment(path);
 
@@ -175,6 +176,7 @@ public class ContentServiceImpl implements ContentService {
 	/**
 	 * Get children contents in a given folder
 	 */
+	@Override
 	public List<Content> getChildren(String folderId) {
 		List<Content> children = new ArrayList<Content>();
 
@@ -202,6 +204,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	// if the root of the tree doesn't exists, return null
+	@Override
 	public List<Content> getDescendants(String folderId, int depth) {
 		// Content class is somehow abstract, but it's enough for DELETE.
 		Content content = contentDaoService.getContent(folderId);
@@ -248,11 +251,17 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
+	public Document getDocumentOfLatestMajorVersion(String versionSeriesId) {
+		return contentDaoService.getDocumentOfLatestMajorVersion(versionSeriesId);
+	}
+
+	@Override
 	public List<Document> getAllVersions(String versionSeriesId) {
 		return contentDaoService.getAllVersions(versionSeriesId);
 	}
 
 	// TODO enable orderBy
+	@Override
 	public List<Document> getCheckedOutDocs(String folderId, String orderBy,
 			ExtensionsData extension) {
 		return contentDaoService.getCheckedOutDocuments(folderId);
@@ -327,7 +336,7 @@ public class ContentServiceImpl implements ContentService {
 			ExtensionsData extension) {
 		return contentDaoService.getAppliedPolicies(objectId);
 	}
-	
+
 	@Override
 	public Item getItem(String objectId) {
 		return contentDaoService.getItem(objectId);
@@ -612,7 +621,7 @@ public class ContentServiceImpl implements ContentService {
 		copy.setAcl(original.getAcl());
 		copy.setAspects(original.getAspects());
 		copy.setSecondaryIds(original.getSecondaryIds());
-		
+
 		setSignature(callContext, copy);
 		return copy;
 	}
@@ -701,7 +710,7 @@ public class ContentServiceImpl implements ContentService {
 
 	/**
 	 * Update versionSeriesId#versionSeriesCheckedOutId after creating a PWC
-	 * 
+	 *
 	 * @param callContext
 	 * @param versionSeries
 	 * @param pwc
@@ -804,7 +813,7 @@ public class ContentServiceImpl implements ContentService {
 		if(tdf.isFileable()){
 			i.setParentId(folderId);
 		}
-		
+
 		// Set ACL
 		i.setAclInherited(true);
 		i.setAcl(new Acl());
@@ -880,7 +889,7 @@ public class ContentServiceImpl implements ContentService {
 		if(properties == null || MapUtils.isEmpty(properties.getProperties())){
 			return content;
 		}
-		
+
 		// Primary
 		org.apache.chemistry.opencmis.commons.definitions.TypeDefinition td = typeManager
 				.getTypeDefinition(content.getObjectType());
@@ -1036,7 +1045,7 @@ public class ContentServiceImpl implements ContentService {
 			return null;
 		}
 	}
-	
+
 	@Override
 	public Content updateProperties(CallContext callContext,
 			Properties properties, Content content) {
@@ -1112,11 +1121,12 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, content, ChangeType.SECURITY);
 	}
 
-	
+
 
 	/**
 	 * Delete a Content.
 	 */
+	@Override
 	public void delete(CallContext callContext, String objectId,
 			Boolean deletedWithParent) {
 		Content content = getContent(objectId);
@@ -1135,6 +1145,7 @@ public class ContentServiceImpl implements ContentService {
 		contentDaoService.delete(attachmentId);
 	}
 
+	@Override
 	public void deleteDocument(CallContext callContext, String objectId,
 			Boolean allVersions, Boolean deleteWithParent) {
 		Document document = (Document) getContent(objectId);
@@ -1211,7 +1222,7 @@ public class ContentServiceImpl implements ContentService {
 			}
 		}
 	}
-	
+
 	// ///////////////////////////////////////
 	// Attachment
 	// ///////////////////////////////////////
@@ -1227,7 +1238,7 @@ public class ContentServiceImpl implements ContentService {
 		AttachmentNode an = contentDaoService.getAttachment(attachmentId);
 		return an;
 	}
-	
+
 	private String createAttachment(CallContext callContext,
 			ContentStream contentStream) {
 		AttachmentNode a = new AttachmentNode();
@@ -1249,10 +1260,10 @@ public class ContentServiceImpl implements ContentService {
 		long length = attachment.getLength() + contentStream.getLength();
 		ContentStream cs = new ContentStreamImpl("content", BigInteger.valueOf(length), attachment.getMimeType(), sis);
 		contentDaoService.updateAttachment(attachment, cs);
-		
+
 		writeChangeEvent(callContext, document, ChangeType.UPDATED);
 	}
-	
+
 	@Override
 	public Rendition getRendition(String streamId) {
 		return contentDaoService.getRendition(streamId);
@@ -1286,7 +1297,7 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public Acl calculateAcl(Content content) {
 		Acl acl = content.getAcl();
-		
+
 		if (content.isRoot())
 			return acl;
 
@@ -1304,7 +1315,7 @@ public class ContentServiceImpl implements ContentService {
 		}
 		return acl;
 	}
-	
+
 	// ///////////////////////////////////////
 	// Change event
 	// ///////////////////////////////////////
@@ -1312,7 +1323,7 @@ public class ContentServiceImpl implements ContentService {
 	public Change getChangeEvent(String token) {
 		return contentDaoService.getChangeEvent(token);
 	}
-	
+
 	@Override
 	public List<Change> getLatestChanges(CallContext context,
 			Holder<String> changeLogToken, Boolean includeProperties,
@@ -1395,7 +1406,7 @@ public class ContentServiceImpl implements ContentService {
 		Archive archive = contentDaoService.createAttachmentArchive(a);
 		return archive;
 	}
-	
+
 	@Override
 	public void restoreArchive(String archiveId) {
 		Archive archive = contentDaoService.getArchive(archiveId);
@@ -1469,7 +1480,7 @@ public class ContentServiceImpl implements ContentService {
 
 		return getFolder(archive.getOriginalId());
 	}
-	
+
 	private Boolean restorationTargetExists(Archive archive) {
 		String parentId = archive.getParentId();
 		Content parent = contentDaoService.getContent(parentId);
@@ -1479,7 +1490,7 @@ public class ContentServiceImpl implements ContentService {
 			return true;
 		}
 	}
-	
+
 	// ///////////////////////////////////////
 	// Utility
 	// ///////////////////////////////////////
@@ -1567,7 +1578,7 @@ public class ContentServiceImpl implements ContentService {
 
 	/**
 	 * Parse CMIS extension to Nemaki Aspect model
-	 * 
+	 *
 	 * @param properties
 	 * @return aspects
 	 */
@@ -1655,7 +1666,7 @@ public class ContentServiceImpl implements ContentService {
 		n.setModifier(callContext.getUsername());
 		n.setModified(getTimeStamp());
 	}
-	
+
 	private GregorianCalendar getTimeStamp() {
 		return DataUtil.millisToCalendar(System.currentTimeMillis());
 	}

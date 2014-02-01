@@ -1,6 +1,6 @@
-Content-Type: multipart/mixed; boundary="==b66c76606df14c2281a84ee2f5de1358=="
+Content-Type: multipart/mixed; boundary="==b8b29a9bd0034720a931b9519dcf851f=="
 
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: /
 Content-Length: 369
 Content-MD5: A94GE5j6I+Ovh9VZ54EZYQ==
@@ -8,7 +8,7 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-613cdea4d8ea4f16e91b4ab4c5327b1e"
 
 {"_id": "/", "aspects": [], "name": "/", "creator": "system", "_rev": "1-613cdea4d8ea4f16e91b4ab4c5327b1e", "created": "2013-01-01T00:00:00.000+0000", "modified": "2013-01-01T00:00:00.000+0000", "acl": {"entries": [{"permissions": ["cmis:read"], "direct": true, "principal": "GROUP_EVERYONE"}]}, "modifier": "system", "type": "cmis:folder", "objectType": "cmis:folder"}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: 18d9eb1d9a6c624a63013e9e2a2ca16c
 Content-Length: 292
 Content-MD5: jf1ely/Mj4pVCLcN2i43TQ==
@@ -16,7 +16,7 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-4809d8d2caec7626fbad873e15d83dff"
 
 {"_id": "18d9eb1d9a6c624a63013e9e2a2ca16c", "created": "2013-01-01T00:00:00.000+0000", "_rev": "1-4809d8d2caec7626fbad873e15d83dff", "creator": "system", "queryName": "nemaki:tag", "propertyType": "STRING", "cardinality": "MULTI", "type": "propertyDefinitionCore", "propertyId": "nemaki:tag"}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: 18d9eb1d9a6c624a63013e9e2a2cad99
 Content-Length: 300
 Content-MD5: /5iZUqAbjCGf+h6Ff7429Q==
@@ -24,7 +24,7 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-8480adb6929ed26adb8cfdc8dc8042b7"
 
 {"_id": "18d9eb1d9a6c624a63013e9e2a2cad99", "created": "2013-01-01T00:00:00.000+0000", "_rev": "1-8480adb6929ed26adb8cfdc8dc8042b7", "creator": "system", "queryName": "nemaki:comment", "propertyType": "STRING", "cardinality": "MULTI", "type": "propertyDefinitionCore", "propertyId": "nemaki:comment"}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: 18d9eb1d9a6c624a63013e9e2a2cc9da
 Content-Length: 314
 Content-MD5: N32Hs0qtLYgo/X7gtbqTmw==
@@ -32,7 +32,7 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-e3f12fccac4fe613cc7faa73ad2cdf3c"
 
 {"_id": "18d9eb1d9a6c624a63013e9e2a2cc9da", "created": "2013-01-01T00:00:00.000+0000", "_rev": "1-e3f12fccac4fe613cc7faa73ad2cdf3c", "creator": "system", "queryName": "nemaki:classification", "propertyType": "STRING", "cardinality": "MULTI", "type": "propertyDefinitionCore", "propertyId": "nemaki:classification"}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: 18d9eb1d9a6c624a63013e9e2a2ccb97
 Content-Length: 311
 Content-MD5: O1nBcj9Y9HHyUzgzP4Hmdg==
@@ -40,7 +40,7 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-0453297aa3a28b8088bd870b22283907"
 
 {"_id": "18d9eb1d9a6c624a63013e9e2a2ccb97", "created": "2013-01-01T00:00:00.000+0000", "_rev": "1-0453297aa3a28b8088bd870b22283907", "creator": "system", "queryName": "nemaki:customerName", "propertyType": "STRING", "cardinality": "SINGLE", "type": "propertyDefinitionCore", "propertyId": "nemaki:customerName"}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: 18d9eb1d9a6c624a63013e9e2a2cd09f
 Content-Length: 313
 Content-MD5: iplMBdOQw3Iqm6F5J5p6OA==
@@ -48,7 +48,7 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-4f6e09a105599783a20c2f5de69f6b53"
 
 {"_id": "18d9eb1d9a6c624a63013e9e2a2cd09f", "created": "2013-01-01T00:00:00.000+0000", "_rev": "1-4f6e09a105599783a20c2f5de69f6b53", "creator": "system", "queryName": "nemaki:chargedPerson", "propertyType": "STRING", "cardinality": "SINGLE", "type": "propertyDefinitionCore", "propertyId": "nemaki:chargedPerson"}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: 18d9eb1d9a6c624a63013e9e2a2cd416
 Content-Length: 311
 Content-MD5: aUPV8Y3/ea6M8lag5lmAkg==
@@ -56,7 +56,7 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-d3cee0d1f020f5f8ae8fb173843b4b82"
 
 {"_id": "18d9eb1d9a6c624a63013e9e2a2cd416", "created": "2013-01-01T00:00:00.000+0000", "_rev": "1-d3cee0d1f020f5f8ae8fb173843b4b82", "creator": "system", "queryName": "nemaki:nextReviewer", "propertyType": "STRING", "cardinality": "SINGLE", "type": "propertyDefinitionCore", "propertyId": "nemaki:nextReviewer"}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: 18d9eb1d9a6c624a63013e9e2a2cd64a
 Content-Length: 311
 Content-MD5: VC7X1EarVvP44Tzg27L0Eg==
@@ -64,7 +64,7 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-1ea110db7fdb30768b6a7470083bf7c5"
 
 {"_id": "18d9eb1d9a6c624a63013e9e2a2cd64a", "created": "2013-01-01T00:00:00.000+0000", "_rev": "1-1ea110db7fdb30768b6a7470083bf7c5", "creator": "system", "queryName": "nemaki:reviewStatus", "propertyType": "STRING", "cardinality": "SINGLE", "type": "propertyDefinitionCore", "propertyId": "nemaki:reviewStatus"}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: 18d9eb1d9a6c624a63013e9e2a2cd6d2
 Content-Length: 523
 Content-MD5: fW1AnCtq6gO5im2h17ZUCw==
@@ -72,7 +72,7 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-3b7680b0009720fa703a0c9004f000b3"
 
 {"_id": "18d9eb1d9a6c624a63013e9e2a2cd6d2", "displayName": "TagForSub", "description": "Tag", "creator": "system", "type": "propertyDefinitionDetail", "_rev": "1-3b7680b0009720fa703a0c9004f000b3", "required": false, "created": "2013-01-01T00:00:00.000+0000", "choices": [{"displayName": "tag1", "value": ["A"]}, {"displayName": "tag2", "value": ["B", "C"]}], "localName": "nemaki:tag", "updatability": "READWRITE", "orderable": true, "openChoice": false, "coreNodeId": "18d9eb1d9a6c624a63013e9e2a2ca16c", "queryable": true}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: 18d9eb1d9a6c624a63013e9e2a2ce6be
 Content-Length: 408
 Content-MD5: q8DLp213vcuF1EmdrUcK7A==
@@ -80,7 +80,7 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-2ef0d1d5c1582d2f169c0eb00fb382dc"
 
 {"displayName": "Comment", "description": "Comment", "creator": "system", "type": "propertyDefinitionDetail", "_rev": "1-2ef0d1d5c1582d2f169c0eb00fb382dc", "required": false, "created": "2013-01-01T00:00:00.000+0000", "localName": "nemaki:comment", "updatability": "READWRITE", "orderable": true, "_id": "18d9eb1d9a6c624a63013e9e2a2ce6be", "coreNodeId": "18d9eb1d9a6c624a63013e9e2a2cad99", "queryable": true}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: 18d9eb1d9a6c624a63013e9e2a2ceca0
 Content-Length: 408
 Content-MD5: z5EARQhNBi2GF4gS3SkpAA==
@@ -88,15 +88,15 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-2ef0d1d5c1582d2f169c0eb00fb382dc"
 
 {"displayName": "Comment", "description": "Comment", "creator": "system", "type": "propertyDefinitionDetail", "_rev": "1-2ef0d1d5c1582d2f169c0eb00fb382dc", "required": false, "created": "2013-01-01T00:00:00.000+0000", "localName": "nemaki:comment", "updatability": "READWRITE", "orderable": true, "_id": "18d9eb1d9a6c624a63013e9e2a2ceca0", "coreNodeId": "18d9eb1d9a6c624a63013e9e2a2cad99", "queryable": true}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: _design/_repo
-Content-Length: 3619
-Content-MD5: PKhxifs2VrrBTPZvhhq4eA==
+Content-Length: 3763
+Content-MD5: sIGKh16SdKD88v1uJGckzw==
 Content-Type: application/json;charset=utf-8
-ETag: "2-37d6bf56d54165943c5e74bae92eaa7c"
+ETag: "2-a4b4b17ac736215a340be1b597900a9e"
 
-{"_rev": "2-37d6bf56d54165943c5e74bae92eaa7c", "_id": "_design/_repo", "language": "javascript", "views": {"attachments": {"map": "function(doc) { if (doc.type == 'attachment')  emit(doc._id, doc) }"}, "countByObjectType": {"map": "function(doc) { if (['cmis:document', 'cmis:folder', 'cmis:relationship', 'cmis:policy', 'cmis:item','cmis:secondary'].indexOf(doc.type) >= 0)  emit(doc.objectType, doc) }", "reduce": "function(key,values){return values.length}"}, "propertyDefinitionCoresByPropertyId": {"map": "function(doc) { if (doc.type == 'propertyDefinitionCore')  emit(doc.propertyId, doc) }"}, "children": {"map": "function(doc) { if (doc.type == 'cmis:folder' || doc.type == 'cmis:document' && doc.latestVersion || doc.type == 'cmis:item') emit(doc.parentId, doc) }"}, "relationships": {"map": "function(doc) { if (doc.type == 'cmis:relationship')  emit(doc._id, doc) }"}, "documents": {"map": "function(doc) { if (doc.type == 'cmis:document')  emit(doc._id, doc) }"}, "childByName": {"map": "function(doc) { if (doc.type == 'cmis:folder' || doc.type == 'cmis:document' && doc.latestVersion) emit({parentId: doc.parentId, name:doc.name}, doc) }"}, "privateWorkingCopies": {"map": "function(doc) { if (doc.type == 'cmis:document' && doc.privateWorkingCopy) emit(doc.parentId, doc) }"}, "propertyDefinitionCores": {"map": "function(doc) { if (doc.type == 'propertyDefinitionCore')  emit(doc._id, doc) }"}, "folders": {"map": "function(doc) { if (doc.type == 'cmis:folder')  emit(doc._id, doc) }"}, "users": {"map": "function(doc) { if (doc.type == 'user')  emit(doc.userId, doc) }"}, "propertyDefinitionDetailsByCoreNodeId": {"map": "function(doc) { if (doc.type == 'propertyDefinitionDetail')  emit(doc.coreNodeId, doc) }"}, "contentsById": {"map": "function(doc) { if (['cmis:document', 'cmis:folder', 'cmis:relationship', 'cmis:policy', 'cmis:item','cmis:secondary'].indexOf(doc.type) >= 0)  emit(doc._id, doc) }"}, "relationshipsByTarget": {"map": "function(doc) { if (doc.type == 'cmis:relationship') emit(doc.targetId, doc) }"}, "policiesByAppliedObject": {"map": "function(doc) { if (doc.type == 'cmis:policy') for(i in doc.appliedIds){emit(i, doc)} }"}, "groups": {"map": "function(doc) { if (doc.type == 'group')  emit(doc.name, doc) }"}, "documentsByVersionSeriesId": {"map": "function(doc) { if (doc.type == 'cmis:document') emit(doc.versionSeriesId, doc) }"}, "foldersByPath": {"map": "function(doc) { if (doc.type == 'cmis:folder')  emit(doc.path, doc) }"}, "versionSeries": {"map": "function(doc) { if (doc.type == 'versionSeries')  emit(doc._id, doc) }"}, "relationshipsBySource": {"map": "function(doc) { if (doc.type == 'cmis:relationship') emit(doc.sourceId, doc) }"}, "propertyDefinitionDetails": {"map": "function(doc) { if (doc.type == 'propertyDefinitionDetail')  emit(doc._id, doc) }"}, "items": {"map": "function(doc) { if (doc.type == 'cmis:item')  emit(doc._id, doc) }"}, "changesByCreated": {"map": "function(doc) { if (doc.type == 'change')  emit(doc.created, doc) }"}, "typeDefinitions": {"map": "function(doc) { if (doc.type == 'typeDefinition')  emit(doc.typeId, doc) }"}, "policies": {"map": "function(doc) { if (doc.type == 'cmis:policy')  emit(doc._id, doc) }"}, "renditions": {"map": "function(doc) { if (doc.type == 'rendition')  emit(doc._id, doc) }"}, "latestVersions": {"map": "function(doc) { if (doc.type == 'cmis:document' && doc.latestVersion)  emit(doc.versionSeriesId, doc) }"}, "changesByToken": {"map": "function(doc) { if (doc.type == 'change')  emit(doc.changeToken, doc) }"}, "changes": {"map": "function(doc) { if (doc.type == 'change')  emit(doc._id, doc) }"}}}
---==b66c76606df14c2281a84ee2f5de1358==
+{"_rev": "2-a4b4b17ac736215a340be1b597900a9e", "_id": "_design/_repo", "language": "javascript", "views": {"attachments": {"map": "function(doc) { if (doc.type == 'attachment')  emit(doc._id, doc) }"}, "countByObjectType": {"map": "function(doc) { if (['cmis:document', 'cmis:folder', 'cmis:relationship', 'cmis:policy', 'cmis:item','cmis:secondary'].indexOf(doc.type) >= 0)  emit(doc.objectType, doc) }", "reduce": "function(key,values){return values.length}"}, "propertyDefinitionCoresByPropertyId": {"map": "function(doc) { if (doc.type == 'propertyDefinitionCore')  emit(doc.propertyId, doc) }"}, "children": {"map": "function(doc) { if (doc.type == 'cmis:folder' || doc.type == 'cmis:document' && doc.latestVersion || doc.type == 'cmis:item') emit(doc.parentId, doc) }"}, "relationships": {"map": "function(doc) { if (doc.type == 'cmis:relationship')  emit(doc._id, doc) }"}, "documents": {"map": "function(doc) { if (doc.type == 'cmis:document')  emit(doc._id, doc) }"}, "childByName": {"map": "function(doc) { if (doc.type == 'cmis:folder' || doc.type == 'cmis:document' && doc.latestVersion) emit({parentId: doc.parentId, name:doc.name}, doc) }"}, "privateWorkingCopies": {"map": "function(doc) { if (doc.type == 'cmis:document' && doc.privateWorkingCopy) emit(doc.parentId, doc) }"}, "propertyDefinitionCores": {"map": "function(doc) { if (doc.type == 'propertyDefinitionCore')  emit(doc._id, doc) }"}, "folders": {"map": "function(doc) { if (doc.type == 'cmis:folder')  emit(doc._id, doc) }"}, "users": {"map": "function(doc) { if (doc.type == 'user')  emit(doc.userId, doc) }"}, "propertyDefinitionDetailsByCoreNodeId": {"map": "function(doc) { if (doc.type == 'propertyDefinitionDetail')  emit(doc.coreNodeId, doc) }"}, "contentsById": {"map": "function(doc) { if (['cmis:document', 'cmis:folder', 'cmis:relationship', 'cmis:policy', 'cmis:item','cmis:secondary'].indexOf(doc.type) >= 0)  emit(doc._id, doc) }"}, "relationshipsByTarget": {"map": "function(doc) { if (doc.type == 'cmis:relationship') emit(doc.targetId, doc) }"}, "policiesByAppliedObject": {"map": "function(doc) { if (doc.type == 'cmis:policy') for(i in doc.appliedIds){emit(i, doc)} }"}, "groups": {"map": "function(doc) { if (doc.type == 'group')  emit(doc.name, doc) }"}, "documentsByVersionSeriesId": {"map": "function(doc) { if (doc.type == 'cmis:document') emit(doc.versionSeriesId, doc) }"}, "foldersByPath": {"map": "function(doc) { if (doc.type == 'cmis:folder')  emit(doc.path, doc) }"}, "versionSeries": {"map": "function(doc) { if (doc.type == 'versionSeries')  emit(doc._id, doc) }"}, "relationshipsBySource": {"map": "function(doc) { if (doc.type == 'cmis:relationship') emit(doc.sourceId, doc) }"}, "propertyDefinitionDetails": {"map": "function(doc) { if (doc.type == 'propertyDefinitionDetail')  emit(doc._id, doc) }"}, "items": {"map": "function(doc) { if (doc.type == 'cmis:item')  emit(doc._id, doc) }"}, "latestMajorVersions": {"map": "function(doc) { if (doc.type == 'cmis:document' && doc.latestMajorVersion)  emit(doc.versionSeriesId, doc) }"}, "changesByCreated": {"map": "function(doc) { if (doc.type == 'change')  emit(doc.created, doc) }"}, "typeDefinitions": {"map": "function(doc) { if (doc.type == 'typeDefinition')  emit(doc.typeId, doc) }"}, "policies": {"map": "function(doc) { if (doc.type == 'cmis:policy')  emit(doc._id, doc) }"}, "renditions": {"map": "function(doc) { if (doc.type == 'rendition')  emit(doc._id, doc) }"}, "latestVersions": {"map": "function(doc) { if (doc.type == 'cmis:document' && doc.latestVersion)  emit(doc.versionSeriesId, doc) }"}, "changesByToken": {"map": "function(doc) { if (doc.type == 'change')  emit(doc.changeToken, doc) }"}, "changes": {"map": "function(doc) { if (doc.type == 'change')  emit(doc._id, doc) }"}}}
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: admin
 Content-Length: 394
 Content-MD5: /SeG4mRvfUw5FO0+yoHfdw==
@@ -104,7 +104,7 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-5640bb74714e22297e4b2d6d283b28c1"
 
 {"_id": "admin", "name": "admin", "firstName": "admin", "creator": "system", "lastName": "admin", "_rev": "1-5640bb74714e22297e4b2d6d283b28c1", "passwordHash": "$2a$10$0goveaxLj.2UJAlVN1Ru2OmGID6q04ugln/HAkVpzb5bwvZ.kvEne", "userId": "admin", "modified": "2013-01-01T00:00:00.000+0000", "created": "2013-01-01T00:00:00.000+0000", "modifier": "system", "type": "user", "email": "admin@aegif.jp"}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: b11bf1bf25317a8fa2941b8f140148b6
 Content-Length: 397
 Content-MD5: 22SBPG42lwQncY+RI8ijJw==
@@ -112,7 +112,7 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-4b6e09e59b2272b3100399eabad03be7"
 
 {"_id": "b11bf1bf25317a8fa2941b8f140148b6", "changeToken": 1, "name": "Sample Site", "creator": "admin", "_rev": "1-4b6e09e59b2272b3100399eabad03be7", "created": "2013-06-03T06:43:31.322+0000", "modified": "2013-06-03T06:43:31.322+0000", "acl": {"entries": []}, "secondaryIds": [], "aclInherited": true, "parentId": "sites", "modifier": "admin", "type": "cmis:folder", "objectType": "cmis:folder"}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: b11bf1bf25317a8fa2941b8f14014d7e
 Content-Length: 478
 Content-MD5: nuzIFerc9HY/RDupmr3Bjw==
@@ -120,7 +120,7 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-1afe9240647b74a6ffb0cedb73604ddf"
 
 {"creator": "admin", "_rev": "1-1afe9240647b74a6ffb0cedb73604ddf", "policyIds": [], "objectType": "cmis:folder", "_id": "b11bf1bf25317a8fa2941b8f14014d7e", "changeToken": 1, "name": "Sample Site", "objectId": "b11bf1bf25317a8fa2941b8f140148b6", "baseType": "cmis:folder", "created": "2013-06-03T06:43:31.391+0000", "modified": "2013-06-03T06:43:31.391+0000", "time": "2013-06-03T06:43:31.391+0000", "modifier": "admin", "type": "change", "changeType": "CREATED", "latest": true}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: ceeea12ac47d659d88c0d46e67000566
 Content-Length: 448
 Content-MD5: oYYM1EB3ytl/Jryuys6vLQ==
@@ -128,7 +128,7 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-35f1d93fdeec7b96752ff04099780950"
 
 {"typeId": "nemaki:document", "displayName": "nemaki:document", "description": "nemaki:document", "baseId": "CMIS_DOCUMENT", "creator": "system", "_rev": "1-35f1d93fdeec7b96752ff04099780950", "created": "2013-01-01T00:00:00.000+0000", "queryName": "nemaki:document", "parentId": "cmis:document", "localName": "nemaki:document", "_id": "ceeea12ac47d659d88c0d46e67000566", "type": "typeDefinition", "properties": ["ceeea12ac47d659d88c0d46e67001184"]}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: ceeea12ac47d659d88c0d46e67001184
 Content-Length: 396
 Content-MD5: BJOEdkR6yBrh+cmUdDB+7Q==
@@ -136,7 +136,7 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-ba37f0a6cd7565a80a11d3896e929740"
 
 {"displayName": "Tag", "description": "Tag", "creator": "system", "type": "propertyDefinitionDetail", "_rev": "1-ba37f0a6cd7565a80a11d3896e929740", "required": false, "created": "2013-01-01T00:00:00.000+0000", "localName": "nemaki:tag", "updatability": "READWRITE", "orderable": true, "_id": "ceeea12ac47d659d88c0d46e67001184", "coreNodeId": "18d9eb1d9a6c624a63013e9e2a2ca16c", "queryable": true}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: ceeea12ac47d659d88c0d46e67001c6b
 Content-Length: 465
 Content-MD5: qxqgcO4q211qFSITG+5ZvQ==
@@ -144,7 +144,7 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-5ef6bf2b6695d59bb81af5403c6068d7"
 
 {"typeId": "nemaki:subdocument", "displayName": "nemaki:subdocument", "description": "nemaki:subdocument", "baseId": "CMIS_DOCUMENT", "creator": "system", "_rev": "1-5ef6bf2b6695d59bb81af5403c6068d7", "created": "2013-01-01T00:00:00.000+0000", "queryName": "nemaki:subdocument", "parentId": "nemaki:document", "localName": "nemaki:subdocument", "_id": "ceeea12ac47d659d88c0d46e67001c6b", "type": "typeDefinition", "properties": ["18d9eb1d9a6c624a63013e9e2a2cd6d2"]}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: ceeea12ac47d659d88c0d46e67001cfb
 Content-Length: 480
 Content-MD5: SCGRkrgmR8EOzYTYC56QQw==
@@ -152,7 +152,7 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-0febc57d16726ec06aaf41719a47effc"
 
 {"typeId": "nemaki:commentable", "displayName": "Commentable", "description": "A content with this type is commentable.", "baseId": "CMIS_SECONDARY", "created": "2013-01-01T00:00:00.000+0000", "_rev": "1-0febc57d16726ec06aaf41719a47effc", "creator": "system", "queryName": "nemaki:commentable", "parentId": "cmis:secondary", "localName": "nemaki:commentable", "_id": "ceeea12ac47d659d88c0d46e67001cfb", "type": "typeDefinition", "properties": ["ceeea12ac47d659d88c0d46e6700270d"]}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: ceeea12ac47d659d88c0d46e6700270d
 Content-Length: 408
 Content-MD5: LWyMUA9W7i1ycC5vcKgE3Q==
@@ -160,7 +160,7 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-2ef0d1d5c1582d2f169c0eb00fb382dc"
 
 {"displayName": "Comment", "description": "Comment", "creator": "system", "type": "propertyDefinitionDetail", "_rev": "1-2ef0d1d5c1582d2f169c0eb00fb382dc", "required": false, "created": "2013-01-01T00:00:00.000+0000", "localName": "nemaki:comment", "updatability": "READWRITE", "orderable": true, "_id": "ceeea12ac47d659d88c0d46e6700270d", "coreNodeId": "18d9eb1d9a6c624a63013e9e2a2cad99", "queryable": true}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: ceeea12ac47d659d88c0d46e67002b95
 Content-Length: 429
 Content-MD5: +cp5vadFCFwXOwmlKaBXZA==
@@ -168,7 +168,7 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-5235d2e0e112dd6767f898122bc1c603"
 
 {"displayName": "Document class", "description": "Document class", "creator": "system", "type": "propertyDefinitionDetail", "_rev": "1-5235d2e0e112dd6767f898122bc1c603", "required": false, "created": "2013-01-01T00:00:00.000+0000", "localName": "nemaki:classification", "updatability": "READWRITE", "orderable": true, "_id": "ceeea12ac47d659d88c0d46e67002b95", "coreNodeId": "18d9eb1d9a6c624a63013e9e2a2cc9da", "queryable": true}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: ceeea12ac47d659d88c0d46e67003542
 Content-Length: 390
 Content-MD5: CNwGI9RMB4rgfYcFIOOAOw==
@@ -176,15 +176,15 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-3a48369eca61a60faa96974da443bead"
 
 {"displayName": "Customer name", "description": "Customer name", "creator": "system", "type": "propertyDefinitionDetail", "_rev": "1-3a48369eca61a60faa96974da443bead", "required": false, "created": "2013-01-01T00:00:00.000+0000", "updatability": "READWRITE", "localName": false, "_id": "ceeea12ac47d659d88c0d46e67003542", "coreNodeId": "18d9eb1d9a6c624a63013e9e2a2ccb97", "queryable": true}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: ceeea12ac47d659d88c0d46e67003985
 Content-Length: 429
 Content-MD5: Cc0mhuEYb9yNe+kE/215Xg==
 Content-Type: application/json;charset=utf-8
 ETag: "1-ef5fbb1367353ad9bef9993b9e195f47"
 
-{"displayName": "Person in charge", "description": "Person in charge", "creator": "system", "type": "propertyDefinitionDetail", "_rev": "1-ef5fbb1367353ad9bef9993b9e195f47", "required": false, "created": "2013-01-01T00:00:00.000+0000", "localName": "nemaki:chargedPerson", "updatability": "READWRITE", "orderable": false, "_id": "ceeea12ac47d659d88c0d46e67003985", "coreNodeId": "18d9eb1d9a6c624a63013e9e2a2cd09f", "queryable": true}
---==b66c76606df14c2281a84ee2f5de1358==
+{"displayName": "Charged person", "description": "Charged person", "creator": "system", "type": "propertyDefinitionDetail", "_rev": "1-ef5fbb1367353ad9bef9993b9e195f47", "required": false, "created": "2013-01-01T00:00:00.000+0000", "localName": "nemaki:chargedPerson", "updatability": "READWRITE", "orderable": false, "_id": "ceeea12ac47d659d88c0d46e67003985", "coreNodeId": "18d9eb1d9a6c624a63013e9e2a2cd09f", "queryable": true}
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: ceeea12ac47d659d88c0d46e670046de
 Content-Length: 426
 Content-MD5: Ub2dDndYbBSNJH/g8GFlLg==
@@ -192,7 +192,7 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-4eca16008a30d8f35d41835d9bc6a67a"
 
 {"displayName": "Next reviewer", "description": "Next reviewer", "creator": "system", "type": "propertyDefinitionDetail", "_rev": "1-4eca16008a30d8f35d41835d9bc6a67a", "required": false, "created": "2013-01-01T00:00:00.000+0000", "localName": "nemaki:nextReviewer", "updatability": "READWRITE", "orderable": false, "_id": "ceeea12ac47d659d88c0d46e670046de", "coreNodeId": "18d9eb1d9a6c624a63013e9e2a2cd416", "queryable": true}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: ceeea12ac47d659d88c0d46e67004ecd
 Content-Length: 425
 Content-MD5: CC3uAch5OhFbsQavXDSbHw==
@@ -200,7 +200,7 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-a9732e1868ca1ed9f0958508c600f9bb"
 
 {"displayName": "Review status", "description": "Review status", "creator": "system", "type": "propertyDefinitionDetail", "_rev": "1-a9732e1868ca1ed9f0958508c600f9bb", "required": false, "created": "2013-01-01T00:00:00.000+0000", "localName": "nemaki:reviewStatus", "updatability": "READWRITE", "orderable": true, "_id": "ceeea12ac47d659d88c0d46e67004ecd", "coreNodeId": "18d9eb1d9a6c624a63013e9e2a2cd64a", "queryable": true}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: ceeea12ac47d659d88c0d46e67005162
 Content-Length: 539
 Content-MD5: sKld2i10v8DLRK3G85Rbew==
@@ -208,7 +208,7 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-7fb66644c90c315af709680c4728a7a2"
 
 {"typeId": "nemaki:classificationInfo", "displayName": "Document classification information", "description": "Document classification information", "baseId": "CMIS_SECONDARY", "created": "2013-01-01T00:00:00.000+0000", "_rev": "1-7fb66644c90c315af709680c4728a7a2", "creator": "system", "queryName": "nemaki:classificationInfo", "parentId": "cmis:secondary", "localName": "nemaki:classificationInfo", "creatable": true, "_id": "ceeea12ac47d659d88c0d46e67005162", "type": "typeDefinition", "properties": ["ceeea12ac47d659d88c0d46e67002b95"]}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: ceeea12ac47d659d88c0d46e6700545f
 Content-Length: 498
 Content-MD5: hxha5Uz1JIgS6stmV2bGdQ==
@@ -216,7 +216,7 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-012e30c2da21f54d7a9df33e1a1774cf"
 
 {"typeId": "nemaki:clientInfo", "displayName": "Client information", "description": "Client information", "baseId": "CMIS_SECONDARY", "created": "2013-01-01T00:00:00.000+0000", "_rev": "1-012e30c2da21f54d7a9df33e1a1774cf", "creator": "system", "queryName": "nemaki:clientInfo", "parentId": "cmis:secondary", "localName": "nemaki:clientInfo", "_id": "ceeea12ac47d659d88c0d46e6700545f", "type": "typeDefinition", "properties": ["ceeea12ac47d659d88c0d46e67003542", "ceeea12ac47d659d88c0d46e67003985"]}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: ceeea12ac47d659d88c0d46e67005511
 Content-Length: 534
 Content-MD5: PzkG5pZodr9iX2R3R1h0QQ==
@@ -224,7 +224,7 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-4c5bde362dbc8d3a5de2f0b0506a1977"
 
 {"typeId": "nemaki:reviewInfo", "displayName": "Review information", "description": "Review information", "baseId": "CMIS_SECONDARY", "created": "2013-01-01T00:00:00.000+0000", "_rev": "1-4c5bde362dbc8d3a5de2f0b0506a1977", "creator": "system", "queryName": "nemaki:reviewInfo", "parentId": "cmis:secondary", "localName": "nemaki:reviewInfo", "_id": "ceeea12ac47d659d88c0d46e67005511", "type": "typeDefinition", "properties": ["ceeea12ac47d659d88c0d46e67004ecd", "ceeea12ac47d659d88c0d46e670046de", "ceeea12ac47d659d88c0d46e6700270d"]}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: sites
 Content-Length: 339
 Content-MD5: ZPHPwpRu+yujvPmcI3heqw==
@@ -232,7 +232,7 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-e04b62fce3e71ac286cbcc198209501e"
 
 {"_id": "sites", "aspects": [], "name": "sites", "creator": "system", "_rev": "1-e04b62fce3e71ac286cbcc198209501e", "created": "2013-01-01T00:00:00.000+0000", "modified": "2013-01-01T00:00:00.000+0000", "acl": {"entries": []}, "aclInherited": true, "parentId": "/", "modifier": "system", "type": "cmis:folder", "objectType": "cmis:folder"}
---==b66c76606df14c2281a84ee2f5de1358==
+--==b8b29a9bd0034720a931b9519dcf851f==
 Content-ID: system
 Content-Length: 293
 Content-MD5: uAl71n2qLt6o2cgg4EgdsQ==
@@ -240,4 +240,4 @@ Content-Type: application/json;charset=utf-8
 ETag: "1-c740a8403336b4c3dc75e43fb8a4446e"
 
 {"_id": "system", "name": "system", "firstName": "", "creator": "system", "lastName": "", "_rev": "1-c740a8403336b4c3dc75e43fb8a4446e", "created": "2013-01-01T00:00:00.000+0000", "userId": "system", "modified": "2013-01-01T00:00:00.000+0000", "modifier": "system", "type": "user", "email": ""}
---==b66c76606df14c2281a84ee2f5de1358==--
+--==b8b29a9bd0034720a931b9519dcf851f==--
