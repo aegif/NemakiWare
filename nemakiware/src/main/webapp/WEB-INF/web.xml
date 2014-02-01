@@ -13,7 +13,7 @@
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://java.sun.com/xml/ns/j2ee http://java.sun.com/xml/ns/j2ee/web-app_2_4.xsd">
 
-	<display-name>Nemaki</display-name>
+	<display-name>NemakiWare</display-name>
 
 	<welcome-file-list>
 		<welcome-file>index.html</welcome-file>
@@ -26,10 +26,10 @@
 
 	<listener>
 		<listener-class>com.sun.xml.ws.transport.http.servlet.WSServletContextListener</listener-class>
-	</listener>
-	<listener>
+    </listener>
+    <listener>
 		<listener-class>org.springframework.web.context.ContextLoaderListener</listener-class>
-	</listener>
+    </listener>
 
 	<servlet>
 		<servlet-name>cmisws</servlet-name>
@@ -46,7 +46,7 @@
 		<init-param>
 			<param-name>callContextHandler</param-name>
 			<param-value>jp.aegif.nemaki.repository.DefaultContextHandler</param-value>
-		</init-param>
+        </init-param>
 		<init-param>
  			<param-name>cmisVersion</param-name>
  			<param-value>1.1</param-value>

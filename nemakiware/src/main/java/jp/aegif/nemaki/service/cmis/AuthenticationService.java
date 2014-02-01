@@ -46,5 +46,5 @@ public interface AuthenticationService {
 	 * Authenticate user, or throw an exception if failed.
 	 * @throws CmisPermissionDeniedException
 	 */
-	void login(String username, String passwd);
+	void login(String userName, String passWord);
 }

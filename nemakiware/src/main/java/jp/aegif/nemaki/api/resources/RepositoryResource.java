@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License along with NemakiWare. 
+ *
+ * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -42,6 +42,8 @@ import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
 
+import jp.aegif.nemaki.model.constant.PropertyKey;
+import jp.aegif.nemaki.util.NemakiPropertyManager;
 import jp.aegif.nemaki.util.PropertyManager;
 
 import org.json.simple.JSONArray;
@@ -58,38 +60,44 @@ import org.springframework.stereotype.Component;
 @Component
 @Path("/db")
 public class RepositoryResource extends ResourceBase implements ApplicationContextAware {
-	
+
 	private ApplicationContext context;
-	
+
 	private String host;
-	
+	private String propertiesFile;
+	private NemakiPropertyManager nemakiPropertyManager;
+
 	public RepositoryResource(){
+
+	}
+
+	public RepositoryResource(NemakiPropertyManager nemakiPropertyManager){
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 		String dbHost;
 		String dbProtocol;
 		String dbPort;
-		
+
+		setNemakiPropertyManager(nemakiPropertyManager);
 		try{
-			PropertyManager propertyManager = new PropertyManager(FILEPATH_PROPERTIESFILE);
-			dbHost = propertyManager.readValue(PROPERTY_DBHOST);
-			dbProtocol = propertyManager.readValue(PROPERTY_DBPROTOCOL);
-			dbPort = propertyManager.readValue(PROPERTY_DBPORT);
+			dbHost = nemakiPropertyManager.readValue(PropertyKey.DB_HOST);
+			dbProtocol = nemakiPropertyManager.readValue(PropertyKey.DB_PROTOCOL);
+			dbPort = nemakiPropertyManager.readValue(PropertyKey.DB_PORT);
 			this.setHost(dbProtocol + "://" +  dbHost + ":" + dbPort + "/");
 		}catch(Exception ex){
 			ex.printStackTrace();
 			status=false;
 			addErrMsg(errMsg, ITEM_COUCHDBRESTURL, ERR_READ);
 		}
-		
+
 		result = makeResult(status, result, errMsg);
-		
+
 		if(!status){
 			Logger.getLogger(RepositoryResource.class.getName()).log(Level.SEVERE, result.toJSONString());
 		}
 	}
-	
+
 	/**
 	 * List up all databases with detail info of each one
 	 * @return
@@ -103,51 +111,51 @@ public class RepositoryResource extends ResourceBase implements ApplicationConte
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 		JSONObject detailedJSON = new JSONObject();
-		
+
 		Map map = getCouchDbApiResponse(VIEW_ALL, errMsg);
 		String response = (String) map.get("response");
 		errMsg = (JSONArray) map.get("errMsg");
-		
+
 		if(response != null){
 			try {
 				JSONArray json = (JSONArray) JSONValue.parseWithException(response);
 
 				//Add additional each db info to the JSON
 				String dbId = SPACE;
-				if (json != null) { 
+				if (json != null) {
 				   int len = json.size();
-				   
+
 				   Map dbInfoMap = new HashMap();
 				   JSONObject dbInfo = new JSONObject();
-				   for (int i=0;i<len;i++){ 
+				   for (int i=0;i<len;i++){
 					   dbId = SPACE;
 					   dbId = json.get(i).toString();
-					   
+
 					   //call API
 					   dbInfoMap = getEachDbInfo(dbId, errMsg);
 					   dbInfo = (JSONObject) dbInfoMap.get("json");
 					   errMsg = (JSONArray) dbInfoMap.get("errMsg");
-					   
+
 					   detailedJSON.put(dbId, dbInfo);
 					   result.put(ITEM_DATABASES, detailedJSON);
-				   } 
-				} 
+				   }
+				}
 			} catch (ParseException e) {
 				e.printStackTrace();
 				status = false;
 				addErrMsg(errMsg, ITEM_DATABASES, ERR_PARSEJSON);
 			}
 		}
-		
+
 		//API result output process
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
 	}
-	
-	
+
+
 	/**
-	 * Create a new couchDB database registering a view document for it and 
-	 * add its id to the property file 
+	 * Create a new couchDB database registering a view document for it and
+	 * add its id to the property file
 	 * @param dbId
 	 * @return
 	 */
@@ -155,18 +163,18 @@ public class RepositoryResource extends ResourceBase implements ApplicationConte
 	@Path("/create/{dbId}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public String create(@PathParam("dbId") String dbId){
-		
+
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
-		
+
 		//Wrap REST API
-		String urlString = host + dbId; 
+		String urlString = host + dbId;
 		try {
 			URL url = new URL(urlString);
 			try {
 				HttpURLConnection connection = (HttpURLConnection) url.openConnection ();
-				
+
 				connection.setRequestMethod("PUT");
 				connection.connect();
 				connection.disconnect();
@@ -184,9 +192,9 @@ public class RepositoryResource extends ResourceBase implements ApplicationConte
 			status = false;
 			addErrMsg(errMsg, ITEM_COUCHDBRESTURL, ERR_PARSEURL);
 		}
-		
+
 		if(status){
-			//Register a view to the db 
+			//Register a view to the db
 			try {
 				createDesignDoc(dbId, DOCNAME_VIEW);
 			} catch (Exception ex) {
@@ -195,26 +203,26 @@ public class RepositoryResource extends ResourceBase implements ApplicationConte
 				addErrMsg(errMsg, ITEM_VIEW, ERR_CREATE);
 			}
 		}
-		
+
 		if(status){
 			//Add dbId to the property file
 			try{
-				PropertyManager propertyManager = new PropertyManager(FILEPATH_PROPERTIESFILE);
-				propertyManager.addValue(PROPERTY_REPOSITORIES, dbId);
+				PropertyManager propertyManager = new PropertyManager(propertiesFile);
+				propertyManager.addValue(PropertyKey.REPOSITORIES, dbId);
 				//modify current repository info on the property file
-				propertyManager.modifyValue(PROPERTY_INFO_REPOSITORY, dbId);
+				propertyManager.modifyValue(PropertyKey.REPOSITORY_MAIN, dbId);
 			}catch(Exception ex){
 				ex.printStackTrace();
 				status = false;
 				addErrMsg(errMsg, ITEM_PROPERTIESFILE, ERR_ADD_REPOSITORY);
 			}
 		}
-		
+
 		//API result output process
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
 	}
-	
+
 	/**
 	 * Delete a database and remove its id from the property file
 	 * @param dbId
@@ -224,25 +232,25 @@ public class RepositoryResource extends ResourceBase implements ApplicationConte
 	@Path("/delete/{dbId}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public String delete(@PathParam("dbId") String dbId){
-		
+
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
-		
+
 		//Wrap REST API
-		String urlString = host + dbId; 
+		String urlString = host + dbId;
 		try {
 			URL url = new URL(urlString);
 			try {
 				HttpURLConnection connection = (HttpURLConnection) url.openConnection ();
-				
+
 				connection.setRequestMethod("DELETE");
 				connection.connect();
-				connection.disconnect();				
+				connection.disconnect();
 				if(! (connection.getResponseCode() == HttpURLConnection.HTTP_OK)){
 					status = false;
 					addErrMsg(errMsg, ITEM_COUCHDBRESPONSE, ERR_STATUSCODE + connection.getResponseCode());
-				}				
+				}
 			} catch (IOException e) {
 				e.printStackTrace();
 				status = false;
@@ -253,27 +261,27 @@ public class RepositoryResource extends ResourceBase implements ApplicationConte
 			status = false;
 			addErrMsg(errMsg, ITEM_COUCHDBRESTURL, ERR_PARSEURL);
 		}
-		
+
 		//Remove dbId from properties file
 		if(status){
 			try{
-				PropertyManager propertyManager = new PropertyManager(FILEPATH_PROPERTIESFILE);
-				propertyManager.removeValue(PROPERTY_REPOSITORIES, dbId);
+				PropertyManager propertyManager = new PropertyManager(propertiesFile);
+				propertyManager.removeValue(PropertyKey.REPOSITORIES, dbId);
 				//modify current repository info on the property file
-				String headValue = propertyManager.readHeadValue(PROPERTY_REPOSITORIES);
-				propertyManager.modifyValue(PROPERTY_INFO_REPOSITORY, headValue);
+				String headValue = propertyManager.readHeadValue(PropertyKey.REPOSITORIES);
+				propertyManager.modifyValue(PropertyKey.REPOSITORY_MAIN, headValue);
 			}catch(Exception ex){
 				ex.printStackTrace();
 				status = false;
 				addErrMsg(errMsg, ITEM_PROPERTIESFILE, ERR_REMOVE_REPOSITORY);
 			}
 		}
-		
+
 		//API result output process
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
 	}
-	
+
 	/**
 	 * register a view docment(designdoc) to the specified database
 	 * @param dbId
@@ -281,23 +289,23 @@ public class RepositoryResource extends ResourceBase implements ApplicationConte
 	 * @throws Exception
 	 */
 public void createDesignDoc(String dbId, String docName) throws Exception{
-		
+
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
-		
+
 		//TODO:daoServiceの使用に切り替える
-		
+
 		//Set REST URL connection of couchDB for creating a document
 		String urlStr = host + dbId + "/" + docName;
-		
+
 		URL url = new URL(urlStr);
 		HttpURLConnection connection;
 		connection = (HttpURLConnection) url.openConnection();
 		connection.setRequestMethod("PUT");
 		connection.setRequestProperty("content-type", "application/json; charset=utf-8");
 		connection.setDoOutput(true);
-		
+
 		//Read views content(external json string)
 		String viewStr = SPACE;
 		Resource resource = context.getResource(FILEPATH_VIEW);
@@ -305,44 +313,44 @@ public void createDesignDoc(String dbId, String docName) throws Exception{
 			InputStream is = resource.getInputStream();
 			InputStreamReader isr = new InputStreamReader(is);
 			BufferedReader reader = new BufferedReader(isr);
-			
+
 			String line = reader.readLine();
 			while(line!=null){
 					viewStr = viewStr + line;
 					line = reader.readLine();
 			}
 		}
-			
+
 		//Create a view designdoc via REST API
 		OutputStreamWriter writer = new OutputStreamWriter(connection.getOutputStream());
 	    writer.write(viewStr);
 	    writer.close();
-	
+
 	    if(!(connection.getResponseCode() == HttpURLConnection.HTTP_CREATED)){
 	    	throw new Exception();
 	    }
 	}
 
 	/**
-	 * Get simple string result of the HTTP body from couchDB REST API  
+	 * Get simple string result of the HTTP body from couchDB REST API
 	 * @param param: REST parameter added to the host url
-	 * @param errMsg 
+	 * @param errMsg
 	 * @return
 	 */
 	public Map getCouchDbApiResponse(String param, JSONArray errMsg){
 		boolean status = true;
-		
+
 		String urlString = host + param;
 		String response = SPACE;
-		
+
 		try {
 			URL url = new URL(urlString);
 			try {
 				HttpURLConnection connection = (HttpURLConnection) url.openConnection ();
-				
+
 				connection.setRequestMethod("GET");
 				connection.connect();
-				
+
 				BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
 				while (true){
 					String line = reader.readLine();
@@ -354,12 +362,12 @@ public void createDesignDoc(String dbId, String docName) throws Exception{
 				reader.close();
 
 				connection.disconnect();
-				
+
 				if(!(connection.getResponseCode() == HttpURLConnection.HTTP_OK)){
 					status = false;
 					addErrMsg(errMsg, ITEM_COUCHDBRESPONSE, ERR_STATUSCODE + connection.getResponseCode());
 				}
-				
+
 			} catch (IOException e) {
 				e.printStackTrace();
 				status = false;
@@ -370,13 +378,13 @@ public void createDesignDoc(String dbId, String docName) throws Exception{
 			status = false;
 			addErrMsg(errMsg, ITEM_COUCHDBRESTURL, ERR_PARSEURL);
 		}
-		
+
 		Map map = new HashMap();
 		map.put("response", response);
 		map.put("errMsg", errMsg);
 		return map;
 	}
-	
+
 	/**
 	 * Get detail info of each database
 	 * @param dbId
@@ -386,11 +394,11 @@ public void createDesignDoc(String dbId, String docName) throws Exception{
 	public Map getEachDbInfo(String dbId, JSONArray errMsg){
 		boolean status = true;
 		JSONObject json = new JSONObject();
-		
+
 		Map map = getCouchDbApiResponse(dbId, errMsg);
 		String response = (String) map.get("response");
 		errMsg = (JSONArray) map.get("errMsg");
-		
+
 		try {
 			json = (JSONObject) JSONValue.parseWithException(response);
 		} catch (ParseException e) {
@@ -398,21 +406,29 @@ public void createDesignDoc(String dbId, String docName) throws Exception{
 			status = false;
 			addErrMsg(errMsg, ITEM_DATABASE + ":" + dbId, ERR_PARSEJSON);
 		}
-		
+
 		Map dbInfoMap = new HashMap();
 		dbInfoMap.put("json", json);
 		dbInfoMap.put("errMsg", errMsg);
 		return dbInfoMap;
 	}
-	
+
 	//Setter
 	public void setHost(String host) {
 		this.host = host;
 	}
 
+	public void setPropertiesFile(String propertiesFile) {
+		this.propertiesFile = propertiesFile;
+	}
+
+	public void setNemakiPropertyManager(NemakiPropertyManager nemakiPropertyManager) {
+		this.nemakiPropertyManager = nemakiPropertyManager;
+	}
+
 	@Override
 	public void setApplicationContext(ApplicationContext context)
 			throws BeansException {
-		this.context = context; 
+		this.context = context;
 	}
 }

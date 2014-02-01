@@ -24,7 +24,7 @@ package jp.aegif.nemaki.service.cmis;
 import java.math.BigInteger;
 import java.util.List;
 
-import jp.aegif.nemaki.repository.TypeManager;
+import jp.aegif.nemaki.repository.type.TypeManager;
 
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;

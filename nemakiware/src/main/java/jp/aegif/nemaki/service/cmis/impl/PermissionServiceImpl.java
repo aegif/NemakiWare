@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -27,29 +27,27 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import jp.aegif.nemaki.model.Ace;
+import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Content;
-import jp.aegif.nemaki.model.CustomPermission;
-import jp.aegif.nemaki.repository.TypeManager;
+import jp.aegif.nemaki.model.constant.PropertyKey;
+import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.cmis.PermissionService;
 import jp.aegif.nemaki.service.node.ContentService;
 import jp.aegif.nemaki.service.node.PrincipalService;
-import jp.aegif.nemaki.util.PropertyManager;
-import jp.aegif.nemaki.util.YamlManager;
+import jp.aegif.nemaki.util.NemakiPropertyManager;
 
-import org.apache.chemistry.opencmis.commons.data.Ace;
-import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
-import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PermissionDefinitionDataImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 /**
  * Permission Service implementation.
- * 
+ *
  */
 public class PermissionServiceImpl implements PermissionService {
 
@@ -60,87 +58,26 @@ public class PermissionServiceImpl implements PermissionService {
 	private ContentService contentService;
 	private TypeManager typeManager;
 	private RepositoryInfo repositoryInfo;
-	
-	static final String FILEPATH_PROPERTIESFILE = "nemakiware.properties";
-	static final String PROP_PRINCIPAL_ADMIN_ID = "principal.admin.id";
+	private NemakiPropertyManager propertyManager;
 
-	// //////////////////////////////////////////////////////////////////////////
-	// Permission Definitions
-	// //////////////////////////////////////////////////////////////////////////
-	/**
-	 * Get the list of existing permissions. For instance: read, write, all
-	 */
-	public List<PermissionDefinition> getPermissionDefinitions() {
-		List<PermissionDefinition> permissions = new ArrayList<PermissionDefinition>();
-		// CMIS basic permissions
-		permissions.add(createPermission(CMIS_READ_PERMISSION, "Read"));
-		permissions.add(createPermission(CMIS_WRITE_PERMISSION, "Write"));
-		permissions.add(createPermission(CMIS_ALL_PERMISSION, "All"));
-
-		// Repository specific permissions
-		for (CustomPermission cp : getCustomPermissions()) {
-			permissions.add(createPermission(cp.getId(), cp.getDescription()));
-		}
-
-		return permissions;
-	}
-
-	public List<String> getPermissions() {
-		List<String> permissions = new ArrayList<String>();
-		permissions.add(CMIS_READ_PERMISSION);
-		permissions.add(CMIS_WRITE_PERMISSION);
-		permissions.add(CMIS_ALL_PERMISSION);
-		for (CustomPermission cp : getCustomPermissions()) {
-			permissions.add(cp.getId());
-		}
-		return permissions;
-	}
-
-	/**
-	 * Create a new permission.
-	 */
-	private PermissionDefinition createPermission(String permission,
-			String description) {
-		PermissionDefinitionDataImpl pd = new PermissionDefinitionDataImpl();
-		pd.setPermission(permission);
-		pd.setDescription(description);
-		return pd;
-	}
-
-	// //////////////////////////////////////////////////////////////////////////
-	// Permission Mappings
-	// //////////////////////////////////////////////////////////////////////////
-	/**
-	 * Mapping permission group to elemental permission (repository static)
-	 */
-	public Map<String, PermissionMapping> getPermissionMap() {
-		return this.repositoryInfo.getAclCapabilities().getPermissionMapping();
-	}
 
 	// //////////////////////////////////////////////////////////////////////////
 	// Permission Check called from each CMIS method
 	// //////////////////////////////////////////////////////////////////////////
+
 	/**
-	 * permissionDenied Exception check
-	 * 
-	 * @return
+	 *
 	 */
-	// TODO Before this method, perform objectNotFound check!
 	@Override
 	public Boolean checkPermission(CallContext callContext, String key, Acl acl,
 			String baseType, Content content) {
 		// Admin always pass a permission check
 		String admin = new String();
-		try {
-			PropertyManager propertyManager = new PropertyManager(FILEPATH_PROPERTIESFILE);
-			admin = propertyManager.readHeadValue(PROP_PRINCIPAL_ADMIN_ID);
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-		
+		admin = propertyManager.readValue(PropertyKey.PRINCIPAL_ADMIN);
+
 		if (callContext.getUsername().equals(admin))
 			return isAllowableBaseType(key, baseType, content);
-		
+
 		if (acl == null)
 			return false;
 
@@ -148,7 +85,7 @@ public class PermissionServiceImpl implements PermissionService {
 		// Set<String> and remain unique.
 		// Get ACL for the current user
 		String userName = callContext.getUsername();
-		List<Ace> aces = acl.getAces();
+		List<Ace> aces = acl.getAllAces();
 		Set<String> userPermissions = new HashSet<String>();
 		Set<String> groups = principalService.getGroupIdsContainingUser(userName);
 		for (Ace ace : aces) {
@@ -161,7 +98,7 @@ public class PermissionServiceImpl implements PermissionService {
 				userPermissions.addAll(ace.getPermissions());
 			}
 			// Group permission(which user inherits)
-			if(groups.contains(ace.getPrincipalId())){
+			if(CollectionUtils.isNotEmpty(groups) && groups.contains(ace.getPrincipalId())){
 				userPermissions.addAll(ace.getPermissions());
 			}
 		}
@@ -170,85 +107,24 @@ public class PermissionServiceImpl implements PermissionService {
 		return isAllowableBaseType(key, baseType, content) && checkCalculatedPermissions(key, userPermissions);
 	}
 
-	// TODO User permission is inherited from Group permission.
+
 	/**
-	 * each permission(ex.cmis:write) will be extended to [cmis:read,cmis:write] etc.
+	 *
 	 * @param key
 	 * @param userPermissions
 	 * @return
 	 */
 	private Boolean checkCalculatedPermissions(String key, Set<String> userPermissions) {
-		// CMIS default permission mapping
-		Map<String, PermissionMapping> map = getPermissionMap();
-		// Check allowable key
-		List<String> mappedPermissions = map.get(key).getPermissions();
-		// Repository-specific custom permission mapping
-		List<CustomPermission> customPermissions = getCustomPermissions();
-		List<String> customPermissionIds = new ArrayList<String>();
-		for (CustomPermission customPermission : customPermissions) {
-			customPermissionIds.add(customPermission.getId());
-		}
+		Map<String, PermissionMapping> table = repositoryInfo.getAclCapabilities().getPermissionMapping();
+		List<String> actionPermissions = table.get(key).getPermissions();
 
-		// Customize the permission mapping of the key
-		Set<String> extend = new HashSet<String>();
-		//Boolean customAllowable = false;
-		for (String userPermission : userPermissions) {
-			// if cmis:all, return true without condition
-			if (userPermission.equals("cmis:all")) {
-				return true;
-			}
-
-			// Extend permissions
-			// CASE cmis:write
-			if (userPermission.equals(CMIS_WRITE_PERMISSION)) {
-				extend.add(CMIS_READ_PERMISSION);
-			}
-			// CASE custom permission
-			if (customPermissionIds.contains(userPermission)) {
-				CustomPermission cp = getNemakiPermission(userPermission,
-						customPermissions);
-				extend.addAll(cp.getBase());
-				// custom permission mapping
-				Map<String, Boolean> pm = cp.getPermissionMapping();
-				if (pm.containsKey(key)) {
-					//customAllowable = customAllowable || pm.get(key);
-					if ( pm.get(key)) {
-						return true;
-					}
-				}
-			}
-		}
-
-		// Check
 		for (String up : userPermissions) {
-			// If a user base permission is allowed
-			if (mappedPermissions.contains(up)) {
+			if (actionPermissions.contains(up)) {
+				//If one of user permissions is contained, allowed.
 				return true;
 			}
 		}
-
-		// If all the check hasnt't been passed, permission denied.
 		return false;
-	}
-
-	@SuppressWarnings("unchecked")
-	/**
-	 * custom permissionの詳細情報を取得
-	 * @param nemakiPermissions
-	 * @return
-	 */
-	private List<CustomPermission> getCustomPermissions() {
-		List<CustomPermission> results = new ArrayList<CustomPermission>();
-
-		YamlManager manager = new YamlManager("custom_permission.yml");
-		List<Map<String, Object>> yml = (List<Map<String, Object>>) manager
-				.loadYml();
-		for (Map<String, Object> y : yml) {
-			CustomPermission cp = new CustomPermission(y);
-			results.add(cp);
-		}
-
-		return results;
 	}
 
 	private Boolean isAllowableBaseType(String key, String baseType, Content content) {
@@ -270,7 +146,7 @@ public class PermissionServiceImpl implements PermissionService {
 				return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType) || BaseTypeId.CMIS_FOLDER.value().equals(baseType)
 						|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM.value().equals(baseType));
 			}
-			
+
 		// Object Services
 		if (PermissionMapping.CAN_CREATE_DOCUMENT_FOLDER.equals(key))
 			return BaseTypeId.CMIS_FOLDER.value().equals(baseType);
@@ -401,36 +277,24 @@ public class PermissionServiceImpl implements PermissionService {
 
 		return false;
 	}
-	
-	private CustomPermission getNemakiPermission(String id,
-			List<CustomPermission> list) {
-		for (CustomPermission np : list) {
-			if (np.getId().equals(id)) {
-				return np;
-			}
-		}
-		return null;
-	}
 
 	/**
 	 * Filtering check to a list of contents based on the permission
 	 */
+	@Override
 	public List<Content> getFiltered(CallContext callContext,
 			List<Content> contents) {
 		List<Content> result = new ArrayList<Content>();
 
 		// Validation
 		// TODO refine the logic
-		if (contents == null)
+		if (CollectionUtils.isEmpty(contents)){
 			return null;
-		while (contents.remove(null))
-			;
-		if (contents == null || contents.size() == 0)
-			return null;
+		}
 
 		// Filtering
 		for (Content content : contents) {
-			Acl acl = contentService.convertToCmisAcl(content, false);
+			Acl acl = contentService.calculateAcl(content);
 
 			Boolean filtered = checkPermission(callContext,
 					PermissionMapping.CAN_GET_PROPERTIES_OBJECT, acl, content.getType(), content);
@@ -452,6 +316,7 @@ public class PermissionServiceImpl implements PermissionService {
 		this.contentService = contentService;
 	}
 
+
 	public TypeManager getTypeManager() {
 		return typeManager;
 	}
@@ -463,5 +328,8 @@ public class PermissionServiceImpl implements PermissionService {
 	public void setRepositoryInfo(RepositoryInfo repositoryInfo) {
 		this.repositoryInfo = repositoryInfo;
 	}
-	
+
+	public void setPropertyManager(NemakiPropertyManager propertyManager) {
+		this.propertyManager = propertyManager;
+	}
 }

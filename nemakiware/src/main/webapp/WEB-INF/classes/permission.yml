@@ -1,0 +1,27 @@
+######################
+#CMIS Basic Permission
+######################
+- id: "cmis:read"
+  description: "READ"
+  asCmisBasic: "cmis:read"
+
+- id: "cmis:write"
+  description: "WRITE"
+  asCmisBasic: "cmis:write"
+
+- id: "cmis:all"
+  description: "ADMINISTRATOR"
+  asCmisBasic: "cmis:all"
+
+##########################
+#Custom Permission(Sample)
+##########################
+#Custom permission must be defined after its base permission.
+- id: "nemaki:consumer"
+  description: Nemaki CONSUMER Permission(For Test)
+  base: ["cmis:write"]
+  permissionMapping:
+   #Specify true/false. If value is empty, default to true.
+   canApplyACL.Object: false
+  #See spec 2.2.10.2 onlyBasicPermissions flag.
+  asCmisBasic: "cmis:write"

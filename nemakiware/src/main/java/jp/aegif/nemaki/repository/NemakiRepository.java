@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -27,7 +27,6 @@ import java.util.List;
 import jp.aegif.nemaki.service.cmis.AclService;
 import jp.aegif.nemaki.service.cmis.DiscoveryService;
 import jp.aegif.nemaki.service.cmis.NavigationService;
-import jp.aegif.nemaki.service.cmis.NemakiCmisService;
 import jp.aegif.nemaki.service.cmis.ObjectService;
 import jp.aegif.nemaki.service.cmis.PolicyService;
 import jp.aegif.nemaki.service.cmis.RelationshipService;
@@ -99,12 +98,12 @@ public class NemakiRepository {
 			ExtensionsData extension) {
 
 	}
-	
+
 	public void appendContentStream(CallContext callContext, Holder<String> objectId, Holder<String> changeToken,
 			ContentStream contentStream, boolean isLastChunk,
 			ExtensionsData extension){
 		objectService.appendContentStream(callContext, objectId, changeToken, contentStream, isLastChunk, extension);
-		
+
 	}
 
 	public FailedToDeleteData deleteTree(CallContext callContext,
@@ -238,7 +237,7 @@ public class NemakiRepository {
 		return objectService.createRelationship(callContext, properties,
 				policies, addAces, removeAces, extension);
 	}
-	
+
 	public String createItem(CallContext callContext, Properties properties,
 			String folderId, List<String> policies, Acl addAces,
 			Acl removeAces, ExtensionsData extension) {
@@ -357,7 +356,7 @@ public class NemakiRepository {
 
 	/**
 	 * Executes a CMIS query statement against the contents of the repository.
-	 * 
+	 *
 	 * TODO this should be replaced with other search engine like Lucene.
 	 */
 	public ObjectList query(CallContext callContext, String statement,

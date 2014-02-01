@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -33,11 +33,12 @@ import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.model.constant.DomainType;
-import jp.aegif.nemaki.repository.NemakiRepositoryInfoImpl;
-import jp.aegif.nemaki.repository.TypeManager;
+import jp.aegif.nemaki.repository.info.NemakiRepositoryInfoImpl;
+import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.cmis.RepositoryService;
 import jp.aegif.nemaki.service.node.ContentService;
+import jp.aegif.nemaki.service.node.TypeService;
 
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
@@ -47,29 +48,33 @@ import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionList;
 import org.apache.chemistry.opencmis.commons.definitions.TypeMutability;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
 import org.springframework.beans.factory.InitializingBean;
-import org.apache.commons.collections.CollectionUtils;
 
 public class RepositoryServiceImpl implements RepositoryService,
 		InitializingBean {
 
 	private NemakiRepositoryInfoImpl repositoryInfo;
-	private ContentService contentService;
 	private TypeManager typeManager;
+	private TypeService typeService;
+	private ContentService contentService;;
+
 	private ExceptionService exceptionService;
 
+	@Override
 	public TypeManager getTypeManager() {
 		return typeManager;
 	}
 
+	@Override
 	public boolean hasThisRepositoryId(String repositoryId) {
 		return (repositoryId.equals(repositoryInfo.getId()));
 	}
 
+	@Override
 	public NemakiRepositoryInfoImpl getRepositoryInfo() {
-		repositoryInfo.setLatestChangeLogToken(contentService
-				.getLatestChangeToken());
+		repositoryInfo.setLatestChangeLogToken(contentService.getLatestChangeToken());
 		return repositoryInfo;
 	}
 
@@ -132,7 +137,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 					exceptionService.constraintQueryName(propDef);
 					NemakiPropertyDefinition create = new NemakiPropertyDefinition(
 							propDef);
-					NemakiPropertyDefinitionDetail created = contentService
+					NemakiPropertyDefinitionDetail created = typeService
 							.createPropertyDefinition(create);
 
 					List<String> l = ntd.getProperties();
@@ -143,7 +148,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 		}
 
 		// Create
-		NemakiTypeDefinition created = contentService.createTypeDefinition(ntd);
+		NemakiTypeDefinition created = typeService.createTypeDefinition(ntd);
 		typeManager.refreshTypes();
 
 		// Sort the order of properties
@@ -166,7 +171,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		contentService.deleteTypeDefinition(typeId);
+		typeService.deleteTypeDefinition(typeId);
 		typeManager.refreshTypes();
 	}
 
@@ -186,7 +191,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		NemakiTypeDefinition existingType = contentService
+		NemakiTypeDefinition existingType = typeService
 				.getTypeDefinition(type.getId());
 
 		// Attributes
@@ -207,25 +212,25 @@ public class RepositoryServiceImpl implements RepositoryService,
 				List<String> existingPropertyNodeIds = (CollectionUtils
 						.isEmpty(existingType.getProperties())) ? new ArrayList<String>()
 						: existingType.getProperties();
-				
-				String propNodeId = contentService.getPropertyDefinitionCoreByPropertyId(key).getId(); 		
+
+				String propNodeId = typeService.getPropertyDefinitionCoreByPropertyId(key).getId();
 				if (existingPropertyNodeIds.contains(propNodeId)) {
 					// update
 					PropertyDefinition<?> oldPropDef = typeManager.getTypeDefinition(existingType.getTypeId()).getPropertyDefinitions().get(propNodeId);
 					exceptionService.constraintUpdatePropertyDefinition(propDef, oldPropDef);
 					exceptionService.constraintQueryName(propDef);
-					
+
 					NemakiPropertyDefinition _update = new NemakiPropertyDefinition(
 							propDef);
-					NemakiPropertyDefinitionCore core = contentService.getPropertyDefinitionCoreByPropertyId(_update.getPropertyId());
+					NemakiPropertyDefinitionCore core = typeService.getPropertyDefinitionCoreByPropertyId(_update.getPropertyId());
 					NemakiPropertyDefinitionDetail update = new NemakiPropertyDefinitionDetail(_update, core.getId());
-					contentService.updatePropertyDefinitionDetail(update);
+					typeService.updatePropertyDefinitionDetail(update);
 				} else {
 					// create
 					exceptionService.constraintQueryName(propDef);
 					NemakiPropertyDefinition create = new NemakiPropertyDefinition(
 							propDef);
-					NemakiPropertyDefinitionDetail created = contentService
+					NemakiPropertyDefinitionDetail created = typeService
 							.createPropertyDefinition(create);
 
 					List<String> l = ntd.getProperties();
@@ -237,13 +242,13 @@ public class RepositoryServiceImpl implements RepositoryService,
 		}
 
 		// Update
-		NemakiTypeDefinition updated = contentService.updateTypeDefinition(ntd);
+		NemakiTypeDefinition updated = typeService.updateTypeDefinition(ntd);
 		typeManager.refreshTypes();
 
 		// Sort
 		return sortPropertyDefinitions(updated, type);
 	}
-	
+
 	private NemakiTypeDefinition setNemakiTypeDefinitionAttributes(
 			TypeDefinition typeDefinition) {
 		NemakiTypeDefinition ntd = new NemakiTypeDefinition();
@@ -324,6 +329,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 	/**
 	 * Sets CMIS optional capabilities for Nemaki repository.
 	 */
+	@Override
 	public void afterPropertiesSet() throws Exception {
 	}
 
@@ -335,15 +341,15 @@ public class RepositoryServiceImpl implements RepositoryService,
 		this.typeManager = typeManager;
 	}
 
-	public ContentService getContentService() {
-		return contentService;
+	public void setExceptionService(ExceptionService exceptionService) {
+		this.exceptionService = exceptionService;
+	}
+
+	public void setTypeService(TypeService typeService) {
+		this.typeService = typeService;
 	}
 
 	public void setContentService(ContentService contentService) {
 		this.contentService = contentService;
-	}
-
-	public void setExceptionService(ExceptionService exceptionService) {
-		this.exceptionService = exceptionService;
 	}
 }

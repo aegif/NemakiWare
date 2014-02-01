@@ -119,7 +119,7 @@ public class NavigationServiceImpl implements NavigationService {
 			contents = aclFiltered;
 		}
 		
-		if(contents == null){
+		if(CollectionUtils.isEmpty(contents)){
 			result.setNumItems(BigInteger.ZERO);
 			return result;
 		}
@@ -219,8 +219,7 @@ public class NavigationServiceImpl implements NavigationService {
 					BigInteger.valueOf(0), folderOnly);
 
 			childrenOfFolder = new ArrayList<ObjectInFolderContainer>();
-			if (null != children) {
-
+			if (null != children && CollectionUtils.isNotEmpty(children.getObjects())) {
 				for (ObjectInFolderData child : children.getObjects()) {
 					ObjectInFolderContainerImpl oifc = new ObjectInFolderContainerImpl();
 					String childId = child.getObject().getId();
@@ -232,7 +231,7 @@ public class NavigationServiceImpl implements NavigationService {
 							folderOnly);
 
 					oifc.setObject(child);
-					if (null != subChildren)
+					if (CollectionUtils.isNotEmpty(subChildren))
 						oifc.setChildren(subChildren);
 					childrenOfFolder.add(oifc);
 				}
@@ -255,7 +254,8 @@ public class NavigationServiceImpl implements NavigationService {
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		Folder parent = contentService.getFolder(folder.getParentId());
+		Folder parent = contentService.getParent(folderId);
+		exceptionService.objectNotFoundParentFolder(folderId, parent);
 		exceptionService.invalidArgumentRootFolder(folder);
 		
 		// //////////////////
@@ -277,16 +277,15 @@ public class NavigationServiceImpl implements NavigationService {
 		exceptionService.permissionDenied(callContext, PermissionMapping.CAN_GET_PARENTS_FOLDER, content);
 		
 		// //////////////////
+		// Specific Exception
+		// //////////////////
+		Folder parent = contentService.getParent(objectId);
+		exceptionService.objectNotFoundParentFolder(objectId, parent);
+		exceptionService.invalidArgumentRootFolder(content);
+		
+		// //////////////////
 		// Body of the method
 		// //////////////////
-		// return empty list if content is ROOT folder
-		if(content.isRoot()) return Collections.emptyList();
-		
-		Content parent = contentService.getContent(content.getParentId());
-		if(parent == null) {
-			//TODO logging
-		}
-		
 		ObjectParentDataImpl result = new ObjectParentDataImpl();
 		ObjectData o = compileObjectService.compileObjectData(callContext, parent, filter, includeAllowableActions, true, null);
 		result.setObject(o);

@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -31,6 +31,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 
+import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Aspect;
 import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Change;
@@ -42,26 +43,30 @@ import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.VersionSeries;
-import jp.aegif.nemaki.repository.NemakiRepositoryInfoImpl;
-import jp.aegif.nemaki.repository.TypeManager;
+import jp.aegif.nemaki.repository.info.NemakiRepositoryInfoImpl;
+import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.cmis.CompileObjectService;
 import jp.aegif.nemaki.service.cmis.PermissionService;
 import jp.aegif.nemaki.service.cmis.RepositoryService;
 import jp.aegif.nemaki.service.node.ContentService;
+import jp.aegif.nemaki.util.DataUtil;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
-import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.AllowableActions;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
+import org.apache.chemistry.opencmis.commons.data.RepositoryCapabilities;
+import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.Action;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.ChangeType;
+import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
+import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyData;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AllowableActionsImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ChangeEventInfoDataImpl;
@@ -82,7 +87,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 public class CompileObjectServiceImpl implements CompileObjectService {
-	
+
 	private static final Log log = LogFactory.getLog(CompileObjectServiceImpl.class);
 
 	private NemakiRepositoryInfoImpl repositoryInfo;
@@ -96,6 +101,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	/**
 	 * Builds a CMIS ObjectData from the given CouchDB content.
 	 */
+	@Override
 	public ObjectData compileObjectData(CallContext context, Content content,
 			String filter, Boolean includeAllowableActions, Boolean includeAcl,
 			Map<String, String> aliases) {
@@ -114,8 +120,8 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		}
 
 		if (iacl) {
-			Acl acl = contentService.convertToCmisAcl(content, false);
-			result.setAcl(acl);
+			Acl acl = contentService.calculateAcl(content);
+			result.setAcl(DataUtil.convertToCmisAcl(acl, content.isAclInherited(), false));
 			result.setIsExactAcl(true);
 		}
 
@@ -197,9 +203,9 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			}
 		}
 
-		
+
 		results.setNumItems(BigInteger.valueOf(results.getObjects().size()));
-		
+
 		String latestInRepository = repositoryService.getRepositoryInfo().getLatestChangeLogToken();
 		String latestInResults = changeLogToken.getValue();
 		if(latestInResults.equals(latestInRepository)){
@@ -263,8 +269,10 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			Boolean includeAcl) {
 		boolean iacl = (includeAcl == null ? false : includeAcl.booleanValue());
 		if (iacl) {
-			if (content != null)
-				object.setAcl(contentService.convertToCmisAcl(content, false));
+			if (content != null){
+				Acl acl = contentService.calculateAcl(content);
+				object.setAcl(DataUtil.convertToCmisAcl(acl, content.isAclInherited(), false));
+			}
 		}
 	}
 
@@ -278,16 +286,17 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 	/**
 	 * Sets allowable action for the content
-	 * 
+	 *
 	 * @param content
 	 */
+	@Override
 	public AllowableActions compileAllowableActions(CallContext callContext,
 			Content content) {
 		// Get parameters to calculate AllowableActions
 		jp.aegif.nemaki.model.Acl contentAcl = content.getAcl();
 		if (contentAcl == null)
 			return null;
-		Acl acl = contentService.convertToCmisAcl(content, false);
+		Acl acl = contentService.calculateAcl(content);
 		Map<String, PermissionMapping> permissionMap = repositoryInfo
 				.getAclCapabilities().getPermissionMapping();
 		String baseType = content.getType();
@@ -297,17 +306,29 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		for (Entry<String, PermissionMapping> mappingEntry : permissionMap
 				.entrySet()) {
 			String key = mappingEntry.getValue().getKey();
-						
+
+			//TODO WORKAROUND. implement class cast check
+
+			//FIXME WORKAROUND: skip canCreatePolicy.Folder
+			if(PermissionMapping.CAN_CREATE_POLICY_FOLDER.equals(key)){
+				continue;
+			}
+
 			boolean allowable = permissionService.checkPermission(callContext,
 					mappingEntry.getKey(), acl, baseType, content);
 
-			// Check Content-specific allowable actions
+			//Additional check
+			if(!isAllowableByCapability(key)){
+				continue;
+			}
+			if(!isAllowableByType(key, content)){
+				continue;
+			}
 			if (content.isRoot()) {
-				if (convertKeyToAction(key).equals(Action.CAN_MOVE_OBJECT)) {
+				if (Action.CAN_MOVE_OBJECT == convertKeyToAction(key)) {
 					continue;
 				}
 			}
-
 			if (content.isDocument()) {
 				Document d = (Document) content;
 				allowable = isAllowableActionForDocument(allowable, d,
@@ -341,9 +362,72 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		return allowable;
 	}
 
+	private boolean isAllowableByCapability(String key){
+		RepositoryCapabilities capabilities = repositoryInfo.getCapabilities();
+
+		//Multifiling or Unfiling Capabilities
+		if(PermissionMapping.CAN_ADD_TO_FOLDER_OBJECT.equals(key) ||
+		   PermissionMapping.CAN_ADD_TO_FOLDER_FOLDER.equals(key)){
+			//This is not a explicit spec, but it's plausible.
+			return capabilities.isUnfilingSupported() ||
+				   capabilities.isMultifilingSupported();
+		}else if(PermissionMapping.CAN_REMOVE_FROM_FOLDER_OBJECT.equals(key) ||
+				 PermissionMapping.CAN_REMOVE_FROM_FOLDER_FOLDER.equals(key)){
+			return capabilities.isUnfilingSupported();
+
+		//GetDescendents or GetFolderTree Capabilities
+		}else if(PermissionMapping.CAN_GET_DESCENDENTS_FOLDER.equals(key)){
+			return capabilities.isGetDescendantsSupported() ||
+				   capabilities.isGetFolderTreeSupported();
+		}else{
+			return true;
+		}
+	}
+
+	private boolean isAllowableByType(String key, Content content){
+		TypeDefinition tdf = typeManager.getTypeDefinition(content.getObjectType());
+
+		//ControllableACL
+		if(PermissionMapping.CAN_APPLY_ACL_OBJECT.equals(key)){
+			//Default to FALSE
+			boolean ctrlAcl = (tdf.isControllableAcl() == null)? false : tdf.isControllableAcl();
+			return ctrlAcl;
+
+		//ControllablePolicy
+		}else if(PermissionMapping.CAN_ADD_POLICY_OBJECT.equals(key) ||
+				 PermissionMapping.CAN_ADD_POLICY_POLICY.equals(key) ||
+				 PermissionMapping.CAN_REMOVE_POLICY_OBJECT.equals(key) ||
+				 PermissionMapping.CAN_REMOVE_POLICY_POLICY.equals(key)){
+			//Default to FALSE
+			boolean ctrlPolicy = (tdf.isControllablePolicy() == null)? false : tdf.isControllablePolicy();
+			return ctrlPolicy;
+
+		//setContent
+		}else if(PermissionMapping.CAN_SET_CONTENT_DOCUMENT.equals(key)){
+			if(BaseTypeId.CMIS_DOCUMENT != tdf.getBaseTypeId()) return true;
+
+			DocumentTypeDefinition _tdf = (DocumentTypeDefinition) tdf;
+			//Default to REQUIRED
+			ContentStreamAllowed csa = (_tdf.getContentStreamAllowed() == null)? ContentStreamAllowed.REQUIRED : _tdf.getContentStreamAllowed();
+			return !(csa == ContentStreamAllowed.NOTALLOWED);
+
+		//deleteContent
+		}else if(PermissionMapping.CAN_DELETE_CONTENT_DOCUMENT.equals(key)){
+			if(BaseTypeId.CMIS_DOCUMENT != tdf.getBaseTypeId()) return true;
+
+			DocumentTypeDefinition _tdf = (DocumentTypeDefinition) tdf;
+			//Default to REQUIRED
+			ContentStreamAllowed csa = (_tdf.getContentStreamAllowed() == null)? ContentStreamAllowed.REQUIRED : _tdf.getContentStreamAllowed();
+			return !(csa == ContentStreamAllowed.REQUIRED);
+
+		}else{
+			return true;
+		}
+	}
 	/**
 	 * Compiles properties of a piece of content.
 	 */
+	@Override
 	public Properties compileProperties(Content content, Set<String> filter,
 			ObjectInfoImpl objectInfo) {
 
@@ -380,7 +464,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 	private PropertiesImpl compileRootFolderProperties(Folder folder,
 			PropertiesImpl properties, Set<String> filter) {
-		String typeId = TypeManager.FOLDER_TYPE_ID;
+		String typeId = BaseTypeId.CMIS_FOLDER.value();
 		setCmisBaseProperties(properties, typeId, filter, folder);
 		// Add parentId property without value
 		PropertyIdImpl parentId = new PropertyIdImpl();
@@ -439,7 +523,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		setCmisPolicyProperties(properties, typeId, filter, policy);
 		return properties;
 	}
-	
+
 	private PropertiesImpl compileItemProperties(Item item,
 			PropertiesImpl properties, Set<String> filter) {
 		String typeId = item.getObjectType();
@@ -500,28 +584,31 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 						propertyDefinition.getId(), value);
 			}
 		}
-		
+
 		// Secondary properties
 		setCmisSecondaryTypes(properties, content, typeId, filter);
 	}
 
 	private Property extractSubTypeProperty(Content content, String propertyId){
 		List<Property> subTypeProperties = content.getSubTypeProperties();
-		for (Property subTypeProperty : subTypeProperties) {
-			if(subTypeProperty.getKey().equals(propertyId)){
-				return subTypeProperty;
+		if(CollectionUtils.isNotEmpty(subTypeProperties)){
+			for (Property subTypeProperty : subTypeProperties) {
+				if(subTypeProperty.getKey().equals(propertyId)){
+					return subTypeProperty;
+				}
 			}
 		}
+
 		return null;
 	}
-	
+
 	private void setCmisFolderProperties(PropertiesImpl properties,
 			String typeId, Set<String> filter, Folder folder) {
 
 		addProperty(properties, typeId, filter, PropertyIds.BASE_TYPE_ID,
 				BaseTypeId.CMIS_FOLDER.value());
 		addProperty(properties, typeId, filter, PropertyIds.PATH,
-				contentService.getPath(folder));
+				contentService.calculatePath(folder));
 
 		if (checkAddProperty(properties, typeId, filter,
 				PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS)) {
@@ -544,7 +631,8 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 		addProperty(properties, typeId, filter, PropertyIds.BASE_TYPE_ID,
 				BaseTypeId.CMIS_DOCUMENT.value());
-		Boolean isImmutable = (document.isImmutable() == null) ?  (Boolean)typeManager.getSingleDefaultValue(PropertyIds.IS_IMMUTABLE, typeId) : document.isImmutable(); 
+
+		Boolean isImmutable = (document.isImmutable() == null) ?  (Boolean)typeManager.getSingleDefaultValue(PropertyIds.IS_IMMUTABLE, typeId) : document.isImmutable();
 		addProperty(properties, typeId, filter, PropertyIds.IS_IMMUTABLE, isImmutable);
 		addProperty(properties, typeId, filter,
 				PropertyIds.IS_PRIVATE_WORKING_COPY,
@@ -613,7 +701,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		addProperty(properties, typeId, filter, PropertyIds.POLICY_TEXT,
 				policy.getPolicyText());
 	}
-	
+
 	private void setCmisItemProperties(PropertiesImpl properties,
 			String typeId, Set<String> filter, Item item) {
 		addProperty(properties, typeId, filter, PropertyIds.BASE_TYPE_ID,
@@ -631,20 +719,20 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 				secondaryIds.add(secondaryId);
 			}
 		}
-		
+
 		PropertyData<?> pd = new PropertyIdImpl(
 				PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondaryIds);
 		addProperty(props, typeId, filter, PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondaryIds);
-		
-		
+
+
 		//each secondary properties
 		for(String secondaryId : secondaryIds){
 			List<PropertyDefinition<?>> secondaryPropertyDefinitions = typeManager.getSpecificPropertyDefinitions(secondaryId);
 			if(CollectionUtils.isEmpty(secondaryPropertyDefinitions)) continue;
-			
+
 			Aspect aspect = extractAspect(aspects, secondaryId);
 			List<Property> properties = (aspect == null) ? new ArrayList<Property>() : aspect.getProperties();
-			
+
 			for(PropertyDefinition<?> secondaryPropertyDefinition : secondaryPropertyDefinitions){
 				Property property = extractProperty(properties, secondaryPropertyDefinition.getId());
 				Object value = (property == null) ? null : property.getValue();
@@ -652,7 +740,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			}
 		}
 	}
-	
+
 	private Aspect extractAspect(List<Aspect> aspects, String aspectId){
 		for(Aspect aspect : aspects){
 			if(aspect.getName().equals(aspectId)){
@@ -661,7 +749,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		}
 		return null;
 	}
-	
+
 	private Property extractProperty(List<Property> properties, String propertyId){
 		for(Property property : properties){
 			if(property.getKey().equals(propertyId)){
@@ -707,7 +795,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 	/**
 	 * Adds specified property in property set.
-	 * 
+	 *
 	 * @param props
 	 *            property set
 	 * @param typeId
@@ -719,78 +807,114 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	 * @param value
 	 *            actual property value
 	 */
+	//TODO if cast fails, continue the operation
 	private void addProperty(PropertiesImpl props, String typeId,
 			Set<String> filter, String id, Object value) {
-		String nullString = null;
-
-		PropertyDefinition pdf = repositoryService.getTypeManager()
+		PropertyDefinition<?> pdf = repositoryService.getTypeManager()
 				.getTypeDefinition(typeId).getPropertyDefinitions().get(id);
 
 		if (!checkAddProperty(props, typeId, filter, id))
 			return;
 
-		switch (pdf.getPropertyType()) {
-		case BOOLEAN:
-			PropertyBooleanImpl propBoolean;
-			if (value instanceof List<?>) {
-				propBoolean = new PropertyBooleanImpl(id, (List<Boolean>) value);
-			} else {
-				propBoolean = new PropertyBooleanImpl(id, (Boolean) value);
-			}
-			addPropertyBase(props, id, propBoolean, pdf);
-			break;
-		case INTEGER:
-			PropertyIntegerImpl propInteger;
-			if (value instanceof List<?>) {
-				propInteger = new PropertyIntegerImpl(id,
-						(List<BigInteger>) value);
-			} else {
-				propInteger = new PropertyIntegerImpl(id,
-						BigInteger.valueOf((Long) value));
-			}
-			addPropertyBase(props, id, propInteger, pdf);
-			break;
-		case DATETIME:
-			PropertyDateTimeImpl propDate;
-			if (value instanceof List<?>) {
-				propDate = new PropertyDateTimeImpl(id,
-						(List<GregorianCalendar>) value);
-			} else {
-				propDate = new PropertyDateTimeImpl(id,
-						(GregorianCalendar) value);
-			}
-			addPropertyBase(props, id, propDate, pdf);
-			break;
-		case STRING:
-			PropertyStringImpl propString = new PropertyStringImpl();
-			propString.setId(id);
-			if (value == null) {
-				propString.setValue(nullString);
-			} else {
-				if (value instanceof List<?>) {
-					propString.setValues((List<String>) value);
-				} else {
-					propString.setValue(String.valueOf(value));
+		try{
+			 switch (pdf.getPropertyType()) {
+				case BOOLEAN:
+					PropertyBooleanImpl propBoolean;
+					if (value instanceof List<?>) {
+						propBoolean = new PropertyBooleanImpl(id, (List<Boolean>) value);
+					} else if( value instanceof Boolean) {
+						propBoolean = new PropertyBooleanImpl(id, (Boolean) value);
+					} else{
+						Boolean _null = null;
+						propBoolean = new PropertyBooleanImpl(id, _null);
+						if( value != null){
+							String msg = buildCastErrMsg(typeId, id, pdf.getPropertyType(), value.getClass().getName(), Boolean.class.getName());
+							log.warn(msg);
+						}
+					}
+					addPropertyBase(props, id, propBoolean, pdf);
+					break;
+				case INTEGER:
+					PropertyIntegerImpl propInteger;
+					if (value instanceof List<?>) {
+						propInteger = new PropertyIntegerImpl(id,
+								(List<BigInteger>) value);
+					} else if(value instanceof Long || value instanceof Integer) {
+						propInteger = new PropertyIntegerImpl(id,
+								BigInteger.valueOf((Long) value));
+					} else{
+						BigInteger _null = null;
+						propInteger = new PropertyIntegerImpl(id, _null);
+						if( value != null){
+							String msg = buildCastErrMsg(typeId, id, pdf.getPropertyType(), value.getClass().getName(), Long.class.getName());
+							log.warn(msg);
+						}
+					}
+					addPropertyBase(props, id, propInteger, pdf);
+					break;
+				case DATETIME:
+					PropertyDateTimeImpl propDate;
+					if (value instanceof List<?>) {
+						propDate = new PropertyDateTimeImpl(id,
+								(List<GregorianCalendar>) value);
+					} else if(value instanceof GregorianCalendar){
+						propDate = new PropertyDateTimeImpl(id,
+								(GregorianCalendar) value);
+					}else{
+						GregorianCalendar _null = null;
+						propDate = new PropertyDateTimeImpl(id, _null);
+						if( value != null){
+							String msg = buildCastErrMsg(typeId, id, pdf.getPropertyType(), value.getClass().getName(), GregorianCalendar.class.getName());
+							log.warn(msg);
+						}
+					}
+					addPropertyBase(props, id, propDate, pdf);
+					break;
+				case STRING:
+					PropertyStringImpl propString = new PropertyStringImpl();
+					propString.setId(id);
+					if (value instanceof List<?>) {
+						propString.setValues((List<String>) value);
+					} else if(value instanceof String){
+						propString.setValue(String.valueOf(value));
+					}else{
+						String _null = null;
+						propString = new PropertyStringImpl(id, _null);
+						if( value != null){
+							String msg = buildCastErrMsg(typeId, id, pdf.getPropertyType(), value.getClass().getName(), String.class.getName());
+							log.warn(msg);
+						}
+					}
+
+					addPropertyBase(props, id, propString, pdf);
+					break;
+				case ID:
+					PropertyIdImpl propId = new PropertyIdImpl();
+					propId.setId(id);
+					if (value instanceof List<?>) {
+						propId.setValues((List<String>) value);
+					} else if(value instanceof String){
+						propId.setValue(String.valueOf(value));
+
+					} else{
+						String _null = null;
+						propId = new PropertyIdImpl(id, _null);
+						if( value != null){
+							String msg = buildCastErrMsg(typeId, id, pdf.getPropertyType(), value.getClass().getName(), String.class.getName());
+							log.warn(msg);
+						}
+					}
+					addPropertyBase(props, id, propId, pdf);
+					break;
+				default:
 				}
-			}
-			addPropertyBase(props, id, propString, pdf);
-			break;
-		case ID:
-			PropertyIdImpl propId = new PropertyIdImpl();
-			propId.setId(id);
-			if (value == null) {
-				propId.setValue(nullString);
-			} else {
-				if (value instanceof List<?>) {
-					propId.setValues((List<String>) value);
-				} else {
-					propId.setValue(String.valueOf(value));
-				}
-			}
-			addPropertyBase(props, id, propId, pdf);
-			break;
-		default:
-		}
+		 }catch(Exception e){
+			 log.warn("typeId:" + typeId + ", propertyId:" + id + " class cast error!", e);
+		 }
+	}
+
+	private String buildCastErrMsg(String typeId, String propertyId, PropertyType propertyType, String sourceClass, String targetClass){
+		return "[typeId:" + typeId + ", propertyId:" + propertyId + ", propertyType:" + propertyType.value() + "]Cannot convert " + sourceClass + " to " + targetClass;
 	}
 
 	private <T> void addPropertyBase(PropertiesImpl props, String id,
@@ -814,6 +938,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	// NOTE: "not set" can mean "all properties" and invalid queryName should be
 	// ignored.
 	// NOTE: So, filterNotValid exception might not be needed.
+	@Override
 	public Set<String> splitFilter(String filter) {
 		final String ASTERISK = "*";
 		final String COMMA = ",";
@@ -853,8 +978,9 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			return Action.CAN_CREATE_DOCUMENT;
 		if (PermissionMapping.CAN_CREATE_FOLDER_FOLDER.equals(key))
 			return Action.CAN_CREATE_FOLDER;
-		if ("canCreatePolicy.Folder".equals(key))
-			return null; // FIXME the constant already implemented?
+		// FIXME the constant already implemented?
+		//if (PermissionMapping.CAN_CREATE_POLICY_FOLDER.equals(key))
+		//	return null;
 		if (PermissionMapping.CAN_CREATE_RELATIONSHIP_SOURCE.equals(key))
 			return Action.CAN_CREATE_RELATIONSHIP;
 		if (PermissionMapping.CAN_CREATE_RELATIONSHIP_TARGET.equals(key))

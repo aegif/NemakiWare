@@ -24,10 +24,11 @@ import java.util.List;
 
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.constant.DomainType;
-import jp.aegif.nemaki.repository.TypeManager;
+import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.cmis.AclService;
 import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.node.ContentService;
+import jp.aegif.nemaki.util.DataUtil;
 
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
@@ -60,8 +61,9 @@ public class AclServiceImpl implements AclService {
 		
 		// //////////////////
 		// Body of the method
-		// //////////////////		
-		return contentService.convertToCmisAcl(content, onlyBasicPermissions);
+		// //////////////////
+		jp.aegif.nemaki.model.Acl acl = contentService.calculateAcl(content);
+		return DataUtil.convertToCmisAcl(acl, content.isAclInherited(), onlyBasicPermissions);
 	}
 
 	public Acl applyAcl(CallContext callContext, String objectId, Acl acl,

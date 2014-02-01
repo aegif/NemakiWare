@@ -25,6 +25,7 @@ import java.io.InputStream;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
+
 import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
@@ -35,10 +36,10 @@ import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.model.constant.DomainType;
-import jp.aegif.nemaki.repository.TypeManager;
+import jp.aegif.nemaki.repository.NemakiCmisService;
+import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.cmis.CompileObjectService;
 import jp.aegif.nemaki.service.cmis.ExceptionService;
-import jp.aegif.nemaki.service.cmis.NemakiCmisService;
 import jp.aegif.nemaki.service.cmis.ObjectService;
 import jp.aegif.nemaki.service.cmis.RepositoryService;
 import jp.aegif.nemaki.service.node.ContentService;
@@ -170,9 +171,10 @@ public class ObjectServiceImpl implements ObjectService {
 
 		// Set content stream
 		BigInteger length = BigInteger.valueOf(attachment.getLength());
+		String name = attachment.getName();
 		String mimeType = attachment.getMimeType();
 		InputStream is = attachment.getInputStream();
-		ContentStream cs = new ContentStreamImpl("", length, mimeType, is);
+		ContentStream cs = new ContentStreamImpl(name, length, mimeType, is);
 
 		return cs;
 
@@ -237,7 +239,7 @@ public class ObjectServiceImpl implements ObjectService {
 			VersioningState versioningState, List<String> policies,
 			ExtensionsData extension) {
 
-		String typeId = DataUtil.getTypeId(properties);
+		String typeId = DataUtil.getObjectTypeId(properties);
 		TypeDefinition type = repositoryService.getTypeManager()
 				.getTypeDefinition(typeId);
 		if (type == null) {
@@ -274,7 +276,7 @@ public class ObjectServiceImpl implements ObjectService {
 			String folderId, List<String> policies, Acl addAces,
 			Acl removeAces, ExtensionsData extension) {
 		FolderTypeDefinition td = (FolderTypeDefinition) typeManager
-				.getTypeDefinition(DataUtil.getTypeId(properties));
+				.getTypeDefinition(DataUtil.getObjectTypeId(properties));
 		Folder parentFolder = contentService.getFolder(folderId);
 
 		// //////////////////
@@ -362,13 +364,13 @@ public class ObjectServiceImpl implements ObjectService {
 		Document original = contentService.getDocument(sourceId);
 		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
 				.getTypeDefinition(original.getObjectType());
-		Folder parentFolder = contentService.getFolder(folderId);
-
+		
 		// //////////////////
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequired("properties", properties);
 		exceptionService.invalidArgumentRequiredParentFolderId(folderId);
+		Folder parentFolder = contentService.getFolder(folderId);
 		exceptionService.objectNotFoundParentFolder(folderId, parentFolder);
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_CREATE_FOLDER_FOLDER, parentFolder);
@@ -395,7 +397,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// Body of the method
 		// //////////////////
 		Document document = contentService.createDocumentFromSource(
-				callContext, properties, folderId, original, versioningState,
+				callContext, properties, parentFolder, original, versioningState,
 				policies, addAces, removeAces);
 		return document.getId();
 	}
@@ -418,7 +420,7 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_SET_CONTENT_DOCUMENT, doc);
 		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
-				.getTypeDefinition(DataUtil.getTypeId(properties));
+				.getTypeDefinition(DataUtil.getObjectTypeId(properties));
 		exceptionService.constraintImmutable(doc, td);
 
 		// //////////////////
@@ -428,13 +430,13 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.streamNotSupported(td, contentStream);
 		exceptionService.updateConflict(doc, changeToken);
 		exceptionService.versioning(doc);
+		Folder parent = contentService.getParent(id);
+		exceptionService.objectNotFoundParentFolder(id, parent);
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
 		// TODO Externalize versioningState
-		Folder parent = contentService.getParent(id);
-		exceptionService.objectNotFoundParentFolder(id, parent);
 		contentService.createDocumentWithNewStream(callContext, doc,
 				contentStream);
 	}
@@ -474,7 +476,7 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_SET_CONTENT_DOCUMENT, doc);
 		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
-				.getTypeDefinition(DataUtil.getTypeId(properties));
+				.getTypeDefinition(DataUtil.getObjectTypeId(properties));
 		exceptionService.constraintImmutable(doc, td);
 
 		// //////////////////
@@ -584,7 +586,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// General Exception
 		// //////////////////
-		TypeDefinition td = typeManager.getTypeDefinition(DataUtil.getTypeId(properties));
+		TypeDefinition td = typeManager.getTypeDefinition(DataUtil.getObjectTypeId(properties));
 		Folder parentFolder = contentService.getFolder(folderId);
 		exceptionService.objectNotFoundParentFolder(folderId, parentFolder);
 		exceptionService.invalidArgumentRequiredCollection("properties",
@@ -738,7 +740,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		contentService.move(content, targetFolderId);
+		contentService.move(content, target);
 	}
 
 	public void deleteObject(CallContext callContext, String objectId,
