@@ -618,8 +618,8 @@ class NemakiRepository
     file = upload_info[:file]
     if !file.nil?
       obj.set_content_stream({:file => file.original_filename, :data => file.read, :mime_type => file.content_type, :overwrite => true})
+      obj.save
     end
-    obj.save
   end
 
   def delete(id)
@@ -699,10 +699,10 @@ class NemakiRepository
 
     params = {'includeAcl' => true, 'includeProperties' => true}
 
-    if !force && !latest_token.nil?
+    if !force && !latest_token.blank?
       if @repo.latest_changelog_token == latest_token
       #TODO logging: puts 'do nothing because there is no change'
-      return
+        return
       else
         params['changeLogToken'] = latest_token.to_i
       end
@@ -712,7 +712,7 @@ class NemakiRepository
     changes = @repo.changes params
 
     if changes.empty?
-    return
+      return
     else
 
       first = changes.first
