@@ -123,7 +123,7 @@ public class NemakiRepository {
 			String sourceFolderId, String targetFolderId,
 			NemakiCmisService couchCmisService) {
 		objectService.moveObject(callContext, objectId, sourceFolderId,
-				targetFolderId, couchCmisService);
+				targetFolderId);
 	}
 
 	public List<RenditionData> getRenditions(CallContext callContext,

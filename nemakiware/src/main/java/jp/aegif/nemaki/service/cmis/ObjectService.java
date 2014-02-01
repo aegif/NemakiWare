@@ -25,7 +25,6 @@ import java.math.BigInteger;
 import java.util.List;
 
 import jp.aegif.nemaki.model.Content;
-import jp.aegif.nemaki.repository.NemakiCmisService;
 
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.AllowableActions;
@@ -99,7 +98,7 @@ public interface ObjectService {
 	 */
 	public abstract void moveObject(CallContext callContext,
 			Holder<String> objectId, String sourceFolderId,
-			String targetFolderId, NemakiCmisService couchCmisService);
+			String targetFolderId);
 
 	/**
 	 * Gets the list of associated renditions for the specified object. Only
