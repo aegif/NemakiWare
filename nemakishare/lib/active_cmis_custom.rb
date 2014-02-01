@@ -108,7 +108,37 @@ module ActiveCMIS
           yield(entry)
         end
       end
-    end    
+    end
+
+    def save_content_stream(stream)
+      # Should never occur (is private method)
+      raise "no content to save" if stream.nil?
+
+      # put to link with rel 'edit-media' if it's there
+      # NOTE: cmislib uses the src link of atom:content instead, that might be correct
+      edit_links = Internal::Utils.extract_links(data, "edit-media")
+      if edit_links.length == 1
+        link = edit_links.first
+      elsif edit_links.empty?
+        raise Error.new("No edit-media link, can't save content")
+      else
+        raise Error.new("Too many edit-media links, don't know how to choose")
+      end
+      data = stream[:data] || File.open(stream[:file])
+      content_type = stream[:mime_type] || "application/octet-stream"
+
+      if stream.has_key?(:overwrite)
+        #aegif-
+        #url = Internal::Utils.append_parameters(link, "overwrite" => stream[:overwrite])
+        ct = attribute("cmis:changeToken");
+        url = Internal::Utils.append_parameters(link, "overwrite" => stream[:overwrite], "changeToken" => Internal::Utils.escape_url_parameter(ct))
+        #-aegif
+      else
+        url = link
+      end
+      conn.put(url, data, "Content-Type" => content_type)
+      self
+    end
   end
 
   class Folder < ActiveCMIS::Object
