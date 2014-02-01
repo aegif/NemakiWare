@@ -11,3 +11,4 @@ tags
 *.class
 jetty.log
 .project
+.settings/
