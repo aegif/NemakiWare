@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -27,20 +27,25 @@ import java.util.Set;
 
 import jp.aegif.nemaki.model.Group;
 import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.model.constant.PropertyKey;
 import jp.aegif.nemaki.service.dao.PrincipalDaoService;
 import jp.aegif.nemaki.service.node.PrincipalService;
+import jp.aegif.nemaki.util.NemakiPropertyManager;
+import jp.aegif.nemaki.util.PasswordHasher;
 
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 /**
  * Principal(User / Group) Service implementation.
- * 
+ *
  */
 public class PrincipalServiceImpl implements PrincipalService {
-	
+
 	private static final Log log = LogFactory.getLog(PrincipalServiceImpl.class);
 
+	private NemakiPropertyManager propertyManager;
 	private PrincipalDaoService principalDaoService;
 
 	@Override
@@ -49,7 +54,7 @@ public class PrincipalServiceImpl implements PrincipalService {
 		List<User> users = principalDaoService.getUsers();
 		return users;
 	}
-	
+
 	@Override
 	public List<Group> getGroups() {
 		//refresh to cope with new group without restarting the server
@@ -69,10 +74,10 @@ public class PrincipalServiceImpl implements PrincipalService {
 		groupIds.add(PrincipalService.GROUP_EVERYONE);
 		return groupIds;
 	}
-	
+
 	private boolean cnotainsUserInGroup(String userId, Group group) {
 		log.debug("$$ group:" + group.getName());
-		if ( group.getUsers().contains(userId)) 
+		if ( group.getUsers().contains(userId))
 			return true;
 		for(String groupId: group.getGroups() ) {
 			log.debug("$$ subgroup: " + groupId);
@@ -88,13 +93,9 @@ public class PrincipalServiceImpl implements PrincipalService {
 		return principalDaoService.getGroupById(groupId);
 	}
 
-	public void setPrincipalDaoService(PrincipalDaoService principalDaoService) {
-		this.principalDaoService = principalDaoService;
-	}
-
 	@Override
 	public User getUserById(String id) {
-		return (User) principalDaoService.getUserById(id);
+		return principalDaoService.getUserById(id);
 	}
 
 	@Override
@@ -125,5 +126,33 @@ public class PrincipalServiceImpl implements PrincipalService {
 	@Override
 	public void deleteGroup(String id) {
 		principalDaoService.delete(Group.class, id);
+	}
+
+	@Override
+	public String getAdmin() {
+		return propertyManager.readValue(PropertyKey.PRINCIPAL_ADMIN);
+	}
+
+	@Override
+	public boolean isAdmin(String userId, String password) {
+		if(StringUtils.isBlank(userId) || StringUtils.isBlank(password)){
+			return false;
+		}
+
+		User user = getUserById(userId);
+		if(user.getId().equals(getAdmin())){
+			//password check
+			boolean match = PasswordHasher.isCompared(password, user.getPasswordHash());
+			if(match) return true;
+		}
+		return false;
+	}
+
+	public void setPrincipalDaoService(PrincipalDaoService principalDaoService) {
+		this.principalDaoService = principalDaoService;
+	}
+
+	public void setPropertyManager(NemakiPropertyManager propertyManager) {
+		this.propertyManager = propertyManager;
 	}
 }

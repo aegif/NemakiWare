@@ -1,20 +1,20 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public Licensealong with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -39,16 +39,17 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 	private PrincipalService principalService;
 
-	public void login(String username, String password) {
-		User u = principalService.getUserById(username);
+	@Override
+	public void login(String userName, String password) {
+		User u = principalService.getUserById(userName);
 		// succeeded
 		if (passwordMatches(password, u.getPasswordHash())) {
-			log.debug("Authentication succeeded");
+			log.debug("[" + userName + "]Authentication succeeded");
 			return;
 		}
 		// failed
-		log.error("Authentication failed");
-		throw new CmisPermissionDeniedException("Authentication failed");
+		log.error("[" + userName + "Authentication failed");
+		throw new CmisPermissionDeniedException("[" + userName + "Authentication failed");
 	}
 
 	/**

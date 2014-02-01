@@ -198,6 +198,7 @@ public class VersioningServiceImpl implements VersioningService {
 	 */
 	private class VersionComparator implements Comparator<Content>{
 		public int compare(Content content0, Content content1) {
+			//TODO when created time is not set
 			GregorianCalendar created0 = content0.getCreated();
 			GregorianCalendar created1 = content1.getCreated();
 			

@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License along with NemakiWare. 
+ *
+ * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -28,19 +28,13 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpSession;
 
 import jp.aegif.nemaki.model.NodeBase;
-import jp.aegif.nemaki.model.User;
-import jp.aegif.nemaki.service.node.ContentService;
 import jp.aegif.nemaki.service.node.PrincipalService;
-import jp.aegif.nemaki.util.PasswordHasher;
-import jp.aegif.nemaki.util.PropertyManager;
 
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
-import org.springframework.context.ApplicationContext;
-import org.springframework.context.support.ClassPathXmlApplicationContext;
 
 public class ResourceBase {
-	
+
 	//protected ApplicationContext context;
 	protected PrincipalService principalService;
 	//protected ContentService contentService;
@@ -51,20 +45,14 @@ public class ResourceBase {
 	static final String SUCCESS = "success";
 	static final String FAILURE = "failure";
 	static final String DOCNAME_VIEW="_design/_repo";
-	static final String FILEPATH_PROPERTIESFILE = "nemakiware.properties";
-	static final String PROPERTY_REPOSITORIES = "nemakiware.repositories";
-	static final String PROPERTY_INFO_REPOSITORY = "nemakiware.repository.main";
-	static final String PROPERTY_DBHOST = "db.host";
-	static final String PROPERTY_DBPORT = "db.port";
-	static final String PROPERTY_DBPROTOCOL = "db.protocol";
 	static final String VIEW_ALL = "_all_dbs";
 	static final String SPACE = "";
-	
+
 	static final String FILEPATH_VIEW = "views.json";
-	
+
 	static final String API_ADD = "add";
 	static final String API_REMOVE = "remove";
-	
+
 	static final String FORM_USERNAME = "name";
 	static final String FORM_PASSWORD = "password";
 	static final String FORM_NEWPASSWORD = "newPassword";
@@ -77,7 +65,7 @@ public class ResourceBase {
 	static final String FORM_MEMBER_USERS = "users";
 	static final String FORM_MEMBER_GROUPS = "groups";
 	static final String FORM_ID = "id";
-	
+
 	static final String ITEM_USERID = "userId";
 	static final String ITEM_USER = "user";
 	static final String ITEM_USERNAME = "userName";
@@ -93,9 +81,9 @@ public class ResourceBase {
 	static final String ITEM_CREATED = "created";
 	static final String ITEM_MODIFIER = "modifier";
 	static final String ITEM_MODIFIED = "modified";
-	static final String ITEM_GROUPID = "groupId"; 
+	static final String ITEM_GROUPID = "groupId";
 	static final String ITEM_GROUP = "group";
-	static final String ITEM_GROUPNAME = "groupName"; 
+	static final String ITEM_GROUPNAME = "groupName";
 	static final String ITEM_MEMBER_USERS = "users";
 	static final String ITEM_MEMBER_GROUPS = "groups";
 	static final String ITEM_MEMBER_USERSSIZE = "usersSize";
@@ -112,7 +100,7 @@ public class ResourceBase {
 	static final String ITEM_VIEW = "view";
 	static final String ITEM_PROPERTIESFILE = "propertiesFile";
 	static final String ITEM_ARCHIVE = "archive";
-	
+
 	static final String ERR_NOTAUTHENTICATED = "notAuthenticated";
 	static final String ERR_MANDATORY = "mandatory";
 	static final String ERR_ALREADYEXISTS = "alreadyExists";
@@ -135,19 +123,14 @@ public class ResourceBase {
 	static final String ERR_REMOVE_REPOSITORY = "failToRemoveRepository";
 	static final String ERR_GET_ARCHIVES = "failToGetArchives";
 	static final String ERR_RESTORE = "failToRestore";
-	
-	
-	
+
 	public void setPrincipalService(PrincipalService principalService) {
 		this.principalService = principalService;
 	}
 
 	//Set daoService
 	public ResourceBase(){
-		//Inject beans
-		//context = new ClassPathXmlApplicationContext("applicationContext.xml");
-	    //principalService = (PrincipalService)context.getBean("PrincipalService");
-	    //contentService = (ContentService)context.getBean("ContentService");
+
 	}
 
 	//Utility methods
@@ -157,7 +140,7 @@ public class ResourceBase {
 		errMsg.add(obj);
 		return errMsg;
 	}
-	
+
 	protected JSONObject makeResult(boolean status, JSONObject result, JSONArray errMsg){
 		if(status && errMsg.size() == 0){
 			result.put(ITEM_STATUS, SUCCESS);
@@ -167,7 +150,7 @@ public class ResourceBase {
 		}
 		return result;
 	}
-	
+
 	protected boolean nonZeroString(String param){
 		if (param == null || param.equals("")){
 			return false;
@@ -181,39 +164,20 @@ public class ResourceBase {
 		calendar.setTimeInMillis(millis);
 		return calendar;
 	}
-	
-	protected boolean isAdmin(String id, String password){
-		if(!nonZeroString(id) || !nonZeroString(password)) return false;
-		
-		String defaultAdminUserId = new String();
-		try{
-			PropertyManager propertyManager = new PropertyManager(FILEPATH_PROPERTIESFILE);
-			defaultAdminUserId = propertyManager.readHeadValue("principal.admin.id");
-		}catch(Exception ex){
-			ex.printStackTrace();
-		}
-		User user = principalService.getUserById(id);
-		if(user.getId().equals(defaultAdminUserId)){
-			//password check
-			boolean cmpPass = PasswordHasher.isCompared(password, user.getPasswordHash());
-			if(cmpPass) return true;
-		}
-		return false;
-	}
-	
+
 	protected UserInfo getUserInfo(HttpServletRequest httpRequest){
 		HttpSession session = httpRequest.getSession();
 		UserInfo  userInfo = (UserInfo) session.getAttribute("USER_INFO");
 		return userInfo;
 	}
-	
+
 	protected void setSignature(UserInfo userInfo, NodeBase nodeBase){
 		nodeBase.setCreator(userInfo.userId);
 		nodeBase.setCreated(millisToCalendar(System.currentTimeMillis()));
 		nodeBase.setModifier(userInfo.userId);
 		nodeBase.setModified(millisToCalendar(System.currentTimeMillis()));
 	}
-	
+
 	protected void setModifiedSignature(UserInfo userInfo, NodeBase nodeBase){
 		nodeBase.setModifier(userInfo.userId);
 		nodeBase.setModified(millisToCalendar(System.currentTimeMillis()));

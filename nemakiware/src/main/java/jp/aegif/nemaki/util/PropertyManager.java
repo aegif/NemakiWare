@@ -38,6 +38,10 @@ public class PropertyManager {
 	private Properties config;
 	
 	
+	public PropertyManager(){
+		
+	}
+	
 	/**
 	 *Constructor setting propertiesFile and config
 	 * @param propertiesFile
@@ -134,6 +138,10 @@ public class PropertyManager {
 		return currentVals[0];
 	}
 	
+	
+	public boolean containsKey(String key){
+		return config.containsKey(key);
+	}
 	/*
 	 * Getter & Setter
 	 */

@@ -26,7 +26,7 @@ import java.util.List;
 
 import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.query.QueryProcessor;
-import jp.aegif.nemaki.repository.TypeManager;
+import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.cmis.CompileObjectService;
 import jp.aegif.nemaki.service.cmis.DiscoveryService;
 import jp.aegif.nemaki.service.cmis.ExceptionService;

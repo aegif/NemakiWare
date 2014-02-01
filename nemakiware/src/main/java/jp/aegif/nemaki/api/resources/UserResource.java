@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -92,9 +92,9 @@ public class UserResource extends ResourceBase {
 			status = false;
 			addErrMsg(errMsg, ITEM_USERID, ERR_MANDATORY);
 		}
-			
+
 		User user = principalService.getUserById(userId);
-		
+
 		if (user == null) {
 			status = false;
 			addErrMsg(errMsg, ITEM_USER, ERR_NOTFOUND);
@@ -104,9 +104,9 @@ public class UserResource extends ResourceBase {
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
 	}
-	
+
 	/**
-	 * Search user by id 
+	 * Search user by id
 	 * TODO Use Solr
 	 * @param query
 	 * @return
@@ -177,7 +177,7 @@ public class UserResource extends ResourceBase {
 
 			//TODO Error handling
 			principalService.createUser(user);
-			
+
 		}
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
@@ -197,7 +197,7 @@ public class UserResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
-		
+
 		//Existing user
 		User user = principalService.getUserById(userId);
 		if(user == null){
@@ -208,7 +208,7 @@ public class UserResource extends ResourceBase {
 		// Validation
 		status = checkAuthorityForUser(status, errMsg, httpRequest, userId);
 		status = validateUser(status, errMsg, userId, name, firstName, lastName);
-	
+
 		// Edit & Update
 		if (status) {
 			// Edit the user info
@@ -233,11 +233,11 @@ public class UserResource extends ResourceBase {
 				addErrMsg(errMsg, ITEM_USER, ERR_UPDATE);
 			}
 		}
-		
+
 		makeResult(status, result, errMsg);
 		return result.toJSONString();
 	}
-	
+
 	@PUT
 	@Path("/updatePassword/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
@@ -255,14 +255,14 @@ public class UserResource extends ResourceBase {
 			status = false;
 			addErrMsg(errMsg, ITEM_USER, ERR_NOTFOUND);
 		}
-		
+
 		// Validation
 		status = checkAuthorityForUser(status, errMsg, httpRequest, userId);
 		status = validateUserPassword(status, errMsg, userId, newPassword);
-		
+
 		//TODO Error handling
 		user = principalService.getUserById(userId);
-	
+
 		// Edit & Update
 		if (status) {
 			// Edit the user info
@@ -290,7 +290,7 @@ public class UserResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
-		
+
 		//Existing user
 		User user = principalService.getUserById(userId);
 		if(user == null){
@@ -300,7 +300,7 @@ public class UserResource extends ResourceBase {
 
 		// Validation
 		status = checkAuthorityForUser(status, errMsg, httpRequest, userId);
-		
+
 		// Delete a user
 		if (status) {
 			try {
@@ -314,7 +314,7 @@ public class UserResource extends ResourceBase {
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
 	}
-	
+
 	private boolean validateUser(boolean status, JSONArray errMsg,
 			String userId, String userName, String firstName, String lastName) {
 		if (StringUtils.isBlank(userId)) {
@@ -331,10 +331,10 @@ public class UserResource extends ResourceBase {
 			status = false;
 			addErrMsg(errMsg, ITEM_FIRSTNAME, ERR_MANDATORY);
 		}
-		
+
 		return status;
 	}
-	
+
 	private boolean validateUserPassword(boolean status, JSONArray errMsg,
 			String userId, String newPassword){
 		if(StringUtils.isBlank(newPassword)){
@@ -343,25 +343,25 @@ public class UserResource extends ResourceBase {
 		}
 		return status;
 	}
-	
+
 	private boolean validateNewUser(boolean status, JSONArray errMsg,
 			String userId, String userName, String firstName, String lastName, String password) {
 		status = validateUser(status, errMsg, userId, userName, firstName, lastName);
-		
+
 		//userID uniqueness
 		User user = principalService.getUserById(userId);
 		if(user != null){
 			status = false;
 			addErrMsg(errMsg, ITEM_USERID, ERR_ALREADYEXISTS);
 		}
-		
+
 		if (StringUtils.isBlank(password)) {
 			status = false;
 			addErrMsg(errMsg, ITEM_PASSWORD, ERR_MANDATORY);
 		}
 		return status;
 	}
-	
+
 	@SuppressWarnings("unchecked")
 	private JSONObject convertUserToJson(User user) {
 		SimpleDateFormat sdf = new SimpleDateFormat(DATE_FORMAT);
@@ -396,12 +396,12 @@ public class UserResource extends ResourceBase {
 
 		return userJSON;
 	}
-	
+
 	private boolean checkAuthorityForUser(boolean status, JSONArray errMsg, HttpServletRequest httpRequest, String resoureId){
 		UserInfo userInfo = AuthenticationFilter.getUserInfo(httpRequest);
-		
-		if(!userInfo.getUserId().equals(resoureId) && 
-		   !isAdmin(userInfo.getUserId(), userInfo.getPassword()) ){
+
+		if(!userInfo.getUserId().equals(resoureId) &&
+				!principalService.isAdmin(userInfo.getUserId(), userInfo.getPassword()) ){
 			status = false;
 			addErrMsg(errMsg, ITEM_USER, ERR_NOTAUTHENTICATED);
 		}

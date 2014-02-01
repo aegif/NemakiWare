@@ -51,37 +51,6 @@ import org.apache.chemistry.opencmis.commons.spi.Holder;
 public interface ContentService {
 
 	// ///////////////////////////////////////
-	// Type & Property definition
-	// ///////////////////////////////////////
-	List<NemakiTypeDefinition> getTypeDefinitions();
-
-	NemakiTypeDefinition getTypeDefinition(String typeId);
-
-	NemakiTypeDefinition createTypeDefinition(
-			NemakiTypeDefinition typeDefinition);
-
-	NemakiTypeDefinition updateTypeDefinition(
-			NemakiTypeDefinition typeDefinition);
-
-	void deleteTypeDefinition(String typeId);
-
-	NemakiPropertyDefinition getPropertyDefinition(String detailNodeId);
-
-	List<NemakiPropertyDefinitionCore> getPropertyDefinitionCores();
-
-	NemakiPropertyDefinitionCore getPropertyDefinitionCore(String nodeId);
-	
-	NemakiPropertyDefinitionCore getPropertyDefinitionCoreByPropertyId(String propertyId);
-
-	NemakiPropertyDefinitionDetail getPropertyDefinitionDetail(String nodeId);
-
-	NemakiPropertyDefinitionDetail createPropertyDefinition(
-			NemakiPropertyDefinition propertyDefinition);
-
-	NemakiPropertyDefinitionDetail updatePropertyDefinitionDetail(
-			NemakiPropertyDefinitionDetail propertyDefinitionDetail);
-
-	// ///////////////////////////////////////
 	// Content
 	// ///////////////////////////////////////
 	boolean existContent(String objectTypeId);
@@ -178,14 +147,14 @@ public interface ContentService {
 	 * @return
 	 */
 	Folder getFolder(String objectId);
-
+	
 	/**
 	 * Get a path string
 	 * 
 	 * @param content
 	 * @return
 	 */
-	String getPath(Content content);
+	String calculatePath(Content content);
 
 	
 
@@ -242,7 +211,7 @@ public interface ContentService {
 	 * 
 	 * @param callContext
 	 * @param properties
-	 * @param folderId
+	 * @param target
 	 * @param original
 	 * @param versioningState
 	 * @param policies
@@ -251,7 +220,7 @@ public interface ContentService {
 	 * @return
 	 */
 	Document createDocumentFromSource(CallContext callContext,
-			Properties properties, String folderId, Document original,
+			Properties properties, Folder target, Document original,
 			VersioningState versioningState, List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces);
@@ -393,9 +362,9 @@ public interface ContentService {
 	 * Move a content
 	 * 
 	 * @param content
-	 * @param targetFolderId
+	 * @param target
 	 */
-	void move(Content content, String targetFolderId);
+	void move(Content content, Folder target);
 	
 	/**
 	 * Apply a policy from a content
@@ -466,27 +435,6 @@ public interface ContentService {
 			throws Exception;
 
 	// ///////////////////////////////////////
-	// Acl
-	// ///////////////////////////////////////
-	/**
-	 * Merge inherited ACL
-	 * 
-	 * @param content
-	 * @return
-	 */
-	public Acl mergeInheritedAcl(Content content);
-
-	/**
-	 * Convert Nemaki ACL to OpenCMIS ACL
-	 * 
-	 * @param content
-	 * @param onlyBasicPermissions
-	 * @return
-	 */
-	public org.apache.chemistry.opencmis.commons.data.Acl convertToCmisAcl(
-			Content content, Boolean onlyBasicPermissions);
-
-	// ///////////////////////////////////////
 	// Attachment
 	// ///////////////////////////////////////
 	/**
@@ -536,6 +484,11 @@ public interface ContentService {
 	 */
 	List<Rendition> getRenditions(String objectId);
 
+	// ///////////////////////////////////////
+	// Acl
+	// ///////////////////////////////////////
+	public Acl calculateAcl(Content content);
+	
 	// ///////////////////////////////////////
 	// Change event
 	// ///////////////////////////////////////

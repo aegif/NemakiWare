@@ -30,7 +30,7 @@ import java.util.Set;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.constant.DomainType;
-import jp.aegif.nemaki.repository.TypeManager;
+import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.cmis.CompileObjectService;
 import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.cmis.RelationshipService;

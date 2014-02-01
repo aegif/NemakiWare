@@ -3,19 +3,17 @@
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:aop="http://www.springframework.org/schema/aop"
     xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
 
-    <import resource="classpath:propertyContext.xml" />
-
-    		
-    <bean id="nemakiApplicationContextLoader" class="jp.aegif.nemaki.spring.NemakiApplicationContextLoader">
-        <property name="propertyConfigurer">
-           <ref bean="propertyConfigurer" />
-        </property>
-        <property name="configLocations">
+    <!-- Property Configurer -->
+    <bean id="propertyConfigurer"
+        class="jp.aegif.nemaki.spring.SpringPropertiesUtil">
+        <property name="locations">
             <list>
-            	<value>classpath:propertyContext.xml</value>	
-                <value>classpath:nemakiContext.xml</value>
-                <value>classpath*:${context.backend}</value>
+                <value>classpath:nemakiware.properties</value>
+                <value>classpath*:custom_nemakiware.properties</value>
+                <value>classpath*:nemaki-override.properties</value>
             </list>
         </property>
     </bean>
+
+   
 </beans>

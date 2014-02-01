@@ -28,14 +28,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.GregorianCalendar;
-import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import jp.aegif.nemaki.model.Ace;
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.Aspect;
@@ -45,10 +42,6 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.Item;
-import jp.aegif.nemaki.model.NemakiPropertyDefinition;
-import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
-import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
-import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.model.NodeBase;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Property;
@@ -57,7 +50,7 @@ import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.model.constant.NemakiConstant;
 import jp.aegif.nemaki.model.constant.NodeType;
-import jp.aegif.nemaki.repository.TypeManager;
+import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.dao.ContentDaoService;
 import jp.aegif.nemaki.service.dao.impl.ContentDaoServiceImpl;
 import jp.aegif.nemaki.service.node.ContentService;
@@ -67,7 +60,6 @@ import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
-import org.apache.chemistry.opencmis.commons.data.Principal;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
@@ -78,10 +70,6 @@ import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.CmisExtensionElementImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
@@ -106,149 +94,6 @@ public class ContentServiceImpl implements ContentService {
 	private static final Log log = LogFactory
 			.getLog(ContentDaoServiceImpl.class);
 	final static int FIRST_TOKEN = 1;
-
-	// ///////////////////////////////////////
-	// Type & Property definition
-	// ///////////////////////////////////////
-	@Override
-	public List<NemakiTypeDefinition> getTypeDefinitions() {
-		return contentDaoService.getTypeDefinitions();
-	}
-
-	@Override
-	public NemakiTypeDefinition getTypeDefinition(String typeId) {
-		return contentDaoService.getTypeDefinition(typeId);
-	}
-
-	@Override
-	public NemakiTypeDefinition createTypeDefinition(
-			NemakiTypeDefinition typeDefinition) {
-		return contentDaoService.createTypeDefinition(typeDefinition);
-	}
-
-	@Override
-	public NemakiTypeDefinition updateTypeDefinition(
-			NemakiTypeDefinition typeDefinition) {
-		return contentDaoService.updateTypeDefinition(typeDefinition);
-	}
-
-	@Override
-	public void deleteTypeDefinition(String typeId) {
-		NemakiTypeDefinition ntd = getTypeDefinition(typeId);
-		
-		//Delete unnecessary property definitions
-		List<String> detailIds = ntd.getProperties();
-		for(String detailId : detailIds){
-			NemakiPropertyDefinitionDetail detail = getPropertyDefinitionDetail(detailId);
-			NemakiPropertyDefinitionCore core = getPropertyDefinitionCore(detail.getCoreNodeId());
-			//Delete a detail
-			contentDaoService.delete(detail.getId());
-			
-			//Delete a core only if no details exist
-			List<NemakiPropertyDefinitionDetail> l = 
-					contentDaoService.getPropertyDefinitionDetailByCoreNodeId(core.getId());
-			if(CollectionUtils.isEmpty(l)){
-				contentDaoService.delete(core.getId());
-			}
-		}
-		
-		//Delete the type definition
-		contentDaoService.deleteTypeDefinition(ntd.getId());
-	}
-
-	@Override
-	public List<NemakiPropertyDefinitionCore> getPropertyDefinitionCores() {
-		return contentDaoService.getPropertyDefinitionCores();
-	}
-
-	@Override
-	public NemakiPropertyDefinitionCore getPropertyDefinitionCore(String nodeId) {
-		return contentDaoService.getPropertyDefinitionCore(nodeId);
-	}
-	
-	@Override
-	public NemakiPropertyDefinitionCore getPropertyDefinitionCoreByPropertyId(String propertyId) {
-		return contentDaoService.getPropertyDefinitionCoreByPropertyId(propertyId);
-	}
-
-	@Override
-	public NemakiPropertyDefinitionDetail getPropertyDefinitionDetail(
-			String nodeId) {
-		return contentDaoService.getPropertyDefinitionDetail(nodeId);
-	}
-	
-	@Override
-	public NemakiPropertyDefinition getPropertyDefinition(String detailNodeId) {
-		NemakiPropertyDefinitionDetail detail = getPropertyDefinitionDetail(detailNodeId);
-		NemakiPropertyDefinitionCore core = getPropertyDefinitionCore(detail
-				.getCoreNodeId());
-
-		NemakiPropertyDefinition npd = new NemakiPropertyDefinition(core,
-				detail);
-		return npd;
-	}
-
-	@Override
-	public NemakiPropertyDefinitionDetail createPropertyDefinition(
-			NemakiPropertyDefinition propertyDefinition) {
-		NemakiPropertyDefinitionCore _core = new NemakiPropertyDefinitionCore(
-				propertyDefinition);
-
-		// Skip creating a core when it exists
-		List<NemakiPropertyDefinitionCore> cores = getPropertyDefinitionCores();
-		Map<String, NemakiPropertyDefinitionCore> corePropertyIds = new HashMap<String, NemakiPropertyDefinitionCore>();
-		for (NemakiPropertyDefinitionCore npdc : cores) {
-			corePropertyIds.put(npdc.getPropertyId(), npdc);
-		}
-		String coreNodeId = "";
-		if (!corePropertyIds.containsKey(_core.getPropertyId())) {
-			//propertyId uniqueness
-			_core.setPropertyId(buildUniquePropertyId(_core.getPropertyId()));
-			// Create a property core
-			NemakiPropertyDefinitionCore core = contentDaoService
-					.createPropertyDefinitionCore(_core);
-			coreNodeId = core.getId();
-		} else {
-			NemakiPropertyDefinitionCore existing = corePropertyIds.get(_core
-					.getPropertyId());
-			coreNodeId = existing.getId();
-		}
-
-		// Create a detail
-		NemakiPropertyDefinitionDetail _detail = new NemakiPropertyDefinitionDetail(
-				propertyDefinition, coreNodeId);
-		NemakiPropertyDefinitionDetail detail = contentDaoService
-				.createPropertyDefinitionDetail(_detail);
-
-		return detail;
-	}
-	
-	private String buildUniquePropertyId(String propertyId){
-		if(isUniquePropertyIdInRepository(propertyId)){
-			return propertyId;
-		}else{
-			return propertyId + "_" + String.valueOf(System.currentTimeMillis());
-		}
-	}
-	
-	private boolean isUniquePropertyIdInRepository(String propertyId){
-		//propertyId uniqueness
-		List<String> list = typeManager.getSystemPropertyIds();
-		List<NemakiPropertyDefinitionCore>cores = getPropertyDefinitionCores();
-		if(CollectionUtils.isNotEmpty(cores)){
-			for(NemakiPropertyDefinitionCore core: cores){
-				list.add(core.getPropertyId());
-			}
-		}
-		
-		return !list.contains(propertyId);
-	}
-
-	@Override
-	public NemakiPropertyDefinitionDetail updatePropertyDefinitionDetail(
-			NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
-		return contentDaoService.updatePropertyDefinitionDetail(propertyDefinitionDetail);
-	}
 
 	// ///////////////////////////////////////
 	// Content
@@ -424,21 +269,21 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public String getPath(Content content) {
-		List<String> path = getPathInternal(new ArrayList<String>(), content);
+	public String calculatePath(Content content) {
+		List<String> path = calculatePathInternal(new ArrayList<String>(), content);
 		path.remove(0);
 		return NemakiConstant.PATH_SEPARATOR
 				+ StringUtils.join(path, NemakiConstant.PATH_SEPARATOR);
 	}
 
-	private List<String> getPathInternal(List<String> path, Content content) {
+	private List<String> calculatePathInternal(List<String> path, Content content) {
 		path.add(0, content.getName());
 
 		if (content.isRoot()) {
 			return path;
 		} else {
 			Content parent = getParent(content.getId());
-			getPathInternal(path, parent);
+			calculatePathInternal(path, parent);
 		}
 		return path;
 	}
@@ -584,7 +429,7 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public Document createDocumentFromSource(CallContext callContext,
-			Properties properties, String folderId, Document original,
+			Properties properties, Folder target, Document original,
 			VersioningState versioningState, List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces) {
@@ -597,8 +442,7 @@ public class ContentServiceImpl implements ContentService {
 
 		setVersionProperties(callContext, versioningState, copy);
 
-		if (folderId != null)
-			copy.setParentId(folderId);
+		copy.setParentId(target.getId());
 		// Set updated properties
 		updateProperties(callContext, properties, copy);
 		setSignature(callContext, copy);
@@ -1232,9 +1076,9 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public void move(Content content, String targetFolderId) {
-		content.setParentId(targetFolderId);
-		String uniqueName = buildUniqueName(content.getName(), targetFolderId,
+	public void move(Content content, Folder target) {
+		content.setParentId(target.getId());
+		String uniqueName = buildUniqueName(content.getName(), target.getId(),
 				null);
 		content.setName(uniqueName);
 		update(content);
@@ -1367,66 +1211,7 @@ public class ContentServiceImpl implements ContentService {
 			}
 		}
 	}
-
-	// ///////////////////////////////////////
-	// Acl
-	// ///////////////////////////////////////
-	public Acl mergeInheritedAcl(Content content) {
-		Acl acl = content.getAcl();
-		if (content.isRoot())
-			return acl;
-
-		if (content.isAclInherited()) {
-			Content parent = getParent(content.getId());
-			acl.setInheritedAces(mergeInheritedAcl(parent).getPropagatingAces());
-			// TODO Merge ACEs of the same principal id
-		} else {
-			return acl;
-		}
-		return acl;
-	}
-
-	public org.apache.chemistry.opencmis.commons.data.Acl convertToCmisAcl(
-			Content content, Boolean onlyBasicPermissions) {
-		AccessControlListImpl cmisAcl = new AccessControlListImpl();
-		cmisAcl.setAces(new ArrayList<org.apache.chemistry.opencmis.commons.data.Ace>());
-
-		Acl acl = mergeInheritedAcl(content);
-		// Set local ACEs
-		for (Ace ace : acl.getLocalAces()) {
-			Principal principal = new AccessControlPrincipalDataImpl(
-					ace.getPrincipalId());
-			AccessControlEntryImpl cmisAce = new AccessControlEntryImpl(
-					principal, ace.getPermissions());
-			cmisAce.setDirect(true);
-			cmisAcl.getAces().add(cmisAce);
-		}
-
-		// Set inherited ACEs
-		for (jp.aegif.nemaki.model.Ace ace : acl.getInheritedAces()) {
-			Principal principal = new AccessControlPrincipalDataImpl(
-					ace.getPrincipalId());
-			AccessControlEntryImpl cmisAce = new AccessControlEntryImpl(
-					principal, ace.getPermissions());
-			cmisAce.setDirect(false);
-			cmisAcl.getAces().add(cmisAce);
-		}
-
-		// Set "exact" property
-		cmisAcl.setExact(true);
-
-		// Set "inherited" property, which is out of bounds to CMIS
-		String namespace = NemakiConstant.NAMESPACE_ACL_INHERITANCE;
-		CmisExtensionElementImpl inherited = new CmisExtensionElementImpl(
-				namespace, NemakiConstant.EXTNAME_ACL_INHERITED, null, content
-						.isAclInherited().toString());
-		List<CmisExtensionElement> exts = new ArrayList<CmisExtensionElement>();
-		exts.add(inherited);
-		cmisAcl.setExtensions(exts);
-
-		return cmisAcl;
-	}
-
+	
 	// ///////////////////////////////////////
 	// Attachment
 	// ///////////////////////////////////////
@@ -1494,6 +1279,32 @@ public class ContentServiceImpl implements ContentService {
 		return renditions;
 	}
 
+	// ///////////////////////////////////////
+	// Acl
+	// ///////////////////////////////////////
+	//Merge inherited ACL
+	@Override
+	public Acl calculateAcl(Content content) {
+		Acl acl = content.getAcl();
+		
+		if (content.isRoot())
+			return acl;
+
+		boolean iht = (content.isAclInherited() == null)? false : content.isAclInherited();
+		if (iht) {
+			Content parent = getParent(content.getId());
+			if(parent == null){
+				log.warn("[objectId=" + content.getId() + "]" + "Parent is missing. ACL inheritance calculation is skipped.");
+				return acl;
+			}
+			acl.setInheritedAces(calculateAcl(parent).getPropagatingAces());
+			// TODO Merge ACEs of the same principal id
+		} else {
+			return acl;
+		}
+		return acl;
+	}
+	
 	// ///////////////////////////////////////
 	// Change event
 	// ///////////////////////////////////////

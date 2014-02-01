@@ -21,11 +21,14 @@
  ******************************************************************************/
 package jp.aegif.nemaki.util;
 
+import java.io.BufferedReader;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.ho.yaml.Yaml;
+import org.jvyaml.YAML;
 
 public class YamlManager {
 	
@@ -37,15 +40,27 @@ public class YamlManager {
 	}
 	
 	public synchronized Object loadYml(){
-		InputStream input = getClass().getClassLoader().getResourceAsStream(baseModelFile);
-		if (null == input) {
+		InputStream is = getClass().getClassLoader().getResourceAsStream(baseModelFile);
+		if (null == is) {
 			log.error("yaml file not found");
 		}
-		try{
-			Object o = Yaml.load(input);
-			return o;
-		}catch(Exception e){
-			log.error("yaml load failed", e);
+		
+		Reader reader;
+		try {
+			reader = new InputStreamReader(is, "UTF-8");
+		
+	        reader = new BufferedReader(reader);
+	        StringBuffer buf = new StringBuffer();
+	        int ch;
+	        while ((ch = reader.read()) >= 0)
+	            buf.append((char)ch);
+	        reader.close();
+	        Object ydoc = YAML.load(buf.toString());
+	
+	        return ydoc;
+		} catch (Exception e) {
+			log.error(baseModelFile + " load failed", e);
+		
 		}
 		return null;
 	}

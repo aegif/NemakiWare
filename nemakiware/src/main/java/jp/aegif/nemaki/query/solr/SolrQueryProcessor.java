@@ -30,7 +30,7 @@ import java.util.Map;
 
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.query.QueryProcessor;
-import jp.aegif.nemaki.repository.TypeManager;
+import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.cmis.CompileObjectService;
 import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.cmis.PermissionService;

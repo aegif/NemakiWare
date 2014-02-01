@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -33,14 +33,12 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 
-import org.springframework.context.ApplicationContext;
-import org.springframework.context.support.ClassPathXmlApplicationContext;
-import org.springframework.web.context.WebApplicationContext;
-import org.springframework.web.context.support.WebApplicationContextUtils;
-
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.service.node.PrincipalService;
 import jp.aegif.nemaki.util.PasswordHasher;
+
+import org.springframework.web.context.WebApplicationContext;
+import org.springframework.web.context.support.WebApplicationContextUtils;
 
 public class AuthenticationFilter implements Filter {
 
@@ -48,7 +46,7 @@ public class AuthenticationFilter implements Filter {
 
 	@Override
 	public void init(FilterConfig filterConfig) throws ServletException {
-		
+
 		WebApplicationContext context = WebApplicationContextUtils.getWebApplicationContext(filterConfig.getServletContext());
 		principalService = (PrincipalService) context
 		.getBean("principalService");
@@ -66,11 +64,11 @@ public class AuthenticationFilter implements Filter {
 //
 //		return user;
 		return (UserInfo)httpRequest.getSession().getAttribute("USER_INFO");
-		
-		
+
+
 
 	}
-	
+
 	@Override
 	public void doFilter(ServletRequest req, ServletResponse res,
 			FilterChain chain) throws IOException, ServletException {
@@ -81,8 +79,8 @@ public class AuthenticationFilter implements Filter {
 
 		if (session.getAttribute("USER_INFO") == null) {
 			String auth = hreq.getHeader("Authorization");
-			
-			if (auth == null) {			
+
+			if (auth == null) {
 				requireAuth(hres);
 				return;
 			} else {
