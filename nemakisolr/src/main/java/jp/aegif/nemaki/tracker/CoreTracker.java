@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -61,7 +61,6 @@ import org.apache.chemistry.opencmis.commons.SessionParameter;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BindingType;
-import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
@@ -72,19 +71,16 @@ import org.apache.solr.client.solrj.request.AbstractUpdateRequest;
 import org.apache.solr.client.solrj.request.ContentStreamUpdateRequest;
 import org.apache.solr.client.solrj.request.UpdateRequest;
 import org.apache.solr.client.solrj.response.QueryResponse;
-import org.apache.solr.common.SolrDocumentList;
 import org.apache.solr.common.SolrInputDocument;
 import org.apache.solr.common.params.ModifiableSolrParams;
-import org.apache.solr.common.params.SolrParams;
-import org.apache.solr.common.util.Hash;
 import org.apache.solr.core.CloseHook;
 import org.apache.solr.core.SolrCore;
 
 /**
  * Index tracking class
- * 
+ *
  * @author linzhixing
- * 
+ *
  */
 public class CoreTracker extends CloseHook {
 
@@ -97,7 +93,7 @@ public class CoreTracker extends CloseHook {
 	Session cmisSession;
 
 	private final String MODE_FULL = "FULL";
-	
+
 	private final String PROP_TOKEN = "changeToken";
 	private final String PROP_USER = "user";
 	private final String PROP_PASSWORD = "password";
@@ -106,7 +102,7 @@ public class CoreTracker extends CloseHook {
 	private final String PROP_ITEMS = "changelog.items";
 	private final String PROP_COUNTRY = "locale.country";
 	private final String PROP_LANGUAGE = "locale.language";
-	
+
 	private final String FIELD_ID = "id";
 	private final String FIELD_NAME = "name";
 	private final String FIELD_DESCRIPTION = "cmis_description";
@@ -202,7 +198,7 @@ public class CoreTracker extends CloseHook {
 			logger.error("Failed to create a session to CMIS server", e);
 		}
 	}
-	
+
 	public boolean isConnectionSetup() {
 		return (this.cmisSession != null);
 	}
@@ -239,7 +235,7 @@ public class CoreTracker extends CloseHook {
 
 	/**
 	 * Read CMIS change logs and Index them
-	 * 
+	 *
 	 * @param trackingType
 	 */
 	public void index(String trackingType) {
@@ -255,9 +251,9 @@ public class CoreTracker extends CloseHook {
 				events.remove(0);
 			}
 		}
-		
+
 		if(events.isEmpty()) return;
-		
+
 		//Extract only the last events of each objectId
 		List<ChangeEvent> list = extractChangeEvent(events);
 		for (ChangeEvent ce : list) {
@@ -279,10 +275,10 @@ public class CoreTracker extends CloseHook {
 		// Save the latest token
 		trackingMgr.modifyValue(PROP_TOKEN, changeEvents.getLatestChangeLogToken());
 	}
-	
+
 	/**
 	 * Get CMIS change logs
-	 * 
+	 *
 	 * @param trackingType
 	 * @return
 	 */
@@ -308,14 +304,14 @@ public class CoreTracker extends CloseHook {
 	}
 
 	/**
-	 * 
+	 *
 	 * @param events
 	 * @return
 	 */
 	private List<ChangeEvent> extractChangeEvent(List<ChangeEvent> events){
 		List<ChangeEvent> list = new ArrayList<ChangeEvent>();
 		Set<String> objectIds = new HashSet<String>();
-		
+
 		int size = events.size();
 		ListIterator<ChangeEvent> iterator = events.listIterator(size);
 		while(iterator.hasPrevious()){
@@ -331,14 +327,20 @@ public class CoreTracker extends CloseHook {
 		Collections.reverse(list);
 		return list;
 	}
-	
+
 	/**
 	 * Create/Update Solr document
-	 * 
+	 *
 	 * @param ce
 	 */
 	private void registerSolrDocument(ChangeEvent ce) {
-		CmisObject obj = cmisSession.getObject(ce.getObjectId());
+		CmisObject obj = null;
+		try{
+			obj = cmisSession.getObject(ce.getObjectId());
+		}catch(Exception e){
+			logger.warn("[objectId=" + ce.getObjectId() + "]object is deleted. Skip reading a change event.");
+			return;
+		}
 
 		AbstractUpdateRequest req = null;
 		Map<String, Object> map = buildParamMap(obj);
@@ -381,7 +383,7 @@ public class CoreTracker extends CloseHook {
 
 	/**
 	 * Delete Solr document
-	 * 
+	 *
 	 * @param ce
 	 */
 	private void deleteSolrDocument(ChangeEvent ce) {
@@ -398,7 +400,7 @@ public class CoreTracker extends CloseHook {
 			}else{
 				logger.error(core.getName()+ ":Something wrong in the connection to Solr server");
 			}
-			
+
 			//Delete
 			server.deleteById(ce.getObjectId());
 			server.commit();
@@ -414,7 +416,7 @@ public class CoreTracker extends CloseHook {
 
 	/**
 	 * Build update request with file to Solr
-	 * 
+	 *
 	 * @param content
 	 * @param inputStream
 	 * @return
@@ -435,7 +437,7 @@ public class CoreTracker extends CloseHook {
 		}
 
 		// Set field values
-		// NOTION: 
+		// NOTION:
 		// Cast to String works on the assumption they are already String
 		// so that ModifiableSolrParams can have an argument Map<String, String[]>.
 		// Any other better way?
@@ -464,12 +466,12 @@ public class CoreTracker extends CloseHook {
 		up.setParams(new ModifiableSolrParams(m));
 
 		up.setAction(AbstractUpdateRequest.ACTION.COMMIT, true, true);
-		return (AbstractUpdateRequest) up;
+		return up;
 	}
 
 	/**
 	 * Build an update request to Solr without file
-	 * 
+	 *
 	 * @param content
 	 * @return
 	 */
@@ -491,7 +493,7 @@ public class CoreTracker extends CloseHook {
 
 		// Set Solr action parameter
 		up.setAction(AbstractUpdateRequest.ACTION.COMMIT, true, true);
-		return (AbstractUpdateRequest) up;
+		return up;
 	}
 
 	/**
@@ -524,7 +526,7 @@ public class CoreTracker extends CloseHook {
 	}
 
 	/**
-	 * 
+	 *
 	 * @param content
 	 * @return
 	 */
@@ -606,7 +608,7 @@ public class CoreTracker extends CloseHook {
 	/**
 	 * For properties other than those of baseType. They are indexed regardless
 	 * of its "queryable" flag in case the flag is changed later.
-	 * 
+	 *
 	 * @param map
 	 * @param object
 	 */
@@ -647,7 +649,7 @@ public class CoreTracker extends CloseHook {
 	}
 
 	/**
-	 * 
+	 *
 	 * @param cal
 	 * @return
 	 */
