@@ -45,6 +45,7 @@ en:
       group_management: "Group management"
       archive: "Archive"
       search_engine_management: "Search engine management"
+      type_management: "Type management"
       logout: "Log out"
       logout_confirmation: "Do you really want to logout?"
       login: "Log in"
@@ -149,6 +150,9 @@ en:
         search_engine_management: "Search Engine Management"
         initiaize_solr: "Initialize Solr"
         reindex_solr: "Reindex Solr"
+    type:
+      index:
+        type_management: "Type Management"
   message:
     validation:
       general: "Validation error: please input correct values"

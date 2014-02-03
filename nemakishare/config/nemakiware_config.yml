@@ -8,6 +8,7 @@ repository:
   acl_inheritance_namespace: 'http://www.aegif.jp/Nemaki/feature/aclInheritance/'
   user_rest_url: 'http://localhost:8080/NemakiWare/rest/user/' 
   group_rest_url: 'http://localhost:8080/NemakiWare/rest/group/'
+  type_rest_url: 'http://localhost:8080/NemakiWare/rest/type/'
   archive_rest_url: 'http://localhost:8080/NemakiWare/rest/archive/'
   admin_id: 'admin'
   admin_password: 'admin'

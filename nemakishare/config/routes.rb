@@ -53,6 +53,8 @@
   
   resources :search_engine
   
+  resources :types
+
   match 'principals/search' => 'principals#search'
   
 

@@ -33,7 +33,7 @@ var baseTableParams = {
 		datatype : "local",
 		//colNames : ,
 		//colModel : ,
-		rowNum : 10,
+		//rowNum : 10,
 		rowList : [1, 10, 20],
 		caption : "",
 		forceFit: true,
