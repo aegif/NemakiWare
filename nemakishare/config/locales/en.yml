@@ -188,3 +188,7 @@ en:
       error_text_node_not_found: "Specified folder or content does not exist or has already deleted."
       success_text_create: "Creation succeeded"
       error_text_create: "Creation failed"
+      success_text_update: "Update succeeded"
+      error_text_update: "Update succeeded"
+      success_text_delete: "Deletion succeeded"
+      error_text_delete: "Deletion failed"

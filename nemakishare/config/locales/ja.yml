@@ -191,3 +191,7 @@ ja:
       error_text_node_not_found: "指定されたコンテンツもしくはフォルダは存在しないか削除されました"
       success_text_create: "作成に成功しました"
       error_text_create: "作成に失敗しました"
+      success_text_update: "更新に成功しました"
+      error_text_update: "更新に失敗しました"
+      success_text_delete: "削除に成功しました"
+      error_text_delete: "削除に失敗しました"
