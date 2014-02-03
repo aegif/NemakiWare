@@ -604,6 +604,15 @@
             <value>nemakiware.properties</value>
         </property>
     </bean>
+
+   	<bean id="typeResource" class="jp.aegif.nemaki.api.resources.TypeResource">
+        <property name="typeService">
+            <ref bean="TypeService" />
+        </property>
+       	<property name="typeManager">
+            <ref bean="TypeManager" />
+        </property> 
+    </bean>     
     
     
 </beans>

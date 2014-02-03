@@ -45,6 +45,7 @@ ja:
       user_management: "ユーザ管理"
       group_management: "グループ管理"
       archive: "ゴミ箱"
+      type_management: "タイプ管理"
       search_engine_management: "検索エンジン管理"
       logout: "ログアウト"
       logout_confirmation: "ログアウトしますか？"
@@ -152,6 +153,9 @@ ja:
         search_engine_management: "検索エンジン管理画面"
         initiaize_solr: "Solr初期化"
         reindex_solr: "Solrインデクス再作成"
+    type:
+      index:
+        type_management: "タイプ管理画面"
   message:
     validation:
       general: "バリデーションエラー：正しい値を入力してください"

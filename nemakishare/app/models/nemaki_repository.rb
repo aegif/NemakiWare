@@ -1001,5 +1001,13 @@ class NemakiRepository
   def is_admin_role(user_id)
     user_id == 'admin'
   end
+
+  def create_types(data)
+    #TODO authentication
+    resource = RestClient::Resource.new(CONFIG['repository']['type_rest_url'] + "register", @auth_info[:id], @auth_info[:password])
+    json = resource.post :data => data
+    JSON.parse(json)
+  end
+
 #Class end
 end

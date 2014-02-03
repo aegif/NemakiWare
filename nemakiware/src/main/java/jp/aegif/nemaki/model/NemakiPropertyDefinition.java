@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -26,6 +26,8 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
+import jp.aegif.nemaki.model.constant.NodeType;
+
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.DecimalPrecision;
@@ -35,7 +37,7 @@ import org.apache.lucene.document.DateTools.Resolution;
 
 public class NemakiPropertyDefinition extends NodeBase {
 	private String detailNodeId;
-	
+
 	// Attributes common
 	private String propertyId;
 	private String localName;
@@ -80,19 +82,19 @@ public class NemakiPropertyDefinition extends NodeBase {
 		setModified(n.getModified());
 		setModifier(n.getModifier());
 	}
-	
+
 	public NemakiPropertyDefinition(NemakiPropertyDefinitionCore core, NemakiPropertyDefinitionDetail detail){
-		//TODO coreとdetailがマッチしないときはエラー
-		
+		//TODO Output error when core and detail don't match
+
 		setId(detail.getId());
-		setType("propertyDefinition");
+		setType(NodeType.TYPE_DEFINITION.value());
 		setCreated(detail.getCreated());
 		setCreator(detail.getCreator());
 		setModified(detail.getModified());
 		setModifier(detail.getModifier());
-		
+
 		setDetailNodeId(detail.getId());
-		
+
 		setPropertyId(core.getPropertyId());
 		setLocalName(detail.getLocalName());
 		setLocalNameSpace(detail.getLocalNameSpace());
@@ -106,7 +108,7 @@ public class NemakiPropertyDefinition extends NodeBase {
 		setChoices(detail.getChoices());
 		setOpenChoice(detail.isOpenChoice());
 		setDefaultValue(detail.getDefaultValue());
-		
+
 		setMinValue(detail.getMinValue());
 		setMaxValue(detail.getMaxValue());
 		setResolution(detail.getResolution());
@@ -117,7 +119,6 @@ public class NemakiPropertyDefinition extends NodeBase {
 	}
 
 	public NemakiPropertyDefinition(PropertyDefinition<?> propertyDefinition) {
-		// Inheritedはproperty自体の性質ではなく、そのpropertyをもつtypeによって決まる?
 		setPropertyId(propertyDefinition.getId());
 		setLocalName(propertyDefinition.getLocalName());
 		setLocalNameSpace(propertyDefinition.getLocalNamespace());
@@ -131,8 +132,8 @@ public class NemakiPropertyDefinition extends NodeBase {
 		setChoices(buildChoices(propertyDefinition.getChoices()));
 		setOpenChoice(propertyDefinition.isOpenChoice());
 		setDefaultValue(new ArrayList<Object>(propertyDefinition.getDefaultValue()));
-		
-		
+
+
 	}
 
 	private <T> List<Choice> buildChoices(List<org.apache.chemistry.opencmis.commons.definitions.Choice<T>> choices){
@@ -140,7 +141,7 @@ public class NemakiPropertyDefinition extends NodeBase {
 		if(org.apache.commons.collections.CollectionUtils.isNotEmpty(choices)){
 			for(org.apache.chemistry.opencmis.commons.definitions.Choice<T> choice : choices){
 				List<Object> values = new ArrayList<Object>(choice.getValue());
-				Choice c = new Choice(choice.getDisplayName(), values, buildChoices(choice.getChoice())); 
+				Choice c = new Choice(choice.getDisplayName(), values, buildChoices(choice.getChoice()));
 				list.add(c);
 			}
 		}
