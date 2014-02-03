@@ -154,9 +154,16 @@ class NodesController < ApplicationController
 
   #新規バージョンのアップロード処理
   def upload
-    @nemaki_repository.upload(params[:id], params[:node])
-    node = @nemaki_repository.find(params[:id])
-    redirect_to :action => 'explore', :id => node.parent_id #TODO pass via params?
+    begin
+      @nemaki_repository.upload(params[:id], params[:node])
+      addInfoMessage("message.node.success_text_update")
+    rescue
+      addErrorMessage("message.node.error_text_update")
+    ensure
+      node = @nemaki_repository.find(params[:id])
+      parent = @nemaki_repository.get_parent(node)
+      redirect_to_parent(explore_node_path(parent.id))
+    end
   end
 
   def show
