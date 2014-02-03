@@ -164,6 +164,8 @@ en:
       update_failure: "Failed to update the user."
       update_password_success: "User password has been updated successfully."
       update_password_failure: "Failed to update the user's password."
+      destroy_success: "User has been deleted successfully"
+      destroy_failure: "Fail to delete the user."
     group:
       create_success: "Group has been created successfully."
       create_failure: "Failed to create a new group."

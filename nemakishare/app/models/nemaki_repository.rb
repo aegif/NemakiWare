@@ -922,7 +922,7 @@ class NemakiRepository
   end
 
   def delete_group(id)
-    resource = RestClient::Resource.new(CONFIG['repository']['user_rest_url'] +  'delete',@auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(CONFIG['repository']['group_rest_url'] +  'delete',@auth_info[:id], @auth_info[:password])
     json = resource[id].delete
     JSON.parse(json)
   end
