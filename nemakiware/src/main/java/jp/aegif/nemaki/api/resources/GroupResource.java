@@ -177,10 +177,6 @@ public class GroupResource extends ResourceBase{
 
 		//Existing group
 		Group group = principalService.getGroupById(groupId);
-		if(group == null){
-			status = false;
-			addErrMsg(errMsg, ITEM_GROUP, ERR_NOTFOUND);
-		}
 
 		//Validation
 		status = validateGroup(status, errMsg, groupId, name);
@@ -224,7 +220,7 @@ public class GroupResource extends ResourceBase{
 		//Delete the group
 		if(status){
 			try{
-				principalService.deleteGroup(groupId);
+				principalService.deleteGroup(group.getId());
 			}catch(Exception ex){
 				addErrMsg(errMsg, ITEM_GROUP, ERR_DELETE);
 			}

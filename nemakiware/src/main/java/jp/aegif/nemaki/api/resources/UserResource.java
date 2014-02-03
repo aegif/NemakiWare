@@ -200,10 +200,6 @@ public class UserResource extends ResourceBase {
 
 		//Existing user
 		User user = principalService.getUserById(userId);
-		if(user == null){
-			status = false;
-			addErrMsg(errMsg, ITEM_USER, ERR_NOTFOUND);
-		}
 
 		// Validation
 		status = checkAuthorityForUser(status, errMsg, httpRequest, userId);
@@ -304,7 +300,7 @@ public class UserResource extends ResourceBase {
 		// Delete a user
 		if (status) {
 			try {
-				principalService.deleteUser(userId);
+				principalService.deleteUser(user.getId());
 			} catch (Exception ex) {
 				ex.printStackTrace();
 				status = false;

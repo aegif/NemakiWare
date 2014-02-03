@@ -156,7 +156,7 @@ class UsersController < ApplicationController
   
   def destroy
     result = @nemaki_repository.delete_user params[:id]
-    if result && result['status'] == 'error'
+    if result && result['status'] == 'failure'
       #@error = result['error']
       addErrorMessage("message.user.destroy_failure")
     else
