@@ -167,6 +167,8 @@ ja:
       update_failure: "ユーザ情報の更新に失敗しました"
       update_password_success: "ユーザパスワードの更新に成功しました"
       update_password_failure: "ユーザパスワードの更新に失敗しました"
+      destroy_success: "ユーザの削除に成功しました"
+      destroy_failure: "ユーザの削除に失敗しました"
     group:
       create_success: "グループの新規作成に成功しました"
       create_failure: "グループの新規作成に失敗しました"

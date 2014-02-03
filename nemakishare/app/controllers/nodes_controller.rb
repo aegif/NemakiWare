@@ -102,15 +102,12 @@ class NodesController < ApplicationController
 
     begin
       @nemaki_repository.create(params[:node], params[:parent_id], cmis_type)
-      #TODO リダイレクトするのでエラーメッセージが戻らない
       addInfoMessage("message.node.success_text_create")
-      redirect_to_parent(explore_node_path(params[:parent_id]))
     rescue
-      #TODO 失敗時の処理
       addErrorMessage("message.node.error_text_create")
+    ensure
+      redirect_to_parent(explore_node_path(params[:parent_id]))
     end
-
-
   end
 
   def edit
@@ -129,27 +126,19 @@ class NodesController < ApplicationController
         update_properties[bp['key']] = bp['value']
       end
     end
-=begin    
-    secondary_types = JSON.parse(params[:custom_properties])
-    update_properties['cmis:secondaryObjectTypeIds'] = Array.new
-    if !secondary_types.nil? && !secondary_types.empty?
-      secondary_types.each do |sec|
-        update_properties['cmis:secondaryObjectTypeIds'] << sec['id']
-        
-        sec_props = sec['properties']
-        sec_props.each do |sec_prop|
-          update_properties[sec_prop['key']] = sec_prop['value']
-        end
-      end
-    end
-=end
     update_aspects = @nemaki_repository.convert_input_to_aspects(node, JSON.parse(params[:custom_properties]))
 
     #TODO CMIS属性の更新でdiffがあるときのみupdateになっているか確認
-    @nemaki_repository.update(params[:id], update_properties, update_aspects)
-   
-    parent = @nemaki_repository.get_parent(node)
-    redirect_to_parent(explore_node_path(parent.id))  
+    begin
+      @nemaki_repository.update(params[:id], update_properties, update_aspects)
+      addInfoMessage("message.node.success_text_update")
+    rescue
+      addErrorMessage("message.node.error_text_update")
+    ensure
+      parent = @nemaki_repository.get_parent(node)
+      redirect_to_parent(explore_node_path(parent.id))
+    end
+
   end
 
   #新規バージョンのアップロード処理
@@ -333,15 +322,20 @@ class NodesController < ApplicationController
   end
 
   def destroy
-    if params[:id]
-      parent_id = @nemaki_repository.delete(params[:id])
-    end
-    
-    if params[:from_site_controller]
-      flash[:notice] = t('message.site.delete_success')
-      redirect_to :controller => 'sites', :action => 'index'
-    else
-      redirect_to :action => 'explore', :id => parent_id  
+    begin
+      if params[:id]
+        parent_id = @nemaki_repository.delete(params[:id])
+        addInfoMessage("message.node.success_text_update")
+      end
+    rescue
+        addErrorMessage("message.node.error_text_delete")
+    ensure
+      if params[:from_site_controller]
+        flash[:notice] = t('message.site.delete_success')
+        redirect_to :controller => 'sites', :action => 'index'
+      else
+        redirect_to :action => 'explore', :id => parent_id
+      end
     end
   end
 

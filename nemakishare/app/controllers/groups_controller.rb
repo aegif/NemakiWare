@@ -67,12 +67,12 @@ class GroupsController < ApplicationController
     if @group.valid?
       result = @nemaki_repository.create_group @group
       if is_success?(result)
-        flash[:notice] = t('message.group.create_success')
+        addInfoMessage('message.group.create_success')
       else
-        flash[:error] = t('message.group.create_failure')
+        addErrorMessage('message.group.create_failure')
       end
     else
-      flash[:error] = t('message.validation.general')
+      addErrorMessage('message.validation.general')
     end
     redirect_to_parent(groups_path(:search_form => {:query => params[:groups][:id]}))
   end
@@ -87,12 +87,12 @@ class GroupsController < ApplicationController
     if @group.valid?
       result = @nemaki_repository.update_group @group
       if is_success?(result)
-        flash[:notice] = t('message.group.update_success')
+        addInfoMessage("message.group.update_success")
       else
-        flash[:error] = t('message.group.update_failure') + ":" + result['error'].to_json
+        addErrorMessage("message.group.update_failure")
       end
     else
-      flash[:error] = t('message.validation.general')
+      addErrorMessage("message.validation.general")
     end
     redirect_to_parent(groups_path(:search_form => {:query => params[:id]}))
   end
@@ -100,9 +100,9 @@ class GroupsController < ApplicationController
   def destroy
     result = @nemaki_repository.delete_group params[:id]
     if is_success?(result)
-      flash[:notice] = t('message.group.delete_success')
+      addInfoMessage('message.group.destroy_success')
     else
-      flash[:error] = t('message.group.delete_failure') + ":" + result['error'].to_json
+      addErrorMessage("message.group.destroy_failure")
     end
     redirect_to_parent(groups_path(:search_form => {:query => params[:id]}))
   end
