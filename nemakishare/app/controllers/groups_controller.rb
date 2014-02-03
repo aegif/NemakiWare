@@ -190,8 +190,8 @@ class GroupsController < ApplicationController
     return group
   end
   
+  #TODO integrate other method
   def is_success?(result)
-   puts result['status']
     result['status'] == "success" 
   end
 

@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -41,7 +41,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Dao Service for Principal(User/Group) Implementation for CouchDB
- * 
+ *
  * @author linzhixing
  */
 @Component
@@ -57,6 +57,18 @@ public class CouchPrincipalDaoServiceImpl implements
 
 	}
 
+
+	@Override
+	public User getUser(String nodeId) {
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
+				.viewName("users").key(nodeId);
+		List<CouchUser> l = connector.queryView(query, CouchUser.class);
+
+		if (CollectionUtils.isEmpty(l))
+			return null;
+		return l.get(0).convert();
+	}
+
 	@Override
 	public User getUserById(String userId) {
 		CouchUser cu = getUserByIdInternal(userId);
@@ -70,7 +82,7 @@ public class CouchPrincipalDaoServiceImpl implements
 
 	private CouchUser getUserByIdInternal(String userId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("users").key(userId);
+				.viewName("usersById").key(userId);
 		List<CouchUser> l = connector.queryView(query, CouchUser.class);
 
 		if (CollectionUtils.isEmpty(l))
@@ -83,7 +95,7 @@ public class CouchPrincipalDaoServiceImpl implements
 		List<User> users = new ArrayList<User>();
 
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("users");
+				.viewName("usersById");
 		List<CouchUser> l = connector.queryView(query, CouchUser.class);
 
 		for (CouchUser c : l) {
@@ -92,6 +104,17 @@ public class CouchPrincipalDaoServiceImpl implements
 		}
 
 		return users;
+	}
+
+	@Override
+	public Group getGroup(String nodeId) {
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
+				.viewName("groups").key(nodeId);
+		List<CouchGroup> l = connector.queryView(query, CouchGroup.class);
+
+		if (CollectionUtils.isEmpty(l))
+			return null;
+		return l.get(0).convert();
 	}
 
 	@Override
@@ -107,7 +130,7 @@ public class CouchPrincipalDaoServiceImpl implements
 
 	private CouchGroup getGroupByIdInternal(String groupId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("groups").key(groupId);
+				.viewName("groupsById").key(groupId);
 		List<CouchGroup> l = connector.queryView(query, CouchGroup.class);
 
 		if (CollectionUtils.isEmpty(l))
@@ -120,7 +143,7 @@ public class CouchPrincipalDaoServiceImpl implements
 		List<Group> groups = new ArrayList<Group>();
 
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("groups");
+				.viewName("groupsById");
 
 		List<CouchGroup> l = connector.queryView(query, CouchGroup.class);
 
@@ -175,7 +198,7 @@ public class CouchPrincipalDaoServiceImpl implements
 
 		return g;
 	}
-	
+
 	@Override
 	public void delete(Class<?> clazz, String principalId){
 		CouchNodeBase cnb = connector.get(CouchNodeBase.class, principalId);

@@ -25,9 +25,9 @@
 <%= form_for :group ,:url => {:action => :update}, :html => {:method => :put, :id => 'groupForm', :class => 'form-horizontal'} do |f| %>
 	<!--ID-->
 	<div class="control-group">
-		<label class="control-label" for="inputEmail"><%=t('model.group.id')%></label>
 		<div class="controls">
-			<%= f.text_field :id %>
+			<!-- <%= f.text_field :id %> -->
+			<%= f.hidden_field :id %>
 		</div>
 	</div>
 	<!--Name-->
