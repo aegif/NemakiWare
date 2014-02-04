@@ -548,18 +548,16 @@ class NemakiRepository
     if acl_param
       acl_array = JSON.parse(acl_param)
 
-      #Extract ADD/Update ACEs
-      #TODO validation for nil
-      removePrincipals = extract_remove_principals(local_entries, acl_array)
-      #grantAces = extract_grant_aces(local_entries, acl_array)
-
-      #Revoke permissions
-      removePrincipals.each do |rp|
-        acl.revoke_all_permissions(rp)
-      end
-
-      acl_array.each do |ga|
-        acl.grant_permission(ga['principal'], ga['permissions'])
+      #Revoke all permissions and rewrite a new complete ACL
+      #(As OpenCMIS AtomPub demands)
+      acl.revoke_all_users
+      acl_array.each do |ace|
+        permissions = ace['permissions']
+        granted = permissions.select { |k, v| v == "True"}
+        #ActiveCMIS grant_permission take one permission each time
+        granted.keys.each do |g|
+          acl.grant_permission(ace['principal'], g)
+        end
       end
     end
 
@@ -567,7 +565,6 @@ class NemakiRepository
     inheritance_flg = (inheritance == "true") ? true : false
 
     #Set acl data
-    data = acl.data
     #TODO Enable to switch "inherited" flag from the client
     exts = acl.set_extension(CONFIG['repository']['acl_inheritance_namespace'], "inherited", {}, inheritance_flg)
     xml = exts[0].to_xml
@@ -1007,6 +1004,10 @@ class NemakiRepository
     resource = RestClient::Resource.new(CONFIG['repository']['type_rest_url'] + "register", @auth_info[:id], @auth_info[:password])
     json = resource.post :data => data
     JSON.parse(json)
+  end
+
+  def permissions
+    permissions = @repo.permissions
   end
 
 #Class end

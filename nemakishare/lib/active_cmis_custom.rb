@@ -1,8 +1,22 @@
 require 'active_cmis'
 
 module ActiveCMIS
-  class Acl
+  class Repository
+    include Internal::Caching
 
+    def permissions
+      perms = []
+      data.xpath("cra:repositoryInfo/c:aclCapability/c:permissions/c:permission", NS::COMBINED).map do |node|
+        perms << node.text
+      end
+      perms
+    end
+
+    cache :permissions
+  end
+
+
+  class Acl
     attr_accessor :extensions
 
     #override initialize by using around alias
@@ -11,6 +25,12 @@ module ActiveCMIS
     def initialize(repository, document, link, _data = nil)
       initialize_original(repository, document, link, _data)
       @extensions = []
+    end
+
+    def revoke_all_users
+      permissions.each do |ace|
+        revoke_all_permissions ace.principal
+      end
     end
 
     #define new apply method with argument 

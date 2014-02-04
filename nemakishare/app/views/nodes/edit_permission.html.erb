@@ -1,7 +1,7 @@
 <% content_for :javascript_includes do %>
 	<%= javascript_include_tag "node_permission_table" %>
 	<script type="text/javascript">
-		buildGridData(<%= raw @node.acl.to_json %>, <%= @node.acl_inherited %>);
+		buildGridData(<%= raw @node.acl.to_json %>, <%= @node.acl_inherited %>, <%= raw @permissions.to_json %>);
 	</script>
 <%end %>
 
@@ -73,7 +73,7 @@
 
 				<!--Search form-->
 				<%= form_for SearchForm.new, :url => {:controller => :users , :action => :search_both}, :html => {:id => 'user_search', :method => :get}, :remote => true do |f| %>
-				        <%= select_tag 'search_target', options_for_select([[t('model.user.user'),"user"],[t('model.group.group'),"group"]]) %>
+				    <%= select_tag 'search_target', options_for_select([[t('model.user.user'),"user"],[t('model.group.group'),"group"]]) %>
 					<%= f.text_field :query, :class => 'search-query' %>
 					<%= submit_tag t('view.general.search'), :class => 'btn' %>
 				<% end %>
