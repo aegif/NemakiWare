@@ -341,6 +341,7 @@ class NodesController < ApplicationController
 
   def edit_permission
     @node = @nemaki_repository.find(params[:id])
+    @permissions = @nemaki_repository.permissions
     render :layout => 'popup'
   end
 
