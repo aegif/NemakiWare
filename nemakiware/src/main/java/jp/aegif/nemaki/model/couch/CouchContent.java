@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -51,7 +51,7 @@ public class CouchContent extends CouchNodeBase{
 	public CouchContent(){
 		super();
 	}
-	
+
 	public CouchContent(Content c){
 		super(c);
 		setName(c.getName());
@@ -65,7 +65,7 @@ public class CouchContent extends CouchNodeBase{
 		setObjectType(c.getObjectType());
 		setChangeToken(c.getChangeToken());
 	}
-	
+
 	/**
 	 * Getter & Setter
 	 */
@@ -101,7 +101,7 @@ public class CouchContent extends CouchNodeBase{
 	public void setAcl(CouchAcl acl) {
 		this.acl = acl;
 	}
-	
+
 	public Boolean isAclInherited() {
 		return aclInherited;
 	}
@@ -109,7 +109,7 @@ public class CouchContent extends CouchNodeBase{
 	public void setAclInherited(Boolean aclInherited) {
 		this.aclInherited = aclInherited;
 	}
-	
+
 	public List<Property> getSubTypeProperties() {
 		return subTypeProperties;
 	}
@@ -125,7 +125,7 @@ public class CouchContent extends CouchNodeBase{
 	public void setAspects(List<Aspect> aspects) {
 		this.aspects = aspects;
 	}
-	
+
 	public List<String> getSecondaryIds() {
 		return secondaryIds;
 	}
@@ -133,7 +133,7 @@ public class CouchContent extends CouchNodeBase{
 	public void setSecondaryIds(List<String> secondaryIds) {
 		this.secondaryIds = secondaryIds;
 	}
-	
+
 	public String getObjectType() {
 		return objectType;
 	}
@@ -157,14 +157,14 @@ public class CouchContent extends CouchNodeBase{
 			JSONObject entry = new JSONObject();
 			entry.put("principal", ace.getPrincipalId());
 			entry.put("permissions", ace.getPermissions());
-			entry.put("objectOnly", ace.isObjectOnly());
 			entries.add(entry);
 		}
 		CouchAcl cacl = new CouchAcl();
 		cacl.setEntries(entries);
 		return cacl;
 	}
-	
+
+	@Override
 	public Content convert(){
 		Content c = new Content(super.convert());
 		c.setName(getName());
@@ -176,10 +176,10 @@ public class CouchContent extends CouchNodeBase{
 		c.setSecondaryIds(getSecondaryIds());
 		c.setObjectType(getObjectType());
 		c.setChangeToken(getChangeToken());
-		
+
 		CouchAcl cacl = getAcl();
 		c.setAcl(cacl.convertToNemakiAcl());
-		
+
 		return c;
 	}
 }

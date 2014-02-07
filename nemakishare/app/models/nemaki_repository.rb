@@ -643,11 +643,7 @@ class NemakiRepository
 
   def get_parent(node)
     if !node.is_root?
-      #obj = @repo.object_by_id(node.id)
-      obj = get_cmis_object(node)  
-      parent_obj = obj.parent_folders.first
-      attr = extract_attr(parent_obj.attributes, nil)
-      parent = Node.new(attr)
+      find(node.parent_id)
     end
   end
 

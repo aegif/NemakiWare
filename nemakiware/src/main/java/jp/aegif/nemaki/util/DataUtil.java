@@ -462,10 +462,10 @@ public class DataUtil {
 		cmisAcl.setAces(new ArrayList<org.apache.chemistry.opencmis.commons.data.Ace>());
 		if(acl != null){
 			// Set local ACEs
-			buildCmisAce(cmisAcl, acl.getLocalAces(), obp);
+			buildCmisAce(cmisAcl, true, acl.getLocalAces(), obp);
 
 			// Set inherited ACEs
-			buildCmisAce(cmisAcl, acl.getInheritedAces(), obp);
+			buildCmisAce(cmisAcl, false, acl.getInheritedAces(), obp);
 		}
 
 		// Set "exact" property
@@ -483,7 +483,7 @@ public class DataUtil {
 		return cmisAcl;
 	}
 
-	private static void buildCmisAce(AccessControlListImpl cmisAcl, List<Ace> aces, boolean onlyBasicPermissions){
+	private static void buildCmisAce(AccessControlListImpl cmisAcl, boolean direct, List<Ace> aces, boolean onlyBasicPermissions){
 		if(CollectionUtils.isNotEmpty(aces)){
 			for (Ace ace : aces) {
 				//Set principal
@@ -508,7 +508,7 @@ public class DataUtil {
 						principal, permissions);
 
 				//Set direct flag
-				cmisAce.setDirect(true);
+				cmisAce.setDirect(direct);
 
 				cmisAcl.getAces().add(cmisAce);
 			}
