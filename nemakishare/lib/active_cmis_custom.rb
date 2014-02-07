@@ -15,7 +15,6 @@ module ActiveCMIS
     cache :permissions
   end
 
-
   class Acl
     attr_accessor :extensions
 
@@ -685,4 +684,28 @@ module ActiveCMIS
     attr_accessor :data
   end
 
+  ######
+  class PropertyDefinition
+    def to_json
+      json = {};
+      json["id"] = @id
+      json["local_name"] = @local_name
+      json["local_namespace"] = @local_namespace
+      json["query_name"] = @query_name
+      json["display_name"] = @display_name
+      json["description"] = @description
+      json["cardinality"] = @cardinality
+      json["property_type"] = @property_type
+      json["updatability"] = @updatability
+      json["default_value"] = @default_value
+      json["inherited"] = @inherited
+      json["required"] = @required
+      json["queryable"] = @queryable
+      json["orderable"] = @orderable
+      json["choices"] = @choices
+      json["open_choice"] = @open_choice
+
+      json
+    end
+  end
 end

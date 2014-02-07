@@ -1002,7 +1002,11 @@ class NemakiRepository
     JSON.parse(json)
   end
 
-  def permissions
+  def get_type_by_id(type_id)
+    @repo.type_by_id(type_id)
+  end
+
+  def get_permissions
     permissions = @repo.permissions
   end
 

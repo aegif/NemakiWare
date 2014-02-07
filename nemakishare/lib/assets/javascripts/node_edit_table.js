@@ -24,9 +24,13 @@ var selector_basicInfo = "#basicInfo";
 var selector_versionInfo = "#versionInfo";
 var aspect_table_prefix = "nemaki_table_aspect_";
 
-var node = [];
+var CONST_YES = "Y";
+var CONST_NO = "N";
+
+var GLOBAL_NODE = [];
 var parent = [];
-var aspects = [];
+var GLOBAL_ASPECTS = [];
+var GLOBAL_TYPE = [];
 
 var baseTableParams = {
 		data:[],
@@ -52,12 +56,13 @@ var baseTableParams = {
 //////////////////////////////////////////
 //Build data for jqGrid from Ruby variable
 //////////////////////////////////////////
-function buildGridData(nodeJSON, parentJSON, aspectsJSON){
+function copyData(nodeJSON, parentJSON, aspectsJSON, typeJSON){
 	//Key MUST be the same as Rails Node classes field name
-	node.push({key:"name", name:I18n.t("model.node.name"), value: nodeJSON.name});
-	node.push({key:"description", name:I18n.t("model.node.description"), value: nodeJSON.description});
+	GLOBAL_NODE.push({key:"name", name:I18n.t("model.node.name"), value: nodeJSON.name});
+	GLOBAL_NODE.push({key:"description", name:I18n.t("model.node.description"), value: nodeJSON.description});
 
-	aspects = aspectsJSON;
+	GLOBAL_ASPECTS = aspectsJSON;
+	GLOBAL_TYPE = typeJSON;
 }
 
 /** 
@@ -93,10 +98,10 @@ function update() {
 	
 	// Update custom properties via hidden tag
 	var editedAspects = [];
-	if(aspects && aspects.length > 0){
-		for(var i=0; i<aspects.length; i++){
-			var a = aspects[i];
-			var properties =  $("#" + aspect_table_prefix + escapeColon(a.id)).jqGrid('getRowData')
+	if(GLOBAL_ASPECTS && GLOBAL_ASPECTS.length > 0){
+		for(var i=0; i < GLOBAL_ASPECTS.length; i++){
+			var a = GLOBAL_ASPECTS[i];
+			var properties =  $("#" + aspect_table_prefix + escapeColon(a.id)).jqGrid('getRowData');
                         properties = convertInputToValues(properties);
 			var aspect = {"id": a.id, "properties": properties};
 			editedAspects.push(aspect);
@@ -111,49 +116,77 @@ $(function() {
 	///////////////////////////////////
 	//Basic Info Table
 	///////////////////////////////////
-	var colModelSettings_basicInfo = [	
-		{name:"key",index:"key", align:"left", sortable:false, hidden:true},
-		{name:"name",index:"name", width:40, align:"left", sortable:false},
-		{name:"value",index:"value",align:"left", edittype:'text', editable:true, sortable:false}
-	]
+	function buildColNames(){
+		var colNames = ["ID", I18n.t("view.general.property"), I18n.t("view.general.value"), "タイプ", "M"];
+		return colNames;
+	}
 	
-	var colNames_basicInfo = ["ID", I18n.t("view.general.property"), I18n.t("view.general.value")];
+	function buildColModelSettings(){
+		var colModelSettings =
+			[{name:"key",index:"key", align:"left", sortable:false, hidden:true},
+			{name:"name",index:"name", width:80, align:"left", sortable:false},
+			{name:"value",index:"value",align:"left", edittype:'text', editable:true, sortable:false},
+			{name:"datatype",index:"datatype",width:30, align:"center", sortable:false, editable:false},
+			{name:"cardinality",index:"cardinality",width:15, align:"center", sortable:false, editable:false}];
+		return colModelSettings;
+	}
+	
+	/**
+	 *
+	 * @returns {}
+	 */
+	//TODO prototype: hard-coded!
+	function buildBasicGridData(){
+		var data = [];
+		
+		for(var i = 0; i < GLOBAL_NODE.length; i++){
+			rowData = {};
+			rowData.key = GLOBAL_NODE[i].key;
+			rowData.name = GLOBAL_NODE[i].name;
+			rowData.value = GLOBAL_NODE[i].value;
+			rowData.datatype = "string";
+			rowData.updatability = "readwrite";
+			rowData.cardinality = CONST_NO;
+			data.push(rowData);
+		}
+		
+		return data;
+	}
+	
+	
 	//CREATE TABLE
-	if(node && node.length > 0){
+	if(GLOBAL_NODE && GLOBAL_NODE.length > 0){
 		createBasicInfoTable();
 	}
 	function createBasicInfoTable(){
 		var tableParams_basicInfo = $.extend(true, {}, baseTableParams);
 		tableParams_basicInfo.caption = I18n.t("view.node.show.content_basic_information");
-		tableParams_basicInfo.data = node;
-		tableParams_basicInfo.colNames = colNames_basicInfo;
-		tableParams_basicInfo.colModel = colModelSettings_basicInfo;
+		
+		
+		tableParams_basicInfo.data = buildBasicGridData();
+		
+		tableParams_basicInfo.colNames = buildColNames();
+		tableParams_basicInfo.colModel = buildColModelSettings();
 		$(selector_basicInfo).jqGrid(tableParams_basicInfo);
 	};
 
 	///////////////////////////////////
 	//Aspect Info Table
 	///////////////////////////////////
-	var colModelSettings_aspectInfo = [	
-		{name:"key",index:"key", align:"left", sortable:false, hidden: true},
-		{name:"name",index:"name", align:"left", sortable:false},
-		{name:"value",index:"value",align:"left", sortable:false, editable:true, edittype:'text'}
-	]
-	
-	var colNames_aspectInfo = ["ID", I18n.t("view.general.property"), I18n.t("view.general.value")];
-	
 	var tableParams_aspectInfo = $.extend(true, {}, baseTableParams);
-	tableParams_aspectInfo.colNames = colNames_aspectInfo;
-	tableParams_aspectInfo.colModel = colModelSettings_aspectInfo;
+	tableParams_aspectInfo.colNames = buildColNames();
+	tableParams_aspectInfo.colModel = buildColModelSettings();
 	//CREATE TABLE
-	createAspectInfoTables(aspects);
+	createAspectInfoTables(GLOBAL_ASPECTS);
 	function createAspectInfoTables(aspects){
 		for(var i=0; i<aspects.length; i++){
 			var a = aspects[i];
 			var tableSelector = "#nemaki_table_aspect_" + escapeColon(a.id);
-			var data = buildPropertyRecords(a.properties);
 			tableParams_aspectInfo.caption = a.attributes.displayName;
+			
+			var data = buildAspectGridData(a.properties);
 			tableParams_aspectInfo.data = data;
+			
 			$(tableSelector).jqGrid(tableParams_aspectInfo);
 			
 			var gridState;
@@ -166,11 +199,30 @@ $(function() {
 		}
 	}
 	
-	function buildPropertyRecords(propertiesJSON){
+	/**
+	 * Build and Filter data for jqGrid
+	 *  Filtering: only Updatable rows
+	 * @param {} propertiesJSON
+	 * @returns {}
+	 */
+	function buildAspectGridData(propertiesJSON){
 		var data = [];
 		for(var i=0; i<propertiesJSON.length; i++){
 			var p = propertiesJSON[i];
-			data.push({key: p.key, name:p.attributes.displayName, value:p.value});
+			
+			//Filter
+			updatability = p.attributes.updatability;
+			if(updatability != "readwrite") continue;
+			
+			//Set a row data			
+			var rowData = {key: p.key, name:p.attributes.displayName, value:p.value};
+			rowData.datatype = p.attributes.datatype;
+			if(p.attributes.cardinality = "single"){
+				rowData.cardinality = CONST_NO;
+			}else{
+				rowData.cardinality = CONST_YES;
+			}
+			data.push(rowData);
 		}
 		return data;
 	}
