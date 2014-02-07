@@ -1,7 +1,7 @@
 <% content_for :javascript_includes do %>
 <%= javascript_include_tag "node_edit_table" %>
 <script type="text/javascript">
-buildGridData(<%= raw @node.to_json %>,<%= raw @parent.to_json %>,<%= raw @aspects.to_json %>);</script>
+copyData(<%= raw @node.to_json %>,<%= raw @parent.to_json %>,<%= raw @aspects.to_json %>, <%= raw @type.to_json %>);</script>
 <% end %>
 
 <div class="row-fluid span11 nemaki_popup_header">

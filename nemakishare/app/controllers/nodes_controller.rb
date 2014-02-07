@@ -113,6 +113,12 @@ class NodesController < ApplicationController
   def edit
     @node = @nemaki_repository.find(params[:id])
     @aspects = @nemaki_repository.get_aspects_with_attributes(@node)
+
+    type_attributes = @nemaki_repository.get_type_by_id(@node.object_type).attributes
+    @type = {}
+    type_attributes.each do |k,v|
+      @type[k] = v.to_json
+    end
     render :layout => 'popup'
   end
 
@@ -342,7 +348,7 @@ class NodesController < ApplicationController
   def edit_permission
     @node = @nemaki_repository.find(params[:id])
     @parent = @nemaki_repository.get_parent(@node)
-    @permissions = @nemaki_repository.permissions
+    @permissions = @nemaki_repository.get_permissions
     render :layout => 'popup'
   end
 
