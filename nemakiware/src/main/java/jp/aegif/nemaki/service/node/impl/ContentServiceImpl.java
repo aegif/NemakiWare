@@ -28,11 +28,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.GregorianCalendar;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map.Entry;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import jp.aegif.nemaki.model.Ace;
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.Aspect;
@@ -1296,24 +1299,109 @@ public class ContentServiceImpl implements ContentService {
 	//Merge inherited ACL
 	@Override
 	public Acl calculateAcl(Content content) {
-		Acl acl = content.getAcl();
 
-		if (content.isRoot())
-			return acl;
+		if (content.isRoot()){
+			//Directフラグは？
+			return content.getAcl();
+		}
 
 		boolean iht = (content.isAclInherited() == null)? false : content.isAclInherited();
 		if (iht) {
-			Content parent = getParent(content.getId());
-			if(parent == null){
-				log.warn("[objectId=" + content.getId() + "]" + "Parent is missing. ACL inheritance calculation is skipped.");
-				return acl;
+			//Caching the results of calculation
+			List<Ace> aces = new ArrayList<Ace>();
+			List<Ace> result = calculateAclInternal(aces, content);
+
+			//Convert result to temporary Acl
+			Acl acl = new Acl();
+			for(Ace r : result){
+				if(r.isDirect()){
+					acl.getLocalAces().add(r);
+				}else{
+					acl.getInheritedAces().add(r);
+				}
 			}
-			acl.setInheritedAces(calculateAcl(parent).getPropagatingAces());
-			// TODO Merge ACEs of the same principal id
-		} else {
 			return acl;
+		} else {
+			return content.getAcl();
 		}
-		return acl;
+
+	}
+
+	private List<Ace> calculateAclInternal(List<Ace>result, Content content){
+		if(content.isRoot()){
+			List<Ace> rootAces = new ArrayList<Ace>();
+			List<Ace> aces = content.getAcl().getLocalAces();
+			for(Ace ace : aces){
+				Ace rootAce = deepCopy(ace);
+				rootAce.setDirect(true);
+				rootAces.add(rootAce);
+			}
+			return mergeAcl(result, rootAces);
+		}else{
+			Content parent = getParent(content.getId());
+			return mergeAcl(content.getAcl().getLocalAces(), calculateAclInternal(new ArrayList<Ace>(), parent));
+		}
+	}
+
+	private List<Ace> mergeAcl(List<Ace>target, List<Ace>source){
+		HashMap<String, Ace> _result = new HashMap<String, Ace>();
+
+		HashMap<String, Ace> targetMap = buildAceMap(target);
+		HashMap<String, Ace> sourceMap = buildAceMap(source);
+
+		for(Entry<String, Ace> t : targetMap.entrySet()){
+			Ace ace = deepCopy(t.getValue());
+			ace.setDirect(true);
+			_result.put(t.getKey(), ace);
+		}
+
+		//Overwrite(というか追加)
+		for(Entry<String, Ace> s : sourceMap.entrySet()){
+			//TODO Deep copy
+			if(!targetMap.containsKey(s.getKey())){
+				Ace ace = deepCopy(s.getValue());
+				ace.setDirect(false);
+				_result.put(s.getKey(), ace);
+			}
+		}
+
+		//Convert
+		List<Ace>result = new ArrayList<Ace>();
+		for(Entry<String, Ace> r : _result.entrySet()){
+			result.add(r.getValue());
+		}
+
+		//Acl上でinherited/localの区別はしない
+		//ただしAce上でisDirectフラグは設定する
+		return result;
+	}
+
+	private HashMap<String, Ace> buildAceMap(List<Ace> aces){
+		HashMap<String, Ace> map = new HashMap<String, Ace>();
+
+		for(Ace ace : aces){
+			map.put(ace.getPrincipalId(), ace);
+		}
+
+		return map;
+	}
+
+	private Ace deepCopy(Ace ace){
+		Ace result = new Ace();
+
+		result.setPrincipalId(ace.getPrincipalId());
+		result.setDirect(ace.isDirect());
+		if(CollectionUtils.isEmpty(ace.getPermissions())){
+			result.setPermissions(new ArrayList<String>());
+		}else{
+			List<String> l = new ArrayList<String>();
+			for(String p: ace.getPermissions()){
+				l.add(p);
+			}
+			result.setPermissions(l);
+		}
+
+		return result;
 	}
 
 	// ///////////////////////////////////////
