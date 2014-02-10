@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -68,18 +68,20 @@ public class SolrQueryProcessor implements QueryProcessor {
 	private CompileObjectService compileObjectService;
 	private ExceptionService exceptionService;
 	private SolrUtil solrUtil;
-	private static final Log logger = LogFactory.getLog(SolrQueryProcessor.class);
+	private static final Log logger = LogFactory
+			.getLog(SolrQueryProcessor.class);
 
 	public SolrQueryProcessor() {
-		
+
 	}
 
+	@Override
 	public ObjectList query(TypeManager typeManager, CallContext callContext,
 			String username, String id, String statement,
 			Boolean searchAllVersions, Boolean includeAllowableActions,
 			IncludeRelationships includeRelationships, String renditionFilter,
 			BigInteger maxItems, BigInteger skipCount) {
-		
+
 		SolrServer solrServer = solrUtil.getSolrServer();
 
 		// queryObject includes the SQL information
@@ -98,12 +100,12 @@ public class SolrQueryProcessor implements QueryProcessor {
 		} else {
 			SolrPredicateWalker solrPredicateWalker = new SolrPredicateWalker(
 					queryObject, solrUtil);
-			try{
+			try {
 				Query whereQuery = solrPredicateWalker.walkPredicate(whereTree);
 				whereQueryString = whereQuery.toString();
-			}catch(Exception e){
+			} catch (Exception e) {
 				e.printStackTrace();
-				//TODO Output more detailed exception
+				// TODO Output more detailed exception
 				exceptionService.invalidArgument("Invalid CMIS SQL statement!");
 			}
 		}
@@ -112,20 +114,25 @@ public class SolrQueryProcessor implements QueryProcessor {
 		String fromQueryString = "";
 
 		TypeDefinition td = queryObject.getMainFromName();
-		//includedInSupertypeQuery
-		List<TypeDefinitionContainer> typeDescendants = typeManager.getTypesDescendants(td.getId(), BigInteger.valueOf(-1), false);
+		// includedInSupertypeQuery
+		List<TypeDefinitionContainer> typeDescendants = typeManager
+				.getTypesDescendants(td.getId(), BigInteger.valueOf(-1), false);
 		Iterator<TypeDefinitionContainer> iterator = typeDescendants.iterator();
 		List<String> tables = new ArrayList<String>();
-		while(iterator.hasNext()){
+		while (iterator.hasNext()) {
 			TypeDefinition descendant = iterator.next().getTypeDefinition();
-			if(td.getId() != descendant.getId()){
-				boolean isq = (descendant.isIncludedInSupertypeQuery() == null) ? false : descendant.isIncludedInSupertypeQuery();
-				if(!isq) continue;
+			if (td.getId() != descendant.getId()) {
+				boolean isq = (descendant.isIncludedInSupertypeQuery() == null) ? false
+						: descendant.isIncludedInSupertypeQuery();
+				if (!isq)
+					continue;
 			}
 			String table = descendant.getQueryName();
 			tables.add(table.replaceAll(":", "\\\\:"));
 		}
-		Term t = new Term(solrUtil.getPropertyNameInSolr(PropertyIds.OBJECT_TYPE_ID), StringUtils.join(tables, " "));
+		Term t = new Term(
+				solrUtil.getPropertyNameInSolr(PropertyIds.OBJECT_TYPE_ID),
+				StringUtils.join(tables, " "));
 		fromQueryString = new TermQuery(t).toString();
 
 		// Execute query
@@ -153,23 +160,25 @@ public class SolrQueryProcessor implements QueryProcessor {
 			}
 
 			// Filter out by permissions
-			List<Content> permitted = permissionService.getFiltered(callContext,
-					contents);
+			List<Content> permitted = permissionService.getFiltered(
+					callContext, contents);
 
 			// Filter return value with SELECT clause
-			Map<String, String>m = queryObject.getRequestedPropertiesByAlias();
+			Map<String, String> m = queryObject.getRequestedPropertiesByAlias();
 			Map<String, String> aliases = new HashMap<String, String>();
-			for(String alias : m.keySet()){
+			for (String alias : m.keySet()) {
 				aliases.put(m.get(alias), alias);
 			}
-			
+
 			String filter = null;
-			if(!aliases.keySet().contains("*")){
+			if (!aliases.keySet().contains("*")) {
 				filter = StringUtils.join(aliases.keySet(), ",");
 			}
-			
-			return compileObjectService.compileObjectDataList(callContext, permitted, filter, includeAllowableActions, true, maxItems, skipCount);
-		}else{
+
+			return compileObjectService.compileObjectDataList(callContext,
+					permitted, filter, includeAllowableActions,
+					includeRelationships, null, true, maxItems, skipCount);
+		} else {
 			ObjectListImpl nullList = new ObjectListImpl();
 			nullList.setHasMoreItems(false);
 			nullList.setNumItems(BigInteger.ZERO);
@@ -193,9 +202,9 @@ public class SolrQueryProcessor implements QueryProcessor {
 	public void setExceptionService(ExceptionService exceptionService) {
 		this.exceptionService = exceptionService;
 	}
-	
+
 	public void setSolrUtil(SolrUtil solrUtil) {
 		this.solrUtil = solrUtil;
 	}
-	
+
 }

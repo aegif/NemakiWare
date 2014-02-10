@@ -37,20 +37,27 @@ public interface NavigationService {
 
 	/**
 	 * Gets the list of child objects contained in the specified folder.
+	 * @param orderBy TODO
+	 * @param includeRelationships TODO
+	 * @param renditionFilter TODO
+	 * @param extension TODO
 	 */
 	public abstract ObjectInFolderList getChildren(CallContext callContext,
-			String folderId, String filter, Boolean includeAllowableActions,
-			Boolean includePathSegments, BigInteger maxItems,
-			BigInteger skipCount);
+			String folderId, String filter, String orderBy,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
+			String renditionFilter, Boolean includePathSegments, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension);
 
 	/**
 	 * Gets the set of descendant objects contained in the specified folder or
 	 * any of its child folders.
+	 * @param includeRelationships TODO
+	 * @param renditionFilter TODO
+	 * @param extension TODO
 	 */
 	public abstract List<ObjectInFolderContainer> getDescendants(
 			CallContext callContext, String folderId, BigInteger depth,
 			String filter, Boolean includeAllowableActions,
-			Boolean includePathSegment, boolean foldersOnly);
+			IncludeRelationships includeRelationships, String renditionFilter, Boolean includePathSegment, boolean foldersOnly, ExtensionsData extension);
 
 	/**
 	 * Gets the parent folder object for the specified folder object.
@@ -60,11 +67,14 @@ public interface NavigationService {
 
 	/**
 	 * Gets the parent folder(s) for the specified non-folder, fileable object.
+	 * @param includeRelationships TODO
+	 * @param renditionFilter TODO
+	 * @param extension TODO
 	 */
 	public abstract List<ObjectParentData> getObjectParents(
 			CallContext callContext, String objectId, String filter,
 			Boolean includeAllowableActions,
-			Boolean includeRelativePathSegment);
+			IncludeRelationships includeRelationships, String renditionFilter, Boolean includeRelativePathSegment, ExtensionsData extension);
 
 	public abstract ObjectList getCheckedOutDocs(CallContext callContext,
 			String folderId, String filter, String orderBy,

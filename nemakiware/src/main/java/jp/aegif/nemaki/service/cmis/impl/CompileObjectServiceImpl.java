@@ -66,7 +66,9 @@ import org.apache.chemistry.opencmis.commons.enums.Action;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
+import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
+import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyData;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AllowableActionsImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ChangeEventInfoDataImpl;
@@ -88,7 +90,8 @@ import org.apache.commons.logging.LogFactory;
 
 public class CompileObjectServiceImpl implements CompileObjectService {
 
-	private static final Log log = LogFactory.getLog(CompileObjectServiceImpl.class);
+	private static final Log log = LogFactory
+			.getLog(CompileObjectServiceImpl.class);
 
 	private NemakiRepositoryInfoImpl repositoryInfo;
 	private RepositoryService repositoryService;
@@ -103,11 +106,14 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	 */
 	@Override
 	public ObjectData compileObjectData(CallContext context, Content content,
-			String filter, Boolean includeAllowableActions, Boolean includeAcl,
-			Map<String, String> aliases) {
+			String filter, Boolean includeAllowableActions,
+			IncludeRelationships includeRelationships, String renditionFilter,
+			Boolean includeAcl, Map<String, String> aliases) {
 		Boolean iaa = (includeAllowableActions == null ? false
 				: includeAllowableActions.booleanValue());
 		Boolean iacl = (includeAcl == null ? false : includeAcl.booleanValue());
+		IncludeRelationships irl = (includeRelationships == null ? IncludeRelationships.SOURCE
+				: includeRelationships);
 		this.aliases = aliases;
 
 		ObjectDataImpl result = new ObjectDataImpl();
@@ -115,14 +121,47 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		result.setProperties(compileProperties(content, splitFilter(filter),
 				objectInfo));
 
+		// Allowable actions
 		if (iaa) {
 			result.setAllowableActions(compileAllowableActions(context, content));
 		}
 
+		// Acl
 		if (iacl) {
 			Acl acl = contentService.calculateAcl(content);
-			result.setAcl(DataUtil.convertToCmisAcl(acl, content.isAclInherited(), false));
+			result.setAcl(DataUtil.convertToCmisAcl(acl,
+					content.isAclInherited(), false));
 			result.setIsExactAcl(true);
+		}
+
+		// Relationships
+		if (IncludeRelationships.NONE != irl) {
+			RelationshipDirection rd;
+			switch (irl) {
+			case SOURCE:
+				rd = RelationshipDirection.SOURCE;
+				break;
+			case TARGET:
+				rd = RelationshipDirection.TARGET;
+				break;
+			case BOTH:
+				rd = RelationshipDirection.EITHER;
+				break;
+			default:
+				rd = RelationshipDirection.SOURCE;
+				break;
+			}
+			List<Relationship> _rels = contentService.getRelationsipsOfObject(
+					content.getId(), rd);
+
+			List<ObjectData> rels = new ArrayList<ObjectData>();
+			for (Relationship _rel : _rels) {
+				ObjectData rel = compileObjectData(context, _rel, null, false,
+						IncludeRelationships.NONE, null, false, aliases);
+				rels.add(rel);
+			}
+
+			result.setRelationships(rels);
 		}
 
 		return result;
@@ -131,6 +170,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	@Override
 	public <T> ObjectList compileObjectDataList(CallContext callContext,
 			List<T> contents, String filter, Boolean includeAllowableActions,
+			IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includeAcl, BigInteger maxItems, BigInteger skipCount) {
 		ObjectListImpl list = new ObjectListImpl();
 		list.setObjects(new ArrayList<ObjectData>());
@@ -160,7 +200,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			if (content instanceof Content) {
 				ObjectData o = compileObjectData(callContext,
 						(Content) content, filter, includeAllowableActions,
-						includeAcl, null);
+						IncludeRelationships.NONE, null, includeAcl, null);
 				list.getObjects().add(o);
 			} else {
 				continue;
@@ -179,8 +219,9 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 	@Override
 	public ObjectList compileChangeDataList(CallContext context,
-			List<Change> changes, Holder<String> changeLogToken, Boolean includeProperties,
-			String filter, Boolean includePolicyIds, Boolean includeAcl) {
+			List<Change> changes, Holder<String> changeLogToken,
+			Boolean includeProperties, String filter, Boolean includePolicyIds,
+			Boolean includeAcl) {
 		ObjectListImpl results = new ObjectListImpl();
 		results.setObjects(new ArrayList<ObjectData>());
 
@@ -203,14 +244,14 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			}
 		}
 
-
 		results.setNumItems(BigInteger.valueOf(results.getObjects().size()));
 
-		String latestInRepository = repositoryService.getRepositoryInfo().getLatestChangeLogToken();
+		String latestInRepository = repositoryService.getRepositoryInfo()
+				.getLatestChangeLogToken();
 		String latestInResults = changeLogToken.getValue();
-		if(latestInResults.equals(latestInRepository)){
+		if (latestInResults.equals(latestInRepository)) {
 			results.setHasMoreItems(false);
-		}else{
+		} else {
 			results.setHasMoreItems(true);
 		}
 		return results;
@@ -269,9 +310,10 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			Boolean includeAcl) {
 		boolean iacl = (includeAcl == null ? false : includeAcl.booleanValue());
 		if (iacl) {
-			if (content != null){
+			if (content != null) {
 				Acl acl = contentService.calculateAcl(content);
-				object.setAcl(DataUtil.convertToCmisAcl(acl, content.isAclInherited(), false));
+				object.setAcl(DataUtil.convertToCmisAcl(acl,
+						content.isAclInherited(), false));
 			}
 		}
 	}
@@ -307,21 +349,21 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 				.entrySet()) {
 			String key = mappingEntry.getValue().getKey();
 
-			//TODO WORKAROUND. implement class cast check
+			// TODO WORKAROUND. implement class cast check
 
-			//FIXME WORKAROUND: skip canCreatePolicy.Folder
-			if(PermissionMapping.CAN_CREATE_POLICY_FOLDER.equals(key)){
+			// FIXME WORKAROUND: skip canCreatePolicy.Folder
+			if (PermissionMapping.CAN_CREATE_POLICY_FOLDER.equals(key)) {
 				continue;
 			}
 
 			boolean allowable = permissionService.checkPermission(callContext,
 					mappingEntry.getKey(), acl, baseType, content);
 
-			//Additional check
-			if(!isAllowableByCapability(key)){
+			// Additional check
+			if (!isAllowableByCapability(key)) {
 				continue;
 			}
-			if(!isAllowableByType(key, content)){
+			if (!isAllowableByType(key, content)) {
 				continue;
 			}
 			if (content.isRoot()) {
@@ -362,68 +404,76 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		return allowable;
 	}
 
-	private boolean isAllowableByCapability(String key){
+	private boolean isAllowableByCapability(String key) {
 		RepositoryCapabilities capabilities = repositoryInfo.getCapabilities();
 
-		//Multifiling or Unfiling Capabilities
-		if(PermissionMapping.CAN_ADD_TO_FOLDER_OBJECT.equals(key) ||
-		   PermissionMapping.CAN_ADD_TO_FOLDER_FOLDER.equals(key)){
-			//This is not a explicit spec, but it's plausible.
-			return capabilities.isUnfilingSupported() ||
-				   capabilities.isMultifilingSupported();
-		}else if(PermissionMapping.CAN_REMOVE_FROM_FOLDER_OBJECT.equals(key) ||
-				 PermissionMapping.CAN_REMOVE_FROM_FOLDER_FOLDER.equals(key)){
+		// Multifiling or Unfiling Capabilities
+		if (PermissionMapping.CAN_ADD_TO_FOLDER_OBJECT.equals(key)
+				|| PermissionMapping.CAN_ADD_TO_FOLDER_FOLDER.equals(key)) {
+			// This is not a explicit spec, but it's plausible.
+			return capabilities.isUnfilingSupported()
+					|| capabilities.isMultifilingSupported();
+		} else if (PermissionMapping.CAN_REMOVE_FROM_FOLDER_OBJECT.equals(key)
+				|| PermissionMapping.CAN_REMOVE_FROM_FOLDER_FOLDER.equals(key)) {
 			return capabilities.isUnfilingSupported();
 
-		//GetDescendents or GetFolderTree Capabilities
-		}else if(PermissionMapping.CAN_GET_DESCENDENTS_FOLDER.equals(key)){
-			return capabilities.isGetDescendantsSupported() ||
-				   capabilities.isGetFolderTreeSupported();
-		}else{
+			// GetDescendents or GetFolderTree Capabilities
+		} else if (PermissionMapping.CAN_GET_DESCENDENTS_FOLDER.equals(key)) {
+			return capabilities.isGetDescendantsSupported()
+					|| capabilities.isGetFolderTreeSupported();
+		} else {
 			return true;
 		}
 	}
 
-	private boolean isAllowableByType(String key, Content content){
-		TypeDefinition tdf = typeManager.getTypeDefinition(content.getObjectType());
+	private boolean isAllowableByType(String key, Content content) {
+		TypeDefinition tdf = typeManager.getTypeDefinition(content
+				.getObjectType());
 
-		//ControllableACL
-		if(PermissionMapping.CAN_APPLY_ACL_OBJECT.equals(key)){
-			//Default to FALSE
-			boolean ctrlAcl = (tdf.isControllableAcl() == null)? false : tdf.isControllableAcl();
+		// ControllableACL
+		if (PermissionMapping.CAN_APPLY_ACL_OBJECT.equals(key)) {
+			// Default to FALSE
+			boolean ctrlAcl = (tdf.isControllableAcl() == null) ? false : tdf
+					.isControllableAcl();
 			return ctrlAcl;
 
-		//ControllablePolicy
-		}else if(PermissionMapping.CAN_ADD_POLICY_OBJECT.equals(key) ||
-				 PermissionMapping.CAN_ADD_POLICY_POLICY.equals(key) ||
-				 PermissionMapping.CAN_REMOVE_POLICY_OBJECT.equals(key) ||
-				 PermissionMapping.CAN_REMOVE_POLICY_POLICY.equals(key)){
-			//Default to FALSE
-			boolean ctrlPolicy = (tdf.isControllablePolicy() == null)? false : tdf.isControllablePolicy();
+			// ControllablePolicy
+		} else if (PermissionMapping.CAN_ADD_POLICY_OBJECT.equals(key)
+				|| PermissionMapping.CAN_ADD_POLICY_POLICY.equals(key)
+				|| PermissionMapping.CAN_REMOVE_POLICY_OBJECT.equals(key)
+				|| PermissionMapping.CAN_REMOVE_POLICY_POLICY.equals(key)) {
+			// Default to FALSE
+			boolean ctrlPolicy = (tdf.isControllablePolicy() == null) ? false
+					: tdf.isControllablePolicy();
 			return ctrlPolicy;
 
-		//setContent
-		}else if(PermissionMapping.CAN_SET_CONTENT_DOCUMENT.equals(key)){
-			if(BaseTypeId.CMIS_DOCUMENT != tdf.getBaseTypeId()) return true;
+			// setContent
+		} else if (PermissionMapping.CAN_SET_CONTENT_DOCUMENT.equals(key)) {
+			if (BaseTypeId.CMIS_DOCUMENT != tdf.getBaseTypeId())
+				return true;
 
 			DocumentTypeDefinition _tdf = (DocumentTypeDefinition) tdf;
-			//Default to REQUIRED
-			ContentStreamAllowed csa = (_tdf.getContentStreamAllowed() == null)? ContentStreamAllowed.REQUIRED : _tdf.getContentStreamAllowed();
+			// Default to REQUIRED
+			ContentStreamAllowed csa = (_tdf.getContentStreamAllowed() == null) ? ContentStreamAllowed.REQUIRED
+					: _tdf.getContentStreamAllowed();
 			return !(csa == ContentStreamAllowed.NOTALLOWED);
 
-		//deleteContent
-		}else if(PermissionMapping.CAN_DELETE_CONTENT_DOCUMENT.equals(key)){
-			if(BaseTypeId.CMIS_DOCUMENT != tdf.getBaseTypeId()) return true;
+			// deleteContent
+		} else if (PermissionMapping.CAN_DELETE_CONTENT_DOCUMENT.equals(key)) {
+			if (BaseTypeId.CMIS_DOCUMENT != tdf.getBaseTypeId())
+				return true;
 
 			DocumentTypeDefinition _tdf = (DocumentTypeDefinition) tdf;
-			//Default to REQUIRED
-			ContentStreamAllowed csa = (_tdf.getContentStreamAllowed() == null)? ContentStreamAllowed.REQUIRED : _tdf.getContentStreamAllowed();
+			// Default to REQUIRED
+			ContentStreamAllowed csa = (_tdf.getContentStreamAllowed() == null) ? ContentStreamAllowed.REQUIRED
+					: _tdf.getContentStreamAllowed();
 			return !(csa == ContentStreamAllowed.REQUIRED);
 
-		}else{
+		} else {
 			return true;
 		}
 	}
+
 	/**
 	 * Compiles properties of a piece of content.
 	 */
@@ -440,13 +490,11 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 						filter);
 				// Other than root folder
 			} else {
-				properties = compileFolderProperties(folder, properties,
-						filter);
+				properties = compileFolderProperties(folder, properties, filter);
 			}
 		} else if (content.isDocument()) {
 			Document document = (Document) content;
-			properties = compileDocumentProperties(document, properties,
-					filter);
+			properties = compileDocumentProperties(document, properties, filter);
 		} else if (content.isRelationship()) {
 			Relationship relationship = (Relationship) content;
 			properties = compileRelationshipProperties(relationship,
@@ -454,7 +502,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		} else if (content.isPolicy()) {
 			Policy policy = (Policy) content;
 			properties = compilePolicyProperties(policy, properties, filter);
-		}else if (content.isItem()) {
+		} else if (content.isItem()) {
 			Item item = (Item) content;
 			properties = compileItemProperties(item, properties, filter);
 		}
@@ -573,13 +621,16 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		addProperty(properties, typeId, filter, PropertyIds.CHANGE_TOKEN,
 				String.valueOf(content.getChangeToken()));
 
-		//TODO If subType properties is not registered in DB, return void properties via CMIS
+		// TODO If subType properties is not registered in DB, return void
+		// properties via CMIS
 		// SubType properties
-		List<PropertyDefinition<?>> specificPropertyDefinitions = typeManager.getSpecificPropertyDefinitions(typeId);
-		if(!CollectionUtils.isEmpty(specificPropertyDefinitions)){
-			for(PropertyDefinition<?> propertyDefinition : specificPropertyDefinitions){
-				Property property = extractSubTypeProperty(content, propertyDefinition.getId());
-				Object value = (property == null) ?  null : property.getValue();
+		List<PropertyDefinition<?>> specificPropertyDefinitions = typeManager
+				.getSpecificPropertyDefinitions(typeId);
+		if (!CollectionUtils.isEmpty(specificPropertyDefinitions)) {
+			for (PropertyDefinition<?> propertyDefinition : specificPropertyDefinitions) {
+				Property property = extractSubTypeProperty(content,
+						propertyDefinition.getId());
+				Object value = (property == null) ? null : property.getValue();
 				addProperty(properties, content.getObjectType(), filter,
 						propertyDefinition.getId(), value);
 			}
@@ -589,11 +640,11 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		setCmisSecondaryTypes(properties, content, typeId, filter);
 	}
 
-	private Property extractSubTypeProperty(Content content, String propertyId){
+	private Property extractSubTypeProperty(Content content, String propertyId) {
 		List<Property> subTypeProperties = content.getSubTypeProperties();
-		if(CollectionUtils.isNotEmpty(subTypeProperties)){
+		if (CollectionUtils.isNotEmpty(subTypeProperties)) {
 			for (Property subTypeProperty : subTypeProperties) {
-				if(subTypeProperty.getKey().equals(propertyId)){
+				if (subTypeProperty.getKey().equals(propertyId)) {
 					return subTypeProperty;
 				}
 			}
@@ -613,7 +664,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		if (checkAddProperty(properties, typeId, filter,
 				PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS)) {
 			List<String> values = new ArrayList<String>();
-			//If not specified, all child types are allowed.
+			// If not specified, all child types are allowed.
 			if (!CollectionUtils.isEmpty(folder.getAllowedChildTypeIds())) {
 				values = folder.getAllowedChildTypeIds();
 			}
@@ -629,8 +680,11 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		addProperty(properties, typeId, filter, PropertyIds.BASE_TYPE_ID,
 				BaseTypeId.CMIS_DOCUMENT.value());
 
-		Boolean isImmutable = (document.isImmutable() == null) ?  (Boolean)typeManager.getSingleDefaultValue(PropertyIds.IS_IMMUTABLE, typeId) : document.isImmutable();
-		addProperty(properties, typeId, filter, PropertyIds.IS_IMMUTABLE, isImmutable);
+		Boolean isImmutable = (document.isImmutable() == null) ? (Boolean) typeManager
+				.getSingleDefaultValue(PropertyIds.IS_IMMUTABLE, typeId)
+				: document.isImmutable();
+		addProperty(properties, typeId, filter, PropertyIds.IS_IMMUTABLE,
+				isImmutable);
 		addProperty(properties, typeId, filter,
 				PropertyIds.IS_PRIVATE_WORKING_COPY,
 				document.isPrivateWorkingCopy());
@@ -705,51 +759,57 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 				BaseTypeId.CMIS_ITEM.value());
 	}
 
-	private void setCmisSecondaryTypes(PropertiesImpl props,
-			Content content, String typeId, Set<String> filter) {
+	private void setCmisSecondaryTypes(PropertiesImpl props, Content content,
+			String typeId, Set<String> filter) {
 		List<Aspect> aspects = content.getAspects();
 		List<String> secondaryIds = new ArrayList<String>();
 
-		//cmis:secondaryObjectTypeIds
-		if(CollectionUtils.isNotEmpty(content.getSecondaryIds())){
-			for(String secondaryId : content.getSecondaryIds()){
+		// cmis:secondaryObjectTypeIds
+		if (CollectionUtils.isNotEmpty(content.getSecondaryIds())) {
+			for (String secondaryId : content.getSecondaryIds()) {
 				secondaryIds.add(secondaryId);
 			}
 		}
 
 		PropertyData<?> pd = new PropertyIdImpl(
 				PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondaryIds);
-		addProperty(props, typeId, filter, PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondaryIds);
+		addProperty(props, typeId, filter,
+				PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondaryIds);
 
-
-		//each secondary properties
-		for(String secondaryId : secondaryIds){
-			List<PropertyDefinition<?>> secondaryPropertyDefinitions = typeManager.getSpecificPropertyDefinitions(secondaryId);
-			if(CollectionUtils.isEmpty(secondaryPropertyDefinitions)) continue;
+		// each secondary properties
+		for (String secondaryId : secondaryIds) {
+			List<PropertyDefinition<?>> secondaryPropertyDefinitions = typeManager
+					.getSpecificPropertyDefinitions(secondaryId);
+			if (CollectionUtils.isEmpty(secondaryPropertyDefinitions))
+				continue;
 
 			Aspect aspect = extractAspect(aspects, secondaryId);
-			List<Property> properties = (aspect == null) ? new ArrayList<Property>() : aspect.getProperties();
+			List<Property> properties = (aspect == null) ? new ArrayList<Property>()
+					: aspect.getProperties();
 
-			for(PropertyDefinition<?> secondaryPropertyDefinition : secondaryPropertyDefinitions){
-				Property property = extractProperty(properties, secondaryPropertyDefinition.getId());
+			for (PropertyDefinition<?> secondaryPropertyDefinition : secondaryPropertyDefinitions) {
+				Property property = extractProperty(properties,
+						secondaryPropertyDefinition.getId());
 				Object value = (property == null) ? null : property.getValue();
-				addProperty(props, secondaryId, null, secondaryPropertyDefinition.getId(), value);
+				addProperty(props, secondaryId, null,
+						secondaryPropertyDefinition.getId(), value);
 			}
 		}
 	}
 
-	private Aspect extractAspect(List<Aspect> aspects, String aspectId){
-		for(Aspect aspect : aspects){
-			if(aspect.getName().equals(aspectId)){
+	private Aspect extractAspect(List<Aspect> aspects, String aspectId) {
+		for (Aspect aspect : aspects) {
+			if (aspect.getName().equals(aspectId)) {
 				return aspect;
 			}
 		}
 		return null;
 	}
 
-	private Property extractProperty(List<Property> properties, String propertyId){
-		for(Property property : properties){
-			if(property.getKey().equals(propertyId)){
+	private Property extractProperty(List<Property> properties,
+			String propertyId) {
+		for (Property property : properties) {
+			if (property.getKey().equals(propertyId)) {
 				return property;
 			}
 		}
@@ -774,7 +834,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		if (type == null)
 			throw new IllegalArgumentException("Unknown type: " + type.getId());
 
-		//TODO :performance
+		// TODO :performance
 		if (!type.getPropertyDefinitions().containsKey(id))
 			throw new IllegalArgumentException("Unknown property: " + id);
 
@@ -804,7 +864,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	 * @param value
 	 *            actual property value
 	 */
-	//TODO if cast fails, continue the operation
+	// TODO if cast fails, continue the operation
 	private void addProperty(PropertiesImpl props, String typeId,
 			Set<String> filter, String id, Object value) {
 		PropertyDefinition<?> pdf = repositoryService.getTypeManager()
@@ -813,105 +873,121 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		if (!checkAddProperty(props, typeId, filter, id))
 			return;
 
-		try{
-			 switch (pdf.getPropertyType()) {
-				case BOOLEAN:
-					PropertyBooleanImpl propBoolean;
-					if (value instanceof List<?>) {
-						propBoolean = new PropertyBooleanImpl(id, (List<Boolean>) value);
-					} else if( value instanceof Boolean) {
-						propBoolean = new PropertyBooleanImpl(id, (Boolean) value);
-					} else{
-						Boolean _null = null;
-						propBoolean = new PropertyBooleanImpl(id, _null);
-						if( value != null){
-							String msg = buildCastErrMsg(typeId, id, pdf.getPropertyType(), value.getClass().getName(), Boolean.class.getName());
-							log.warn(msg);
-						}
+		try {
+			switch (pdf.getPropertyType()) {
+			case BOOLEAN:
+				PropertyBooleanImpl propBoolean;
+				if (value instanceof List<?>) {
+					propBoolean = new PropertyBooleanImpl(id,
+							(List<Boolean>) value);
+				} else if (value instanceof Boolean) {
+					propBoolean = new PropertyBooleanImpl(id, (Boolean) value);
+				} else {
+					Boolean _null = null;
+					propBoolean = new PropertyBooleanImpl(id, _null);
+					if (value != null) {
+						String msg = buildCastErrMsg(typeId, id,
+								pdf.getPropertyType(), value.getClass()
+										.getName(), Boolean.class.getName());
+						log.warn(msg);
 					}
-					addPropertyBase(props, id, propBoolean, pdf);
-					break;
-				case INTEGER:
-					PropertyIntegerImpl propInteger;
-					if (value instanceof List<?>) {
-						propInteger = new PropertyIntegerImpl(id,
-								(List<BigInteger>) value);
-					} else if(value instanceof Long || value instanceof Integer) {
-						propInteger = new PropertyIntegerImpl(id,
-								BigInteger.valueOf((Long) value));
-					} else{
-						BigInteger _null = null;
-						propInteger = new PropertyIntegerImpl(id, _null);
-						if( value != null){
-							String msg = buildCastErrMsg(typeId, id, pdf.getPropertyType(), value.getClass().getName(), Long.class.getName());
-							log.warn(msg);
-						}
-					}
-					addPropertyBase(props, id, propInteger, pdf);
-					break;
-				case DATETIME:
-					PropertyDateTimeImpl propDate;
-					if (value instanceof List<?>) {
-						propDate = new PropertyDateTimeImpl(id,
-								(List<GregorianCalendar>) value);
-					} else if(value instanceof GregorianCalendar){
-						propDate = new PropertyDateTimeImpl(id,
-								(GregorianCalendar) value);
-					}else{
-						GregorianCalendar _null = null;
-						propDate = new PropertyDateTimeImpl(id, _null);
-						if( value != null){
-							String msg = buildCastErrMsg(typeId, id, pdf.getPropertyType(), value.getClass().getName(), GregorianCalendar.class.getName());
-							log.warn(msg);
-						}
-					}
-					addPropertyBase(props, id, propDate, pdf);
-					break;
-				case STRING:
-					PropertyStringImpl propString = new PropertyStringImpl();
-					propString.setId(id);
-					if (value instanceof List<?>) {
-						propString.setValues((List<String>) value);
-					} else if(value instanceof String){
-						propString.setValue(String.valueOf(value));
-					}else{
-						String _null = null;
-						propString = new PropertyStringImpl(id, _null);
-						if( value != null){
-							String msg = buildCastErrMsg(typeId, id, pdf.getPropertyType(), value.getClass().getName(), String.class.getName());
-							log.warn(msg);
-						}
-					}
-
-					addPropertyBase(props, id, propString, pdf);
-					break;
-				case ID:
-					PropertyIdImpl propId = new PropertyIdImpl();
-					propId.setId(id);
-					if (value instanceof List<?>) {
-						propId.setValues((List<String>) value);
-					} else if(value instanceof String){
-						propId.setValue(String.valueOf(value));
-
-					} else{
-						String _null = null;
-						propId = new PropertyIdImpl(id, _null);
-						if( value != null){
-							String msg = buildCastErrMsg(typeId, id, pdf.getPropertyType(), value.getClass().getName(), String.class.getName());
-							log.warn(msg);
-						}
-					}
-					addPropertyBase(props, id, propId, pdf);
-					break;
-				default:
 				}
-		 }catch(Exception e){
-			 log.warn("typeId:" + typeId + ", propertyId:" + id + " class cast error!", e);
-		 }
+				addPropertyBase(props, id, propBoolean, pdf);
+				break;
+			case INTEGER:
+				PropertyIntegerImpl propInteger;
+				if (value instanceof List<?>) {
+					propInteger = new PropertyIntegerImpl(id,
+							(List<BigInteger>) value);
+				} else if (value instanceof Long || value instanceof Integer) {
+					propInteger = new PropertyIntegerImpl(id,
+							BigInteger.valueOf((Long) value));
+				} else {
+					BigInteger _null = null;
+					propInteger = new PropertyIntegerImpl(id, _null);
+					if (value != null) {
+						String msg = buildCastErrMsg(typeId, id,
+								pdf.getPropertyType(), value.getClass()
+										.getName(), Long.class.getName());
+						log.warn(msg);
+					}
+				}
+				addPropertyBase(props, id, propInteger, pdf);
+				break;
+			case DATETIME:
+				PropertyDateTimeImpl propDate;
+				if (value instanceof List<?>) {
+					propDate = new PropertyDateTimeImpl(id,
+							(List<GregorianCalendar>) value);
+				} else if (value instanceof GregorianCalendar) {
+					propDate = new PropertyDateTimeImpl(id,
+							(GregorianCalendar) value);
+				} else {
+					GregorianCalendar _null = null;
+					propDate = new PropertyDateTimeImpl(id, _null);
+					if (value != null) {
+						String msg = buildCastErrMsg(typeId, id,
+								pdf.getPropertyType(), value.getClass()
+										.getName(),
+								GregorianCalendar.class.getName());
+						log.warn(msg);
+					}
+				}
+				addPropertyBase(props, id, propDate, pdf);
+				break;
+			case STRING:
+				PropertyStringImpl propString = new PropertyStringImpl();
+				propString.setId(id);
+				if (value instanceof List<?>) {
+					propString.setValues((List<String>) value);
+				} else if (value instanceof String) {
+					propString.setValue(String.valueOf(value));
+				} else {
+					String _null = null;
+					propString = new PropertyStringImpl(id, _null);
+					if (value != null) {
+						String msg = buildCastErrMsg(typeId, id,
+								pdf.getPropertyType(), value.getClass()
+										.getName(), String.class.getName());
+						log.warn(msg);
+					}
+				}
+
+				addPropertyBase(props, id, propString, pdf);
+				break;
+			case ID:
+				PropertyIdImpl propId = new PropertyIdImpl();
+				propId.setId(id);
+				if (value instanceof List<?>) {
+					propId.setValues((List<String>) value);
+				} else if (value instanceof String) {
+					propId.setValue(String.valueOf(value));
+
+				} else {
+					String _null = null;
+					propId = new PropertyIdImpl(id, _null);
+					if (value != null) {
+						String msg = buildCastErrMsg(typeId, id,
+								pdf.getPropertyType(), value.getClass()
+										.getName(), String.class.getName());
+						log.warn(msg);
+					}
+				}
+				addPropertyBase(props, id, propId, pdf);
+				break;
+			default:
+			}
+		} catch (Exception e) {
+			log.warn("typeId:" + typeId + ", propertyId:" + id
+					+ " class cast error!", e);
+		}
 	}
 
-	private String buildCastErrMsg(String typeId, String propertyId, PropertyType propertyType, String sourceClass, String targetClass){
-		return "[typeId:" + typeId + ", propertyId:" + propertyId + ", propertyType:" + propertyType.value() + "]Cannot convert " + sourceClass + " to " + targetClass;
+	private String buildCastErrMsg(String typeId, String propertyId,
+			PropertyType propertyType, String sourceClass, String targetClass) {
+		return "[typeId:" + typeId + ", propertyId:" + propertyId
+				+ ", propertyType:" + propertyType.value() + "]Cannot convert "
+				+ sourceClass + " to " + targetClass;
 	}
 
 	private <T> void addPropertyBase(PropertiesImpl props, String id,
@@ -976,8 +1052,8 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		if (PermissionMapping.CAN_CREATE_FOLDER_FOLDER.equals(key))
 			return Action.CAN_CREATE_FOLDER;
 		// FIXME the constant already implemented?
-		//if (PermissionMapping.CAN_CREATE_POLICY_FOLDER.equals(key))
-		//	return null;
+		// if (PermissionMapping.CAN_CREATE_POLICY_FOLDER.equals(key))
+		// return null;
 		if (PermissionMapping.CAN_CREATE_RELATIONSHIP_SOURCE.equals(key))
 			return Action.CAN_CREATE_RELATIONSHIP;
 		if (PermissionMapping.CAN_CREATE_RELATIONSHIP_TARGET.equals(key))
