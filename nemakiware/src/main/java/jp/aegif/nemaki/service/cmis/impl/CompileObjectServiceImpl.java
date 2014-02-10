@@ -613,11 +613,8 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		if (checkAddProperty(properties, typeId, filter,
 				PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS)) {
 			List<String> values = new ArrayList<String>();
-			if (CollectionUtils.isEmpty(folder.getAllowedChildTypeIds())) {
-				values.add(BaseTypeId.CMIS_DOCUMENT.value());
-				values.add(BaseTypeId.CMIS_FOLDER.value());
-				values.add(BaseTypeId.CMIS_ITEM.value());
-			} else {
+			//If not specified, all child types are allowed.
+			if (!CollectionUtils.isEmpty(folder.getAllowedChildTypeIds())) {
 				values = folder.getAllowedChildTypeIds();
 			}
 			PropertyData<String> pd = new PropertyIdImpl(
