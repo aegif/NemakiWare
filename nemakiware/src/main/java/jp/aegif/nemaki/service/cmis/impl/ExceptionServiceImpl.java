@@ -391,6 +391,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 	public void constraintAllowedChildObjectTypeId(Folder folder,
 			Properties childProperties) {
 		List<String> allowedTypes = folder.getAllowedChildTypeIds();
+
+		//If cmis:allowedCHildTypeIds is not set, all types are allowed.
 		if (!CollectionUtils.isEmpty(allowedTypes)) {
 			// NOTE: Elements of allowedTypes must be like "cmis:folder", not
 			// "folder"
