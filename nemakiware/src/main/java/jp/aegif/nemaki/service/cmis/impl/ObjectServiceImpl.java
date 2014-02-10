@@ -831,6 +831,7 @@ public class ObjectServiceImpl implements ObjectService {
 		try {
 			contentService.deleteTree(callContext, folderId, allVersions,
 					continueOnFailure, false);
+			contentService.callSolrIndexing();
 		} catch (Exception e) {
 			// do nothing
 			e.printStackTrace();

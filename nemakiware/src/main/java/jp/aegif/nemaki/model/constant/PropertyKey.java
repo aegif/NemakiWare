@@ -10,6 +10,7 @@ public interface PropertyKey {
 	final String REPOSITORIES= "repositories";
 	final String PRINCIPAL_ADMIN= "principal.admin.id";
 	final String SOLR_URL= "solr.url";
+	final String SOLR_INDEXING_FORCE= "solr.indexing.force";
 	final String PERMISSION_DEFINITION= "permission.definition";
 	final String PERMISSION_MAPPING_DEFINITION= "permission.mapping.definition";
 	final String OVRRIDE_FILE= "override.file";

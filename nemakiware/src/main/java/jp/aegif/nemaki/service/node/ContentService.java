@@ -581,4 +581,9 @@ public interface ContentService {
 	 * @param archiveId
 	 */
 	void restoreArchive(String archiveId);
+
+	/**
+	 *Call Solr indexing forcibly
+	 */
+	public void callSolrIndexing();
 }
