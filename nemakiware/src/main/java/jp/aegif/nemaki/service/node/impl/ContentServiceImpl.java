@@ -53,11 +53,13 @@ import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.model.constant.NemakiConstant;
 import jp.aegif.nemaki.model.constant.NodeType;
+import jp.aegif.nemaki.model.constant.PropertyKey;
 import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.dao.ContentDaoService;
 import jp.aegif.nemaki.service.dao.impl.ContentDaoServiceImpl;
 import jp.aegif.nemaki.service.node.ContentService;
 import jp.aegif.nemaki.util.DataUtil;
+import jp.aegif.nemaki.util.NemakiPropertyManager;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
@@ -84,6 +86,9 @@ import org.apache.commons.lang.math.NumberUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import com.sun.jersey.api.client.Client;
+import com.sun.jersey.api.client.WebResource;
+
 /**
  * Node Service implementation
  *
@@ -94,6 +99,8 @@ public class ContentServiceImpl implements ContentService {
 
 	private ContentDaoService contentDaoService;
 	private TypeManager typeManager;
+	private NemakiPropertyManager propertyManager;
+
 	private static final Log log = LogFactory
 			.getLog(ContentDaoServiceImpl.class);
 	final static int FIRST_TOKEN = 1;
@@ -436,6 +443,9 @@ public class ContentServiceImpl implements ContentService {
 		// Write change event
 		writeChangeEvent(callContext, document, ChangeType.CREATED);
 
+		// Call Solr indexing forcibly
+		callSolrIndexing();
+
 		return document;
 	}
 
@@ -471,6 +481,9 @@ public class ContentServiceImpl implements ContentService {
 		// Record the change event
 		writeChangeEvent(callContext, result, ChangeType.CREATED);
 
+		// Call Solr indexing forcibly
+		callSolrIndexing();
+
 		return result;
 	}
 
@@ -494,6 +507,9 @@ public class ContentServiceImpl implements ContentService {
 
 		// Record the change event
 		writeChangeEvent(callContext, result, ChangeType.CREATED);
+
+		// Call Solr indexing forcibly
+		callSolrIndexing();
 
 		return result;
 	}
@@ -523,6 +539,9 @@ public class ContentServiceImpl implements ContentService {
 		updateVersionSeriesWithPwc(callContext,
 				getVersionSeries(result.getVersionSeriesId()), result);
 
+		// Call Solr indexing forcibly
+		callSolrIndexing();
+
 		return result;
 	}
 
@@ -542,6 +561,9 @@ public class ContentServiceImpl implements ContentService {
 		vs.setVersionSeriesCheckedOutBy("");
 		vs.setVersionSeriesCheckedOutId("");
 		contentDaoService.update(vs);
+
+		// Call Solr indexing forcibly
+		callSolrIndexing();
 	}
 
 	@Override
@@ -589,6 +611,9 @@ public class ContentServiceImpl implements ContentService {
 
 		// Record the change event
 		writeChangeEvent(callContext, result, ChangeType.CREATED);
+
+		// Call Solr indexing forcibly
+		callSolrIndexing();
 
 		return result;
 	}
@@ -754,6 +779,9 @@ public class ContentServiceImpl implements ContentService {
 
 		// Record the change event
 		writeChangeEvent(callContext, folder, ChangeType.CREATED);
+
+		// Call Solr indexing forcibly
+		callSolrIndexing();
 
 		return folder;
 	}
@@ -1033,23 +1061,6 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public Content update(Content content) {
-		if (content instanceof Document) {
-			return contentDaoService.update((Document) content);
-		} else if (content instanceof Folder) {
-			return contentDaoService.update((Folder) content);
-		} else if (content instanceof Relationship) {
-			return contentDaoService.update((Relationship) content);
-		} else if (content instanceof Policy) {
-			return contentDaoService.update((Policy) content);
-		} else if (content instanceof Item) {
-			return contentDaoService.update((Item) content);
-		} else {
-			return null;
-		}
-	}
-
-	@Override
 	public Content updateProperties(CallContext callContext,
 			Properties properties, Content content) {
 
@@ -1059,6 +1070,28 @@ public class ContentServiceImpl implements ContentService {
 
 		// Record the change event
 		writeChangeEvent(callContext, result, ChangeType.UPDATED);
+
+		return result;
+	}
+
+	@Override
+	public Content update(Content content) {
+		Content result = null;
+
+		if (content instanceof Document) {
+			result = contentDaoService.update((Document) content);
+		} else if (content instanceof Folder) {
+			result =  contentDaoService.update((Folder) content);
+		} else if (content instanceof Relationship) {
+			result =  contentDaoService.update((Relationship) content);
+		} else if (content instanceof Policy) {
+			result =  contentDaoService.update((Policy) content);
+		} else if (content instanceof Item) {
+			result =  contentDaoService.update((Item) content);
+		}
+
+		// Call Solr indexing forcibly
+		callSolrIndexing();
 
 		return result;
 	}
@@ -1094,6 +1127,9 @@ public class ContentServiceImpl implements ContentService {
 				null);
 		content.setName(uniqueName);
 		update(content);
+
+		//Call Solr indexing forcibly
+		callSolrIndexing();
 	}
 
 	@Override
@@ -1140,6 +1176,9 @@ public class ContentServiceImpl implements ContentService {
 		// Archive and then Delete
 		createArchive(callContext, objectId, deletedWithParent);
 		contentDaoService.delete(objectId);
+
+		//Call Solr indexing forcibly
+		callSolrIndexing();
 	}
 
 	@Override
@@ -1184,6 +1223,9 @@ public class ContentServiceImpl implements ContentService {
 				contentDaoService.update(latestVersion);
 			}
 		}
+
+		//Call Solr indexing forcibly
+		callSolrIndexing();
 	}
 
 	// deletedWithParent flag controls whether it's deleted with the parent all
@@ -1525,6 +1567,9 @@ public class ContentServiceImpl implements ContentService {
 		} else {
 			log.error("Only document or folder is supported for restoration");
 		}
+
+		//Call Solr indexing forcibly
+		callSolrIndexing();
 	}
 
 	private Document restoreDocument(Archive archive) {
@@ -1757,6 +1802,25 @@ public class ContentServiceImpl implements ContentService {
 
 	private GregorianCalendar getTimeStamp() {
 		return DataUtil.millisToCalendar(System.currentTimeMillis());
+	}
+
+	@Override
+	public void callSolrIndexing(){
+		String _force = propertyManager.readValue(PropertyKey.SOLR_INDEXING_FORCE);
+		boolean force = (Boolean.TRUE.toString().equals(_force)) ? true : false;
+
+		if(!force) return;
+
+		String url = propertyManager.readValue(PropertyKey.SOLR_URL);
+		 Client client = Client.create();
+		 //TODO Regardless a slash on the last, build the correct URL
+		 WebResource webResource = client.resource(url + "admin/cores?core=nemaki&action=index&tracking=AUTO");
+		 String xml = webResource.accept("application/xml").get(String.class);
+		 //TODO log according to the response status
+	}
+
+	public void setPropertyManager(NemakiPropertyManager propertyManager) {
+		this.propertyManager = propertyManager;
 	}
 
 	public void setContentDaoService(ContentDaoService contentDaoService) {

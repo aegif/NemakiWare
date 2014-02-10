@@ -156,7 +156,14 @@ public class SolrQueryProcessor implements QueryProcessor {
 			for (SolrDocument doc : docs) {
 				String docId = (String) doc.getFieldValue("id");
 				Content c = contentService.getContent(docId);
-				contents.add(c);
+
+				//When for some reason the content is missed, pass through
+				if(c == null){
+					logger.warn("[objectId=" + docId + "]It is missed in DB but still rests in Solr.");
+				}else{
+					contents.add(c);
+				}
+
 			}
 
 			// Filter out by permissions

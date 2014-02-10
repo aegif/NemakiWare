@@ -1,177 +1,170 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <beans xmlns="http://www.springframework.org/schema/beans"
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:aop="http://www.springframework.org/schema/aop"
-    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
-
-
-    <!-- Node Service Beans -->
-    <bean id="ContentService" class="org.springframework.aop.framework.ProxyFactoryBean">
-        <property name="proxyInterfaces">
-            <list>
-                <value>jp.aegif.nemaki.service.node.ContentService
-                </value>
-            </list>
-        </property>
-        <property name="target">
-            <ref bean="contentService" />
-        </property>
-        <property name="interceptorNames">
-            <list>
-                <value>debugInterceptor</value>
-            </list>
-        </property>
-    </bean>
-    <bean id="contentService" class="jp.aegif.nemaki.service.node.impl.ContentServiceImpl">
-        <property name="contentDaoService">
-            <ref bean="ContentDaoService" />
-        </property>
-        <property name="typeManager">
-            <ref bean="TypeManager" />
-        </property>
-    </bean>
-
-    <bean id="PrincipalService" class="org.springframework.aop.framework.ProxyFactoryBean">
-        <property name="proxyInterfaces">
-            <list>
-                <value>jp.aegif.nemaki.service.node.PrincipalService
-                </value>
-            </list>
-        </property>
-        <property name="target">
-            <ref bean="principalService" />
-        </property>
-        <property name="interceptorNames">
-            <list>
-                <value>debugInterceptor</value>
-            </list>
-        </property>
-    </bean>
-    <bean id="principalService"
-        class="jp.aegif.nemaki.service.node.impl.PrincipalServiceImpl">
-        <property name="principalDaoService">
-            <ref bean="PrincipalDaoService" />
-        </property>
-       	<property name="propertyManager">
-        	<ref bean="nemakiPropertyManager" />
-        </property>  
-    </bean>
-
-    <bean id="TypeService" class="org.springframework.aop.framework.ProxyFactoryBean">
-        <property name="proxyInterfaces">
-            <list>
-                <value>jp.aegif.nemaki.service.node.TypeService
-                </value>
-            </list>
-        </property>
-        <property name="target">
-            <ref bean="typeService" />
-        </property>
-        <property name="interceptorNames">
-            <list>
-                <value>debugInterceptor</value>
-            </list>
-        </property>
-    </bean>
-    <bean id="typeService" class="jp.aegif.nemaki.service.node.impl.TypeServiceImpl">
-        <constructor-arg>
-            <ref bean="contentDaoService" />
-        </constructor-arg>
-    </bean>
-
-
-    <!-- DAO Service Beans -->
-    <bean id="ContentDaoService" class="org.springframework.aop.framework.ProxyFactoryBean">
-        <property name="proxyInterfaces">
-            <list>
-                <value>jp.aegif.nemaki.service.dao.ContentDaoService
-                </value>
-            </list>
-        </property>
-        <property name="target">
-            <ref bean="contentDaoService" />
-        </property>
-        <property name="interceptorNames">
-            <list>
-                <value>debugInterceptor</value>
-            </list>
-        </property>
-    </bean>
-    <bean id="contentDaoService"
-        class="jp.aegif.nemaki.service.dao.impl.ContentDaoServiceImpl">
-        <property name="nonCachedContentDaoService">
-            <ref bean="nonCachedContentDaoService" />
-        </property>
-        <property name="requestDurationCache">
-            <ref bean="requestDurationCache" />
-        </property>
-    </bean>
-
-    <bean id="PrincipalDaoService" class="org.springframework.aop.framework.ProxyFactoryBean">
-        <property name="proxyInterfaces">
-            <list>
-                <value>jp.aegif.nemaki.service.dao.PrincipalDaoService
-                </value>
-            </list>
-        </property>
-        <property name="target">
-            <ref bean="principalDaoService" />
-        </property>
-        <property name="interceptorNames">
-            <list>
-                <value>debugInterceptor</value>
-            </list>
-        </property>
-    </bean>
-    <bean id="principalDaoService"
-        class="jp.aegif.nemaki.service.dao.impl.PrincipalDaoServiceImpl">
-        <property name="nonCachedPrincipalDaoService">
-            <ref bean="nonCachedPrincipalDaoService" />
-        </property>
-    </bean>
-
-
-    <!-- CouchDB Beans -->
-    <bean id="connector" class="jp.aegif.nemaki.service.db.CouchConnector"
-        init-method="init">
-        <property name="repositoryId">
-            <value>${repositories}</value>
-        </property>
-        <property name="host">
-            <value>${db.host}</value>
-        </property>
-        <property name="maxConnections">
-            <value>${db.maxConnections}</value>
-        </property>
-    </bean>
-
-    <bean id="archiveConnector" class="jp.aegif.nemaki.service.db.CouchConnector"
-        init-method="init">
-        <property name="repositoryId">
-            <value>${repository.archive}</value>
-        </property>
-        <property name="host">
-            <value>${db.host}</value>
-        </property>
-        <property name="maxConnections">
-            <value>${db.maxConnections}</value>
-        </property>
-    </bean>
-
-    <bean id="nonCachedContentDaoService"
-        class="jp.aegif.nemaki.service.dao.impl.CouchContentDaoServiceImpl">
-        <property name="connector">
-            <ref bean="connector" />
-        </property>
-        <property name="archiveConnector">
-            <ref bean="archiveConnector" />
-        </property>
-    </bean>
-
-    <bean id="nonCachedPrincipalDaoService"
-        class="jp.aegif.nemaki.service.dao.impl.CouchPrincipalDaoServiceImpl">
-        <property name="connector">
-            <ref bean="connector" />
-        </property>
-    </bean>
-    
+	xmlns:aop="http://www.springframework.org/schema/aop"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
+	
+	
+	<!-- Node Service Beans -->
+	<bean id="ContentService" class="org.springframework.aop.framework.ProxyFactoryBean">
+		<property name="proxyInterfaces">
+			<list>
+				<value>jp.aegif.nemaki.service.node.ContentService</value>
+			</list>
+		</property>
+		<property name="target">
+			<ref bean="contentService" />
+		</property>
+		<property name="interceptorNames">
+			<list>
+				<value>debugInterceptor</value>
+			</list>
+		</property>
+	</bean>
+	<bean id="contentService" class="jp.aegif.nemaki.service.node.impl.ContentServiceImpl">
+		<property name="contentDaoService">
+			<ref bean="ContentDaoService" />
+		</property>
+		<property name="typeManager">
+			<ref bean="TypeManager" />
+		</property>
+		<property name="propertyManager">
+			<ref bean="nemakiPropertyManager" />
+		</property>
+	</bean>
+	
+	<bean id="PrincipalService" class="org.springframework.aop.framework.ProxyFactoryBean">
+		<property name="proxyInterfaces">
+			<list>
+				<value>jp.aegif.nemaki.service.node.PrincipalService</value>
+			</list>
+		</property>
+		<property name="target">
+			<ref bean="principalService" />
+		</property>
+		<property name="interceptorNames">
+			<list>
+				<value>debugInterceptor</value>
+			</list>
+		</property>
+	</bean>
+	<bean id="principalService" class="jp.aegif.nemaki.service.node.impl.PrincipalServiceImpl">
+		<property name="principalDaoService">
+			<ref bean="PrincipalDaoService" />
+		</property>
+		<property name="propertyManager">
+			<ref bean="nemakiPropertyManager" />
+		</property>
+	</bean>
+	
+	<bean id="TypeService" class="org.springframework.aop.framework.ProxyFactoryBean">
+		<property name="proxyInterfaces">
+			<list>
+				<value>jp.aegif.nemaki.service.node.TypeService</value>
+			</list>
+		</property>
+		<property name="target">
+			<ref bean="typeService" />
+		</property>
+		<property name="interceptorNames">
+			<list>
+				<value>debugInterceptor</value>
+			</list>
+		</property>
+	</bean>
+	<bean id="typeService" class="jp.aegif.nemaki.service.node.impl.TypeServiceImpl">
+		<constructor-arg>
+			<ref bean="contentDaoService" />
+		</constructor-arg>
+	</bean>
+	
+	
+	<!-- DAO Service Beans -->
+	<bean id="ContentDaoService" class="org.springframework.aop.framework.ProxyFactoryBean">
+		<property name="proxyInterfaces">
+			<list>
+				<value>jp.aegif.nemaki.service.dao.ContentDaoService</value>
+			</list>
+		</property>
+		<property name="target">
+			<ref bean="contentDaoService" />
+		</property>
+		<property name="interceptorNames">
+			<list>
+				<value>debugInterceptor</value>
+			</list>
+		</property>
+	</bean>
+	<bean id="contentDaoService" class="jp.aegif.nemaki.service.dao.impl.ContentDaoServiceImpl">
+		<property name="nonCachedContentDaoService">
+			<ref bean="nonCachedContentDaoService" />
+		</property>
+		<property name="requestDurationCache">
+			<ref bean="requestDurationCache" />
+		</property>
+	</bean>
+	
+	<bean id="PrincipalDaoService" class="org.springframework.aop.framework.ProxyFactoryBean">
+		<property name="proxyInterfaces">
+			<list>
+				<value>jp.aegif.nemaki.service.dao.PrincipalDaoService</value>
+			</list>
+		</property>
+		<property name="target">
+			<ref bean="principalDaoService" />
+		</property>
+		<property name="interceptorNames">
+			<list>
+				<value>debugInterceptor</value>
+			</list>
+		</property>
+	</bean>
+	<bean id="principalDaoService" class="jp.aegif.nemaki.service.dao.impl.PrincipalDaoServiceImpl">
+		<property name="nonCachedPrincipalDaoService">
+			<ref bean="nonCachedPrincipalDaoService" />
+		</property>
+	</bean>
+	
+	
+	<!-- CouchDB Beans -->
+	<bean id="connector" class="jp.aegif.nemaki.service.db.CouchConnector" init-method="init">
+		<property name="repositoryId">
+			<value>${repositories}</value>
+		</property>
+		<property name="host">
+			<value>${db.host}</value>
+		</property>
+		<property name="maxConnections">
+			<value>${db.maxConnections}</value>
+		</property>
+	</bean>
+	
+	<bean id="archiveConnector" class="jp.aegif.nemaki.service.db.CouchConnector" init-method="init">
+		<property name="repositoryId">
+			<value>${repository.archive}</value>
+		</property>
+		<property name="host">
+			<value>${db.host}</value>
+		</property>
+		<property name="maxConnections">
+			<value>${db.maxConnections}</value>
+		</property>
+	</bean>
+	
+	<bean id="nonCachedContentDaoService" class="jp.aegif.nemaki.service.dao.impl.CouchContentDaoServiceImpl">
+		<property name="connector">
+			<ref bean="connector" />
+		</property>
+		<property name="archiveConnector">
+			<ref bean="archiveConnector" />
+		</property>
+	</bean>
+	
+	<bean id="nonCachedPrincipalDaoService" class="jp.aegif.nemaki.service.dao.impl.CouchPrincipalDaoServiceImpl">
+		<property name="connector">
+			<ref bean="connector" />
+		</property>
+	</bean>
+	
 </beans>
