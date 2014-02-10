@@ -341,7 +341,7 @@ public class NavigationServiceImpl implements NavigationService {
 		return compileObjectService.compileObjectDataList(callContext,
 				checkedOuts, filter, includeAllowableActions,
 				includeRelationships, renditionFilter, false, maxItems,
-				skipCount);
+				skipCount, null);
 	}
 
 	private class ContentComparator implements Comparator<Content> {
