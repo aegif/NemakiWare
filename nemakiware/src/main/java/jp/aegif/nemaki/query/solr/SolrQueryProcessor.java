@@ -177,7 +177,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 			return compileObjectService.compileObjectDataList(callContext,
 					permitted, filter, includeAllowableActions,
-					includeRelationships, null, true, maxItems, skipCount);
+					includeRelationships, null, true, maxItems, skipCount, aliases);
 		} else {
 			ObjectListImpl nullList = new ObjectListImpl();
 			nullList.setHasMoreItems(false);

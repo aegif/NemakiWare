@@ -45,7 +45,7 @@ public interface CompileObjectService {
 	
 	public <T> ObjectList compileObjectDataList(CallContext callContext,
 			List<T> contents, String filter, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl, BigInteger maxItems, BigInteger skipCount);
+			IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl, BigInteger maxItems, BigInteger skipCount, Map<String, String> aliases);
 	
 	public ObjectList compileChangeDataList(CallContext context, List<Change> changes,
 			Holder<String> changeLogToken, Boolean includeProperties, String filter,

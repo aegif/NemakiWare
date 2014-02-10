@@ -85,6 +85,8 @@ import org.apache.chemistry.opencmis.commons.impl.server.ObjectInfoImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections.MapUtils;
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -171,7 +173,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	public <T> ObjectList compileObjectDataList(CallContext callContext,
 			List<T> contents, String filter, Boolean includeAllowableActions,
 			IncludeRelationships includeRelationships, String renditionFilter,
-			Boolean includeAcl, BigInteger maxItems, BigInteger skipCount) {
+			Boolean includeAcl, BigInteger maxItems, BigInteger skipCount, Map<String, String> aliases) {
 		ObjectListImpl list = new ObjectListImpl();
 		list.setObjects(new ArrayList<ObjectData>());
 
@@ -200,7 +202,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			if (content instanceof Content) {
 				ObjectData o = compileObjectData(callContext,
 						(Content) content, filter, includeAllowableActions,
-						IncludeRelationships.NONE, null, includeAcl, null);
+						IncludeRelationships.NONE, null, includeAcl, aliases);
 				list.getObjects().add(o);
 			} else {
 				continue;
@@ -994,7 +996,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			AbstractPropertyData<T> p, PropertyDefinition pdf) {
 		p.setDisplayName(pdf.getDisplayName());
 		p.setLocalName(id);
-		if (aliases != null && aliases.get(id) != null) {
+		if (MapUtils.isNotEmpty(aliases) && StringUtils.isNotBlank(aliases.get(id))) {
 			p.setQueryName(aliases.get(id));
 		} else {
 			p.setQueryName(pdf.getQueryName());
