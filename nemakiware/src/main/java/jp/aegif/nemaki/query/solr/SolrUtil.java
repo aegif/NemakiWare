@@ -39,8 +39,6 @@ import org.apache.solr.client.solrj.impl.HttpSolrServer;
  *
  */
 public class SolrUtil {
-
-	public static final String FILEPATH_PROPERTIESFILE = "nemakiware.properties";
 	public static final String FIELD_SOLRURL = "solr.url";
 
 	private final HashMap<String, String>map;

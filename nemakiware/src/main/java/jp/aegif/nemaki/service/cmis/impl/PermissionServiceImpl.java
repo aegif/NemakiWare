@@ -30,6 +30,7 @@ import java.util.Set;
 import jp.aegif.nemaki.model.Ace;
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.constant.PropertyKey;
 import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.cmis.PermissionService;
@@ -68,16 +69,25 @@ public class PermissionServiceImpl implements PermissionService {
 	/**
 	 *
 	 */
+	//TODO Merge arguments(acl, content)
 	@Override
 	public Boolean checkPermission(CallContext callContext, String key, Acl acl,
 			String baseType, Content content) {
 		// Admin always pass a permission check
 		String admin = new String();
 		admin = propertyManager.readValue(PropertyKey.PRINCIPAL_ADMIN);
-
 		if (callContext.getUsername().equals(admin))
 			return isAllowableBaseType(key, baseType, content);
 
+		// Relation has no ACL stored in DB.
+		// Though some actions are defined in the specs,
+		// Some other direct actions is needed to be set here.
+		if(content.isRelationship()){
+			Relationship relationship = (Relationship)content;
+			return checkRelationshipPermission(callContext, key, relationship);
+		}
+
+		// Void Acl fails(but Admin can do an action)
 		if (acl == null)
 			return false;
 
@@ -107,7 +117,6 @@ public class PermissionServiceImpl implements PermissionService {
 		return isAllowableBaseType(key, baseType, content) && checkCalculatedPermissions(key, userPermissions);
 	}
 
-
 	/**
 	 *
 	 * @param key
@@ -124,6 +133,52 @@ public class PermissionServiceImpl implements PermissionService {
 				return true;
 			}
 		}
+		return false;
+	}
+
+	/**
+	 * TODO In the future, enable different configuration for Read/Update/Delete.
+	 * @param callContext
+	 * @param key
+	 * @param relationship
+	 * @return
+	 */
+	private Boolean checkRelationshipPermission(CallContext callContext, String key, Relationship relationship){
+		Content source = contentService.getRelationship(relationship.getSourceId());
+		Content target = contentService.getRelationship(relationship.getTargetId());
+
+		if(source == null || target == null){
+			log.warn("[objectId=" + relationship.getId() + "]Source or target of this relationship is missing");
+			return false;
+		}
+
+		//Read action when a relationship is specified directly
+		if(PermissionMapping.CAN_GET_PROPERTIES_OBJECT.equals(key)){
+			boolean readSource =
+					checkPermission(callContext, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(source), source.getType(), source);
+			boolean readTarget =
+					checkPermission(callContext, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(target), target.getType(), target);
+			return readSource | readTarget;
+		}
+
+		//Update action
+		if(PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT.equals(key)){
+			boolean updateSource =
+					checkPermission(callContext, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(source), source.getType(), source);
+			boolean updateTarget =
+					checkPermission(callContext, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(target), target.getType(), target);
+			return updateSource | updateTarget;
+		}
+
+		//Delete action
+		if(PermissionMapping.CAN_DELETE_OBJECT.equals(key)){
+			boolean deleteSource =
+					checkPermission(callContext, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(source), source.getType(), source);
+			boolean deleteTarget =
+					checkPermission(callContext, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(target), target.getType(), target);
+			return deleteSource | deleteTarget;
+		}
+
 		return false;
 	}
 
