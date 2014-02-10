@@ -123,21 +123,22 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		result.setProperties(compileProperties(content, splitFilter(filter),
 				objectInfo));
 
-		// Allowable actions
+		// Set Allowable actions
 		if (iaa) {
 			result.setAllowableActions(compileAllowableActions(context, content));
 		}
 
-		// Acl
+		// Set Acl
 		if (iacl) {
 			Acl acl = contentService.calculateAcl(content);
+			result.setIsExactAcl(true);
 			result.setAcl(DataUtil.convertToCmisAcl(acl,
 					content.isAclInherited(), false));
-			result.setIsExactAcl(true);
 		}
 
-		// Relationships
-		if (IncludeRelationships.NONE != irl) {
+		// Set Relationships
+		if (IncludeRelationships.NONE != irl
+				) {
 			RelationshipDirection rd;
 			switch (irl) {
 			case SOURCE:
@@ -165,6 +166,9 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 			result.setRelationships(rels);
 		}
+
+
+		aliases = null;
 
 		return result;
 	}
