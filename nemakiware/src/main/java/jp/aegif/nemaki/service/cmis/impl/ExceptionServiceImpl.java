@@ -643,20 +643,24 @@ public class ExceptionServiceImpl implements ExceptionService,
 	public void constraintAllowedSourceTypes(
 			RelationshipTypeDefinition relationshipTypeDefinition,
 			Content source) {
-		if (!relationshipTypeDefinition.getAllowedSourceTypeIds().contains(
-				(source.getObjectType())))
-			constraint(source.getId(),
-					"The source object's type is not allowed for the relationship");
+		List<String> allowed = relationshipTypeDefinition.getAllowedSourceTypeIds();
+		if(CollectionUtils.isNotEmpty(allowed)){
+			if (!allowed.contains((source.getObjectType())))
+				constraint(source.getId(),
+						"The source object's type is not allowed for the relationship");
+		}
 	}
 
 	@Override
 	public void constraintAllowedTargetTypes(
 			RelationshipTypeDefinition relationshipTypeDefinition,
 			Content target) {
-		if (!relationshipTypeDefinition.getAllowedTargetTypeIds().contains(
-				target.getObjectType()))
-			constraint(target.getId(),
-					"The target object's type is not allowed for the relationship");
+		List<String> allowed = relationshipTypeDefinition.getAllowedTargetTypeIds();
+		if(CollectionUtils.isNotEmpty(allowed)){
+			if (!allowed.contains(target.getObjectType()))
+				constraint(target.getId(),
+						"The target object's type is not allowed for the relationship");
+		}
 	}
 
 	@Override

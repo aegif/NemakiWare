@@ -64,12 +64,14 @@ public class VersioningServiceImpl implements VersioningService {
 		exceptionService.invalidArgumentRequiredString("objectId", id);
 		Document document = contentService.getDocument(id);
 		exceptionService.objectNotFound(DomainType.OBJECT, document, id);
-		exceptionService.permissionDenied(callContext, PermissionMapping.CAN_CHECKOUT_DOCUMENT, document);
+		exceptionService.permissionDenied(callContext,
+				PermissionMapping.CAN_CHECKOUT_DOCUMENT, document);
 
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		//CMIS doesn't define the error type when checkOut is performed repeatedly
+		// CMIS doesn't define the error type when checkOut is performed
+		// repeatedly
 		exceptionService.constraintAlreadyCheckedOut(document);
 		exceptionService.constraintVersionable(document.getObjectType());
 		exceptionService.versioning(document);
@@ -92,7 +94,8 @@ public class VersioningServiceImpl implements VersioningService {
 		exceptionService.invalidArgumentRequiredString("objectId", objectId);
 		Document document = contentService.getDocument(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, document, objectId);
-		exceptionService.permissionDenied(callContext, PermissionMapping.CAN_CHECKIN_DOCUMENT, document);
+		exceptionService.permissionDenied(callContext,
+				PermissionMapping.CAN_CHECKIN_DOCUMENT, document);
 
 		// //////////////////
 		// Specific Exception
@@ -117,19 +120,23 @@ public class VersioningServiceImpl implements VersioningService {
 		exceptionService.invalidArgumentRequiredString("objectId", id);
 		Document document = contentService.getDocument(id);
 		exceptionService.objectNotFound(DomainType.OBJECT, document, id);
-		exceptionService.permissionDenied(callContext, PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT, document);
+		exceptionService.permissionDenied(callContext,
+				PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT, document);
 
 		// //////////////////
 		// Specific Exception
 		// //////////////////
 		exceptionService.constraintVersionable(document.getObjectType());
-		//TODO implement
-		//exceptionService.streamNotSupported(documentTypeDefinition, contentStream);
+		// TODO implement
+		// exceptionService.streamNotSupported(documentTypeDefinition,
+		// contentStream);
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		Document checkedIn = contentService.checkIn(callContext, objectId, major, properties, contentStream, checkinComment, policies, addAces, removeAces, extension);
+		Document checkedIn = contentService.checkIn(callContext, objectId,
+				major, properties, contentStream, checkinComment, policies,
+				addAces, removeAces, extension);
 		objectId.setValue(checkedIn.getId());
 	}
 
@@ -143,28 +150,35 @@ public class VersioningServiceImpl implements VersioningService {
 		// //////////////////
 		// General Exception
 		// //////////////////
-		//Chemistry Atompub calls this method only with objectId
-		if(versionSeriesId == null){
-			exceptionService.invalidArgumentRequiredString("objectId", objectId);
+		// Chemistry Atompub calls this method only with objectId
+		if (versionSeriesId == null) {
+			exceptionService
+					.invalidArgumentRequiredString("objectId", objectId);
 			Document d = contentService.getDocument(objectId);
 			versionSeriesId = d.getVersionSeriesId();
 		}
 
-		//Default to false
-		Boolean _major = (major == null)? false : major;
+		// Default to false
+		Boolean _major = (major == null) ? false : major;
 		Document document = null;
-		if(_major){
-			document = contentService.getDocumentOfLatestMajorVersion(versionSeriesId);
-		}else{
-			document = contentService.getDocumentOfLatestVersion(versionSeriesId);
+		if (_major) {
+			document = contentService
+					.getDocumentOfLatestMajorVersion(versionSeriesId);
+		} else {
+			document = contentService
+					.getDocumentOfLatestVersion(versionSeriesId);
 		}
-		exceptionService.objectNotFound(DomainType.OBJECT, document, versionSeriesId);
-		exceptionService.permissionDenied(context, PermissionMapping.CAN_GET_PROPERTIES_OBJECT, document);
+		exceptionService.objectNotFound(DomainType.OBJECT, document,
+				versionSeriesId);
+		exceptionService.permissionDenied(context,
+				PermissionMapping.CAN_GET_PROPERTIES_OBJECT, document);
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		ObjectData objectData = compileObjectService.compileObjectData(context, document, filter, includeAllowableActions, includeAcl, null);
+		ObjectData objectData = compileObjectService.compileObjectData(context,
+				document, filter, includeAllowableActions,
+				includeRelationships, renditionFilter, includeAcl, null);
 		return objectData;
 	}
 
@@ -175,25 +189,32 @@ public class VersioningServiceImpl implements VersioningService {
 		// //////////////////
 		// General Exception
 		// //////////////////
-		//CMIS spec needs versionSeries as required, but Chemistry also takes objectId
-		if(versionSeriesId == null){
-			exceptionService.invalidArgumentRequiredString("objectId", objectId);
+		// CMIS spec needs versionSeries as required, but Chemistry also takes
+		// objectId
+		if (versionSeriesId == null) {
+			exceptionService
+					.invalidArgumentRequiredString("objectId", objectId);
 			Document d = contentService.getDocument(objectId);
 			versionSeriesId = d.getVersionSeriesId();
 		}
-		List<Document> allVersions = contentService.getAllVersions(versionSeriesId);
-		exceptionService.objectNotFoundVersionSeries(versionSeriesId, allVersions);
-		//Sort by the descending order
+		List<Document> allVersions = contentService
+				.getAllVersions(versionSeriesId);
+		exceptionService.objectNotFoundVersionSeries(versionSeriesId,
+				allVersions);
+		// Sort by the descending order
 		Collections.sort(allVersions, new VersionComparator());
-		exceptionService.permissionDenied(context, PermissionMapping.CAN_GET_ALL_VERSIONS_VERSION_SERIES, allVersions.get(0));
-
+		exceptionService.permissionDenied(context,
+				PermissionMapping.CAN_GET_ALL_VERSIONS_VERSION_SERIES,
+				allVersions.get(0));
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
 		List<ObjectData> result = new ArrayList<ObjectData>();
-		for(Content content : allVersions){
-			ObjectData objectData = compileObjectService.compileObjectData(context, content, filter, includeAllowableActions, true, null);
+		for (Content content : allVersions) {
+			ObjectData objectData = compileObjectService.compileObjectData(
+					context, content, filter, includeAllowableActions,
+					IncludeRelationships.NONE, null, true, null);
 			result.add(objectData);
 		}
 
@@ -202,20 +223,21 @@ public class VersioningServiceImpl implements VersioningService {
 
 	/**
 	 * Descending order by cmis:creationDate
+	 *
 	 * @author linzhixing
 	 */
-	private class VersionComparator implements Comparator<Content>{
+	private class VersionComparator implements Comparator<Content> {
 		@Override
 		public int compare(Content content0, Content content1) {
-			//TODO when created time is not set
+			// TODO when created time is not set
 			GregorianCalendar created0 = content0.getCreated();
 			GregorianCalendar created1 = content1.getCreated();
 
-			if(created0.before(created1)){
+			if (created0.before(created1)) {
 				return 1;
-			}else if(created0.after(created1)){
+			} else if (created0.after(created1)) {
 				return -1;
-			}else{
+			} else {
 				return 0;
 			}
 		}
@@ -225,7 +247,8 @@ public class VersioningServiceImpl implements VersioningService {
 		this.contentService = contentService;
 	}
 
-	public void setCompileObjectService(CompileObjectService compileObjectService) {
+	public void setCompileObjectService(
+			CompileObjectService compileObjectService) {
 		this.compileObjectService = compileObjectService;
 	}
 

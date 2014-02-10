@@ -86,7 +86,6 @@ public class NemakiCmisService extends AbstractCmisService {
 		this.repositoryMap = repositoryMap;
 	}
 
-
 	// --- Navigation Service Implementation ---
 
 	private ObjectInfo setObjectInfo(String repositoryId, ObjectData object) {
@@ -104,13 +103,14 @@ public class NemakiCmisService extends AbstractCmisService {
 		return info;
 	}
 
-	private void setObjectInfoInTree(String repositoryId, List<ObjectInFolderContainer> list){
-		//Set ObjecInfo
-		if(CollectionUtils.isNotEmpty(list)){
-			for(ObjectInFolderContainer o: list){
+	private void setObjectInfoInTree(String repositoryId,
+			List<ObjectInFolderContainer> list) {
+		// Set ObjecInfo
+		if (CollectionUtils.isNotEmpty(list)) {
+			for (ObjectInFolderContainer o : list) {
 				setObjectInfo(repositoryId, o.getObject().getObject());
-				//TODO traverse descendant
-				if(CollectionUtils.isNotEmpty(o.getChildren())){
+				// TODO traverse descendant
+				if (CollectionUtils.isNotEmpty(o.getChildren())) {
 					setObjectInfoInTree(repositoryId, o.getChildren());
 				}
 			}
@@ -120,184 +120,208 @@ public class NemakiCmisService extends AbstractCmisService {
 	/**
 	 * This method is customized based on OpenCMIS code
 	 */
-	 @Override
-	 protected ObjectInfo getObjectInfoIntern(String repositoryId, ObjectData object) {
-	        // if the object has no properties, stop here
-	        if (object.getProperties() == null || object.getProperties().getProperties() == null) {
-	            throw new CmisRuntimeException("No properties!");
-	        }
+	@Override
+	protected ObjectInfo getObjectInfoIntern(String repositoryId,
+			ObjectData object) {
+		// if the object has no properties, stop here
+		if (object.getProperties() == null
+				|| object.getProperties().getProperties() == null) {
+			throw new CmisRuntimeException("No properties!");
+		}
 
-	        ObjectInfoImpl info = new ObjectInfoImpl();
+		ObjectInfoImpl info = new ObjectInfoImpl();
 
-	        // get the repository info
-	        RepositoryInfo repositoryInfo = getRepositoryInfo(repositoryId, null);
+		// get the repository info
+		RepositoryInfo repositoryInfo = getRepositoryInfo(repositoryId, null);
 
-	        // general properties
-	        info.setObject(object);
-	        info.setId(object.getId());
-	        info.setName(getStringProperty(object, PropertyIds.NAME));
-	        info.setCreatedBy(getStringProperty(object, PropertyIds.CREATED_BY));
-	        info.setCreationDate(getDateTimeProperty(object, PropertyIds.CREATED_BY));
-	        info.setLastModificationDate(getDateTimeProperty(object, PropertyIds.LAST_MODIFICATION_DATE));
-	        info.setTypeId(getIdProperty(object, PropertyIds.OBJECT_TYPE_ID));
-	        info.setBaseType(object.getBaseTypeId());
+		// general properties
+		info.setObject(object);
+		info.setId(object.getId());
+		info.setName(getStringProperty(object, PropertyIds.NAME));
+		info.setCreatedBy(getStringProperty(object, PropertyIds.CREATED_BY));
+		info.setCreationDate(getDateTimeProperty(object, PropertyIds.CREATED_BY));
+		info.setLastModificationDate(getDateTimeProperty(object,
+				PropertyIds.LAST_MODIFICATION_DATE));
+		info.setTypeId(getIdProperty(object, PropertyIds.OBJECT_TYPE_ID));
+		info.setBaseType(object.getBaseTypeId());
 
-	        // versioning
-	        info.setIsCurrentVersion(object.getBaseTypeId() == BaseTypeId.CMIS_DOCUMENT);
-	        info.setWorkingCopyId(null);
-	        info.setWorkingCopyOriginalId(null);
+		// versioning
+		info.setIsCurrentVersion(object.getBaseTypeId() == BaseTypeId.CMIS_DOCUMENT);
+		info.setWorkingCopyId(null);
+		info.setWorkingCopyOriginalId(null);
 
-	        info.setVersionSeriesId(getIdProperty(object, PropertyIds.VERSION_SERIES_ID));
-	        if (info.getVersionSeriesId() != null) {
-	            Boolean isLatest = getBooleanProperty(object, PropertyIds.IS_LATEST_VERSION);
-	            info.setIsCurrentVersion(isLatest == null ? true : isLatest.booleanValue());
+		info.setVersionSeriesId(getIdProperty(object,
+				PropertyIds.VERSION_SERIES_ID));
+		if (info.getVersionSeriesId() != null) {
+			Boolean isLatest = getBooleanProperty(object,
+					PropertyIds.IS_LATEST_VERSION);
+			info.setIsCurrentVersion(isLatest == null ? true : isLatest
+					.booleanValue());
 
-	            Boolean isCheckedOut = getBooleanProperty(object, PropertyIds.IS_VERSION_SERIES_CHECKED_OUT);
-	            if (isCheckedOut != null && isCheckedOut.booleanValue()) {
-	                info.setWorkingCopyId(getIdProperty(object, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID));
+			Boolean isCheckedOut = getBooleanProperty(object,
+					PropertyIds.IS_VERSION_SERIES_CHECKED_OUT);
+			if (isCheckedOut != null && isCheckedOut.booleanValue()) {
+				info.setWorkingCopyId(getIdProperty(object,
+						PropertyIds.VERSION_SERIES_CHECKED_OUT_ID));
 
-	                // get latest version
-	                //// Nemaki Cusomization START ////
-	               /*List<ObjectData> versions = getAllVersions(repositoryId, object.getId(), info.getVersionSeriesId(),
-	                        null, Boolean.FALSE, null);
-	                if (versions != null && versions.size() > 0) {
-	                    info.setWorkingCopyOriginalId(versions.get(0).getId());
-	                }*/
+				// get latest version
+				// // Nemaki Cusomization START ////
+				/*
+				 * List<ObjectData> versions = getAllVersions(repositoryId,
+				 * object.getId(), info.getVersionSeriesId(), null,
+				 * Boolean.FALSE, null); if (versions != null && versions.size()
+				 * > 0) {
+				 * info.setWorkingCopyOriginalId(versions.get(0).getId()); }
+				 */
 
-	                //NOTE:Spec2.2.7.6 only says the first element of getAllVersions MUST be PWC.
-	                //When isCheckedOut = true, PWC MUST exsits, and
-	                //cmis:versionSeriesCheckedOutId is PWC id(2.1.13.5.1).
-	                info.setWorkingCopyOriginalId(getIdProperty(object, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID));
-	                //// Nemaki Cusomization END ////
-	            }
-	        }
+				// NOTE:Spec2.2.7.6 only says the first element of
+				// getAllVersions MUST be PWC.
+				// When isCheckedOut = true, PWC MUST exsits, and
+				// cmis:versionSeriesCheckedOutId is PWC id(2.1.13.5.1).
+				info.setWorkingCopyOriginalId(getIdProperty(object,
+						PropertyIds.VERSION_SERIES_CHECKED_OUT_ID));
+				// // Nemaki Cusomization END ////
+			}
+		}
 
-	        // content
-	        String fileName = getStringProperty(object, PropertyIds.CONTENT_STREAM_FILE_NAME);
-	        String mimeType = getStringProperty(object, PropertyIds.CONTENT_STREAM_MIME_TYPE);
-	        String streamId = getIdProperty(object, PropertyIds.CONTENT_STREAM_ID);
-	        BigInteger length = getIntegerProperty(object, PropertyIds.CONTENT_STREAM_LENGTH);
-	        boolean hasContent = fileName != null || mimeType != null || streamId != null || length != null;
-	        if (hasContent) {
-	            info.setHasContent(hasContent);
-	            info.setContentType(mimeType);
-	            info.setFileName(fileName);
-	        } else {
-	            info.setHasContent(false);
-	            info.setContentType(null);
-	            info.setFileName(null);
-	        }
+		// content
+		String fileName = getStringProperty(object,
+				PropertyIds.CONTENT_STREAM_FILE_NAME);
+		String mimeType = getStringProperty(object,
+				PropertyIds.CONTENT_STREAM_MIME_TYPE);
+		String streamId = getIdProperty(object, PropertyIds.CONTENT_STREAM_ID);
+		BigInteger length = getIntegerProperty(object,
+				PropertyIds.CONTENT_STREAM_LENGTH);
+		boolean hasContent = fileName != null || mimeType != null
+				|| streamId != null || length != null;
+		if (hasContent) {
+			info.setHasContent(hasContent);
+			info.setContentType(mimeType);
+			info.setFileName(fileName);
+		} else {
+			info.setHasContent(false);
+			info.setContentType(null);
+			info.setFileName(null);
+		}
 
-	        // parents
-	        if (object.getBaseTypeId() == BaseTypeId.CMIS_RELATIONSHIP) {
-	            info.setHasParent(false);
-	        } else if (object.getBaseTypeId() == BaseTypeId.CMIS_FOLDER) {
-	            info.setHasParent(!object.getId().equals(repositoryInfo.getRootFolderId()));
-	        //// Nemaki Cusomization START ////
-	        /*
-	        } else {
-	            try {
-	                List<ObjectParentData> parents = getObjectParents(repositoryId, object.getId(), null, Boolean.FALSE,
-	                        IncludeRelationships.NONE, "cmis:none", Boolean.FALSE, null);
-	                info.setHasParent(parents.size() > 0);
-	            } catch (CmisInvalidArgumentException e) {
-	                info.setHasParent(false);
-	            }
-	        }*/
-	        } else{
-	        	String objecTypeId = getIdProperty(object, PropertyIds.OBJECT_TYPE_ID);
-	        	TypeDefinition typeDefinition = getTypeDefinition(repositoryId, objecTypeId, null);
+		// parents
+		if (object.getBaseTypeId() == BaseTypeId.CMIS_RELATIONSHIP) {
+			info.setHasParent(false);
+		} else if (object.getBaseTypeId() == BaseTypeId.CMIS_FOLDER) {
+			info.setHasParent(!object.getId().equals(
+					repositoryInfo.getRootFolderId()));
+			// // Nemaki Cusomization START ////
+			/*
+			 * } else { try { List<ObjectParentData> parents =
+			 * getObjectParents(repositoryId, object.getId(), null,
+			 * Boolean.FALSE, IncludeRelationships.NONE, "cmis:none",
+			 * Boolean.FALSE, null); info.setHasParent(parents.size() > 0); }
+			 * catch (CmisInvalidArgumentException e) {
+			 * info.setHasParent(false); } }
+			 */
+		} else {
+			String objecTypeId = getIdProperty(object,
+					PropertyIds.OBJECT_TYPE_ID);
+			TypeDefinition typeDefinition = getTypeDefinition(repositoryId,
+					objecTypeId, null);
 
-	        	if(typeDefinition.isFileable()){
-	        		boolean unfiling = (repositoryInfo.getCapabilities().isUnfilingSupported() == null) ? false : repositoryInfo.getCapabilities().isUnfilingSupported();
-	        		if(unfiling){
-	        			List<ObjectParentData> parents = getObjectParents(repositoryId, object.getId(), null, Boolean.FALSE,
-		                        IncludeRelationships.NONE, "cmis:none", Boolean.FALSE, null);
-		                info.setHasParent(parents != null && parents.size() >= 0);
-	        		}else{
-	        			info.setHasParent(true);
-	        		}
-	        	}else{
-	        		 info.setHasParent(false);
-	        	}
-	        }
-	        //// Nemaki Cusomization END ////
+			if (typeDefinition.isFileable()) {
+				boolean unfiling = (repositoryInfo.getCapabilities()
+						.isUnfilingSupported() == null) ? false
+						: repositoryInfo.getCapabilities()
+								.isUnfilingSupported();
+				if (unfiling) {
+					List<ObjectParentData> parents = getObjectParents(
+							repositoryId, object.getId(), null, Boolean.FALSE,
+							IncludeRelationships.NONE, "cmis:none",
+							Boolean.FALSE, null);
+					info.setHasParent(parents != null && parents.size() >= 0);
+				} else {
+					info.setHasParent(true);
+				}
+			} else {
+				info.setHasParent(false);
+			}
+		}
+		// // Nemaki Cusomization END ////
 
-	        // policies and relationships
-	        info.setSupportsRelationships(false);
-	        info.setSupportsPolicies(false);
+		// policies and relationships
+		info.setSupportsRelationships(false);
+		info.setSupportsPolicies(false);
 
-	        TypeDefinitionList baseTypesList = getTypeChildren(repositoryId, null, Boolean.FALSE, BigInteger.valueOf(4),
-	                BigInteger.ZERO, null);
-	        for (TypeDefinition type : baseTypesList.getList()) {
-	            if (BaseTypeId.CMIS_RELATIONSHIP.value().equals(type.getId())) {
-	                info.setSupportsRelationships(true);
-	            } else if (BaseTypeId.CMIS_POLICY.value().equals(type.getId())) {
-	                info.setSupportsPolicies(true);
-	            }
-	        }
+		TypeDefinitionList baseTypesList = getTypeChildren(repositoryId, null,
+				Boolean.FALSE, BigInteger.valueOf(4), BigInteger.ZERO, null);
+		for (TypeDefinition type : baseTypesList.getList()) {
+			if (BaseTypeId.CMIS_RELATIONSHIP.value().equals(type.getId())) {
+				info.setSupportsRelationships(true);
+			} else if (BaseTypeId.CMIS_POLICY.value().equals(type.getId())) {
+				info.setSupportsPolicies(true);
+			}
+		}
 
-	        // renditions
-	        info.setRenditionInfos(null);
-	        List<RenditionData> renditions = object.getRenditions();
-	        if (renditions != null && renditions.size() > 0) {
-	            List<RenditionInfo> renditionInfos = new ArrayList<RenditionInfo>();
-	            for (RenditionData rendition : renditions) {
-	                RenditionInfoImpl renditionInfo = new RenditionInfoImpl();
-	                renditionInfo.setId(rendition.getStreamId());
-	                renditionInfo.setKind(rendition.getKind());
-	                renditionInfo.setContentType(rendition.getMimeType());
-	                renditionInfo.setTitle(rendition.getTitle());
-	                renditionInfo.setLength(rendition.getBigLength());
-	                renditionInfos.add(renditionInfo);
-	            }
-	            info.setRenditionInfos(renditionInfos);
-	        }
+		// renditions
+		info.setRenditionInfos(null);
+		List<RenditionData> renditions = object.getRenditions();
+		if (renditions != null && renditions.size() > 0) {
+			List<RenditionInfo> renditionInfos = new ArrayList<RenditionInfo>();
+			for (RenditionData rendition : renditions) {
+				RenditionInfoImpl renditionInfo = new RenditionInfoImpl();
+				renditionInfo.setId(rendition.getStreamId());
+				renditionInfo.setKind(rendition.getKind());
+				renditionInfo.setContentType(rendition.getMimeType());
+				renditionInfo.setTitle(rendition.getTitle());
+				renditionInfo.setLength(rendition.getBigLength());
+				renditionInfos.add(renditionInfo);
+			}
+			info.setRenditionInfos(renditionInfos);
+		}
 
-	        // relationships
-	        info.setRelationshipSourceIds(null);
-	        info.setRelationshipTargetIds(null);
-	        List<ObjectData> relationships = object.getRelationships();
-	        if (relationships != null && relationships.size() > 0) {
-	            List<String> sourceIds = new ArrayList<String>();
-	            List<String> targetIds = new ArrayList<String>();
-	            for (ObjectData relationship : relationships) {
-	                String sourceId = getIdProperty(relationship, PropertyIds.SOURCE_ID);
-	                String targetId = getIdProperty(relationship, PropertyIds.TARGET_ID);
-	                if (object.getId().equals(sourceId)) {
-	                    sourceIds.add(relationship.getId());
-	                }
-	                if (object.getId().equals(targetId)) {
-	                    targetIds.add(relationship.getId());
-	                }
-	            }
-	            if (sourceIds.size() > 0) {
-	                info.setRelationshipSourceIds(sourceIds);
-	            }
-	            if (targetIds.size() > 0) {
-	                info.setRelationshipTargetIds(targetIds);
-	            }
-	        }
+		// relationships
+		info.setRelationshipSourceIds(null);
+		info.setRelationshipTargetIds(null);
+		List<ObjectData> relationships = object.getRelationships();
+		if (relationships != null && relationships.size() > 0) {
+			List<String> sourceIds = new ArrayList<String>();
+			List<String> targetIds = new ArrayList<String>();
+			for (ObjectData relationship : relationships) {
+				String sourceId = getIdProperty(relationship,
+						PropertyIds.SOURCE_ID);
+				String targetId = getIdProperty(relationship,
+						PropertyIds.TARGET_ID);
+				if (object.getId().equals(sourceId)) {
+					sourceIds.add(relationship.getId());
+				}
+				if (object.getId().equals(targetId)) {
+					targetIds.add(relationship.getId());
+				}
+			}
+			if (sourceIds.size() > 0) {
+				info.setRelationshipSourceIds(sourceIds);
+			}
+			if (targetIds.size() > 0) {
+				info.setRelationshipTargetIds(targetIds);
+			}
+		}
 
-	        // global settings
-	        info.setHasAcl(false);
-	        info.setSupportsDescendants(false);
-	        info.setSupportsFolderTree(false);
+		// global settings
+		info.setHasAcl(false);
+		info.setSupportsDescendants(false);
+		info.setSupportsFolderTree(false);
 
-	        RepositoryCapabilities capabilities = repositoryInfo.getCapabilities();
-	        if (capabilities != null) {
-	            info.setHasAcl(capabilities.getAclCapability() == CapabilityAcl.DISCOVER
-	                    || capabilities.getAclCapability() == CapabilityAcl.MANAGE);
-	            if (object.getBaseTypeId() == BaseTypeId.CMIS_FOLDER) {
-	                info.setSupportsDescendants(Boolean.TRUE.equals(capabilities.isGetDescendantsSupported()));
-	                info.setSupportsFolderTree(Boolean.TRUE.equals(capabilities.isGetFolderTreeSupported()));
-	            }
-	        }
+		RepositoryCapabilities capabilities = repositoryInfo.getCapabilities();
+		if (capabilities != null) {
+			info.setHasAcl(capabilities.getAclCapability() == CapabilityAcl.DISCOVER
+					|| capabilities.getAclCapability() == CapabilityAcl.MANAGE);
+			if (object.getBaseTypeId() == BaseTypeId.CMIS_FOLDER) {
+				info.setSupportsDescendants(Boolean.TRUE.equals(capabilities
+						.isGetDescendantsSupported()));
+				info.setSupportsFolderTree(Boolean.TRUE.equals(capabilities
+						.isGetFolderTreeSupported()));
+			}
+		}
 
-	        return info;
-	    }
-
-
+		return info;
+	}
 
 	// --- Navigation Service Implementation ---
 
@@ -310,11 +334,12 @@ public class NemakiCmisService extends AbstractCmisService {
 			IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includePathSegment, BigInteger maxItems,
 			BigInteger skipCount, ExtensionsData extension) {
-		ObjectInFolderList children =  getRepository(repositoryId).getChildren(getCallContext(),
-				folderId, filter, includeAllowableActions, includePathSegment,
-				maxItems, skipCount, this);
-		if(children != null){
-			for(ObjectInFolderData o : children.getObjects()){
+		ObjectInFolderList children = getRepository(repositoryId).getChildren(
+				getCallContext(), folderId, filter, null,
+				includeAllowableActions, null, null, includePathSegment,
+				maxItems, skipCount, extension);
+		if (children != null) {
+			for (ObjectInFolderData o : children.getObjects()) {
 				setObjectInfo(repositoryId, o.getObject());
 			}
 		}
@@ -332,10 +357,10 @@ public class NemakiCmisService extends AbstractCmisService {
 			IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includePathSegment, ExtensionsData extension) {
 
-
-		List<ObjectInFolderContainer> result = getRepository(repositoryId).getDescendants(getCallContext(),
-				folderId, depth, filter, includeAllowableActions,
-				includePathSegment, this, false);
+		List<ObjectInFolderContainer> result = getRepository(repositoryId)
+				.getDescendants(getCallContext(), folderId, depth, filter,
+						includeAllowableActions, includeRelationships,
+						renditionFilter, includePathSegment, false, extension);
 		setObjectInfoInTree(repositoryId, result);
 		return result;
 	}
@@ -360,9 +385,10 @@ public class NemakiCmisService extends AbstractCmisService {
 			Boolean includeAllowableActions,
 			IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includePathSegment, ExtensionsData extension) {
-		List<ObjectInFolderContainer> result = getRepository(repositoryId).getDescendants(getCallContext(),
-				folderId, depth, filter, includeAllowableActions,
-				includePathSegment, this, true);
+		List<ObjectInFolderContainer> result = getRepository(repositoryId)
+				.getDescendants(getCallContext(), folderId, depth, filter,
+						includeAllowableActions, includeRelationships,
+						renditionFilter, includePathSegment, true, extension);
 		setObjectInfoInTree(repositoryId, result);
 		return result;
 	}
@@ -375,10 +401,10 @@ public class NemakiCmisService extends AbstractCmisService {
 			String objectId, String filter, Boolean includeAllowableActions,
 			IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includeRelativePathSegment, ExtensionsData extension) {
-		List<ObjectParentData> parents =
-				getRepository(repositoryId).getObjectParents(getCallContext(),
-				objectId, filter, includeAllowableActions,
-				includeRelativePathSegment, this);
+		List<ObjectParentData> parents = getRepository(repositoryId)
+				.getObjectParents(getCallContext(), objectId, filter,
+						includeAllowableActions, includeRelationships,
+						renditionFilter, includeRelativePathSegment, extension);
 		return parents;
 	}
 
@@ -556,7 +582,8 @@ public class NemakiCmisService extends AbstractCmisService {
 			ExtensionsData extension) {
 		ObjectData objectData = getRepository(repositoryId).getObject(
 				getCallContext(), objectId, filter, includeAllowableActions,
-				includeAcl, this);
+				includeRelationships, renditionFilter, includePolicyIds,
+				includeAcl, extension);
 		setObjectInfo(repositoryId, objectData);
 		return objectData;
 	}
@@ -572,7 +599,8 @@ public class NemakiCmisService extends AbstractCmisService {
 			ExtensionsData extension) {
 		ObjectData objectData = getRepository(repositoryId).getObjectByPath(
 				getCallContext(), path, filter, includeAllowableActions,
-				includeAcl, this);
+				includeRelationships, renditionFilter, includePolicyIds,
+				includeAcl, extension);
 		setObjectInfo(repositoryId, objectData);
 		return objectData;
 	}
@@ -584,7 +612,8 @@ public class NemakiCmisService extends AbstractCmisService {
 	public Properties getProperties(String repositoryId, String objectId,
 			String filter, ExtensionsData extension) {
 		ObjectData object = getRepository(repositoryId).getObject(
-				getCallContext(), objectId, filter, false, false, this);
+				getCallContext(), objectId, filter, false,
+				IncludeRelationships.NONE, null, false, false, extension);
 		return object.getProperties();
 	}
 
@@ -672,11 +701,11 @@ public class NemakiCmisService extends AbstractCmisService {
 			String objectId, String versionSeriesId, String filter,
 			Boolean includeAllowableActions, ExtensionsData extension) {
 
-		List<ObjectData> result = getRepository(repositoryId).getAllVersions(getCallContext(),
-				objectId, versionSeriesId, filter, includeAllowableActions,
-				extension);
-		if(CollectionUtils.isNotEmpty(result)){
-			for(ObjectData o : result){
+		List<ObjectData> result = getRepository(repositoryId).getAllVersions(
+				getCallContext(), objectId, versionSeriesId, filter,
+				includeAllowableActions, extension);
+		if (CollectionUtils.isNotEmpty(result)) {
+			for (ObjectData o : result) {
 				setObjectInfo(repositoryId, o);
 			}
 		}

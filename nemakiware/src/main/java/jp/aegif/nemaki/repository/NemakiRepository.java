@@ -99,10 +99,12 @@ public class NemakiRepository {
 
 	}
 
-	public void appendContentStream(CallContext callContext, Holder<String> objectId, Holder<String> changeToken,
+	public void appendContentStream(CallContext callContext,
+			Holder<String> objectId, Holder<String> changeToken,
 			ContentStream contentStream, boolean isLastChunk,
-			ExtensionsData extension){
-		objectService.appendContentStream(callContext, objectId, changeToken, contentStream, isLastChunk, extension);
+			ExtensionsData extension) {
+		objectService.appendContentStream(callContext, objectId, changeToken,
+				contentStream, isLastChunk, extension);
 
 	}
 
@@ -161,19 +163,25 @@ public class NemakiRepository {
 	}
 
 	public ObjectData getObjectByPath(CallContext callContext, String path,
-			String filter, Boolean includeAllowableActions, Boolean includeAcl,
-			ObjectInfoHandler objectInfos) {
+			String filter, Boolean includeAllowableActions,
+			IncludeRelationships includeRelationships, String renditionFilter,
+			Boolean includePolicyIds, Boolean includeAcl,
+			ExtensionsData extension) {
 
 		return objectService.getObjectByPath(callContext, path, filter,
-				includeAllowableActions, includeAcl, objectInfos);
+				includeAllowableActions, includeRelationships, renditionFilter,
+				includePolicyIds, includeAcl, extension);
 	}
 
 	public ObjectData getObject(CallContext callContext, String objectId,
-			String filter, Boolean includeAllowableActions, Boolean includeAcl,
-			ObjectInfoHandler objectInfos) {
+			String filter, Boolean includeAllowableActions,
+			IncludeRelationships includeRelationships, String renditionFilter,
+			Boolean includePolicyIds, Boolean includeAcl,
+			ExtensionsData extension) {
 
 		ObjectData object = objectService.getObject(callContext, objectId,
-				filter, includeAllowableActions, includeAcl, objectInfos);
+				filter, includeAllowableActions, includeRelationships,
+				renditionFilter, includePolicyIds, includeAcl, extension);
 		return object;
 	}
 
@@ -241,30 +249,35 @@ public class NemakiRepository {
 	public String createItem(CallContext callContext, Properties properties,
 			String folderId, List<String> policies, Acl addAces,
 			Acl removeAces, ExtensionsData extension) {
-		return objectService.createItem(callContext, properties, folderId, policies, addAces, removeAces, extension);
+		return objectService.createItem(callContext, properties, folderId,
+				policies, addAces, removeAces, extension);
 	}
 
 	// --- Navigation Service
 
 	public ObjectInFolderList getChildren(CallContext callContext,
-			String folderId, String filter, Boolean includeAllowableActions,
+			String folderId, String filter, String orderBy,
+			Boolean includeAllowableActions,
+			IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includePathSegments, BigInteger maxItems,
-			BigInteger skipCount, ObjectInfoHandler objectInfos) {
+			BigInteger skipCount, ExtensionsData extension) {
 
 		return navigationService.getChildren(callContext, folderId, filter,
-				includeAllowableActions, includePathSegments, maxItems,
-				skipCount);
+				null, includeAllowableActions, includeRelationships,
+				renditionFilter, includePathSegments, maxItems, skipCount,
+				extension);
 	}
 
 	public List<ObjectInFolderContainer> getDescendants(
 			CallContext callContext, String folderId, BigInteger depth,
 			String filter, Boolean includeAllowableActions,
-			Boolean includePathSegment, ObjectInfoHandler objectInfos,
-			boolean foldersOnly) {
+			IncludeRelationships includeRelationships, String renditionFilter,
+			Boolean includePathSegment, boolean foldersOnly,
+			ExtensionsData extension) {
 
 		return navigationService.getDescendants(callContext, folderId, depth,
-				filter, includeAllowableActions, includePathSegment,
-				foldersOnly);
+				filter, includeAllowableActions, includeRelationships,
+				renditionFilter, includePathSegment, foldersOnly, extension);
 	}
 
 	public ObjectData getFolderParent(CallContext callContext, String folderId,
@@ -275,10 +288,12 @@ public class NemakiRepository {
 
 	public List<ObjectParentData> getObjectParents(CallContext callContext,
 			String objectId, String filter, Boolean includeAllowableActions,
-			Boolean includeRelativePathSegment, ObjectInfoHandler objectInfos) {
+			IncludeRelationships includeRelationships, String renditionFilter,
+			Boolean includeRelativePathSegment, ExtensionsData extension) {
 
 		return navigationService.getObjectParents(callContext, objectId,
-				filter, includeAllowableActions, includeRelativePathSegment);
+				filter, includeAllowableActions, includeRelationships,
+				renditionFilter, includeRelativePathSegment, extension);
 	}
 
 	public ObjectList getCheckedOutDocs(CallContext callContext,
@@ -321,8 +336,8 @@ public class NemakiRepository {
 		return repositoryService.getTypeDefinition(callContext, typeId);
 	}
 
-	public TypeDefinition createType(CallContext callContext, TypeDefinition type,
-			ExtensionsData extension) {
+	public TypeDefinition createType(CallContext callContext,
+			TypeDefinition type, ExtensionsData extension) {
 		return repositoryService.createType(callContext, type, extension);
 	}
 
@@ -331,8 +346,8 @@ public class NemakiRepository {
 		repositoryService.deleteType(callContext, typeId, extension);
 	}
 
-	public TypeDefinition updateType(CallContext callContext, TypeDefinition type,
-			ExtensionsData extension) {
+	public TypeDefinition updateType(CallContext callContext,
+			TypeDefinition type, ExtensionsData extension) {
 		return repositoryService.updateType(callContext, type, extension);
 	}
 
