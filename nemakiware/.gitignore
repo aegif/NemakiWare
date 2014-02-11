@@ -12,3 +12,5 @@ tags
 jetty.log
 .project
 .settings/
+src/main/resources/*
+!.gitkeep
