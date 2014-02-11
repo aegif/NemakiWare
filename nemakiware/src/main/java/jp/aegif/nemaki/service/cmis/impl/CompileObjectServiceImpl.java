@@ -158,15 +158,16 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 					content.getId(), rd);
 
 			List<ObjectData> rels = new ArrayList<ObjectData>();
-			for (Relationship _rel : _rels) {
-				ObjectData rel = compileObjectData(context, _rel, null, false,
-						IncludeRelationships.NONE, null, false, aliases);
-				rels.add(rel);
+			if(CollectionUtils.isNotEmpty(_rels)){
+				for (Relationship _rel : _rels) {
+					ObjectData rel = compileObjectData(context, _rel, null, false,
+							IncludeRelationships.NONE, null, false, aliases);
+					rels.add(rel);
+				}
+
+				result.setRelationships(rels);
 			}
-
-			result.setRelationships(rels);
 		}
-
 
 		aliases = null;
 
