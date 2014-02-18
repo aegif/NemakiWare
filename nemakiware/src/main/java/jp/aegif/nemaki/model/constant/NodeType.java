@@ -31,6 +31,7 @@ public enum NodeType {
 	CMIS_POLICY("cmis:policy"),
 	CMIS_ITEM("cmis:item"),
 	ATTACHMENT("attachment"),
+	RENDITION("rendition"),
 	VERSION_SERIES("versionSeries"),
 	CHANGE("change"),
 	USER("user"),

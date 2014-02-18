@@ -44,9 +44,9 @@ import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
+import org.apache.commons.lang.StringUtils;
 
 public class VersioningServiceImpl implements VersioningService {
-
 	private ContentService contentService;
 	private CompileObjectService compileObjectService;
 	private ExceptionService exceptionService;
@@ -191,12 +191,13 @@ public class VersioningServiceImpl implements VersioningService {
 		// //////////////////
 		// CMIS spec needs versionSeries as required, but Chemistry also takes
 		// objectId
-		if (versionSeriesId == null) {
+		if (StringUtils.isBlank(versionSeriesId)) {
 			exceptionService
 					.invalidArgumentRequiredString("objectId", objectId);
 			Document d = contentService.getDocument(objectId);
 			versionSeriesId = d.getVersionSeriesId();
 		}
+		
 		List<Document> allVersions = contentService
 				.getAllVersions(versionSeriesId);
 		exceptionService.objectNotFoundVersionSeries(versionSeriesId,
