@@ -42,6 +42,7 @@ import jp.aegif.nemaki.model.Item;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.Relationship;
+import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.repository.info.NemakiRepositoryInfoImpl;
 import jp.aegif.nemaki.repository.type.TypeManager;
@@ -58,6 +59,7 @@ import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
+import org.apache.chemistry.opencmis.commons.data.RenditionData;
 import org.apache.chemistry.opencmis.commons.data.RepositoryCapabilities;
 import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
@@ -81,6 +83,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeIm
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.RenditionDataImpl;
 import org.apache.chemistry.opencmis.commons.impl.server.ObjectInfoImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
@@ -137,48 +140,49 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		}
 
 		// Set Relationships
-		if (IncludeRelationships.NONE != irl
-				) {
-			RelationshipDirection rd;
-			switch (irl) {
-			case SOURCE:
-				rd = RelationshipDirection.SOURCE;
-				break;
-			case TARGET:
-				rd = RelationshipDirection.TARGET;
-				break;
-			case BOTH:
-				rd = RelationshipDirection.EITHER;
-				break;
-			default:
-				rd = RelationshipDirection.SOURCE;
-				break;
-			}
-			List<Relationship> _rels = contentService.getRelationsipsOfObject(
-					content.getId(), rd);
-
-			List<ObjectData> rels = new ArrayList<ObjectData>();
-			if(CollectionUtils.isNotEmpty(_rels)){
-				for (Relationship _rel : _rels) {
-					ObjectData rel = compileObjectData(context, _rel, null, false,
-							IncludeRelationships.NONE, null, false, aliases);
-					rels.add(rel);
-				}
-
-				result.setRelationships(rels);
-			}
+		if(!content.isRelationship()){
+			result.setRelationships(compileRelationships(context, content, irl));
 		}
-
+		
+		//Set Renditions
+		if(content.isDocument()){
+			result.setRenditions(compileRenditions(context, content));
+		}
+		
 		aliases = null;
 
 		return result;
 	}
 
+	private List<RenditionData> compileRenditions(CallContext callContext, Content content){
+		List<RenditionData> renditions = new ArrayList<RenditionData>();
+		
+		List<Rendition> _renditions = contentService.getRenditions(content.getId());
+		if(CollectionUtils.isNotEmpty(_renditions)){
+			for(Rendition _rd : _renditions){
+				RenditionDataImpl rd = new RenditionDataImpl();
+				rd.setStreamId(_rd.getId());
+				rd.setMimeType(rd.getMimeType());
+				rd.setBigLength(BigInteger.valueOf(_rd.getLength()));
+				rd.setKind(_rd.getKind());
+				rd.setTitle(_rd.getTitle());
+				rd.setBigHeight(BigInteger.valueOf(_rd.getHeight()));
+				rd.setBigWidth(BigInteger.valueOf(_rd.getWidth()));
+				rd.setRenditionDocumentId(_rd.getRenditionDocumentId());
+				
+				renditions.add(rd);
+			}
+		}
+		
+		return renditions;
+	}
+	
 	@Override
 	public <T> ObjectList compileObjectDataList(CallContext callContext,
 			List<T> contents, String filter, Boolean includeAllowableActions,
 			IncludeRelationships includeRelationships, String renditionFilter,
-			Boolean includeAcl, BigInteger maxItems, BigInteger skipCount, Map<String, String> aliases) {
+			Boolean includeAcl, BigInteger maxItems, BigInteger skipCount,
+			Map<String, String> aliases) {
 		ObjectListImpl list = new ObjectListImpl();
 		list.setObjects(new ArrayList<ObjectData>());
 
@@ -335,15 +339,17 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 	/**
 	 * Sets allowable action for the content
-	 *
+	 * 
 	 * @param content
 	 */
 	@Override
 	public AllowableActions compileAllowableActions(CallContext callContext,
 			Content content) {
 		// Get parameters to calculate AllowableActions
+		TypeDefinition tdf = typeManager.getTypeDefinition(content
+				.getObjectType());
 		jp.aegif.nemaki.model.Acl contentAcl = content.getAcl();
-		if (contentAcl == null)
+		if (tdf.isControllableAcl() && contentAcl == null)
 			return null;
 		Acl acl = contentService.calculateAcl(content);
 		Map<String, PermissionMapping> permissionMap = repositoryInfo
@@ -355,7 +361,6 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		for (Entry<String, PermissionMapping> mappingEntry : permissionMap
 				.entrySet()) {
 			String key = mappingEntry.getValue().getKey();
-
 			// TODO WORKAROUND. implement class cast check
 
 			// FIXME WORKAROUND: skip canCreatePolicy.Folder
@@ -363,14 +368,11 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 				continue;
 			}
 
-			boolean allowable = permissionService.checkPermission(callContext,
-					mappingEntry.getKey(), acl, baseType, content);
-
 			// Additional check
 			if (!isAllowableByCapability(key)) {
 				continue;
 			}
-			if (!isAllowableByType(key, content)) {
+			if (!isAllowableByType(key, content, tdf)) {
 				continue;
 			}
 			if (content.isRoot()) {
@@ -380,11 +382,17 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			}
 			if (content.isDocument()) {
 				Document d = (Document) content;
-				allowable = isAllowableActionForDocument(allowable, d,
-						mappingEntry.getKey());
+				DocumentTypeDefinition dtdf = (DocumentTypeDefinition) tdf;
+				if (!isAllowableActionForVersionableDocument(
+						mappingEntry.getKey(), d, dtdf)) {
+					continue;
+				}
 			}
 
 			// Add an allowable action
+			boolean allowable = permissionService.checkPermission(callContext,
+					mappingEntry.getKey(), acl, baseType, content);
+
 			if (allowable) {
 				actionSet.add(convertKeyToAction(key));
 			}
@@ -394,21 +402,24 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		return allowableActions;
 	}
 
-	private boolean isAllowableActionForDocument(boolean allowable,
-			Document document, String permissionMappingKey) {
+	private boolean isAllowableActionForVersionableDocument(
+			String permissionMappingKey, Document document,
+			DocumentTypeDefinition dtdf) {
+
 		VersionSeries vs = contentService.getVersionSeries(document
 				.getVersionSeriesId());
 		if (permissionMappingKey
 				.equals(PermissionMapping.CAN_CHECKOUT_DOCUMENT)) {
-			allowable = allowable && !vs.isVersionSeriesCheckedOut();
+			return dtdf.isVersionable() && !vs.isVersionSeriesCheckedOut();
 		} else if (permissionMappingKey
 				.equals(PermissionMapping.CAN_CHECKIN_DOCUMENT)) {
-			allowable = allowable && document.isPrivateWorkingCopy();
+			return dtdf.isVersionable() && document.isPrivateWorkingCopy();
 		} else if (permissionMappingKey
 				.equals(PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT)) {
-			allowable = allowable && document.isPrivateWorkingCopy();
+			return dtdf.isVersionable() && document.isPrivateWorkingCopy();
 		}
-		return allowable;
+
+		return true;
 	}
 
 	private boolean isAllowableByCapability(String key) {
@@ -433,10 +444,8 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		}
 	}
 
-	private boolean isAllowableByType(String key, Content content) {
-		TypeDefinition tdf = typeManager.getTypeDefinition(content
-				.getObjectType());
-
+	private boolean isAllowableByType(String key, Content content,
+			TypeDefinition tdf) {
 		// ControllableACL
 		if (PermissionMapping.CAN_APPLY_ACL_OBJECT.equals(key)) {
 			// Default to FALSE
@@ -481,6 +490,43 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		}
 	}
 
+	
+	private List<ObjectData> compileRelationships(CallContext context,
+			Content content, IncludeRelationships irl) {
+		if (IncludeRelationships.NONE == irl) {
+			return null;
+		}
+
+		RelationshipDirection rd;
+		switch (irl) {
+		case SOURCE:
+			rd = RelationshipDirection.SOURCE;
+			break;
+		case TARGET:
+			rd = RelationshipDirection.TARGET;
+			break;
+		case BOTH:
+			rd = RelationshipDirection.EITHER;
+			break;
+		default:
+			rd = RelationshipDirection.SOURCE;
+			break;
+		}
+		List<Relationship> _rels = contentService.getRelationsipsOfObject(
+				content.getId(), rd);
+
+		List<ObjectData> rels = new ArrayList<ObjectData>();
+		if (CollectionUtils.isNotEmpty(_rels)) {
+			for (Relationship _rel : _rels) {
+				ObjectData rel = compileObjectData(context, _rel, null, false,
+						IncludeRelationships.NONE, null, false, aliases);
+				rels.add(rel);
+			}
+		}
+
+		return rels;
+	}
+	
 	/**
 	 * Compiles properties of a piece of content.
 	 */
@@ -692,40 +738,70 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 				: document.isImmutable();
 		addProperty(properties, typeId, filter, PropertyIds.IS_IMMUTABLE,
 				isImmutable);
-		addProperty(properties, typeId, filter,
-				PropertyIds.IS_PRIVATE_WORKING_COPY,
-				document.isPrivateWorkingCopy());
-		addProperty(properties, typeId, filter, PropertyIds.IS_LATEST_VERSION,
-				document.isLatestVersion());
-		addProperty(properties, typeId, filter, PropertyIds.IS_MAJOR_VERSION,
-				document.isMajorVersion());
-		addProperty(properties, typeId, filter,
-				PropertyIds.IS_LATEST_MAJOR_VERSION,
-				document.isLatestMajorVersion());
-		addProperty(properties, typeId, filter, PropertyIds.VERSION_LABEL,
-				document.getVersionLabel());
-		addProperty(properties, typeId, filter, PropertyIds.VERSION_SERIES_ID,
-				document.getVersionSeriesId());
-		addProperty(properties, typeId, filter, PropertyIds.CHECKIN_COMMENT,
-				document.getCheckinComment());
 
-		VersionSeries vs = contentService.getVersionSeries(document
-				.getVersionSeriesId());
-		addProperty(properties, typeId, filter,
-				PropertyIds.IS_VERSION_SERIES_CHECKED_OUT,
-				vs.isVersionSeriesCheckedOut());
-		if (vs.isVersionSeriesCheckedOut()) {
+		DocumentTypeDefinition type = (DocumentTypeDefinition) typeManager
+				.getTypeDefinition(typeId);
+		if (type.isVersionable()) {
 			addProperty(properties, typeId, filter,
-					PropertyIds.VERSION_SERIES_CHECKED_OUT_ID,
-					vs.getVersionSeriesCheckedOutId());
+					PropertyIds.IS_PRIVATE_WORKING_COPY,
+					document.isPrivateWorkingCopy());
 			addProperty(properties, typeId, filter,
-					PropertyIds.VERSION_SERIES_CHECKED_OUT_BY,
-					vs.getVersionSeriesCheckedOutBy());
+					PropertyIds.IS_LATEST_VERSION, document.isLatestVersion());
+			addProperty(properties, typeId, filter,
+					PropertyIds.IS_MAJOR_VERSION, document.isMajorVersion());
+			addProperty(properties, typeId, filter,
+					PropertyIds.IS_LATEST_MAJOR_VERSION,
+					document.isLatestMajorVersion());
+			addProperty(properties, typeId, filter, PropertyIds.VERSION_LABEL,
+					document.getVersionLabel());
+			addProperty(properties, typeId, filter,
+					PropertyIds.VERSION_SERIES_ID,
+					document.getVersionSeriesId());
+			addProperty(properties, typeId, filter,
+					PropertyIds.CHECKIN_COMMENT, document.getCheckinComment());
+
+			VersionSeries vs = contentService.getVersionSeries(document
+					.getVersionSeriesId());
+			addProperty(properties, typeId, filter,
+					PropertyIds.IS_VERSION_SERIES_CHECKED_OUT,
+					vs.isVersionSeriesCheckedOut());
+			if (vs.isVersionSeriesCheckedOut()) {
+				addProperty(properties, typeId, filter,
+						PropertyIds.VERSION_SERIES_CHECKED_OUT_ID,
+						vs.getVersionSeriesCheckedOutId());
+				addProperty(properties, typeId, filter,
+						PropertyIds.VERSION_SERIES_CHECKED_OUT_BY,
+						vs.getVersionSeriesCheckedOutBy());
+			} else {
+				addProperty(properties, typeId, filter,
+						PropertyIds.VERSION_SERIES_CHECKED_OUT_ID, null);
+				addProperty(properties, typeId, filter,
+						PropertyIds.VERSION_SERIES_CHECKED_OUT_BY, null);
+			}
+
+			// TODO comment
 		} else {
 			addProperty(properties, typeId, filter,
-					PropertyIds.VERSION_SERIES_CHECKED_OUT_ID, null);
+					PropertyIds.IS_PRIVATE_WORKING_COPY, false);
 			addProperty(properties, typeId, filter,
-					PropertyIds.VERSION_SERIES_CHECKED_OUT_BY, null);
+					PropertyIds.IS_LATEST_VERSION, false);
+			addProperty(properties, typeId, filter,
+					PropertyIds.IS_MAJOR_VERSION, false);
+			addProperty(properties, typeId, filter,
+					PropertyIds.IS_LATEST_MAJOR_VERSION, false);
+			addProperty(properties, typeId, filter, PropertyIds.VERSION_LABEL,
+					"");
+			addProperty(properties, typeId, filter,
+					PropertyIds.VERSION_SERIES_ID, "");
+			addProperty(properties, typeId, filter,
+					PropertyIds.CHECKIN_COMMENT, "");
+			addProperty(properties, typeId, filter,
+					PropertyIds.IS_VERSION_SERIES_CHECKED_OUT, false);
+
+			addProperty(properties, typeId, filter,
+					PropertyIds.VERSION_SERIES_CHECKED_OUT_ID, "");
+			addProperty(properties, typeId, filter,
+					PropertyIds.VERSION_SERIES_CHECKED_OUT_BY, "");
 		}
 	}
 
@@ -859,7 +935,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 	/**
 	 * Adds specified property in property set.
-	 *
+	 * 
 	 * @param props
 	 *            property set
 	 * @param typeId
@@ -1001,7 +1077,8 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			AbstractPropertyData<T> p, PropertyDefinition pdf) {
 		p.setDisplayName(pdf.getDisplayName());
 		p.setLocalName(id);
-		if (MapUtils.isNotEmpty(aliases) && StringUtils.isNotBlank(aliases.get(id))) {
+		if (MapUtils.isNotEmpty(aliases)
+				&& StringUtils.isNotBlank(aliases.get(id))) {
 			p.setQueryName(aliases.get(id));
 		} else {
 			p.setQueryName(pdf.getQueryName());
