@@ -1,5 +1,7 @@
 package jp.aegif.nemaki.util;
 
+import java.util.List;
+
 import jp.aegif.nemaki.spring.SpringPropertiesUtil;
 
 import org.apache.commons.logging.Log;
@@ -22,13 +24,17 @@ public class NemakiPropertyManager{
 	 * @throws Exception
 	 */
 	public String readValue(String key){
-		return nemakiProperties.getProperty(key);
+		return nemakiProperties.getValue(key);
 	}
 
 	public String readHeadValue(String key) throws Exception{
-		return nemakiProperties.getProperty(key);
+		return nemakiProperties.getHeadValue(key);
 	}
 
+	public List<String> readValues(String key) {
+		return nemakiProperties.getValues(key);
+	}
+	
 	public void setNemakiProperties(SpringPropertiesUtil nemakiProperties) {
 		this.nemakiProperties = nemakiProperties;
 	}

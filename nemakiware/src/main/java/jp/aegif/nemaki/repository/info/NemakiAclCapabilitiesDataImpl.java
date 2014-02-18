@@ -25,10 +25,14 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
 
 import jp.aegif.nemaki.model.NemakiPermissionDefinition;
-import jp.aegif.nemaki.util.DataUtil;
+import jp.aegif.nemaki.model.constant.PropertyKey;
+import jp.aegif.nemaki.util.NemakiPropertyManager;
+import jp.aegif.nemaki.util.PermissionDataUtil;
+import jp.aegif.nemaki.util.YamlManager;
 
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
@@ -46,19 +50,28 @@ public class NemakiAclCapabilitiesDataImpl extends AclCapabilitiesDataImpl {
 	private static final long serialVersionUID = 8654484629504222836L;
 	private static final Log log = LogFactory.getLog(NemakiAclCapabilitiesDataImpl.class);
 
+	private PermissionDataUtil permissionDataUtil;
+	
 	public NemakiAclCapabilitiesDataImpl() {
+		
+	}
+	
+	public NemakiAclCapabilitiesDataImpl(PermissionDataUtil permissionDataUtil) {
+		setPermissionDataUtil(permissionDataUtil);
+		
 		setSupportedPermissions(SupportedPermissions.BOTH);
 		setAclPropagation(AclPropagation.PROPAGATE);
 		setPermissionDefinitionData(buildPermissionDefinitions());
 		setPermissionMappingData(buildPermissionMaps());
 	}
 
+	
 	// //////////////////////////////////////////////////////////////////////////
 	// Permission Definitions
 	// //////////////////////////////////////////////////////////////////////////
 	public List<PermissionDefinition> buildPermissionDefinitions() {
 		List<PermissionDefinition> permissions = new ArrayList<PermissionDefinition>();
-		for (NemakiPermissionDefinition np : DataUtil.readPermissionDefinitions()) {
+		for (NemakiPermissionDefinition np : permissionDataUtil.readPermissionDefinitions()) {
 			permissions.add(createPermission(np.getId(), np.getDescription()));
 		}
 		return permissions;
@@ -75,6 +88,7 @@ public class NemakiAclCapabilitiesDataImpl extends AclCapabilitiesDataImpl {
 		return pd;
 	}
 
+	
 	// //////////////////////////////////////////////////////////////////////////
 	// Permission Mappings
 	// //////////////////////////////////////////////////////////////////////////
@@ -82,7 +96,7 @@ public class NemakiAclCapabilitiesDataImpl extends AclCapabilitiesDataImpl {
 		LinkedHashMap<String, PermissionMapping> table
 			= new LinkedHashMap<String, PermissionMapping>();
 
-		HashMap<String, ArrayList<String>> map = DataUtil.readPermissionMappingDefinitions();
+		HashMap<String, ArrayList<String>> map = permissionDataUtil.readPermissionMappingDefinitions();
 
 		//Build table
 		for(Entry<String, ArrayList<String>> entry : map.entrySet()){
@@ -99,7 +113,7 @@ public class NemakiAclCapabilitiesDataImpl extends AclCapabilitiesDataImpl {
 		}
 
 		//Add customized permissions to table
-		List<NemakiPermissionDefinition> customs = DataUtil.readPermissionDefinitions();
+		List<NemakiPermissionDefinition> customs = permissionDataUtil.readPermissionDefinitions();
 		for(NemakiPermissionDefinition custom : customs){
 			customizeTable(custom, table);
 		}
@@ -149,4 +163,9 @@ public class NemakiAclCapabilitiesDataImpl extends AclCapabilitiesDataImpl {
 
 		}
 	}
+
+	public void setPermissionDataUtil(PermissionDataUtil permissionDataUtil) {
+		this.permissionDataUtil = permissionDataUtil;
+	}
+	
 }

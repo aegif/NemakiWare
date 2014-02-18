@@ -24,6 +24,8 @@ package jp.aegif.nemaki.repository.info;
 import java.util.HashSet;
 import java.util.Set;
 
+import jp.aegif.nemaki.util.NemakiPropertyManager;
+
 import org.apache.chemistry.opencmis.commons.enums.CapabilityAcl;
 import org.apache.chemistry.opencmis.commons.enums.CapabilityChanges;
 import org.apache.chemistry.opencmis.commons.enums.CapabilityContentStreamUpdates;
@@ -40,7 +42,12 @@ public class NemakiCapabilitiesImpl extends RepositoryCapabilitiesImpl {
 
 	private static final long serialVersionUID = -7037495456587139344L;
 
+	private NemakiPropertyManager propertyManager;
+	
 	public void setup() {
+		
+		
+		
 		// Navigation Capabilities
 		setSupportsGetDescendants(true);
 		setSupportsGetFolderTree(true);
@@ -100,5 +107,9 @@ public class NemakiCapabilitiesImpl extends RepositoryCapabilitiesImpl {
 		newTypeSetableAttributes.setCanSetQueryable(true);
 		newTypeSetableAttributes.setCanSetQueryName(true);
 		setNewTypeSettableAttributes(newTypeSetableAttributes);
+	}
+
+	public void setPropertyManager(NemakiPropertyManager propertyManager) {
+		this.propertyManager = propertyManager;
 	}
 }
