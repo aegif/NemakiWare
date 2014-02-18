@@ -1,6 +1,8 @@
 package jp.aegif.nemaki.spring;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
@@ -10,7 +12,7 @@ import org.springframework.beans.factory.config.PropertyPlaceholderConfigurer;
 
 public class SpringPropertiesUtil extends PropertyPlaceholderConfigurer {
 
-    private static Map<String, String> propertiesMap;
+    private Map<String, String> propertiesMap;
     // Default as in PropertyPlaceholderConfigurer
     private int springSystemPropertiesMode = SYSTEM_PROPERTIES_MODE_FALLBACK;
 
@@ -32,8 +34,29 @@ public class SpringPropertiesUtil extends PropertyPlaceholderConfigurer {
         }
     }
 
-    public static String getProperty(String name) {
-        return propertiesMap.get(name).toString();
+    public String getValue(String key) {
+        return propertiesMap.get(key).toString();
+    }
+
+    public String getHeadValue(String key){
+    	String val = propertiesMap.get(key).toString();
+    	String[] _val = val.split(","); 
+    	if(_val.length == 0) return null;
+    	
+    	return _val[0].trim();
+    }
+   
+    public List<String> getValues(String key){
+    	String val = propertiesMap.get(key).toString();
+    	String[] _val = val.split(","); 
+    	if(_val.length == 0) return null;
+    	
+    	List<String> result = new ArrayList<String>();
+    	for(String _v : _val){
+    		result.add(_v.trim());
+    	}
+    	
+    	return result;
     }
 
 }

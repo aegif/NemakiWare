@@ -29,6 +29,7 @@ import jp.aegif.nemaki.service.cmis.AclService;
 import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.node.ContentService;
 import jp.aegif.nemaki.util.DataUtil;
+import jp.aegif.nemaki.util.PermissionDataUtil;
 
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
@@ -48,6 +49,7 @@ public class AclServiceImpl implements AclService {
 	private ContentService contentService;
 	private ExceptionService exceptionService;
 	private TypeManager typeManager;
+	private PermissionDataUtil permissionDataUtil;
 
 	public Acl getAcl(CallContext callContext, String objectId,
 			Boolean onlyBasicPermissions) {
@@ -63,7 +65,7 @@ public class AclServiceImpl implements AclService {
 		// Body of the method
 		// //////////////////
 		jp.aegif.nemaki.model.Acl acl = contentService.calculateAcl(content);
-		return DataUtil.convertToCmisAcl(acl, content.isAclInherited(), onlyBasicPermissions);
+		return permissionDataUtil.convertToCmisAcl(acl, content.isAclInherited(), onlyBasicPermissions);
 	}
 
 	public Acl applyAcl(CallContext callContext, String objectId, Acl acl,
@@ -125,5 +127,9 @@ public class AclServiceImpl implements AclService {
 
 	public void setTypeManager(TypeManager typeManager) {
 		this.typeManager = typeManager;
+	}
+
+	public void setPermissionDataUtil(PermissionDataUtil permissionDataUtil) {
+		this.permissionDataUtil = permissionDataUtil;
 	}	
 }

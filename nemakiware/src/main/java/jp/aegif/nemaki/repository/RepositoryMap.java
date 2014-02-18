@@ -38,18 +38,20 @@ public class RepositoryMap {
 
 	private final Map<String, NemakiRepository> repositories;
 	private String mainRepositoryId;
+	private NemakiPropertyManager propertyManager;
 
 	private static final Log log = LogFactory
 			.getLog(RepositoryMap.class);
-
-	public RepositoryMap() {
+	
+	public RepositoryMap(NemakiPropertyManager propertyManager) {
+		setPropertyManager(propertyManager);
+		
 		repositories = new HashMap<String, NemakiRepository>();
 		new HashMap<String, String>();
 
 		//If repositoryId is not specified, return default value;
-		NemakiPropertyManager manager = new NemakiPropertyManager();
 		try {
-			mainRepositoryId = manager.readHeadValue(PropertyKey.REPOSITORY_MAIN);
+			mainRepositoryId = propertyManager.readValue(PropertyKey.REPOSITORY_MAIN);
 		} catch (Exception e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -87,5 +89,9 @@ public class RepositoryMap {
 
 	public void setMainRepositoryId(String mainRepositoryId) {
 		this.mainRepositoryId = mainRepositoryId;
+	}
+
+	public void setPropertyManager(NemakiPropertyManager propertyManager) {
+		this.propertyManager = propertyManager;
 	}
 }

@@ -51,6 +51,7 @@ import jp.aegif.nemaki.service.cmis.PermissionService;
 import jp.aegif.nemaki.service.cmis.RepositoryService;
 import jp.aegif.nemaki.service.node.ContentService;
 import jp.aegif.nemaki.util.DataUtil;
+import jp.aegif.nemaki.util.PermissionDataUtil;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.AllowableActions;
@@ -103,6 +104,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	private ContentService contentService;
 	private PermissionService permissionService;
 	private TypeManager typeManager;
+	private PermissionDataUtil permissionDataUtil;
 
 	private Map<String, String> aliases;
 
@@ -135,7 +137,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		if (iacl) {
 			Acl acl = contentService.calculateAcl(content);
 			result.setIsExactAcl(true);
-			result.setAcl(DataUtil.convertToCmisAcl(acl,
+			result.setAcl(permissionDataUtil.convertToCmisAcl(acl,
 					content.isAclInherited(), false));
 		}
 
@@ -323,7 +325,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		if (iacl) {
 			if (content != null) {
 				Acl acl = contentService.calculateAcl(content);
-				object.setAcl(DataUtil.convertToCmisAcl(acl,
+				object.setAcl(permissionDataUtil.convertToCmisAcl(acl,
 						content.isAclInherited(), false));
 			}
 		}
@@ -1221,5 +1223,9 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 	public void setTypeManager(TypeManager typeManager) {
 		this.typeManager = typeManager;
+	}
+
+	public void setPermissionDataUtil(PermissionDataUtil permissionDataUtil) {
+		this.permissionDataUtil = permissionDataUtil;
 	}
 }

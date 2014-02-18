@@ -54,10 +54,6 @@ public class NemakiCmisServiceFactory extends AbstractServiceFactory {
 	}
 
 
-	public void setNemakiRepository(NemakiRepository nemakiRepository) {
-		this.nemakiRepository = nemakiRepository;
-	}
-
 	/**
 	 * Repository reference to all repositories.
 	 */
@@ -73,7 +69,6 @@ public class NemakiCmisServiceFactory extends AbstractServiceFactory {
 	 */
 	@Override
 	public void init(Map<String, String> parameters) {
-		repositoryMap = new RepositoryMap();
 		repositoryMap.addRepository(nemakiRepository);
 	}
 
@@ -104,4 +99,13 @@ public class NemakiCmisServiceFactory extends AbstractServiceFactory {
 	public void setAuthenticationService(AuthenticationService authenticationService) {
 		this.authenticationService = authenticationService;
 	}
+
+	public void setNemakiRepository(NemakiRepository nemakiRepository) {
+		this.nemakiRepository = nemakiRepository;
+	}
+	
+	public void setRepositoryMap(RepositoryMap repositoryMap) {
+		this.repositoryMap = repositoryMap;
+	}
+	
 }
