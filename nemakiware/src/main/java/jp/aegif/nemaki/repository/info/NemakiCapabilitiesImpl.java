@@ -22,8 +22,10 @@
 package jp.aegif.nemaki.repository.info;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
+import jp.aegif.nemaki.model.constant.PropertyKey;
 import jp.aegif.nemaki.util.NemakiPropertyManager;
 
 import org.apache.chemistry.opencmis.commons.enums.CapabilityAcl;
@@ -37,79 +39,107 @@ import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.CreatablePropertyTypesImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.NewTypeSettableAttributesImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.RepositoryCapabilitiesImpl;
+import org.apache.commons.collections.CollectionUtils;
 
 public class NemakiCapabilitiesImpl extends RepositoryCapabilitiesImpl {
 
 	private static final long serialVersionUID = -7037495456587139344L;
 
-	private NemakiPropertyManager propertyManager;
+	private NemakiPropertyManager pm;
 	
-	public void setup() {
+	public NemakiCapabilitiesImpl(NemakiPropertyManager propertyManager) {
+		setPropertyManager(propertyManager);
 		
-		
-		
+		//////////////////////////////////////////////////////////////////
 		// Navigation Capabilities
-		setSupportsGetDescendants(true);
-		setSupportsGetFolderTree(true);
-		setOrderByCapability(CapabilityOrderBy.NONE);
+		//////////////////////////////////////////////////////////////////
+		// capabiliyGetDescendants
+		setSupportsGetDescendants(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_GET_DESCENDENTS)));
+		// capabilityGetFolderTree
+		setSupportsGetFolderTree(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_GET_FOLDER_TREE)));
+		// capabilityOrderBy
+		setOrderByCapability(CapabilityOrderBy.fromValue(pm.readValue(PropertyKey.CAPABILITY_ORDER_BY)));
 		
+		//////////////////////////////////////////////////////////////////
 		// Object Capabilities
-		setCapabilityContentStreamUpdates(CapabilityContentStreamUpdates.ANYTIME);
-		setCapabilityChanges(CapabilityChanges.NONE);
-		setCapabilityRendition(CapabilityRenditions.NONE);
+		//////////////////////////////////////////////////////////////////
+		// capabilityContentStreamUpdatability
+		setCapabilityContentStreamUpdates(CapabilityContentStreamUpdates.fromValue(pm.readValue(PropertyKey.CAPABILITY_CONTENT_STREAM_UPDATABILITY)));
+		//capabilityChanges
+		setCapabilityChanges(CapabilityChanges.fromValue(pm.readValue(PropertyKey.CAPABILITY_CHANGES)));
+		//capabilityRenditions
+		setCapabilityRendition(CapabilityRenditions.fromValue(pm.readValue(PropertyKey.CAPABILITY_RENDITIONS)));
 
-		// Filling Capabilities
-		setSupportsMultifiling(false);
-		setSupportsUnfiling(false);
-		setSupportsVersionSpecificFiling(false);
+		//////////////////////////////////////////////////////////////////
+		// Filing Capabilities
+		//////////////////////////////////////////////////////////////////
+		//capabilityMultifiling
+		setSupportsMultifiling(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_MULTIFILING)));
+		//capabilityUnfiling
+		setSupportsUnfiling(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_UNFILING)));
+		//capabilityVersionSpecificFiling
+		setSupportsVersionSpecificFiling(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_VERSION_SPECIFIC_FILING)));
 
+		//////////////////////////////////////////////////////////////////
 		// Versioning Capabilities
-		setIsPwcUpdatable(true);
-		setIsPwcSearchable(false);
-		setAllVersionsSearchable(false);
+		//////////////////////////////////////////////////////////////////
+		//capabilityPWCUpdatable
+		setIsPwcUpdatable(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_PWC_UPDATABLE)));
+		//capabilityPWCSearchable
+		setIsPwcSearchable(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_PWC_SEARCHABLE)));
+		// capabilityAllVersionsSearchable
+		setAllVersionsSearchable(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_ALL_VERSION_SEARCHABLE)));
 
+		//////////////////////////////////////////////////////////////////
 		// Query Capabilities
-		setCapabilityQuery(CapabilityQuery.BOTHCOMBINED);
-		setCapabilityJoin(CapabilityJoin.NONE);
+		//////////////////////////////////////////////////////////////////		
+		// capabilityQuery
+		setCapabilityQuery(CapabilityQuery.fromValue(pm.readValue(PropertyKey.CAPABILITY_QUERY)));
+		// capabilityJoin
+		setCapabilityJoin(CapabilityJoin.fromValue(pm.readValue(PropertyKey.CAPABILITY_JOIN)));
 
-		// Changes Capabilities
-		setCapabilityChanges(CapabilityChanges.OBJECTIDSONLY);
-		
-		// ACL Capabilities
-		setCapabilityAcl(CapabilityAcl.MANAGE);
-		
-		//Type Mutability
+		//////////////////////////////////////////////////////////////////
+		// Type Capabilities
+		//////////////////////////////////////////////////////////////////		
+		//capabilityCreatablPopertyTypes
 		CreatablePropertyTypesImpl creatablePropertyTypes = new CreatablePropertyTypesImpl();
+		
+		List<String> _propertyTypes = pm.readValues(PropertyKey.CAPABILITY_CREATABLE_PROPERTY_TYPES);
 		Set<PropertyType> propertyTypes = new HashSet<PropertyType>();
-		propertyTypes.add(PropertyType.BOOLEAN);
-		propertyTypes.add(PropertyType.DATETIME);
-		propertyTypes.add(PropertyType.DECIMAL);
-		propertyTypes.add(PropertyType.HTML);
-		propertyTypes.add(PropertyType.ID);
-		propertyTypes.add(PropertyType.INTEGER);
-		propertyTypes.add(PropertyType.STRING);
-		propertyTypes.add(PropertyType.URI);
+		if(CollectionUtils.isNotEmpty(_propertyTypes)){
+			for(String _pt : _propertyTypes){
+				propertyTypes.add(PropertyType.fromValue(_pt));
+			}
+		}
 		creatablePropertyTypes.setCanCreate(propertyTypes);
 		setCreatablePropertyTypes(creatablePropertyTypes);
+
+		//capabilityNewTypeSettableAttributes
+		NewTypeSettableAttributesImpl newTypeSettableAttributes = new NewTypeSettableAttributesImpl();
 		
-		NewTypeSettableAttributesImpl newTypeSetableAttributes = new NewTypeSettableAttributesImpl();
-		newTypeSetableAttributes.setCanSetControllableAcl(false);
-		newTypeSetableAttributes.setCanSetControllablePolicy(false);
-		newTypeSetableAttributes.setCanSetCreatable(true);
-		newTypeSetableAttributes.setCanSetDescription(true);
-		newTypeSetableAttributes.setCanSetDisplayName(true);
-		newTypeSetableAttributes.setCanSetFileable(false);
-		newTypeSetableAttributes.setCanSetFulltextIndexed(true);
-		newTypeSetableAttributes.setCanSetId(true);
-		newTypeSetableAttributes.setCanSetIncludedInSupertypeQuery(true);
-		newTypeSetableAttributes.setCanSetLocalName(true);
-		newTypeSetableAttributes.setCanSetLocalNamespace(true);
-		newTypeSetableAttributes.setCanSetQueryable(true);
-		newTypeSetableAttributes.setCanSetQueryName(true);
-		setNewTypeSettableAttributes(newTypeSetableAttributes);
+		newTypeSettableAttributes.setCanSetId(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_ID)));
+		newTypeSettableAttributes.setCanSetLocalName(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_LOCAL_NAME)));
+		newTypeSettableAttributes.setCanSetLocalNamespace(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_LOCAL_NAME_SPACE)));
+		newTypeSettableAttributes.setCanSetDisplayName(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_DISPLAY_NAME)));
+		newTypeSettableAttributes.setCanSetDescription(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_DESCRIPTION)));
+		newTypeSettableAttributes.setCanSetCreatable(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_CREATABLE)));
+		newTypeSettableAttributes.setCanSetFileable(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_FILEABLE)));
+		newTypeSettableAttributes.setCanSetQueryable(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_QUERYABLE)));
+		newTypeSettableAttributes.setCanSetFulltextIndexed(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_FULLTEXT_INDEXED)));
+		newTypeSettableAttributes.setCanSetIncludedInSupertypeQuery(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_INCLUDE_IN_SUPERTYPE_QUERY)));
+		newTypeSettableAttributes.setCanSetControllablePolicy(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_CONTROLLABLE_POLICY)));
+		newTypeSettableAttributes.setCanSetControllableAcl(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_CONTROLLABLE_ACL)));
+		
+		setNewTypeSettableAttributes(newTypeSettableAttributes);
+		
+		//////////////////////////////////////////////////////////////////
+		// ACL Capabilities
+		//////////////////////////////////////////////////////////////////				
+		// capabilityACL
+		setCapabilityAcl(CapabilityAcl.fromValue(pm.readValue(PropertyKey.CAPABILITY_ACL)));
 	}
 
 	public void setPropertyManager(NemakiPropertyManager propertyManager) {
-		this.propertyManager = propertyManager;
+		this.pm = propertyManager;
 	}
 }
