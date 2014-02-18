@@ -9,6 +9,7 @@
         <property name="locations">
             <list>
                 <value>classpath:nemakiware.properties</value>
+                <value>classpath:nemakiware.capability.properties</value>
                 <value>classpath*:custom_nemakiware.properties</value>
                 <value>classpath*:nemaki-override.properties</value>
             </list>

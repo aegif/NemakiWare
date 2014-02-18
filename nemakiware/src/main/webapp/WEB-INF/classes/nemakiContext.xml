@@ -98,8 +98,10 @@
     </bean>
 
     <bean id="capabilities"
-        class="jp.aegif.nemaki.repository.info.NemakiCapabilitiesImpl"
-        init-method="setup">
+        class="jp.aegif.nemaki.repository.info.NemakiCapabilitiesImpl">
+         <constructor-arg>
+            <ref bean="nemakiPropertyManager" />
+        </constructor-arg>
     </bean>
 
     <bean id="aclCapabilities"
