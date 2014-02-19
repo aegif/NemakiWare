@@ -16,10 +16,9 @@
         <property name="nemakiProperties" ref="propertyConfigurer" />
     </bean>
 
-    <bean id="permissionDataUtil" class="jp.aegif.nemaki.util.PermissionDataUtil">
+    <bean id="propertyUtil" class="jp.aegif.nemaki.util.PropertyUtil">
         <property name="propertyManager" ref="nemakiPropertyManager" />
     </bean>
-
 
     <!-- CMIS Repository Beans -->
     <bean id="CmisLifecycleBean" class="jp.aegif.nemaki.repository.CmisLifecycleBean">
@@ -107,7 +106,7 @@
     <bean id="aclCapabilities"
         class="jp.aegif.nemaki.repository.info.NemakiAclCapabilitiesDataImpl">
         <constructor-arg>
-            <ref bean="permissionDataUtil" />
+            <ref bean="propertyUtil" />
         </constructor-arg>
     </bean>
 
@@ -413,8 +412,8 @@
         <property name="typeManager">
             <ref bean="TypeManager" />
         </property>
-        <property name="permissionDataUtil">
-            <ref bean="permissionDataUtil" />
+        <property name="propertyUtil">
+            <ref bean="propertyUtil" />
         </property>
     </bean>
 
@@ -476,8 +475,8 @@
         <property name="typeManager">
             <ref bean="TypeManager" />
         </property>
-        <property name="permissionDataUtil">
-            <ref bean="permissionDataUtil" />
+        <property name="propertyUtil">
+            <ref bean="propertyUtil" />
         </property>
     </bean>
 
@@ -511,8 +510,8 @@
         <property name="repositoryInfo">
             <ref bean="RepositoryInfo" />
         </property>
-        <property name="propertyManager">
-            <ref bean="nemakiPropertyManager" />
+        <property name="propertyUtil">
+            <ref bean="propertyUtil" />
         </property>
     </bean>
 
@@ -548,6 +547,9 @@
         </property>
         <property name="principalService">
             <ref bean="PrincipalService" />
+        </property>
+        <property name="propertyUtil">
+            <ref bean="propertyUtil" />
         </property>
     </bean>
 

@@ -29,9 +29,9 @@
 		<property name="typeManager">
 			<ref bean="TypeManager" />
 		</property>
-		<property name="propertyManager">
-			<ref bean="nemakiPropertyManager" />
-		</property>
+        <property name="propertyUtil">
+            <ref bean="propertyUtil" />
+        </property>
 	</bean>
 	
 	<bean id="PrincipalService" class="org.springframework.aop.framework.ProxyFactoryBean">

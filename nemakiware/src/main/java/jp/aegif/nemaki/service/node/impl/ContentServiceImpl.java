@@ -60,6 +60,7 @@ import jp.aegif.nemaki.service.dao.impl.ContentDaoServiceImpl;
 import jp.aegif.nemaki.service.node.ContentService;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.NemakiPropertyManager;
+import jp.aegif.nemaki.util.PropertyUtil;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
@@ -99,7 +100,7 @@ public class ContentServiceImpl implements ContentService {
 
 	private ContentDaoService contentDaoService;
 	private TypeManager typeManager;
-	private NemakiPropertyManager propertyManager;
+	private PropertyUtil propertyUtil;
 
 	private static final Log log = LogFactory
 			.getLog(ContentDaoServiceImpl.class);
@@ -298,7 +299,7 @@ public class ContentServiceImpl implements ContentService {
 	private List<String> calculatePathInternal(List<String> path, Content content) {
 		path.add(0, content.getName());
 
-		if (content.isRoot()) {
+		if (propertyUtil.isRoot(content)) {
 			return path;
 		} else {
 			Content parent = getParent(content.getId());
@@ -1342,8 +1343,7 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public Acl calculateAcl(Content content) {
 
-		if (content.isRoot()){
-			//Directフラグは？
+		if (propertyUtil.isRoot(content)){
 			return content.getAcl();
 		}
 
@@ -1370,7 +1370,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	private List<Ace> calculateAclInternal(List<Ace>result, Content content){
-		if(content.isRoot()){
+		if(propertyUtil.isRoot(content)){
 			List<Ace> rootAces = new ArrayList<Ace>();
 			List<Ace> aces = content.getAcl().getLocalAces();
 			for(Ace ace : aces){
@@ -1397,7 +1397,7 @@ public class ContentServiceImpl implements ContentService {
 			_result.put(t.getKey(), ace);
 		}
 
-		//Overwrite(というか追加)
+		//Overwrite(ã�¨ã�„ã�†ã�‹è¿½åŠ )
 		for(Entry<String, Ace> s : sourceMap.entrySet()){
 			//TODO Deep copy
 			if(!targetMap.containsKey(s.getKey())){
@@ -1413,8 +1413,8 @@ public class ContentServiceImpl implements ContentService {
 			result.add(r.getValue());
 		}
 
-		//Acl上でinherited/localの区別はしない
-		//ただしAce上でisDirectフラグは設定する
+		//Aclä¸Šã�§inherited/localã�®åŒºåˆ¥ã�¯ã�—ã�ªã�„
+		//ã�Ÿã� ã�—Aceä¸Šã�§isDirectãƒ•ãƒ©ã‚°ã�¯è¨­å®šã�™ã‚‹
 		return result;
 	}
 
@@ -1806,6 +1806,7 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public void callSolrIndexing(){
+		NemakiPropertyManager propertyManager  = propertyUtil.getPropertyManager();
 		String _force = propertyManager.readValue(PropertyKey.SOLR_INDEXING_FORCE);
 		boolean force = (Boolean.TRUE.toString().equals(_force)) ? true : false;
 
@@ -1819,15 +1820,15 @@ public class ContentServiceImpl implements ContentService {
 		 //TODO log according to the response status
 	}
 
-	public void setPropertyManager(NemakiPropertyManager propertyManager) {
-		this.propertyManager = propertyManager;
-	}
-
 	public void setContentDaoService(ContentDaoService contentDaoService) {
 		this.contentDaoService = contentDaoService;
 	}
 
 	public void setTypeManager(TypeManager typeManager) {
 		this.typeManager = typeManager;
+	}
+
+	public void setPropertyUtil(PropertyUtil propertyUtil) {
+		this.propertyUtil = propertyUtil;
 	}
 }

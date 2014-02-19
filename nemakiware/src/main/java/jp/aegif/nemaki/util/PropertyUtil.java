@@ -17,16 +17,32 @@ import org.apache.commons.logging.LogFactory;
 
 import jp.aegif.nemaki.model.Ace;
 import jp.aegif.nemaki.model.Acl;
+import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.NemakiPermissionDefinition;
 import jp.aegif.nemaki.model.constant.NemakiConstant;
 import jp.aegif.nemaki.model.constant.PropertyKey;
 
-public class PermissionDataUtil {
+public class PropertyUtil {
+	private static final Log log = LogFactory.getLog(PropertyUtil.class);
 	
-	private static final Log log = LogFactory.getLog(PermissionDataUtil.class);
 	private NemakiPropertyManager propertyManager;
+
+	//////////////////////////////////////////////////
+	//Utilities
+	//////////////////////////////////////////////////
+	public boolean isRoot(Content content){
+		String rootObjectId = propertyManager.readValue(PropertyKey.REPOSITORY_MAIN_ROOT);
+		if(content.isFolder() && rootObjectId.equals(content.getId())){
+			return true;
+		}else{
+			return false;
+		}
+	}
 	
 	
+	//////////////////////////////////////////////////
+	//Permission utilities
+	//////////////////////////////////////////////////
 	public org.apache.chemistry.opencmis.commons.data.Acl convertToCmisAcl(
 			Acl acl, Boolean isInherited, Boolean onlyBasicPermissions) {
 
@@ -147,7 +163,13 @@ public class PermissionDataUtil {
 
 		return map;
 	}
-
+	
+	
+	public NemakiPropertyManager getPropertyManager() {
+		return propertyManager;
+	}
+	
+	
 	public void setPropertyManager(NemakiPropertyManager propertyManager) {
 		this.propertyManager = propertyManager;
 	}

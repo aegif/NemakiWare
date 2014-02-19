@@ -37,6 +37,7 @@ import jp.aegif.nemaki.service.cmis.PermissionService;
 import jp.aegif.nemaki.service.node.ContentService;
 import jp.aegif.nemaki.service.node.PrincipalService;
 import jp.aegif.nemaki.util.NemakiPropertyManager;
+import jp.aegif.nemaki.util.PropertyUtil;
 
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
@@ -59,7 +60,7 @@ public class PermissionServiceImpl implements PermissionService {
 	private ContentService contentService;
 	private TypeManager typeManager;
 	private RepositoryInfo repositoryInfo;
-	private NemakiPropertyManager propertyManager;
+	private PropertyUtil propertyUtil;
 
 
 	// //////////////////////////////////////////////////////////////////////////
@@ -74,8 +75,8 @@ public class PermissionServiceImpl implements PermissionService {
 	public Boolean checkPermission(CallContext callContext, String key, Acl acl,
 			String baseType, Content content) {
 		// Admin always pass a permission check
-		String admin = new String();
-		admin = propertyManager.readValue(PropertyKey.PRINCIPAL_ADMIN);
+		NemakiPropertyManager pm = propertyUtil.getPropertyManager();
+		String admin = pm.readValue(PropertyKey.PRINCIPAL_ADMIN);
 		if (callContext.getUsername().equals(admin))
 			return isAllowableBaseType(key, baseType, content);
 
@@ -189,13 +190,13 @@ public class PermissionServiceImpl implements PermissionService {
 		if (PermissionMapping.CAN_GET_CHILDREN_FOLDER.equals(key))
 			return BaseTypeId.CMIS_FOLDER.value().equals(baseType);
 		if (PermissionMapping.CAN_GET_FOLDER_PARENT_OBJECT.equals(key))
-			if(content.isRoot()){
+			if(propertyUtil.isRoot(content)){
 				return false;
 			}else{
 				return BaseTypeId.CMIS_FOLDER.value().equals(baseType);
 			}
 		if (PermissionMapping.CAN_GET_PARENTS_FOLDER.equals(key))
-			if(content.isRoot()){
+			if(propertyUtil.isRoot(content)){
 				return false;
 			}else{
 				return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType) || BaseTypeId.CMIS_FOLDER.value().equals(baseType)
@@ -232,7 +233,7 @@ public class PermissionServiceImpl implements PermissionService {
 					|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM
 					.value().equals(baseType));
 		if (PermissionMapping.CAN_MOVE_OBJECT.equals(key))
-			if(content.isRoot()){
+			if(propertyUtil.isRoot(content)){
 				return false;
 			}else{
 				return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)
@@ -245,7 +246,7 @@ public class PermissionServiceImpl implements PermissionService {
 		if (PermissionMapping.CAN_MOVE_SOURCE.equals(key))
 			return BaseTypeId.CMIS_FOLDER.value().equals(baseType);
 		if (PermissionMapping.CAN_DELETE_OBJECT.equals(key))
-			if(content.isRoot()){
+			if(propertyUtil.isRoot(content)){
 				return false;
 			}else{
 				return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)
@@ -385,6 +386,9 @@ public class PermissionServiceImpl implements PermissionService {
 	}
 
 	public void setPropertyManager(NemakiPropertyManager propertyManager) {
-		this.propertyManager = propertyManager;
+	}
+
+	public void setPropertyUtil(PropertyUtil propertyUtil) {
+		this.propertyUtil = propertyUtil;
 	}
 }
