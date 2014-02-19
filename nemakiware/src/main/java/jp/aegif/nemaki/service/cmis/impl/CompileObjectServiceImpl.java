@@ -567,14 +567,13 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 	private PropertiesImpl compileRootFolderProperties(Folder folder,
 			PropertiesImpl properties, Set<String> filter) {
-		String typeId = BaseTypeId.CMIS_FOLDER.value();
+		String typeId = folder.getObjectType();
 		setCmisBaseProperties(properties, typeId, filter, folder);
 		// Add parentId property without value
 		PropertyIdImpl parentId = new PropertyIdImpl();
 		parentId.setId(PropertyIds.PARENT_ID);
 		parentId.setValue(null);
 		properties.addProperty(parentId);
-
 		setCmisFolderProperties(properties, typeId, filter, folder);
 
 		return properties;
