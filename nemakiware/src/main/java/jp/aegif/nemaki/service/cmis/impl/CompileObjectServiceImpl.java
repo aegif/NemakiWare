@@ -50,7 +50,6 @@ import jp.aegif.nemaki.service.cmis.CompileObjectService;
 import jp.aegif.nemaki.service.cmis.PermissionService;
 import jp.aegif.nemaki.service.cmis.RepositoryService;
 import jp.aegif.nemaki.service.node.ContentService;
-import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PermissionDataUtil;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
@@ -67,6 +66,7 @@ import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.Action;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
+import org.apache.chemistry.opencmis.commons.enums.CapabilityRenditions;
 import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
@@ -147,7 +147,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		}
 		
 		//Set Renditions
-		if(content.isDocument()){
+		if(content.isDocument() && repositoryInfo.getCapabilities().getRenditionsCapability() == CapabilityRenditions.READ){
 			result.setRenditions(compileRenditions(context, content));
 		}
 		
@@ -156,29 +156,6 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		return result;
 	}
 
-	private List<RenditionData> compileRenditions(CallContext callContext, Content content){
-		List<RenditionData> renditions = new ArrayList<RenditionData>();
-		
-		List<Rendition> _renditions = contentService.getRenditions(content.getId());
-		if(CollectionUtils.isNotEmpty(_renditions)){
-			for(Rendition _rd : _renditions){
-				RenditionDataImpl rd = new RenditionDataImpl();
-				rd.setStreamId(_rd.getId());
-				rd.setMimeType(rd.getMimeType());
-				rd.setBigLength(BigInteger.valueOf(_rd.getLength()));
-				rd.setKind(_rd.getKind());
-				rd.setTitle(_rd.getTitle());
-				rd.setBigHeight(BigInteger.valueOf(_rd.getHeight()));
-				rd.setBigWidth(BigInteger.valueOf(_rd.getWidth()));
-				rd.setRenditionDocumentId(_rd.getRenditionDocumentId());
-				
-				renditions.add(rd);
-			}
-		}
-		
-		return renditions;
-	}
-	
 	@Override
 	public <T> ObjectList compileObjectDataList(CallContext callContext,
 			List<T> contents, String filter, Boolean includeAllowableActions,
@@ -527,6 +504,29 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		}
 
 		return rels;
+	}
+	
+	private List<RenditionData> compileRenditions(CallContext callContext, Content content){
+		List<RenditionData> renditions = new ArrayList<RenditionData>();
+		
+		List<Rendition> _renditions = contentService.getRenditions(content.getId());
+		if(CollectionUtils.isNotEmpty(_renditions)){
+			for(Rendition _rd : _renditions){
+				RenditionDataImpl rd = new RenditionDataImpl();
+				rd.setStreamId(_rd.getId());
+				rd.setMimeType(_rd.getMimetype());
+				rd.setBigLength(BigInteger.valueOf(_rd.getLength()));
+				rd.setKind(_rd.getKind());
+				rd.setTitle(_rd.getTitle());
+				rd.setBigHeight(BigInteger.valueOf(_rd.getHeight()));
+				rd.setBigWidth(BigInteger.valueOf(_rd.getWidth()));
+				rd.setRenditionDocumentId(_rd.getRenditionDocumentId());
+				
+				renditions.add(rd);
+			}
+		}
+		
+		return renditions;
 	}
 	
 	/**
@@ -952,13 +952,13 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	// TODO if cast fails, continue the operation
 	private void addProperty(PropertiesImpl props, String typeId,
 			Set<String> filter, String id, Object value) {
+		try {
 		PropertyDefinition<?> pdf = repositoryService.getTypeManager()
 				.getTypeDefinition(typeId).getPropertyDefinitions().get(id);
-
+		
 		if (!checkAddProperty(props, typeId, filter, id))
 			return;
 
-		try {
 			switch (pdf.getPropertyType()) {
 			case BOOLEAN:
 				PropertyBooleanImpl propBoolean;
@@ -1064,7 +1064,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			}
 		} catch (Exception e) {
 			log.warn("typeId:" + typeId + ", propertyId:" + id
-					+ " class cast error!", e);
+					+ " Faile to add a property!", e);
 		}
 	}
 
