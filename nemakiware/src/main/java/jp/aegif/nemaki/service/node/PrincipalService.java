@@ -32,10 +32,6 @@ import jp.aegif.nemaki.model.User;
  */
 public interface PrincipalService {
 
-	//TODO externalize
-	public static final String GROUP_EVERYONE = "GROUP_EVERYONE";
-	public static final String USER_UNKNOWN = "USER_UNKNOWN";
-
 	/**
 	 * Get a list of all users
 	 */
