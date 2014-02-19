@@ -71,7 +71,7 @@ public class PrincipalServiceImpl implements PrincipalService {
 				groupIds.add(g.getGroupId());
 			}
 		}
-		groupIds.add(PrincipalService.GROUP_EVERYONE);
+		groupIds.add(propertyManager.readValue(PropertyKey.REPOSITORY_MAIN_PRINCIPAL_ANYONE));
 		return groupIds;
 	}
 
