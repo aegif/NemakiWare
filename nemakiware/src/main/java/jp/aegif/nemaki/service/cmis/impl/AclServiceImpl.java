@@ -28,8 +28,7 @@ import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.cmis.AclService;
 import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.node.ContentService;
-import jp.aegif.nemaki.util.DataUtil;
-import jp.aegif.nemaki.util.PermissionDataUtil;
+import jp.aegif.nemaki.util.PropertyUtil;
 
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
@@ -49,7 +48,7 @@ public class AclServiceImpl implements AclService {
 	private ContentService contentService;
 	private ExceptionService exceptionService;
 	private TypeManager typeManager;
-	private PermissionDataUtil permissionDataUtil;
+	private PropertyUtil propertyUtil;
 
 	public Acl getAcl(CallContext callContext, String objectId,
 			Boolean onlyBasicPermissions) {
@@ -65,7 +64,7 @@ public class AclServiceImpl implements AclService {
 		// Body of the method
 		// //////////////////
 		jp.aegif.nemaki.model.Acl acl = contentService.calculateAcl(content);
-		return permissionDataUtil.convertToCmisAcl(acl, content.isAclInherited(), onlyBasicPermissions);
+		return propertyUtil.convertToCmisAcl(acl, content.isAclInherited(), onlyBasicPermissions);
 	}
 
 	public Acl applyAcl(CallContext callContext, String objectId, Acl acl,
@@ -129,7 +128,7 @@ public class AclServiceImpl implements AclService {
 		this.typeManager = typeManager;
 	}
 
-	public void setPermissionDataUtil(PermissionDataUtil permissionDataUtil) {
-		this.permissionDataUtil = permissionDataUtil;
+	public void setPropertyUtil(PropertyUtil propertyUtil) {
+		this.propertyUtil = propertyUtil;
 	}	
 }

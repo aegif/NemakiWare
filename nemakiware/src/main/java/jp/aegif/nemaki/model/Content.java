@@ -186,8 +186,4 @@ public class Content extends NodeBase {
 	public int hashCode() {
 		return this.getId().hashCode();
 	}
-
-	public Boolean isRoot(){
-		return (getId().equals("/")) ? true : false;
-	}
 }

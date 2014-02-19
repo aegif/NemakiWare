@@ -50,7 +50,7 @@ import jp.aegif.nemaki.service.cmis.CompileObjectService;
 import jp.aegif.nemaki.service.cmis.PermissionService;
 import jp.aegif.nemaki.service.cmis.RepositoryService;
 import jp.aegif.nemaki.service.node.ContentService;
-import jp.aegif.nemaki.util.PermissionDataUtil;
+import jp.aegif.nemaki.util.PropertyUtil;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.AllowableActions;
@@ -104,7 +104,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	private ContentService contentService;
 	private PermissionService permissionService;
 	private TypeManager typeManager;
-	private PermissionDataUtil permissionDataUtil;
+	private PropertyUtil propertyUtil;
 
 	private Map<String, String> aliases;
 
@@ -137,7 +137,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		if (iacl) {
 			Acl acl = contentService.calculateAcl(content);
 			result.setIsExactAcl(true);
-			result.setAcl(permissionDataUtil.convertToCmisAcl(acl,
+			result.setAcl(propertyUtil.convertToCmisAcl(acl,
 					content.isAclInherited(), false));
 		}
 
@@ -302,7 +302,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		if (iacl) {
 			if (content != null) {
 				Acl acl = contentService.calculateAcl(content);
-				object.setAcl(permissionDataUtil.convertToCmisAcl(acl,
+				object.setAcl(propertyUtil.convertToCmisAcl(acl,
 						content.isAclInherited(), false));
 			}
 		}
@@ -354,7 +354,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			if (!isAllowableByType(key, content, tdf)) {
 				continue;
 			}
-			if (content.isRoot()) {
+			if (propertyUtil.isRoot(content)) {
 				if (Action.CAN_MOVE_OBJECT == convertKeyToAction(key)) {
 					continue;
 				}
@@ -540,7 +540,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		if (content.isFolder()) {
 			Folder folder = (Folder) content;
 			// Root folder
-			if (folder.isRoot()) {
+			if (propertyUtil.isRoot(folder)) {
 				properties = compileRootFolderProperties(folder, properties,
 						filter);
 				// Other than root folder
@@ -856,7 +856,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			}
 		}
 
-		PropertyData<?> pd = new PropertyIdImpl(
+		new PropertyIdImpl(
 				PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondaryIds);
 		addProperty(props, typeId, filter,
 				PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondaryIds);
@@ -1225,7 +1225,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		this.typeManager = typeManager;
 	}
 
-	public void setPermissionDataUtil(PermissionDataUtil permissionDataUtil) {
-		this.permissionDataUtil = permissionDataUtil;
+	public void setPropertyUtil(PropertyUtil propertyUtil) {
+		this.propertyUtil = propertyUtil;
 	}
 }

@@ -5,7 +5,16 @@ public interface PropertyKey {
 	final String DB_MAXCONNECTIONS= "db.maxConnections";
 	final String DB_PORT= "db.port";
 	final String DB_PROTOCOL = "db.protocol";
-	final String REPOSITORY_MAIN= "repository.main";
+	final String REPOSITORY_MAIN = "repository.main";
+	final String REPOSITORY_MAIN_DESCRIPTION= "repository.main.description";
+	final String REPOSITORY_MAIN_ROOT= "repository.main.root";
+	final String REPOSITORY_MAIN_PRINCIPAL_ANONYMOUS= "repository.main.principal.anonymous";
+	final String REPOSITORY_MAIN_PRINCIPAL_ANYONE= "repository.main.principal.anyone";
+	final String REPOSITORY_MAIN_THINCLIENTURI= "repository.main.thinClientUri";
+	final String REPOSITORY_MAIN_VENDOR= "repository.main.vendor";
+	final String REPOSITORY_MAIN_PRODUCT_NAME= "repository.main.product.name";
+	final String REPOSITORY_MAIN_PRODUCT_VERSION= "repository.main.product.version";
+	final String REPOSITORY_MAIN_NAMESPACE= "repository.main.namespace";
 	final String REPOSITORY_ARCHIVE= "repository.archive";
 	final String REPOSITORIES= "repositories";
 	final String PRINCIPAL_ADMIN= "principal.admin.id";
