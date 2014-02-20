@@ -36,6 +36,7 @@ import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.model.constant.DomainType;
+import jp.aegif.nemaki.query.solr.SolrUtil;
 import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.cmis.CompileObjectService;
 import jp.aegif.nemaki.service.cmis.ExceptionService;
@@ -80,6 +81,7 @@ public class ObjectServiceImpl implements ObjectService {
 	private RepositoryService repositoryService;
 	private ExceptionService exceptionService;
 	private CompileObjectService compileObjectService;
+	private SolrUtil solrUtil;
 
 	@Override
 	public ObjectData getObjectByPath(CallContext callContext, String path,
@@ -831,7 +833,7 @@ public class ObjectServiceImpl implements ObjectService {
 		try {
 			contentService.deleteTree(callContext, folderId, allVersions,
 					continueOnFailure, false);
-			contentService.callSolrIndexing();
+			solrUtil.callSolrIndexing();
 		} catch (Exception e) {
 			// do nothing
 			e.printStackTrace();
@@ -868,5 +870,9 @@ public class ObjectServiceImpl implements ObjectService {
 
 	public void setTypeManager(TypeManager typeManager) {
 		this.typeManager = typeManager;
+	}
+
+	public void setSolrUtil(SolrUtil solrUtil) {
+		this.solrUtil = solrUtil;
 	}
 }
