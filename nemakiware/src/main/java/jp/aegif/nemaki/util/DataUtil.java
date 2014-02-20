@@ -113,7 +113,15 @@ public class DataUtil {
 	/////////////////////////////////////////////////
 
 	public static TypeDefinition copyTypeDefinition(TypeDefinition type) {
-		return WSConverter.convert(WSConverter.convert(type));
+		try{
+			if(type.getId().equals("cincom:courrier_standard")){
+				System.out.println();
+			}
+			return WSConverter.convert(WSConverter.convert(type));
+		}catch(Exception e){
+			return null;
+		}
+		
 	}
 
 	public static PropertyDefinition<?> createPropDef(String id,

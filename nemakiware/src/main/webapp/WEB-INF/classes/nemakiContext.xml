@@ -261,6 +261,9 @@
         <property name="compileObjectService">
             <ref bean="CompileObjectService" />
         </property>
+        <property name="solrUtil">
+            <ref bean="solrUtil" />
+        </property>
     </bean>
 
     <bean id="DiscoveryService" class="org.springframework.aop.framework.ProxyFactoryBean">

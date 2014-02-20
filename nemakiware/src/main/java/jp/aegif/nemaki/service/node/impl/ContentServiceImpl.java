@@ -53,13 +53,12 @@ import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.model.constant.NemakiConstant;
 import jp.aegif.nemaki.model.constant.NodeType;
-import jp.aegif.nemaki.model.constant.PropertyKey;
+import jp.aegif.nemaki.query.solr.SolrUtil;
 import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.dao.ContentDaoService;
 import jp.aegif.nemaki.service.dao.impl.ContentDaoServiceImpl;
 import jp.aegif.nemaki.service.node.ContentService;
 import jp.aegif.nemaki.util.DataUtil;
-import jp.aegif.nemaki.util.NemakiPropertyManager;
 import jp.aegif.nemaki.util.PropertyUtil;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
@@ -87,9 +86,6 @@ import org.apache.commons.lang.math.NumberUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
-import com.sun.jersey.api.client.Client;
-import com.sun.jersey.api.client.WebResource;
-
 /**
  * Node Service implementation
  *
@@ -101,6 +97,7 @@ public class ContentServiceImpl implements ContentService {
 	private ContentDaoService contentDaoService;
 	private TypeManager typeManager;
 	private PropertyUtil propertyUtil;
+	private SolrUtil solrUtil;
 
 	private static final Log log = LogFactory
 			.getLog(ContentDaoServiceImpl.class);
@@ -444,8 +441,8 @@ public class ContentServiceImpl implements ContentService {
 		// Write change event
 		writeChangeEvent(callContext, document, ChangeType.CREATED);
 
-		// Call Solr indexing forcibly
-		callSolrIndexing();
+		// Call Solr indexing(optional)
+		solrUtil.callSolrIndexing();
 
 		return document;
 	}
@@ -482,8 +479,8 @@ public class ContentServiceImpl implements ContentService {
 		// Record the change event
 		writeChangeEvent(callContext, result, ChangeType.CREATED);
 
-		// Call Solr indexing forcibly
-		callSolrIndexing();
+		// Call Solr indexing(optional)
+		solrUtil.callSolrIndexing();
 
 		return result;
 	}
@@ -509,8 +506,8 @@ public class ContentServiceImpl implements ContentService {
 		// Record the change event
 		writeChangeEvent(callContext, result, ChangeType.CREATED);
 
-		// Call Solr indexing forcibly
-		callSolrIndexing();
+		// Call Solr indexing(optional)
+		solrUtil.callSolrIndexing();
 
 		return result;
 	}
@@ -540,8 +537,8 @@ public class ContentServiceImpl implements ContentService {
 		updateVersionSeriesWithPwc(callContext,
 				getVersionSeries(result.getVersionSeriesId()), result);
 
-		// Call Solr indexing forcibly
-		callSolrIndexing();
+		// Call Solr indexing(optional)
+		solrUtil.callSolrIndexing();
 
 		return result;
 	}
@@ -563,8 +560,8 @@ public class ContentServiceImpl implements ContentService {
 		vs.setVersionSeriesCheckedOutId("");
 		contentDaoService.update(vs);
 
-		// Call Solr indexing forcibly
-		callSolrIndexing();
+		// Call Solr indexing(optional)
+		solrUtil.callSolrIndexing();
 	}
 
 	@Override
@@ -613,8 +610,8 @@ public class ContentServiceImpl implements ContentService {
 		// Record the change event
 		writeChangeEvent(callContext, result, ChangeType.CREATED);
 
-		// Call Solr indexing forcibly
-		callSolrIndexing();
+		// Call Solr indexing(optional)
+		solrUtil.callSolrIndexing();
 
 		return result;
 	}
@@ -781,8 +778,8 @@ public class ContentServiceImpl implements ContentService {
 		// Record the change event
 		writeChangeEvent(callContext, folder, ChangeType.CREATED);
 
-		// Call Solr indexing forcibly
-		callSolrIndexing();
+		// Call Solr indexing(optional)
+		solrUtil.callSolrIndexing();
 
 		return folder;
 	}
@@ -1091,8 +1088,8 @@ public class ContentServiceImpl implements ContentService {
 			result =  contentDaoService.update((Item) content);
 		}
 
-		// Call Solr indexing forcibly
-		callSolrIndexing();
+		// Call Solr indexing(optional)
+		solrUtil.callSolrIndexing();
 
 		return result;
 	}
@@ -1129,8 +1126,8 @@ public class ContentServiceImpl implements ContentService {
 		content.setName(uniqueName);
 		update(content);
 
-		//Call Solr indexing forcibly
-		callSolrIndexing();
+		//Call Solr indexing(optional)
+		solrUtil.callSolrIndexing();
 	}
 
 	@Override
@@ -1178,8 +1175,8 @@ public class ContentServiceImpl implements ContentService {
 		createArchive(callContext, objectId, deletedWithParent);
 		contentDaoService.delete(objectId);
 
-		//Call Solr indexing forcibly
-		callSolrIndexing();
+		//Call Solr indexing(optional)
+		solrUtil.callSolrIndexing();
 	}
 
 	@Override
@@ -1225,8 +1222,8 @@ public class ContentServiceImpl implements ContentService {
 			}
 		}
 
-		//Call Solr indexing forcibly
-		callSolrIndexing();
+		//Call Solr indexing(optional)
+		solrUtil.callSolrIndexing();
 	}
 
 	// deletedWithParent flag controls whether it's deleted with the parent all
@@ -1568,8 +1565,8 @@ public class ContentServiceImpl implements ContentService {
 			log.error("Only document or folder is supported for restoration");
 		}
 
-		//Call Solr indexing forcibly
-		callSolrIndexing();
+		//Call Solr indexing(optional)
+		solrUtil.callSolrIndexing();
 	}
 
 	private Document restoreDocument(Archive archive) {
@@ -1803,23 +1800,7 @@ public class ContentServiceImpl implements ContentService {
 	private GregorianCalendar getTimeStamp() {
 		return DataUtil.millisToCalendar(System.currentTimeMillis());
 	}
-
-	@Override
-	public void callSolrIndexing(){
-		NemakiPropertyManager propertyManager  = propertyUtil.getPropertyManager();
-		String _force = propertyManager.readValue(PropertyKey.SOLR_INDEXING_FORCE);
-		boolean force = (Boolean.TRUE.toString().equals(_force)) ? true : false;
-
-		if(!force) return;
-
-		String url = propertyManager.readValue(PropertyKey.SOLR_URL);
-		 Client client = Client.create();
-		 //TODO Regardless a slash on the last, build the correct URL
-		 WebResource webResource = client.resource(url + "admin/cores?core=nemaki&action=index&tracking=AUTO");
-		 String xml = webResource.accept("application/xml").get(String.class);
-		 //TODO log according to the response status
-	}
-
+	
 	public void setContentDaoService(ContentDaoService contentDaoService) {
 		this.contentDaoService = contentDaoService;
 	}
@@ -1830,5 +1811,9 @@ public class ContentServiceImpl implements ContentService {
 
 	public void setPropertyUtil(PropertyUtil propertyUtil) {
 		this.propertyUtil = propertyUtil;
+	}
+
+	public void setSolrUtil(SolrUtil solrUtil) {
+		this.solrUtil = solrUtil;
 	}
 }

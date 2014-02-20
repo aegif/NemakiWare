@@ -397,8 +397,6 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 		//If cmis:allowedCHildTypeIds is not set, all types are allowed.
 		if (!CollectionUtils.isEmpty(allowedTypes)) {
-			// NOTE: Elements of allowedTypes must be like "cmis:folder", not
-			// "folder"
 			String childType = DataUtil.getIdProperty(childProperties,
 					PropertyIds.OBJECT_TYPE_ID);
 			if (!allowedTypes.contains(childType)) {
@@ -406,7 +404,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 						PropertyIds.OBJECT_ID);
 				constraint(
 						objectId,
-						"cmis:objectTypeId property value is NOT in the list of AllowedChildObjectTypeIds of the parent-folder");
+						"cmis:objectTypeId=" + childType + " is not in the list of AllowedChildObjectTypeIds of the parent folder");
 			}
 		}
 	}

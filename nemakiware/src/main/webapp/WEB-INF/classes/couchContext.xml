@@ -32,6 +32,9 @@
         <property name="propertyUtil">
             <ref bean="propertyUtil" />
         </property>
+        <property name="solrUtil">
+            <ref bean="solrUtil" />
+        </property>
 	</bean>
 	
 	<bean id="PrincipalService" class="org.springframework.aop.framework.ProxyFactoryBean">

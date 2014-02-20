@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
+import jp.aegif.nemaki.model.constant.PropertyKey;
 import jp.aegif.nemaki.util.NemakiPropertyManager;
 
 import org.antlr.runtime.tree.Tree;
@@ -32,6 +33,9 @@ import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.commons.lang.StringUtils;
 import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.client.solrj.impl.HttpSolrServer;
+
+import com.sun.jersey.api.client.Client;
+import com.sun.jersey.api.client.WebResource;
 
 /**
  * Common utility class for Solr query
@@ -108,6 +112,20 @@ public class SolrUtil {
 		return StringUtils.join(_string, ".");
 	}
 
+	public void callSolrIndexing(){
+		String _force = propertyManager.readValue(PropertyKey.SOLR_INDEXING_FORCE);
+		boolean force = (Boolean.TRUE.toString().equals(_force)) ? true : false;
+
+		if(!force) return;
+
+		String url = propertyManager.readValue(PropertyKey.SOLR_URL);
+		 Client client = Client.create();
+		 //TODO Regardless a slash on the last, build the correct URL
+		 WebResource webResource = client.resource(url + "admin/cores?core=nemaki&action=index&tracking=AUTO");
+		 String xml = webResource.accept("application/xml").get(String.class);
+		 //TODO log according to the response status
+	}
+	
 	public void setPropertyManager(NemakiPropertyManager propertyManager) {
 		this.propertyManager = propertyManager;
 	}

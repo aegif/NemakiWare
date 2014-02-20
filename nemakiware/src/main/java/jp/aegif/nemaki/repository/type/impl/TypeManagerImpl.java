@@ -992,7 +992,7 @@ public class TypeManagerImpl implements TypeManager {
 			TypeDefinitionContainer tdc = types.get(typeId);
 			flattenTypeDefinitionContainer(tdc, result, d, ipd);
 		}
-
+		
 		return result;
 	}
 
