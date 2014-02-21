@@ -10,6 +10,10 @@ echo "Copy tracking files"
 cp -f ../nemakisolr/src/main/webapp/WEB-INF/classes/tracking.properties.template ../nemakisolr/src/main/webapp/WEB-INF/classes/tracking.properties
 cp -f ../nemakishare/config/latest_change_token.yml.template ../nemakishare/config/latest_change_token.yml
 
+#Change ownership to user running the software
+chown $(whoami):$(whoami) ../nemakisolr/src/main/webapp/WEB-INF/classes/tracking.properties
+chown $(whoami):$(whoami) ../nemakishare/config/latest_change_token.yml
+
 
 #Client's bundle install
 echo "Install NemakiWare client dependencies"
