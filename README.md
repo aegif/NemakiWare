@@ -32,6 +32,11 @@ Prerequisite for installation
 * Platform: OSX 10.8.3+ or CentOS 6+, Ubuntu 12.10+ (Although Windows is not tested, NemakiWare is basically platform-agnostic).
 * Package management system, yum (CentOS), Homebrew/Mac Port (Mac), apt-get (Ubuntu) as you like
 
+### On Ubuntu 
+```bash
+sudo apt-get install curl vim git openjdk-6-jdk maven ruby1.9.1 ruby1.9.1-dev sqlite3 libsqlite3-dev -y
+```
+
 Installation
 ------
 ### Clone the repository
