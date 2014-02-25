@@ -680,12 +680,31 @@ public class ExceptionServiceImpl implements ExceptionService,
 		VersionSeries vs = contentService.getVersionSeries(document
 				.getVersionSeriesId());
 		if (vs.isVersionSeriesCheckedOut()) {
-			if (!(document.isPrivateWorkingCopy() && repositoryInfo
-					.getCapabilities().isPwcUpdatableSupported())) {
+			if (!(document.isPrivateWorkingCopy())) {
 				constraint(document.getId(),
-						"The version series is alredy checked out");
+						"The version series is already checked out");
 			}
 		}
+	}
+
+	@Override
+	public void constraintUpdateWhenCheckedOut(String currentUserId,
+			Document document) {
+		VersionSeries vs = contentService.getVersionSeries(document
+				.getVersionSeriesId());
+		if (vs.isVersionSeriesCheckedOut()) {
+			if(document.isPrivateWorkingCopy()){
+				//Can update by only the use who has checked it out
+				String whoCheckedOut = vs.getVersionSeriesCheckedOutBy();
+				if(!currentUserId.equals(whoCheckedOut)){
+					constraint(document.getId(), "This private working copy can be modified only by the user who has checked it out. ");
+				}
+			}else{
+				//All versions except for PWC are locked.
+				constraint(document.getId(), "All versions except for PWC are locked when checked out.");
+			}
+		}
+		
 	}
 
 	@Override

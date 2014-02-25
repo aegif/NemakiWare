@@ -142,15 +142,16 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		}
 
 		// Set Relationships
-		if(!content.isRelationship()){
+		if (!content.isRelationship()) {
 			result.setRelationships(compileRelationships(context, content, irl));
 		}
-		
-		//Set Renditions
-		if(content.isDocument() && repositoryInfo.getCapabilities().getRenditionsCapability() == CapabilityRenditions.READ){
+
+		// Set Renditions
+		if (content.isDocument()
+				&& repositoryInfo.getCapabilities().getRenditionsCapability() == CapabilityRenditions.READ) {
 			result.setRenditions(compileRenditions(context, content));
 		}
-		
+
 		aliases = null;
 
 		return result;
@@ -362,7 +363,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			if (content.isDocument()) {
 				Document d = (Document) content;
 				DocumentTypeDefinition dtdf = (DocumentTypeDefinition) tdf;
-				if (!isAllowableActionForVersionableDocument(
+				if (!isAllowableActionForVersionableDocument(callContext,
 						mappingEntry.getKey(), d, dtdf)) {
 					continue;
 				}
@@ -382,23 +383,53 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	}
 
 	private boolean isAllowableActionForVersionableDocument(
-			String permissionMappingKey, Document document,
-			DocumentTypeDefinition dtdf) {
-
+			CallContext callContext, String permissionMappingKey,
+			Document document, DocumentTypeDefinition dtdf) {
+		
 		VersionSeries vs = contentService.getVersionSeries(document
 				.getVersionSeriesId());
+		//Versioning action(checkOut / checkIn)
 		if (permissionMappingKey
 				.equals(PermissionMapping.CAN_CHECKOUT_DOCUMENT)) {
-			return dtdf.isVersionable() && !vs.isVersionSeriesCheckedOut();
+			return dtdf.isVersionable() && !vs.isVersionSeriesCheckedOut() && document.isLatestVersion();
 		} else if (permissionMappingKey
 				.equals(PermissionMapping.CAN_CHECKIN_DOCUMENT)) {
-			return dtdf.isVersionable() && document.isPrivateWorkingCopy();
+			return dtdf.isVersionable() && vs.isVersionSeriesCheckedOut() && document.isPrivateWorkingCopy();
 		} else if (permissionMappingKey
 				.equals(PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT)) {
-			return dtdf.isVersionable() && document.isPrivateWorkingCopy();
+			return dtdf.isVersionable() && vs.isVersionSeriesCheckedOut() && document.isPrivateWorkingCopy();
+		}
+		
+		
+		//Lock as an effect of checkOut
+		if(dtdf.isVersionable()){
+			if(isLockableAction(permissionMappingKey)){
+				if(document.isLatestVersion()){
+					//LocK only when checked out
+					return !vs.isVersionSeriesCheckedOut();
+				}else if(document.isPrivateWorkingCopy()){
+					//Only owner can do actions on pwc
+					return callContext.getUsername().equals(vs.getVersionSeriesCheckedOutBy());
+				}else{
+					return false;
+				}
+			}
 		}
 
 		return true;
+	}
+
+	private boolean isLockableAction(String key) {
+		return key.equals(PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT)
+				|| key.equals(PermissionMapping.CAN_SET_CONTENT_DOCUMENT)
+				|| key.equals(PermissionMapping.CAN_ADD_POLICY_OBJECT)
+				|| key.equals(PermissionMapping.CAN_ADD_TO_FOLDER_OBJECT)
+				|| key.equals(PermissionMapping.CAN_APPLY_ACL_OBJECT)
+				|| key.equals(PermissionMapping.CAN_DELETE_CONTENT_DOCUMENT)
+				|| key.equals(PermissionMapping.CAN_DELETE_OBJECT)
+				|| key.equals(PermissionMapping.CAN_MOVE_OBJECT)
+				|| key.equals(PermissionMapping.CAN_REMOVE_FROM_FOLDER_OBJECT)
+				|| key.equals(PermissionMapping.CAN_REMOVE_POLICY_OBJECT);
 	}
 
 	private boolean isAllowableByCapability(String key) {
@@ -469,7 +500,6 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		}
 	}
 
-	
 	private List<ObjectData> compileRelationships(CallContext context,
 			Content content, IncludeRelationships irl) {
 		if (IncludeRelationships.NONE == irl) {
@@ -505,13 +535,15 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 		return rels;
 	}
-	
-	private List<RenditionData> compileRenditions(CallContext callContext, Content content){
+
+	private List<RenditionData> compileRenditions(CallContext callContext,
+			Content content) {
 		List<RenditionData> renditions = new ArrayList<RenditionData>();
-		
-		List<Rendition> _renditions = contentService.getRenditions(content.getId());
-		if(CollectionUtils.isNotEmpty(_renditions)){
-			for(Rendition _rd : _renditions){
+
+		List<Rendition> _renditions = contentService.getRenditions(content
+				.getId());
+		if (CollectionUtils.isNotEmpty(_renditions)) {
+			for (Rendition _rd : _renditions) {
 				RenditionDataImpl rd = new RenditionDataImpl();
 				rd.setStreamId(_rd.getId());
 				rd.setMimeType(_rd.getMimetype());
@@ -521,14 +553,14 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 				rd.setBigHeight(BigInteger.valueOf(_rd.getHeight()));
 				rd.setBigWidth(BigInteger.valueOf(_rd.getWidth()));
 				rd.setRenditionDocumentId(_rd.getRenditionDocumentId());
-				
+
 				renditions.add(rd);
 			}
 		}
-		
+
 		return renditions;
 	}
-	
+
 	/**
 	 * Compiles properties of a piece of content.
 	 */
@@ -855,8 +887,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			}
 		}
 
-		new PropertyIdImpl(
-				PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondaryIds);
+		new PropertyIdImpl(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondaryIds);
 		addProperty(props, typeId, filter,
 				PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondaryIds);
 
@@ -952,11 +983,11 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	private void addProperty(PropertiesImpl props, String typeId,
 			Set<String> filter, String id, Object value) {
 		try {
-		PropertyDefinition<?> pdf = repositoryService.getTypeManager()
-				.getTypeDefinition(typeId).getPropertyDefinitions().get(id);
-		
-		if (!checkAddProperty(props, typeId, filter, id))
-			return;
+			PropertyDefinition<?> pdf = repositoryService.getTypeManager()
+					.getTypeDefinition(typeId).getPropertyDefinitions().get(id);
+
+			if (!checkAddProperty(props, typeId, filter, id))
+				return;
 
 			switch (pdf.getPropertyType()) {
 			case BOOLEAN:

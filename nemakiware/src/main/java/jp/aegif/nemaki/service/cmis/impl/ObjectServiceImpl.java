@@ -673,26 +673,14 @@ public class ObjectServiceImpl implements ObjectService {
 				objectId.getValue());
 		if (content.isDocument()) {
 			Document d = (Document) content;
-			exceptionService.constraintAlreadyCheckedOut(d);
+			exceptionService.constraintUpdateWhenCheckedOut(callContext.getUsername(), d);
 			TypeDefinition typeDef = typeManager.getTypeDefinition(d);
 			exceptionService.constraintImmutable(d, typeDef);
 		}
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT, content);
 		exceptionService.updateConflict(content, changeToken);
-
-		/*
-		 * //If secondaryObjectTypeIds are changed, update them in advance
-		 * List<String> secIds = getIdListProperty(properties,
-		 * PropertyIds.SECONDARY_OBJECT_TYPE_IDS); if(!compareList(secIds,
-		 * content.getSecondaryIds())){ PropertiesImpl pi = new
-		 * PropertiesImpl();
-		 * pi.addProperty(properties.getProperties().get(PropertyIds
-		 * .SECONDARY_OBJECT_TYPE_IDS));
-		 *
-		 * content = null; content = updateProperties(callContext, objectId, pi,
-		 * changeToken); }
-		 */
+		
 
 		TypeDefinition tdf = typeManager.getTypeDefinition(content);
 		exceptionService.constraintPropertyValue(tdf, properties,

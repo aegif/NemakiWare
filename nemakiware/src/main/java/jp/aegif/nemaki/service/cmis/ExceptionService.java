@@ -83,6 +83,7 @@ public interface ExceptionService {
 	void constraintAllowedTargetTypes(RelationshipTypeDefinition relationshipTypeDefinition, Content target);
 	void constraintVersionable(String typeId);
 	void constraintAlreadyCheckedOut(Document document);
+	void constraintUpdateWhenCheckedOut(String currentUserId, Document document);
 	void constraintAclPropagationDoesNotMatch(AclPropagation aclPropagation);
 	void constraintContentStreamRequired(Document document);
 	void constaintOnlyLeafTypeDefinition(String objectTypeId);
