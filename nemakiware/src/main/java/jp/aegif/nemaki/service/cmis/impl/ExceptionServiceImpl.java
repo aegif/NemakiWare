@@ -984,6 +984,22 @@ public class ExceptionServiceImpl implements ExceptionService,
 		return ".*" + contained + ".*";
 	}
 
+	public void constraintContentStreamDownload(Document document){
+		DocumentTypeDefinition documentTypeDefinition = (DocumentTypeDefinition) typeManager.getTypeDefinition(document);
+		ContentStreamAllowed csa = documentTypeDefinition.getContentStreamAllowed();
+		if(ContentStreamAllowed.NOTALLOWED == csa ||
+			ContentStreamAllowed.ALLOWED == csa && StringUtils.isBlank(document.getAttachmentNodeId())){
+			constraint(document.getId(), "This document has no ContentStream. getContentStream is not supported.");
+		}
+	}
+	
+	public void constraintRenditionStreamDownload(Content content, String streamId){
+		List<String> renditions = content.getRenditionIds();
+		if(CollectionUtils.isEmpty(renditions) || !renditions.contains(streamId)){
+			constraint(content.getId(), "This document has no rendition specified with " + streamId);
+		}
+	}
+	
 	@Override
 	public void constraintImmutable(Document document,
 			TypeDefinition typeDefinition) {

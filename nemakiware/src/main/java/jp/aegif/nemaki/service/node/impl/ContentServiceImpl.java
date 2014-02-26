@@ -264,7 +264,20 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public List<Document> getAllVersions(String versionSeriesId) {
+	public List<Document> getAllVersions(CallContext callContext, String versionSeriesId) {
+		List<Document> results = new ArrayList<Document>();
+		
+		//TODO hide PWC from a non-owner user
+		List<Document> versions = contentDaoService.getAllVersions(versionSeriesId);
+		
+		if(CollectionUtils.isNotEmpty(versions)){
+			for(Document doc : versions){
+				if(!doc.isPrivateWorkingCopy()){
+					results.add(doc);
+				}
+			}
+		}
+		
 		return contentDaoService.getAllVersions(versionSeriesId);
 	}
 
@@ -1186,6 +1199,13 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
+	public void deleteContentStream(CallContext callContext,
+			Holder<String> objectId) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
 	public void deleteDocument(CallContext callContext, String objectId,
 			Boolean allVersions, Boolean deleteWithParent) {
 		Document document = (Document) getContent(objectId);
@@ -1194,7 +1214,7 @@ public class ContentServiceImpl implements ContentService {
 		List<Document> versionList = new ArrayList<Document>();
 		String versionSeriesId = document.getVersionSeriesId();
 		if (allVersions) {
-			versionList = getAllVersions(versionSeriesId);
+			versionList = getAllVersions(callContext, versionSeriesId);
 		} else {
 			versionList.add(document);
 		}

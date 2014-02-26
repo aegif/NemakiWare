@@ -175,7 +175,7 @@ public class ObjectServiceImpl implements ObjectService {
 							"getContentStream cannnot be invoked to other than document type.");
 		}
 		Document document = (Document) content;
-
+		exceptionService.constraintContentStreamDownload(document);
 		AttachmentNode attachment = contentService.getAttachment(document
 				.getAttachmentNodeId());
 
@@ -190,14 +190,14 @@ public class ObjectServiceImpl implements ObjectService {
 
 	}
 
-	// TODO Rendition and ContnetStream can be integrated as StreamNode class.
 	private ContentStream getRenditionStream(Content content, String streamId) {
-		if (!content.isDocument() || content.isFolder()) {
+		if (!content.isDocument() && !content.isFolder()) {
 			exceptionService
 					.constraint(content.getId(),
 							"getRenditionStream cannnot be invoked to other than document or folder type.");
 		}
-
+		
+		exceptionService.constraintRenditionStreamDownload(content, streamId);
 		Rendition rendition = contentService.getRendition(streamId);
 
 		BigInteger length = BigInteger.valueOf(rendition.getLength());
@@ -475,8 +475,11 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.objectNotFound(DomainType.OBJECT, document,
 				document.getId());
 		exceptionService.constraintContentStreamRequired(document);
-
-		// NOTE: Nemaki does't support documents without content stream
+		
+		// //////////////////
+		// Body of the method
+		// //////////////////
+		contentService.deleteContentStream(callContext, objectId);
 	}
 
 	@Override

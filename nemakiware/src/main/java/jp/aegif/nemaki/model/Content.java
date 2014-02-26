@@ -60,6 +60,7 @@ public class Content extends NodeBase {
 	private List<String> secondaryIds = new ArrayList<String>();
 	private String objectType;
 	private int changeToken;
+	private List<String> renditionIds;
 
 	public Content() {
 		super();
@@ -155,6 +156,14 @@ public class Content extends NodeBase {
 
 	public void setChangeToken(int changeToken) {
 		this.changeToken = changeToken;
+	}
+
+	public List<String> getRenditionIds() {
+		return renditionIds;
+	}
+
+	public void setRenditionIds(List<String> renditionIds) {
+		this.renditionIds = renditionIds;
 	}
 
 	@Override

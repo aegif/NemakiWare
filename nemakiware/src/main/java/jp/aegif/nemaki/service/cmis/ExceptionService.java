@@ -92,6 +92,8 @@ public interface ExceptionService {
 	void constraintUpdatePropertyDefinition(PropertyDefinition<?> update,PropertyDefinition<?> old);
 	void constraintQueryName(PropertyDefinition<?> propertyDefinition);
 	void constraintImmutable(Document document, TypeDefinition typeDefinition);
+	void constraintContentStreamDownload(Document document);
+	void constraintRenditionStreamDownload(Content content, String streamId);
 	void contentAlreadyExists(Content content, Boolean overwriteFlag);
 	void streamNotSupported(DocumentTypeDefinition documentTypeDefinition, ContentStream contentStream);
 	void nameConstraintViolation(Properties properties, Folder parentFolder);
