@@ -832,25 +832,35 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	private void setCmisAttachmentProperties(PropertiesImpl properties,
 			String typeId, Set<String> filter,
 			Document document) {
+		Long length = null;
+		String mimeType = null;
+		String fileName = null;
+		String streamId = null;
+		
 		//Check if ContentStream is attached
 		DocumentTypeDefinition tdf = (DocumentTypeDefinition) typeManager.getTypeDefinition(typeId);
 		ContentStreamAllowed csa = tdf.getContentStreamAllowed();
-		if(ContentStreamAllowed.NOTALLOWED == csa ||
-			ContentStreamAllowed.ALLOWED == csa && StringUtils.isBlank(document.getAttachmentNodeId())){
-			return;
+		if(ContentStreamAllowed.REQUIRED == csa ||
+			ContentStreamAllowed.ALLOWED == csa && StringUtils.isNotBlank(document.getAttachmentNodeId())){
+			
+			AttachmentNode attachment = contentService.getAttachmentRef(document
+					.getAttachmentNodeId());
+			
+			length = attachment.getLength();
+			mimeType = attachment.getMimeType();
+			fileName = attachment.getName();
+			streamId = attachment.getId();
 		}
 		
-		AttachmentNode attachment = contentService.getAttachmentRef(document
-				.getAttachmentNodeId());
 		//Add ContentStream properties to Document object
 		addProperty(properties, typeId, filter,
-				PropertyIds.CONTENT_STREAM_LENGTH, attachment.getLength());
+				PropertyIds.CONTENT_STREAM_LENGTH, length);
 		addProperty(properties, typeId, filter,
-				PropertyIds.CONTENT_STREAM_MIME_TYPE, attachment.getMimeType());
+				PropertyIds.CONTENT_STREAM_MIME_TYPE, mimeType);
 		addProperty(properties, typeId, filter,
-				PropertyIds.CONTENT_STREAM_FILE_NAME, document.getName());
+				PropertyIds.CONTENT_STREAM_FILE_NAME, fileName);
 		addProperty(properties, typeId, filter, PropertyIds.CONTENT_STREAM_ID,
-				attachment.getId());
+				streamId);
 	}
 
 	private void setCmisRelationshipProperties(PropertiesImpl properties,
