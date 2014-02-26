@@ -627,17 +627,8 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		String typeId = document.getObjectType();
 		setCmisBaseProperties(properties, typeId, filter, document);
 		setCmisDocumentProperties(properties, typeId, filter, document);
-
-		AttachmentNode attachment = contentService.getAttachmentRef(document
-				.getAttachmentNodeId());
-		if (attachment != null) {
-			setCmisAttachmentProperties(properties, typeId, filter, attachment,
-					document);
-
-		} else {
-			// TODO Logging
-		}
-
+		setCmisAttachmentProperties(properties, typeId, filter, document);
+	
 		return properties;
 	}
 
@@ -839,8 +830,19 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	}
 
 	private void setCmisAttachmentProperties(PropertiesImpl properties,
-			String typeId, Set<String> filter, AttachmentNode attachment,
-			Content document) {
+			String typeId, Set<String> filter,
+			Document document) {
+		//Check if ContentStream is attached
+		DocumentTypeDefinition tdf = (DocumentTypeDefinition) typeManager.getTypeDefinition(typeId);
+		ContentStreamAllowed csa = tdf.getContentStreamAllowed();
+		if(ContentStreamAllowed.NOTALLOWED == csa ||
+			ContentStreamAllowed.ALLOWED == csa && StringUtils.isBlank(document.getAttachmentNodeId())){
+			return;
+		}
+		
+		AttachmentNode attachment = contentService.getAttachmentRef(document
+				.getAttachmentNodeId());
+		//Add ContentStream properties to Document object
 		addProperty(properties, typeId, filter,
 				PropertyIds.CONTENT_STREAM_LENGTH, attachment.getLength());
 		addProperty(properties, typeId, filter,

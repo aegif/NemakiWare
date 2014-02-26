@@ -119,11 +119,12 @@ public interface ContentService {
 
 	/**
 	 * Get all versions of a document
-	 *
+	 * @param callContext TODO
 	 * @param versionSeriesId
+	 *
 	 * @return
 	 */
-	List<Document> getAllVersions(String versionSeriesId);
+	List<Document> getAllVersions(CallContext callContext, String versionSeriesId);
 
 	/**
 	 * Get checkout documents in a folder
@@ -424,6 +425,13 @@ public interface ContentService {
 	 */
 	void deleteAttachment(CallContext callContext, String attachmentId);
 
+	/**
+	 * Delete content stream
+	 * @param callContext
+	 * @param objectId
+	 */
+	void deleteContentStream(CallContext callContext, Holder<String> objectId);
+	
 	/**
 	 * Delete a whole folder tree
 	 *

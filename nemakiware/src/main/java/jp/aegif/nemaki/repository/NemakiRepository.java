@@ -96,7 +96,8 @@ public class NemakiRepository {
 	public void deleteContentStream(CallContext callContext,
 			Holder<String> objectId, Holder<String> changeToken,
 			ExtensionsData extension) {
-
+		objectService.deleteContentStream(callContext, objectId, changeToken,
+				extension);
 	}
 
 	public void appendContentStream(CallContext callContext,
@@ -371,7 +372,7 @@ public class NemakiRepository {
 
 	/**
 	 * Executes a CMIS query statement against the contents of the repository.
-	 *
+	 * 
 	 * TODO this should be replaced with other search engine like Lucene.
 	 */
 	public ObjectList query(CallContext callContext, String statement,

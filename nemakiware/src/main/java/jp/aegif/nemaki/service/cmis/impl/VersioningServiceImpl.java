@@ -199,11 +199,13 @@ public class VersioningServiceImpl implements VersioningService {
 		}
 		
 		List<Document> allVersions = contentService
-				.getAllVersions(versionSeriesId);
+				.getAllVersions(context, versionSeriesId);
 		exceptionService.objectNotFoundVersionSeries(versionSeriesId,
 				allVersions);
 		// Sort by the descending order
 		Collections.sort(allVersions, new VersionComparator());
+	
+		//Permissions check on the latest document
 		exceptionService.permissionDenied(context,
 				PermissionMapping.CAN_GET_ALL_VERSIONS_VERSION_SERIES,
 				allVersions.get(0));

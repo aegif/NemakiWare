@@ -34,11 +34,8 @@ import org.codehaus.jackson.annotate.JsonIgnoreProperties;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Document extends Content {
 
-	public static final String TYPE = "document";
-
-	// Attachment
+		// Attachment
 		private String attachmentNodeId;
-		private List<String> renditionIds;
 		
 		// Versioning
 		private String versionSeriesId;
@@ -83,14 +80,6 @@ public class Document extends Content {
 		this.attachmentNodeId = attachmentNodeId;
 	}
 	
-	public List<String> getRenditionIds() {
-		return renditionIds;
-	}
-
-	public void setRenditionIds(List<String> renditionIds) {
-		this.renditionIds = renditionIds;
-	}
-
 	public String getVersionSeriesId() {
 		return versionSeriesId;
 	}
