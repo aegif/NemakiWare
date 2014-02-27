@@ -1570,7 +1570,7 @@ public class ContentServiceImpl implements ContentService {
 
 		CallContextImpl dummyContext = new CallContextImpl(null, null, null,
 				null, null, null, null, null);
-		dummyContext.put(dummyContext.USERNAME, "system");
+		dummyContext.put(dummyContext.USERNAME, NemakiConstant.PRINCIPAL_SYSTEM);
 
 		// Switch over the operation depending on the type of archive
 		if (archive.isFolder()) {
