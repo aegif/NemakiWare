@@ -36,4 +36,6 @@ public interface NemakiConstant {
 	final String EXTNAME_ACL_INHERITED = "inherited";
 	
 	final String PATH_SEPARATOR = "/";
+	
+	final String PRINCIPAL_SYSTEM = "system";
 }
