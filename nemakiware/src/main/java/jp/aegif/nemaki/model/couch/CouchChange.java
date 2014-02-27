@@ -45,7 +45,7 @@ public class CouchChange extends CouchNodeBase implements Comparable<CouchChange
 	private String paretnId;
 	
 	private String objectId;
-	private int changeToken;
+	private long changeToken;
 	private ChangeType changeType;
 	private GregorianCalendar time;
 	
@@ -142,10 +142,10 @@ public class CouchChange extends CouchNodeBase implements Comparable<CouchChange
 		this.objectId = objectId;
 	}
 	
-	public int getChangeToken() {
+	public long getChangeToken() {
 		return changeToken;
 	}
-	public void setChangeToken(int changeToken) {
+	public void setChangeToken(long changeToken) {
 		this.changeToken = changeToken;
 	}
 	

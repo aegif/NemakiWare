@@ -1074,7 +1074,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void updateConflict(Content content, Holder<String> changeToken) {
-		int latestOfContent = content.getChangeToken();
+		long latestOfContent = content.getChangeToken();
 
 		if ((changeToken == null || changeToken.getValue() == null)
 				&& latestOfContent != 0) {

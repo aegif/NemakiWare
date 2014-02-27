@@ -363,7 +363,7 @@ public class ContentServiceImpl implements ContentService {
 		return contentDaoService.getItem(objectId);
 	}
 
-	private int writeChangeEvent(CallContext callContext, Content content,
+	private long writeChangeEvent(CallContext callContext, Content content,
 			ChangeType changeType) {
 		Change latest = contentDaoService.getLatestChange();
 

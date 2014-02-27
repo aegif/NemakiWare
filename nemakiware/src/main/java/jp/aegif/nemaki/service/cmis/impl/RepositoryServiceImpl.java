@@ -58,7 +58,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 	private NemakiRepositoryInfoImpl repositoryInfo;
 	private TypeManager typeManager;
 	private TypeService typeService;
-	private ContentService contentService;;
+	private ContentService contentService;
 
 	private ExceptionService exceptionService;
 

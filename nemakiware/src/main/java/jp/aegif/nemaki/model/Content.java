@@ -59,7 +59,7 @@ public class Content extends NodeBase {
 	private List<Aspect> aspects = new ArrayList<Aspect>();
 	private List<String> secondaryIds = new ArrayList<String>();
 	private String objectType;
-	private int changeToken;
+	private long changeToken;
 	private List<String> renditionIds;
 
 	public Content() {
@@ -150,11 +150,11 @@ public class Content extends NodeBase {
 		this.objectType = objectType;
 	}
 
-	public int getChangeToken() {
+	public long getChangeToken() {
 		return changeToken;
 	}
 
-	public void setChangeToken(int changeToken) {
+	public void setChangeToken(long changeToken) {
 		this.changeToken = changeToken;
 	}
 
