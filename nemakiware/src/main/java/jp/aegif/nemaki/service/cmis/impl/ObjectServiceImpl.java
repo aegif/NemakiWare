@@ -436,8 +436,8 @@ public class ObjectServiceImpl implements ObjectService {
 				.invalidArgumentRequired("contentStream", contentStream);
 		Document doc = (Document) contentService.getContent(id);
 		exceptionService.objectNotFound(DomainType.OBJECT, doc, id);
-		Properties properties = compileObjectService.compileProperties(doc,
-				compileObjectService.splitFilter(""), new ObjectInfoImpl());
+		Properties properties = compileObjectService.compileProperties(callContext,
+				doc, compileObjectService.splitFilter(""), new ObjectInfoImpl());
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_SET_CONTENT_DOCUMENT, doc);
 		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
@@ -497,8 +497,8 @@ public class ObjectServiceImpl implements ObjectService {
 				.invalidArgumentRequired("contentStream", contentStream);
 		Document doc = (Document) contentService.getContent(id);
 		exceptionService.objectNotFound(DomainType.OBJECT, doc, id);
-		Properties properties = compileObjectService.compileProperties(doc,
-				compileObjectService.splitFilter(""), new ObjectInfoImpl());
+		Properties properties = compileObjectService.compileProperties(callContext,
+				doc, compileObjectService.splitFilter(""), new ObjectInfoImpl());
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_SET_CONTENT_DOCUMENT, doc);
 		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager

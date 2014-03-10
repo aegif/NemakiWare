@@ -112,7 +112,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	 * Builds a CMIS ObjectData from the given CouchDB content.
 	 */
 	@Override
-	public ObjectData compileObjectData(CallContext context, Content content,
+	public ObjectData compileObjectData(CallContext callContext, Content content,
 			String filter, Boolean includeAllowableActions,
 			IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includeAcl, Map<String, String> aliases) {
@@ -125,12 +125,12 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 		ObjectDataImpl result = new ObjectDataImpl();
 		ObjectInfoImpl objectInfo = new ObjectInfoImpl();
-		result.setProperties(compileProperties(content, splitFilter(filter),
-				objectInfo));
+		result.setProperties(compileProperties(callContext, content,
+				splitFilter(filter), objectInfo));
 
 		// Set Allowable actions
 		if (iaa) {
-			result.setAllowableActions(compileAllowableActions(context, content));
+			result.setAllowableActions(compileAllowableActions(callContext, content));
 		}
 
 		// Set Acl
@@ -143,13 +143,13 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 		// Set Relationships
 		if (!content.isRelationship()) {
-			result.setRelationships(compileRelationships(context, content, irl));
+			result.setRelationships(compileRelationships(callContext, content, irl));
 		}
 
 		// Set Renditions
 		if (content.isDocument()
 				&& repositoryInfo.getCapabilities().getRenditionsCapability() == CapabilityRenditions.READ) {
-			result.setRenditions(compileRenditions(context, content));
+			result.setRenditions(compileRenditions(callContext, content));
 		}
 
 		aliases = null;
@@ -570,8 +570,8 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	 * Compiles properties of a piece of content.
 	 */
 	@Override
-	public Properties compileProperties(Content content, Set<String> filter,
-			ObjectInfoImpl objectInfo) {
+	public Properties compileProperties(CallContext callContext, Content content,
+			Set<String> filter, ObjectInfoImpl objectInfo) {
 
 		PropertiesImpl properties = new PropertiesImpl();
 		if (content.isFolder()) {
@@ -586,7 +586,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			}
 		} else if (content.isDocument()) {
 			Document document = (Document) content;
-			properties = compileDocumentProperties(document, properties, filter);
+			properties = compileDocumentProperties(callContext, document, properties, filter);
 		} else if (content.isRelationship()) {
 			Relationship relationship = (Relationship) content;
 			properties = compileRelationshipProperties(relationship,
@@ -627,11 +627,11 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		return properties;
 	}
 
-	private PropertiesImpl compileDocumentProperties(Document document,
-			PropertiesImpl properties, Set<String> filter) {
+	private PropertiesImpl compileDocumentProperties(CallContext callContext,
+			Document document, PropertiesImpl properties, Set<String> filter) {
 		String typeId = document.getObjectType();
 		setCmisBaseProperties(properties, typeId, filter, document);
-		setCmisDocumentProperties(properties, typeId, filter, document);
+		setCmisDocumentProperties(callContext, properties, typeId, filter, document);
 		setCmisAttachmentProperties(properties, typeId, filter, document);
 	
 		return properties;
@@ -756,8 +756,8 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		}
 	}
 
-	private void setCmisDocumentProperties(PropertiesImpl properties,
-			String typeId, Set<String> filter, Document document) {
+	private void setCmisDocumentProperties(CallContext callContext,
+			PropertiesImpl properties, String typeId, Set<String> filter, Document document) {
 
 		addProperty(properties, typeId, filter, PropertyIds.BASE_TYPE_ID,
 				BaseTypeId.CMIS_DOCUMENT.value());
@@ -794,12 +794,23 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 					PropertyIds.IS_VERSION_SERIES_CHECKED_OUT,
 					vs.isVersionSeriesCheckedOut());
 			if (vs.isVersionSeriesCheckedOut()) {
-				addProperty(properties, typeId, filter,
-						PropertyIds.VERSION_SERIES_CHECKED_OUT_ID,
-						vs.getVersionSeriesCheckedOutId());
-				addProperty(properties, typeId, filter,
-						PropertyIds.VERSION_SERIES_CHECKED_OUT_BY,
-						vs.getVersionSeriesCheckedOutBy());
+				String userId = callContext.getUsername();
+				String checkedOutBy = vs.getVersionSeriesCheckedOutBy();
+				
+				if(userId.equals(checkedOutBy)){
+					addProperty(properties, typeId, filter,
+							PropertyIds.VERSION_SERIES_CHECKED_OUT_ID,
+							vs.getVersionSeriesCheckedOutId());
+					addProperty(properties, typeId, filter,
+							PropertyIds.VERSION_SERIES_CHECKED_OUT_BY,
+							checkedOutBy);
+				}else{
+					addProperty(properties, typeId, filter,
+							PropertyIds.VERSION_SERIES_CHECKED_OUT_ID, null);
+					addProperty(properties, typeId, filter,
+							PropertyIds.VERSION_SERIES_CHECKED_OUT_BY, checkedOutBy);
+				}
+				
 			} else {
 				addProperty(properties, typeId, filter,
 						PropertyIds.VERSION_SERIES_CHECKED_OUT_ID, null);
