@@ -139,6 +139,13 @@ public interface ContentService {
 
 	/**
 	 * Get a version series
+	 * @param document
+	 * @return
+	 */
+	VersionSeries getVersionSeries(Document document);
+	
+	/**
+	 * Get a version series
 	 *
 	 * @param versionSeriesId
 	 * @return

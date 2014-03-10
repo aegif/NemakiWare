@@ -287,7 +287,12 @@ public class ContentServiceImpl implements ContentService {
 			ExtensionsData extension) {
 		return contentDaoService.getCheckedOutDocuments(folderId);
 	}
-
+	
+	@Override
+	public VersionSeries getVersionSeries(Document document){
+		return getVersionSeries(document.getVersionSeriesId());
+	}
+	
 	@Override
 	public VersionSeries getVersionSeries(String versionSeriesId) {
 		return contentDaoService.getVersionSeries(versionSeriesId);
@@ -486,7 +491,7 @@ public class ContentServiceImpl implements ContentService {
 		// Update versionSeriesId#versionSeriesCheckedOutId after creating a PWC
 		if (versioningState == VersioningState.CHECKEDOUT) {
 			updateVersionSeriesWithPwc(callContext,
-					getVersionSeries(result.getVersionSeriesId()), result);
+					getVersionSeries(result), result);
 		}
 
 		// Record the change event
@@ -548,7 +553,7 @@ public class ContentServiceImpl implements ContentService {
 
 		// Modify versionSeries
 		updateVersionSeriesWithPwc(callContext,
-				getVersionSeries(result.getVersionSeriesId()), result);
+				getVersionSeries(result), result);
 
 		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing();
@@ -560,7 +565,7 @@ public class ContentServiceImpl implements ContentService {
 	public void cancelCheckOut(CallContext callContext, String objectId,
 			ExtensionsData extension) {
 		Document pwc = getDocument(objectId);
-		VersionSeries vs = getVersionSeries(pwc.getVersionSeriesId());
+		VersionSeries vs = getVersionSeries(pwc);
 
 		// Delete attachment & document itself(without archiving)
 		contentDaoService.delete(pwc.getAttachmentNodeId());
