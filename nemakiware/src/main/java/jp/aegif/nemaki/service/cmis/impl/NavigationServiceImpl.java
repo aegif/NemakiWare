@@ -45,12 +45,14 @@ import org.apache.chemistry.opencmis.commons.data.ObjectInFolderList;
 import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.data.ObjectParentData;
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
+import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectInFolderContainerImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectInFolderDataImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectInFolderListImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectParentDataImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.commons.collections.CollectionUtils;
 
 public class NavigationServiceImpl implements NavigationService {
@@ -66,7 +68,7 @@ public class NavigationServiceImpl implements NavigationService {
 			Boolean includeAllowableActions,
 			IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includePathSegments, BigInteger maxItems,
-			BigInteger skipCount, ExtensionsData extension) {
+			BigInteger skipCount, ExtensionsData extension, Holder<ObjectData> parentObjectData) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -83,6 +85,10 @@ public class NavigationServiceImpl implements NavigationService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
+		//Set ObjectData of parent folder for ObjectInfo
+		ObjectData _parent = compileObjectService.compileObjectData(callContext, folder, filter, includeAllowableActions, includeRelationships, renditionFilter, false, null);
+		parentObjectData.setValue(_parent);
+		
 		return getChildrenInternal(callContext, folderId, filter, orderBy,
 				includeAllowableActions, includeRelationships, renditionFilter,
 				includePathSegments, maxItems, skipCount, false);
@@ -109,9 +115,8 @@ public class NavigationServiceImpl implements NavigationService {
 			max = Integer.MAX_VALUE;
 		}
 
-		Folder folder = (Folder) contentService.getContent(folderId);
 		List<Content> aclFiltered = permissionService.getFiltered(callContext,
-				contentService.getChildren(folder.getId()));
+				contentService.getChildren(folderId));
 		// Filtering with folderOnly flag
 		List<Content> contents = new ArrayList<Content>();
 		if (folderOnly) {
@@ -174,7 +179,7 @@ public class NavigationServiceImpl implements NavigationService {
 			String filter, Boolean includeAllowableActions,
 			IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includePathSegment, boolean foldersOnly,
-			ExtensionsData extension) {
+			ExtensionsData extension, Holder<ObjectData> anscestorObjectData) {
 
 		// //////////////////
 		// General Exception
@@ -202,13 +207,17 @@ public class NavigationServiceImpl implements NavigationService {
 		boolean ips = (includePathSegment == null ? false : includePathSegment
 				.booleanValue());
 
+		
+		// Set ObjectData of the starting folder for ObjectInfo
+		ObjectData _folder = compileObjectService.compileObjectData(callContext, folder, filter, includeAllowableActions, includeRelationships, renditionFilter, false, null);
+		anscestorObjectData.setValue(_folder);
+		
 		// get the tree.
-		return getDescendantsInternal(callContext, folderId, filter, iaa,
-				false, includeRelationships, null, ips, 0, d, foldersOnly);
+		return getDescendantsInternal(callContext, _folder, filter, iaa, false, includeRelationships, null, ips, 0, d, foldersOnly);
 	}
 
 	private List<ObjectInFolderContainer> getDescendantsInternal(
-			CallContext callContext, String folderId, String filter,
+			CallContext callContext, ObjectData node, String filter,
 			Boolean includeAllowableActions, Boolean includeAcl,
 			IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includePathSegments, int level, int maxLevels,
@@ -216,11 +225,11 @@ public class NavigationServiceImpl implements NavigationService {
 
 		List<ObjectInFolderContainer> childrenOfFolder = new ArrayList<ObjectInFolderContainer>();
 		// Check specified folderId is folder(if not, it's a leaf node)
-		Content c = contentService.getContent(folderId);
-		if (!c.isFolder()) {
+		if(node.getBaseTypeId() != BaseTypeId.CMIS_FOLDER){
 			return childrenOfFolder;
 		}
 
+		String folderId = node.getId();
 		if (maxLevels == -1 || level < maxLevels) {
 			ObjectInFolderList children = getChildrenInternal(callContext,
 					folderId, filter, null, includeAllowableActions,
@@ -233,9 +242,8 @@ public class NavigationServiceImpl implements NavigationService {
 					&& CollectionUtils.isNotEmpty(children.getObjects())) {
 				for (ObjectInFolderData child : children.getObjects()) {
 					ObjectInFolderContainerImpl oifc = new ObjectInFolderContainerImpl();
-					String childId = child.getObject().getId();
 					List<ObjectInFolderContainer> subChildren = getDescendantsInternal(
-							callContext, childId, filter,
+							callContext, child.getObject(), filter,
 							includeAllowableActions, includeAcl,
 							includeRelationships, renditionFilter,
 							includePathSegments, level + 1, maxLevels,
