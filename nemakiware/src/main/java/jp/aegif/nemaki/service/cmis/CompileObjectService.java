@@ -51,8 +51,8 @@ public interface CompileObjectService {
 			Holder<String> changeLogToken, Boolean includeProperties, String filter,
 			Boolean includePolicyIds, Boolean includeAcl);
 	
-	public Properties compileProperties(Content content, Set<String> filter,
-			ObjectInfoImpl objectInfo);
+	public Properties compileProperties(CallContext callContext, Content content,
+			Set<String> filter, ObjectInfoImpl objectInfo);
 	
 	public AllowableActions compileAllowableActions(CallContext callContext,
 			Content content);
