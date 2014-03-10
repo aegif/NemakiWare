@@ -37,9 +37,14 @@
  */
 package jp.aegif.nemaki.model;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
+import java.math.BigInteger;
 import java.util.GregorianCalendar;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.codehaus.jackson.annotate.JsonIgnoreProperties;
 
 /**
@@ -47,6 +52,9 @@ import org.codehaus.jackson.annotate.JsonIgnoreProperties;
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class AttachmentNode extends NodeBase {
+	
+	private static final Log log = LogFactory
+			.getLog(AttachmentNode.class);
 
 	public static final String TYPE = "attachment";
 	
@@ -54,6 +62,9 @@ public class AttachmentNode extends NodeBase {
 	private long length;
 	private String mimeType;
 	private InputStream inputStream;
+	
+	private BigInteger rangeOffset;
+	private BigInteger rangeLength;
 	
 	public AttachmentNode(){
 		super();
@@ -107,10 +118,47 @@ public class AttachmentNode extends NodeBase {
 	}
 
 	public InputStream getInputStream() {
-		return inputStream;
+		if(rangeOffset == null && rangeLength == null){
+			return inputStream;
+		}else{
+			if (rangeLength == null){
+				rangeLength = BigInteger.valueOf(length);
+			}
+			
+			if(rangeLength.intValue() + rangeOffset.intValue() > length){
+				rangeLength = BigInteger.valueOf(length - rangeOffset.intValue());
+			}
+			
+			byte[]bytes = new byte[1024];
+			try {
+				inputStream.read(bytes);
+				ByteArrayInputStream result = new ByteArrayInputStream(bytes, rangeOffset.intValue(), rangeLength.intValue());
+				return result;
+			} catch (IOException e) {
+				log.error("[attachment id=" + getId() + "]getInputStream with rangeOffset=" + rangeLength.toString() + " rangeLength=" + rangeLength.toString() + " failed.", e);
+			}
+		}
+		
+		return null;
 	}
 
 	public void setInputStream(InputStream inputStream) {
 		this.inputStream = inputStream;
+	}
+
+	public BigInteger getRangeOffset() {
+		return rangeOffset;
+	}
+
+	public void setRangeOffset(BigInteger rangeOffset) {
+		this.rangeOffset = rangeOffset;
+	}
+
+	public BigInteger getRangeLength() {
+		return rangeLength;
+	}
+
+	public void setRangeLength(BigInteger rangeLength) {
+		this.rangeLength = rangeLength;
 	}
 }
