@@ -853,7 +853,8 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			
 			length = attachment.getLength();
 			mimeType = attachment.getMimeType();
-			fileName = attachment.getName();
+			//fileName = attachment.getName();
+			fileName = document.getName();
 			streamId = attachment.getId();
 		}
 		
