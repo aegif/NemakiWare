@@ -341,7 +341,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		VersionSeries versionSeries = null;
 		if(content.isDocument()){
 			Document d = (Document)content;
-			versionSeries = contentService.getVersionSeries(d.getVersionSeriesId());
+			versionSeries = contentService.getVersionSeries(d);
  		}
 		
 		
@@ -789,8 +789,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			addProperty(properties, typeId, filter,
 					PropertyIds.CHECKIN_COMMENT, document.getCheckinComment());
 
-			VersionSeries vs = contentService.getVersionSeries(document
-					.getVersionSeriesId());
+			VersionSeries vs = contentService.getVersionSeries(document);
 			addProperty(properties, typeId, filter,
 					PropertyIds.IS_VERSION_SERIES_CHECKED_OUT,
 					vs.isVersionSeriesCheckedOut());

@@ -677,8 +677,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void constraintAlreadyCheckedOut(Document document) {
-		VersionSeries vs = contentService.getVersionSeries(document
-				.getVersionSeriesId());
+		VersionSeries vs = contentService.getVersionSeries(document);
 		if (vs.isVersionSeriesCheckedOut()) {
 			if (!(document.isPrivateWorkingCopy())) {
 				constraint(document.getId(),
@@ -690,8 +689,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 	@Override
 	public void constraintUpdateWhenCheckedOut(String currentUserId,
 			Document document) {
-		VersionSeries vs = contentService.getVersionSeries(document
-				.getVersionSeriesId());
+		VersionSeries vs = contentService.getVersionSeries(document);
 		if (vs.isVersionSeriesCheckedOut()) {
 			if(document.isPrivateWorkingCopy()){
 				//Can update by only the use who has checked it out

@@ -88,7 +88,7 @@ public class PermissionServiceImpl implements PermissionService {
 		if(content.isDocument()){
 			Document document = (Document)content;
 			if(document.isPrivateWorkingCopy()){
-				VersionSeries vs = contentService.getVersionSeries(document.getVersionSeriesId());
+				VersionSeries vs = contentService.getVersionSeries(document);
 				if(!callContext.getUsername().equals(vs.getVersionSeriesCheckedOutBy())){
 					return false;
 				}
