@@ -32,6 +32,7 @@ import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.data.ObjectParentData;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.chemistry.opencmis.commons.spi.Holder;
 
 public interface NavigationService {
 
@@ -41,11 +42,12 @@ public interface NavigationService {
 	 * @param includeRelationships TODO
 	 * @param renditionFilter TODO
 	 * @param extension TODO
+	 * @param parentObjectDa TODO
 	 */
 	public abstract ObjectInFolderList getChildren(CallContext callContext,
 			String folderId, String filter, String orderBy,
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
-			String renditionFilter, Boolean includePathSegments, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension);
+			String renditionFilter, Boolean includePathSegments, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension, Holder<ObjectData> parentObjectDa);
 
 	/**
 	 * Gets the set of descendant objects contained in the specified folder or
@@ -53,11 +55,12 @@ public interface NavigationService {
 	 * @param includeRelationships TODO
 	 * @param renditionFilter TODO
 	 * @param extension TODO
+	 * @param anscestorObjectData TODO
 	 */
 	public abstract List<ObjectInFolderContainer> getDescendants(
 			CallContext callContext, String folderId, BigInteger depth,
 			String filter, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter, Boolean includePathSegment, boolean foldersOnly, ExtensionsData extension);
+			IncludeRelationships includeRelationships, String renditionFilter, Boolean includePathSegment, boolean foldersOnly, ExtensionsData extension, Holder<ObjectData> anscestorObjectData);
 
 	/**
 	 * Gets the parent folder object for the specified folder object.

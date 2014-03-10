@@ -338,6 +338,13 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 		// Calculate AllowableActions
 		Set<Action> actionSet = new HashSet<Action>();
+		VersionSeries versionSeries = null;
+		if(content.isDocument()){
+			Document d = (Document)content;
+			versionSeries = contentService.getVersionSeries(d.getVersionSeriesId());
+ 		}
+		
+		
 		for (Entry<String, PermissionMapping> mappingEntry : permissionMap
 				.entrySet()) {
 			String key = mappingEntry.getValue().getKey();
@@ -360,11 +367,11 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 					continue;
 				}
 			}
-			if (content.isDocument()) {
+			if (versionSeries != null) {
 				Document d = (Document) content;
 				DocumentTypeDefinition dtdf = (DocumentTypeDefinition) tdf;
 				if (!isAllowableActionForVersionableDocument(callContext,
-						mappingEntry.getKey(), d, dtdf)) {
+						mappingEntry.getKey(), d, versionSeries, dtdf)) {
 					continue;
 				}
 			}
@@ -384,20 +391,18 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 
 	private boolean isAllowableActionForVersionableDocument(
 			CallContext callContext, String permissionMappingKey,
-			Document document, DocumentTypeDefinition dtdf) {
+			Document document, VersionSeries versionSeries, DocumentTypeDefinition dtdf) {
 		
-		VersionSeries vs = contentService.getVersionSeries(document
-				.getVersionSeriesId());
 		//Versioning action(checkOut / checkIn)
 		if (permissionMappingKey
 				.equals(PermissionMapping.CAN_CHECKOUT_DOCUMENT)) {
-			return dtdf.isVersionable() && !vs.isVersionSeriesCheckedOut() && document.isLatestVersion();
+			return dtdf.isVersionable() && !versionSeries.isVersionSeriesCheckedOut() && document.isLatestVersion();
 		} else if (permissionMappingKey
 				.equals(PermissionMapping.CAN_CHECKIN_DOCUMENT)) {
-			return dtdf.isVersionable() && vs.isVersionSeriesCheckedOut() && document.isPrivateWorkingCopy();
+			return dtdf.isVersionable() && versionSeries.isVersionSeriesCheckedOut() && document.isPrivateWorkingCopy();
 		} else if (permissionMappingKey
 				.equals(PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT)) {
-			return dtdf.isVersionable() && vs.isVersionSeriesCheckedOut() && document.isPrivateWorkingCopy();
+			return dtdf.isVersionable() && versionSeries.isVersionSeriesCheckedOut() && document.isPrivateWorkingCopy();
 		}
 		
 		
@@ -406,10 +411,10 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			if(isLockableAction(permissionMappingKey)){
 				if(document.isLatestVersion()){
 					//LocK only when checked out
-					return !vs.isVersionSeriesCheckedOut();
+					return !versionSeries.isVersionSeriesCheckedOut();
 				}else if(document.isPrivateWorkingCopy()){
 					//Only owner can do actions on pwc
-					return callContext.getUsername().equals(vs.getVersionSeriesCheckedOutBy());
+					return callContext.getUsername().equals(versionSeries.getVersionSeriesCheckedOutBy());
 				}else{
 					return false;
 				}
@@ -1106,7 +1111,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			}
 		} catch (Exception e) {
 			log.warn("typeId:" + typeId + ", propertyId:" + id
-					+ " Faile to add a property!", e);
+					+ " Fail to add a property!", e);
 		}
 	}
 

@@ -334,15 +334,22 @@ public class NemakiCmisService extends AbstractCmisService {
 			IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includePathSegment, BigInteger maxItems,
 			BigInteger skipCount, ExtensionsData extension) {
+		Holder<ObjectData> parentObjectData = new Holder<ObjectData>(null);
+		
 		ObjectInFolderList children = getRepository(repositoryId).getChildren(
 				getCallContext(), folderId, filter, null,
 				includeAllowableActions, null, null, includePathSegment,
-				maxItems, skipCount, extension);
+				maxItems, skipCount, extension, parentObjectData);
+		
+		if(parentObjectData != null && parentObjectData.getValue() != null){
+			setObjectInfo(repositoryId, parentObjectData.getValue());
+		}
 		if (children != null) {
 			for (ObjectInFolderData o : children.getObjects()) {
 				setObjectInfo(repositoryId, o.getObject());
 			}
 		}
+
 		return children;
 	}
 
@@ -356,23 +363,20 @@ public class NemakiCmisService extends AbstractCmisService {
 			Boolean includeAllowableActions,
 			IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includePathSegment, ExtensionsData extension) {
-
+		Holder<ObjectData> anscestorObjectData = new Holder<ObjectData>(null);
+		
 		List<ObjectInFolderContainer> result = getRepository(repositoryId)
 				.getDescendants(getCallContext(), folderId, depth, filter,
 						includeAllowableActions, includeRelationships,
-						renditionFilter, includePathSegment, false, extension);
-		setObjectInfoInTree(repositoryId, result);
-		return result;
-	}
+						renditionFilter, includePathSegment, false, extension, anscestorObjectData);
 
-	/**
-	 * Gets the parent folder object for the specified folder object.
-	 */
-	@Override
-	public ObjectData getFolderParent(String repositoryId, String folderId,
-			String filter, ExtensionsData extension) {
-		return getRepository(repositoryId).getFolderParent(getCallContext(),
-				folderId, filter, this);
+		
+		if(anscestorObjectData != null && anscestorObjectData.getValue() != null){
+			setObjectInfo(repositoryId, anscestorObjectData.getValue());
+		}
+		setObjectInfoInTree(repositoryId, result);
+		
+		return result;
 	}
 
 	/**
@@ -385,14 +389,31 @@ public class NemakiCmisService extends AbstractCmisService {
 			Boolean includeAllowableActions,
 			IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includePathSegment, ExtensionsData extension) {
+		Holder<ObjectData> anscestorObjectData = new Holder<ObjectData>(null);
+		
 		List<ObjectInFolderContainer> result = getRepository(repositoryId)
 				.getDescendants(getCallContext(), folderId, depth, filter,
 						includeAllowableActions, includeRelationships,
-						renditionFilter, includePathSegment, true, extension);
+						renditionFilter, includePathSegment, true, extension, anscestorObjectData);
+		
+		if(anscestorObjectData != null && anscestorObjectData.getValue() != null){
+			setObjectInfo(repositoryId, anscestorObjectData.getValue());
+		}
 		setObjectInfoInTree(repositoryId, result);
+		
 		return result;
 	}
-
+	
+	/**
+	 * Gets the parent folder object for the specified folder object.
+	 */
+	@Override
+	public ObjectData getFolderParent(String repositoryId, String folderId,
+			String filter, ExtensionsData extension) {
+		return getRepository(repositoryId).getFolderParent(getCallContext(),
+				folderId, filter, this);
+	}
+	
 	/**
 	 * Gets the parent folder(s) for the specified non-folder, fileable object.
 	 */
@@ -407,7 +428,7 @@ public class NemakiCmisService extends AbstractCmisService {
 						renditionFilter, includeRelativePathSegment, extension);
 		return parents;
 	}
-
+	
 	/**
 	 * Gets the list of documents that are checked out that the user has access
 	 * to. No checkout for now, so empty.

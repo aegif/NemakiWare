@@ -261,12 +261,12 @@ public class NemakiRepository {
 			Boolean includeAllowableActions,
 			IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includePathSegments, BigInteger maxItems,
-			BigInteger skipCount, ExtensionsData extension) {
+			BigInteger skipCount, ExtensionsData extension, Holder<ObjectData> parentObjectData) {
 
 		return navigationService.getChildren(callContext, folderId, filter,
 				null, includeAllowableActions, includeRelationships,
 				renditionFilter, includePathSegments, maxItems, skipCount,
-				extension);
+				extension, parentObjectData);
 	}
 
 	public List<ObjectInFolderContainer> getDescendants(
@@ -274,11 +274,11 @@ public class NemakiRepository {
 			String filter, Boolean includeAllowableActions,
 			IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includePathSegment, boolean foldersOnly,
-			ExtensionsData extension) {
+			ExtensionsData extension, Holder<ObjectData> anscestorObjectData) {
 
 		return navigationService.getDescendants(callContext, folderId, depth,
 				filter, includeAllowableActions, includeRelationships,
-				renditionFilter, includePathSegment, foldersOnly, extension);
+				renditionFilter, includePathSegment, foldersOnly, extension, anscestorObjectData);
 	}
 
 	public ObjectData getFolderParent(CallContext callContext, String folderId,
