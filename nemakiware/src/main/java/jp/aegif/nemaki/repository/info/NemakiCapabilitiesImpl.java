@@ -120,6 +120,7 @@ public class NemakiCapabilitiesImpl extends RepositoryCapabilitiesImpl {
 		newTypeSettableAttributes.setCanSetId(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_ID)));
 		newTypeSettableAttributes.setCanSetLocalName(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_LOCAL_NAME)));
 		newTypeSettableAttributes.setCanSetLocalNamespace(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_LOCAL_NAME_SPACE)));
+		newTypeSettableAttributes.setCanSetQueryName(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_QUERY_NAME)));
 		newTypeSettableAttributes.setCanSetDisplayName(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_DISPLAY_NAME)));
 		newTypeSettableAttributes.setCanSetDescription(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_DESCRIPTION)));
 		newTypeSettableAttributes.setCanSetCreatable(Boolean.valueOf(pm.readValue(PropertyKey.CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_CREATABLE)));
