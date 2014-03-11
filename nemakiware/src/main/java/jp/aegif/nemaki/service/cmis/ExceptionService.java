@@ -86,6 +86,7 @@ public interface ExceptionService {
 	void constraintUpdateWhenCheckedOut(String currentUserId, Document document);
 	void constraintAclPropagationDoesNotMatch(AclPropagation aclPropagation);
 	void constraintContentStreamRequired(Document document);
+	void constraintContentStreamRequired(DocumentTypeDefinition typeDefinition, ContentStream contentStream);
 	void constaintOnlyLeafTypeDefinition(String objectTypeId);
 	void constraintObjectsStillExist(String objectTypeId);
 	void constraintDuplicatePropertyDefinition(TypeDefinition typeDefinition);

@@ -21,7 +21,6 @@
  ******************************************************************************/
 package jp.aegif.nemaki.service.cmis.impl;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigInteger;
 import java.util.ArrayList;
@@ -358,6 +357,7 @@ public class ObjectServiceImpl implements ObjectService {
 				properties);
 		exceptionService.constraintPropertyValue(td, properties,
 				DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
+		exceptionService.constraintContentStreamRequired(td, contentStream);
 		exceptionService.constraintControllableVersionable(td, versioningState,
 				null);
 		exceptionService

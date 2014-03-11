@@ -726,6 +726,14 @@ public class ExceptionServiceImpl implements ExceptionService,
 		}
 	}
 
+	public void constraintContentStreamRequired(DocumentTypeDefinition typeDefinition, ContentStream contentStream){
+		if(ContentStreamAllowed.REQUIRED.equals(typeDefinition.getContentStreamAllowed())){
+			if(contentStream == null || contentStream.getStream() == null){
+				constraint("[typeId=" + typeDefinition.getId() + "]This document type does not allow no content stream");
+			}
+		}
+	}
+	
 	@Override
 	public void constaintOnlyLeafTypeDefinition(String objectTypeId) {
 		TypeDefinitionContainer tdc = typeManager.getTypeById(objectTypeId);
