@@ -23,8 +23,10 @@ package jp.aegif.nemaki.repository.type;
 
 import java.math.BigInteger;
 import java.util.List;
+
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
+
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
@@ -91,5 +93,19 @@ public interface TypeManager extends
 	public AbstractTypeDefinition buildTypeDefinitionFromDB(NemakiTypeDefinition nemakiType);
 	
 	public Object getSingleDefaultValue(String propertyId, String typeId);
-
+	
+	/**
+	 * Get a property definition specified with its query name and under specified type
+	 * @param typeDefinition
+	 * @param propQueryName
+	 * @return
+	 */
+	public PropertyDefinition<?> getPropertyDefinitionForQueryName(TypeDefinition typeDefinition,
+			String propQueryName);
+	/**
+	 * Get core attributes of PropertyDefinition specified with given query name
+	 * @param queryName
+	 * @return PropertyDefinition with only core attribute(Id, QueryName, ProeprtyType, Cardinality)
+	 */
+	public PropertyDefinition<?> getPropertyDefinitionCoreForQueryName(String queryName);
 }

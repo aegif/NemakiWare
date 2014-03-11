@@ -337,7 +337,7 @@ public class NemakiCmisService extends AbstractCmisService {
 		Holder<ObjectData> parentObjectData = new Holder<ObjectData>(null);
 		
 		ObjectInFolderList children = getRepository(repositoryId).getChildren(
-				getCallContext(), folderId, filter, null,
+				getCallContext(), folderId, filter, orderBy,
 				includeAllowableActions, null, null, includePathSegment,
 				maxItems, skipCount, extension, parentObjectData);
 		

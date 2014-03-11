@@ -24,7 +24,6 @@ package jp.aegif.nemaki.service.cmis.impl;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 
 import jp.aegif.nemaki.model.Content;
@@ -36,7 +35,10 @@ import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.cmis.NavigationService;
 import jp.aegif.nemaki.service.cmis.PermissionService;
 import jp.aegif.nemaki.service.node.ContentService;
+import jp.aegif.nemaki.util.DataUtil;
+import jp.aegif.nemaki.util.SortUtil;
 
+import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.data.ObjectInFolderContainer;
@@ -61,6 +63,7 @@ public class NavigationServiceImpl implements NavigationService {
 	private PermissionService permissionService;
 	private ExceptionService exceptionService;
 	private CompileObjectService compileObjectService;
+	private SortUtil sortUtil;
 
 	@Override
 	public ObjectInFolderList getChildren(CallContext callContext,
@@ -135,33 +138,42 @@ public class NavigationServiceImpl implements NavigationService {
 			return result;
 		}
 
-		// Sort children by cmis:name
-		Collections.sort(contents, new ContentComparator());
-
-		// iterate through children
+		// Build ObjectData list of chilren
 		int count = 0;
+		List<ObjectData>list = new ArrayList<ObjectData>();
 		for (Content content : contents) {
 			// Skip until specified number of items
 			if (count < skip) {
 				count++;
 				continue;
 			}
-
-			if (result.getObjects().size() >= max) {
+			// Stop if the number reached to maxItems
+			if (list.size() >= max) {
 				result.setHasMoreItems(true);
-				continue;
+				break;
 			}
-			// build and add child object
-			ObjectInFolderDataImpl objectInFolder = new ObjectInFolderDataImpl();
-			objectInFolder.setObject(compileObjectService.compileObjectData(
+			
+			ObjectData od = compileObjectService.compileObjectData(
 					callContext, content, filter, includeAllowableActions,
-					includeRelationships, null, false, null));
+					includeRelationships, null, false, null);
+			list.add(od);
+		}
+		
+		//Sort
+		sortUtil.sort(list, orderBy);
+		
+		// Build ObjectInFolderList from ObjectDataList
+		for(ObjectData od : list){
+			ObjectInFolderDataImpl objectInFolder = new ObjectInFolderDataImpl();
+			objectInFolder.setObject(od);
 			if (includePathSegments) {
-				String name = content.getName();
+				String name = DataUtil.getStringProperty(od.getProperties(), PropertyIds.NAME);
 				objectInFolder.setPathSegment(name);
 			}
+			
 			result.getObjects().add(objectInFolder);
 		}
+		
 
 		// Set paging information
 		int numItems = contents.size();
@@ -352,13 +364,6 @@ public class NavigationServiceImpl implements NavigationService {
 				skipCount, null);
 	}
 
-	private class ContentComparator implements Comparator<Content> {
-		@Override
-		public int compare(Content c1, Content c2) {
-			return c1.getName().compareTo(c2.getName());
-		}
-	}
-
 	public void setContentService(ContentService contentService) {
 		this.contentService = contentService;
 	}
@@ -376,4 +381,7 @@ public class NavigationServiceImpl implements NavigationService {
 		this.compileObjectService = compileObjectService;
 	}
 
+	public void setSortUtil(SortUtil sortUtil) {
+		this.sortUtil = sortUtil;
+	}
 }

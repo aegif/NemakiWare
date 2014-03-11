@@ -227,6 +227,15 @@
         <property name="compileObjectService">
             <ref bean="CompileObjectService" />
         </property>
+        <property name="sortUtil">
+            <ref bean="sortUtil" />
+        </property>
+    </bean>
+    
+    <bean id="sortUtil" class="jp.aegif.nemaki.util.SortUtil">
+        <property name="typeManager" ref="TypeManager" />
+        <property name="repositoryInfo" ref="RepositoryInfo" />
+        <property name="propertyManager" ref="nemakiPropertyManager" />
     </bean>
 
     <bean id="ObjectService" class="org.springframework.aop.framework.ProxyFactoryBean">
