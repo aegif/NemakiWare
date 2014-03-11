@@ -264,7 +264,7 @@ public class NemakiRepository {
 			BigInteger skipCount, ExtensionsData extension, Holder<ObjectData> parentObjectData) {
 
 		return navigationService.getChildren(callContext, folderId, filter,
-				null, includeAllowableActions, includeRelationships,
+				orderBy, includeAllowableActions, includeRelationships,
 				renditionFilter, includePathSegments, maxItems, skipCount,
 				extension, parentObjectData);
 	}

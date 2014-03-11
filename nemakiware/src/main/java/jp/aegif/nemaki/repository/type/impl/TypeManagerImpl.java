@@ -101,6 +101,9 @@ public class TypeManagerImpl implements TypeManager {
 	// Map of subtype-specific property
 	private Map<String, List<PropertyDefinition<?>>> subTypeProperties;
 
+	//Map of propertyDefinition cores(id, name, queryName, propertyType)
+	private Map<String, PropertyDefinition<?>> propertyDefinitionCoresForQueryName;
+	
 	// /////////////////////////////////////////////////
 	// Constructor
 	// /////////////////////////////////////////////////
@@ -108,7 +111,8 @@ public class TypeManagerImpl implements TypeManager {
 		types = new HashMap<String, TypeDefinitionContainer>();
 		basetypes = new HashMap<String, TypeDefinitionContainer>();
 		subTypeProperties = new HashMap<String, List<PropertyDefinition<?>>>();
-
+		propertyDefinitionCoresForQueryName = new HashMap<String, PropertyDefinition<?>>();
+		
 		generate();
 	}
 
@@ -123,6 +127,9 @@ public class TypeManagerImpl implements TypeManager {
 
 		// Generate subtypes
 		addSubTypes();
+		
+		// Generate property definition cores
+		buildPropertyDefinitionCores();
 	}
 
 	// /////////////////////////////////////////////////
@@ -810,8 +817,43 @@ public class TypeManagerImpl implements TypeManager {
 		return type;
 	}
 
+	private void buildPropertyDefinitionCores(){
+		//CMIS default property cores
+		Map<String, PropertyDefinition<?>> d = types.get(DOCUMENT_TYPE_ID).getTypeDefinition().getPropertyDefinitions();
+		Map<String, PropertyDefinition<?>> f = types.get(FOLDER_TYPE_ID).getTypeDefinition().getPropertyDefinitions();
+		Map<String, PropertyDefinition<?>> r = types.get(RELATIONSHIP_TYPE_ID).getTypeDefinition().getPropertyDefinitions();
+		Map<String, PropertyDefinition<?>> p = types.get(POLICY_TYPE_ID).getTypeDefinition().getPropertyDefinitions();
+		Map<String, PropertyDefinition<?>> i = types.get(ITEM_TYPE_ID).getTypeDefinition().getPropertyDefinitions();
+		
+		copyToPropertyDefinitionCore(d);
+		copyToPropertyDefinitionCore(f);
+		copyToPropertyDefinitionCore(r);
+		copyToPropertyDefinitionCore(p);
+		copyToPropertyDefinitionCore(i);
+		
+		//Subtype property cores(consequently includes secondary property cores)
+		List<NemakiPropertyDefinitionCore> subTypeCores = typeService.getPropertyDefinitionCores();
+		for(NemakiPropertyDefinitionCore sc : subTypeCores){
+			addPropertyDefinitionCore(sc.getPropertyId(), sc.getQueryName(), sc.getPropertyType(), sc.getCardinality());
+		}
+	}
 
-
+	private void copyToPropertyDefinitionCore(Map<String, PropertyDefinition<?>> map){
+		for(Entry<String, PropertyDefinition<?>> e : map.entrySet()){
+			if(!propertyDefinitionCoresForQueryName.containsKey(e.getKey())){
+				PropertyDefinition<?> pdf = e.getValue();
+				addPropertyDefinitionCore(pdf.getId(), pdf.getQueryName(), pdf.getPropertyType(), pdf.getCardinality());
+			}
+		}
+	}
+	
+	private void addPropertyDefinitionCore(String propertyId, String queryName, PropertyType propertyType, Cardinality cardinality){
+		if(!propertyDefinitionCoresForQueryName.containsKey(propertyId)){
+			PropertyDefinition<?> core = DataUtil.createPropDefCore(propertyId, queryName, propertyType, cardinality);
+			propertyDefinitionCoresForQueryName.put(queryName, core);
+		}
+	}
+	
 
 
 	// /////////////////////////////////////////////////
@@ -857,12 +899,31 @@ public class TypeManagerImpl implements TypeManager {
 	public String getPropertyIdForQueryName(TypeDefinition typeDefinition,
 			String propQueryName) {
 		// TODO Auto-generated method stub
+		PropertyDefinition<?> def = getPropertyDefinitionForQueryName(typeDefinition, propQueryName);
+		if(def == null){
+			return null;
+		}else{
+			return def.getQueryName();
+		}
+	}
+	
+	public PropertyDefinition<?> getPropertyDefinitionForQueryName(TypeDefinition typeDefinition,
+			String propQueryName){
+		Map<String, PropertyDefinition<?>> defs = typeDefinition.getPropertyDefinitions();
+		for(Entry<String, PropertyDefinition<?>> def : defs.entrySet()){
+			if(def.getValue().getQueryName().equals(propQueryName)){
+				return def.getValue();
+			}
+		}
+		
 		return null;
 	}
-
-	/**
-	 * For Nemaki use
-	 */
+	
+	@Override
+	public PropertyDefinition<?> getPropertyDefinitionCoreForQueryName(String queryName){
+		return propertyDefinitionCoresForQueryName.get(queryName);
+	}
+	
 	@Override
 	public TypeDefinition getTypeDefinition(String typeId) {
 		TypeDefinitionContainer tc = types.get(typeId);

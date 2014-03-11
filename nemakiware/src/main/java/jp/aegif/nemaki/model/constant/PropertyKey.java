@@ -23,6 +23,7 @@ public interface PropertyKey {
 	final String PERMISSION_DEFINITION= "permission.definition";
 	final String PERMISSION_MAPPING_DEFINITION= "permission.mapping.definition";
 	final String OVRRIDE_FILE= "override.file";
+	final String CAPABILITY_EXTENDED_ORDERBY_DEFAULT = "capability.extended.orderBy.default";
 	
 	//Capabilities
 	final String CAPABILITY_GET_DESCENDENTS = "capability.getDescendants";
