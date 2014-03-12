@@ -98,7 +98,7 @@ public class SortUtil {
 				val1 = pd1.getFirstValue();
 			}
 			if(pd2 != null){
-				val2 = pd1.getFirstValue();
+				val2 = pd2.getFirstValue();
 			}
 			
 			// Null values are put to the last
