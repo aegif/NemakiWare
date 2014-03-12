@@ -23,7 +23,6 @@ package jp.aegif.nemaki.query.solr;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -48,8 +47,8 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectListImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.server.support.query.CmisQueryWalker;
 import org.apache.chemistry.opencmis.server.support.query.QueryObject;
-import org.apache.chemistry.opencmis.server.support.query.QueryUtil;
 import org.apache.chemistry.opencmis.server.support.query.QueryObject.SortSpec;
+import org.apache.chemistry.opencmis.server.support.query.QueryUtil;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -71,6 +70,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 	private CompileObjectService compileObjectService;
 	private ExceptionService exceptionService;
 	private SolrUtil solrUtil;
+	private SortUtil sortUtil;
 	private static final Log logger = LogFactory
 			.getLog(SolrQueryProcessor.class);
 
@@ -190,6 +190,21 @@ public class SolrQueryProcessor implements QueryProcessor {
 					permitted, filter, includeAllowableActions,
 					includeRelationships, null, true, maxItems, skipCount, false, aliases);
 			
+			//Sort
+			List<SortSpec> sortSpecs = queryObject.getOrderBys();
+			List<String> _orderBy = new ArrayList<String>();
+			for(SortSpec sortSpec : sortSpecs){
+				List<String> _sortSpec = new ArrayList<String>();
+				_sortSpec.add(sortSpec.getSelector().getName());
+				if(!sortSpec.isAscending()){
+					_sortSpec.add("DESC");
+				}
+				
+				_orderBy.add(StringUtils.join(_sortSpec, " "));
+			}
+			String orderBy = StringUtils.join(_orderBy, ",");
+			sortUtil.sort(result.getObjects(), orderBy);
+			
 			return result;
 		} else {
 			ObjectListImpl nullList = new ObjectListImpl();
@@ -220,4 +235,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 		this.solrUtil = solrUtil;
 	}
 
+	public void setSortUtil(SortUtil sortUtil) {
+		this.sortUtil = sortUtil;
+	}
 }
