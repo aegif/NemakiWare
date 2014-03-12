@@ -91,9 +91,16 @@ public class SortUtil {
 			PropertyData<?> pd2 = o2.getProperties().getProperties()
 					.get(propertyId);
 
-			Object val1 = pd1.getFirstValue();
-			Object val2 = pd2.getFirstValue();
-
+			Object val1 = null;
+			Object val2 = null;
+		
+			if(pd1 != null){
+				val1 = pd1.getFirstValue();
+			}
+			if(pd2 != null){
+				val2 = pd1.getFirstValue();
+			}
+			
 			// Null values are put to the last
 			if (val1 == null && val2 == null) {
 				return 0;
