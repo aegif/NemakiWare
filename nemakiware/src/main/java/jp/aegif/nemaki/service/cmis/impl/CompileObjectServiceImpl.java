@@ -226,7 +226,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			
 			ObjectData od = compileObjectData(
 					callContext, _content, filter, includeAllowableActions,
-					includeRelationships, null, false, null);
+					includeRelationships, null, false, aliases);
 			ods.add(od);
 		}
 		
