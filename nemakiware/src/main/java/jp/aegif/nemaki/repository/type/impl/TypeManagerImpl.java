@@ -837,9 +837,11 @@ public class TypeManagerImpl implements TypeManager {
 		// cores)
 		List<NemakiPropertyDefinitionCore> subTypeCores = typeService
 				.getPropertyDefinitionCores();
-		for (NemakiPropertyDefinitionCore sc : subTypeCores) {
-			addPropertyDefinitionCore(sc.getPropertyId(), sc.getQueryName(),
-					sc.getPropertyType(), sc.getCardinality());
+		if(CollectionUtils.isNotEmpty(subTypeCores)){
+			for (NemakiPropertyDefinitionCore sc : subTypeCores) {
+				addPropertyDefinitionCore(sc.getPropertyId(), sc.getQueryName(),
+						sc.getPropertyType(), sc.getCardinality());
+			}
 		}
 	}
 
