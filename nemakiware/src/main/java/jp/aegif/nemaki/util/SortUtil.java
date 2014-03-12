@@ -154,17 +154,18 @@ public class SortUtil {
 			// Property definition
 			PropertyDefinition<?> pdf = convertToPropertyDefinition(order[0]);
 			if (pdf == null) {
-				log.warn("Invalid property query name in orderBy argument is ignored: propertyId="
+				log.warn("Invalid property query name in orderBy parameter is ignored: propertyId="
 						+ order[0]);
 				continue;
 			} else if (capabilityOrderBy == CapabilityOrderBy.COMMON &&
 					!isCommonProperty(pdf)) {
-				log.warn("This property query name in orderBy argument is not supported when capabilityOrderBy=common: propertyId="
+				log.warn("This property query name in orderBy parameter is not supported when capabilityOrderBy=common: propertyId="
 						+ order[0]);
 				continue;
-			}else if(!pdf.isOrderable()){
-				log.warn("This property query name in orderBy argument is not orderable and ignored: propertyId="
-						+ order[0]);
+			// "orderable" can be different even when the same property id
+			/*}else if(!pdf.isOrderable()){
+				log.warn("This property query name in orderBy parameter is not orderable and ignored: propertyId="
+						+ order[0]);*/
 			}
 
 			// Modifier
@@ -173,7 +174,7 @@ public class SortUtil {
 				if ("DESC".equals(order[1])) {
 					desc = true;
 				} else if (StringUtils.isNotBlank(order[1])) {
-					log.warn("Invalid modifier other than DESC in orderBy argument is ignored: propertyId="
+					log.warn("Invalid modifier other than DESC in orderBy parameter is ignored: propertyId="
 							+ order[0]);
 				}
 			}
