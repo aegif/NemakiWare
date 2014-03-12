@@ -442,7 +442,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 				constraint(objectId, "An required property is not provided!");
 
 			// Check choices
-			constaintChoices(propertyDefinition, pd, objectId);
+			constraintChoices(propertyDefinition, pd, objectId);
 
 			// Check min/max length
 			switch (propertyDefinition.getPropertyType()) {
@@ -460,7 +460,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 		}
 	}
 
-	private <T> void constaintChoices(PropertyDefinition<T> definition,
+	private <T> void constraintChoices(PropertyDefinition<T> definition,
 			PropertyData<T> propertyData, String objectId) {
 		// Check OpenChoice
 		boolean openChoice = (definition.isOpenChoice() == null) ? true : false;
@@ -735,7 +735,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 	
 	@Override
-	public void constaintOnlyLeafTypeDefinition(String objectTypeId) {
+	public void constraintOnlyLeafTypeDefinition(String objectTypeId) {
 		TypeDefinitionContainer tdc = typeManager.getTypeById(objectTypeId);
 		if (!CollectionUtils.isEmpty(tdc.getChildren())) {
 			String msg = "Cannot delete a type definition which has sub types"
@@ -1026,7 +1026,22 @@ public class ExceptionServiceImpl implements ExceptionService,
 			constraint(document.getId(), "Immutable document cannot be updated/deleted");
 		}
 	}
-
+	
+	@Override
+	public void constraintPropertyDefinition(
+			TypeDefinition typeDefinition,
+			PropertyDefinition<?> propertyDefinition) {
+		
+		String typeId = typeDefinition.getId();
+		String propertyId = propertyDefinition.getId();
+		
+		if(propertyDefinition.isOrderable()
+				&& propertyDefinition.getCardinality() == Cardinality.MULTI){
+			String msg = DataUtil.buildPrefixTypeProperty(typeId, propertyId) + "PropertyDefinition violates the specification";
+			constraint(msg);
+		}
+	}
+	
 	@Override
 	public void contentAlreadyExists(Content content, Boolean overwriteFlag) {
 		if (!overwriteFlag) {

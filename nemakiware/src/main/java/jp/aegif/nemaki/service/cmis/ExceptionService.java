@@ -87,7 +87,7 @@ public interface ExceptionService {
 	void constraintAclPropagationDoesNotMatch(AclPropagation aclPropagation);
 	void constraintContentStreamRequired(Document document);
 	void constraintContentStreamRequired(DocumentTypeDefinition typeDefinition, ContentStream contentStream);
-	void constaintOnlyLeafTypeDefinition(String objectTypeId);
+	void constraintOnlyLeafTypeDefinition(String objectTypeId);
 	void constraintObjectsStillExist(String objectTypeId);
 	void constraintDuplicatePropertyDefinition(TypeDefinition typeDefinition);
 	void constraintUpdatePropertyDefinition(PropertyDefinition<?> update,PropertyDefinition<?> old);
@@ -95,6 +95,7 @@ public interface ExceptionService {
 	void constraintImmutable(Document document, TypeDefinition typeDefinition);
 	void constraintContentStreamDownload(Document document);
 	void constraintRenditionStreamDownload(Content content, String streamId);
+	void constraintPropertyDefinition(TypeDefinition typeDefinition, PropertyDefinition<?> propertyDefinition);
 	void contentAlreadyExists(Content content, Boolean overwriteFlag);
 	void streamNotSupported(DocumentTypeDefinition documentTypeDefinition, ContentStream contentStream);
 	void nameConstraintViolation(Properties properties, Folder parentFolder);
