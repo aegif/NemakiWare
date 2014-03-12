@@ -23,6 +23,7 @@ package jp.aegif.nemaki.query.solr;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -35,6 +36,7 @@ import jp.aegif.nemaki.service.cmis.CompileObjectService;
 import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.cmis.PermissionService;
 import jp.aegif.nemaki.service.node.ContentService;
+import jp.aegif.nemaki.util.SortUtil;
 
 import org.antlr.runtime.tree.Tree;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
@@ -47,6 +49,7 @@ import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.server.support.query.CmisQueryWalker;
 import org.apache.chemistry.opencmis.server.support.query.QueryObject;
 import org.apache.chemistry.opencmis.server.support.query.QueryUtil;
+import org.apache.chemistry.opencmis.server.support.query.QueryObject.SortSpec;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -181,10 +184,13 @@ public class SolrQueryProcessor implements QueryProcessor {
 			if (!aliases.keySet().contains("*")) {
 				filter = StringUtils.join(aliases.keySet(), ",");
 			}
-
-			return compileObjectService.compileObjectDataList(callContext,
+			
+			//Build ObjectList
+			ObjectList result = compileObjectService.compileObjectDataList(callContext,
 					permitted, filter, includeAllowableActions,
-					includeRelationships, null, true, maxItems, skipCount, aliases);
+					includeRelationships, null, true, maxItems, skipCount, false, aliases);
+			
+			return result;
 		} else {
 			ObjectListImpl nullList = new ObjectListImpl();
 			nullList.setHasMoreItems(false);

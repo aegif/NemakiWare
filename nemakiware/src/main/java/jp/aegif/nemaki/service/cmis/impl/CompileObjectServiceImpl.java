@@ -162,7 +162,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			List<T> contents, String filter, Boolean includeAllowableActions,
 			IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includeAcl, BigInteger maxItems, BigInteger skipCount,
-			Map<String, String> aliases) {
+			boolean folderOnly, Map<String, String> aliases) {
 		ObjectListImpl list = new ObjectListImpl();
 		list.setObjects(new ArrayList<ObjectData>());
 
@@ -182,28 +182,55 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			max = Integer.MAX_VALUE;
 		}
 
-		// Build ObjectList
-		for (int i = skip; i < max; i++) {
-			if (i == contents.size())
-				break;
-
-			T content = contents.get(i);
-			if (content instanceof Content) {
-				ObjectData o = compileObjectData(callContext,
-						(Content) content, filter, includeAllowableActions,
-						IncludeRelationships.NONE, null, includeAcl, aliases);
-				list.getObjects().add(o);
-			} else {
-				continue;
+		// Filter with folderOnly
+		List<T> filteredWithFolderOnly = new ArrayList<T>();
+		if (folderOnly) {
+			if (!CollectionUtils.isEmpty(contents)) {
+				for (T c : contents) {
+					Content _c = (Content) c; 
+					if (_c.isFolder())
+						filteredWithFolderOnly.add(c);
+				}
+			}
+		} else {
+			filteredWithFolderOnly = contents;
+		}
+		
+		// Filter with permission
+		List<T> filteredWithPermission = permissionService.getFiltered(callContext, filteredWithFolderOnly);
+		
+		//Set metadata after the targets are fixed
+		if(CollectionUtils.isEmpty(filteredWithPermission)){
+			return list;
+		}else{
+			list.setNumItems(BigInteger.valueOf(filteredWithPermission.size()));
+			if(max + skip < filteredWithPermission.size()){
+				list.setHasMoreItems(true);
 			}
 		}
-
-		list.setNumItems(BigInteger.valueOf(list.getObjects().size()));
-		if (contents.size() != list.getObjects().size()) {
-			list.setHasMoreItems(true);
-		} else {
-			list.setHasMoreItems(false);
+		
+		// Build ObjectList
+		int count = 0;
+		List<ObjectData>ods = new ArrayList<ObjectData>();
+		for (T content : filteredWithPermission) {
+			Content _content = (Content) content;
+			// Skip until specified number of items
+			if (count < skip) {
+				count++;
+				continue;
+			}
+			// Stop if the number reached to maxItems
+			if (ods.size() >= max) {
+				break;
+			}
+			
+			ObjectData od = compileObjectData(
+					callContext, _content, filter, includeAllowableActions,
+					includeRelationships, null, false, null);
+			ods.add(od);
 		}
+		
+		list.setObjects(ods);
 
 		return list;
 	}
