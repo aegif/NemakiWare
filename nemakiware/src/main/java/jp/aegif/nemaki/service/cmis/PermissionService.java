@@ -50,5 +50,5 @@ public interface PermissionService {
 	 * @param contents
 	 * @return
 	 */
-	public List<Content> getFiltered(CallContext callContext,List<Content>contents);
+	public <T> List<T> getFiltered(CallContext callContext,List<T>contents);
 }

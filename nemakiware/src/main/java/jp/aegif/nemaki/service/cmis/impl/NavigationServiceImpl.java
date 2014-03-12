@@ -71,7 +71,8 @@ public class NavigationServiceImpl implements NavigationService {
 			Boolean includeAllowableActions,
 			IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includePathSegments, BigInteger maxItems,
-			BigInteger skipCount, ExtensionsData extension, Holder<ObjectData> parentObjectData) {
+			BigInteger skipCount, ExtensionsData extension,
+			Holder<ObjectData> parentObjectData) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -88,10 +89,12 @@ public class NavigationServiceImpl implements NavigationService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		//Set ObjectData of parent folder for ObjectInfo
-		ObjectData _parent = compileObjectService.compileObjectData(callContext, folder, filter, includeAllowableActions, includeRelationships, renditionFilter, false, null);
+		// Set ObjectData of parent folder for ObjectInfo
+		ObjectData _parent = compileObjectService.compileObjectData(
+				callContext, folder, filter, includeAllowableActions,
+				includeRelationships, renditionFilter, false, null);
 		parentObjectData.setValue(_parent);
-		
+
 		return getChildrenInternal(callContext, folderId, filter, orderBy,
 				includeAllowableActions, includeRelationships, renditionFilter,
 				includePathSegments, maxItems, skipCount, false);
@@ -103,84 +106,36 @@ public class NavigationServiceImpl implements NavigationService {
 			IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includePathSegments, BigInteger maxItems,
 			BigInteger skipCount, boolean folderOnly) {
-		// prepare result
+
+		// Prepare
 		ObjectInFolderListImpl result = new ObjectInFolderListImpl();
 		result.setObjects(new ArrayList<ObjectInFolderData>());
 		result.setHasMoreItems(false);
 
-		// skip and max
-		int skip = (skipCount == null ? 0 : skipCount.intValue());
-		if (skip < 0) {
-			skip = 0;
-		}
-		int max = (maxItems == null ? Integer.MAX_VALUE : maxItems.intValue());
-		if (max < 0) {
-			max = Integer.MAX_VALUE;
-		}
+		// Build ObjectList
+		List<Content> contents = contentService.getChildren(folderId);
 
-		List<Content> aclFiltered = permissionService.getFiltered(callContext,
-				contentService.getChildren(folderId));
-		// Filtering with folderOnly flag
-		List<Content> contents = new ArrayList<Content>();
-		if (folderOnly) {
-			if (!CollectionUtils.isEmpty(aclFiltered)) {
-				for (Content c : aclFiltered) {
-					if (c.isFolder())
-						contents.add(c);
-				}
-			}
-		} else {
-			contents = aclFiltered;
-		}
+		ObjectList ol = compileObjectService.compileObjectDataList(callContext,
+				contents, filter, includeAllowableActions,
+				includeRelationships, renditionFilter, false, maxItems,
+				skipCount, folderOnly, null);
 
-		if (CollectionUtils.isEmpty(contents)) {
-			result.setNumItems(BigInteger.ZERO);
-			return result;
-		}
+		// Sort
+		sortUtil.sort(ol.getObjects(), orderBy);
 
-		// Build ObjectData list of chilren
-		int count = 0;
-		List<ObjectData>list = new ArrayList<ObjectData>();
-		for (Content content : contents) {
-			// Skip until specified number of items
-			if (count < skip) {
-				count++;
-				continue;
-			}
-			// Stop if the number reached to maxItems
-			if (list.size() >= max) {
-				result.setHasMoreItems(true);
-				break;
-			}
-			
-			ObjectData od = compileObjectService.compileObjectData(
-					callContext, content, filter, includeAllowableActions,
-					includeRelationships, null, false, null);
-			list.add(od);
-		}
-		
-		//Sort
-		sortUtil.sort(list, orderBy);
-		
-		// Build ObjectInFolderList from ObjectDataList
-		for(ObjectData od : list){
+		// Build ObjectInFolderList
+		for (ObjectData od : ol.getObjects()) {
 			ObjectInFolderDataImpl objectInFolder = new ObjectInFolderDataImpl();
 			objectInFolder.setObject(od);
 			if (includePathSegments) {
-				String name = DataUtil.getStringProperty(od.getProperties(), PropertyIds.NAME);
+				String name = DataUtil.getStringProperty(od.getProperties(),
+						PropertyIds.NAME);
 				objectInFolder.setPathSegment(name);
 			}
-			
 			result.getObjects().add(objectInFolder);
 		}
-		
-
-		// Set paging information
-		int numItems = contents.size();
-		result.setNumItems(BigInteger.valueOf(numItems));
-
-		Boolean hasMoreItems = (skip + max < numItems);
-		result.setHasMoreItems(hasMoreItems);
+		result.setNumItems(ol.getNumItems());
+		result.setHasMoreItems(ol.hasMoreItems());
 
 		return result;
 	}
@@ -219,13 +174,15 @@ public class NavigationServiceImpl implements NavigationService {
 		boolean ips = (includePathSegment == null ? false : includePathSegment
 				.booleanValue());
 
-		
 		// Set ObjectData of the starting folder for ObjectInfo
-		ObjectData _folder = compileObjectService.compileObjectData(callContext, folder, filter, includeAllowableActions, includeRelationships, renditionFilter, false, null);
+		ObjectData _folder = compileObjectService.compileObjectData(
+				callContext, folder, filter, includeAllowableActions,
+				includeRelationships, renditionFilter, false, null);
 		anscestorObjectData.setValue(_folder);
-		
+
 		// get the tree.
-		return getDescendantsInternal(callContext, _folder, filter, iaa, false, includeRelationships, null, ips, 0, d, foldersOnly);
+		return getDescendantsInternal(callContext, _folder, filter, iaa, false,
+				includeRelationships, null, ips, 0, d, foldersOnly);
 	}
 
 	private List<ObjectInFolderContainer> getDescendantsInternal(
@@ -237,7 +194,7 @@ public class NavigationServiceImpl implements NavigationService {
 
 		List<ObjectInFolderContainer> childrenOfFolder = new ArrayList<ObjectInFolderContainer>();
 		// Check specified folderId is folder(if not, it's a leaf node)
-		if(node.getBaseTypeId() != BaseTypeId.CMIS_FOLDER){
+		if (node.getBaseTypeId() != BaseTypeId.CMIS_FOLDER) {
 			return childrenOfFolder;
 		}
 
@@ -358,13 +315,13 @@ public class NavigationServiceImpl implements NavigationService {
 		// //////////////////
 		List<Document> checkedOuts = contentService.getCheckedOutDocs(folderId,
 				orderBy, extension);
-		
-		ObjectList list = compileObjectService.compileObjectDataList(callContext,
-				checkedOuts, filter, includeAllowableActions,
+
+		ObjectList list = compileObjectService.compileObjectDataList(
+				callContext, checkedOuts, filter, includeAllowableActions,
 				includeRelationships, renditionFilter, false, maxItems,
-				skipCount, null);
+				skipCount, false, null);
 		sortUtil.sort(list.getObjects(), orderBy);
-		
+
 		return list;
 	}
 

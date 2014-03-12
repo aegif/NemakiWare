@@ -353,9 +353,9 @@ public class PermissionServiceImpl implements PermissionService {
 	 * Filtering check to a list of contents based on the permission
 	 */
 	@Override
-	public List<Content> getFiltered(CallContext callContext,
-			List<Content> contents) {
-		List<Content> result = new ArrayList<Content>();
+	public <T> List<T> getFiltered(CallContext callContext,
+			List<T> contents) {
+		List<T> result = new ArrayList<T>();
 
 		// Validation
 		// TODO refine the logic
@@ -364,13 +364,14 @@ public class PermissionServiceImpl implements PermissionService {
 		}
 
 		// Filtering
-		for (Content content : contents) {
+		for (T _content : contents) {
+			Content content = (Content) _content;
 			Acl acl = contentService.calculateAcl(content);
 
 			Boolean filtered = checkPermission(callContext,
 					PermissionMapping.CAN_GET_PROPERTIES_OBJECT, acl, content.getType(), content);
 			if (filtered) {
-				result.add(content);
+				result.add(_content);
 			}
 		}
 		return result;
