@@ -59,6 +59,7 @@ import org.apache.chemistry.opencmis.client.runtime.SessionFactoryImpl;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.SessionParameter;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.chemistry.opencmis.commons.data.ObjectParentData;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BindingType;
 import org.apache.commons.collections.CollectionUtils;
@@ -78,9 +79,9 @@ import org.apache.solr.core.SolrCore;
 
 /**
  * Index tracking class
- *
+ * 
  * @author linzhixing
- *
+ * 
  */
 public class CoreTracker extends CloseHook {
 
@@ -235,7 +236,7 @@ public class CoreTracker extends CloseHook {
 
 	/**
 	 * Read CMIS change logs and Index them
-	 *
+	 * 
 	 * @param trackingType
 	 */
 	public void index(String trackingType) {
@@ -252,9 +253,10 @@ public class CoreTracker extends CloseHook {
 			}
 		}
 
-		if(events.isEmpty()) return;
+		if (events.isEmpty())
+			return;
 
-		//Extract only the last events of each objectId
+		// Extract only the last events of each objectId
 		List<ChangeEvent> list = extractChangeEvent(events);
 		for (ChangeEvent ce : list) {
 			switch (ce.getChangeType()) {
@@ -273,12 +275,13 @@ public class CoreTracker extends CloseHook {
 		}
 
 		// Save the latest token
-		trackingMgr.modifyValue(PROP_TOKEN, changeEvents.getLatestChangeLogToken());
+		trackingMgr.modifyValue(PROP_TOKEN,
+				changeEvents.getLatestChangeLogToken());
 	}
 
 	/**
 	 * Get CMIS change logs
-	 *
+	 * 
 	 * @param trackingType
 	 * @return
 	 */
@@ -304,21 +307,21 @@ public class CoreTracker extends CloseHook {
 	}
 
 	/**
-	 *
+	 * 
 	 * @param events
 	 * @return
 	 */
-	private List<ChangeEvent> extractChangeEvent(List<ChangeEvent> events){
+	private List<ChangeEvent> extractChangeEvent(List<ChangeEvent> events) {
 		List<ChangeEvent> list = new ArrayList<ChangeEvent>();
 		Set<String> objectIds = new HashSet<String>();
 
 		int size = events.size();
 		ListIterator<ChangeEvent> iterator = events.listIterator(size);
-		while(iterator.hasPrevious()){
+		while (iterator.hasPrevious()) {
 			ChangeEvent event = iterator.previous();
-			if(objectIds.contains(event.getObjectId())){
+			if (objectIds.contains(event.getObjectId())) {
 				continue;
-			}else{
+			} else {
 				objectIds.add(event.getObjectId());
 				list.add(event);
 			}
@@ -330,15 +333,16 @@ public class CoreTracker extends CloseHook {
 
 	/**
 	 * Create/Update Solr document
-	 *
+	 * 
 	 * @param ce
 	 */
 	private void registerSolrDocument(ChangeEvent ce) {
 		CmisObject obj = null;
-		try{
+		try {
 			obj = cmisSession.getObject(ce.getObjectId());
-		}catch(Exception e){
-			logger.warn("[objectId=" + ce.getObjectId() + "]object is deleted. Skip reading a change event.");
+		} catch (Exception e) {
+			logger.warn("[objectId=" + ce.getObjectId()
+					+ "]object is deleted. Skip reading a change event.");
 			return;
 		}
 
@@ -383,25 +387,27 @@ public class CoreTracker extends CloseHook {
 
 	/**
 	 * Delete Solr document
-	 *
+	 * 
 	 * @param ce
 	 */
 	private void deleteSolrDocument(ChangeEvent ce) {
 		try {
-			//Check if the SolrDocument exists
+			// Check if the SolrDocument exists
 			SolrQuery solrQuery = new SolrQuery();
 			solrQuery.setQuery(FIELD_ID + ":" + ce.getObjectId());
 			QueryResponse resp = server.query(solrQuery);
-			if (resp != null && resp.getResults() != null){
-				if(resp.getResults().getNumFound() == 0){
-					logger.info(logPrefix(ce) + "DELETED type change event is skipped because there is no SolrDocument");
+			if (resp != null && resp.getResults() != null) {
+				if (resp.getResults().getNumFound() == 0) {
+					logger.info(logPrefix(ce)
+							+ "DELETED type change event is skipped because there is no SolrDocument");
 					return;
 				}
-			}else{
-				logger.error(core.getName()+ ":Something wrong in the connection to Solr server");
+			} else {
+				logger.error(core.getName()
+						+ ":Something wrong in the connection to Solr server");
 			}
 
-			//Delete
+			// Delete
 			server.deleteById(ce.getObjectId());
 			server.commit();
 			logger.info(logPrefix(ce) + "Successfully deleted");
@@ -416,7 +422,7 @@ public class CoreTracker extends CloseHook {
 
 	/**
 	 * Build update request with file to Solr
-	 *
+	 * 
 	 * @param content
 	 * @param inputStream
 	 * @return
@@ -439,7 +445,8 @@ public class CoreTracker extends CloseHook {
 		// Set field values
 		// NOTION:
 		// Cast to String works on the assumption they are already String
-		// so that ModifiableSolrParams can have an argument Map<String, String[]>.
+		// so that ModifiableSolrParams can have an argument Map<String,
+		// String[]>.
 		// Any other better way?
 		Map<String, String[]> m = new HashMap<String, String[]>();
 		// for a field with capital letters
@@ -471,7 +478,7 @@ public class CoreTracker extends CloseHook {
 
 	/**
 	 * Build an update request to Solr without file
-	 *
+	 * 
 	 * @param content
 	 * @return
 	 */
@@ -526,7 +533,7 @@ public class CoreTracker extends CloseHook {
 	}
 
 	/**
-	 *
+	 * 
 	 * @param content
 	 * @return
 	 */
@@ -549,11 +556,18 @@ public class CoreTracker extends CloseHook {
 							.toString());
 			map.put(FIELD_VERSION_LABEL,
 					object.getPropertyValue(PropertyIds.VERSION_LABEL));
-			String isMajorVersion = (object.getPropertyValue(PropertyIds.IS_MAJOR_VERSION) == null) ? null : object.getPropertyValue(PropertyIds.IS_MAJOR_VERSION).toString();
+			String isMajorVersion = (object
+					.getPropertyValue(PropertyIds.IS_MAJOR_VERSION) == null) ? null
+					: object.getPropertyValue(PropertyIds.IS_MAJOR_VERSION)
+							.toString();
 			map.put(FIELD_IS_MAJOR_VEERSION, isMajorVersion);
 			map.put(FIELD_VERSION_SERIES_ID,
 					object.getPropertyValue(PropertyIds.VERSION_SERIES_ID));
-			String isCheckedOut = (object.getPropertyValue(PropertyIds.IS_VERSION_SERIES_CHECKED_OUT) == null) ? null : object.getPropertyValue(PropertyIds.IS_VERSION_SERIES_CHECKED_OUT).toString();
+			String isCheckedOut = (object
+					.getPropertyValue(PropertyIds.IS_VERSION_SERIES_CHECKED_OUT) == null) ? null
+					: object.getPropertyValue(
+							PropertyIds.IS_VERSION_SERIES_CHECKED_OUT)
+							.toString();
 			map.put(FIELD_IS_CHECKEDOUT, isCheckedOut);
 			map.put(FIELD_CHECKEDOUT_ID,
 					object.getPropertyValue(PropertyIds.VERSION_SERIES_CHECKED_OUT_ID));
@@ -561,8 +575,15 @@ public class CoreTracker extends CloseHook {
 					object.getPropertyValue(PropertyIds.VERSION_SERIES_CHECKED_OUT_BY));
 			map.put(FIELD_CHECKIN_COMMENT,
 					object.getPropertyValue(PropertyIds.CHECKIN_COMMENT));
-			String isPrivateWorkingCopy = (object.getPropertyValue(PropertyIds.IS_PRIVATE_WORKING_COPY) == null) ? null : object.getPropertyValue(PropertyIds.IS_PRIVATE_WORKING_COPY).toString();
+			String isPrivateWorkingCopy = (object
+					.getPropertyValue(PropertyIds.IS_PRIVATE_WORKING_COPY) == null) ? null
+					: object.getPropertyValue(
+							PropertyIds.IS_PRIVATE_WORKING_COPY).toString();
 			map.put(FIELD_IS_PRIVATE_WORKING_COPY, isPrivateWorkingCopy);
+
+			ObjectParentData parent= getParent(object);
+			map.put(FIELD_PARENT_ID,
+					parent.getObject().getId());
 			break;
 		case CMIS_FOLDER:
 			map.put(FIELD_PARENT_ID,
@@ -608,7 +629,7 @@ public class CoreTracker extends CloseHook {
 	/**
 	 * For properties other than those of baseType. They are indexed regardless
 	 * of its "queryable" flag in case the flag is changed later.
-	 *
+	 * 
 	 * @param map
 	 * @param object
 	 */
@@ -648,8 +669,18 @@ public class CoreTracker extends CloseHook {
 		}
 	}
 
+	private ObjectParentData getParent(CmisObject object){
+		List<ObjectParentData> parents = 
+		cmisSession
+		.getBinding()
+		.getNavigationService()
+		.getObjectParents(cmisSession.getRepositoryInfo().getId(),
+				object.getId(), null, false, null, null, true, null);
+		return parents.get(0);
+	}
+	
 	/**
-	 *
+	 * 
 	 * @param cal
 	 * @return
 	 */
