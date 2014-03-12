@@ -18,6 +18,7 @@ import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.CapabilityOrderBy;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
 import org.apache.commons.collections.comparators.ComparatorChain;
 import org.apache.commons.lang.StringUtils;
@@ -34,6 +35,11 @@ public class SortUtil {
 
 	@SuppressWarnings("unchecked")
 	public void sort(List<ObjectData> list, String orderBy) {
+		//Check empty list
+		if(CollectionUtils.isEmpty(list)){
+			return;
+		}
+		
 		// Check orderBy argument
 		if (StringUtils.isEmpty(orderBy)) {
 			String defaultOrderBy = propertyManager

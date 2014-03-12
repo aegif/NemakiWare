@@ -358,10 +358,14 @@ public class NavigationServiceImpl implements NavigationService {
 		// //////////////////
 		List<Document> checkedOuts = contentService.getCheckedOutDocs(folderId,
 				orderBy, extension);
-		return compileObjectService.compileObjectDataList(callContext,
+		
+		ObjectList list = compileObjectService.compileObjectDataList(callContext,
 				checkedOuts, filter, includeAllowableActions,
 				includeRelationships, renditionFilter, false, maxItems,
 				skipCount, null);
+		sortUtil.sort(list.getObjects(), orderBy);
+		
+		return list;
 	}
 
 	public void setContentService(ContentService contentService) {
