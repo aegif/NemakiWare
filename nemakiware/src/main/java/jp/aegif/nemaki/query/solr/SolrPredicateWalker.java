@@ -651,8 +651,9 @@ public class SolrPredicateWalker {
 		list.add(folderId); // Add oneself to the list in advance
 
 		SolrQuery query = new SolrQuery();
-		query.setQuery(solrUtil.getPropertyNameInSolr(PropertyIds.PARENT_ID) + folderId + " AND "
-				+ solrUtil.getPropertyNameInSolr(PropertyIds.BASE_TYPE_ID) + "cmis:folder"); // only "folder" nodes
+		
+		query.setQuery(solrUtil.getPropertyNameInSolr(PropertyIds.PARENT_ID) + ":" + folderId + " AND "
+				+ solrUtil.getPropertyNameInSolr(PropertyIds.BASE_TYPE_ID) + ":cmis\\:folder"); // only "folder" nodes
 
 		// Connect to SolrServer and add subfolder ids to the list
 		try {
