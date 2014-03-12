@@ -162,6 +162,9 @@ public class SortUtil {
 				log.warn("This property query name in orderBy argument is not supported when capabilityOrderBy=common: propertyId="
 						+ order[0]);
 				continue;
+			}else if(!pdf.isOrderable()){
+				log.warn("This property query name in orderBy argument is not orderable and ignored: propertyId="
+						+ order[0]);
 			}
 
 			// Modifier

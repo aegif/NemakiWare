@@ -101,18 +101,18 @@ public class TypeManagerImpl implements TypeManager {
 	// Map of subtype-specific property
 	private Map<String, List<PropertyDefinition<?>>> subTypeProperties;
 
-	//Map of propertyDefinition cores(id, name, queryName, propertyType)
+	// Map of propertyDefinition cores(id, name, queryName, propertyType)
 	private Map<String, PropertyDefinition<?>> propertyDefinitionCoresForQueryName;
-	
+
 	// /////////////////////////////////////////////////
 	// Constructor
 	// /////////////////////////////////////////////////
-	public void init(){
+	public void init() {
 		types = new HashMap<String, TypeDefinitionContainer>();
 		basetypes = new HashMap<String, TypeDefinitionContainer>();
 		subTypeProperties = new HashMap<String, List<PropertyDefinition<?>>>();
 		propertyDefinitionCoresForQueryName = new HashMap<String, PropertyDefinition<?>>();
-		
+
 		generate();
 	}
 
@@ -127,10 +127,11 @@ public class TypeManagerImpl implements TypeManager {
 
 		// Generate subtypes
 		addSubTypes();
-		
+
 		// Generate property definition cores
 		buildPropertyDefinitionCores();
 	}
+
 
 	// /////////////////////////////////////////////////
 	// Refresh global variables from DB
@@ -517,14 +518,14 @@ public class TypeManagerImpl implements TypeManager {
 		boolean inherited = false;
 		boolean openChoice = false;
 
-		result = DataUtil.createPropDef(id, localName, localNameSpace, queryName,
-				displayName, description, datatype, cardinality, updatability,
-				required, queryable, inherited, null, openChoice, orderable,
-				defaultValue,null, null, null, null, null, null, null);
+		result = DataUtil.createPropDef(id, localName, localNameSpace,
+				queryName, displayName, description, datatype, cardinality,
+				updatability, required, queryable, inherited, null, openChoice,
+				orderable, defaultValue, null, null, null, null, null, null,
+				null);
 
 		return result;
 	}
-
 
 	// /////////////////////////////////////////////////
 	// Subtype
@@ -580,7 +581,8 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	@Override
-	public AbstractTypeDefinition buildTypeDefinitionFromDB(NemakiTypeDefinition nemakiType){
+	public AbstractTypeDefinition buildTypeDefinitionFromDB(
+			NemakiTypeDefinition nemakiType) {
 		switch (nemakiType.getBaseId()) {
 		case CMIS_DOCUMENT:
 			return buildDocumentTypeDefinitionFromDB(nemakiType);
@@ -600,7 +602,6 @@ public class TypeManagerImpl implements TypeManager {
 
 		return null;
 	}
-
 
 	private void buildTypeDefinitionBaseFromDB(AbstractTypeDefinition type,
 			AbstractTypeDefinition parentType, NemakiTypeDefinition nemakiType) {
@@ -667,7 +668,8 @@ public class TypeManagerImpl implements TypeManager {
 		type.setPropertyDefinitions(parentProperties);
 
 		// Add specific properties
-		//TODO if there is the same id with that of the inherited, check the difference of attributes
+		// TODO if there is the same id with that of the inherited, check the
+		// difference of attributes
 		Map<String, PropertyDefinition<?>> properties = type
 				.getPropertyDefinitions();
 		List<PropertyDefinition<?>> specificProperties = new ArrayList<PropertyDefinition<?>>();
@@ -687,21 +689,16 @@ public class TypeManagerImpl implements TypeManager {
 						p.getDisplayName(), p.getDescription(),
 						p.getPropertyType(), p.getCardinality(),
 						p.getUpdatability(), p.isRequired(), p.isQueryable(),
-						false, p.getChoices(), p.isOpenChoice(), p.isOrderable(),
-						p.getDefaultValue(),
-						p.getMinValue(),
-						p.getMaxValue(),
-						p.getResolution(),
-						p.getDecimalPrecision(),
-						p.getDecimalMinValue(),
-						p.getDecimalMaxValue(),
-						p.getMaxLength()
-						);
+						false, p.getChoices(), p.isOpenChoice(),
+						p.isOrderable(), p.getDefaultValue(), p.getMinValue(),
+						p.getMaxValue(), p.getResolution(),
+						p.getDecimalPrecision(), p.getDecimalMinValue(),
+						p.getDecimalMaxValue(), p.getMaxLength());
 				properties.put(p.getPropertyId(), property);
 
 				// for subTypeProperties
 				// ignore null property (List index will be lost)
-				if(property != null){
+				if (property != null) {
 					specificProperties.add(property);
 				}
 			}
@@ -711,7 +708,7 @@ public class TypeManagerImpl implements TypeManager {
 		if (subTypeProperties.containsKey(type.getParentTypeId())) {
 			List<PropertyDefinition<?>> parentSpecificProperties = subTypeProperties
 					.get(type.getParentTypeId());
-			//subTypeProperties.put(type.getId(), specificProperties);
+			// subTypeProperties.put(type.getId(), specificProperties);
 			specificProperties.addAll(parentSpecificProperties);
 			subTypeProperties.put(type.getId(), specificProperties);
 		} else {
@@ -817,44 +814,54 @@ public class TypeManagerImpl implements TypeManager {
 		return type;
 	}
 
-	private void buildPropertyDefinitionCores(){
-		//CMIS default property cores
-		Map<String, PropertyDefinition<?>> d = types.get(DOCUMENT_TYPE_ID).getTypeDefinition().getPropertyDefinitions();
-		Map<String, PropertyDefinition<?>> f = types.get(FOLDER_TYPE_ID).getTypeDefinition().getPropertyDefinitions();
-		Map<String, PropertyDefinition<?>> r = types.get(RELATIONSHIP_TYPE_ID).getTypeDefinition().getPropertyDefinitions();
-		Map<String, PropertyDefinition<?>> p = types.get(POLICY_TYPE_ID).getTypeDefinition().getPropertyDefinitions();
-		Map<String, PropertyDefinition<?>> i = types.get(ITEM_TYPE_ID).getTypeDefinition().getPropertyDefinitions();
-		
+	private void buildPropertyDefinitionCores() {
+		// CMIS default property cores
+		Map<String, PropertyDefinition<?>> d = types.get(DOCUMENT_TYPE_ID)
+				.getTypeDefinition().getPropertyDefinitions();
+		Map<String, PropertyDefinition<?>> f = types.get(FOLDER_TYPE_ID)
+				.getTypeDefinition().getPropertyDefinitions();
+		Map<String, PropertyDefinition<?>> r = types.get(RELATIONSHIP_TYPE_ID)
+				.getTypeDefinition().getPropertyDefinitions();
+		Map<String, PropertyDefinition<?>> p = types.get(POLICY_TYPE_ID)
+				.getTypeDefinition().getPropertyDefinitions();
+		Map<String, PropertyDefinition<?>> i = types.get(ITEM_TYPE_ID)
+				.getTypeDefinition().getPropertyDefinitions();
+
 		copyToPropertyDefinitionCore(d);
 		copyToPropertyDefinitionCore(f);
 		copyToPropertyDefinitionCore(r);
 		copyToPropertyDefinitionCore(p);
 		copyToPropertyDefinitionCore(i);
-		
-		//Subtype property cores(consequently includes secondary property cores)
-		List<NemakiPropertyDefinitionCore> subTypeCores = typeService.getPropertyDefinitionCores();
-		for(NemakiPropertyDefinitionCore sc : subTypeCores){
-			addPropertyDefinitionCore(sc.getPropertyId(), sc.getQueryName(), sc.getPropertyType(), sc.getCardinality());
+
+		// Subtype property cores(consequently includes secondary property
+		// cores)
+		List<NemakiPropertyDefinitionCore> subTypeCores = typeService
+				.getPropertyDefinitionCores();
+		for (NemakiPropertyDefinitionCore sc : subTypeCores) {
+			addPropertyDefinitionCore(sc.getPropertyId(), sc.getQueryName(),
+					sc.getPropertyType(), sc.getCardinality());
 		}
 	}
 
-	private void copyToPropertyDefinitionCore(Map<String, PropertyDefinition<?>> map){
-		for(Entry<String, PropertyDefinition<?>> e : map.entrySet()){
-			if(!propertyDefinitionCoresForQueryName.containsKey(e.getKey())){
+	private void copyToPropertyDefinitionCore(
+			Map<String, PropertyDefinition<?>> map) {
+		for (Entry<String, PropertyDefinition<?>> e : map.entrySet()) {
+			if (!propertyDefinitionCoresForQueryName.containsKey(e.getKey())) {
 				PropertyDefinition<?> pdf = e.getValue();
-				addPropertyDefinitionCore(pdf.getId(), pdf.getQueryName(), pdf.getPropertyType(), pdf.getCardinality());
+				addPropertyDefinitionCore(pdf.getId(), pdf.getQueryName(),
+						pdf.getPropertyType(), pdf.getCardinality());
 			}
 		}
 	}
-	
-	private void addPropertyDefinitionCore(String propertyId, String queryName, PropertyType propertyType, Cardinality cardinality){
-		if(!propertyDefinitionCoresForQueryName.containsKey(propertyId)){
-			PropertyDefinition<?> core = DataUtil.createPropDefCore(propertyId, queryName, propertyType, cardinality);
+
+	private void addPropertyDefinitionCore(String propertyId, String queryName,
+			PropertyType propertyType, Cardinality cardinality) {
+		if (!propertyDefinitionCoresForQueryName.containsKey(propertyId)) {
+			PropertyDefinition<?> core = DataUtil.createPropDefCore(propertyId,
+					queryName, propertyType, cardinality);
 			propertyDefinitionCoresForQueryName.put(queryName, core);
 		}
 	}
-	
-
 
 	// /////////////////////////////////////////////////
 	// Type Service Methods
@@ -899,31 +906,34 @@ public class TypeManagerImpl implements TypeManager {
 	public String getPropertyIdForQueryName(TypeDefinition typeDefinition,
 			String propQueryName) {
 		// TODO Auto-generated method stub
-		PropertyDefinition<?> def = getPropertyDefinitionForQueryName(typeDefinition, propQueryName);
-		if(def == null){
+		PropertyDefinition<?> def = getPropertyDefinitionForQueryName(
+				typeDefinition, propQueryName);
+		if (def == null) {
 			return null;
-		}else{
+		} else {
 			return def.getQueryName();
 		}
 	}
-	
-	public PropertyDefinition<?> getPropertyDefinitionForQueryName(TypeDefinition typeDefinition,
-			String propQueryName){
-		Map<String, PropertyDefinition<?>> defs = typeDefinition.getPropertyDefinitions();
-		for(Entry<String, PropertyDefinition<?>> def : defs.entrySet()){
-			if(def.getValue().getQueryName().equals(propQueryName)){
+
+	public PropertyDefinition<?> getPropertyDefinitionForQueryName(
+			TypeDefinition typeDefinition, String propQueryName) {
+		Map<String, PropertyDefinition<?>> defs = typeDefinition
+				.getPropertyDefinitions();
+		for (Entry<String, PropertyDefinition<?>> def : defs.entrySet()) {
+			if (def.getValue().getQueryName().equals(propQueryName)) {
 				return def.getValue();
 			}
 		}
-		
+
 		return null;
 	}
-	
+
 	@Override
-	public PropertyDefinition<?> getPropertyDefinitionCoreForQueryName(String queryName){
+	public PropertyDefinition<?> getPropertyDefinitionCoreForQueryName(
+			String queryName) {
 		return propertyDefinitionCoresForQueryName.get(queryName);
 	}
-	
+
 	@Override
 	public TypeDefinition getTypeDefinition(String typeId) {
 		TypeDefinitionContainer tc = types.get(typeId);
@@ -986,7 +996,8 @@ public class TypeManagerImpl implements TypeManager {
 					continue;
 				}
 
-				result.getList().add(DataUtil.copyTypeDefinition(child.getTypeDefinition()));
+				result.getList().add(
+						DataUtil.copyTypeDefinition(child.getTypeDefinition()));
 
 				max--;
 				if (max == 0) {
@@ -1053,7 +1064,7 @@ public class TypeManagerImpl implements TypeManager {
 			TypeDefinitionContainer tdc = types.get(typeId);
 			flattenTypeDefinitionContainer(tdc, result, d, ipd);
 		}
-		
+
 		return result;
 	}
 
@@ -1062,9 +1073,9 @@ public class TypeManagerImpl implements TypeManager {
 			boolean includePropertyDefinitions) {
 		if (depth == 0)
 			return;
-		if(includePropertyDefinitions){
+		if (includePropertyDefinitions) {
 			result.add(tdc);
-		}else{
+		} else {
 			result.add(removeProeprtyDefinition(tdc));
 		}
 
@@ -1077,21 +1088,24 @@ public class TypeManagerImpl implements TypeManager {
 		}
 	}
 
-	private TypeDefinitionContainer removeProeprtyDefinition(TypeDefinitionContainer tdc){
-		//Remove from its own typeDefinition
+	private TypeDefinitionContainer removeProeprtyDefinition(
+			TypeDefinitionContainer tdc) {
+		// Remove from its own typeDefinition
 		TypeDefinition tdf = tdc.getTypeDefinition();
 		TypeDefinition copy = DataUtil.copyTypeDefinition(tdf);
-		Map<String, PropertyDefinition<?>> propDefs = copy.getPropertyDefinitions();
-		if(MapUtils.isNotEmpty(propDefs)){
+		Map<String, PropertyDefinition<?>> propDefs = copy
+				.getPropertyDefinitions();
+		if (MapUtils.isNotEmpty(propDefs)) {
 			propDefs.clear();
 		}
-		TypeDefinitionContainerImpl result = new TypeDefinitionContainerImpl(copy);
+		TypeDefinitionContainerImpl result = new TypeDefinitionContainerImpl(
+				copy);
 
-		//Remove from children recursively
+		// Remove from children recursively
 		List<TypeDefinitionContainer> children = tdc.getChildren();
-		if(CollectionUtils.isNotEmpty(children)){
+		if (CollectionUtils.isNotEmpty(children)) {
 			List<TypeDefinitionContainer> l = new ArrayList<TypeDefinitionContainer>();
-			for(TypeDefinitionContainer child : children){
+			for (TypeDefinitionContainer child : children) {
 				l.add(removeProeprtyDefinition(child));
 			}
 			result.setChildren(l);
@@ -1102,7 +1116,7 @@ public class TypeManagerImpl implements TypeManager {
 
 	/**
 	 * Get a type definition Internal Use
-	 *
+	 * 
 	 * @param content
 	 * @return
 	 */
@@ -1115,7 +1129,7 @@ public class TypeManagerImpl implements TypeManager {
 
 	/**
 	 * List up specification-default property ids
-	 *
+	 * 
 	 * @return
 	 */
 	@Override
@@ -1139,8 +1153,7 @@ public class TypeManagerImpl implements TypeManager {
 	// //////////////////////////////////////////////////////////////////////////////
 	// Utility
 	// //////////////////////////////////////////////////////////////////////////////
-	private void addTypeInternal(
-			Map<String, TypeDefinitionContainer> types,
+	private void addTypeInternal(Map<String, TypeDefinitionContainer> types,
 			AbstractTypeDefinition type) {
 		if (type == null) {
 			return;
@@ -1184,11 +1197,13 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	@Override
-	public Object getSingleDefaultValue(String propertyId, String typeId){
+	public Object getSingleDefaultValue(String propertyId, String typeId) {
 		TypeDefinition tdf = getTypeDefinition(typeId);
-		PropertyDefinition<?> pdf = tdf.getPropertyDefinitions().get(propertyId);
+		PropertyDefinition<?> pdf = tdf.getPropertyDefinitions()
+				.get(propertyId);
 		return pdf.getDefaultValue().get(0);
 	}
+
 	public void setTypeService(TypeService typeService) {
 		this.typeService = typeService;
 	}

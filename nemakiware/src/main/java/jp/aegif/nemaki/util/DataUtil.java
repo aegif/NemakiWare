@@ -3,11 +3,13 @@ package jp.aegif.nemaki.util;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.GregorianCalendar;
 import java.util.List;
 import java.util.TimeZone;
 
 import jp.aegif.nemaki.model.Content;
+
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.PropertyBoolean;
@@ -22,6 +24,7 @@ import org.apache.chemistry.opencmis.commons.enums.DateTimeResolution;
 import org.apache.chemistry.opencmis.commons.enums.DecimalPrecision;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
 import org.apache.chemistry.opencmis.commons.impl.WSConverter;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyDefinition;
@@ -35,6 +38,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerDef
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyUriDefinitionImpl;
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.lucene.document.DateTools.Resolution;
@@ -449,10 +453,22 @@ public class DataUtil {
 
 	public static PropertyDefinition<?> createPropDefCore(String id,
 			String queryName, PropertyType propertyType, Cardinality cardinality) {
-		PropertyDefinition<?> core = createPropDef(id, null, null,
-				queryName, null, null, propertyType, cardinality, null, false,
-				false, false, null, false, false, null, null, null, null, null,
-				null, null, null);
+		PropertyDefinition<?> core = createPropDef(id, null, null, queryName,
+				null, null, propertyType, cardinality, null, false, false,
+				false, null, false, false, null, null, null, null, null, null,
+				null, null);
 		return core;
+	}
+	
+	public static String buildPrefixTypeProperty(String typeId, String propertyId){
+		List<String> list = new ArrayList<String>();
+		if(StringUtils.isNotBlank(typeId)){
+			list.add("typeId=" + typeId);
+		}
+		if(StringUtils.isNotBlank(propertyId)){
+			list.add("propertyId=" + propertyId);
+		}
+		
+		return "[" + StringUtils.join(list, ",") + "]";
 	}
 }

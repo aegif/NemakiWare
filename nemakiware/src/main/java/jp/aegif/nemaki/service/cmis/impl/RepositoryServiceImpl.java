@@ -134,7 +134,10 @@ public class RepositoryServiceImpl implements RepositoryService,
 			for (String key : propDefs.keySet()) {
 				PropertyDefinition<?> propDef = propDefs.get(key);
 				if (!systemIds.contains(key)) {
+					//Check PropertyDefinition
 					exceptionService.constraintQueryName(propDef);
+					exceptionService.constraintPropertyDefinition(type, propDef);
+					
 					NemakiPropertyDefinition create = new NemakiPropertyDefinition(
 							propDef);
 					NemakiPropertyDefinitionDetail created = typeService
@@ -165,7 +168,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 		exceptionService.invalidArgumentRequiredString("typeId", typeId);
 		exceptionService.invalidArgumentDoesNotExistType(typeId);
 		exceptionService.invalidArgumentDeletableType(typeId);
-		exceptionService.constaintOnlyLeafTypeDefinition(typeId);
+		exceptionService.constraintOnlyLeafTypeDefinition(typeId);
 		exceptionService.constraintObjectsStillExist(typeId);
 
 		// //////////////////
@@ -185,7 +188,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 		exceptionService.invalidArgumentRequired("typeDefinition", type);
 		exceptionService.invalidArgumentDoesNotExistType(type.getId());
 		exceptionService.invalidArgumentUpdatableType(type);
-		exceptionService.constaintOnlyLeafTypeDefinition(type.getId());
+		exceptionService.constraintOnlyLeafTypeDefinition(type.getId());
 		exceptionService.constraintDuplicatePropertyDefinition(type);
 
 		// //////////////////
@@ -219,6 +222,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 					PropertyDefinition<?> oldPropDef = typeManager.getTypeDefinition(existingType.getTypeId()).getPropertyDefinitions().get(propNodeId);
 					exceptionService.constraintUpdatePropertyDefinition(propDef, oldPropDef);
 					exceptionService.constraintQueryName(propDef);
+					exceptionService.constraintPropertyDefinition(type, propDef);
 
 					NemakiPropertyDefinition _update = new NemakiPropertyDefinition(
 							propDef);
