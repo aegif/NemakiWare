@@ -1,10 +1,10 @@
 package jp.aegif.nemaki.model.constant;
 
 public interface PropertyKey {
-	final String DB_HOST= "db.host";
-	final String DB_MAXCONNECTIONS= "db.maxConnections";
-	final String DB_PORT= "db.port";
-	final String DB_PROTOCOL = "db.protocol";
+	final String DB_COUCHDB_PROTOCOL = "db.couchdb.protocol";
+	final String DB_COUCHDB_HOST= "db.couchdb.host";
+	final String DB_COUCHDB_PORT= "db.couchdb.port";
+	final String DB_COUCHDB_MAX_CONNECTIONS= "db.couchdb.max.connections";
 	final String REPOSITORY_MAIN = "repository.main";
 	final String REPOSITORY_MAIN_DESCRIPTION= "repository.main.description";
 	final String REPOSITORY_MAIN_ROOT= "repository.main.root";

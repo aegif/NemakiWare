@@ -136,10 +136,10 @@
 			<value>${repositories}</value>
 		</property>
 		<property name="host">
-			<value>${db.host}</value>
+			<value>${db.couchdb.host}</value>
 		</property>
 		<property name="maxConnections">
-			<value>${db.maxConnections}</value>
+			<value>${db.couchdb.max.connections}</value>
 		</property>
 	</bean>
 	
@@ -148,10 +148,10 @@
 			<value>${repository.archive}</value>
 		</property>
 		<property name="host">
-			<value>${db.host}</value>
+			<value>${db.couchdb.host}</value>
 		</property>
 		<property name="maxConnections">
-			<value>${db.maxConnections}</value>
+			<value>${db.couchdb.max.connections}</value>
 		</property>
 	</bean>
 	
