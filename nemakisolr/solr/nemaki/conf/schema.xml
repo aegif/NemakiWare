@@ -97,6 +97,9 @@
       trailing underscores (e.g. _version_) are reserved.
    -->
    
+   <!-- Latest change token-->	
+   <field name="change_token" type="string" indexed="true" stored="true" required="false" multiValued="false" />
+   		
    <!-- NemakiWare CMIS properties -->     
    <field name="id" type="string" indexed="true" stored="true" required="true" multiValued="false" />
    <field name="name" type="string" indexed="true" stored="true" multiValued="false" />
