@@ -8,7 +8,7 @@ log4j.properties
 doc/
 load_tesat/
 target/
-solr/nemaki/data/
+solr/*/data/
 *.DS_Store
 log/
 tracking.properties

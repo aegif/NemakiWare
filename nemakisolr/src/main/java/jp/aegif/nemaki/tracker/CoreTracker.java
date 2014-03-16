@@ -90,7 +90,8 @@ public class CoreTracker extends CloseHook {
 	Logger logger = Logger.getLogger(CoreTracker.class);
 	NemakiCoreAdminHandler adminHandler;
 	SolrCore core;
-	SolrServer server;
+	SolrServer repositoryServer;
+	SolrServer tokenServer;
 	Session cmisSession;
 
 	private final String MODE_FULL = "FULL";
@@ -135,13 +136,13 @@ public class CoreTracker extends CloseHook {
 	private final String separator = ".";
 
 	public CoreTracker(NemakiCoreAdminHandler adminHandler, SolrCore core,
-			SolrServer server) {
+			SolrServer repositoryServer, SolrServer tokenServer) {
 		super();
 
 		this.adminHandler = adminHandler;
 		this.core = core;
-		this.server = server;
-
+		this.repositoryServer = repositoryServer;
+		this.tokenServer = tokenServer;
 	}
 
 	public void setupCmisSession() {
@@ -219,8 +220,8 @@ public class CoreTracker extends CloseHook {
 	public void initCore() {
 		try {
 			// Initialize all documents
-			server.deleteByQuery("*:*");
-			server.commit();
+			repositoryServer.deleteByQuery("*:*");
+			repositoryServer.commit();
 			logger.info(core.getName() + ":Successfully initialized!");
 
 			storeLatestChangeToken("");
@@ -286,7 +287,7 @@ public class CoreTracker extends CloseHook {
 
 		QueryResponse resp = null;
 		try {
-			resp = server.query(solrQuery);
+			resp = tokenServer.query(solrQuery);
 		} catch (SolrServerException e) {
 			e.printStackTrace();
 		}
@@ -317,7 +318,7 @@ public class CoreTracker extends CloseHook {
 		AbstractUpdateRequest req = buildUpdateRequest(map);
 
 		try {
-			server.request(req);
+			tokenServer.request(req);
 		} catch (SolrServerException e) {
 			logger.error("Failed to store latest change token in Solr!", e);
 		} catch (IOException e) {
@@ -422,7 +423,7 @@ public class CoreTracker extends CloseHook {
 
 		// Send a request to Solr
 		try {
-			server.request(req);
+			repositoryServer.request(req);
 			logger.info(logPrefix(ce) + successMsg);
 		} catch (Exception e) {
 			logger.error(logPrefix(ce) + errMsg, e);
@@ -439,7 +440,7 @@ public class CoreTracker extends CloseHook {
 			// Check if the SolrDocument exists
 			SolrQuery solrQuery = new SolrQuery();
 			solrQuery.setQuery(FIELD_ID + ":" + ce.getObjectId());
-			QueryResponse resp = server.query(solrQuery);
+			QueryResponse resp = repositoryServer.query(solrQuery);
 			if (resp != null && resp.getResults() != null) {
 				if (resp.getResults().getNumFound() == 0) {
 					logger.info(logPrefix(ce)
@@ -452,8 +453,8 @@ public class CoreTracker extends CloseHook {
 			}
 
 			// Delete
-			server.deleteById(ce.getObjectId());
-			server.commit();
+			repositoryServer.deleteById(ce.getObjectId());
+			repositoryServer.commit();
 			logger.info(logPrefix(ce) + "Successfully deleted");
 		} catch (Exception e) {
 			logger.error(logPrefix(ce) + "Failed to ", e);
@@ -743,4 +744,6 @@ public class CoreTracker extends CloseHook {
 			return url + "/";
 		}
 	}
+
+
 }
