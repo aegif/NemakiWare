@@ -73,10 +73,14 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 	public NemakiCoreAdminHandler(CoreContainer coreContainer) {
 		super(coreContainer);
 
-		String cname = "nemaki";
-		SolrServer server = new EmbeddedSolrServer(coreContainer, cname);
-		SolrCore core = getCoreContainer().getCore(cname);
-		CoreTracker tracker = new CoreTracker(this, core, server);
+		String repositoryCorename = "nemaki";
+		String tokenCoreName = "token";
+
+		SolrServer repositoryServer = new EmbeddedSolrServer(coreContainer, repositoryCorename);
+		SolrServer tokenServer = new EmbeddedSolrServer(coreContainer, tokenCoreName);
+
+		SolrCore core = getCoreContainer().getCore(repositoryCorename);
+		CoreTracker tracker = new CoreTracker(this, core, repositoryServer, tokenServer);
 		logger.info("NemakiCoreAdminHandler successfully instantiated");
 
 		PropertyManager propertyManager = new PropertyManagerImpl(
@@ -138,10 +142,13 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 		SolrParams params = req.getParams();
 
 		// Get Server & Tracker info
-		String cname = params.get(CoreAdminParams.CORE);
-		SolrServer server = new EmbeddedSolrServer(coreContainer, cname);
-		SolrCore core = getCoreContainer().getCore(cname);
-		CoreTracker tracker = new CoreTracker(this, core, server);
+		String repositoryCoreName = params.get(CoreAdminParams.CORE);
+		String tokenCoreName = "token";
+
+		SolrServer repositoryServer = new EmbeddedSolrServer(coreContainer, repositoryCoreName);
+		SolrServer tokenServer = new EmbeddedSolrServer(coreContainer, tokenCoreName);
+		SolrCore core = getCoreContainer().getCore(repositoryCoreName);
+		CoreTracker tracker = new CoreTracker(this, core, repositoryServer, tokenServer);
 
 		// Get the tracking mode: FULL or AUTO
 		String tracking = params.get("tracking"); // tracking mode
@@ -164,7 +171,7 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 			SolrQuery query = new SolrQuery();
 			query.setQuery("*:*");
 			try {
-				QueryResponse qrsp = server.query(query);
+				QueryResponse qrsp = repositoryServer.query(query);
 				SolrDocumentList list = qrsp.getResults();
 
 				rsp.add("Solr's doclist", list);
