@@ -18,13 +18,16 @@ public interface PropertyKey {
 	final String REPOSITORY_ARCHIVE= "repository.archive";
 	final String REPOSITORIES= "repositories";
 	final String PRINCIPAL_ADMIN= "principal.admin.id";
-	final String SOLR_URL= "solr.url";
+	final String SOLR_PROTOCOL = "solr.protocol";
+	final String SOLR_HOST = "solr.host";
+	final String SOLR_PORT = "solr.port";
+	final String SOLR_CONTEXT = "solr.context";
 	final String SOLR_INDEXING_FORCE= "solr.indexing.force";
 	final String PERMISSION_DEFINITION= "permission.definition";
 	final String PERMISSION_MAPPING_DEFINITION= "permission.mapping.definition";
 	final String OVRRIDE_FILE= "override.file";
 	final String CAPABILITY_EXTENDED_ORDERBY_DEFAULT = "capability.extended.orderBy.default";
-	
+
 	//Capabilities
 	final String CAPABILITY_GET_DESCENDENTS = "capability.getDescendants";
 	final String CAPABILITY_GET_FOLDER_TREE = "capability.getFolderTree";
@@ -55,5 +58,5 @@ public interface PropertyKey {
 	final String CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_CONTROLLABLE_POLICY = "capability.newTypeSettableAttributes.controllablePolicy";
 	final String CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_CONTROLLABLE_ACL = "capability.newTypeSettableAttributes.controllableACL";
 	final String CAPABILITY_ACL = "capability.acl";
-	
+
 }

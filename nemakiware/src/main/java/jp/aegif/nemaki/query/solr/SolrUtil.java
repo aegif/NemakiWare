@@ -21,6 +21,8 @@
  ******************************************************************************/
 package jp.aegif.nemaki.query.solr;
 
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -39,17 +41,16 @@ import com.sun.jersey.api.client.WebResource;
 
 /**
  * Common utility class for Solr query
+ *
  * @author linzhixing
  *
  */
 public class SolrUtil {
-	public static final String FIELD_SOLRURL = "solr.url";
-
-	private final HashMap<String, String>map;
+	private final HashMap<String, String> map;
 
 	private NemakiPropertyManager propertyManager;
 
-	public SolrUtil(){
+	public SolrUtil() {
 		map = new HashMap<String, String>();
 		map.put(PropertyIds.OBJECT_ID, "id");
 		map.put(PropertyIds.BASE_TYPE_ID, "basetype");
@@ -60,7 +61,8 @@ public class SolrUtil {
 		map.put(PropertyIds.CREATED_BY, "creator");
 		map.put(PropertyIds.LAST_MODIFICATION_DATE, "modified");
 		map.put(PropertyIds.LAST_MODIFIED_BY, "modifier");
-		map.put(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, "secondary_object_type_ids");
+		map.put(PropertyIds.SECONDARY_OBJECT_TYPE_IDS,
+				"secondary_object_type_ids");
 
 		map.put(PropertyIds.IS_MAJOR_VERSION, "is_major_version");
 		map.put(PropertyIds.IS_PRIVATE_WORKING_COPY, "is_pwc");
@@ -81,51 +83,74 @@ public class SolrUtil {
 
 	/**
 	 * Get Solr server instance
+	 *
 	 * @return
 	 */
-	public SolrServer getSolrServer(){
-		String solrUrl = null;
-			solrUrl = propertyManager.readValue(FIELD_SOLRURL);
-		return new HttpSolrServer(solrUrl);
+	public SolrServer getSolrServer() {
+		String url = getSolrUrl();
+		return new HttpSolrServer(url);
 	}
 
 	/**
 	 * CMIS to Solr property name dictionary
+	 *
 	 * @param cmisColName
 	 * @return
 	 */
-	public String getPropertyNameInSolr(String cmisColName){
+	public String getPropertyNameInSolr(String cmisColName) {
 		String val = map.get(cmisColName);
 
-		if (val == null){
+		if (val == null) {
 			val = "dynamic.property." + cmisColName;
 		}
 
 		return val;
 	}
 
-	public String convertToString(Tree propertyNode){
+	public String convertToString(Tree propertyNode) {
 		List<String> _string = new ArrayList<String>();
-		for(int i=0; i<propertyNode.getChildCount(); i++){
+		for (int i = 0; i < propertyNode.getChildCount(); i++) {
 			_string.add(propertyNode.getChild(i).toString());
 		}
 		return StringUtils.join(_string, ".");
 	}
 
-	public void callSolrIndexing(){
-		String _force = propertyManager.readValue(PropertyKey.SOLR_INDEXING_FORCE);
+	public void callSolrIndexing() {
+		String _force = propertyManager
+				.readValue(PropertyKey.SOLR_INDEXING_FORCE);
 		boolean force = (Boolean.TRUE.toString().equals(_force)) ? true : false;
 
-		if(!force) return;
+		if (!force)
+			return;
 
-		String url = propertyManager.readValue(PropertyKey.SOLR_URL);
-		 Client client = Client.create();
-		 //TODO Regardless a slash on the last, build the correct URL
-		 WebResource webResource = client.resource(url + "admin/cores?core=nemaki&action=index&tracking=AUTO");
+		String url = getSolrUrl();
+
+		Client client = Client.create();
+		// TODO Regardless a slash on the last, build the correct URL
+		WebResource webResource = client.resource(url
+				+ "admin/cores?core=nemaki&action=index&tracking=AUTO");
 		 String xml = webResource.accept("application/xml").get(String.class);
-		 //TODO log according to the response status
+		// TODO log according to the response status
 	}
-	
+
+	private String getSolrUrl(){
+		String protocol = propertyManager.readValue(PropertyKey.SOLR_PROTOCOL);
+		String host = propertyManager.readValue(PropertyKey.SOLR_HOST);
+		int port = Integer.valueOf(propertyManager
+				.readValue(PropertyKey.SOLR_PORT));
+		String context = propertyManager.readValue(PropertyKey.SOLR_CONTEXT);
+
+		String url = null;
+		try {
+			URL _url = new URL(protocol, host, port, "");
+			url = _url.toString() + "/" + context + "/";
+		} catch (MalformedURLException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return url;
+	}
+
 	public void setPropertyManager(NemakiPropertyManager propertyManager) {
 		this.propertyManager = propertyManager;
 	}
