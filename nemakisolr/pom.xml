@@ -3,10 +3,11 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>NemakiSolr</groupId>
 	<artifactId>NemakiSolr</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
 	<packaging>war</packaging>
+	<version>1.0</version>
 	<name>NemakiSolr</name>
-	<description>Solr for Nemaki</description>
+	<description>Solr customized for Nemaki</description>
+	<url>https://github.com/NemakiWare/NemakiWare</url>
 
 	<properties>
 		<org.apache.chemistry.opencmis.version>0.10.0</org.apache.chemistry.opencmis.version>
@@ -101,6 +102,7 @@
 	<build>
 		<!-- <sourceDirectory>src</sourceDirectory> -->
 		<!-- <sourceDirectory>src/main/java/</sourceDirectory> -->
+		<finalName>NemakiSolr</finalName>
 		<plugins>
 			<plugin>
 				<artifactId>maven-compiler-plugin</artifactId>
