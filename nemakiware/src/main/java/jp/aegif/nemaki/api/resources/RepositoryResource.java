@@ -81,9 +81,9 @@ public class RepositoryResource extends ResourceBase implements ApplicationConte
 
 		setNemakiPropertyManager(nemakiPropertyManager);
 		try{
-			dbHost = nemakiPropertyManager.readValue(PropertyKey.DB_HOST);
-			dbProtocol = nemakiPropertyManager.readValue(PropertyKey.DB_PROTOCOL);
-			dbPort = nemakiPropertyManager.readValue(PropertyKey.DB_PORT);
+			dbHost = nemakiPropertyManager.readValue(PropertyKey.DB_COUCHDB_HOST);
+			dbProtocol = nemakiPropertyManager.readValue(PropertyKey.DB_COUCHDB_PROTOCOL);
+			dbPort = nemakiPropertyManager.readValue(PropertyKey.DB_COUCHDB_PORT);
 			this.setHost(dbProtocol + "://" +  dbHost + ":" + dbPort + "/");
 		}catch(Exception ex){
 			ex.printStackTrace();
