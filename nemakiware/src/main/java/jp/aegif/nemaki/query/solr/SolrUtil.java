@@ -29,10 +29,13 @@ import java.util.List;
 
 import jp.aegif.nemaki.model.constant.PropertyKey;
 import jp.aegif.nemaki.util.NemakiPropertyManager;
+import jp.aegif.nemaki.util.SortUtil;
 
 import org.antlr.runtime.tree.Tree;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.commons.lang.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.client.solrj.impl.HttpSolrServer;
 
@@ -46,6 +49,8 @@ import com.sun.jersey.api.client.WebResource;
  *
  */
 public class SolrUtil {
+	private static final Log log = LogFactory.getFactory().getInstance(SortUtil.class);
+
 	private final HashMap<String, String> map;
 
 	private NemakiPropertyManager propertyManager;
@@ -148,6 +153,7 @@ public class SolrUtil {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
+		log.info("Solr URL:" + url);
 		return url;
 	}
 
