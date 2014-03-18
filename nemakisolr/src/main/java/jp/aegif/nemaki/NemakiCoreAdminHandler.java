@@ -29,7 +29,9 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import jp.aegif.nemaki.tracker.CoreTracker;
 import jp.aegif.nemaki.tracker.CoreTrackerJob;
+import jp.aegif.nemaki.util.PropertyKey;
 import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.StringPool;
 import jp.aegif.nemaki.util.impl.PropertyManagerImpl;
 
 import org.apache.log4j.Logger;
@@ -62,9 +64,11 @@ import org.quartz.impl.StdSchedulerFactory;
  */
 public class NemakiCoreAdminHandler extends CoreAdminHandler {
 
+	Logger logger = Logger.getLogger(NemakiCoreAdminHandler.class);
+
 	ConcurrentHashMap<String, CoreTracker> trackers = new ConcurrentHashMap<String, CoreTracker>();
 	Scheduler scheduler = null;
-	Logger logger = Logger.getLogger(NemakiCoreAdminHandler.class);
+
 
 	public NemakiCoreAdminHandler() {
 		super();
@@ -73,8 +77,11 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 	public NemakiCoreAdminHandler(CoreContainer coreContainer) {
 		super(coreContainer);
 
-		String repositoryCorename = "nemaki";
-		String tokenCoreName = "token";
+		PropertyManager pm = new PropertyManagerImpl(
+				StringPool.PROPERTIES_PATH);
+
+		String repositoryCorename = pm.readValue(PropertyKey.SOLR_CORE_MAIN);
+		String tokenCoreName = pm.readValue(PropertyKey.SOLR_CORE_TOKEN);
 
 		SolrServer repositoryServer = new EmbeddedSolrServer(coreContainer, repositoryCorename);
 		SolrServer tokenServer = new EmbeddedSolrServer(coreContainer, tokenCoreName);
@@ -83,11 +90,8 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 		CoreTracker tracker = new CoreTracker(this, core, repositoryServer, tokenServer);
 		logger.info("NemakiCoreAdminHandler successfully instantiated");
 
-		PropertyManager propertyManager = new PropertyManagerImpl(
-				"nemakisolr.properties");
-
-		String  jobEnabled = propertyManager.readValue("tracking.cron.enabled");
-		if(jobEnabled.equals("true")){
+		String  jobEnabled = pm.readValue(PropertyKey.SOLR_TRACKING_CRON_ENABLED);
+		if("true".equals(jobEnabled)){
 			// Configure Job
 			JobDataMap jobDataMap = new JobDataMap();
 			jobDataMap.put("ADMIN_HANDLER", this);
@@ -98,7 +102,7 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 
 			// Configure Trigger
 			// Cron expression is set in a property file
-			String cron = propertyManager.readValue("tracking.cron.expression");
+			String cron = pm.readValue(PropertyKey.SOLR_TRACKING_CRON_EXPRESSION);
 			Trigger trigger = newTrigger().withIdentity("TrackTrigger", "Solr")
 					.withSchedule(CronScheduleBuilder.cronSchedule(cron)).build();
 
@@ -159,15 +163,15 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 		// Switch actions
 		String a = params.get(CoreAdminParams.ACTION);
 
-		// INDEX tracking
 		if (a.equalsIgnoreCase("INDEX")) {
+			// Action=INDEX: track documents(FULL//AUTO)
 			tracker.setupCmisSession();
 			tracker.index(tracking);
-			// TODO Action結果を出力
+			// TODO More info
 			rsp.add("Result", "Successfully tracked!");
 
-			// LIST all documents in Core
 		} else if (a.equalsIgnoreCase("LIST")) {
+			// Action=LIST: all documents in Core
 			SolrQuery query = new SolrQuery();
 			query.setQuery("*:*");
 			try {
@@ -175,13 +179,12 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 				SolrDocumentList list = qrsp.getResults();
 
 				rsp.add("Solr's doclist", list);
-			} catch (SolrServerException e1) {
-				// TODO 自動生成された catch ブロック
-				e1.printStackTrace();
+			} catch (SolrServerException e) {
+				e.printStackTrace();
 			}
 
-		// INIT Core
 		} else if (a.equalsIgnoreCase("INIT")) {
+			// Action=INIT: initialize core
 			tracker.initCore();
 			rsp.add("Result", "Successfully initialized!");
 		} else {

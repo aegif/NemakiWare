@@ -29,6 +29,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -44,7 +46,9 @@ import java.util.Set;
 import java.util.TimeZone;
 
 import jp.aegif.nemaki.NemakiCoreAdminHandler;
+import jp.aegif.nemaki.util.PropertyKey;
 import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.StringPool;
 import jp.aegif.nemaki.util.impl.PropertyManagerImpl;
 
 import org.apache.chemistry.opencmis.client.api.ChangeEvent;
@@ -86,8 +90,8 @@ import org.apache.solr.core.SolrCore;
  */
 public class CoreTracker extends CloseHook {
 
-	private final String PATH_CMIS = "cmis.properties";
 	Logger logger = Logger.getLogger(CoreTracker.class);
+
 	NemakiCoreAdminHandler adminHandler;
 	SolrCore core;
 	SolrServer repositoryServer;
@@ -96,13 +100,7 @@ public class CoreTracker extends CloseHook {
 
 	private final String MODE_FULL = "FULL";
 
-	private final String PROP_USER = "user";
-	private final String PROP_PASSWORD = "password";
 	private final String PROP_URL = "url";
-	private final String PROP_REPOSITORY = "repository";
-	private final String PROP_ITEMS = "changelog.items";
-	private final String PROP_COUNTRY = "locale.country";
-	private final String PROP_LANGUAGE = "locale.language";
 
 	private final String FIELD_ID = "id";
 	private final String FIELD_NAME = "name";
@@ -146,13 +144,20 @@ public class CoreTracker extends CloseHook {
 	}
 
 	public void setupCmisSession() {
-		PropertyManager pm = new PropertyManagerImpl(PATH_CMIS);
-		String user = pm.readValue(PROP_USER);
-		String password = pm.readValue(PROP_PASSWORD);
-		String url = sanitizeUrl(pm.readValue(PROP_URL));
-		String repository = pm.readValue(PROP_REPOSITORY);
-		String country = pm.readValue(PROP_COUNTRY);
-		String language = pm.readValue(PROP_LANGUAGE);
+		PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_PATH);
+
+		String protocol = pm.readValue(PropertyKey.CMIS_SERVER_PROTOCOL);
+		String host = pm.readValue(PropertyKey.CMIS_SERVER_HOST);
+		String port = pm.readValue(PropertyKey.CMIS_SERVER_PORT);
+		String context = pm.readValue(PropertyKey.CMIS_SERVER_CONTEXT);
+		String wsEndpoint = pm.readValue(PropertyKey.CMIS_SERVER_WS_ENDPOINT);
+		String url = getCmisUrl(protocol, host, port, context, wsEndpoint);
+
+		String repository = pm.readValue(PropertyKey.CMIS_REPOSITORY_MAIN);
+		String country = pm.readValue(PropertyKey.CMIS_LOCALE_COUNTRY);
+		String language = pm.readValue(PropertyKey.CMIS_LOCALE_LANGUAGE);
+		String user = pm.readValue(PropertyKey.CMIS_PRINCIPAL_ADMIN_ID);
+		String password = pm.readValue(PropertyKey.CMIS_PRINCIPAL_ADMIN_PASSWORD);
 
 		SessionFactory f = SessionFactoryImpl.newInstance();
 		Map<String, String> parameter = new HashMap<String, String>();
@@ -194,12 +199,25 @@ public class CoreTracker extends CloseHook {
 		// create session
 		try {
 			cmisSession = f.createSession(parameter);
-			OperationContext context = cmisSession.createOperationContext(null,
+			OperationContext operationContext = cmisSession.createOperationContext(null,
 					false, false, false, null, null, false, null, true, 100);
-			cmisSession.setDefaultContext(context);
+			cmisSession.setDefaultContext(operationContext);
 		} catch (Exception e) {
 			logger.error("Failed to create a session to CMIS server", e);
 		}
+	}
+
+	private String getCmisUrl(String protocol, String host, String port, String context, String wsEndpoint){
+		try {
+			URL url = new URL(protocol, host, Integer.parseInt(port), "");
+			return url.toString() + "/" + context + "/" + wsEndpoint + "/";
+		} catch (NumberFormatException e) {
+			logger.error("", e);
+			e.printStackTrace();
+		} catch (MalformedURLException e) {
+			logger.error("", e);
+		}
+		return null;
 	}
 
 	public boolean isConnectionSetup() {
@@ -333,13 +351,13 @@ public class CoreTracker extends CloseHook {
 	 * @return
 	 */
 	private ChangeEvents getCmisChangeLog(String trackingType) {
-		PropertyManager cmisMgr = new PropertyManagerImpl(PATH_CMIS);
+		PropertyManager cmisMgr = new PropertyManagerImpl(StringPool.PROPERTIES_PATH);
 
 		String _latestToken = readLatestChangeToken();
 		String latestToken = (trackingType.equals(MODE_FULL) || StringUtils
 				.isEmpty(_latestToken)) ? null : _latestToken;
 
-		String _numItems = cmisMgr.readValue(PROP_ITEMS);
+		String _numItems = cmisMgr.readValue(PropertyKey.CMIS_CHANGELOG_ITEMS);
 		long numItems = (StringUtils.isEmpty(_numItems)) ? 100 : Long.valueOf(_numItems);
 
 		ChangeEvents changeEvents = cmisSession.getContentChanges(latestToken,
