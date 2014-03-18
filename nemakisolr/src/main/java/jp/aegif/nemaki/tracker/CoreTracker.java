@@ -100,8 +100,6 @@ public class CoreTracker extends CloseHook {
 
 	private final String MODE_FULL = "FULL";
 
-	private final String PROP_URL = "url";
-
 	private final String FIELD_ID = "id";
 	private final String FIELD_NAME = "name";
 	private final String FIELD_DESCRIPTION = "cmis_description";
@@ -273,15 +271,24 @@ public class CoreTracker extends CloseHook {
 		if (events.isEmpty())
 			return;
 
+		//Read MIME-Type filtering
+		PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_PATH);
+		String _filter = pm.readValue(PropertyKey.SOLR_TRACKING_MIMETYPE_FILTER_ENABLED);
+		boolean mimeTypeFilter = "true".equals(_filter);
+		List<String> allowedMimeTypeFilter = new ArrayList<String>();
+		if(mimeTypeFilter){
+			allowedMimeTypeFilter = pm.readValues(PropertyKey.SOLR_TRACKING_MIMETYPE);
+		}
+
 		// Extract only the last events of each objectId
 		List<ChangeEvent> list = extractChangeEvent(events);
 		for (ChangeEvent ce : list) {
 			switch (ce.getChangeType()) {
 			case CREATED:
-				registerSolrDocument(ce);
+				registerSolrDocument(ce, mimeTypeFilter, allowedMimeTypeFilter);
 				break;
 			case UPDATED:
-				registerSolrDocument(ce);
+				registerSolrDocument(ce, mimeTypeFilter, allowedMimeTypeFilter);
 				break;
 			case DELETED:
 				deleteSolrDocument(ce);
@@ -399,7 +406,7 @@ public class CoreTracker extends CloseHook {
 	 *
 	 * @param ce
 	 */
-	private void registerSolrDocument(ChangeEvent ce) {
+	private void registerSolrDocument(ChangeEvent ce, boolean mimeTypeFilter, List<String>allowedMimeTypes) {
 		CmisObject obj = null;
 		try {
 			obj = cmisSession.getObject(ce.getObjectId());
@@ -413,9 +420,14 @@ public class CoreTracker extends CloseHook {
 		Map<String, Object> map = buildParamMap(obj);
 		switch (obj.getBaseTypeId()) {
 		case CMIS_DOCUMENT:
-			ContentStream cs = cmisSession.getContentStream(new ObjectIdImpl(
-					obj.getId()));
-			req = buildUpdateRequestWithFile(map, cs);
+			String mimeType = (String) map.get(FIELD_CONTENT_MIMETYPE);
+			if(!mimeTypeFilter || CollectionUtils.isNotEmpty(allowedMimeTypes) && allowedMimeTypes.contains(mimeType)){
+					ContentStream cs = cmisSession.getContentStream(new ObjectIdImpl(
+							obj.getId()));
+					req = buildUpdateRequestWithFile(map, cs);
+			}else{
+				req = buildUpdateRequest(map);
+			}
 			break;
 		case CMIS_FOLDER:
 			req = buildUpdateRequest(map);
