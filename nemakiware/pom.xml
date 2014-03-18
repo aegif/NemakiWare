@@ -2,10 +2,10 @@
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
 
 	<modelVersion>4.0.0</modelVersion>
-	<groupId>NemakiWare</groupId>
-	<artifactId>NemakiWare</artifactId>
+	<groupId>jp.aegif.nemaki</groupId>
+	<artifactId>nemakiware</artifactId>
 	<packaging>war</packaging>
-	<version>1.0</version>
+	<version>1.0GA4</version>
 	<name>NemakiWare</name>
 	<description>NemakiWare server</description>
 	<url>https://github.com/NemakiWare/NemakiWare</url>
@@ -233,7 +233,7 @@
 	</dependencies>
 
 	<build>
-		<finalName>NemakiWare</finalName>
+		<finalName>nemakiware</finalName>
 		<plugins>
 			<plugin>
 				<artifactId>maven-compiler-plugin</artifactId>
