@@ -4,10 +4,10 @@
 		xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 		<modelVersion>4.0.0</modelVersion>
 		<groupId>jp.aegif.nemaki</groupId>
-		<artifactId>solr</artifactId>
+		<artifactId>nemakisolr</artifactId>
 		<packaging>war</packaging>
 		<version>1.0GA4</version>
-		<name>NemakiSolr</name>
+		<name>nemakisolr</name>
 		<description>Solr customized for Nemaki</description>
 		<url>https://github.com/NemakiWare/NemakiWare</url>
 		

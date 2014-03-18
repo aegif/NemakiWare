@@ -6,7 +6,7 @@
 	<artifactId>nemakiware</artifactId>
 	<packaging>war</packaging>
 	<version>1.0GA4</version>
-	<name>NemakiWare</name>
+	<name>nemakiware</name>
 	<description>NemakiWare server</description>
 	<url>https://github.com/NemakiWare/NemakiWare</url>
 
