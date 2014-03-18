@@ -61,7 +61,6 @@ public class PropertyManagerImpl implements PropertyManager{
 		SolrResourceLoader loader = new SolrResourceLoader(null);
 		try {
 			InputStream inputStream = loader.openResource(propertiesFile);
-			//InputStream inputStream = Thread.currentThread().getContextClassLoader().getResourceAsStream(propertiesFile);
 			if(inputStream != null){
 				config.load(inputStream);
 				this.setConfig(config);
