@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.BeansException;
@@ -16,7 +17,7 @@ public class SpringPropertiesUtil extends PropertyPlaceholderConfigurer {
 
 	private static final Log log = LogFactory
 			.getLog(SpringPropertiesUtil.class);
-	
+
     private Map<String, String> propertiesMap;
     // Default as in PropertyPlaceholderConfigurer
     private int springSystemPropertiesMode = SYSTEM_PROPERTIES_MODE_FALLBACK;
@@ -39,31 +40,34 @@ public class SpringPropertiesUtil extends PropertyPlaceholderConfigurer {
         }
     }
 
-  //TODO error handling
     public String getValue(String key) {
-        return propertiesMap.get(key).toString();
+    	String value = propertiesMap.get(key);
+    	if(StringUtils.isBlank(value)){
+    		log.info("Blank properties key:" + key);
+    	};
+        return value;
     }
 
     //TODO error handling
     public String getHeadValue(String key){
     	String val = propertiesMap.get(key).toString();
-    	String[] _val = val.split(","); 
+    	String[] _val = val.split(",");
     	if(_val.length == 0) return null;
-    	
+
     	return _val[0].trim();
     }
-   
+
     public List<String> getValues(String key){
     	try{
     		String val = propertiesMap.get(key).toString();
-        	String[] _val = val.split(","); 
+        	String[] _val = val.split(",");
         	if(_val.length == 0) return null;
-        	
+
         	List<String> result = new ArrayList<String>();
         	for(String _v : _val){
         		result.add(_v.trim());
         	}
-        	
+
         	return result;
     	}catch(Exception e){
     		log.error("key=" + key, e);
