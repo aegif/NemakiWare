@@ -29,8 +29,8 @@ require 'active_cmis_custom'
 
 class NemakiRepository
   def initialize(auth_info_param=nil, logger=nil)
-    @auth_info = auth_info_param
-    @server = ActiveCMIS::Server.new(CONFIG['repository']['server_url'], logger).authenticate(:basic, @auth_info[:id], @auth_info[:password])
+    @auth_info = auth_info_param 
+    @server = ActiveCMIS::Server.new(REPOSITORY_SERVER_URL, logger).authenticate(:basic, @auth_info[:id], @auth_info[:password])
     @repo = @server.repository(CONFIG['repository']['repository_id'], [:basic, @auth_info[:id], @auth_info[:password] ])
     @logger = logger
   end
@@ -881,7 +881,7 @@ class NemakiRepository
   #Return an array of users: [{user1_hash}, {users2_hash},...]
   def get_users
     #FIXME URI shouln't be hard-coded
-    users_json = RestClient.get CONFIG['repository']['user_rest_url'] + 'list'
+    users_json = RestClient.get USER_REST_URL + 'list'
     JSON.parse(users_json)['users']
   end
 
@@ -905,25 +905,25 @@ class NemakiRepository
   end
 
   def get_user_by_id(id)
-    resource = RestClient::Resource.new(CONFIG['repository']['user_rest_url'] + 'show',@auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(USER_REST_URL + 'show',@auth_info[:id], @auth_info[:password])
     json = resource[id].get
     JSON.parse(json)
   end
 
   def delete_user(id)
-    resource = RestClient::Resource.new(CONFIG['repository']['user_rest_url'] + 'delete', @auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(USER_REST_URL + 'delete', @auth_info[:id], @auth_info[:password])
     json = resource[id].delete
     JSON.parse(json)
   end
 
   def delete_group(id)
-    resource = RestClient::Resource.new(CONFIG['repository']['group_rest_url'] +  'delete',@auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(GROUP_REST_URL +  'delete',@auth_info[:id], @auth_info[:password])
     json = resource[id].delete
     JSON.parse(json)
   end
 
   def search_users(id)
-    resource = RestClient::Resource.new(CONFIG['repository']['user_rest_url'] + 'search',@auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(USER_REST_URL + 'search',@auth_info[:id], @auth_info[:password])
     json = resource.get({:params => {:query => id}})
     result = JSON.parse(json)
     if result['status'] == 'success'
@@ -934,7 +934,7 @@ class NemakiRepository
   end
 
   def search_groups(id)
-    resource = RestClient::Resource.new(CONFIG['repository']['group_rest_url'] + 'search',@auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(GROUP_REST_URL + 'search',@auth_info[:id], @auth_info[:password])
     json = resource.get({:params => {:query => id}})
     result = JSON.parse(json)
     if result['status'] == 'success'
@@ -945,39 +945,39 @@ class NemakiRepository
   end
 
   def get_group_by_id(id)
-    resource = RestClient::Resource.new(CONFIG['repository']['group_rest_url'] + 'show',@auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(GROUP_REST_URL + 'show',@auth_info[:id], @auth_info[:password])
     json = resource[id].get
     JSON.parse(json)
   end
 
   def create_group(group)
-    resource = RestClient::Resource.new(CONFIG['repository']['group_rest_url'] + 'create', @auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(GROUP_REST_URL + 'create', @auth_info[:id], @auth_info[:password])
     json = resource[group.id].post({"name" => group.name,}, :content_type => 'application/x-www-form-urlencoded', :accept => :json)
     JSON.parse(json)
   end
 
   def create_user(user)
-    resource = RestClient::Resource.new(CONFIG['repository']['user_rest_url'] + 'create', @auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(USER_REST_URL + 'create', @auth_info[:id], @auth_info[:password])
     json = resource[user.id].post({"name" => user.name, "firstName" => user.first_name, "lastName" => user.last_name, "email" => user.email, "password" => user.password}, :content_type => 'application/x-www-form-urlencoded', :accept => :json)
     JSON.parse(json)
   end
 
   def update_user(user)
-    resource = RestClient::Resource.new(CONFIG['repository']['user_rest_url'] + 'update', @auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(USER_REST_URL + 'update', @auth_info[:id], @auth_info[:password])
     params = {"name" => user.name, "firstName" => user.first_name, "lastName" => user.last_name, "email" => user.email}
     json = resource[user.id].put(params, :content_type => 'application/x-www-form-urlencoded', :accept => :json)
     JSON.parse(json)
   end
 
   def update_user_password(user)
-    resource = RestClient::Resource.new(CONFIG['repository']['user_rest_url'] + 'updatePassword', @auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(USER_REST_URL + 'updatePassword', @auth_info[:id], @auth_info[:password])
     params = {"newPassword" => user.password}
     json = resource[user.id].put(params, :content_type => 'application/x-www-form-urlencoded', :accept => :json)
     JSON.parse(json)
   end
 
   def update_group_members(apiType, group, users=[], groups=[])
-    resource = RestClient::Resource.new(CONFIG['repository']['group_rest_url'], @auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(GROUP_REST_URL, @auth_info[:id], @auth_info[:password])
     userjson = users.to_json
     params = {"users" => users.to_json, "groups" => groups.to_json}
     url = resource[apiType][group.id]
@@ -987,7 +987,7 @@ class NemakiRepository
   end
 
   def update_group(group)
-    resource = RestClient::Resource.new(CONFIG['repository']['group_rest_url'] + 'update', @auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(GROUP_REST_URL + 'update', @auth_info[:id], @auth_info[:password])
     params = {"name" => group.name}
     json = resource[group.id].put(params, :content_type => 'application/x-www-form-urlencoded', :accept => :json)
     JSON.parse(json)
@@ -999,7 +999,7 @@ class NemakiRepository
 
   def create_types(data)
     #TODO authentication
-    resource = RestClient::Resource.new(CONFIG['repository']['type_rest_url'] + "register", @auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(TYPE_REST_URL + "register", @auth_info[:id], @auth_info[:password])
     json = resource.post :data => data
     JSON.parse(json)
   end
