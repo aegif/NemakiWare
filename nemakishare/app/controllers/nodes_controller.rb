@@ -71,7 +71,7 @@ class NodesController < ApplicationController
 
   def authenticate
     user = params[:user]
-    server = ActiveCMIS::Server.new(CONFIG['repository']['server_url'])
+    server = ActiveCMIS::Server.new(REPOSITORY_SERVER_URL)
     nemaki = server.authenticate(:basic, user[:id], user[:password])
     repo = nemaki.repository(CONFIG['repository']['repository_id'])
     session[:nemaki_auth_info] = user
