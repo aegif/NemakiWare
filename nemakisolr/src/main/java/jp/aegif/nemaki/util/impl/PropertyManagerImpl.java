@@ -33,18 +33,17 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
 
+import jp.aegif.nemaki.util.PropertyKey;
 import jp.aegif.nemaki.util.PropertyManager;
 
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang.StringUtils;
 import org.apache.solr.core.SolrResourceLoader;
-
-import ucar.unidata.util.StringUtil;
 
 public class PropertyManagerImpl implements PropertyManager{
 
 	private String propertiesFile;
 	private Properties config;
-
+	private List<String> overrideFiles = new ArrayList<String>();
 
 	public PropertyManagerImpl(){
 
@@ -60,10 +59,18 @@ public class PropertyManagerImpl implements PropertyManager{
 		Properties config = new Properties();
 		SolrResourceLoader loader = new SolrResourceLoader(null);
 		try {
+			//Set key values
 			InputStream inputStream = loader.openResource(propertiesFile);
 			if(inputStream != null){
 				config.load(inputStream);
 				this.setConfig(config);
+			}
+
+			//Set override files
+			String _overrideFiles = config.getProperty(PropertyKey.OVERRIDE_FILES);
+			if(StringUtils.isNotBlank(_overrideFiles)){
+				System.out.println("Read override files:" + _overrideFiles);
+				overrideFiles = split(_overrideFiles);
 			}
 		}
 		catch(Exception e) {
@@ -74,16 +81,66 @@ public class PropertyManagerImpl implements PropertyManager{
 	@Override
 	public String readValue(String key){
 		String val = config.getProperty(key);
-		return val;
+		return override(key, val);
 	}
 
 	@Override
 	public List<String> readValues(String key){
-		final String delimiter = ",";
 		String val = readValue(key);
-		return StringUtil.split(val, delimiter);
+		String _val = override(key, val);
+		return split(_val);
 	}
 
+	@Override
+	public String readHeadValue(String key){
+		String val = config.getProperty(key);
+		String _val = override(key, val);
+		String[] vals = _val.split(",");
+		return vals[0];
+	}
+
+	private List<String> split(String str){
+		if(StringUtils.isBlank(str)){
+			return new ArrayList<String>();
+		}
+		final String delimiter = ",";
+		String[] splitted = StringUtils.split(str, delimiter);
+
+		List<String> result = new ArrayList<String>();
+		for(int i=0; i < splitted.length; i++){
+			result.add(splitted[i]);
+		}
+		return result;
+	}
+
+	private String override(String key, String value){
+		String result = value;
+		ClassLoader cl = Thread.currentThread().getContextClassLoader();
+		for(String file : overrideFiles){
+			//Load file
+			InputStream is = cl.getResourceAsStream(file);
+			if (is == null){
+				continue;
+			}
+			Properties properties = new Properties();
+			try {
+				properties.load(is);
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+
+			String _value = properties.getProperty(key);
+			if(_value != null){
+				result = _value;
+			}
+		}
+		return result;
+	}
+
+	/**
+	 * Override is not supported for update
+	 */
 	@Override
 	public void modifyValue(String key, String value) {
 		config.setProperty(key, value);
@@ -113,6 +170,9 @@ public class PropertyManagerImpl implements PropertyManager{
 
 	}
 
+	/**
+	 * Override is not supported for update
+	 */
 	@Override
 	public void addValue(String key, String value){
 		String currentVal = config.getProperty(key);
@@ -129,18 +189,17 @@ public class PropertyManagerImpl implements PropertyManager{
 		try {
 			config.store(new FileOutputStream(new File(url.toURI())), null);
 		} catch (FileNotFoundException e) {
-			// TODO 自動生成された catch ブロック
 			e.printStackTrace();
 		} catch (IOException e) {
-			// TODO 自動生成された catch ブロック
 			e.printStackTrace();
 		} catch (URISyntaxException e) {
-			// TODO 自動生成された catch ブロック
 			e.printStackTrace();
 		}
-
 	}
 
+	/**
+	 * Override is not supported for update
+	 */
 	@Override
 	public void removeValue(String key, String value){
 		String currentVal = config.getProperty(key);
@@ -158,28 +217,15 @@ public class PropertyManagerImpl implements PropertyManager{
 			try {
 				config.store(new FileOutputStream(new File(url.toURI())), null);
 			} catch (FileNotFoundException e) {
-				// TODO 自動生成された catch ブロック
 				e.printStackTrace();
 			} catch (IOException e) {
-				// TODO 自動生成された catch ブロック
 				e.printStackTrace();
 			} catch (URISyntaxException e) {
-				// TODO 自動生成された catch ブロック
 				e.printStackTrace();
 			}
 		}
 	}
 
-	@Override
-	public String readHeadValue(String key){
-		String currentVal = config.getProperty(key);
-		String[] currentVals = currentVal.split(",");
-		return currentVals[0];
-	}
-
-	/*
-	 * Getter & Setter
-	 */
 	public String getPropertiesFile() {
 		return propertiesFile;
 	}
