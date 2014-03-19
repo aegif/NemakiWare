@@ -51,7 +51,7 @@ public class RepositoryMap {
 
 		//If repositoryId is not specified, return default value;
 		try {
-			mainRepositoryId = propertyManager.readValue(PropertyKey.REPOSITORY_MAIN);
+			mainRepositoryId = propertyManager.readValue(PropertyKey.CMIS_REPOSITORY_MAIN);
 		} catch (Exception e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();

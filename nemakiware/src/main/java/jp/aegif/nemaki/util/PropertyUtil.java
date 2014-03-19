@@ -31,7 +31,7 @@ public class PropertyUtil {
 	//Utilities
 	//////////////////////////////////////////////////
 	public boolean isRoot(Content content){
-		String rootObjectId = propertyManager.readValue(PropertyKey.REPOSITORY_MAIN_ROOT);
+		String rootObjectId = propertyManager.readValue(PropertyKey.CMIS_REPOSITORY_MAIN_ROOT);
 		if(content.isFolder() && rootObjectId.equals(content.getId())){
 			return true;
 		}else{

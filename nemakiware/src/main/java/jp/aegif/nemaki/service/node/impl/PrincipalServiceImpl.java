@@ -71,7 +71,7 @@ public class PrincipalServiceImpl implements PrincipalService {
 				groupIds.add(g.getGroupId());
 			}
 		}
-		groupIds.add(propertyManager.readValue(PropertyKey.REPOSITORY_MAIN_PRINCIPAL_ANYONE));
+		groupIds.add(propertyManager.readValue(PropertyKey.CMIS_REPOSITORY_MAIN_PRINCIPAL_ANYONE));
 		return groupIds;
 	}
 
@@ -130,7 +130,7 @@ public class PrincipalServiceImpl implements PrincipalService {
 
 	@Override
 	public String getAdmin() {
-		return propertyManager.readValue(PropertyKey.PRINCIPAL_ADMIN);
+		return propertyManager.readValue(PropertyKey.CMIS_PRINCIPAL_ADMIN);
 	}
 
 	@Override
