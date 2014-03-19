@@ -45,7 +45,7 @@ public class PropertyManagerImpl implements PropertyManager{
 	private Properties config;
 	private List<String> overrideFiles = new ArrayList<String>();
 
-	public PropertyManagerImpl(){
+	private PropertyManagerImpl(){
 
 	}
 
