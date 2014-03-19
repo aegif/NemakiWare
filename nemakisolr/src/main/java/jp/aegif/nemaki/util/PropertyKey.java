@@ -16,9 +16,9 @@ public interface PropertyKey {
 	public final String CMIS_CHANGELOG_ITEMS = "cmis.changelog.items";
 	public final String CMIS_LOCALE_COUNTRY = "cmis.locale.country";
 	public final String CMIS_LOCALE_LANGUAGE = "cmis.locale.language";
-	public final String CMIS_REPOSITORY_MAIN = "repository.main";
-	public final String CMIS_PRINCIPAL_ADMIN_ID = "principal.admin.id";
-	public final String CMIS_PRINCIPAL_ADMIN_PASSWORD = "principal.admin.password";
+	public final String CMIS_REPOSITORY_MAIN = "cmis.repository.main";
+	public final String CMIS_PRINCIPAL_ADMIN_ID = "cmis.principal.admin.id";
+	public final String CMIS_PRINCIPAL_ADMIN_PASSWORD = "cmis.principal.admin.password";
 
 	public final String OVERRIDE_FILES = "override.files";
 }

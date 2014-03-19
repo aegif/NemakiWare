@@ -69,7 +69,6 @@ public class PropertyManagerImpl implements PropertyManager{
 			//Set override files
 			String _overrideFiles = config.getProperty(PropertyKey.OVERRIDE_FILES);
 			if(StringUtils.isNotBlank(_overrideFiles)){
-				System.out.println("Read override files:" + _overrideFiles);
 				overrideFiles = split(_overrideFiles);
 			}
 		}

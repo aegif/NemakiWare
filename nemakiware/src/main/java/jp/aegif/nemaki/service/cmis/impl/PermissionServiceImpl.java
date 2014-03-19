@@ -78,7 +78,7 @@ public class PermissionServiceImpl implements PermissionService {
 			String baseType, Content content) {
 		// Admin always pass a permission check
 		NemakiPropertyManager pm = propertyUtil.getPropertyManager();
-		String admin = pm.readValue(PropertyKey.PRINCIPAL_ADMIN);
+		String admin = pm.readValue(PropertyKey.CMIS_PRINCIPAL_ADMIN);
 		if (callContext.getUsername().equals(admin))
 			return isAllowableBaseType(key, baseType, content);
 

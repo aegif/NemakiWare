@@ -50,13 +50,13 @@
         class="jp.aegif.nemaki.repository.info.NemakiRepositoryInfoImpl"
         init-method="setup">
         <property name="id">
-            <value>${repository.main}</value>
+            <value>${cmis.repository.main}</value>
         </property>
         <property name="name">
-            <value>${repository.main}</value>
+            <value>${cmis.repository.main}</value>
         </property>
         <property name="description">
-            <value>${repository.main.description}</value>
+            <value>${cmis.repository.main.description}</value>
         </property>
         <property name="cmisVersionSupported">
             <value>1.1</value>
@@ -65,31 +65,31 @@
             <ref bean="capabilities" />
         </property>
         <property name="rootFolder">
-            <value>${repository.main.root}</value>
+            <value>${cmis.repository.main.root}</value>
         </property>
         <property name="aclCapabilities">
             <ref bean="aclCapabilities" />
         </property>
         <property name="principalAnonymous">
-            <value>${repository.main.principal.anonymous}</value>
+            <value>${cmis.repository.main.principal.anonymous}</value>
         </property>
         <property name="principalAnyone">
-            <value>${repository.main.principal.anyone}</value>
+            <value>${cmis.repository.main.principal.anyone}</value>
         </property>
         <property name="thinClientUri">
-            <value>${repository.main.thinClientUri}</value>
+            <value>${cmis.repository.main.thinClientUri}</value>
         </property>
         <property name="vendorName">
-            <value>${repository.main.vendor}</value>
+            <value>${cmis.repository.main.vendor}</value>
         </property>
         <property name="productName">
-            <value>${repository.main.product.name}</value>
+            <value>${cmis.repository.main.product.name}</value>
         </property>
         <property name="productVersion">
-            <value>${repository.main.product.version}</value>
+            <value>${cmis.repository.main.product.version}</value>
         </property>
         <property name="nameSpace">
-            <value>${repository.main.namespace}</value>
+            <value>${cmis.repository.main.namespace}</value>
         </property>
         <property name="changesIncomplete">
             <value>true</value>

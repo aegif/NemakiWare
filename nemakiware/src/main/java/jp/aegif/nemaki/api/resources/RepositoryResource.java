@@ -208,9 +208,9 @@ public class RepositoryResource extends ResourceBase implements ApplicationConte
 			//Add dbId to the property file
 			try{
 				PropertyManager propertyManager = new PropertyManager(propertiesFile);
-				propertyManager.addValue(PropertyKey.REPOSITORIES, dbId);
+				propertyManager.addValue(PropertyKey.CMIS_REPOSITORIES, dbId);
 				//modify current repository info on the property file
-				propertyManager.modifyValue(PropertyKey.REPOSITORY_MAIN, dbId);
+				propertyManager.modifyValue(PropertyKey.CMIS_REPOSITORY_MAIN, dbId);
 			}catch(Exception ex){
 				ex.printStackTrace();
 				status = false;
@@ -266,10 +266,10 @@ public class RepositoryResource extends ResourceBase implements ApplicationConte
 		if(status){
 			try{
 				PropertyManager propertyManager = new PropertyManager(propertiesFile);
-				propertyManager.removeValue(PropertyKey.REPOSITORIES, dbId);
+				propertyManager.removeValue(PropertyKey.CMIS_REPOSITORIES, dbId);
 				//modify current repository info on the property file
-				String headValue = propertyManager.readHeadValue(PropertyKey.REPOSITORIES);
-				propertyManager.modifyValue(PropertyKey.REPOSITORY_MAIN, headValue);
+				String headValue = propertyManager.readHeadValue(PropertyKey.CMIS_REPOSITORIES);
+				propertyManager.modifyValue(PropertyKey.CMIS_REPOSITORY_MAIN, headValue);
 			}catch(Exception ex){
 				ex.printStackTrace();
 				status = false;

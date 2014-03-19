@@ -133,7 +133,7 @@
 	<!-- CouchDB Beans -->
 	<bean id="connector" class="jp.aegif.nemaki.service.db.CouchConnector" init-method="init">
 		<property name="repositoryId">
-			<value>${repositories}</value>
+			<value>${cmis.repositories}</value>
 		</property>
 		<property name="host">
 			<value>${db.couchdb.host}</value>
@@ -145,7 +145,7 @@
 	
 	<bean id="archiveConnector" class="jp.aegif.nemaki.service.db.CouchConnector" init-method="init">
 		<property name="repositoryId">
-			<value>${repository.archive}</value>
+			<value>${cmis.repository.archive}</value>
 		</property>
 		<property name="host">
 			<value>${db.couchdb.host}</value>
