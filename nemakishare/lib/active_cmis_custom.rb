@@ -34,7 +34,7 @@ module ActiveCMIS
 
     #define new apply method with argument 
     def apply(only_basic_permissions=false, acl_propagation='repositorydetermined')
-    #-aegif
+    #-nemaki
       body = Nokogiri::XML::Builder.new do |xml|
         xml.acl("xmlns" => NS::CMIS_CORE) do
           permissions.each do |permission|
@@ -43,29 +43,29 @@ module ActiveCMIS
               xml.direct     permission.direct?  
             
               #TODO need to understand this fix
-              #aegif-
+              #nemaki-
               #permission.each do |permit|
               #xml.permission { permit }              
               permission.permissions.each do |permit|
                 xml.permission  permit
-                #-aegif 
+                #-nemaki 
               end
             end
           end
 
-          #aegif-
+          #nemaki-
           if !extensions[0].nil?
                 str = extensions[0].build_str(extensions[0])
                 eval(str)
               end
-          #-aegif
+          #-nemaki
         end
 
       end
-      #aegif-
+      #nemaki-
       #conn.put(self_link("onlyBasicPermissions" => false), body)
       conn.put(self_link("onlyBasicPermissions" => only_basic_permissions, "aclPropagation" => acl_propagation), body.to_xml, "Content-Type" => "application/atom+xml;type=entry")
-      #-aegif
+      #-nemaki
       reload
     end    
 
@@ -75,10 +75,10 @@ module ActiveCMIS
       when :anonymous
         anonymous_user
       when :world
-        #aegif-
+        #nemaki-
         #world
         world_user
-        #-aegif
+        #-nemaki
       when anonymous_user
         :anonymous
       when world_user
@@ -147,11 +147,11 @@ module ActiveCMIS
       content_type = stream[:mime_type] || "application/octet-stream"
 
       if stream.has_key?(:overwrite)
-        #aegif-
+        #nemaki-
         #url = Internal::Utils.append_parameters(link, "overwrite" => stream[:overwrite])
         ct = attribute("cmis:changeToken");
         url = Internal::Utils.append_parameters(link, "overwrite" => stream[:overwrite], "changeToken" => Internal::Utils.escape_url_parameter(ct))
-        #-aegif
+        #-nemaki
       else
         url = link
       end
@@ -164,15 +164,15 @@ module ActiveCMIS
     def items(option={})
       conn.logger.debug "items is called"
       item_feed = Internal::Utils.extract_links(data, 'down', 'application/atom+xml','type' => 'feed')
-      #aegif-
+      #nemaki-
       link = Internal::Utils.append_parameters(item_feed.first, option)
-      #-aegif
+      #-nemaki
       raise "No child feed link for folder" if item_feed.empty?
-      #aegif-
+      #nemaki-
       #Collection.new(repository, item_feed.first)
       #Collection.new(repository, link)
       PagedCollection.new(repository, link)
-      #-aegif
+      #-nemaki
     end    
   end
 
@@ -208,13 +208,13 @@ module ActiveCMIS
       else
         @key = parameters["id"] || attribute('cmis:objectId')
         @self_link = data.xpath("at:link[@rel = 'self']/@href", NS::COMBINED).first
-        #aegif-
+        #nemaki-
         #PURPOSE: ChangeEvent type atom has no self link if it's deleted
         #@self_link = @self_link.text
         if @self_link
           @self_link = @self_link.text
         end
-        #-aegif
+        #-nemaki
       end
       @used_parameters = parameters
       # FIXME: decide? parameters to use?? always same ? or parameter with reload ?
@@ -236,7 +236,7 @@ module ActiveCMIS
     # Attribute getter for the CMIS attributes of an object
     # @return [Hash{String => ::Object}] All attributes, the keys are the property ids of the attributes
     def attributes
-      #aegif-
+      #nemaki-
       primary_attributes = self.class.attributes
       attrs = {}
       attrs.merge!(primary_attributes)
@@ -249,7 +249,7 @@ module ActiveCMIS
       end
       attrs.inject({}) do |hash, (key, attr)|
       #self.class.attributes.inject({}) do |hash, (key, attr)|
-      #-aegif
+      #-nemaki
         if data.nil?
           if key == "cmis:objectTypeId" 
             hash[key] = self.class.id
@@ -278,7 +278,7 @@ module ActiveCMIS
     end
     cache :attributes
 
-    #aegif-
+    #nemaki-
     def secondary_ids
       if(data == nil)
         return []
@@ -294,9 +294,9 @@ module ActiveCMIS
         end
       end
     end
-    #-aegif
+    #-nemaki
 
-    #aegif-
+    #nemaki-
     def change_event_info
       if !data.nil?
         info = data.xpath("cra:object/c:changeEventInfo", NS::COMBINED)
@@ -310,18 +310,18 @@ module ActiveCMIS
       end
     end
     cache :change_event_info
-    #-aegif
+    #-nemaki
 
-    #aegif-
+    #nemaki-
     attr_accessor :extension, :updated_extension
-    #-aegif
+    #-nemaki
 
     def update(attributes)
       attributes.each do |key, value|
-        #aegif-
+        #nemaki-
         #if (property = self.class.attributes[key.to_s]).nil?
         if (property = self.class.attributes[key.to_s]).nil? && (property = secondary_attributes_definition[key.to_s]).nil? 
-        #-aegif
+        #-nemaki
           raise Error::Constraint.new("You are trying to add an unknown attribute (#{key})")
         else
           property.validate_ruby_value(value)
@@ -331,10 +331,10 @@ module ActiveCMIS
       self.attributes.merge!(attributes)
     end
 
-    #aegif-
+    #nemaki-
     def render_atom_entry(properties = self.class.attributes, attributes = self.attributes, options = {}, extension = nil)
     #def render_atom_entry(properties = self.class.attributes, attributes = self.attributes, options = {})
-    #-aegif
+    #-nemaki
       builder = Nokogiri::XML::Builder.new do |xml|
         xml.entry(NS::COMBINED) do
           xml.parent.namespace = xml.parent.namespace_definitions.detect {|ns| ns.prefix == "at"}
@@ -352,12 +352,12 @@ module ActiveCMIS
               properties.each do |key, definition|
                 definition.render_property(xml, attributes[key])
               end
-              #aegif-
+              #nemaki-
               if !extension.nil?
                 str = extension.build_str(extension)
                 eval(str)
               end
-              #-aegif
+              #-nemaki
             end
           end
           yield(xml) if block_given?
@@ -365,10 +365,10 @@ module ActiveCMIS
       end
       conn.logger.debug builder.to_xml
 
-      #aegif-
+      #nemaki-
       builder.to_xml
       #builder.to_xml
-      #-aegif
+      #-nemaki
     end
 
     def updated_aspects(checkin = nil)
@@ -383,14 +383,14 @@ module ActiveCMIS
           result << {:message => :save_folders, :parameters => [parent_folders]}
         end
       else
-        #aegif-
+        #nemaki-
         #if !updated_attributes.empty?
         if !updated_attributes.empty? || !updated_extension.nil?
-        #-aegif 
-          #aegif-
+        #-nemaki 
+          #nemaki-
           result << {:message => :save_attributes, :parameters => [updated_attributes, attributes, checkin, updated_extension]}
           #result << {:message => :save_attributes, :parameters => [updated_attributes, attributes, checkin]}
-          #-aegif
+          #-nemaki
         end
         if @original_parent_folders
           result << {:message => :save_folders, :parameters => [parent_folders, checkin && !updated_attributes]}
@@ -408,33 +408,33 @@ module ActiveCMIS
       result
     end
 
-    #aegif-
+    #nemaki-
     def attributes_definition
       definitions = Hash.new
       definitions = self.class.attributes.merge(secondary_attributes_definition)
     end
-    #-aegif
+    #-nemaki
 
-    #aegif-
+    #nemaki-
     def save_attributes(attributes, values, checkin = nil, updated_extension = nil)
     #def save_attributes(attributes, values, checkin = nil)
-    #-aegif
-      #aegif-
+    #-nemaki
+      #nemaki-
       #if attributes.empty? && checkin.nil?
       if (attributes.empty? && checkin.nil?) && updated_extension.nil?
-      #-aegif
+      #-nemaki
         raise "Error: saving attributes but nothing to do"
       end
-      #aegif-
+      #nemaki-
       #properties = self.class.attributes.reject {|key,_| !updated_attributes.include?(key)}
       #properties = self.class.attributes.reject {|key,_| !updated_attributes.include?(key) && key != 'cmis:changeToken'}
       properties = attributes_definition.reject {|key,_| !updated_attributes.include?(key) && key != 'cmis:changeToken'}
-      #-aegif
+      #-nemaki
 
-      #aegif-
+      #nemaki-
       body = render_atom_entry(properties, values, {:checkin => checkin}, updated_extension)
       #body = render_atom_entry(properties, values, :checkin => checkin)
-      #-aegif
+      #-nemaki
       if checkin.nil?
         parameters = {}
       else
@@ -469,7 +469,7 @@ module ActiveCMIS
       end
     end
 
-    #aegif-
+    #nemaki-
     # @private
     class << self
       def from_parameters_by_path(repository, parameters)
@@ -477,7 +477,7 @@ module ActiveCMIS
         data = repository.conn.get_atom_entry(url)
         from_atom_entry(repository, data, parameters)
       end
-      #-aegif    
+      #-nemaki    
     end
 
     #########################
@@ -508,7 +508,7 @@ module ActiveCMIS
   end
 
   class Repository
-    #aegif-
+    #nemaki-
     def object_by_path(path, parameters = {"renditionFilter" => "*", "includeAllowableActions" => "true", "includeACL" => true})
       ActiveCMIS::Object.from_parameters_by_path(self, parameters.merge("path" => path))
     end
@@ -519,7 +519,7 @@ module ActiveCMIS
       raise "Repository does not define required URI-template 'objectbypath'" unless template
       url = fill_in_template(template, parameters)
     end
-    #-aegif
+    #-nemaki
   end
 
   #Introduce Secondary Type Class
@@ -533,9 +533,9 @@ module ActiveCMIS
   class Server
     def clear_repositories
       @cached_repositories = {}
-      #aegif-
+      #nemaki-
       @repository_info = conn.get_xml(endpoint)
-      #-aegif-
+      #-nemaki-
     end
   end
 
@@ -556,13 +556,13 @@ module ActiveCMIS
                        Relationship
                      when "cmis:policy"
                        Policy
-                     #aegif-
+                     #nemaki-
                      when "cmis:item"
                        Item
                      when "cmis:secondary"
                        Secondary
                        #Document
-                     #-aegif
+                     #-nemaki
                      else
                        raise ActiveCMIS::Error.new("Type #{klass_data.xpath("cra:type/c:id", NS::COMBINED).text} without supertype, and not actually a valid base_type (#{base_type_id.inspect})\n" + klass_data.to_s)
                      end
