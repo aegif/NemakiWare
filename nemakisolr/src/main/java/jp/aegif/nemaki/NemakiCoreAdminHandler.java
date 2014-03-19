@@ -78,7 +78,7 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 		super(coreContainer);
 
 		PropertyManager pm = new PropertyManagerImpl(
-				StringPool.PROPERTIES_PATH);
+				StringPool.PROPERTIES_NAME);
 
 		String repositoryCorename = pm.readValue(PropertyKey.SOLR_CORE_MAIN);
 		String tokenCoreName = pm.readValue(PropertyKey.SOLR_CORE_TOKEN);

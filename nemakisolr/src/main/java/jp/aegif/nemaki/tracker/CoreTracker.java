@@ -142,7 +142,7 @@ public class CoreTracker extends CloseHook {
 	}
 
 	public void setupCmisSession() {
-		PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_PATH);
+		PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
 
 		String protocol = pm.readValue(PropertyKey.CMIS_SERVER_PROTOCOL);
 		String host = pm.readValue(PropertyKey.CMIS_SERVER_HOST);
@@ -272,7 +272,7 @@ public class CoreTracker extends CloseHook {
 			return;
 
 		//Read MIME-Type filtering
-		PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_PATH);
+		PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
 		String _filter = pm.readValue(PropertyKey.SOLR_TRACKING_MIMETYPE_FILTER_ENABLED);
 		boolean mimeTypeFilter = "true".equals(_filter);
 		List<String> allowedMimeTypeFilter = new ArrayList<String>();
@@ -358,7 +358,7 @@ public class CoreTracker extends CloseHook {
 	 * @return
 	 */
 	private ChangeEvents getCmisChangeLog(String trackingType) {
-		PropertyManager cmisMgr = new PropertyManagerImpl(StringPool.PROPERTIES_PATH);
+		PropertyManager cmisMgr = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
 
 		String _latestToken = readLatestChangeToken();
 		String latestToken = (trackingType.equals(MODE_FULL) || StringUtils
