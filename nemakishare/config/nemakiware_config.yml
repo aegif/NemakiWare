@@ -7,7 +7,7 @@ repository:
   server_port: '8080'
   server_context: 'nemakiware'
   server_binding: 'atom'
-  repository_id: 'bedroom'
+  repository_main_id: 'bedroom'
   admin_id: 'admin'
   admin_password: 'admin'
   aspects_namespace: 'http://www.aegif.jp/Nemaki/feature/aspects/'

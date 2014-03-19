@@ -31,14 +31,14 @@ class NemakiRepository
   def initialize(auth_info_param=nil, logger=nil)
     @auth_info = auth_info_param 
     @server = ActiveCMIS::Server.new(REPOSITORY_SERVER_URL, logger).authenticate(:basic, @auth_info[:id], @auth_info[:password])
-    @repo = @server.repository(CONFIG['repository']['repository_id'], [:basic, @auth_info[:id], @auth_info[:password] ])
+    @repo = @server.repository(REPOSITORY_MAIN_ID, [:basic, @auth_info[:id], @auth_info[:password] ])
     @logger = logger
   end
 
   def reset_repository
     @repo = nil
     @server.clear_repositories
-    @repo = @server.repository(CONFIG['repository']['repository_id'])
+    @repo = @server.repository(REPOSITORY_MAIN_ID)
   end
 
   ########################################

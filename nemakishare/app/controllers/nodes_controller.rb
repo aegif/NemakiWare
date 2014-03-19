@@ -73,7 +73,7 @@ class NodesController < ApplicationController
     user = params[:user]
     server = ActiveCMIS::Server.new(REPOSITORY_SERVER_URL)
     nemaki = server.authenticate(:basic, user[:id], user[:password])
-    repo = nemaki.repository(CONFIG['repository']['repository_id'])
+    repo = nemaki.repository(REPOSITORY_MAIN_ID)
     session[:nemaki_auth_info] = user
 
     redirect_to :action => 'explore'
