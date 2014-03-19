@@ -14,6 +14,7 @@ USER_REST_URL = REPOSITORY_SERVER_REST_ROOT + "user/"
 GROUP_REST_URL = REPOSITORY_SERVER_REST_ROOT + "group/"
 TYPE_REST_URL = REPOSITORY_SERVER_REST_ROOT + "type/"
 ARCHIVE_REST_URL = REPOSITORY_SERVER_REST_ROOT + "archive/"
+REPOSITORY_MAIN_ID = config_repo['repository_main_id']
 
 config_search = CONFIG['search_engine']
 search_protocol = config_search['server_protocol']
