@@ -87,7 +87,7 @@ public interface PrincipalService {
 	 */
 	void deleteGroup(String groupId);
 
-	String getAdmin();
+	User getAdmin();
 
 	boolean isAdmin(String userId, String password);
 }

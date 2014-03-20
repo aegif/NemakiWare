@@ -35,6 +35,7 @@ import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.model.constant.DomainType;
 import jp.aegif.nemaki.repository.info.NemakiRepositoryInfoImpl;
@@ -97,7 +98,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 	private NemakiRepositoryInfoImpl repositoryInfo;
 	private PrincipalService principalService;
 	private PropertyUtil propertyUtil;
-	
+
 	private static final Log log = LogFactory
 			.getLog(ExceptionServiceImpl.class);
 
@@ -356,9 +357,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void perimissionAdmin(CallContext context) {
-		String admin = principalService.getAdmin();
+		User admin = principalService.getAdmin();
 
-		if (!admin.equals(context.getUsername())) {
+		if (!admin.getUserId().equals(context.getUsername())) {
 			String msg = "This operation if permitted only for administrator";
 			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
 		}
@@ -702,7 +703,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 				constraint(document.getId(), "All versions except for PWC are locked when checked out.");
 			}
 		}
-		
+
 	}
 
 	@Override
@@ -726,6 +727,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 		}
 	}
 
+	@Override
 	public void constraintContentStreamRequired(DocumentTypeDefinition typeDefinition, ContentStream contentStream){
 		if(ContentStreamAllowed.REQUIRED.equals(typeDefinition.getContentStreamAllowed())){
 			if(contentStream == null || contentStream.getStream() == null){
@@ -733,7 +735,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 			}
 		}
 	}
-	
+
 	@Override
 	public void constraintOnlyLeafTypeDefinition(String objectTypeId) {
 		TypeDefinitionContainer tdc = typeManager.getTypeById(objectTypeId);
@@ -990,6 +992,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 		return ".*" + contained + ".*";
 	}
 
+	@Override
 	public void constraintContentStreamDownload(Document document){
 		DocumentTypeDefinition documentTypeDefinition = (DocumentTypeDefinition) typeManager.getTypeDefinition(document);
 		ContentStreamAllowed csa = documentTypeDefinition.getContentStreamAllowed();
@@ -998,14 +1001,15 @@ public class ExceptionServiceImpl implements ExceptionService,
 			constraint(document.getId(), "This document has no ContentStream. getContentStream is not supported.");
 		}
 	}
-	
+
+	@Override
 	public void constraintRenditionStreamDownload(Content content, String streamId){
 		List<String> renditions = content.getRenditionIds();
 		if(CollectionUtils.isEmpty(renditions) || !renditions.contains(streamId)){
 			constraint(content.getId(), "This document has no rendition specified with " + streamId);
 		}
 	}
-	
+
 	@Override
 	public void constraintImmutable(Document document,
 			TypeDefinition typeDefinition) {
@@ -1026,22 +1030,22 @@ public class ExceptionServiceImpl implements ExceptionService,
 			constraint(document.getId(), "Immutable document cannot be updated/deleted");
 		}
 	}
-	
+
 	@Override
 	public void constraintPropertyDefinition(
 			TypeDefinition typeDefinition,
 			PropertyDefinition<?> propertyDefinition) {
-		
+
 		String typeId = typeDefinition.getId();
 		String propertyId = propertyDefinition.getId();
-		
+
 		if(propertyDefinition.isOrderable()
 				&& propertyDefinition.getCardinality() == Cardinality.MULTI){
 			String msg = DataUtil.buildPrefixTypeProperty(typeId, propertyId) + "PropertyDefinition violates the specification";
 			constraint(msg);
 		}
 	}
-	
+
 	@Override
 	public void contentAlreadyExists(Content content, Boolean overwriteFlag) {
 		if (!overwriteFlag) {

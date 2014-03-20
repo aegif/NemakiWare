@@ -129,8 +129,8 @@ public class PrincipalServiceImpl implements PrincipalService {
 	}
 
 	@Override
-	public String getAdmin() {
-		return propertyManager.readValue(PropertyKey.CMIS_PRINCIPAL_ADMIN);
+	public User getAdmin() {
+		return principalDaoService.getAdmin();
 	}
 
 	@Override
@@ -140,7 +140,8 @@ public class PrincipalServiceImpl implements PrincipalService {
 		}
 
 		User user = getUserById(userId);
-		if(user.getId().equals(getAdmin())){
+		boolean isAdmin = (user.isAdmin() == null) ? false : user.isAdmin();
+		if(isAdmin){
 			//password check
 			boolean match = PasswordHasher.isCompared(password, user.getPasswordHash());
 			if(match) return true;

@@ -46,6 +46,12 @@ public interface PrincipalDaoService {
 	List<User> getUsers();
 
 	/**
+	 * Get Admin user
+	 * @return
+	 */
+	User getAdmin();
+
+	/**
 	 * Get a group
 	 * @param nodeId
 	 * @return

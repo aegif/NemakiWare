@@ -17,7 +17,6 @@ public interface PropertyKey {
 	final String CMIS_REPOSITORY_MAIN_NAMESPACE= "cmis.repository.main.namespace";
 	final String CMIS_REPOSITORY_ARCHIVE= "cmis.repository.archive";
 	final String CMIS_REPOSITORIES= "cmis.repositories";
-	final String CMIS_PRINCIPAL_ADMIN= "cmis.principal.admin.id";
 	final String SOLR_PROTOCOL = "solr.protocol";
 	final String SOLR_HOST = "solr.host";
 	final String SOLR_PORT = "solr.port";
