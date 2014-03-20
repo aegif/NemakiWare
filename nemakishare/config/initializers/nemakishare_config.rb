@@ -1,4 +1,4 @@
-CONFIG = YAML.load_file("#{Rails.root}/config/nemakiware_config.yml")
+CONFIG = YAML.load_file("#{Rails.root}/config/nemakishare_config.yml")
 VALIDATION = CONFIG['validation']
 
 config_repo = CONFIG['repository']
