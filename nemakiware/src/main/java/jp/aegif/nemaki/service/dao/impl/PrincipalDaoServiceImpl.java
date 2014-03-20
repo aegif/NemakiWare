@@ -150,6 +150,12 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 		return user;
 	}
 
+	@Override
+	public User getAdmin() {
+		User admin = nonCachedPrincipalDaoService.getAdmin();
+		return admin;
+	}
+
 	/**
 	 *
 	 */

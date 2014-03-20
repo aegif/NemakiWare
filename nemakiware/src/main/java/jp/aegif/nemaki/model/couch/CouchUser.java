@@ -1,29 +1,29 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
 package jp.aegif.nemaki.model.couch;
 
-import org.codehaus.jackson.annotate.JsonIgnoreProperties;
-
 import jp.aegif.nemaki.model.User;
+
+import org.codehaus.jackson.annotate.JsonIgnoreProperties;
 @JsonIgnoreProperties(ignoreUnknown=true)
 public class CouchUser extends CouchNodeBase{
 
@@ -34,7 +34,8 @@ public class CouchUser extends CouchNodeBase{
 	private String firstName;
 	private String email;
 	private String passwordHash;
-	
+	private Boolean admin;
+
 	public CouchUser() {
 		super();
 	}
@@ -47,8 +48,9 @@ public class CouchUser extends CouchNodeBase{
 		setLastName(u.getLastName());
 		setEmail(u.getEmail());
 		setPasswordHash(u.getPasswordHash());
+		setAdmin(u.isAdmin());
 	}
-	
+
 	public String getUserId() {
 		return userId;
 	}
@@ -96,7 +98,16 @@ public class CouchUser extends CouchNodeBase{
 	public void setPasswordHash(String passwordHash) {
 		this.passwordHash = passwordHash;
 	}
-	
+
+	public Boolean isAdmin() {
+		return admin;
+	}
+
+	public void setAdmin(Boolean admin) {
+		this.admin = admin;
+	}
+
+	@Override
 	public User convert(){
 		User u = new User(super.convert());
 		u.setUserId(getUserId());
@@ -105,6 +116,7 @@ public class CouchUser extends CouchNodeBase{
 		u.setLastName(getLastName());
 		u.setEmail(getEmail());
 		u.setPasswordHash(getPasswordHash());
+		u.setAdmin(isAdmin());
 		return u;
 	}
 }

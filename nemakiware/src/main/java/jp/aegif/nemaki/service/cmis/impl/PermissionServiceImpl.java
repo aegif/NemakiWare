@@ -32,8 +32,8 @@ import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Relationship;
+import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.VersionSeries;
-import jp.aegif.nemaki.model.constant.PropertyKey;
 import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.cmis.PermissionService;
 import jp.aegif.nemaki.service.node.ContentService;
@@ -77,12 +77,11 @@ public class PermissionServiceImpl implements PermissionService {
 	public Boolean checkPermission(CallContext callContext, String key, Acl acl,
 			String baseType, Content content) {
 		// Admin always pass a permission check
-		NemakiPropertyManager pm = propertyUtil.getPropertyManager();
-		String admin = pm.readValue(PropertyKey.CMIS_PRINCIPAL_ADMIN);
-		if (callContext.getUsername().equals(admin))
+		User admin = principalService.getAdmin();
+		if (callContext.getUsername().equals(admin.getUserId()))
 			return isAllowableBaseType(key, baseType, content);
 
-		
+
 		//PWC doesn't accept any actions from a non-owner user
 		//TODO admin can manipulate PWC even when it is checked out ?
 		if(content.isDocument()){
@@ -94,7 +93,7 @@ public class PermissionServiceImpl implements PermissionService {
 				}
 			}
 		}
-		
+
 		// Relation has no ACL stored in DB.
 		// Though some actions are defined in the specs,
 		// Some other direct actions is needed to be set here.

@@ -107,6 +107,18 @@ public class CouchPrincipalDaoServiceImpl implements
 	}
 
 	@Override
+	public User getAdmin() {
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
+				.viewName("admin");
+		List<CouchUser> l = connector.queryView(query, CouchUser.class);
+
+		if (CollectionUtils.isEmpty(l))
+			return null;
+		return l.get(0).convert();
+	}
+
+
+	@Override
 	public Group getGroup(String nodeId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("groups").key(nodeId);
