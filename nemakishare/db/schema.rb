@@ -11,7 +11,7 @@
 #
 # It's strongly recommended to check this file into your version control system.
 
-ActiveRecord::Schema.define(:version => 20130521112957) do
+ActiveRecord::Schema.define(:version => 20140320000423) do
 
   create_table "change_events", :force => true do |t|
     t.string   "objectId"
@@ -26,6 +26,12 @@ ActiveRecord::Schema.define(:version => 20130521112957) do
     t.string   "site"
     t.datetime "created_at",     :null => false
     t.datetime "updated_at",     :null => false
+  end
+
+  create_table "latest_change_tokens", :force => true do |t|
+    t.string   "token"
+    t.datetime "created_at", :null => false
+    t.datetime "updated_at", :null => false
   end
 
 end

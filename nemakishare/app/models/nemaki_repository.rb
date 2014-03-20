@@ -681,6 +681,18 @@ class NemakiRepository
   #Change log
   ########################################
 
+  def register_latest_change_token
+    lct = LatestChangeToken.new(:token => "")
+    success = lct.save
+    if success
+      puts "Create latest change token"
+    else
+      puts "Failed to create latest change token"
+    end
+    
+    lct
+  end
+
   #
   #Retrieve change log from CMIS server and Cache them into local DB
   #
@@ -688,18 +700,29 @@ class NemakiRepository
     reset_repository
 
     #Prepare input parameters
-    file_path = "#{Rails.root}/config/latest_change_token.yml"
-    yml = YAML.load_file(file_path)
-    latest_token = yml[:token]
+    
+    #Get latest change token from DB
+    if LatestChangeToken.exists?
+      lct = LatestChangeToken.first
+    else
+      lct = register_latest_change_token
+    end
 
+    if lct.nil? || lct.token.blank?
+      latest_token = ""
+    else
+      latest_token = lct.token
+    end
+    
+    #CMIS default parameters    
     params = {'includeAcl' => true, 'includeProperties' => true}
-
+    
     if !force && !latest_token.blank?
       if @repo.latest_changelog_token == latest_token
       #TODO logging: puts 'do nothing because there is no change'
         return
       else
-        params['changeLogToken'] = latest_token.to_i
+        params['changeLogToken'] = latest_token
       end
     end
 
@@ -776,15 +799,16 @@ class NemakiRepository
       caches.each do |c|
         puts "[ChangeLog Subscription]" + c.objectId + ":" + c.change_type
         c.save
-      end
+      end  
     end
 
     #Update latestChangeToken
-    yml[:token]  = @repo.latest_changelog_token
-    yml[:timestamp] = Time.now.instance_eval { '%s.%03d' % [strftime('%Y/%m/%d %H:%M:%S'), (usec / 1000.0).round] }
-    open(file_path, "w") do |f|
-      YAML.dump(yml,f)
+    _lct = @repo.latest_changelog_token
+    if _lct.present?
+      puts "Update latest change token to #{_lct}"
+      lct.token = _lct  
     end
+    lct.save
   end
 
   def get_site_by_node_path(node_path)
