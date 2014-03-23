@@ -254,7 +254,7 @@
 					<stopPort>9966</stopPort>
 					<stopKey>foo</stopKey>
 					<webAppConfig>
-						<contextPath>/NemakiWare</contextPath>
+						<contextPath>/nemakiware</contextPath>
 					</webAppConfig>
 					<connectors>
 						<connector implementation="org.eclipse.jetty.server.nio.SelectChannelConnector">
