@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+
+<!-- The Japanese langpack -->
+
+<langpack>
+    <str id="pack.utility" txt="インストール用ユーティリティ" />
+    <str id="pack.application.server" txt="Tomcat" />
+    <str id="pack.nemakiware" txt="NemakiWare CMIS サーバ" />
+    <str id="pack.couchdb.configuration" txt="CouchDB初期データのインポート " />
+    <str id="pack.couchdb.configuration.description" txt="CouchDBが既にインストールされている必要があります" />
+    <str id="pack.solr" txt="Solr" />
+    <str id="pack.nemakishare" txt="NemakiShare CMIS クライアント" />
+    <str id="pack.rails" txt="Rails" />
+    <str id="pack.rails.description" txt="注意事項:Windowsのみ。RailsInstaller ver.2.2.2を使用します。http://railsinstaller.org/en" />
+    <str id="pack.nemakishare.configuration" txt="NemakiShareの初期設定 " />
+    <str id="pack.nemakishare.configuration.description" txt="Rails環境が必要です " />
+    <str id="pack.delete.tmp" txt="インストール用一時ファイルの削除 " />
+</langpack>

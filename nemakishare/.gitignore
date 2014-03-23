@@ -14,5 +14,7 @@
 /log/*.log
 /tmp
 
-/config/latest_change_token.yml
 Gemfile.lock
+
+vendor/bundle
+vendor/cache
