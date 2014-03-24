@@ -1,8 +1,8 @@
 @echo off
-set local
+setlocal
 
 rem Location
-if %1 == "" (
+if [%1] == [] (
 	set BAT_PATH=%~dp0
 	cd /d %BAT_PATH%
 	cd /d ../../
@@ -11,9 +11,6 @@ if %1 == "" (
 ) ELSE (
 	set SOURCE_HOME=%1
 )
-
-rem Install Rails
-call %SOURCE_HOME%\setup\nemakishare\railsinstaller-2.2.2.exe
 
 rem refresh environmental variable(Ruby/Rails path)
 call %SOURCE_HOME%\setup\nemakishare\resetvars.bat

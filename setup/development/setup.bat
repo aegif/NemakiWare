@@ -29,7 +29,7 @@ for %%i in (%*) do (
 )
 
 rem Location
-if "%1" == "" (
+if [%1] == [] (
 	set BAT_DIR=%~dp0
 	cd /d %BAT_DIR%
 	cd /d ../../
