@@ -6,10 +6,10 @@ set ORIGINAL_PWD=%CD%
 rem Location
 if "%1" == "" (
 	set BAT_DIR=%~dp0
-	cd %BAT_DIR%
-	cd ../../
+	cd /d %BAT_DIR%
+	cd /d ../../
 	FOR /F %%i in ('CD') do set SOURCE_HOME=%%i
-	cd %ORIGINAL_PWD%
+	cd /d %ORIGINAL_PWD%
 ) ELSE (
 	set SOURCE_HOME=%1
 )
@@ -33,9 +33,9 @@ echo NemakiSolr server started.
 @echo on
 echo NemakiShare client starting...
 @echo off
-cd %SOURCE_HOME%\nemakishare
+cd /d %SOURCE_HOME%\nemakishare
 start rails s
-cd %ORIGINAL_PWD%
+cd /d %ORIGINAL_PWD%
 @echo on
 echo NemakiShare client started.
 @echo off
