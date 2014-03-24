@@ -460,13 +460,13 @@ public class SolrPredicateWalker {
 	}
 
 	private Query walkTextWord(Tree node) {
-		Term term = new Term("text", doubleQuote(node.toString()));
+		Term term = new Term("text", node.toString());
 		TermQuery q = new TermQuery(term);
 		return q;
 	}
 
 	private Query walkTextPhrase(Tree node) {
-		Term term = new Term("text", doubleQuote(node.toString()));
+		Term term = new Term("text", node.toString());
 		TermQuery q = new TermQuery(term);
 		return q;
 	}
@@ -623,10 +623,6 @@ public class SolrPredicateWalker {
 			throw new IllegalStateException(
 					"Unexpected numerical value function in where clause");
 		}
-	}
-
-	private String doubleQuote(String str){
-		return "\"" + str + "\"";
 	}
 
 	/**
