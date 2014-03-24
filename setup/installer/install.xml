@@ -233,7 +233,7 @@
     <pack id="pack.rails" name="Rails Installer(Windows)" required="no" condition="izpack.windowsinstall">
       <description>For Windows only using RailsInstaller ver2.2.2. See http://railsinstaller.org/en</description>
 
-       <executable targetfile="$INSTALL_PATH/setup/nemakishare/railsinstaller-2.2.2.exe" stage="postinstall">
+       <executable targetfile="$INSTALL_PATH/setup/nemakishare/railsinstaller-2.2.2.exe" stage="postinstall" keep="true">
         <os family="windows" />
       </executable>
     </pack>
