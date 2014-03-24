@@ -30,10 +30,10 @@ for %%i in (%*) do (
 rem Location
 if "%1" == "" (
 	set BAT_DIR=%~dp0
-	cd %BAT_DIR%
-	cd ../../
+	cd /d %BAT_DIR%
+	cd /d ../../
 	FOR /F %%i in ('CD') do set SOURCE_HOME=%%i
-	cd %ORIGINAL_PWD%
+	cd /d %ORIGINAL_PWD%
 ) ELSE (
 	set SOURCE_HOME=%1
 )
