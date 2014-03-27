@@ -1,0 +1,291 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<installation version="1.0">
+  <!-- Application info -->
+  <info>
+    <appname>NemakiWare</appname>
+    <appversion>1.0.GA4</appversion>
+    <url>http://www.nemakiware.com/</url>
+    <!-- 
+    If you a general user install on C:¥Program Files on Windows,
+    some commands will fail. RUNAS command doesn't somehow work.
+    <run-privileged condition="izpack.windowsinstall" />
+    -->    
+  </info>
+
+  <!-- GUI settings -->
+  <guiprefs width="800" height="640" resizable="no">
+    <modifier key="useButtonIcons" value="no"/>
+    <modifier key="useLabelIcons" value="no"/>
+    <modifier key="labelGap" value="2"/>
+    <modifier key="layoutAnchor" value="NORTHWEST"/>
+    <modifier key="useHeadingPanel" value="yes"/>
+    <modifier key="headingImageOnLeft" value="yes"/>
+    <modifier key="headingLineCount" value="1"/>
+    <modifier key="headingFontSize" value="1.5"/>
+    <modifier key="headingBackgroundColor" value="0x00ffffff"/>
+    <modifier key="headingPanelCounter" value="text"/>
+    <modifier key="headingPanelCounterPos" value="inHeading"/>
+  </guiprefs>
+
+  <!-- Available languages -->
+  <locale>
+    <langpack iso3="jpn" />
+    <langpack iso3="eng"/>
+    <langpack iso3="fra"/>
+  </locale>
+
+  <!-- Variables in this fhile-->
+  <variables>
+    <variable name="TOMCAT" value="apache-tomcat-7.0.41" />
+  </variables>
+  <dynamicvariables>
+    <variable name="cmis.repository.main.thinClientUri" value=""/>
+    <variable name="cmis.repository.main.thinClientUri" value="http://localhost:3000/nodes" 
+      condition="izpack.selected.pack.nemakishare"/>
+  </dynamicvariables>
+
+  <!-- Resource import -->
+  <resources>
+    <res id="Installer.image" src="setup/installer/images/logo.jpg" />
+    <res id="LicencePanel.licence" src="legal/LICENSE.txt"/>
+    <res id="userInputSpec.xml" src="setup/installer/user-input-spec_modified.xml" parse="yes" type="xml" />
+
+    <res id="packsLang.xml_jpn" src="setup/installer/i18n/packsLang.xml_jpn"/>
+    <res id="packsLang.xml_fra" src="setup/installer/i18n/packsLang.xml_fra"/>
+
+    <res id="userInputLang.xml_jpn" src="setup/installer/i18n/userInputLang.xml_jpn"/>
+    <res id="userInputLang.xml_fra" src="setup/installer/i18n/userInputLang.xml_fra"/>
+  </resources>
+
+  <!-- Conditions -->
+  <conditions>
+    <condition type="packselection" id="condition.pack.application.server">
+      <packid>pack.application.server</packid>
+    </condition>
+    <condition type="packselection" id="condition.pack.nemakiware">
+      <packid>pack.nemakiware</packid>
+    </condition>
+    <condition type="packselection" id="condition.pack.couchdb.configuration">
+      <packid>pack.couchdb.configuration</packid>
+    </condition>
+    <condition type="packselection" id="condition.pack.solr">
+      <packid>pack.solr</packid>
+    </condition>
+    <condition type="packselection" id="condition.pack.nemakishare">
+      <packid>pack.nemakishare</packid>
+    </condition>
+    <condition type="packselection" id="condition.pack.rails">
+      <packid>pack.rails</packid>
+    </condition>
+  </conditions>
+
+  <!-- Panels in order -->
+  <panels>
+    <panel classname="HelloPanel" />
+    <panel classname="LicencePanel"/>
+    <panel classname="TargetPanel" />
+    <panel classname="TreePacksPanel"/>
+    <panel classname="SummaryPanel"/>
+    <panel classname="UserInputPanel" id="user.inputpanel.appserver" 
+      condition="condition.pack.application.server|condition.pack.nemakishare" />
+    <panel classname="UserInputPanel" id="user.inputpanel.repository" 
+      condition="condition.pack.nemakiware|condition.pack.couchdb.configuration|condition.pack.nemakishare" />    
+    <panel classname="UserInputPanel" id="user.inputpanel.couchdb.configuration" condition="condition.pack.couchdb.configuration"/>
+    <!--<panel classname="UserInputPanel" id="user.inputpanel.solr" condition="condition.pack.solr"/>
+    -->
+    <panel classname="UserInputPanel" id="user.inputpanel.rails" condition="condition.pack.rails"/>
+    <panel classname="InstallPanel" />
+    <panel classname="FinishPanel" />
+  </panels>
+
+  <!-- Packs: Define installation files here-->
+  <packs>
+
+    <!-- Pack: Utilities -->
+    <pack id="pack.utility" name="Installation utility" required="yes" hidden="true">
+      <description></description>
+      
+       <!-- Import configuration scripts -->
+      <file src="setup/installer/install-util/target/install-util.jar" targetdir="$INSTALL_PATH/setup" />
+      <fileset dir="setup/installer/tomcat" targetdir="$INSTALL_PATH/setup/tomcat">
+        <exclude name="apache-tomcat-7.0.41.zip" />
+      </fileset>
+    </pack>
+
+    <!-- Pack: Application server -->
+    <pack id="pack.application.server" name="Tomcat" required="no"> 
+      <description></description>
+      
+      <!-- Expand Tomcat -->
+      <file src="setup/installer/tomcat/${TOMCAT}.zip" targetdir="$INSTALL_PATH" unpack="true" />
+      
+      <!-- Create log folder-->
+      <file src="setup/installer/tomcat/logs/catalina.out" targetdir="$INSTALL_PATH/${TOMCAT}/logs" />
+      
+      <!-- Configure tomcat -->
+      <executable targetfile="$INSTALL_PATH/setup/install-util.jar" stage="postinstall" type="jar" keep="true">
+        <args>
+          <arg value="config-tomcat" />
+          <arg value="$INSTALL_PATH/${TOMCAT}" />
+          <arg value="${tomcat.port}" />
+          <arg value="${tomcat.shutdown.port}" />
+          <arg value="${tomcat.ajp.port}" />
+        </args>
+      </executable>
+    </pack>
+
+
+    <!-- Pack: NemakiWare -->
+    <pack id="pack.nemakiware" name="NemakiWare CMIS server" required="no">
+      <description></description>
+      <depends packname="Tomcat" />
+
+      <!-- Deploy WAR file -->
+      <file src="nemakiware/target/nemakiware.war" targetdir="$INSTALL_PATH/${TOMCAT}/webapps" />
+      
+      <!-- Create general custom setting file -->
+      <file src="setup/installer/tomcat/app-server-general.properties" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
+      <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-general.properties"/>
+    </pack>
+
+    <!-- Pack: CouchDB configuration -->
+    <pack id="pack.couchdb.configuration" name="CouchDB initial data import" required="no">
+      <description>CouchDB MUST be installed in advance</description>
+
+      <!-- Import configuration scripts -->
+      <file src="setup/couchdb/bjornloka/target/bjornloka.jar" targetdir="$INSTALL_PATH/setup/couchdb" />
+      <fileset dir="setup/couchdb" targetdir="$INSTALL_PATH/setup/couchdb">
+        <include name="**"/>
+        <exclude name="bjornloka/**" />
+      </fileset>
+     
+      <!-- Import initial data -->
+      <executable targetfile="$INSTALL_PATH/setup/couchdb/bjornloka.jar" stage="postinstall" 
+        type="jar" keep="true">
+        <args>
+          <arg value="${db.couchdb.host}" />
+          <arg value="${db.couchdb.port}" />
+          <arg value="${cmis.repository.main}" />
+          <arg value="${cmis.repository.archive}" />
+          <arg value="$INSTALL_PATH/setup/couchdb/initial_import/bedroom_init.dump" />
+          <arg value="$INSTALL_PATH/setup/couchdb/initial_import/archive_init.dump" />
+        </args>
+      </executable>
+      
+      <!-- Create CouchDB setting file-->
+      <file src="setup/installer/tomcat/app-server-couchdb.properties" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
+      <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-couchdb.properties"/>
+    </pack>
+
+
+    <!-- Pack: NemakiSolr -->
+    <pack id="pack.solr" name="Solr" required="no" predefined="no">
+      <description></description>
+      <depends packname="Tomcat" />
+      
+      <!-- Deploy WAR file -->
+      <file src="nemakisolr/target/solr.war" targetdir="$INSTALL_PATH/${TOMCAT}/webapps" />
+
+      <!-- Create Solr setting file -->
+      <file src="setup/installer/tomcat/app-server-solr.properties" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
+      <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-solr.properties"/>
+
+      <!-- Deploy Solr home -->
+      <fileset dir="nemakisolr/solr" targetdir="$INSTALL_PATH/solr">
+        <include name="**"/>
+        <exclude name="**/data/*/" />
+      </fileset>
+
+      <!-- Create Solr context fragment -->
+      <file src="setup/installer/tomcat/solr.xml" targetdir="$INSTALL_PATH/${TOMCAT}/conf/Catalina/localhost" />
+      <parsable targetfile="$INSTALL_PATH/${TOMCAT}/conf/Catalina/localhost/solr.xml"/>
+    </pack>
+
+
+    <!-- Pack: NemakiShare -->
+    <pack id="pack.nemakishare" name="NemakiShare CMIS client" required="no">
+      <description></description>
+
+      <!-- Deploy nemakishare -->
+      <fileset dir="nemakishare" targetdir="$INSTALL_PATH/nemakishare">
+          <exclude name="vendor/bundle/" />
+          <exclude name="Gemfile.lock" />
+      </fileset> 
+      
+      <!-- Setting properties -->
+      <executable targetfile="$INSTALL_PATH/setup/install-util.jar" stage="postinstall" type="jar" keep="true">
+        <args>
+          <arg value="config-share" />
+          <arg value="$INSTALL_PATH/nemakishare/config/nemakishare_config.yml" />
+          <arg value="${tomcat.port}" />
+          <arg value="${cmis.repository.main}" />
+        </args>
+      </executable>
+
+      <!-- Import configuration scripts -->
+      <fileset dir="setup/nemakishare" targetdir="$INSTALL_PATH/setup/nemakishare">
+        <include name="**"/>
+      </fileset>
+    </pack>
+
+
+    <!-- Pack: Rails instlaller(Windows) -->
+    <pack id="pack.rails" name="Rails Installer(Windows)" required="no" condition="izpack.windowsinstall">
+      <description>For Windows only using RailsInstaller ver2.2.2. See http://railsinstaller.org/en</description>
+
+       <executable targetfile="$INSTALL_PATH/setup/nemakishare/railsinstaller-2.2.2.exe" stage="postinstall" keep="true">
+        <os family="windows" />
+      </executable>
+    </pack>
+
+
+     <!-- Pack: NemakiShare configuration -->
+    <pack id="pack.nemakishare.configuration" name="NemakiShare configuration" required="no">
+      <description></description>
+      <depends packname="NemakiShare CMIS client" />
+
+      <!-- OS: common -->
+      <fileset dir="setup/nemakishare/cache" targetdir="$INSTALL_PATH/nemakishare/vendor/cache">
+        <include name="**" />
+      </fileset>
+
+      <!-- OS: Unix-like -->
+      <executable targetfile="$INSTALL_PATH/setup/nemakishare/setup_nemakishare.sh" stage="postinstall" keep="true">
+        <os family="unix" />
+        <os family="mac" />
+          <args>
+            <arg value="$INSTALL_PATH" />
+          </args>
+      </executable> 
+
+      <!-- OS: Windows -->
+      <file src="setup/nemakishare/v8.dll" targetdir="${ruby.bin}">
+        <os family="windows" />
+      </file>
+      <executable targetfile="$INSTALL_PATH/setup/nemakishare/setup_nemakishare.bat" stage="postinstall" keep="true">
+        <os family="windows" />
+          <args>
+            <arg value="$INSTALL_PATH" />
+          </args>
+      </executable> 
+    </pack>
+
+
+    <!-- Pack: Delete tmp files -->
+    <pack id="pack.delete.tmp" name="Delete tmp files" required="yes" hidden="true">
+      <description></description>
+      <executable targetfile="$INSTALL_PATH/setup/install-util.jar" stage="postinstall" type="jar" keep="true">
+        <args>
+          <arg value="delete-tmp-files" />
+          <arg value="$INSTALL_PATH/setup/tomcat" />
+        </args>
+      </executable>
+      <executable targetfile="$INSTALL_PATH/setup/install-util.jar" stage="postinstall" type="jar" keep="false">
+        <args>
+          <arg value="delete-tmp-files" />
+          <arg value="$INSTALL_PATH/setup/nemakishare" />
+        </args>
+      </executable>
+    </pack>
+  </packs>
+</installation>

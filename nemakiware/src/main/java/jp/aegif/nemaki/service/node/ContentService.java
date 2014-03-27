@@ -1,20 +1,20 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public Licensealong with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -31,10 +31,6 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.Item;
-import jp.aegif.nemaki.model.NemakiPropertyDefinition;
-import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
-import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
-import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
@@ -51,44 +47,13 @@ import org.apache.chemistry.opencmis.commons.spi.Holder;
 public interface ContentService {
 
 	// ///////////////////////////////////////
-	// Type & Property definition
-	// ///////////////////////////////////////
-	List<NemakiTypeDefinition> getTypeDefinitions();
-
-	NemakiTypeDefinition getTypeDefinition(String typeId);
-
-	NemakiTypeDefinition createTypeDefinition(
-			NemakiTypeDefinition typeDefinition);
-
-	NemakiTypeDefinition updateTypeDefinition(
-			NemakiTypeDefinition typeDefinition);
-
-	void deleteTypeDefinition(String typeId);
-
-	NemakiPropertyDefinition getPropertyDefinition(String detailNodeId);
-
-	List<NemakiPropertyDefinitionCore> getPropertyDefinitionCores();
-
-	NemakiPropertyDefinitionCore getPropertyDefinitionCore(String nodeId);
-	
-	NemakiPropertyDefinitionCore getPropertyDefinitionCoreByPropertyId(String propertyId);
-
-	NemakiPropertyDefinitionDetail getPropertyDefinitionDetail(String nodeId);
-
-	NemakiPropertyDefinitionDetail createPropertyDefinition(
-			NemakiPropertyDefinition propertyDefinition);
-
-	NemakiPropertyDefinitionDetail updatePropertyDefinitionDetail(
-			NemakiPropertyDefinitionDetail propertyDefinitionDetail);
-
-	// ///////////////////////////////////////
 	// Content
 	// ///////////////////////////////////////
 	boolean existContent(String objectTypeId);
 
 	/**
 	 * Get a content(without type-specified)
-	 * 
+	 *
 	 * @param objectId
 	 * @return
 	 */
@@ -96,7 +61,7 @@ public interface ContentService {
 
 	/**
 	 * Get a fileable content by path
-	 * 
+	 *
 	 * @param path
 	 * @return
 	 */
@@ -104,15 +69,15 @@ public interface ContentService {
 
 	/**
 	 * Get the parent folder
-	 * 
+	 *
 	 * @param objectId
 	 * @return
 	 */
 	Folder getParent(String objectId);
-	
+
 	/**
 	 * Get children under a folder
-	 * 
+	 *
 	 * @param objectId
 	 * @return
 	 */
@@ -120,7 +85,7 @@ public interface ContentService {
 
 	/**
 	 * Get descendant contents in a folder
-	 * 
+	 *
 	 * @param objectId
 	 * @param depth
 	 *            -1 means infinity.
@@ -130,7 +95,7 @@ public interface ContentService {
 
 	/**
 	 * Get a document
-	 * 
+	 *
 	 * @param objectId
 	 * @return
 	 */
@@ -138,23 +103,32 @@ public interface ContentService {
 
 	/**
 	 * Get the latest version document of a given versionSeries
-	 * 
+	 *
 	 * @param versionSeriesId
 	 * @return
 	 */
 	Document getDocumentOfLatestVersion(String versionSeriesId);
-	
+
 	/**
-	 * Get all versions of a document
-	 * 
+	 * Get the latest version major document of a given versionSeries
+	 *
 	 * @param versionSeriesId
 	 * @return
 	 */
-	List<Document> getAllVersions(String versionSeriesId);
-	
+	Document getDocumentOfLatestMajorVersion(String versionSeriesId);
+
+	/**
+	 * Get all versions of a document
+	 * @param callContext TODO
+	 * @param versionSeriesId
+	 *
+	 * @return
+	 */
+	List<Document> getAllVersions(CallContext callContext, String versionSeriesId);
+
 	/**
 	 * Get checkout documents in a folder
-	 * 
+	 *
 	 * @param folderId
 	 * @param orderBy
 	 * @param extension
@@ -165,15 +139,22 @@ public interface ContentService {
 
 	/**
 	 * Get a version series
-	 * 
+	 * @param document
+	 * @return
+	 */
+	VersionSeries getVersionSeries(Document document);
+	
+	/**
+	 * Get a version series
+	 *
 	 * @param versionSeriesId
 	 * @return
 	 */
 	VersionSeries getVersionSeries(String versionSeriesId);
-	
+
 	/**
 	 * Get a folder
-	 * 
+	 *
 	 * @param objectId
 	 * @return
 	 */
@@ -181,17 +162,17 @@ public interface ContentService {
 
 	/**
 	 * Get a path string
-	 * 
+	 *
 	 * @param content
 	 * @return
 	 */
-	String getPath(Content content);
+	String calculatePath(Content content);
 
-	
+
 
 	/**
 	 * Get a relationship
-	 * 
+	 *
 	 * @param objectId
 	 * @return
 	 */
@@ -199,7 +180,7 @@ public interface ContentService {
 
 	/**
 	 * Search relationships by the edge node
-	 * 
+	 *
 	 * @param objectId
 	 * @param relationshipDirection
 	 * @return
@@ -209,7 +190,7 @@ public interface ContentService {
 
 	/**
 	 * Get a policy
-	 * 
+	 *
 	 * @param objectId
 	 * @return
 	 */
@@ -221,10 +202,10 @@ public interface ContentService {
 	 * @return
 	 */
 	Item getItem(String objectId);
-	
+
 	/**
 	 * Create a document
-	 * 
+	 *
 	 * @param callContext
 	 * @param properties
 	 * @param parentFolder
@@ -239,10 +220,10 @@ public interface ContentService {
 
 	/**
 	 * Copy a document
-	 * 
+	 *
 	 * @param callContext
 	 * @param properties
-	 * @param folderId
+	 * @param target
 	 * @param original
 	 * @param versioningState
 	 * @param policies
@@ -251,14 +232,14 @@ public interface ContentService {
 	 * @return
 	 */
 	Document createDocumentFromSource(CallContext callContext,
-			Properties properties, String folderId, Document original,
+			Properties properties, Folder target, Document original,
 			VersioningState versioningState, List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces);
 
 	/**
 	 * Copy a document setting new content stream
-	 * 
+	 *
 	 * @param callContext
 	 * @param original
 	 * @param contentStream
@@ -269,7 +250,7 @@ public interface ContentService {
 
 	/**
 	 * Check out and create PWC
-	 * 
+	 *
 	 * @param callContext
 	 * @param objectId
 	 * @param extension
@@ -280,7 +261,7 @@ public interface ContentService {
 
 	/**
 	 * Cancel checking out
-	 * 
+	 *
 	 * @param callContext
 	 * @param objectId
 	 * @param extension
@@ -290,7 +271,7 @@ public interface ContentService {
 
 	/**
 	 * Check in and delete PWC
-	 * 
+	 *
 	 * @param callContext
 	 * @param objectId
 	 * @param major
@@ -312,7 +293,7 @@ public interface ContentService {
 
 	/**
 	 * Create a folder
-	 * 
+	 *
 	 * @param callContext
 	 * @param properties
 	 * @param parentFolder
@@ -323,7 +304,7 @@ public interface ContentService {
 
 	/**
 	 * Create a relationship
-	 * 
+	 *
 	 * @param callContext
 	 * @param properties
 	 * @param policies
@@ -340,7 +321,7 @@ public interface ContentService {
 
 	/**
 	 * Create a policy
-	 * 
+	 *
 	 * @param callContext
 	 * @param properties
 	 * @param policies
@@ -354,7 +335,7 @@ public interface ContentService {
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces,
 			ExtensionsData extension);
-	
+
 	/**
 	 * Create an item
 	 * @param callContext
@@ -369,10 +350,10 @@ public interface ContentService {
 	Item createItem(CallContext callContext, Properties properties,
 			String folderId, List<String> policies, org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension);
-	
+
 	/**
 	 * Update a content(for general-purpose)
-	 * 
+	 *
 	 * @param content
 	 * @return
 	 */
@@ -380,7 +361,7 @@ public interface ContentService {
 
 	/**
 	 * Update properties of a content
-	 * 
+	 *
 	 * @param callContext
 	 * @param properties
 	 * @param content
@@ -391,15 +372,15 @@ public interface ContentService {
 
 	/**
 	 * Move a content
-	 * 
+	 *
 	 * @param content
-	 * @param targetFolderId
+	 * @param target
 	 */
-	void move(Content content, String targetFolderId);
-	
+	void move(Content content, Folder target);
+
 	/**
 	 * Apply a policy from a content
-	 * 
+	 *
 	 * @param callContext
 	 * @param policyId
 	 * @param objectId
@@ -410,7 +391,7 @@ public interface ContentService {
 
 	/**
 	 * Remove a policy from a content
-	 * 
+	 *
 	 * @param callContext
 	 * @param policyId
 	 * @param objectId
@@ -424,7 +405,7 @@ public interface ContentService {
 
 	/**
 	 * Delete a content(for general-purpose)
-	 * 
+	 *
 	 * @param callContext
 	 * @param objectId
 	 * @param deletedWithParent
@@ -434,7 +415,7 @@ public interface ContentService {
 
 	/**
 	 * Delete a document (and also its versions)
-	 * 
+	 *
 	 * @param callContext
 	 * @param objectId
 	 * @param allVersions
@@ -445,15 +426,22 @@ public interface ContentService {
 
 	/**
 	 * Delete an attachment node
-	 * 
+	 *
 	 * @param callContext
 	 * @param attachmentId
 	 */
 	void deleteAttachment(CallContext callContext, String attachmentId);
 
 	/**
+	 * Delete content stream
+	 * @param callContext
+	 * @param objectId
+	 */
+	void deleteContentStream(CallContext callContext, Holder<String> objectId);
+	
+	/**
 	 * Delete a whole folder tree
-	 * 
+	 *
 	 * @param context
 	 * @param folderId
 	 * @param allVersions
@@ -466,32 +454,11 @@ public interface ContentService {
 			throws Exception;
 
 	// ///////////////////////////////////////
-	// Acl
-	// ///////////////////////////////////////
-	/**
-	 * Merge inherited ACL
-	 * 
-	 * @param content
-	 * @return
-	 */
-	public Acl mergeInheritedAcl(Content content);
-
-	/**
-	 * Convert Nemaki ACL to OpenCMIS ACL
-	 * 
-	 * @param content
-	 * @param onlyBasicPermissions
-	 * @return
-	 */
-	public org.apache.chemistry.opencmis.commons.data.Acl convertToCmisAcl(
-			Content content, Boolean onlyBasicPermissions);
-
-	// ///////////////////////////////////////
 	// Attachment
 	// ///////////////////////////////////////
 	/**
 	 * Get an attachment
-	 * 
+	 *
 	 * @param attachmentId
 	 * @return
 	 */
@@ -499,16 +466,16 @@ public interface ContentService {
 
 	/**
 	 * Get an attachment without stream
-	 * 
+	 *
 	 * @param attachmentId
 	 * @return
 	 */
 	AttachmentNode getAttachmentRef(String attachmentId);
-	
+
 	/**
-	 * 
-	 * 
-	 * 
+	 *
+	 *
+	 *
 	 * @param callContext
 	 * @param objectId
 	 * @param changeToken
@@ -522,7 +489,7 @@ public interface ContentService {
 
 	/**
 	 * Get a rendition
-	 * 
+	 *
 	 * @param streamId
 	 * @return
 	 */
@@ -530,18 +497,23 @@ public interface ContentService {
 
 	/**
 	 * Get renditions of a content
-	 * 
+	 *
 	 * @param objectId
 	 * @return
 	 */
 	List<Rendition> getRenditions(String objectId);
 
 	// ///////////////////////////////////////
+	// Acl
+	// ///////////////////////////////////////
+	public Acl calculateAcl(Content content);
+
+	// ///////////////////////////////////////
 	// Change event
 	// ///////////////////////////////////////
 	/**
 	 * Get a change event
-	 * 
+	 *
 	 * @param token
 	 * @return
 	 */
@@ -549,7 +521,7 @@ public interface ContentService {
 
 	/**
 	 * Get latest change events in the change log
-	 * 
+	 *
 	 * @param context
 	 * @param changeLogToken
 	 * @param includeProperties
@@ -567,7 +539,7 @@ public interface ContentService {
 
 	/**
 	 * Get the latest change token in the repository
-	 * 
+	 *
 	 * @return
 	 */
 	String getLatestChangeToken();
@@ -577,14 +549,14 @@ public interface ContentService {
 	// ///////////////////////////////////////
 	/**
 	 * Get all archives in the repository
-	 * 
+	 *
 	 * @return
 	 */
 	List<Archive> getAllArchives();
 
 	/**
 	 * Get an archive
-	 * 
+	 *
 	 * @param archiveId
 	 * @return
 	 */
@@ -592,15 +564,15 @@ public interface ContentService {
 
 	/**
 	 * Get an archive by its original content's id
-	 * 
+	 *
 	 * @param archiveId
 	 * @return
 	 */
 	Archive getArchiveByOriginalId(String archiveId);
-	
+
 	/**
 	 * Create an archive of a content
-	 * 
+	 *
 	 * @param callContext
 	 * @param objectId
 	 * @param deletedWithParent
@@ -611,7 +583,7 @@ public interface ContentService {
 
 	/**
 	 * Create an archive of an attachment
-	 * 
+	 *
 	 * @param callContext
 	 * @param attachmentId
 	 * @return
@@ -620,7 +592,7 @@ public interface ContentService {
 
 	/**
 	 * Restore a content from an archive
-	 * 
+	 *
 	 * @param archiveId
 	 */
 	void restoreArchive(String archiveId);

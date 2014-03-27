@@ -13,7 +13,7 @@
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://java.sun.com/xml/ns/j2ee http://java.sun.com/xml/ns/j2ee/web-app_2_4.xsd">
 
-	<display-name>Nemaki</display-name>
+	<display-name>NemakiWare</display-name>
 
 	<welcome-file-list>
 		<welcome-file>index.html</welcome-file>
@@ -26,10 +26,10 @@
 
 	<listener>
 		<listener-class>com.sun.xml.ws.transport.http.servlet.WSServletContextListener</listener-class>
-	</listener>
-	<listener>
+    </listener>
+    <listener>
 		<listener-class>org.springframework.web.context.ContextLoaderListener</listener-class>
-	</listener>
+    </listener>
 
 	<servlet>
 		<servlet-name>cmisws</servlet-name>
@@ -46,11 +46,20 @@
 		<init-param>
 			<param-name>callContextHandler</param-name>
 			<param-value>jp.aegif.nemaki.repository.DefaultContextHandler</param-value>
-		</init-param>
+        </init-param>
 		<init-param>
  			<param-name>cmisVersion</param-name>
  			<param-value>1.1</param-value>
  		</init-param>
+		<load-on-startup>2</load-on-startup>
+	</servlet>
+	<servlet>
+		<servlet-name>cmisbrowser</servlet-name>
+		<servlet-class>org.apache.chemistry.opencmis.server.impl.browser.CmisBrowserBindingServlet</servlet-class>
+		<init-param>
+			<param-name>callContextHandler</param-name>
+			<param-value>org.apache.chemistry.opencmis.server.shared.BasicAuthCallContextHandler</param-value>
+		</init-param>
 		<load-on-startup>2</load-on-startup>
 	</servlet>
 	<filter>
@@ -75,17 +84,18 @@
 		<servlet-name>cmisws</servlet-name>
 		<url-pattern>/services/*</url-pattern>
 	</servlet-mapping>
-
 	<servlet-mapping>
 		<servlet-name>cmisatom</servlet-name>
 		<url-pattern>/atom/*</url-pattern>
 	</servlet-mapping>
-	
+	<servlet-mapping>
+		<servlet-name>cmisbrowser</servlet-name>
+		<url-pattern>/browser/*</url-pattern>
+	</servlet-mapping>
 	 <servlet-mapping>
         <servlet-name>Jersey Web Application</servlet-name>
         <url-pattern>/rest/*</url-pattern>
     </servlet-mapping>
-
 	<session-config>
 		<session-timeout>60</session-timeout>
 	</session-config>

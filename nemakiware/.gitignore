@@ -10,3 +10,7 @@ tags
 .DS_Store
 *.class
 jetty.log
+.project
+.settings/
+src/main/resources/*
+!.gitkeep

@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -43,7 +43,8 @@ public class User extends NodeBase {
 	private String firstName;
 	private String email;
 	private String passwordHash;
-	
+	private Boolean admin;
+
 	public User() {
 		super();
 		setType(NodeType.USER.value());
@@ -59,7 +60,7 @@ public class User extends NodeBase {
 		setEmail(email);
 		setPasswordHash(passwordHash);
 	}
-	
+
 	public User(NodeBase n){
 		setId(n.getId());
 		setType(n.getType());
@@ -87,7 +88,7 @@ public class User extends NodeBase {
 	public void setName(String name) {
 		this.name = name;
 	}
-	
+
 	public String getEmail() {
 		return email;
 	}
@@ -118,6 +119,14 @@ public class User extends NodeBase {
 
 	public void setPasswordHash(String passwordHash) {
 		this.passwordHash = passwordHash;
+	}
+
+	public Boolean isAdmin() {
+		return admin;
+	}
+
+	public void setAdmin(Boolean admin) {
+		this.admin = admin;
 	}
 
 	@Override

@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -27,7 +27,7 @@ import java.util.List;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.constant.DomainType;
-import jp.aegif.nemaki.repository.TypeManager;
+import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.cmis.CompileObjectService;
 import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.cmis.PolicyService;
@@ -37,6 +37,7 @@ import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
+import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.collections.CollectionUtils;
 
@@ -46,7 +47,7 @@ public class PolicyServiceImpl implements PolicyService {
 	private CompileObjectService compileObjectService;
 	private ExceptionService exceptionService;
 	private TypeManager typeManager;
-	
+
 	@Override
 	public void applyPolicy(CallContext callContext, String policyId,
 			String objectId, ExtensionsData extension) {
@@ -63,13 +64,16 @@ public class PolicyServiceImpl implements PolicyService {
 		exceptionService.objectNotFound(DomainType.OBJECT, policy, policyId);
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_ADD_POLICY_POLICY, policy);
-		
+
 		// //////////////////
 		// Specific Exception
-		// //////////////////		
+		// //////////////////
 		TypeDefinition td = typeManager.getTypeDefinition(content);
-		if(!td.isControllablePolicy()) exceptionService.constraint(objectId, "appyPolicy cannot be performed on the object whose controllablePolicy = false");
-		
+		if (!td.isControllablePolicy())
+			exceptionService
+					.constraint(objectId,
+							"appyPolicy cannot be performed on the object whose controllablePolicy = false");
+
 		// //////////////////
 		// Body of the method
 		// //////////////////
@@ -82,7 +86,7 @@ public class PolicyServiceImpl implements PolicyService {
 		// //////////////////
 		// General Exception
 		// //////////////////
-		exceptionService.invalidArgumentRequiredString("objectId", objectId);		
+		exceptionService.invalidArgumentRequiredString("objectId", objectId);
 		exceptionService.invalidArgumentRequiredString("policyId", policyId);
 		Content content = contentService.getContent(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
@@ -92,7 +96,7 @@ public class PolicyServiceImpl implements PolicyService {
 		exceptionService.objectNotFound(DomainType.OBJECT, policy, policyId);
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_REMOVE_POLICY_POLICY, policy);
-		
+
 		// //////////////////
 		// Body of the method
 		// //////////////////
@@ -100,24 +104,28 @@ public class PolicyServiceImpl implements PolicyService {
 	}
 
 	@Override
-	public List<ObjectData> getAppliedPolicies(CallContext callContext, String objectId,
-			String filter, ExtensionsData extension) {
+	public List<ObjectData> getAppliedPolicies(CallContext callContext,
+			String objectId, String filter, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("objectId", objectId);
 		Content content = contentService.getContent(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
-		exceptionService.permissionDenied(callContext, PermissionMapping.CAN_GET_APPLIED_POLICIES_OBJECT, content);
-		
+		exceptionService.permissionDenied(callContext,
+				PermissionMapping.CAN_GET_APPLIED_POLICIES_OBJECT, content);
+
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		List<Policy> policies = contentService.getAppliedPolicies(objectId, extension);
+		List<Policy> policies = contentService.getAppliedPolicies(objectId,
+				extension);
 		List<ObjectData> objects = new ArrayList<ObjectData>();
-		if(!CollectionUtils.isEmpty(policies)){
-			for(Policy policy : policies){
-				objects.add(compileObjectService.compileObjectData(callContext, policy, filter, true, true, null));
+		if (!CollectionUtils.isEmpty(policies)) {
+			for (Policy policy : policies) {
+				objects.add(compileObjectService.compileObjectData(callContext,
+						policy, filter, true, IncludeRelationships.NONE, null,
+						true, null));
 			}
 		}
 		return objects;
@@ -127,7 +135,8 @@ public class PolicyServiceImpl implements PolicyService {
 		this.contentService = contentService;
 	}
 
-	public void setCompileObjectService(CompileObjectService compileObjectService) {
+	public void setCompileObjectService(
+			CompileObjectService compileObjectService) {
 		this.compileObjectService = compileObjectService;
 	}
 

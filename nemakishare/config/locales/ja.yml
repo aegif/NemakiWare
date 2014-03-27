@@ -45,6 +45,7 @@ ja:
       user_management: "ユーザ管理"
       group_management: "グループ管理"
       archive: "ゴミ箱"
+      type_management: "タイプ管理"
       search_engine_management: "検索エンジン管理"
       logout: "ログアウト"
       logout_confirmation: "ログアウトしますか？"
@@ -90,14 +91,26 @@ ja:
         update: "更新"
         upload: "アップロード"
       permission:
-        inherited_permissions: "継承した権限"
+        edit_permission: "権限の編集"
+        inherited_permissions: "親フォルダから継承した権限"
+        object_specific_permissions: "このオブジェクト固有の権限"
         inherit_permissions: "権限の継承"
-        local_permissions: "ローカルで設定された権限"
-        user_search_results: "ユーザ検索結果"
+        permission_table: "権限一覧"
+        principal_search_results: "ユーザ/グループ検索結果"
         search_member: "追加するユーザの検索"
-        add_permission: "権限を追加"
-        user_and_group_id: "ユーザ/グループID"
+        add_principal: "テーブルに追加"
+        remove_principal: "テーブルから削除"
+        inheritance_on: "継承ON"
+        inheritance_off: "継承OFF"
+        principal_type: "種類"
+        principal_type_user: "ユーザ"
+        principal_type_group: "グループ"
+        principal_id: "ユーザ/グループID"
         permission: "権限"
+        principal_already_added: "このユーザ/グループは既に追加されています"
+        select_rows_to_delete: "削除するレコードを選択してください"
+        confirm_update: "権限情報を保存します。よろしいですか？"
+        inherited_permission_cannot_be_modified: "継承された権限は編集できません"
       delete:
       search:
         query_word: "検索ワード"
@@ -152,6 +165,9 @@ ja:
         search_engine_management: "検索エンジン管理画面"
         initiaize_solr: "Solr初期化"
         reindex_solr: "Solrインデクス再作成"
+    type:
+      index:
+        type_management: "タイプ管理画面"
   message:
     validation:
       general: "バリデーションエラー：正しい値を入力してください"
@@ -163,6 +179,8 @@ ja:
       update_failure: "ユーザ情報の更新に失敗しました"
       update_password_success: "ユーザパスワードの更新に成功しました"
       update_password_failure: "ユーザパスワードの更新に失敗しました"
+      destroy_success: "ユーザの削除に成功しました"
+      destroy_failure: "ユーザの削除に失敗しました"
     group:
       create_success: "グループの新規作成に成功しました"
       create_failure: "グループの新規作成に失敗しました"
@@ -187,3 +205,7 @@ ja:
       error_text_node_not_found: "指定されたコンテンツもしくはフォルダは存在しないか削除されました"
       success_text_create: "作成に成功しました"
       error_text_create: "作成に失敗しました"
+      success_text_update: "更新に成功しました"
+      error_text_update: "更新に失敗しました"
+      success_text_delete: "削除に成功しました"
+      error_text_delete: "削除に失敗しました"

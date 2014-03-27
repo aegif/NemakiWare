@@ -87,12 +87,13 @@ class UsersController < ApplicationController
     if @user.valid?
       result = @nemaki_repository.create_user @user
       if is_success?(result)
-        flash[:notice] = t('message.user.create_success')
+        addInfoMessage('message.user.create_success')
+        #flash[:notice] = t('message.user.create_success')
       else
-        flash[:error] = t('message.user.create_failure')
+        addErrorMessage('message.user.create_failure')
       end
     else
-      flash[:error] = t('message.validation.general')  
+      addErrorMessage('message.validation.general')
     end
     redirect_to_parent(users_path(:search_form => {:query => params[:user][:id]}))
   end
@@ -107,12 +108,12 @@ class UsersController < ApplicationController
     if @user.valid?
       result = @nemaki_repository.update_user @user
       if is_success?(result)
-        flash[:notice] = t('message.user.update_success')
+        addInfoMessage('message.user.update_success')
       else
-        flash[:error] = t('message.user.update_failure')
+        addErrorMessage('message.user.update_failure')
       end
     else
-      flash[:error] = t('message.validation.general')  
+      addErrorMessage('message.validation.general')
     end
     
     redirect_to_parent(users_path(:search_form => {:query => params[:id]}))
@@ -123,12 +124,12 @@ class UsersController < ApplicationController
     if @user.valid?
       result = @nemaki_repository.update_user_password @user
       if is_success?(result)
-        flash[:notice] = t('message.user.update_password_success')
+        addInfoMessage('message.user.update_password_success')
       else
-        flash[:error] = t('message.user.update_password_failure')
+        addErrorMessage('message.user.update_password_failure')
       end
     else
-      flash[:notice] = t('message.validation.general')  
+      addErrorMessage('message.validation.general')
     end
     redirect_to_parent(users_path(:search_form => {:query => params[:id]}))
   end
@@ -155,8 +156,11 @@ class UsersController < ApplicationController
   
   def destroy
     result = @nemaki_repository.delete_user params[:id]
-    if result && result['status'] == 'error'
-      @error = result['error']
+    if result && result['status'] == 'failure'
+      #@error = result['error']
+      addErrorMessage("message.user.destroy_failure")
+    else
+      addInfoMessage("message.user.destroy_success")
     end
     redirect_to_parent(users_path(:search_form => {:query => params[:id]}))
   end

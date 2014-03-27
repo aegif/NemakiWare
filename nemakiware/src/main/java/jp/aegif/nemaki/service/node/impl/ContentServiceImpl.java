@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -31,8 +31,7 @@ import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
-import java.util.TimeZone;
+import java.util.Map.Entry;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -46,10 +45,6 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.Item;
-import jp.aegif.nemaki.model.NemakiPropertyDefinition;
-import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
-import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
-import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.model.NodeBase;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Property;
@@ -58,21 +53,21 @@ import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.model.constant.NemakiConstant;
 import jp.aegif.nemaki.model.constant.NodeType;
-import jp.aegif.nemaki.repository.TypeManager;
+import jp.aegif.nemaki.model.constant.PropertyKey;
+import jp.aegif.nemaki.query.solr.SolrUtil;
+import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.dao.ContentDaoService;
 import jp.aegif.nemaki.service.dao.impl.ContentDaoServiceImpl;
 import jp.aegif.nemaki.service.node.ContentService;
+import jp.aegif.nemaki.util.DataUtil;
+import jp.aegif.nemaki.util.PropertyUtil;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
-import org.apache.chemistry.opencmis.commons.data.Principal;
 import org.apache.chemistry.opencmis.commons.data.Properties;
-import org.apache.chemistry.opencmis.commons.data.PropertyBoolean;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
-import org.apache.chemistry.opencmis.commons.data.PropertyId;
-import org.apache.chemistry.opencmis.commons.data.PropertyString;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
@@ -81,10 +76,6 @@ import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.CmisExtensionElementImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
@@ -98,160 +89,20 @@ import org.apache.commons.logging.LogFactory;
 
 /**
  * Node Service implementation
- * 
+ *
  * @author linzhixing
- * 
+ *
  */
 public class ContentServiceImpl implements ContentService {
 
 	private ContentDaoService contentDaoService;
 	private TypeManager typeManager;
+	private PropertyUtil propertyUtil;
+	private SolrUtil solrUtil;
+
 	private static final Log log = LogFactory
 			.getLog(ContentDaoServiceImpl.class);
 	final static int FIRST_TOKEN = 1;
-
-	// ///////////////////////////////////////
-	// Type & Property definition
-	// ///////////////////////////////////////
-	@Override
-	public List<NemakiTypeDefinition> getTypeDefinitions() {
-		return contentDaoService.getTypeDefinitions();
-	}
-
-	@Override
-	public NemakiTypeDefinition getTypeDefinition(String typeId) {
-		return contentDaoService.getTypeDefinition(typeId);
-	}
-
-	@Override
-	public NemakiTypeDefinition createTypeDefinition(
-			NemakiTypeDefinition typeDefinition) {
-		return contentDaoService.createTypeDefinition(typeDefinition);
-	}
-
-	@Override
-	public NemakiTypeDefinition updateTypeDefinition(
-			NemakiTypeDefinition typeDefinition) {
-		return contentDaoService.updateTypeDefinition(typeDefinition);
-	}
-
-	@Override
-	public void deleteTypeDefinition(String typeId) {
-		NemakiTypeDefinition ntd = getTypeDefinition(typeId);
-		
-		//Delete unnecessary property definitions
-		List<String> detailIds = ntd.getProperties();
-		for(String detailId : detailIds){
-			NemakiPropertyDefinitionDetail detail = getPropertyDefinitionDetail(detailId);
-			NemakiPropertyDefinitionCore core = getPropertyDefinitionCore(detail.getCoreNodeId());
-			//Delete a detail
-			contentDaoService.delete(detail.getId());
-			
-			//Delete a core only if no details exist
-			List<NemakiPropertyDefinitionDetail> l = 
-					contentDaoService.getPropertyDefinitionDetailByCoreNodeId(core.getId());
-			if(CollectionUtils.isEmpty(l)){
-				contentDaoService.delete(core.getId());
-			}
-		}
-		
-		//Delete the type definition
-		contentDaoService.deleteTypeDefinition(ntd.getId());
-	}
-
-	@Override
-	public List<NemakiPropertyDefinitionCore> getPropertyDefinitionCores() {
-		return contentDaoService.getPropertyDefinitionCores();
-	}
-
-	@Override
-	public NemakiPropertyDefinitionCore getPropertyDefinitionCore(String nodeId) {
-		return contentDaoService.getPropertyDefinitionCore(nodeId);
-	}
-	
-	@Override
-	public NemakiPropertyDefinitionCore getPropertyDefinitionCoreByPropertyId(String propertyId) {
-		return contentDaoService.getPropertyDefinitionCoreByPropertyId(propertyId);
-	}
-
-	@Override
-	public NemakiPropertyDefinitionDetail getPropertyDefinitionDetail(
-			String nodeId) {
-		return contentDaoService.getPropertyDefinitionDetail(nodeId);
-	}
-	
-	@Override
-	public NemakiPropertyDefinition getPropertyDefinition(String detailNodeId) {
-		NemakiPropertyDefinitionDetail detail = getPropertyDefinitionDetail(detailNodeId);
-		NemakiPropertyDefinitionCore core = getPropertyDefinitionCore(detail
-				.getCoreNodeId());
-
-		NemakiPropertyDefinition npd = new NemakiPropertyDefinition(core,
-				detail);
-		return npd;
-	}
-
-	@Override
-	public NemakiPropertyDefinitionDetail createPropertyDefinition(
-			NemakiPropertyDefinition propertyDefinition) {
-		NemakiPropertyDefinitionCore _core = new NemakiPropertyDefinitionCore(
-				propertyDefinition);
-
-		// Skip creating a core when it exists
-		List<NemakiPropertyDefinitionCore> cores = getPropertyDefinitionCores();
-		Map<String, NemakiPropertyDefinitionCore> corePropertyIds = new HashMap<String, NemakiPropertyDefinitionCore>();
-		for (NemakiPropertyDefinitionCore npdc : cores) {
-			corePropertyIds.put(npdc.getPropertyId(), npdc);
-		}
-		String coreNodeId = "";
-		if (!corePropertyIds.containsKey(_core.getPropertyId())) {
-			//propertyId uniqueness
-			_core.setPropertyId(buildUniquePropertyId(_core.getPropertyId()));
-			// Create a property core
-			NemakiPropertyDefinitionCore core = contentDaoService
-					.createPropertyDefinitionCore(_core);
-			coreNodeId = core.getId();
-		} else {
-			NemakiPropertyDefinitionCore existing = corePropertyIds.get(_core
-					.getPropertyId());
-			coreNodeId = existing.getId();
-		}
-
-		// Create a detail
-		NemakiPropertyDefinitionDetail _detail = new NemakiPropertyDefinitionDetail(
-				propertyDefinition, coreNodeId);
-		NemakiPropertyDefinitionDetail detail = contentDaoService
-				.createPropertyDefinitionDetail(_detail);
-
-		return detail;
-	}
-	
-	private String buildUniquePropertyId(String propertyId){
-		if(isUniquePropertyIdInRepository(propertyId)){
-			return propertyId;
-		}else{
-			return propertyId + "_" + String.valueOf(System.currentTimeMillis());
-		}
-	}
-	
-	private boolean isUniquePropertyIdInRepository(String propertyId){
-		//propertyId uniqueness
-		List<String> list = typeManager.getSystemPropertyIds();
-		List<NemakiPropertyDefinitionCore>cores = getPropertyDefinitionCores();
-		if(CollectionUtils.isNotEmpty(cores)){
-			for(NemakiPropertyDefinitionCore core: cores){
-				list.add(core.getPropertyId());
-			}
-		}
-		
-		return !list.contains(propertyId);
-	}
-
-	@Override
-	public NemakiPropertyDefinitionDetail updatePropertyDefinitionDetail(
-			NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
-		return contentDaoService.updatePropertyDefinitionDetail(propertyDefinitionDetail);
-	}
 
 	// ///////////////////////////////////////
 	// Content
@@ -275,7 +126,7 @@ public class ContentServiceImpl implements ContentService {
 			return contentDaoService.getRelationship(content.getId());
 		} else if (content.isPolicy()) {
 			return contentDaoService.getPolicy(content.getId());
-		}else if(content.isItem()){
+		} else if (content.isItem()) {
 			return contentDaoService.getItem(content.getId());
 		} else {
 			return null;
@@ -285,6 +136,7 @@ public class ContentServiceImpl implements ContentService {
 	/**
 	 * Get the pieces of content available at that path.
 	 */
+	@Override
 	public Content getContentByPath(String path) {
 		List<String> splittedPath = splitLeafPathSegment(path);
 
@@ -333,6 +185,7 @@ public class ContentServiceImpl implements ContentService {
 	/**
 	 * Get children contents in a given folder
 	 */
+	@Override
 	public List<Content> getChildren(String folderId) {
 		List<Content> children = new ArrayList<Content>();
 
@@ -360,6 +213,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	// if the root of the tree doesn't exists, return null
+	@Override
 	public List<Content> getDescendants(String folderId, int depth) {
 		// Content class is somehow abstract, but it's enough for DELETE.
 		Content content = contentDaoService.getContent(folderId);
@@ -406,14 +260,41 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public List<Document> getAllVersions(String versionSeriesId) {
+	public Document getDocumentOfLatestMajorVersion(String versionSeriesId) {
+		return contentDaoService
+				.getDocumentOfLatestMajorVersion(versionSeriesId);
+	}
+
+	@Override
+	public List<Document> getAllVersions(CallContext callContext,
+			String versionSeriesId) {
+		List<Document> results = new ArrayList<Document>();
+
+		// TODO hide PWC from a non-owner user
+		List<Document> versions = contentDaoService
+				.getAllVersions(versionSeriesId);
+
+		if (CollectionUtils.isNotEmpty(versions)) {
+			for (Document doc : versions) {
+				if (!doc.isPrivateWorkingCopy()) {
+					results.add(doc);
+				}
+			}
+		}
+
 		return contentDaoService.getAllVersions(versionSeriesId);
 	}
 
 	// TODO enable orderBy
+	@Override
 	public List<Document> getCheckedOutDocs(String folderId, String orderBy,
 			ExtensionsData extension) {
 		return contentDaoService.getCheckedOutDocuments(folderId);
+	}
+
+	@Override
+	public VersionSeries getVersionSeries(Document document) {
+		return getVersionSeries(document.getVersionSeriesId());
 	}
 
 	@Override
@@ -427,21 +308,23 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public String getPath(Content content) {
-		List<String> path = getPathInternal(new ArrayList<String>(), content);
+	public String calculatePath(Content content) {
+		List<String> path = calculatePathInternal(new ArrayList<String>(),
+				content);
 		path.remove(0);
 		return NemakiConstant.PATH_SEPARATOR
 				+ StringUtils.join(path, NemakiConstant.PATH_SEPARATOR);
 	}
 
-	private List<String> getPathInternal(List<String> path, Content content) {
+	private List<String> calculatePathInternal(List<String> path,
+			Content content) {
 		path.add(0, content.getName());
 
-		if (content.isRoot()) {
+		if (propertyUtil.isRoot(content)) {
 			return path;
 		} else {
 			Content parent = getParent(content.getId());
-			getPathInternal(path, parent);
+			calculatePathInternal(path, parent);
 		}
 		return path;
 	}
@@ -485,13 +368,13 @@ public class ContentServiceImpl implements ContentService {
 			ExtensionsData extension) {
 		return contentDaoService.getAppliedPolicies(objectId);
 	}
-	
+
 	@Override
 	public Item getItem(String objectId) {
 		return contentDaoService.getItem(objectId);
 	}
 
-	private int writeChangeEvent(CallContext callContext, Content content,
+	private long writeChangeEvent(CallContext callContext, Content content,
 			ChangeType changeType) {
 		Change latest = contentDaoService.getLatestChange();
 
@@ -541,11 +424,10 @@ public class ContentServiceImpl implements ContentService {
 
 		// Modify old change event
 		contentDaoService.create(change);
-		/*if (latest != null) {
-			latest.setLatest(false);
-			contentDaoService.update(latest);
-		}
-*/
+		/*
+		 * if (latest != null) { latest.setLatest(false);
+		 * contentDaoService.update(latest); }
+		 */
 		// Update change token of the content
 		content.setChangeToken(change.getChangeToken());
 		update(content);
@@ -582,12 +464,15 @@ public class ContentServiceImpl implements ContentService {
 		// Write change event
 		writeChangeEvent(callContext, document, ChangeType.CREATED);
 
+		// Call Solr indexing(optional)
+		solrUtil.callSolrIndexing();
+
 		return document;
 	}
 
 	@Override
 	public Document createDocumentFromSource(CallContext callContext,
-			Properties properties, String folderId, Document original,
+			Properties properties, Folder target, Document original,
 			VersioningState versioningState, List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces) {
@@ -600,8 +485,7 @@ public class ContentServiceImpl implements ContentService {
 
 		setVersionProperties(callContext, versioningState, copy);
 
-		if (folderId != null)
-			copy.setParentId(folderId);
+		copy.setParentId(target.getId());
 		// Set updated properties
 		updateProperties(callContext, properties, copy);
 		setSignature(callContext, copy);
@@ -611,12 +495,15 @@ public class ContentServiceImpl implements ContentService {
 
 		// Update versionSeriesId#versionSeriesCheckedOutId after creating a PWC
 		if (versioningState == VersioningState.CHECKEDOUT) {
-			updateVersionSeriesWithPwc(callContext,
-					getVersionSeries(result.getVersionSeriesId()), result);
+			updateVersionSeriesWithPwc(callContext, getVersionSeries(result),
+					result);
 		}
 
 		// Record the change event
 		writeChangeEvent(callContext, result, ChangeType.CREATED);
+
+		// Call Solr indexing(optional)
+		solrUtil.callSolrIndexing();
 
 		return result;
 	}
@@ -641,6 +528,9 @@ public class ContentServiceImpl implements ContentService {
 
 		// Record the change event
 		writeChangeEvent(callContext, result, ChangeType.CREATED);
+
+		// Call Solr indexing(optional)
+		solrUtil.callSolrIndexing();
 
 		return result;
 	}
@@ -667,8 +557,11 @@ public class ContentServiceImpl implements ContentService {
 		Document result = contentDaoService.create(pwc);
 
 		// Modify versionSeries
-		updateVersionSeriesWithPwc(callContext,
-				getVersionSeries(result.getVersionSeriesId()), result);
+		updateVersionSeriesWithPwc(callContext, getVersionSeries(result),
+				result);
+
+		// Call Solr indexing(optional)
+		solrUtil.callSolrIndexing();
 
 		return result;
 	}
@@ -677,7 +570,7 @@ public class ContentServiceImpl implements ContentService {
 	public void cancelCheckOut(CallContext callContext, String objectId,
 			ExtensionsData extension) {
 		Document pwc = getDocument(objectId);
-		VersionSeries vs = getVersionSeries(pwc.getVersionSeriesId());
+		VersionSeries vs = getVersionSeries(pwc);
 
 		// Delete attachment & document itself(without archiving)
 		contentDaoService.delete(pwc.getAttachmentNodeId());
@@ -689,6 +582,9 @@ public class ContentServiceImpl implements ContentService {
 		vs.setVersionSeriesCheckedOutBy("");
 		vs.setVersionSeriesCheckedOutId("");
 		contentDaoService.update(vs);
+
+		// Call Solr indexing(optional)
+		solrUtil.callSolrIndexing();
 	}
 
 	@Override
@@ -737,6 +633,9 @@ public class ContentServiceImpl implements ContentService {
 		// Record the change event
 		writeChangeEvent(callContext, result, ChangeType.CREATED);
 
+		// Call Solr indexing(optional)
+		solrUtil.callSolrIndexing();
+
 		return result;
 	}
 
@@ -745,7 +644,8 @@ public class ContentServiceImpl implements ContentService {
 		Document d = new Document();
 		setBaseProperties(callContext, properties, d, parentFolder.getId());
 		d.setParentId(parentFolder.getId());
-		d.setImmutable(getBooleanProperty(properties, PropertyIds.IS_IMMUTABLE));
+		d.setImmutable(DataUtil.getBooleanProperty(properties,
+				PropertyIds.IS_IMMUTABLE));
 		setSignature(callContext, d);
 		// Aspect
 		List<Aspect> aspects = buildAspects(properties);
@@ -771,7 +671,7 @@ public class ContentServiceImpl implements ContentService {
 		copy.setAcl(original.getAcl());
 		copy.setAspects(original.getAspects());
 		copy.setSecondaryIds(original.getSecondaryIds());
-		
+
 		setSignature(callContext, copy);
 		return copy;
 	}
@@ -860,7 +760,7 @@ public class ContentServiceImpl implements ContentService {
 
 	/**
 	 * Update versionSeriesId#versionSeriesCheckedOutId after creating a PWC
-	 * 
+	 *
 	 * @param callContext
 	 * @param versionSeries
 	 * @param pwc
@@ -881,7 +781,7 @@ public class ContentServiceImpl implements ContentService {
 		setBaseProperties(callContext, properties, f, parentFolder.getId());
 		f.setParentId(parentFolder.getId());
 		// Defaults to document / folder / item if not specified
-		List<String> allowedTypes = getIdListProperty(properties,
+		List<String> allowedTypes = DataUtil.getIdListProperty(properties,
 				PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS);
 		if (CollectionUtils.isEmpty(allowedTypes)) {
 			List<String> l = new ArrayList<String>();
@@ -902,6 +802,9 @@ public class ContentServiceImpl implements ContentService {
 		// Record the change event
 		writeChangeEvent(callContext, folder, ChangeType.CREATED);
 
+		// Call Solr indexing(optional)
+		solrUtil.callSolrIndexing();
+
 		return folder;
 	}
 
@@ -914,8 +817,10 @@ public class ContentServiceImpl implements ContentService {
 
 		Relationship rel = new Relationship();
 		setBaseProperties(callContext, properties, rel, null);
-		rel.setSourceId(getIdProperty(properties, PropertyIds.SOURCE_ID));
-		rel.setTargetId(getIdProperty(properties, PropertyIds.TARGET_ID));
+		rel.setSourceId(DataUtil.getIdProperty(properties,
+				PropertyIds.SOURCE_ID));
+		rel.setTargetId(DataUtil.getIdProperty(properties,
+				PropertyIds.TARGET_ID));
 		// Set ACL
 		rel.setAclInherited(true);
 		rel.setAcl(new Acl());
@@ -937,7 +842,8 @@ public class ContentServiceImpl implements ContentService {
 
 		Policy p = new Policy();
 		setBaseProperties(callContext, properties, p, null);
-		p.setPolicyText(getStringProperty(properties, PropertyIds.POLICY_TEXT));
+		p.setPolicyText(DataUtil.getStringProperty(properties,
+				PropertyIds.POLICY_TEXT));
 		p.setAppliedIds(new ArrayList<String>());
 
 		// Set ACL
@@ -954,16 +860,19 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public Item createItem(CallContext callContext, Properties properties,
-			String folderId, List<String> policies, org.apache.chemistry.opencmis.commons.data.Acl addAces,
-			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension) {
+			String folderId, List<String> policies,
+			org.apache.chemistry.opencmis.commons.data.Acl addAces,
+			org.apache.chemistry.opencmis.commons.data.Acl removeAces,
+			ExtensionsData extension) {
 		Item i = new Item();
 		setBaseProperties(callContext, properties, i, null);
-		String objectTypeId = getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID);
+		String objectTypeId = DataUtil.getIdProperty(properties,
+				PropertyIds.OBJECT_TYPE_ID);
 		TypeDefinition tdf = typeManager.getTypeDefinition(objectTypeId);
-		if(tdf.isFileable()){
+		if (tdf.isFileable()) {
 			i.setParentId(folderId);
 		}
-		
+
 		// Set ACL
 		i.setAclInherited(true);
 		i.setAcl(new Acl());
@@ -979,7 +888,7 @@ public class ContentServiceImpl implements ContentService {
 	private void setBaseProperties(CallContext callContext,
 			Properties properties, Content content, String parentFolderId) {
 		// Object Type
-		String objectTypeId = getIdProperty(properties,
+		String objectTypeId = DataUtil.getIdProperty(properties,
 				PropertyIds.OBJECT_TYPE_ID);
 		content.setObjectType(objectTypeId);
 
@@ -991,16 +900,16 @@ public class ContentServiceImpl implements ContentService {
 
 		// Name(Unique in a folder)
 		String uniqueName = buildUniqueName(
-				getStringProperty(properties, PropertyIds.NAME),
+				DataUtil.getStringProperty(properties, PropertyIds.NAME),
 				parentFolderId, null);
 		content.setName(uniqueName);
 
 		// Description
-		content.setDescription(getStringProperty(properties,
+		content.setDescription(DataUtil.getStringProperty(properties,
 				PropertyIds.DESCRIPTION));
 
 		// Secondary Type IDs
-		content.setSecondaryIds(getIdListProperty(properties,
+		content.setSecondaryIds(DataUtil.getIdListProperty(properties,
 				PropertyIds.SECONDARY_OBJECT_TYPE_IDS));
 
 		// Signature
@@ -1036,10 +945,10 @@ public class ContentServiceImpl implements ContentService {
 
 	private Content modifyProperties(CallContext callContext,
 			Properties properties, Content content) {
-		if(properties == null || MapUtils.isEmpty(properties.getProperties())){
+		if (properties == null || MapUtils.isEmpty(properties.getProperties())) {
 			return content;
 		}
-		
+
 		// Primary
 		org.apache.chemistry.opencmis.commons.definitions.TypeDefinition td = typeManager
 				.getTypeDefinition(content.getObjectType());
@@ -1180,23 +1089,6 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public Content update(Content content) {
-		if (content instanceof Document) {
-			return contentDaoService.update((Document) content);
-		} else if (content instanceof Folder) {
-			return contentDaoService.update((Folder) content);
-		} else if (content instanceof Relationship) {
-			return contentDaoService.update((Relationship) content);
-		} else if (content instanceof Policy) {
-			return contentDaoService.update((Policy) content);
-		} else if (content instanceof Item) {
-			return contentDaoService.update((Item) content);
-		} else {
-			return null;
-		}
-	}
-	
-	@Override
 	public Content updateProperties(CallContext callContext,
 			Properties properties, Content content) {
 
@@ -1210,37 +1102,62 @@ public class ContentServiceImpl implements ContentService {
 		return result;
 	}
 
-	//TODO updatable CMIS properties are hard-coded.
+	@Override
+	public Content update(Content content) {
+		Content result = null;
+
+		if (content instanceof Document) {
+			result = contentDaoService.update((Document) content);
+		} else if (content instanceof Folder) {
+			result = contentDaoService.update((Folder) content);
+		} else if (content instanceof Relationship) {
+			result = contentDaoService.update((Relationship) content);
+		} else if (content instanceof Policy) {
+			result = contentDaoService.update((Policy) content);
+		} else if (content instanceof Item) {
+			result = contentDaoService.update((Item) content);
+		}
+
+		// Call Solr indexing(optional)
+		solrUtil.callSolrIndexing();
+
+		return result;
+	}
+
+	// TODO updatable CMIS properties are hard-coded.
 	private void setUpdatePropertyValue(Content content,
 			PropertyData<?> propertyData, Properties properties) {
 		if (propertyData.getId().equals(PropertyIds.NAME)) {
-			if (getIdProperty(properties, PropertyIds.OBJECT_ID) != content
+			if (DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID) != content
 					.getId()) {
-				String uniqueName = buildUniqueName(
-						getStringProperty(properties, PropertyIds.NAME),
-						content.getParentId(), content.getId());
+				String uniqueName = buildUniqueName(DataUtil.getStringProperty(
+						properties, PropertyIds.NAME), content.getParentId(),
+						content.getId());
 				content.setName(uniqueName);
 			}
 		}
 
 		if (propertyData.getId().equals(PropertyIds.DESCRIPTION)) {
-			content.setDescription(getStringProperty(properties,
+			content.setDescription(DataUtil.getStringProperty(properties,
 					propertyData.getId()));
 		}
 
 		if (propertyData.getId().equals(PropertyIds.SECONDARY_OBJECT_TYPE_IDS)) {
-			content.setSecondaryIds(getIdListProperty(properties,
+			content.setSecondaryIds(DataUtil.getIdListProperty(properties,
 					PropertyIds.SECONDARY_OBJECT_TYPE_IDS));
 		}
 	}
 
 	@Override
-	public void move(Content content, String targetFolderId) {
-		content.setParentId(targetFolderId);
-		String uniqueName = buildUniqueName(content.getName(), targetFolderId,
+	public void move(Content content, Folder target) {
+		content.setParentId(target.getId());
+		String uniqueName = buildUniqueName(content.getName(), target.getId(),
 				null);
 		content.setName(uniqueName);
 		update(content);
+
+		// Call Solr indexing(optional)
+		solrUtil.callSolrIndexing();
 	}
 
 	@Override
@@ -1271,11 +1188,10 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, content, ChangeType.SECURITY);
 	}
 
-	
-
 	/**
 	 * Delete a Content.
 	 */
+	@Override
 	public void delete(CallContext callContext, String objectId,
 			Boolean deletedWithParent) {
 		Content content = getContent(objectId);
@@ -1286,6 +1202,9 @@ public class ContentServiceImpl implements ContentService {
 		// Archive and then Delete
 		createArchive(callContext, objectId, deletedWithParent);
 		contentDaoService.delete(objectId);
+
+		// Call Solr indexing(optional)
+		solrUtil.callSolrIndexing();
 	}
 
 	@Override
@@ -1294,6 +1213,14 @@ public class ContentServiceImpl implements ContentService {
 		contentDaoService.delete(attachmentId);
 	}
 
+	@Override
+	public void deleteContentStream(CallContext callContext,
+			Holder<String> objectId) {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
 	public void deleteDocument(CallContext callContext, String objectId,
 			Boolean allVersions, Boolean deleteWithParent) {
 		Document document = (Document) getContent(objectId);
@@ -1302,7 +1229,7 @@ public class ContentServiceImpl implements ContentService {
 		List<Document> versionList = new ArrayList<Document>();
 		String versionSeriesId = document.getVersionSeriesId();
 		if (allVersions) {
-			versionList = getAllVersions(versionSeriesId);
+			versionList = getAllVersions(callContext, versionSeriesId);
 		} else {
 			versionList.add(document);
 		}
@@ -1329,6 +1256,9 @@ public class ContentServiceImpl implements ContentService {
 				contentDaoService.update(latestVersion);
 			}
 		}
+
+		// Call Solr indexing(optional)
+		solrUtil.callSolrIndexing();
 	}
 
 	// deletedWithParent flag controls whether it's deleted with the parent all
@@ -1372,65 +1302,6 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	// ///////////////////////////////////////
-	// Acl
-	// ///////////////////////////////////////
-	public Acl mergeInheritedAcl(Content content) {
-		Acl acl = content.getAcl();
-		if (content.isRoot())
-			return acl;
-
-		if (content.isAclInherited()) {
-			Content parent = getParent(content.getId());
-			acl.setInheritedAces(mergeInheritedAcl(parent).getPropagatingAces());
-			// TODO Merge ACEs of the same principal id
-		} else {
-			return acl;
-		}
-		return acl;
-	}
-
-	public org.apache.chemistry.opencmis.commons.data.Acl convertToCmisAcl(
-			Content content, Boolean onlyBasicPermissions) {
-		AccessControlListImpl cmisAcl = new AccessControlListImpl();
-		cmisAcl.setAces(new ArrayList<org.apache.chemistry.opencmis.commons.data.Ace>());
-
-		Acl acl = mergeInheritedAcl(content);
-		// Set local ACEs
-		for (Ace ace : acl.getLocalAces()) {
-			Principal principal = new AccessControlPrincipalDataImpl(
-					ace.getPrincipalId());
-			AccessControlEntryImpl cmisAce = new AccessControlEntryImpl(
-					principal, ace.getPermissions());
-			cmisAce.setDirect(true);
-			cmisAcl.getAces().add(cmisAce);
-		}
-
-		// Set inherited ACEs
-		for (jp.aegif.nemaki.model.Ace ace : acl.getInheritedAces()) {
-			Principal principal = new AccessControlPrincipalDataImpl(
-					ace.getPrincipalId());
-			AccessControlEntryImpl cmisAce = new AccessControlEntryImpl(
-					principal, ace.getPermissions());
-			cmisAce.setDirect(false);
-			cmisAcl.getAces().add(cmisAce);
-		}
-
-		// Set "exact" property
-		cmisAcl.setExact(true);
-
-		// Set "inherited" property, which is out of bounds to CMIS
-		String namespace = NemakiConstant.NAMESPACE_ACL_INHERITANCE;
-		CmisExtensionElementImpl inherited = new CmisExtensionElementImpl(
-				namespace, NemakiConstant.EXTNAME_ACL_INHERITED, null, content
-						.isAclInherited().toString());
-		List<CmisExtensionElement> exts = new ArrayList<CmisExtensionElement>();
-		exts.add(inherited);
-		cmisAcl.setExtensions(exts);
-
-		return cmisAcl;
-	}
-
-	// ///////////////////////////////////////
 	// Attachment
 	// ///////////////////////////////////////
 	@Override
@@ -1445,7 +1316,7 @@ public class ContentServiceImpl implements ContentService {
 		AttachmentNode an = contentDaoService.getAttachment(attachmentId);
 		return an;
 	}
-	
+
 	private String createAttachment(CallContext callContext,
 			ContentStream contentStream) {
 		AttachmentNode a = new AttachmentNode();
@@ -1455,22 +1326,26 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public void appendAttachment(CallContext callContext, Holder<String> objectId, Holder<String> changeToken,
+	public void appendAttachment(CallContext callContext,
+			Holder<String> objectId, Holder<String> changeToken,
 			ContentStream contentStream, boolean isLastChunk,
 			ExtensionsData extension) {
 		Document document = contentDaoService.getDocument(objectId.getValue());
-		AttachmentNode attachment = getAttachment(document.getAttachmentNodeId());
+		AttachmentNode attachment = getAttachment(document
+				.getAttachmentNodeId());
 		InputStream is = attachment.getInputStream();
-		//Append
-		SequenceInputStream sis = new SequenceInputStream(is, contentStream.getStream());
+		// Append
+		SequenceInputStream sis = new SequenceInputStream(is,
+				contentStream.getStream());
 		// appendStream will be used for a huge file, so avoid reading stream
 		long length = attachment.getLength() + contentStream.getLength();
-		ContentStream cs = new ContentStreamImpl("content", BigInteger.valueOf(length), attachment.getMimeType(), sis);
+		ContentStream cs = new ContentStreamImpl("content",
+				BigInteger.valueOf(length), attachment.getMimeType(), sis);
 		contentDaoService.updateAttachment(attachment, cs);
-		
+
 		writeChangeEvent(callContext, document, ChangeType.UPDATED);
 	}
-	
+
 	@Override
 	public Rendition getRendition(String streamId) {
 		return contentDaoService.getRendition(streamId);
@@ -1498,22 +1373,148 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	// ///////////////////////////////////////
+	// Acl
+	// ///////////////////////////////////////
+	// Merge inherited ACL
+	@Override
+	public Acl calculateAcl(Content content) {
+		Acl acl = content.getAcl();
+
+		boolean iht = (content.isAclInherited() == null) ? false : content
+				.isAclInherited();
+
+		if (!propertyUtil.isRoot(content) && iht) {
+			// Caching the results of calculation
+			List<Ace> aces = new ArrayList<Ace>();
+			List<Ace> result = calculateAclInternal(aces, content);
+
+			// Convert result to Acl
+			Acl _acl = new Acl();
+			for (Ace r : result) {
+				if (r.isDirect()) {
+					_acl.getLocalAces().add(r);
+				} else {
+					_acl.getInheritedAces().add(r);
+				}
+			}
+			acl = _acl;
+		}
+
+		// Convert anonymous and anyone
+		convertSystemPrincipalId(acl);
+
+		return acl;
+	}
+
+	private List<Ace> calculateAclInternal(List<Ace> result, Content content) {
+		if (propertyUtil.isRoot(content)) {
+			List<Ace> rootAces = new ArrayList<Ace>();
+			List<Ace> aces = content.getAcl().getLocalAces();
+			for (Ace ace : aces) {
+				Ace rootAce = deepCopy(ace);
+				rootAce.setDirect(true);
+				rootAces.add(rootAce);
+			}
+			return mergeAcl(result, rootAces);
+		} else {
+			Content parent = getParent(content.getId());
+			return mergeAcl(content.getAcl().getLocalAces(),
+					calculateAclInternal(new ArrayList<Ace>(), parent));
+		}
+	}
+
+	private List<Ace> mergeAcl(List<Ace> target, List<Ace> source) {
+		HashMap<String, Ace> _result = new HashMap<String, Ace>();
+
+		HashMap<String, Ace> targetMap = buildAceMap(target);
+		HashMap<String, Ace> sourceMap = buildAceMap(source);
+
+		for (Entry<String, Ace> t : targetMap.entrySet()) {
+			Ace ace = deepCopy(t.getValue());
+			ace.setDirect(true);
+			_result.put(t.getKey(), ace);
+		}
+
+		// Overwrite
+		for (Entry<String, Ace> s : sourceMap.entrySet()) {
+			// TODO Deep copy
+			if (!targetMap.containsKey(s.getKey())) {
+				Ace ace = deepCopy(s.getValue());
+				ace.setDirect(false);
+				_result.put(s.getKey(), ace);
+			}
+		}
+
+		// Convert
+		List<Ace> result = new ArrayList<Ace>();
+		for (Entry<String, Ace> r : _result.entrySet()) {
+			result.add(r.getValue());
+		}
+
+		return result;
+	}
+
+	private HashMap<String, Ace> buildAceMap(List<Ace> aces) {
+		HashMap<String, Ace> map = new HashMap<String, Ace>();
+
+		for (Ace ace : aces) {
+			map.put(ace.getPrincipalId(), ace);
+		}
+
+		return map;
+	}
+
+	private Ace deepCopy(Ace ace) {
+		Ace result = new Ace();
+
+		result.setPrincipalId(ace.getPrincipalId());
+		result.setDirect(ace.isDirect());
+		if (CollectionUtils.isEmpty(ace.getPermissions())) {
+			result.setPermissions(new ArrayList<String>());
+		} else {
+			List<String> l = new ArrayList<String>();
+			for (String p : ace.getPermissions()) {
+				l.add(p);
+			}
+			result.setPermissions(l);
+		}
+
+		return result;
+	}
+
+	private void convertSystemPrincipalId(Acl acl) {
+		List<Ace> aces = acl.getAllAces();
+		for (Ace ace : aces) {
+			if (NemakiConstant.PRINCIPAL_ANONYMOUS.equals(ace.getPrincipalId())) {
+				String anonymous = propertyUtil.getPropertyManager().readValue(
+						PropertyKey.CMIS_REPOSITORY_MAIN_PRINCIPAL_ANONYMOUS);
+				ace.setPrincipalId(anonymous);
+			}
+			if (NemakiConstant.PRINCIPAL_ANYONE.equals(ace.getPrincipalId())) {
+				String anyone = propertyUtil.getPropertyManager().readValue(
+						PropertyKey.CMIS_REPOSITORY_MAIN_PRINCIPAL_ANYONE);
+				ace.setPrincipalId(anyone);
+			}
+		}
+	}
+
+	// ///////////////////////////////////////
 	// Change event
 	// ///////////////////////////////////////
 	@Override
 	public Change getChangeEvent(String token) {
 		return contentDaoService.getChangeEvent(token);
 	}
-	
+
 	@Override
 	public List<Change> getLatestChanges(CallContext context,
 			Holder<String> changeLogToken, Boolean includeProperties,
 			String filter, Boolean includePolicyIds, Boolean includeAcl,
 			BigInteger maxItems, ExtensionsData extension) {
-		int latestChangeLogToken = 0;
+		long latestChangeLogToken = 0;
 		if (changeLogToken != null && changeLogToken.getValue() != null
 				&& NumberUtils.isNumber(changeLogToken.getValue()))
-			latestChangeLogToken = Integer.parseInt(changeLogToken.getValue());
+			latestChangeLogToken = Long.parseLong(changeLogToken.getValue());
 
 		return contentDaoService.getLatestChanges(latestChangeLogToken,
 				maxItems.intValue());
@@ -1587,7 +1588,7 @@ public class ContentServiceImpl implements ContentService {
 		Archive archive = contentDaoService.createAttachmentArchive(a);
 		return archive;
 	}
-	
+
 	@Override
 	public void restoreArchive(String archiveId) {
 		Archive archive = contentDaoService.getArchive(archiveId);
@@ -1604,7 +1605,8 @@ public class ContentServiceImpl implements ContentService {
 
 		CallContextImpl dummyContext = new CallContextImpl(null, null, null,
 				null, null, null, null, null);
-		dummyContext.put(dummyContext.USERNAME, "system");
+		dummyContext
+				.put(dummyContext.USERNAME, NemakiConstant.PRINCIPAL_SYSTEM);
 
 		// Switch over the operation depending on the type of archive
 		if (archive.isFolder()) {
@@ -1618,6 +1620,9 @@ public class ContentServiceImpl implements ContentService {
 		} else {
 			log.error("Only document or folder is supported for restoration");
 		}
+
+		// Call Solr indexing(optional)
+		solrUtil.callSolrIndexing();
 	}
 
 	private Document restoreDocument(Archive archive) {
@@ -1661,7 +1666,7 @@ public class ContentServiceImpl implements ContentService {
 
 		return getFolder(archive.getOriginalId());
 	}
-	
+
 	private Boolean restorationTargetExists(Archive archive) {
 		String parentId = archive.getParentId();
 		Content parent = contentDaoService.getContent(parentId);
@@ -1671,7 +1676,7 @@ public class ContentServiceImpl implements ContentService {
 			return true;
 		}
 	}
-	
+
 	// ///////////////////////////////////////
 	// Utility
 	// ///////////////////////////////////////
@@ -1757,52 +1762,9 @@ public class ContentServiceImpl implements ContentService {
 		}
 	}
 
-	private GregorianCalendar millisToCalendar(long millis) {
-		GregorianCalendar calendar = new GregorianCalendar();
-		calendar.setTimeZone(TimeZone.getTimeZone("GMT"));
-		calendar.setTimeInMillis(millis);
-		return calendar;
-	}
-
-	private String getStringProperty(Properties properties, String name) {
-		PropertyData<?> property = properties.getProperties().get(name);
-		if (!(property instanceof PropertyString)) {
-			return null;
-		}
-
-		return ((PropertyString) property).getFirstValue();
-	}
-
-	private String getIdProperty(Properties properties, String name) {
-		PropertyData<?> property = properties.getProperties().get(name);
-		if (!(property instanceof PropertyId)) {
-			return null;
-		}
-
-		return ((PropertyId) property).getFirstValue();
-	}
-	
-	private Boolean getBooleanProperty(Properties properties, String name) {
-		PropertyData<?> property = properties.getProperties().get(name);
-		if (!(property instanceof PropertyBoolean)) {
-			return null;
-		}
-
-		return ((PropertyBoolean) property).getFirstValue();
-	}
-
-	private List<String> getIdListProperty(Properties properties, String name) {
-		PropertyData<?> property = properties.getProperties().get(name);
-		if (!(property instanceof PropertyId)) {
-			return null;
-		}
-
-		return ((PropertyId) property).getValues();
-	}
-
 	/**
 	 * Parse CMIS extension to Nemaki Aspect model
-	 * 
+	 *
 	 * @param properties
 	 * @return aspects
 	 */
@@ -1890,9 +1852,9 @@ public class ContentServiceImpl implements ContentService {
 		n.setModifier(callContext.getUsername());
 		n.setModified(getTimeStamp());
 	}
-	
+
 	private GregorianCalendar getTimeStamp() {
-		return millisToCalendar(System.currentTimeMillis());
+		return DataUtil.millisToCalendar(System.currentTimeMillis());
 	}
 
 	public void setContentDaoService(ContentDaoService contentDaoService) {
@@ -1901,5 +1863,13 @@ public class ContentServiceImpl implements ContentService {
 
 	public void setTypeManager(TypeManager typeManager) {
 		this.typeManager = typeManager;
+	}
+
+	public void setPropertyUtil(PropertyUtil propertyUtil) {
+		this.propertyUtil = propertyUtil;
+	}
+
+	public void setSolrUtil(SolrUtil solrUtil) {
+		this.solrUtil = solrUtil;
 	}
 }

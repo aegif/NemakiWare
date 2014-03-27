@@ -45,6 +45,7 @@ en:
       group_management: "Group management"
       archive: "Archive"
       search_engine_management: "Search engine management"
+      type_management: "Type management"
       logout: "Log out"
       logout_confirmation: "Do you really want to logout?"
       login: "Log in"
@@ -88,14 +89,26 @@ en:
         update: "Update"
         upload: "Upload"
       permission:
-        inherited_permissions: "Inherited Permissions"
+        edit_permission: "Edit permissions"
+        inherited_permissions:
+        object_specific_permissions:
         inherit_permissions: "Inherit Permissions"
-        local_permissions: "Local Permissions"
-        user_search_results: "User Search Results"
+        permission_table: "Permission Table"
+        principal_search_results: "User/Group Search Results"
         search_member: "Search users to be added"
-        add_permission: "Add permission"
-        user_and_group_id: "User/Group ID"
+        add_principal: "Add to table"
+        remove_principal: "Remove from table"
+        principal_type: "Type"
+        principal_type_user: "User"
+        principal_type_group: "Group"
+        principal_id: "User/Group ID"
+        inheritance_on: "Inherit ON"
+        inheritance_off: "Inherit OFF"
         permission: "Permission"
+        principal_already_added: "Principal already added"
+        select_rows_to_delete: "Select rows to delete"
+        confirm_update: "Update permissions. OK?"
+        inherited_permission_cannot_be_modified: "Inherited permission cammot be modified"
       search:
         query_word: "Query word"
         number_of_results: "Number of results" 
@@ -149,6 +162,9 @@ en:
         search_engine_management: "Search Engine Management"
         initiaize_solr: "Initialize Solr"
         reindex_solr: "Reindex Solr"
+    type:
+      index:
+        type_management: "Type Management"
   message:
     validation:
       general: "Validation error: please input correct values"
@@ -160,6 +176,8 @@ en:
       update_failure: "Failed to update the user."
       update_password_success: "User password has been updated successfully."
       update_password_failure: "Failed to update the user's password."
+      destroy_success: "User has been deleted successfully"
+      destroy_failure: "Fail to delete the user."
     group:
       create_success: "Group has been created successfully."
       create_failure: "Failed to create a new group."
@@ -184,3 +202,7 @@ en:
       error_text_node_not_found: "Specified folder or content does not exist or has already deleted."
       success_text_create: "Creation succeeded"
       error_text_create: "Creation failed"
+      success_text_update: "Update succeeded"
+      error_text_update: "Update succeeded"
+      success_text_delete: "Deletion succeeded"
+      error_text_delete: "Deletion failed"

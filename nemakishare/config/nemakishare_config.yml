@@ -1,0 +1,63 @@
+#NemakiWare specific Settings
+
+#Repository
+repository:
+  server_protocol: 'http'
+  server_host: '127.0.0.1'
+  server_port: '8080'
+  server_context: 'nemakiware'
+  server_binding: 'atom'
+  repository_main_id: 'bedroom'
+  admin_id: 'admin'
+  admin_password: 'admin'
+  aspects_namespace: 'http://www.aegif.jp/Nemaki/feature/aspects/'
+  acl_inheritance_namespace: 'http://www.aegif.jp/Nemaki/feature/aclInheritance/'
+   
+#Search Engine
+search_engine:
+  server_protocol: 'http'
+  server_host: '127.0.0.1'
+  server_port: '8983'
+  server_context: 'solr'
+  
+#Site
+site:
+  root_id: 'sites'
+
+#Change Log
+change_log:
+  display_number: 5
+
+#Paging
+paging: 
+  maxItems: 10
+  
+#Validate
+validation:
+  user:
+    id:
+      required: true
+    name:
+      required: true
+    first_name:
+      required: true
+    password:
+      required: true
+      length:
+        min: 4
+    email:
+      email: true
+  group:
+    id:
+      required: true
+    name:
+      required: true
+
+#Layout
+layout:
+  popup:
+    thickbox:
+      url_param:
+        TB_iframe: true
+        width: 777
+        height: 600

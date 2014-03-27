@@ -42,8 +42,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import jp.aegif.nemaki.model.constant.NodeType;
-
 import org.codehaus.jackson.annotate.JsonIgnoreProperties;
 
 /**
@@ -61,7 +59,8 @@ public class Content extends NodeBase {
 	private List<Aspect> aspects = new ArrayList<Aspect>();
 	private List<String> secondaryIds = new ArrayList<String>();
 	private String objectType;
-	private int changeToken;
+	private long changeToken;
+	private List<String> renditionIds;
 
 	public Content() {
 		super();
@@ -151,12 +150,20 @@ public class Content extends NodeBase {
 		this.objectType = objectType;
 	}
 
-	public int getChangeToken() {
+	public long getChangeToken() {
 		return changeToken;
 	}
 
-	public void setChangeToken(int changeToken) {
+	public void setChangeToken(long changeToken) {
 		this.changeToken = changeToken;
+	}
+
+	public List<String> getRenditionIds() {
+		return renditionIds;
+	}
+
+	public void setRenditionIds(List<String> renditionIds) {
+		this.renditionIds = renditionIds;
 	}
 
 	@Override
@@ -187,9 +194,5 @@ public class Content extends NodeBase {
 	@Override
 	public int hashCode() {
 		return this.getId().hashCode();
-	}
-
-	public Boolean isRoot(){
-		return (getId().equals("/")) ? true : false;
 	}
 }

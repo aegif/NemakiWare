@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -78,9 +78,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * Dao Service implementation for CouchDB.
- * 
+ *
  * @author linzhixing
- * 
+ *
  */
 @Component
 public class CouchContentDaoServiceImpl implements ContentDaoService {
@@ -271,6 +271,7 @@ public class CouchContentDaoServiceImpl implements ContentDaoService {
 	// ///////////////////////////////////////
 	// Content
 	// ///////////////////////////////////////
+	@Override
 	public NodeBase getNodeBase(String objectId) {
 		CouchNodeBase cnb = connector.get(CouchNodeBase.class, objectId);
 		return cnb.convert();
@@ -296,7 +297,7 @@ public class CouchContentDaoServiceImpl implements ContentDaoService {
 		Document doc = cd.convert();
 		return doc;
 	}
-	
+
 	@Override
 	public boolean existContent(String objectTypeId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
@@ -381,6 +382,26 @@ public class CouchContentDaoServiceImpl implements ContentDaoService {
 			return list.get(0).convert();
 		} else if (list.size() > 1) {
 			log.warn("The latest version of [" + versionSeriesId
+					+ "] is duplicate.");
+			return list.get(0).convert();
+		} else {
+			return null;
+		}
+	}
+
+	@Override
+	public Document getDocumentOfLatestMajorVersion(String versionSeriesId) {
+		if (versionSeriesId == null)
+			return null;
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
+				.viewName("latestMajorVersions").key(versionSeriesId);
+		List<CouchDocument> list = connector.queryView(query,
+				CouchDocument.class);
+
+		if (list.size() == 1) {
+			return list.get(0).convert();
+		} else if (list.size() > 1) {
+			log.warn("The latest major version of [" + versionSeriesId
 					+ "] is duplicate.");
 			return list.get(0).convert();
 		} else {
@@ -768,7 +789,7 @@ public class CouchContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public List<Change> getLatestChanges(int startToken, int maxItems) {
+	public List<Change> getLatestChanges(long startToken, int maxItems) {
 		Change latest = getLatestChange();
 		if (startToken <= 0)
 			startToken = 0;

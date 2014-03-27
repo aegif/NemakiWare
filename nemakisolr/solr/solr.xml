@@ -2,5 +2,6 @@
 <solr persistent="true" sharedLib="lib">
   <cores defaultCoreName="nemaki" adminHandler="jp.aegif.nemaki.NemakiCoreAdminHandler" adminPath="/admin/cores" zkClientTimeout="${zkClientTimeout:15000}" hostPort="8983" hostContext="solr">
     <core instanceDir="nemaki/" name="nemaki"/>
+	<core instanceDir="token/" name="token"/>    
   </cores>
 </solr>

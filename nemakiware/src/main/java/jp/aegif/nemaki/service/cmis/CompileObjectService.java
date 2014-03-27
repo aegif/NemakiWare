@@ -33,6 +33,7 @@ import org.apache.chemistry.opencmis.commons.data.AllowableActions;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.data.Properties;
+import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.impl.server.ObjectInfoImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
@@ -40,18 +41,18 @@ import org.apache.chemistry.opencmis.commons.spi.Holder;
 public interface CompileObjectService {
 	public ObjectData compileObjectData(CallContext context,
 			Content content, String filter, Boolean includeAllowableActions,
-			Boolean includeAcl, Map<String, String> aliases);
+			IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl, Map<String, String> aliases);
 	
 	public <T> ObjectList compileObjectDataList(CallContext callContext,
 			List<T> contents, String filter, Boolean includeAllowableActions,
-			Boolean includeAcl, BigInteger maxItems, BigInteger skipCount);
+			IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl, BigInteger maxItems, BigInteger skipCount, boolean folderOnly, Map<String, String> aliases);
 	
 	public ObjectList compileChangeDataList(CallContext context, List<Change> changes,
 			Holder<String> changeLogToken, Boolean includeProperties, String filter,
 			Boolean includePolicyIds, Boolean includeAcl);
 	
-	public Properties compileProperties(Content content, Set<String> filter,
-			ObjectInfoImpl objectInfo);
+	public Properties compileProperties(CallContext callContext, Content content,
+			Set<String> filter, ObjectInfoImpl objectInfo);
 	
 	public AllowableActions compileAllowableActions(CallContext callContext,
 			Content content);

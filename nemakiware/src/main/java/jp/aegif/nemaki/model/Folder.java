@@ -34,8 +34,6 @@ import org.codehaus.jackson.annotate.JsonIgnoreProperties;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Folder extends Content {
 
-	public static final String TYPE = "folder";
-
 	private List<String> allowedChildTypeIds;
 	private List<String> renditionIds;
 	

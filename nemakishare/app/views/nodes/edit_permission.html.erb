@@ -1,8 +1,7 @@
 <% content_for :javascript_includes do %>
-	<%= javascript_include_tag "node_permission_table" %>
-	<script type="text/javascript">
-		buildGridData(<%= raw @node.acl.to_json %>, <%= @node.acl_inherited %>);
-	</script>
+<%= javascript_include_tag "node_permission_table" %>
+<script type="text/javascript">
+copyData(<%= raw @node.acl.to_json %>,<%= raw @parent.acl.to_json %>,<%= @node.acl_inherited %>,<%= raw @permissions.to_json %>);</script>
 <%end %>
 
 <!--HEADER-->
@@ -19,7 +18,10 @@
 		<div class="span6">
 			<h4><u><%=t('view.node.permission.inherited_permissions')%></u></h4>
 		</div>
-		<div class="span5">
+		<div class="span1">
+		
+		</div>
+		<div class="span4">
 			<h4><u>&lt;&lt;<%=t('view.node.permission.inherit_permissions')%></u></h4>
 		</div>	
 	</div>
@@ -28,11 +30,16 @@
 		<div class="span6">
 			<!--jqGrid-->
 			<div class="nemaki_jqgrid_container">
-				<table id="inherited_acl_table"></table>
-				<div id = "inherited_acl_paager"></div>
+				<table id="acl_table_inherited"></table>
+				<div id = "acl_pager_inherited"></div>
 			</div>
 		</div>
-		<div class="span5">
+		
+		<div class="span1">
+			
+		</div>
+		
+		<div class="span4">
 			<div>
 			    <div id="inheritance_button" class="switch">
 					<input type="checkbox" <%if @node.acl_inherited %>checked<%end%> />
@@ -44,9 +51,12 @@
 	<!--Node specific permission-->
 	<div class="row-fluid nemaki_table_title">
 		<div class="span6">
-			<h4><u><%=t('view.node.permission.local_permissions')%></u></h4>
+			<h4><u><%=t('view.node.permission.object_specific_permissions')%></u></h4>
 		</div>
-		<div class="span5">
+		<div class="span1">
+		
+		</div>
+		<div class="span4">
 			<h4><u>&lt;&lt;<%=t('view.node.permission.search_member')%></u></h4>
 		</div>	
 	</div>
@@ -55,10 +65,10 @@
 		<div class="span6">
 			<!--jqGrid-->
 			<div class="nemaki_jqgrid_container">
-				<table id="local_acl_table"></table>
-				<div id = "local_acl_pager"></div>
+				<table id="acl_table"></table>
+				<div id = "acl_pager"></div>
 				<!--Remove Button-->
-				<a href="#" class="btn btn" onclick="delrow()"><i class='icon-minus'></i> <%=t('view.general.delete')%></a>
+				<a href="#" class="btn btn" onclick="removePrincipalFromAcl()"><i class='icon-minus'></i> <%=t('view.general.delete')%></a>
 				<!--Update Button-->
 				<a href="#" class="btn btn btn-primary" onclick="update()"><i class='icon-repeat'></i> <%=t('view.general.update')%></a>
 				<%= form_tag({:action => 'update_permission'}, {:id => 'permission_form'}) do %>
@@ -67,23 +77,27 @@
 				<% end %>
 			</div>
 		</div>
+		
+		
+		<div class="span1">
+			<!--Add Button-->
+				<a href="#" class="btn" style="margin-top: 75px" onclick="addPrincipalToAcl()">&lt;&lt;</a>
+		</div>
+		
 		<!--User search-->
-		<div class="span6">
+		<div class="span4">
 			<div class="nemaki_jqgrid_container">
 
+				<!--jqGrid-->
+				<table id="principal_table"></table>
+				<div id = "principal_paager"></div>
+
 				<!--Search form-->
-				<%= form_for SearchForm.new, :url => {:controller => :users , :action => :search_both}, :html => {:id => 'user_search', :method => :get}, :remote => true do |f| %>
-				        <%= select_tag 'search_target', options_for_select([[t('model.user.user'),"user"],[t('model.group.group'),"group"]]) %>
-					<%= f.text_field :query, :class => 'search-query' %>
+				<%= form_for SearchForm.new, :url => {:controller => :users , :action => :search_both}, :html => {:id => 'principal_search', :method => :get}, :remote => true do |f| %>
+				    <%= select_tag 'search_target', options_for_select([[t('model.user.user'),"user"],[t('model.group.group'),"group"]]), :style => 'width:80px;' %>
+					<%= f.text_field :query, :class => 'search-query', :style => 'width:130px;' %>
 					<%= submit_tag t('view.general.search'), :class => 'btn' %>
 				<% end %>
-
-				<!--jqGrid-->
-				<table id="user_table"></table>
-				<div id = "user_paager"></div>
-				<!--Add Button-->
-				<a href="#" class="btn" onclick="addPrincipalToAcl()"><i class='icon-plus'></i> <%=t('view.node.permission.add_permission')%></a>
-
 			</div>
 		</div>
 	</div>
