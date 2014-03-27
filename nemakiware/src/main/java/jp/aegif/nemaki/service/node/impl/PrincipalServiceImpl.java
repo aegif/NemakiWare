@@ -21,6 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.service.node.impl;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -102,6 +103,18 @@ public class PrincipalServiceImpl implements PrincipalService {
 
 	@Override
 	public void createUser(User user) {
+		//UserID uniqueness
+		List<User> users = principalDaoService.getUsers();
+		List<String> userIds = new ArrayList<String>();
+		for(User u : users){
+			userIds.add(u.getId());
+		}
+
+		if(userIds.contains(user.getId())){
+			//TODO Create an Exception class?
+			log.error("userId=" + user.getUserId() + " already exists.");
+		}
+
 		principalDaoService.createUser(user);
 	}
 
@@ -117,6 +130,18 @@ public class PrincipalServiceImpl implements PrincipalService {
 
 	@Override
 	public void createGroup(Group group) {
+		//GroupID uniqueness
+		List<Group> groups = principalDaoService.getGroups();
+		List<String> groupIds = new ArrayList<String>();
+		for(Group g : groups){
+			groupIds.add(g.getId());
+		}
+
+		if(groupIds.contains(group.getId())){
+			//TODO Create an Exception class?
+			log.error("groupId=" + group.getGroupId() + " already exists.");
+		}
+
 		principalDaoService.createGroup(group);
 	}
 
