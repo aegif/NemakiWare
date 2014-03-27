@@ -274,10 +274,16 @@
     <!-- Pack: Delete tmp files -->
     <pack id="pack.delete.tmp" name="Delete tmp files" required="yes" hidden="true">
       <description></description>
-      <executable targetfile="$INSTALL_PATH/setup/install-util.jar" stage="postinstall" type="jar" keep="false">
+      <executable targetfile="$INSTALL_PATH/setup/install-util.jar" stage="postinstall" type="jar" keep="true">
         <args>
           <arg value="delete-tmp-files" />
           <arg value="$INSTALL_PATH/setup/tomcat" />
+        </args>
+      </executable>
+      <executable targetfile="$INSTALL_PATH/setup/install-util.jar" stage="postinstall" type="jar" keep="false">
+        <args>
+          <arg value="delete-tmp-files" />
+          <arg value="$INSTALL_PATH/setup/nemakishare" />
         </args>
       </executable>
     </pack>
