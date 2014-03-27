@@ -70,7 +70,7 @@ public class PrincipalServiceImpl implements PrincipalService {
 		Set<String> groupIds = new HashSet<String>();
 		List<Group> groups = getGroups();
 		for (Group g : groups) {
-			if ( cnotainsUserInGroup(userId, g) ) {
+			if ( containsUserInGroup(userId, g) ) {
 				groupIds.add(g.getGroupId());
 			}
 		}
@@ -78,14 +78,14 @@ public class PrincipalServiceImpl implements PrincipalService {
 		return groupIds;
 	}
 
-	private boolean cnotainsUserInGroup(String userId, Group group) {
+	private boolean containsUserInGroup(String userId, Group group) {
 		log.debug("$$ group:" + group.getName());
 		if ( group.getUsers().contains(userId))
 			return true;
 		for(String groupId: group.getGroups() ) {
 			log.debug("$$ subgroup: " + groupId);
 			Group g = this.getGroupById(groupId);
-			boolean result = cnotainsUserInGroup(userId, g);
+			boolean result = containsUserInGroup(userId, g);
 			if ( result ) return true;
 		}
 		return false;
