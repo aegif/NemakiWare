@@ -21,10 +21,12 @@
 package jp.aegif.nemaki.service.cmis.impl;
 
 import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.model.constant.NodeType;
 import jp.aegif.nemaki.service.cmis.AuthenticationService;
 import jp.aegif.nemaki.service.node.PrincipalService;
 
 import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.mindrot.jbcrypt.BCrypt;
@@ -50,6 +52,15 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 			}
 		}
 
+		// Check anonymous
+		String anonymousId = principalService.getAnonymous();
+		if(StringUtils.isNotBlank(anonymousId) && anonymousId.equals(userName)){
+			if(u != null){
+				log.warn(anonymousId + " should have not been registered in the database.");
+			}
+			return buildDummyAnonymousUser(anonymousId);
+		}
+
 		// failed
 		log.error("[userName=" + userName + ", password=" + password + "]" + "Authentication failed");
 		throw new CmisPermissionDeniedException("[userName=" + userName + "]" + "Authentication failed");
@@ -60,6 +71,14 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	 */
 	private boolean passwordMatches(String candidate, String hashed) {
 		return BCrypt.checkpw(candidate, hashed);
+	}
+
+	private User buildDummyAnonymousUser(String anonoymousId){
+		User anonymous = new User();
+		anonymous.setType(NodeType.USER.value());
+		anonymous.setUserId(anonoymousId);
+
+		return anonymous;
 	}
 
 	public void setPrincipalService(PrincipalService principalService) {
