@@ -32,8 +32,8 @@ import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Relationship;
-import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.VersionSeries;
+import jp.aegif.nemaki.model.constant.NemakiConstant;
 import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.cmis.PermissionService;
 import jp.aegif.nemaki.service.node.ContentService;
@@ -45,6 +45,7 @@ import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -73,14 +74,19 @@ public class PermissionServiceImpl implements PermissionService {
 	 *
 	 */
 	//TODO Merge arguments(acl, content)
+	//FIXME Refactor duplicate isAllowableBaseType
 	@Override
 	public Boolean checkPermission(CallContext callContext, String key, Acl acl,
 			String baseType, Content content) {
-		// Admin always pass a permission check
-		User admin = principalService.getAdmin();
-		if (callContext.getUsername().equals(admin.getUserId()))
-			return isAllowableBaseType(key, baseType, content);
 
+		// Admin always pass a permission check
+		CallContextImpl cci = (CallContextImpl) callContext;
+		Boolean _isAdmin = (Boolean) cci.get(NemakiConstant.CALL_CONTEXT_IS_ADMIN);
+		boolean isAdmin = (_isAdmin == null) ? false : _isAdmin;
+
+		if (isAdmin){
+			return isAllowableBaseType(key, baseType, content);
+		}
 
 		//PWC doesn't accept any actions from a non-owner user
 		//TODO admin can manipulate PWC even when it is checked out ?

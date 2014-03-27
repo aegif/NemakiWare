@@ -57,12 +57,9 @@ public class DefaultContextHandler extends BasicAuthCallContextHandler {
 		// Call superclass to get user and password via basic authentication.
 		Map<String, String> ctxMap = super.getCallContextMap(request);
 
-		if (null == ctxMap)
-			throw new CmisPermissionDeniedException("Authentication required");
-
-		WebApplicationContext context = WebApplicationContextUtils.getWebApplicationContext(request.getSession().getServletContext());
 
 		//clear latest change cache
+		WebApplicationContext context = WebApplicationContextUtils.getWebApplicationContext(request.getSession().getServletContext());
 		RequestDurationCacheBean rdc = context.getBean("requestDurationCache", RequestDurationCacheBean.class);
 		rdc.getLatestChangeCache().clear();
 

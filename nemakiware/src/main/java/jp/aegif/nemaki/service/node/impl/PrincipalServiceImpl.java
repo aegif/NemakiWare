@@ -47,6 +47,8 @@ public class PrincipalServiceImpl implements PrincipalService {
 
 	private NemakiPropertyManager propertyManager;
 	private PrincipalDaoService principalDaoService;
+	private String anonymous;
+	private String anyone;
 
 	@Override
 	public List<User> getUsers() {
@@ -149,11 +151,34 @@ public class PrincipalServiceImpl implements PrincipalService {
 		return false;
 	}
 
+	@Override
+	public String getAnonymous() {
+		return anonymous;
+	}
+
+	@Override
+	public boolean isAnonymous(String userId) {
+		return anonymous.equals(userId);
+	}
+
 	public void setPrincipalDaoService(PrincipalDaoService principalDaoService) {
 		this.principalDaoService = principalDaoService;
 	}
 
 	public void setPropertyManager(NemakiPropertyManager propertyManager) {
 		this.propertyManager = propertyManager;
+	}
+
+
+	public void setAnonymous(String anonymous) {
+		this.anonymous = anonymous;
+	}
+
+	public String getAnyone() {
+		return anyone;
+	}
+
+	public void setAnyone(String anyone) {
+		this.anyone = anyone;
 	}
 }

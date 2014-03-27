@@ -87,7 +87,30 @@ public interface PrincipalService {
 	 */
 	void deleteGroup(String groupId);
 
+	/**
+	 *  Get admin user
+	 * @return
+	 */
 	User getAdmin();
 
+	/**
+	 * Check if a given userId and password match admin
+	 * @param userId
+	 * @param password
+	 * @return
+	 */
 	boolean isAdmin(String userId, String password);
+
+	/**
+	 * Get anonymous Id(non-login user)
+	 * @return
+	 */
+	String getAnonymous();
+
+	/**
+	 * Check if a given userId match anonymous
+	 * @param userId
+	 * @return
+	 */
+	boolean isAnonymous(String userId);
 }

@@ -24,11 +24,14 @@ package jp.aegif.nemaki.repository;
 import java.math.BigInteger;
 import java.util.Map;
 
+import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.model.constant.NemakiConstant;
 import jp.aegif.nemaki.service.cmis.AuthenticationService;
 
 import org.apache.chemistry.opencmis.commons.impl.server.AbstractServiceFactory;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.server.CmisService;
+import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
 import org.apache.chemistry.opencmis.server.support.CmisServiceWrapper;
 
 /**
@@ -86,7 +89,10 @@ public class NemakiCmisServiceFactory extends AbstractServiceFactory {
 		wrapperService.getWrappedService().setCallContext(context);
 
 		//authentication
-		authenticationService.login(context.getUsername(), context.getPassword());
+		User user = authenticationService.login(context.getUsername(), context.getPassword());
+
+		//Set admin flag as Nemaki extension
+		((CallContextImpl)context).put(NemakiConstant.CALL_CONTEXT_IS_ADMIN, user.isAdmin());
 
 		return wrapperService;
 	}
@@ -103,9 +109,9 @@ public class NemakiCmisServiceFactory extends AbstractServiceFactory {
 	public void setNemakiRepository(NemakiRepository nemakiRepository) {
 		this.nemakiRepository = nemakiRepository;
 	}
-	
+
 	public void setRepositoryMap(RepositoryMap repositoryMap) {
 		this.repositoryMap = repositoryMap;
 	}
-	
+
 }
