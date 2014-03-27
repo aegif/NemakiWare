@@ -397,10 +397,25 @@ public class UserResource extends ResourceBase {
 		UserInfo userInfo = AuthenticationFilter.getUserInfo(httpRequest);
 
 		if(!userInfo.getUserId().equals(resoureId) &&
-				!principalService.isAdmin(userInfo.getUserId(), userInfo.getPassword()) ){
+				!isAdmin(userInfo.getUserId(), userInfo.getPassword()) ){
 			status = false;
 			addErrMsg(errMsg, ITEM_USER, ERR_NOTAUTHENTICATED);
 		}
 		return status;
+	}
+
+	private boolean isAdmin(String userId, String password) {
+		if(StringUtils.isBlank(userId) || StringUtils.isBlank(password)){
+			return false;
+		}
+
+		User user = principalService.getUserById(userId);
+		boolean isAdmin = (user.isAdmin() == null) ? false : user.isAdmin();
+		if(isAdmin){
+			//password check
+			boolean match = PasswordHasher.isCompared(password, user.getPasswordHash());
+			if(match) return true;
+		}
+		return false;
 	}
 }

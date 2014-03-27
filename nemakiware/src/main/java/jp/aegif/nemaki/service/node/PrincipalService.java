@@ -94,14 +94,6 @@ public interface PrincipalService {
 	User getAdmin();
 
 	/**
-	 * Check if a given userId and password match admin
-	 * @param userId
-	 * @param password
-	 * @return
-	 */
-	boolean isAdmin(String userId, String password);
-
-	/**
 	 * Get anonymous Id(non authenticated user)
 	 * @return
 	 */
