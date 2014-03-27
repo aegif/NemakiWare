@@ -71,9 +71,9 @@ class NodesController < ApplicationController
 
   def authenticate
     user = params[:user]
-    server = ActiveCMIS::Server.new(CONFIG['repository']['server_url'])
+    server = ActiveCMIS::Server.new(REPOSITORY_SERVER_URL)
     nemaki = server.authenticate(:basic, user[:id], user[:password])
-    repo = nemaki.repository(CONFIG['repository']['repository_id'])
+    repo = nemaki.repository(REPOSITORY_MAIN_ID)
     session[:nemaki_auth_info] = user
 
     redirect_to :action => 'explore'
@@ -102,20 +102,23 @@ class NodesController < ApplicationController
 
     begin
       @nemaki_repository.create(params[:node], params[:parent_id], cmis_type)
-      #TODO リダイレクトするのでエラーメッセージが戻らない
       addInfoMessage("message.node.success_text_create")
-      redirect_to_parent(explore_node_path(params[:parent_id]))
     rescue
-      #TODO 失敗時の処理
       addErrorMessage("message.node.error_text_create")
+    ensure
+      redirect_to_parent(explore_node_path(params[:parent_id]))
     end
-
-
   end
 
   def edit
     @node = @nemaki_repository.find(params[:id])
     @aspects = @nemaki_repository.get_aspects_with_attributes(@node)
+
+    type_attributes = @nemaki_repository.get_type_by_id(@node.object_type).attributes
+    @type = {}
+    type_attributes.each do |k,v|
+      @type[k] = v.to_json
+    end
     render :layout => 'popup'
   end
 
@@ -129,34 +132,33 @@ class NodesController < ApplicationController
         update_properties[bp['key']] = bp['value']
       end
     end
-=begin    
-    secondary_types = JSON.parse(params[:custom_properties])
-    update_properties['cmis:secondaryObjectTypeIds'] = Array.new
-    if !secondary_types.nil? && !secondary_types.empty?
-      secondary_types.each do |sec|
-        update_properties['cmis:secondaryObjectTypeIds'] << sec['id']
-        
-        sec_props = sec['properties']
-        sec_props.each do |sec_prop|
-          update_properties[sec_prop['key']] = sec_prop['value']
-        end
-      end
-    end
-=end
     update_aspects = @nemaki_repository.convert_input_to_aspects(node, JSON.parse(params[:custom_properties]))
 
     #TODO CMIS属性の更新でdiffがあるときのみupdateになっているか確認
-    @nemaki_repository.update(params[:id], update_properties, update_aspects)
-   
-    parent = @nemaki_repository.get_parent(node)
-    redirect_to_parent(explore_node_path(parent.id))  
+    begin
+      @nemaki_repository.update(params[:id], update_properties, update_aspects)
+      addInfoMessage("message.node.success_text_update")
+    rescue
+      addErrorMessage("message.node.error_text_update")
+    ensure
+      parent = @nemaki_repository.get_parent(node)
+      redirect_to_parent(explore_node_path(parent.id))
+    end
+
   end
 
   #新規バージョンのアップロード処理
   def upload
-    @nemaki_repository.upload(params[:id], params[:node])
-    node = @nemaki_repository.find(params[:id])
-    redirect_to :action => 'explore', :id => node.parent_id #TODO pass via params?
+    begin
+      @nemaki_repository.upload(params[:id], params[:node])
+      addInfoMessage("message.node.success_text_update")
+    rescue
+      addErrorMessage("message.node.error_text_update")
+    ensure
+      node = @nemaki_repository.find(params[:id])
+      parent = @nemaki_repository.get_parent(node)
+      redirect_to_parent(explore_node_path(parent.id))
+    end
   end
 
   def show
@@ -297,9 +299,9 @@ class NodesController < ApplicationController
 
     #Build CMIS SQL Query statement
     #NOTE: CMIS says CONTAINS() 'MAY' be allowed with AND.
-    statement_document = "SELECT * FROM cmis:document WHERE cmis:name = '" + q + "' OR CONTAINS('" + q +  "')"
+    statement_document = "SELECT * FROM cmis:document WHERE cmis:name LIKE '" + "%" + q + "%" + "' OR CONTAINS('" + q +  "')"
     @nodes = @nemaki_repository.search(statement_document)
-    statement_folder = "SELECT * FROM cmis:folder WHERE cmis:name = '" + q + "'"
+    statement_folder = "SELECT * FROM cmis:folder WHERE cmis:name LIKE '" + "%" + q + "%" + "'"
     @nodes = @nodes + @nemaki_repository.search(statement_folder)
 
     #Set site
@@ -326,20 +328,27 @@ class NodesController < ApplicationController
   end
 
   def destroy
-    if params[:id]
-      parent_id = @nemaki_repository.delete(params[:id])
-    end
-    
-    if params[:from_site_controller]
-      flash[:notice] = t('message.site.delete_success')
-      redirect_to :controller => 'sites', :action => 'index'
-    else
-      redirect_to :action => 'explore', :id => parent_id  
+    begin
+      if params[:id]
+        parent_id = @nemaki_repository.delete(params[:id])
+        addInfoMessage("message.node.success_text_update")
+      end
+    rescue
+        addErrorMessage("message.node.error_text_delete")
+    ensure
+      if params[:from_site_controller]
+        flash[:notice] = t('message.site.delete_success')
+        redirect_to :controller => 'sites', :action => 'index'
+      else
+        redirect_to :action => 'explore', :id => parent_id
+      end
     end
   end
 
   def edit_permission
     @node = @nemaki_repository.find(params[:id])
+    @parent = @nemaki_repository.get_parent(@node)
+    @permissions = @nemaki_repository.get_permissions
     render :layout => 'popup'
   end
 

@@ -22,13 +22,10 @@
 package jp.aegif.nemaki.service.cmis;
 
 import java.util.List;
-import java.util.Map;
 
+import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Content;
 
-import org.apache.chemistry.opencmis.commons.data.Acl;
-import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
-import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 
 /**
@@ -39,18 +36,6 @@ public interface PermissionService {
 	public static final String CMIS_READ_PERMISSION = "cmis:read";
 	public static final String CMIS_WRITE_PERMISSION = "cmis:write";
 	public static final String CMIS_ALL_PERMISSION = "cmis:all";
-	
-	
-	public List<String> getPermissions();
-	/**
-	 * Get the list of existing permissions. For instance: read, write, all
-	 */
-	public List<PermissionDefinition> getPermissionDefinitions();
-
-	/**
-	 * Mapping permission group to elemental permission (repository static)
-	 */
-	public Map<String, PermissionMapping> getPermissionMap();
 
 	/**
 	 * permissionDenied Exception check 
@@ -65,5 +50,5 @@ public interface PermissionService {
 	 * @param contents
 	 * @return
 	 */
-	public List<Content> getFiltered(CallContext callContext,List<Content>contents);
+	public <T> List<T> getFiltered(CallContext callContext,List<T>contents);
 }

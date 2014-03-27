@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public Licensealong with NemakiWare. 
+ *
+ * You should have received a copy of the GNU General Public Licensealong with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -30,33 +30,32 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 
+import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.model.constant.DomainType;
-import jp.aegif.nemaki.repository.NemakiRepositoryInfoImpl;
-import jp.aegif.nemaki.repository.TypeManager;
+import jp.aegif.nemaki.repository.info.NemakiRepositoryInfoImpl;
+import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.cmis.PermissionService;
 import jp.aegif.nemaki.service.node.ContentService;
+import jp.aegif.nemaki.service.node.PrincipalService;
 import jp.aegif.nemaki.util.DataUtil;
-import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.PropertyUtil;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
-import org.apache.chemistry.opencmis.commons.data.Ace;
-import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
-import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.data.Properties;
-import org.apache.chemistry.opencmis.commons.data.PropertyBoolean;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.data.PropertyDecimal;
-import org.apache.chemistry.opencmis.commons.data.PropertyId;
 import org.apache.chemistry.opencmis.commons.data.PropertyString;
 import org.apache.chemistry.opencmis.commons.definitions.Choice;
 import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
+import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDecimalDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyIntegerDefinition;
@@ -80,10 +79,8 @@ import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedExce
 import org.apache.chemistry.opencmis.commons.exceptions.CmisStreamNotSupportedException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisUpdateConflictException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisVersioningException;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
-import org.apache.chemistry.opencmis.server.impl.browser.RepositoryService.GetLastResult;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang.StringUtils;
@@ -99,9 +96,12 @@ public class ExceptionServiceImpl implements ExceptionService,
 	private ContentService contentService;
 	private PermissionService permissionService;
 	private NemakiRepositoryInfoImpl repositoryInfo;
+	private PrincipalService principalService;
+	private PropertyUtil propertyUtil;
+
 	private static final Log log = LogFactory
 			.getLog(ExceptionServiceImpl.class);
-	
+
 	private final BigInteger HTTP_STATUS_CODE_400 = BigInteger.valueOf(400);
 	private final BigInteger HTTP_STATUS_CODE_403 = BigInteger.valueOf(403);
 	private final BigInteger HTTP_STATUS_CODE_404 = BigInteger.valueOf(404);
@@ -109,9 +109,6 @@ public class ExceptionServiceImpl implements ExceptionService,
 	private final BigInteger HTTP_STATUS_CODE_409 = BigInteger.valueOf(409);
 	private final BigInteger HTTP_STATUS_CODE_500 = BigInteger.valueOf(500);
 
-	static final String FILEPATH_PROPERTIESFILE = "nemakiware.properties";
-	static final String PROP_PRINCIPAL_ADMIN_ID = "principal.admin.id";
-	
 	@Override
 	public void invalidArgument(String msg) {
 		throw new CmisInvalidArgumentException(msg, HTTP_STATUS_CODE_400);
@@ -148,8 +145,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void invalidArgumentRootFolder(Folder folder) {
-		if (folder.isRoot())
+	public void invalidArgumentRootFolder(Content content) {
+		if (propertyUtil.isRoot(content))
 			invalidArgument("Cannot specify the root folder as an input parameter");
 	}
 
@@ -337,27 +334,20 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	/**
-	 * 
+	 *
 	 */
 	// TODO Show also stack errors
 	@Override
 	public void permissionDenied(CallContext context, String key,
-			ObjectData object) {
-		Content content = contentService.getContent(object.getId());
-		permissionDeniedInternal(context, key, object.getAcl(),
-				getBaseTypeId(object.getProperties()), content);
-	}
-
-	@Override
-	public void permissionDenied(CallContext context, String key,
 			Content content) {
 		String baseTypeId = content.getType();
-		Acl acl = contentService.convertToCmisAcl(content, false);
+		Acl acl = contentService.calculateAcl(content);
 		permissionDeniedInternal(context, key, acl, baseTypeId, content);
 	}
 
 	private void permissionDeniedInternal(CallContext callContext, String key,
 			Acl acl, String baseTypeId, Content content) {
+
 		if (!permissionService.checkPermission(callContext, key, acl,
 				baseTypeId, content)) {
 			String msg = "Permission Denied!";
@@ -367,22 +357,16 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void perimissionAdmin(CallContext context) {
-		String admin = new String();
-		try {
-			PropertyManager propertyManager = new PropertyManager(FILEPATH_PROPERTIESFILE);
-			admin = propertyManager.readHeadValue(PROP_PRINCIPAL_ADMIN_ID);
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-		
-		if (!admin.equals(context.getUsername())) {
+		User admin = principalService.getAdmin();
+
+		if (!admin.getUserId().equals(context.getUsername())) {
 			String msg = "This operation if permitted only for administrator";
 			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
 		}
 	}
 
 	/**
-	 * 
+	 *
 	 * NOTE:Check the condition before calling this method
 	 */
 	@Override
@@ -390,7 +374,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 		throw new CmisConstraintException(buildMsgWithId(msg, objectId),
 				HTTP_STATUS_CODE_409);
 	}
-	
+
 	private void constraint(String msg) {
 		throw new CmisConstraintException(msg, HTTP_STATUS_CODE_409);
 	}
@@ -398,7 +382,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 	@Override
 	public void constraintBaseTypeId(Properties properties,
 			BaseTypeId baseTypeId) {
-		String objectTypeId = DataUtil.getTypeId(properties);
+		String objectTypeId = DataUtil.getObjectTypeId(properties);
 		TypeDefinition td = typeManager.getTypeDefinition(objectTypeId);
 
 		if (!td.getBaseTypeId().equals(baseTypeId))
@@ -411,9 +395,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 	public void constraintAllowedChildObjectTypeId(Folder folder,
 			Properties childProperties) {
 		List<String> allowedTypes = folder.getAllowedChildTypeIds();
+
+		//If cmis:allowedCHildTypeIds is not set, all types are allowed.
 		if (!CollectionUtils.isEmpty(allowedTypes)) {
-			// NOTE: Elements of allowedTypes must be like "cmis:folder", not
-			// "folder"
 			String childType = DataUtil.getIdProperty(childProperties,
 					PropertyIds.OBJECT_TYPE_ID);
 			if (!allowedTypes.contains(childType)) {
@@ -421,7 +405,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 						PropertyIds.OBJECT_ID);
 				constraint(
 						objectId,
-						"cmis:objectTypeId property value is NOT in the list of AllowedChildObjectTypeIds of the parent-folder");
+						"cmis:objectTypeId=" + childType + " is not in the list of AllowedChildObjectTypeIds of the parent folder");
 			}
 		}
 	}
@@ -431,7 +415,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 			Properties properties, String objectId) {
 		Map<String, PropertyDefinition<?>> propertyDefinitions = typeDefinition
 				.getPropertyDefinitions();
-		
+
 		//Adding secondary types and its properties MAY be done in the same operation
 		List<String> secIds = DataUtil.getIdListProperty(properties, PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
 		if(CollectionUtils.isNotEmpty(secIds)){
@@ -444,7 +428,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 				}
 			}
 		}
-		
+
 		for (PropertyData<?> _pd : properties.getPropertyList()) {
 			PropertyData<T> pd = (PropertyData<T>) _pd;
 			PropertyDefinition<T> propertyDefinition = (PropertyDefinition<T>) propertyDefinitions
@@ -459,7 +443,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 				constraint(objectId, "An required property is not provided!");
 
 			// Check choices
-			constaintChoices(propertyDefinition, pd, objectId);
+			constraintChoices(propertyDefinition, pd, objectId);
 
 			// Check min/max length
 			switch (propertyDefinition.getPropertyType()) {
@@ -477,7 +461,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 		}
 	}
 
-	private <T> void constaintChoices(PropertyDefinition<T> definition,
+	private <T> void constraintChoices(PropertyDefinition<T> definition,
 			PropertyData<T> propertyData, String objectId) {
 		// Check OpenChoice
 		boolean openChoice = (definition.isOpenChoice() == null) ? true : false;
@@ -485,22 +469,31 @@ public class ExceptionServiceImpl implements ExceptionService,
 			return;
 
 		List<T> data = propertyData.getValues();
+		//null or blank String value should be permitted within any choice list
+		if(CollectionUtils.isEmpty(data)) return;
+
 		List<Choice<T>> choices = definition.getChoices();
 		if (CollectionUtils.isEmpty(choices) || CollectionUtils.isEmpty(data))
 			return;
 
 		boolean included = false;
-
 		if (definition.getCardinality() == Cardinality.SINGLE) {
 			T d = data.get(0);
-			for (Choice<T> choice : choices) {
-				List<T> value = choice.getValue();
-				T v = value.get(0);
-				if (v.equals(d)) {
-					included = true;
-					break;
+
+			if(d instanceof String && StringUtils.isBlank((String)d)
+					|| d == null){
+				return;
+			}else{
+				for (Choice<T> choice : choices) {
+					List<T> value = choice.getValue();
+					T v = value.get(0);
+					if (v.equals(d)) {
+						included = true;
+						break;
+					}
 				}
 			}
+
 		} else if (definition.getCardinality() == Cardinality.MULTI) {
 			List<T> values = new ArrayList<T>();
 			for (Choice<T> choice : choices) {
@@ -511,8 +504,13 @@ public class ExceptionServiceImpl implements ExceptionService,
 				if (values.contains(d)) {
 					included = true;
 				} else {
-					included = false;
-					break;
+					if(d instanceof String && StringUtils.isBlank((String)d)
+							|| d == null){
+						included = true;
+					}else{
+						included = false;
+						break;
+					}
 				}
 			}
 		}
@@ -608,7 +606,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void constraintCotrollableAcl(TypeDefinition typeDefinition,
-			Acl addAces, Acl removeAces, Properties properties) {
+			org.apache.chemistry.opencmis.commons.data.Acl addAces, org.apache.chemistry.opencmis.commons.data.Acl removeAces, Properties properties) {
 		// TODO ignore removeAces?
 		boolean aclIsEmpty = (addAces == null)
 				|| (addAces != null && CollectionUtils.isEmpty(addAces
@@ -620,19 +618,23 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void constraintPermissionDefined(Acl acl, String objectId) {
+	public void constraintPermissionDefined(org.apache.chemistry.opencmis.commons.data.Acl acl, String objectId) {
 		boolean aclIsEmpty = (acl == null)
 				|| (acl != null && CollectionUtils.isEmpty(acl.getAces())) ? true
 				: false;
-		List<String> nemakiPermissions = permissionService.getPermissions();
+		List<PermissionDefinition> definitions = repositoryInfo.getAclCapabilities().getPermissions();
+		List<String> definedIds = new ArrayList<String>();
+		for(PermissionDefinition pdf : definitions){
+			definedIds.add(pdf.getId());
+		}
 
 		if (!aclIsEmpty) {
-			for (Ace ace : acl.getAces()) {
+			for (org.apache.chemistry.opencmis.commons.data.Ace ace : acl.getAces()) {
 				List<String> permissions = ace.getPermissions();
 				for (String p : permissions) {
-					if (!nemakiPermissions.contains(p)) {
+					if (!definedIds.contains(p)) {
 						constraint(objectId,
-								"A provided ACE includes a permission not supported by the repository");
+								"A provided ACE includes an unsupported permission");
 					}
 				}
 			}
@@ -643,20 +645,24 @@ public class ExceptionServiceImpl implements ExceptionService,
 	public void constraintAllowedSourceTypes(
 			RelationshipTypeDefinition relationshipTypeDefinition,
 			Content source) {
-		if (!relationshipTypeDefinition.getAllowedSourceTypeIds().contains(
-				(source.getObjectType())))
-			constraint(source.getId(),
-					"The source object's type is not allowed for the relationship");
+		List<String> allowed = relationshipTypeDefinition.getAllowedSourceTypeIds();
+		if(CollectionUtils.isNotEmpty(allowed)){
+			if (!allowed.contains((source.getObjectType())))
+				constraint(source.getId(),
+						"The source object's type is not allowed for the relationship");
+		}
 	}
 
 	@Override
 	public void constraintAllowedTargetTypes(
 			RelationshipTypeDefinition relationshipTypeDefinition,
 			Content target) {
-		if (!relationshipTypeDefinition.getAllowedTargetTypeIds().contains(
-				target.getObjectType()))
-			constraint(target.getId(),
-					"The target object's type is not allowed for the relationship");
+		List<String> allowed = relationshipTypeDefinition.getAllowedTargetTypeIds();
+		if(CollectionUtils.isNotEmpty(allowed)){
+			if (!allowed.contains(target.getObjectType()))
+				constraint(target.getId(),
+						"The target object's type is not allowed for the relationship");
+		}
 	}
 
 	@Override
@@ -672,15 +678,32 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void constraintAlreadyCheckedOut(Document document) {
-		VersionSeries vs = contentService.getVersionSeries(document
-				.getVersionSeriesId());
+		VersionSeries vs = contentService.getVersionSeries(document);
 		if (vs.isVersionSeriesCheckedOut()) {
-			if (!(document.isPrivateWorkingCopy() && repositoryInfo
-					.getCapabilities().isPwcUpdatableSupported())) {
+			if (!(document.isPrivateWorkingCopy())) {
 				constraint(document.getId(),
-						"The version series is alredy checked out");
+						"The version series is already checked out");
 			}
 		}
+	}
+
+	@Override
+	public void constraintUpdateWhenCheckedOut(String currentUserId,
+			Document document) {
+		VersionSeries vs = contentService.getVersionSeries(document);
+		if (vs.isVersionSeriesCheckedOut()) {
+			if(document.isPrivateWorkingCopy()){
+				//Can update by only the use who has checked it out
+				String whoCheckedOut = vs.getVersionSeriesCheckedOutBy();
+				if(!currentUserId.equals(whoCheckedOut)){
+					constraint(document.getId(), "This private working copy can be modified only by the user who has checked it out. ");
+				}
+			}else{
+				//All versions except for PWC are locked.
+				constraint(document.getId(), "All versions except for PWC are locked when checked out.");
+			}
+		}
+
 	}
 
 	@Override
@@ -705,7 +728,16 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void constaintOnlyLeafTypeDefinition(String objectTypeId) {
+	public void constraintContentStreamRequired(DocumentTypeDefinition typeDefinition, ContentStream contentStream){
+		if(ContentStreamAllowed.REQUIRED.equals(typeDefinition.getContentStreamAllowed())){
+			if(contentStream == null || contentStream.getStream() == null){
+				constraint("[typeId=" + typeDefinition.getId() + "]This document type does not allow no content stream");
+			}
+		}
+	}
+
+	@Override
+	public void constraintOnlyLeafTypeDefinition(String objectTypeId) {
 		TypeDefinitionContainer tdc = typeManager.getTypeById(objectTypeId);
 		if (!CollectionUtils.isEmpty(tdc.getChildren())) {
 			String msg = "Cannot delete a type definition which has sub types"
@@ -752,7 +784,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 	public  void constraintUpdatePropertyDefinition(PropertyDefinition<?> update, PropertyDefinition<?>old) {
 		constraintUpdatePropertyDefinitionHelper(update,old);
 	}
-		 
+
 	private  <T> PropertyDefinition<T> constraintUpdatePropertyDefinitionHelper(
 			PropertyDefinition<T> update, PropertyDefinition<?>old) {
 		String msg = "";
@@ -762,11 +794,11 @@ public class ExceptionServiceImpl implements ExceptionService,
 		if(!old.isInherited().equals(update.isInherited())){
 			msg += "'inherited' cannot be modified";
 		}
-		
+
 		if(typeManager.getSystemPropertyIds().contains(update.getId())){
 			msg += "CMIS-defined property definition cannot be modified";
 		}
-		
+
 		if (Boolean.FALSE.equals(old.isRequired())
 				&& Boolean.TRUE.equals(update.isRequired())) {
 			msg += "'required' cannot be modified from Optional to Required";
@@ -778,13 +810,13 @@ public class ExceptionServiceImpl implements ExceptionService,
 			msg += "'openChoice' cannot be modified from true to false";
 			constraint(msg);
 		}
-		
+
 		if (Boolean.FALSE.equals(update.isOpenChoice())) {
 			constraintChoicesRestriction(update, old);
 		}
-		
+
 		constraintRestrictedValidation(update, old);
-		
+
 		if (!old.getPropertyType().equals(update.getPropertyType())) {
 			msg += "'property type' cannot be modified";
 			constraint(msg);
@@ -796,10 +828,10 @@ public class ExceptionServiceImpl implements ExceptionService,
 		}
 		return update;
 	}
-	
+
 	private void constraintChoicesRestriction(PropertyDefinition<?>update,PropertyDefinition<?>old){
 		 String msg = update.getId() + ":";
-		 
+
 		List<?> updateValues = flattenChoiceValues(update.getChoices());
 		List<?> oldValues = flattenChoiceValues(old.getChoices());
 		if (!updateValues.containsAll(oldValues)) {
@@ -807,7 +839,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 			constraint(msg);
 		}
 	}
-	
+
 	private <T> List<T> flattenChoiceValues(List<Choice<T>> choices) {
 		if (CollectionUtils.isEmpty(choices))
 			return null;
@@ -861,7 +893,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 		// When minValue is restricted, throw an error
 		maxRestriction(_update.getMaxValue(), _old.getMaxValue(), _update.getId(), null);
 	}
-	
+
 	private void constraintRestrictedIntegerValidation(
 			PropertyDefinition<?> update, PropertyDefinition<?> old) {
 		PropertyIntegerDefinition _update = (PropertyIntegerDefinition) update;
@@ -900,7 +932,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 			constraint(msg);
 		}
 	}
-	
+
 	private void maxRestriction(Comparable update, Comparable old, String propertyId, PropertyType propertyType) {
 		// When minValue is restricted, throw an error
 		boolean flag = false;
@@ -928,12 +960,12 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void constraintQueryName(PropertyDefinition<?> propertyDefinition) {
-		
+
 		String msg = propertyDefinition.getId() + ":";
 		String queryName = propertyDefinition.getQueryName();
 
 		if(StringUtils.isEmpty(queryName)) constraint(msg + "'queryName' is null");
-		
+
 		final String space = " ";
 		final String comma = ",";
 		final String dubleQuotation = "\"";
@@ -942,8 +974,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 		final String period = "\\.";
 		final String openParenthesis = "\\(";
 		final String closeParenthesis = "\\)";
-		
-		if(queryName.matches(buildContainRegEx(space)) 
+
+		if(queryName.matches(buildContainRegEx(space))
 		|| queryName.matches(buildContainRegEx(comma))
 		|| queryName.matches(buildContainRegEx(dubleQuotation))
 		|| queryName.matches(buildContainRegEx(singleQuotaion))
@@ -959,12 +991,30 @@ public class ExceptionServiceImpl implements ExceptionService,
 	private String buildContainRegEx(String contained){
 		return ".*" + contained + ".*";
 	}
-	
+
+	@Override
+	public void constraintContentStreamDownload(Document document){
+		DocumentTypeDefinition documentTypeDefinition = (DocumentTypeDefinition) typeManager.getTypeDefinition(document);
+		ContentStreamAllowed csa = documentTypeDefinition.getContentStreamAllowed();
+		if(ContentStreamAllowed.NOTALLOWED == csa ||
+			ContentStreamAllowed.ALLOWED == csa && StringUtils.isBlank(document.getAttachmentNodeId())){
+			constraint(document.getId(), "This document has no ContentStream. getContentStream is not supported.");
+		}
+	}
+
+	@Override
+	public void constraintRenditionStreamDownload(Content content, String streamId){
+		List<String> renditions = content.getRenditionIds();
+		if(CollectionUtils.isEmpty(renditions) || !renditions.contains(streamId)){
+			constraint(content.getId(), "This document has no rendition specified with " + streamId);
+		}
+	}
+
 	@Override
 	public void constraintImmutable(Document document,
 			TypeDefinition typeDefinition) {
 		Boolean defaultVal = (Boolean)typeManager.getSingleDefaultValue(PropertyIds.IS_IMMUTABLE, typeDefinition.getId());
-		
+
 		boolean flag = false;
 		if(document.isImmutable() == null){
 			if(defaultVal != null && defaultVal){
@@ -975,9 +1025,24 @@ public class ExceptionServiceImpl implements ExceptionService,
 				flag = true;
 			}
 		}
-		
+
 		if(flag){
 			constraint(document.getId(), "Immutable document cannot be updated/deleted");
+		}
+	}
+
+	@Override
+	public void constraintPropertyDefinition(
+			TypeDefinition typeDefinition,
+			PropertyDefinition<?> propertyDefinition) {
+
+		String typeId = typeDefinition.getId();
+		String propertyId = propertyDefinition.getId();
+
+		if(propertyDefinition.isOrderable()
+				&& propertyDefinition.getCardinality() == Cardinality.MULTI){
+			String msg = DataUtil.buildPrefixTypeProperty(typeId, propertyId) + "PropertyDefinition violates the specification";
+			constraint(msg);
 		}
 	}
 
@@ -1008,7 +1073,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	/**
-	 * 
+	 *
 	 */
 	@Override
 	public void versioning(Document doc) {
@@ -1034,7 +1099,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void updateConflict(Content content, Holder<String> changeToken) {
-		int latestOfContent = content.getChangeToken();
+		long latestOfContent = content.getChangeToken();
 
 		if ((changeToken == null || changeToken.getValue() == null)
 				&& latestOfContent != 0) {
@@ -1061,13 +1126,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 			objectId = "";
 		return msg + " [cmis:objectId = " + objectId + "]";
 	}
-	
+
 	private String getObjectId(Properties properties) {
 		return DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID);
-	}
-
-	private String getBaseTypeId(Properties properties) {
-		return DataUtil.getIdProperty(properties, PropertyIds.BASE_TYPE_ID);
 	}
 
 	/**
@@ -1094,4 +1155,11 @@ public class ExceptionServiceImpl implements ExceptionService,
 		this.repositoryInfo = repositoryInfo;
 	}
 
+	public void setPrincipalService(PrincipalService principalService) {
+		this.principalService = principalService;
+	}
+
+	public void setPropertyUtil(PropertyUtil propertyUtil) {
+		this.propertyUtil = propertyUtil;
+	}
 }

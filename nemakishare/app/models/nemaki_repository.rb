@@ -29,16 +29,16 @@ require 'active_cmis_custom'
 
 class NemakiRepository
   def initialize(auth_info_param=nil, logger=nil)
-    @auth_info = auth_info_param
-    @server = ActiveCMIS::Server.new(CONFIG['repository']['server_url'], logger).authenticate(:basic, @auth_info[:id], @auth_info[:password])
-    @repo = @server.repository(CONFIG['repository']['repository_id'], [:basic, @auth_info[:id], @auth_info[:password] ])
+    @auth_info = auth_info_param 
+    @server = ActiveCMIS::Server.new(REPOSITORY_SERVER_URL, logger).authenticate(:basic, @auth_info[:id], @auth_info[:password])
+    @repo = @server.repository(REPOSITORY_MAIN_ID, [:basic, @auth_info[:id], @auth_info[:password] ])
     @logger = logger
   end
 
   def reset_repository
     @repo = nil
     @server.clear_repositories
-    @repo = @server.repository(CONFIG['repository']['repository_id'])
+    @repo = @server.repository(REPOSITORY_MAIN_ID)
   end
 
   ########################################
@@ -548,18 +548,16 @@ class NemakiRepository
     if acl_param
       acl_array = JSON.parse(acl_param)
 
-      #Extract ADD/Update ACEs
-      #TODO validation for nil
-      removePrincipals = extract_remove_principals(local_entries, acl_array)
-      #grantAces = extract_grant_aces(local_entries, acl_array)
-
-      #Revoke permissions
-      removePrincipals.each do |rp|
-        acl.revoke_all_permissions(rp)
-      end
-
-      acl_array.each do |ga|
-        acl.grant_permission(ga['principal'], ga['permissions'])
+      #Revoke all permissions and rewrite a new complete ACL
+      #(As OpenCMIS AtomPub demands)
+      acl.revoke_all_users
+      acl_array.each do |ace|
+        permissions = ace['permissions']
+        granted = permissions.select { |k, v| v == "True"}
+        #ActiveCMIS grant_permission take one permission each time
+        granted.keys.each do |g|
+          acl.grant_permission(ace['principal'], g)
+        end
       end
     end
 
@@ -567,7 +565,6 @@ class NemakiRepository
     inheritance_flg = (inheritance == "true") ? true : false
 
     #Set acl data
-    data = acl.data
     #TODO Enable to switch "inherited" flag from the client
     exts = acl.set_extension(CONFIG['repository']['acl_inheritance_namespace'], "inherited", {}, inheritance_flg)
     xml = exts[0].to_xml
@@ -618,8 +615,8 @@ class NemakiRepository
     file = upload_info[:file]
     if !file.nil?
       obj.set_content_stream({:file => file.original_filename, :data => file.read, :mime_type => file.content_type, :overwrite => true})
+      obj.save
     end
-    obj.save
   end
 
   def delete(id)
@@ -646,11 +643,9 @@ class NemakiRepository
 
   def get_parent(node)
     if !node.is_root?
-      #obj = @repo.object_by_id(node.id)
-      obj = get_cmis_object(node)  
-      parent_obj = obj.parent_folders.first
-      attr = extract_attr(parent_obj.attributes, nil)
-      parent = Node.new(attr)
+      parents = @repo.object_by_id(node.id).parent_folders
+      parent = parents[0]
+      cast_from_cmis_object(parent)
     end
   end
 
@@ -686,6 +681,18 @@ class NemakiRepository
   #Change log
   ########################################
 
+  def register_latest_change_token
+    lct = LatestChangeToken.new(:token => "")
+    success = lct.save
+    if success
+      puts "Create latest change token"
+    else
+      puts "Failed to create latest change token"
+    end
+    
+    lct
+  end
+
   #
   #Retrieve change log from CMIS server and Cache them into local DB
   #
@@ -693,18 +700,29 @@ class NemakiRepository
     reset_repository
 
     #Prepare input parameters
-    file_path = "#{Rails.root}/config/latest_change_token.yml"
-    yml = YAML.load_file(file_path)
-    latest_token = yml[:token]
+    
+    #Get latest change token from DB
+    if LatestChangeToken.exists?
+      lct = LatestChangeToken.first
+    else
+      lct = register_latest_change_token
+    end
 
+    if lct.nil? || lct.token.blank?
+      latest_token = ""
+    else
+      latest_token = lct.token
+    end
+    
+    #CMIS default parameters    
     params = {'includeAcl' => true, 'includeProperties' => true}
-
-    if !force && !latest_token.nil?
+    
+    if !force && !latest_token.blank?
       if @repo.latest_changelog_token == latest_token
       #TODO logging: puts 'do nothing because there is no change'
-      return
+        return
       else
-        params['changeLogToken'] = latest_token.to_i
+        params['changeLogToken'] = latest_token
       end
     end
 
@@ -712,7 +730,7 @@ class NemakiRepository
     changes = @repo.changes params
 
     if changes.empty?
-    return
+      return
     else
 
       first = changes.first
@@ -781,15 +799,16 @@ class NemakiRepository
       caches.each do |c|
         puts "[ChangeLog Subscription]" + c.objectId + ":" + c.change_type
         c.save
-      end
+      end  
     end
 
     #Update latestChangeToken
-    yml[:token]  = @repo.latest_changelog_token
-    yml[:timestamp] = Time.now.instance_eval { '%s.%03d' % [strftime('%Y/%m/%d %H:%M:%S'), (usec / 1000.0).round] }
-    open(file_path, "w") do |f|
-      YAML.dump(yml,f)
+    _lct = @repo.latest_changelog_token
+    if _lct.present?
+      puts "Update latest change token to #{_lct}"
+      lct.token = _lct  
     end
+    lct.save
   end
 
   def get_site_by_node_path(node_path)
@@ -886,7 +905,7 @@ class NemakiRepository
   #Return an array of users: [{user1_hash}, {users2_hash},...]
   def get_users
     #FIXME URI shouln't be hard-coded
-    users_json = RestClient.get CONFIG['repository']['user_rest_url'] + 'list'
+    users_json = RestClient.get USER_REST_URL + 'list'
     JSON.parse(users_json)['users']
   end
 
@@ -910,25 +929,25 @@ class NemakiRepository
   end
 
   def get_user_by_id(id)
-    resource = RestClient::Resource.new(CONFIG['repository']['user_rest_url'] + 'show',@auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(USER_REST_URL + 'show',@auth_info[:id], @auth_info[:password])
     json = resource[id].get
     JSON.parse(json)
   end
 
   def delete_user(id)
-    resource = RestClient::Resource.new(CONFIG['repository']['user_rest_url'] + 'delete', @auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(USER_REST_URL + 'delete', @auth_info[:id], @auth_info[:password])
     json = resource[id].delete
     JSON.parse(json)
   end
 
   def delete_group(id)
-    resource = RestClient::Resource.new(CONFIG['repository']['user_rest_url'] +  'delete',@auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(GROUP_REST_URL +  'delete',@auth_info[:id], @auth_info[:password])
     json = resource[id].delete
     JSON.parse(json)
   end
 
   def search_users(id)
-    resource = RestClient::Resource.new(CONFIG['repository']['user_rest_url'] + 'search',@auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(USER_REST_URL + 'search',@auth_info[:id], @auth_info[:password])
     json = resource.get({:params => {:query => id}})
     result = JSON.parse(json)
     if result['status'] == 'success'
@@ -939,7 +958,7 @@ class NemakiRepository
   end
 
   def search_groups(id)
-    resource = RestClient::Resource.new(CONFIG['repository']['group_rest_url'] + 'search',@auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(GROUP_REST_URL + 'search',@auth_info[:id], @auth_info[:password])
     json = resource.get({:params => {:query => id}})
     result = JSON.parse(json)
     if result['status'] == 'success'
@@ -950,39 +969,39 @@ class NemakiRepository
   end
 
   def get_group_by_id(id)
-    resource = RestClient::Resource.new(CONFIG['repository']['group_rest_url'] + 'show',@auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(GROUP_REST_URL + 'show',@auth_info[:id], @auth_info[:password])
     json = resource[id].get
     JSON.parse(json)
   end
 
   def create_group(group)
-    resource = RestClient::Resource.new(CONFIG['repository']['group_rest_url'] + 'create', @auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(GROUP_REST_URL + 'create', @auth_info[:id], @auth_info[:password])
     json = resource[group.id].post({"name" => group.name,}, :content_type => 'application/x-www-form-urlencoded', :accept => :json)
     JSON.parse(json)
   end
 
   def create_user(user)
-    resource = RestClient::Resource.new(CONFIG['repository']['user_rest_url'] + 'create', @auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(USER_REST_URL + 'create', @auth_info[:id], @auth_info[:password])
     json = resource[user.id].post({"name" => user.name, "firstName" => user.first_name, "lastName" => user.last_name, "email" => user.email, "password" => user.password}, :content_type => 'application/x-www-form-urlencoded', :accept => :json)
     JSON.parse(json)
   end
 
   def update_user(user)
-    resource = RestClient::Resource.new(CONFIG['repository']['user_rest_url'] + 'update', @auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(USER_REST_URL + 'update', @auth_info[:id], @auth_info[:password])
     params = {"name" => user.name, "firstName" => user.first_name, "lastName" => user.last_name, "email" => user.email}
     json = resource[user.id].put(params, :content_type => 'application/x-www-form-urlencoded', :accept => :json)
     JSON.parse(json)
   end
 
   def update_user_password(user)
-    resource = RestClient::Resource.new(CONFIG['repository']['user_rest_url'] + 'updatePassword', @auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(USER_REST_URL + 'updatePassword', @auth_info[:id], @auth_info[:password])
     params = {"newPassword" => user.password}
     json = resource[user.id].put(params, :content_type => 'application/x-www-form-urlencoded', :accept => :json)
     JSON.parse(json)
   end
 
   def update_group_members(apiType, group, users=[], groups=[])
-    resource = RestClient::Resource.new(CONFIG['repository']['group_rest_url'], @auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(GROUP_REST_URL, @auth_info[:id], @auth_info[:password])
     userjson = users.to_json
     params = {"users" => users.to_json, "groups" => groups.to_json}
     url = resource[apiType][group.id]
@@ -992,7 +1011,7 @@ class NemakiRepository
   end
 
   def update_group(group)
-    resource = RestClient::Resource.new(CONFIG['repository']['group_rest_url'] + 'update', @auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(GROUP_REST_URL + 'update', @auth_info[:id], @auth_info[:password])
     params = {"name" => group.name}
     json = resource[group.id].put(params, :content_type => 'application/x-www-form-urlencoded', :accept => :json)
     JSON.parse(json)
@@ -1001,5 +1020,21 @@ class NemakiRepository
   def is_admin_role(user_id)
     user_id == 'admin'
   end
+
+  def create_types(data)
+    #TODO authentication
+    resource = RestClient::Resource.new(TYPE_REST_URL + "register", @auth_info[:id], @auth_info[:password])
+    json = resource.post :data => data
+    JSON.parse(json)
+  end
+
+  def get_type_by_id(type_id)
+    @repo.type_by_id(type_id)
+  end
+
+  def get_permissions
+    permissions = @repo.permissions
+  end
+
 #Class end
 end

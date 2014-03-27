@@ -1,141 +1,135 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-	<modelVersion>4.0.0</modelVersion>
-	<groupId>NemakiSolr</groupId>
-	<artifactId>NemakiSolr</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
-	<packaging>war</packaging>
-	<name>NemakiSolr</name>
-	<description>Solr for Nemaki</description>
 
-	<properties>
-		<org.apache.chemistry.opencmis.version>0.10.0</org.apache.chemistry.opencmis.version>
-	</properties>
-
-	<dependencies>
-		<dependency>
-			<groupId>org.apache.solr</groupId>
-			<artifactId>solr-core</artifactId>
-			<version>4.1.0</version>
-		</dependency>
-		<dependency>
-			<groupId>org.apache.solr</groupId>
-			<artifactId>solr-solrj</artifactId>
-			<version>4.1.0</version>
-		</dependency>
-		<dependency>
-			<groupId>org.apache.solr</groupId>
-			<artifactId>solr-cell</artifactId>
-			<version>4.1.0</version>
-		</dependency>
-		<dependency>
-			<groupId>org.quartz-scheduler</groupId>
-			<artifactId>quartz</artifactId>
-			<version>2.1.6</version>
-		</dependency>
-		<dependency>
-			<groupId>com.googlecode.json-simple</groupId>
-			<artifactId>json-simple</artifactId>
-			<version>1.1.1</version>
-		</dependency>
-		<dependency>
-			<groupId>org.slf4j</groupId>
-			<artifactId>slf4j-log4j12</artifactId>
-			<version>1.6.2</version>
-		</dependency>
-		<dependency>
-			<groupId>org.ektorp</groupId>
-			<artifactId>org.ektorp</artifactId>
-			<version>1.2.2</version>
-		</dependency>
-		<dependency>
-			<groupId>org.apache.tika</groupId>
-			<artifactId>tika-core</artifactId>
-			<version>1.2</version>
-		</dependency>
-		<dependency>
-			<groupId>org.apache.commons</groupId>
-			<artifactId>commons-lang3</artifactId>
-			<version>3.0.1</version>
-			<optional>false</optional>
-		</dependency>
-
-		<dependency>
-			<groupId>com.googlecode.json-simple</groupId>
-			<artifactId>json-simple</artifactId>
-			<version>1.1</version>
-			<optional>false</optional>
-		</dependency>
-
-		<dependency>
-			<groupId>junit</groupId>
-			<artifactId>junit</artifactId>
-			<version>4.10</version>
-		</dependency>
-
-		<dependency>
-			<groupId>commons-collections</groupId>
-			<artifactId>commons-collections</artifactId>
-			<version>3.2.1</version>
-		</dependency>
-
-
-
-		<dependency>
-			<groupId>org.apache.chemistry.opencmis</groupId>
-			<artifactId>chemistry-opencmis-client-impl</artifactId>
-			<version>${org.apache.chemistry.opencmis.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>org.apache.chemistry.opencmis</groupId>
-			<artifactId>chemistry-opencmis-client-api</artifactId>
-			<version>${org.apache.chemistry.opencmis.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>org.apache.chemistry.opencmis</groupId>
-			<artifactId>chemistry-opencmis-client-bindings</artifactId>
-			<version>${org.apache.chemistry.opencmis.version}</version>
-		</dependency>
-	</dependencies>
-
-	<build>
-		<!-- <sourceDirectory>src</sourceDirectory> -->
-		<!-- <sourceDirectory>src/main/java/</sourceDirectory> -->
-		<plugins>
-			<plugin>
-				<artifactId>maven-compiler-plugin</artifactId>
-				<version>2.3.2</version>
-				<configuration>
-					<encoding>UTF-8</encoding>
-					<source>1.6</source>
-					<target>1.6</target>
-				</configuration>
-			</plugin>
-
-			<plugin>
-				<groupId>org.mortbay.jetty</groupId>
-				<artifactId>jetty-maven-plugin</artifactId>
-				<version>7.0.1.v20091125</version>
-				<configuration>
-					<scanIntervalSeconds>1</scanIntervalSeconds>
-					<stopPort>9968</stopPort>
-					<stopKey>foo</stopKey>
-					<webAppConfig>
-						<contextPath>/solr</contextPath>
-						<tempDirectory>./tmp</tempDirectory>
-					</webAppConfig>
-					<connectors>
-						<connector implementation="org.eclipse.jetty.server.nio.SelectChannelConnector">
-							<port>8983</port>
-						</connector>
-					</connectors>
-					<scanTargets>
-						<scanTarget>src/main/webapp</scanTarget>
-					</scanTargets>
-				</configuration>
-			</plugin>
-
-
-		</plugins>
-	</build>
-</project>
+	<project xmlns="http://maven.apache.org/POM/4.0.0"
+		xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+		xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+		<modelVersion>4.0.0</modelVersion>
+		<groupId>jp.aegif.nemaki</groupId>
+		<artifactId>nemakisolr</artifactId>
+		<packaging>war</packaging>
+		<version>1.0GA4</version>
+		<name>nemakisolr</name>
+		<description>Solr customized for Nemaki</description>
+		<url>https://github.com/NemakiWare/NemakiWare</url>
+		
+		<properties>
+			<org.apache.chemistry.opencmis.version>0.10.0</org.apache.chemistry.opencmis.version>
+		</properties>
+		
+		<dependencies>
+			<dependency>
+				<groupId>org.apache.solr</groupId>
+				<artifactId>solr-core</artifactId>
+				<version>4.1.0</version>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.solr</groupId>
+				<artifactId>solr-solrj</artifactId>
+				<version>4.1.0</version>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.solr</groupId>
+				<artifactId>solr-cell</artifactId>
+				<version>4.1.0</version>
+			</dependency>
+			<dependency>
+				<groupId>org.quartz-scheduler</groupId>
+				<artifactId>quartz</artifactId>
+				<version>2.1.6</version>
+			</dependency>
+			<dependency>
+				<groupId>com.googlecode.json-simple</groupId>
+				<artifactId>json-simple</artifactId>
+				<version>1.1.1</version>
+			</dependency>
+			<dependency>
+				<groupId>org.slf4j</groupId>
+				<artifactId>slf4j-log4j12</artifactId>
+				<version>1.6.2</version>
+			</dependency>
+			<dependency>
+				<groupId>org.ektorp</groupId>
+				<artifactId>org.ektorp</artifactId>
+				<version>1.2.2</version>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.tika</groupId>
+				<artifactId>tika-core</artifactId>
+				<version>1.2</version>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.commons</groupId>
+				<artifactId>commons-lang3</artifactId>
+				<version>3.0.1</version>
+				<optional>false</optional>
+			</dependency>
+			<dependency>
+				<groupId>com.googlecode.json-simple</groupId>
+				<artifactId>json-simple</artifactId>
+				<version>1.1</version>
+				<optional>false</optional>
+			</dependency>
+			<dependency>
+				<groupId>junit</groupId>
+				<artifactId>junit</artifactId>
+				<version>4.10</version>
+			</dependency>
+			<dependency>
+				<groupId>commons-collections</groupId>
+				<artifactId>commons-collections</artifactId>
+				<version>3.2.1</version>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.chemistry.opencmis</groupId>
+				<artifactId>chemistry-opencmis-client-impl</artifactId>
+				<version>${org.apache.chemistry.opencmis.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.chemistry.opencmis</groupId>
+				<artifactId>chemistry-opencmis-client-api</artifactId>
+				<version>${org.apache.chemistry.opencmis.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.chemistry.opencmis</groupId>
+				<artifactId>chemistry-opencmis-client-bindings</artifactId>
+				<version>${org.apache.chemistry.opencmis.version}</version>
+			</dependency>
+		</dependencies>
+		
+		<build>
+			<finalName>solr</finalName>
+			<plugins>
+				<plugin>
+					<artifactId>maven-compiler-plugin</artifactId>
+					<version>2.3.2</version>
+					<configuration>
+						<encoding>UTF-8</encoding>
+						<source>1.6</source>
+						<target>1.6</target>
+					</configuration>
+				</plugin>
+				
+				<plugin>
+					<groupId>org.mortbay.jetty</groupId>
+					<artifactId>jetty-maven-plugin</artifactId>
+					<version>7.0.1.v20091125</version>
+					<configuration>
+						<scanIntervalSeconds>1</scanIntervalSeconds>
+						<stopPort>9968</stopPort>
+						<stopKey>foo</stopKey>
+						<webAppConfig>
+							<contextPath>/solr</contextPath>
+							<tempDirectory>./tmp</tempDirectory>
+						</webAppConfig>
+						<connectors>
+							<connector implementation="org.eclipse.jetty.server.nio.SelectChannelConnector">
+								<port>8983</port>
+							</connector>
+						</connectors>
+						<scanTargets>
+							<scanTarget>src/main/webapp</scanTarget>
+						</scanTargets>
+					</configuration>
+				</plugin>
+			</plugins>
+		</build>
+	</project>

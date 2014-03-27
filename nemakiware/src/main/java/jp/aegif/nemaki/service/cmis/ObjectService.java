@@ -35,10 +35,10 @@ import org.apache.chemistry.opencmis.commons.data.FailedToDeleteData;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.RenditionData;
+import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.enums.UnfileObject;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
-import org.apache.chemistry.opencmis.commons.server.ObjectInfoHandler;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 
 public interface ObjectService {
@@ -98,7 +98,7 @@ public interface ObjectService {
 	 */
 	public abstract void moveObject(CallContext callContext,
 			Holder<String> objectId, String sourceFolderId,
-			String targetFolderId, NemakiCmisService couchCmisService);
+			String targetFolderId);
 
 	/**
 	 * Gets the list of associated renditions for the specified object. Only
@@ -139,18 +139,26 @@ public interface ObjectService {
 
 	/**
 	 * Gets the specified information for the object specified by path.
+	 * @param includeRelationships TODO
+	 * @param renditionFilter TODO
+	 * @param includePolicyIds TODO
+	 * @param extension TODO
 	 */
 	public abstract ObjectData getObjectByPath(CallContext callContext,
 			String path, String filter, Boolean includeAllowableActions,
-			Boolean includeAcl, ObjectInfoHandler objectInfos);
+			IncludeRelationships includeRelationships, String renditionFilter, Boolean includePolicyIds, Boolean includeAcl, ExtensionsData extension);
 
 	/**
 	 * Gets the specified information for the object specified by id.
+	 * @param includeRelationships TODO
+	 * @param renditionFilter TODO
+	 * @param includePolicyIds TODO
+	 * @param extension TODO
 	 */
 	public abstract ObjectData getObject(CallContext callContext,
 			String objectId, String filter,
-			Boolean includeAllowableActions, Boolean includeAcl,
-			ObjectInfoHandler objectInfos);
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
+			String renditionFilter, Boolean includePolicyIds, Boolean includeAcl, ExtensionsData extension);
 
 	/**
 	 * Gets the list of allowable actions for an object.

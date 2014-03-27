@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -56,18 +56,18 @@ import org.apache.solr.common.SolrDocumentList;
 
 /**
  * CMIS to Solr parser class for WHERE clause of query
- * 
+ *
  * @author linzhixing
- * 
+ *
  */
 public class SolrPredicateWalker {
 
-	private SolrUtil solrUtil;
-	private QueryObject queryObject;
+	private final SolrUtil solrUtil;
+	private final QueryObject queryObject;
 
 	public static final String FLD = "field";
 	public static final String CND = "cond";
-	
+
 	public SolrPredicateWalker(QueryObject queryObject, SolrUtil solrUtil) {
 		this.queryObject = queryObject;
 		this.solrUtil = solrUtil;
@@ -169,7 +169,7 @@ public class SolrPredicateWalker {
 		Query q = new TermQuery(term);
 		return q;
 	}
-	
+
 	private Query walkNotEquals(Tree leftNode, Tree rightNode) {
 		BooleanQuery q = new BooleanQuery();
 		q.add(walkEquals(leftNode, rightNode), Occur.MUST_NOT);
@@ -208,7 +208,7 @@ public class SolrPredicateWalker {
 	 * TODO Implement check for each kind of literal
 	 * Parse field name & condition value. Field name is prepared for Solr
 	 * query.
-	 * 
+	 *
 	 * @param leftNode
 	 * @param rightNode
 	 * @return
@@ -216,10 +216,10 @@ public class SolrPredicateWalker {
 	private HashMap<String, String> walkCompareInternal(Tree leftNode,
 			Tree rightNode) {
 		HashMap<String, String> map = new HashMap<String, String>();
-		
+
 		String left = solrUtil.convertToString(leftNode);
-		String right = walkExpr(rightNode).toString(); 
-		
+		String right = walkExpr(rightNode).toString();
+
 		map.put(FLD, ClientUtils.escapeQueryChars(solrUtil.getPropertyNameInSolr(left)));
 		map.put(CND, right);
 		return map;
@@ -513,8 +513,8 @@ public class SolrPredicateWalker {
 	private Object walkString(Tree node) {
 		String s = node.getText();
 		s = s.substring(1, s.length() - 1);
-		//return "\"" + ClientUtils.escapeQueryChars(s) + "\"";
-		return ClientUtils.escapeQueryChars(s);
+		return "\"" + ClientUtils.escapeQueryChars(s) + "\"";
+		//return ClientUtils.escapeQueryChars(s);
 	}
 
 	private Object walkTimestamp(Tree node) {
@@ -555,7 +555,7 @@ public class SolrPredicateWalker {
 
 	/**
 	 * Convert String to BytesRef for Lucene TermRangeQuery
-	 * 
+	 *
 	 * @param s
 	 * @return
 	 */
@@ -567,7 +567,7 @@ public class SolrPredicateWalker {
 
 	/**
 	 * Translate a full-text search expression from SQL style to Solr style
-	 * 
+	 *
 	 * @param wildcardString
 	 * @return
 	 */
@@ -627,7 +627,7 @@ public class SolrPredicateWalker {
 
 	/**
 	 * Look up a Solr name of a table from alias
-	 * 
+	 *
 	 * @param alias
 	 * @return
 	 */
@@ -639,7 +639,7 @@ public class SolrPredicateWalker {
 
 	/**
 	 * Get all subfolder ids by connecting to Solr recursively
-	 * 
+	 *
 	 * @param folderId
 	 * @param solrServer
 	 * @return
@@ -651,8 +651,9 @@ public class SolrPredicateWalker {
 		list.add(folderId); // Add oneself to the list in advance
 
 		SolrQuery query = new SolrQuery();
-		query.setQuery(solrUtil.getPropertyNameInSolr(PropertyIds.PARENT_ID) + folderId + " AND "
-				+ solrUtil.getPropertyNameInSolr(PropertyIds.BASE_TYPE_ID) + "cmis:folder"); // only "folder" nodes
+
+		query.setQuery(solrUtil.getPropertyNameInSolr(PropertyIds.PARENT_ID) + ":" + folderId + " AND "
+				+ solrUtil.getPropertyNameInSolr(PropertyIds.BASE_TYPE_ID) + ":cmis\\:folder"); // only "folder" nodes
 
 		// Connect to SolrServer and add subfolder ids to the list
 		try {

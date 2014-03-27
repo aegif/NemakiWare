@@ -34,7 +34,7 @@ class ArchivesController < ApplicationController
   
   def index(status=true)
     
-    resource = RestClient::Resource.new(CONFIG['repository']['archive_rest_url'] + 'index', @auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(ARCHIVE_REST_URL + 'index', @auth_info[:id], @auth_info[:password])
     json = resource.get()
     result = JSON.parse(json)
     
@@ -75,8 +75,7 @@ class ArchivesController < ApplicationController
   end
   
   def restore
-    #uri = CONFIG['repository']['archive_rest_url'] + "restore/" + params[:id]
-    resource = RestClient::Resource.new(CONFIG['repository']['archive_rest_url'], @auth_info[:id], @auth_info[:password])
+    resource = RestClient::Resource.new(ARCHIVE_REST_URL, @auth_info[:id], @auth_info[:password])
     json = resource["restore"][params[:id]].put("")
     _status = JSON.parse(json)['status']
     

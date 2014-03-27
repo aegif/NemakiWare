@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -36,7 +36,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Dao Service for Principal(User/Group) Implementation for CouchDB
- * 
+ *
  * @author linzhixing
  */
 @Component
@@ -45,11 +45,11 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 	private static final Log log = LogFactory
 			.getLog(PrincipalDaoServiceImpl.class);
 
-	private CacheManager cacheManager;
+	private final CacheManager cacheManager;
 	private PrincipalDaoService nonCachedPrincipalDaoService;
 
 	/**
-	 * 
+	 *
 	 */
 
 	public PrincipalDaoServiceImpl() {
@@ -73,7 +73,7 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 		User created = nonCachedPrincipalDaoService.createUser(user);
 
 		Cache userCache = cacheManager.getCache("userCache");
-		userCache.put(new Element(created.getId(), created));
+		userCache.put(new Element(created.getUserId(), created));
 		Cache usersCache = cacheManager.getCache("usersCache");
 		usersCache.removeAll();
 		return created;
@@ -84,7 +84,7 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 		Group created = nonCachedPrincipalDaoService.createGroup(group);
 
 		Cache groupCache = cacheManager.getCache("groupCache");
-		groupCache.put(new Element(created.getId(), created));
+		groupCache.put(new Element(created.getGroupId(), created));
 		Cache groupsCache = cacheManager.getCache("groupsCache");
 		groupsCache.removeAll();
 		return created;
@@ -95,7 +95,7 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 		User u = nonCachedPrincipalDaoService.updateUser(user);
 
 		Cache userCache = cacheManager.getCache("userCache");
-		userCache.put(new Element(u.getId(), u));
+		userCache.put(new Element(u.getUserId(), u));
 		Cache usersCache = cacheManager.getCache("usersCache");
 		usersCache.removeAll();
 
@@ -107,7 +107,7 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 		Group g = nonCachedPrincipalDaoService.updateGroup(group);
 
 		Cache groupCache = cacheManager.getCache("groupCache");
-		groupCache.put(new Element(g.getId(), g));
+		groupCache.put(new Element(g.getGroupId(), g));
 
 		Cache groupsCache = cacheManager.getCache("groupsCache");
 		groupsCache.removeAll();
@@ -116,44 +116,48 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 	}
 
 	@Override
-	public void delete(Class<?> clazz, String principalId) {
-		nonCachedPrincipalDaoService.delete(null, principalId);
-
+	public void delete(Class<?> clazz, String nodeId) {
 		if (clazz.equals(User.class)) {
+			User exising = getUser(nodeId);
+
+			nonCachedPrincipalDaoService.delete(null, nodeId);
+
 			Cache userCache = cacheManager.getCache("userCache");
-			userCache.remove(principalId);
+			userCache.remove(exising.getUserId());
 			Cache usersCache = cacheManager.getCache("usersCache");
 			usersCache.removeAll();
-		} else if(clazz.equals(User.class)){
+		} else if(clazz.equals(Group.class)){
+			Group exising = getGroup(nodeId);
+
+			nonCachedPrincipalDaoService.delete(null, nodeId);
+
 			Cache groupCache = cacheManager.getCache("groupCache");
-			groupCache.remove(principalId);
+			groupCache.remove(exising.getGroupId());
 			Cache groupsCache = cacheManager.getCache("groupsCache");
 			groupsCache.removeAll();
 		}
 	}
 
-	/**
-	 * 
-	 */
 	@Override
-	public List<User> getUsers() {
-		Cache usersCache = cacheManager.getCache("usersCache");
-		Element userEl = usersCache.get("users");
+	public User getUser(String nodeId) {
+		Cache userCache = cacheManager.getCache("userCache");
 
-		if (userEl != null) {
-			return (List<User>) userEl.getObjectValue();
+		User user = nonCachedPrincipalDaoService.getUser(nodeId);
+		if (user != null) {
+			userCache.put(new Element(user.getUserId(), user));
 		}
 
-		List<User> users = nonCachedPrincipalDaoService.getUsers();
+		return user;
+	}
 
-		usersCache.put(new Element("users", users));
-
-		return users;
-
+	@Override
+	public User getAdmin() {
+		User admin = nonCachedPrincipalDaoService.getAdmin();
+		return admin;
 	}
 
 	/**
-	 * 
+	 *
 	 */
 	@Override
 	public User getUserById(String userId) {
@@ -174,7 +178,39 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 	}
 
 	/**
-	 * 
+	 *
+	 */
+	@Override
+	public List<User> getUsers() {
+		Cache usersCache = cacheManager.getCache("usersCache");
+		Element userEl = usersCache.get("users");
+
+		if (userEl != null) {
+			return (List<User>) userEl.getObjectValue();
+		}
+
+		List<User> users = nonCachedPrincipalDaoService.getUsers();
+
+		usersCache.put(new Element("users", users));
+
+		return users;
+
+	}
+
+	@Override
+	public Group getGroup(String nodeId) {
+		Cache groupCache = cacheManager.getCache("groupCache");
+
+		Group group = nonCachedPrincipalDaoService.getGroup(nodeId);
+		if (group != null) {
+			groupCache.put(new Element(group.getGroupId(), group));
+		}
+
+		return group;
+	}
+
+	/**
+	 *
 	 */
 	@Override
 	public Group getGroupById(String groupId) {
@@ -194,7 +230,7 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 	}
 
 	/**
-	 * 
+	 *
 	 */
 	@Override
 	public List<Group> getGroups() {

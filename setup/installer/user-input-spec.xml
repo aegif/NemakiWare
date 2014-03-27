@@ -1,0 +1,69 @@
+<!-- NOTE:Place holders are replaced with values in source code property file -->
+<!-- NOTE:Labels are defined in i18n folder, except that english is defined here -->
+
+<userInput>
+	<!-- App server configuration -->
+	<panel id="user.inputpanel.appserver">
+		<field type="title" id="user.inputpanel.appserver.title" txt="Tomcat configuration" />
+		<field type="text" variable="tomcat.port">
+			<spec id="tomcat.port" size="6" set="8080" txt="Tomcat port" />
+			<validator class="com.izforge.izpack.util.IsPortValidator" txt="Invalid server port!" />
+		</field>
+		<field type="text" variable="tomcat.shutdown.port">
+			<spec id="tomcat.shutdown.port" size="6" set="8005" txt="Tomcat port(shutdown)"/>
+			<validator class="com.izforge.izpack.util.IsPortValidator" txt="Invalid server shutdown port!" />
+		</field>
+		<field type="text" variable="tomcat.ajp.port">
+			<spec id="tomcat.ajp.port" size="6" set="8009" txt="Tomcat port(AJP)"/>
+			<validator class="com.izforge.izpack.util.IsPortValidator" txt="Invalid AJP port!" />
+		</field>
+	</panel>
+
+	<!-- Repository configuration -->
+	<panel id="user.inputpanel.repository">
+		<field type="title" id="user.inputpanel.repository.title" txt="Repository configuration " />
+		<field type="text" variable="cmis.repository.main">
+			<spec id="cmis.repository.main" size="25" set="${cmis.repository.main}" txt="Repository ID(main)" />
+			<validator class="com.izforge.izpack.util.NotEmptyValidator" txt="Empty value!" />
+		</field>
+		<field type="text" variable="cmis.repository.archive">
+			<spec id="cmis.repository.archive" size="25" set="${cmis.repository.archive}" txt="Repository ID(archive)" />
+			<validator class="com.izforge.izpack.util.NotEmptyValidator" txt="Empty value!" />
+		</field>
+	</panel>	
+	
+	<!-- CouchDB configuration -->
+	<panel id="user.inputpanel.couchdb.configuration">
+		<field type="title" id="user.inputpanel.couchdb.title" txt="CouchDB configuration " />
+		<field type="text" variable="db.couchdb.host">
+			<spec id="db.couchdb.host" size="25" set="${db.couchdb.host}" txt="CouchDB host" />
+			<validator class="com.izforge.izpack.util.NotEmptyValidator" txt="Invalid host!" />
+		</field>
+		<field type="text" variable="db.couchdb.port">
+			<spec id="db.couchdb.port" size="6" set="${db.couchdb.port}" txt="CouchDB port" />
+			<validator class="com.izforge.izpack.util.IsPortValidator" txt="Invalid port!" />
+		</field>
+	</panel>
+
+	<!-- Solr configuration -->
+	<panel id="user.inputpanel.solr">
+		<field type="title" id="user.inputpanel.solr.title" txt="Solr configuration " />
+		<field type="text" variable="solr.host">
+			<spec id="solr.host" size="25" set="${solr.host}" txt="Solr host" />
+			<validator class="com.izforge.izpack.util.NotEmptyValidator" txt="Invalid host!" />
+		</field>
+		<field type="text" variable="solr.port">
+			<spec id="solr.port" size="6" set="${solr.port}" txt="Solr port" />
+			<validator class="com.izforge.izpack.util.IsPortValidator" txt="Invalid port!" />
+		</field>
+	</panel>
+
+	<!-- NemakiShare configuration -->
+	<panel id="user.inputpanel.rails">
+		<field type="title" id="user.inputpanel.nemakishare.title" txt="Rails configuration " />
+		<field type="dir" align="left" variable="ruby.bin">
+  			<spec id ="ruby.bin" size="25" set="C:\RailsInstaller\Ruby1.9.3\bin" mustExist="false" txt="Choose your Ruby bin path"/>
+		</field>
+
+	</panel>
+</userInput>

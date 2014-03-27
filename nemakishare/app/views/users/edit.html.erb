@@ -27,10 +27,11 @@
 <div class="row-fluid">
 <%= form_for :user , :url => {:action => :update}, :html => {:method => :put, :id => 'userForm', :class => 'form-horizontal'} do |f| %>
 	<!--ID-->
+	<!--ID-->
 	<div class="control-group">
-		<label class="control-label"><%=t('model.user.id')%></label>
 		<div class="controls">
-			<%= f.text_field :id %>
+			<!-- <%= f.text_field :id %> -->
+			<%= f.hidden_field :id %>
 		</div>
 	</div>
 	<!--Name-->

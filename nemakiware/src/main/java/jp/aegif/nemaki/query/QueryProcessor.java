@@ -23,8 +23,7 @@ package jp.aegif.nemaki.query;
 
 import java.math.BigInteger;
 
-import jp.aegif.nemaki.repository.TypeManager;
-
+import jp.aegif.nemaki.repository.type.TypeManager;
 
 import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
