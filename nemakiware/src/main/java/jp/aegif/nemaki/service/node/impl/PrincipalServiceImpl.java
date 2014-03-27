@@ -104,13 +104,8 @@ public class PrincipalServiceImpl implements PrincipalService {
 	@Override
 	public void createUser(User user) {
 		//UserID uniqueness
-		List<User> users = principalDaoService.getUsers();
-		List<String> userIds = new ArrayList<String>();
-		for(User u : users){
-			userIds.add(u.getId());
-		}
-
-		if(userIds.contains(user.getId())){
+		List<String> principalIds = getPrincipalIds();
+		if(principalIds.contains(user.getUserId())){
 			//TODO Create an Exception class?
 			log.error("userId=" + user.getUserId() + " already exists.");
 		}
@@ -131,13 +126,8 @@ public class PrincipalServiceImpl implements PrincipalService {
 	@Override
 	public void createGroup(Group group) {
 		//GroupID uniqueness
-		List<Group> groups = principalDaoService.getGroups();
-		List<String> groupIds = new ArrayList<String>();
-		for(Group g : groups){
-			groupIds.add(g.getId());
-		}
-
-		if(groupIds.contains(group.getId())){
+		List<String> principalIds = getPrincipalIds();
+		if(principalIds.contains(group.getGroupId())){
 			//TODO Create an Exception class?
 			log.error("groupId=" + group.getGroupId() + " already exists.");
 		}
@@ -184,6 +174,28 @@ public class PrincipalServiceImpl implements PrincipalService {
 	@Override
 	public boolean isAnonymous(String userId) {
 		return anonymous.equals(userId);
+	}
+
+	private List<String> getPrincipalIds(){
+		List<String> principalIds = new ArrayList<String>();
+
+		List<User> users = principalDaoService.getUsers();
+		for(User u : users){
+			if(principalIds.contains(u.getUserId())){
+				log.warn("userId=" + u.getUserId() + " is duplicate in the database.");
+			}
+			principalIds.add(u.getUserId());
+		}
+
+		List<Group> groups = principalDaoService.getGroups();
+		for(Group g : groups){
+			if(principalIds.contains(g.getGroupId())){
+				log.warn("groupId=" + g.getGroupId() + " is duplicate in the database.");
+			}
+			principalIds.add(g.getGroupId());
+		}
+
+		return principalIds;
 	}
 
 	public void setPrincipalDaoService(PrincipalDaoService principalDaoService) {
