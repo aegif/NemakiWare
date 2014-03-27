@@ -53,6 +53,7 @@ import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.model.constant.NemakiConstant;
 import jp.aegif.nemaki.model.constant.NodeType;
+import jp.aegif.nemaki.model.constant.PropertyKey;
 import jp.aegif.nemaki.query.solr.SolrUtil;
 import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.dao.ContentDaoService;
@@ -125,7 +126,7 @@ public class ContentServiceImpl implements ContentService {
 			return contentDaoService.getRelationship(content.getId());
 		} else if (content.isPolicy()) {
 			return contentDaoService.getPolicy(content.getId());
-		}else if(content.isItem()){
+		} else if (content.isItem()) {
 			return contentDaoService.getItem(content.getId());
 		} else {
 			return null;
@@ -260,24 +261,27 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public Document getDocumentOfLatestMajorVersion(String versionSeriesId) {
-		return contentDaoService.getDocumentOfLatestMajorVersion(versionSeriesId);
+		return contentDaoService
+				.getDocumentOfLatestMajorVersion(versionSeriesId);
 	}
 
 	@Override
-	public List<Document> getAllVersions(CallContext callContext, String versionSeriesId) {
+	public List<Document> getAllVersions(CallContext callContext,
+			String versionSeriesId) {
 		List<Document> results = new ArrayList<Document>();
-		
-		//TODO hide PWC from a non-owner user
-		List<Document> versions = contentDaoService.getAllVersions(versionSeriesId);
-		
-		if(CollectionUtils.isNotEmpty(versions)){
-			for(Document doc : versions){
-				if(!doc.isPrivateWorkingCopy()){
+
+		// TODO hide PWC from a non-owner user
+		List<Document> versions = contentDaoService
+				.getAllVersions(versionSeriesId);
+
+		if (CollectionUtils.isNotEmpty(versions)) {
+			for (Document doc : versions) {
+				if (!doc.isPrivateWorkingCopy()) {
 					results.add(doc);
 				}
 			}
 		}
-		
+
 		return contentDaoService.getAllVersions(versionSeriesId);
 	}
 
@@ -287,12 +291,12 @@ public class ContentServiceImpl implements ContentService {
 			ExtensionsData extension) {
 		return contentDaoService.getCheckedOutDocuments(folderId);
 	}
-	
+
 	@Override
-	public VersionSeries getVersionSeries(Document document){
+	public VersionSeries getVersionSeries(Document document) {
 		return getVersionSeries(document.getVersionSeriesId());
 	}
-	
+
 	@Override
 	public VersionSeries getVersionSeries(String versionSeriesId) {
 		return contentDaoService.getVersionSeries(versionSeriesId);
@@ -305,13 +309,15 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public String calculatePath(Content content) {
-		List<String> path = calculatePathInternal(new ArrayList<String>(), content);
+		List<String> path = calculatePathInternal(new ArrayList<String>(),
+				content);
 		path.remove(0);
 		return NemakiConstant.PATH_SEPARATOR
 				+ StringUtils.join(path, NemakiConstant.PATH_SEPARATOR);
 	}
 
-	private List<String> calculatePathInternal(List<String> path, Content content) {
+	private List<String> calculatePathInternal(List<String> path,
+			Content content) {
 		path.add(0, content.getName());
 
 		if (propertyUtil.isRoot(content)) {
@@ -418,11 +424,10 @@ public class ContentServiceImpl implements ContentService {
 
 		// Modify old change event
 		contentDaoService.create(change);
-		/*if (latest != null) {
-			latest.setLatest(false);
-			contentDaoService.update(latest);
-		}
-*/
+		/*
+		 * if (latest != null) { latest.setLatest(false);
+		 * contentDaoService.update(latest); }
+		 */
 		// Update change token of the content
 		content.setChangeToken(change.getChangeToken());
 		update(content);
@@ -490,8 +495,8 @@ public class ContentServiceImpl implements ContentService {
 
 		// Update versionSeriesId#versionSeriesCheckedOutId after creating a PWC
 		if (versioningState == VersioningState.CHECKEDOUT) {
-			updateVersionSeriesWithPwc(callContext,
-					getVersionSeries(result), result);
+			updateVersionSeriesWithPwc(callContext, getVersionSeries(result),
+					result);
 		}
 
 		// Record the change event
@@ -552,8 +557,8 @@ public class ContentServiceImpl implements ContentService {
 		Document result = contentDaoService.create(pwc);
 
 		// Modify versionSeries
-		updateVersionSeriesWithPwc(callContext,
-				getVersionSeries(result), result);
+		updateVersionSeriesWithPwc(callContext, getVersionSeries(result),
+				result);
 
 		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing();
@@ -639,7 +644,8 @@ public class ContentServiceImpl implements ContentService {
 		Document d = new Document();
 		setBaseProperties(callContext, properties, d, parentFolder.getId());
 		d.setParentId(parentFolder.getId());
-		d.setImmutable(DataUtil.getBooleanProperty(properties, PropertyIds.IS_IMMUTABLE));
+		d.setImmutable(DataUtil.getBooleanProperty(properties,
+				PropertyIds.IS_IMMUTABLE));
 		setSignature(callContext, d);
 		// Aspect
 		List<Aspect> aspects = buildAspects(properties);
@@ -811,8 +817,10 @@ public class ContentServiceImpl implements ContentService {
 
 		Relationship rel = new Relationship();
 		setBaseProperties(callContext, properties, rel, null);
-		rel.setSourceId(DataUtil.getIdProperty(properties, PropertyIds.SOURCE_ID));
-		rel.setTargetId(DataUtil.getIdProperty(properties, PropertyIds.TARGET_ID));
+		rel.setSourceId(DataUtil.getIdProperty(properties,
+				PropertyIds.SOURCE_ID));
+		rel.setTargetId(DataUtil.getIdProperty(properties,
+				PropertyIds.TARGET_ID));
 		// Set ACL
 		rel.setAclInherited(true);
 		rel.setAcl(new Acl());
@@ -834,7 +842,8 @@ public class ContentServiceImpl implements ContentService {
 
 		Policy p = new Policy();
 		setBaseProperties(callContext, properties, p, null);
-		p.setPolicyText(DataUtil.getStringProperty(properties, PropertyIds.POLICY_TEXT));
+		p.setPolicyText(DataUtil.getStringProperty(properties,
+				PropertyIds.POLICY_TEXT));
 		p.setAppliedIds(new ArrayList<String>());
 
 		// Set ACL
@@ -851,13 +860,16 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public Item createItem(CallContext callContext, Properties properties,
-			String folderId, List<String> policies, org.apache.chemistry.opencmis.commons.data.Acl addAces,
-			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension) {
+			String folderId, List<String> policies,
+			org.apache.chemistry.opencmis.commons.data.Acl addAces,
+			org.apache.chemistry.opencmis.commons.data.Acl removeAces,
+			ExtensionsData extension) {
 		Item i = new Item();
 		setBaseProperties(callContext, properties, i, null);
-		String objectTypeId = DataUtil.getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID);
+		String objectTypeId = DataUtil.getIdProperty(properties,
+				PropertyIds.OBJECT_TYPE_ID);
 		TypeDefinition tdf = typeManager.getTypeDefinition(objectTypeId);
-		if(tdf.isFileable()){
+		if (tdf.isFileable()) {
 			i.setParentId(folderId);
 		}
 
@@ -933,7 +945,7 @@ public class ContentServiceImpl implements ContentService {
 
 	private Content modifyProperties(CallContext callContext,
 			Properties properties, Content content) {
-		if(properties == null || MapUtils.isEmpty(properties.getProperties())){
+		if (properties == null || MapUtils.isEmpty(properties.getProperties())) {
 			return content;
 		}
 
@@ -1097,13 +1109,13 @@ public class ContentServiceImpl implements ContentService {
 		if (content instanceof Document) {
 			result = contentDaoService.update((Document) content);
 		} else if (content instanceof Folder) {
-			result =  contentDaoService.update((Folder) content);
+			result = contentDaoService.update((Folder) content);
 		} else if (content instanceof Relationship) {
-			result =  contentDaoService.update((Relationship) content);
+			result = contentDaoService.update((Relationship) content);
 		} else if (content instanceof Policy) {
-			result =  contentDaoService.update((Policy) content);
+			result = contentDaoService.update((Policy) content);
 		} else if (content instanceof Item) {
-			result =  contentDaoService.update((Item) content);
+			result = contentDaoService.update((Item) content);
 		}
 
 		// Call Solr indexing(optional)
@@ -1112,15 +1124,15 @@ public class ContentServiceImpl implements ContentService {
 		return result;
 	}
 
-	//TODO updatable CMIS properties are hard-coded.
+	// TODO updatable CMIS properties are hard-coded.
 	private void setUpdatePropertyValue(Content content,
 			PropertyData<?> propertyData, Properties properties) {
 		if (propertyData.getId().equals(PropertyIds.NAME)) {
 			if (DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID) != content
 					.getId()) {
-				String uniqueName = buildUniqueName(
-						DataUtil.getStringProperty(properties, PropertyIds.NAME),
-						content.getParentId(), content.getId());
+				String uniqueName = buildUniqueName(DataUtil.getStringProperty(
+						properties, PropertyIds.NAME), content.getParentId(),
+						content.getId());
 				content.setName(uniqueName);
 			}
 		}
@@ -1144,7 +1156,7 @@ public class ContentServiceImpl implements ContentService {
 		content.setName(uniqueName);
 		update(content);
 
-		//Call Solr indexing(optional)
+		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing();
 	}
 
@@ -1176,8 +1188,6 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, content, ChangeType.SECURITY);
 	}
 
-
-
 	/**
 	 * Delete a Content.
 	 */
@@ -1193,7 +1203,7 @@ public class ContentServiceImpl implements ContentService {
 		createArchive(callContext, objectId, deletedWithParent);
 		contentDaoService.delete(objectId);
 
-		//Call Solr indexing(optional)
+		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing();
 	}
 
@@ -1207,7 +1217,7 @@ public class ContentServiceImpl implements ContentService {
 	public void deleteContentStream(CallContext callContext,
 			Holder<String> objectId) {
 		// TODO Auto-generated method stub
-		
+
 	}
 
 	@Override
@@ -1247,7 +1257,7 @@ public class ContentServiceImpl implements ContentService {
 			}
 		}
 
-		//Call Solr indexing(optional)
+		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing();
 	}
 
@@ -1316,17 +1326,21 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public void appendAttachment(CallContext callContext, Holder<String> objectId, Holder<String> changeToken,
+	public void appendAttachment(CallContext callContext,
+			Holder<String> objectId, Holder<String> changeToken,
 			ContentStream contentStream, boolean isLastChunk,
 			ExtensionsData extension) {
 		Document document = contentDaoService.getDocument(objectId.getValue());
-		AttachmentNode attachment = getAttachment(document.getAttachmentNodeId());
+		AttachmentNode attachment = getAttachment(document
+				.getAttachmentNodeId());
 		InputStream is = attachment.getInputStream();
-		//Append
-		SequenceInputStream sis = new SequenceInputStream(is, contentStream.getStream());
+		// Append
+		SequenceInputStream sis = new SequenceInputStream(is,
+				contentStream.getStream());
 		// appendStream will be used for a huge file, so avoid reading stream
 		long length = attachment.getLength() + contentStream.getLength();
-		ContentStream cs = new ContentStreamImpl("content", BigInteger.valueOf(length), attachment.getMimeType(), sis);
+		ContentStream cs = new ContentStreamImpl("content",
+				BigInteger.valueOf(length), attachment.getMimeType(), sis);
 		contentDaoService.updateAttachment(attachment, cs);
 
 		writeChangeEvent(callContext, document, ChangeType.UPDATED);
@@ -1361,111 +1375,127 @@ public class ContentServiceImpl implements ContentService {
 	// ///////////////////////////////////////
 	// Acl
 	// ///////////////////////////////////////
-	//Merge inherited ACL
+	// Merge inherited ACL
 	@Override
 	public Acl calculateAcl(Content content) {
+		Acl acl = content.getAcl();
 
-		if (propertyUtil.isRoot(content)){
-			return content.getAcl();
-		}
+		boolean iht = (content.isAclInherited() == null) ? false : content
+				.isAclInherited();
 
-		boolean iht = (content.isAclInherited() == null)? false : content.isAclInherited();
-		if (iht) {
-			//Caching the results of calculation
+		if (!propertyUtil.isRoot(content) && iht) {
+			// Caching the results of calculation
 			List<Ace> aces = new ArrayList<Ace>();
 			List<Ace> result = calculateAclInternal(aces, content);
 
-			//Convert result to temporary Acl
-			Acl acl = new Acl();
-			for(Ace r : result){
-				if(r.isDirect()){
-					acl.getLocalAces().add(r);
-				}else{
-					acl.getInheritedAces().add(r);
+			// Convert result to Acl
+			Acl _acl = new Acl();
+			for (Ace r : result) {
+				if (r.isDirect()) {
+					_acl.getLocalAces().add(r);
+				} else {
+					_acl.getInheritedAces().add(r);
 				}
 			}
-			return acl;
-		} else {
-			return content.getAcl();
+			acl = _acl;
 		}
 
+		// Convert anonymous and anyone
+		convertSystemPrincipalId(acl);
+
+		return acl;
 	}
 
-	private List<Ace> calculateAclInternal(List<Ace>result, Content content){
-		if(propertyUtil.isRoot(content)){
+	private List<Ace> calculateAclInternal(List<Ace> result, Content content) {
+		if (propertyUtil.isRoot(content)) {
 			List<Ace> rootAces = new ArrayList<Ace>();
 			List<Ace> aces = content.getAcl().getLocalAces();
-			for(Ace ace : aces){
+			for (Ace ace : aces) {
 				Ace rootAce = deepCopy(ace);
 				rootAce.setDirect(true);
 				rootAces.add(rootAce);
 			}
 			return mergeAcl(result, rootAces);
-		}else{
+		} else {
 			Content parent = getParent(content.getId());
-			return mergeAcl(content.getAcl().getLocalAces(), calculateAclInternal(new ArrayList<Ace>(), parent));
+			return mergeAcl(content.getAcl().getLocalAces(),
+					calculateAclInternal(new ArrayList<Ace>(), parent));
 		}
 	}
 
-	private List<Ace> mergeAcl(List<Ace>target, List<Ace>source){
+	private List<Ace> mergeAcl(List<Ace> target, List<Ace> source) {
 		HashMap<String, Ace> _result = new HashMap<String, Ace>();
 
 		HashMap<String, Ace> targetMap = buildAceMap(target);
 		HashMap<String, Ace> sourceMap = buildAceMap(source);
 
-		for(Entry<String, Ace> t : targetMap.entrySet()){
+		for (Entry<String, Ace> t : targetMap.entrySet()) {
 			Ace ace = deepCopy(t.getValue());
 			ace.setDirect(true);
 			_result.put(t.getKey(), ace);
 		}
 
-		//Overwrite(ã�¨ã�„ã�†ã�‹è¿½åŠ )
-		for(Entry<String, Ace> s : sourceMap.entrySet()){
-			//TODO Deep copy
-			if(!targetMap.containsKey(s.getKey())){
+		// Overwrite
+		for (Entry<String, Ace> s : sourceMap.entrySet()) {
+			// TODO Deep copy
+			if (!targetMap.containsKey(s.getKey())) {
 				Ace ace = deepCopy(s.getValue());
 				ace.setDirect(false);
 				_result.put(s.getKey(), ace);
 			}
 		}
 
-		//Convert
-		List<Ace>result = new ArrayList<Ace>();
-		for(Entry<String, Ace> r : _result.entrySet()){
+		// Convert
+		List<Ace> result = new ArrayList<Ace>();
+		for (Entry<String, Ace> r : _result.entrySet()) {
 			result.add(r.getValue());
 		}
 
-		//Aclä¸Šã�§inherited/localã�®åŒºåˆ¥ã�¯ã�—ã�ªã�„
-		//ã�Ÿã� ã�—Aceä¸Šã�§isDirectãƒ•ãƒ©ã‚°ã�¯è¨­å®šã�™ã‚‹
 		return result;
 	}
 
-	private HashMap<String, Ace> buildAceMap(List<Ace> aces){
+	private HashMap<String, Ace> buildAceMap(List<Ace> aces) {
 		HashMap<String, Ace> map = new HashMap<String, Ace>();
 
-		for(Ace ace : aces){
+		for (Ace ace : aces) {
 			map.put(ace.getPrincipalId(), ace);
 		}
 
 		return map;
 	}
 
-	private Ace deepCopy(Ace ace){
+	private Ace deepCopy(Ace ace) {
 		Ace result = new Ace();
 
 		result.setPrincipalId(ace.getPrincipalId());
 		result.setDirect(ace.isDirect());
-		if(CollectionUtils.isEmpty(ace.getPermissions())){
+		if (CollectionUtils.isEmpty(ace.getPermissions())) {
 			result.setPermissions(new ArrayList<String>());
-		}else{
+		} else {
 			List<String> l = new ArrayList<String>();
-			for(String p: ace.getPermissions()){
+			for (String p : ace.getPermissions()) {
 				l.add(p);
 			}
 			result.setPermissions(l);
 		}
 
 		return result;
+	}
+
+	private void convertSystemPrincipalId(Acl acl) {
+		List<Ace> aces = acl.getAllAces();
+		for (Ace ace : aces) {
+			if (NemakiConstant.PRINCIPAL_ANONYMOUS.equals(ace.getPrincipalId())) {
+				String anonymous = propertyUtil.getPropertyManager().readValue(
+						PropertyKey.CMIS_REPOSITORY_MAIN_PRINCIPAL_ANONYMOUS);
+				ace.setPrincipalId(anonymous);
+			}
+			if (NemakiConstant.PRINCIPAL_ANYONE.equals(ace.getPrincipalId())) {
+				String anyone = propertyUtil.getPropertyManager().readValue(
+						PropertyKey.CMIS_REPOSITORY_MAIN_PRINCIPAL_ANYONE);
+				ace.setPrincipalId(anyone);
+			}
+		}
 	}
 
 	// ///////////////////////////////////////
@@ -1575,7 +1605,8 @@ public class ContentServiceImpl implements ContentService {
 
 		CallContextImpl dummyContext = new CallContextImpl(null, null, null,
 				null, null, null, null, null);
-		dummyContext.put(dummyContext.USERNAME, NemakiConstant.PRINCIPAL_SYSTEM);
+		dummyContext
+				.put(dummyContext.USERNAME, NemakiConstant.PRINCIPAL_SYSTEM);
 
 		// Switch over the operation depending on the type of archive
 		if (archive.isFolder()) {
@@ -1590,7 +1621,7 @@ public class ContentServiceImpl implements ContentService {
 			log.error("Only document or folder is supported for restoration");
 		}
 
-		//Call Solr indexing(optional)
+		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing();
 	}
 
@@ -1825,7 +1856,7 @@ public class ContentServiceImpl implements ContentService {
 	private GregorianCalendar getTimeStamp() {
 		return DataUtil.millisToCalendar(System.currentTimeMillis());
 	}
-	
+
 	public void setContentDaoService(ContentDaoService contentDaoService) {
 		this.contentDaoService = contentDaoService;
 	}

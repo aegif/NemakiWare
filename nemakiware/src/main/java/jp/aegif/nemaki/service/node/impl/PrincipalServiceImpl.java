@@ -28,6 +28,7 @@ import java.util.Set;
 
 import jp.aegif.nemaki.model.Group;
 import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.model.constant.NemakiConstant;
 import jp.aegif.nemaki.service.dao.PrincipalDaoService;
 import jp.aegif.nemaki.service.node.PrincipalService;
 import jp.aegif.nemaki.util.PasswordHasher;
@@ -146,6 +147,50 @@ public class PrincipalServiceImpl implements PrincipalService {
 		principalDaoService.delete(Group.class, id);
 	}
 
+	private List<String> getPrincipalIds(){
+		List<String> principalIds = new ArrayList<String>();
+
+		//UserId
+		List<User> users = principalDaoService.getUsers();
+		for(User u : users){
+			if(principalIds.contains(u.getUserId())){
+				log.warn("userId=" + u.getUserId() + " is duplicate in the database.");
+			}
+			principalIds.add(u.getUserId());
+		}
+
+		//GroupId
+		List<Group> groups = principalDaoService.getGroups();
+		for(Group g : groups){
+			if(principalIds.contains(g.getGroupId())){
+				log.warn("groupId=" + g.getGroupId() + " is duplicate in the database.");
+			}
+			principalIds.add(g.getGroupId());
+		}
+
+		//Anonymous
+		if(principalIds.contains(anonymous)){
+			log.warn("CMIS 'anonymous':" +  anonymous + " should have not been registered in the database.");
+		}
+		principalIds.add(anonymous);
+		if(principalIds.contains(NemakiConstant.PRINCIPAL_ANONYMOUS)){
+			log.warn("CMIS 'anonymous':" +  anonymous + " should have not been registered in the database.(For system use)");
+		}
+		principalIds.add(NemakiConstant.PRINCIPAL_ANONYMOUS);
+
+		//Anyone
+		if(principalIds.contains(anyone) ){
+			log.warn("CMIS 'anyone': " + anyone + " should have not been registered in the database.");
+		}
+		principalIds.add(anyone);
+		if(principalIds.contains(NemakiConstant.PRINCIPAL_ANYONE)){
+			log.warn("CMIS 'anyone':" + NemakiConstant.PRINCIPAL_ANYONE + " should have not been registered in the database.(For system use)");
+		}
+		principalIds.add(NemakiConstant.PRINCIPAL_ANYONE);
+
+		return principalIds;
+	}
+
 	@Override
 	public User getAdmin() {
 		return principalDaoService.getAdmin();
@@ -172,59 +217,20 @@ public class PrincipalServiceImpl implements PrincipalService {
 		return anonymous;
 	}
 
-	@Override
-	public boolean isAnonymous(String userId) {
-		return anonymous.equals(userId);
-	}
-
-	private List<String> getPrincipalIds(){
-		List<String> principalIds = new ArrayList<String>();
-
-		//UserId
-		List<User> users = principalDaoService.getUsers();
-		for(User u : users){
-			if(principalIds.contains(u.getUserId())){
-				log.warn("userId=" + u.getUserId() + " is duplicate in the database.");
-			}
-			principalIds.add(u.getUserId());
-		}
-
-		//GroupId
-		List<Group> groups = principalDaoService.getGroups();
-		for(Group g : groups){
-			if(principalIds.contains(g.getGroupId())){
-				log.warn("groupId=" + g.getGroupId() + " is duplicate in the database.");
-			}
-			principalIds.add(g.getGroupId());
-		}
-
-		//Anyone
-		if(principalIds.contains(anyone)){
-			log.warn(anyone + " should have not been registered in the database.");
-		}
-		principalIds.add(anyone);
-
-		if(principalIds.contains(anonymous)){
-			log.warn(anonymous + " should have not been registered in the database.");
-		}
-		principalIds.add(anonymous);
-
-		return principalIds;
-	}
-
-	public void setPrincipalDaoService(PrincipalDaoService principalDaoService) {
-		this.principalDaoService = principalDaoService;
-	}
-
 	public void setAnonymous(String anonymous) {
 		this.anonymous = anonymous;
 	}
 
+	@Override
 	public String getAnyone() {
 		return anyone;
 	}
 
 	public void setAnyone(String anyone) {
 		this.anyone = anyone;
+	}
+
+	public void setPrincipalDaoService(PrincipalDaoService principalDaoService) {
+		this.principalDaoService = principalDaoService;
 	}
 }

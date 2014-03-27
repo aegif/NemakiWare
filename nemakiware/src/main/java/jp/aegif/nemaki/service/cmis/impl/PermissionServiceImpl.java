@@ -124,11 +124,11 @@ public class PermissionServiceImpl implements PermissionService {
 			if (ace.getPermissions() == null)
 				continue;
 
-			// User permission
+			// Add user permissions
 			if (ace.getPrincipalId().equals(userName)) {
 				userPermissions.addAll(ace.getPermissions());
 			}
-			// Group permission(which user inherits)
+			// Add inherited permissions which user inherits
 			if(CollectionUtils.isNotEmpty(groups) && groups.contains(ace.getPrincipalId())){
 				userPermissions.addAll(ace.getPermissions());
 			}
