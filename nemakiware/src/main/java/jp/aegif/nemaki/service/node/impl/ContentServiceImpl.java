@@ -1511,10 +1511,10 @@ public class ContentServiceImpl implements ContentService {
 			Holder<String> changeLogToken, Boolean includeProperties,
 			String filter, Boolean includePolicyIds, Boolean includeAcl,
 			BigInteger maxItems, ExtensionsData extension) {
-		int latestChangeLogToken = 0;
+		long latestChangeLogToken = 0;
 		if (changeLogToken != null && changeLogToken.getValue() != null
 				&& NumberUtils.isNumber(changeLogToken.getValue()))
-			latestChangeLogToken = Integer.parseInt(changeLogToken.getValue());
+			latestChangeLogToken = Long.parseLong(changeLogToken.getValue());
 
 		return contentDaoService.getLatestChanges(latestChangeLogToken,
 				maxItems.intValue());

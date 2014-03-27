@@ -789,7 +789,7 @@ public class CouchContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public List<Change> getLatestChanges(int startToken, int maxItems) {
+	public List<Change> getLatestChanges(long startToken, int maxItems) {
 		Change latest = getLatestChange();
 		if (startToken <= 0)
 			startToken = 0;
