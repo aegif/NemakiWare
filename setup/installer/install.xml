@@ -95,7 +95,7 @@
     -->
     <panel classname="UserInputPanel" id="user.inputpanel.rails" condition="condition.pack.rails"/>
     <panel classname="InstallPanel" />
-    <panel classname="SimpleFinishPanel" />
+    <panel classname="FinishPanel" />
   </panels>
 
   <!-- Packs: Define installation files here-->
