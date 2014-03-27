@@ -37,6 +37,8 @@
  */
 package jp.aegif.nemaki.service.cmis;
 
+import jp.aegif.nemaki.model.User;
+
 /**
  * Authentication Service interface.
  */
@@ -44,7 +46,8 @@ public interface AuthenticationService {
 
 	/**
 	 * Authenticate user, or throw an exception if failed.
+	 * @return TODO
 	 * @throws CmisPermissionDeniedException
 	 */
-	void login(String userName, String passWord);
+	User login(String userName, String passWord);
 }

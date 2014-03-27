@@ -59,6 +59,12 @@
 		<property name="propertyManager">
 			<ref bean="nemakiPropertyManager" />
 		</property>
+		<property name="anonymous">
+            <value>${cmis.repository.main.principal.anonymous}</value>
+        </property>
+        <property name="anyone">
+            <value>${cmis.repository.main.principal.anyone}</value>
+        </property>
 	</bean>
 	
 	<bean id="TypeService" class="org.springframework.aop.framework.ProxyFactoryBean">

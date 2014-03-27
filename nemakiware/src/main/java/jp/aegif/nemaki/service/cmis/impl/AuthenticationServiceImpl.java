@@ -40,16 +40,19 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	private PrincipalService principalService;
 
 	@Override
-	public void login(String userName, String password) {
+	public User login(String userName, String password) {
 		User u = principalService.getUserById(userName);
 		// succeeded
-		if (passwordMatches(password, u.getPasswordHash())) {
-			log.debug("[" + userName + "]Authentication succeeded");
-			return;
+		if (u != null ) {
+			if(passwordMatches(password, u.getPasswordHash()) || principalService.isAnonymous(userName)){
+				log.debug("[" + userName + "]Authentication succeeded");
+				return u;
+			}
 		}
+
 		// failed
-		log.error("[" + userName + "Authentication failed");
-		throw new CmisPermissionDeniedException("[" + userName + "Authentication failed");
+		log.error("[userName=" + userName + ", password=" + password + "]" + "Authentication failed");
+		throw new CmisPermissionDeniedException("[userName=" + userName + "]" + "Authentication failed");
 	}
 
 	/**
