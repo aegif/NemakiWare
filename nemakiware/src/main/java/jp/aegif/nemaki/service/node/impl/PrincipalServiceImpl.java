@@ -103,7 +103,6 @@ public class PrincipalServiceImpl implements PrincipalService {
 		//UserID uniqueness
 		List<String> principalIds = getPrincipalIds();
 		if(principalIds.contains(user.getUserId())){
-			//TODO Create an Exception class?
 			log.error("userId=" + user.getUserId() + " already exists.");
 		}
 
@@ -125,7 +124,6 @@ public class PrincipalServiceImpl implements PrincipalService {
 		//GroupID uniqueness
 		List<String> principalIds = getPrincipalIds();
 		if(principalIds.contains(group.getGroupId())){
-			//TODO Create an Exception class?
 			log.error("groupId=" + group.getGroupId() + " already exists.");
 		}
 
@@ -195,11 +193,15 @@ public class PrincipalServiceImpl implements PrincipalService {
 		}
 
 		//Anyone
-		//Anonymous should be already added in userIds
 		if(principalIds.contains(anyone)){
 			log.warn(anyone + " should have not been registered in the database.");
 		}
 		principalIds.add(anyone);
+
+		if(principalIds.contains(anonymous)){
+			log.warn(anonymous + " should have not been registered in the database.");
+		}
+		principalIds.add(anonymous);
 
 		return principalIds;
 	}
