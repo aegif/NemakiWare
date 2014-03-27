@@ -62,9 +62,9 @@ public class Load {
 		//Execute loading
 		boolean success = load(host, port, repositoryId, file, force);
 		if(success){
-			System.out.println("Data imported successfully");
+			System.out.println(repositoryId + ":Data imported successfully");
 		}else{
-			System.err.println("Data import failed");
+			System.err.println(repositoryId + ":Data import failed");
 		}
 
 	}
