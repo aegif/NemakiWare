@@ -28,10 +28,8 @@ import java.util.Set;
 
 import jp.aegif.nemaki.model.Group;
 import jp.aegif.nemaki.model.User;
-import jp.aegif.nemaki.model.constant.PropertyKey;
 import jp.aegif.nemaki.service.dao.PrincipalDaoService;
 import jp.aegif.nemaki.service.node.PrincipalService;
-import jp.aegif.nemaki.util.NemakiPropertyManager;
 import jp.aegif.nemaki.util.PasswordHasher;
 
 import org.apache.commons.lang.StringUtils;
@@ -46,7 +44,6 @@ public class PrincipalServiceImpl implements PrincipalService {
 
 	private static final Log log = LogFactory.getLog(PrincipalServiceImpl.class);
 
-	private NemakiPropertyManager propertyManager;
 	private PrincipalDaoService principalDaoService;
 	private String anonymous;
 	private String anyone;
@@ -74,7 +71,7 @@ public class PrincipalServiceImpl implements PrincipalService {
 				groupIds.add(g.getGroupId());
 			}
 		}
-		groupIds.add(propertyManager.readValue(PropertyKey.CMIS_REPOSITORY_MAIN_PRINCIPAL_ANYONE));
+		groupIds.add(anyone);
 		return groupIds;
 	}
 
@@ -179,6 +176,7 @@ public class PrincipalServiceImpl implements PrincipalService {
 	private List<String> getPrincipalIds(){
 		List<String> principalIds = new ArrayList<String>();
 
+		//UserId
 		List<User> users = principalDaoService.getUsers();
 		for(User u : users){
 			if(principalIds.contains(u.getUserId())){
@@ -187,6 +185,7 @@ public class PrincipalServiceImpl implements PrincipalService {
 			principalIds.add(u.getUserId());
 		}
 
+		//GroupId
 		List<Group> groups = principalDaoService.getGroups();
 		for(Group g : groups){
 			if(principalIds.contains(g.getGroupId())){
@@ -195,17 +194,19 @@ public class PrincipalServiceImpl implements PrincipalService {
 			principalIds.add(g.getGroupId());
 		}
 
+		//Anyone
+		//Anonymous should be already added in userIds
+		if(principalIds.contains(anyone)){
+			log.warn(anyone + " should have not been registered in the database.");
+		}
+		principalIds.add(anyone);
+
 		return principalIds;
 	}
 
 	public void setPrincipalDaoService(PrincipalDaoService principalDaoService) {
 		this.principalDaoService = principalDaoService;
 	}
-
-	public void setPropertyManager(NemakiPropertyManager propertyManager) {
-		this.propertyManager = propertyManager;
-	}
-
 
 	public void setAnonymous(String anonymous) {
 		this.anonymous = anonymous;
