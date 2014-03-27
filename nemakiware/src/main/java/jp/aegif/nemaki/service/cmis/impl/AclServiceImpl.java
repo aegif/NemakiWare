@@ -1,20 +1,20 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public Licensealong with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -24,6 +24,8 @@ import java.util.List;
 
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.constant.DomainType;
+import jp.aegif.nemaki.model.constant.NemakiConstant;
+import jp.aegif.nemaki.model.constant.PropertyKey;
 import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.cmis.AclService;
 import jp.aegif.nemaki.service.cmis.ExceptionService;
@@ -41,7 +43,7 @@ import org.apache.commons.collections.CollectionUtils;
 
 /**
  * Discovery Service implementation for CouchDB.
- * 
+ *
  */
 public class AclServiceImpl implements AclService {
 
@@ -50,6 +52,7 @@ public class AclServiceImpl implements AclService {
 	private TypeManager typeManager;
 	private PropertyUtil propertyUtil;
 
+	@Override
 	public Acl getAcl(CallContext callContext, String objectId,
 			Boolean onlyBasicPermissions) {
 		// //////////////////
@@ -59,7 +62,7 @@ public class AclServiceImpl implements AclService {
 		Content content = contentService.getContent(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,PermissionMapping.CAN_GET_ACL_OBJECT, content);
-		
+
 		// //////////////////
 		// Body of the method
 		// //////////////////
@@ -67,6 +70,7 @@ public class AclServiceImpl implements AclService {
 		return propertyUtil.convertToCmisAcl(acl, content.isAclInherited(), onlyBasicPermissions);
 	}
 
+	@Override
 	public Acl applyAcl(CallContext callContext, String objectId, Acl acl,
 			AclPropagation aclPropagation) {
 		// //////////////////
@@ -76,7 +80,7 @@ public class AclServiceImpl implements AclService {
 		Content content = contentService.getContent(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,PermissionMapping.CAN_APPLY_ACL_OBJECT, content);
-		
+
 		// //////////////////
 		// Specific Exception
 		// //////////////////
@@ -84,7 +88,7 @@ public class AclServiceImpl implements AclService {
 		if(!td.isControllableAcl()) exceptionService.constraint(objectId, "applyAcl cannot be performed on the object whose controllableAcl = false");
 		exceptionService.constraintAclPropagationDoesNotMatch(aclPropagation);
 		exceptionService.constraintPermissionDefined(acl, objectId);
-		
+
 		// //////////////////
 		// Body of the method
 		// //////////////////
@@ -99,7 +103,7 @@ public class AclServiceImpl implements AclService {
 			}
 			if(!content.isAclInherited().equals(inherited)) content.setAclInherited(inherited);
 		}
-		
+
 		jp.aegif.nemaki.model.Acl nemakiAcl = new jp.aegif.nemaki.model.Acl();
 		//REPOSUTORYDETERMINED or PROPAGATE is considered as PROPAGATE
 		boolean objectOnly = (aclPropagation == AclPropagation.OBJECTONLY)? true : false;
@@ -109,13 +113,33 @@ public class AclServiceImpl implements AclService {
 				nemakiAcl.getLocalAces().add(nemakiAce);
 			}
 		}
-		
+
+		convertSystemPrinciaplId(nemakiAcl);
 		content.setAcl(nemakiAcl);
 		contentService.update(content);
-		
+
 		return getAcl(callContext, objectId, false);
 	}
-	
+
+	private void convertSystemPrinciaplId(jp.aegif.nemaki.model.Acl acl){
+		List<jp.aegif.nemaki.model.Ace> aces = acl.getAllAces();
+		for (jp.aegif.nemaki.model.Ace ace : aces) {
+			//Convert anonymous to the form of database
+			String anonymous = propertyUtil.getPropertyManager().readValue(
+					PropertyKey.CMIS_REPOSITORY_MAIN_PRINCIPAL_ANONYMOUS);
+			if (anonymous.equals(ace.getPrincipalId())) {
+				ace.setPrincipalId(NemakiConstant.PRINCIPAL_ANONYMOUS);
+			}
+
+			//Convert anyone to the form of database
+			String anyone = propertyUtil.getPropertyManager().readValue(
+					PropertyKey.CMIS_REPOSITORY_MAIN_PRINCIPAL_ANYONE);
+			if (anyone.equals(ace.getPrincipalId())) {
+				ace.setPrincipalId(NemakiConstant.PRINCIPAL_ANYONE);
+			}
+		}
+	}
+
 	public void setContentService(ContentService contentService) {
 		this.contentService = contentService;
 	}
@@ -130,5 +154,5 @@ public class AclServiceImpl implements AclService {
 
 	public void setPropertyUtil(PropertyUtil propertyUtil) {
 		this.propertyUtil = propertyUtil;
-	}	
+	}
 }

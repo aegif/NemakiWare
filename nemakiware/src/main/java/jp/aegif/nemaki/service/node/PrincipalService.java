@@ -102,15 +102,14 @@ public interface PrincipalService {
 	boolean isAdmin(String userId, String password);
 
 	/**
-	 * Get anonymous Id(non-login user)
+	 * Get anonymous Id(non authenticated user)
 	 * @return
 	 */
 	String getAnonymous();
 
 	/**
-	 * Check if a given userId match anonymous
-	 * @param userId
+	 * Get anyone Id(any authenticated user)
 	 * @return
 	 */
-	boolean isAnonymous(String userId);
+	String getAnyone();
 }

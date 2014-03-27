@@ -46,7 +46,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		User u = principalService.getUserById(userName);
 		// succeeded
 		if (u != null ) {
-			if(passwordMatches(password, u.getPasswordHash()) || principalService.isAnonymous(userName)){
+			if(passwordMatches(password, u.getPasswordHash())){
 				log.debug("[" + userName + "]Authentication succeeded");
 				return u;
 			}

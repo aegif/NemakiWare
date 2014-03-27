@@ -37,7 +37,10 @@ public interface NemakiConstant {
 
 	final String PATH_SEPARATOR = "/";
 
+	//System principal ID used in the database
 	final String PRINCIPAL_SYSTEM = "system";
+	final String PRINCIPAL_ANYONE ="CMIS_ANYONE";
+	final String PRINCIPAL_ANONYMOUS ="CMIS_ANONYMOUS";
 
 	final String CALL_CONTEXT_IS_ADMIN = "isAdmin";
 }
