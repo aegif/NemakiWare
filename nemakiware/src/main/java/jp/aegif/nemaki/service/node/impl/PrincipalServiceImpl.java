@@ -31,9 +31,7 @@ import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.constant.NemakiConstant;
 import jp.aegif.nemaki.service.dao.PrincipalDaoService;
 import jp.aegif.nemaki.service.node.PrincipalService;
-import jp.aegif.nemaki.util.PasswordHasher;
 
-import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -194,22 +192,6 @@ public class PrincipalServiceImpl implements PrincipalService {
 	@Override
 	public User getAdmin() {
 		return principalDaoService.getAdmin();
-	}
-
-	@Override
-	public boolean isAdmin(String userId, String password) {
-		if(StringUtils.isBlank(userId) || StringUtils.isBlank(password)){
-			return false;
-		}
-
-		User user = getUserById(userId);
-		boolean isAdmin = (user.isAdmin() == null) ? false : user.isAdmin();
-		if(isAdmin){
-			//password check
-			boolean match = PasswordHasher.isCompared(password, user.getPasswordHash());
-			if(match) return true;
-		}
-		return false;
 	}
 
 	@Override
