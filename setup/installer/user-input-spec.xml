@@ -62,7 +62,7 @@
 	<panel id="user.inputpanel.rails">
 		<field type="title" id="user.inputpanel.nemakishare.title" txt="Rails configuration " />
 		<field type="dir" align="left" variable="ruby.bin">
-  			<spec id ="ruby.bin" size="25" set="C:\RailsInstaller\Ruby1.9.3\bin" mustExist="false" txt="hoose your Ruby bin path"/>
+  			<spec id ="ruby.bin" size="25" set="C:\RailsInstaller\Ruby1.9.3\bin" mustExist="false" txt="Choose your Ruby bin path"/>
 		</field>
 
 	</panel>
