@@ -56,9 +56,6 @@
 		<property name="principalDaoService">
 			<ref bean="PrincipalDaoService" />
 		</property>
-		<property name="propertyManager">
-			<ref bean="nemakiPropertyManager" />
-		</property>
 		<property name="anonymous">
             <value>${cmis.repository.main.principal.anonymous}</value>
         </property>
