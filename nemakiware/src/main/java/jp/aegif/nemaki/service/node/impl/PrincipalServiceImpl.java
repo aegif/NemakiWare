@@ -65,6 +65,12 @@ public class PrincipalServiceImpl implements PrincipalService {
 	@Override
 	public Set<String> getGroupIdsContainingUser(String userId) {
 		Set<String> groupIds = new HashSet<String>();
+
+		//Anonymous user doesn't belong to any group, even to Anyone.
+		if(userId.equals(anonymous)){
+			return groupIds;
+		}
+
 		List<Group> groups = getGroups();
 		for (Group g : groups) {
 			if ( containsUserInGroup(userId, g) ) {
