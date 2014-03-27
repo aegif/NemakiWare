@@ -141,6 +141,9 @@
 		<property name="host">
 			<value>${db.couchdb.host}</value>
 		</property>
+		<property name="port">
+			<value>${db.couchdb.port}</value>
+		</property>
 		<property name="maxConnections">
 			<value>${db.couchdb.max.connections}</value>
 		</property>
@@ -152,6 +155,9 @@
 		</property>
 		<property name="host">
 			<value>${db.couchdb.host}</value>
+		</property>
+		<property name="port">
+			<value>${db.couchdb.port}</value>
 		</property>
 		<property name="maxConnections">
 			<value>${db.couchdb.max.connections}</value>
