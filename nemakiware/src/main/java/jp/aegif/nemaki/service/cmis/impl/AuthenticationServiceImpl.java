@@ -42,13 +42,15 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	private PrincipalService principalService;
 
 	@Override
-	public User login(String userName, String password) {
+	public boolean login(String userName, String password) {
 		User u = principalService.getUserById(userName);
 		// succeeded
 		if (u != null ) {
 			if(passwordMatches(password, u.getPasswordHash())){
 				log.debug("[" + userName + "]Authentication succeeded");
-				return u;
+				
+				boolean isAdmin = (u.isAdmin() == null) ? false : true;
+				return isAdmin;
 			}
 		}
 
@@ -58,7 +60,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 			if(u != null){
 				log.warn(anonymousId + " should have not been registered in the database.");
 			}
-			return buildDummyAnonymousUser(anonymousId);
+			return false;
 		}
 
 		// failed
