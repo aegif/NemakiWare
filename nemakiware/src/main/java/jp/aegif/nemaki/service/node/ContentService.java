@@ -49,6 +49,18 @@ public interface ContentService {
 	// ///////////////////////////////////////
 	// Content
 	// ///////////////////////////////////////
+	/**
+	 * Check if a folder is the root folder
+	 * @param folder
+	 * @return
+	 */
+	public boolean isRoot(Folder folder);
+
+	/**
+	 * Check if any object of a type exists
+	 * @param objectTypeId
+	 * @return
+	 */
 	boolean existContent(String objectTypeId);
 
 	/**
@@ -143,7 +155,7 @@ public interface ContentService {
 	 * @return
 	 */
 	VersionSeries getVersionSeries(Document document);
-	
+
 	/**
 	 * Get a version series
 	 *
@@ -438,7 +450,7 @@ public interface ContentService {
 	 * @param objectId
 	 */
 	void deleteContentStream(CallContext callContext, Holder<String> objectId);
-	
+
 	/**
 	 * Delete a whole folder tree
 	 *

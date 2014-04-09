@@ -102,7 +102,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 			whereQueryString = "*:*";
 		} else {
 			SolrPredicateWalker solrPredicateWalker = new SolrPredicateWalker(
-					queryObject, solrUtil);
+					queryObject, solrUtil, contentService);
 			try {
 				Query whereQuery = solrPredicateWalker.walkPredicate(whereTree);
 				whereQueryString = whereQuery.toString();
@@ -184,12 +184,12 @@ public class SolrQueryProcessor implements QueryProcessor {
 			if (!aliases.keySet().contains("*")) {
 				filter = StringUtils.join(aliases.keySet(), ",");
 			}
-			
+
 			//Build ObjectList
 			ObjectList result = compileObjectService.compileObjectDataList(callContext,
 					permitted, filter, includeAllowableActions,
 					includeRelationships, null, true, maxItems, skipCount, false, aliases);
-			
+
 			//Sort
 			List<SortSpec> sortSpecs = queryObject.getOrderBys();
 			List<String> _orderBy = new ArrayList<String>();
@@ -199,12 +199,12 @@ public class SolrQueryProcessor implements QueryProcessor {
 				if(!sortSpec.isAscending()){
 					_sortSpec.add("DESC");
 				}
-				
+
 				_orderBy.add(StringUtils.join(_sortSpec, " "));
 			}
 			String orderBy = StringUtils.join(_orderBy, ",");
 			sortUtil.sort(result.getObjects(), orderBy);
-			
+
 			return result;
 		} else {
 			ObjectListImpl nullList = new ObjectListImpl();
