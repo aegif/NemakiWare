@@ -1002,7 +1002,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 				.getTypeDefinition(typeId);
 
 		if (type == null)
-			throw new IllegalArgumentException("Unknown type: " + type.getId());
+			throw new IllegalArgumentException("Unknown type: " + typeId);
 
 		// TODO :performance
 		if (!type.getPropertyDefinitions().containsKey(id))
