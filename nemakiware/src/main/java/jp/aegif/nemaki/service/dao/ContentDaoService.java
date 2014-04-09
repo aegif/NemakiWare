@@ -479,7 +479,7 @@ public interface ContentDaoService {
 	 *            "<= 0" means "infinite"
 	 * @return Return results with descending order by time
 	 */
-	List<Change> getLatestChanges(long startToken, int maxItems);
+	List<Change> getLatestChanges(String startToken, int maxItems);
 
 	/**
 	 * Create a change event

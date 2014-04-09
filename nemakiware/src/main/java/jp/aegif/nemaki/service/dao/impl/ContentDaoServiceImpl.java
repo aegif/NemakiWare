@@ -575,7 +575,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public List<Change> getLatestChanges(long startToken, int maxItems) {
+	public List<Change> getLatestChanges(String startToken, int maxItems) {
 		return nonCachedContentDaoService
 				.getLatestChanges(startToken, maxItems);
 	}
