@@ -203,7 +203,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 					.getValue());
 			if (change == null)
 				invalidArgument("changeLogToken:" + changeLogToken.getValue()
-						+ " is no longer available");
+						+ " does not exist");
 		}
 
 	}
@@ -366,7 +366,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	/**
-	 *
+	 * 
 	 * NOTE:Check the condition before calling this method
 	 */
 	@Override
@@ -396,7 +396,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 			Properties childProperties) {
 		List<String> allowedTypes = folder.getAllowedChildTypeIds();
 
-		//If cmis:allowedCHildTypeIds is not set, all types are allowed.
+		// If cmis:allowedCHildTypeIds is not set, all types are allowed.
 		if (!CollectionUtils.isEmpty(allowedTypes)) {
 			String childType = DataUtil.getIdProperty(childProperties,
 					PropertyIds.OBJECT_TYPE_ID);
@@ -405,7 +405,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 						PropertyIds.OBJECT_ID);
 				constraint(
 						objectId,
-						"cmis:objectTypeId=" + childType + " is not in the list of AllowedChildObjectTypeIds of the parent folder");
+						"cmis:objectTypeId="
+								+ childType
+								+ " is not in the list of AllowedChildObjectTypeIds of the parent folder");
 			}
 		}
 	}
@@ -416,14 +418,19 @@ public class ExceptionServiceImpl implements ExceptionService,
 		Map<String, PropertyDefinition<?>> propertyDefinitions = typeDefinition
 				.getPropertyDefinitions();
 
-		//Adding secondary types and its properties MAY be done in the same operation
-		List<String> secIds = DataUtil.getIdListProperty(properties, PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
-		if(CollectionUtils.isNotEmpty(secIds)){
-			for(String secId : secIds){
-				TypeDefinition sec = typeManager.getTypeById(secId).getTypeDefinition();
-				for(Entry<String, PropertyDefinition<?>> entry : sec.getPropertyDefinitions().entrySet()){
-					if(!propertyDefinitions.containsKey(entry.getKey())){
-						propertyDefinitions.put(entry.getKey(), entry.getValue());
+		// Adding secondary types and its properties MAY be done in the same
+		// operation
+		List<String> secIds = DataUtil.getIdListProperty(properties,
+				PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
+		if (CollectionUtils.isNotEmpty(secIds)) {
+			for (String secId : secIds) {
+				TypeDefinition sec = typeManager.getTypeById(secId)
+						.getTypeDefinition();
+				for (Entry<String, PropertyDefinition<?>> entry : sec
+						.getPropertyDefinitions().entrySet()) {
+					if (!propertyDefinitions.containsKey(entry.getKey())) {
+						propertyDefinitions.put(entry.getKey(),
+								entry.getValue());
 					}
 				}
 			}
@@ -469,8 +476,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 			return;
 
 		List<T> data = propertyData.getValues();
-		//null or blank String value should be permitted within any choice list
-		if(CollectionUtils.isEmpty(data)) return;
+		// null or blank String value should be permitted within any choice list
+		if (CollectionUtils.isEmpty(data))
+			return;
 
 		List<Choice<T>> choices = definition.getChoices();
 		if (CollectionUtils.isEmpty(choices) || CollectionUtils.isEmpty(data))
@@ -480,10 +488,10 @@ public class ExceptionServiceImpl implements ExceptionService,
 		if (definition.getCardinality() == Cardinality.SINGLE) {
 			T d = data.get(0);
 
-			if(d instanceof String && StringUtils.isBlank((String)d)
-					|| d == null){
+			if (d instanceof String && StringUtils.isBlank((String) d)
+					|| d == null) {
 				return;
-			}else{
+			} else {
 				for (Choice<T> choice : choices) {
 					List<T> value = choice.getValue();
 					T v = value.get(0);
@@ -504,10 +512,10 @@ public class ExceptionServiceImpl implements ExceptionService,
 				if (values.contains(d)) {
 					included = true;
 				} else {
-					if(d instanceof String && StringUtils.isBlank((String)d)
-							|| d == null){
+					if (d instanceof String && StringUtils.isBlank((String) d)
+							|| d == null) {
 						included = true;
-					}else{
+					} else {
 						included = false;
 						break;
 					}
@@ -606,7 +614,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void constraintCotrollableAcl(TypeDefinition typeDefinition,
-			org.apache.chemistry.opencmis.commons.data.Acl addAces, org.apache.chemistry.opencmis.commons.data.Acl removeAces, Properties properties) {
+			org.apache.chemistry.opencmis.commons.data.Acl addAces,
+			org.apache.chemistry.opencmis.commons.data.Acl removeAces,
+			Properties properties) {
 		// TODO ignore removeAces?
 		boolean aclIsEmpty = (addAces == null)
 				|| (addAces != null && CollectionUtils.isEmpty(addAces
@@ -618,18 +628,21 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void constraintPermissionDefined(org.apache.chemistry.opencmis.commons.data.Acl acl, String objectId) {
+	public void constraintPermissionDefined(
+			org.apache.chemistry.opencmis.commons.data.Acl acl, String objectId) {
 		boolean aclIsEmpty = (acl == null)
 				|| (acl != null && CollectionUtils.isEmpty(acl.getAces())) ? true
 				: false;
-		List<PermissionDefinition> definitions = repositoryInfo.getAclCapabilities().getPermissions();
+		List<PermissionDefinition> definitions = repositoryInfo
+				.getAclCapabilities().getPermissions();
 		List<String> definedIds = new ArrayList<String>();
-		for(PermissionDefinition pdf : definitions){
+		for (PermissionDefinition pdf : definitions) {
 			definedIds.add(pdf.getId());
 		}
 
 		if (!aclIsEmpty) {
-			for (org.apache.chemistry.opencmis.commons.data.Ace ace : acl.getAces()) {
+			for (org.apache.chemistry.opencmis.commons.data.Ace ace : acl
+					.getAces()) {
 				List<String> permissions = ace.getPermissions();
 				for (String p : permissions) {
 					if (!definedIds.contains(p)) {
@@ -645,8 +658,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 	public void constraintAllowedSourceTypes(
 			RelationshipTypeDefinition relationshipTypeDefinition,
 			Content source) {
-		List<String> allowed = relationshipTypeDefinition.getAllowedSourceTypeIds();
-		if(CollectionUtils.isNotEmpty(allowed)){
+		List<String> allowed = relationshipTypeDefinition
+				.getAllowedSourceTypeIds();
+		if (CollectionUtils.isNotEmpty(allowed)) {
 			if (!allowed.contains((source.getObjectType())))
 				constraint(source.getId(),
 						"The source object's type is not allowed for the relationship");
@@ -657,8 +671,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 	public void constraintAllowedTargetTypes(
 			RelationshipTypeDefinition relationshipTypeDefinition,
 			Content target) {
-		List<String> allowed = relationshipTypeDefinition.getAllowedTargetTypeIds();
-		if(CollectionUtils.isNotEmpty(allowed)){
+		List<String> allowed = relationshipTypeDefinition
+				.getAllowedTargetTypeIds();
+		if (CollectionUtils.isNotEmpty(allowed)) {
 			if (!allowed.contains(target.getObjectType()))
 				constraint(target.getId(),
 						"The target object's type is not allowed for the relationship");
@@ -692,15 +707,18 @@ public class ExceptionServiceImpl implements ExceptionService,
 			Document document) {
 		VersionSeries vs = contentService.getVersionSeries(document);
 		if (vs.isVersionSeriesCheckedOut()) {
-			if(document.isPrivateWorkingCopy()){
-				//Can update by only the use who has checked it out
+			if (document.isPrivateWorkingCopy()) {
+				// Can update by only the use who has checked it out
 				String whoCheckedOut = vs.getVersionSeriesCheckedOutBy();
-				if(!currentUserId.equals(whoCheckedOut)){
-					constraint(document.getId(), "This private working copy can be modified only by the user who has checked it out. ");
+				if (!currentUserId.equals(whoCheckedOut)) {
+					constraint(
+							document.getId(),
+							"This private working copy can be modified only by the user who has checked it out. ");
 				}
-			}else{
-				//All versions except for PWC are locked.
-				constraint(document.getId(), "All versions except for PWC are locked when checked out.");
+			} else {
+				// All versions except for PWC are locked.
+				constraint(document.getId(),
+						"All versions except for PWC are locked when checked out.");
 			}
 		}
 
@@ -728,10 +746,14 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void constraintContentStreamRequired(DocumentTypeDefinition typeDefinition, ContentStream contentStream){
-		if(ContentStreamAllowed.REQUIRED.equals(typeDefinition.getContentStreamAllowed())){
-			if(contentStream == null || contentStream.getStream() == null){
-				constraint("[typeId=" + typeDefinition.getId() + "]This document type does not allow no content stream");
+	public void constraintContentStreamRequired(
+			DocumentTypeDefinition typeDefinition, ContentStream contentStream) {
+		if (ContentStreamAllowed.REQUIRED.equals(typeDefinition
+				.getContentStreamAllowed())) {
+			if (contentStream == null || contentStream.getStream() == null) {
+				constraint("[typeId="
+						+ typeDefinition.getId()
+						+ "]This document type does not allow no content stream");
 			}
 		}
 	}
@@ -781,21 +803,22 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public  void constraintUpdatePropertyDefinition(PropertyDefinition<?> update, PropertyDefinition<?>old) {
-		constraintUpdatePropertyDefinitionHelper(update,old);
+	public void constraintUpdatePropertyDefinition(
+			PropertyDefinition<?> update, PropertyDefinition<?> old) {
+		constraintUpdatePropertyDefinitionHelper(update, old);
 	}
 
-	private  <T> PropertyDefinition<T> constraintUpdatePropertyDefinitionHelper(
-			PropertyDefinition<T> update, PropertyDefinition<?>old) {
+	private <T> PropertyDefinition<T> constraintUpdatePropertyDefinitionHelper(
+			PropertyDefinition<T> update, PropertyDefinition<?> old) {
 		String msg = "";
 		// objField.setName(field.getName());
 		// objField.setValue(field.getValue());
-		//return objField;
-		if(!old.isInherited().equals(update.isInherited())){
+		// return objField;
+		if (!old.isInherited().equals(update.isInherited())) {
 			msg += "'inherited' cannot be modified";
 		}
 
-		if(typeManager.getSystemPropertyIds().contains(update.getId())){
+		if (typeManager.getSystemPropertyIds().contains(update.getId())) {
 			msg += "CMIS-defined property definition cannot be modified";
 		}
 
@@ -829,8 +852,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 		return update;
 	}
 
-	private void constraintChoicesRestriction(PropertyDefinition<?>update,PropertyDefinition<?>old){
-		 String msg = update.getId() + ":";
+	private void constraintChoicesRestriction(PropertyDefinition<?> update,
+			PropertyDefinition<?> old) {
+		String msg = update.getId() + ":";
 
 		List<?> updateValues = flattenChoiceValues(update.getChoices());
 		List<?> oldValues = flattenChoiceValues(old.getChoices());
@@ -858,8 +882,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 		return result;
 	}
 
-	private void constraintRestrictedValidation(
-			PropertyDefinition<?> update, PropertyDefinition<?> old) {
+	private void constraintRestrictedValidation(PropertyDefinition<?> update,
+			PropertyDefinition<?> old) {
 		switch (update.getPropertyType()) {
 		case BOOLEAN:
 			break;
@@ -884,14 +908,17 @@ public class ExceptionServiceImpl implements ExceptionService,
 			break;
 		}
 	}
+
 	private void constraintRestrictedDecimalValidation(
 			PropertyDefinition<?> update, PropertyDefinition<?> old) {
 		PropertyDecimalDefinition _update = (PropertyDecimalDefinition) update;
 		PropertyDecimalDefinition _old = (PropertyDecimalDefinition) old;
 		// When minValue is restricted, throw an error
-		minRestriction(_update.getMinValue(), _old.getMinValue(), _update.getId());
+		minRestriction(_update.getMinValue(), _old.getMinValue(),
+				_update.getId());
 		// When minValue is restricted, throw an error
-		maxRestriction(_update.getMaxValue(), _old.getMaxValue(), _update.getId(), null);
+		maxRestriction(_update.getMaxValue(), _old.getMaxValue(),
+				_update.getId(), null);
 	}
 
 	private void constraintRestrictedIntegerValidation(
@@ -899,9 +926,11 @@ public class ExceptionServiceImpl implements ExceptionService,
 		PropertyIntegerDefinition _update = (PropertyIntegerDefinition) update;
 		PropertyIntegerDefinition _old = (PropertyIntegerDefinition) old;
 		// When minValue is restricted, throw an error
-		minRestriction(_update.getMinValue(), _old.getMinValue(), _update.getId());
+		minRestriction(_update.getMinValue(), _old.getMinValue(),
+				_update.getId());
 		// When minValue is restricted, throw an error
-		maxRestriction(_update.getMaxValue(), _old.getMaxValue(), _update.getId(), _update.getPropertyType());
+		maxRestriction(_update.getMaxValue(), _old.getMaxValue(),
+				_update.getId(), _update.getPropertyType());
 	}
 
 	private void constraintRestrictedStringValidation(
@@ -909,10 +938,12 @@ public class ExceptionServiceImpl implements ExceptionService,
 		PropertyStringDefinition _update = (PropertyStringDefinition) update;
 		PropertyStringDefinition _old = (PropertyStringDefinition) old;
 		// When minValue is restricted, throw an error
-		maxRestriction(_update.getMaxLength(), _old.getMaxLength(), _update.getId(), _update.getPropertyType());
+		maxRestriction(_update.getMaxLength(), _old.getMaxLength(),
+				_update.getId(), _update.getPropertyType());
 	}
 
-	private void minRestriction(Comparable update, Comparable old, String propertyId) {
+	private void minRestriction(Comparable update, Comparable old,
+			String propertyId) {
 		// When minValue is restricted, throw an error
 		boolean flag = false;
 		String msg = propertyId + ":";
@@ -933,7 +964,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 		}
 	}
 
-	private void maxRestriction(Comparable update, Comparable old, String propertyId, PropertyType propertyType) {
+	private void maxRestriction(Comparable update, Comparable old,
+			String propertyId, PropertyType propertyType) {
 		// When minValue is restricted, throw an error
 		boolean flag = false;
 		String msg = propertyId + ":";
@@ -949,9 +981,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 			}
 		}
 		if (flag) {
-			if(propertyType.equals(PropertyType.STRING)){
+			if (propertyType.equals(PropertyType.STRING)) {
 				msg += "'maxLength' cannot be further restricted";
-			}else{
+			} else {
 				msg += "'maxValue' cannot be further restricted";
 			}
 			constraint(msg);
@@ -964,7 +996,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 		String msg = propertyDefinition.getId() + ":";
 		String queryName = propertyDefinition.getQueryName();
 
-		if(StringUtils.isEmpty(queryName)) constraint(msg + "'queryName' is null");
+		if (StringUtils.isEmpty(queryName))
+			constraint(msg + "'queryName' is null");
 
 		final String space = " ";
 		final String comma = ",";
@@ -975,73 +1008,82 @@ public class ExceptionServiceImpl implements ExceptionService,
 		final String openParenthesis = "\\(";
 		final String closeParenthesis = "\\)";
 
-		if(queryName.matches(buildContainRegEx(space))
-		|| queryName.matches(buildContainRegEx(comma))
-		|| queryName.matches(buildContainRegEx(dubleQuotation))
-		|| queryName.matches(buildContainRegEx(singleQuotaion))
-		|| queryName.matches(buildContainRegEx(backslash))
-		|| queryName.matches(buildContainRegEx(period))
-		|| queryName.matches(buildContainRegEx(openParenthesis))
-		|| queryName.matches(buildContainRegEx(closeParenthesis))
-		){
-			constraint(msg + "invalid character for 'queryName'. See spec 2.1.2.1.3");
+		if (queryName.matches(buildContainRegEx(space))
+				|| queryName.matches(buildContainRegEx(comma))
+				|| queryName.matches(buildContainRegEx(dubleQuotation))
+				|| queryName.matches(buildContainRegEx(singleQuotaion))
+				|| queryName.matches(buildContainRegEx(backslash))
+				|| queryName.matches(buildContainRegEx(period))
+				|| queryName.matches(buildContainRegEx(openParenthesis))
+				|| queryName.matches(buildContainRegEx(closeParenthesis))) {
+			constraint(msg
+					+ "invalid character for 'queryName'. See spec 2.1.2.1.3");
 		}
 	}
 
-	private String buildContainRegEx(String contained){
+	private String buildContainRegEx(String contained) {
 		return ".*" + contained + ".*";
 	}
 
 	@Override
-	public void constraintContentStreamDownload(Document document){
-		DocumentTypeDefinition documentTypeDefinition = (DocumentTypeDefinition) typeManager.getTypeDefinition(document);
-		ContentStreamAllowed csa = documentTypeDefinition.getContentStreamAllowed();
-		if(ContentStreamAllowed.NOTALLOWED == csa ||
-			ContentStreamAllowed.ALLOWED == csa && StringUtils.isBlank(document.getAttachmentNodeId())){
-			constraint(document.getId(), "This document has no ContentStream. getContentStream is not supported.");
+	public void constraintContentStreamDownload(Document document) {
+		DocumentTypeDefinition documentTypeDefinition = (DocumentTypeDefinition) typeManager
+				.getTypeDefinition(document);
+		ContentStreamAllowed csa = documentTypeDefinition
+				.getContentStreamAllowed();
+		if (ContentStreamAllowed.NOTALLOWED == csa
+				|| ContentStreamAllowed.ALLOWED == csa
+				&& StringUtils.isBlank(document.getAttachmentNodeId())) {
+			constraint(document.getId(),
+					"This document has no ContentStream. getContentStream is not supported.");
 		}
 	}
 
 	@Override
-	public void constraintRenditionStreamDownload(Content content, String streamId){
+	public void constraintRenditionStreamDownload(Content content,
+			String streamId) {
 		List<String> renditions = content.getRenditionIds();
-		if(CollectionUtils.isEmpty(renditions) || !renditions.contains(streamId)){
-			constraint(content.getId(), "This document has no rendition specified with " + streamId);
+		if (CollectionUtils.isEmpty(renditions)
+				|| !renditions.contains(streamId)) {
+			constraint(content.getId(),
+					"This document has no rendition specified with " + streamId);
 		}
 	}
 
 	@Override
 	public void constraintImmutable(Document document,
 			TypeDefinition typeDefinition) {
-		Boolean defaultVal = (Boolean)typeManager.getSingleDefaultValue(PropertyIds.IS_IMMUTABLE, typeDefinition.getId());
+		Boolean defaultVal = (Boolean) typeManager.getSingleDefaultValue(
+				PropertyIds.IS_IMMUTABLE, typeDefinition.getId());
 
 		boolean flag = false;
-		if(document.isImmutable() == null){
-			if(defaultVal != null && defaultVal){
+		if (document.isImmutable() == null) {
+			if (defaultVal != null && defaultVal) {
 				flag = true;
 			}
-		}else{
-			if(document.isImmutable()){
+		} else {
+			if (document.isImmutable()) {
 				flag = true;
 			}
 		}
 
-		if(flag){
-			constraint(document.getId(), "Immutable document cannot be updated/deleted");
+		if (flag) {
+			constraint(document.getId(),
+					"Immutable document cannot be updated/deleted");
 		}
 	}
 
 	@Override
-	public void constraintPropertyDefinition(
-			TypeDefinition typeDefinition,
+	public void constraintPropertyDefinition(TypeDefinition typeDefinition,
 			PropertyDefinition<?> propertyDefinition) {
 
 		String typeId = typeDefinition.getId();
 		String propertyId = propertyDefinition.getId();
 
-		if(propertyDefinition.isOrderable()
-				&& propertyDefinition.getCardinality() == Cardinality.MULTI){
-			String msg = DataUtil.buildPrefixTypeProperty(typeId, propertyId) + "PropertyDefinition violates the specification";
+		if (propertyDefinition.isOrderable()
+				&& propertyDefinition.getCardinality() == Cardinality.MULTI) {
+			String msg = DataUtil.buildPrefixTypeProperty(typeId, propertyId)
+					+ "PropertyDefinition violates the specification";
 			constraint(msg);
 		}
 	}
@@ -1099,26 +1141,14 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void updateConflict(Content content, Holder<String> changeToken) {
-		long latestOfContent = content.getChangeToken();
-
-		if ((changeToken == null || changeToken.getValue() == null)
-				&& latestOfContent != 0) {
+		if ((changeToken == null || changeToken.getValue() == null)) {
 			throw new CmisUpdateConflictException(
 					"Change token is required to update", HTTP_STATUS_CODE_409);
-		} else {
-			// NOTE: 0 means somewhat "not set" for system use
-			if (latestOfContent == 0) {
-				// Do nothing
-				// TODO logging?
-			} else {
-				if (!String.valueOf(latestOfContent).equals(
-						changeToken.getValue()))
-					throw new CmisUpdateConflictException(
-							"Cannot update because the changeToken conflicts",
-							HTTP_STATUS_CODE_409);
-			}
+		} else if (!changeToken.getValue().equals(content.getChangeToken())) {
+			throw new CmisUpdateConflictException(
+					"Cannot update because the changeToken conflicts",
+					HTTP_STATUS_CODE_409);
 		}
-
 	}
 
 	private String buildMsgWithId(String msg, String objectId) {

@@ -83,7 +83,6 @@ import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang.StringUtils;
-import org.apache.commons.lang.math.NumberUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -102,7 +101,7 @@ public class ContentServiceImpl implements ContentService {
 
 	private static final Log log = LogFactory
 			.getLog(ContentDaoServiceImpl.class);
-	final static int FIRST_TOKEN = 1;
+	final static String FIRST_TOKEN = "1";
 
 	// ///////////////////////////////////////
 	// Content
@@ -374,7 +373,7 @@ public class ContentServiceImpl implements ContentService {
 		return contentDaoService.getItem(objectId);
 	}
 
-	private long writeChangeEvent(CallContext callContext, Content content,
+	private String writeChangeEvent(CallContext callContext, Content content,
 			ChangeType changeType) {
 		Change latest = contentDaoService.getLatestChange();
 
@@ -398,7 +397,15 @@ public class ContentServiceImpl implements ContentService {
 		if (latest == null) {
 			change.setChangeToken(FIRST_TOKEN);
 		} else {
-			change.setChangeToken(latest.getChangeToken() + 1);
+			Long latestToken = null;
+			try{
+				latestToken = Long.valueOf(latest.getChangeToken());
+			}catch(Exception e){
+				log.error("ChangeToken " + latest.getChangeToken() + " is not numeric", e);
+			}
+			
+			String token = String.valueOf(latestToken + 1);
+			change.setChangeToken(token);
 		}
 
 		change.setType(NodeType.CHANGE.value());
@@ -422,12 +429,9 @@ public class ContentServiceImpl implements ContentService {
 
 		setSignature(callContext, change);
 
-		// Modify old change event
+		//  Create a new change event
 		contentDaoService.create(change);
-		/*
-		 * if (latest != null) { latest.setLatest(false);
-		 * contentDaoService.update(latest); }
-		 */
+		
 		// Update change token of the content
 		content.setChangeToken(change.getChangeToken());
 		update(content);
@@ -1511,12 +1515,7 @@ public class ContentServiceImpl implements ContentService {
 			Holder<String> changeLogToken, Boolean includeProperties,
 			String filter, Boolean includePolicyIds, Boolean includeAcl,
 			BigInteger maxItems, ExtensionsData extension) {
-		long latestChangeLogToken = 0;
-		if (changeLogToken != null && changeLogToken.getValue() != null
-				&& NumberUtils.isNumber(changeLogToken.getValue()))
-			latestChangeLogToken = Long.parseLong(changeLogToken.getValue());
-
-		return contentDaoService.getLatestChanges(latestChangeLogToken,
+		return contentDaoService.getLatestChanges(changeLogToken.getValue(),
 				maxItems.intValue());
 	}
 
