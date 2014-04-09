@@ -107,6 +107,11 @@ public class ContentServiceImpl implements ContentService {
 	// Content
 	// ///////////////////////////////////////
 	@Override
+	public boolean isRoot(Folder folder){
+		return propertyUtil.isRoot(folder);
+	}
+
+	@Override
 	public boolean existContent(String objectTypeId) {
 		return contentDaoService.existContent(objectTypeId);
 	}
@@ -403,7 +408,7 @@ public class ContentServiceImpl implements ContentService {
 			}catch(Exception e){
 				log.error("ChangeToken " + latest.getChangeToken() + " is not numeric", e);
 			}
-			
+
 			String token = String.valueOf(latestToken + 1);
 			change.setChangeToken(token);
 		}
@@ -431,7 +436,7 @@ public class ContentServiceImpl implements ContentService {
 
 		//  Create a new change event
 		contentDaoService.create(change);
-		
+
 		// Update change token of the content
 		content.setChangeToken(change.getChangeToken());
 		update(content);

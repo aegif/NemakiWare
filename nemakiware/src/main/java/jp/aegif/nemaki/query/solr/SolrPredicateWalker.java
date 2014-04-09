@@ -27,6 +27,9 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
+import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.service.node.ContentService;
+
 import org.antlr.runtime.tree.Tree;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
@@ -64,13 +67,15 @@ public class SolrPredicateWalker {
 
 	private final SolrUtil solrUtil;
 	private final QueryObject queryObject;
+	private final ContentService contentService;
 
 	public static final String FLD = "field";
 	public static final String CND = "cond";
 
-	public SolrPredicateWalker(QueryObject queryObject, SolrUtil solrUtil) {
+	public SolrPredicateWalker(QueryObject queryObject, SolrUtil solrUtil, ContentService contentService) {
 		this.queryObject = queryObject;
 		this.solrUtil = solrUtil;
+		this.contentService = contentService;
 	}
 
 	public Query walkPredicate(Tree node) {
@@ -360,8 +365,7 @@ public class SolrPredicateWalker {
 		}
 
 		// Build a Statement
-		String folderId = (String) walkExpr(paramNode);
-		Query q = walkInTreeInternal(folderId);
+		Query q = walkInTreeInternal(paramNode);
 		if (qualNode != null) {
 			String qualifier = walkExpr(qualNode).toString();
 			Term tQual = new Term("type", buildQualField(qualifier));
@@ -374,24 +378,66 @@ public class SolrPredicateWalker {
 		return q;
 	}
 
-	private Query walkInTreeInternal(String folderId) {
-		// Solr server setting
-		SolrServer solrServer = solrUtil.getSolrServer();
+	private Query walkInTreeInternal(Tree paramNode) {
+		//Build first query for descendant folders
+		BooleanQuery query1 = new BooleanQuery();
 
-		// Get all the subfolder ids
-		List<String> descendantIds = getDescendantFolderId(folderId, solrServer);
+		String s = paramNode.getText();
+		String folderId = s.substring(1, s.length() - 1);
 
-		// Build a statement
-		Iterator<String> iterator = descendantIds.iterator();
-		BooleanQuery q = new BooleanQuery();
-		while (iterator.hasNext()) {
-			String descendantId = iterator.next();
-			Term t = new Term(solrUtil.getPropertyNameInSolr(PropertyIds.PARENT_ID), descendantId);
-			TermQuery q1 = new TermQuery(t);
-			q.add(q1, Occur.SHOULD);
+		Folder folder = contentService.getFolder(folderId);
+
+		String folderPath = contentService.calculatePath(folder);
+		String _folderPath = folderPath.replaceAll("\\/", "\\\\/"); //escape in Solr query
+
+		if(contentService.isRoot(folder)){
+			Term t = new Term(solrUtil.getPropertyNameInSolr(PropertyIds.PATH), _folderPath + "*");
+			query1.add(new TermQuery(t), Occur.MUST);
+		}else{
+			String _folderId = folderId.replaceAll("\\/", "\\\\/"); //escape in Solr query
+			Term t1 = new Term(solrUtil.getPropertyNameInSolr(PropertyIds.PARENT_ID), _folderId);
+			String path = folderPath + "/*";
+			String _path = path.replaceAll("\\/", "\\\\/"); //escape in Solr query
+			Term t2 = new Term(solrUtil.getPropertyNameInSolr(PropertyIds.PATH), _path);
+			query1.add(new TermQuery(t1), Occur.SHOULD);
+			query1.add(new TermQuery(t2), Occur.SHOULD);
 		}
 
-		return q;
+		// Set Solr server
+		SolrServer solrServer = solrUtil.getSolrServer();
+
+		// Get all the descending folder objectIds(including direct children)
+		List<String> descendantIds = new ArrayList<String>();
+		SolrDocumentList children = null;
+		try {
+			QueryResponse resp = solrServer.query(new SolrQuery(query1.toString()));
+			children = resp.getResults();
+		} catch (SolrServerException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+
+		if(children != null && !children.isEmpty()){
+			Iterator<SolrDocument> it = children.iterator();
+			while(it.hasNext()){
+				SolrDocument sd = it.next();
+				String id = (String) sd.getFieldValue("id");
+				descendantIds.add(id);
+			}
+		}
+
+		// Build the second query for getting all the objects under descending folders
+		Iterator<String> iterator = descendantIds.iterator();
+		BooleanQuery query2 = new BooleanQuery();
+		while (iterator.hasNext()) {
+			String descendantId = iterator.next();
+			String _descendantId = descendantId.replaceAll("\\/", "\\\\/");
+			Term t = new Term(solrUtil.getPropertyNameInSolr(PropertyIds.PARENT_ID), _descendantId);
+			TermQuery tq = new TermQuery(t);
+			query2.add(tq, Occur.SHOULD);
+		}
+
+		return query2;
 	}
 
 	// //////////////////////////////////////////////////////////////////////////////
