@@ -25,6 +25,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import jp.aegif.nemaki.model.constant.NodeType;
+
 import org.codehaus.jackson.annotate.JsonIgnoreProperties;
 
 /**
@@ -40,6 +42,7 @@ public class Folder extends Content {
 	
 	public Folder(){
 		super();
+		setType(NodeType.CMIS_FOLDER.value());
 	}
 	
 	public Folder(Content c){

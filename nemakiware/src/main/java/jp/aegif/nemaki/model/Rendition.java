@@ -23,6 +23,8 @@ package jp.aegif.nemaki.model;
 
 import java.io.InputStream;
 
+import jp.aegif.nemaki.model.constant.NodeType;
+
 
 public class Rendition extends NodeBase{
 	public static final String TYPE = "rendition";
@@ -38,6 +40,7 @@ public class Rendition extends NodeBase{
 
 	public Rendition(){
 		super();
+		setType(NodeType.RENDITION.value());
 	}
 
 	public Rendition(NodeBase n){
