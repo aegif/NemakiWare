@@ -21,6 +21,8 @@
  ******************************************************************************/
 package jp.aegif.nemaki.model;
 
+import jp.aegif.nemaki.model.constant.NodeType;
+
 public class Relationship extends Content {
 	public static final String TYPE = "relationship";
 	private String sourceId;
@@ -28,6 +30,7 @@ public class Relationship extends Content {
 	
 	public Relationship(){
 		super();
+		setType(NodeType.CMIS_RELATIONSHIP.value());
 	}
 	
 	public Relationship(Content c){

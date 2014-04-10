@@ -64,6 +64,7 @@ public class NemakiPropertyDefinitionDetail extends NodeBase {
 
 	public NemakiPropertyDefinitionDetail() {
 		super();
+		setType(NodeType.PROPERTY_DEFINITION_DETAIL.value());
 	}
 
 	public NemakiPropertyDefinitionDetail(NodeBase n) {

@@ -47,6 +47,7 @@ public class Change extends NodeBase{
 	
 	public Change() {
 		super();
+		setType(NodeType.CHANGE.value());
 	}
 
 	public Change(NodeBase n) {
