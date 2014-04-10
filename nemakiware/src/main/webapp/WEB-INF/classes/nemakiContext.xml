@@ -8,7 +8,7 @@
 
 
     <!-- Interceptor for Debugging -->
-    <bean id="debugInterceptor" class="jp.aegif.nemaki.util.DebugInterceptor">
+    <bean id="debugInterceptor" class="jp.aegif.nemaki.spring.DebugInterceptor">
     </bean>
 
     <!-- Property Manager -->
