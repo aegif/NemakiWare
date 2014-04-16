@@ -98,7 +98,7 @@
 
     <bean id="capabilities"
         class="jp.aegif.nemaki.repository.info.NemakiCapabilitiesImpl">
-         <constructor-arg>
+        <constructor-arg>
             <ref bean="nemakiPropertyManager" />
         </constructor-arg>
     </bean>
@@ -130,6 +130,9 @@
         init-method="init" depends-on="typeService">
         <property name="typeService">
             <ref bean="TypeService" />
+        </property>
+        <property name="propertyManager">
+            <ref bean="nemakiPropertyManager" />
         </property>
     </bean>
 

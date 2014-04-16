@@ -57,5 +57,87 @@ public interface PropertyKey {
 	final String CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_CONTROLLABLE_POLICY = "capability.newTypeSettableAttributes.controllablePolicy";
 	final String CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_CONTROLLABLE_ACL = "capability.newTypeSettableAttributes.controllableACL";
 	final String CAPABILITY_ACL = "capability.acl";
+	
+	//Base types
+	final String BASETYPE_DOCUMENT_LOCAL_NAME = "basetype.document.localName";
+	final String BASETYPE_DOCUMENT_DISPLAY_NAME = "basetype.document.displayName";
+	final String BASETYPE_DOCUMENT_DESCRIPTION = "basetype.document.description";
+	final String BASETYPE_DOCUMENT_CREATABLE = "basetype.document.creatable";
+	final String BASETYPE_DOCUMENT_FILEABLE = "basetype.document.fileable";
+	final String BASETYPE_DOCUMENT_QUERYABLE = "basetype.document.queryable";
+	final String BASETYPE_DOCUMENT_CONTROLLABLE_POLICY = "basetype.document.controllablePolicy";
+	final String BASETYPE_DOCUMENT_CONTROLLABLE_ACL = "basetype.document.controllableAcl";
+	final String BASETYPE_DOCUMENT_INCLUDED_IN_SUPER_TYPE_QUERY = "basetype.document.includedInSupertypeQuery";
+	final String BASETYPE_DOCUMENT_FULLTEXT_INDEXED = "basetype.document.fulltextIndexed";
+	final String BASETYPE_DOCUMENT_TYPE_MUTABILITY_CAN_CREATE = "basetype.document.typeMutability.canCreate";
+	final String BASETYPE_DOCUMENT_TYPE_MUTABILITY_CAN_UPDATE = "basetype.document.typeMutability.canUpdate";
+	final String BASETYPE_DOCUMENT_TYPE_MUTABILITY_CAN_DELETE = "basetype.document.typeMutability.canDelete";
+	final String BASETYPE_DOCUMENT_VERSIONABLE = "basetype.document.versionable";
+	final String BASETYPE_DOCUMENT_CONTENT_STREAM_ALLOWED = "basetype.document.contentStreamAllowed";
+	
+	final String BASETYPE_FOLDER_LOCAL_NAME = "basetype.folder.localName";
+	final String BASETYPE_FOLDER_DISPLAY_NAME = "basetype.folder.displayName";
+	final String BASETYPE_FOLDER_DESCRIPTION = "basetype.folder.description";
+	final String BASETYPE_FOLDER_CREATABLE = "basetype.folder.creatable";
+	final String BASETYPE_FOLDER_QUERYABLE = "basetype.folder.queryable";
+	final String BASETYPE_FOLDER_CONTROLLABLE_POLICY = "basetype.folder.controllablePolicy";
+	final String BASETYPE_FOLDER_CONTROLLABLE_ACL = "basetype.folder.controllableAcl";
+	final String BASETYPE_FOLDER_INCLUDED_IN_SUPER_TYPE_QUERY = "basetype.folder.includedInSupertypeQuery";
+	final String BASETYPE_FOLDER_FULLTEXT_INDEXED = "basetype.folder.fulltextIndexed";
+	final String BASETYPE_FOLDER_TYPE_MUTABILITY_CAN_CREATE = "basetype.folder.typeMutability.canCreate";
+	final String BASETYPE_FOLDER_TYPE_MUTABILITY_CAN_UPDATE = "basetype.folder.typeMutability.canUpdate";
+	final String BASETYPE_FOLDER_TYPE_MUTABILITY_CAN_DELETE = "basetype.folder.typeMutability.canDelete";
 
+	final String BASETYPE_RELATIONSHIP_LOCAL_NAME = "basetype.relationship.localName";
+	final String BASETYPE_RELATIONSHIP_DISPLAY_NAME = "basetype.relationship.displayName";
+	final String BASETYPE_RELATIONSHIP_DESCRIPTION = "basetype.relationship.description";
+	final String BASETYPE_RELATIONSHIP_CREATABLE = "basetype.relationship.creatable";
+	final String BASETYPE_RELATIONSHIP_QUERYABLE = "basetype.relationship.queryable";
+	final String BASETYPE_RELATIONSHIP_CONTROLLABLE_POLICY = "basetype.relationship.controllablePolicy";
+	final String BASETYPE_RELATIONSHIP_CONTROLLABLE_ACL = "basetype.relationship.controllableAcl";
+	final String BASETYPE_RELATIONSHIP_INCLUDED_IN_SUPER_TYPE_QUERY = "basetype.relationship.includedInSupertypeQuery";
+	final String BASETYPE_RELATIONSHIP_FULLTEXT_INDEXED = "basetype.relationship.fulltextIndexed";
+	final String BASETYPE_RELATIONSHIP_TYPE_MUTABILITY_CAN_CREATE = "basetype.relationship.typeMutability.canCreate";
+	final String BASETYPE_RELATIONSHIP_TYPE_MUTABILITY_CAN_UPDATE = "basetype.relationship.typeMutability.canUpdate";
+	final String BASETYPE_RELATIONSHIP_TYPE_MUTABILITY_CAN_DELETE = "basetype.relationship.typeMutability.canDelete";
+	final String BASETYPE_RELATIONSHIP_ALLOWED_SOURCE_TYPES = "basetype.relationship.allowedSourceTypes";
+	final String BASETYPE_RELATIONSHIP_ALLOWED_TARGET_TYPES = "basetype.relationship.allowedTargetTypes";
+
+	final String BASETYPE_POLICY_LOCAL_NAME = "basetype.policy.localName";
+	final String BASETYPE_POLICY_DISPLAY_NAME = "basetype.policy.displayName";
+	final String BASETYPE_POLICY_DESCRIPTION = "basetype.policy.description";
+	final String BASETYPE_POLICY_CREATABLE = "basetype.policy.creatable";
+	final String BASETYPE_POLICY_FILEABLE = "basetype.policy.fileable";
+	final String BASETYPE_POLICY_QUERYABLE = "basetype.policy.queryable";
+	final String BASETYPE_POLICY_CONTROLLABLE_POLICY = "basetype.policy.controllablePolicy";
+	final String BASETYPE_POLICY_CONTROLLABLE_ACL = "basetype.policy.controllableAcl";
+	final String BASETYPE_POLICY_INCLUDED_IN_SUPER_TYPE_QUERY = "basetype.policy.includedInSupertypeQuery";
+	final String BASETYPE_POLICY_FULLTEXT_INDEXED = "basetype.policy.fulltextIndexed";
+	final String BASETYPE_POLICY_TYPE_MUTABILITY_CAN_CREATE = "basetype.policy.typeMutability.canCreate";
+	final String BASETYPE_POLICY_TYPE_MUTABILITY_CAN_UPDATE = "basetype.policy.typeMutability.canUpdate";
+	final String BASETYPE_POLICY_TYPE_MUTABILITY_CAN_DELETE = "basetype.policy.typeMutability.canDelete";
+
+	final String BASETYPE_ITEM_LOCAL_NAME = "basetype.item.localName";
+	final String BASETYPE_ITEM_DISPLAY_NAME = "basetype.item.displayName";
+	final String BASETYPE_ITEM_DESCRIPTION = "basetype.item.description";
+	final String BASETYPE_ITEM_CREATABLE = "basetype.item.creatable";
+	final String BASETYPE_ITEM_FILEABLE = "basetype.item.fileable";
+	final String BASETYPE_ITEM_QUERYABLE = "basetype.item.queryable";
+	final String BASETYPE_ITEM_CONTROLLABLE_POLICY = "basetype.item.controllablePolicy";
+	final String BASETYPE_ITEM_CONTROLLABLE_ACL = "basetype.item.controllableAcl";
+	final String BASETYPE_ITEM_INCLUDED_IN_SUPER_TYPE_QUERY = "basetype.item.includedInSupertypeQuery";
+	final String BASETYPE_ITEM_FULLTEXT_INDEXED = "basetype.item.fulltextIndexed";
+	final String BASETYPE_ITEM_TYPE_MUTABILITY_CAN_CREATE = "basetype.item.typeMutability.canCreate";
+	final String BASETYPE_ITEM_TYPE_MUTABILITY_CAN_UPDATE = "basetype.item.typeMutability.canUpdate";
+	final String BASETYPE_ITEM_TYPE_MUTABILITY_CAN_DELETE = "basetype.item.typeMutability.canDelete";
+
+	final String BASETYPE_SECONDARY_LOCAL_NAME = "basetype.secondary.localName";
+	final String BASETYPE_SECONDARY_DISPLAY_NAME = "basetype.secondary.displayName";
+	final String BASETYPE_SECONDARY_DESCRIPTION = "basetype.secondary.description";
+	final String BASETYPE_SECONDARY_QUERYABLE = "basetype.secondary.queryable";
+	final String BASETYPE_SECONDARY_INCLUDED_IN_SUPER_TYPE_QUERY = "basetype.secondary.includedInSupertypeQuery";
+	final String BASETYPE_SECONDARY_FULLTEXT_INDEXED = "basetype.secondary.fulltextIndexed";
+	final String BASETYPE_SECONDARY_TYPE_MUTABILITY_CAN_CREATE = "basetype.secondary.typeMutability.canCreate";
+	final String BASETYPE_SECONDARY_TYPE_MUTABILITY_CAN_UPDATE = "basetype.secondary.typeMutability.canUpdate";
+	final String BASETYPE_SECONDARY_TYPE_MUTABILITY_CAN_DELETE = "basetype.secondary.typeMutability.canDelete";
 }
