@@ -96,16 +96,6 @@ public interface ContentService {
 	List<Content> getChildren(String folderId);
 
 	/**
-	 * Get descendant contents in a folder
-	 *
-	 * @param objectId
-	 * @param depth
-	 *            -1 means infinity.
-	 * @return descendants are returned in a flatten list.
-	 */
-	List<Content> getDescendants(String folderId, int depth);
-
-	/**
 	 * Get a document
 	 *
 	 * @param objectId
@@ -459,11 +449,11 @@ public interface ContentService {
 	 * @param allVersions
 	 * @param continueOnFailure
 	 * @param deletedWithParent
+	 * @return TODO
 	 * @throws Exception
 	 */
-	void deleteTree(CallContext context, String folderId, Boolean allVersions,
-			Boolean continueOnFailure, Boolean deletedWithParent)
-			throws Exception;
+	List<String> deleteTree(CallContext context, String folderId, Boolean allVersions,
+			Boolean continueOnFailure, Boolean deletedWithParent);
 
 	// ///////////////////////////////////////
 	// Attachment
