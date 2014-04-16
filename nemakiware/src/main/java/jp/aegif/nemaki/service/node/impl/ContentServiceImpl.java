@@ -216,43 +216,6 @@ public class ContentServiceImpl implements ContentService {
 		return children;
 	}
 
-	// if the root of the tree doesn't exists, return null
-	@Override
-	public List<Content> getDescendants(String folderId, int depth) {
-		// Content class is somehow abstract, but it's enough for DELETE.
-		Content content = contentDaoService.getContent(folderId);
-		if (content == null)
-			return null;
-
-		List<Content> descendants = getDescendantsInternal(content, depth);
-		return descendants;
-	}
-
-	private List<Content> getDescendantsInternal(Content content, int depth) {
-		// check depth
-		if (depth == 0) {
-			throw new CmisInvalidArgumentException("Depth must not be 0!");
-		}
-		if (depth < -1) {
-			depth = -1;
-		}
-
-		List<Content> descendants = new ArrayList<Content>();
-		List<Content> children = getChildren(content.getId());
-		if (children == null)
-			return descendants;
-
-		for (Content c : children) {
-			descendants.add(c);
-			if (getChildren(c.getId()) == null || depth == 1) {
-				return descendants;
-			} else {
-				descendants.addAll(getDescendantsInternal(c, depth - 1));
-			}
-		}
-		return descendants;
-	}
-
 	@Override
 	public Document getDocument(String objectId) {
 		return contentDaoService.getDocument(objectId);
@@ -1273,9 +1236,11 @@ public class ContentServiceImpl implements ContentService {
 	// deletedWithParent flag controls whether it's deleted with the parent all
 	// together.
 	@Override
-	public void deleteTree(CallContext callContext, String folderId,
+	public List<String> deleteTree(CallContext callContext, String folderId,
 			Boolean allVersions, Boolean continueOnFailure,
-			Boolean deletedWithParent) throws Exception {
+			Boolean deletedWithParent){
+		List<String> failureIds = new ArrayList<String>();
+		
 		// Delete children
 		List<Content> children = getChildren(folderId);
 		if (!CollectionUtils.isEmpty(children)) {
@@ -1292,9 +1257,10 @@ public class ContentServiceImpl implements ContentService {
 					}
 				} catch (Exception e) {
 					if (continueOnFailure) {
+						failureIds.add(child.getId());
 						continue;
 					} else {
-						throw e;
+						log.error("", e);
 					}
 				}
 			}
@@ -1304,10 +1270,14 @@ public class ContentServiceImpl implements ContentService {
 		try {
 			delete(callContext, folderId, deletedWithParent);
 		} catch (Exception e) {
-			if (!continueOnFailure) {
-				throw e;
+			if (continueOnFailure) {
+				failureIds.add(folderId);
+			}else{
+				log.error("", e);
 			}
 		}
+		
+		return failureIds;
 	}
 
 	// ///////////////////////////////////////
