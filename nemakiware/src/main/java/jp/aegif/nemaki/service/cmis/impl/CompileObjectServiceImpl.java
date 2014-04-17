@@ -267,7 +267,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		String latestInRepository = repositoryService.getRepositoryInfo()
 				.getLatestChangeLogToken();
 		String latestInResults = changeLogToken.getValue();
-		if (latestInResults.equals(latestInRepository)) {
+		if (latestInResults != null && latestInResults.equals(latestInRepository)) {
 			results.setHasMoreItems(false);
 		} else {
 			results.setHasMoreItems(true);
