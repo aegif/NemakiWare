@@ -636,20 +636,6 @@
         </property>
     </bean>
 
-    <bean id="RepositoryResource" class="jp.aegif.nemaki.api.resources.RepositoryResource"
-        depends-on="nemakiPropertyManager">
-        <constructor-arg>
-            <ref bean="nemakiPropertyManager" />
-        </constructor-arg>
-
-        <property name="principalService">
-            <ref bean="PrincipalService" />
-        </property>
-        <property name="propertiesFile">
-            <value>nemakiware.properties</value>
-        </property>
-    </bean>
-
     <bean id="typeResource" class="jp.aegif.nemaki.api.resources.TypeResource">
         <property name="typeService">
             <ref bean="TypeService" />
