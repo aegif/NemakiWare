@@ -26,7 +26,13 @@ public interface PropertyKey {
 	final String PERMISSION_MAPPING_DEFINITION= "permission.mapping.definition";
 	final String OVRRIDE_FILE= "override.file";
 	final String CAPABILITY_EXTENDED_ORDERBY_DEFAULT = "capability.extended.orderBy.default";
-
+	
+	//Rest
+	final String REST_USER_ENABLED = "rest.user.enabled";
+	final String REST_GROUP_ENABLED = "rest.group.enabled";
+	final String REST_TYPE_ENABLED = "rest.type.enabled";
+	final String REST_ARCHIVE_ENABLED = "rest.archive.enabled";
+	
 	//Capabilities
 	final String CAPABILITY_GET_DESCENDENTS = "capability.getDescendants";
 	final String CAPABILITY_GET_FOLDER_TREE = "capability.getFolderTree";

@@ -34,7 +34,9 @@ import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 
 import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.model.constant.PropertyKey;
 import jp.aegif.nemaki.service.node.PrincipalService;
+import jp.aegif.nemaki.util.NemakiPropertyManager;
 import jp.aegif.nemaki.util.PasswordHasher;
 
 import org.springframework.web.context.WebApplicationContext;
@@ -43,30 +45,24 @@ import org.springframework.web.context.support.WebApplicationContextUtils;
 public class AuthenticationFilter implements Filter {
 
 	private PrincipalService principalService;
+	private NemakiPropertyManager propertyManager;
+	private final String TOKEN_FALSE = "false";
 
 	@Override
 	public void init(FilterConfig filterConfig) throws ServletException {
 
 		WebApplicationContext context = WebApplicationContextUtils.getWebApplicationContext(filterConfig.getServletContext());
+		
 		principalService = (PrincipalService) context
 		.getBean("principalService");
+		
+		propertyManager = (NemakiPropertyManager)context
+				.getBean("nemakiPropertyManager");
+		
 	}
 
 	public static UserInfo getUserInfo(HttpServletRequest httpRequest){
-//		String auth = httpRequest.getHeader("Authorization");
-//		String decoded = decodeAuthHeader(auth);
-//
-//		int pos = decoded.indexOf(":");
-//		String username = decoded.substring(0, pos);
-//		String password = decoded.substring(pos + 1);
-//
-//		UserInfo user = new UserInfo(username, password);
-//
-//		return user;
 		return (UserInfo)httpRequest.getSession().getAttribute("USER_INFO");
-
-
-
 	}
 
 	@Override
@@ -76,7 +72,12 @@ public class AuthenticationFilter implements Filter {
 		HttpServletResponse hres = (HttpServletResponse) res;
 
 		HttpSession session = hreq.getSession();
-
+		
+		if(!checkResourceEnabled(hreq)){
+			//FIXME
+			throw new ServletException("This REST API is not supported");
+		}
+		
 		if (session.getAttribute("USER_INFO") == null) {
 			String auth = hreq.getHeader("Authorization");
 
@@ -126,7 +127,6 @@ public class AuthenticationFilter implements Filter {
 		hres.sendError(HttpServletResponse.SC_UNAUTHORIZED);
 	}
 
-	@SuppressWarnings("restriction")
 	public static String decodeAuthHeader(String header) {
 		String ret = "";
 
@@ -153,5 +153,28 @@ public class AuthenticationFilter implements Filter {
 			u.roles = new String[] { "Users" };
 		}
 		return u;
+	}
+	
+	private boolean checkResourceEnabled(HttpServletRequest request){
+		boolean enabled = true;
+		
+		String pathInfo = request.getPathInfo();
+		if(pathInfo.startsWith("/user")){
+			String userResourceEnabled = propertyManager.readValue(PropertyKey.REST_USER_ENABLED);
+			enabled = TOKEN_FALSE.equals(userResourceEnabled) ? false : true;
+		}else if(pathInfo.startsWith("/group")){
+			String groupResourceEnabled = propertyManager.readValue(PropertyKey.REST_GROUP_ENABLED);
+			enabled = TOKEN_FALSE.equals(groupResourceEnabled) ? false : true;
+		}else if(pathInfo.startsWith("/type")){
+			String typeResourceEnabled = propertyManager.readValue(PropertyKey.REST_TYPE_ENABLED);
+			enabled = TOKEN_FALSE.equals(typeResourceEnabled) ? false : true;
+		}else if(pathInfo.startsWith("/archive")){
+			String archiveResourceEnabled = propertyManager.readValue(PropertyKey.REST_ARCHIVE_ENABLED);
+			enabled = TOKEN_FALSE.equals(archiveResourceEnabled) ? false : true;
+		}else{
+			enabled = false;
+		}
+		
+		return enabled;
 	}
 }
