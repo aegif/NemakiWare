@@ -146,4 +146,83 @@ public interface PropertyKey {
 	final String BASETYPE_SECONDARY_TYPE_MUTABILITY_CAN_CREATE = "basetype.secondary.typeMutability.canCreate";
 	final String BASETYPE_SECONDARY_TYPE_MUTABILITY_CAN_UPDATE = "basetype.secondary.typeMutability.canUpdate";
 	final String BASETYPE_SECONDARY_TYPE_MUTABILITY_CAN_DELETE = "basetype.secondary.typeMutability.canDelete";
+	
+	//Property
+	final String PROPERTY_NAME_UPDATABILITY="property.name.updatability";
+	final String PROPERTY_NAME_QUERYABLE="property.name.queryable";
+	final String PROPERTY_NAME_ORDERABLE="property.name.orderable";
+	
+	final String PROPERTY_DESCRIPTION_UPDATABILITY="property.description.updatability";
+	final String PROPERTY_DESCRIPTION_QUERYABLE="property.description.queryable";
+	final String PROPERTY_DESCRIPTION_ORDERABLE="property.description.orderable";
+	
+	final String PROPERTY_OBJECT_ID_ORDERABLE= "property.objectId.orderable";
+	
+	final String PROPERTY_BASE_TYPE_ID_QUERYABLE="property.baseTypeId.queryable";
+	final String PROPERTY_BASE_TYPE_ID_ORDERABLE="property.baseTypeId.orderable";
+	
+	final String PROPERTY_OBJECT_TYPE_ID_QUERYABLE="property.objectTypeId.queryable";
+	final String PROPERTY_OBJECT_TYPE_ID_ORDERABLE="property.objectTypeId.orderable";
+	
+	final String PROPERTY_SECONDARY_OBJECT_TYPE_IDS_UPDATABILITY="property.secondaryObjectTypeIds.updatability";
+	final String PROPERTY_SECONDARY_OBJECT_TYPE_IDS_QUERYABLE="property.secondaryObjectTypeIds.queryable";
+	
+	final String PROPERTY_IS_IMMUTABLE_QUERYABLE = "property.isImmutable.queryable";
+	final String PROPERTY_IS_IMMUTABLE_ORDERABLE = "property.isImmutable.orderable";
+	
+	final String PROPERTY_IS_LATEST_VERSION_QUERYABLE = "property.isLatestVersion.queryable";
+	final String PROPERTY_IS_LATEST_VERSION_ORDERABLE = "property.isLatestVersion.orderable";
+	
+	final String PROPERTY_IS_MAJOR_VERSION_QUERYABLE = "property.isMajorVersion.queryable";
+	final String PROPERTY_IS_MAJOR_VERSION_ORDERABLE = "property.isMajorVersion.orderable";
+	
+	final String PROPERTY_IS_LATEST_MAJOR_VERSION_QUERYABLE = "property.isLatestMajorVersion.queryable";
+	final String PROPERTY_IS_LATEST_MAJOR_VERSION_ORDERABLE = "property.isLatestMajorVersion.orderable";
+	
+	final String PROPERTY_IS_PRIVATE_WORKING_COPY_QUERYABLE = "property.isPrivateWorkingCopy.queryable";
+	final String PROPERTY_IS_PRIVATE_WORKING_COPY_ORDERABLE = "property.isPrivateWorkingCopy.orderable";
+	
+	final String PROPERTY_VERSION_LABEL_QUERYABLE = "property.versionLabel.queryable";
+	final String PROPERTY_VERSION_LABEL_ORDERABLE = "property.versionLabel.orderable";
+	
+	final String PROPERTY_VERSION_SERIES_ID_QUERYABLE = "property.versionSeriesId.queryable";
+	final String PROPERTY_VERSION_SERIES_ID_ORDERABLE = "property.versionSeriesId.orderable";
+	
+	final String PROPERTY_IS_VERSION_SERIES_CHECKED_OUT_QUERYABLE = "property.isVersionSeriesCheckedOut.queryable";
+	final String PROPERTY_IS_VERSION_SERIES_CHECKED_OUT_ORDERABLE = "property.isVersionSeriesCheckedOut.orderable";
+	
+	final String PROPERTY_VERSION_SERIES_CHECKED_OUT_BY_QUERYABLE = "property.versionSeriesCheckedOutBy.queryable";
+	final String PROPERTY_VERSION_SERIES_CHECKED_OUT_BY_ORDERABLE = "property.versionSeriesCheckedOutBy.orderable";
+	
+	final String PROPERTY_VERSION_SERIES_CHECKED_OUT_ID_QUERYABLE = "property.versionSeriesCheckedOutId.queryable";
+	final String PROPERTY_VERSION_SERIES_CHECKED_OUT_ID_ORDERABLE = "property.versionSeriesCheckedOutId.orderable";
+	
+	final String PROPERTY_CHECK_IN_COMMENT_QUERYABLE = "property.checkInComment.queryable";
+	final String PROPERTY_CHECK_IN_COMMENT_ORDERABLE = "property.checkInComment.orderable";
+	
+	final String PROPERTY_CONTENT_STREAM_LENGTH_QUERYABLE = "property.contentStreamLength.queryable";
+	final String PROPERTY_CONTENT_STREAM_LENGTH_ORDERABLE = "property.contentStreamLength.orderable";
+	
+	final String PROPERTY_CONTENT_STREAM_MIME_TYPE_QUERYABLE = "property.contentStreamMimeType.queryable";
+	final String PROPERTY_CONTENT_STREAM_MIME_TYPE_ORDERABLE = "property.contentStreamMimeType.orderable";
+	
+	final String PROPERTY_CONTENT_STREAM_FILE_NAME_QUERYABLE = "property.contentStreamFileName.queryable";
+	final String PROPERTY_CONTENT_STREAM_FILE_NAME_ORDERABLE = "property.contentStreamFileName.orderable";
+	
+	final String PROPERTY_CONTENT_STREAM_ID_QUERYABLE = "property.contentStreamId.queryable";
+	final String PROPERTY_CONTENT_STREAM_ID_ORDERABLE = "property.contentStreamId.orderable";
+	
+	final String PROPERTY_PARENT_ID_QUERYABLE = "property.parentId.queryable";
+	
+	final String PROPERTY_PATH_QUERYABLE = "property.path.queryable";
+	final String PROPERTY_PATH_ORDERABLE = "property.path.orderable";
+	
+	final String PROPERTY_SOURCE_ID_QUERYABLE = "property.sourceId.queryable";
+	final String PROPERTY_SOURCE_ID_ORDERABLE = "property.sourceId.orderable";
+	
+	final String PROPERTY_TARGET_ID_QUERYABLE = "property.targetId.queryable";
+	final String PROPERTY_TARGET_ID_ORDERABLE = "property.targetId.orderable";
+	
+	final String PROPERTY_POLICY_TEXT_QUERYABLE = "property.policyText.queryable";
+	final String PROPERTY_POLICY_TEXT_ORDERABLE = "property.policyText.orderable";
 }
