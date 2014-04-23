@@ -1,5 +1,8 @@
 .DS_Store
 *~
-.settings/*
 nohup.out
 jetty.log
+.classpath
+.project
+.settings
+!.gitkeep
