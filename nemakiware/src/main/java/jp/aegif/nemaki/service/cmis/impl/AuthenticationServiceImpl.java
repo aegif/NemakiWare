@@ -21,7 +21,6 @@
 package jp.aegif.nemaki.service.cmis.impl;
 
 import jp.aegif.nemaki.model.User;
-import jp.aegif.nemaki.model.constant.NodeType;
 import jp.aegif.nemaki.service.cmis.AuthenticationService;
 import jp.aegif.nemaki.service.node.PrincipalService;
 
@@ -73,14 +72,6 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	 */
 	private boolean passwordMatches(String candidate, String hashed) {
 		return BCrypt.checkpw(candidate, hashed);
-	}
-
-	private User buildDummyAnonymousUser(String anonoymousId){
-		User anonymous = new User();
-		anonymous.setType(NodeType.USER.value());
-		anonymous.setUserId(anonoymousId);
-
-		return anonymous;
 	}
 
 	public void setPrincipalService(PrincipalService principalService) {
