@@ -35,6 +35,11 @@ public class NemakiPropertyManager{
 		return nemakiProperties.getValues(key);
 	}
 	
+	public boolean readBoolean(String key){
+		String val = readValue(key);
+		return Boolean.valueOf(val);
+	}
+	
 	public void setNemakiProperties(SpringPropertiesUtil nemakiProperties) {
 		this.nemakiProperties = nemakiProperties;
 	}

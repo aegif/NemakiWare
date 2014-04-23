@@ -13,6 +13,7 @@
 				<value>classpath:nemakiware.properties</value>
 				<value>classpath:nemakiware-capability.properties</value>
                 <value>classpath:nemakiware-basetype.properties</value>
+                <value>classpath:nemakiware-property.properties</value>
 				<value>classpath*:custom-nemakiware.properties</value>
 				<value>classpath*:app-server-couchdb.properties</value>
 				<value>classpath*:app-server-solr.properties</value>
