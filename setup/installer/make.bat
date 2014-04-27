@@ -46,6 +46,10 @@ rem Build install utilities
 call mvn -f %SCRIPT_HOME%\install-util package
 call mvn -f %SOURCE_HOME%\setup\couchdb\bjornloka package
 
+rem Convert line enconding in Unix
+copy %SOURCE_HOME%\setup\nemakishare\setup_nemakishare.sh %SOURCE_HOME%\setup\nemakishare\setup_nemakishare.sh.tmp
+%SOURCE_HOME%\setup\nemakishare\third-party\swiss-file-knife\sfk171.exe remcr %SOURCE_HOME%\setup\nemakishare\setup_nemakishare.sh.tmp
+
 rem Setting installer default values from source code
 rem Override by custom properties
 set PROPERTIES=%DEFAULT_PROP_PATH%\nemakiware.properties
@@ -70,6 +74,7 @@ call mvn -f %SOURCE_HOME%\nemakisolr clean
 call mvn -f %SCRIPT_HOME%\install-util clean
 call mvn -f %SOURCE_HOME%\setup\couchdb\bjornloka clean
 del %USER_INPUT_SPEC_MODIFIED%
+del %SOURCE_HOME%\setup\nemakishare\setup_nemakishare.sh.tmp
 
 rem Execute isntaller
 if "%FLG_E%" == "TRUE" (

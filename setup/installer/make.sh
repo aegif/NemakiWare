@@ -52,6 +52,9 @@ USER_INPUT_SPEC=$SCRIPT_HOME/user-input-spec.xml
 USER_INPUT_SPEC_MODIFIED=$SCRIPT_HOME/user-input-spec_modified.xml
 java -cp $SCRIPT_HOME/install-util/target/install-util.jar jp.aegif.nemaki.installer.ProcessTemplate $USER_INPUT_SPEC $PROPERTIES $PROPERTIES_CUSTOM
 
+#Copy tmp setup_nemakishare.sh(To be consistent in DOS environment)
+cp $SOURCE_HOME/setup/nemakishare/setup_nemakishare.sh $SOURCE_HOME/setup/nemakishare/setup_nemakishare.sh.tmp
+
 #Prepare WAR
 mvn -f $SOURCE_HOME/nemakiware/pom.xml clean
 mvn -f $SOURCE_HOME/nemakiware/pom.xml -Dmaven.test.skip=true package
@@ -67,6 +70,7 @@ mvn -f $SOURCE_HOME/nemakisolr/pom.xml clean
 mvn -f $SCRIPT_HOME/install-util/pom.xml clean
 mvn -f $SOURCE_HOME/setup/couchdb/bjornloka/pom.xml clean
 rm $USER_INPUT_SPEC_MODIFIED
+rm $SOURCE_HOME/setup/nemakishare/setup_nemakishare.sh.tmp
 
 #Execute isntaller
 if [ "$FLG_E" = "TRUE" ]; then
