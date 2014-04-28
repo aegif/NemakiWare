@@ -46,7 +46,7 @@ public class CouchContent extends CouchNodeBase{
 	private List<Aspect> aspects = new ArrayList<Aspect>();
 	private List<String> secondaryIds = new ArrayList<String>();
 	private String objectType;
-	private long changeToken;
+	private String changeToken;
 
 	public CouchContent(){
 		super();
@@ -142,11 +142,11 @@ public class CouchContent extends CouchNodeBase{
 		this.objectType = objectType;
 	}
 
-	public long getChangeToken() {
+	public String getChangeToken() {
 		return changeToken;
 	}
 
-	public void setChangeToken(long changeToken) {
+	public void setChangeToken(String changeToken) {
 		this.changeToken = changeToken;
 	}
 

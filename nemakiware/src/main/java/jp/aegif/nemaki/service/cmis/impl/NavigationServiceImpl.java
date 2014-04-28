@@ -56,6 +56,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectParentDataIm
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.lang.StringUtils;
 
 public class NavigationServiceImpl implements NavigationService {
 
@@ -306,13 +307,17 @@ public class NavigationServiceImpl implements NavigationService {
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		Folder folder = contentService.getFolder(folderId);
-		exceptionService.objectNotFoundParentFolder(folderId, folder);
+		//Folder ID can be null, which means all PWCs are returned.
+		if(StringUtils.isNotBlank(folderId)){
+			Folder folder = contentService.getFolder(folderId);
+			exceptionService.objectNotFoundParentFolder(folderId, folder);
+		}
 		exceptionService.invalidArgumentOrderBy(orderBy);
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
+		//Folder ID can be null, which means all PWCs are returned.
 		List<Document> checkedOuts = contentService.getCheckedOutDocs(folderId,
 				orderBy, extension);
 

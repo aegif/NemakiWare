@@ -43,6 +43,8 @@ import java.io.InputStream;
 import java.math.BigInteger;
 import java.util.GregorianCalendar;
 
+import jp.aegif.nemaki.model.constant.NodeType;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.codehaus.jackson.annotate.JsonIgnoreProperties;
@@ -68,6 +70,7 @@ public class AttachmentNode extends NodeBase {
 	
 	public AttachmentNode(){
 		super();
+		setType(NodeType.ATTACHMENT.value());
 	}
 	
 	public AttachmentNode(String name, String mimeType, long length,

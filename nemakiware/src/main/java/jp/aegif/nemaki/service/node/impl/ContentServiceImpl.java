@@ -83,7 +83,6 @@ import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang.StringUtils;
-import org.apache.commons.lang.math.NumberUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -102,11 +101,16 @@ public class ContentServiceImpl implements ContentService {
 
 	private static final Log log = LogFactory
 			.getLog(ContentDaoServiceImpl.class);
-	final static int FIRST_TOKEN = 1;
+	final static String FIRST_TOKEN = "1";
 
 	// ///////////////////////////////////////
 	// Content
 	// ///////////////////////////////////////
+	@Override
+	public boolean isRoot(Folder folder){
+		return propertyUtil.isRoot(folder);
+	}
+
 	@Override
 	public boolean existContent(String objectTypeId) {
 		return contentDaoService.existContent(objectTypeId);
@@ -210,43 +214,6 @@ public class ContentServiceImpl implements ContentService {
 			}
 		}
 		return children;
-	}
-
-	// if the root of the tree doesn't exists, return null
-	@Override
-	public List<Content> getDescendants(String folderId, int depth) {
-		// Content class is somehow abstract, but it's enough for DELETE.
-		Content content = contentDaoService.getContent(folderId);
-		if (content == null)
-			return null;
-
-		List<Content> descendants = getDescendantsInternal(content, depth);
-		return descendants;
-	}
-
-	private List<Content> getDescendantsInternal(Content content, int depth) {
-		// check depth
-		if (depth == 0) {
-			throw new CmisInvalidArgumentException("Depth must not be 0!");
-		}
-		if (depth < -1) {
-			depth = -1;
-		}
-
-		List<Content> descendants = new ArrayList<Content>();
-		List<Content> children = getChildren(content.getId());
-		if (children == null)
-			return descendants;
-
-		for (Content c : children) {
-			descendants.add(c);
-			if (getChildren(c.getId()) == null || depth == 1) {
-				return descendants;
-			} else {
-				descendants.addAll(getDescendantsInternal(c, depth - 1));
-			}
-		}
-		return descendants;
 	}
 
 	@Override
@@ -374,7 +341,7 @@ public class ContentServiceImpl implements ContentService {
 		return contentDaoService.getItem(objectId);
 	}
 
-	private long writeChangeEvent(CallContext callContext, Content content,
+	private String writeChangeEvent(CallContext callContext, Content content,
 			ChangeType changeType) {
 		Change latest = contentDaoService.getLatestChange();
 
@@ -398,7 +365,15 @@ public class ContentServiceImpl implements ContentService {
 		if (latest == null) {
 			change.setChangeToken(FIRST_TOKEN);
 		} else {
-			change.setChangeToken(latest.getChangeToken() + 1);
+			Long latestToken = null;
+			try{
+				latestToken = Long.valueOf(latest.getChangeToken());
+			}catch(Exception e){
+				log.error("ChangeToken " + latest.getChangeToken() + " is not numeric", e);
+			}
+
+			String token = String.valueOf(latestToken + 1);
+			change.setChangeToken(token);
 		}
 
 		change.setType(NodeType.CHANGE.value());
@@ -422,12 +397,9 @@ public class ContentServiceImpl implements ContentService {
 
 		setSignature(callContext, change);
 
-		// Modify old change event
+		//  Create a new change event
 		contentDaoService.create(change);
-		/*
-		 * if (latest != null) { latest.setLatest(false);
-		 * contentDaoService.update(latest); }
-		 */
+
 		// Update change token of the content
 		content.setChangeToken(change.getChangeToken());
 		update(content);
@@ -1264,9 +1236,11 @@ public class ContentServiceImpl implements ContentService {
 	// deletedWithParent flag controls whether it's deleted with the parent all
 	// together.
 	@Override
-	public void deleteTree(CallContext callContext, String folderId,
+	public List<String> deleteTree(CallContext callContext, String folderId,
 			Boolean allVersions, Boolean continueOnFailure,
-			Boolean deletedWithParent) throws Exception {
+			Boolean deletedWithParent){
+		List<String> failureIds = new ArrayList<String>();
+		
 		// Delete children
 		List<Content> children = getChildren(folderId);
 		if (!CollectionUtils.isEmpty(children)) {
@@ -1283,9 +1257,10 @@ public class ContentServiceImpl implements ContentService {
 					}
 				} catch (Exception e) {
 					if (continueOnFailure) {
+						failureIds.add(child.getId());
 						continue;
 					} else {
-						throw e;
+						log.error("", e);
 					}
 				}
 			}
@@ -1295,10 +1270,14 @@ public class ContentServiceImpl implements ContentService {
 		try {
 			delete(callContext, folderId, deletedWithParent);
 		} catch (Exception e) {
-			if (!continueOnFailure) {
-				throw e;
+			if (continueOnFailure) {
+				failureIds.add(folderId);
+			}else{
+				log.error("", e);
 			}
 		}
+		
+		return failureIds;
 	}
 
 	// ///////////////////////////////////////
@@ -1511,12 +1490,7 @@ public class ContentServiceImpl implements ContentService {
 			Holder<String> changeLogToken, Boolean includeProperties,
 			String filter, Boolean includePolicyIds, Boolean includeAcl,
 			BigInteger maxItems, ExtensionsData extension) {
-		long latestChangeLogToken = 0;
-		if (changeLogToken != null && changeLogToken.getValue() != null
-				&& NumberUtils.isNumber(changeLogToken.getValue()))
-			latestChangeLogToken = Long.parseLong(changeLogToken.getValue());
-
-		return contentDaoService.getLatestChanges(latestChangeLogToken,
+		return contentDaoService.getLatestChanges(changeLogToken.getValue(),
 				maxItems.intValue());
 	}
 

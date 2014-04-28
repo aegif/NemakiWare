@@ -42,7 +42,6 @@ public class ProcessTemplate {
 			String propertiesFilePath = args[i];
 			File propertiesFile = new File(propertiesFilePath);
 			if (propertiesFile.exists()) {
-				System.out.println(propertiesFile);
 				propertiesFiles.add(propertiesFile);
 			}
 		}

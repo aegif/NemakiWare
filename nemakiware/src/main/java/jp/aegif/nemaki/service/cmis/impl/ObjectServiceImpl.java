@@ -823,21 +823,18 @@ public class ObjectServiceImpl implements ObjectService {
 		// Body of the method
 		// //////////////////
 		// Delete descendants
-		try {
-			contentService.deleteTree(callContext, folderId, allVersions,
-					continueOnFailure, false);
-			solrUtil.callSolrIndexing();
-		} catch (Exception e) {
-			// do nothing
-			e.printStackTrace();
-		}
+		List<String> failureIds = new ArrayList<String>();
+	
+		failureIds = contentService.deleteTree(callContext, folderId, allVersions,
+				continueOnFailure, false);
+		solrUtil.callSolrIndexing();
 
 		// Check FailedToDeleteData
 		// FIXME Consider orphans that was failed to be deleted
 		FailedToDeleteDataImpl fdd = new FailedToDeleteDataImpl();
-		List<Content> descendants = contentService.getDescendants(folderId, -1);
-		if (descendants != null && !descendants.isEmpty()) {
-			fdd.setIds(DataUtil.getIds(descendants));
+		
+		if (CollectionUtils.isNotEmpty(failureIds)) {
+			fdd.setIds(failureIds);
 		} else {
 			fdd.setIds(new ArrayList<String>());
 		}
