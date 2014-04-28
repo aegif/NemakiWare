@@ -40,13 +40,14 @@ public class Change extends NodeBase{
 	private String parentId;
 	
 	private String objectId;
-	private long changeToken;
+	private String changeToken;
 	private ChangeType changeType;
 	private GregorianCalendar time;
 
 	
 	public Change() {
 		super();
+		setType(NodeType.CHANGE.value());
 	}
 
 	public Change(NodeBase n) {
@@ -113,13 +114,14 @@ public class Change extends NodeBase{
 		this.objectId = objectId;
 	}
 	
-	
-	public long getChangeToken() {
+	public String getChangeToken() {
 		return changeToken;
 	}
-	public void setChangeToken(long changeToken) {
+
+	public void setChangeToken(String changeToken) {
 		this.changeToken = changeToken;
 	}
+
 	public ChangeType getChangeType() {
 		return changeType;
 	}

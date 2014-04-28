@@ -267,7 +267,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		String latestInRepository = repositoryService.getRepositoryInfo()
 				.getLatestChangeLogToken();
 		String latestInResults = changeLogToken.getValue();
-		if (latestInResults.equals(latestInRepository)) {
+		if (latestInResults != null && latestInResults.equals(latestInRepository)) {
 			results.setHasMoreItems(false);
 		} else {
 			results.setHasMoreItems(true);
@@ -1002,7 +1002,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 				.getTypeDefinition(typeId);
 
 		if (type == null)
-			throw new IllegalArgumentException("Unknown type: " + type.getId());
+			throw new IllegalArgumentException("Unknown type: " + typeId);
 
 		// TODO :performance
 		if (!type.getPropertyDefinitions().containsKey(id))

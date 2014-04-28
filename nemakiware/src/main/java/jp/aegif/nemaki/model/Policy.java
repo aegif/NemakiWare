@@ -23,6 +23,8 @@ package jp.aegif.nemaki.model;
 
 import java.util.List;
 
+import jp.aegif.nemaki.model.constant.NodeType;
+
 /**
  * 
  * @author linzhixing
@@ -36,6 +38,7 @@ public class Policy extends Content {
 
 	public Policy(){
 		super();
+		setType(NodeType.CMIS_POLICY.value());
 	}
 	
 	public Policy(Content c){

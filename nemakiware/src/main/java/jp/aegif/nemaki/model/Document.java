@@ -24,6 +24,8 @@ package jp.aegif.nemaki.model;
 import java.util.HashMap;
 import java.util.Map;
 
+import jp.aegif.nemaki.model.constant.NodeType;
+
 import org.codehaus.jackson.annotate.JsonIgnoreProperties;
 
 /**
@@ -51,6 +53,7 @@ public class Document extends Content {
 
 	public Document(){
 		super();
+		setType(NodeType.CMIS_DOCUMENT.value());
 	}
 
 	public Document(Content c){

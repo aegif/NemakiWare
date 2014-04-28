@@ -24,7 +24,6 @@ package jp.aegif.nemaki.repository;
 import java.math.BigInteger;
 import java.util.Map;
 
-import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.constant.NemakiConstant;
 import jp.aegif.nemaki.service.cmis.AuthenticationService;
 
@@ -89,10 +88,10 @@ public class NemakiCmisServiceFactory extends AbstractServiceFactory {
 		wrapperService.getWrappedService().setCallContext(context);
 
 		//authentication
-		User user = authenticationService.login(context.getUsername(), context.getPassword());
+		boolean isAdmin = authenticationService.login(context.getUsername(), context.getPassword());
 
 		//Set admin flag as Nemaki extension
-		((CallContextImpl)context).put(NemakiConstant.CALL_CONTEXT_IS_ADMIN, user.isAdmin());
+		((CallContextImpl)context).put(NemakiConstant.CALL_CONTEXT_IS_ADMIN, isAdmin);
 
 		return wrapperService;
 	}

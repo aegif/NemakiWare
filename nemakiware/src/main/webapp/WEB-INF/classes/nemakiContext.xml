@@ -8,7 +8,7 @@
 
 
     <!-- Interceptor for Debugging -->
-    <bean id="debugInterceptor" class="jp.aegif.nemaki.util.DebugInterceptor">
+    <bean id="debugInterceptor" class="jp.aegif.nemaki.spring.DebugInterceptor">
     </bean>
 
     <!-- Property Manager -->
@@ -98,7 +98,7 @@
 
     <bean id="capabilities"
         class="jp.aegif.nemaki.repository.info.NemakiCapabilitiesImpl">
-         <constructor-arg>
+        <constructor-arg>
             <ref bean="nemakiPropertyManager" />
         </constructor-arg>
     </bean>
@@ -130,6 +130,9 @@
         init-method="init" depends-on="typeService">
         <property name="typeService">
             <ref bean="TypeService" />
+        </property>
+        <property name="propertyManager">
+            <ref bean="nemakiPropertyManager" />
         </property>
     </bean>
 
@@ -630,20 +633,6 @@
     <bean id="groupResource" class="jp.aegif.nemaki.api.resources.GroupResource">
         <property name="principalService">
             <ref bean="PrincipalService" />
-        </property>
-    </bean>
-
-    <bean id="RepositoryResource" class="jp.aegif.nemaki.api.resources.RepositoryResource"
-        depends-on="nemakiPropertyManager">
-        <constructor-arg>
-            <ref bean="nemakiPropertyManager" />
-        </constructor-arg>
-
-        <property name="principalService">
-            <ref bean="PrincipalService" />
-        </property>
-        <property name="propertiesFile">
-            <value>nemakiware.properties</value>
         </property>
     </bean>
 
