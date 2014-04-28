@@ -5,7 +5,7 @@
 	<groupId>jp.aegif.nemaki</groupId>
 	<artifactId>nemakiware</artifactId>
 	<packaging>war</packaging>
-	<version>1.1beta1</version>
+	<version>1.1beta2</version>
 	<name>nemakiware</name>
 	<description>NemakiWare server</description>
 	<url>https://github.com/NemakiWare/NemakiWare</url>
