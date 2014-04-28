@@ -48,8 +48,8 @@ public class NemakiPropertyDefinitionDetail extends NodeBase {
 	private List<Object> defaultValue;
 
 	// Attributes specific to Integer
-	private long minValue;
-	private long maxValue;
+	private Long minValue;
+	private Long maxValue;
 
 	// Attributes specific to DateTime
 	private Resolution resolution;
@@ -60,10 +60,11 @@ public class NemakiPropertyDefinitionDetail extends NodeBase {
 	private BigDecimal decimalMaxValue;
 
 	// Attributes specific to String
-	private long maxLength;
+	private Long maxLength;
 
 	public NemakiPropertyDefinitionDetail() {
 		super();
+		setType(NodeType.PROPERTY_DEFINITION_DETAIL.value());
 	}
 
 	public NemakiPropertyDefinitionDetail(NodeBase n) {
@@ -198,19 +199,19 @@ public class NemakiPropertyDefinitionDetail extends NodeBase {
 		this.defaultValue = defaultValue;
 	}
 
-	public long getMinValue() {
+	public Long getMinValue() {
 		return minValue;
 	}
 
-	public void setMinValue(long minValue) {
+	public void setMinValue(Long minValue) {
 		this.minValue = minValue;
 	}
 
-	public long getMaxValue() {
+	public Long getMaxValue() {
 		return maxValue;
 	}
 
-	public void setMaxValue(long maxValue) {
+	public void setMaxValue(Long maxValue) {
 		this.maxValue = maxValue;
 	}
 
@@ -246,11 +247,11 @@ public class NemakiPropertyDefinitionDetail extends NodeBase {
 		this.decimalMaxValue = decimalMaxValue;
 	}
 
-	public long getMaxLength() {
+	public Long getMaxLength() {
 		return maxLength;
 	}
 
-	public void setMaxLength(long maxLength) {
+	public void setMaxLength(Long maxLength) {
 		this.maxLength = maxLength;
 	}
 

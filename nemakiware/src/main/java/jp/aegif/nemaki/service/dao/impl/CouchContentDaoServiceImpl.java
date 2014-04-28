@@ -65,6 +65,7 @@ import jp.aegif.nemaki.service.db.CouchConnector;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.ektorp.Attachment;
@@ -768,7 +769,7 @@ public class CouchContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Change getChangeEvent(String token) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("changesByToken").key(Integer.valueOf(token));
+				.viewName("changesByToken").key(token);
 		List<CouchChange> l = connector.queryView(query, CouchChange.class);
 
 		if (CollectionUtils.isEmpty(l))
@@ -789,14 +790,33 @@ public class CouchContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public List<Change> getLatestChanges(long startToken, int maxItems) {
+	public List<Change> getLatestChanges(String startToken, int maxItems) {
+		long _startToken = 0;
+		if(StringUtils.isNotBlank(startToken)){
+			//null startToken means the first entry in the repository
+			try{
+				_startToken = Long.parseLong(startToken);
+			}catch(Exception e){
+				log.error("startToken=" + startToken + " must be numeric");
+			}
+		}
+		
 		Change latest = getLatestChange();
-		if (startToken <= 0)
-			startToken = 0;
-		if (latest == null || startToken > latest.getChangeToken())
+		long latestToken = 0;
+		try{
+			latestToken = Long.parseLong(latest.getChangeToken());
+		}catch(Exception e){
+			log.error("ChangeEvent(" + latest.getId() + ") changeToken is not numeric");
+		}
+		
+		
+		if (_startToken <= 0)
+			_startToken = 0;
+		if (latest == null || _startToken > latestToken){
 			return null;
+		}
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("changesByToken").descending(false).key(startToken)
+				.viewName("changesByToken").descending(false).startKey(startToken)
 				.endKey(latest.getChangeToken());
 		if (maxItems > 0)
 			query.limit(maxItems);

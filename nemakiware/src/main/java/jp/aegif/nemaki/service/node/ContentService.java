@@ -49,6 +49,18 @@ public interface ContentService {
 	// ///////////////////////////////////////
 	// Content
 	// ///////////////////////////////////////
+	/**
+	 * Check if a folder is the root folder
+	 * @param folder
+	 * @return
+	 */
+	public boolean isRoot(Folder folder);
+
+	/**
+	 * Check if any object of a type exists
+	 * @param objectTypeId
+	 * @return
+	 */
 	boolean existContent(String objectTypeId);
 
 	/**
@@ -82,16 +94,6 @@ public interface ContentService {
 	 * @return
 	 */
 	List<Content> getChildren(String folderId);
-
-	/**
-	 * Get descendant contents in a folder
-	 *
-	 * @param objectId
-	 * @param depth
-	 *            -1 means infinity.
-	 * @return descendants are returned in a flatten list.
-	 */
-	List<Content> getDescendants(String folderId, int depth);
 
 	/**
 	 * Get a document
@@ -143,7 +145,7 @@ public interface ContentService {
 	 * @return
 	 */
 	VersionSeries getVersionSeries(Document document);
-	
+
 	/**
 	 * Get a version series
 	 *
@@ -438,7 +440,7 @@ public interface ContentService {
 	 * @param objectId
 	 */
 	void deleteContentStream(CallContext callContext, Holder<String> objectId);
-	
+
 	/**
 	 * Delete a whole folder tree
 	 *
@@ -447,11 +449,11 @@ public interface ContentService {
 	 * @param allVersions
 	 * @param continueOnFailure
 	 * @param deletedWithParent
+	 * @return TODO
 	 * @throws Exception
 	 */
-	void deleteTree(CallContext context, String folderId, Boolean allVersions,
-			Boolean continueOnFailure, Boolean deletedWithParent)
-			throws Exception;
+	List<String> deleteTree(CallContext context, String folderId, Boolean allVersions,
+			Boolean continueOnFailure, Boolean deletedWithParent);
 
 	// ///////////////////////////////////////
 	// Attachment

@@ -35,6 +35,7 @@ public class NemakiPropertyDefinitionCore extends NodeBase{
 
 	public NemakiPropertyDefinitionCore() {
 		super();
+		setType(NodeType.PROPERTY_DEFINITION_CORE.value());
 	}
 
 	public NemakiPropertyDefinitionCore(NodeBase n) {

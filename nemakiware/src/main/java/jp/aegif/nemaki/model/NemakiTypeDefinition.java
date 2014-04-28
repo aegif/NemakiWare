@@ -24,6 +24,8 @@ package jp.aegif.nemaki.model;
 
 import java.util.List;
 
+import jp.aegif.nemaki.model.constant.NodeType;
+
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
 
@@ -59,6 +61,7 @@ public class NemakiTypeDefinition extends NodeBase {
 	
 	public NemakiTypeDefinition(){
 		super();
+		setType(NodeType.TYPE_DEFINITION.value());
 	}
 	
 	public NemakiTypeDefinition(NodeBase n){

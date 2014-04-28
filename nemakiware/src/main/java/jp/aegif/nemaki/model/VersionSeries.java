@@ -21,6 +21,8 @@
  ******************************************************************************/
 package jp.aegif.nemaki.model;
 
+import jp.aegif.nemaki.model.constant.NodeType;
+
 
 public class VersionSeries extends NodeBase{
 	public static final String TYPE = "versionSeries";
@@ -31,6 +33,7 @@ public class VersionSeries extends NodeBase{
 	
 	public VersionSeries(){
 		super();
+		setType(NodeType.VERSION_SERIES.value());
 	}
 	
 	public VersionSeries(NodeBase n){

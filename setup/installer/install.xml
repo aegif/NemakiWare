@@ -225,7 +225,10 @@
       <!-- Import configuration scripts -->
       <fileset dir="setup/nemakishare" targetdir="$INSTALL_PATH/setup/nemakishare">
         <include name="**"/>
+        <exclude name="setup_nemakishare.sh"/>
+        <exclude name="setup_nemakishare.sh.tmp"/>
       </fileset>
+      <singlefile src="setup/nemakishare/setup_nemakishare.sh.tmp" target="$INSTALL_PATH/setup/nemakishare/setup_nemakishare.sh"/>
     </pack>
 
 

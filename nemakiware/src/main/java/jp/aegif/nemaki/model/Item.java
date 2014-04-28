@@ -22,9 +22,12 @@
 
 package jp.aegif.nemaki.model;
 
+import jp.aegif.nemaki.model.constant.NodeType;
+
 public class Item extends Content{
 	public Item(){
 		super();
+		setType(NodeType.CMIS_ITEM.value());
 	}
 	
 	public Item(Content c){

@@ -44,7 +44,7 @@ public class SpringPropertiesUtil extends PropertyPlaceholderConfigurer {
     	String value = propertiesMap.get(key);
     	if(StringUtils.isBlank(value)){
     		log.info("Blank properties key:" + key);
-    	};
+    	}
         return value;
     }
 

@@ -36,9 +36,11 @@ import jp.aegif.nemaki.model.NemakiPropertyDefinition;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
+import jp.aegif.nemaki.model.constant.PropertyKey;
 import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.node.TypeService;
 import jp.aegif.nemaki.util.DataUtil;
+import jp.aegif.nemaki.util.NemakiPropertyManager;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
@@ -72,6 +74,9 @@ import org.apache.commons.collections.MapUtils;
 public class TypeManagerImpl implements TypeManager {
 
 	private TypeService typeService;
+	private NemakiPropertyManager propertyManager;
+	private String NAMESPACE;
+
 	/**
 	 * Constant
 	 */
@@ -84,7 +89,7 @@ public class TypeManagerImpl implements TypeManager {
 	public final static String ITEM_TYPE_ID = BaseTypeId.CMIS_ITEM.value();
 	public final static String SECONDARY_TYPE_ID = BaseTypeId.CMIS_SECONDARY
 			.value();
-	private static final String NAMESPACE = "http://www.aegif.jp/Nemaki";
+
 	private final static boolean REQUIRED = true;
 	private final static boolean QUERYABLE = true;
 	private final static boolean ORDERABLE = true;
@@ -108,6 +113,9 @@ public class TypeManagerImpl implements TypeManager {
 	// Constructor
 	// /////////////////////////////////////////////////
 	public void init() {
+		NAMESPACE = propertyManager
+				.readValue(PropertyKey.CMIS_REPOSITORY_MAIN_NAMESPACE);
+
 		types = new HashMap<String, TypeDefinitionContainer>();
 		basetypes = new HashMap<String, TypeDefinitionContainer>();
 		subTypeProperties = new HashMap<String, List<PropertyDefinition<?>>>();
@@ -132,7 +140,6 @@ public class TypeManagerImpl implements TypeManager {
 		buildPropertyDefinitionCores();
 	}
 
-
 	// /////////////////////////////////////////////////
 	// Refresh global variables from DB
 	// /////////////////////////////////////////////////
@@ -149,28 +156,63 @@ public class TypeManagerImpl implements TypeManager {
 	// BaseType Generating Methods
 	// /////////////////////////////////////////////////
 	private void addDocumentType() {
+		// Read parameters
+		String localName = propertyManager
+				.readValue(PropertyKey.BASETYPE_DOCUMENT_LOCAL_NAME);
+		String displayName = propertyManager
+				.readValue(PropertyKey.BASETYPE_DOCUMENT_DISPLAY_NAME);
+		String description = propertyManager
+				.readValue(PropertyKey.BASETYPE_DOCUMENT_DESCRIPTION);
+		boolean creatable = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_DOCUMENT_CREATABLE);
+		boolean fileable = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_DOCUMENT_FILEABLE);
+		boolean queryable = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_DOCUMENT_QUERYABLE);
+		boolean controllablePolicy = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_DOCUMENT_CONTROLLABLE_POLICY);
+		boolean controllableAcl = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_DOCUMENT_CONTROLLABLE_ACL);
+		boolean includedInSupertypeQuery = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_DOCUMENT_INCLUDED_IN_SUPER_TYPE_QUERY);
+		boolean fulltextIndexed = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_DOCUMENT_FULLTEXT_INDEXED);
+		boolean typeMutabilityCanCreate = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_DOCUMENT_TYPE_MUTABILITY_CAN_CREATE);
+		boolean typeMutabilityCanUpdate = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_DOCUMENT_TYPE_MUTABILITY_CAN_UPDATE);
+		boolean typeMutabilityCanDelete = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_DOCUMENT_TYPE_MUTABILITY_CAN_DELETE);
+		boolean versionable = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_DOCUMENT_VERSIONABLE);
+		String _contentStreamAllowed = propertyManager
+				.readValue(PropertyKey.BASETYPE_DOCUMENT_CONTENT_STREAM_ALLOWED);
+		ContentStreamAllowed contentStreamAllowed = ContentStreamAllowed
+				.fromValue(_contentStreamAllowed);
+
+		// Set attributes
 		DocumentTypeDefinitionImpl documentType = new DocumentTypeDefinitionImpl();
 		documentType.setId(DOCUMENT_TYPE_ID);
-		documentType.setLocalName("document");
+		documentType.setLocalName(localName);
 		documentType.setLocalNamespace(NAMESPACE);
 		documentType.setQueryName(DOCUMENT_TYPE_ID);
-		documentType.setDisplayName("document");
-		documentType.setDescription("Document");
+		documentType.setDisplayName(displayName);
+		documentType.setDescription(description);
 		documentType.setBaseTypeId(BaseTypeId.CMIS_DOCUMENT);
-		documentType.setIsCreatable(true);
-		documentType.setIsFileable(true);
-		documentType.setIsQueryable(true);
-		documentType.setIsControllablePolicy(false);
-		documentType.setIsControllableAcl(true);
-		documentType.setIsIncludedInSupertypeQuery(true);
-		documentType.setIsFulltextIndexed(true);
-		documentType.setIsVersionable(true);
-		documentType.setContentStreamAllowed(ContentStreamAllowed.REQUIRED);
+		documentType.setIsCreatable(creatable);
+		documentType.setIsFileable(fileable);
+		documentType.setIsQueryable(queryable);
+		documentType.setIsControllablePolicy(controllablePolicy);
+		documentType.setIsControllableAcl(controllableAcl);
+		documentType.setIsIncludedInSupertypeQuery(includedInSupertypeQuery);
+		documentType.setIsFulltextIndexed(fulltextIndexed);
+		documentType.setIsVersionable(versionable);
+		documentType.setContentStreamAllowed(contentStreamAllowed);
 
 		TypeMutabilityImpl typeMutability = new TypeMutabilityImpl();
-		typeMutability.setCanCreate(true);
-		typeMutability.setCanUpdate(false);
-		typeMutability.setCanDelete(false);
+		typeMutability.setCanCreate(typeMutabilityCanCreate);
+		typeMutability.setCanUpdate(typeMutabilityCanUpdate);
+		typeMutability.setCanDelete(typeMutabilityCanDelete);
 		documentType.setTypeMutability(typeMutability);
 
 		addBasePropertyDefinitions(documentType);
@@ -181,26 +223,53 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	private void addFolderType() {
+		// Read parameters
+		String localName = propertyManager
+				.readValue(PropertyKey.BASETYPE_FOLDER_LOCAL_NAME);
+		String displayName = propertyManager
+				.readValue(PropertyKey.BASETYPE_FOLDER_DISPLAY_NAME);
+		String description = propertyManager
+				.readValue(PropertyKey.BASETYPE_FOLDER_DESCRIPTION);
+		boolean creatable = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_FOLDER_CREATABLE);
+		boolean queryable = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_FOLDER_QUERYABLE);
+		boolean controllablePolicy = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_FOLDER_CONTROLLABLE_POLICY);
+		boolean controllableAcl = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_FOLDER_CONTROLLABLE_ACL);
+		boolean includedInSupertypeQuery = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_FOLDER_INCLUDED_IN_SUPER_TYPE_QUERY);
+		boolean fulltextIndexed = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_FOLDER_FULLTEXT_INDEXED);
+		boolean typeMutabilityCanCreate = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_FOLDER_TYPE_MUTABILITY_CAN_CREATE);
+		boolean typeMutabilityCanUpdate = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_FOLDER_TYPE_MUTABILITY_CAN_UPDATE);
+		boolean typeMutabilityCanDelete = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_FOLDER_TYPE_MUTABILITY_CAN_DELETE);
+
+		// Set attributes
 		FolderTypeDefinitionImpl folderType = new FolderTypeDefinitionImpl();
 		folderType.setId(FOLDER_TYPE_ID);
-		folderType.setLocalName("folder");
+		folderType.setLocalName(localName);
 		folderType.setLocalNamespace(NAMESPACE);
 		folderType.setQueryName(FOLDER_TYPE_ID);
-		folderType.setDisplayName("folder");
+		folderType.setDisplayName(displayName);
 		folderType.setBaseTypeId(BaseTypeId.CMIS_FOLDER);
-		folderType.setDescription("Folder");
-		folderType.setIsCreatable(true);
+		folderType.setDescription(description);
+		folderType.setIsCreatable(creatable);
 		folderType.setIsFileable(true);
-		folderType.setIsQueryable(true);
-		folderType.setIsControllablePolicy(false);
-		folderType.setIsControllableAcl(true);
-		folderType.setIsFulltextIndexed(false);
-		folderType.setIsIncludedInSupertypeQuery(true);
+		folderType.setIsQueryable(queryable);
+		folderType.setIsControllablePolicy(controllablePolicy);
+		folderType.setIsControllableAcl(controllableAcl);
+		folderType.setIsIncludedInSupertypeQuery(includedInSupertypeQuery);
+		folderType.setIsFulltextIndexed(fulltextIndexed);
 
 		TypeMutabilityImpl typeMutability = new TypeMutabilityImpl();
-		typeMutability.setCanCreate(true);
-		typeMutability.setCanUpdate(false);
-		typeMutability.setCanDelete(false);
+		typeMutability.setCanCreate(typeMutabilityCanCreate);
+		typeMutability.setCanUpdate(typeMutabilityCanUpdate);
+		typeMutability.setCanDelete(typeMutabilityCanDelete);
 		folderType.setTypeMutability(typeMutability);
 
 		addBasePropertyDefinitions(folderType);
@@ -211,33 +280,62 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	private void addRelationshipType() {
+		// Read parameters
+		String localName = propertyManager
+				.readValue(PropertyKey.BASETYPE_RELATIONSHIP_LOCAL_NAME);
+		String displayName = propertyManager
+				.readValue(PropertyKey.BASETYPE_RELATIONSHIP_DISPLAY_NAME);
+		String description = propertyManager
+				.readValue(PropertyKey.BASETYPE_RELATIONSHIP_DESCRIPTION);
+		boolean creatable = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_RELATIONSHIP_CREATABLE);
+		boolean queryable = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_RELATIONSHIP_QUERYABLE);
+		boolean controllablePolicy = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_RELATIONSHIP_CONTROLLABLE_POLICY);
+		boolean controllableAcl = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_RELATIONSHIP_CONTROLLABLE_ACL);
+		boolean includedInSupertypeQuery = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_RELATIONSHIP_INCLUDED_IN_SUPER_TYPE_QUERY);
+		boolean fulltextIndexed = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_RELATIONSHIP_FULLTEXT_INDEXED);
+		boolean typeMutabilityCanCreate = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_RELATIONSHIP_TYPE_MUTABILITY_CAN_CREATE);
+		boolean typeMutabilityCanUpdate = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_RELATIONSHIP_TYPE_MUTABILITY_CAN_UPDATE);
+		boolean typeMutabilityCanDelete = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_RELATIONSHIP_TYPE_MUTABILITY_CAN_DELETE);
+		List<String> allowedSourceTypes = propertyManager
+				.readValues(PropertyKey.BASETYPE_RELATIONSHIP_ALLOWED_SOURCE_TYPES);
+		List<String> allowedTargetTypes = propertyManager
+				.readValues(PropertyKey.BASETYPE_RELATIONSHIP_ALLOWED_TARGET_TYPES);
+
+		// Set attributes
 		RelationshipTypeDefinitionImpl relationshipType = new RelationshipTypeDefinitionImpl();
 		relationshipType.setId(RELATIONSHIP_TYPE_ID);
-		relationshipType.setLocalName("relationship");
+		relationshipType.setLocalName(localName);
 		relationshipType.setLocalNamespace(NAMESPACE);
 		relationshipType.setQueryName(RELATIONSHIP_TYPE_ID);
-		relationshipType.setDisplayName("relationship");
+		relationshipType.setDisplayName(displayName);
 		relationshipType.setBaseTypeId(BaseTypeId.CMIS_RELATIONSHIP);
-		relationshipType.setDescription("Relationship");
-		relationshipType.setIsCreatable(true);
+		relationshipType.setDescription(description);
+		relationshipType.setIsCreatable(creatable);
 		relationshipType.setIsFileable(false);
-		relationshipType.setIsQueryable(false);
-		relationshipType.setIsControllablePolicy(false);
-		relationshipType.setIsControllableAcl(false);
-		relationshipType.setIsIncludedInSupertypeQuery(true);
-		relationshipType.setIsFulltextIndexed(false);
+		relationshipType.setIsQueryable(queryable);
+		relationshipType.setIsControllablePolicy(controllablePolicy);
+		relationshipType.setIsControllableAcl(controllableAcl);
+		relationshipType
+				.setIsIncludedInSupertypeQuery(includedInSupertypeQuery);
+		relationshipType.setIsFulltextIndexed(fulltextIndexed);
 
 		TypeMutabilityImpl typeMutability = new TypeMutabilityImpl();
-		typeMutability.setCanCreate(false);
-		typeMutability.setCanUpdate(false);
-		typeMutability.setCanDelete(false);
+		typeMutability.setCanCreate(typeMutabilityCanCreate);
+		typeMutability.setCanUpdate(typeMutabilityCanUpdate);
+		typeMutability.setCanDelete(typeMutabilityCanDelete);
 		relationshipType.setTypeMutability(typeMutability);
 
-		List<String> allowedTypes = new ArrayList<String>();
-		allowedTypes.add(DOCUMENT_TYPE_ID);
-		allowedTypes.add(FOLDER_TYPE_ID);
-		relationshipType.setAllowedSourceTypes(allowedTypes);
-		relationshipType.setAllowedTargetTypes(allowedTypes);
+		relationshipType.setAllowedSourceTypes(allowedSourceTypes);
+		relationshipType.setAllowedTargetTypes(allowedTargetTypes);
 
 		addBasePropertyDefinitions(relationshipType);
 		addRelationshipPropertyDefinitions(relationshipType);
@@ -247,26 +345,55 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	private void addPolicyType() {
+		// Read parameters
+		String localName = propertyManager
+				.readValue(PropertyKey.BASETYPE_POLICY_LOCAL_NAME);
+		String displayName = propertyManager
+				.readValue(PropertyKey.BASETYPE_POLICY_DISPLAY_NAME);
+		String description = propertyManager
+				.readValue(PropertyKey.BASETYPE_POLICY_DESCRIPTION);
+		boolean creatable = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_POLICY_CREATABLE);
+		boolean fileable = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_POLICY_FILEABLE);
+		boolean queryable = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_POLICY_QUERYABLE);
+		boolean controllablePolicy = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_POLICY_CONTROLLABLE_POLICY);
+		boolean controllableAcl = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_POLICY_CONTROLLABLE_ACL);
+		boolean includedInSupertypeQuery = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_POLICY_INCLUDED_IN_SUPER_TYPE_QUERY);
+		boolean fulltextIndexed = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_POLICY_FULLTEXT_INDEXED);
+		boolean typeMutabilityCanCreate = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_POLICY_TYPE_MUTABILITY_CAN_CREATE);
+		boolean typeMutabilityCanUpdate = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_POLICY_TYPE_MUTABILITY_CAN_UPDATE);
+		boolean typeMutabilityCanDelete = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_POLICY_TYPE_MUTABILITY_CAN_DELETE);
+
+		// Set attributes
 		PolicyTypeDefinitionImpl policyType = new PolicyTypeDefinitionImpl();
 		policyType.setId(POLICY_TYPE_ID);
-		policyType.setLocalName("policy");
+		policyType.setLocalName(localName);
 		policyType.setLocalNamespace(NAMESPACE);
 		policyType.setQueryName(POLICY_TYPE_ID);
-		policyType.setDisplayName("policy");
+		policyType.setDisplayName(displayName);
 		policyType.setBaseTypeId(BaseTypeId.CMIS_POLICY);
-		policyType.setDescription("Policy");
-		policyType.setIsCreatable(false);
-		policyType.setIsFileable(false);
-		policyType.setIsQueryable(false);
-		policyType.setIsControllablePolicy(false);
-		policyType.setIsControllableAcl(false);
-		policyType.setIsIncludedInSupertypeQuery(true);
-		policyType.setIsFulltextIndexed(false);
+		policyType.setDescription(description);
+		policyType.setIsCreatable(creatable);
+		policyType.setIsFileable(fileable);
+		policyType.setIsQueryable(queryable);
+		policyType.setIsControllablePolicy(controllablePolicy);
+		policyType.setIsControllableAcl(controllableAcl);
+		policyType.setIsIncludedInSupertypeQuery(includedInSupertypeQuery);
+		policyType.setIsFulltextIndexed(fulltextIndexed);
 
 		TypeMutabilityImpl typeMutability = new TypeMutabilityImpl();
-		typeMutability.setCanCreate(false);
-		typeMutability.setCanUpdate(false);
-		typeMutability.setCanDelete(false);
+		typeMutability.setCanCreate(typeMutabilityCanCreate);
+		typeMutability.setCanUpdate(typeMutabilityCanUpdate);
+		typeMutability.setCanDelete(typeMutabilityCanDelete);
 		policyType.setTypeMutability(typeMutability);
 
 		addBasePropertyDefinitions(policyType);
@@ -277,26 +404,55 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	private void addItemType() {
+		// Read parameters
+		String localName = propertyManager
+				.readValue(PropertyKey.BASETYPE_ITEM_LOCAL_NAME);
+		String displayName = propertyManager
+				.readValue(PropertyKey.BASETYPE_ITEM_DISPLAY_NAME);
+		String description = propertyManager
+				.readValue(PropertyKey.BASETYPE_ITEM_DESCRIPTION);
+		boolean creatable = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_ITEM_CREATABLE);
+		boolean fileable = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_ITEM_FILEABLE);
+		boolean queryable = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_ITEM_QUERYABLE);
+		boolean controllablePolicy = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_ITEM_CONTROLLABLE_POLICY);
+		boolean controllableAcl = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_ITEM_CONTROLLABLE_ACL);
+		boolean includedInSupertypeQuery = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_ITEM_INCLUDED_IN_SUPER_TYPE_QUERY);
+		boolean fulltextIndexed = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_ITEM_FULLTEXT_INDEXED);
+		boolean typeMutabilityCanCreate = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_ITEM_TYPE_MUTABILITY_CAN_CREATE);
+		boolean typeMutabilityCanUpdate = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_ITEM_TYPE_MUTABILITY_CAN_UPDATE);
+		boolean typeMutabilityCanDelete = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_ITEM_TYPE_MUTABILITY_CAN_DELETE);
+
+		// Set attributes
 		ItemTypeDefinitionImpl itemType = new ItemTypeDefinitionImpl();
 		itemType.setId(ITEM_TYPE_ID);
-		itemType.setLocalName("item");
+		itemType.setLocalName(localName);
 		itemType.setLocalNamespace(NAMESPACE);
 		itemType.setQueryName(ITEM_TYPE_ID);
-		itemType.setDisplayName("item");
+		itemType.setDisplayName(displayName);
 		itemType.setBaseTypeId(BaseTypeId.CMIS_ITEM);
-		itemType.setDescription("Item");
-		itemType.setIsCreatable(true);
-		itemType.setIsFileable(true);
-		itemType.setIsQueryable(false);
-		itemType.setIsControllablePolicy(false);
-		itemType.setIsControllableAcl(false);
-		itemType.setIsIncludedInSupertypeQuery(true);
-		itemType.setIsFulltextIndexed(false);
+		itemType.setDescription(description);
+		itemType.setIsCreatable(creatable);
+		itemType.setIsFileable(fileable);
+		itemType.setIsQueryable(queryable);
+		itemType.setIsControllablePolicy(controllablePolicy);
+		itemType.setIsControllableAcl(controllableAcl);
+		itemType.setIsIncludedInSupertypeQuery(includedInSupertypeQuery);
+		itemType.setIsFulltextIndexed(fulltextIndexed);
 
 		TypeMutabilityImpl typeMutability = new TypeMutabilityImpl();
-		typeMutability.setCanCreate(false);
-		typeMutability.setCanUpdate(false);
-		typeMutability.setCanDelete(false);
+		typeMutability.setCanCreate(typeMutabilityCanCreate);
+		typeMutability.setCanUpdate(typeMutabilityCanUpdate);
+		typeMutability.setCanDelete(typeMutabilityCanDelete);
 		itemType.setTypeMutability(typeMutability);
 
 		addBasePropertyDefinitions(itemType);
@@ -306,28 +462,49 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	private void addSecondayType() {
+		// Read parameters
+		String localName = propertyManager
+				.readValue(PropertyKey.BASETYPE_SECONDARY_LOCAL_NAME);
+		String displayName = propertyManager
+				.readValue(PropertyKey.BASETYPE_SECONDARY_DISPLAY_NAME);
+		String description = propertyManager
+				.readValue(PropertyKey.BASETYPE_SECONDARY_DESCRIPTION);
+		boolean queryable = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_SECONDARY_QUERYABLE);
+		boolean includedInSupertypeQuery = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_SECONDARY_INCLUDED_IN_SUPER_TYPE_QUERY);
+		boolean fulltextIndexed = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_SECONDARY_FULLTEXT_INDEXED);
+		boolean typeMutabilityCanCreate = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_SECONDARY_TYPE_MUTABILITY_CAN_CREATE);
+		boolean typeMutabilityCanUpdate = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_SECONDARY_TYPE_MUTABILITY_CAN_UPDATE);
+		boolean typeMutabilityCanDelete = propertyManager
+				.readBoolean(PropertyKey.BASETYPE_SECONDARY_TYPE_MUTABILITY_CAN_DELETE);
+
+		// Set attributes
 		SecondaryTypeDefinitionImpl secondaryType = new SecondaryTypeDefinitionImpl();
 		secondaryType.setId(SECONDARY_TYPE_ID);
-		secondaryType.setLocalName("secondary");
+		secondaryType.setLocalName(localName);
 		secondaryType.setLocalNamespace(NAMESPACE);
 		secondaryType.setQueryName(SECONDARY_TYPE_ID);
-		secondaryType.setDisplayName("secondary");
+		secondaryType.setDisplayName(displayName);
 		secondaryType.setBaseTypeId(BaseTypeId.CMIS_SECONDARY);
-		secondaryType.setDescription("Secondary");
+		secondaryType.setDescription(description);
 		secondaryType.setIsCreatable(false);
 		secondaryType.setIsFileable(false);
-		secondaryType.setIsQueryable(true);
+		secondaryType.setIsQueryable(queryable);
 		secondaryType.setIsControllablePolicy(false);
 		secondaryType.setIsControllableAcl(false);
-		secondaryType.setIsIncludedInSupertypeQuery(true);
-		secondaryType.setIsFulltextIndexed(true);
+		secondaryType.setIsIncludedInSupertypeQuery(includedInSupertypeQuery);
+		secondaryType.setIsFulltextIndexed(fulltextIndexed);
 		secondaryType
 				.setPropertyDefinitions(new HashMap<String, PropertyDefinition<?>>());
 
 		TypeMutabilityImpl typeMutability = new TypeMutabilityImpl();
-		typeMutability.setCanCreate(true);
-		typeMutability.setCanUpdate(false);
-		typeMutability.setCanDelete(false);
+		typeMutability.setCanCreate(typeMutabilityCanCreate);
+		typeMutability.setCanUpdate(typeMutabilityCanUpdate);
+		typeMutability.setCanDelete(typeMutabilityCanDelete);
 		secondaryType.setTypeMutability(typeMutability);
 
 		secondaryType
@@ -337,33 +514,56 @@ public class TypeManagerImpl implements TypeManager {
 		addTypeInternal(basetypes, secondaryType);
 	}
 
+		
 	private void addBasePropertyDefinitions(AbstractTypeDefinition type) {
+		//cmis:name
+		String _updatability_name = propertyManager.readValue(PropertyKey.PROPERTY_NAME_UPDATABILITY);
+		Updatability updatability_name = Updatability.fromValue(_updatability_name);
+		boolean queryable_name = propertyManager.readBoolean(PropertyKey.PROPERTY_NAME_QUERYABLE);
+		boolean orderable_name = propertyManager.readBoolean(PropertyKey.PROPERTY_NAME_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.NAME,
 				PropertyType.STRING, Cardinality.SINGLE,
-				Updatability.READWRITE, REQUIRED, QUERYABLE, ORDERABLE, null));
+				updatability_name, REQUIRED, queryable_name, orderable_name, null));
 
+		//cmis:description
+		String _updatability_description = propertyManager.readValue(PropertyKey.PROPERTY_DESCRIPTION_UPDATABILITY);
+		Updatability updatability_description = Updatability.fromValue(_updatability_description);
+		boolean queryable_description = propertyManager.readBoolean(PropertyKey.PROPERTY_DESCRIPTION_QUERYABLE);
+		boolean orderable_description = propertyManager.readBoolean(PropertyKey.PROPERTY_DESCRIPTION_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.DESCRIPTION, PropertyType.STRING,
-				Cardinality.SINGLE, Updatability.READWRITE, !REQUIRED,
-				QUERYABLE, ORDERABLE, null));
+				Cardinality.SINGLE, updatability_description, !REQUIRED,
+				queryable_description, orderable_description, null));
 
+		//cmis:objectId
+		boolean orderable_objectId = propertyManager.readBoolean(PropertyKey.PROPERTY_OBJECT_ID_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.OBJECT_ID,
 				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, QUERYABLE, ORDERABLE, null));
+				!REQUIRED, QUERYABLE, orderable_objectId, null));
 
+		//cmis:baseTypeId
+		boolean queryable_baseTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_BASE_TYPE_ID_QUERYABLE);
+		boolean orderable_baseTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_BASE_TYPE_ID_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.BASE_TYPE_ID, PropertyType.ID, Cardinality.SINGLE,
-				Updatability.READONLY, !REQUIRED, QUERYABLE, ORDERABLE, null));
+				Updatability.READONLY, !REQUIRED, queryable_baseTypeId, orderable_baseTypeId, null));
 
+		//cmis:objectTypeId
+		boolean queryable_objectTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_OBJECT_TYPE_ID_QUERYABLE);
+		boolean orderable_objectTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_OBJECT_TYPE_ID_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.OBJECT_TYPE_ID, PropertyType.ID,
-				Cardinality.SINGLE, Updatability.ONCREATE, REQUIRED, QUERYABLE,
-				ORDERABLE, null));
+				Cardinality.SINGLE, Updatability.ONCREATE, REQUIRED, queryable_objectTypeId,
+				orderable_objectTypeId, null));
 
+		//cmis:secondaryObjectTypeIds
+		String _updatability_secondaryObjectTypeIds = propertyManager.readValue(PropertyKey.PROPERTY_SECONDARY_OBJECT_TYPE_IDS_UPDATABILITY);
+		Updatability updatability_secondaryObjectTypeIds = Updatability.fromValue(_updatability_secondaryObjectTypeIds);
+		boolean queryable_secondaryObjectTypeIds = propertyManager.readBoolean(PropertyKey.PROPERTY_SECONDARY_OBJECT_TYPE_IDS_QUERYABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.SECONDARY_OBJECT_TYPE_IDS, PropertyType.ID,
-				Cardinality.MULTI, Updatability.READWRITE, !REQUIRED,
-				QUERYABLE, !ORDERABLE, null));
+				Cardinality.MULTI, updatability_secondaryObjectTypeIds, !REQUIRED,
+				queryable_secondaryObjectTypeIds, !ORDERABLE, null));
 
 		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.CREATED_BY,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
@@ -391,13 +591,18 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	private void addFolderPropertyDefinitions(FolderTypeDefinitionImpl type) {
+		//cmis:parentId
+		boolean queryable_parentId = propertyManager.readBoolean(PropertyKey.PROPERTY_PARENT_ID_QUERYABLE);
 		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.PARENT_ID,
 				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, QUERYABLE, !ORDERABLE, null));
+				!REQUIRED, queryable_parentId, !ORDERABLE, null));
 
+		//cmis:path
+		boolean queryable_path = propertyManager.readBoolean(PropertyKey.PROPERTY_PATH_QUERYABLE);
+		boolean orderable_path = propertyManager.readBoolean(PropertyKey.PROPERTY_PATH_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.PATH,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, !QUERYABLE, !ORDERABLE, null));
+				!REQUIRED, queryable_path, orderable_path, null));
 
 		List<String> defaults = new ArrayList<String>();
 		defaults.add(BaseTypeId.CMIS_FOLDER.value());
@@ -409,98 +614,152 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	private void addDocumentPropertyDefinitions(DocumentTypeDefinitionImpl type) {
+		//cmis:isImmutable
+		boolean queryable_isImmutable = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_IMMUTABLE_QUERYABLE);
+		boolean orderable_isImmutable = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_IMMUTABLE_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.IS_IMMUTABLE, PropertyType.BOOLEAN,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				!QUERYABLE, !ORDERABLE, Arrays.asList(false)));
+				queryable_isImmutable, orderable_isImmutable, Arrays.asList(false)));
 
+		//cmis:isLatestVersion
+		boolean queryable_isLatestVersion = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_LATEST_VERSION_QUERYABLE);
+		boolean orderable_isLatestVersion = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_LATEST_VERSION_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.IS_LATEST_VERSION, PropertyType.BOOLEAN,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				!QUERYABLE, !ORDERABLE, null));
+				queryable_isLatestVersion, orderable_isLatestVersion, null));
 
+		//cmis:isMajorVersion
+		boolean queryable_isMajorVersion = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_MAJOR_VERSION_QUERYABLE);
+		boolean orderable_isMajorVersion = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_MAJOR_VERSION_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.IS_MAJOR_VERSION, PropertyType.BOOLEAN,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				QUERYABLE, !ORDERABLE, null));
+				queryable_isMajorVersion, orderable_isMajorVersion, null));
 
+		//cmis:isLatestMajorVersion
+		boolean queryable_isLatestMajorVersion = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_LATEST_MAJOR_VERSION_QUERYABLE);
+		boolean orderable_isLatestMajorVersion = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_LATEST_MAJOR_VERSION_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.IS_LATEST_MAJOR_VERSION, PropertyType.BOOLEAN,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				!QUERYABLE, !ORDERABLE, null));
+				queryable_isLatestMajorVersion, orderable_isLatestMajorVersion, null));
 
+		//cmis:isPrivateWorkingCopy
+		boolean queryable_isPrivateWorkingCopy = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_PRIVATE_WORKING_COPY_QUERYABLE);
+		boolean orderable_isPrivateWorkingCopy = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_PRIVATE_WORKING_COPY_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.IS_PRIVATE_WORKING_COPY, PropertyType.BOOLEAN,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				QUERYABLE, ORDERABLE, null));
+				queryable_isPrivateWorkingCopy, orderable_isPrivateWorkingCopy, null));
 
+		//cmis:versionLabel
+		boolean queryable_versionLabel = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_LABEL_QUERYABLE);
+		boolean orderable_versionLabel = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_LABEL_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.VERSION_LABEL, PropertyType.STRING,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				QUERYABLE, ORDERABLE, null));
+				queryable_versionLabel, orderable_versionLabel, null));
 
+		//cmis:versionSeriesId
+		boolean queryable_versionSeriesId = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_SERIES_ID_QUERYABLE);
+		boolean orderable_versionSeriesId = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_SERIES_ID_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.VERSION_SERIES_ID, PropertyType.ID,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				QUERYABLE, ORDERABLE, null));
+				queryable_versionSeriesId, orderable_versionSeriesId, null));
 
+		//cmis:isVersionSeriesCheckedOut
+		boolean queryable_isVersionSeriesCheckedOut = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_VERSION_SERIES_CHECKED_OUT_QUERYABLE);
+		boolean orderable_isVersionSeriesCheckedOut = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_VERSION_SERIES_CHECKED_OUT_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.IS_VERSION_SERIES_CHECKED_OUT,
 				PropertyType.BOOLEAN, Cardinality.SINGLE,
-				Updatability.READONLY, !REQUIRED, QUERYABLE, ORDERABLE, null));
+				Updatability.READONLY, !REQUIRED, queryable_isVersionSeriesCheckedOut, orderable_isVersionSeriesCheckedOut, null));
 
+		//cmis:versionSeriesCheckedOutBy
+		boolean queryable_versionSeriesCheckedOutBy = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_SERIES_CHECKED_OUT_BY_QUERYABLE);
+		boolean orderable_versionSeriesCheckedOutBy = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_SERIES_CHECKED_OUT_BY_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.VERSION_SERIES_CHECKED_OUT_BY, PropertyType.STRING,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				QUERYABLE, !ORDERABLE, null));
+				queryable_versionSeriesCheckedOutBy, orderable_versionSeriesCheckedOutBy, null));
 
+		//cmis:versionSeriesCheckedOutId
+		boolean queryable_versionSeriesCheckedOutId = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_SERIES_CHECKED_OUT_ID_QUERYABLE);
+		boolean orderable_versionSeriesCheckedOutId = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_SERIES_CHECKED_OUT_ID_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.VERSION_SERIES_CHECKED_OUT_ID, PropertyType.ID,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				QUERYABLE, !ORDERABLE, null));
+				queryable_versionSeriesCheckedOutId, orderable_versionSeriesCheckedOutId, null));
 
+		//cmis:checkInComment
+		boolean queryable_checkInComment = propertyManager.readBoolean(PropertyKey.PROPERTY_CHECK_IN_COMMENT_QUERYABLE);
+		boolean orderable_checkInComment = propertyManager.readBoolean(PropertyKey.PROPERTY_CHECK_IN_COMMENT_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.CHECKIN_COMMENT, PropertyType.STRING,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				QUERYABLE, !ORDERABLE, null));
+				queryable_checkInComment, orderable_checkInComment, null));
 
+		//cmis:contentStreamLength
+		boolean queryable_contentStreamLength = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_LENGTH_QUERYABLE);
+		boolean orderable_contentStreamLength = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_LENGTH_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.CONTENT_STREAM_LENGTH, PropertyType.INTEGER,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				QUERYABLE, !ORDERABLE, null));
+				queryable_contentStreamLength, orderable_contentStreamLength, null));
 
+		//cmis:contentStreamMimeType
+		boolean queryable_contentStreamMimeType = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_MIME_TYPE_QUERYABLE);
+		boolean orderable_contentStreamMimeType = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_MIME_TYPE_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.CONTENT_STREAM_MIME_TYPE, PropertyType.STRING,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				QUERYABLE, !ORDERABLE, null));
+				queryable_contentStreamMimeType, orderable_contentStreamMimeType, null));
 
+		//cmis:contentStreamMimeType
+		boolean queryable_contentStreamFileName = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_FILE_NAME_QUERYABLE);
+		boolean orderable_contentStreamFileName = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_FILE_NAME_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.CONTENT_STREAM_FILE_NAME, PropertyType.STRING,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				!QUERYABLE, !ORDERABLE, null));
+				queryable_contentStreamFileName, orderable_contentStreamFileName, null));
 
+		//cmis:contentStreamId
+		boolean queryable_contentStreamId = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_ID_QUERYABLE);
+		boolean orderable_contentStreamId = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_ID_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.CONTENT_STREAM_ID, PropertyType.ID,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				!QUERYABLE, !ORDERABLE, null));
+				queryable_contentStreamId, orderable_contentStreamId, null));
 	}
 
 	private void addRelationshipPropertyDefinitions(
 			RelationshipTypeDefinitionImpl type) {
+		//cmis:sourceId
+		boolean queryable_sourceId = propertyManager.readBoolean(PropertyKey.PROPERTY_SOURCE_ID_QUERYABLE);
+		boolean orderable_sourceId = propertyManager.readBoolean(PropertyKey.PROPERTY_SOURCE_ID_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.SOURCE_ID,
 				PropertyType.ID, Cardinality.SINGLE, Updatability.READWRITE,
-				REQUIRED, !QUERYABLE, !ORDERABLE, null));
+				REQUIRED, queryable_sourceId, orderable_sourceId, null));
 
+		//cmis:targetId
+		boolean queryable_targetId = propertyManager.readBoolean(PropertyKey.PROPERTY_TARGET_ID_QUERYABLE);
+		boolean orderable_targetId = propertyManager.readBoolean(PropertyKey.PROPERTY_TARGET_ID_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.TARGET_ID,
 				PropertyType.ID, Cardinality.SINGLE, Updatability.READWRITE,
-				REQUIRED, !QUERYABLE, !ORDERABLE, null));
+				REQUIRED, queryable_targetId, orderable_targetId, null));
 	}
 
 	private void addPolicyPropertyDefinitions(PolicyTypeDefinitionImpl type) {
+		//cmis:policyText
+		boolean queryable_policyText = propertyManager.readBoolean(PropertyKey.PROPERTY_POLICY_TEXT_QUERYABLE);
+		boolean orderable_policyText = propertyManager.readBoolean(PropertyKey.PROPERTY_POLICY_TEXT_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
 				PropertyIds.POLICY_TEXT, PropertyType.STRING,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				!QUERYABLE, !ORDERABLE, null));
+				queryable_policyText, orderable_policyText, null));
 	}
 
 	private PropertyDefinition<?> createDefaultPropDef(String id,
@@ -837,10 +1096,11 @@ public class TypeManagerImpl implements TypeManager {
 		// cores)
 		List<NemakiPropertyDefinitionCore> subTypeCores = typeService
 				.getPropertyDefinitionCores();
-		if(CollectionUtils.isNotEmpty(subTypeCores)){
+		if (CollectionUtils.isNotEmpty(subTypeCores)) {
 			for (NemakiPropertyDefinitionCore sc : subTypeCores) {
-				addPropertyDefinitionCore(sc.getPropertyId(), sc.getQueryName(),
-						sc.getPropertyType(), sc.getCardinality());
+				addPropertyDefinitionCore(sc.getPropertyId(),
+						sc.getQueryName(), sc.getPropertyType(),
+						sc.getCardinality());
 			}
 		}
 	}
@@ -1019,9 +1279,8 @@ public class TypeManagerImpl implements TypeManager {
 						type.getPropertyDefinitions().clear();
 					}
 				} catch (Exception e) {
-					System.out.print(e);
+					e.printStackTrace();
 				}
-
 			}
 		}
 
@@ -1208,5 +1467,9 @@ public class TypeManagerImpl implements TypeManager {
 
 	public void setTypeService(TypeService typeService) {
 		this.typeService = typeService;
+	}
+
+	public void setPropertyManager(NemakiPropertyManager propertyManager) {
+		this.propertyManager = propertyManager;
 	}
 }
