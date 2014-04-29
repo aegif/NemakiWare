@@ -75,7 +75,6 @@ import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
-import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
@@ -1240,7 +1239,7 @@ public class ContentServiceImpl implements ContentService {
 			Boolean allVersions, Boolean continueOnFailure,
 			Boolean deletedWithParent){
 		List<String> failureIds = new ArrayList<String>();
-		
+
 		// Delete children
 		List<Content> children = getChildren(folderId);
 		if (!CollectionUtils.isEmpty(children)) {
@@ -1276,7 +1275,7 @@ public class ContentServiceImpl implements ContentService {
 				log.error("", e);
 			}
 		}
-		
+
 		return failureIds;
 	}
 
