@@ -514,7 +514,7 @@ public class TypeManagerImpl implements TypeManager {
 		addTypeInternal(basetypes, secondaryType);
 	}
 
-		
+
 	private void addBasePropertyDefinitions(AbstractTypeDefinition type) {
 		//cmis:name
 		String _updatability_name = propertyManager.readValue(PropertyKey.PROPERTY_NAME_UPDATABILITY);
@@ -1177,6 +1177,7 @@ public class TypeManagerImpl implements TypeManager {
 		}
 	}
 
+	@Override
 	public PropertyDefinition<?> getPropertyDefinitionForQueryName(
 			TypeDefinition typeDefinition, String propQueryName) {
 		Map<String, PropertyDefinition<?>> defs = typeDefinition
@@ -1377,7 +1378,7 @@ public class TypeManagerImpl implements TypeManager {
 
 	/**
 	 * Get a type definition Internal Use
-	 * 
+	 *
 	 * @param content
 	 * @return
 	 */
@@ -1390,7 +1391,7 @@ public class TypeManagerImpl implements TypeManager {
 
 	/**
 	 * List up specification-default property ids
-	 * 
+	 *
 	 * @return
 	 */
 	@Override
@@ -1409,6 +1410,22 @@ public class TypeManagerImpl implements TypeManager {
 			}
 		}
 		return ids;
+	}
+
+	public void addTypeDefinition(TypeDefinition typeDefinition,
+			boolean addInheritedProperties) {
+		// TODO Auto-generated method stub
+
+	}
+
+	public void updateTypeDefinition(TypeDefinition typeDefinition) {
+		// TODO Auto-generated method stub
+
+	}
+
+	public void deleteTypeDefinition(String typeId) {
+		// TODO Auto-generated method stub
+
 	}
 
 	// //////////////////////////////////////////////////////////////////////////////
