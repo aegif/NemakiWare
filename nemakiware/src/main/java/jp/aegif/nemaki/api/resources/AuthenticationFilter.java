@@ -34,10 +34,10 @@ import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 
 import jp.aegif.nemaki.model.User;
-import jp.aegif.nemaki.model.constant.PropertyKey;
 import jp.aegif.nemaki.service.node.PrincipalService;
 import jp.aegif.nemaki.util.NemakiPropertyManager;
 import jp.aegif.nemaki.util.PasswordHasher;
+import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.context.support.WebApplicationContextUtils;

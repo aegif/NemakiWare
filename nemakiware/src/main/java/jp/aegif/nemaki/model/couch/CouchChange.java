@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -28,12 +28,17 @@ import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Change;
 
 import org.apache.chemistry.opencmis.commons.enums.ChangeType;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 public class CouchChange extends CouchNodeBase implements Comparable<CouchChange>{
 	/**
-	 * 
+	 *
 	 */
 	private static final long serialVersionUID = 3016760183200314355L;
+
+	private static final Log log = LogFactory
+			.getLog(CouchChange.class);
 
 	private String name;
 	private String baseType;
@@ -43,20 +48,21 @@ public class CouchChange extends CouchNodeBase implements Comparable<CouchChange
 	private List<String> policyIds;
 	private Acl acl;
 	private String paretnId;
-	
+
 	private String objectId;
-	private String changeToken;
+	private Long changeToken;
 	private ChangeType changeType;
 	private GregorianCalendar time;
-	
+
 	public CouchChange(){
 		super();
 	}
-	
+
 	public CouchChange(Change c){
 		super(c);
 		setObjectId(c.getObjectId());
-		setChangeToken(c.getChangeToken());
+		Long changeToken = convertChangeToken(c.getChangeToken());
+		setChangeToken(changeToken);
 		setChangeType(c.getChangeType());
 		setTime(c.getCreated());
 		setType(c.getType());
@@ -68,9 +74,9 @@ public class CouchChange extends CouchNodeBase implements Comparable<CouchChange
 		setPolicyIds(c.getPolicyIds());
 		setAcl(c.getAcl());
 	}
-	
-	
-	
+
+
+
 	public String getParetnId() {
 		return paretnId;
 	}
@@ -138,17 +144,28 @@ public class CouchChange extends CouchNodeBase implements Comparable<CouchChange
 	public String getObjectId() {
 		return objectId;
 	}
-	
+
 	public void setObjectId(String objectId) {
 		this.objectId = objectId;
 	}
 
-	public String getChangeToken() {
+	public Long getChangeToken() {
 		return changeToken;
 	}
 
-	public void setChangeToken(String changeToken) {
+	public void setChangeToken(Long changeToken) {
 		this.changeToken = changeToken;
+	}
+
+	public Long convertChangeToken(String changeToken) {
+		Long _changeToken = null;
+		try{
+			_changeToken = Long.valueOf(changeToken);
+		}catch(Exception e){
+			log.error("Change token must be long type value", e);
+		}
+
+		return _changeToken;
 	}
 
 	public ChangeType getChangeType() {
@@ -160,7 +177,7 @@ public class CouchChange extends CouchNodeBase implements Comparable<CouchChange
 	public GregorianCalendar getTime() {
 		return time;
 	}
-	
+
 	public void setTime(GregorianCalendar time) {
 		this.time = time;
 	}
@@ -174,14 +191,15 @@ public class CouchChange extends CouchNodeBase implements Comparable<CouchChange
 		return -asc;
 	}
 
+	@Override
 	public Change convert(){
 		Change change = new Change(super.convert());
 		change.setChangeType(getChangeType());
 		change.setTime(getTime());
 		change.setObjectId(getObjectId());
-		change.setChangeToken(getChangeToken());
+		change.setChangeToken(String.valueOf(getChangeToken()));
 		change.setType(getType());
-		
+
 		change.setName(getName());
 		change.setBaseType(getBaseType());
 		change.setObjectType(getObjectType());

@@ -33,13 +33,13 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.VersionSeries;
-import jp.aegif.nemaki.model.constant.NemakiConstant;
 import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.cmis.PermissionService;
 import jp.aegif.nemaki.service.node.ContentService;
 import jp.aegif.nemaki.service.node.PrincipalService;
 import jp.aegif.nemaki.util.NemakiPropertyManager;
 import jp.aegif.nemaki.util.PropertyUtil;
+import jp.aegif.nemaki.util.constant.NemakiConstant;
 
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;

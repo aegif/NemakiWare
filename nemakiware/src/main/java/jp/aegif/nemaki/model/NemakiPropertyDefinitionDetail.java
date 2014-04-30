@@ -25,7 +25,7 @@ package jp.aegif.nemaki.model;
 import java.math.BigDecimal;
 import java.util.List;
 
-import jp.aegif.nemaki.model.constant.NodeType;
+import jp.aegif.nemaki.util.constant.NodeType;
 
 import org.apache.chemistry.opencmis.commons.enums.DecimalPrecision;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;

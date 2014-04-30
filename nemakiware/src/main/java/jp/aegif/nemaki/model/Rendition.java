@@ -23,7 +23,7 @@ package jp.aegif.nemaki.model;
 
 import java.io.InputStream;
 
-import jp.aegif.nemaki.model.constant.NodeType;
+import jp.aegif.nemaki.util.constant.NodeType;
 
 
 public class Rendition extends NodeBase{

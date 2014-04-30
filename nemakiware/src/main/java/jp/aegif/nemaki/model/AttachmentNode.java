@@ -43,7 +43,7 @@ import java.io.InputStream;
 import java.math.BigInteger;
 import java.util.GregorianCalendar;
 
-import jp.aegif.nemaki.model.constant.NodeType;
+import jp.aegif.nemaki.util.constant.NodeType;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
