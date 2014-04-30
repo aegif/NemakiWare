@@ -6,7 +6,7 @@ What is NemakiWare?
 
 NemakiWare is an open source Enterprise Content Management system.
 
-* **CMIS-copliant and even CMIS-native server**
+* **CMIS ver1.1 compliant and even CMIS-native server**
     * Easy Integration or replacement with other existing/future CMIS-compliant client.
     * Extended feature out of CMIS specification: user/group, archive etc.
     * Highly customizable in CMIS specification because of CMIS-native development.
