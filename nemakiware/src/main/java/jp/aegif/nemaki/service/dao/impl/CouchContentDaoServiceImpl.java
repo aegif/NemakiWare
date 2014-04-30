@@ -44,7 +44,6 @@ import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
-import jp.aegif.nemaki.model.constant.NodeType;
 import jp.aegif.nemaki.model.couch.CouchArchive;
 import jp.aegif.nemaki.model.couch.CouchAttachmentNode;
 import jp.aegif.nemaki.model.couch.CouchChange;
@@ -62,6 +61,7 @@ import jp.aegif.nemaki.model.couch.CouchTypeDefinition;
 import jp.aegif.nemaki.model.couch.CouchVersionSeries;
 import jp.aegif.nemaki.service.dao.ContentDaoService;
 import jp.aegif.nemaki.service.db.CouchConnector;
+import jp.aegif.nemaki.util.constant.NodeType;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.commons.collections.CollectionUtils;

@@ -33,8 +33,8 @@ import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
 
 import jp.aegif.nemaki.model.Archive;
-import jp.aegif.nemaki.model.constant.NodeType;
 import jp.aegif.nemaki.service.node.ContentService;
+import jp.aegif.nemaki.util.constant.NodeType;
 
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
