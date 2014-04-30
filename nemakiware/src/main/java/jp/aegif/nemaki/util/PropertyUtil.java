@@ -19,8 +19,8 @@ import jp.aegif.nemaki.model.Ace;
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.NemakiPermissionDefinition;
-import jp.aegif.nemaki.model.constant.NemakiConstant;
-import jp.aegif.nemaki.model.constant.PropertyKey;
+import jp.aegif.nemaki.util.constant.NemakiConstant;
+import jp.aegif.nemaki.util.constant.PropertyKey;
 
 public class PropertyUtil {
 	private static final Log log = LogFactory.getLog(PropertyUtil.class);

@@ -22,7 +22,7 @@
 
 package jp.aegif.nemaki.model;
 
-import jp.aegif.nemaki.model.constant.NodeType;
+import jp.aegif.nemaki.util.constant.NodeType;
 
 public class Item extends Content{
 	public Item(){

@@ -19,7 +19,7 @@
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
-package jp.aegif.nemaki.model.constant;
+package jp.aegif.nemaki.util.constant;
 
 public interface CmisPermission {
 	public static final String READ = "cmis:read";
