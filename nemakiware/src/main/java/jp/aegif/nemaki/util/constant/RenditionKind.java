@@ -1,4 +1,4 @@
-package jp.aegif.nemaki.model.constant;
+package jp.aegif.nemaki.util.constant;
 
 public enum RenditionKind {
 	CMIS_THUMBNAIL("cmis:thumbnail");

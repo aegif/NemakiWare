@@ -8,8 +8,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map.Entry;
 
-import jp.aegif.nemaki.model.constant.PropertyKey;
 import jp.aegif.nemaki.repository.type.TypeManager;
+import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;

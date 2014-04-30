@@ -36,11 +36,11 @@ import jp.aegif.nemaki.model.NemakiPropertyDefinition;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
-import jp.aegif.nemaki.model.constant.PropertyKey;
 import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.node.TypeService;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.NemakiPropertyManager;
+import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;

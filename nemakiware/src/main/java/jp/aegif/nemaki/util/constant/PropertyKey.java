@@ -1,4 +1,4 @@
-package jp.aegif.nemaki.model.constant;
+package jp.aegif.nemaki.util.constant;
 
 public interface PropertyKey {
 	final String DB_COUCHDB_PROTOCOL = "db.couchdb.protocol";
