@@ -24,8 +24,8 @@ package jp.aegif.nemaki.repository;
 import java.math.BigInteger;
 import java.util.Map;
 
-import jp.aegif.nemaki.model.constant.NemakiConstant;
 import jp.aegif.nemaki.service.cmis.AuthenticationService;
+import jp.aegif.nemaki.util.constant.NemakiConstant;
 
 import org.apache.chemistry.opencmis.commons.impl.server.AbstractServiceFactory;
 import org.apache.chemistry.opencmis.commons.server.CallContext;

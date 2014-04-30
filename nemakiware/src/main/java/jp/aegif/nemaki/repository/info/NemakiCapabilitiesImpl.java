@@ -25,8 +25,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-import jp.aegif.nemaki.model.constant.PropertyKey;
 import jp.aegif.nemaki.util.NemakiPropertyManager;
+import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.apache.chemistry.opencmis.commons.enums.CapabilityAcl;
 import org.apache.chemistry.opencmis.commons.enums.CapabilityChanges;

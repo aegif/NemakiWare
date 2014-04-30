@@ -29,10 +29,10 @@ import java.util.Map;
 import java.util.Map.Entry;
 
 import jp.aegif.nemaki.model.NemakiPermissionDefinition;
-import jp.aegif.nemaki.model.constant.PropertyKey;
 import jp.aegif.nemaki.util.NemakiPropertyManager;
 import jp.aegif.nemaki.util.PropertyUtil;
 import jp.aegif.nemaki.util.YamlManager;
+import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;

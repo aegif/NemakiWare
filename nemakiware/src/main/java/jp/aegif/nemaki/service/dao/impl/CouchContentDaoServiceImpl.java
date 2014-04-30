@@ -44,7 +44,6 @@ import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
-import jp.aegif.nemaki.model.constant.NodeType;
 import jp.aegif.nemaki.model.couch.CouchArchive;
 import jp.aegif.nemaki.model.couch.CouchAttachmentNode;
 import jp.aegif.nemaki.model.couch.CouchChange;
@@ -62,6 +61,7 @@ import jp.aegif.nemaki.model.couch.CouchTypeDefinition;
 import jp.aegif.nemaki.model.couch.CouchVersionSeries;
 import jp.aegif.nemaki.service.dao.ContentDaoService;
 import jp.aegif.nemaki.service.db.CouchConnector;
+import jp.aegif.nemaki.util.constant.NodeType;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.commons.collections.CollectionUtils;
@@ -768,8 +768,15 @@ public class CouchContentDaoServiceImpl implements ContentDaoService {
 	// ///////////////////////////////////////
 	@Override
 	public Change getChangeEvent(String token) {
+		Long _token =  null;
+		try{
+			_token = Long.valueOf(token);
+		}catch(Exception e){
+			log.error("Change token must be long type value", e);
+		}
+
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("changesByToken").key(token);
+				.viewName("changesByToken").key(_token);
 		List<CouchChange> l = connector.queryView(query, CouchChange.class);
 
 		if (CollectionUtils.isEmpty(l))
@@ -800,7 +807,7 @@ public class CouchContentDaoServiceImpl implements ContentDaoService {
 				log.error("startToken=" + startToken + " must be numeric");
 			}
 		}
-		
+
 		Change latest = getLatestChange();
 		long latestToken = 0;
 		try{
@@ -808,16 +815,17 @@ public class CouchContentDaoServiceImpl implements ContentDaoService {
 		}catch(Exception e){
 			log.error("ChangeEvent(" + latest.getId() + ") changeToken is not numeric");
 		}
-		
-		
+
+
 		if (_startToken <= 0)
 			_startToken = 0;
 		if (latest == null || _startToken > latestToken){
 			return null;
 		}
+
+
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("changesByToken").descending(false).startKey(startToken)
-				.endKey(latest.getChangeToken());
+				.viewName("changesByToken").descending(false).startKey(_startToken).endKey(latestToken);
 		if (maxItems > 0)
 			query.limit(maxItems);
 

@@ -23,14 +23,14 @@ package jp.aegif.nemaki.service.cmis.impl;
 import java.util.List;
 
 import jp.aegif.nemaki.model.Content;
-import jp.aegif.nemaki.model.constant.DomainType;
-import jp.aegif.nemaki.model.constant.NemakiConstant;
-import jp.aegif.nemaki.model.constant.PropertyKey;
 import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.cmis.AclService;
 import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.node.ContentService;
 import jp.aegif.nemaki.util.PropertyUtil;
+import jp.aegif.nemaki.util.constant.DomainType;
+import jp.aegif.nemaki.util.constant.NemakiConstant;
+import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;

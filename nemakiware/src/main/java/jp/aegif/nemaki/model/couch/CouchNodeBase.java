@@ -24,7 +24,7 @@ package jp.aegif.nemaki.model.couch;
 import java.util.GregorianCalendar;
 
 import jp.aegif.nemaki.model.NodeBase;
-import jp.aegif.nemaki.model.constant.NodeType;
+import jp.aegif.nemaki.util.constant.NodeType;
 
 import org.codehaus.jackson.annotate.JsonIgnore;
 import org.codehaus.jackson.annotate.JsonIgnoreProperties;

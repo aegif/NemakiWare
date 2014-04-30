@@ -46,6 +46,7 @@ import java.util.Set;
 import java.util.TimeZone;
 
 import jp.aegif.nemaki.NemakiCoreAdminHandler;
+import jp.aegif.nemaki.util.Constant;
 import jp.aegif.nemaki.util.PropertyKey;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.StringPool;
@@ -97,8 +98,6 @@ public class CoreTracker extends CloseHook {
 	SolrServer repositoryServer;
 	SolrServer tokenServer;
 	Session cmisSession;
-
-	private final String MODE_FULL = "FULL";
 
 	private final String FIELD_ID = "id";
 	private final String FIELD_NAME = "name";
@@ -361,7 +360,7 @@ public class CoreTracker extends CloseHook {
 		PropertyManager cmisMgr = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
 
 		String _latestToken = readLatestChangeToken();
-		String latestToken = (trackingType.equals(MODE_FULL) || StringUtils
+		String latestToken = (trackingType.equals(Constant.MODE_FULL) || StringUtils
 				.isEmpty(_latestToken)) ? null : _latestToken;
 
 		String _numItems = cmisMgr.readValue(PropertyKey.CMIS_CHANGELOG_ITEMS);
