@@ -29,6 +29,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import jp.aegif.nemaki.tracker.CoreTracker;
 import jp.aegif.nemaki.tracker.CoreTrackerJob;
+import jp.aegif.nemaki.util.Constant;
 import jp.aegif.nemaki.util.PropertyKey;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.StringPool;
@@ -154,17 +155,17 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 		SolrCore core = getCoreContainer().getCore(repositoryCoreName);
 		CoreTracker tracker = new CoreTracker(this, core, repositoryServer, tokenServer);
 
-		// Get the tracking mode: FULL or AUTO
+		// Get the tracking mode: FULL or DELTA
 		String tracking = params.get("tracking"); // tracking mode
-		if (tracking == null || !tracking.equals("FULL")) {
-			tracking = "AUTO"; // default to AUTO
+		if (tracking == null || !tracking.equals(Constant.MODE_FULL)) {
+			tracking = Constant.MODE_DELTA; // default to DELTA
 		}
 
 		// Switch actions
 		String a = params.get(CoreAdminParams.ACTION);
 
 		if (a.equalsIgnoreCase("INDEX")) {
-			// Action=INDEX: track documents(FULL//AUTO)
+			// Action=INDEX: track documents(by FULL or DELTA)
 			tracker.setupCmisSession();
 			tracker.index(tracking);
 			// TODO More info
