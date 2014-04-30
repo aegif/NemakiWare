@@ -19,7 +19,7 @@
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
-package jp.aegif.nemaki.model.constant;
+package jp.aegif.nemaki.util.constant;
 
 public enum DomainType {
 	OBJECT("object"), OBJECT_TYPE("objectType"), REPOSITORY("repository");

@@ -27,9 +27,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
-import jp.aegif.nemaki.model.constant.PropertyKey;
 import jp.aegif.nemaki.util.NemakiPropertyManager;
 import jp.aegif.nemaki.util.SortUtil;
+import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.antlr.runtime.tree.Tree;
 import org.apache.chemistry.opencmis.commons.PropertyIds;

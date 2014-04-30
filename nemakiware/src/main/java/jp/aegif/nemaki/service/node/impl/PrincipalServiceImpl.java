@@ -28,9 +28,9 @@ import java.util.Set;
 
 import jp.aegif.nemaki.model.Group;
 import jp.aegif.nemaki.model.User;
-import jp.aegif.nemaki.model.constant.NemakiConstant;
 import jp.aegif.nemaki.service.dao.PrincipalDaoService;
 import jp.aegif.nemaki.service.node.PrincipalService;
+import jp.aegif.nemaki.util.constant.NemakiConstant;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;

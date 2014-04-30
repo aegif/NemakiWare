@@ -25,7 +25,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import jp.aegif.nemaki.model.constant.NodeType;
+import jp.aegif.nemaki.util.constant.NodeType;
 
 import org.codehaus.jackson.annotate.JsonIgnoreProperties;
 

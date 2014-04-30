@@ -26,12 +26,12 @@ import java.util.List;
 
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Policy;
-import jp.aegif.nemaki.model.constant.DomainType;
 import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.cmis.CompileObjectService;
 import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.cmis.PolicyService;
 import jp.aegif.nemaki.service.node.ContentService;
+import jp.aegif.nemaki.util.constant.DomainType;
 
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;

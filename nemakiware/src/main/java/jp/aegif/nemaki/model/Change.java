@@ -24,7 +24,7 @@ package jp.aegif.nemaki.model;
 import java.util.GregorianCalendar;
 import java.util.List;
 
-import jp.aegif.nemaki.model.constant.NodeType;
+import jp.aegif.nemaki.util.constant.NodeType;
 
 import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 
