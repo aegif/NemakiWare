@@ -57,7 +57,7 @@ class ApplicationController < ActionController::Base
   
   def redirect_to_parent(path)
     session[:messages] = @notified_messages
-    render text: "<html><body><script type='text/javascript' charset='utf-8'>window.parent.document.location.href = '" + path+ "';</script></body></html>", content_type: :html
+    render text: "<html><body><script type='text/javascript' charset='utf-8'>window.parent.document.location.href = '" + path+ "';</script></body></html>", content_type: 'text/html'
   end
   
   def set_locale
