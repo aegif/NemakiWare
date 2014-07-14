@@ -21,7 +21,10 @@
 		dom_file = $('#node_file');
 		dom_name = $('#node_name');
 		dom_file.change(function(){
-			dom_name.val(dom_file.val()) 
+			var val = dom_file.val();
+			var path = val.replace(/\\/g, '/');
+                    	var match = path.lastIndexOf('/');
+                    	dom_name.val(match !== -1 ? val.substring(match + 1) : val);
 		})
 	});
 </script>
