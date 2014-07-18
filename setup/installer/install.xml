@@ -1,9 +1,9 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <installation version="1.0">
   <!-- Application info -->
   <info>
     <appname>NemakiWare</appname>
-    <appversion>1.0.GA4</appversion>
+    <appversion>1.1.1</appversion>
     <url>http://www.nemakiware.com/</url>
     <!-- 
     If you a general user install on C:¥Program Files on Windows,
@@ -36,7 +36,7 @@
 
   <!-- Variables in this fhile-->
   <variables>
-    <variable name="TOMCAT" value="apache-tomcat-7.0.41" />
+    <variable name="TOMCAT" value="apache-tomcat-7.0.54" />
   </variables>
   <dynamicvariables>
     <variable name="cmis.repository.main.thinClientUri" value=""/>
@@ -108,7 +108,7 @@
        <!-- Import configuration scripts -->
       <file src="setup/installer/install-util/target/install-util.jar" targetdir="$INSTALL_PATH/setup" />
       <fileset dir="setup/installer/tomcat" targetdir="$INSTALL_PATH/setup/tomcat">
-        <exclude name="apache-tomcat-7.0.41.zip" />
+        <exclude name="apache-tomcat-7.0.54.zip" />
       </fileset>
     </pack>
 
