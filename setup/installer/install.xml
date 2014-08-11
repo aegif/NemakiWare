@@ -37,6 +37,7 @@
   <!-- Variables in this fhile-->
   <variables>
     <variable name="TOMCAT" value="apache-tomcat-7.0.54" />
+	<variable name="TargetPanel.dir.windows" value="C:\NemakiWare" />
   </variables>
   <dynamicvariables>
     <variable name="cmis.repository.main.thinClientUri" value=""/>
