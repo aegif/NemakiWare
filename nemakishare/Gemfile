@@ -56,6 +56,7 @@ osn = RbConfig::CONFIG["target_os"].downcase
 @@os = osn =~ /mswin(?!ce)|mingw|cygwin|bccwin/ ? "win" : (osn =~ /linux/ ? "linux" : "other")
 
 if(@@os == 'win')
+	gem 'eventmachine', '1.0.3', :path => 'vendor/gem_win/eventmachine-1.0.3-x86-mingw32'
 	gem 'thin', '1.2.11', :path => 'vendor/gem_win/thin-1.2.11-x86-mingw32'
 	gem 'therubyracer', '0.11.0beta1', :path => 'vendor/gem_win/therubyracer-0.11.0beta1-x86-mingw32'
 	gem 'sqlite3', '1.3.7', :path => 'vendor/gem_win/sqlite3-1.3.7-x86-mingw32'
