@@ -62,7 +62,6 @@ if(@@os == 'win')
 	gem 'sqlite3', '1.3.7', :path => 'vendor/gem_win/sqlite3-1.3.7-x86-mingw32'
 	gem 'nokogiri', '1.6.1', :path => 'vendor/gem_win/nokogiri-1.6.1-x86-mingw32'
 else
-	gem 'thin'
 	gem 'therubyracer'
 	gem 'sqlite3', '1.3.7'
 	gem 'nokogiri', '1.6.1'
