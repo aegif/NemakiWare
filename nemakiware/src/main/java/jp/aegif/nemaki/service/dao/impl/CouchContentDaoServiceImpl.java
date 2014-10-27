@@ -454,11 +454,22 @@ public class CouchContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Content getChildByName(String parentId, String name) {
-		JSONObject json = new JSONObject();
-		json.put("parentId", parentId);
-		json.put("name", name);
+		class ViewKey{
+			public String parentId;
+			public String name;
+			
+			public ViewKey(){
+				
+			};
+			
+			public ViewKey(String parentId, String name){
+				this.parentId = parentId;
+				this.name = name;
+			}
+		}
+		
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("childByName").key(json);
+				.viewName("childByName").key(new ViewKey(parentId,name));
 		List<CouchContent> list = connector
 				.queryView(query, CouchContent.class);
 
