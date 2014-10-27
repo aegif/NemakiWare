@@ -323,11 +323,11 @@ public class UserResource extends ResourceBase {
 			addErrMsg(errMsg, ITEM_USERNAME, ERR_MANDATORY);
 		}
 
-		if(StringUtils.isBlank(firstName)){
+		/*if(StringUtils.isBlank(firstName)){
 			status = false;
 			addErrMsg(errMsg, ITEM_FIRSTNAME, ERR_MANDATORY);
-		}
-
+		}*/
+		 
 		return status;
 	}
 
