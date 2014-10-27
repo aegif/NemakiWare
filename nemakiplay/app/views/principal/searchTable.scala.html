@@ -1,0 +1,43 @@
+@import org.apache.commons.collections.CollectionUtils
+@import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition
+
+@(title:String)(principals:List[model.Principal]=null)
+
+@*no more need for contentTemplate frame*@
+@contentTemplate()
+
+@*********functions*********@
+@contentTemplate() = {
+	@defining("ps-"){prefix =>
+		<div>
+			<legend>検索結果</legend>
+		</div>
+		<div>
+			<button class='btn btn-default btn-xs' id='@{prefix}add'><i class="glyphicon glyphicon-arrow-right"></i>追加</button>
+		</div>
+		
+		<table class="footable" id="@{prefix}search-table" data-sort="true" data-page-navigation=".pagination" data-page-size="5">
+			<thead>
+				<tr>
+					<th data-sort-ignore="true"><!-- checkbox --></th>
+					<th data-sort-ignore="true">種類</th>
+					<th data-sort-initial="true">ID</th>
+					<th>名前</th>
+				</tr>
+			</thead>
+			<tbody>
+			</tbody>
+			<tfoot>
+				<tr>
+					<td colspan="5">
+						<div class="pagination pagination-centered hide-if-no-paging"></div>
+					</td>
+				</tr>
+			</tfoot>
+		</table>
+	}
+}
+
+
+
+			

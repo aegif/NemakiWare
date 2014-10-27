@@ -1,0 +1,73 @@
+@import util._
+@import org.apache.commons.collections.CollectionUtils
+@import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition
+@import org.apache.chemistry.opencmis.commons.data.Ace
+
+@(title:String)(principals:List[model.Principal]=null)(acl:Map[String, Ace] = null)(permissionDefinitions:List[PermissionDefinition] = null)
+
+@*no more need for contentTemplate frame*@
+@contentTemplate()
+
+@*********functions*********@
+@contentTemplate() = {
+	@defining(("ps-","hoge")){case (prefix,hoge) =>
+		<div>
+			<legend>@title</legend>
+		</div>
+		<div>
+			<button class='btn btn-default btn-xs' id='@{prefix}remove'><i class="glyphicon glyphicon-remove-circle"></i>除外</button>
+		</div>
+		
+		
+		<table class="footable" id="@{prefix}selected-table" data-sort="true" data-page-navigation=".pagination" data-page-size="5">
+			<thead>
+				<tr>
+					<th data-sort-ignore="true"><!-- checkbox --></th>
+					<th data-sort-ignore="true">種類</th>
+					<th data-sort-initial="true">ID</th>
+					<th>名前</th>
+					<!-- permission definitions -->
+					@if(CollectionUtils.isNotEmpty(permissionDefinitions)){
+						@for(pdf <- permissionDefinitions){
+							<th>@pdf.getId</th>
+						}
+					}
+				</tr>
+			</thead>
+			<tbody>
+				@if(CollectionUtils.isNotEmpty(principals)){
+				
+						@for(p <- principals){
+							<tr>
+								<td><input type='checkbox' principal-id='@p.id' principal-name='@p.name' principal-genre='@p.genre'/></td>
+								<td>@p.genre</td>
+								<td>@p.id</td>
+								<td>@p.name</td>
+								
+								<!-- permission definitions -->
+								@if(CollectionUtils.isNotEmpty(permissionDefinitions)){
+									@for(pdf <- permissionDefinitions if(CollectionUtils.isNotEmpty(permissionDefinitions))){
+										<td>
+											<input type="checkbox" class="permission-@pdf.getId" 
+												@if(acl.get(p.id).getPermissions.contains(pdf.getId)){checked="true"} />
+										</td>
+									}
+								}
+							</tr>
+						}
+				}
+				
+			</tbody>
+			<tfoot>
+				<tr>
+					@defining(if(permissionDefinitions == null){4}else{4 + permissionDefinitions.length}){ colspan =>
+					<td colspan="@colspan">
+					}
+						<div class="pagination pagination-centered hide-if-no-paging"></div>
+					</td>
+				</tr>
+			</tfoot>
+		</table>
+	}
+}
+

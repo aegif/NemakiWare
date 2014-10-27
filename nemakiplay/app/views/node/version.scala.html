@@ -1,0 +1,40 @@
+@(versions: List[org.apache.chemistry.opencmis.client.api.Document])
+@import util._
+
+<table class="table table-striped table-bordered table-hover">
+	<thead>
+		<tr>
+			<th>バージョン</th>
+			<th>名前</th>
+			<th>作成者</th>
+			<th>作成時刻</th>
+		</tr>
+	</thead>
+	<tbody>
+		@for(version <- versions){
+			<tr>
+				<td>
+					<a href="/objects/@version.getId()/download">
+						<i class="glyphicon glyphicon-download"/>
+						@version.getVersionLabel()
+					</a>
+				</td>
+				<td>@version.getName()</td>
+				<td>@version.getCreatedBy()</td>
+				<td>@Formatter.calToString(version.getCreationDate())</td>
+			</tr>
+		}
+	</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
