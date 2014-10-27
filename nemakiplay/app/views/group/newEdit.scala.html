@@ -1,0 +1,63 @@
+@import principal._
+
+@lightbox{
+	<section class="container">
+		<div class="row">
+			<div class="col-sm-4">
+				グループを新規作成します
+			</div>
+		</div>
+		
+		<div class="row">
+			<div class="col-sm-8">
+				<input type="text" name="groupId" id="new-group-id" placeholder="グループID"/><br/>
+				<input type="text" name="groupName" id="new-group-name" placeholder="グループ名前"/><br/>
+			</div>
+		</div>
+			
+		<div class="row">
+			<div class="col-sm-8">
+				メンバの追加
+			</div>
+		</div>
+		@principalSearch()
+		
+	   	<button class="btn btn-default" id="group-create">作成</button>
+	
+	</section>
+}
+
+
+<!-- scripts -->
+<script type="text/javascript">
+	//TODO unify similar codes
+	$(function () {
+		
+		//binding: create button
+		$(document).on('click','#group-create', function(){
+			var users = [];
+			var groups = [];
+			$('#ps-selected-table :checkbox').each(function(i,chkbx){
+				if($(chkbx).attr('principal-genre') == 'user'){
+					users.push($(chkbx).attr('principal-id'));	
+				}else if($(chkbx).attr('principal-genre') == 'group'){
+					groups.push($(chkbx).attr('principal-id'));
+				}
+			});
+
+			//post
+			$.ajax({
+				url : 'http://localhost:9000/groups/create',
+				type: 'POST',
+				data : {groupId: $('#new-group-id').val(),
+						groupName : $('#new-group-name').val(),
+						users: JSON.stringify(users),
+						groups: JSON.stringify(groups)},
+				success : function(data){
+					window.location.reload();
+				}
+			});
+		});
+	});
+</script>
+

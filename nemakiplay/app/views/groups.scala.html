@@ -1,0 +1,79 @@
+<div>
+	<!-- search box -->
+	<div class="input-group">
+    	<input type="text" class="form-control" placeholder="Search" name="term" id="user-search-box">
+     	<div class="input-group-btn">
+        	<button class="btn btn-default" id="user-search"><i class="glyphicon glyphicon-search"></i></button>
+     	</div>
+ 	</div>
+	
+	<!-- search result -->
+	<div id="user-result">
+		<table id="user-table">
+			<thead>
+				<tr>
+					<td>グループID</td>
+					<td>表示名</td>
+					<td>姓</td>
+					<td>名</td>
+					<td>メール</td>
+				</tr>
+			</thead>
+			<tbody>
+			</tbody>
+		</table>
+	</div>
+</div>
+
+<!-- scripts -->
+<script type="text/javascript">
+	$(function () {
+		$('#user-table').footable();	
+	});
+</script>
+
+<script type="text/javascript">
+	$(function () {
+		//draw table, calling NemakiWare API
+		function searchUser(){
+			$.ajax({
+				url : 'http://localhost:9000/users/search',
+				success : function(data) {
+					var footable = $('#user-table').data('footable');
+					
+					//delete all rows
+					var rows = $('#user-table tbody tr').get();
+					for(var row_index in rows){
+						footable.removeRow(rows[row_index]);
+					}
+					
+					//append
+					for(var index in data){
+						var row = "<tr>" + 
+						"<td>" + data[index].userId + "</td>" +
+						"<td>" + data[index].userName + "</td>" +
+						"<td>" + data[index].lastName + "</td>" +
+						"<td>" + data[index].firstName+ "</td>" +
+						"<td>" + data[index].email + "</td>" +
+						"</tr>";
+						
+						footable.appendRow(row);
+					}
+				}
+			});
+		}
+		
+		//click action
+		$('#user-search').bind('click', function(){
+			searchUser();
+		});	
+		
+		//keypress action
+		$('#user-search-box').keypress(function(event){
+			if(event.which == 13){
+				searchUser();
+			}
+		});
+		
+	});
+</script>

@@ -1,0 +1,26 @@
+@import principal._
+@import util._
+@import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition
+@import org.apache.chemistry.opencmis.commons.data.Ace
+@(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(members:List[model.Principal])(permissionDefinitions:List[PermissionDefinition] = null)
+
+@script(permissionDefinitions)
+
+
+<div class="row">
+	<div class="col-sm-5">
+		@searchBox()
+	</div>
+</div>
+
+<div class="row">
+	<div class="col-sm-5">
+		@searchTable("検索結果")(members)
+	</div>
+</div>
+
+<div class="row">
+	<div class="col-sm-5">
+		@selectedTable("選択されたメンバ")(members)(Util.zipWithId(obj.getAcl))(permissionDefinitions)
+	</div>
+</div>
