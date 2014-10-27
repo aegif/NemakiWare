@@ -559,8 +559,8 @@ public class SolrPredicateWalker {
 	private Object walkString(Tree node) {
 		String s = node.getText();
 		s = s.substring(1, s.length() - 1);
-		return "\"" + ClientUtils.escapeQueryChars(s) + "\"";
-		//return ClientUtils.escapeQueryChars(s);
+		//return "\"" + ClientUtils.escapeQueryChars(s) + "\"";
+		return ClientUtils.escapeQueryChars(s);
 	}
 
 	private Object walkTimestamp(Tree node) {
