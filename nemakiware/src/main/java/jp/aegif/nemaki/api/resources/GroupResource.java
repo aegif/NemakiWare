@@ -46,6 +46,8 @@ import org.apache.commons.lang.StringUtils;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.JSONValue;
+import org.json.simple.parser.JSONParser;
+import org.json.simple.parser.ParseException;
 
 @Path("/group")
 public class GroupResource extends ResourceBase{
@@ -134,6 +136,8 @@ public class GroupResource extends ResourceBase{
 	@Consumes(MediaType.APPLICATION_FORM_URLENCODED)
 	public String create(@PathParam("id") String groupId,
 						 @FormParam(FORM_GROUPNAME) String name,
+						 @FormParam("users") String users,
+						 @FormParam("groups") String groups,
 						 @Context HttpServletRequest httpRequest
 						 ){
 
@@ -144,9 +148,10 @@ public class GroupResource extends ResourceBase{
 		//Validation
 		status = validateNewGroup(status, errMsg, groupId, name);
 
-		//Edit a group info
-		//Group group = new Group();
-		Group group = new Group(groupId, name, new JSONArray(), new JSONArray());
+		//Edit group info
+		JSONArray _users = parseJsonArray(users);
+		JSONArray _groups = parseJsonArray(groups);
+		Group group = new Group(groupId, name, _users, _groups);
 		setSignature(getUserInfo(httpRequest), group);
 
 		//Create a group
@@ -169,6 +174,8 @@ public class GroupResource extends ResourceBase{
 	@Consumes(MediaType.APPLICATION_FORM_URLENCODED)
 	public String update(@PathParam("id") String groupId,
 						 @FormParam(FORM_GROUPNAME) String name,
+						 @FormParam("users") String users,
+						 @FormParam("groups") String groups,
 						 @Context HttpServletRequest httpRequest){
 
 		boolean status = true;
@@ -183,9 +190,11 @@ public class GroupResource extends ResourceBase{
 
 		//Edit & Update
 		if(status){
-			//Edit the group info
+			//Edit group info
 			//if a parameter is not input, it won't be modified.
 			group.setName(name);
+			group.setUsers(parseJsonArray(users));
+			group.setGroups(parseJsonArray(groups));
 			setModifiedSignature(getUserInfo(httpRequest), group);
 
 			try{
@@ -497,5 +506,20 @@ public class GroupResource extends ResourceBase{
 		groupJSON.put(ITEM_MEMBER_GROUPSSIZE, group.getGroups().size());
 
 		return groupJSON;
+	}
+	
+	private JSONArray parseJsonArray(String str){
+		JSONParser parser = new JSONParser();
+		Object obj;
+		try {
+			obj = parser.parse(str);
+			JSONArray result = (JSONArray)obj;
+			return result;
+		} catch (ParseException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+		return new JSONArray();
 	}
 }
