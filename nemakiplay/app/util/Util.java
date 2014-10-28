@@ -385,6 +385,12 @@ public class Util {
 		return result;
 	}
 	
+	public static String escapeSelector(String selector){
+		String result = selector;
+		result = selector.replaceAll(":", "\\\\\\\\:");
+		return result;
+	}
+	
 	public static List<String> dividePath(String path){
 		String[] ary = path.split("/");
 		

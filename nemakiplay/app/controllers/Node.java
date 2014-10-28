@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
+import jdk.nashorn.internal.runtime.regexp.joni.exception.JOniException;
 import model.Principal;
 
 import org.apache.chemistry.opencmis.client.api.CmisObject;
@@ -25,17 +26,24 @@ import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.client.runtime.ObjectIdImpl;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Ace;
+import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
+import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.deser.BuilderBasedDeserializer;
 
 import play.data.DynamicForm;
+import play.data.DynamicForm.Dynamic;
 import play.data.Form;
 import play.mvc.Controller;
 import play.mvc.Http.MultipartFormData;
@@ -43,6 +51,7 @@ import play.mvc.Http.MultipartFormData.FilePart;
 import play.mvc.Security.Authenticated;
 import play.mvc.Result;
 import util.Util;
+import views.html.group.newEdit;
 import views.html.node.tree;
 import views.html.node.version;
 import views.html.node.blank;
@@ -279,6 +288,71 @@ public class Node extends Controller {
     	//return redirectToParent(input);
     	return ok();
     }
+    
+    public static Result updatePermission(String id){
+    	//Get an object in the repository
+    	Session session = createSession();
+    	CmisObject obj = session.getObject(id);
+    	
+    	List<Ace> oldAcl = obj.getAcl().getAces();
+    	List<Ace> newAcl = new ArrayList<>();
+    	
+    	
+    	//Get input form data
+    	DynamicForm input = Form.form();
+    	input = input.bindFromRequest();
+
+    	
+    	
+    	String acl = input.get("acl");
+    	ObjectMapper mapper = new ObjectMapper();
+    	try {
+			JsonNode jn = mapper.readTree(acl);
+			Iterator<JsonNode> itr = jn.iterator();
+			while(itr.hasNext()){
+				JsonNode ace = itr.next();
+				
+				Boolean inheritance = ace.get("inheritance").asBoolean();
+				if(inheritance) continue;
+				
+				String principalId = ace.get("principalId").asText();
+				
+				List<String> _permission = new ArrayList<>();
+				JsonNode permission = ace.get("permission");
+				Iterator<JsonNode> itr2 = permission.iterator();
+				while(itr2.hasNext()){
+					_permission.add(itr2.next().asText());
+				}
+				
+				newAcl.add(buildAce(principalId, _permission));
+			}
+			
+			obj.applyAcl(newAcl, oldAcl, AclPropagation.PROPAGATE);
+			
+			
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+    	
+    	
+    	//parse json data
+    	
+    	
+    	
+    	return ok();
+    	
+    }
+    
+    private static Ace buildAce(String principalId, List<String>permission){
+    	
+    	AccessControlEntryImpl ace = new AccessControlEntryImpl();
+    	AccessControlPrincipalDataImpl principal = new AccessControlPrincipalDataImpl(principalId);
+    	ace.setPrincipal(principal);
+    	ace.setPermissions(permission);
+    	
+    	return ace;
+    }
 
     public static Result showFile(String id){
     	Session session = createSession();
@@ -491,7 +565,7 @@ public class Node extends Controller {
 	   //user
 	   JsonNode resultUser = Util.getJsonResponse("http://localhost:8080/nemakiware/rest/user/show/" + principalId);
 	   //TODO check status
-	   JsonNode user = resultUser.get("result");
+	   JsonNode user = resultUser.get("user");
 	   if(user != null){
 		   Principal p = new Principal("user", user.get("userId").asText(), user.get("userName").asText());
 		   return p;
@@ -500,7 +574,7 @@ public class Node extends Controller {
 	   //group
 	   JsonNode resultGroup = Util.getJsonResponse("http://localhost:8080/nemakiware/rest/group/show/" + principalId);
 	   //TODO check status
-	   JsonNode group = resultGroup.get("result");
+	   JsonNode group = resultGroup.get("group");
 	   if(group != null){
 		   Principal p = new Principal("group", group.get("groupId").asText(), group.get("groupName").asText());
 		   return p;
