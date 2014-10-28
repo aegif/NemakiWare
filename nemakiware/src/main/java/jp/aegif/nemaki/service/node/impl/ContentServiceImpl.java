@@ -21,6 +21,9 @@
  ******************************************************************************/
 package jp.aegif.nemaki.service.node.impl;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.SequenceInputStream;
 import java.math.BigInteger;
@@ -31,6 +34,7 @@ import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -56,11 +60,13 @@ import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.dao.ContentDaoService;
 import jp.aegif.nemaki.service.dao.impl.ContentDaoServiceImpl;
 import jp.aegif.nemaki.service.node.ContentService;
+import jp.aegif.nemaki.service.rendition.RenditionManager;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyUtil;
 import jp.aegif.nemaki.util.constant.NemakiConstant;
 import jp.aegif.nemaki.util.constant.NodeType;
 import jp.aegif.nemaki.util.constant.PropertyKey;
+import jp.aegif.nemaki.util.constant.RenditionKind;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
@@ -85,6 +91,8 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+
+
 /**
  * Node Service implementation
  *
@@ -95,9 +103,10 @@ public class ContentServiceImpl implements ContentService {
 
 	private ContentDaoService contentDaoService;
 	private TypeManager typeManager;
+	private RenditionManager renditionManager;
 	private PropertyUtil propertyUtil;
 	private SolrUtil solrUtil;
-
+	
 	private static final Log log = LogFactory
 			.getLog(ContentDaoServiceImpl.class);
 	final static String FIRST_TOKEN = "1";
@@ -405,6 +414,23 @@ public class ContentServiceImpl implements ContentService {
 
 		return change.getChangeToken();
 	}
+	
+	private Map<String, ContentStream>copyContentStream(ContentStream contentStream){
+		BigInteger length = contentStream.getBigLength();
+		byte[]bytes = readContentStreamToByte(contentStream);
+		
+		ByteArrayInputStream bais1 = new ByteArrayInputStream(bytes);
+		ContentStream attachment = new ContentStreamImpl(contentStream.getFileName(), length, contentStream.getMimeType(), bais1);
+		
+		ByteArrayInputStream bais2 = new ByteArrayInputStream(bytes);
+		ContentStream preview = new ContentStreamImpl(contentStream.getFileName(), length, contentStream.getMimeType(), bais2);
+
+		Map<String, ContentStream> map = new HashMap<String, ContentStream>();
+		map.put("attachment", attachment);
+		map.put("preview", preview);
+		
+		return map;
+	}
 
 	// TODO Create a rendition
 	@Override
@@ -415,11 +441,18 @@ public class ContentServiceImpl implements ContentService {
 		Document d = buildNewBasicDocument(callContext, properties,
 				parentFolder);
 
-		// create Attachment node
-		String attachmentId = createAttachment(callContext, contentStream);
+		//Prepare ContentStream(to read it twice)
+		Map<String,ContentStream> contentStreamMap = copyContentStream(contentStream);
+		
+		// Create Attachment node
+		String attachmentId = createAttachment(callContext, contentStreamMap.get("attachment"));
 		d.setAttachmentNodeId(attachmentId);
 
-		// TODO create Renditions
+		// Create Renditions
+		ContentStream previewCS = contentStreamMap.get("preview");
+		if(isPreviewEnabled() && renditionManager.checkConvertible(previewCS.getMimeType())){
+			createPreview(callContext, previewCS, d);
+		}
 
 		// Set version properties
 		VersionSeries vs = setVersionProperties(callContext, versioningState, d);
@@ -485,9 +518,18 @@ public class ContentServiceImpl implements ContentService {
 		Document copy = buildCopyDocumentWithBasicProperties(callContext,
 				original);
 
-		String attachmentId = createAttachment(callContext, contentStream);
+		//Prepare ContentStream(to read it twice)
+		Map<String,ContentStream> contentStreamMap = copyContentStream(contentStream);
+		
+		//Attachment
+		String attachmentId = createAttachment(callContext, contentStreamMap.get("attachment"));
 		copy.setAttachmentNodeId(attachmentId);
-		// TODO copy renditions
+		
+		//Rendition
+		ContentStream previewCS = contentStreamMap.get("preview");
+		if(isPreviewEnabled() && renditionManager.checkConvertible(previewCS.getMimeType())){
+			createPreview(callContext, contentStreamMap.get("preview"), copy);
+		}
 
 		// Set other properties
 		// TODO externalize versionigState
@@ -646,6 +688,7 @@ public class ContentServiceImpl implements ContentService {
 		setSignature(callContext, copy);
 		return copy;
 	}
+	
 
 	private VersionSeries setVersionProperties(CallContext callContext,
 			VersioningState versioningState, Document d) {
@@ -908,10 +951,26 @@ public class ContentServiceImpl implements ContentService {
 		if (CollectionUtils.isEmpty(renditionIds))
 			return null;
 
+		List<String>list = new ArrayList<String>(); 
 		for (String renditionId : renditionIds) {
-			// TODO not yet implemented
+			Rendition original = getRendition(renditionId);
+			ContentStream cs = new ContentStreamImpl("content",
+					BigInteger.valueOf(original.getLength()),
+					original.getMimetype(), original.getInputStream());
+
+			Rendition copy = new Rendition();
+			copy.setKind(original.getKind());
+			copy.setHeight(original.getHeight());
+			copy.setWidth(original.getWidth());
+			copy.setLength(original.getLength());
+			copy.setMimetype(original.getMimetype());
+			copy.setType(NodeType.RENDITION.value());
+			setSignature(callContext, copy);
+
+			String createdId = contentDaoService.createRendition(copy, cs);
+			list.add(createdId);
 		}
-		return null;
+		return list;
 	}
 
 	private Content modifyProperties(CallContext callContext,
@@ -1213,6 +1272,13 @@ public class ContentServiceImpl implements ContentService {
 				// Delete an attachment
 				deleteAttachment(callContext, attachmentId);
 			}
+			// Delete rendition(no need for archive)
+			if(CollectionUtils.isNotEmpty(version.getRenditionIds())){
+				for(String renditionId : version.getRenditionIds()){
+					contentDaoService.delete(renditionId);
+				}
+			}
+			
 			// Delete a document
 			delete(callContext, version.getId(), deleteWithParent);
 		}
@@ -1282,6 +1348,20 @@ public class ContentServiceImpl implements ContentService {
 	// ///////////////////////////////////////
 	// Attachment
 	// ///////////////////////////////////////
+	private byte[] readContentStreamToByte(ContentStream source){
+		ByteArrayOutputStream baos = new ByteArrayOutputStream();
+		try {
+			org.apache.commons.io.IOUtils.copy(source.getStream(), baos);
+			byte[] bytes = baos.toByteArray();
+			
+			return bytes;
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return null;
+	}
+	
 	@Override
 	public AttachmentNode getAttachment(String attachmentId) {
 		AttachmentNode an = contentDaoService.getAttachment(attachmentId);
@@ -1299,10 +1379,46 @@ public class ContentServiceImpl implements ContentService {
 			ContentStream contentStream) {
 		AttachmentNode a = new AttachmentNode();
 		a.setType(AttachmentNode.TYPE);
+		a.setMimeType(contentStream.getMimeType());
+		a.setLength(contentStream.getLength());
 		setSignature(callContext, a);
 		return contentDaoService.createAttachment(a, contentStream);
 	}
 
+	private void createPreview(CallContext callContext,
+			ContentStream contentStream, Document document) {
+		
+		Rendition rendition = new Rendition();
+		rendition.setTitle("PDF Preview");
+		rendition.setKind(RenditionKind.CMIS_PREVIEW.value());
+		rendition.setMimetype(contentStream.getMimeType());
+		rendition.setLength(contentStream.getLength());
+		rendition.setType(Rendition.TYPE);
+		
+		ContentStream converted = renditionManager.convertToPdf(contentStream, document.getName());
+		
+		setSignature(callContext, rendition);
+		if(converted == null){
+			//TODO logging
+			return;
+		}else{
+			String renditionId = contentDaoService.createRendition(rendition, converted);
+			List<String> renditionIds = document.getRenditionIds();
+			if(renditionIds == null){
+				document.setRenditionIds(new ArrayList<String>());
+			}
+			
+			document.getRenditionIds().add(renditionId);
+		}
+		
+	}
+	
+	private boolean isPreviewEnabled(){
+		String _cpbltyPreview = propertyUtil.getPropertyManager().readValue(PropertyKey.CAPABILITY_EXTENDED_PREVIEW);
+		boolean cpbltyPreview = (Boolean.valueOf(_cpbltyPreview) == null)? false : Boolean.valueOf(_cpbltyPreview);
+		return cpbltyPreview;
+	}
+	
 	@Override
 	public void appendAttachment(CallContext callContext,
 			Holder<String> objectId, Holder<String> changeToken,
@@ -1344,9 +1460,12 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		List<Rendition> renditions = new ArrayList<Rendition>();
-		for (String id : ids) {
-			renditions.add(contentDaoService.getRendition(id));
+		if(CollectionUtils.isNotEmpty(ids)){
+			for (String id : ids) {
+				renditions.add(contentDaoService.getRendition(id));
+			}
 		}
+		
 		return renditions;
 	}
 
@@ -1836,6 +1955,10 @@ public class ContentServiceImpl implements ContentService {
 
 	public void setTypeManager(TypeManager typeManager) {
 		this.typeManager = typeManager;
+	}
+
+	public void setRenditionManager(RenditionManager renditionManager) {
+		this.renditionManager = renditionManager;
 	}
 
 	public void setPropertyUtil(PropertyUtil propertyUtil) {

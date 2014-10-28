@@ -435,6 +435,14 @@ public interface ContentDaoService {
 	Rendition getRendition(String objectId);
 
 	/**
+	 * Create a rendition
+	 * @param rendition
+	 * @param contentStream
+	 * @return
+	 */
+	String createRendition(Rendition rendition, ContentStream contentStream);
+	
+	/**
 	 * Create an attachment
 	 *
 	 * @param attachment

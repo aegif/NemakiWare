@@ -26,6 +26,7 @@ public interface PropertyKey {
 	final String PERMISSION_MAPPING_DEFINITION= "permission.mapping.definition";
 	final String OVRRIDE_FILE= "override.file";
 	final String CAPABILITY_EXTENDED_ORDERBY_DEFAULT = "capability.extended.orderBy.default";
+	final String CAPABILITY_EXTENDED_PREVIEW = "capability.extended.preview";
 	
 	//Rest
 	final String REST_USER_ENABLED = "rest.user.enabled";
@@ -225,4 +226,8 @@ public interface PropertyKey {
 	
 	final String PROPERTY_POLICY_TEXT_QUERYABLE = "property.policyText.queryable";
 	final String PROPERTY_POLICY_TEXT_ORDERABLE = "property.policyText.orderable";
+	
+	//Rendition service
+	final String JODCONVERTER_REGISTRY_DATAFORMATS = "jodconverter.registry.dataformats";
+	final String JODCONVERTER_OFFICEHOME = "jodconverter.officehome";
 }

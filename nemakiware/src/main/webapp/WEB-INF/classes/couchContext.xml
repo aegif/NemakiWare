@@ -29,6 +29,9 @@
 		<property name="typeManager">
 			<ref bean="TypeManager" />
 		</property>
+		<property name="renditionManager">
+			<ref bean="RenditionManager" />
+		</property>
         <property name="propertyUtil">
             <ref bean="propertyUtil" />
         </property>

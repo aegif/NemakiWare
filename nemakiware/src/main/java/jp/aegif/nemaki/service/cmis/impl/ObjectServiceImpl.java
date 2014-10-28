@@ -21,6 +21,10 @@
  ******************************************************************************/
 package jp.aegif.nemaki.service.cmis.impl;
 
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigInteger;
 import java.util.ArrayList;
@@ -199,17 +203,17 @@ public class ObjectServiceImpl implements ObjectService {
 		}
 		
 		exceptionService.constraintRenditionStreamDownload(content, streamId);
+		
 		Rendition rendition = contentService.getRendition(streamId);
 
 		BigInteger length = BigInteger.valueOf(rendition.getLength());
 		String mimeType = rendition.getMimetype();
 		InputStream is = rendition.getInputStream();
-
-		ContentStream cs = new ContentStreamImpl("", length, mimeType, is);
+		ContentStream cs = new ContentStreamImpl("preview_" + streamId, length, mimeType, is);
 
 		return cs;
 	}
-
+	
 	@Override
 	public List<RenditionData> getRenditions(CallContext callContext,
 			String objectId, String renditionFilter, BigInteger maxItems,

@@ -42,6 +42,8 @@ public class CouchAttachmentNode extends CouchNodeBase{
 	public CouchAttachmentNode(AttachmentNode a){
 		super(a);
 		setName(a.getName());
+		setMimeType(a.getMimeType());
+		setLength(a.getLength());
 	}
 	
 	/**

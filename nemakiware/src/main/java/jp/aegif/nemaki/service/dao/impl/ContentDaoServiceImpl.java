@@ -534,6 +534,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public String createRendition(Rendition rendition,
+			ContentStream contentStream) {
+		return nonCachedContentDaoService.createRendition(rendition, contentStream);
+	}
+
+	@Override
 	public String createAttachment(AttachmentNode attachment, ContentStream cs) {
 		return nonCachedContentDaoService.createAttachment(attachment, cs);
 	}
