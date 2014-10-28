@@ -33,7 +33,7 @@
 	</script>
 	<script type="text/javascript">
 		//binding:update
-		$(document).on('click', "#obj-update", function(){
+		$(document).on('click', "#property-update", function(){
 			var data = {};
 			@for(p <- primaries){
 				data["@p.getId"] = editedValue("#@p.getId");
@@ -61,7 +61,7 @@
 		<div class="container">
 			<div class="row" style="margin-bottom:15px">
 				<div class="col-sm-5">
-					<button class="btn btn-default btn-primary" id="obj-update"><i class=" glyphicon glyphicon-saved"></i>更新</button>
+					<button class="btn btn-default btn-primary" id="property-update"><i class=" glyphicon glyphicon-saved"></i>更新</button>
 				</div>
 			</div>
 			

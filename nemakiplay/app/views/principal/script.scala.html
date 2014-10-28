@@ -69,7 +69,7 @@
 				//binding: remove button
 				$(document).on('click', '#@{prefix}remove', function(){
 					var footable = $('#@{prefix}selected-table').data('footable');
-					$('#@{prefix}selected-table :checkbox').each(function(i,chkbx){
+					$('.@{prefix}remove > input').each(function(i,chkbx){
 						if($(chkbx).prop('checked')){
 							var row = $(chkbx).parent().parent();
 							footable.removeRow(row);	
@@ -95,7 +95,7 @@
 					}
 				}
 				
-				//util: build selected table row's html
+				//util: build search table row's html
 				function buildSearchRow(genre, id, name){
 					var row = 
 					"<tr>" + 
@@ -111,15 +111,17 @@
 				function buildSelectedRow(genre, id, name, permissions){
 					var row = 
 					"<tr>" + 
-					"<td>" + "<input type='checkbox' principal-id='" + id  +"' principal-name='" + name + "' principal-genre='" + genre + "'/>" + "</td>" +
-					"<td>" + genre + "</td>" +
-					"<td>" + id + "</td>" + 
-					"<td>" + name + "</td>";;
+					"<td class='@{prefix}remove'>" + "<input type='checkbox' principal-id='" + id  +"' principal-name='" + name + "' principal-genre='" + genre + "'/>" + "</td>" +
+					"<td class='@{prefix}genre'>" + genre + "</td>" +
+					"<td class='@{prefix}id'>" + id + "</td>" + 
+					"<td class='@{prefix}name'>" + name + "</td>";;
 					
 					@if(CollectionUtils.isNotEmpty(permissionDefinitions)){
 						for(var i=0; i < permissions.length; i++){
-							row = row +  "<td>" + "<input type='checkbox'/>" + "</td>";
+							row = row +  "<td class='permission-" + permissions[i] + "'>" + "<input type='checkbox' />" + "</td>";
 						}
+						
+						row += "<td class='inheritance'><input type='checkbox' onclick='return false;' /></td>";
 					}
 					
 					
