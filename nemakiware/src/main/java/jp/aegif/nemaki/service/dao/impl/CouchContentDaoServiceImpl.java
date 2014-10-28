@@ -714,31 +714,39 @@ public class CouchContentDaoServiceImpl implements ContentDaoService {
 	public Rendition getRendition(String objectId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("renditions").key(objectId);
-		List<CouchRendition> crnds = connector.queryView(query,
+		List<CouchRendition> list = connector.queryView(query,
 				CouchRendition.class);
-		if (!CollectionUtils.isEmpty(crnds)) {
-			CouchRendition crnd = crnds.get(0);
-			Rendition rnd = crnd.convert();
-			// Set an input stream
-			InputStream is = connector.getAttachment(rnd.getId(),
-					rnd.getTitle());
-			rnd.setInputStream(is);
-			try {
-				BufferedImage bimg = ImageIO.read(is);
+		
+		if (CollectionUtils.isEmpty(list)) {
+			return null;
+		}else{
+			CouchRendition crd = list.get(0);
+			Attachment a = crd.getAttachments().get(ATTACHMENT_NAME);
+			
+			Rendition rd = new Rendition();
+			rd.setType(NodeType.RENDITION.value());
+			rd.setId(objectId);
+			rd.setTitle(crd.getTitle());
+			rd.setKind(crd.getKind());
+			rd.setMimetype(a.getContentType());
+			rd.setLength(a.getContentLength());
+			AttachmentInputStream ais = connector.getAttachment(
+					objectId, ATTACHMENT_NAME);
+			rd.setInputStream(ais);
+			
+			/*try {
+				BufferedImage bimg = ImageIO.read(ais);
 				if (bimg != null) {
-					rnd.setWidth(bimg.getWidth());
-					rnd.setHeight(bimg.getHeight());
+					rd.setWidth(bimg.getWidth());
+					rd.setHeight(bimg.getHeight());
 					bimg.flush();
 				}
 			} catch (IOException e) {
 				// TODO logging
 				// do nothing
-			}
-
-			return rnd;
-
-		} else {
-			return null;
+			}*/
+			
+			return rd;
 		}
 	}
 
@@ -754,6 +762,19 @@ public class CouchContentDaoServiceImpl implements ContentDaoService {
 		connector.createAttachment(ca.getId(), ca.getRevision(), ais);
 
 		return ca.getId();
+	}
+	
+	@Override
+	public String createRendition(Rendition rendition, ContentStream contentStream){
+		CouchRendition cr = new CouchRendition(rendition);
+		connector.create(cr);
+
+		AttachmentInputStream ais = new AttachmentInputStream(ATTACHMENT_NAME,
+				contentStream.getStream(), contentStream.getMimeType(),
+				contentStream.getLength());
+		connector.createAttachment(cr.getId(), cr.getRevision(), ais);
+
+		return cr.getId();
 	}
 
 	@Override

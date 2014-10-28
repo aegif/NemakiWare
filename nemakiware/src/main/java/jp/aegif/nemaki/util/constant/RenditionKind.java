@@ -1,7 +1,8 @@
 package jp.aegif.nemaki.util.constant;
 
 public enum RenditionKind {
-	CMIS_THUMBNAIL("cmis:thumbnail");
+	CMIS_THUMBNAIL("cmis:thumbnail"), 
+	CMIS_PREVIEW("cmis:preview");
 
 	private final String value;
 

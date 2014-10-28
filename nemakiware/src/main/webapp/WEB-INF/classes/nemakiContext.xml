@@ -645,5 +645,26 @@
         </property>
     </bean>
 
+	<!-- Rendition builder -->
+	<bean id="RenditionManager" class="org.springframework.aop.framework.ProxyFactoryBean">
+		<property name="proxyInterfaces">
+			<list>
+				<value>jp.aegif.nemaki.service.rendition.RenditionManager</value>
+			</list>
+		</property>
+		<property name="target">
+			<ref bean="jodRenditionManager" />
+		</property>
+		<property name="interceptorNames">
+			<list>
+				<value>debugInterceptor</value>
+			</list>
+		</property>
+	</bean>
+	<bean id="jodRenditionManager" class="jp.aegif.nemaki.service.rendition.impl.JodRenditionManagerImpl">
+		<constructor-arg>
+            <ref bean="propertyUtil" />
+        </constructor-arg>
+	</bean>
 
 </beans>
