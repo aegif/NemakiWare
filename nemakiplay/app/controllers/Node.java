@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
-import jdk.nashorn.internal.runtime.regexp.joni.exception.JOniException;
 import model.Principal;
 
 import org.apache.chemistry.opencmis.client.api.CmisObject;
@@ -19,6 +18,7 @@ import org.apache.chemistry.opencmis.client.api.FileableCmisObject;
 import org.apache.chemistry.opencmis.client.api.Folder;
 import org.apache.chemistry.opencmis.client.api.ItemIterable;
 import org.apache.chemistry.opencmis.client.api.ObjectId;
+import org.apache.chemistry.opencmis.client.api.ObjectType;
 import org.apache.chemistry.opencmis.client.api.OperationContext;
 import org.apache.chemistry.opencmis.client.api.Property;
 import org.apache.chemistry.opencmis.client.api.SecondaryType;
@@ -26,11 +26,11 @@ import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.client.runtime.ObjectIdImpl;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Ace;
-import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
+import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
@@ -40,10 +40,9 @@ import org.apache.commons.lang3.StringUtils;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.deser.BuilderBasedDeserializer;
 
+import play.Application;
 import play.data.DynamicForm;
-import play.data.DynamicForm.Dynamic;
 import play.data.Form;
 import play.mvc.Controller;
 import play.mvc.Http.MultipartFormData;
@@ -51,7 +50,6 @@ import play.mvc.Http.MultipartFormData.FilePart;
 import play.mvc.Security.Authenticated;
 import play.mvc.Result;
 import util.Util;
-import views.html.group.newEdit;
 import views.html.node.tree;
 import views.html.node.version;
 import views.html.node.blank;
@@ -132,7 +130,7 @@ public class Node extends Controller {
     }
 
     public static Result showBlank(){
-    	String objectType = request().getQueryString("objectType");
+     	String objectType = request().getQueryString("objectType");
     	String baseType = request().getQueryString("baseType");
     	String parentId = request().getQueryString("parentId");
 
@@ -154,19 +152,19 @@ public class Node extends Controller {
     	DynamicForm input = Form.form();
     	input = input.bindFromRequest();
     	//Extract form parameters
-    	String parentId = input.get("parentId");
-    	String baseType = input.get("baseType");
-    	String objectType = input.get("objectType");
+    	String parentId = input.get("cmis:parentId");
+    	String objectType = input.get("cmis:objectType");
 
     	//Set CMIS parameters
-    	Map param = new HashMap<String, Object>();
+    	Map<String, Object> param = new HashMap<String, Object>();
+    	param.put(PropertyIds.OBJECT_TYPE_ID, objectType);
     	ObjectId _parentId = new ObjectIdImpl(parentId);
 
     	Session session = createSession();
-
-    	param.put(PropertyIds.OBJECT_TYPE_ID, objectType);
-    	if(baseType.equals("cmis:document")){
-    		MultipartFormData body = request().body().asMultipartFormData();
+    	
+    	switch (Util.getBaseType(session, objectType)){
+		case CMIS_DOCUMENT:
+			MultipartFormData body = request().body().asMultipartFormData();
 
     		List<FilePart> files = body.getFiles();
     		//TODO package name
@@ -178,16 +176,22 @@ public class Node extends Controller {
     	        	session.createDocument(param, _parentId, cs, VersioningState.MAJOR);
     			}
     		}
-
-    	}else if(baseType.equals("cmis:folder")){
-    		String name = input.get("name");
+			break;
+		case CMIS_FOLDER:
+			String name = input.get("name");
     		param.put(PropertyIds.NAME, name);
     		session.createFolder(param, _parentId);
+			break;
+		default:
+			break;
+    		
     	}
-
+    	
     	return redirectToParent(input);
     }
 
+   
+    
     private static Result redirectToParent(DynamicForm input){
     	String parentId = input.get("parentId");
     	//TODO fix hard code
@@ -225,7 +229,6 @@ public class Node extends Controller {
     			secondaries.put(st, new ArrayList<>());
     		}
     	}
-    	
     	
     	
     	for(Property p : properties){
@@ -522,7 +525,7 @@ public class Node extends Controller {
     	return ok(search.render(term, list));
     }
 
-   public static Result permission(String id){
+   public static Result showPermission(String id){
 	   Session session = createSession();
 	   
 	   CmisObject obj = session.getObject(id);

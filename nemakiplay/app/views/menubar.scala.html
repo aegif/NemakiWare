@@ -7,7 +7,7 @@
 					class="icon-bar"></span> <span class="icon-bar"></span> <span
 					class="icon-bar"></span>
 			</button>
-			<a class="navbar-brand" href="http://localhost:9000">NemakiWare</a>
+			<a class="navbar-brand" href="@routes.Node.index().absoluteURL(request)">NemakiWare</a>
 		</div>
 		<div class="navbar-collapse collapse">
 			<ul class="nav navbar-nav">
@@ -18,7 +18,7 @@
 						@session.get("loginUserId")<span class="caret" />
 					</a>
 					<ul class="dropdown-menu" role="menu">
-						<li><a href="http://localhost:9000/logout" id="logout"><i class="glyphicon glyphicon-log-out"></i>ログアウト</a></li>
+						<li><a href="@routes.Application.logout().absoluteURL(request)" id="logout"><i class="glyphicon glyphicon-log-out"></i>ログアウト</a></li>
 						<li class="divider"></li>
 					</ul>
 				</li>
@@ -27,8 +27,8 @@
 				<li class="dropdown"><a href="#" class="dropdown-toggle"
 					data-toggle="dropdown"><i class="glyphicon glyphicon-cog"></i>コントロールパネル <span class="caret"></span></a>
 					<ul class="dropdown-menu" role="menu">
-						<li><a href="http://localhost:9000/users" id="user-console"><i class="glyphicon glyphicon-user"></i>ユーザ管理</a></li>
-						<li><a href="http://localhost:9000/groups" id="group-console"><i class="glyphicon glyphicon-th"></i>グループ管理</a></li>
+						<li><a href="@routes.User.index().absoluteURL(request)" id="user-console"><i class="glyphicon glyphicon-user"></i>ユーザ管理</a></li>
+						<li><a href="@routes.Group.index().absoluteURL(request)" id="group-console"><i class="glyphicon glyphicon-th"></i>グループ管理</a></li>
 						<li class="divider"></li>
 					</ul>
 				</li>

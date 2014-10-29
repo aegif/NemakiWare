@@ -132,7 +132,7 @@
 				//util: search user/group
 				function searchPrincipal(term){
 					//decide url
-					var url = 'http://localhost:9000/principals/search';
+					var url = "@routes.Principal.search().absoluteURL(request)";
 					
 					//ajax call
 					$.ajax({

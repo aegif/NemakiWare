@@ -25,7 +25,7 @@
 		$(document).on('click','#user-update', function(){
 			//post
 			$.ajax({
-				url : 'http://localhost:9000/users/@user.id/update',
+				url : "@routes.User.update(user.id).absoluteURL(request)",
 				type: 'POST',
 				data : {
 							userId: "@user.id",

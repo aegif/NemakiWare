@@ -36,7 +36,7 @@
 		
 			//post
 			$.ajax({
-				url : 'http://localhost:9000/groups/@group.id/update',
+				url : "@routes.Group.update(group.id).absoluteURL(request)",
 				type: 'POST',
 				data : {groupId: "@group.id",
 						groupName : editedValue('#group-name'),

@@ -47,7 +47,7 @@
 
 			//post
 			$.ajax({
-				url : 'http://localhost:9000/groups/create',
+				url : "@routes.Group.create().absoluteURL(request)",
 				type: 'POST',
 				data : {groupId: $('#new-group-id').val(),
 						groupName : $('#new-group-name').val(),

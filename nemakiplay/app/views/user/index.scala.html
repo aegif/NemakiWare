@@ -1,5 +1,7 @@
-@(users:List[model.User])
+@import util.Util
 @import org.apache.commons.collections.CollectionUtils
+
+@(users:List[model.User])
 
 <!DOCTYPE html>
 <html>
@@ -88,7 +90,7 @@
 	$(function () {
 		//binding: create button
 		$('#user-create-button').bind('click', function(){
-			$.get("http://localhost:9000/users/new", function(html){
+			$.get("@routes.User.showBlank().absoluteURL(request)", function(html){
 				$("#floating-pane").html(html);
 				$("#floating-pane").lightbox_me(lightbox_me_config);
 			});
@@ -98,7 +100,7 @@
 		$('.user-detail').click(function(){
 			var id = $(this).attr('user-id');
        		
-			$.get("http://localhost:9000/users/" + id + "/edit", function(html){
+			$.get("@{Util.getContextPath(request)}users/" + id + "/edit", function(html){
 				$("#floating-pane").html(html);
 				$("#floating-pane").lightbox_me(lightbox_me_config);
        		});	
@@ -110,7 +112,7 @@
 			//alert dialog
 			if(window.confirm("削除してよろしいですか？")){
 				var id = $(this).attr('user-id');
-	       		$.post("http://localhost:9000/users/" + id + "/delete",{},function(data){
+	       		$.post("@{Util.getContextPath(request)}users/" + id + "/delete",{},function(data){
 	       			window.location.reload();
 	       		});	
 			}

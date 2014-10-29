@@ -17,6 +17,7 @@ import play.mvc.Controller;
 import play.mvc.Result;
 import play.mvc.Security.Authenticated;
 import util.Util;
+import views.html.group.blank;
 import views.html.group.index;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -81,9 +82,9 @@ public class Group extends Controller {
     	
     }
 
-	public static Result newEdit(){
+	public static Result showBlank(){
 		
-		return ok(views.html.group.newEdit.render());
+		return ok(blank.render());
 	}
 
 	public static Result create(){

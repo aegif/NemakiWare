@@ -11,11 +11,11 @@
 	  			<!-- breadcrumb -->
 	  			<div class="col-md-11">
 	  				<ul class="breadcrumb">
-	  					<li><a href="http://localhost:9000" title="root"><i class="glyphicon glyphicon-home"></i></a></li>
+	  					<li><a href="@routes.Node.index().absoluteURL(request)" title="root"><i class="glyphicon glyphicon-home"></i></a></li>
 	  					@defining(Util.dividePath(parent.getPath)){ segments =>
 	  						@for(i <- 0 to segments.length - 1; if(CollectionUtils.isNotEmpty(segments))){
 	  							@defining(segments.take(i+1).mkString("/")){url=>
-	  								<li><a href="http://localhost:9000/path/children?path=/@url"><i class="glyphicon glyphicon-folder-open"></i> @segments(i)</a></li>
+	  								<li><a href="@routes.Node.showChildrenByPath('/' + url).absoluteURL(request)"><i class="glyphicon glyphicon-folder-open"></i> @segments(i)</a></li>
 	  							}
 	  						}
 	  					}
@@ -63,7 +63,7 @@
 			var baseType = $('#pulldown-new').val();
 			
 			if(objectType != ""){
-				$.get("http://localhost:9000/objects/new" + "?objectType=" + objectType + "&baseType=" + baseType + "&parentId=@parent.getId()"  , function(html){
+				$.get("@routes.Node.showBlank().absoluteURL(request)" + "?objectType=" + objectType + "&baseType=" + baseType + "&parentId=@parent.getId()"  , function(html){
 							$("#floating-pane").html(html);
 							$("#floating-pane").lightbox_me(lightbox_me_config);
 				});	
@@ -94,12 +94,11 @@
 			formData.append('file_' + i, event.dataTransfer.files[i]);	
 		}
 		
-		formData.append('parentId', '@parent.getId()');
-		formData.append('baseType', 'cmis:document');
-		formData.append('objectType', 'cmis:document');
+		formData.append('cmis:parentId', '@parent.getId()');
+		formData.append('cmis:objectType', 'cmis:document');
 		 
 		 $(function(){
-			 $.ajax("http://localhost:9000/objects/create",
+			 $.ajax("@routes.Node.create().absoluteURL(request)",
 			{
 				 type: 'post',
 			      processData: false,
