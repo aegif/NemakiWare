@@ -64,23 +64,15 @@
 		$('#checkout').click(function(){
 			$.ajax({
 				type: "POST",
-				  url: "http://localhost:9000/objects/" + "@obj.getId()" + "/checkout",
+				  url: "@routes.Node.checkOut(obj.getId).absoluteURL(request)",
 				  data: "",
 				  success: function(msg){
 				        alert( "正常にロックされました。ページを更新しますのでしばらくお待ちください ");
-				        
-				        @if(parentId == "/"){
-				        	location.href="http://localhost:9000/objects";
-				        }else{
-				        	location.href="http://localhost:9000/objects/" + "@parentId" + "/children";	
-				        }
+				        window.location.reload();
 				  },
 				  error: function(XMLHttpRequest, textStatus, errorThrown) {
 				     alert("some error:" + textStatus);
 				  }
-				
-				
-				
 			});
 		});
 	});

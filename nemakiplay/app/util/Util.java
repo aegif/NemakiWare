@@ -20,6 +20,7 @@ import java.util.Map.Entry;
 import org.apache.chemistry.opencmis.client.api.CmisObject;
 import org.apache.chemistry.opencmis.client.api.Document;
 import org.apache.chemistry.opencmis.client.api.Folder;
+import org.apache.chemistry.opencmis.client.api.ObjectType;
 import org.apache.chemistry.opencmis.client.api.OperationContext;
 import org.apache.chemistry.opencmis.client.api.Property;
 import org.apache.chemistry.opencmis.client.api.Session;
@@ -35,6 +36,7 @@ import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.http.Header;
 import org.apache.http.HttpRequest;
 import org.apache.http.HttpResponse;
@@ -56,14 +58,18 @@ import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.message.BasicHeader;
 import org.apache.http.message.BasicNameValuePair;
 
+import play.Play;
+import play.api.Configuration;
 import play.api.http.MediaRange;
 import play.libs.Json;
 import play.mvc.Http.MultipartFormData.FilePart;
+import play.mvc.Http.Request;
 
 import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.typesafe.config.ConfigFactory;
 
 public class Util {
 	public static Session createCmisSession(String id, String password){
@@ -454,5 +460,15 @@ public class Util {
 		return result;
 	}
 	
+	public static String getContextPath(Request request){
+		String _ctxt = Play.application().configuration().getString("application.context");
+		String ctxt = (StringUtils.isBlank(_ctxt))? "" : _ctxt;
+		
+		return "http://" + request.host() + ctxt;
+	}
 	
+	 public static BaseTypeId getBaseType(Session cmisSession, String objectTypeId){
+		 ObjectType objectType = cmisSession.getTypeDefinition(objectTypeId, true);
+		 return objectType.getBaseTypeId();
+	 }
 }

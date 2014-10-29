@@ -13,8 +13,8 @@ import play.mvc.Controller;
 import play.mvc.Result;
 import play.mvc.Security.Authenticated;
 import util.Util;
+import views.html.user.blank;
 import views.html.user.index;
-import views.html.user.newEdit;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
@@ -65,9 +65,9 @@ public class User extends Controller {
     	
     }
 
-	public static Result newEdit(){
+	public static Result showBlank(){
 		
-		return ok(newEdit.render());
+		return ok(blank.render());
 	}
 
 	public static Result create(){

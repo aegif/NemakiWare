@@ -81,7 +81,7 @@
 		};
 		
 		$.ajax({
-			url : 'http://localhost:9000/objects/@obj.getId()/updatePermission',
+			url : "@routes.Node.updatePermission(obj.getId).absoluteURL(request)",
 			type : 'POST',
 			data : data,
 			success : function(data){
