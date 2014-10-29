@@ -156,12 +156,11 @@ public class Util {
 
 		InputStream inputStream = contentStream.getStream();
 
-		String tDir = System.getProperty("java.io.tmpdir");
-		File file = new File(tDir + "\\" + contentStream.getFileName());
+		File file = File.createTempFile(contentStream.getFileName(), "");
 
+		OutputStream out = null;
 		try {
-			// write the inputStream to a FileOutputStream
-			OutputStream out = new FileOutputStream(file);
+			out = new FileOutputStream(file);
 
 			int read = 0;
 			byte[] bytes = new byte[1024];
@@ -169,13 +168,16 @@ public class Util {
 			while ((read = inputStream.read(bytes)) != -1) {
 				out.write(bytes, 0, read);
 			}
+			
+		} catch (IOException e) {
+			System.out.println(e.getMessage());
+		}finally{
 			inputStream.close();
 			out.flush();
 			out.close();
-		} catch (IOException e) {
-			System.out.println(e.getMessage());
 		}
-
+		
+		file.deleteOnExit();
 		return file;
 	}
 

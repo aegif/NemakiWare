@@ -18,7 +18,6 @@ import org.apache.chemistry.opencmis.client.api.FileableCmisObject;
 import org.apache.chemistry.opencmis.client.api.Folder;
 import org.apache.chemistry.opencmis.client.api.ItemIterable;
 import org.apache.chemistry.opencmis.client.api.ObjectId;
-import org.apache.chemistry.opencmis.client.api.ObjectType;
 import org.apache.chemistry.opencmis.client.api.OperationContext;
 import org.apache.chemistry.opencmis.client.api.Property;
 import org.apache.chemistry.opencmis.client.api.SecondaryType;
@@ -30,18 +29,15 @@ import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
-import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
-
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import play.Application;
 import play.data.DynamicForm;
 import play.data.Form;
 import play.mvc.Controller;
@@ -399,21 +395,26 @@ public class Node extends Controller {
     public static Result download(String id){
     	Session session = createSession();
 
-    	CmisObject o = session.getObject(id);
-    	//TODO check object type
-    	Document doc = (Document)o;
+    	CmisObject obj = session.getObject(id);
+    	if(!Util.isDocument(obj)){
+    		//TODO logging
+    		return badRequest();
+    	}
+    	
+    	Document doc = (Document)obj;
     	ContentStream cs = doc.getContentStream();
 
     	File tmpFile = null;
 		try {
-			//TODO set file name
 			tmpFile = Util.convertInputStreamToFile(cs);
-
-
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
+		
+		response().setHeader("Content-disposition", "attachment; filename="+ doc.getName());
+		response().setContentType(cs.getMimeType());
+		
     	return ok(tmpFile);
     }
 
