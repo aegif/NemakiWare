@@ -330,7 +330,7 @@ public class Util {
 		HttpClient client = buildClient();
 
 		HttpPost request = new HttpPost(url);
-		List<NameValuePair> list = new ArrayList<>();
+		List<NameValuePair> list = new ArrayList<NameValuePair>();
 		if(MapUtils.isNotEmpty(params)){
 			for(Entry<String, String>entry : params.entrySet()){
 				list.add(new BasicNameValuePair(entry.getKey(),entry.getValue()));
@@ -352,7 +352,7 @@ public class Util {
 		HttpClient client = buildClient();
 
 		HttpPut request = new HttpPut(url);
-		List<NameValuePair> list = new ArrayList<>();
+		List<NameValuePair> list = new ArrayList<NameValuePair>();
 		if(MapUtils.isNotEmpty(params)){
 			for(Entry<String, String>entry : params.entrySet()){
 				list.add(new BasicNameValuePair(entry.getKey(),entry.getValue()));
@@ -401,7 +401,7 @@ public class Util {
 		if(ary.length == 0){
 			return new ArrayList<String>();
 		}else{
-			List<String> result = new ArrayList<>();
+			List<String> result = new ArrayList<String>();
 			//TODO error
 			//remove first empty element
 			for(int i=1; i < ary.length; i++){
@@ -424,7 +424,7 @@ public class Util {
 	
 
 	public static List<String> convertToList(JsonNode jsonArray){
-		List<String> result = new ArrayList<>();
+		List<String> result = new ArrayList<String>();
 		
 		Iterator<JsonNode> itr = jsonArray.iterator();
 		while(itr.hasNext()){
@@ -444,7 +444,7 @@ public class Util {
 	}
 	
 	public static Map<String, Ace> zipWithId(Acl acl){
-		Map<String, Ace>result = new HashMap<>();
+		Map<String, Ace>result = new HashMap<String, Ace>();
 		
 		if(acl != null){
 			List<Ace> list = acl.getAces();

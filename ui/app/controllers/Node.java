@@ -35,6 +35,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntry
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -207,27 +208,22 @@ public class Node extends Controller {
 
 
     	List<Property<?>> properties = o.getProperties();
-    	
-    	Map<String, PropertyDefinition<?>>primaryDefs =  o.getType().getPropertyDefinitions();
-    	
     	List<SecondaryType>secondaryTypes = o.getSecondaryTypes();
-    	List<PropertyDefinition<?>> secondaryDefs = new ArrayList<>();
-    	
     	
     	//divide
-    	List<Property<?>>primaries = new ArrayList<>();
-    	Map<SecondaryType, List<Property<?>>>secondaries = new HashMap<>();
+    	List<Property<?>>primaries = new ArrayList<Property<?>>();
+    	Map<SecondaryType, List<Property<?>>>secondaries = new HashMap<SecondaryType, List<Property<?>>>();
     	
     	if(CollectionUtils.isNotEmpty(secondaryTypes)){
     		Iterator<SecondaryType> itr = secondaryTypes.iterator();
     		while(itr.hasNext()){
     			SecondaryType st = itr.next();
-    			secondaries.put(st, new ArrayList<>());
+    			secondaries.put(st, new ArrayList<Property<?>>());
     		}
     	}
     	
     	
-    	for(Property p : properties){
+    	for(Property<?> p : properties){
     		boolean isSecondary = false;
 
     		if(CollectionUtils.isNotEmpty(secondaryTypes)){
@@ -240,7 +236,6 @@ public class Node extends Controller {
         			}
         		}
     		}
-    		
     		
     		if(!isSecondary){
     			primaries.add(p);
@@ -262,7 +257,7 @@ public class Node extends Controller {
 
     	//Build upadte properties
     	//TODO multi-valued properties
-    	Map<String, Object>properties = new HashMap<>();
+    	Map<String, Object>properties = new HashMap<String, Object>();
     	for(Entry<String, PropertyDefinition<?>> entry : o.getType().getPropertyDefinitions().entrySet()){
     		PropertyDefinition<?>pdf =  entry.getValue();
     		if(Updatability.READWRITE == pdf.getUpdatability()){
@@ -294,7 +289,7 @@ public class Node extends Controller {
     	CmisObject obj = session.getObject(id);
     	
     	List<Ace> oldAcl = obj.getAcl().getAces();
-    	List<Ace> newAcl = new ArrayList<>();
+    	List<Ace> newAcl = new ArrayList<Ace>();
     	
     	
     	//Get input form data
@@ -316,7 +311,7 @@ public class Node extends Controller {
 				
 				String principalId = ace.get("principalId").asText();
 				
-				List<String> _permission = new ArrayList<>();
+				List<String> _permission = new ArrayList<String>();
 				JsonNode permission = ace.get("permission");
 				Iterator<JsonNode> itr2 = permission.iterator();
 				while(itr2.hasNext()){
@@ -492,7 +487,7 @@ public class Node extends Controller {
 
 
     	//Execute
-    	Map<String, Object>param = new HashMap<>();
+    	Map<String, Object>param = new HashMap<String, Object>();
     	doc.checkIn(true, param, cs, "");
 
 
@@ -504,7 +499,7 @@ public class Node extends Controller {
 
     	OperationContext ctxt = session.getDefaultContext();
 
-    	List<CmisObject> list = new ArrayList<>();
+    	List<CmisObject> list = new ArrayList<CmisObject>();
     	//Build WHERE clause(cmis:document)
     	MessageFormat docFormat = new MessageFormat("cmis:name LIKE ''%{0}%'' OR CONTAINS(''{0}'')");
     	String docStatement = docFormat.format(new String[]{term});
@@ -535,7 +530,7 @@ public class Node extends Controller {
 	   List<PermissionDefinition> permissionDefs = session.getRepositoryInfo().getAclCapabilities().getPermissions();
 	   
 	   //Principals
-	   List<Principal>members = new ArrayList<>();
+	   List<Principal>members = new ArrayList<Principal>();
 	   if(obj.getAcl() != null){
 		   List<Ace> list = obj.getAcl().getAces();
 		   if(CollectionUtils.isNotEmpty(list)){

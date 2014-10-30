@@ -34,7 +34,7 @@ public class User extends Controller {
     	//TODO check status
     	JsonNode users = result.get("result");
     	
-    	List<model.User> list = new ArrayList<>();
+    	List<model.User> list = new ArrayList<model.User>();
     	
     	if(users == null){
     		users = Json.parse("[]");
@@ -149,7 +149,7 @@ public class User extends Controller {
     	String email = input.get("email");
 
 
-    	Map<String, String>params = new HashMap<>();
+    	Map<String, String>params = new HashMap<String, String>();
     	params.put("id", userId);
     	params.put("name", userName);
     	params.put("firstName", firstName);

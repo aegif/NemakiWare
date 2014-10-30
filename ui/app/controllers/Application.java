@@ -11,7 +11,7 @@ import views.html.login;
 
 public class Application extends Controller{
 	public static Result login() {
-	    return ok(login.render(new Form<>(Login.class)));
+	    return ok(login.render(new Form<Login>(Login.class)));
 	}
 	
 	public static Result authenticate(){

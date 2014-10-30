@@ -18,7 +18,7 @@ import util.Util;
 @Authenticated(Secured.class)
 public class Principal extends Controller{
 	public static Result search(String term){
-		List<model.Principal>principals = new ArrayList<>();
+		List<model.Principal>principals = new ArrayList<model.Principal>();
 		
 		//user search
 		JsonNode resultUsers = Util.getJsonResponse("http://localhost:8080/nemakiware/rest/user/search?query=" + term);
