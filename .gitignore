@@ -6,3 +6,4 @@ jetty.log
 .project
 .settings
 !.gitkeep
+nemakiware/.tomcatplugin
