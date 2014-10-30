@@ -1,0 +1,115 @@
+@(parent: org.apache.chemistry.opencmis.client.api.Folder, objects: List[org.apache.chemistry.opencmis.client.api.CmisObject])
+@import util.Util
+@import org.apache.commons.collections.CollectionUtils
+<!DOCTYPE html>
+<html>
+	@header()
+	<body>
+		@menubar()
+		<div class="container">
+	  		<div class="row">
+	  			<!-- breadcrumb -->
+	  			<div class="col-md-11">
+	  				<ul class="breadcrumb">
+	  					<li><a href="@routes.Node.index().absoluteURL(request)" title="root"><i class="glyphicon glyphicon-home"></i></a></li>
+	  					@defining(Util.dividePath(parent.getPath)){ segments =>
+	  						@for(i <- 0 to segments.length - 1; if(CollectionUtils.isNotEmpty(segments))){
+	  							@defining(segments.take(i+1).mkString("/")){url=>
+	  								<li><a href="@routes.Node.showChildrenByPath('/' + url).absoluteURL(request)"><i class="glyphicon glyphicon-folder-open"></i> @segments(i)</a></li>
+	  							}
+	  						}
+	  					}
+	  				</ul>
+	  			</div>
+	  			
+	  			<div class="col-md-11">
+					<!-- 新規作成プルダウン -->
+					<select id="pulldown-new" class="selectpicker"> 
+						<option value="">新規作成</option>
+						<option value="cmis:folder">フォルダ</option>
+						<option value="cmis:document">ファイル</option>
+					</select>
+					
+					<br/><br/>
+				</div>
+				
+				<div class="col-md-11">
+				 	<div id="list" class="dropzone" ondragover="handleDragStart(event);" ondragleave="hadleDragLeave(event);" ondrop="handleDrop(event);">
+						@list(objects) 		
+				 	</div>
+				</div>
+	  		</div>
+		</div>
+	</body>
+</html>
+
+
+<!-- scripts -->
+<script type="text/javascript">
+        $(window).on('load', function () {
+            $('.selectpicker').selectpicker({
+                
+            });
+        });
+</script>
+
+
+<script type="text/javascript">
+	//create button
+	$(function(){
+		
+		$('#pulldown-new').change(function(){
+			var objectType = $('#pulldown-new').val();
+			var baseType = $('#pulldown-new').val();
+			
+			if(objectType != ""){
+				$.get("@routes.Node.showBlank().absoluteURL(request)" + "?objectType=" + objectType + "&baseType=" + baseType + "&parentId=@parent.getId()"  , function(html){
+							$("#floating-pane").html(html);
+							$("#floating-pane").lightbox_me(lightbox_me_config);
+				});	
+			}
+		})
+	});
+
+	//drag&drop
+	function handleDragStart(event){
+		event.preventDefault();
+		$(".dropzone").css("border", "3px solid #74A9D6");
+	}
+	
+	function hadleDragLeave(event){
+		event.preventDefault();
+		$(".dropzone").css("border", "none");
+	}
+	
+	function handleDrop(event)
+	{
+		event.preventDefault();
+		
+		$(".dropzone").css("border", "none");
+	
+		var formData = new FormData();
+		// イベントに格納されたファイルを取り出し
+		for(var i=0; i < event.dataTransfer.files.length; i++){
+			formData.append('file_' + i, event.dataTransfer.files[i]);	
+		}
+		
+		formData.append('cmis:parentId', '@parent.getId()');
+		formData.append('cmis:objectType', 'cmis:document');
+		 
+		 $(function(){
+			 $.ajax("@routes.Node.create().absoluteURL(request)",
+			{
+				 type: 'post',
+			      processData: false,
+			      contentType: false,
+			      data: formData,
+			      dataType: 'html',
+			      success: function(data){
+			        window.alert("ファイルがアップロードされました");
+			        window.location.reload();
+			      }
+			});
+		 });
+	}
+</script>

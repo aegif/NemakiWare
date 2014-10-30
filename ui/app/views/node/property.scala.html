@@ -1,0 +1,81 @@
+@import util.Formatter
+@import util.Util
+@import org.apache.chemistry.opencmis.client.api.Document
+@import org.apache.chemistry.opencmis.client.api.Folder
+@import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition
+@import org.apache.chemistry.opencmis.client.api.Property
+@import org.apache.chemistry.opencmis.client.api.SecondaryType
+
+@(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(primaries: List[Property[_]])(secondary: Map[SecondaryType, List[Property[_]]])
+
+@defining(new ArrayList[String]()){ editables =>
+	<div style="display:none">
+	@{
+		for(p <- primaries){
+			if(Util.isEditable(p)){
+				editables.add("#" + p.getId)
+			}
+		}
+	}
+	</div>
+		
+	<!-- scripts -->
+	<script type="text/javascript" src="@routes.Assets.at("javascripts/binding-editable.js")"/>
+	<script type="text/javascript">
+		var editables = [];
+		@for(editable <- editables){
+			editables.push("@editable");
+		}                 
+		
+		jQuery.each(editables, function(i, editable){
+			bindEditable(editable);
+		});
+	</script>
+	<script type="text/javascript">
+		//binding:update
+		$(document).on('click', "#property-update", function(){
+			var data = {};
+			@for(p <- primaries){
+				data["@p.getId"] = editedValue("#@p.getId");
+			}
+			
+			$.ajax({
+				url : "@routes.Node.update(obj.getId).absoluteURL(request)",
+				type : 'POST',
+				data : data,
+				success : function(data){
+					alert("成功しました");
+					window.location.reload();
+				},
+				error : function(XMLHttpRequest, textStatus, errorThrown) {
+		            alert("XMLHttpRequest : " + XMLHttpRequest.status);
+		            alert("textStatus : " + textStatus);
+		            alert("errorThrown : " + errorThrown.message);
+		         }
+			});
+		});
+	</script>
+	
+	<!-- html -->
+	<div id="tab-edit">
+		<div class="container">
+			<div class="row" style="margin-bottom:15px">
+				<div class="col-sm-5">
+					<button class="btn btn-default btn-primary" id="property-update"><i class=" glyphicon glyphicon-saved"></i>更新</button>
+				</div>
+			</div>
+			
+			<div class="row">
+				<div class="col-sm-8">
+					<div><h4><i class="glyphicon glyphicon-wrench"></i>プロパティ</h4></div>
+					@editableTable("obj-property-table")(10){
+						@for(p <- primaries){
+							@editableRow(p.getId)(p.getId)(p.getValueAsString)(editables)
+						}
+					}
+					<hr/>
+				</div>
+			</div>
+		</div>
+	</div>
+}

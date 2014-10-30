@@ -1,0 +1,56 @@
+@(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(parentId:String)
+@import util._
+<script src="@routes.Assets.at("javascripts/jquery.tabs.js")"></script>
+
+ <script type="text/javascript">
+ $.ajax({
+     type: "GET",
+     url: "@routes.Node.showProperty(obj.getId).absoluteURL(request)",
+     error: function(data){
+       alert("There was a problem");
+     },
+     success: function(data){
+       $("#property").html(data);
+     }
+ });
+ 
+ $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+	  var target = $(e.target).attr("href"); // activated tab
+	    $.ajax({
+	      type: "GET",
+	      url: target,
+	      error: function(data){
+	        alert("There was a problem");
+	      },
+	      success: function(data){
+	    	var t = $(e.target).attr("data-target");
+	        $(t).html(data);
+	      }
+	  });
+	})
+</script>  
+
+
+<div class="lightbox-me-container">
+
+	<div>
+		<h4><img src="@routes.Assets.at("images/node/")@Util.getIconName(obj)"/>@obj.getName()</h4>
+	</div>
+	
+	<ul id="myTab" class="nav nav-tabs">
+  		<li class="active"><a href="@routes.Node.showProperty(obj.getId).absoluteURL(request)" data-toggle="tab" data-target="#property">プロパティ</a></li>
+  		@if(Util.isDocument(obj)){
+  		<li class=""><a href="@routes.Node.showFile(obj.getId).absoluteURL(request)" data-toggle="tab" data-target="#file">ファイル</a></li>
+  		<li class=""><a href="@routes.Node.showVersion(obj.getId).absoluteURL(request)" data-toggle="tab" data-target="#version">バージョン</a></li>
+  		}
+  		
+  		<li class=""><a href="@routes.Node.showPermission(obj.getId).absoluteURL(request)" data-toggle="tab" data-target="#permission">権限</a></li>
+	</ul>
+ 
+	<div id="myTabContent" class="tab-content">
+	  	<div class="tab-pane fade active in" id="property"></div>
+	  	<div class="tab-pane fade" id="file"></div>
+	  	<div class="tab-pane fade" id="version"></div>
+	  	<div class="tab-pane fade" id="permission"></div>
+	</div>
+</div>

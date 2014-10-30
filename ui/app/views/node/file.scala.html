@@ -1,0 +1,79 @@
+@(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(parentId:String)
+@import util._
+@import org.apache.chemistry.opencmis.client.api.Document
+
+<div id="tab-edit-file">
+	@if(Util.isDocument(obj)){
+		
+		@if(Util.convertToDocument(obj).isVersionSeriesCheckedOut()){
+				<!-- checkin form -->
+				@helper.form(action=routes.Node.checkIn(obj.getId()), 'enctype -> "multipart/form-data") {
+				<fieldset>
+					<legend>ファイルを更新する</legend>
+					<div>編集したファイルをアップロードし、ロックを解除します。</div>
+					<input type="file" name="file"/>
+					<input type="hidden" name="parentId" value="@parentId"/>
+			   		<button type="submit" class="btn btn-default btn-xs">実行</button>
+			   	</fieldset>
+				}
+				
+				<br/>or<br/>
+				<!-- cancel checkout form -->
+				@helper.form(action = routes.Node.cancelCheckOut(obj.getId())) {
+				<fieldset>
+					<legend>編集をやめる</legend>
+					<div>編集前の状態に戻し、ロックを解除します。</div>
+					<input type="hidden" name="parentId" value="@parentId"/>
+			   		<button type="submit" class="btn btn-default btn-xs">実行</button>
+			   	</fieldset>
+				}
+			
+			
+		}else{
+			<!-- checkout form -->
+			
+				<legend><i class="glyphicon glyphicon-edit"/>オフライン編集のためファイルをロックする</legend>
+				<div>ファイルはロックされ、編集者以外は操作できません。<br/>編集用のコピーをダウンロードして編集してください。</div>
+				<input type="hidden" name="parentId" value="@parentId"/>
+		   		<button id="checkout" class="btn btn-default btn-xs">実行</button>
+			
+			
+			<br/>
+			or
+			<br/><br/>
+	
+			<!-- direct upload -->
+			@helper.form(action = routes.Node.upload(obj.getId()), 'enctype -> "multipart/form-data") {
+				<fieldset>
+					<legend><i class="glyphicon glyphicon-upload"/>直接ファイル更新する</legend>
+					<div>ファイルをロックせず直接更新します。バージョン履歴には反映されます。</div>
+					<input type="file"/>
+					<input type="hidden" name="parentId" value="@parentId"/>
+			   		<button type="submit" class="btn btn-default btn-xs">実行</button>
+		   		</fieldset>
+			}
+		}
+		
+	}
+</div>
+
+
+<!-- scripts -->
+<script type="text/javascript">
+	$(function(){
+		$('#checkout').click(function(){
+			$.ajax({
+				type: "POST",
+				  url: "@routes.Node.checkOut(obj.getId).absoluteURL(request)",
+				  data: "",
+				  success: function(msg){
+				        alert( "正常にロックされました。ページを更新しますのでしばらくお待ちください ");
+				        window.location.reload();
+				  },
+				  error: function(XMLHttpRequest, textStatus, errorThrown) {
+				     alert("some error:" + textStatus);
+				  }
+			});
+		});
+	});
+</script>

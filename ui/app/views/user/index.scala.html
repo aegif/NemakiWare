@@ -1,0 +1,124 @@
+@import util.Util
+@import org.apache.commons.collections.CollectionUtils
+
+@(users:List[model.User])
+
+<!DOCTYPE html>
+<html>
+	@header()
+	<body>
+		@menubar()
+		<div class="container">
+			<div class="row">
+	  			<div class="col-md-11">
+	  				<h3><i class="glyphicon glyphicon-user"></i>ユーザ管理</h3>
+	  			</div>
+	  		</div>
+		
+	  		<div class="row">
+	  			<div class="col-md-11">
+	  				<ul class="nav nav-pills">
+	  					<li>
+							<!-- create button -->
+			  				<button type="button" class="btn btn-default" id="user-create-button">新規作成</button>
+						</li>
+						<li>
+							<!-- search box -->
+							<div class="input-group">
+								@helper.form(action = routes.User.search()){
+									<input type="text" class="form-control" placeholder="Search" name="term" id="user-search-box">
+							     	<div class="input-group-btn">
+							        	<button class="btn btn-default" id="user-search" type="submit"><i class="glyphicon glyphicon-search"></i></button>
+							     	</div>
+								}
+						    	
+						 	</div>
+						</li>
+	  				</ul>
+				</div>
+				
+				<div class="col-md-11">
+					<!-- search result -->
+					<div id="user-result">
+						<table class="footable" id="user-table" data-sort="true">
+							<thead>
+								<tr>
+									<th data-sort-initial="true">ユーザID</th>
+									<th>表示名</th>
+									<th>姓</th>
+									<th>名</th>
+									<th>メール</th>
+									<th data-sort-ignore="true">アクション</th>
+								</tr>
+							</thead>
+							<tbody>
+								@for(user <- users; if(CollectionUtils.isNotEmpty(users))){
+									<tr>
+										<td>@user.id</td>
+										<td>@user.name</td>
+										<td>@user.firstName</td>
+										<td>@user.lastName</td>
+										<td>@user.email</td>
+										<td>
+											<button type='button' class='btn btn-default user-detail' user-id='@user.id'><i class="glyphicon glyphicon-wrench"></i>詳細</button>
+											<button type='button' class='btn btn-default user-delete' user-id='@user.id'><i class="glyphicon glyphicon-trash"></i>削除</button>
+										</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					</div>
+				
+				</div>
+			</div>
+		</div>
+	</body>
+</html>
+
+
+
+
+
+<!-- scripts -->
+<script type="text/javascript">
+	$(function () {
+		$('#user-table').footable();	
+	});
+</script>
+
+<script type="text/javascript">
+	$(function () {
+		//binding: create button
+		$('#user-create-button').bind('click', function(){
+			$.get("@routes.User.showBlank().absoluteURL(request)", function(html){
+				$("#floating-pane").html(html);
+				$("#floating-pane").lightbox_me(lightbox_me_config);
+			});
+		});
+	
+		//binding: show button
+		$('.user-detail').click(function(){
+			var id = $(this).attr('user-id');
+       		
+			$.get("@{Util.getContextPath(request)}users/" + id + "/edit", function(html){
+				$("#floating-pane").html(html);
+				$("#floating-pane").lightbox_me(lightbox_me_config);
+       		});	
+			
+		});
+	
+		//binding: delete button
+		$('.user-delete').click(function(){
+			//alert dialog
+			if(window.confirm("削除してよろしいですか？")){
+				var id = $(this).attr('user-id');
+	       		$.post("@{Util.getContextPath(request)}users/" + id + "/delete",{},function(data){
+	       			window.location.reload();
+	       		});	
+			}
+			
+		});
+	
+	});
+</script>
+

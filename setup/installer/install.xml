@@ -1,9 +1,9 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <installation version="1.0">
   <!-- Application info -->
   <info>
     <appname>NemakiWare</appname>
-    <appversion>1.0.GA4</appversion>
+    <appversion>1.1.1</appversion>
     <url>http://www.nemakiware.com/</url>
     <!-- 
     If you a general user install on C:¥Program Files on Windows,
@@ -36,13 +36,9 @@
 
   <!-- Variables in this fhile-->
   <variables>
-    <variable name="TOMCAT" value="apache-tomcat-7.0.41" />
+    <variable name="TOMCAT" value="apache-tomcat-8.0.14" />
+	<variable name="TargetPanel.dir.windows" value="C:\NemakiWare" />
   </variables>
-  <dynamicvariables>
-    <variable name="cmis.repository.main.thinClientUri" value=""/>
-    <variable name="cmis.repository.main.thinClientUri" value="http://localhost:3000/nodes" 
-      condition="izpack.selected.pack.nemakishare"/>
-  </dynamicvariables>
 
   <!-- Resource import -->
   <resources>
@@ -62,17 +58,14 @@
     <condition type="packselection" id="condition.pack.application.server">
       <packid>pack.application.server</packid>
     </condition>
-    <condition type="packselection" id="condition.pack.nemakiware">
-      <packid>pack.nemakiware</packid>
+    <condition type="packselection" id="condition.pack.core">
+      <packid>pack.core</packid>
     </condition>
     <condition type="packselection" id="condition.pack.couchdb.configuration">
       <packid>pack.couchdb.configuration</packid>
     </condition>
     <condition type="packselection" id="condition.pack.solr">
       <packid>pack.solr</packid>
-    </condition>
-    <condition type="packselection" id="condition.pack.nemakishare">
-      <packid>pack.nemakishare</packid>
     </condition>
     <condition type="packselection" id="condition.pack.rails">
       <packid>pack.rails</packid>
@@ -87,9 +80,9 @@
     <panel classname="TreePacksPanel"/>
     <panel classname="SummaryPanel"/>
     <panel classname="UserInputPanel" id="user.inputpanel.appserver" 
-      condition="condition.pack.application.server|condition.pack.nemakishare" />
+      condition="condition.pack.application.server" />
     <panel classname="UserInputPanel" id="user.inputpanel.repository" 
-      condition="condition.pack.nemakiware|condition.pack.couchdb.configuration|condition.pack.nemakishare" />    
+      condition="condition.pack.core|condition.pack.couchdb.configuration" />    
     <panel classname="UserInputPanel" id="user.inputpanel.couchdb.configuration" condition="condition.pack.couchdb.configuration"/>
     <!--<panel classname="UserInputPanel" id="user.inputpanel.solr" condition="condition.pack.solr"/>
     -->
@@ -108,7 +101,7 @@
        <!-- Import configuration scripts -->
       <file src="setup/installer/install-util/target/install-util.jar" targetdir="$INSTALL_PATH/setup" />
       <fileset dir="setup/installer/tomcat" targetdir="$INSTALL_PATH/setup/tomcat">
-        <exclude name="apache-tomcat-7.0.41.zip" />
+        <exclude name="apache-tomcat-7.0.54.zip" />
       </fileset>
     </pack>
 
@@ -135,13 +128,13 @@
     </pack>
 
 
-    <!-- Pack: NemakiWare -->
-    <pack id="pack.nemakiware" name="NemakiWare CMIS server" required="no">
+    <!-- Pack: Core -->
+    <pack id="pack.core" name="Core" required="no">
       <description></description>
       <depends packname="Tomcat" />
 
       <!-- Deploy WAR file -->
-      <file src="nemakiware/target/nemakiware.war" targetdir="$INSTALL_PATH/${TOMCAT}/webapps" />
+      <file src="core/target/core.war" targetdir="$INSTALL_PATH/${TOMCAT}/webapps" />
       
       <!-- Create general custom setting file -->
       <file src="setup/installer/tomcat/app-server-general.properties" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
@@ -178,20 +171,20 @@
     </pack>
 
 
-    <!-- Pack: NemakiSolr -->
+    <!-- Pack: Solr -->
     <pack id="pack.solr" name="Solr" required="no" predefined="no">
       <description></description>
       <depends packname="Tomcat" />
       
       <!-- Deploy WAR file -->
-      <file src="nemakisolr/target/solr.war" targetdir="$INSTALL_PATH/${TOMCAT}/webapps" />
+      <file src="solr/target/solr.war" targetdir="$INSTALL_PATH/${TOMCAT}/webapps" />
 
       <!-- Create Solr setting file -->
       <file src="setup/installer/tomcat/app-server-solr.properties" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
       <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-solr.properties"/>
 
       <!-- Deploy Solr home -->
-      <fileset dir="nemakisolr/solr" targetdir="$INSTALL_PATH/solr">
+      <fileset dir="solr/solr" targetdir="$INSTALL_PATH/solr">
         <include name="**"/>
         <exclude name="**/data/*/" />
       </fileset>
@@ -201,78 +194,13 @@
       <parsable targetfile="$INSTALL_PATH/${TOMCAT}/conf/Catalina/localhost/solr.xml"/>
     </pack>
 
-
-    <!-- Pack: NemakiShare -->
-    <pack id="pack.nemakishare" name="NemakiShare CMIS client" required="no">
+     <!-- Pack: Solr -->
+    <pack id="pack.ui" name="UI" required="no" predefined="no">
       <description></description>
 
-      <!-- Deploy nemakishare -->
-      <fileset dir="nemakishare" targetdir="$INSTALL_PATH/nemakishare">
-          <exclude name="vendor/bundle/" />
-          <exclude name="Gemfile.lock" />
-      </fileset> 
-      
-      <!-- Setting properties -->
-      <executable targetfile="$INSTALL_PATH/setup/install-util.jar" stage="postinstall" type="jar" keep="true">
-        <args>
-          <arg value="config-share" />
-          <arg value="$INSTALL_PATH/nemakishare/config/nemakishare_config.yml" />
-          <arg value="${tomcat.port}" />
-          <arg value="${cmis.repository.main}" />
-        </args>
-      </executable>
-
-      <!-- Import configuration scripts -->
-      <fileset dir="setup/nemakishare" targetdir="$INSTALL_PATH/setup/nemakishare">
-        <include name="**"/>
-        <exclude name="setup_nemakishare.sh"/>
-        <exclude name="setup_nemakishare.sh.tmp"/>
-      </fileset>
-      <singlefile src="setup/nemakishare/setup_nemakishare.sh.tmp" target="$INSTALL_PATH/setup/nemakishare/setup_nemakishare.sh"/>
+      <!-- Deploy WAR file -->
+      <file src="ui/target/ui.war" targetdir="$INSTALL_PATH/${TOMCAT}/webapps" />
     </pack>
-
-
-    <!-- Pack: Rails instlaller(Windows) -->
-    <pack id="pack.rails" name="Rails Installer(Windows)" required="no" condition="izpack.windowsinstall">
-      <description>For Windows only using RailsInstaller ver2.2.2. See http://railsinstaller.org/en</description>
-
-       <executable targetfile="$INSTALL_PATH/setup/nemakishare/railsinstaller-2.2.2.exe" stage="postinstall" keep="true">
-        <os family="windows" />
-      </executable>
-    </pack>
-
-
-     <!-- Pack: NemakiShare configuration -->
-    <pack id="pack.nemakishare.configuration" name="NemakiShare configuration" required="no">
-      <description></description>
-      <depends packname="NemakiShare CMIS client" />
-
-      <!-- OS: common -->
-      <fileset dir="setup/nemakishare/cache" targetdir="$INSTALL_PATH/nemakishare/vendor/cache">
-        <include name="**" />
-      </fileset>
-
-      <!-- OS: Unix-like -->
-      <executable targetfile="$INSTALL_PATH/setup/nemakishare/setup_nemakishare.sh" stage="postinstall" keep="true">
-        <os family="unix" />
-        <os family="mac" />
-          <args>
-            <arg value="$INSTALL_PATH" />
-          </args>
-      </executable> 
-
-      <!-- OS: Windows -->
-      <file src="setup/nemakishare/v8.dll" targetdir="${ruby.bin}">
-        <os family="windows" />
-      </file>
-      <executable targetfile="$INSTALL_PATH/setup/nemakishare/setup_nemakishare.bat" stage="postinstall" keep="true">
-        <os family="windows" />
-          <args>
-            <arg value="$INSTALL_PATH" />
-          </args>
-      </executable> 
-    </pack>
-
 
     <!-- Pack: Delete tmp files -->
     <pack id="pack.delete.tmp" name="Delete tmp files" required="yes" hidden="true">
@@ -281,12 +209,6 @@
         <args>
           <arg value="delete-tmp-files" />
           <arg value="$INSTALL_PATH/setup/tomcat" />
-        </args>
-      </executable>
-      <executable targetfile="$INSTALL_PATH/setup/install-util.jar" stage="postinstall" type="jar" keep="false">
-        <args>
-          <arg value="delete-tmp-files" />
-          <arg value="$INSTALL_PATH/setup/nemakishare" />
         </args>
       </executable>
     </pack>
