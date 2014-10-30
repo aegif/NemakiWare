@@ -33,7 +33,7 @@ public class Group extends Controller {
 	public static Result search(String term){
     	JsonNode result = Util.getJsonResponse("http://localhost:8080/nemakiware/rest/group/search?query=" + term);
 
-    	List<model.Group> list = new ArrayList<>();
+    	List<model.Group> list = new ArrayList<model.Group>();
     	
     	//TODO check status
     	JsonNode groups = result.get("result");
@@ -50,7 +50,7 @@ public class Group extends Controller {
         		//member(user)
         		group.usersSize = node.get("usersSize").asInt();
         		if(!node.get("users").isNull()){
-        			List<String> memberUsers = new ArrayList<>();
+        			List<String> memberUsers = new ArrayList<String>();
             		for(final JsonNode userId : node.get("users")){
             			memberUsers.add(userId.asText());
             		}
@@ -59,7 +59,7 @@ public class Group extends Controller {
         		//member(group)
         		group.groupsSize = node.get("groupsSize").asInt();
         		if(!node.get("groups").isNull()){
-        			List<String> memberGroups = new ArrayList<>();
+        			List<String> memberGroups = new ArrayList<String>();
             		for(final JsonNode groupId : node.get("groups")){
             			memberGroups.add(groupId.asText());
             		}
@@ -132,7 +132,7 @@ public class Group extends Controller {
 			
 			
 			//List of (userId,userName)
-			List<Principal> users = new ArrayList<>();
+			List<Principal> users = new ArrayList<Principal>();
 			List<String> userIds = group.users;
 			if(CollectionUtils.isNotEmpty(userIds)){
 				for(String userId : userIds){
@@ -145,7 +145,7 @@ public class Group extends Controller {
 			}
 			
 			//List of (groupId,groupName)
-			List<Principal> groups = new ArrayList<>();
+			List<Principal> groups = new ArrayList<Principal>();
 			List<String> groupIds = group.groups;
 			if(CollectionUtils.isNotEmpty(groupIds)){
 				for(String groupId : groupIds){
@@ -157,7 +157,7 @@ public class Group extends Controller {
 				}
 			}
 			
-			List<Principal>principals = new ArrayList<>();
+			List<Principal>principals = new ArrayList<Principal>();
 			principals.addAll(users);
 			principals.addAll(groups);
 			
@@ -199,7 +199,7 @@ public class Group extends Controller {
     	String users = input.get("users");
     	String groups = input.get("groups");
     	
-    	Map<String, String>params = new HashMap<>();
+    	Map<String, String>params = new HashMap<String, String>();
     	params.put("id", groupId);
     	params.put("name", groupName);
     	params.put("users", users);
