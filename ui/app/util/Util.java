@@ -23,6 +23,7 @@ import org.apache.chemistry.opencmis.client.api.Folder;
 import org.apache.chemistry.opencmis.client.api.ObjectType;
 import org.apache.chemistry.opencmis.client.api.OperationContext;
 import org.apache.chemistry.opencmis.client.api.Property;
+import org.apache.chemistry.opencmis.client.api.Rendition;
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.client.api.SessionFactory;
 import org.apache.chemistry.opencmis.client.runtime.SessionFactoryImpl;
@@ -564,5 +565,18 @@ public class Util {
 	 
 	 public static String tail(String str){
 		 return str.substring(1, str.length());
+	 }
+	 
+	 public static boolean existPreview(CmisObject obj){
+		 List<Rendition>renditions = obj.getRenditions();
+		 if(CollectionUtils.isNotEmpty(renditions)){
+			 for(Rendition rendition : renditions){
+				 if("cmis:preview".equals(rendition.getKind())){
+					 return true;
+				 }
+			 }
+		 }
+    	
+	    return false;
 	 }
 }

@@ -21,6 +21,7 @@ import org.apache.chemistry.opencmis.client.api.ObjectId;
 import org.apache.chemistry.opencmis.client.api.ObjectType;
 import org.apache.chemistry.opencmis.client.api.OperationContext;
 import org.apache.chemistry.opencmis.client.api.Property;
+import org.apache.chemistry.opencmis.client.api.Rendition;
 import org.apache.chemistry.opencmis.client.api.SecondaryType;
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.client.api.Tree;
@@ -35,7 +36,6 @@ import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
-import org.apache.chemistry.opencmis.commons.spi.ObjectService;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
@@ -47,10 +47,10 @@ import play.data.Form;
 import play.mvc.Controller;
 import play.mvc.Http.MultipartFormData;
 import play.mvc.Http.MultipartFormData.FilePart;
-import play.mvc.Http.RequestBody;
 import play.mvc.Security.Authenticated;
 import play.mvc.Result;
 import util.Util;
+import views.html.node.preview;
 import views.html.node.tree;
 import views.html.node.version;
 import views.html.node.blank;
@@ -103,31 +103,37 @@ public class Node extends Controller {
     	return showChildren(o.getId());
     }
 
-    public static Result showDetail(String id) {
+    public static Result search(String term){
     	Session session = createSession();
 
-    	FileableCmisObject o = (FileableCmisObject)session.getObject(id);
+    	OperationContext ctxt = session.getDefaultContext();
 
-    	//Get parentId
-    	String parentId = o.getParents().get(0).getId();
-
-    	return ok(detail.render(o, parentId));
-    }
-    
-    public static Result showVersion(String id){
-    	Session session = createSession();
-
-    	CmisObject o = session.getObject(id);
-
-    	List<Document> result = new ArrayList<Document>();
-
-    	if(Util.isDocument(o)){
-    		Document doc = (Document) o;
-    		result = doc.getAllVersions();
+    	List<CmisObject> list = new ArrayList<CmisObject>();
+    	//Build WHERE clause(cmis:document)
+    	MessageFormat docFormat = new MessageFormat("cmis:name LIKE ''%{0}%'' OR CONTAINS(''{0}'')");
+    	String docStatement = "";
+    	if(StringUtils.isNotBlank(term)){
+    		docStatement = docFormat.format(new String[]{term});
+    	}
+    	ItemIterable<CmisObject> docResults = session.queryObjects("cmis:document", docStatement, false, ctxt);
+    	Iterator<CmisObject> docItr = docResults.iterator();
+    	while(docItr.hasNext()){
+    		list.add(docItr.next());
     	}
 
-    	return ok(version.render(result));
+    	//Build WHERE clause(cmis:folder)
+    	MessageFormat folderFormat = new MessageFormat("cmis:name LIKE ''%{0}%''");
+    	String folderStatement = "";
+    	if(StringUtils.isNotBlank(term)){
+    		folderStatement = folderFormat.format(new String[]{term});
+    	}
+    	ItemIterable<CmisObject> folderResults = session.queryObjects("cmis:folder", folderStatement, false, ctxt);
+    	Iterator<CmisObject> folderItr = folderResults.iterator();
+    	while(folderItr.hasNext()){
+    		list.add(folderItr.next());
+    	}
 
+    	return ok(search.render(term, list));
     }
 
     public static Result showBlank(){
@@ -156,6 +162,194 @@ public class Node extends Controller {
     }
 
 
+    public static Result showDetail(String id) {
+    	Session session = createSession();
+
+    	FileableCmisObject o = (FileableCmisObject)session.getObject(id);
+
+    	//Get parentId
+    	String parentId = o.getParents().get(0).getId();
+
+    	return ok(detail.render(o, parentId));
+    }
+    
+    public static Result showProperty(String id){
+    	Session session = createSession();
+
+    	FileableCmisObject o = (FileableCmisObject)session.getObject(id);
+
+
+    	List<Property<?>> properties = o.getProperties();
+    	List<SecondaryType>secondaryTypes = o.getSecondaryTypes();
+    	
+    	//divide
+    	List<Property<?>>primaries = new ArrayList<Property<?>>();
+    	Map<SecondaryType, List<Property<?>>>secondaries = new HashMap<SecondaryType, List<Property<?>>>();
+    	
+    	if(CollectionUtils.isNotEmpty(secondaryTypes)){
+    		Iterator<SecondaryType> itr = secondaryTypes.iterator();
+    		while(itr.hasNext()){
+    			SecondaryType st = itr.next();
+    			secondaries.put(st, new ArrayList<Property<?>>());
+    		}
+    	}
+    	
+    	for(Property<?> p : properties){
+    		boolean isSecondary = false;
+
+    		if(CollectionUtils.isNotEmpty(secondaryTypes)){
+    			Iterator<SecondaryType> itr2 = secondaryTypes.iterator();
+        		while(itr2.hasNext()){
+        			SecondaryType st = itr2.next();
+        			if(st.getPropertyDefinitions().containsKey(p.getId())){
+        				secondaries.get(st).add(p);
+        				isSecondary = true;
+        			}
+        		}
+    		}
+    		
+    		if(!isSecondary){
+    			primaries.add(p);
+    		}
+    		
+    	}
+    	
+    	return ok(property.render(o, primaries, secondaries));
+    }
+    
+    public static Result showFile(String id){
+    	Session session = createSession();
+
+    	FileableCmisObject o = (FileableCmisObject)session.getObject(id);
+
+    	//Get parentId
+    	String parentId = o.getParents().get(0).getId();
+
+
+
+    	return ok(file.render(o, parentId));
+
+    }
+    
+    public static Result download(String id){
+    	Session session = createSession();
+
+    	CmisObject obj = session.getObject(id);
+    	if(!Util.isDocument(obj)){
+    		//TODO logging
+    		return badRequest();
+    	}
+    	
+    	Document doc = (Document)obj;
+    	ContentStream cs = doc.getContentStream();
+
+    	File tmpFile = null;
+		try {
+			tmpFile = Util.convertInputStreamToFile(cs);
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+		//TODO better solution for encoding file name
+		
+		response().setHeader("Content-disposition", "attachment; filename="+ doc.getName());
+		response().setContentType(cs.getMimeType());
+		
+		
+    	return ok(tmpFile);
+    }
+    
+    public static Result downloadPreview(String id){
+    	Session session = createSession();
+
+    	CmisObject obj = session.getObject(id);
+    	if(!Util.isDocument(obj)){
+    		//TODO logging
+    		return badRequest();
+    	}
+    	if(!Util.existPreview(obj)){
+    		//TODO logging
+    		return badRequest();
+    	}
+    	
+    	List<Rendition> renditions = obj.getRenditions();
+    	Rendition preview = null;
+    	for(Rendition rendition : renditions){
+    		if("cmis:preview".equals(rendition.getKind())){
+    			preview = rendition;
+    		}
+    	}
+    	
+    	//Download
+    	File tmpFile = null;
+		try {
+			tmpFile = Util.convertInputStreamToFile(preview.getContentStream());
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+		//TODO better solution for encoding file name
+		
+		response().setHeader("Content-disposition", "attachment; filename="+ obj.getName() + ".pdf");
+		response().setContentType(preview.getContentStream().getMimeType());
+		
+    	return ok(tmpFile);
+    }
+    
+    public static Result showVersion(String id){
+    	Session session = createSession();
+
+    	CmisObject o = session.getObject(id);
+
+    	List<Document> result = new ArrayList<Document>();
+
+    	if(Util.isDocument(o)){
+    		Document doc = (Document) o;
+    		result = doc.getAllVersions();
+    	}
+
+    	return ok(version.render(result));
+
+    }
+
+    public static Result showPreview(String id){
+    	Session session = createSession();
+    	CmisObject obj = session.getObject(id);
+    	
+    	return ok(preview.render(obj));
+    }
+    
+    public static Result showPermission(String id){
+ 	   Session session = createSession();
+ 	   
+ 	   CmisObject obj = session.getObject(id);
+ 	   
+ 	   //Get permission types
+ 	   List<PermissionDefinition> permissionDefs = session.getRepositoryInfo().getAclCapabilities().getPermissions();
+ 	   
+ 	   //Principals
+ 	   List<Principal>members = new ArrayList<Principal>();
+ 	   if(obj.getAcl() != null){
+ 		   List<Ace> list = obj.getAcl().getAces();
+ 		   if(CollectionUtils.isNotEmpty(list)){
+ 			   String anyone = session.getRepositoryInfo().getPrincipalIdAnyone();
+ 			   String anonymous = session.getRepositoryInfo().getPrincipalIdAnonymous();
+ 			   for(Ace ace : list){
+ 				   String principalId = ace.getPrincipalId();
+ 				   //call API
+ 				   Principal p = getPrincipal(principalId, anyone, anonymous);
+ 				   if(p != null){
+ 					   members.add(p);
+ 				   }
+ 			   }
+ 		   }
+ 	   }
+
+ 	   return ok(views.html.node.permission.render(obj, members, permissionDefs));
+    }
+    
     public static Result create(){
     	DynamicForm input = Form.form();
     	input = input.bindFromRequest();
@@ -221,66 +415,6 @@ public class Node extends Controller {
     	}
     	
     	return redirectToParent(input);
-    }
-
-   
-    
-    
-    private static Result redirectToParent(DynamicForm input){
-    	String parentId = Util.getFormData(input, PropertyIds.PARENT_ID);
-    	//TODO fix hard code
-    	if ("".equals(parentId) || "/".equals(parentId)){
-    		return redirect(routes.Node.index());
-    	}else{
-    		return redirect(routes.Node.showChildren(parentId));
-    	}
-    }
-
-
-
-    public static Result showProperty(String id){
-    	Session session = createSession();
-
-    	FileableCmisObject o = (FileableCmisObject)session.getObject(id);
-
-
-    	List<Property<?>> properties = o.getProperties();
-    	List<SecondaryType>secondaryTypes = o.getSecondaryTypes();
-    	
-    	//divide
-    	List<Property<?>>primaries = new ArrayList<Property<?>>();
-    	Map<SecondaryType, List<Property<?>>>secondaries = new HashMap<SecondaryType, List<Property<?>>>();
-    	
-    	if(CollectionUtils.isNotEmpty(secondaryTypes)){
-    		Iterator<SecondaryType> itr = secondaryTypes.iterator();
-    		while(itr.hasNext()){
-    			SecondaryType st = itr.next();
-    			secondaries.put(st, new ArrayList<Property<?>>());
-    		}
-    	}
-    	
-    	
-    	for(Property<?> p : properties){
-    		boolean isSecondary = false;
-
-    		if(CollectionUtils.isNotEmpty(secondaryTypes)){
-    			Iterator<SecondaryType> itr2 = secondaryTypes.iterator();
-        		while(itr2.hasNext()){
-        			SecondaryType st = itr2.next();
-        			if(st.getPropertyDefinitions().containsKey(p.getId())){
-        				secondaries.get(st).add(p);
-        				isSecondary = true;
-        			}
-        		}
-    		}
-    		
-    		if(!isSecondary){
-    			primaries.add(p);
-    		}
-    		
-    	}
-    	
-    	return ok(property.render(o, primaries, secondaries));
     }
 
     public static Result update(String id){
@@ -385,20 +519,7 @@ public class Node extends Controller {
     	return ace;
     }
 
-    public static Result showFile(String id){
-    	Session session = createSession();
-
-    	FileableCmisObject o = (FileableCmisObject)session.getObject(id);
-
-    	//Get parentId
-    	String parentId = o.getParents().get(0).getId();
-
-
-
-    	return ok(file.render(o, parentId));
-
-    }
-
+   
 
     public static Result upload(String id){
 
@@ -422,35 +543,6 @@ public class Node extends Controller {
 
 
     	return redirectToParent(input);
-    }
-
-    public static Result download(String id){
-    	Session session = createSession();
-
-    	CmisObject obj = session.getObject(id);
-    	if(!Util.isDocument(obj)){
-    		//TODO logging
-    		return badRequest();
-    	}
-    	
-    	Document doc = (Document)obj;
-    	ContentStream cs = doc.getContentStream();
-
-    	File tmpFile = null;
-		try {
-			tmpFile = Util.convertInputStreamToFile(cs);
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		
-		//TODO better solution for encoding file name
-		
-		response().setHeader("Content-disposition", "attachment; filename="+ doc.getName());
-		response().setContentType(cs.getMimeType());
-		
-		
-    	return ok(tmpFile);
     }
 
     public static Result delete(String id){
@@ -534,68 +626,6 @@ public class Node extends Controller {
     	return redirectToParent(input);
     }
 
-    public static Result search(String term){
-    	Session session = createSession();
-
-    	OperationContext ctxt = session.getDefaultContext();
-
-    	List<CmisObject> list = new ArrayList<CmisObject>();
-    	//Build WHERE clause(cmis:document)
-    	MessageFormat docFormat = new MessageFormat("cmis:name LIKE ''%{0}%'' OR CONTAINS(''{0}'')");
-    	String docStatement = "";
-    	if(StringUtils.isNotBlank(term)){
-    		docFormat.format(new String[]{term});
-    	}
-    	ItemIterable<CmisObject> docResults = session.queryObjects("cmis:document", docStatement, false, ctxt);
-    	Iterator<CmisObject> docItr = docResults.iterator();
-    	while(docItr.hasNext()){
-    		list.add(docItr.next());
-    	}
-
-    	//Build WHERE clause(cmis:folder)
-    	MessageFormat folderFormat = new MessageFormat("cmis:name LIKE ''%{0}%''");
-    	String folderStatement = "";
-    	if(StringUtils.isNotBlank(folderStatement)){
-    		folderFormat.format(new String[]{term});
-    	}
-    	ItemIterable<CmisObject> folderResults = session.queryObjects("cmis:folder", folderStatement, false, ctxt);
-    	Iterator<CmisObject> folderItr = folderResults.iterator();
-    	while(folderItr.hasNext()){
-    		list.add(folderItr.next());
-    	}
-
-    	return ok(search.render(term, list));
-    }
-
-   public static Result showPermission(String id){
-	   Session session = createSession();
-	   
-	   CmisObject obj = session.getObject(id);
-	   
-	   //Get permission types
-	   List<PermissionDefinition> permissionDefs = session.getRepositoryInfo().getAclCapabilities().getPermissions();
-	   
-	   //Principals
-	   List<Principal>members = new ArrayList<Principal>();
-	   if(obj.getAcl() != null){
-		   List<Ace> list = obj.getAcl().getAces();
-		   if(CollectionUtils.isNotEmpty(list)){
-			   String anyone = session.getRepositoryInfo().getPrincipalIdAnyone();
-			   String anonymous = session.getRepositoryInfo().getPrincipalIdAnonymous();
-			   for(Ace ace : list){
-				   String principalId = ace.getPrincipalId();
-				   //call API
-				   Principal p = getPrincipal(principalId, anyone, anonymous);
-				   if(p != null){
-					   members.add(p);
-				   }
-			   }
-		   }
-	   }
-
-	   return ok(views.html.node.permission.render(obj, members, permissionDefs));
-   }
-   
    private static Principal getPrincipal(String principalId, String anyone, String anonymous){
 	   //anyone
 	   if(anyone.equals(principalId)){
@@ -627,5 +657,14 @@ public class Node extends Controller {
 
 	   return null;
    }
-
+   
+   private static Result redirectToParent(DynamicForm input){
+   	String parentId = Util.getFormData(input, PropertyIds.PARENT_ID);
+   	//TODO fix hard code
+   	if ("".equals(parentId) || "/".equals(parentId)){
+   		return redirect(routes.Node.index());
+   	}else{
+   		return redirect(routes.Node.showChildren(parentId));
+   	}
+   }
 }
