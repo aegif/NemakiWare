@@ -18,10 +18,12 @@ import org.apache.chemistry.opencmis.client.api.FileableCmisObject;
 import org.apache.chemistry.opencmis.client.api.Folder;
 import org.apache.chemistry.opencmis.client.api.ItemIterable;
 import org.apache.chemistry.opencmis.client.api.ObjectId;
+import org.apache.chemistry.opencmis.client.api.ObjectType;
 import org.apache.chemistry.opencmis.client.api.OperationContext;
 import org.apache.chemistry.opencmis.client.api.Property;
 import org.apache.chemistry.opencmis.client.api.SecondaryType;
 import org.apache.chemistry.opencmis.client.api.Session;
+import org.apache.chemistry.opencmis.client.api.Tree;
 import org.apache.chemistry.opencmis.client.runtime.ObjectIdImpl;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Ace;
@@ -33,6 +35,7 @@ import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
+import org.apache.chemistry.opencmis.commons.spi.ObjectService;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
@@ -44,6 +47,7 @@ import play.data.Form;
 import play.mvc.Controller;
 import play.mvc.Http.MultipartFormData;
 import play.mvc.Http.MultipartFormData.FilePart;
+import play.mvc.Http.RequestBody;
 import play.mvc.Security.Authenticated;
 import play.mvc.Result;
 import util.Util;
@@ -139,49 +143,81 @@ public class Node extends Controller {
     	}else if(baseType.equals("cmis:document")){
 
     	}
-
-    	return ok(blank.render(baseType, objectType, parentId));
+    	
+    	Session session = createSession();
+    	//ProeprtyDefinitions
+    	Map<String, PropertyDefinition<?>> _propertyDefinitions = session.getTypeDefinition(objectType).getPropertyDefinitions();
+    	List<PropertyDefinition<?>> propertyDefinitions = new ArrayList<PropertyDefinition<?>>(_propertyDefinitions.values());   			
+    	
+    	//ObjectTypes(of the baseType)
+    	List<Tree<ObjectType>> typeDescendants = session.getTypeDescendants(baseType, -1, true);
+    	
+    	return ok(blank.render(baseType, objectType, parentId, propertyDefinitions, typeDescendants));
     }
-
 
 
     public static Result create(){
     	DynamicForm input = Form.form();
     	input = input.bindFromRequest();
-    	//Extract form parameters
-    	String parentId = input.get("cmis:parentId");
-    	String objectType = input.get("cmis:objectType");
 
-    	//Set CMIS parameters
-    	Map<String, Object> param = new HashMap<String, Object>();
-    	param.put(PropertyIds.OBJECT_TYPE_ID, objectType);
-    	ObjectId _parentId = new ObjectIdImpl(parentId);
-
-    	Session session = createSession();
+    	//Extract special property
+    	String objectTypeId = Util.getFormData(input, PropertyIds.OBJECT_TYPE_ID);
+    	String _parentId = Util.getFormData(input, PropertyIds.PARENT_ID);
+    	ObjectId parentId = new ObjectIdImpl(_parentId);
     	
-    	switch (Util.getBaseType(session, objectType)){
-		case CMIS_DOCUMENT:
-			MultipartFormData body = request().body().asMultipartFormData();
-
+    	//Check dragAndDrop
+    	boolean dragAndDrop = (Util.getFormData(input, "dragAndDrop") == null) ? false : Boolean.valueOf(Util.getFormData(input, "dragAndDrop")); 
+    	
+    	Session session = createSession();
+    	if(dragAndDrop){
+    		//multiple file upload
+    		MultipartFormData body = request().body().asMultipartFormData();
     		List<FilePart> files = body.getFiles();
-    		//TODO package name
-
-    		if(CollectionUtils.isNotEmpty(files)){
-    			for(FilePart file : files){
-    				ContentStream cs = Util.convertFileToContentStream(session, file);
-    	        		param.put(PropertyIds.NAME, cs.getFileName());
-    	        	session.createDocument(param, _parentId, cs, VersioningState.MAJOR);
-    			}
-    		}
-			break;
-		case CMIS_FOLDER:
-			String name = input.get("name");
-    		param.put(PropertyIds.NAME, name);
-    		session.createFolder(param, _parentId);
-			break;
-		default:
-			break;
-    		
+			for(FilePart file : files){
+				ContentStream cs = Util.convertFileToContentStream(session, file);
+				
+				//Set minimum required property
+				HashMap<String, Object>param = new HashMap<String, Object>();
+				param.put(PropertyIds.OBJECT_TYPE_ID, objectTypeId);
+				param.put(PropertyIds.NAME, cs.getFileName());
+	        	
+				session.createDocument(param, parentId, cs, VersioningState.MAJOR);
+			}
+    	}else{
+        	//Set CMIS parameter
+        	Map<String, PropertyDefinition<?>> pdfs = session.getTypeDefinition(objectTypeId).getPropertyDefinitions();
+        	List<Updatability> upds = new ArrayList<Updatability>();
+        	upds.add(Updatability.ONCREATE);
+        	upds.add(Updatability.READWRITE);
+        	HashMap<String, Object> param = Util.buildProperties(pdfs, input, upds);
+        	param.put(PropertyIds.OBJECT_TYPE_ID, objectTypeId);
+        	
+        	//Document/Folder specific 
+        	switch (Util.getBaseType(session, objectTypeId)){
+    		case CMIS_DOCUMENT:
+    			MultipartFormData body = request().body().asMultipartFormData();
+        		List<FilePart> files = body.getFiles();
+        		
+        		if(CollectionUtils.isEmpty(files)){
+        			//TODO error
+        		}else if(files.size() == 1){
+        			ContentStream cs = Util.convertFileToContentStream(session, files.get(0));
+        			if(param.get(PropertyIds.NAME) == null){
+        				param.put(PropertyIds.NAME, cs.getFileName());
+        			}
+        			session.createDocument(param, parentId, cs, VersioningState.MAJOR);
+        		}else{
+        			// TODO
+        		}
+        		
+    			break;
+    		case CMIS_FOLDER:
+        		session.createFolder(param, parentId);
+    			break;
+    		default:
+    			break;
+        		
+        	}
     	}
     	
     	return redirectToParent(input);
@@ -189,8 +225,9 @@ public class Node extends Controller {
 
    
     
+    
     private static Result redirectToParent(DynamicForm input){
-    	String parentId = input.get("parentId");
+    	String parentId = Util.getFormData(input, PropertyIds.PARENT_ID);
     	//TODO fix hard code
     	if ("".equals(parentId) || "/".equals(parentId)){
     		return redirect(routes.Node.index());
@@ -407,8 +444,11 @@ public class Node extends Controller {
 			e.printStackTrace();
 		}
 		
+		//TODO better solution for encoding file name
+		
 		response().setHeader("Content-disposition", "attachment; filename="+ doc.getName());
 		response().setContentType(cs.getMimeType());
+		
 		
     	return ok(tmpFile);
     }
