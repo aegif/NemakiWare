@@ -6,6 +6,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
+import play.Play;
 import play.data.DynamicForm;
 import play.data.Form;
 import play.libs.Json;
@@ -22,6 +23,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 @Authenticated(Secured.class)
 public class User extends Controller {
 
+	private static String coreRestUrl = Play.application().configuration().getString("nemaki.core.url") + "rest/";
+	private static String endPoint = coreRestUrl + "user/";
+	
+	
 	public static Result index(){
 		List<model.User>emptyList = new ArrayList<model.User>();
 		
@@ -29,7 +34,7 @@ public class User extends Controller {
 	    }
 
 	public static Result search(String term){
-    	JsonNode result = Util.getJsonResponse("http://localhost:8080/nemakiware/rest/user/search?query=" + term);
+    	JsonNode result = Util.getJsonResponse(endPoint + "search?query=" + term);
 
     	//TODO check status
     	JsonNode users = result.get("result");
@@ -70,9 +75,22 @@ public class User extends Controller {
 		return ok(blank.render());
 	}
 
+	public static Result showDetail(String id){
+		JsonNode result = Util.getJsonResponse(endPoint + "show/" + id);
+		
+		if("success".equals(result.get("status").asText())){
+			JsonNode _user = result.get("user");
+			model.User user = new model.User(_user);
+			return ok(views.html.user.detail.render(user));
+		}else{
+			//TODO
+			return ok();
+		}
+	}
+	
 	public static Result create(){
     	Map<String, String>params = buildParams();
-    	JsonNode result = Util.postJsonResponse("http://localhost:8080/nemakiware/rest/user/create/" + params.get("id"), params);
+    	JsonNode result = Util.postJsonResponse(endPoint + "create/" + params.get("id"), params);
 
     	if(isSuccess(result)){
     		flash("flash message");
@@ -82,46 +100,12 @@ public class User extends Controller {
     		return ok();
     	}
 	}
-
-	public static Result delete(String id){
-		String url = "http://localhost:8080/nemakiware/rest/user/delete/" + id;
-		JsonNode result = Util.deleteJsonResponse(url);
-		
-		//TODO error
-		return redirect(routes.User.index());
-	}
-
-	public static Result show(String id){
-		JsonNode result = Util.getJsonResponse("http://localhost:8080/nemakiware/rest/user/show/" + id);
-		
-		if("success".equals(result.get("status").asText())){
-			JsonNode _user = result.get("user");
-			model.User user = new model.User(_user);
-			return ok(views.html.user.show.render(user));
-		}else{
-			//TODO
-			return ok();
-		}
-	}
-	
-	public static Result edit(String id){
-		JsonNode result = Util.getJsonResponse("http://localhost:8080/nemakiware/rest/user/show/" + id);
-		
-		if("success".equals(result.get("status").asText())){
-			JsonNode _user = result.get("user");
-			model.User user = new model.User(_user);
-			return ok(views.html.user.edit.render(user));
-		}else{
-			//TODO
-			return ok();
-		}
-	}
 	
 	public static Result update(String id){
     	
     	Map<String, String>params = buildParams();
     	
-    	JsonNode result = Util.putJsonResponse("http://localhost:8080/nemakiware/rest/user/update/" + id , params);
+    	JsonNode result = Util.putJsonResponse(endPoint + "update/" + id , params);
     	
     	if(isSuccess(result)){
     		return redirect(routes.User.index());
@@ -129,8 +113,13 @@ public class User extends Controller {
     		//TODO
     		return ok();
     	}
-    	
-    	
+	}
+
+	public static Result delete(String id){
+		JsonNode result = Util.deleteJsonResponse(endPoint + "delete/" + id);
+		
+		//TODO error
+		return redirect(routes.User.index());
 	}
 	
 	private static boolean isSuccess(JsonNode result){
