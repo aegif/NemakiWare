@@ -1,0 +1,21 @@
+@import util.Util
+@import org.apache.chemistry.opencmis.client.api.CmisObject
+@import org.apache.chemistry.opencmis.client.api.Rendition
+
+@(obj:CmisObject)
+
+<div id="tab-edit">
+	<div class="container">
+		<div class="row" style="margin-top:15px; margin-bottom:15px">
+			<div class="col-sm-5">
+				@if(Util.existPreview(obj) == null){
+					<div>プレビューがありません</div>
+				}else{
+					<a href="@routes.Node.downloadPreview(obj.getId)">
+						<button class="btn btn-default btn-primary"><i class="glyphicon glyphicon-eye-open"></i>プレビューを開く</button>
+					</a>
+				}
+			</div>
+		</div>
+	</div>
+</div>

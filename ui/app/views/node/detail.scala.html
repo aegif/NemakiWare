@@ -42,8 +42,8 @@
   		@if(Util.isDocument(obj)){
   		<li class=""><a href="@routes.Node.showFile(obj.getId).absoluteURL(request)" data-toggle="tab" data-target="#file">ファイル</a></li>
   		<li class=""><a href="@routes.Node.showVersion(obj.getId).absoluteURL(request)" data-toggle="tab" data-target="#version">バージョン</a></li>
+  		<li class=""><a href="@routes.Node.showPreview(obj.getId).absoluteURL(request)" data-toggle="tab" data-target="#preview">プレビュー</a></li>
   		}
-  		
   		<li class=""><a href="@routes.Node.showPermission(obj.getId).absoluteURL(request)" data-toggle="tab" data-target="#permission">権限</a></li>
 	</ul>
  
@@ -51,6 +51,7 @@
 	  	<div class="tab-pane fade active in" id="property"></div>
 	  	<div class="tab-pane fade" id="file"></div>
 	  	<div class="tab-pane fade" id="version"></div>
+	  	<div class="tab-pane fade" id="preview"></div>
 	  	<div class="tab-pane fade" id="permission"></div>
 	</div>
 </div>
