@@ -12,7 +12,7 @@
 	<div style="display:none">
 	@{
 		for(p <- primaries){
-			if(Util.isEditable(p)){
+			if(Util.isReadWrite(p)){
 				editables.add("#" + p.getId)
 			}
 		}

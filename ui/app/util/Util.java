@@ -26,12 +26,15 @@ import org.apache.chemistry.opencmis.client.api.Property;
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.client.api.SessionFactory;
 import org.apache.chemistry.opencmis.client.runtime.SessionFactoryImpl;
+import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.SessionParameter;
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.BindingType;
+import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.commons.collections.CollectionUtils;
@@ -60,6 +63,8 @@ import org.apache.http.message.BasicNameValuePair;
 
 import play.Play;
 import play.api.http.MediaRange;
+import play.data.DynamicForm;
+import play.data.Form;
 import play.libs.Json;
 import play.mvc.Http.MultipartFormData.FilePart;
 import play.mvc.Http.Request;
@@ -434,8 +439,55 @@ public class Util {
 		return result;
 	}
 	
+	public static Boolean isOnCreate(Property<?>property){
+		PropertyDefinition<?> pdf = property.getDefinition();
+		return isOnCreate(pdf);
+	}
+	
+	public static Boolean isOnCreate(PropertyDefinition<?>propertyDefinition){
+		Updatability updatability = propertyDefinition.getUpdatability();
+		if(Updatability.ONCREATE == updatability){
+			return true;
+		}else{
+			return false;
+		}
+	}
+	
+	public static Boolean isReadWrite(Property<?>property){
+		PropertyDefinition<?> pdf = property.getDefinition();
+		return isEditable(pdf);
+	}
+	
+	public static Boolean isReadWrite(PropertyDefinition<?>propertyDefinition){
+		Updatability updatability = propertyDefinition.getUpdatability();
+		if(Updatability.READWRITE == updatability || Updatability.WHENCHECKEDOUT == updatability){
+			return true;
+		}else{
+			return false;
+		}
+	}
+	
+	public static Boolean isWhenCheckedOut(Property<?>property){
+		PropertyDefinition<?> pdf = property.getDefinition();
+		return isEditable(pdf);
+	}
+	
+	public static Boolean isWhenCheckedOut(PropertyDefinition<?>propertyDefinition){
+		Updatability updatability = propertyDefinition.getUpdatability();
+		if(Updatability.READWRITE == updatability || Updatability.WHENCHECKEDOUT == updatability){
+			return true;
+		}else{
+			return false;
+		}
+	}
+	
 	public static Boolean isEditable(Property<?>property){
-		Updatability updatability = property.getDefinition().getUpdatability();
+		PropertyDefinition<?> pdf = property.getDefinition();
+		return isEditable(pdf);
+	}
+	
+	public static Boolean isEditable(PropertyDefinition<?>propertyDefinition){
+		Updatability updatability = propertyDefinition.getUpdatability();
 		if(Updatability.READWRITE == updatability || Updatability.WHENCHECKEDOUT == updatability){
 			return true;
 		}else{
@@ -468,5 +520,53 @@ public class Util {
 	 public static BaseTypeId getBaseType(Session cmisSession, String objectTypeId){
 		 ObjectType objectType = cmisSession.getTypeDefinition(objectTypeId, true);
 		 return objectType.getBaseTypeId();
+	 }
+	 
+	 public static String getFormData(DynamicForm input, String key){
+		 String value = input.get(key);
+		 if(value == null){
+			 return getFormDataWithoutColon(input, key);
+		 }else{
+			 return value;
+		 }
+	 }
+	 
+	 public static String getFormDataWithoutColon(DynamicForm input, String keyWithColon){
+		 String key = keyWithColon.replace(":", "");
+		 return input.get(key);
+	 }
+	 
+	 public static HashMap<String,Object> buildProperties(Map<String, PropertyDefinition<?>>propertyDefinitions, DynamicForm input, List<Updatability>updatabilities){
+		 HashMap<String,Object>data = new HashMap<String, Object>();
+		 
+		 for(Entry<String, PropertyDefinition<?>> entry : propertyDefinitions.entrySet()){
+			 PropertyDefinition<?>pdf = entry.getValue();
+			 
+			//TODO work around
+			 if(pdf.getId().equals(PropertyIds.SECONDARY_OBJECT_TYPE_IDS) ||
+				pdf.getId().equals(PropertyIds.OBJECT_TYPE_ID)){
+				 continue;
+			 }
+			 
+			 //TODO work around: skip multiple value
+			 if(pdf.getCardinality() == Cardinality.MULTI){
+				 continue;
+			 }
+			 
+			 //TODO work around: skip obligatory choice value
+			 if(CollectionUtils.isNotEmpty(pdf.getChoices()) && !pdf.isOpenChoice()){
+				 continue;
+			 }
+			 
+			 if(updatabilities.contains(pdf.getUpdatability())){
+				 data.put(pdf.getId(), getFormData(input, pdf.getId()));
+			 }
+		 }
+		 
+		 return data;
+	 }
+	 
+	 public static String tail(String str){
+		 return str.substring(1, str.length());
 	 }
 }
