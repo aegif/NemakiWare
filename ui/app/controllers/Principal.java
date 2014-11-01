@@ -9,6 +9,7 @@ import java.util.List;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import play.Play;
 import play.libs.Json;
 import play.mvc.Controller;
 import play.mvc.Result;
@@ -17,11 +18,15 @@ import util.Util;
 
 @Authenticated(Secured.class)
 public class Principal extends Controller{
+	
+	private static String coreRestUrl = Play.application().configuration().getString("nemaki.core.url") + "rest/";
+	
+	
 	public static Result search(String term){
 		List<model.Principal>principals = new ArrayList<model.Principal>();
 		
 		//user search
-		JsonNode resultUsers = Util.getJsonResponse("http://localhost:8080/nemakiware/rest/user/search?query=" + term);
+		JsonNode resultUsers = Util.getJsonResponse(coreRestUrl + "user/search?query=" + term);
     	//TODO check status
     	JsonNode users = resultUsers.get("result");
 		if(users != null){
@@ -35,7 +40,7 @@ public class Principal extends Controller{
 		}
 		
 		//group search
-		JsonNode resultGroups = Util.getJsonResponse("http://localhost:8080/nemakiware/rest/group/search?query=" + term);
+		JsonNode resultGroups = Util.getJsonResponse(coreRestUrl + "group/search?query=" + term);
     	//TODO check status
     	JsonNode groups = resultGroups.get("result");
 		if(groups != null){

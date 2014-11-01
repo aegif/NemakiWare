@@ -64,7 +64,6 @@ import org.apache.http.message.BasicNameValuePair;
 import play.Play;
 import play.api.http.MediaRange;
 import play.data.DynamicForm;
-import play.data.Form;
 import play.libs.Json;
 import play.mvc.Http.MultipartFormData.FilePart;
 import play.mvc.Http.Request;
@@ -88,13 +87,10 @@ public class Util {
 		parameter.put(SessionParameter.REPOSITORY_ID, "bedroom");
 
 		parameter. put(SessionParameter.BINDING_TYPE, BindingType.ATOMPUB.value());
-		String coreUrl = Play.application().configuration().getString("nemaki.core.url");
-		parameter.put(SessionParameter.ATOMPUB_URL, coreUrl);
+		String coreAtomUrl = Play.application().configuration().getString("nemaki.core.url") + "atom/";
+		parameter.put(SessionParameter.ATOMPUB_URL, coreAtomUrl);
 
     	SessionFactory f = SessionFactoryImpl.newInstance();
-
-
-
     	Session session = f.createSession(parameter);
     	OperationContext operationContext = session.createOperationContext(null,
 				true, true, false, IncludeRelationships.BOTH, null, false, null, true, 100);

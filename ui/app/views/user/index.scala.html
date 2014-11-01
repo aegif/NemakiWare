@@ -100,7 +100,7 @@
 		$('.user-detail').click(function(){
 			var id = $(this).attr('user-id');
        		
-			$.get("@{Util.getContextPath(request)}users/" + id + "/edit", function(html){
+			$.get("@{Util.getContextPath(request)}users/" + id, function(html){
 				$("#floating-pane").html(html);
 				$("#floating-pane").lightbox_me(lightbox_me_config);
        		});	

@@ -10,6 +10,7 @@ import model.Principal;
 
 import org.apache.commons.collections.CollectionUtils;
 
+import play.Play;
 import play.data.DynamicForm;
 import play.data.Form;
 import play.libs.Json;
@@ -25,13 +26,16 @@ import com.fasterxml.jackson.databind.JsonNode;
 @Authenticated(Secured.class)
 public class Group extends Controller {
 
+	private static String coreRestUrl = Play.application().configuration().getString("nemaki.core.url") + "rest/";
+	private static String endPoint = coreRestUrl + "group/";
+	
 	public static Result index(){
 		List<model.Group>emptyList = new ArrayList<model.Group>();
 	    return ok(views.html.group.index.render(emptyList));
 	}
 
 	public static Result search(String term){
-    	JsonNode result = Util.getJsonResponse("http://localhost:8080/nemakiware/rest/group/search?query=" + term);
+    	JsonNode result = Util.getJsonResponse(endPoint + "search?query=" + term);
 
     	List<model.Group> list = new ArrayList<model.Group>();
     	
@@ -89,7 +93,7 @@ public class Group extends Controller {
 
 	public static Result create(){
     	Map<String, String>params = buildParams();
-    	JsonNode result = Util.postJsonResponse("http://localhost:8080/nemakiware/rest/group/create/" + params.get("id"), params);
+    	JsonNode result = Util.postJsonResponse(endPoint + "create/" + params.get("id"), params);
 
     	if(isSuccess(result)){
     		flash("flash message");
@@ -103,28 +107,14 @@ public class Group extends Controller {
 	}
 
 	public static Result delete(String id){
-		String url = "http://localhost:8080/nemakiware/rest/group/delete/" + id;
-		JsonNode result = Util.deleteJsonResponse(url);
+		JsonNode result = Util.deleteJsonResponse(endPoint + "delete/" + id);
 		
 		//TODO error
 		return redirect(routes.User.index());
 	}
 
-	public static Result show(String id){
-		JsonNode result = Util.getJsonResponse("http://localhost:8080/nemakiware/rest/user/show/" + id);
-		
-		if("success".equals(result.get("status").asText())){
-			JsonNode _user = result.get("user");
-			model.User user = new model.User(_user);
-			return ok(views.html.user.show.render(user));
-		}else{
-			//TODO
-			return ok();
-		}
-	}
-	
-	public static Result edit(String id){
-		JsonNode result = Util.getJsonResponse("http://localhost:8080/nemakiware/rest/group/show/" + id);
+	public static Result showDetail(String id){
+		JsonNode result = Util.getJsonResponse(endPoint + "show/" + id);
 		
 		if(isSuccess(result)){
 			JsonNode _group = result.get("group");
@@ -136,7 +126,7 @@ public class Group extends Controller {
 			List<String> userIds = group.users;
 			if(CollectionUtils.isNotEmpty(userIds)){
 				for(String userId : userIds){
-					JsonNode _memberUser = Util.getJsonResponse("http://localhost:8080/nemakiware/rest/user/show/" + userId);
+					JsonNode _memberUser = Util.getJsonResponse(coreRestUrl + "user/show/" + userId);
 					if(isSuccess(_memberUser)){
 						String userName = _memberUser.get("user").get("userName").asText();
 						users.add(new Principal("user", userId, userName));
@@ -149,7 +139,7 @@ public class Group extends Controller {
 			List<String> groupIds = group.groups;
 			if(CollectionUtils.isNotEmpty(groupIds)){
 				for(String groupId : groupIds){
-					JsonNode _memberGroup = Util.getJsonResponse("http://localhost:8080/nemakiware/rest/group/show/" + groupId);
+					JsonNode _memberGroup = Util.getJsonResponse(coreRestUrl + "group/show/" + groupId);
 					if(isSuccess(_memberGroup)){
 						String groupName = _memberGroup.get("group").get("groupName").asText();
 						groups.add(new Principal("group", groupId, groupName));
@@ -173,7 +163,7 @@ public class Group extends Controller {
     	Map<String, String>params = buildParams();
     	
     	
-    	JsonNode result = Util.putJsonResponse("http://localhost:8080/nemakiware/rest/group/update/" + id , params);
+    	JsonNode result = Util.putJsonResponse(endPoint + "update/" + id , params);
     	
     	if(isSuccess(result)){
     		return redirect(routes.Group.index());
