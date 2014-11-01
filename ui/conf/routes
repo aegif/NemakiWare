@@ -50,9 +50,9 @@ POST	/users/:id/delete		controllers.User.delete(id:String)
 # Group API
 GET		/groups				controllers.Group.index()
 GET		/groups/search				controllers.Group.search(term:String ?= "")
-GET		/groups/new				controllers.Group.showBlank()
+GET		/groups/new					controllers.Group.showBlank()
 POST	/groups/create				controllers.Group.create()
-GET	/groups/:id/edit				controllers.Group.edit(id:String)
+GET		/groups/:id/edit				controllers.Group.edit(id:String)
 POST	/groups/:id/update				controllers.Group.update(id:String)
 POST	/groups/:id/delete		controllers.Group.delete(id:String)
 

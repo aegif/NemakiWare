@@ -542,7 +542,10 @@ public class Node extends Controller {
     	List<CmisObject> list = new ArrayList<CmisObject>();
     	//Build WHERE clause(cmis:document)
     	MessageFormat docFormat = new MessageFormat("cmis:name LIKE ''%{0}%'' OR CONTAINS(''{0}'')");
-    	String docStatement = docFormat.format(new String[]{term});
+    	String docStatement = "";
+    	if(StringUtils.isNotBlank(term)){
+    		docFormat.format(new String[]{term});
+    	}
     	ItemIterable<CmisObject> docResults = session.queryObjects("cmis:document", docStatement, false, ctxt);
     	Iterator<CmisObject> docItr = docResults.iterator();
     	while(docItr.hasNext()){
@@ -551,7 +554,10 @@ public class Node extends Controller {
 
     	//Build WHERE clause(cmis:folder)
     	MessageFormat folderFormat = new MessageFormat("cmis:name LIKE ''%{0}%''");
-    	String folderStatement = folderFormat.format(new String[]{term});
+    	String folderStatement = "";
+    	if(StringUtils.isNotBlank(folderStatement)){
+    		folderFormat.format(new String[]{term});
+    	}
     	ItemIterable<CmisObject> folderResults = session.queryObjects("cmis:folder", folderStatement, false, ctxt);
     	Iterator<CmisObject> folderItr = folderResults.iterator();
     	while(folderItr.hasNext()){
