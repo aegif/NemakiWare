@@ -2,9 +2,8 @@
 @import util._
 @import org.apache.chemistry.opencmis.client.api.Document
 
-<div id="tab-edit-file">
+<div class="tap-pane">
 	@if(Util.isDocument(obj)){
-		
 		@if(Util.convertToDocument(obj).isVersionSeriesCheckedOut()){
 				<!-- checkin form -->
 				@helper.form(action=routes.Node.checkIn(obj.getId()), 'enctype -> "multipart/form-data") {
@@ -36,8 +35,7 @@
 				<div>ファイルはロックされ、編集者以外は操作できません。<br/>編集用のコピーをダウンロードして編集してください。</div>
 				<input type="hidden" name="parentId" value="@parentId"/>
 		   		<button id="checkout" class="btn btn-default btn-xs">実行</button>
-			
-			
+	
 			<br/>
 			or
 			<br/><br/>
@@ -56,7 +54,6 @@
 		
 	}
 </div>
-
 
 <!-- scripts -->
 <script type="text/javascript">
