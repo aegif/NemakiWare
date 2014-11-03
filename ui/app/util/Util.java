@@ -71,6 +71,8 @@ import play.mvc.Http.Request;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
+import constant.PropertyKey;
+
 public class Util {
 	public static Session createCmisSession(String id, String password){
 		Map<String, String> parameter = new HashMap<String, String>();
@@ -88,8 +90,8 @@ public class Util {
 		parameter.put(SessionParameter.REPOSITORY_ID, "bedroom");
 
 		parameter. put(SessionParameter.BINDING_TYPE, BindingType.ATOMPUB.value());
-		String coreAtomUrl = Play.application().configuration().getString("nemaki.core.url") + "atom/";
-		parameter.put(SessionParameter.ATOMPUB_URL, coreAtomUrl);
+		String coreAtomUri = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI) + "atom/";
+		parameter.put(SessionParameter.ATOMPUB_URL, coreAtomUri);
 
     	SessionFactory f = SessionFactoryImpl.newInstance();
     	Session session = f.createSession(parameter);
