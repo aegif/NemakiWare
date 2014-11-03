@@ -139,7 +139,7 @@
 	<!-- CouchDB Beans -->
 	<bean id="connector" class="jp.aegif.nemaki.service.db.CouchConnector" init-method="init">
 		<property name="repositoryId">
-			<value>${cmis.repositories}</value>
+			<value>${cmis.repository.main}</value>
 		</property>
 		<property name="host">
 			<value>${db.couchdb.host}</value>
