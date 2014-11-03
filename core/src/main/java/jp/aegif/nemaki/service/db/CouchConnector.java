@@ -48,7 +48,7 @@ public class CouchConnector {
 	 * Repository id, for instance: books
 	 */
 	@Value("${repositoryId}")
-	private String[] repositoryId;
+	private String repositoryId;
 
 	/**
 	 * Port, for instance: 5984
@@ -70,7 +70,7 @@ public class CouchConnector {
 
 		String repo = "";
 		try {
-			repo = repositoryId[0];
+			repo = repositoryId;
 		} catch (Exception ex) {
 			ex.printStackTrace();
 		}
@@ -81,7 +81,7 @@ public class CouchConnector {
 		return connector;
 	}
 
-	public void setRepositoryId(String[] repositoryId) {
+	public void setRepositoryId(String repositoryId) {
 		this.repositoryId = repositoryId;
 	}
 
