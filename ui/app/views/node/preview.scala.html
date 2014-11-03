@@ -4,18 +4,16 @@
 
 @(obj:CmisObject)
 
-<div id="tab-edit">
-	<div class="container">
-		<div class="row" style="margin-top:15px; margin-bottom:15px">
-			<div class="col-sm-5">
-				@if(Util.existPreview(obj)){
-					<a href="@routes.Node.downloadPreview(obj.getId)">
-						<button class="btn btn-default btn-primary"><i class="glyphicon glyphicon-eye-open"></i>プレビューを開く</button>
-					</a>					
-				}else{
-					<div>プレビューがありません</div>
-				}
-			</div>
+<div class="container tab-pane">
+	<div class="row">
+		<div class="col-sm-5">
+			@if(Util.existPreview(obj)){
+				<a href="@routes.Node.downloadPreview(obj.getId)">
+					<button class="btn btn-default btn-primary"><i class="glyphicon glyphicon-eye-open"></i>プレビューを開く</button>
+				</a>					
+			}else{
+				<div>プレビューがありません</div>
+			}
 		</div>
 	</div>
 </div>
