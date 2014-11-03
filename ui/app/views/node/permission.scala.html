@@ -1,0 +1,102 @@
+@import principal._
+@import util._
+@import org.apache.commons.collections.CollectionUtils
+@import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition
+@import org.apache.chemistry.opencmis.commons.data.Ace
+@(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(members:List[model.Principal])(permissionDefinitions:List[PermissionDefinition] = null)
+
+@script(permissionDefinitions)
+
+<div class="container tab-pane">
+	<div class="row" style="margin-bottom:15px">
+		<div class="col-sm-5">
+			<button class="btn btn-default btn-primary" id="permission-update"><i class=" glyphicon glyphicon-saved"></i>更新</button>
+		</div>
+	</div>
+
+	<div class="row">
+		<div class="col-sm-5">
+			@searchBox()
+		</div>
+	</div>
+	
+	<div class="row">
+		<div class="col-sm-5">
+			@searchTable("検索結果")(members)
+		</div>
+	</div>
+	
+	<div class="row">
+		<div class="col-sm-5">
+			@selectedTable("選択されたメンバ")(members)(Util.zipWithId(obj.getAcl))(permissionDefinitions)
+		</div>
+	</div>
+</div>
+
+<script type="text/javascript">
+	//binding:update
+	$(document).on('click', "#permission-update", function(){
+		//build data
+		
+		var acl = [];
+		$('#ps-selected-table tbody tr').each(function(i, row){
+			var json = {};
+			//principalId
+			var id = $(row).children('.ps-id').text();
+			json['principalId'] = id;
+			
+			//Permission
+			var permissionDefs =  [];
+			@if(CollectionUtils.isNotEmpty(permissionDefinitions)){
+				@for(pdf <- permissionDefinitions){
+					permissionDefs.push("@pdf.getId");
+				}
+			}
+			var permissionValue = [];
+			for(var i=0; i<permissionDefs.length; i++){
+				var checked = $($(row).find('.permission-' + escape(permissionDefs[i]) + ' > input')[0]).prop('checked');	
+				if(checked){
+					permissionValue.push(permissionDefs[i]);
+				}
+			}
+			json['permission'] = permissionValue;
+			
+			//Inheritance
+			var inheritance = $($(row).find('.inheritance > input')).prop('checked');
+			json['inheritance'] = inheritance;
+			
+			
+			alert(JSON.stringify(json));
+			
+			acl.push(json);
+			
+				
+			
+		});
+		
+		alert(JSON.stringify(acl));
+		
+		var data = {
+			acl :JSON.stringify(acl)
+		};
+		
+		$.ajax({
+			url : "@routes.Node.updatePermission(obj.getId).absoluteURL(request)",
+			type : 'POST',
+			data : data,
+			success : function(data){
+				alert("成功しました");
+				window.location.reload();
+			},
+			error : function(XMLHttpRequest, textStatus, errorThrown) {
+	            alert("XMLHttpRequest : " + XMLHttpRequest.status);
+	            alert("textStatus : " + textStatus);
+	            alert("errorThrown : " + errorThrown.message);
+	         }
+		});
+	});
+	
+	function escape(selector){
+		return selector.replace(':',"\\:");
+	}
+</script>

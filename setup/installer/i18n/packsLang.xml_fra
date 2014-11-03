@@ -5,14 +5,13 @@
 <langpack>
     <str id="pack.utility" txt="Utilitaire d'installation" />
     <str id="pack.application.server" txt="Tomcat" />
-    <str id="pack.nemakiware" txt="NemakiWare CMIS sérveur" />
+    <str id="pack.core" txt="Core" />
+    <str id="pack.core.description" txt="CMIS sérveur" />
     <str id="pack.couchdb.configuration" txt="Importation des données d'initialisation de CouchDB " />
     <str id="pack.couchdb.configuration.description" txt="Il faut CouchDB déjà installé." />
     <str id="pack.solr" txt="Solr" />
-    <str id="pack.nemakishare.client" txt="NemakiShare CMIS client " />
-    <str id="pack.rails" txt="Rails" />
-    <str id="pack.rails.description" txt="Uniqument pour Windows en utilisant RailsInstaller ver.2.2.2. Voir http://railsinstaller.org/en" />
-    <str id="pack.nemakishare.configuration" txt="Configuration de NemakiShare" />
-    <str id="pack.nemakishare.configuration.description" txt="Il faut Rails environement." />
+    <str id="pack.solr.description" txt="Moteur de rechereche" />
+    <str id="pack.ui" txt="UI" />
+    <str id="pack.ui.description" txt="CMIS client" />
     <str id="pack.delete.tmp" txt="Supprimer les fichiers temp". />
 </langpack>

@@ -1,0 +1,108 @@
+@import helper.twitterBootstrap._
+@import util.Util
+@import util.Formatter
+@(objects: List[org.apache.chemistry.opencmis.client.api.CmisObject])
+
+<table class="footable" id="objects-table" data-sort="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
+	<thead>
+		<tr>
+			<th data-class="expand" data-sort-initial="true">名前</th>
+			<th data-class="expand">作成者</th>
+			<th>作成時刻</th>
+			<th data-sort-ignore="true"></th>
+		</tr>
+	</thead>
+	<tbody>
+	@for(obj <- objects){
+		<tr>
+			<td>
+				@if(Util.isDocument(obj)){
+					@if(Util.convertToDocument(obj).isVersionSeriesCheckedOut()){
+						<i class="glyphicon glyphicon-lock"></i>
+					}
+				}
+				
+				@if(Util.isDocument(obj)){
+					<a href="@routes.Node.download(obj.getId)">
+				}else{
+					<a href="@routes.Node.showChildren(obj.getId)">
+				}
+					<img src="@routes.Assets.at("images/node/")@Util.getIconName(obj)"/>
+					@obj.getName()
+				</a>
+			</td>
+			<td>@obj.getCreatedBy()</td>
+			<td>@Formatter.calToString(obj.getCreationDate())</td>
+			<td>
+				<button type="button" class="btn btn-default show-detail" cmis-id="@obj.getId()"><i class="glyphicon glyphicon-wrench"></i>詳細</button>
+				<button type="button" class="btn btn-default delete" cmis-id="@obj.getId()"><i class="glyphicon glyphicon-trash"></i>削除</button>
+				@if(Util.isDocument(obj) && obj.asInstanceOf[org.apache.chemistry.opencmis.client.api.Document].isVersionSeriesCheckedOut()){
+				<button type="button" class="btn btn-default pwc" cmis-id="@obj.asInstanceOf[org.apache.chemistry.opencmis.client.api.Document].getVersionSeriesCheckedOutId()">PWC</button>
+				}
+			</td>							
+		</tr>
+	}
+	</tbody>
+	<tfoot>
+		<tr>
+			<td colspan="4">
+				<div class="pagination pagination-centered hide-if-no-paging"></div>
+			</td>
+		</tr>
+	</tfoot>
+</table>
+
+
+
+<!-- ------------------------------------------------ -->	
+<!-- detail -->
+<script type="text/javascript">
+	$(function(){
+    	//Detail
+        $(".show-detail").bind('click', function(){
+        //Get CmisObject
+       		var id = $(this).attr('cmis-id');
+       		$.get("@{Util.getContextPath(request)}objects/" + id, function(html){
+       			$("#floating-pane").html(html);
+				$("#floating-pane").lightbox_me(lightbox_me_config);
+       		});
+        });
+    });
+    </script>
+    
+<!-- PWC -->
+<script type="text/javascript">
+	$(function(){
+    	//Detail
+       	$(".pwc").bind('click', function(){
+        	//Get CmisObject
+        	var id = $(this).attr('cmis-id');
+        	$.get("@{Util.getContextPath(request)}objects/" + id, function(html){
+				$("#floating-pane").html(html);	
+				$("#floating-pane").lightbox_me(lightbox_me_config);
+			});
+        });
+	});
+</script>
+
+<!-- delete -->
+<script type="text/javascript">
+	$(function(){
+		$('.delete').click(function(){
+			//alert dialog
+			if(window.confirm("削除してよろしいですか？")){
+				var id = $(this).attr('cmis-id');
+	       		$.post("@{Util.getContextPath(request)}objects/" + id + "/delete",{},function(data){
+	       			window.location.reload();
+	       		});	
+			}
+		})
+	});
+</script>
+
+<!-- footable -->
+<script type="text/javascript">
+        $(function () {
+            $('#objects-table').footable();
+        });
+</script>      
