@@ -6,7 +6,7 @@
 		<groupId>jp.aegif.nemaki</groupId>
 		<artifactId>solr</artifactId>
 		<packaging>war</packaging>
-		<version>1.1</version>
+		<version>2.0beta</version>
 		<name>solr</name>
 		<description>Solr customized for Nemaki</description>
 		<url>https://github.com/NemakiWare/NemakiWare</url>
