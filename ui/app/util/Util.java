@@ -10,6 +10,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -38,6 +39,7 @@ import org.apache.chemistry.opencmis.commons.enums.BindingType;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
+import org.apache.chemistry.opencmis.commons.impl.UrlBuilder;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -87,10 +89,11 @@ public class Util {
 		parameter.put(SessionParameter.LOCALE_ISO639_LANGUAGE, "");
 
 		// repository
-		parameter.put(SessionParameter.REPOSITORY_ID, "bedroom");
+		parameter.put(SessionParameter.REPOSITORY_ID, NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_REPOSITORY));
 
 		parameter. put(SessionParameter.BINDING_TYPE, BindingType.ATOMPUB.value());
-		String coreAtomUri = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI) + "atom/";
+		
+		String coreAtomUri = buildNemakiCoreUri() + "atom/";
 		parameter.put(SessionParameter.ATOMPUB_URL, coreAtomUri);
 
     	SessionFactory f = SessionFactoryImpl.newInstance();
@@ -102,6 +105,19 @@ public class Util {
 		return session;
 	}
 	
+	public static String buildNemakiCoreUri(){
+		String protocol = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_PROTOCOL);
+		String host = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_HOST);
+		String port = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_PORT);
+		String context = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_CONTEXT);
+		return buildUri(protocol, host, port, context);
+	}
+	
+	private static String buildUri(String protocol, String host, String port, String context){
+		StringBuilder sb = new StringBuilder();
+		sb.append(protocol).append("://").append(host).append(":").append(port).append("/").append(context).append("/");
+		return sb.toString();
+	}
 	
 	public static boolean isDocument(CmisObject obj) {
 		return obj.getBaseTypeId().equals(BaseTypeId.CMIS_DOCUMENT);

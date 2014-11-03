@@ -10,18 +10,16 @@ import play.libs.Json;
 import play.mvc.Controller;
 import play.mvc.Result;
 import play.mvc.Security.Authenticated;
-import util.NemakiConfig;
 import util.Util;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import constant.PropertyKey;
 
 @Authenticated(Secured.class)
 public class Principal extends Controller{
 	
-	private static String coreRestUri = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI) + "rest/";
+	private static String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 	
 	
 	public static Result search(String term){
