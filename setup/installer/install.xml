@@ -37,7 +37,6 @@
   <!-- Variables in this fhile-->
   <variables>
     <variable name="TOMCAT" value="apache-tomcat-8.0.14" />
-	<variable name="TargetPanel.dir.windows" value="C:\NemakiWare" />
   </variables>
 
   <!-- Resource import -->
@@ -130,7 +129,7 @@
 
     <!-- Pack: Core -->
     <pack id="pack.core" name="Core" required="no">
-      <description></description>
+      <description>CMIS server</description>
       <depends packname="Tomcat" />
 
       <!-- Deploy WAR file -->
@@ -173,7 +172,7 @@
 
     <!-- Pack: Solr -->
     <pack id="pack.solr" name="Solr" required="no" predefined="no">
-      <description></description>
+      <description>Search engine</description>
       <depends packname="Tomcat" />
       
       <!-- Deploy WAR file -->
@@ -194,12 +193,17 @@
       <parsable targetfile="$INSTALL_PATH/${TOMCAT}/conf/Catalina/localhost/solr.xml"/>
     </pack>
 
-     <!-- Pack: Solr -->
+     <!-- Pack: UI -->
     <pack id="pack.ui" name="UI" required="no" predefined="no">
-      <description></description>
+      <description>CMIS client</description>
+      <depends packname="Tomcat" />
 
       <!-- Deploy WAR file -->
       <file src="ui/target/ui.war" targetdir="$INSTALL_PATH/${TOMCAT}/webapps" />
+
+      <!-- Create UI setting file -->
+      <file src="setup/installer/tomcat/app-server-ui.properties" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
+      <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-ui.properties"/>
     </pack>
 
     <!-- Pack: Delete tmp files -->
