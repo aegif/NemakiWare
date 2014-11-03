@@ -6,27 +6,29 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-import play.Play;
 import play.libs.Json;
 import play.mvc.Controller;
 import play.mvc.Result;
 import play.mvc.Security.Authenticated;
+import util.NemakiConfig;
 import util.Util;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import constant.PropertyKey;
 
 @Authenticated(Secured.class)
 public class Principal extends Controller{
 	
-	private static String coreRestUrl = Play.application().configuration().getString("nemaki.core.url") + "rest/";
+	private static String coreRestUri = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI) + "rest/";
 	
 	
 	public static Result search(String term){
 		List<model.Principal>principals = new ArrayList<model.Principal>();
 		
 		//user search
-		JsonNode resultUsers = Util.getJsonResponse(coreRestUrl + "user/search?query=" + term);
+		JsonNode resultUsers = Util.getJsonResponse(coreRestUri + "user/search?query=" + term);
     	//TODO check status
     	JsonNode users = resultUsers.get("result");
 		if(users != null){
@@ -40,7 +42,7 @@ public class Principal extends Controller{
 		}
 		
 		//group search
-		JsonNode resultGroups = Util.getJsonResponse(coreRestUrl + "group/search?query=" + term);
+		JsonNode resultGroups = Util.getJsonResponse(coreRestUri + "group/search?query=" + term);
     	//TODO check status
     	JsonNode groups = resultGroups.get("result");
 		if(groups != null){

@@ -49,6 +49,7 @@ import play.mvc.Http.MultipartFormData;
 import play.mvc.Http.MultipartFormData.FilePart;
 import play.mvc.Security.Authenticated;
 import play.mvc.Result;
+import util.NemakiConfig;
 import util.Util;
 import views.html.node.preview;
 import views.html.node.tree;
@@ -70,7 +71,6 @@ public class Node extends Controller {
 		return cmisSession;
 	}
 
-	
     public static Result index() {
     	Session session = createSession();
 		Folder root = session.getRootFolder();

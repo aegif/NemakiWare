@@ -6,25 +6,27 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
-import play.Play;
 import play.data.DynamicForm;
 import play.data.Form;
 import play.libs.Json;
 import play.mvc.Controller;
 import play.mvc.Result;
 import play.mvc.Security.Authenticated;
+import util.NemakiConfig;
 import util.Util;
 import views.html.user.blank;
 import views.html.user.index;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
+import constant.PropertyKey;
+
 
 @Authenticated(Secured.class)
 public class User extends Controller {
 
-	private static String coreRestUrl = Play.application().configuration().getString("nemaki.core.url") + "rest/";
-	private static String endPoint = coreRestUrl + "user/";
+	private static String coreRestUri = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI) + "rest/";
+	private static String endPoint = coreRestUri + "user/";
 	
 	
 	public static Result index(){
