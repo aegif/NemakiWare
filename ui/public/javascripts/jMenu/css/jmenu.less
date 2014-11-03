@@ -1,0 +1,72 @@
+.jMenu {
+    display: table;
+    margin: 0;
+    padding: 0;
+    list-style:none;
+
+
+    /* First level */
+    li {
+        display: table-cell;
+        background-color: #322f32;
+        margin: 0;
+        list-style:none;
+
+        a {
+            padding: 10px 15px;
+            display: block;
+            background-color: transparent;
+            color: white;
+            text-transform: uppercase;
+            cursor: pointer;
+            font-size: 12px;
+
+            &:hover {
+                background-color:#3a3a3a;
+            }
+        }
+
+        &:hover>a {
+            background-color:#3a3a3a;
+        };
+
+        // Sub-menus
+        ul {
+            display: none;
+            position: absolute;
+            z-index:9999;
+            padding: 0;
+            margin: 0;
+            list-style:none;
+
+
+            li {
+                background-color: #322f32;
+                display: block;
+                border-bottom: 1px solid #484548;
+                padding: 0;
+                list-style:none;
+                position:relative;
+
+                a {
+                    font-size: 11px;
+                    text-transform: none;
+                    display:block;
+                    padding: 7px;
+                    border-top: 1px solid transparent;
+                    border-bottom: 1px solid transparent;
+
+                    &.isParent {
+                        background-color: #3a3a3a;
+                    }
+
+                    &:hover {
+                        background-color: #514c52;
+                        border-top: 1px solid #322f32;
+                        border-bottom: 1px solid #322f32;
+                    }
+                }
+            }
+        }
+    }
+}

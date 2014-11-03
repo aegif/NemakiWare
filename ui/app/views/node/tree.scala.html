@@ -1,0 +1,122 @@
+@(parent: org.apache.chemistry.opencmis.client.api.Folder, objects: List[org.apache.chemistry.opencmis.client.api.CmisObject])
+@import util.Util
+@import org.apache.commons.collections.CollectionUtils
+<!DOCTYPE html>
+<html>
+	@header()
+	<body>
+		@menubar()
+		<div class="container">
+	  		<div class="row">
+	  			<!-- breadcrumb -->
+	  			<div class="col-md-11">
+	  				<ul class="breadcrumb">
+	  					<li><a href="@routes.Node.index().absoluteURL(request)" title="root"><i class="glyphicon glyphicon-home"></i></a></li>
+	  					@defining(Util.dividePath(parent.getPath)){ segments =>
+	  						@for(i <- 0 to segments.length - 1; if(CollectionUtils.isNotEmpty(segments))){
+	  							@defining(segments.take(i+1).mkString("/")){url=>
+	  								<li><a href="@routes.Node.showChildrenByPath('/' + url).absoluteURL(request)"><i class="glyphicon glyphicon-folder-open"></i> @segments(i)</a></li>
+	  							}
+	  						}
+	  					}
+	  				</ul>
+	  			</div>
+	  			
+	  			<div class="col-md-11">
+					<!-- create button -->
+						<div class="dropdown">
+							<button class="btn btn-default dropdown-toggle" data-toggle="dropdown"><i class="glyphicon glyphicon-plus"></i>新規作成 <span class="caret"></span></button>
+							<ul class="dropdown-menu" role="menu">
+								<li id="create-folder-in-tree"><a href="#"><i class="glyphicon glyphicon-folder-close"></i>フォルダ</a></li>
+								<li id="create-file-in-tree"><a href="#"><i class="glyphicon glyphicon-file"></i>ファイル</a></li>
+							</ul>
+						</div>
+					
+					<br/><br/>
+				</div>
+				
+				<div class="col-md-11">
+				 	<div id="list" class="dropzone" ondragover="handleDragStart(event);" ondragleave="hadleDragLeave(event);" ondrop="handleDrop(event);">
+						@list(objects) 		
+				 	</div>
+				</div>
+	  		</div>
+		</div>
+	</body>
+</html>
+
+
+<!-- scripts -->
+<script type="text/javascript">
+	//create button
+	$(function(){
+		$(document).on('click', '#create-folder-in-tree', function(){
+			$.get("@routes.Node.showBlank().absoluteURL(request)" + "?objectType=" + "cmis:folder" + "&baseType=" + "cmis:folder" + "&parentId=@parent.getId()"  , function(html){
+				$("#floating-pane").html(html);
+				$("#floating-pane").lightbox_me(lightbox_me_config);
+			});	
+		});
+		
+		$(document).on('click', '#create-file-in-tree', function(){
+			$.get("@routes.Node.showBlank().absoluteURL(request)" + "?objectType=" + "cmis:document" + "&baseType=" + "cmis:document" + "&parentId=@parent.getId()"  , function(html){
+				$("#floating-pane").html(html);
+				$("#floating-pane").lightbox_me(lightbox_me_config);
+			});	
+		});
+
+	});
+</script>
+
+<script type="text/javascript">
+	//drag&drop
+	function handleDragStart(event){
+		event.preventDefault();
+		$(".dropzone").css("border", "3px solid #74A9D6");
+	}
+	
+	function hadleDragLeave(event){
+		event.preventDefault();
+		$(".dropzone").css("border", "none");
+	}
+	
+	function escape(selector){
+		return selector.replace(':',"\\:");
+	}
+	
+	function handleDrop(event)
+	{
+		event.preventDefault();
+		
+		if(!window.FormData){
+			alert("ファイルのドラッグ&ドロップにブラウザが対応していません");
+		}
+		
+		$(".dropzone").css("border", "none");
+	
+		var formData = new FormData();
+		formData.append("dragAndDrop", 'true');
+		
+		// イベントに格納されたファイルを取り出し
+		for(var i=0; i < event.dataTransfer.files.length; i++){
+			formData.append('file_' + i, event.dataTransfer.files[i]);	
+		}
+		
+		formData.append("cmis:parentId", '@parent.getId()');
+		formData.append("cmis:objectTypeId", 'cmis:document');
+		 
+		 $(function(){
+			 $.ajax("@routes.Node.create().absoluteURL(request)",
+			{
+				 type: 'post',
+			      processData: false,
+			      contentType: false,
+			      data: formData,
+			      //dataType: 'html',
+			      success: function(data){
+			        window.alert("ファイルがアップロードされました");
+			        window.location.reload();
+			      }
+			});
+		 });
+	}
+</script>

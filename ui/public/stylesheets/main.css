@@ -1,0 +1,48 @@
+body {
+	/*For menu bar*/
+    padding-top: 70px;
+}
+
+div.menubar {
+   background-color: #cccccc;
+}
+div.lightbox-me-container{
+	border-style:solid;
+	border-width: 3px;
+	background-color:#eeeeee;
+	overflow-x:scroll; 
+	height:560px;
+	width: 720px;
+	padding-top:20px;
+	padding-left:20px;
+}
+
+div.tab-pane{
+	padding-top:20px;
+}
+	
+/*検索窓*/		
+.navbar-search {
+    position: relative;
+}
+ 
+.navbar-search .search-query {
+    padding-left: 29px;
+}
+ 
+.navbar-search .icon-search {
+    position: absolute;
+    top: 7px;
+    left: 11px;
+}
+ 
+.navbar-search .search-query:focus, .navbar-search .search-query.focused {
+    padding-left: 30px;
+}​
+
+.table {
+  width: 100%;
+  table-layout: fixed;
+  word-wrap: break-word;
+}
+	

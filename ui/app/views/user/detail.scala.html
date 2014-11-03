@@ -1,0 +1,99 @@
+@(user:model.User)
+
+@defining(new ArrayList[String]()){ editables =>
+	@{
+		editables.add("#user-name")
+		editables.add("#user-first-name")
+		editables.add("#user-last-name")
+		editables.add("#user-email")
+	}
+
+	<!-- make fields editable -->
+	<script type="text/javascript" src="@routes.Assets.at("javascripts/binding-editable.js")"/>
+	<script type="text/javascript">
+		var editables = [];
+		@for(editable <- editables){
+			editables.push("@editable");
+		}                 
+		
+		jQuery.each(editables, function(i, editable){
+			bindEditable(editable);
+		});
+	</script>
+	<script type="text/javascript">
+		//binding: udpate button
+		$(document).on('click','#user-update', function(){
+			//post
+			$.ajax({
+				url : "@routes.User.update(user.id).absoluteURL(request)",
+				type: 'POST',
+				data : {
+							userId: "@user.id",
+							userName : editedValue('#user-name'),
+							firstName : editedValue('#user-first-name'),
+							lastName : editedValue('#user-last-name'),
+							email : editedValue$('#user-email')
+						},
+				success : function(data){
+					window.location.reload();
+				}
+			});
+		});
+	</script>
+	
+
+	@lightbox{
+		<div class="container">
+			<div class="row">
+				<div class="col-sm-5">
+					<h3><i class="glyphicon glyphicon-user">@user.name</i></h3>
+				</div>
+			</div>
+	
+			<div class="row" style="margin-bottom:15px">
+				<div class="col-sm-5">
+					<button class="btn btn-default btn-primary" id="user-update"><i class=" glyphicon glyphicon-saved"></i>更新</button>
+				</div>
+			</div>
+			
+			<div class="row">
+				<div class="col-sm-8">
+					<div><h4><i class="glyphicon glyphicon-wrench"></i>プロパティ</h4></div>
+					
+					<table class="footable" id="user-property-table">
+						<thead>
+							<tr>
+								<th class="col-md-2 col-sm-2">キー</th>
+								<th class="col-md-1 col-sm-1"><i class="glyphicon glyphicon-edit" title="更新可能"></i></th>
+								<th class="col-md-5 col-sm-5">値</th>
+							</tr>
+						</thead>
+						<tbody>
+							<!-- id row -->
+							@editableRow("user-id")("ID")(user.id)(editables)
+							<!-- name row -->
+							@editableRow("user-name")("名前")(user.name)(editables)
+							<!-- last name row -->
+							@editableRow("user-last-name")("姓")(user.lastName)(editables)
+							<!-- first name row -->
+							@editableRow("user-first-name")("名")(user.firstName)(editables)
+							<!-- email row -->
+							@editableRow("user-email")("メール")(user.email)(editables)
+						</tbody>
+					</table>
+	
+					<hr/>
+	
+				</div>
+			</div>
+			
+		</div>
+		
+		
+		
+	}
+	
+	
+	
+}
+

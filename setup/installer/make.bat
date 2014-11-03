@@ -39,16 +39,12 @@ if [%1] == [] (
 )
 
 set SCRIPT_HOME=%SOURCE_HOME%\setup\installer
-set DEFAULT_PROP_PATH=%SOURCE_HOME%\nemakiware\src\main\webapp\WEB-INF\classes
-set CUSTOM_PROP_PATH=%SOURCE_HOME%\nemakiware\src\main\resources
+set DEFAULT_PROP_PATH=%SOURCE_HOME%\core\src\main\webapp\WEB-INF\classes
+set CUSTOM_PROP_PATH=%SOURCE_HOME%\core\src\main\resources
 
 rem Build install utilities
 call mvn -f %SCRIPT_HOME%\install-util package
 call mvn -f %SOURCE_HOME%\setup\couchdb\bjornloka package
-
-rem Convert line enconding in Unix
-copy %SOURCE_HOME%\setup\nemakishare\setup_nemakishare.sh %SOURCE_HOME%\setup\nemakishare\setup_nemakishare.sh.tmp
-%SOURCE_HOME%\setup\nemakishare\third-party\swiss-file-knife\sfk171.exe remcr %SOURCE_HOME%\setup\nemakishare\setup_nemakishare.sh.tmp
 
 rem Setting installer default values from source code
 rem Override by custom properties
@@ -60,21 +56,19 @@ set USER_INPUT_SPEC_MODIFIED=%SCRIPT_HOME%\user-input-spec_modified.xml
 java -cp %SCRIPT_HOME%\install-util\target\install-util.jar jp.aegif.nemaki.installer.ProcessTemplate %USER_INPUT_SPEC% %PROPERTIES% %PROPERTIES_CUSTOM%
 
 rem Prepare WAR
-call mvn -f %SOURCE_HOME%\nemakiware clean
-call mvn -f %SOURCE_HOME%\nemakiware -Dmaven.test.skip=true package
-call mvn -f %SOURCE_HOME%\nemakisolr clean
-call mvn -f %SOURCE_HOME%\nemakisolr -Dmaven.test.skip=true package
+call mvn -f %SOURCE_HOME%\core clean
+call mvn -f %SOURCE_HOME%\core -Dmaven.test.skip=true package
+call mvn -f %SOURCE_HOME%\solr clean
+call mvn -f %SOURCE_HOME%\solr -Dmaven.test.skip=true package
+cd /d %SOURCE_HOME%\ui
+call activator.bat war
+cd /d %ORIGINAL_PWD%
 
 rem Build installer
 call %SCRIPT_HOME%\IzPack\bin\compile.bat %SCRIPT_HOME%\install.xml -b %SOURCE_HOME%\ -o %SCRIPT_HOME%\install.jar -k standard
 
 rem Delete tmp file after putting them into installer
-call mvn -f %SOURCE_HOME%\nemakiware clean
-call mvn -f %SOURCE_HOME%\nemakisolr clean
-call mvn -f %SCRIPT_HOME%\install-util clean
-call mvn -f %SOURCE_HOME%\setup\couchdb\bjornloka clean
 del %USER_INPUT_SPEC_MODIFIED%
-del %SOURCE_HOME%\setup\nemakishare\setup_nemakishare.sh.tmp
 
 rem Execute isntaller
 if "%FLG_E%" == "TRUE" (
