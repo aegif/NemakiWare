@@ -597,4 +597,9 @@ public class Util {
     	
 	    return false;
 	 }
+	 
+	 public static int getNavigationPagingSize(){
+		 String _size = NemakiConfig.getValue(PropertyKey.NAVIGATION_PAGING_SIZE);
+		 return Integer.valueOf(_size);
+	 }
 }

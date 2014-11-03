@@ -1,8 +1,9 @@
-@(objects: List[org.apache.chemistry.opencmis.client.api.CmisObject])
 @import helper.twitterBootstrap._
-@import util._
+@import util.Util
+@import util.Formatter
+@(objects: List[org.apache.chemistry.opencmis.client.api.CmisObject])
 
-<table class="footable" id="objects-table" data-sort="true">
+<table class="footable" id="objects-table" data-sort="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
 	<thead>
 		<tr>
 			<th data-class="expand" data-sort-initial="true">名前</th>
@@ -42,6 +43,13 @@
 		</tr>
 	}
 	</tbody>
+	<tfoot>
+		<tr>
+			<td colspan="4">
+				<div class="pagination pagination-centered hide-if-no-paging"></div>
+			</td>
+		</tr>
+	</tfoot>
 </table>
 
 
