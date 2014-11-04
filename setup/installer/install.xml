@@ -3,7 +3,7 @@
   <!-- Application info -->
   <info>
     <appname>NemakiWare</appname>
-    <appversion>1.1.1</appversion>
+    <appversion>2.0beta</appversion>
     <url>http://www.nemakiware.com/</url>
     <!-- 
     If you a general user install on C:¥Program Files on Windows,
@@ -111,6 +111,10 @@
       <!-- Expand Tomcat -->
       <file src="setup/installer/tomcat/${TOMCAT}.zip" targetdir="$INSTALL_PATH" unpack="true" />
       
+      <!-- Create setenv -->
+      <file src="setup/installer/tomcat/setenv.sh" targetdir="$INSTALL_PATH/${TOMCAT}/bin" />
+      <file src="setup/installer/tomcat/setenv.bat" targetdir="$INSTALL_PATH/${TOMCAT}/bin" />
+
       <!-- Create log folder-->
       <file src="setup/installer/tomcat/logs/catalina.out" targetdir="$INSTALL_PATH/${TOMCAT}/logs" />
       
