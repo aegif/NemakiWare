@@ -27,14 +27,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.Content;
 
-import org.codehaus.jackson.annotate.JsonIgnore;
-import org.codehaus.jackson.annotate.JsonIgnoreProperties;
-import org.codehaus.jackson.annotate.JsonProperty;
-
-@JsonIgnoreProperties(ignoreUnknown = true)
 public class CouchArchive extends CouchNodeBase{
 
 	private static final long serialVersionUID = -1664675735259473057L;
@@ -199,7 +196,6 @@ public class CouchArchive extends CouchNodeBase{
 		return this.getId().hashCode();
 	}
 	
-	@JsonIgnore
 	public Boolean isFolder(){
 		if("folder".equals(type)){
 			return true;
@@ -207,7 +203,7 @@ public class CouchArchive extends CouchNodeBase{
 			return false;
 		}
 	}
-	@JsonIgnore
+
 	public Boolean isDocument(){
 		if("document".equals(type)){
 			return true;
@@ -215,7 +211,7 @@ public class CouchArchive extends CouchNodeBase{
 			return false;
 		}
 	}
-	@JsonIgnore
+
 	public Boolean isAttachment(){
 		if("attachment".equals(type)){
 			return true;

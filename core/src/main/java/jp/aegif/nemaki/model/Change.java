@@ -43,7 +43,6 @@ public class Change extends NodeBase{
 	private String changeToken;
 	private ChangeType changeType;
 	private GregorianCalendar time;
-
 	
 	public Change() {
 		super();
