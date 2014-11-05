@@ -54,6 +54,7 @@ public class CouchChange extends CouchNodeBase implements Comparable<CouchChange
 	private ChangeType changeType;
 	private GregorianCalendar time;
 
+	
 	public CouchChange(){
 		super();
 	}
@@ -74,8 +75,6 @@ public class CouchChange extends CouchNodeBase implements Comparable<CouchChange
 		setPolicyIds(c.getPolicyIds());
 		setAcl(c.getAcl());
 	}
-
-
 
 	public String getParetnId() {
 		return paretnId;
@@ -207,6 +206,7 @@ public class CouchChange extends CouchNodeBase implements Comparable<CouchChange
 		change.setVersionLabel(getVersionLabel());
 		change.setPolicyIds(getPolicyIds());
 		change.setAcl(getAcl());
+		
 		return change;
 	}
 }
