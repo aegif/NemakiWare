@@ -41,6 +41,7 @@ import javax.ws.rs.core.MediaType;
 
 import jp.aegif.nemaki.model.Group;
 import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.service.node.PrincipalService;
 
 import org.apache.commons.lang.StringUtils;
 import org.json.simple.JSONArray;
@@ -52,7 +53,8 @@ import org.json.simple.parser.ParseException;
 @Path("/group")
 public class GroupResource extends ResourceBase{
 
-
+	PrincipalService principalService;
+	
 	@SuppressWarnings("unchecked")
 	@GET
 	@Path("/search")
@@ -521,5 +523,9 @@ public class GroupResource extends ResourceBase{
 		}
 		
 		return new JSONArray();
+	}
+	
+	public void setPrincipalService(PrincipalService principalService) {
+		this.principalService = principalService;
 	}
 }

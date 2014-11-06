@@ -28,16 +28,11 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpSession;
 
 import jp.aegif.nemaki.model.NodeBase;
-import jp.aegif.nemaki.service.node.PrincipalService;
 
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
 public class ResourceBase {
-
-	//protected ApplicationContext context;
-	protected PrincipalService principalService;
-	//protected ContentService contentService;
 
 	static final String DATE_FORMAT = "yyyy:MM:dd HH:mm:ss z";
 	static final String TYPE_GROUP = "group";
@@ -124,10 +119,6 @@ public class ResourceBase {
 	static final String ERR_REMOVE_REPOSITORY = "failToRemoveRepository";
 	static final String ERR_GET_ARCHIVES = "failToGetArchives";
 	static final String ERR_RESTORE = "failToRestore";
-
-	public void setPrincipalService(PrincipalService principalService) {
-		this.principalService = principalService;
-	}
 
 	//Set daoService
 	public ResourceBase(){
