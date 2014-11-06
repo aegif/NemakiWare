@@ -59,7 +59,7 @@ mvn -f $SOURCE_HOME/core/pom.xml -Dmaven.test.skip=true package
 mvn -f $SOURCE_HOME/solr/pom.xml clean
 mvn -f $SOURCE_HOME/solr/pom.xml -Dmaven.test.skip=true package
 cd $SOURCE_HOME/ui/
-activator war
+./activator war
 cd $EXECUTION_DIRECTORY
 
 #Build installer
