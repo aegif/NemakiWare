@@ -171,7 +171,7 @@ public class AuthenticationFilter implements Filter {
 		}else if(pathInfo.startsWith("/archive")){
 			String archiveResourceEnabled = propertyManager.readValue(PropertyKey.REST_ARCHIVE_ENABLED);
 			enabled = TOKEN_FALSE.equals(archiveResourceEnabled) ? false : true;
-		}else if(pathInfo.startsWith("/solr")){
+		}else if(pathInfo.startsWith("/search-engine")){
 			String solrResourceEnabled = propertyManager.readValue(PropertyKey.REST_SOLR_ENABLED);
 			enabled = TOKEN_FALSE.equals(solrResourceEnabled) ? false : true;
 		}else{

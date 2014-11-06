@@ -1,0 +1,58 @@
+@import util.Util
+
+@lightbox{
+	<div class="container">
+		<div class="row">
+			<h4><i class="glyphicon glyphicon-search"></i>検索エンジン管理</h4>
+		</div>
+
+		<div class="row">
+			<div>
+				<button class="btn btn-default" id="search-engine-init">インデクスの初期化</button>
+			</div>
+			<div style="padding-top:15px">
+				<button class="btn btn-default" id="search-engine-reindex">インデクスの再作成</button>
+			</div>
+		</div>
+	</div>
+}
+
+<script type="text/javascript">
+	$(function(){
+		//binding: init
+		$(document).on("click", "#search-engine-init", function(){
+			$.ajax({
+				url:"@{Util.getContextPath(request)}search-engine/init",
+				success:function(data, textStatus){
+					alert("検索エンジンのインデクスを初期化しました");
+				},
+				error:function(XMLHttpRequest, textStatus, errorThrown){
+					var msg = "";
+					msg += "XMLHttpRequest:" + XMLHttpRequest.status + "\n";
+					msg += "textStatus:" + textStatus + "\n";
+					msg += "errorThrown:" + errorThrown.message + "\n";
+					alert(msg);
+				}
+			});
+		});
+	
+		//binding: reindex
+		$(document).on("click", "#search-engine-reindex", function(){
+			if(window.confirm("インデクスの再作成には時間がかかる場合があります。\nよろしいですか？")){
+				$.ajax({
+					url:"@{Util.getContextPath(request)}search-engine/reindex",
+					success:function(data, textStatus){
+						alert("検索エンジンのインデクスを再作成しました");
+					},
+					error:function(XMLHttpRequest, textStatus, errorThrown){
+						var msg = "";
+						msg += "XMLHttpRequest:" + XMLHttpRequest.status + "\n";
+						msg += "textStatus:" + textStatus + "\n";
+						msg += "errorThrown:" + errorThrown.message + "\n";
+						alert(msg);
+					}
+				});
+			}
+		});
+	});
+</script>

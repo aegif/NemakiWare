@@ -57,6 +57,10 @@ GET		/groups/:id				controllers.Group.showDetail(id:String)
 POST	/groups/:id/update				controllers.Group.update(id:String)
 POST	/groups/:id/delete		controllers.Group.delete(id:String)
 
-
 # Principal API
 GET		/principals/search		controllers.Principal.search(term:String ?= "")
+
+# Search engine API
+GET		/search-engine			controllers.SearchEngine.index()		
+GET		/search-engine/init			controllers.SearchEngine.init()
+GET		/search-engine/reindex			controllers.SearchEngine.reindex()

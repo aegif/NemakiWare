@@ -25,7 +25,6 @@ public class User extends Controller {
 	private static String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 	private static String endPoint = coreRestUri + "user/";
 	
-	
 	public static Result index(){
 		List<model.User>emptyList = new ArrayList<model.User>();
 		
