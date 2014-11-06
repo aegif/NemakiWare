@@ -278,7 +278,7 @@ public class Util {
 		return fileName;
 	}
 
-	private static HttpClient buildClient(){
+	private static HttpClient buildClient(play.mvc.Http.Session session){
 		// configurations
 				String userAgent = "My Http Client 0.1";
 
@@ -289,10 +289,12 @@ public class Util {
 				headers.add(new BasicHeader("User-Agent", userAgent));
 
 				// set credential
-				//TODO remove hard code
-				Credentials credentials = new UsernamePasswordCredentials("admin",
-						"admin");
-				AuthScope scope = new AuthScope("localhost", 8080);
+				String user = session.get(Token.LOGIN_USER_ID);
+				String password = session.get(Token.LOGIN_USER_PASSWORD);
+				Credentials credentials = new UsernamePasswordCredentials(user, password);
+				String host = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_HOST);
+				String port = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_PORT);
+				AuthScope scope = new AuthScope(host, Integer.valueOf(port));
 				CredentialsProvider credsProvider = new BasicCredentialsProvider();
 				credsProvider.setCredentials(scope, credentials);
 
@@ -336,20 +338,16 @@ public class Util {
 		return null;
 	}
 
-	public static JsonNode getJsonResponse(String url) {
-
-
+	public static JsonNode getJsonResponse(play.mvc.Http.Session session, String url) {
 		// create client
-		HttpClient client = buildClient();
-
+		HttpClient client = buildClient(session);
 		HttpGet request = new HttpGet(url);
-
 		return executeRequest(client, request);
 	}
 
-	public static JsonNode postJsonResponse(String url, Map<String, String>params) {
+	public static JsonNode postJsonResponse(play.mvc.Http.Session session, String url, Map<String, String>params) {
 		// create client
-		HttpClient client = buildClient();
+		HttpClient client = buildClient(session);
 
 		HttpPost request = new HttpPost(url);
 		List<NameValuePair> list = new ArrayList<NameValuePair>();
@@ -369,9 +367,9 @@ public class Util {
 		return executeRequest(client, request);
 	}
 	
-	public static JsonNode putJsonResponse(String url, Map<String, String>params) {
+	public static JsonNode putJsonResponse(play.mvc.Http.Session session, String url, Map<String, String>params) {
 		// create client
-		HttpClient client = buildClient();
+		HttpClient client = buildClient(session);
 
 		HttpPut request = new HttpPut(url);
 		List<NameValuePair> list = new ArrayList<NameValuePair>();
@@ -391,8 +389,8 @@ public class Util {
 		return executeRequest(client, request);
 	}
 
-	public static JsonNode deleteJsonResponse(String url){
-		HttpClient client = buildClient();
+	public static JsonNode deleteJsonResponse(play.mvc.Http.Session session, String url){
+		HttpClient client = buildClient(session);
 		HttpDelete request = new HttpDelete(url);
 		return executeRequest(client, request);
 	}
@@ -605,11 +603,11 @@ public class Util {
 		 return Integer.valueOf(_size);
 	 }
 	 
-	 public static String getSeachEngineUrl(){
+	 public static String getSeachEngineUrl(play.mvc.Http.Session session){
 		String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 		String endPoint = coreRestUri + "search-engine/";
 		
-		JsonNode result = Util.getJsonResponse(endPoint + "url");
+		JsonNode result = Util.getJsonResponse(session, endPoint + "url");
 		
 		String status = result.get(Token.REST_STATUS).textValue();
 		try {

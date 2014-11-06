@@ -8,7 +8,7 @@
 		</div>
 
 		<div class="row" style="padding-bottom:30px;">
-			@defining(Util.getSeachEngineUrl()){ url =>
+			@defining(Util.getSeachEngineUrl(session)){ url =>
 				@if(StringUtils.isNotBlank(url)){
 					<i class="glyphicon glyphicon-link"></i>
 					<a href="@url" target="_blank">検索エンジンを開く</a>

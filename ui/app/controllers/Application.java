@@ -51,7 +51,7 @@ public class Application extends Controller{
 		String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 		String endPoint = coreRestUri + "user/";
 		
-		JsonNode result = Util.getJsonResponse(endPoint + "show/" + id);
+		JsonNode result = Util.getJsonResponse(session(), endPoint + "show/" + id);
 		
 		if("success".equals(result.get("status").asText())){
 			JsonNode _user = result.get("user");

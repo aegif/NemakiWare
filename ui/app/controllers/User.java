@@ -32,7 +32,7 @@ public class User extends Controller {
 	    }
 
 	public static Result search(String term){
-    	JsonNode result = Util.getJsonResponse(endPoint + "search?query=" + term);
+    	JsonNode result = Util.getJsonResponse(session(), endPoint + "search?query=" + term);
 
     	//TODO check status
     	JsonNode users = result.get("result");
@@ -74,7 +74,7 @@ public class User extends Controller {
 	}
 
 	public static Result showDetail(String id){
-		JsonNode result = Util.getJsonResponse(endPoint + "show/" + id);
+		JsonNode result = Util.getJsonResponse(session(), endPoint + "show/" + id);
 		
 		if("success".equals(result.get("status").asText())){
 			JsonNode _user = result.get("user");
@@ -88,7 +88,7 @@ public class User extends Controller {
 	
 	public static Result create(){
     	Map<String, String>params = buildParams();
-    	JsonNode result = Util.postJsonResponse(endPoint + "create/" + params.get("id"), params);
+    	JsonNode result = Util.postJsonResponse(session(), endPoint + "create/" + params.get("id"), params);
 
     	if(isSuccess(result)){
     		flash("flash message");
@@ -103,7 +103,7 @@ public class User extends Controller {
     	
     	Map<String, String>params = buildParams();
     	
-    	JsonNode result = Util.putJsonResponse(endPoint + "update/" + id , params);
+    	JsonNode result = Util.putJsonResponse(session(), endPoint + "update/" + id , params);
     	
     	if(isSuccess(result)){
     		return redirect(routes.User.index());
@@ -114,7 +114,7 @@ public class User extends Controller {
 	}
 
 	public static Result delete(String id){
-		JsonNode result = Util.deleteJsonResponse(endPoint + "delete/" + id);
+		JsonNode result = Util.deleteJsonResponse(session(), endPoint + "delete/" + id);
 		
 		//TODO error
 		return redirect(routes.User.index());
