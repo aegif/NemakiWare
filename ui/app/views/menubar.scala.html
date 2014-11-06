@@ -1,3 +1,6 @@
+@import constant.Token
+@import util.Util
+
 <div class="navbar navbar-inverse navbar-fixed-top" role="navigation">
 	<div class="container-fluid">
 		<div class="navbar-header">
@@ -15,7 +18,7 @@
 				<li class="dropdown">
 					<a href="#" class="dropdown-toggle" data-toggle="dropdown">
 						<i class="glyphicon glyphicon-user"></i>
-						@session.get("loginUserId")<span class="caret" />
+						@session.get(Token.LOGIN_USER_ID)<span class="caret" />
 					</a>
 					<ul class="dropdown-menu" role="menu">
 						<li><a href="@routes.Application.logout().absoluteURL(request)" id="logout"><i class="glyphicon glyphicon-log-out"></i>ログアウト</a></li>
@@ -23,13 +26,16 @@
 					</ul>
 				</li>
 			
-				<!-- admin console -->
+				<!-- console -->
 				<li class="dropdown"><a href="#" class="dropdown-toggle"
 					data-toggle="dropdown"><i class="glyphicon glyphicon-cog"></i>コントロールパネル <span class="caret"></span></a>
 					<ul class="dropdown-menu" role="menu">
 						<li><a href="@routes.User.index().absoluteURL(request)" id="user-console"><i class="glyphicon glyphicon-user"></i>ユーザ管理</a></li>
 						<li><a href="@routes.Group.index().absoluteURL(request)" id="group-console"><i class="glyphicon glyphicon-th"></i>グループ管理</a></li>
-						<li class="divider"></li>
+						@if(session.get(Token.LOGIN_USER_IS_ADMIN) == "true"){
+							<li class="divider"></li>
+							<li><a href="#" id="search-engine-console"><i class="glyphicon glyphicon-search"></i>検索エンジン管理</a></li>
+						}
 					</ul>
 				</li>
 					
@@ -52,3 +58,15 @@
 
 <!-- floating pane for lightbox_me-->
 <div id="floating-pane" style="display:none"></div>
+
+<!-- scripts -->
+<script type="text/javascript">
+	$(function(){
+		$("#search-engine-console").click(function(){
+			$.get("@{Util.getContextPath(request)}search-engine", function(html){
+				$("#floating-pane").html(html);	
+				$("#floating-pane").lightbox_me(lightbox_me_config);
+			});
+		});
+	});
+</script>

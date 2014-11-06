@@ -22,7 +22,7 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.w3c.dom.Node;
 
-@Path("/solr")
+@Path("/search-engine")
 public class SolrResource extends ResourceBase {
 	
 	private SolrUtil solrUtil;
