@@ -34,6 +34,7 @@ import javax.ws.rs.core.MediaType;
 
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.service.node.ContentService;
+import jp.aegif.nemaki.service.node.PrincipalService;
 import jp.aegif.nemaki.util.constant.NodeType;
 
 import org.json.simple.JSONArray;
@@ -43,6 +44,7 @@ import org.json.simple.JSONObject;
 public class ArchiveResource extends ResourceBase {
 	
 	private ContentService contentService;
+	private PrincipalService principalService;
 	
 	public void setContentService(ContentService contentService) {
 		this.contentService = contentService;
@@ -121,4 +123,7 @@ public class ArchiveResource extends ResourceBase {
 		return archiveJson;
 	}
 
+	public void setPrincipalService(PrincipalService principalService) {
+		this.principalService = principalService;
+	}
 }
