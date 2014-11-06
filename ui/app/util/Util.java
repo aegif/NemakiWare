@@ -11,6 +11,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.URL;
+import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -74,6 +75,7 @@ import play.mvc.Http.Request;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import constant.PropertyKey;
+import constant.Token;
 
 public class Util {
 	public static Session createCmisSession(String id, String password){
@@ -601,5 +603,30 @@ public class Util {
 	 public static int getNavigationPagingSize(){
 		 String _size = NemakiConfig.getValue(PropertyKey.NAVIGATION_PAGING_SIZE);
 		 return Integer.valueOf(_size);
+	 }
+	 
+	 public static String getSeachEngineUrl(){
+		String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
+		String endPoint = coreRestUri + "search-engine/";
+		
+		JsonNode result = Util.getJsonResponse(endPoint + "url");
+		
+		String status = result.get(Token.REST_STATUS).textValue();
+		try {
+			if(Token.REST_SUCCESS.equals(status)){
+				String _url = result.get("url").textValue();
+				String url;
+				
+					url = URLDecoder.decode(_url, "UTF-8");
+					return url;
+			
+			}else{
+				throw new Exception("REST API returned failure.");
+			}
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+			return null;
+		}
 	 }
 }

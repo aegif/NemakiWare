@@ -28,6 +28,23 @@ public class SolrResource extends ResourceBase {
 	private SolrUtil solrUtil;
 
 	@GET
+	@Path("/url")
+	@Produces(MediaType.APPLICATION_JSON)
+	public String url() {
+		boolean status = true;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+		
+		String solrUrl = solrUtil.getSolrUrl();
+		
+		result.put("url", solrUrl);
+		
+		// Output
+		result = makeResult(status, result, errMsg);
+		return result.toJSONString();
+	}
+	
+	@GET
 	@Path("/init")
 	@Produces(MediaType.APPLICATION_JSON)
 	public String initialize() {
