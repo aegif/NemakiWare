@@ -1,9 +1,20 @@
 @import util.Util
+@import org.apache.commons.lang3.StringUtils
 
 @lightbox{
 	<div class="container">
-		<div class="row">
+		<div class="row" style="padding-bottom:30px;">
 			<h4><i class="glyphicon glyphicon-search"></i>検索エンジン管理</h4>
+		</div>
+
+		<div class="row" style="padding-bottom:30px;">
+			@defining(Util.getSeachEngineUrl()){ url =>
+				@if(StringUtils.isNotBlank(url)){
+					<i class="glyphicon glyphicon-link"></i>
+					<a href="@url" target="_blank">検索エンジンを開く</a>
+				}
+			}
+			
 		</div>
 
 		<div class="row">
