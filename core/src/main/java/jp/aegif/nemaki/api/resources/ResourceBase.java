@@ -81,6 +81,7 @@ public class ResourceBase {
 	static final String ITEM_CREATED = "created";
 	static final String ITEM_MODIFIER = "modifier";
 	static final String ITEM_MODIFIED = "modified";
+	static final String ITEM_IS_ADMIN = "isAdmin";
 	static final String ITEM_GROUPID = "groupId";
 	static final String ITEM_GROUP = "group";
 	static final String ITEM_GROUPNAME = "groupName";
