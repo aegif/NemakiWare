@@ -637,8 +637,10 @@ public class Node extends Controller {
 		return new Principal("user", anonymous, anonymous);  
 	   }
 	   
+	   String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
+	   
 	   //user
-	   JsonNode resultUser = Util.getJsonResponse("http://localhost:8080/nemakiware/rest/user/show/" + principalId);
+	   JsonNode resultUser = Util.getJsonResponse(session(), coreRestUri + "user/show/" + principalId);
 	   //TODO check status
 	   JsonNode user = resultUser.get("user");
 	   if(user != null){
@@ -647,7 +649,7 @@ public class Node extends Controller {
 	   }
 		
 	   //group
-	   JsonNode resultGroup = Util.getJsonResponse("http://localhost:8080/nemakiware/rest/group/show/" + principalId);
+	   JsonNode resultGroup = Util.getJsonResponse(session(), coreRestUri + "group/show/" + principalId);
 	   //TODO check status
 	   JsonNode group = resultGroup.get("group");
 	   if(group != null){
