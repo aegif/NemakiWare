@@ -389,6 +389,9 @@ public class UserResource extends ResourceBase {
 		userJSON.put(ITEM_CREATED, created);
 		userJSON.put(ITEM_MODIFIER, user.getModifier());
 		userJSON.put(ITEM_MODIFIED, modified);
+		
+		boolean isAdmin = (user.isAdmin() == null) ? false : true; 
+		userJSON.put(ITEM_IS_ADMIN, isAdmin);
 
 		return userJSON;
 	}
