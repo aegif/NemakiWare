@@ -1,0 +1,24 @@
+@import util.Util
+@import org.apache.commons.collections.CollectionUtils
+@import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition
+
+@(pdf:PropertyDefinition[_])(value:Any)(filter:Boolean = true)
+
+@if(filter){
+	<tr>
+		<td class="col-md-2 col-sm-2">
+			@pdf.getDisplayName
+		</td>
+		<td class="col-md-1 col-sm-1">
+			@if(Util.isReadWrite(pdf)){
+				<i class="glyphicon glyphicon-ok editable"></i>
+				<div style="display:none">1</div>
+			}else{
+				<div style="display:none">0</div>
+			}
+		</td>
+		<td class="col-md-5 col-sm-5 value" id="@pdf.getId">
+			<div>@value</div>
+		</td>
+	</tr>
+}

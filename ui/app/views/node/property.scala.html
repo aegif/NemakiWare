@@ -1,3 +1,5 @@
+@import table._
+
 @import util.Formatter
 @import util.Util
 @import org.apache.chemistry.opencmis.client.api.Document
@@ -69,7 +71,7 @@
 				<div><h4><i class="glyphicon glyphicon-wrench"></i>プロパティ</h4></div>
 				@editableTable("obj-property-table")(10){
 					@for(p <- primaries){
-						@editableRow(p.getId)(p.getId)(p.getValueAsString)(editables)
+						@editableRow(p.getDefinition)(p.getValueAsString)()
 					}
 				}
 				<hr/>

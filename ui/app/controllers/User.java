@@ -15,6 +15,7 @@ import play.mvc.Security.Authenticated;
 import util.Util;
 import views.html.user.blank;
 import views.html.user.index;
+import views.html.user.property;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
@@ -79,7 +80,7 @@ public class User extends Controller {
 		if("success".equals(result.get("status").asText())){
 			JsonNode _user = result.get("user");
 			model.User user = new model.User(_user);
-			return ok(views.html.user.detail.render(user));
+			return ok(property.render(user));
 		}else{
 			//TODO
 			return ok();
