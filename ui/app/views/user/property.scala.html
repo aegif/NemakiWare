@@ -1,3 +1,6 @@
+@import table._
+@import util.Util
+
 @(user:model.User)
 
 @defining(new ArrayList[String]()){ editables =>
@@ -23,20 +26,27 @@
 	<script type="text/javascript">
 		//binding: udpate button
 		$(document).on('click','#user-update', function(){
-			//post
+			//build data
+			var data = {};
+			data['userId'] = "@user.id";
+			data['userName'] = editedValue('#user-name');
+			data['firstName'] = editedValue('#user-first-name');
+			data['lastName'] = editedValue('#user-last-name');
+			data['email'] = editedValue('#user-email');
+			
+			//call
 			$.ajax({
 				url : "@routes.User.update(user.id).absoluteURL(request)",
 				type: 'POST',
-				data : {
-							userId: "@user.id",
-							userName : editedValue('#user-name'),
-							firstName : editedValue('#user-first-name'),
-							lastName : editedValue('#user-last-name'),
-							email : editedValue$('#user-email')
-						},
+				data : data,
 				success : function(data){
 					window.location.reload();
-				}
+				},
+				error : function(XMLHttpRequest, textStatus, errorThrown) {
+		            alert("XMLHttpRequest : " + XMLHttpRequest.status);
+		            alert("textStatus : " + textStatus);
+		            alert("errorThrown : " + errorThrown.message);
+		         }
 			});
 		});
 	</script>
@@ -70,15 +80,35 @@
 						</thead>
 						<tbody>
 							<!-- id row -->
-							@editableRow("user-id")("ID")(user.id)(editables)
+							@defining(Util.buildTempStringDefinition(
+								"user-id", "ID", true, false, false, null, false
+							)){ pdf =>
+								@editableRow(pdf)(user.id)()
+							}
 							<!-- name row -->
-							@editableRow("user-name")("名前")(user.name)(editables)
+							@defining(Util.buildTempStringDefinition(
+								"user-name", "名前", true, true, false, null, false
+							)){ pdf =>
+								@editableRow(pdf)(user.name)()
+							}
 							<!-- last name row -->
-							@editableRow("user-last-name")("姓")(user.lastName)(editables)
+							@defining(Util.buildTempStringDefinition(
+								"user-last-name", "姓", false, true, false, null, false
+							)){ pdf =>
+								@editableRow(pdf)(user.lastName)()
+							}
 							<!-- first name row -->
-							@editableRow("user-first-name")("名")(user.firstName)(editables)
+							@defining(Util.buildTempStringDefinition(
+								"user-first-name", "名", false, true, false, null, false
+							)){ pdf =>
+								@editableRow(pdf)(user.firstName)()
+							}
 							<!-- email row -->
-							@editableRow("user-email")("メール")(user.email)(editables)
+							@defining(Util.buildTempStringDefinition(
+								"user-email", "メール", false, true, false, null, false
+							)){ pdf =>
+								@editableRow(pdf)(user.email)()
+							}
 						</tbody>
 					</table>
 	

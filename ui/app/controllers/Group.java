@@ -19,6 +19,7 @@ import play.mvc.Security.Authenticated;
 import util.Util;
 import views.html.group.blank;
 import views.html.group.index;
+import views.html.group.property;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
@@ -112,7 +113,7 @@ public class Group extends Controller {
 		return redirect(routes.User.index());
 	}
 
-	public static Result showDetail(String id){
+	public static Result showProperty(String id){
 		JsonNode result = Util.getJsonResponse(session(), endPoint + "show/" + id);
 		
 		if(isSuccess(result)){
@@ -150,7 +151,7 @@ public class Group extends Controller {
 			principals.addAll(users);
 			principals.addAll(groups);
 			
-			return ok(views.html.group.edit.render(group, principals));
+			return ok(property.render(group, principals));
 		}else{
 			//TODO
 			return ok();

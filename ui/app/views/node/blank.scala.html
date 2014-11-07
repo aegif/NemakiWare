@@ -1,4 +1,5 @@
-@import helper.twitterBootstrap._
+@import table._
+
 @import util.Util
 @import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition
 @import org.apache.chemistry.opencmis.client.api.Tree
@@ -122,11 +123,7 @@
 						<div><h4>プロパティ</h4></div>
 						@editableTable("obj-property-table")(10){
 							@for(p <- primaries){
-								@if(Util.isOnCreate(p) || Util.isEditable(p)){
-									@if(editables.contains("#" + p.getId)){
-										@editableRow(p.getId)(p.getId)("")(editables)
-									}
-								}
+								@editableRow(p)("")(Util.isReadWrite(p) && !p.getId.equals("cmis:secondaryObjectTypeIds"))
 							}
 						}
 						<hr/>

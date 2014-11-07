@@ -21,6 +21,8 @@ libraryDependencies ++= Seq(
   "org.apache.chemistry.opencmis" % "chemistry-opencmis-client-impl" % "0.12.0",
   "org.apache.chemistry.opencmis" % "chemistry-opencmis-client-bindings" % "0.12.0",
   "org.apache.chemistry.opencmis" % "chemistry-opencmis-client-api" % "0.12.0",
+  "org.apache.chemistry.opencmis" % "chemistry-opencmis-client-api" % "0.12.0",
+  "org.apache.chemistry.opencmis" % "chemistry-opencmis-commons-impl" % "0.12.0",
   "org.apache.httpcomponents" % "httpclient" % "4.4-beta1"
 )
 

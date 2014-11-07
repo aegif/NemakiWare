@@ -34,6 +34,7 @@ import org.apache.chemistry.opencmis.commons.SessionParameter;
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.chemistry.opencmis.commons.definitions.Choice;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.BindingType;
@@ -41,6 +42,7 @@ import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.impl.UrlBuilder;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -626,5 +628,17 @@ public class Util {
 			e.printStackTrace();
 			return null;
 		}
+	 }
+	 
+	 public static PropertyDefinition<String> buildTempStringDefinition(String id, String name, boolean required, boolean updatable, boolean multiple, List<Choice<String>>choices, boolean openChoice ){
+		PropertyStringDefinitionImpl pdf = new PropertyStringDefinitionImpl();
+		pdf.setId(id);
+		pdf.setDisplayName(name);
+		pdf.setIsRequired(required);
+		pdf.setUpdatability((updatable)? Updatability.READWRITE : Updatability.READONLY);
+		pdf.setCardinality((multiple)? Cardinality.MULTI : Cardinality.SINGLE);
+		pdf.setChoices(null);
+		pdf.setIsOpenChoice(openChoice);
+		return pdf;
 	 }
 }

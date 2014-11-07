@@ -51,7 +51,7 @@ GET		/groups							controllers.Group.index()
 GET		/groups/search					controllers.Group.search(term:String ?= "")
 GET		/groups/new						controllers.Group.showBlank()
 POST	/groups/create					controllers.Group.create()
-GET		/groups/:id						controllers.Group.showDetail(id:String)
+GET		/groups/:id						controllers.Group.showProperty(id:String)
 POST	/groups/:id/update				controllers.Group.update(id:String)
 POST	/groups/:id/delete				controllers.Group.delete(id:String)
 
