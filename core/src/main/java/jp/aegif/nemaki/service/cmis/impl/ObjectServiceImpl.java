@@ -464,8 +464,10 @@ public class ObjectServiceImpl implements ObjectService {
 		// Body of the method
 		// //////////////////
 		// TODO Externalize versioningState
-		contentService.createDocumentWithNewStream(callContext, doc,
+		Document result = contentService.createDocumentWithNewStream(callContext, doc,
 				contentStream);
+		
+		objectId.setValue(result.getId());
 	}
 
 	@Override
