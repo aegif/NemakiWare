@@ -2,11 +2,14 @@ package controllers;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
 import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 
@@ -251,12 +254,19 @@ public class Node extends Controller {
 			e.printStackTrace();
 		}
 		
-		//TODO better solution for encoding file name
+		try {
+			if (request().getHeader("User-Agent").indexOf("MSIE") == -1) {
+			  // Firefox, Opera 11
+			  response().setHeader("Content-Disposition", String.format(Locale.JAPAN, "attachment; filename*=utf-8'jp'%s", URLEncoder.encode(doc.getName(), "utf-8")));
+			} else {
+			  // IE7, 8, 9
+			  response().setHeader("Content-Disposition", String.format(Locale.JAPAN, "attachment; filename=\"%s\"", new String(doc.getName().getBytes("MS932"), "ISO8859_1")));
+			}
+		}catch(Exception e){
+			e.printStackTrace();
+		}
 		
-		response().setHeader("Content-disposition", "attachment; filename="+ doc.getName());
 		response().setContentType(cs.getMimeType());
-		
-		
     	return ok(tmpFile);
     }
     
