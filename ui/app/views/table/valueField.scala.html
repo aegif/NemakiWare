@@ -1,0 +1,13 @@
+@import util.Util
+@import org.apache.commons.collections.CollectionUtils
+@import org.apache.chemistry.opencmis.client.api.Property
+
+@(property:Property[_])
+
+@if(Util.isMultiple(property.getDefinition)){
+	@multiValueField(property)
+}else{
+	<div class="editable-value-field-container">
+		<div class="editable-value-field">@property.getValueAsString</div>
+	</div>
+}

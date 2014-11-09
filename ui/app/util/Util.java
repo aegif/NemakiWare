@@ -10,7 +10,6 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
-import java.net.URL;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -28,6 +27,7 @@ import org.apache.chemistry.opencmis.client.api.Property;
 import org.apache.chemistry.opencmis.client.api.Rendition;
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.client.api.SessionFactory;
+import org.apache.chemistry.opencmis.client.runtime.PropertyImpl;
 import org.apache.chemistry.opencmis.client.runtime.SessionFactoryImpl;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.SessionParameter;
@@ -41,7 +41,6 @@ import org.apache.chemistry.opencmis.commons.enums.BindingType;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
-import org.apache.chemistry.opencmis.commons.impl.UrlBuilder;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
@@ -78,6 +77,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 import constant.PropertyKey;
 import constant.Token;
+import constant.UpdateContext;
 
 public class Util {
 	public static Session createCmisSession(String id, String password){
@@ -630,7 +630,29 @@ public class Util {
 		}
 	 }
 	 
-	 public static PropertyDefinition<String> buildTempStringDefinition(String id, String name, boolean required, boolean updatable, boolean multiple, List<Choice<String>>choices, boolean openChoice ){
+	 public static Property buildTempProperty(String id, String name, boolean required, boolean updatable, boolean multiple, List<Choice>choices, boolean openChoice, Object values){
+		 PropertyDefinition pdf = buildTempStringDefinition(id, name, required, updatable, multiple, choices, openChoice);
+		 
+		 PropertyImpl prop = new PropertyImpl(pdf, listify(values));
+		 return prop;
+	 }
+	 
+	 public static Property buildTempProperty(PropertyDefinition pdf, Object values){
+		 PropertyImpl prop = new PropertyImpl(pdf, listify(values));
+		 return prop;
+	 }
+	 
+	 public static List<?> listify(Object obj){
+		 if (obj instanceof List<?>) {
+			 return (List<?>)obj;
+		 }else{
+			 List list = new ArrayList<Object>();
+			 list.add(obj);
+			 return list;
+		 }
+	 }
+
+	 public static PropertyDefinition buildTempStringDefinition(String id, String name, boolean required, boolean updatable, boolean multiple, List<Choice>choices, boolean openChoice){
 		PropertyStringDefinitionImpl pdf = new PropertyStringDefinitionImpl();
 		pdf.setId(id);
 		pdf.setDisplayName(name);
@@ -640,5 +662,28 @@ public class Util {
 		pdf.setChoices(null);
 		pdf.setIsOpenChoice(openChoice);
 		return pdf;
+	 }
+	 
+	 public static boolean isMultiple(PropertyDefinition<?> pdf){
+		 return Cardinality.MULTI == pdf.getCardinality();
+	 }
+	 
+	 public static boolean isEditable(PropertyDefinition pdf, UpdateContext updateContext){
+		 switch(updateContext){
+		 case NORMAL:
+			 return isReadWrite(pdf);
+		 case CREATE:
+			 return isReadWrite(pdf) || isOnCreate(pdf);
+		 case CHECKOUT:
+			 return isReadWrite(pdf) || isWhenCheckedOut(pdf);
+		 default:
+			 return false;
+		 }
+	 }
+	 
+	 public static boolean isEditableOnNodeBlank(PropertyDefinition<?> pdf){
+		 return isEditable(pdf, UpdateContext.CREATE) && 
+			!PropertyIds.OBJECT_TYPE_ID.equals(pdf.getId()) &&
+			!PropertyIds.SECONDARY_OBJECT_TYPE_IDS.equals(pdf.getId());
 	 }
 }

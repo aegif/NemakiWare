@@ -1,3 +1,5 @@
+@import constant.UpdateContext
+
 @(tableId:String)(paging:Int=0)(rows:Html)
 <table class="footable" 
 	id="@tableId" 
@@ -5,8 +7,7 @@
 	@if(paging!=0){
 		data-page-navigation=".pagination" 
 		data-page-size="@paging"
-	}
-	>
+	}>
 	<thead>
 		<tr>
 			<th class="col-md-2 col-sm-2">キー</th>
@@ -26,9 +27,15 @@
 	</tfoot>
 </table>
 
-<!-- footable -->
+<!-- scripts:editableTable -->
 <script type="text/javascript">
-	$(function () {
-	    $('#@tableId').footable();
-	});
+	$('#@tableId').footable();
 </script>  
+<script src="@routes.Assets.at("javascripts/editable-table.js")" type="text/javascript"></script>
+<script type="text/javascript">
+	bindEditable('#@tableId > tbody > tr > td.editable-value div.editable-value-field');
+</script>
+<script src="@routes.Assets.at("javascripts/editable-value-control.js")" type="text/javascript"></script>
+<script type="text/javascript">
+	editableValueFieldControl();
+</script>
