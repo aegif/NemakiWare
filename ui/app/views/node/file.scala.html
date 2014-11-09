@@ -11,7 +11,7 @@
 					<legend>ファイルを更新する</legend>
 					<div>編集したファイルをアップロードし、ロックを解除します。</div>
 					<input type="file" name="file"/>
-					<input type="hidden" name="parentId" value="@parentId"/>
+					<input type="hidden" name="cmis:parentId" value="@parentId"/>
 			   		<button type="submit" class="btn btn-default btn-xs">実行</button>
 			   	</fieldset>
 				}
@@ -22,20 +22,17 @@
 				<fieldset>
 					<legend>編集をやめる</legend>
 					<div>編集前の状態に戻し、ロックを解除します。</div>
-					<input type="hidden" name="parentId" value="@parentId"/>
+					<input type="hidden" name="cmis:parentId" value="@parentId"/>
 			   		<button type="submit" class="btn btn-default btn-xs">実行</button>
 			   	</fieldset>
 				}
-			
-			
 		}else{
 			<!-- checkout form -->
 			
 				<legend><i class="glyphicon glyphicon-lock"/>オフライン編集のためファイルをロックする</legend>
 				<div>ファイルはロックされ、編集者以外は操作できません。<br/>編集用のコピーをダウンロードして編集してください。</div>
-				<input type="hidden" name="parentId" value="@parentId"/>
+				<input type="hidden" name="cmis:parentId" value="@parentId"/>
 		   		<button id="checkout" class="btn btn-default btn-xs">実行</button>
-	
 			<br/>
 			or
 			<br/><br/>
