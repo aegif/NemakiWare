@@ -45,8 +45,8 @@
 				<fieldset>
 					<legend><i class="glyphicon glyphicon-upload"/>直接ファイル更新する</legend>
 					<div>ファイルをロックせず直接更新します。バージョン履歴には反映されます。</div>
-					<input type="file"/>
-					<input type="hidden" name="parentId" value="@parentId"/>
+					<input type="file" name="file"/>
+					<input type="hidden" name="cmis:parentId" value="@parentId"/>
 			   		<button type="submit" class="btn btn-default btn-xs">実行</button>
 		   		</fieldset>
 			}
