@@ -3,26 +3,64 @@
 
 @(user:model.User)
 
-@defining(new ArrayList[String]()){ editables =>
-	@{
-		editables.add("#user-name")
-		editables.add("#user-first-name")
-		editables.add("#user-last-name")
-		editables.add("#user-email")
-	}
+@lightbox{
+	<!-- html -->
+	<div class="container">
+		<div class="row">
+			<div class="col-sm-5">
+				<h3><i class="glyphicon glyphicon-user">@user.name</i></h3>
+			</div>
+		</div>
 
-	<!-- make fields editable -->
-	<script type="text/javascript" src="@routes.Assets.at("javascripts/binding-editable.js")"/>
-	<script type="text/javascript">
-		var editables = [];
-		@for(editable <- editables){
-			editables.push("@editable");
-		}                 
+		<div class="row" style="margin-bottom:15px">
+			<div class="col-sm-5">
+				<button class="btn btn-default btn-primary" id="user-update"><i class=" glyphicon glyphicon-saved"></i>更新</button>
+			</div>
+		</div>
 		
-		jQuery.each(editables, function(i, editable){
-			bindEditable(editable);
-		});
-	</script>
+		<div class="row">
+			<div class="col-sm-8">
+				<div><h4><i class="glyphicon glyphicon-wrench"></i>プロパティ</h4></div>
+				
+				@editableTable("obj-property-table")(10){
+					<!-- id row -->
+					@defining(Util.buildTempProperty(
+						"user-id", "ID", true, false, false, null, false, user.id
+					)){ property =>
+						@editableRow(property)()
+					}
+					<!-- name row -->
+					@defining(Util.buildTempProperty(
+						"user-name", "名前", true, true, false, null, false, user.name
+					)){ property =>
+						@editableRow(property)()
+					}
+					<!-- last name row -->
+					@defining(Util.buildTempProperty(
+						"user-last-name", "姓", false, true, false, null, false, user.lastName
+					)){ property =>
+						@editableRow(property)()
+					}
+					<!-- first name row -->
+					@defining(Util.buildTempProperty(
+						"user-first-name", "名", false, true, false, null, false, user.firstName
+					)){ property =>
+						@editableRow(property)()
+					}
+					<!-- email row -->
+					@defining(Util.buildTempProperty(
+						"user-email", "メール", false, true, false, null, false, user.email
+					)){ property =>
+						@editableRow(property)()
+					}
+				}
+				<hr/>
+
+			</div>
+		</div>
+	</div>
+	
+	<!-- scripts -->
 	<script type="text/javascript">
 		//binding: udpate button
 		$(document).on('click','#user-update', function(){
@@ -50,80 +88,4 @@
 			});
 		});
 	</script>
-	
-
-	@lightbox{
-		<div class="container">
-			<div class="row">
-				<div class="col-sm-5">
-					<h3><i class="glyphicon glyphicon-user">@user.name</i></h3>
-				</div>
-			</div>
-	
-			<div class="row" style="margin-bottom:15px">
-				<div class="col-sm-5">
-					<button class="btn btn-default btn-primary" id="user-update"><i class=" glyphicon glyphicon-saved"></i>更新</button>
-				</div>
-			</div>
-			
-			<div class="row">
-				<div class="col-sm-8">
-					<div><h4><i class="glyphicon glyphicon-wrench"></i>プロパティ</h4></div>
-					
-					<table class="footable" id="user-property-table">
-						<thead>
-							<tr>
-								<th class="col-md-2 col-sm-2">キー</th>
-								<th class="col-md-1 col-sm-1"><i class="glyphicon glyphicon-edit" title="更新可能"></i></th>
-								<th class="col-md-5 col-sm-5">値</th>
-							</tr>
-						</thead>
-						<tbody>
-							<!-- id row -->
-							@defining(Util.buildTempStringDefinition(
-								"user-id", "ID", true, false, false, null, false
-							)){ pdf =>
-								@editableRow(pdf)(user.id)()
-							}
-							<!-- name row -->
-							@defining(Util.buildTempStringDefinition(
-								"user-name", "名前", true, true, false, null, false
-							)){ pdf =>
-								@editableRow(pdf)(user.name)()
-							}
-							<!-- last name row -->
-							@defining(Util.buildTempStringDefinition(
-								"user-last-name", "姓", false, true, false, null, false
-							)){ pdf =>
-								@editableRow(pdf)(user.lastName)()
-							}
-							<!-- first name row -->
-							@defining(Util.buildTempStringDefinition(
-								"user-first-name", "名", false, true, false, null, false
-							)){ pdf =>
-								@editableRow(pdf)(user.firstName)()
-							}
-							<!-- email row -->
-							@defining(Util.buildTempStringDefinition(
-								"user-email", "メール", false, true, false, null, false
-							)){ pdf =>
-								@editableRow(pdf)(user.email)()
-							}
-						</tbody>
-					</table>
-	
-					<hr/>
-	
-				</div>
-			</div>
-			
-		</div>
-		
-		
-		
-	}
-	
-	
-	
 }
-

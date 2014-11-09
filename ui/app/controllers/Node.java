@@ -32,11 +32,11 @@ import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
+import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
@@ -50,7 +50,6 @@ import play.mvc.Http.MultipartFormData;
 import play.mvc.Http.MultipartFormData.FilePart;
 import play.mvc.Security.Authenticated;
 import play.mvc.Result;
-import util.NemakiConfig;
 import util.Util;
 import views.html.node.preview;
 import views.html.node.tree;
@@ -437,11 +436,25 @@ public class Node extends Controller {
     			if(PropertyIds.SECONDARY_OBJECT_TYPE_IDS.equals(pdf.getId())){
     				continue;
     			}
-
-    			String value = input.data().get(pdf.getId());
-
-    			//TODO type conversion
-    			properties.put(pdf.getId(), value);
+    			
+    			if(Cardinality.SINGLE == pdf.getCardinality()){
+    				String value = input.data().get(pdf.getId());
+    				//TODO type conversion
+    				properties.put(pdf.getId(), value);
+    			}else{
+    				System.out.println();
+    				//TODO find better way
+    				List<String> list = new ArrayList<String>();
+    				for(int i=0; i < input.data().keySet().size(); i++){
+    					String keyWithIndex = pdf.getId() + "[" + i + "]";
+    					String value = input.data().get(keyWithIndex);
+    					if(value == null){
+    						break;
+    					}
+    					list.add(value);
+    				}
+    				properties.put(pdf.getId(), list);
+    			}
     		}
     	}
 
