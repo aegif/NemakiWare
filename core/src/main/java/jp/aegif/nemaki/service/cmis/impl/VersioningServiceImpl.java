@@ -29,6 +29,7 @@ import java.util.List;
 
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
+import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.service.cmis.CompileObjectService;
 import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.cmis.VersioningService;
@@ -205,11 +206,19 @@ public class VersioningServiceImpl implements VersioningService {
 		// Sort by the descending order
 		Collections.sort(allVersions, new VersionComparator());
 	
-		//Permissions check on the latest document
-		exceptionService.permissionDenied(context,
+		//Permissions filter
+		/*exceptionService.permissionDenied(context,
 				PermissionMapping.CAN_GET_ALL_VERSIONS_VERSION_SERIES,
 				allVersions.get(0));
-
+		 */
+		Document latest = allVersions.get(0);
+		if(latest.isPrivateWorkingCopy()){
+			VersionSeries vs = contentService.getVersionSeries(latest);
+			if(!context.getUsername().equals(vs.getVersionSeriesCheckedOutBy())){
+				allVersions.remove(latest);
+			}
+		}
+		
 		// //////////////////
 		// Body of the method
 		// //////////////////
