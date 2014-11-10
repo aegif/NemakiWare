@@ -1,6 +1,8 @@
 @import helper.twitterBootstrap._
 @import util.Util
 @import util.Formatter
+@import org.apache.chemistry.opencmis.commons.PropertyIds
+
 @(objects: List[org.apache.chemistry.opencmis.client.api.CmisObject])
 
 <table class="footable" id="objects-table" data-sort="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
@@ -34,8 +36,8 @@
 			<td>@obj.getCreatedBy()</td>
 			<td>@Formatter.calToString(obj.getCreationDate())</td>
 			<td>
-				<button type="button" class="btn btn-default show-detail" cmis-id="@obj.getId()"><i class="glyphicon glyphicon-wrench"></i>詳細</button>
-				<button type="button" class="btn btn-default delete" cmis-id="@obj.getId()"><i class="glyphicon glyphicon-trash"></i>削除</button>
+				<button type="button" class="btn btn-default show-detail" cmis-id="@obj.getId()"><i class="glyphicon glyphicon-wrench"></i>@Messages("view.detail")</button>
+				<button type="button" class="btn btn-default delete" cmis-id="@obj.getId()"><i class="glyphicon glyphicon-trash"></i>@Messages("view.delete")</button>
 				@if(Util.isDocument(obj) && obj.asInstanceOf[org.apache.chemistry.opencmis.client.api.Document].isVersionSeriesCheckedOut()){
 				<button type="button" class="btn btn-default pwc" cmis-id="@obj.asInstanceOf[org.apache.chemistry.opencmis.client.api.Document].getVersionSeriesCheckedOutId()">PWC</button>
 				}

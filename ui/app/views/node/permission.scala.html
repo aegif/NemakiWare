@@ -10,7 +10,7 @@
 <div class="container tab-pane">
 	<div class="row" style="margin-bottom:15px">
 		<div class="col-sm-5">
-			<button class="btn btn-default btn-primary" id="permission-update"><i class=" glyphicon glyphicon-saved"></i>更新</button>
+			<button class="btn btn-default btn-primary" id="permission-update"><i class=" glyphicon glyphicon-saved"></i>@Messages("view.save")</button>
 		</div>
 	</div>
 
@@ -22,13 +22,13 @@
 	
 	<div class="row">
 		<div class="col-sm-5">
-			@searchTable("検索結果")(members)
+			@searchTable(Messages("view.node.permission.search.caption"))(members)
 		</div>
 	</div>
 	
 	<div class="row">
 		<div class="col-sm-5">
-			@selectedTable("選択されたメンバ")(members)(Util.zipWithId(obj.getAcl))(permissionDefinitions)
+			@selectedTable(Messages("view.node.permission.table.caption"))(members)(Util.zipWithId(obj.getAcl))(permissionDefinitions)
 		</div>
 	</div>
 </div>

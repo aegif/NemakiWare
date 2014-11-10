@@ -15,7 +15,7 @@
 			<legend>@title</legend>
 		</div>
 		<div>
-			<button class='btn btn-default btn-xs' id='@{prefix}remove'><i class="glyphicon glyphicon-remove-circle"></i>除外</button>
+			<button class='btn btn-default btn-xs' id='@{prefix}remove'><i class="glyphicon glyphicon-remove-circle"></i>@Messages("view.remove")</button>
 		</div>
 		
 		
@@ -23,16 +23,16 @@
 			<thead>
 				<tr>
 					<th data-sort-ignore="true"><!-- checkbox --></th>
-					<th data-sort-ignore="true">種類</th>
-					<th data-sort-initial="true">ID</th>
-					<th>名前</th>
+					<th data-sort-ignore="true">@Messages("view.principal.type")</th>
+					<th data-sort-initial="true">@Messages("view.principal.id")</th>
+					<th>@Messages("view.principal.name")</th>
 					<!-- permission definitions -->
 					@if(CollectionUtils.isNotEmpty(permissionDefinitions)){
 						@for(pdf <- permissionDefinitions){
 							<th>@pdf.getId</th>
 						}
 						
-						<th>継承</th>
+						<th>@Messages("view.principal.inheritance")</th>
 					}
 				</tr>
 			</thead>
@@ -75,4 +75,3 @@
 		</table>
 	}
 }
-

@@ -15,13 +15,13 @@
 	<div class="container">
 		<div class="row" style="margin-bottom:15px">
 			<div class="col-sm-5">
-				<button class="btn btn-default btn-primary" id="property-update"><i class=" glyphicon glyphicon-saved"></i>更新</button>
+				<button class="btn btn-default btn-primary" id="property-update"><i class=" glyphicon glyphicon-saved"></i>@Messages("view.save")</button>
 			</div>
 		</div>
 		
 		<div class="row">
 			<div class="col-sm-8">
-				<div><h4><i class="glyphicon glyphicon-wrench"></i>プロパティ</h4></div>
+				<div><h4><i class="glyphicon glyphicon-wrench"></i>@Messages("view.node.property")</h4></div>
 				@editableTable("obj-property-table")(10){
 					@for(p <- primaries){
 						@editableRow(p)()
