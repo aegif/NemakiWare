@@ -8,10 +8,17 @@
 <table class="footable" id="objects-table" data-sort="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
 	<thead>
 		<tr>
-			<th data-class="expand" data-sort-initial="true">名前</th>
-			<th data-class="expand">作成者</th>
-			<th>作成時刻</th>
-			<th data-sort-ignore="true"></th>
+			<th data-class="expand" data-sort-initial="true">@Util.l10nCmisId(PropertyIds.NAME)</th>
+			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
+				<th data-class="expand">@Util.l10nCmisId(column)</th>
+			}
+			<!--  
+				<th data-class="expand" data-sort-initial="true">@Util.l10nCmisId(PropertyIds.NAME)</th>
+				<th data-class="expand">作成者</th>
+				<th>作成時刻</th>
+			-->
+			
+			<th data-sort-ignore="true">@Messages("view.action")</th>
 		</tr>
 	</thead>
 	<tbody>
@@ -33,8 +40,9 @@
 					@obj.getName()
 				</a>
 			</td>
-			<td>@obj.getCreatedBy()</td>
-			<td>@Formatter.calToString(obj.getCreationDate())</td>
+			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
+				<td>@Util.displayValue(obj, column)</td>
+			}
 			<td>
 				<button type="button" class="btn btn-default show-detail" cmis-id="@obj.getId()"><i class="glyphicon glyphicon-wrench"></i>@Messages("view.detail")</button>
 				<button type="button" class="btn btn-default delete" cmis-id="@obj.getId()"><i class="glyphicon glyphicon-trash"></i>@Messages("view.delete")</button>
@@ -47,7 +55,7 @@
 	</tbody>
 	<tfoot>
 		<tr>
-			<td colspan="4">
+			<td colspan="@play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 2">
 				<div class="pagination pagination-centered hide-if-no-paging"></div>
 			</td>
 		</tr>

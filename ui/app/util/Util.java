@@ -688,13 +688,27 @@ public class Util {
 			!PropertyIds.SECONDARY_OBJECT_TYPE_IDS.equals(pdf.getId());
 	 }
 	 
-	 public static String l10n(PropertyDefinition pdf){
-		 String key = "view.cmis." + pdf.getId().replaceFirst(":", ".");
-		 String s = PropertyIds.CREATION_DATE;
+	 public static String l10nCmisId(String cmisId){
+		 String key = "view.cmis." + cmisId.replaceAll(":", ".");
 		 if(Messages.isDefined(key)){
 			 return Messages.get(key);
 		 }else{
-			 return pdf.getDisplayName();
+			 return cmisId;
 		 }
+	 }
+	 
+	 public static String displayValue(CmisObject obj, String propertyId){
+		 if(PropertyIds.CREATED_BY.equals(propertyId)){
+			 return obj.getCreatedBy();
+		 }else if(PropertyIds.CREATION_DATE.equals(propertyId)){
+			 return Formatter.calToString(obj.getCreationDate());
+		 } else if(PropertyIds.LAST_MODIFIED_BY.equals(propertyId)){
+			 return obj.getLastModifiedBy();
+		}else if(PropertyIds.LAST_MODIFICATION_DATE.equals(propertyId)){
+			 return Formatter.calToString(obj.getLastModificationDate());
+		 }
+		 
+		 
+		 return "#Error!";
 	 }
 }
