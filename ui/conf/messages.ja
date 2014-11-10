@@ -81,3 +81,9 @@ view.delete=削除
 view.add=追加
 view.remove=除外
 view.action=アクション
+
+view.cmis.cmis.name=名前
+view.cmis.cmis.createdBy=作成者
+view.cmis.cmis.creationDate=作成時刻
+view.cmis.cmis.lastModifiedBy=更新者
+view.cmis.cmis.lastModificationDate=更新時刻

@@ -1,8 +1,9 @@
 package controllers;
 
+import global.Global;
+
 import java.io.File;
 import java.io.IOException;
-import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.text.MessageFormat;
 import java.util.ArrayList;
@@ -43,26 +44,26 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrinc
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
+import play.api.Play;
 import play.data.DynamicForm;
 import play.data.Form;
 import play.mvc.Controller;
 import play.mvc.Http.MultipartFormData;
 import play.mvc.Http.MultipartFormData.FilePart;
-import play.mvc.Security.Authenticated;
 import play.mvc.Result;
+import play.mvc.Security.Authenticated;
 import util.Util;
-import views.html.node.preview;
-import views.html.node.tree;
-import views.html.node.version;
 import views.html.node.blank;
 import views.html.node.detail;
-import views.html.node.property;
 import views.html.node.file;
+import views.html.node.preview;
+import views.html.node.property;
 import views.html.node.search;
+import views.html.node.tree;
+import views.html.node.version;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Authenticated(Secured.class)
 public class Node extends Controller {
