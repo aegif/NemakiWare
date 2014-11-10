@@ -99,7 +99,7 @@
 			var fileList = document.getElementById("file").files;
 			if(fileList.length > 0){
 				var fileName = fileList[0].name;
-				$(escape('#cmis:name') + ' > div').text(fileName);
+				$(escape('#cmis:name') + ' div.editable-value-field').text(fileName);
 			}
 		});
 	</script>
