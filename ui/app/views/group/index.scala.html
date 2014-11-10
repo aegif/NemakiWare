@@ -11,7 +11,7 @@
 		<div class="container">
 	  		<div class="row">
 	  			<div class="col-md-11">
-	  				<h3><i class="glyphicon glyphicon-th"></i>グループ管理</h3>
+	  				<h3><i class="glyphicon glyphicon-th"></i>@Messages("view.group.caption")</h3>
 	  			</div>
 	  		</div>
 	  		
@@ -22,7 +22,7 @@
 							<!-- create button -->
 			  				<button type="button" class="btn btn-default" id="group-create-button">
 			  					<i class="glyphicon glyphicon-pencil"></i>
-			  					新規作成
+			  					@Messages("view.group.create")
 			  				</button>
 						</li>
 						<li>
@@ -46,11 +46,11 @@
 						<table class="footable" id="user-table" data-sort="true">
 							<thead>
 								<tr>
-									<th data-sort-initial="true">グループID</th>
-									<th>表示名</th>
-									<th>メンバ(ユーザ)</th>
-									<th>メンバ(グループ)</th>
-									<th data-sort-ignore="true">アクション</th>
+									<th data-sort-initial="true">@Messages("view.group.id")</th>
+									<th>@Messages("view.group.name")</th>
+									<th>@Messages("view.group.member.user")</th>
+									<th>@Messages("view.group.member.group")</th>
+									<th data-sort-ignore="true">@Messages("view.action")</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -61,15 +61,14 @@
 										<td>@group.users.length</td>
 										<td>@group.groups.length</td>
 										<td>
-											<button type='button' class='btn btn-default group-detail' group-id='@group.id'><i class="glyphicon glyphicon-wrench"></i>詳細</button>
-											<button type='button' class='btn btn-default group-delete' group-id='@group.id'><i class="glyphicon glyphicon-trash"></i>削除</button>
+											<button type='button' class='btn btn-default group-detail' group-id='@group.id'><i class="glyphicon glyphicon-wrench"></i>@Messages("view.detail")</button>
+											<button type='button' class='btn btn-default group-delete' group-id='@group.id'><i class="glyphicon glyphicon-trash"></i>@Messages("view.delete")</button>
 										</td>
 									</tr>
 								}
 							</tbody>
 						</table>
 					</div>
-				
 				</div>
 			</div>
 		</div>

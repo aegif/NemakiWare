@@ -10,7 +10,7 @@
 					class="icon-bar"></span> <span class="icon-bar"></span> <span
 					class="icon-bar"></span>
 			</button>
-			<a class="navbar-brand" href="@routes.Node.index().absoluteURL(request)">NemakiWare</a>
+			<a class="navbar-brand" href="@routes.Node.index().absoluteURL(request)">@Messages("view.header.product.name")</a>
 		</div>
 		<div class="navbar-collapse collapse">
 			<ul class="nav navbar-nav">
@@ -21,20 +21,20 @@
 						@session.get(Token.LOGIN_USER_ID)<span class="caret" />
 					</a>
 					<ul class="dropdown-menu" role="menu">
-						<li><a href="@routes.Application.logout().absoluteURL(request)" id="logout"><i class="glyphicon glyphicon-log-out"></i>ログアウト</a></li>
+						<li><a href="@routes.Application.logout().absoluteURL(request)" id="logout"><i class="glyphicon glyphicon-log-out"></i>@Messages("view.auth.logout")</a></li>
 						<li class="divider"></li>
 					</ul>
 				</li>
 			
 				<!-- console -->
 				<li class="dropdown"><a href="#" class="dropdown-toggle"
-					data-toggle="dropdown"><i class="glyphicon glyphicon-cog"></i>コントロールパネル <span class="caret"></span></a>
+					data-toggle="dropdown"><i class="glyphicon glyphicon-cog"></i>@Messages("view.header.control-panel")<span class="caret"></span></a>
 					<ul class="dropdown-menu" role="menu">
-						<li><a href="@routes.User.index().absoluteURL(request)" id="user-console"><i class="glyphicon glyphicon-user"></i>ユーザ管理</a></li>
-						<li><a href="@routes.Group.index().absoluteURL(request)" id="group-console"><i class="glyphicon glyphicon-th"></i>グループ管理</a></li>
+						<li><a href="@routes.User.index().absoluteURL(request)" id="user-console"><i class="glyphicon glyphicon-user"></i>@Messages("view.user.caption")</a></li>
+						<li><a href="@routes.Group.index().absoluteURL(request)" id="group-console"><i class="glyphicon glyphicon-th"></i>@Messages("view.group.caption")</a></li>
 						@if(session.get(Token.LOGIN_USER_IS_ADMIN) == "true"){
 							<li class="divider"></li>
-							<li><a href="#" id="search-engine-console"><i class="glyphicon glyphicon-search"></i>検索エンジン管理</a></li>
+							<li><a href="#" id="search-engine-console"><i class="glyphicon glyphicon-search"></i>@Messages("view.search-engine.caption")</a></li>
 						}
 					</ul>
 				</li>

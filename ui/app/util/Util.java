@@ -69,6 +69,7 @@ import org.apache.http.message.BasicNameValuePair;
 import play.Play;
 import play.api.http.MediaRange;
 import play.data.DynamicForm;
+import play.i18n.Messages;
 import play.libs.Json;
 import play.mvc.Http.MultipartFormData.FilePart;
 import play.mvc.Http.Request;
@@ -685,5 +686,15 @@ public class Util {
 		 return isEditable(pdf, UpdateContext.CREATE) && 
 			!PropertyIds.OBJECT_TYPE_ID.equals(pdf.getId()) &&
 			!PropertyIds.SECONDARY_OBJECT_TYPE_IDS.equals(pdf.getId());
+	 }
+	 
+	 public static String l10n(PropertyDefinition pdf){
+		 String key = "view.cmis." + pdf.getId().replaceFirst(":", ".");
+		 String s = PropertyIds.CREATION_DATE;
+		 if(Messages.isDefined(key)){
+			 return Messages.get(key);
+		 }else{
+			 return pdf.getDisplayName();
+		 }
 	 }
 }

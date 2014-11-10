@@ -11,7 +11,7 @@
 		<div class="container">
 			<div class="row">
 	  			<div class="col-md-11">
-	  				<h3><i class="glyphicon glyphicon-user"></i>ユーザ管理</h3>
+	  				<h3><i class="glyphicon glyphicon-user"></i>@Messages("view.user.caption")</h3>
 	  			</div>
 	  		</div>
 		
@@ -20,7 +20,7 @@
 	  				<ul class="nav nav-pills">
 	  					<li>
 							<!-- create button -->
-			  				<button type="button" class="btn btn-default" id="user-create-button">新規作成</button>
+			  				<button type="button" class="btn btn-default" id="user-create-button">@Messages("view.user.create")</button>
 						</li>
 						<li>
 							<!-- search box -->
@@ -43,12 +43,12 @@
 						<table class="footable" id="user-table" data-sort="true">
 							<thead>
 								<tr>
-									<th data-sort-initial="true">ユーザID</th>
-									<th>表示名</th>
-									<th>姓</th>
-									<th>名</th>
-									<th>メール</th>
-									<th data-sort-ignore="true">アクション</th>
+									<th data-sort-initial="true">@Messages("view.user.id")</th>
+									<th>@Messages("view.user.name")</th>
+									<th>@Messages("view.user.last.name")</th>
+									<th>@Messages("view.user.first.name")</th>
+									<th>@Messages("view.user.email")</th>
+									<th data-sort-ignore="true">@Messages("view.action")</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -60,24 +60,19 @@
 										<td>@user.lastName</td>
 										<td>@user.email</td>
 										<td>
-											<button type='button' class='btn btn-default user-detail' user-id='@user.id'><i class="glyphicon glyphicon-wrench"></i>詳細</button>
-											<button type='button' class='btn btn-default user-delete' user-id='@user.id'><i class="glyphicon glyphicon-trash"></i>削除</button>
+											<button type='button' class='btn btn-default user-detail' user-id='@user.id'><i class="glyphicon glyphicon-wrench"></i>@Messages("view.detail")</button>
+											<button type='button' class='btn btn-default user-delete' user-id='@user.id'><i class="glyphicon glyphicon-trash"></i>@Messages("view.delete")</button>
 										</td>
 									</tr>
 								}
 							</tbody>
 						</table>
 					</div>
-				
 				</div>
 			</div>
 		</div>
 	</body>
 </html>
-
-
-
-
 
 <!-- scripts -->
 <script type="text/javascript">
@@ -121,4 +116,3 @@
 	
 	});
 </script>
-

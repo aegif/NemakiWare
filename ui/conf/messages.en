@@ -1,0 +1,82 @@
+view.header.product.name=NemakiWare
+view.header.control-panel=Control Panel
+
+view.auth.login=Log in
+view.auth.login=Log out
+
+view.node.property=Property
+view.node.file=File
+view.node.version=Version
+view.node.preview=Preview
+view.node.permission=Permission
+view.node.type=Type
+view.node.create.caption=New
+view.node.document=Document
+view.node.folder=Folder
+view.node.document.create=Create a new document
+view.node.folder.create=Create a new folder
+view.node.file.select=Select a file
+view.node.file.checkout.caption=Lock for offline editing
+view.node.file.checkout.description-1=The document will be locked and can be edited only by the editor.
+view.node.file.checkout.description-2=Download a copy to edit it.
+view.node.file.checkin.caption=Update file
+view.node.file.checkin.description=Upload an edited filed and unlock the docment.
+view.node.file.direct.caption=Update file directly
+view.node.file.direct.description=Update file without locking. The update will be shown in the version history.
+view.node.preview.open=Open Preview
+view.node.preview.none=No Preview
+view.node.version.label=Version
+view.node.permission.search.caption=User/Group Search
+view.node.permission.table.caption=Permission Table
+view.node.search.term=Search Term
+view.node.drag-and-drop.out-of-support=Your browser does not support file drag & drop.
+view.node.drag-and-drop.success=File(s) are uploaded.
+
+view.principal.type=Type
+view.principal.id=ID
+view.principal.name=Name
+view.principal.inheritance=Inheritance
+
+view.user.caption=User Management
+view.user.property=Property
+view.user.create=New User
+view.user.create.caption=Create a new user
+view.user.id=ID
+view.user.password=Password
+view.user.name=Display Name
+view.user.first.name=First Name
+view.user.last.name=Last Name
+view.user.email=E-Mail
+
+view.group.caption=Group Management
+view.group.property=Property
+view.group.create=New Group
+view.group.create.caption=Create a new group
+view.group.id=ID
+view.group.name=DIsplay Name
+view.group.member.caption=Member
+view.group.member.user=User
+view.group.member.group=Group
+view.group.member.add=Add Members
+
+view.search-engine.caption=Search Engine Management
+view.search-engine.open=Open Search Engine
+view.search-engine.init=Initialize Index
+view.search-engine.init.success=Initialized search engine index.
+view.search-engine.reindex=Reindex
+view.search-engine.reindex.confirm=Reindexing may take some time. Continue？
+view.search-engine.reindex.success=Reindexed search engine.
+
+view.table.key=Key
+view.table.editable=Editable
+view.table.value=Value
+
+view.execute=Execute
+view.create=Create
+view.save=Save
+view.detail=Detail
+view.delete=Delete
+view.add=Add
+view.remove=Remove
+view.action=Action
+

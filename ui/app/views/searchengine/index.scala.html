@@ -4,25 +4,24 @@
 @lightbox{
 	<div class="container">
 		<div class="row" style="padding-bottom:30px;">
-			<h4><i class="glyphicon glyphicon-search"></i>検索エンジン管理</h4>
+			<h4><i class="glyphicon glyphicon-search"></i>@Messages("view.search-engine.caption")</h4>
 		</div>
 
 		<div class="row" style="padding-bottom:30px;">
 			@defining(Util.getSeachEngineUrl(session)){ url =>
 				@if(StringUtils.isNotBlank(url)){
 					<i class="glyphicon glyphicon-link"></i>
-					<a href="@url" target="_blank">検索エンジンを開く</a>
+					<a href="@url" target="_blank">@Messages("view.search-engine.open")</a>
 				}
 			}
-			
 		</div>
 
 		<div class="row">
 			<div>
-				<button class="btn btn-default" id="search-engine-init">インデクスの初期化</button>
+				<button class="btn btn-default" id="search-engine-init">@Messages("view.search-engine.init")</button>
 			</div>
 			<div style="padding-top:15px">
-				<button class="btn btn-default" id="search-engine-reindex">インデクスの再作成</button>
+				<button class="btn btn-default" id="search-engine-reindex">@Messages("view.search-engine.reindex")</button>
 			</div>
 		</div>
 	</div>
@@ -35,7 +34,7 @@
 			$.ajax({
 				url:"@{Util.getContextPath(request)}search-engine/init",
 				success:function(data, textStatus){
-					alert("検索エンジンのインデクスを初期化しました");
+					alert('@Messages("view.search-engine.init.success")');
 				},
 				error:function(XMLHttpRequest, textStatus, errorThrown){
 					var msg = "";
@@ -49,11 +48,11 @@
 	
 		//binding: reindex
 		$(document).on("click", "#search-engine-reindex", function(){
-			if(window.confirm("インデクスの再作成には時間がかかる場合があります。\nよろしいですか？")){
+			if(window.confirm('@Messages("view.search-engine.reindex.confirm")')){
 				$.ajax({
 					url:"@{Util.getContextPath(request)}search-engine/reindex",
 					success:function(data, textStatus){
-						alert("検索エンジンのインデクスを再作成しました");
+						alert('@Messages("view.search-engine.reindex.success")');
 					},
 					error:function(XMLHttpRequest, textStatus, errorThrown){
 						var msg = "";
