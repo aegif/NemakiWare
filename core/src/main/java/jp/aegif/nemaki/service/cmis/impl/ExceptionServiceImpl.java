@@ -446,7 +446,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 			// Check "required" flag
 			if (propertyDefinition.isRequired()
-					&& CollectionUtils.isEmpty(pd.getValues()))
+					&& !DataUtil.valueExist(pd.getValues()))
 				constraint(objectId, "An required property is not provided!");
 
 			// Check choices
