@@ -65,6 +65,8 @@ import views.html.node.version;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import constant.Token;
+
 @Authenticated(Secured.class)
 public class Node extends Controller {
 
@@ -93,8 +95,25 @@ public class Node extends Controller {
     	List<CmisObject> results = new ArrayList<CmisObject>();
 		Iterator<CmisObject> itr = children.iterator();
 		while (itr.hasNext()) {
-			CmisObject o = itr.next();
-			results.add(o);
+			CmisObject obj = itr.next();
+
+			//Check and replace to PWC for owner
+			if(Util.isDocument(obj)){
+				Document doc = (Document)obj;
+				if(doc.isVersionSeriesCheckedOut()){
+					//check owner
+					String loginUser = session().get(Token.LOGIN_USER_ID);					
+					String owner = doc.getVersionSeriesCheckedOutBy();
+					if(loginUser.equals(owner)){
+						String pwcId = doc.getVersionSeriesCheckedOutId();
+						CmisObject pwc = session.getObject(pwcId);
+						results.add(pwc);
+						continue;
+					}
+				}
+			}
+			
+			results.add(obj);
 		}
 
         return ok(tree.render(_parent, results));
@@ -623,30 +642,27 @@ public class Node extends Controller {
 
     public static Result checkIn(String id){
     	Session session = createSession();
-
-    	CmisObject o = session.getObject(id);
-
+    	CmisObject obj = session.getObject(id);
+    	
     	DynamicForm input = Form.form();
     	input = input.bindFromRequest();
-
     	MultipartFormData body = request().body().asMultipartFormData();
-		List<FilePart> files = body.getFiles();
+
+    	//Files
+    	List<FilePart> files = body.getFiles();
 		if(files.isEmpty()){
 			//TODO error
 		}
     	FilePart file = files.get(0);
-
-
-    	Document doc = (Document)o;
-
-
+    	Document doc = (Document)obj;
     	ContentStream cs = Util.convertFileToContentStream(session, file);
-
-
+    	
+    	//Comment
+    	String checkinComment = Util.getFormData(input, PropertyIds.CHECKIN_COMMENT);
+    
     	//Execute
     	Map<String, Object>param = new HashMap<String, Object>();
-    	doc.checkIn(true, param, cs, "");
-
+    	doc.checkIn(true, param, cs, checkinComment);
 
     	return redirectToParent(input);
     }

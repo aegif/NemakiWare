@@ -9,14 +9,20 @@
 @import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition
 @import org.apache.chemistry.opencmis.client.api.Property
 @import org.apache.chemistry.opencmis.client.api.SecondaryType
+@import org.apache.chemistry.opencmis.commons.PropertyIds
 
 @(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(primaries: List[Property[_]])(secondary: Map[SecondaryType, List[Property[_]]])
 	<!-- html -->
 	<div class="container">
 		<div class="row" style="margin-bottom:15px">
-			<div class="col-sm-5">
-				<button class="btn btn-default btn-primary" id="property-update"><i class=" glyphicon glyphicon-saved"></i>@Messages("view.save")</button>
+			<div class="col-sm-8">
+			@if(Util.isFreezeCopy(obj, session)){
+				@Messages("view.node.freeze-copy.cannot-update", Util.displayValue(obj,PropertyIds.VERSION_SERIES_CHECKED_OUT_BY))
+			}else{
+				<button class="btn btn-default btn-primary" id="property-update"><i class=" glyphicon glyphicon-saved"></i>@Messages("view.save")</button>				
+			}
 			</div>
+			
 		</div>
 		
 		<div class="row">
