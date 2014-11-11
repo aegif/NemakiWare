@@ -464,10 +464,15 @@ public class ObjectServiceImpl implements ObjectService {
 		// Body of the method
 		// //////////////////
 		// TODO Externalize versioningState
-		Document result = contentService.createDocumentWithNewStream(callContext, doc,
-				contentStream);
-		
-		objectId.setValue(result.getId());
+		if(doc.isPrivateWorkingCopy()){
+			Document result = contentService.replacePwc(callContext, doc,
+					contentStream);
+			objectId.setValue(result.getId());
+		}else{
+			Document result = contentService.createDocumentWithNewStream(callContext, doc,
+					contentStream);
+			objectId.setValue(result.getId());
+		}
 	}
 
 	@Override
@@ -684,6 +689,7 @@ public class ObjectServiceImpl implements ObjectService {
 				objectId.getValue());
 		if (content.isDocument()) {
 			Document d = (Document) content;
+			exceptionService.versioning(d);
 			exceptionService.constraintUpdateWhenCheckedOut(callContext.getUsername(), d);
 			TypeDefinition typeDef = typeManager.getTypeDefinition(d);
 			exceptionService.constraintImmutable(d, typeDef);
@@ -691,6 +697,7 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT, content);
 		exceptionService.updateConflict(content, changeToken);
+		
 		
 
 		TypeDefinition tdf = typeManager.getTypeDefinition(content);
