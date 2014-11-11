@@ -704,11 +704,32 @@ public class Util {
 			 return Formatter.calToString(obj.getCreationDate());
 		 } else if(PropertyIds.LAST_MODIFIED_BY.equals(propertyId)){
 			 return obj.getLastModifiedBy();
-		}else if(PropertyIds.LAST_MODIFICATION_DATE.equals(propertyId)){
+		 }else if(PropertyIds.LAST_MODIFICATION_DATE.equals(propertyId)){
 			 return Formatter.calToString(obj.getLastModificationDate());
+		 }else if(PropertyIds.VERSION_SERIES_CHECKED_OUT_BY.equals(propertyId)){
+			 if(isDocument(obj)){
+				 Document doc = (Document)obj;
+				 return doc.getVersionSeriesCheckedOutBy();
+			 }else{
+				 return null;
+			 }
 		 }
 		 
 		 
 		 return "#Error!";
 	 }
+	 
+	 public static boolean isFreezeCopy(CmisObject obj, play.mvc.Http.Session session){
+		 String loginUserId = session.get(Token.LOGIN_USER_ID);
+		 if(isDocument(obj)){
+			 Document doc = (Document)obj;
+			 if(doc.isVersionSeriesCheckedOut()){
+				 String owner = doc.getVersionSeriesCheckedOutBy();
+				 return (!loginUserId.equals(owner));
+			 }
+		 }
+		return false;
+	 }
+	 
+	 
 }

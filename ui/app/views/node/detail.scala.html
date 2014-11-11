@@ -5,7 +5,10 @@
 @lightbox{
 	<!-- html -->
 	<div>
-		<h4><img src="@routes.Assets.at("images/node/")@Util.getIconName(obj)"/>@obj.getName()</h4>
+		<h4>
+			<img src="@routes.Assets.at("images/node/")@Util.getIconName(obj)"/>@obj.getName()
+			@if(Util.isFreezeCopy(obj, session)){<i class="glyphicon glyphicon-lock"></i>}
+		</h4>
 	</div>
 	
 	<ul id="myTab" class="nav nav-tabs">

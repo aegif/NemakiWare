@@ -17,7 +17,7 @@
 					@for(version <- versions){
 						<tr>
 							<td>
-								<a href="/objects/@version.getId()/download">
+								<a href="@routes.Node.download(version.getId).absoluteURL(request)">
 									<i class="glyphicon glyphicon-download"></i>
 									@version.getVersionLabel()
 								</a>
