@@ -1,0 +1,96 @@
+@import principal._
+@import table._
+@import java.util._
+@import util.Util
+
+@(group:model.Group)(member:List[model.Principal])
+
+@lightbox{
+	<!-- html -->
+	<div class="container">
+		<div class="row">
+			<div class="col-sm-5">
+				<h3><i class="glyphicon glyphicon-th">@group.name</i></h3>
+			</div>
+		</div>
+
+		<div class="row" style="margin-bottom:15px">
+			<div class="col-sm-5">
+				<button class="btn btn-default btn-primary" id="group-update"><i class=" glyphicon glyphicon-saved"></i>@Messages("view.save")</button>
+			</div>
+		</div>
+		
+		<div class="row">
+			<div class="col-sm-8">
+				<div><h4><i class="glyphicon glyphicon-wrench"></i>@Messages("view.group.property")</h4></div>
+				@editableTable("obj-property-table")(10){
+					<!-- id row -->
+					@defining(Util.buildTempProperty(
+						"group-id", "ID", true, false, false, null, false, group.id
+					)){ property =>
+						@editableRow(property)()
+					}
+					<!-- name row -->
+					@defining(Util.buildTempProperty(
+						"group-name", "名前", true, true, false, null, false, group.name
+					)){ property =>
+						@editableRow(property)()
+					}
+				}
+				<hr/>
+
+			</div>
+		</div>
+		
+		<div class="row">
+  			<div class="col-sm-5">
+  				<div><h4><i class="glyphicon glyphicon-wrench"></i>@Messages("view.group.caption")</h4></div>
+  			</div>
+	  	</div>
+		
+		<div class="row" style="margin-bottom:15px">
+			<div class="col-sm-12">
+				@principalSearch(member)
+			</div>
+		</div>
+	</div>
+	
+	<!-- scripts -->
+	<script type="text/javascript">
+		//binding: udpate button
+		$(document).on('click','#group-update', function(){
+			//parse member id		
+			var users = [];
+			var groups = [];
+			$('#ps-selected-table :checkbox').each(function(i,chkbx){
+				if($(chkbx).attr('principal-genre') == 'user'){
+					users.push($(chkbx).attr('principal-id'));	
+				}else if($(chkbx).attr('principal-genre') == 'group'){
+					groups.push($(chkbx).attr('principal-id'));
+				}
+			});
+		
+			//prepare data
+			var data = {};
+			data['groupId'] = "@group.id";
+			data['groupName'] = editedValue('#group-name');
+			data['users'] = JSON.stringify(users);
+			data['groups'] = JSON.stringify(groups);
+			
+			//call
+			$.ajax({
+				url : "@routes.Group.update(group.id).absoluteURL(request)",
+				type: 'POST',
+				data : data,
+				success : function(data){
+					window.location.reload();
+				},
+				error : function(XMLHttpRequest, textStatus, errorThrown) {
+		            alert("XMLHttpRequest : " + XMLHttpRequest.status);
+		            alert("textStatus : " + textStatus);
+		            alert("errorThrown : " + errorThrown.message);
+		         }
+			});
+		});
+	</script>
+}	

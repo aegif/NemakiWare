@@ -1,15 +1,24 @@
 @import helper.twitterBootstrap._
 @import util.Util
 @import util.Formatter
+@import org.apache.chemistry.opencmis.commons.PropertyIds
+
 @(objects: List[org.apache.chemistry.opencmis.client.api.CmisObject])
 
 <table class="footable" id="objects-table" data-sort="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
 	<thead>
 		<tr>
-			<th data-class="expand" data-sort-initial="true">名前</th>
-			<th data-class="expand">作成者</th>
-			<th>作成時刻</th>
-			<th data-sort-ignore="true"></th>
+			<th data-class="expand" data-sort-initial="true">@Util.l10nCmisId(PropertyIds.NAME)</th>
+			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
+				<th data-class="expand">@Util.l10nCmisId(column)</th>
+			}
+			<!--  
+				<th data-class="expand" data-sort-initial="true">@Util.l10nCmisId(PropertyIds.NAME)</th>
+				<th data-class="expand">作成者</th>
+				<th>作成時刻</th>
+			-->
+			
+			<th data-sort-ignore="true">@Messages("view.action")</th>
 		</tr>
 	</thead>
 	<tbody>
@@ -31,21 +40,21 @@
 					@obj.getName()
 				</a>
 			</td>
-			<td>@obj.getCreatedBy()</td>
-			<td>@Formatter.calToString(obj.getCreationDate())</td>
+			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
+				<td>@Util.displayValue(obj, column)</td>
+			}
 			<td>
-				<button type="button" class="btn btn-default show-detail" cmis-id="@obj.getId()"><i class="glyphicon glyphicon-wrench"></i>詳細</button>
-				<button type="button" class="btn btn-default delete" cmis-id="@obj.getId()"><i class="glyphicon glyphicon-trash"></i>削除</button>
-				@if(Util.isDocument(obj) && obj.asInstanceOf[org.apache.chemistry.opencmis.client.api.Document].isVersionSeriesCheckedOut()){
-				<button type="button" class="btn btn-default pwc" cmis-id="@obj.asInstanceOf[org.apache.chemistry.opencmis.client.api.Document].getVersionSeriesCheckedOutId()">PWC</button>
-				}
+				<button type="button" class="btn btn-default show-detail" cmis-id="@obj.getId()"><i class="glyphicon glyphicon-wrench"></i>@Messages("view.detail")</button>
+				<button type="button" class="btn btn-default delete" cmis-id="@obj.getId()"><i class="glyphicon glyphicon-trash"></i>@Messages("view.delete")</button>
 			</td>							
 		</tr>
 	}
 	</tbody>
 	<tfoot>
 		<tr>
-			<td colspan="4">
+			@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 2){colSpan =>
+				<td colspan="@colSpan">
+			}
 				<div class="pagination pagination-centered hide-if-no-paging"></div>
 			</td>
 		</tr>
@@ -70,21 +79,6 @@
     });
     </script>
     
-<!-- PWC -->
-<script type="text/javascript">
-	$(function(){
-    	//Detail
-       	$(".pwc").bind('click', function(){
-        	//Get CmisObject
-        	var id = $(this).attr('cmis-id');
-        	$.get("@{Util.getContextPath(request)}objects/" + id, function(html){
-				$("#floating-pane").html(html);	
-				$("#floating-pane").lightbox_me(lightbox_me_config);
-			});
-        });
-	});
-</script>
-
 <!-- delete -->
 <script type="text/javascript">
 	$(function(){

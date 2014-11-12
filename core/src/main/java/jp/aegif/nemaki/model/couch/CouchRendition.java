@@ -22,11 +22,6 @@
 package jp.aegif.nemaki.model.couch;
 
 import java.io.InputStream;
-import java.util.Map.Entry;
-
-import org.apache.commons.collections.MapUtils;
-import org.ektorp.Attachment;
-import org.springframework.util.CollectionUtils;
 
 import jp.aegif.nemaki.model.Rendition;
 

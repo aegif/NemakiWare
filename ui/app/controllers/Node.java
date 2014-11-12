@@ -1,12 +1,16 @@
 package controllers;
 
+import global.Global;
+
 import java.io.File;
 import java.io.IOException;
+import java.net.URLEncoder;
 import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 
@@ -32,6 +36,7 @@ import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
+import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
@@ -39,27 +44,28 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrinc
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
+import play.api.Play;
 import play.data.DynamicForm;
 import play.data.Form;
 import play.mvc.Controller;
 import play.mvc.Http.MultipartFormData;
 import play.mvc.Http.MultipartFormData.FilePart;
-import play.mvc.Security.Authenticated;
 import play.mvc.Result;
-import util.NemakiConfig;
+import play.mvc.Security.Authenticated;
 import util.Util;
-import views.html.node.preview;
-import views.html.node.tree;
-import views.html.node.version;
 import views.html.node.blank;
 import views.html.node.detail;
-import views.html.node.property;
 import views.html.node.file;
+import views.html.node.preview;
+import views.html.node.property;
 import views.html.node.search;
+import views.html.node.tree;
+import views.html.node.version;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import constant.Token;
 
 @Authenticated(Secured.class)
 public class Node extends Controller {
@@ -89,8 +95,25 @@ public class Node extends Controller {
     	List<CmisObject> results = new ArrayList<CmisObject>();
 		Iterator<CmisObject> itr = children.iterator();
 		while (itr.hasNext()) {
-			CmisObject o = itr.next();
-			results.add(o);
+			CmisObject obj = itr.next();
+
+			//Check and replace to PWC for owner
+			if(Util.isDocument(obj)){
+				Document doc = (Document)obj;
+				if(doc.isVersionSeriesCheckedOut()){
+					//check owner
+					String loginUser = session().get(Token.LOGIN_USER_ID);					
+					String owner = doc.getVersionSeriesCheckedOutBy();
+					if(loginUser.equals(owner)){
+						String pwcId = doc.getVersionSeriesCheckedOutId();
+						CmisObject pwc = session.getObject(pwcId);
+						results.add(pwc);
+						continue;
+					}
+				}
+			}
+			
+			results.add(obj);
 		}
 
         return ok(tree.render(_parent, results));
@@ -251,12 +274,19 @@ public class Node extends Controller {
 			e.printStackTrace();
 		}
 		
-		//TODO better solution for encoding file name
+		try {
+			if (request().getHeader("User-Agent").indexOf("MSIE") == -1) {
+			  // Firefox, Opera 11
+			  response().setHeader("Content-Disposition", String.format(Locale.JAPAN, "attachment; filename*=utf-8'jp'%s", URLEncoder.encode(doc.getName(), "utf-8")));
+			} else {
+			  // IE7, 8, 9
+			  response().setHeader("Content-Disposition", String.format(Locale.JAPAN, "attachment; filename=\"%s\"", new String(doc.getName().getBytes("MS932"), "ISO8859_1")));
+			}
+		}catch(Exception e){
+			e.printStackTrace();
+		}
 		
-		response().setHeader("Content-disposition", "attachment; filename="+ doc.getName());
 		response().setContentType(cs.getMimeType());
-		
-		
     	return ok(tmpFile);
     }
     
@@ -436,11 +466,25 @@ public class Node extends Controller {
     			if(PropertyIds.SECONDARY_OBJECT_TYPE_IDS.equals(pdf.getId())){
     				continue;
     			}
-
-    			String value = input.data().get(pdf.getId());
-
-    			//TODO type conversion
-    			properties.put(pdf.getId(), value);
+    			
+    			if(Cardinality.SINGLE == pdf.getCardinality()){
+    				String value = input.data().get(pdf.getId());
+    				//TODO type conversion
+    				properties.put(pdf.getId(), value);
+    			}else{
+    				System.out.println();
+    				//TODO find better way
+    				List<String> list = new ArrayList<String>();
+    				for(int i=0; i < input.data().keySet().size(); i++){
+    					String keyWithIndex = pdf.getId() + "[" + i + "]";
+    					String value = input.data().get(keyWithIndex);
+    					if(value == null){
+    						break;
+    					}
+    					list.add(value);
+    				}
+    				properties.put(pdf.getId(), list);
+    			}
     		}
     	}
 
@@ -598,30 +642,27 @@ public class Node extends Controller {
 
     public static Result checkIn(String id){
     	Session session = createSession();
-
-    	CmisObject o = session.getObject(id);
-
+    	CmisObject obj = session.getObject(id);
+    	
     	DynamicForm input = Form.form();
     	input = input.bindFromRequest();
-
     	MultipartFormData body = request().body().asMultipartFormData();
-		List<FilePart> files = body.getFiles();
+
+    	//Files
+    	List<FilePart> files = body.getFiles();
 		if(files.isEmpty()){
 			//TODO error
 		}
     	FilePart file = files.get(0);
-
-
-    	Document doc = (Document)o;
-
-
+    	Document doc = (Document)obj;
     	ContentStream cs = Util.convertFileToContentStream(session, file);
-
-
+    	
+    	//Comment
+    	String checkinComment = Util.getFormData(input, PropertyIds.CHECKIN_COMMENT);
+    
     	//Execute
     	Map<String, Object>param = new HashMap<String, Object>();
-    	doc.checkIn(true, param, cs, "");
-
+    	doc.checkIn(true, param, cs, checkinComment);
 
     	return redirectToParent(input);
     }
@@ -637,8 +678,10 @@ public class Node extends Controller {
 		return new Principal("user", anonymous, anonymous);  
 	   }
 	   
+	   String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
+	   
 	   //user
-	   JsonNode resultUser = Util.getJsonResponse("http://localhost:8080/nemakiware/rest/user/show/" + principalId);
+	   JsonNode resultUser = Util.getJsonResponse(session(), coreRestUri + "user/show/" + principalId);
 	   //TODO check status
 	   JsonNode user = resultUser.get("user");
 	   if(user != null){
@@ -647,7 +690,7 @@ public class Node extends Controller {
 	   }
 		
 	   //group
-	   JsonNode resultGroup = Util.getJsonResponse("http://localhost:8080/nemakiware/rest/group/show/" + principalId);
+	   JsonNode resultGroup = Util.getJsonResponse(session(), coreRestUri + "group/show/" + principalId);
 	   //TODO check status
 	   JsonNode group = resultGroup.get("group");
 	   if(group != null){

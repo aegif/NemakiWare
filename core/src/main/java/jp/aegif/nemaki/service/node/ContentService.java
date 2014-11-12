@@ -250,6 +250,8 @@ public interface ContentService {
 	Document createDocumentWithNewStream(CallContext callContext,
 			Document original, ContentStream contentStream);
 
+	Document replacePwc(CallContext callContext, Document original, ContentStream contentStream);
+	
 	/**
 	 * Check out and create PWC
 	 *
