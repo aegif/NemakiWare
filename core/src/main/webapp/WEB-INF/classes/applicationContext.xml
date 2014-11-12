@@ -5,7 +5,6 @@
 
     <import resource="classpath:propertyContext.xml" />
 
-    		
     <bean id="nemakiApplicationContextLoader" class="jp.aegif.nemaki.spring.NemakiApplicationContextLoader">
         <property name="propertyConfigurer">
            <ref bean="propertyConfigurer" />
@@ -14,7 +13,8 @@
             <list>
             	<value>classpath:propertyContext.xml</value>	
                 <value>classpath:nemakiContext.xml</value>
-                <value>classpath*:${context.backend}</value>
+                <value>classpath*:${context.node}</value>
+                <value>classpath*:${context.database}</value>
             </list>
         </property>
     </bean>

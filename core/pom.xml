@@ -11,9 +11,9 @@
 	<url>https://github.com/NemakiWare/NemakiWare</url>
 
 	<properties>
-		<org.springframework.version>3.1.1.RELEASE</org.springframework.version>
+		<org.springframework.version>4.1.1.RELEASE</org.springframework.version>
 		<jersey.version>1.17.1</jersey.version>
-		<org.apache.chemistry.opencmis.version>0.10.0</org.apache.chemistry.opencmis.version>
+		<org.apache.chemistry.opencmis.version>0.12.0</org.apache.chemistry.opencmis.version>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 	</properties>
 
@@ -69,7 +69,7 @@
 		<dependency>
 			<groupId>org.ektorp</groupId>
 			<artifactId>org.ektorp</artifactId>
-			<version>1.2.2</version>
+			<version>1.4.2</version>
 		</dependency>
 		<dependency>
 			<groupId>am.ik.ltsv4j</groupId>
@@ -84,19 +84,19 @@
 		</dependency>
 		<dependency>
 			<groupId>org.springframework</groupId>
-			<artifactId>org.springframework.beans</artifactId>
+			<artifactId>spring-beans</artifactId>
 			<version>${org.springframework.version}</version>
 		</dependency>
 
 		<dependency>
 			<groupId>org.springframework</groupId>
-			<artifactId>org.springframework.context</artifactId>
+			<artifactId>spring-context</artifactId>
 			<version>${org.springframework.version}</version>
 		</dependency>
 
 		<dependency>
 			<groupId>org.springframework</groupId>
-			<artifactId>org.springframework.web</artifactId>
+			<artifactId>spring-web</artifactId>
 			<version>${org.springframework.version}</version>
 		</dependency>
 
@@ -108,7 +108,7 @@
 
 		<dependency>
 			<groupId>org.springframework</groupId>
-			<artifactId>org.springframework.core</artifactId>
+			<artifactId>spring-core</artifactId>
 			<version>${org.springframework.version}</version>
 		</dependency>
 

@@ -1,0 +1,26 @@
+@import util.Util
+@import constant.UpdateContext
+
+@import org.apache.commons.collections.CollectionUtils
+@import org.apache.chemistry.opencmis.client.api.Property
+
+@(property:Property[_])(filter:Boolean = true)
+
+@if(filter){
+	<tr id="@property.getDefinition.getId">
+		<td class="col-md-2 col-sm-2">
+			@property.getDefinition.getDisplayName
+		</td>
+		<td class="col-md-1 col-sm-1">
+			@if(Util.isReadWrite(property.getDefinition)){
+				<i class="glyphicon glyphicon-ok editable"></i>
+				<div style="display:none">1</div>
+			}else{
+				<div style="display:none">0</div>
+			}
+		</td>
+		<td class="col-md-5 col-sm-5 value @if(Util.isReadWrite(property.getDefinition)){editable-value}">
+			@valueField(property)
+		</td>
+	</tr>
+}

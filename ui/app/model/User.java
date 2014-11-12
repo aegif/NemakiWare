@@ -9,6 +9,7 @@ public class User {
 	public String firstName;
 	public String lastName;
 	public String email;
+	public boolean isAdmin;
 	
 	public User(){
 		
@@ -20,5 +21,6 @@ public class User {
 		this.firstName = json.get("firstName").asText();
 		this.lastName = json.get("lastName").asText();
 		this.email = json.get("email").asText();
+		this.isAdmin = json.get("isAdmin").asBoolean();
 	}
 }

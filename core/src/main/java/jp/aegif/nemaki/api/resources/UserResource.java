@@ -39,6 +39,7 @@ import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 
 import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.service.node.PrincipalService;
 import jp.aegif.nemaki.util.PasswordHasher;
 
 import org.apache.commons.lang.StringUtils;
@@ -50,6 +51,8 @@ import org.springframework.stereotype.Component;
 @Path("/user")
 public class UserResource extends ResourceBase {
 
+	PrincipalService principalService;
+	
 	@SuppressWarnings("unchecked")
 	@GET
 	@Path("/list")
@@ -389,6 +392,9 @@ public class UserResource extends ResourceBase {
 		userJSON.put(ITEM_CREATED, created);
 		userJSON.put(ITEM_MODIFIER, user.getModifier());
 		userJSON.put(ITEM_MODIFIED, modified);
+		
+		boolean isAdmin = (user.isAdmin() == null) ? false : true; 
+		userJSON.put(ITEM_IS_ADMIN, isAdmin);
 
 		return userJSON;
 	}
@@ -417,5 +423,9 @@ public class UserResource extends ResourceBase {
 			if(match) return true;
 		}
 		return false;
+	}
+	
+	public void setPrincipalService(PrincipalService principalService) {
+		this.principalService = principalService;
 	}
 }

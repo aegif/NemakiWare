@@ -461,6 +461,7 @@ public class SolrPredicateWalker {
 	}
 
 	private Query walkSearchExpr(Tree node) {
+		int t = node.getType();
 		switch (node.getType()) {
 		case TextSearchLexer.TEXT_AND:
 			return walkTextAnd(node);
@@ -473,8 +474,9 @@ public class SolrPredicateWalker {
 		case TextSearchLexer.TEXT_SEARCH_PHRASE_STRING_LIT:
 			return walkTextPhrase(node);
 		default:
-			walkOtherExpr(node);
-			return null;
+			//walkOtherExpr(node);
+			//return null;
+			return walkTextPhrase(node);
 		}
 	}
 

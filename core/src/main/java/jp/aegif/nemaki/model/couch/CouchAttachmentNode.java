@@ -23,9 +23,6 @@ package jp.aegif.nemaki.model.couch;
 
 import jp.aegif.nemaki.model.AttachmentNode;
 
-import org.codehaus.jackson.annotate.JsonIgnoreProperties;
-
-@JsonIgnoreProperties(ignoreUnknown=true)
 public class CouchAttachmentNode extends CouchNodeBase{
 	
 	private static final long serialVersionUID = 1984059866949665299L;

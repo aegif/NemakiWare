@@ -4,26 +4,22 @@
 	<section class="container">
 		<div class="row">
 			<div class="col-sm-4">
-				グループを新規作成します
+				@Messages("view.group.create.caption")
 			</div>
 		</div>
 		
 		<div class="row">
 			<div class="col-sm-8">
-				<input type="text" name="groupId" id="new-group-id" placeholder="グループID"/><br/>
-				<input type="text" name="groupName" id="new-group-name" placeholder="グループ名前"/><br/>
+				<input type="text" name="groupId" id="new-group-id" placeholder="@Messages("view.group.id")"/><br/>
+				<input type="text" name="groupName" id="new-group-name" placeholder="@Messages("view.group.name")"/><br/>
 			</div>
 		</div>
 			
 		<div class="row">
-			<div class="col-sm-8">
-				メンバの追加
-			</div>
+			<div class="col-sm-8">@Messages("view.group.member.add")</div>
 		</div>
 		@principalSearch()
-		
-	   	<button class="btn btn-default" id="group-create">作成</button>
-	
+	   	<button class="btn btn-default" id="group-create">@Messages("view.create")</button>
 	</section>
 }
 

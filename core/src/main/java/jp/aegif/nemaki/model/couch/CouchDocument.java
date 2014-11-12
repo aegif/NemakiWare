@@ -24,11 +24,10 @@ package jp.aegif.nemaki.model.couch;
 
 import java.util.List;
 
-import org.codehaus.jackson.annotate.JsonIgnoreProperties;
-import org.codehaus.jackson.annotate.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import jp.aegif.nemaki.model.Document;
-@JsonIgnoreProperties(ignoreUnknown=true)
+
 public class CouchDocument extends CouchContent {
 
 	private static final long serialVersionUID = 1993139506791735097L;
@@ -98,6 +97,7 @@ public class CouchDocument extends CouchContent {
 	public Boolean isLatestVersion() {
 		return latestVersion;
 	}
+	
 	@JsonProperty("latestVersion")
 	public void setIsLatestVersion(Boolean latestVersion) {
 		this.latestVersion = latestVersion;

@@ -45,4 +45,40 @@ div.tab-pane{
   table-layout: fixed;
   word-wrap: break-word;
 }
+
+div.editable-value-field, input.editable-value-input {
+	width: 300px;
+}
+
+div.editable-value-field.multi, div.editable-value-field.multi input.editable-value-input{
+	width: 230px;
+}
+
+div.editable-value-field, input.editable-value-input{
+	height: 28px;
+}
+
+div.editable-value-field {
+	overflow-x:scroll;
+	white-space:nowrap;
+	background: url(../images/transparent.gif) repeat;	/*so that empty field can be clicked*/
+}
+
+input.editable-value-input {
+	background-color : #f8f8f8;
 	
+	border:0;
+	color:#aaa;
+	
+	-webkit-border-radius: 3px;
+	-moz-border-radius: 3px;
+	border-radius: 3px;
+	
+	-moz-box-shadow: inset 1px 4px 9px -6px rgba(0,0,0,0.5);
+	-webkit-box-shadow: inset 1px 4px 9px -6px rgba(0, 0, 0, 0.5);
+	box-shadow: inset 1px 4px 9px -6px rgba(0,0,0,0.5);
+}
+
+input.editable-value-input:focus{
+	border:solid 1px #7eb0e0;
+}
