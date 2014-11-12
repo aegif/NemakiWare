@@ -138,7 +138,7 @@ public class SolrUtil {
 		// TODO log according to the response status
 	}
 
-	private String getSolrUrl(){
+	public String getSolrUrl(){
 		String protocol = propertyManager.readValue(PropertyKey.SOLR_PROTOCOL);
 		String host = propertyManager.readValue(PropertyKey.SOLR_HOST);
 		int port = Integer.valueOf(propertyManager

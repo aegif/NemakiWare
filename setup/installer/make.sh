@@ -59,8 +59,8 @@ mvn -f $SOURCE_HOME/core/pom.xml -Dmaven.test.skip=true package
 mvn -f $SOURCE_HOME/solr/pom.xml clean
 mvn -f $SOURCE_HOME/solr/pom.xml -Dmaven.test.skip=true package
 cd $SOURCE_HOME/ui/
-activator war
-cd EXECUTION_DIRECTORY
+./activator war
+cd $EXECUTION_DIRECTORY
 
 #Build installer
 $SCRIPT_HOME/IzPack/bin/compile $SCRIPT_HOME/install.xml -b $SOURCE_HOME -o $SCRIPT_HOME/install.jar -k standard

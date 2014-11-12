@@ -1,0 +1,91 @@
+@import table._
+@import util.Util
+
+@(user:model.User)
+
+@lightbox{
+	<!-- html -->
+	<div class="container">
+		<div class="row">
+			<div class="col-sm-5">
+				<h3><i class="glyphicon glyphicon-user">@user.name</i></h3>
+			</div>
+		</div>
+
+		<div class="row" style="margin-bottom:15px">
+			<div class="col-sm-5">
+				<button class="btn btn-default btn-primary" id="user-update"><i class=" glyphicon glyphicon-saved"></i>@Messages("view.save")</button>
+			</div>
+		</div>
+		
+		<div class="row">
+			<div class="col-sm-8">
+				<div><h4><i class="glyphicon glyphicon-wrench"></i>@Messages("view.user.property")</h4></div>
+				
+				@editableTable("obj-property-table")(10){
+					<!-- id row -->
+					@defining(Util.buildTempProperty(
+						"user-id", Messages("view.user.id"), true, false, false, null, false, user.id
+					)){ property =>
+						@editableRow(property)()
+					}
+					<!-- name row -->
+					@defining(Util.buildTempProperty(
+						"user-name", Messages("view.user.name"), true, true, false, null, false, user.name
+					)){ property =>
+						@editableRow(property)()
+					}
+					<!-- last name row -->
+					@defining(Util.buildTempProperty(
+						"user-last-name", Messages("view.user.last.name"), false, true, false, null, false, user.lastName
+					)){ property =>
+						@editableRow(property)()
+					}
+					<!-- first name row -->
+					@defining(Util.buildTempProperty(
+						"user-first-name", Messages("view.user.first.name"), false, true, false, null, false, user.firstName
+					)){ property =>
+						@editableRow(property)()
+					}
+					<!-- email row -->
+					@defining(Util.buildTempProperty(
+						"user-email", Messages("view.user.email"), false, true, false, null, false, user.email
+					)){ property =>
+						@editableRow(property)()
+					}
+				}
+				<hr/>
+
+			</div>
+		</div>
+	</div>
+	
+	<!-- scripts -->
+	<script type="text/javascript">
+		//binding: udpate button
+		$(document).on('click','#user-update', function(){
+			//build data
+			var data = {};
+			data['userId'] = "@user.id";
+			data['userName'] = editedValue('#user-name');
+			data['firstName'] = editedValue('#user-first-name');
+			data['lastName'] = editedValue('#user-last-name');
+			data['email'] = editedValue('#user-email');
+			
+			//call
+			$.ajax({
+				url : "@routes.User.update(user.id).absoluteURL(request)",
+				type: 'POST',
+				data : data,
+				success : function(data){
+					window.location.reload();
+				},
+				error : function(XMLHttpRequest, textStatus, errorThrown) {
+		            alert("XMLHttpRequest : " + XMLHttpRequest.status);
+		            alert("textStatus : " + textStatus);
+		            alert("errorThrown : " + errorThrown.message);
+		         }
+			});
+		});
+	</script>
+}

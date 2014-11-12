@@ -33,6 +33,7 @@ public interface PropertyKey {
 	final String REST_GROUP_ENABLED = "rest.group.enabled";
 	final String REST_TYPE_ENABLED = "rest.type.enabled";
 	final String REST_ARCHIVE_ENABLED = "rest.archive.enabled";
+	final String REST_SOLR_ENABLED = "rest.solr.enabled";
 	
 	//Capabilities
 	final String CAPABILITY_GET_DESCENDENTS = "capability.getDescendants";

@@ -23,10 +23,8 @@ package jp.aegif.nemaki.model.couch;
 
 import java.util.List;
 
-import org.codehaus.jackson.annotate.JsonIgnoreProperties;
-
 import jp.aegif.nemaki.model.Group;
-@JsonIgnoreProperties(ignoreUnknown=true)
+
 public class CouchGroup  extends CouchNodeBase{
 	
 	private static final long serialVersionUID = -5513898484272039889L;

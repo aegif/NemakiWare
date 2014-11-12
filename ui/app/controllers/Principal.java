@@ -26,7 +26,7 @@ public class Principal extends Controller{
 		List<model.Principal>principals = new ArrayList<model.Principal>();
 		
 		//user search
-		JsonNode resultUsers = Util.getJsonResponse(coreRestUri + "user/search?query=" + term);
+		JsonNode resultUsers = Util.getJsonResponse(session(), coreRestUri + "user/search?query=" + term);
     	//TODO check status
     	JsonNode users = resultUsers.get("result");
 		if(users != null){
@@ -40,7 +40,7 @@ public class Principal extends Controller{
 		}
 		
 		//group search
-		JsonNode resultGroups = Util.getJsonResponse(coreRestUri + "group/search?query=" + term);
+		JsonNode resultGroups = Util.getJsonResponse(session(), coreRestUri + "group/search?query=" + term);
     	//TODO check status
     	JsonNode groups = resultGroups.get("result");
 		if(groups != null){

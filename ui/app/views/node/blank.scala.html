@@ -1,38 +1,86 @@
-@import helper.twitterBootstrap._
+@import table._
 @import util.Util
+@import constant.UpdateContext
 @import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition
 @import org.apache.chemistry.opencmis.client.api.Tree
 @import org.apache.chemistry.opencmis.client.api.ObjectType
+@import org.apache.chemistry.opencmis.commons.PropertyIds
+
 @(baseTypeId:String)(objectTypeId:String)(parentId:String)(primaries: List[PropertyDefinition[_]])(typeDescendants:List[Tree[ObjectType]])
 
-<!-- property table -->
-@defining(new ArrayList[String]()){ editables =>
-	<div style="display:none">
-	@{
-		for(p <- primaries){
-			if(Util.isReadWrite(p) || Util.isOnCreate(p)){
-				//skip 
-				if(p.getId != "cmis:objectTypeId" && p.getId != "cmis:secondaryObjectTypeIds"){
-					editables.add("#" + p.getId)
+@lightbox{
+	<!-- html -->
+	<div class="container">
+		@helper.form(action=routes.Node.create, 'enctype -> "multipart/form-data"){
+			<!-- caption -->
+			<div class="row">
+				@if(baseTypeId=="cmis:document"){
+					<h4><i class="glyphicon glyphicon-file"></i>@Messages("view.node.document.create")</h4>
+				}else{
+					<h4><i class="glyphicon glyphicon-folder-close"></i>@Messages("view.node.folder.create")</h4>
+				}
+			</div>
+			
+			<!-- submit button -->
+			<div class="row" style="margin-bottom:15px">
+				<div class="col-sm-5">
+					<button type="submit" class="btn btn-default btn-primary" id="object-create"><i class=" glyphicon glyphicon-saved"></i>@Messages("view.create")</button>
+				</div>
+			</div>
+			
+			<!-- ObjectType select -->
+			<div class="row" style="margin-bottom: 15px">
+				<div class="col-sm-5">
+					<h4>@Messages("view.node.type")</h4>
+					<select class="selectpicker" id="select-object-type">
+						@for(ot <- typeDescendants){
+							<option @if(ot.getItem.getId == objectTypeId){ selected}>
+								@ot.getItem.getId
+							</option>
+						}
+					    
+					</select>
+				</div>
+			</div>
+			
+			<!-- file input -->
+			@if(baseTypeId=="cmis:document"){
+				<div class="row" style="margin-bottom: 15px">
+					<div class="col-sm-8">
+						<div>
+							<h4>@Messages("view.node.file")</h4>
+						</div>
+						<label>@Messages("view.node.file.select")</label> <input type="file" name="file"
+							id="file" />
+					</div>
+				</div>
+			}
+			
+			<!-- property table -->
+			<div class="row">
+				<div class="col-sm-8">
+					<div><h4>@Messages("view.node.property")</h4></div>
+					@editableTable("obj-property-table")(10){
+						@for(p <- primaries){
+							@editableRow(Util.buildTempProperty(p, ""))(Util.isEditableOnNodeBlank(p))
+						}
+					}
+					<hr/>
+				</div>
+			</div>
+			
+			<!-- hidden input area -->
+			@for(p <- primaries){
+				@if(Util.isEditableOnNodeBlank(p)){
+					<input type="hidden" name="@p.getId" id="hidden-@{p.getId}" value="" />
 				}
 			}
+			<input type="hidden" name="cmis:objectTypeId" value="@objectTypeId"/>
+			<input type="hidden" name="cmis:parentId" value="@parentId"/>
 		}
-	}
 	</div>
-		
+
 	<!-- scripts -->
-	<script type="text/javascript" src="@routes.Assets.at("javascripts/binding-editable.js")"></script>
-	<script type="text/javascript">
-		//copy scala template variable into javascript
-		var editables = [];
-		@for(editable <- editables){
-			editables.push("@editable");
-		}                 
-		
-		jQuery.each(editables, function(i, editable){
-			bindEditable(editable);
-		});
-	</script>
 	<script type="text/javascript">
 		//enable selectpicker
 		$('.selectpicker').selectpicker();
@@ -51,7 +99,7 @@
 			var fileList = document.getElementById("file").files;
 			if(fileList.length > 0){
 				var fileName = fileList[0].name;
-				$(escape('#cmis:name') + ' > div').text(fileName);
+				$(escape('#cmis:name') + ' div.editable-value-field').text(fileName);
 			}
 		});
 	</script>
@@ -59,87 +107,12 @@
 		//copy edited values to hidden input tags
 		$(document).on('click', '#object-create', function(){
 			//prepare data
-			for(var i=0; i<editables.length; i++){
-				var v = editedValue(editables[i]);
-				$('#hidden-' + escape(editables[i].slice(1))).val(v);
+			@for(p <- primaries){
+				@if(Util.isEditableOnNodeBlank(p)){
+					var v = editedValue("#@p.getId");
+					$('#hidden-' + escape("@p.getId")).val(v);
+				}	
 			}
 		});
 	</script>
-	
-	<!-- html -->
-	<div class="lightbox-me-container">
-		<div class="container">
-			@helper.form(action=routes.Node.create, 'enctype -> "multipart/form-data"){
-				<!-- caption -->
-				<div class="row">
-					@if(baseTypeId=="cmis:document"){
-						<h4><i class="glyphicon glyphicon-file"></i>ファイルを新規作成します</h4>
-					}else{
-						<h4><i class="glyphicon glyphicon-folder-close"></i>フォルダを新規作成します</h4>
-					}
-				</div>
-				
-				<!-- submit button -->
-				<div class="row" style="margin-bottom:15px">
-					<div class="col-sm-5">
-						<button type="submit" class="btn btn-default btn-primary" id="object-create"><i class=" glyphicon glyphicon-saved"></i>作成</button>
-					</div>
-				</div>
-				
-				<!-- ObjectType select -->
-				<div class="row" style="margin-bottom: 15px">
-					<div class="col-sm-5">
-						<h4>文書タイプ</h4>
-						<select class="selectpicker" id="select-object-type">
-							@for(ot <- typeDescendants){
-								<option @if(ot.getItem.getId == objectTypeId){ selected}>
-									@ot.getItem.getId
-								</option>
-							}
-						    
-						</select>
-					</div>
-				</div>
-				
-				<!-- file input -->
-				@if(baseTypeId=="cmis:document"){
-					<div class="row" style="margin-bottom: 15px">
-						<div class="col-sm-8">
-							<div>
-								<h4>
-									ファイル
-								</h4>
-							</div>
-							<label>ファイルを選択してください</label> <input type="file" name="file"
-								id="file" />
-						</div>
-					</div>
-				}
-				
-				<!-- property table -->
-				<div class="row">
-					<div class="col-sm-8">
-						<div><h4>プロパティ</h4></div>
-						@editableTable("obj-property-table")(10){
-							@for(p <- primaries){
-								@if(Util.isOnCreate(p) || Util.isEditable(p)){
-									@if(editables.contains("#" + p.getId)){
-										@editableRow(p.getId)(p.getId)("")(editables)
-									}
-								}
-							}
-						}
-						<hr/>
-					</div>
-				</div>
-				
-				<!-- hidden input area -->
-				@for(e <- editables){
-					<input type="hidden" name="@Util.tail(e)" id="hidden-@Util.tail(e)" value="" />
-				}
-				<input type="hidden" name="cmis:objectTypeId" value="@objectTypeId"/>
-				<input type="hidden" name="cmis:parentId" value="@parentId"/>
-			}
-		</div>
-	</div>
 }

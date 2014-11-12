@@ -30,10 +30,9 @@ import jp.aegif.nemaki.model.Aspect;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Property;
 
-import org.codehaus.jackson.annotate.JsonIgnoreProperties;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
-@JsonIgnoreProperties(ignoreUnknown=true)
+
 public class CouchContent extends CouchNodeBase{
 
 	private static final long serialVersionUID = -4795093916552322103L;

@@ -7,7 +7,7 @@
 			<table class="footable" id="version-table">
 				<thead>
 					<tr>
-						<th>バージョン</th>
+						<th>@Messages("view.node.version.label")</th>
 						<th>名前</th>
 						<th>作成者</th>
 						<th>作成時刻</th>
@@ -17,7 +17,7 @@
 					@for(version <- versions){
 						<tr>
 							<td>
-								<a href="/objects/@version.getId()/download">
+								<a href="@routes.Node.download(version.getId).absoluteURL(request)">
 									<i class="glyphicon glyphicon-download"></i>
 									@version.getVersionLabel()
 								</a>

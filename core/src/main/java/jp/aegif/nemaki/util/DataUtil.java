@@ -3,7 +3,6 @@ package jp.aegif.nemaki.util;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.GregorianCalendar;
 import java.util.List;
 import java.util.TimeZone;
@@ -24,7 +23,6 @@ import org.apache.chemistry.opencmis.commons.enums.DateTimeResolution;
 import org.apache.chemistry.opencmis.commons.enums.DecimalPrecision;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
-import org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
 import org.apache.chemistry.opencmis.commons.impl.WSConverter;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyDefinition;
@@ -470,5 +468,21 @@ public class DataUtil {
 		}
 		
 		return "[" + StringUtils.join(list, ",") + "]";
+	}
+	
+	public static boolean valueExist(List<?> values){
+		if(CollectionUtils.isEmpty(values)){
+			return false;
+		}else if(values.size() == 1){
+			Object v = values.get(0);
+			if(v instanceof String){
+				return StringUtils.isNotBlank((String)v);
+			}else{
+				return (v != null);
+			}
+		}else{
+			//TODO what if ["", null,null,...] case?
+			return true;
+		}
 	}
 }
