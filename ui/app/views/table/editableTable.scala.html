@@ -1,0 +1,41 @@
+@import constant.UpdateContext
+
+@(tableId:String)(paging:Int=0)(rows:Html)
+<table class="footable" 
+	id="@tableId" 
+	data-sort="true" 
+	@if(paging!=0){
+		data-page-navigation=".pagination" 
+		data-page-size="@paging"
+	}>
+	<thead>
+		<tr>
+			<th class="col-md-2 col-sm-2">@Messages("view.table.key")</th>
+			<th class="col-md-1 col-sm-1"><i class="glyphicon glyphicon-edit" title="@Messages("view.table.editable")"></i></th>
+			<th class="col-md-5 col-sm-5">@Messages("view.table.value")</th>
+		</tr>
+	</thead>
+	<tbody>
+		@rows
+	</tbody>
+	<tfoot>
+		<tr>
+			<td colspan="8">
+				<div class="pagination pagination-centered hide-if-no-paging"></div>
+			</td>
+		</tr>
+	</tfoot>
+</table>
+
+<!-- scripts:editableTable -->
+<script type="text/javascript">
+	$('#@tableId').footable();
+</script>  
+<script src="@routes.Assets.at("javascripts/editable-table.js")" type="text/javascript"></script>
+<script type="text/javascript">
+	bindEditable('#@tableId > tbody > tr > td.editable-value div.editable-value-field');
+</script>
+<script src="@routes.Assets.at("javascripts/editable-value-control.js")" type="text/javascript"></script>
+<script type="text/javascript">
+	editableValueFieldControl();
+</script>

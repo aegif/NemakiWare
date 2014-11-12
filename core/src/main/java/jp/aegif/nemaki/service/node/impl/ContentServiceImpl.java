@@ -547,6 +547,42 @@ public class ContentServiceImpl implements ContentService {
 
 		return result;
 	}
+	
+	public Document replacePwc(CallContext callContext, Document originalPwc, ContentStream contentStream){
+		//Prepare ContentStream(to read it twice)
+		Map<String,ContentStream> contentStreamMap = copyContentStream(contentStream);
+				
+		//Update attachment contentStream
+		AttachmentNode attachment = contentDaoService.getAttachment(originalPwc.getAttachmentNodeId());
+		contentDaoService.updateAttachment(attachment, contentStreamMap.get("attachment"));
+		
+		//Update rendition contentStream
+		ContentStream previewCS = contentStreamMap.get("preview");		
+		if(isPreviewEnabled() && renditionManager.checkConvertible(previewCS.getMimeType())){
+			List<String> renditionIds = originalPwc.getRenditionIds();
+			if(CollectionUtils.isNotEmpty(renditionIds)){
+				for(String renditionId : renditionIds){
+					Rendition rd = contentDaoService.getRendition(renditionId);
+					if(RenditionKind.CMIS_PREVIEW.equals(rd.getKind())){
+						rd.setInputStream(previewCS.getStream());
+						rd.setLength(previewCS.getLength());
+						rd.setMimetype(previewCS.getMimeType());
+					}
+				}
+			}
+		}
+
+		//Modify signature of pwc
+		setSignature(callContext, originalPwc);
+		
+		// Record the change event
+		writeChangeEvent(callContext, originalPwc, ChangeType.UPDATED);
+		
+		// Call Solr indexing(optional)
+		solrUtil.callSolrIndexing();
+
+		return originalPwc;
+	}
 
 	@Override
 	public Document checkOut(CallContext callContext, String objectId,
@@ -573,6 +609,9 @@ public class ContentServiceImpl implements ContentService {
 		updateVersionSeriesWithPwc(callContext, getVersionSeries(result),
 				result);
 
+		// Write change event
+		writeChangeEvent(callContext, result, ChangeType.CREATED);
+		
 		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing();
 
@@ -585,6 +624,8 @@ public class ContentServiceImpl implements ContentService {
 		Document pwc = getDocument(objectId);
 		VersionSeries vs = getVersionSeries(pwc);
 
+		writeChangeEvent(callContext, pwc, ChangeType.DELETED);
+		
 		// Delete attachment & document itself(without archiving)
 		contentDaoService.delete(pwc.getAttachmentNodeId());
 		contentDaoService.delete(pwc.getId());
@@ -640,12 +681,12 @@ public class ContentServiceImpl implements ContentService {
 		// Create
 		Document result = contentDaoService.create(checkedIn);
 
-		// Reverse the effect of checkedout
-		cancelCheckOut(callContext, id, extension);
-
 		// Record the change event
 		writeChangeEvent(callContext, result, ChangeType.CREATED);
 
+		// Reverse the effect of checkedout
+		cancelCheckOut(callContext, id, extension);
+		
 		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing();
 

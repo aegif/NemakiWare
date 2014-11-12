@@ -10,7 +10,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
-import java.net.URL;
+import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -27,19 +27,21 @@ import org.apache.chemistry.opencmis.client.api.Property;
 import org.apache.chemistry.opencmis.client.api.Rendition;
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.client.api.SessionFactory;
+import org.apache.chemistry.opencmis.client.runtime.PropertyImpl;
 import org.apache.chemistry.opencmis.client.runtime.SessionFactoryImpl;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.SessionParameter;
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.chemistry.opencmis.commons.definitions.Choice;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.BindingType;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
-import org.apache.chemistry.opencmis.commons.impl.UrlBuilder;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -67,6 +69,7 @@ import org.apache.http.message.BasicNameValuePair;
 import play.Play;
 import play.api.http.MediaRange;
 import play.data.DynamicForm;
+import play.i18n.Messages;
 import play.libs.Json;
 import play.mvc.Http.MultipartFormData.FilePart;
 import play.mvc.Http.Request;
@@ -74,6 +77,8 @@ import play.mvc.Http.Request;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import constant.PropertyKey;
+import constant.Token;
+import constant.UpdateContext;
 
 public class Util {
 	public static Session createCmisSession(String id, String password){
@@ -276,7 +281,7 @@ public class Util {
 		return fileName;
 	}
 
-	private static HttpClient buildClient(){
+	private static HttpClient buildClient(play.mvc.Http.Session session){
 		// configurations
 				String userAgent = "My Http Client 0.1";
 
@@ -287,10 +292,12 @@ public class Util {
 				headers.add(new BasicHeader("User-Agent", userAgent));
 
 				// set credential
-				//TODO remove hard code
-				Credentials credentials = new UsernamePasswordCredentials("admin",
-						"admin");
-				AuthScope scope = new AuthScope("localhost", 8080);
+				String user = session.get(Token.LOGIN_USER_ID);
+				String password = session.get(Token.LOGIN_USER_PASSWORD);
+				Credentials credentials = new UsernamePasswordCredentials(user, password);
+				String host = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_HOST);
+				String port = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_PORT);
+				AuthScope scope = new AuthScope(host, Integer.valueOf(port));
 				CredentialsProvider credsProvider = new BasicCredentialsProvider();
 				credsProvider.setCredentials(scope, credentials);
 
@@ -334,20 +341,16 @@ public class Util {
 		return null;
 	}
 
-	public static JsonNode getJsonResponse(String url) {
-
-
+	public static JsonNode getJsonResponse(play.mvc.Http.Session session, String url) {
 		// create client
-		HttpClient client = buildClient();
-
+		HttpClient client = buildClient(session);
 		HttpGet request = new HttpGet(url);
-
 		return executeRequest(client, request);
 	}
 
-	public static JsonNode postJsonResponse(String url, Map<String, String>params) {
+	public static JsonNode postJsonResponse(play.mvc.Http.Session session, String url, Map<String, String>params) {
 		// create client
-		HttpClient client = buildClient();
+		HttpClient client = buildClient(session);
 
 		HttpPost request = new HttpPost(url);
 		List<NameValuePair> list = new ArrayList<NameValuePair>();
@@ -367,9 +370,9 @@ public class Util {
 		return executeRequest(client, request);
 	}
 	
-	public static JsonNode putJsonResponse(String url, Map<String, String>params) {
+	public static JsonNode putJsonResponse(play.mvc.Http.Session session, String url, Map<String, String>params) {
 		// create client
-		HttpClient client = buildClient();
+		HttpClient client = buildClient(session);
 
 		HttpPut request = new HttpPut(url);
 		List<NameValuePair> list = new ArrayList<NameValuePair>();
@@ -389,8 +392,8 @@ public class Util {
 		return executeRequest(client, request);
 	}
 
-	public static JsonNode deleteJsonResponse(String url){
-		HttpClient client = buildClient();
+	public static JsonNode deleteJsonResponse(play.mvc.Http.Session session, String url){
+		HttpClient client = buildClient(session);
 		HttpDelete request = new HttpDelete(url);
 		return executeRequest(client, request);
 	}
@@ -602,4 +605,131 @@ public class Util {
 		 String _size = NemakiConfig.getValue(PropertyKey.NAVIGATION_PAGING_SIZE);
 		 return Integer.valueOf(_size);
 	 }
+	 
+	 public static String getSeachEngineUrl(play.mvc.Http.Session session){
+		String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
+		String endPoint = coreRestUri + "search-engine/";
+		
+		JsonNode result = Util.getJsonResponse(session, endPoint + "url");
+		
+		String status = result.get(Token.REST_STATUS).textValue();
+		try {
+			if(Token.REST_SUCCESS.equals(status)){
+				String _url = result.get("url").textValue();
+				String url;
+				
+					url = URLDecoder.decode(_url, "UTF-8");
+					return url;
+			
+			}else{
+				throw new Exception("REST API returned failure.");
+			}
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+			return null;
+		}
+	 }
+	 
+	 public static Property buildTempProperty(String id, String name, boolean required, boolean updatable, boolean multiple, List<Choice>choices, boolean openChoice, Object values){
+		 PropertyDefinition pdf = buildTempStringDefinition(id, name, required, updatable, multiple, choices, openChoice);
+		 
+		 PropertyImpl prop = new PropertyImpl(pdf, listify(values));
+		 return prop;
+	 }
+	 
+	 public static Property buildTempProperty(PropertyDefinition pdf, Object values){
+		 PropertyImpl prop = new PropertyImpl(pdf, listify(values));
+		 return prop;
+	 }
+	 
+	 public static List<?> listify(Object obj){
+		 if (obj instanceof List<?>) {
+			 return (List<?>)obj;
+		 }else{
+			 List list = new ArrayList<Object>();
+			 list.add(obj);
+			 return list;
+		 }
+	 }
+
+	 public static PropertyDefinition buildTempStringDefinition(String id, String name, boolean required, boolean updatable, boolean multiple, List<Choice>choices, boolean openChoice){
+		PropertyStringDefinitionImpl pdf = new PropertyStringDefinitionImpl();
+		pdf.setId(id);
+		pdf.setDisplayName(name);
+		pdf.setIsRequired(required);
+		pdf.setUpdatability((updatable)? Updatability.READWRITE : Updatability.READONLY);
+		pdf.setCardinality((multiple)? Cardinality.MULTI : Cardinality.SINGLE);
+		pdf.setChoices(null);
+		pdf.setIsOpenChoice(openChoice);
+		return pdf;
+	 }
+	 
+	 public static boolean isMultiple(PropertyDefinition<?> pdf){
+		 return Cardinality.MULTI == pdf.getCardinality();
+	 }
+	 
+	 public static boolean isEditable(PropertyDefinition pdf, UpdateContext updateContext){
+		 switch(updateContext){
+		 case NORMAL:
+			 return isReadWrite(pdf);
+		 case CREATE:
+			 return isReadWrite(pdf) || isOnCreate(pdf);
+		 case CHECKOUT:
+			 return isReadWrite(pdf) || isWhenCheckedOut(pdf);
+		 default:
+			 return false;
+		 }
+	 }
+	 
+	 public static boolean isEditableOnNodeBlank(PropertyDefinition<?> pdf){
+		 return isEditable(pdf, UpdateContext.CREATE) && 
+			!PropertyIds.OBJECT_TYPE_ID.equals(pdf.getId()) &&
+			!PropertyIds.SECONDARY_OBJECT_TYPE_IDS.equals(pdf.getId());
+	 }
+	 
+	 public static String l10nCmisId(String cmisId){
+		 String key = "view.cmis." + cmisId.replaceAll(":", ".");
+		 if(Messages.isDefined(key)){
+			 return Messages.get(key);
+		 }else{
+			 return cmisId;
+		 }
+	 }
+	 
+	 public static String displayValue(CmisObject obj, String propertyId){
+		 if(PropertyIds.CREATED_BY.equals(propertyId)){
+			 return obj.getCreatedBy();
+		 }else if(PropertyIds.CREATION_DATE.equals(propertyId)){
+			 return Formatter.calToString(obj.getCreationDate());
+		 } else if(PropertyIds.LAST_MODIFIED_BY.equals(propertyId)){
+			 return obj.getLastModifiedBy();
+		 }else if(PropertyIds.LAST_MODIFICATION_DATE.equals(propertyId)){
+			 return Formatter.calToString(obj.getLastModificationDate());
+		 }else if(PropertyIds.VERSION_SERIES_CHECKED_OUT_BY.equals(propertyId)){
+			 if(isDocument(obj)){
+				 Document doc = (Document)obj;
+				 return doc.getVersionSeriesCheckedOutBy();
+			 }else{
+				 return null;
+			 }
+		 }
+		 
+		 
+		 return "#Error!";
+	 }
+	 
+	 public static boolean isFreezeCopy(CmisObject obj, play.mvc.Http.Session session){
+		 String loginUserId = session.get(Token.LOGIN_USER_ID);
+		 if(isDocument(obj)){
+			 Document doc = (Document)obj;
+			 if(doc.isVersionSeriesCheckedOut()){
+				 String owner = doc.getVersionSeriesCheckedOutBy();
+				 return (!loginUserId.equals(owner));
+			 }
+		 }
+		return false;
+	 }
+	 
+	 
 }

@@ -25,10 +25,10 @@
 	  			<div class="col-md-11">
 					<!-- create button -->
 						<div class="dropdown">
-							<button class="btn btn-default dropdown-toggle" data-toggle="dropdown"><i class="glyphicon glyphicon-plus"></i>新規作成 <span class="caret"></span></button>
+							<button class="btn btn-default dropdown-toggle" data-toggle="dropdown"><i class="glyphicon glyphicon-plus"></i>@Messages("view.node.create.caption")<span class="caret"></span></button>
 							<ul class="dropdown-menu" role="menu">
-								<li id="create-folder-in-tree"><a href="#"><i class="glyphicon glyphicon-folder-close"></i>フォルダ</a></li>
-								<li id="create-file-in-tree"><a href="#"><i class="glyphicon glyphicon-file"></i>ファイル</a></li>
+								<li id="create-folder-in-tree"><a href="#"><i class="glyphicon glyphicon-folder-close"></i>@Messages("view.node.folder")</a></li>
+								<li id="create-file-in-tree"><a href="#"><i class="glyphicon glyphicon-file"></i>@Messages("view.node.file")</a></li>
 							</ul>
 						</div>
 					
@@ -88,7 +88,7 @@
 		event.preventDefault();
 		
 		if(!window.FormData){
-			alert("ファイルのドラッグ&ドロップにブラウザが対応していません");
+			alert("@Messages("view.node.drag-and-drop.out-of-support")");
 		}
 		
 		$(".dropzone").css("border", "none");
@@ -96,7 +96,6 @@
 		var formData = new FormData();
 		formData.append("dragAndDrop", 'true');
 		
-		// イベントに格納されたファイルを取り出し
 		for(var i=0; i < event.dataTransfer.files.length; i++){
 			formData.append('file_' + i, event.dataTransfer.files[i]);	
 		}
@@ -113,7 +112,7 @@
 			      data: formData,
 			      //dataType: 'html',
 			      success: function(data){
-			        window.alert("ファイルがアップロードされました");
+			        window.alert("@Messages("view.node.drag-and-drop.success")");
 			        window.location.reload();
 			      }
 			});

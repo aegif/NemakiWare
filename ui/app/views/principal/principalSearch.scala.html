@@ -12,12 +12,9 @@
 
 <div class="row">
 		<div class="col-sm-5">
-			@searchTable("検索結果")(members)
+			@searchTable(Messages("view.principal.search.caption"))(members)
 		</div>
 		<div class="col-sm-5">
-			@selectedTable("選択されたメンバ")(members)()()
+			@selectedTable(Messages("view.principal.selected.caption"))(members)()()
 		</div>
 </div>
-
-
-	

@@ -1,0 +1,18 @@
+@import org.apache.commons.collections.CollectionUtils
+@import org.apache.chemistry.opencmis.client.api.Property
+
+@(property:Property[_])
+
+@if(CollectionUtils.isEmpty(property.getValues)){
+	<div class="editable-value-field-container">
+		<div class="editable-value-field multi" style="float:left;"></div>
+		@multiValueFieldControl()
+	</div>
+}else{
+	@for(v <- property.getValues){
+		<div class="editable-value-field-container">
+			<div class="editable-value-field multi" style="float:left;">@v</div>
+			@multiValueFieldControl()
+		</div>
+	}
+}

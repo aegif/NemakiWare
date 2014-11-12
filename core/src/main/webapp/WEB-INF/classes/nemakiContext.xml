@@ -644,6 +644,12 @@
             <ref bean="TypeManager" />
         </property>
     </bean>
+    
+    <bean id="solrResource" class="jp.aegif.nemaki.api.resources.SolrResource">
+    	<property name="solrUtil">
+       		<ref bean="solrUtil" />
+        </property>
+    </bean>
 
 	<!-- Rendition builder -->
 	<bean id="RenditionManager" class="org.springframework.aop.framework.ProxyFactoryBean">

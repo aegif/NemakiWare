@@ -26,9 +26,9 @@ import java.util.GregorianCalendar;
 import jp.aegif.nemaki.model.NodeBase;
 import jp.aegif.nemaki.util.constant.NodeType;
 
-import org.codehaus.jackson.annotate.JsonIgnore;
-import org.codehaus.jackson.annotate.JsonIgnoreProperties;
 import org.ektorp.support.CouchDbDocument;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 @JsonIgnoreProperties(ignoreUnknown=true)
 public class CouchNodeBase extends CouchDbDocument{
@@ -63,32 +63,26 @@ public class CouchNodeBase extends CouchDbDocument{
 		this.type = type;
 	}
 	
-	@JsonIgnore
 	public Boolean isFolder(){
 		return (NodeType.CMIS_FOLDER.value().equals(type)) ? true : false;  
 	}
 	
-	@JsonIgnore
 	public Boolean isDocument(){
 		return (NodeType.CMIS_DOCUMENT.value().equals(type)) ? true : false;
 	}
 	
-	@JsonIgnore
 	public Boolean isRelationship(){
 		return (NodeType.CMIS_RELATIONSHIP.value().equals(type)) ? true : false;
 	}
 	
-	@JsonIgnore
 	public Boolean isPolicy(){
 		return (NodeType.CMIS_POLICY.value().equals(type)) ? true : false;
 	}
 
-	@JsonIgnore
 	public Boolean isContent(){
 		return isDocument() || isFolder() || isRelationship() || isPolicy();
 	}
 	
-	@JsonIgnore
 	public Boolean isAttachment(){
 		return (NodeType.ATTACHMENT.value().equals(type)) ? true : false;
 	}

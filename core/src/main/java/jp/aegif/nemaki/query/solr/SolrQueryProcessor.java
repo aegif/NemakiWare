@@ -45,10 +45,9 @@ import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectListImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
-import org.apache.chemistry.opencmis.server.support.query.CmisQueryWalker;
 import org.apache.chemistry.opencmis.server.support.query.QueryObject;
 import org.apache.chemistry.opencmis.server.support.query.QueryObject.SortSpec;
-import org.apache.chemistry.opencmis.server.support.query.QueryUtil;
+import org.apache.chemistry.opencmis.server.support.query.QueryUtilStrict;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -62,180 +61,190 @@ import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
 
-@SuppressWarnings("deprecation")
 public class SolrQueryProcessor implements QueryProcessor {
 
-	private ContentService contentService;
-	private PermissionService permissionService;
-	private CompileObjectService compileObjectService;
-	private ExceptionService exceptionService;
-	private SolrUtil solrUtil;
-	private SortUtil sortUtil;
-	private static final Log logger = LogFactory
-			.getLog(SolrQueryProcessor.class);
+     private ContentService contentService;
+     private PermissionService permissionService;
+     private CompileObjectService compileObjectService;
+     private ExceptionService exceptionService;
+     private SolrUtil solrUtil;
+     private SortUtil sortUtil;
+     private static final Log logger = LogFactory
+               .getLog(SolrQueryProcessor.class);
 
-	public SolrQueryProcessor() {
+     public SolrQueryProcessor() {
 
-	}
+     }
 
-	@Override
-	public ObjectList query(TypeManager typeManager, CallContext callContext,
-			String username, String id, String statement,
-			Boolean searchAllVersions, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
-			BigInteger maxItems, BigInteger skipCount) {
+     @Override
+     public ObjectList query(TypeManager typeManager, CallContext callContext,
+               String username, String id, String statement,
+               Boolean searchAllVersions, Boolean includeAllowableActions,
+               IncludeRelationships includeRelationships, String renditionFilter,
+               BigInteger maxItems, BigInteger skipCount) {
 
-		SolrServer solrServer = solrUtil.getSolrServer();
+          SolrServer solrServer = solrUtil.getSolrServer();
 
-		// queryObject includes the SQL information
-		QueryObject queryObject = new QueryObject(typeManager);
-		QueryUtil util = new QueryUtil();
-		CmisQueryWalker walker = null;
+          //TODO walker is required? 
+          QueryUtilStrict util = new QueryUtilStrict(statement, typeManager, null);
+          QueryObject queryObject = util.getQueryObject();
+          
+          //Get where caluse as Tree
+          Tree whereTree = null;
+          try{
+               util.processStatement();
+               Tree tree = util.parseStatement();
+               for(int i=0; i<tree.getChildCount(); i++){
+                    Tree t = tree.getChild(i);
+                    if("WHERE".equals(t.getText())){
+                         whereTree = t.getChild(0);
+                    }
+                    
+                    System.out.println();
+               }
+          }catch(Exception e){
+               e.printStackTrace();
+          }
+          
+          //Build solr statement of WHERE
+          String whereQueryString = "";
+          if (whereTree == null || whereTree.isNil()) {
+               whereQueryString = "*:*";
+          } else {
+               try {
+                    SolrPredicateWalker solrPredicateWalker = new SolrPredicateWalker(
+                              queryObject, solrUtil, contentService);
+                    Query whereQuery = solrPredicateWalker.walkPredicate(whereTree);
+                    whereQueryString = whereQuery.toString();
+               } catch (Exception e) {
+                    e.printStackTrace();
+                    // TODO Output more detailed exception
+                    exceptionService.invalidArgument("Invalid CMIS SQL statement!");
+               }
+          }
 
-		// If statement is invalid, trhow exception
-		walker = util
-				.traverseStatementAndCatchExc(statement, queryObject, null);
-		// "WHERE" clause to Lucene query
-		String whereQueryString = "";
-		Tree whereTree = walker.getWherePredicateTree();
-		if (whereTree == null || whereTree.isNil()) {
-			whereQueryString = "*:*";
-		} else {
-			SolrPredicateWalker solrPredicateWalker = new SolrPredicateWalker(
-					queryObject, solrUtil, contentService);
-			try {
-				Query whereQuery = solrPredicateWalker.walkPredicate(whereTree);
-				whereQueryString = whereQuery.toString();
-			} catch (Exception e) {
-				e.printStackTrace();
-				// TODO Output more detailed exception
-				exceptionService.invalidArgument("Invalid CMIS SQL statement!");
-			}
-		}
+          //Build solr query of FROM
+          String fromQueryString = "";
+          TypeDefinition td = queryObject.getMainFromName();
+          // includedInSupertypeQuery
+          List<TypeDefinitionContainer> typeDescendants = typeManager
+                    .getTypesDescendants(td.getId(), BigInteger.valueOf(-1), false);
+          Iterator<TypeDefinitionContainer> iterator = typeDescendants.iterator();
+          List<String> tables = new ArrayList<String>();
+          while (iterator.hasNext()) {
+               TypeDefinition descendant = iterator.next().getTypeDefinition();
+               if (td.getId() != descendant.getId()) {
+                    boolean isq = (descendant.isIncludedInSupertypeQuery() == null) ? false
+                              : descendant.isIncludedInSupertypeQuery();
+                    if (!isq)
+                         continue;
+               }
+               String table = descendant.getQueryName();
+               tables.add(table.replaceAll(":", "\\\\:"));
+          }
+          Term t = new Term(
+                    solrUtil.getPropertyNameInSolr(PropertyIds.OBJECT_TYPE_ID),
+                    StringUtils.join(tables, " "));
+          fromQueryString = new TermQuery(t).toString();
 
-		// "FROM" clause to Lucene query
-		String fromQueryString = "";
+          // Execute query
+          SolrQuery solrQuery = new SolrQuery();
+          solrQuery.setQuery(whereQueryString);
+          solrQuery.setFilterQueries(fromQueryString);
 
-		TypeDefinition td = queryObject.getMainFromName();
-		// includedInSupertypeQuery
-		List<TypeDefinitionContainer> typeDescendants = typeManager
-				.getTypesDescendants(td.getId(), BigInteger.valueOf(-1), false);
-		Iterator<TypeDefinitionContainer> iterator = typeDescendants.iterator();
-		List<String> tables = new ArrayList<String>();
-		while (iterator.hasNext()) {
-			TypeDefinition descendant = iterator.next().getTypeDefinition();
-			if (td.getId() != descendant.getId()) {
-				boolean isq = (descendant.isIncludedInSupertypeQuery() == null) ? false
-						: descendant.isIncludedInSupertypeQuery();
-				if (!isq)
-					continue;
-			}
-			String table = descendant.getQueryName();
-			tables.add(table.replaceAll(":", "\\\\:"));
-		}
-		Term t = new Term(
-				solrUtil.getPropertyNameInSolr(PropertyIds.OBJECT_TYPE_ID),
-				StringUtils.join(tables, " "));
-		fromQueryString = new TermQuery(t).toString();
+          QueryResponse resp = null;
+          try {
+               resp = solrServer.query(solrQuery);
+          } catch (SolrServerException e) {
+               e.printStackTrace();
+          }
 
-		// Execute query
-		SolrQuery solrQuery = new SolrQuery();
-		solrQuery.setQuery(whereQueryString);
-		solrQuery.setFilterQueries(fromQueryString);
+          // Output search results to ObjectList
+          if (resp != null && resp.getResults() != null
+                    && resp.getResults().getNumFound() != 0) {
+               SolrDocumentList docs = resp.getResults();
 
-		QueryResponse resp = null;
-		try {
-			resp = solrServer.query(solrQuery);
-		} catch (SolrServerException e) {
-			e.printStackTrace();
-		}
+               List<Content> contents = new ArrayList<Content>();
+               for (SolrDocument doc : docs) {
+                    String docId = (String) doc.getFieldValue("id");
+                    Content c = contentService.getContent(docId);
 
-		// Output search results to ObjectList
-		if (resp != null && resp.getResults() != null
-				&& resp.getResults().getNumFound() != 0) {
-			SolrDocumentList docs = resp.getResults();
+                    //When for some reason the content is missed, pass through
+                    if(c == null){
+                         logger.warn("[objectId=" + docId + "]It is missed in DB but still rests in Solr.");
+                    }else{
+                         contents.add(c);
+                    }
 
-			List<Content> contents = new ArrayList<Content>();
-			for (SolrDocument doc : docs) {
-				String docId = (String) doc.getFieldValue("id");
-				Content c = contentService.getContent(docId);
+               }
 
-				//When for some reason the content is missed, pass through
-				if(c == null){
-					logger.warn("[objectId=" + docId + "]It is missed in DB but still rests in Solr.");
-				}else{
-					contents.add(c);
-				}
+               // Filter out by permissions
+               List<Content> permitted = permissionService.getFiltered(
+                         callContext, contents);
 
-			}
+               // Filter return value with SELECT clause
+               Map<String, String> m = queryObject.getRequestedPropertiesByAlias();
+               Map<String, String> aliases = new HashMap<String, String>();
+               for (String alias : m.keySet()) {
+                    aliases.put(m.get(alias), alias);
+               }
 
-			// Filter out by permissions
-			List<Content> permitted = permissionService.getFiltered(
-					callContext, contents);
+               String filter = null;
+               if (!aliases.keySet().contains("*")) {
+                    filter = StringUtils.join(aliases.keySet(), ",");
+               }
 
-			// Filter return value with SELECT clause
-			Map<String, String> m = queryObject.getRequestedPropertiesByAlias();
-			Map<String, String> aliases = new HashMap<String, String>();
-			for (String alias : m.keySet()) {
-				aliases.put(m.get(alias), alias);
-			}
+               //Build ObjectList
+               ObjectList result = compileObjectService.compileObjectDataList(callContext,
+                         permitted, filter, includeAllowableActions,
+                         includeRelationships, null, true, maxItems, skipCount, false, aliases);
 
-			String filter = null;
-			if (!aliases.keySet().contains("*")) {
-				filter = StringUtils.join(aliases.keySet(), ",");
-			}
+               //Sort
+               List<SortSpec> sortSpecs = queryObject.getOrderBys();
+               List<String> _orderBy = new ArrayList<String>();
+               for(SortSpec sortSpec : sortSpecs){
+                    List<String> _sortSpec = new ArrayList<String>();
+                    _sortSpec.add(sortSpec.getSelector().getName());
+                    if(!sortSpec.isAscending()){
+                         _sortSpec.add("DESC");
+                    }
 
-			//Build ObjectList
-			ObjectList result = compileObjectService.compileObjectDataList(callContext,
-					permitted, filter, includeAllowableActions,
-					includeRelationships, null, true, maxItems, skipCount, false, aliases);
+                    _orderBy.add(StringUtils.join(_sortSpec, " "));
+               }
+               String orderBy = StringUtils.join(_orderBy, ",");
+               sortUtil.sort(result.getObjects(), orderBy);
 
-			//Sort
-			List<SortSpec> sortSpecs = queryObject.getOrderBys();
-			List<String> _orderBy = new ArrayList<String>();
-			for(SortSpec sortSpec : sortSpecs){
-				List<String> _sortSpec = new ArrayList<String>();
-				_sortSpec.add(sortSpec.getSelector().getName());
-				if(!sortSpec.isAscending()){
-					_sortSpec.add("DESC");
-				}
+               return result;
+          } else {
+               ObjectListImpl nullList = new ObjectListImpl();
+               nullList.setHasMoreItems(false);
+               nullList.setNumItems(BigInteger.ZERO);
+               return nullList;
+          }
+     }
 
-				_orderBy.add(StringUtils.join(_sortSpec, " "));
-			}
-			String orderBy = StringUtils.join(_orderBy, ",");
-			sortUtil.sort(result.getObjects(), orderBy);
+     public void setContentService(ContentService contentService) {
+          this.contentService = contentService;
+     }
 
-			return result;
-		} else {
-			ObjectListImpl nullList = new ObjectListImpl();
-			nullList.setHasMoreItems(false);
-			nullList.setNumItems(BigInteger.ZERO);
-			return nullList;
-		}
-	}
+     public void setPermissionService(PermissionService permissionService) {
+          this.permissionService = permissionService;
+     }
 
-	public void setContentService(ContentService contentService) {
-		this.contentService = contentService;
-	}
+     public void setCompileObjectService(
+               CompileObjectService compileObjectService) {
+          this.compileObjectService = compileObjectService;
+     }
 
-	public void setPermissionService(PermissionService permissionService) {
-		this.permissionService = permissionService;
-	}
+     public void setExceptionService(ExceptionService exceptionService) {
+          this.exceptionService = exceptionService;
+     }
 
-	public void setCompileObjectService(
-			CompileObjectService compileObjectService) {
-		this.compileObjectService = compileObjectService;
-	}
+     public void setSolrUtil(SolrUtil solrUtil) {
+          this.solrUtil = solrUtil;
+     }
 
-	public void setExceptionService(ExceptionService exceptionService) {
-		this.exceptionService = exceptionService;
-	}
-
-	public void setSolrUtil(SolrUtil solrUtil) {
-		this.solrUtil = solrUtil;
-	}
-
-	public void setSortUtil(SortUtil sortUtil) {
-		this.sortUtil = sortUtil;
-	}
+     public void setSortUtil(SortUtil sortUtil) {
+          this.sortUtil = sortUtil;
+     }
 }
