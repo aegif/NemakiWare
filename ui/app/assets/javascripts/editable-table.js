@@ -6,11 +6,11 @@ function bindEditable(valueFieldSelector){
 			$(this).attr('on', 'on');
 			txt = $(this).text();
 			$(this).html('<input class="editable-value-input" type="text" value="'+txt+'" />');
-			$(this).children('input:first').focus();
+			$(this).children('.editable-value-input:first').focus();
 		}
 
 		//end of editing
-		$(this).children('input:first').focus().blur(function(){
+		$(this).children('.editable-value-input:first').focus().blur(function(){
 			var inputVal = $(this).val();
 			var parentDiv = $(this).parent();
 			parentDiv.text(inputVal);
@@ -18,7 +18,7 @@ function bindEditable(valueFieldSelector){
 		});
 		
 		//binding: keypress
-		$(document).on('keypress', valueFieldSelector + ' > input', function(event){
+		$(document).on('keypress', valueFieldSelector + ' > .editable-value-input:first', function(event){
 			if(event.which == 13){
 				var inputVal = $(this).val();
 				$(this).parent().text(inputVal);
