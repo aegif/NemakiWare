@@ -12,12 +12,6 @@
 			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
 				<th data-class="expand">@Util.l10nCmisId(column)</th>
 			}
-			<!--  
-				<th data-class="expand" data-sort-initial="true">@Util.l10nCmisId(PropertyIds.NAME)</th>
-				<th data-class="expand">作成者</th>
-				<th>作成時刻</th>
-			-->
-			
 			<th data-sort-ignore="true">@Messages("view.action")</th>
 		</tr>
 	</thead>
@@ -36,8 +30,7 @@
 				}else{
 					<a href="@routes.Node.showChildren(obj.getId)">
 				}
-					<img src="@routes.Assets.at("images/node/")@Util.getIconName(obj)"/>
-					@obj.getName()
+					<i class="fa @Util.getIconName(obj)"></i>@obj.getName()
 				</a>
 			</td>
 			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
