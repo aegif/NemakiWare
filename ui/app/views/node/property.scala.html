@@ -1,4 +1,5 @@
 @import table._
+@import component._
 
 @import util.Formatter
 @import util.Util
@@ -9,7 +10,6 @@
 @import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition
 @import org.apache.chemistry.opencmis.client.api.Property
 @import org.apache.chemistry.opencmis.client.api.SecondaryType
-@import org.apache.chemistry.opencmis.commons.PropertyIds
 
 @(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(primaries: List[Property[_]])(secondary: Map[SecondaryType, List[Property[_]]])
 	<!-- html -->
@@ -17,9 +17,9 @@
 		<div class="row" style="margin-bottom:15px">
 			<div class="col-sm-8">
 			@if(Util.isFreezeCopy(obj, session)){
-				@Messages("view.node.freeze-copy.cannot-update", Util.displayValue(obj,PropertyIds.VERSION_SERIES_CHECKED_OUT_BY))
+				@lockedNotice(obj)
 			}else{
-				<button class="btn btn-default btn-primary" id="property-update"><i class=" glyphicon glyphicon-saved"></i>@Messages("view.save")</button>				
+				@saveButton("property-update")
 			}
 			</div>
 			
@@ -27,7 +27,7 @@
 		
 		<div class="row">
 			<div class="col-sm-8">
-				<div><h4><i class="glyphicon glyphicon-wrench"></i>@Messages("view.node.property")</h4></div>
+				<div><h4>@Messages("view.node.property")</h4></div>
 				@editableTable("obj-property-table")(10){
 					@for(p <- primaries){
 						@editableRow(p)()

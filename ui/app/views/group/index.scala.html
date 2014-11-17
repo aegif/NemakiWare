@@ -11,7 +11,7 @@
 		<div class="container">
 	  		<div class="row">
 	  			<div class="col-md-11">
-	  				<h3><i class="glyphicon glyphicon-th"></i>@Messages("view.group.caption")</h3>
+	  				<h3><i class="fa fa-users"></i>@Messages("view.group.caption")</h3>
 	  			</div>
 	  		</div>
 	  		
@@ -21,8 +21,7 @@
 	  					<li>
 							<!-- create button -->
 			  				<button type="button" class="btn btn-default" id="group-create-button">
-			  					<i class="glyphicon glyphicon-pencil"></i>
-			  					@Messages("view.group.create")
+			  					<i class="fa fa-plus"></i>@Messages("view.group.create")
 			  				</button>
 						</li>
 						<li>
@@ -31,7 +30,7 @@
 								@helper.form(action = routes.Group.search()){
 									<input type="text" class="form-control" placeholder="Search" name="term" id="user-search-box">
 							     	<div class="input-group-btn">
-							        	<button class="btn btn-default" id="user-search" type="submit"><i class="glyphicon glyphicon-search"></i></button>
+							        	<button class="btn btn-default" id="user-search" type="submit"><i class="fa fa-search"></i></button>
 							     	</div>
 								}
 						    	
@@ -61,8 +60,8 @@
 										<td>@group.users.length</td>
 										<td>@group.groups.length</td>
 										<td>
-											<button type='button' class='btn btn-default group-detail' group-id='@group.id'><i class="glyphicon glyphicon-wrench"></i>@Messages("view.detail")</button>
-											<button type='button' class='btn btn-default group-delete' group-id='@group.id'><i class="glyphicon glyphicon-trash"></i>@Messages("view.delete")</button>
+											<button type='button' class='btn btn-default group-detail' group-id='@group.id'><i class="fa fa-wrench"></i>@Messages("view.detail")</button>
+											<button type='button' class='btn btn-default group-delete' group-id='@group.id'><i class="fa fa-trash"></i>@Messages("view.delete")</button>
 										</td>
 									</tr>
 								}
