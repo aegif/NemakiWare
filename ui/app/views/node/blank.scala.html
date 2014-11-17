@@ -1,4 +1,5 @@
 @import table._
+@import component._
 @import util.Util
 @import constant.UpdateContext
 @import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition
@@ -15,16 +16,16 @@
 			<!-- caption -->
 			<div class="row">
 				@if(baseTypeId=="cmis:document"){
-					<h4><i class="glyphicon glyphicon-file"></i>@Messages("view.node.document.create")</h4>
+					<h4><i class="fa fa-file"></i>@Messages("view.node.document.create")</h4>
 				}else{
-					<h4><i class="glyphicon glyphicon-folder-close"></i>@Messages("view.node.folder.create")</h4>
+					<h4><i class="fa fa-folder"></i>@Messages("view.node.folder.create")</h4>
 				}
 			</div>
 			
 			<!-- submit button -->
 			<div class="row" style="margin-bottom:15px">
 				<div class="col-sm-5">
-					<button type="submit" class="btn btn-default btn-primary" id="object-create"><i class=" glyphicon glyphicon-saved"></i>@Messages("view.create")</button>
+					@saveButton("object-create")
 				</div>
 			</div>
 			

@@ -8,19 +8,19 @@
 	<div class="container">
 		<div class="row">
 			<div class="col-sm-5">
-				<h3><i class="glyphicon glyphicon-user">@user.name</i></h3>
+				<h3><i class="fa fa-user">@user.name</i></h3>
 			</div>
 		</div>
 
 		<div class="row" style="margin-bottom:15px">
 			<div class="col-sm-5">
-				<button class="btn btn-default btn-primary" id="user-update"><i class=" glyphicon glyphicon-saved"></i>@Messages("view.save")</button>
+				<button class="btn btn-default btn-primary" id="user-update"><i class="fa fa-save"></i>@Messages("view.save")</button>
 			</div>
 		</div>
 		
 		<div class="row">
 			<div class="col-sm-8">
-				<div><h4><i class="glyphicon glyphicon-wrench"></i>@Messages("view.user.property")</h4></div>
+				<div><h4>@Messages("view.user.property")</h4></div>
 				
 				@editableTable("obj-property-table")(10){
 					<!-- id row -->

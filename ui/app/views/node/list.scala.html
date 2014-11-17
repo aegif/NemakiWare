@@ -27,7 +27,7 @@
 			<td>
 				@if(Util.isDocument(obj)){
 					@if(Util.convertToDocument(obj).isVersionSeriesCheckedOut()){
-						<i class="glyphicon glyphicon-lock"></i>
+						<i class="fa fa-lock"></i>
 					}
 				}
 				
@@ -44,8 +44,10 @@
 				<td>@Util.displayValue(obj, column)</td>
 			}
 			<td>
-				<button type="button" class="btn btn-default show-detail" cmis-id="@obj.getId()"><i class="glyphicon glyphicon-wrench"></i>@Messages("view.detail")</button>
-				<button type="button" class="btn btn-default delete" cmis-id="@obj.getId()"><i class="glyphicon glyphicon-trash"></i>@Messages("view.delete")</button>
+				<div class="btn-group">
+					<button type="button" class="btn btn-default show-detail" cmis-id="@obj.getId()"><i class="fa fa-wrench"></i>@Messages("view.detail")</button>
+					<button type="button" class="btn btn-default delete" cmis-id="@obj.getId()"><i class="fa fa-trash"></i>@Messages("view.delete")</button>
+				</div> 
 			</td>							
 		</tr>
 	}

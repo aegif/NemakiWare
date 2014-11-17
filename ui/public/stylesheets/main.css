@@ -3,6 +3,10 @@ body {
     padding-top: 70px;
 }
 
+i.fa {
+	padding-right:2px;
+}
+
 div.menubar {
    background-color: #cccccc;
 }

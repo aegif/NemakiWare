@@ -17,23 +17,23 @@
 				<!-- account -->
 				<li class="dropdown">
 					<a href="#" class="dropdown-toggle" data-toggle="dropdown">
-						<i class="glyphicon glyphicon-user"></i>
+						<i class="fa fa-user"></i>
 						@session.get(Token.LOGIN_USER_ID)<span class="caret" />
 					</a>
 					<ul class="dropdown-menu" role="menu">
-						<li><a href="@routes.Application.logout().absoluteURL(request)" id="logout"><i class="glyphicon glyphicon-log-out"></i>@Messages("view.auth.logout")</a></li>
+						<li><a href="@routes.Application.logout().absoluteURL(request)" id="logout"><i class="fa fa-sign-out"></i>@Messages("view.auth.logout")</a></li>
 					</ul>
 				</li>
 			
 				<!-- console -->
 				<li class="dropdown"><a href="#" class="dropdown-toggle"
-					data-toggle="dropdown"><i class="glyphicon glyphicon-cog"></i>@Messages("view.header.control-panel")<span class="caret"></span></a>
+					data-toggle="dropdown"><i class="fa fa-cog"></i>@Messages("view.header.control-panel")<span class="caret"></span></a>
 					<ul class="dropdown-menu" role="menu">
-						<li><a href="@routes.User.index().absoluteURL(request)" id="user-console"><i class="glyphicon glyphicon-user"></i>@Messages("view.user.caption")</a></li>
-						<li><a href="@routes.Group.index().absoluteURL(request)" id="group-console"><i class="glyphicon glyphicon-th"></i>@Messages("view.group.caption")</a></li>
+						<li><a href="@routes.User.index().absoluteURL(request)" id="user-console"><i class="fa fa-user"></i>@Messages("view.user.caption")</a></li>
+						<li><a href="@routes.Group.index().absoluteURL(request)" id="group-console"><i class="fa fa-users"></i>@Messages("view.group.caption")</a></li>
 						@if(session.get(Token.LOGIN_USER_IS_ADMIN) == "true"){
 							<li class="divider"></li>
-							<li><a href="#" id="search-engine-console"><i class="glyphicon glyphicon-search"></i>@Messages("view.search-engine.caption")</a></li>
+							<li><a href="#" id="search-engine-console"><i class="fa fa-search"></i>@Messages("view.search-engine.caption")</a></li>
 						}
 					</ul>
 				</li>
@@ -44,7 +44,7 @@
 				        <div class="input-group">
 				            <input type="text" class="form-control" placeholder="Search" name="term" id="srch-term">
 				            <div class="input-group-btn">
-				                <button class="btn btn-default" type="submit"><i class="glyphicon glyphicon-search"></i></button>
+				                <button class="btn btn-default" type="submit"><i class="fa fa-search"></i></button>
 				            </div>
 				        </div>
 			        </form>
