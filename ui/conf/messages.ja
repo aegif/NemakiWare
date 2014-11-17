@@ -3,6 +3,7 @@ view.header.control-panel=コントロールパネル
 
 view.auth.login=ログイン
 view.auth.logout=ログアウト
+view.auth.login.caption=ログインしてください
 
 view.node.property=プロパティ
 view.node.file=ファイル
