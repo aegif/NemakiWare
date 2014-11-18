@@ -20,14 +20,16 @@
 	  				<ul class="nav nav-pills">
 	  					<li>
 							<!-- create button -->
-			  				<button type="button" class="btn btn-default" id="user-create-button">
-			  					<i class="fa fa-plus"></i>@Messages("view.user.create")
-		  					</button>
+							<form class="navbar-form" style="padding-left:0px;">
+								<button type="button" class="btn btn-default" id="user-create-button">
+			  						<i class="fa fa-plus"></i>@Messages("view.user.create")
+		  						</button>
+							</form>
 						</li>
 						<li>
 							<!-- search box -->
 							<div class="input-group">
-								@helper.form(action = routes.User.search()){
+								@helper.form(action = routes.User.search(), 'class -> "navbar-form"){
 									<input type="text" class="form-control" placeholder="Search" name="term" id="user-search-box">
 							     	<div class="input-group-btn">
 							        	<button class="btn btn-default" id="user-search" type="submit"><i class="fa fa-search"></i></button>

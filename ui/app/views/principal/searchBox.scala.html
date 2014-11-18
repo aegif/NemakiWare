@@ -1,9 +1,14 @@
 @defining("ps-"){prefix =>
-	<div class="input-group">
-		<input type="text" id="@{prefix}search-box" class="form-control" placeholder="Search" name="term"/>
-		<div class="input-group-btn">
-	    	<button class="btn btn-default" id="@{prefix}search-button"><i class="fa fa-search"></i></button>
-	   	</div>
-	</div>
-	
+	<ul class="nav nav-pills">
+		<li>
+			<div class="input-group">
+				<form class="navbar-form" style="padding-left:0px;">
+					<input type="text" id="@{prefix}search-box" class="form-control" placeholder="Search" name="term"/>
+					<div class="input-group-btn">
+				    	<button class="btn btn-default" id="@{prefix}search-button"><i class="fa fa-search"></i></button>
+				   	</div>
+				</form>
+			</div>
+		</li>
+	</ul>
 }
