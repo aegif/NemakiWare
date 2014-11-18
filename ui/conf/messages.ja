@@ -89,6 +89,8 @@ view.add=追加
 view.remove=除外
 view.action=アクション
 
+view.message.please.wait=しばらくお待ちください...
+
 view.cmis.cmis.name=名前
 view.cmis.cmis.createdBy=作成者
 view.cmis.cmis.creationDate=作成時刻
