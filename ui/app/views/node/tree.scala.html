@@ -106,7 +106,8 @@
 		formData.append("cmis:objectTypeId", 'cmis:document');
 		 
 		 $(function(){
-			 $.ajax("@routes.Node.create().absoluteURL(request)",
+			$.blockUI({message:"@Messages("view.message.please.wait")"});
+			$.ajax("@routes.Node.create().absoluteURL(request)",
 			{
 				 type: 'post',
 			      processData: false,
@@ -116,6 +117,12 @@
 			      success: function(data){
 			        window.alert("@Messages("view.node.drag-and-drop.success")");
 			        window.location.reload();
+			      },
+			      error: function(XMLHttpRequest, textStatus, errorThrown) {
+					alert("some error:" + textStatus);
+				  },
+			      complete: function(){
+				    $.unblockUI();
 			      }
 			});
 		 });

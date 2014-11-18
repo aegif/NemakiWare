@@ -87,6 +87,8 @@ view.add=Add
 view.remove=Remove
 view.action=Action
 
+view.message.please.wait=Please wait...
+
 view.cmis.cmis.name=Name
 view.cmis.cmis.createdBy=Created By
 view.cmis.cmis.creationDate=Creation Date

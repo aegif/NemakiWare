@@ -72,6 +72,7 @@
 <script type="text/javascript">
 	$(function(){
 		$('#checkout').click(function(){
+			$.blockUI({message:"@Messages("view.message.please.wait")"});
 			$.ajax({
 				type: "POST",
 				  url: "@routes.Node.checkOut(obj.getId).absoluteURL(request)",
@@ -82,6 +83,9 @@
 				  },
 				  error: function(XMLHttpRequest, textStatus, errorThrown) {
 				     alert("some error:" + textStatus);
+				  },
+				  complete: function(){
+					  $.unblockUI();
 				  }
 			});
 		});
