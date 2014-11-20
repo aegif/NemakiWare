@@ -72,16 +72,8 @@
 			var inheritance = $($(row).find('.inheritance > input')).prop('checked');
 			json['inheritance'] = inheritance;
 			
-			
-			alert(JSON.stringify(json));
-			
 			acl.push(json);
-			
-				
-			
 		});
-		
-		alert(JSON.stringify(acl));
 		
 		var data = {
 			acl :JSON.stringify(acl)
