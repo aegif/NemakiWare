@@ -10,7 +10,7 @@ function editableValueFieldAdd(){
 		var myContainer = $(this).closest("div.editable-value-field-container");
 		myContainer.clone(true).insertAfter(myContainer);
 		//empty value after clone
-		myContainer.next().children("div.editable-value-field:first").text("");
+		myContainer.next().find("div.editable-value-field:first").text("");
 	});
 }
 
@@ -22,7 +22,7 @@ function editableValueFieldRemove(){
 			myContainer.remove();
 		}else if(myContainer.parent().children("div.editable-value-field-container").size() == 1){
 			//empty value
-			myContainer.children("div.editable-value-field:first").text("");
+			myContainer.find("div.editable-value-field:first").text("");
 		}
 	});
 }
