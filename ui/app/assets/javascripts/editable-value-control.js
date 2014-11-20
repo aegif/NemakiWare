@@ -7,6 +7,7 @@ function editableValueFieldControl(){
 
 function editableValueFieldAdd(){
 	$('.editable-value-field-add').off().on('click', function(){
+		alert('add!');
 		var myContainer = $(this).closest("div.editable-value-field-container");
 		myContainer.clone(true).insertAfter(myContainer);
 		//empty value after clone
@@ -31,7 +32,7 @@ function editableValueFieldUp(){
 	$(document).on('click', '.editable-value-field-up', function(){
 		var myContainer = $(this).closest("div.editable-value-field-container");
 		if(myContainer.prev().length !== 0){
-			myContainer.clone().insertBefore(myContainer.prev());
+			myContainer.clone(true).insertBefore(myContainer.prev());
 			myContainer.remove();
 		}
 	});
@@ -41,7 +42,7 @@ function editableValueFieldDown(){
 	$(document).on('click', '.editable-value-field-down', function(){
 		var myContainer = $(this).closest("div.editable-value-field-container");
 		if(myContainer.next().length !== 0){	
-			myContainer.clone().insertAfter(myContainer.next());
+			myContainer.clone(true).insertAfter(myContainer.next());
 			myContainer.remove();
 		}
 	});
