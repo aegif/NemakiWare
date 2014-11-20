@@ -26,6 +26,9 @@ function bindEditable(valueFieldSelector){
 function revertField(inputboxDom){
 	var inputVal = inputboxDom.val();
 	var parentDiv = inputboxDom.parent();
+	var wrap = inputboxDom.closest("div.antiscroll-wrap");
+	var inner = inputboxDom.closest("div.antiscroll-inner");
+	
 	parentDiv.text(inputVal);
 	parentDiv.removeAttr('on');
 	
@@ -33,9 +36,12 @@ function revertField(inputboxDom){
 	//TODO .closest() seems not to work
 	var height = parentDiv.height();
 	var width = parentDiv.width();
-	parentDiv.parent().antiscroll();
-	parentDiv.height(height);
-	parentDiv.width(width);
+	$(function () {
+		wrap.antiscroll();
+		inner.height(height);
+		inner.width(width);
+		
+	});
 }
 
 //Get edited value 

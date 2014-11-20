@@ -13,14 +13,18 @@ div.menubar {
 div.lightbox-me-container{
 	border-style:solid;
 	border-width: 3px;
-	background-color:#eeeeee;
-	overflow-x:scroll; 
-	height:560px;
-	width: 720px;
-	padding-top:20px;
-	padding-left:20px;
+	background-color: #eeeeee;
+	overflow: auto; 
+	height: 600px;
+	width: 800px;
+	padding-top: 20px;
+	padding-left: 20px;
 }
 
+div.lightbox-me-container div.container, div.lightbox-me-container div.row{
+	width: 720px !important;
+}
+	
 div.tab-pane{
 	padding-top:20px;
 }
@@ -50,7 +54,12 @@ div.tab-pane{
   word-wrap: break-word;
 }
 
-td.value{
+table.editable-table .key{
+	width: 200px;
+}
+
+table.editable-table .value{
+	width: 310px;
 	padding-top:2px　!important;
 	padding-bottom:0px !important;
 }

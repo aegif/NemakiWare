@@ -12,56 +12,53 @@
 @import org.apache.chemistry.opencmis.client.api.SecondaryType
 
 @(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(primaries: List[Property[_]])(secondary: Map[SecondaryType, List[Property[_]]])
-	<!-- html -->
-	<div class="container">
-		<div class="row" style="margin-bottom:15px">
-			<div class="col-sm-8">
-			@if(Util.isFreezeCopy(obj, session)){
-				@lockedNotice(obj)
-			}else{
-				@saveButton("property-update")
-			}
-			</div>
-			
-		</div>
-		
-		<div class="row">
-			<div class="col-sm-8">
-				<div><h4>@Messages("view.node.property")</h4></div>
-				@editableTable("obj-property-table")(10){
-					@for(p <- primaries){
-						@editableRow(p)()
-					}
-				}
-				<hr/>
-			</div>
-		</div>
+<!-- html -->
+<div class="container">
+	<div class="row" style="margin-bottom:15px">
+		@if(Util.isFreezeCopy(obj, session)){
+			@lockedNotice(obj)
+		}else{
+			@saveButton("property-update")
+		}
 	</div>
 	
-	<!-- scripts -->
-	<script type="text/javascript">
-		//binding:update
-		$(document).on('click', "#property-update", function(){
-			var data = {};
-			@for(p <- primaries){
-				@if(Util.isEditable(p.getDefinition, UpdateContext.NORMAL)){
-					data["@p.getId"] = editedValue("#@p.getId");	
+	<div class="row">
+		<div>
+			<div><h4>@Messages("view.node.property")</h4></div>
+			@editableTable("obj-property-table")(10){
+				@for(p <- primaries){
+					@editableRow(p)()
 				}
 			}
-			
-			$.ajax({
-				url : "@routes.Node.update(obj.getId).absoluteURL(request)",
-				type : 'POST',
-				data : data,
-				success : function(data){
-					alert("成功しました");
-					window.location.reload();
-				},
-				error : function(XMLHttpRequest, textStatus, errorThrown) {
-		            alert("XMLHttpRequest : " + XMLHttpRequest.status);
-		            alert("textStatus : " + textStatus);
-		            alert("errorThrown : " + errorThrown.message);
-		         }
-			});
+			<hr/>
+		</div>
+	</div>
+</div>
+
+<!-- scripts -->
+<script type="text/javascript">
+	//binding:update
+	$(document).on('click', "#property-update", function(){
+		var data = {};
+		@for(p <- primaries){
+			@if(Util.isEditable(p.getDefinition, UpdateContext.NORMAL)){
+				data["@p.getId"] = editedValue("#@p.getId");	
+			}
+		}
+		
+		$.ajax({
+			url : "@routes.Node.update(obj.getId).absoluteURL(request)",
+			type : 'POST',
+			data : data,
+			success : function(data){
+				alert("成功しました");
+				window.location.reload();
+			},
+			error : function(XMLHttpRequest, textStatus, errorThrown) {
+	            alert("XMLHttpRequest : " + XMLHttpRequest.status);
+	            alert("textStatus : " + textStatus);
+	            alert("errorThrown : " + errorThrown.message);
+	         }
 		});
-	</script>
+	});
+</script>

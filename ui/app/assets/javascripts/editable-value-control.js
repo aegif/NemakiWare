@@ -6,7 +6,6 @@ function editableValueFieldControl(){
 }
 
 function editableValueFieldAdd(){
-	//$('.editable-value-field-add').off().on('click', function(){
 	$(document).on('click', '.editable-value-field-add', function(){
 		var myContainer = $(this).closest("div.editable-value-field-container");
 		myContainer.clone().insertAfter(myContainer);

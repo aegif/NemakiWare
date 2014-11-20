@@ -1,7 +1,7 @@
 @import constant.UpdateContext
 
 @(tableId:String)(paging:Int=0)(rows:Html)
-<table class="footable" 
+<table class="footable editable-table" 
 	id="@tableId" 
 	data-sort="true" 
 	@if(paging!=0){
@@ -10,9 +10,9 @@
 	}>
 	<thead>
 		<tr>
-			<th class="col-md-2 col-sm-2">@Messages("view.table.key")</th>
-			<th class="col-md-1 col-sm-1"><i class="fa fa-edit" title="@Messages("view.table.editable")"></i></th>
-			<th class="col-md-5 col-sm-5">@Messages("view.table.value")</th>
+			<th class="key">@Messages("view.table.key")</th>
+			<th class="editable"><i class="fa fa-edit" title="@Messages("view.table.editable")"></i></th>
+			<th class="value">@Messages("view.table.value")</th>
 		</tr>
 	</thead>
 	<tbody>
@@ -43,8 +43,8 @@
 <script type="text/javascript">
 	$(document).ready(
 		function() {
-			$('.antiscroll-wrap').antiscroll();
-			$('.antiscroll-inner').height(28);
+			$('#@tableId .antiscroll-wrap').antiscroll();
+			$('#@tableId .antiscroll-inner').height(28);
 		}
 	);
 </script>
