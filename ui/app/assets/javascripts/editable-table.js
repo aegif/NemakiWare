@@ -11,21 +11,31 @@ function bindEditable(valueFieldSelector){
 
 		//end of editing
 		$(this).children('.editable-value-input:first').focus().blur(function(){
-			var inputVal = $(this).val();
-			var parentDiv = $(this).parent();
-			parentDiv.text(inputVal);
-			parentDiv.removeAttr('on');
+			revertField($(this));
 		});
 		
 		//binding: keypress
 		$(document).on('keypress', valueFieldSelector + ' > .editable-value-input:first', function(event){
 			if(event.which == 13){
-				var inputVal = $(this).val();
-				$(this).parent().text(inputVal);
-				$(valueFieldSelector).removeAttr('on');
+				revertField($(this));
 			}
 		});
     });
+}
+
+function revertField(inputboxDom){
+	var inputVal = inputboxDom.val();
+	var parentDiv = inputboxDom.parent();
+	parentDiv.text(inputVal);
+	parentDiv.removeAttr('on');
+	
+	//re-enable　antiscroll
+	//TODO .closest() seems not to work
+	var height = parentDiv.height();
+	var width = parentDiv.width();
+	parentDiv.parent().antiscroll();
+	parentDiv.height(height);
+	parentDiv.width(width);
 }
 
 //Get edited value 
