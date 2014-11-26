@@ -1,80 +1,78 @@
 @(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(parentId:String)
+@import component._
 @import util._
 @import org.apache.chemistry.opencmis.client.api.Document
 @import org.apache.chemistry.opencmis.commons.PropertyIds
 
 <div class="tap-pane">
 	@if(Util.isFreezeCopy(obj, session)){
-		@Messages("view.node.freeze-copy.cannot-update", Util.displayValue(obj,PropertyIds.VERSION_SERIES_CHECKED_OUT_BY))
+		@lockedNotice(obj)
 	}else{
 		@if(Util.convertToDocument(obj).isVersionSeriesCheckedOut()){
 			<!-- update pwc form -->
 			@helper.form(action=routes.Node.upload(obj.getId()), 'enctype -> "multipart/form-data") {
 			<fieldset>
-				<legend>@Messages("view.node.file.update.pwc.caption")</legend>
+				<legend><i class="fa fa-upload"></i>@Messages("view.node.file.update.pwc.caption")</legend>
 				<div>@Messages("view.node.file.update.pwc.description")</div>
 				<input type="file" name="file"/>
 				<input type="hidden" name="cmis:parentId" value="@parentId"/>
-		   		<button type="submit" class="btn btn-default btn-xs">@Messages("view.execute")</button>
+		   		@executeButton()
 		   	</fieldset>
 			}
 			
-			<br/>or<br/>
+			<br/><br/>
 			
 			<!-- checkin form -->
 			@helper.form(action=routes.Node.checkIn(obj.getId()), 'enctype -> "multipart/form-data") {
 			<fieldset>
-				<legend>@Messages("view.node.file.checkin.caption")</legend>
+				<legend><i class="fa fa-upload"></i><i class="fa fa-unlock"></i>@Messages("view.node.file.checkin.caption")</legend>
 				<div>@Messages("view.node.file.checkin.description")</div>
 				<input type="file" name="file"/>
 				<input type="text" name="cmis:checkinComment" size="50" placeholder="@Messages("view.node.file.checkin.comment")"/>
 				<input type="hidden" name="cmis:parentId" value="@parentId"/><br/>
-		   		<button type="submit" class="btn btn-default btn-xs">@Messages("view.execute")</button>
+		   		@executeButton()
 		   	</fieldset>
 			}
 			
-			<br/>or<br/>
+			<br/><br/>
+			
 			<!-- cancel checkout form -->
 			@helper.form(action = routes.Node.cancelCheckOut(obj.getId())) {
 			<fieldset>
-				<legend>@Messages("view.node.file.cancel.checkout.caption")</legend>
+				<legend><i class="fa fa-undo"></i>@Messages("view.node.file.cancel.checkout.caption")</legend>
 				<div>@Messages("view.node.file.cancel.checkout.description")</div>
 				<input type="hidden" name="cmis:parentId" value="@parentId"/>
-		   		<button type="submit" class="btn btn-default btn-xs">@Messages("view.execute")</button>
+		   		@executeButton()
 		   	</fieldset>
 			}
 		}else{
 			<!-- checkout form -->
-				<legend><i class="glyphicon glyphicon-lock"/>@Messages("view.node.file.checkout.caption")</legend>
+				<legend><i class="fa fa-lock"/>@Messages("view.node.file.checkout.caption")</legend>
 				<div>@Messages("view.node.file.checkout.description-1")</div>
 				<div>@Messages("view.node.file.checkout.description-2")</div>
 				<input type="hidden" name="cmis:parentId" value="@parentId"/>
-		   		<button id="checkout" class="btn btn-default btn-xs">@Messages("view.execute")</button>
-			<br/>
-			or
+		   		@executeButton("checkout")
 			<br/><br/>
 	
 			<!-- direct upload -->
 			@helper.form(action = routes.Node.upload(obj.getId()), 'enctype -> "multipart/form-data") {
 				<fieldset>
-					<legend><i class="glyphicon glyphicon-upload"/>@Messages("view.node.file.direct.caption")</legend>
+					<legend><i class="fa fa-upload"></i>@Messages("view.node.file.direct.caption")</legend>
 					<div>@Messages("view.node.file.direct.description")</div>
 					<input type="file" name="file"/>
 					<input type="hidden" name="cmis:parentId" value="@parentId"/>
-			   		<button type="submit" class="btn btn-default btn-xs">@Messages("view.execute")</button>
+			   		@executeButton()
 		   		</fieldset>
 			}
 		}
 	}
-
-		
-		
 </div>
 
 <!-- scripts -->
 <script type="text/javascript">
 	$(function(){
 		$('#checkout').click(function(){
+			$.blockUI({message:"@Messages("view.message.please.wait")"});
 			$.ajax({
 				type: "POST",
 				  url: "@routes.Node.checkOut(obj.getId).absoluteURL(request)",
@@ -85,6 +83,9 @@
 				  },
 				  error: function(XMLHttpRequest, textStatus, errorThrown) {
 				     alert("some error:" + textStatus);
+				  },
+				  complete: function(){
+					  $.unblockUI();
 				  }
 			});
 		});

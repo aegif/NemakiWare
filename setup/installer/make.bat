@@ -29,8 +29,7 @@ for %%i in (%*) do (
 
 rem Location
 if [%1] == [] (
-	set BAT_DIR=%~dp0
-	cd /d %BAT_DIR%
+	cd /d %~dp0	
 	cd /d ../../
 	FOR /F %%i in ('CD') do set SOURCE_HOME=%%i
 	cd /d %ORIGINAL_PWD%
@@ -70,8 +69,15 @@ call %SCRIPT_HOME%\IzPack\bin\compile.bat %SCRIPT_HOME%\install.xml -b %SOURCE_H
 rem Delete tmp file after putting them into installer
 del %USER_INPUT_SPEC_MODIFIED%
 
+rem Message
+echo The install file is successfully generated.
+pause
+
 rem Execute isntaller
 if "%FLG_E%" == "TRUE" (
+	
+	echo Continue to install...
+	
 	java -jar %SCRIPT_HOME%\install.jar
 )
 
