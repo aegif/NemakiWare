@@ -8,6 +8,8 @@
 	@multiValueField(property)
 }else{
 	<div class="editable-value-field-container">
-		<div class="editable-value-field">@property.getValueAsString</div>
+		<div class="antiscroll-wrap">
+			<div class="editable-value-field antiscroll-inner">@property.getValueAsString</div>
+		</div>
 	</div>
 }

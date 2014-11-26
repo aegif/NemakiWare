@@ -1,19 +1,38 @@
 @(form: Form[model.Login])
 <html>
-	<head></head>
+	@header()
 	<body>
-		@helper.form(routes.Application.authenticate) {
-		   <h1>Sign in</h1>
-		
-		   <p>
-		       <input type="text" name="id" placeholder="ID" value="@form("id").value">
-		   </p>
-		   <p>
-		       <input type="password" name="password" placeholder="Password">
-		   </p>
-		   <p>
-		       <button type="submit">Login</button>
-		   </p>
-		}
+		<div class="container">
+		    <div class="row" style="padding-top:35px;">
+		    	<div class="col-md-4 col-md-offset-4">
+					<img src="@routes.Assets.at("images/nemaki-logo.png")" width="300" />
+		    		<div class="panel panel-default">
+					  	<div class="panel-heading">
+					    	<h3 class="panel-title">@Messages("view.auth.login.caption")</h3>
+					 	</div>
+					  	<div class="panel-body">
+					    	@helper.form(action=routes.Application.authenticate){
+					    		<fieldset>
+						    	  	<div class="form-group">
+						    		    <input class="form-control" placeholder="@Messages("view.user.id")" name="id" type="text">
+						    		</div>
+						    		<div class="form-group">
+						    			<input class="form-control" placeholder="@Messages("view.user.password")" name="password" type="password" value="">
+						    		</div>
+						    		<!-- 
+						    		<div class="checkbox">
+						    	    	<label>
+						    	    		<input name="remember" type="checkbox" value="Remember Me"> Remember Me
+						    	    	</label>
+						    	    </div>
+						    		 -->
+						    		<input class="btn btn-lg btn-primary btn-block" type="submit" value="@Messages("view.auth.login")">
+						    	</fieldset>
+					    	}
+					    </div>
+					</div>
+				</div>
+			</div>
+		</div>
 	</body>
 </html>
