@@ -1,6 +1,8 @@
-@(parent: org.apache.chemistry.opencmis.client.api.Folder, objects: List[org.apache.chemistry.opencmis.client.api.CmisObject])
 @import util.Util
 @import org.apache.commons.collections.CollectionUtils
+
+@(parent: org.apache.chemistry.opencmis.client.api.Folder, objects: List[org.apache.chemistry.opencmis.client.api.CmisObject])
+
 <!DOCTYPE html>
 <html>
 	@header()
@@ -11,11 +13,11 @@
 	  			<!-- breadcrumb -->
 	  			<div class="col-md-11">
 	  				<ul class="breadcrumb">
-	  					<li><a href="@routes.Node.index().absoluteURL(request)" title="root"><i class="glyphicon glyphicon-home"></i></a></li>
+	  					<li><a href="@routes.Node.index().absoluteURL(request)" title="root"><i class="fa fa-home fa-lg"></i></a></li>
 	  					@defining(Util.dividePath(parent.getPath)){ segments =>
 	  						@for(i <- 0 to segments.length - 1; if(CollectionUtils.isNotEmpty(segments))){
 	  							@defining(segments.take(i+1).mkString("/")){url=>
-	  								<li><a href="@routes.Node.showChildrenByPath('/' + url).absoluteURL(request)"><i class="glyphicon glyphicon-folder-open"></i> @segments(i)</a></li>
+	  								<li><a href="@routes.Node.showChildrenByPath('/' + url).absoluteURL(request)"><i class="fa fa-folder-open"></i> @segments(i)</a></li>
 	  							}
 	  						}
 	  					}
@@ -25,10 +27,10 @@
 	  			<div class="col-md-11">
 					<!-- create button -->
 						<div class="dropdown">
-							<button class="btn btn-default dropdown-toggle" data-toggle="dropdown"><i class="glyphicon glyphicon-plus"></i>@Messages("view.node.create.caption")<span class="caret"></span></button>
+							<button class="btn btn-default dropdown-toggle" data-toggle="dropdown"><i class="fa fa-plus"></i>@Messages("view.node.create.caption")<span class="caret"></span></button>
 							<ul class="dropdown-menu" role="menu">
-								<li id="create-folder-in-tree"><a href="#"><i class="glyphicon glyphicon-folder-close"></i>@Messages("view.node.folder")</a></li>
-								<li id="create-file-in-tree"><a href="#"><i class="glyphicon glyphicon-file"></i>@Messages("view.node.file")</a></li>
+								<li id="create-folder-in-tree"><a href="#"><i class="fa fa-folder"></i>@Messages("view.node.folder")</a></li>
+								<li id="create-file-in-tree"><a href="#"><i class="fa fa-file"></i>@Messages("view.node.file")</a></li>
 							</ul>
 						</div>
 					
@@ -104,7 +106,8 @@
 		formData.append("cmis:objectTypeId", 'cmis:document');
 		 
 		 $(function(){
-			 $.ajax("@routes.Node.create().absoluteURL(request)",
+			$.blockUI({message:"@Messages("view.message.please.wait")"});
+			$.ajax("@routes.Node.create().absoluteURL(request)",
 			{
 				 type: 'post',
 			      processData: false,
@@ -114,6 +117,12 @@
 			      success: function(data){
 			        window.alert("@Messages("view.node.drag-and-drop.success")");
 			        window.location.reload();
+			      },
+			      error: function(XMLHttpRequest, textStatus, errorThrown) {
+					alert("some error:" + textStatus);
+				  },
+			      complete: function(){
+				    $.unblockUI();
 			      }
 			});
 		 });

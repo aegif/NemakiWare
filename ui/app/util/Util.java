@@ -218,7 +218,7 @@ public class Util {
 		return cs;
 	}
 
-	public static String getIconName(CmisObject obj) {
+	public static String getIconName(CmisObject obj){
 		String fileName = "";
 
 		// Document
@@ -227,60 +227,60 @@ public class Util {
 			String mimeType = doc.getContentStreamMimeType();
 
 			if ("application/x-javascript".equals(mimeType)) {
-				fileName = "js.gif";
+				fileName = "fa-file-image-o";
 			} else if ("text/plain".equals(mimeType)) {
-				fileName = "text-file-32.png";
+				fileName = "fa-file-text-o ";
 			} else if ("application/msword".equals(mimeType)) {
-				fileName = "doc-file-32.png";
+				fileName = "fa-file-word-o ";
 			} else if ("text/xml".equals(mimeType)) {
-				fileName = "xml.gif";
+				fileName = "fa-file-code-o";
 			} else if ("image/gif".equals(mimeType)) {
-				fileName = "img-file-32.png";
+				fileName = "fa-file-image-o";
 			} else if ("image/jpeg".equals(mimeType)) {
-				fileName = "img-file-32.png";
+				fileName = "fa-file-image-o";
 			} else if ("image/jpeg2000".equals(mimeType)) {
-				fileName = "jpg.gif";
+				fileName = "fa-file-image-o";
 			} else if ("video/mpeg".equals(mimeType)) {
-				fileName = "mpeg.gif";
+				fileName = "fa-file-video-o ";
 			} else if ("audio/x-mpeg".equals(mimeType)) {
-				fileName = "mpg.gif";
+				fileName = "fa-file-audio-o";
 			} else if ("video/mp4".equals(mimeType)) {
-				fileName = "mp4.gif";
+				fileName = "fa-file-video-o";
 			} else if ("video/mpeg2".equals(mimeType)) {
-				fileName = "mp2.gif";
+				fileName = "fa-file-video-o";
 			} else if ("application/pdf".equals(mimeType)) {
-				fileName = "pdf-file-32.png";
+				fileName = "fa-file-pdf-o";
 			} else if ("image/png".equals(mimeType)) {
-				fileName = "img-file-32.png";
+				fileName = "fa-file-image-o ";
 			} else if ("application/vnd.powerpoint".equals(mimeType)) {
-				fileName = "ppt-file-32.png";
+				fileName = "fa-file-powerpoint-o";
 			} else if ("audio/x-wav".equals(mimeType)) {
-				fileName = "wmv.gif";
+				fileName = "fa-file-audio-o ";
 			} else if ("application/vnd.excel".equals(mimeType)) {
-				fileName = "xls-file-32.png";
+				fileName = "fa-file-excel-o";
 			} else if ("application/zip".equals(mimeType)) {
-				fileName = "zip.gif";
+				fileName = "fa-file-archive-o";
 			} else if ("application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 					.equals(mimeType)) {
-				fileName = "doc-file-32.png";
+				fileName = "fa-file-word-o";
 			} else if ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 					.equals(mimeType)) {
-				fileName = "xls-file-32.png";
+				fileName = "fa-file-excel-o";
 			} else if ("application/vnd.openxmlformats-officedocument.presentationml.presentation"
 					.equals(mimeType)) {
-				fileName = "ppt-file-32.png";
+				fileName = "fa-file-powerpoint-o";
 			} else {
-				fileName = "generic-file-32.png";
+				fileName = "fa-file-o ";
 			}
 			// Folder
 			// TODO check cmis:folder
 		} else {
-			fileName = "folder-icon-default.gif";
+			fileName = "fa-folder-o";
 		}
 
 		return fileName;
 	}
-
+	
 	private static HttpClient buildClient(play.mvc.Http.Session session){
 		// configurations
 				String userAgent = "My Http Client 0.1";

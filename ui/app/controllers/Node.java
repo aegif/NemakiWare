@@ -1,7 +1,5 @@
 package controllers;
 
-import global.Global;
-
 import java.io.File;
 import java.io.IOException;
 import java.net.URLEncoder;
@@ -44,7 +42,6 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrinc
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
-import play.api.Play;
 import play.data.DynamicForm;
 import play.data.Form;
 import play.mvc.Controller;

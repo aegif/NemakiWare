@@ -5,13 +5,17 @@
 
 @if(CollectionUtils.isEmpty(property.getValues)){
 	<div class="editable-value-field-container">
-		<div class="editable-value-field multi" style="float:left;"></div>
+		<div class="antiscroll-wrap">
+			<div class="editable-value-field multi antiscroll-inner"></div>
+		</div>
 		@multiValueFieldControl()
 	</div>
 }else{
 	@for(v <- property.getValues){
 		<div class="editable-value-field-container">
-			<div class="editable-value-field multi" style="float:left;">@v</div>
+			<div class="antiscroll-wrap">
+				<div class="editable-value-field multi antiscroll-inner">@v</div>
+			</div>
 			@multiValueFieldControl()
 		</div>
 	}

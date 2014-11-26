@@ -9,7 +9,7 @@
 		<div class="col-sm-5">
 			@if(Util.existPreview(obj)){
 				<a href="@routes.Node.downloadPreview(obj.getId)">
-					<button class="btn btn-default btn-primary"><i class="glyphicon glyphicon-eye-open"></i>@Messages("view.node.preview.open")</button>
+					<button class="btn btn-default btn-primary"><i class="fa fa-eye"></i>@Messages("view.node.preview.open")</button>
 				</a>					
 			}else{
 				<div>@Messages("view.node.preview.none")</div>
