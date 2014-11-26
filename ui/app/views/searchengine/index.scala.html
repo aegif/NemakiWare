@@ -4,13 +4,13 @@
 @lightbox{
 	<div class="container">
 		<div class="row" style="padding-bottom:30px;">
-			<h4><i class="glyphicon glyphicon-search"></i>@Messages("view.search-engine.caption")</h4>
+			<h4><i class="fa fa-search"></i>@Messages("view.search-engine.caption")</h4>
 		</div>
 
 		<div class="row" style="padding-bottom:30px;">
 			@defining(Util.getSeachEngineUrl(session)){ url =>
 				@if(StringUtils.isNotBlank(url)){
-					<i class="glyphicon glyphicon-link"></i>
+					<i class="fa fa-link"></i>
 					<a href="@url" target="_blank">@Messages("view.search-engine.open")</a>
 				}
 			}

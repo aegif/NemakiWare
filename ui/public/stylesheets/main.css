@@ -3,20 +3,28 @@ body {
     padding-top: 70px;
 }
 
+i.fa {
+	padding-right:2px;
+}
+
 div.menubar {
    background-color: #cccccc;
 }
 div.lightbox-me-container{
 	border-style:solid;
 	border-width: 3px;
-	background-color:#eeeeee;
-	overflow-x:scroll; 
-	height:560px;
-	width: 720px;
-	padding-top:20px;
-	padding-left:20px;
+	background-color: #eeeeee;
+	overflow: auto; 
+	height: 600px;
+	width: 800px;
+	padding-top: 20px;
+	padding-left: 20px;
 }
 
+div.lightbox-me-container div.container, div.lightbox-me-container div.row{
+	width: 720px !important;
+}
+	
 div.tab-pane{
 	padding-top:20px;
 }
@@ -46,6 +54,16 @@ div.tab-pane{
   word-wrap: break-word;
 }
 
+table.editable-table .key{
+	width: 200px;
+}
+
+table.editable-table .value{
+	width: 310px;
+	padding-top:2px　!important;
+	padding-bottom:0px !important;
+}
+
 div.editable-value-field, input.editable-value-input {
 	width: 300px;
 }
@@ -54,17 +72,21 @@ div.editable-value-field.multi, div.editable-value-field.multi input.editable-va
 	width: 230px;
 }
 
-div.editable-value-field, input.editable-value-input{
+div.editable-value-field{
 	height: 28px;
 }
 
+div.antiscroll-wrap *{
+	overflow:hidden;
+}
+
 div.editable-value-field {
-	overflow-x:scroll;
 	white-space:nowrap;
 	background: url(../images/transparent.gif) repeat;	/*so that empty field can be clicked*/
 }
 
 input.editable-value-input {
+	height:25px;
 	background-color : #f8f8f8;
 	
 	border:0;

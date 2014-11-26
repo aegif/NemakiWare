@@ -8,18 +8,18 @@
 
 @if(filter){
 	<tr id="@property.getDefinition.getId">
-		<td class="col-md-2 col-sm-2">
+		<td class="key">
 			@property.getDefinition.getDisplayName
 		</td>
-		<td class="col-md-1 col-sm-1">
+		<td class="editable">
 			@if(Util.isReadWrite(property.getDefinition)){
-				<i class="glyphicon glyphicon-ok editable"></i>
+				<i class="fa fa-check editable"></i>
 				<div style="display:none">1</div>
 			}else{
 				<div style="display:none">0</div>
 			}
 		</td>
-		<td class="col-md-5 col-sm-5 value @if(Util.isReadWrite(property.getDefinition)){editable-value}">
+		<td class="value @if(Util.isReadWrite(property.getDefinition)){editable-value}">
 			@valueField(property)
 		</td>
 	</tr>

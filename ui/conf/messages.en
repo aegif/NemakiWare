@@ -1,8 +1,9 @@
 view.header.product.name=NemakiWare
 view.header.control-panel=Control Panel
 
-view.auth.login=Log in
-view.auth.login=Log out
+view.auth.login=Sign in
+view.auth.logout=Sign out
+view.auth.login.caption=Please sign in 
 
 view.node.property=Property
 view.node.file=File
@@ -19,7 +20,7 @@ view.node.file.select=Select a file
 view.node.file.checkout.caption=Lock for offline editing
 view.node.file.checkout.description-1=The document will be locked and can be edited only by the editor.
 view.node.file.checkout.description-2=Download a copy to edit it.
-view.node.file.update.pwc.caption=Reflect offline editing temporarily.
+view.node.file.update.pwc.caption=Reflect offline editing temporarily
 view.node.file.update.pwc.description=Upload an edited file. The document stay unlocked.
 view.node.file.checkin.caption=Complete offline editing
 view.node.file.checkin.description=Upload an edited file and unlock the docment.
@@ -43,7 +44,7 @@ view.principal.id=ID
 view.principal.name=Name
 view.principal.inheritance=Inheritance
 
-view.user.caption=User Management
+view.user.caption=Users
 view.user.property=Property
 view.user.create=New User
 view.user.create.caption=Create a new user
@@ -54,7 +55,7 @@ view.user.first.name=First Name
 view.user.last.name=Last Name
 view.user.email=E-Mail
 
-view.group.caption=Group Management
+view.group.caption=Groups
 view.group.property=Property
 view.group.create=New Group
 view.group.create.caption=Create a new group
@@ -65,9 +66,9 @@ view.group.member.user=User
 view.group.member.group=Group
 view.group.member.add=Add Members
 
-view.search-engine.caption=Search Engine Management
-view.search-engine.open=Open Search Engine
-view.search-engine.init=Initialize Index
+view.search-engine.caption=Search engine
+view.search-engine.open=Open Search engine
+view.search-engine.init=Initialize index
 view.search-engine.init.success=Initialized search engine index.
 view.search-engine.reindex=Reindex
 view.search-engine.reindex.confirm=Reindexing may take some time. Continue？
@@ -86,9 +87,11 @@ view.add=Add
 view.remove=Remove
 view.action=Action
 
+view.message.please.wait=Please wait...
+
 view.cmis.cmis.name=Name
 view.cmis.cmis.createdBy=Created By
 view.cmis.cmis.creationDate=Creation Date
-view.cmis.cmis.lastModifiedBy=Updated By
-view.cmis.cmis.lastModificationDate=Updated By
+view.cmis.cmis.lastModifiedBy=Modified By
+view.cmis.cmis.lastModificationDate=Modification Date
 view.cmis.cmis.versionSeriesCheckedOutBy=Locked By

@@ -11,7 +11,7 @@
 		<div class="container">
 			<div class="row">
 	  			<div class="col-md-11">
-	  				<h3><i class="glyphicon glyphicon-user"></i>@Messages("view.user.caption")</h3>
+	  				<h3><i class="fa fa-user"></i>@Messages("view.user.caption")</h3>
 	  			</div>
 	  		</div>
 		
@@ -20,15 +20,19 @@
 	  				<ul class="nav nav-pills">
 	  					<li>
 							<!-- create button -->
-			  				<button type="button" class="btn btn-default" id="user-create-button">@Messages("view.user.create")</button>
+							<form class="navbar-form" style="padding-left:0px;">
+								<button type="button" class="btn btn-default" id="user-create-button">
+			  						<i class="fa fa-plus"></i>@Messages("view.user.create")
+		  						</button>
+							</form>
 						</li>
 						<li>
 							<!-- search box -->
 							<div class="input-group">
-								@helper.form(action = routes.User.search()){
+								@helper.form(action = routes.User.search(), 'class -> "navbar-form"){
 									<input type="text" class="form-control" placeholder="Search" name="term" id="user-search-box">
 							     	<div class="input-group-btn">
-							        	<button class="btn btn-default" id="user-search" type="submit"><i class="glyphicon glyphicon-search"></i></button>
+							        	<button class="btn btn-default" id="user-search" type="submit"><i class="fa fa-search"></i></button>
 							     	</div>
 								}
 						    	
@@ -60,8 +64,8 @@
 										<td>@user.lastName</td>
 										<td>@user.email</td>
 										<td>
-											<button type='button' class='btn btn-default user-detail' user-id='@user.id'><i class="glyphicon glyphicon-wrench"></i>@Messages("view.detail")</button>
-											<button type='button' class='btn btn-default user-delete' user-id='@user.id'><i class="glyphicon glyphicon-trash"></i>@Messages("view.delete")</button>
+											<button type='button' class='btn btn-default user-detail' user-id='@user.id'><i class="fa fa-wrench"></i>@Messages("view.detail")</button>
+											<button type='button' class='btn btn-default user-delete' user-id='@user.id'><i class="fa fa-trash"></i>@Messages("view.delete")</button>
 										</td>
 									</tr>
 								}

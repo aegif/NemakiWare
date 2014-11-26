@@ -1,5 +1,6 @@
 @import principal._
 @import table._
+@import component._
 @import java.util._
 @import util.Util
 
@@ -10,19 +11,19 @@
 	<div class="container">
 		<div class="row">
 			<div class="col-sm-5">
-				<h3><i class="glyphicon glyphicon-th">@group.name</i></h3>
+				<h3><i class="fa fa-users">@group.name</i></h3>
 			</div>
 		</div>
 
 		<div class="row" style="margin-bottom:15px">
 			<div class="col-sm-5">
-				<button class="btn btn-default btn-primary" id="group-update"><i class=" glyphicon glyphicon-saved"></i>@Messages("view.save")</button>
+				@saveButton("group-update")
 			</div>
 		</div>
 		
 		<div class="row">
 			<div class="col-sm-8">
-				<div><h4><i class="glyphicon glyphicon-wrench"></i>@Messages("view.group.property")</h4></div>
+				<div><h4><i class="fa fa-wrench"></i>@Messages("view.group.property")</h4></div>
 				@editableTable("obj-property-table")(10){
 					<!-- id row -->
 					@defining(Util.buildTempProperty(
@@ -44,7 +45,7 @@
 		
 		<div class="row">
   			<div class="col-sm-5">
-  				<div><h4><i class="glyphicon glyphicon-wrench"></i>@Messages("view.group.caption")</h4></div>
+  				<div><h4><i class="fa fa-wrench"></i>@Messages("view.group.caption")</h4></div>
   			</div>
 	  	</div>
 		

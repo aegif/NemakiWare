@@ -6,26 +6,42 @@ function bindEditable(valueFieldSelector){
 			$(this).attr('on', 'on');
 			txt = $(this).text();
 			$(this).html('<input class="editable-value-input" type="text" value="'+txt+'" />');
-			$(this).children('input:first').focus();
+			$(this).children('.editable-value-input:first').focus();
 		}
 
 		//end of editing
-		$(this).children('input:first').focus().blur(function(){
-			var inputVal = $(this).val();
-			var parentDiv = $(this).parent();
-			parentDiv.text(inputVal);
-			parentDiv.removeAttr('on');
+		$(this).children('.editable-value-input:first').focus().blur(function(){
+			revertField($(this));
 		});
 		
 		//binding: keypress
-		$(document).on('keypress', valueFieldSelector + ' > input', function(event){
+		$(document).on('keypress', valueFieldSelector + ' > .editable-value-input:first', function(event){
 			if(event.which == 13){
-				var inputVal = $(this).val();
-				$(this).parent().text(inputVal);
-				$(valueFieldSelector).removeAttr('on');
+				revertField($(this));
 			}
 		});
     });
+}
+
+function revertField(inputboxDom){
+	var inputVal = inputboxDom.val();
+	var parentDiv = inputboxDom.parent();
+	var wrap = inputboxDom.closest("div.antiscroll-wrap");
+	var inner = inputboxDom.closest("div.antiscroll-inner");
+	
+	parentDiv.text(inputVal);
+	parentDiv.removeAttr('on');
+	
+	//re-enable　antiscroll
+	//TODO .closest() seems not to work
+	var height = parentDiv.height();
+	var width = parentDiv.width();
+	$(function () {
+		wrap.antiscroll();
+		inner.height(height);
+		inner.width(width);
+		
+	});
 }
 
 //Get edited value 
