@@ -20,13 +20,15 @@
 				}
 				
 				//binding: search button click
-				$(document).on('click', '#@{prefix}search-button', function(){
+				$(document).on('click', '#@{prefix}search-button', function(event){
+					event.preventDefault();
 					searchPrincipal($('#@{prefix}search-box').val());
 				});
 			
 				//binding: search box keypress
 				$(document).on('keypress', '#@{prefix}search-box', function(event){
 					if(event.which == 13){
+						event.preventDefault();
 						searchPrincipal($('#@{prefix}search-box').val());
 					}
 				});
@@ -38,7 +40,6 @@
 					var footable = $('#@{prefix}selected-table').data('footable');
 					
 					//build json of selected row data
-					
 					$('#@{prefix}search-table :checkbox').each(function(i,chkbx){
 						if($(chkbx).prop('checked')){
 							//check duplicate row
@@ -144,6 +145,9 @@
 						},
 						error: function(data){
 							alert('error!');
+						},
+						complete: function(){
+							
 						}
 					});
 				}
