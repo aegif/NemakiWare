@@ -58,6 +58,10 @@ table.editable-table .key{
 	width: 200px;
 }
 
+table.editable-table .editable{
+	width: 25px;
+}
+
 table.editable-table .value{
 	width: 310px;
 	padding-top:2px　!important;
