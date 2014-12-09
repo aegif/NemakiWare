@@ -6,6 +6,7 @@ import java.net.URLEncoder;
 import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -501,8 +502,15 @@ public class Node extends Controller {
     	Session session = createSession();
     	CmisObject obj = session.getObject(id);
     	
-    	List<Ace> oldAcl = obj.getAcl().getAces();
-    	List<Ace> newAcl = new ArrayList<Ace>();
+    	List<Ace> originalAcl = obj.getAcl().getAces();
+    	Map<String, Ace> originalAclMap = new HashMap<String, Ace>();
+    	for(Ace ace:originalAcl){
+    		originalAclMap.put(ace.getPrincipalId(), ace);
+    	}
+    	
+    	List<Ace> addAces = new ArrayList<Ace>();
+    	List<Ace> removeAces = new ArrayList<Ace>();
+    	Map<String, Ace> newAclMap = new HashMap<String, Ace>();
     	
     	//Get input form data
     	DynamicForm input = Form.form();
@@ -528,11 +536,36 @@ public class Node extends Controller {
 					_permission.add(itr2.next().asText());
 				}
 				
-				Ace newAce = buildAce(principalId, _permission);
-				newAcl.add(convertNoneAce(principalId, newAce));
+				Ace _newAce = buildAce(principalId, _permission);
+				Ace newAce = convertNoneAce(principalId, _newAce);
+				newAclMap.put(principalId, newAce);
+				
+				//Compare with original and allot to add/removeAces
+				Ace originalAce = originalAclMap.get(principalId);
+				if(originalAce == null){
+					//Add a new ACE row
+					addAces.add(newAce);
+				}else{
+					//add or remove permissions of an existing ACE row
+					List<String> remove = Util.difference(originalAce.getPermissions(), newAce.getPermissions());
+					List<String> add = Util.difference(newAce.getPermissions(), originalAce.getPermissions());
+
+					AccessControlPrincipalDataImpl principal = new AccessControlPrincipalDataImpl(principalId);
+					Ace addAce = new AccessControlEntryImpl(principal, new ArrayList<String>(add));
+					Ace removeAce = new AccessControlEntryImpl(principal, new ArrayList<String>(remove));
+					addAces.add(addAce);
+					removeAces.add(removeAce);
+				}
 			}
 			
-			obj.applyAcl(newAcl, oldAcl, AclPropagation.PROPAGATE);
+			//Remove an existing ACE row
+			for(String key : originalAclMap.keySet()){
+				if(!newAclMap.containsKey(key)){
+					removeAces.add(originalAclMap.get(key));
+				}
+			}
+			
+			obj.applyAcl(addAces, removeAces, AclPropagation.PROPAGATE);
 			
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
