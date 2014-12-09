@@ -35,6 +35,7 @@ import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.definitions.Choice;
+import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.BindingType;
@@ -731,5 +732,14 @@ public class Util {
 		return false;
 	 }
 	 
-	 
+	 public static List<PermissionDefinition> trimForDisplay(List<PermissionDefinition> list){
+		 List<PermissionDefinition> result = new ArrayList<PermissionDefinition>();
+		 for(PermissionDefinition def:list){
+			 if(!"cmis:none".equals(def.getId())){
+				 result.add(def);
+			 }
+		 }
+		 
+		 return result;
+	 }
 }
