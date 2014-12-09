@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.net.URLEncoder;
 import java.text.MessageFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -354,7 +355,7 @@ public class Node extends Controller {
  	   CmisObject obj = session.getObject(id);
  	   
  	   //Get permission types
- 	   List<PermissionDefinition> permissionDefs = session.getRepositoryInfo().getAclCapabilities().getPermissions();
+ 	   List<PermissionDefinition> permissionDefs = Util.trimForDisplay(session.getRepositoryInfo().getAclCapabilities().getPermissions());
  	   
  	   //Principals
  	   List<Principal>members = new ArrayList<Principal>();
@@ -503,12 +504,9 @@ public class Node extends Controller {
     	List<Ace> oldAcl = obj.getAcl().getAces();
     	List<Ace> newAcl = new ArrayList<Ace>();
     	
-    	
     	//Get input form data
     	DynamicForm input = Form.form();
     	input = input.bindFromRequest();
-
-    	
     	
     	String acl = input.get("acl");
     	ObjectMapper mapper = new ObjectMapper();
@@ -530,24 +528,28 @@ public class Node extends Controller {
 					_permission.add(itr2.next().asText());
 				}
 				
-				newAcl.add(buildAce(principalId, _permission));
+				Ace newAce = buildAce(principalId, _permission);
+				newAcl.add(convertNoneAce(principalId, newAce));
 			}
 			
 			obj.applyAcl(newAcl, oldAcl, AclPropagation.PROPAGATE);
-			
 			
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-    	
-    	
-    	//parse json data
-    	
-    	
-    	
     	return ok();
-    	
+    }
+    
+    private static Ace convertNoneAce(String principalId, Ace ace){
+    	if(CollectionUtils.isEmpty(ace.getPermissions())){
+    		AccessControlPrincipalDataImpl principal = new AccessControlPrincipalDataImpl(principalId); 
+    		List<String> cmisNone = Arrays.asList("cmis:none");
+    		Ace none = new AccessControlEntryImpl(principal, cmisNone);
+    		return none;
+    	}else{
+    		return ace;
+    	}
     }
     
     private static Ace buildAce(String principalId, List<String>permission){
@@ -559,8 +561,6 @@ public class Node extends Controller {
     	
     	return ace;
     }
-
-   
 
     public static Result upload(String id){
 
