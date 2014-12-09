@@ -742,4 +742,16 @@ public class Util {
 		 
 		 return result;
 	 }
+	 
+	 public static List<String> difference(List<String> target, List<String> source){
+		 List<String> result = new ArrayList<String>();
+		 
+		 for(String s : target){
+			 if(!source.contains(s)){
+				 result.add(s);
+			 }
+		 }
+		 
+		 return result;
+	 }
 }
