@@ -1539,7 +1539,7 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		// Convert anonymous and anyone
-		convertSystemPrincipalId(acl);
+		convertSystemPrincipalId(acl.getAllAces());
 
 		return acl;
 	}
@@ -1563,6 +1563,9 @@ public class ContentServiceImpl implements ContentService {
 
 	private List<Ace> mergeAcl(List<Ace> target, List<Ace> source) {
 		HashMap<String, Ace> _result = new HashMap<String, Ace>();
+		
+		//convert Normalize system principal id token to a real one
+		convertSystemPrincipalId(target);
 
 		HashMap<String, Ace> targetMap = buildAceMap(target);
 		HashMap<String, Ace> sourceMap = buildAceMap(source);
@@ -1620,8 +1623,7 @@ public class ContentServiceImpl implements ContentService {
 		return result;
 	}
 
-	private void convertSystemPrincipalId(Acl acl) {
-		List<Ace> aces = acl.getAllAces();
+	private void convertSystemPrincipalId(List<Ace> aces) {
 		for (Ace ace : aces) {
 			if (NemakiConstant.PRINCIPAL_ANONYMOUS.equals(ace.getPrincipalId())) {
 				String anonymous = propertyUtil.getPropertyManager().readValue(
