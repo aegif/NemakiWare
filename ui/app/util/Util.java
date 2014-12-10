@@ -327,6 +327,7 @@ public class Util {
 				sb.append(line);
 			}
 
+			//TODO should log the reason of failure
 			JsonNode jn = Json.parse(sb.toString());
 
 			return jn;
