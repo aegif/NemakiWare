@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 import constant.Token;
 import model.Login;
+import play.Routes;
 import play.data.Form;
 import play.mvc.Controller;
 import play.mvc.Result;
@@ -70,6 +71,14 @@ public class Application extends Controller{
 	public static Result logout(){
 		session().remove("loginUserId");
 		return redirect(routes.Application.login());
+	}
+	
+	public static Result getJSRoutes() {
+		return ok(
+			Routes.javascriptRouter("jsRoutes", 
+					controllers.routes.javascript.Node.jsGetAce()
+			)
+		);
 	}
 	
 }

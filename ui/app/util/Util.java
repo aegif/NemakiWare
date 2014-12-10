@@ -754,4 +754,8 @@ public class Util {
 		 
 		 return result;
 	 }
+	 
+	 public static JsonNode emptyJsonObject(){
+		 return Json.toJson(new HashMap<String, String>());
+	 }
 }
