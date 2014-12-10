@@ -5,154 +5,153 @@
 
 @defining("ps-"){prefix =>
 	<!-- javascripts -->
-		<script type="text/javascript">
-			$(function () {
-				//enabling footable
-				$('#@{prefix}search-table').footable();
-				$('#@{prefix}selected-table').footable();
+	<script type="text/javascript">
+		$(function () {
+			//enabling footable
+			$('#@{prefix}search-table').footable();
+			$('#@{prefix}selected-table').footable();
 
-				//global variable
-				var permissions =  [];
-				@if(CollectionUtils.isNotEmpty(permissionDefinitions)){
-					@for(pdf <- permissionDefinitions){
-						permissions.push("@pdf.getId");
-					}
+			//global variable
+			var permissions =  [];
+			@if(CollectionUtils.isNotEmpty(permissionDefinitions)){
+				@for(pdf <- permissionDefinitions){
+					permissions.push("@pdf.getId");
 				}
-				
-				//binding: search button click
-				$(document).on('click', '#@{prefix}search-button', function(event){
-					event.preventDefault();
-					searchPrincipal($('#@{prefix}search-box').val());
-				});
+			}
 			
-				//binding: search box keypress
-				$(document).on('keypress', '#@{prefix}search-box', function(event){
-					if(event.which == 13){
-						event.preventDefault();
-						searchPrincipal($('#@{prefix}search-box').val());
-					}
-				});
-			
-				//binding: add button
-				$(document).on('click', '#@{prefix}add', function(){
-
-					var selectedRows = $('#@{prefix}selected-table' + ' tbody tr input').get();
-					var footable = $('#@{prefix}selected-table').data('footable');
-					
-					//build json of selected row data
-					$('#@{prefix}search-table :checkbox').each(function(i,chkbx){
-						if($(chkbx).prop('checked')){
-							//check duplicate row
-							isDuplicate = false;
-							$('#@{prefix}selected-table' + ' tbody tr input').each(function(j,selected){
-								if($(selected).attr('principal-id') == $(chkbx).attr('principal-id')){
-									alert("既に選択されています！: " + $(selected).attr('principal-id'));
-									isDuplicate =  true;	
-								}
-							});
-							if(isDuplicate){
-								return true; //continue "each" loop
-							}
-							
-							//build data
-							var rowData = {
-								genre: $(chkbx).attr('principal-genre'),
-								id: $(chkbx).attr('principal-id'),
-								name: $(chkbx).attr('principal-name')
-							};
-							
-							footable.appendRow(buildSelectedRow(rowData.genre, rowData.id, rowData.name, permissions));
-							
-						}
-					});
-				});
-				
-				//binding: remove button
-				$(document).on('click', '#@{prefix}remove', function(){
-					var footable = $('#@{prefix}selected-table').data('footable');
-					$('.@{prefix}remove > input').each(function(i,chkbx){
-						if($(chkbx).prop('checked')){
-							var row = $(chkbx).parent().parent();
-							footable.removeRow(row);	
-						}
-					});
-				});
-			
-				
-				//util: redraw footable
-				function redrawSearchTable(tableId, data){
-					var footable = $('#' + tableId).data('footable');
-			
-					//delete all rows
-					var rows = $('#' + tableId + ' tbody tr').get();
-					for(var row_index in rows){
-						footable.removeRow(rows[row_index]);
-					}
-			
-					//append
-					for(var index in data){
-						var row = buildSearchRow(data[index].genre, data[index].id, data[index].name);
-						footable.appendRow(row);
-					}
-				}
-				
-				//util: build search table row's html
-				function buildSearchRow(genre, id, name){
-					var row = 
-					"<tr>" + 
-					"<td>" + "<input type='checkbox' principal-id='" + id  +"' principal-name='" + name + "' principal-genre='" + genre + "'/>" + "</td>" +
-					"<td>" + genre + "</td>" +
-					"<td>" + id + "</td>" +
-					"<td>" + name + "</td>" +
-					"</tr>";
-					return row;
-				}
-				
-				//util: build selected table row's html
-				function buildSelectedRow(genre, id, name, permissions){
-					var row = 
-					"<tr>" + 
-					"<td class='@{prefix}remove'>" + "<input type='checkbox' principal-id='" + id  +"' principal-name='" + name + "' principal-genre='" + genre + "'/>" + "</td>" +
-					"<td class='@{prefix}genre'>" + genre + "</td>" +
-					"<td class='@{prefix}id'>" + id + "</td>" + 
-					"<td class='@{prefix}name'>" + name + "</td>";;
-					
-					@if(CollectionUtils.isNotEmpty(permissionDefinitions)){
-						for(var i=0; i < permissions.length; i++){
-							row = row +  "<td class='permission-" + permissions[i] + "'>" + "<input type='checkbox' />" + "</td>";
-						}
-						
-						row += "<td class='inheritance'><input type='checkbox' onclick='return false;' /></td>";
-					}
-					
-					
-					row = row + "</tr>";
-					return row;
-				}
-				
-				//util: search user/group
-				function searchPrincipal(term){
-					//decide url
-					var url = "@routes.Principal.search().absoluteURL(request)";
-					
-					//ajax call
-					$.ajax({
-						url : url,
-						data : {term: term},
-						dataType: 'json',
-						success : function(data) {
-							redrawSearchTable('@{prefix}search-table', data);
-						},
-						error: function(data){
-							alert('error!');
-						},
-						complete: function(){
-							
-						}
-					});
-				}
-				
+			//binding: search button click
+			$(document).on('click', '#@{prefix}search-button', function(event){
+				event.preventDefault();
+				searchPrincipal($('#@{prefix}search-box').val());
 			});
 		
-		</script>	
+			//binding: search box keypress
+			$(document).on('keypress', '#@{prefix}search-box', function(event){
+				if(event.which == 13){
+					event.preventDefault();
+					searchPrincipal($('#@{prefix}search-box').val());
+				}
+			});
+		
+			//binding: add button
+			$(document).on('click', '#@{prefix}add', function(){
+
+				var selectedRows = $('#@{prefix}selected-table' + ' tbody tr input').get();
+				var footable = $('#@{prefix}selected-table').data('footable');
+				
+				//build json of selected row data
+				$('#@{prefix}search-table :checkbox').each(function(i,chkbx){
+					if($(chkbx).prop('checked')){
+						//check duplicate row
+						isDuplicate = false;
+						$('#@{prefix}selected-table' + ' tbody tr input').each(function(j,selected){
+							if($(selected).attr('principal-id') == $(chkbx).attr('principal-id')){
+								alert("既に選択されています！: " + $(selected).attr('principal-id'));
+								isDuplicate =  true;	
+							}
+						});
+						if(isDuplicate){
+							return true; //continue "each" loop
+						}
+						
+						//build data
+						var rowData = {
+							genre: $(chkbx).attr('principal-genre'),
+							id: $(chkbx).attr('principal-id'),
+							name: $(chkbx).attr('principal-name')
+						};
+						
+						footable.appendRow(buildSelectedRow(rowData.genre, rowData.id, rowData.name, permissions));
+						
+					}
+				});
+			});
+			
+			//binding: remove button
+			$(document).on('click', '#@{prefix}remove', function(){
+				var footable = $('#@{prefix}selected-table').data('footable');
+				$('.@{prefix}remove > input').each(function(i,chkbx){
+					if($(chkbx).prop('checked')){
+						var row = $(chkbx).parent().parent();
+						footable.removeRow(row);	
+					}
+				});
+			});
+		
+			
+			//util: redraw footable
+			function redrawSearchTable(tableId, data){
+				var footable = $('#' + tableId).data('footable');
+		
+				//delete all rows
+				var rows = $('#' + tableId + ' tbody tr').get();
+				for(var row_index in rows){
+					footable.removeRow(rows[row_index]);
+				}
+		
+				//append
+				for(var index in data){
+					var row = buildSearchRow(data[index].genre, data[index].id, data[index].name);
+					footable.appendRow(row);
+				}
+			}
+			
+			//util: build search table row's html
+			function buildSearchRow(genre, id, name){
+				var row = 
+				"<tr>" + 
+				"<td>" + "<input type='checkbox' principal-id='" + id  +"' principal-name='" + name + "' principal-genre='" + genre + "'/>" + "</td>" +
+				"<td>" + genre + "</td>" +
+				"<td>" + id + "</td>" +
+				"<td>" + name + "</td>" +
+				"</tr>";
+				return row;
+			}
+			
+			//util: build selected table row's html
+			function buildSelectedRow(genre, id, name, permissions){
+				var row = 
+				"<tr>" + 
+				"<td class='@{prefix}remove'>" + "<input type='checkbox' principal-id='" + id  +"' principal-name='" + name + "' principal-genre='" + genre + "'/>" + "</td>" +
+				"<td class='@{prefix}genre'>" + genre + "</td>" +
+				"<td class='@{prefix}id'>" + id + "</td>" + 
+				"<td class='@{prefix}name'>" + name + "</td>";;
+				
+				@if(CollectionUtils.isNotEmpty(permissionDefinitions)){
+					for(var i=0; i < permissions.length; i++){
+						row = row +  "<td class='permission permission-" + permissions[i] + "'>" + "<input type='checkbox' />" + "</td>";
+					}
+					
+					row += "<td class='inheritance'><input type='checkbox' class='ace-direct' /></td>";
+				}
+				
+				
+				row = row + "</tr>";
+				return row;
+			}
+			
+			//util: search user/group
+			function searchPrincipal(term){
+				//decide url
+				var url = "@routes.Principal.search().absoluteURL(request)";
+				
+				//ajax call
+				$.ajax({
+					url : url,
+					data : {term: term},
+					dataType: 'json',
+					success : function(data) {
+						redrawSearchTable('@{prefix}search-table', data);
+					},
+					error: function(data){
+						alert('error!');
+					},
+					complete: function(){
+						
+					}
+				});
+			}
+		});
+	
+	</script>	
 }	
