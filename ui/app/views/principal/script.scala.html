@@ -98,10 +98,11 @@
 			
 			//util: build search table row's html
 			function buildSearchRow(genre, id, name){
+				var genreIcon = (genre == "user") ? "<i class='fa fa-user'></i>" : "<i class='fa fa-users'></i>";
 				var row = 
 				"<tr>" + 
 				"<td>" + "<input type='checkbox' principal-id='" + id  +"' principal-name='" + name + "' principal-genre='" + genre + "'/>" + "</td>" +
-				"<td>" + genre + "</td>" +
+				"<td>" + genreIcon + "</td>" +
 				"<td>" + id + "</td>" +
 				"<td>" + name + "</td>" +
 				"</tr>";
