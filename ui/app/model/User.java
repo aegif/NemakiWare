@@ -23,4 +23,16 @@ public class User {
 		this.email = json.get("email").asText();
 		this.isAdmin = json.get("isAdmin").asBoolean();
 	}
+
+	public User(String id, String password, String name, String firstName,
+			String lastName, String email, boolean isAdmin) {
+		super();
+		this.id = id;
+		this.password = password;
+		this.name = name;
+		this.firstName = firstName;
+		this.lastName = lastName;
+		this.email = email;
+		this.isAdmin = isAdmin;
+	}
 }

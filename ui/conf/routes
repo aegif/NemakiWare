@@ -41,7 +41,6 @@ POST    /objects/:id/cancel-checkout   	controllers.Node.cancelCheckOut(id:Strin
 POST 	/objects/:id/delete				controllers.Node.delete(id:String)
 GET		/path/children					controllers.Node.showChildrenByPath(path:String ?= "/")
 
-
 # User API
 GET     /users               			controllers.User.index()
 GET		/users/search					controllers.User.search(term: String ?= "")

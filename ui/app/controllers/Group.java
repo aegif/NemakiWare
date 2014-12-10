@@ -87,8 +87,8 @@ public class Group extends Controller {
     }
 
 	public static Result showBlank(){
-		
-		return ok(blank.render());
+		model.Group emptyGroup = new model.Group("", "", 0, 0, new ArrayList<String>(), new ArrayList<String>());
+		return ok(blank.render(emptyGroup));
 	}
 
 	public static Result create(){
