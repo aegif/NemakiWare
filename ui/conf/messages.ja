@@ -78,6 +78,7 @@ view.search-engine.reindex.success=検索エンジンのインデクスを再作
 
 view.table.key=キー
 view.table.editable=編集可能
+view.table.requred=必須
 view.table.value=値
 
 view.execute=実行

@@ -78,6 +78,7 @@ view.search-engine.reindex.success=Reindexed search engine.
 
 view.table.key=Key
 view.table.editable=Editable
+view.table.requred=Required
 view.table.value=Value
 
 view.execute=Execute
