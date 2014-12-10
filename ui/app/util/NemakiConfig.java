@@ -2,6 +2,7 @@ package util;
 
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
 
@@ -49,6 +50,17 @@ public class NemakiConfig {
 			
 			return value;
 		}
+	}
+	
+	public static List<String> getValues(String key){
+		String value = getValue(key);
+		String[] values = value.split(",");
+		
+		List<String> result = new ArrayList<String>();
+		for(String v : values){
+			result.add(v.trim());
+		}
+		return result;
 	}
 	
 	public static String getLabel(String propertyId, String language){
