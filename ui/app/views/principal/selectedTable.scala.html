@@ -42,7 +42,7 @@
 						@for(p <- principals){
 							<tr @if(!acl.get(p.id).isDirect){class="ace-inherited"}>
 								<td class="@{prefix}remove"><input type='checkbox' principal-id='@p.id' principal-name='@p.name' principal-genre='@p.genre'/></td>
-								<td class="@{prefix}genre">@p.genre</td>
+								<td class="@{prefix}genre">@if(p.genre=="user"){<i class="fa fa-user"></i>}else{<i class="fa fa-users"></i>}</td>
 								<td class="@{prefix}id">@p.id</td>
 								<td class="@{prefix}name">@p.name</td>
 								
