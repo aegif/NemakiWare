@@ -90,10 +90,3 @@ view.remove=Remove
 view.action=Action
 
 view.message.please.wait=Please wait...
-
-view.cmis.cmis.name=Name
-view.cmis.cmis.createdBy=Created By
-view.cmis.cmis.creationDate=Creation Date
-view.cmis.cmis.lastModifiedBy=Modified By
-view.cmis.cmis.lastModificationDate=Modification Date
-view.cmis.cmis.versionSeriesCheckedOutBy=Locked By
