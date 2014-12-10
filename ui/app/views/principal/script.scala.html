@@ -34,7 +34,7 @@
 			});
 		
 			//binding: add button
-			$(document).on('click', '#@{prefix}add', function(){
+			$('#@{prefix}add').off().on('click', function(){
 
 				var selectedRows = $('#@{prefix}selected-table' + ' tbody tr input').get();
 				var footable = $('#@{prefix}selected-table').data('footable');
