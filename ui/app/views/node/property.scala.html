@@ -3,6 +3,7 @@
 
 @import util.Formatter
 @import util.Util
+@import util.NemakiConfig
 @import constant.UpdateContext
 
 @import org.apache.chemistry.opencmis.client.api.Document
@@ -26,8 +27,12 @@
 		<div>
 			<div><h4>@Messages("view.node.property")</h4></div>
 			@editableTable("obj-property-table")(10){
-				@for(p <- primaries){
-					@editableRow(p)()
+				@defining(NemakiConfig.getValues("property-masking")){ masking =>
+					@for(p <- primaries){
+						@if(!masking.contains(p.getId)){
+							@editableRow(p)()
+						}
+					}
 				}
 			}
 			<hr/>
