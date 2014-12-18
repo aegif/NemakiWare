@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 import constant.Token;
 import model.Login;
+import play.Routes;
 import play.data.Form;
 import play.mvc.Controller;
 import play.mvc.Result;
@@ -51,14 +52,15 @@ public class Application extends Controller{
 		String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 		String endPoint = coreRestUri + "user/";
 		
-		JsonNode result = Util.getJsonResponse(session(), endPoint + "show/" + id);
-		
-		if("success".equals(result.get("status").asText())){
-			JsonNode _user = result.get("user");
-			model.User user = new model.User(_user);
-			
-			isAdmin = user.isAdmin;
-		}else{
+		try{
+			JsonNode result = Util.getJsonResponse(session(), endPoint + "show/" + id);
+			if("success".equals(result.get("status").asText())){
+				JsonNode _user = result.get("user");
+				model.User user = new model.User(_user);
+				
+				isAdmin = user.isAdmin;
+			}
+		}catch(Exception e){
 			//TODO logging
 			System.out.println("This user is not returned in REST API:" + id);
 		}
@@ -69,6 +71,14 @@ public class Application extends Controller{
 	public static Result logout(){
 		session().remove("loginUserId");
 		return redirect(routes.Application.login());
+	}
+	
+	public static Result getJSRoutes() {
+		return ok(
+			Routes.javascriptRouter("jsRoutes", 
+					controllers.routes.javascript.Node.jsGetAce()
+			)
+		);
 	}
 	
 }

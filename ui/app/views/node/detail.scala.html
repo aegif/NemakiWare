@@ -6,12 +6,12 @@
 	<!-- html -->
 	<div>
 		<h4>
-			<img src="@routes.Assets.at("images/node/")@Util.getIconName(obj)"/>@obj.getName()
+			<i class="fa @Util.getIconName(obj)"></i>@obj.getName()
 			@if(Util.isFreezeCopy(obj, session)){<i class="fa fa-lock"></i>}
 		</h4>
 	</div>
 	
-	<ul id="myTab" class="nav nav-tabs">
+	<ul class="nav nav-tabs">
   		<li class="active"><a href="@routes.Node.showProperty(obj.getId).absoluteURL(request)" data-toggle="tab" data-target="#property">@Messages("view.node.property")</a></li>
   		@if(Util.isDocument(obj)){
   		<li class=""><a href="@routes.Node.showFile(obj.getId).absoluteURL(request)" data-toggle="tab" data-target="#file">@Messages("view.node.file")</a></li>
@@ -21,7 +21,7 @@
   		<li class=""><a href="@routes.Node.showPermission(obj.getId).absoluteURL(request)" data-toggle="tab" data-target="#permission">@Messages("view.node.permission")</a></li>
 	</ul>
  
-	<div id="myTabContent" class="tab-content">
+	<div class="tab-content">
 	  	<div class="tab-pane fade active in" id="property"></div>
 	  	<div class="tab-pane fade" id="file"></div>
 	  	<div class="tab-pane fade" id="version"></div>

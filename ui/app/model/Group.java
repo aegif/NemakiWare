@@ -26,4 +26,15 @@ public class Group {
 		this.groupsSize = json.get("groupsSize").asInt();
 		this.groups = Util.convertToList(json.get("groups"));
 	}
+
+	public Group(String id, String name, int usersSize, int groupsSize,
+			List<String> users, List<String> groups) {
+		super();
+		this.id = id;
+		this.name = name;
+		this.usersSize = usersSize;
+		this.groupsSize = groupsSize;
+		this.users = users;
+		this.groups = groups;
+	}
 }

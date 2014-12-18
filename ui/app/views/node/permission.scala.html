@@ -40,6 +40,7 @@
 	</div>
 </div>
 
+<script type="text/javascript" src="@routes.Application.getJSRoutes()"></script>
 <script type="text/javascript">
 	//binding:update
 	$(document).on('click', "#permission-update", function(){
@@ -92,6 +93,58 @@
 	            alert("textStatus : " + textStatus);
 	            alert("errorThrown : " + errorThrown.message);
 	         }
+		});
+	});
+	
+	//binding: remove checkbox
+	$('td.ps-remove > :checkbox').off().on('click', function(event){
+		var row = $(this).parent().parent();
+		var inheritance = $(row.find('td.inheritance > :checkbox')).prop('checked')
+		//validation
+		if(inheritance){
+			event.preventDefault();
+			alert("継承されている権限は操作できません。変更するには継承を解除してください")
+			return;
+		}
+	});
+	
+	//binding: permission checkbox
+	$('td.permission > :checkbox').off().on('click', function(event){
+		var row = $(this).parent().parent();
+		var inheritance = $(row.find('td.inheritance > :checkbox')).prop('checked')
+		//validation
+		if(inheritance){
+			event.preventDefault();
+			alert("継承されている権限は操作できません。変更するには継承を解除してください")
+			return;
+		}
+	});
+	
+	//binding: ace's ineheritance
+	$('td.inheritance > :checkbox').off().on('click', function(event){
+		var row = $(this).parent().parent();
+
+		//validation
+		if(!row.hasClass("ace-inherited")){
+			event.preventDefault();
+			return;
+		}
+		
+		//processing
+		var principal = $(row.find('.ps-id')).html();
+		var originalPermissions = [];
+		$.ajax({
+			url : "/ui/objects/js/@{obj.getId}/ace/" + principal,
+			success: function(data){
+				originalPermissions = data["permissions"];
+				@if(CollectionUtils.isNotEmpty(permissionDefinitions)){
+					@for(pdf <- permissionDefinitions){
+						var checked = ($.inArray("@pdf.getId", originalPermissions) >= 0) ;
+						$(row.find('.permission-' + escape("@pdf.getId") + ' > input')[0]).prop('checked',
+								checked);
+					}
+				}
+			}
 		});
 	});
 	

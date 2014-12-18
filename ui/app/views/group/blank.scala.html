@@ -1,17 +1,44 @@
+@import table._
 @import principal._
+@import util.Util
+
+@(group:model.Group)
 
 @lightbox{
 	<section class="container">
+		
 		<div class="row">
-			<div class="col-sm-4">
-				@Messages("view.group.create.caption")
+			<div class="col-sm-5">
+				<h3><i class="fa fa-user">@group.name</i>@Messages("view.group.create.caption")</h3>
+			</div>
+		</div>
+
+		<div class="row" style="margin-bottom:15px">
+			<div class="col-sm-5">
+				<button class="btn btn-default btn-primary" id="group-create"><i class="fa fa-save"></i>@Messages("view.save")</button>
 			</div>
 		</div>
 		
 		<div class="row">
 			<div class="col-sm-8">
-				<input type="text" name="groupId" id="new-group-id" placeholder="@Messages("view.group.id")"/><br/>
-				<input type="text" name="groupName" id="new-group-name" placeholder="@Messages("view.group.name")"/><br/>
+				<div><h4>@Messages("view.group.property")</h4></div>
+				
+				@editableTable("group-property-table")(10){
+					<!-- id row -->
+					@defining(Util.buildTempProperty(
+						"group-id", Messages("view.group.id"), true, true, false, null, false, group.id
+					)){ property =>
+						@editableRow(property)()
+					}
+					<!-- name row -->
+					@defining(Util.buildTempProperty(
+						"group-name", Messages("view.group.name"), true, true, false, null, false, group.name
+					)){ property =>
+						@editableRow(property)()
+					}
+				}
+				<hr/>
+
 			</div>
 		</div>
 			
@@ -19,7 +46,6 @@
 			<div class="col-sm-8">@Messages("view.group.member.add")</div>
 		</div>
 		@principalSearch()
-	   	<button class="btn btn-default" id="group-create">@Messages("view.create")</button>
 	</section>
 }
 
@@ -45,8 +71,8 @@
 			$.ajax({
 				url : "@routes.Group.create().absoluteURL(request)",
 				type: 'POST',
-				data : {groupId: $('#new-group-id').val(),
-						groupName : $('#new-group-name').val(),
+				data : {groupId: editedValue('#group-id'),
+						groupName : editedValue('#group-name'),
 						users: JSON.stringify(users),
 						groups: JSON.stringify(groups)},
 				success : function(data){

@@ -35,6 +35,7 @@ import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.definitions.Choice;
+import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.BindingType;
@@ -326,6 +327,7 @@ public class Util {
 				sb.append(line);
 			}
 
+			//TODO should log the reason of failure
 			JsonNode jn = Json.parse(sb.toString());
 
 			return jn;
@@ -731,5 +733,30 @@ public class Util {
 		return false;
 	 }
 	 
+	 public static List<PermissionDefinition> trimForDisplay(List<PermissionDefinition> list){
+		 List<PermissionDefinition> result = new ArrayList<PermissionDefinition>();
+		 for(PermissionDefinition def:list){
+			 if(!"cmis:none".equals(def.getId())){
+				 result.add(def);
+			 }
+		 }
+		 
+		 return result;
+	 }
 	 
+	 public static List<String> difference(List<String> target, List<String> source){
+		 List<String> result = new ArrayList<String>();
+		 
+		 for(String s : target){
+			 if(!source.contains(s)){
+				 result.add(s);
+			 }
+		 }
+		 
+		 return result;
+	 }
+	 
+	 public static JsonNode emptyJsonObject(){
+		 return Json.toJson(new HashMap<String, String>());
+	 }
 }
