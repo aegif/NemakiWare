@@ -54,7 +54,7 @@ public class Principal extends Controller{
 		}
     	
 		//convert
-		 final ByteArrayOutputStream out = new ByteArrayOutputStream();
+		final ByteArrayOutputStream out = new ByteArrayOutputStream();
 		ObjectMapper mapper = new ObjectMapper();
 		try {
 			mapper.writeValue(out, principals);

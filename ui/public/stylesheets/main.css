@@ -58,6 +58,10 @@ table.editable-table .key{
 	width: 200px;
 }
 
+table.editable-table .editable{
+	width: 25px;
+}
+
 table.editable-table .value{
 	width: 310px;
 	padding-top:2px　!important;
@@ -103,4 +107,12 @@ input.editable-value-input {
 
 input.editable-value-input:focus{
 	border:solid 1px #7eb0e0;
+}
+
+tr.ace-inherited{
+	background-color:#f0f0f0;
+}
+
+input.ace-direct{
+	display:none;
 }

@@ -70,8 +70,9 @@ public class User extends Controller {
     }
 
 	public static Result showBlank(){
+		model.User emptyUser = new model.User("", "", "", "", "", "", false);
 		
-		return ok(blank.render());
+		return ok(blank.render(emptyUser));
 	}
 
 	public static Result showDetail(String id){

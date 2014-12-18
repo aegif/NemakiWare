@@ -14,11 +14,15 @@ GET		/logout							controllers.Application.logout()
 # Home page
 GET     /                           	controllers.Node.index()
 
+# Javascript Router
+GET	/assets/javascripts/routes	controllers.Application.getJSRoutes()
+
 # CMIS Rest API
 GET     /objects               			controllers.Node.showChildren(id="/")
 GET     /objects/search               	controllers.Node.search(term:String ?= "")
 GET     /objects/new               		controllers.Node.showBlank()
 POST	/objects/create               	controllers.Node.create()
+GET		/objects/js/:objectId/ace/:principalId	controllers.Node.jsGetAce(objectId:String, principalId:String)
 GET     /objects/:id               		controllers.Node.showDetail(id:String)
 GET     /objects/:id/property           controllers.Node.showProperty(id:String)
 GET     /objects/:id/download           controllers.Node.download(id:String)
