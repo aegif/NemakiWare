@@ -39,6 +39,7 @@ import jp.aegif.nemaki.service.node.ContentService;
 import jp.aegif.nemaki.service.node.PrincipalService;
 import jp.aegif.nemaki.util.NemakiPropertyManager;
 import jp.aegif.nemaki.util.PropertyUtil;
+import jp.aegif.nemaki.util.constant.CmisPermission;
 import jp.aegif.nemaki.util.constant.NemakiConstant;
 
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
@@ -78,15 +79,15 @@ public class PermissionServiceImpl implements PermissionService {
 	@Override
 	public Boolean checkPermission(CallContext callContext, String key, Acl acl,
 			String baseType, Content content) {
-
+		
+		//All permission checks must go through baseType check
+		if(!isAllowableBaseType(key, baseType, content)) return false;
+		
 		// Admin always pass a permission check
 		CallContextImpl cci = (CallContextImpl) callContext;
 		Boolean _isAdmin = (Boolean) cci.get(NemakiConstant.CALL_CONTEXT_IS_ADMIN);
 		boolean isAdmin = (_isAdmin == null) ? false : _isAdmin;
-
-		if (isAdmin){
-			return isAllowableBaseType(key, baseType, content);
-		}
+		if (isAdmin) return true;
 
 		//PWC doesn't accept any actions from a non-owner user
 		//TODO admin can manipulate PWC even when it is checked out ?
@@ -135,7 +136,7 @@ public class PermissionServiceImpl implements PermissionService {
 		}
 
 		// Check mapping between the user and the content
-		return isAllowableBaseType(key, baseType, content) && checkCalculatedPermissions(key, userPermissions);
+		return checkCalculatedPermissions(key, userPermissions);
 	}
 
 	/**
@@ -149,8 +150,9 @@ public class PermissionServiceImpl implements PermissionService {
 		List<String> actionPermissions = table.get(key).getPermissions();
 
 		for (String up : userPermissions) {
-			if (actionPermissions.contains(up)) {
-				//If one of user permissions is contained, allowed.
+			if (actionPermissions.contains(up) ||
+				CmisPermission.ALL.equals(up)) {
+				//If any one of user permissions is contained, action is allowed.
 				return true;
 			}
 		}

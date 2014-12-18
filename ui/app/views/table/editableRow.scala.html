@@ -1,4 +1,5 @@
 @import util.Util
+@import util.NemakiConfig
 @import constant.UpdateContext
 
 @import org.apache.commons.collections.CollectionUtils
@@ -9,7 +10,7 @@
 @if(filter){
 	<tr id="@property.getDefinition.getId">
 		<td class="key">
-			@property.getDefinition.getDisplayName
+			@NemakiConfig.getLabel(property.getDefinition.getId, lang().language)
 		</td>
 		<td class="editable">
 			@if(Util.isReadWrite(property.getDefinition)){

@@ -33,10 +33,6 @@ import org.apache.chemistry.opencmis.commons.server.CallContext;
  */
 public interface PermissionService {
 
-	public static final String CMIS_READ_PERMISSION = "cmis:read";
-	public static final String CMIS_WRITE_PERMISSION = "cmis:write";
-	public static final String CMIS_ALL_PERMISSION = "cmis:all";
-
 	/**
 	 * permissionDenied Exception check 
 	 * @param content TODO
