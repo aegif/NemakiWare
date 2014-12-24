@@ -364,6 +364,7 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.constraintContentStreamRequired(td, contentStream);
 		exceptionService.constraintControllableVersionable(td, versioningState,
 				null);
+		versioningState = (td.isVersionable() && versioningState == null) ? VersioningState.MAJOR : versioningState;
 		exceptionService
 				.constraintCotrollablePolicies(td, policies, properties);
 		exceptionService.constraintCotrollableAcl(td, addAces, removeAces,
@@ -411,6 +412,7 @@ public class ObjectServiceImpl implements ObjectService {
 				DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
 		exceptionService.constraintControllableVersionable(td, versioningState,
 				null);
+		versioningState = (td.isVersionable() && versioningState == null) ? VersioningState.MAJOR : versioningState;
 		exceptionService
 				.constraintCotrollablePolicies(td, policies, properties);
 		exceptionService.constraintCotrollableAcl(td, addAces, removeAces,
