@@ -1,5 +1,6 @@
 @import helper.twitterBootstrap._
 @import util.Util
+@import util.NemakiConfig
 @import util.Formatter
 @import org.apache.chemistry.opencmis.commons.PropertyIds
 
@@ -8,9 +9,9 @@
 <table class="footable" id="objects-table" data-sort="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
 	<thead>
 		<tr>
-			<th data-class="expand" data-sort-initial="true">@Util.l10nCmisId(PropertyIds.NAME)</th>
+			<th data-class="expand" data-sort-initial="true">@NemakiConfig.getLabel("cmis:name", lang().language)</th>
 			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
-				<th data-class="expand">@Util.l10nCmisId(column)</th>
+				<th data-class="expand">@NemakiConfig.getLabel(column, lang().language)</th>
 			}
 			<th data-sort-ignore="true">@Messages("view.action")</th>
 		</tr>
