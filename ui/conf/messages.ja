@@ -78,6 +78,7 @@ view.search-engine.reindex.success=検索エンジンのインデクスを再作
 
 view.table.key=キー
 view.table.editable=編集可能
+view.table.requred=必須
 view.table.value=値
 
 view.execute=実行
@@ -90,11 +91,4 @@ view.remove=除外
 view.action=アクション
 
 view.message.please.wait=しばらくお待ちください...
-
-view.cmis.cmis.name=名前
-view.cmis.cmis.createdBy=作成者
-view.cmis.cmis.creationDate=作成時刻
-view.cmis.cmis.lastModifiedBy=更新者
-view.cmis.cmis.lastModificationDate=更新時刻
-view.cmis.cmis.versionSeriesCheckedOutBy=ロック中
 
