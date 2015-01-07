@@ -20,6 +20,14 @@
 				<div style="display:none">0</div>
 			}
 		</td>
+		<td class="required">
+			@if(property.getDefinition.isRequired){
+				<i class="fa fa-check editable"></i>
+				<div style="display:none">1</div>
+			}else{
+				<div style="display:none">0</div>
+			}
+		</td>
 		<td class="value @if(Util.isReadWrite(property.getDefinition)){editable-value}">
 			@valueField(property)
 		</td>
