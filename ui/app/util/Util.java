@@ -690,15 +690,6 @@ public class Util {
 			!PropertyIds.SECONDARY_OBJECT_TYPE_IDS.equals(pdf.getId());
 	 }
 	 
-	 public static String l10nCmisId(String cmisId){
-		 String key = "view.cmis." + cmisId.replaceAll(":", ".");
-		 if(Messages.isDefined(key)){
-			 return Messages.get(key);
-		 }else{
-			 return cmisId;
-		 }
-	 }
-	 
 	 public static String displayValue(CmisObject obj, String propertyId){
 		 if(PropertyIds.CREATED_BY.equals(propertyId)){
 			 return obj.getCreatedBy();

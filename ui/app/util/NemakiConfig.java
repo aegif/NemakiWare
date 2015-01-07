@@ -2,15 +2,14 @@ package util;
 
 import java.io.InputStream;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
 
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
-import constant.PropertyKey;
 import play.Play;
+import constant.PropertyKey;
 
 public class NemakiConfig {
 	public static String getValue(String key){
@@ -53,13 +52,16 @@ public class NemakiConfig {
 	}
 	
 	public static List<String> getValues(String key){
-		String value = getValue(key);
-		String[] values = value.split(",");
-		
 		List<String> result = new ArrayList<String>();
-		for(String v : values){
-			result.add(v.trim());
+		
+		String value = getValue(key);
+		if(StringUtils.isNotEmpty(value)){
+			String[] values = value.split(",");
+			for(String v : values){
+				result.add(v.trim());
+			}
 		}
+		
 		return result;
 	}
 	
