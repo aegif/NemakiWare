@@ -89,8 +89,7 @@
 		//binding: create button
 		$('#group-create-button').bind('click', function(){
 			$.get("@routes.Group.showBlank().absoluteURL(request)", function(html){
-				$("#floating-pane").html(html);
-				$("#floating-pane").lightbox_me(lightbox_me_config);
+				showLightbox('group-blank', html);
 			});
 		});
 	
@@ -99,8 +98,7 @@
 			var id = $(this).attr('group-id');
 
 			$.get("@{Util.getContextPath(request)}groups/" + id, function(html){
-				$("#floating-pane").html(html);
-				$("#floating-pane").lightbox_me(lightbox_me_config);
+				showLightbox('group-detail-' + id, html);
        		});	
 			
 		});
