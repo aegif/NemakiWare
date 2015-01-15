@@ -45,25 +45,31 @@
 	//binding:update
 	$(document).on('click', "#property-update", function(){
 		var data = {};
-		@for(p <- primaries){
-			@if(Util.isEditable(p.getDefinition, UpdateContext.NORMAL)){
-				data["@p.getId"] = editedValue("#@p.getId");	
+		@defining(NemakiConfig.getValues("property-masking")){ masking =>
+			@for(p <- primaries){
+				@if(!masking.contains(p.getId) &&
+						Util.isEditable(p.getDefinition, UpdateContext.NORMAL)){
+					data["@p.getId"] = editedValue("#@p.getId");	
+				}
 			}
 		}
 		
+		//Ajax call
+		$.blockUI({message:"@Messages("view.message.please.wait")"});
 		$.ajax({
 			url : "@routes.Node.update(obj.getId).absoluteURL(request)",
 			type : 'POST',
 			data : data,
 			success : function(data){
-				alert("成功しました");
+				window.alert("@Messages("view.update.success")");
 				window.location.reload();
 			},
 			error : function(XMLHttpRequest, textStatus, errorThrown) {
-	            alert("XMLHttpRequest : " + XMLHttpRequest.status);
-	            alert("textStatus : " + textStatus);
-	            alert("errorThrown : " + errorThrown.message);
-	         }
+				window.alert("@Messages("view.update.failure")");
+	         },
+	        complete: function(){
+				$.unblockUI();
+			}
 		});
 	});
 </script>
