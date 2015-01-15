@@ -10,49 +10,39 @@
 	<!-- html -->
 	<div class="container">
 		<div class="row">
-			<div class="col-sm-5">
-				<h3><i class="fa fa-users">@group.name</i></h3>
-			</div>
+			<h3><i class="fa fa-users">@group.name</i></h3>
 		</div>
 
 		<div class="row" style="margin-bottom:15px">
-			<div class="col-sm-5">
 				@saveButton("group-update")
-			</div>
 		</div>
 		
 		<div class="row">
-			<div class="col-sm-8">
-				<div><h4><i class="fa fa-wrench"></i>@Messages("view.group.property")</h4></div>
-				@editableTable("obj-property-table")(10){
-					<!-- id row -->
-					@defining(Util.buildTempProperty(
-						"group-id", "ID", true, false, false, null, false, group.id
-					)){ property =>
-						@editableRow(property)()
-					}
-					<!-- name row -->
-					@defining(Util.buildTempProperty(
-						"group-name", "名前", true, true, false, null, false, group.name
-					)){ property =>
-						@editableRow(property)()
-					}
+			<div><h4>@Messages("view.group.property")</h4></div>
+			@editableTable("obj-property-table")(10){
+				<!-- id row -->
+				@defining(Util.buildTempProperty(
+					"group-id", "ID", true, false, false, null, false, group.id
+				)){ property =>
+					@editableRow(property)()
 				}
-				<hr/>
-
-			</div>
+				<!-- name row -->
+				@defining(Util.buildTempProperty(
+					"group-name", "Name", true, true, false, null, false, group.name
+				)){ property =>
+					@editableRow(property)()
+				}
+			}
 		</div>
 		
+		<hr/>
+		
 		<div class="row">
-  			<div class="col-sm-5">
-  				<div><h4><i class="fa fa-wrench"></i>@Messages("view.group.caption")</h4></div>
-  			</div>
+			<div><h4><i class="fa fa-wrench"></i>@Messages("view.group.caption")</h4></div>
 	  	</div>
 		
 		<div class="row" style="margin-bottom:15px">
-			<div class="col-sm-12">
 				@principalSearch(member)
-			</div>
 		</div>
 	</div>
 	
@@ -79,18 +69,21 @@
 			data['groups'] = JSON.stringify(groups);
 			
 			//call
+			$.blockUI({message:"@Messages("view.message.please.wait")"});
 			$.ajax({
 				url : "@routes.Group.update(group.id).absoluteURL(request)",
 				type: 'POST',
 				data : data,
 				success : function(data){
+					window.alert("@Messages("view.message.update.success")");
 					window.location.reload();
 				},
 				error : function(XMLHttpRequest, textStatus, errorThrown) {
-		            alert("XMLHttpRequest : " + XMLHttpRequest.status);
-		            alert("textStatus : " + textStatus);
-		            alert("errorThrown : " + errorThrown.message);
-		         }
+					window.alert("@Messages("view.message.update.failure")");
+		         },
+		        complete: function(){
+					$.unblockUI();
+				}
 			});
 		});
 	</script>
