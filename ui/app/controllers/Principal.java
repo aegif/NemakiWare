@@ -22,7 +22,7 @@ public class Principal extends Controller{
 	private static String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 	
 	
-	public static Result search(String term){
+	public static Result search(String term, String groupId){
 		List<model.Principal>principals = new ArrayList<model.Principal>();
 		
 		//user search
@@ -49,6 +49,12 @@ public class Principal extends Controller{
 				JsonNode group = groupItr.next();
 				
 				model.Principal p = new model.Principal("group", group.get("groupId").asText(), group.get("groupName").asText());
+				
+				//Remove the same group id when called from a group member search
+				if(p.id != null && p.id.equals(groupId)){
+					continue;
+				}
+					
 				principals.add(p);
 			}
 		}
@@ -58,10 +64,10 @@ public class Principal extends Controller{
 		ObjectMapper mapper = new ObjectMapper();
 		try {
 			mapper.writeValue(out, principals);
-			 final byte[] data = out.toByteArray();
-			 JsonNode converted = Json.parse(new String(data));
+			final byte[] data = out.toByteArray();
+			JsonNode converted = Json.parse(new String(data));
 			 
-			 return ok(converted);
+			return ok(converted);
 			 
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
