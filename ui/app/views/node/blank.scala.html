@@ -12,7 +12,7 @@
 @lightbox{
 	<!-- html -->
 	<div class="container">
-		@helper.form(action=routes.Node.create, 'enctype -> "multipart/form-data"){
+		@helper.form(action=routes.Node.create, 'id -> "node-blank-form", 'enctype -> "multipart/form-data"){
 			<!-- caption -->
 			<div class="row">
 				@if(baseTypeId=="cmis:document"){
@@ -70,14 +70,7 @@
 				</div>
 			</div>
 			
-			<!-- hidden input area -->
-			@for(p <- primaries){
-				@if(Util.isEditableOnNodeBlank(p)){
-					<input type="hidden" name="@p.getId" id="hidden-@{p.getId}" value="" />
-				}
-			}
-			<input type="hidden" name="cmis:objectTypeId" value="@objectTypeId"/>
-			<input type="hidden" name="cmis:parentId" value="@parentId"/>
+			
 		}
 	</div>
 
@@ -105,14 +98,47 @@
 	</script>
 	<script type="text/javascript">
 		//copy edited values to hidden input tags
-		$(document).on('click', '#object-create', function(){
-			//prepare data
+		$('#node-blank-form').submit(function(event) {
+			event.preventDefault();
+
+			//FormData
+			var formData = new FormData();
 			@for(p <- primaries){
 				@if(Util.isEditableOnNodeBlank(p)){
-					var v = editedValue("#@p.getId");
-					$('#hidden-' + escape("@p.getId")).val(v);
-				}	
+					formData.append("@p.getId",editedValue("#@p.getId"));	
+				}
 			}
+
+			@if(baseTypeId=="cmis:document"){
+				formData.append('file', document.getElementById("file").files[0]);
+			}
+			
+			formData.append("cmis:parentId", '@parentId');
+			formData.append("cmis:objectTypeId", '@objectTypeId');
+
+			//Ajax call
+			$(function(){
+				$.blockUI({message:"@Messages("view.message.please.wait")"});
+				$.ajax("@routes.Node.create().absoluteURL(request)",
+				{
+					type: 'post',
+				    processData: false,
+					contentType: false,
+    				data: formData,
+    				success: function(data){
+      					window.alert("@Messages("view.node.create.success")");
+      					window.location.reload();
+   					},
+    				error: function(XMLHttpRequest, textStatus, errorThrown) {
+  	  					window.alert("@Messages("view.node.create.failure")");
+						},
+    				complete: function(){
+   						$.unblockUI();
+   					}
+				});
+			 });
+			
 		});
+		
 	</script>
 }

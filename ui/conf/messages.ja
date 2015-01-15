@@ -38,6 +38,8 @@ view.node.search.term=検索ワード
 view.node.drag-and-drop.out-of-support=ファイルのドラッグ&ドロップにブラウザが対応していません
 view.node.drag-and-drop.success=ファイルがアップロードされました
 view.node.freeze-copy.cannot-update=このドキュメントは"{0}"にロックされています。更新できません。
+view.node.create.success=正常に作成されました
+view.node.create.failure=作成に失敗しました
 
 view.principal.type=種類
 view.principal.id=ID
