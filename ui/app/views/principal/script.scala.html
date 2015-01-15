@@ -111,10 +111,11 @@
 			
 			//util: build selected table row's html
 			function buildSelectedRow(genre, id, name, permissions){
+				var genreIcon = (genre == "user") ? "<i class='fa fa-user'></i>" : "<i class='fa fa-users'></i>";
 				var row = 
 				"<tr>" + 
 				"<td class='@{prefix}remove'>" + "<input type='checkbox' principal-id='" + id  +"' principal-name='" + name + "' principal-genre='" + genre + "'/>" + "</td>" +
-				"<td class='@{prefix}genre'>" + genre + "</td>" +
+				"<td class='@{prefix}genre'>" + genreIcon + "</td>" +
 				"<td class='@{prefix}id'>" + id + "</td>" + 
 				"<td class='@{prefix}name'>" + name + "</td>";;
 				
