@@ -1,7 +1,7 @@
 @import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition
 @import org.apache.commons.collections.CollectionUtils
 
-@(permissionDefinitions:List[PermissionDefinition] = null)
+@(permissionDefinitions:List[PermissionDefinition] = null)(groupId:String = null)
 
 @defining("ps-"){prefix =>
 	<!-- javascripts -->
@@ -46,7 +46,7 @@
 						isDuplicate = false;
 						$('#@{prefix}selected-table' + ' tbody tr input').each(function(j,selected){
 							if($(selected).attr('principal-id') == $(chkbx).attr('principal-id')){
-								alert("既に選択されています！: " + $(selected).attr('principal-id'));
+								alert("@Messages("view.message.already.selected"): " + $(selected).attr('principal-id'));
 								isDuplicate =  true;	
 							}
 						});
@@ -139,7 +139,10 @@
 				//ajax call
 				$.ajax({
 					url : url,
-					data : {term: term},
+					data : {
+						term: term, 
+						groupId: "@groupId"
+					},
 					dataType: 'json',
 					success : function(data) {
 						redrawSearchTable('@{prefix}search-table', data);

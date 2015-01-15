@@ -1,8 +1,8 @@
 @import principal._
 
-@(members:List[model.Principal] = null)
+@(groupId:String = null)(members:List[model.Principal] = null)
 
-@script()
+@script()(groupId)
 
 <div class="row">
 	<div class="col-sm-6 col-md-6">

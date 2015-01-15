@@ -1,5 +1,4 @@
 @import table._
-@import principal._
 @import util.Util
 
 @(group:model.Group)
@@ -43,7 +42,7 @@
 		<div class="row">
 			@Messages("view.group.member.add")
 		</div>
-		@principalSearch()
+		@memberSearch()()
 	</section>
 }
 
