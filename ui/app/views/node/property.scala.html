@@ -61,11 +61,11 @@
 			type : 'POST',
 			data : data,
 			success : function(data){
-				window.alert("@Messages("view.update.success")");
+				window.alert("@Messages("view.message.update.success")");
 				window.location.reload();
 			},
 			error : function(XMLHttpRequest, textStatus, errorThrown) {
-				window.alert("@Messages("view.update.failure")");
+				window.alert("@Messages("view.message.update.failure")");
 	         },
 	        complete: function(){
 				$.unblockUI();

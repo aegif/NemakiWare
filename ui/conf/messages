@@ -38,8 +38,6 @@ view.node.search.term=Search Term
 view.node.drag-and-drop.out-of-support=Your browser does not support file drag & drop.
 view.node.drag-and-drop.success=File(s) are uploaded.
 view.node.freeze-copy.cannot-update=This document is locked by "{0}". Cannot be udpated.
-view.create.success=Successfully created
-view.create.failure=Failed to create
 
 view.principal.type=Type
 view.principal.id=ID
@@ -93,3 +91,10 @@ view.remove=Remove
 view.action=Action
 
 view.message.please.wait=Please wait...
+view.message.create.success=Successfully created
+view.message.create.failure=Failed to create
+view.message.update.success=Successfully updated
+view.message.update.failure=Failed to update
+view.message.delete.confirm=Do you really want to delete?
+view.message.delete.success=Successfully deleted
+view.message.delete.failure=Failed to delete

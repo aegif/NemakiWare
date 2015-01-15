@@ -19,7 +19,6 @@
 		</div>
 		
 		<div class="row">
-			<div class="col-sm-8">
 				<div><h4>@Messages("view.user.property")</h4></div>
 				
 				@editableTable("obj-property-table")(10){
@@ -61,8 +60,6 @@
 					}
 				}
 				<hr/>
-
-			</div>
 		</div>
 	</div>
 	
@@ -80,18 +77,21 @@
 			data['email'] = editedValue('#user-email');
 			
 			//call
+			$.blockUI({message:"@Messages("view.message.please.wait")"});
 			$.ajax({
 				url : "@routes.User.create().absoluteURL(request)",
 				type: 'POST',
 				data : data,
 				success : function(data){
+					window.alert("@Messages("view.message.create.success")");
 					window.location.reload();
 				},
 				error : function(XMLHttpRequest, textStatus, errorThrown) {
-		            alert("XMLHttpRequest : " + XMLHttpRequest.status);
-		            alert("textStatus : " + textStatus);
-		            alert("errorThrown : " + errorThrown.message);
-		         }
+					window.alert("@Messages("view.message.create.failure")");
+		         },
+		        complete: function(){
+					$.unblockUI();
+				}
 			});
 		});
 	</script>

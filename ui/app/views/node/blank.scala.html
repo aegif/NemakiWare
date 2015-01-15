@@ -126,11 +126,11 @@
 					contentType: false,
     				data: formData,
     				success: function(data){
-      					window.alert("@Messages("view.create.success")");
+      					window.alert("@Messages("view.message.create.success")");
       					window.location.reload();
    					},
     				error: function(XMLHttpRequest, textStatus, errorThrown) {
-  	  					window.alert("@Messages("view.create.failure")");
+  	  					window.alert("@Messages("view.message.create.failure")");
 						},
     				complete: function(){
    						$.unblockUI();

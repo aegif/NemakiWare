@@ -43,15 +43,15 @@
 				
 				<div class="col-md-11">
 					<!-- search result -->
-					<div id="user-result">
-						<table class="footable" id="user-table" data-sort="true">
+					<div id="group-result">
+						<table class="footable" id="group-table" data-sort="true">
 							<thead>
 								<tr>
 									<th data-sort-initial="true">@Messages("view.group.id")</th>
 									<th>@Messages("view.group.name")</th>
 									<th>@Messages("view.group.member.user")</th>
 									<th>@Messages("view.group.member.group")</th>
-									<th data-sort-ignore="true">@Messages("view.action")</th>
+									<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action")</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -105,14 +105,26 @@
 	
 		//binding: delete button
 		$('.group-delete').click(function(){
-			//alert dialog
-			if(window.confirm("削除してよろしいですか？")){
+			if(window.confirm("@Messages("view.message.delete.confirm")")){
 				var id = $(this).attr('group-id');
-	       		$.post("@{Util.getContextPath(request)}groups/" + id + "/delete",{},function(data){
-	       			window.location.reload();
-	       		});	
+				alert("hgoe");
+				$.blockUI({message:"@Messages("view.message.please.wait")"});
+				$.ajax({
+					url : "@{Util.getContextPath(request)}groups/" + id + "/delete",
+					type : 'POST',
+					data : null,
+					success : function(data){
+						window.alert("@Messages("view.message.delete.success")");
+						window.location.reload();
+					},
+					error : function(XMLHttpRequest, textStatus, errorThrown) {
+						window.alert("@Messages("view.message.delete.failure")");
+			        },
+			        complete : function(){
+						$.unblockUI();
+					}
+				})
 			}
-			
 		});
 	});
 </script>

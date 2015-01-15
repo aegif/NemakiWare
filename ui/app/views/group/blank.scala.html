@@ -20,7 +20,6 @@
 		</div>
 		
 		<div class="row">
-			<div class="col-sm-8">
 				<div><h4>@Messages("view.group.property")</h4></div>
 				
 				@editableTable("group-property-table")(10){
@@ -37,13 +36,12 @@
 						@editableRow(property)()
 					}
 				}
-				<hr/>
-
-			</div>
 		</div>
+
+		<hr/>
 			
 		<div class="row">
-			<div class="col-sm-8">@Messages("view.group.member.add")</div>
+			@Messages("view.group.member.add")
 		</div>
 		@principalSearch()
 	</section>
@@ -67,7 +65,8 @@
 				}
 			});
 
-			//post
+			//call
+			$.blockUI({message:"@Messages("view.message.please.wait")"});
 			$.ajax({
 				url : "@routes.Group.create().absoluteURL(request)",
 				type: 'POST',
@@ -75,9 +74,16 @@
 						groupName : editedValue('#group-name'),
 						users: JSON.stringify(users),
 						groups: JSON.stringify(groups)},
-				success : function(data){
-					window.location.reload();
-				}
+						success : function(data){
+							window.alert("@Messages("view.message.create.success")");
+							window.location.reload();
+						},
+						error : function(XMLHttpRequest, textStatus, errorThrown) {
+							window.alert("@Messages("view.message.create.failure")");
+				         },
+				        complete: function(){
+							$.unblockUI();
+						}
 			});
 		});
 	});

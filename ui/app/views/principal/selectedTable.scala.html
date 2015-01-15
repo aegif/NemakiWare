@@ -10,14 +10,13 @@
 
 @*********functions*********@
 @contentTemplate() = {
-	@defining(("ps-","hoge")){case (prefix,hoge) =>
+	@defining("ps-"){case prefix =>
 		<div>
 			<legend>@title</legend>
 		</div>
 		<div>
 			<button class='btn btn-default btn-xs' id='@{prefix}remove'><i class="fa fa-times-circle-o"></i>@Messages("view.remove")</button>
 		</div>
-		
 		
 		<table class="footable" id="@{prefix}selected-table" data-sort="true" data-page-navigation=".pagination" data-page-size="5">
 			<thead>
@@ -38,9 +37,8 @@
 			</thead>
 			<tbody>
 				@if(CollectionUtils.isNotEmpty(principals)){
-				
 						@for(p <- principals){
-							<tr @if(!acl.get(p.id).isDirect){class="ace-inherited"}>
+							<tr @if(acl != null && !acl.get(p.id).isDirect){class="ace-inherited"}>
 								<td class="@{prefix}remove"><input type='checkbox' principal-id='@p.id' principal-name='@p.name' principal-genre='@p.genre'/></td>
 								<td class="@{prefix}genre">@if(p.genre=="user"){<i class="fa fa-user"></i>}else{<i class="fa fa-users"></i>}</td>
 								<td class="@{prefix}id">@p.id</td>
