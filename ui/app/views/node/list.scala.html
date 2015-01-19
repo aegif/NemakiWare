@@ -11,7 +11,7 @@
 		<tr>
 			<th data-class="expand" data-sort-initial="true">@NemakiConfig.getLabel("cmis:name", lang().language)</th>
 			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
-				<th data-class="expand">@NemakiConfig.getLabel(column, lang().language)</th>
+				<th class="content-size" data-class="expand">@NemakiConfig.getLabel(column, lang().language)</th>
 			}
 			<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action")</th>
 		</tr>

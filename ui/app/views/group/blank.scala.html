@@ -4,46 +4,41 @@
 @(group:model.Group)
 
 @lightbox{
-	<section class="container">
-		
+	<div class="container">
 		<div class="row">
-			<div class="col-sm-5">
-				<h3><i class="fa fa-user">@group.name</i>@Messages("view.group.create.caption")</h3>
-			</div>
-		</div>
-
-		<div class="row" style="margin-bottom:15px">
-			<div class="col-sm-5">
-				<button class="btn btn-default btn-primary" id="group-create"><i class="fa fa-save"></i>@Messages("view.save")</button>
-			</div>
-		</div>
-		
-		<div class="row">
-				<div><h4>@Messages("view.group.property")</h4></div>
+			<div class="col-sm-12 col-md-12">
+				<div>
+					<h3><i class="fa fa-user">@group.name</i>@Messages("view.group.create.caption")</h3>
+				</div>
 				
-				@editableTable("group-property-table")(10){
-					<!-- id row -->
-					@defining(Util.buildTempProperty(
-						"group-id", Messages("view.group.id"), true, true, false, null, false, group.id
-					)){ property =>
-						@editableRow(property)()
+				<div style="margin-bottom:15px">
+					<button class="btn btn-default btn-primary" id="group-create"><i class="fa fa-save"></i>@Messages("view.save")</button>
+				</div>
+			
+				<div>
+					<div><h4>@Messages("view.group.property")</h4></div>
+					@editableTable("group-property-table")(10){
+						<!-- id row -->
+						@defining(Util.buildTempProperty(
+							"group-id", Messages("view.group.id"), true, true, false, null, false, group.id
+						)){ property =>
+							@editableRow(property)()
+						}
+						<!-- name row -->
+						@defining(Util.buildTempProperty(
+							"group-name", Messages("view.group.name"), true, true, false, null, false, group.name
+						)){ property =>
+							@editableRow(property)()
+						}
 					}
-					<!-- name row -->
-					@defining(Util.buildTempProperty(
-						"group-name", Messages("view.group.name"), true, true, false, null, false, group.name
-					)){ property =>
-						@editableRow(property)()
-					}
-				}
+				</div>
+				
+			
+			</div>
 		</div>
 
-		<hr/>
-			
-		<div class="row">
-			@Messages("view.group.member.add")
-		</div>
 		@memberSearch()()
-	</section>
+	</div>
 }
 
 

@@ -101,10 +101,10 @@
 				var genreIcon = (genre == "user") ? "<i class='fa fa-user'></i>" : "<i class='fa fa-users'></i>";
 				var row = 
 				"<tr>" + 
-				"<td>" + "<input type='checkbox' principal-id='" + id  +"' principal-name='" + name + "' principal-genre='" + genre + "'/>" + "</td>" +
-				"<td>" + genreIcon + "</td>" +
-				"<td>" + id + "</td>" +
-				"<td>" + name + "</td>" +
+				"<td class='column-action'>" + "<input type='checkbox' principal-id='" + id  +"' principal-name='" + name + "' principal-genre='" + genre + "'/>" + "</td>" +
+				"<td class='column-genre'>" + genreIcon + "</td>" +
+				"<td class='column-id'>" + id + "</td>" +
+				"<td class='column-name'>" + name + "</td>" +
 				"</tr>";
 				return row;
 			}
@@ -114,17 +114,17 @@
 				var genreIcon = (genre == "user") ? "<i class='fa fa-user'></i>" : "<i class='fa fa-users'></i>";
 				var row = 
 				"<tr>" + 
-				"<td class='@{prefix}remove'>" + "<input type='checkbox' principal-id='" + id  +"' principal-name='" + name + "' principal-genre='" + genre + "'/>" + "</td>" +
-				"<td class='@{prefix}genre'>" + genreIcon + "</td>" +
-				"<td class='@{prefix}id'>" + id + "</td>" + 
-				"<td class='@{prefix}name'>" + name + "</td>";;
+				"<td class='@{prefix}remove column-action'>" + "<input type='checkbox' principal-id='" + id  +"' principal-name='" + name + "' principal-genre='" + genre + "'/>" + "</td>" +
+				"<td class='@{prefix}genre column-genre'>" + genreIcon + "</td>" +
+				"<td class='@{prefix}id column-id'>" + id + "</td>" + 
+				"<td class='@{prefix}name column-name'>" + name + "</td>";;
 				
 				@if(CollectionUtils.isNotEmpty(permissionDefinitions)){
 					for(var i=0; i < permissions.length; i++){
-						row = row +  "<td class='permission permission-" + permissions[i] + "'>" + "<input type='checkbox' />" + "</td>";
+						row = row +  "<td class='column-permission permission permission-" + permissions[i] + "'>" + "<input type='checkbox' />" + "</td>";
 					}
 					
-					row += "<td class='inheritance'><input type='checkbox' class='ace-direct' /></td>";
+					row += "<td class='inheritance column-inheritance'><input type='checkbox' class='ace-direct' /></td>";
 				}
 				
 				

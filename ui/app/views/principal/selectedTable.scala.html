@@ -12,26 +12,23 @@
 @contentTemplate() = {
 	@defining("ps-"){case prefix =>
 		<div>
-			<legend>@title</legend>
-		</div>
-		<div>
-			<button class='btn btn-default btn-xs' id='@{prefix}remove'><i class="fa fa-times-circle-o"></i>@Messages("view.remove")</button>
+			<h4>@title</h4>
 		</div>
 		
-		<table class="footable" id="@{prefix}selected-table" data-sort="true" data-page-navigation=".pagination" data-page-size="5">
+		<table class="footable principal-table" id="@{prefix}selected-table" data-sort="true" data-page-navigation=".pagination" data-page-size="5">
 			<thead>
 				<tr>
-					<th data-sort-ignore="true"><!-- checkbox --></th>
-					<th data-sort-ignore="true">@Messages("view.principal.type")</th>
-					<th data-sort-initial="true">@Messages("view.principal.id")</th>
-					<th>@Messages("view.principal.name")</th>
+					<th class="column-action" data-sort-ignore="true"><button class='btn btn-default btn-sm' id='@{prefix}remove'><i class="fa fa-minus-square fa-lg"></i></button></th>
+					<th class="column-genre" data-sort-ignore="true">@Messages("view.principal.type")</th>
+					<th class="column-id" data-sort-initial="true">@Messages("view.principal.id")</th>
+					<th class="column-name">@Messages("view.principal.name")</th>
 					<!-- permission definitions -->
 					@if(CollectionUtils.isNotEmpty(permissionDefinitions)){
 						@for(pdf <- permissionDefinitions){
-							<th>@pdf.getId</th>
+							<th class="column-permission">@NemakiConfig.getLabel(pdf.getId, lang().language)</th>
 						}
 						
-						<th>@Messages("view.principal.inheritance")</th>
+						<th class="column-inheritance">@Messages("view.principal.inheritance")</th>
 					}
 				</tr>
 			</thead>
@@ -39,21 +36,21 @@
 				@if(CollectionUtils.isNotEmpty(principals)){
 						@for(p <- principals){
 							<tr @if(acl != null && !acl.get(p.id).isDirect){class="ace-inherited"}>
-								<td class="@{prefix}remove"><input type='checkbox' principal-id='@p.id' principal-name='@p.name' principal-genre='@p.genre'/></td>
-								<td class="@{prefix}genre">@if(p.genre=="user"){<i class="fa fa-user"></i>}else{<i class="fa fa-users"></i>}</td>
-								<td class="@{prefix}id">@p.id</td>
-								<td class="@{prefix}name">@p.name</td>
+								<td class="@{prefix}remove column-action"><input type='checkbox' principal-id='@p.id' principal-name='@p.name' principal-genre='@p.genre'/></td>
+								<td class="@{prefix}genre column-genre">@if(p.genre=="user"){<i class="fa fa-user"></i>}else{<i class="fa fa-users"></i>}</td>
+								<td class="@{prefix}id column-id">@p.id</td>
+								<td class="@{prefix}name column-name">@p.name</td>
 								
 								<!-- permission definitions -->
 								@if(CollectionUtils.isNotEmpty(permissionDefinitions)){
 									@for(pdf <- permissionDefinitions if(CollectionUtils.isNotEmpty(permissionDefinitions))){
-										<td class="permission permission-@pdf.getId">
+										<td class="permission permission-@pdf.getId column-permission">
 											<input type="checkbox" 
 												@if(acl.get(p.id).getPermissions.contains(pdf.getId)){checked="true"} />
 										</td>
 									}
 									
-									<td class="inheritance"><input type='checkbox' @if(acl.get(p.id).isDirect()){class='ace-direct'}else{checked='true'} /></td>
+									<td class="inheritance column-inheritance"><input type='checkbox' @if(acl.get(p.id).isDirect()){class='ace-direct'}else{checked='true'} /></td>
 								}
 								
 							</tr>

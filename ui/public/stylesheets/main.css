@@ -22,7 +22,7 @@ div.lightbox-me-container{
 }
 
 div.lightbox-me-container div.container, div.lightbox-me-container div.row{
-	width: 720px !important;
+	width: 760px !important;
 }
 	
 div.tab-pane{
@@ -55,15 +55,18 @@ div.tab-pane{
 }
 
 table.editable-table .key{
-	width: 200px;
+	width: 1%;
+	white-space:nowrap;
 }
 
 table.editable-table .editable{
-	width: 25px;
+	width: 1%;
+	white-space:nowrap;
 }
 
 table.editable-table .required{
-	width: 25px;
+	width: 1%;
+	white-space:nowrap;
 }
 
 table.editable-table .value{
@@ -119,4 +122,32 @@ tr.ace-inherited{
 
 input.ace-direct{
 	display:none;
+}
+
+input.form-control.principal-searach{
+	width:290px;
+}
+
+.principal-table .column-action{
+	width:1px;
+	white-space:nowrap;
+	text-align: center !important;,
+	vertical-align: center !important;
+}
+
+.principal-table .column-genre{
+	width:1px;
+	white-space:nowrap;
+	text-align: center !important;,
+	vertical-align: center !important;
+}
+
+.nopadding {
+   padding: 0 !important;
+   margin: 0 !important;
+}
+
+.content-size{
+	width:1px;
+	white-space:nowrap;	
 }
