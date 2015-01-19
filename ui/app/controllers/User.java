@@ -6,6 +6,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.commons.lang3.StringUtils;
+
 import play.data.DynamicForm;
 import play.data.Form;
 import play.libs.Json;
@@ -13,6 +15,7 @@ import play.mvc.Controller;
 import play.mvc.Result;
 import play.mvc.Security.Authenticated;
 import util.Util;
+import views.html.defaultpages.error;
 import views.html.user.blank;
 import views.html.user.index;
 import views.html.user.property;
@@ -108,10 +111,9 @@ public class User extends Controller {
     	JsonNode result = Util.putJsonResponse(session(), endPoint + "update/" + id , params);
     	
     	if(isSuccess(result)){
-    		return redirect(routes.User.index());
-    	}else{
-    		//TODO
     		return ok();
+    	}else{
+    		return internalServerError();
     	}
 	}
 
@@ -131,20 +133,21 @@ public class User extends Controller {
     	input = input.bindFromRequest();
     	//Extract form parameters
     	String userId = input.get("userId");
-    	String password = input.get("password");
     	String userName = input.get("userName");
     	String firstName = input.get("firstName");
     	String lastName = input.get("lastName");
     	String email = input.get("email");
-
+    	String password = input.get("password");
 
     	Map<String, String>params = new HashMap<String, String>();
     	params.put("id", userId);
     	params.put("name", userName);
     	params.put("firstName", firstName);
     	params.put("lastName", lastName);
-    	params.put("password", password);
     	params.put("email", email);
+    	if(StringUtils.isNotBlank(password)){
+    		params.put("password", password);
+    	}
     	
     	return params;
 	}
