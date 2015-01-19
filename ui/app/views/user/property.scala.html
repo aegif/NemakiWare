@@ -17,7 +17,7 @@
 				</div>
 			
 				<div>
-					<div><h4>@Messages("view.user.property")</h4></div>
+					<h4>@Messages("view.user.property")</h4>
 					@editableTable("obj-property-table")(10){
 						<!-- id row -->
 						@defining(Util.buildTempProperty(
@@ -49,6 +49,12 @@
 						)){ property =>
 							@editableRow(property)()
 						}
+						<!-- new password row -->
+						@defining(Util.buildTempProperty(
+							"user-password", "Password", false, true, false, null, false, user.password
+						)){ property =>
+							@editableRow(property)()
+						}
 					}
 				</div>
 			</div>
@@ -66,6 +72,7 @@
 			data['firstName'] = editedValue('#user-first-name');
 			data['lastName'] = editedValue('#user-last-name');
 			data['email'] = editedValue('#user-email');
+			data['password'] = editedValue('#user-password');
 			
 			//call
 			$.blockUI({message:"@Messages("view.message.please.wait")"});
