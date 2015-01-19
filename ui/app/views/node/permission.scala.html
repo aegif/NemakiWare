@@ -12,7 +12,7 @@
 
 <div class="container tab-pane">
 	<div class="row" style="margin-bottom:15px">
-		<div class="col-sm-8">
+		<div class="col-sm-6 col-md-6">
 			@if(Util.isFreezeCopy(obj, session)){
 				@lockedNotice(obj)
 			}else{
@@ -20,21 +20,21 @@
 			}
 		</div>
 	</div>
-
+	
 	<div class="row">
-		<div class="col-sm-5">
-			@searchBox()
+		<div class="col-sm-6 col-md-6">
+			@searchBox("追加可能なメンバを検索")
 		</div>
 	</div>
 	
 	<div class="row">
-		<div class="col-sm-5">
+		<div class="col-sm-6 col-md-6">
 			@searchTable(Messages("view.node.permission.search.caption"))(members)
 		</div>
 	</div>
 	
 	<div class="row">
-		<div class="col-sm-5">
+		<div class="col-sm-12 col-md-12">
 			@selectedTable(Messages("view.node.permission.table.caption"))(members)(Util.zipWithId(obj.getAcl))(permissionDefinitions)
 		</div>
 	</div>

@@ -3,10 +3,9 @@
 @(groupId:String = null)(members:List[model.Principal] = null)
 
 @script()(groupId)
-
 <div class="row">
 	<div class="col-sm-6 col-md-6">
-		@searchBox()
+		@searchBox("追加可能なユーザを検索して表示します")
 	</div>
 </div>
 
@@ -15,6 +14,6 @@
 			@searchTable(Messages("view.principal.search.caption"))(members)
 		</div>
 		<div class="col-sm-6 col-md-6">
-			@selectedTable(Messages("view.principal.selected.caption"))(members)()()
+			@selectedTable(Messages("view.principal.group.member.caption"))(members)()()
 		</div>
 </div>

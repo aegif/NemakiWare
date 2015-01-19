@@ -9,40 +9,35 @@
 	<!-- html -->
 	<div class="container">
 		<div class="row">
-			<h3><i class="fa fa-users">@group.name</i></h3>
+			<div class="col-sm-12 col-md-12">
+				<div style="margin-bottom:15px">
+					<h3><i class="fa fa-users">@group.name</i></h3>
+				</div>
+				
+				<div style="margin-bottom:15px">
+					@saveButton("group-update")
+				</div>
+				
+				<div style="margin-bottom:5px">
+					<h4>@Messages("view.group.property")</h4>
+					@editableTable("obj-property-table")(10){
+						<!-- id row -->
+						@defining(Util.buildTempProperty(
+							"group-id", "ID", true, false, false, null, false, group.id
+						)){ property =>
+							@editableRow(property)()
+						}
+						<!-- name row -->
+						@defining(Util.buildTempProperty(
+							"group-name", "Name", true, true, false, null, false, group.name
+						)){ property =>
+							@editableRow(property)()
+						}
+					}
+				</div>
+			</div>
 		</div>
-
-		<div class="row" style="margin-bottom:15px">
-				@saveButton("group-update")
-		</div>
-		
-		<div class="row">
-			<div><h4>@Messages("view.group.property")</h4></div>
-			@editableTable("obj-property-table")(10){
-				<!-- id row -->
-				@defining(Util.buildTempProperty(
-					"group-id", "ID", true, false, false, null, false, group.id
-				)){ property =>
-					@editableRow(property)()
-				}
-				<!-- name row -->
-				@defining(Util.buildTempProperty(
-					"group-name", "Name", true, true, false, null, false, group.name
-				)){ property =>
-					@editableRow(property)()
-				}
-			}
-		</div>
-		
-		<hr/>
-		
-		<div class="row">
-			<div><h4><i class="fa fa-wrench"></i>@Messages("view.group.caption")</h4></div>
-	  	</div>
-		
-		<div class="row" style="margin-bottom:15px">
-				@memberSearch(group.id)(member)
-		</div>
+		@memberSearch(group.id)(member)
 	</div>
 	
 	<!-- scripts -->

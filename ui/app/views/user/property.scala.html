@@ -7,49 +7,51 @@
 	<!-- html -->
 	<div class="container">
 		<div class="row">
-			<h3><i class="fa fa-user">@user.name</i></h3>
-		</div>
-
-		<div class="row" style="margin-bottom:15px">
-				<button class="btn btn-default btn-primary" id="user-update"><i class="fa fa-save"></i>@Messages("view.save")</button>
-		</div>
-		
-		<div class="row">
-				<div><h4>@Messages("view.user.property")</h4></div>
+			<div class="column-sm-12 column-md-12">
+				<div>
+					<h3><i class="fa fa-user">@user.name</i></h3>
+				</div>
 				
-				@editableTable("obj-property-table")(10){
-					<!-- id row -->
-					@defining(Util.buildTempProperty(
-						"user-id", "ID", true, false, false, null, false, user.id
-					)){ property =>
-						@editableRow(property)()
+				<div style="margin-bottom:15px">
+					<button class="btn btn-default btn-primary" id="user-update"><i class="fa fa-save"></i>@Messages("view.save")</button>
+				</div>
+			
+				<div>
+					<div><h4>@Messages("view.user.property")</h4></div>
+					@editableTable("obj-property-table")(10){
+						<!-- id row -->
+						@defining(Util.buildTempProperty(
+							"user-id", "ID", true, false, false, null, false, user.id
+						)){ property =>
+							@editableRow(property)()
+						}
+						<!-- name row -->
+						@defining(Util.buildTempProperty(
+							"user-name", "Name", true, true, false, null, false, user.name
+						)){ property =>
+							@editableRow(property)()
+						}
+						<!-- last name row -->
+						@defining(Util.buildTempProperty(
+							"user-last-name", "Last Name", false, true, false, null, false, user.lastName
+						)){ property =>
+							@editableRow(property)()
+						}
+						<!-- first name row -->
+						@defining(Util.buildTempProperty(
+							"user-first-name", "First Name", false, true, false, null, false, user.firstName
+						)){ property =>
+							@editableRow(property)()
+						}
+						<!-- email row -->
+						@defining(Util.buildTempProperty(
+							"user-email", "Email", false, true, false, null, false, user.email
+						)){ property =>
+							@editableRow(property)()
+						}
 					}
-					<!-- name row -->
-					@defining(Util.buildTempProperty(
-						"user-name", "Name", true, true, false, null, false, user.name
-					)){ property =>
-						@editableRow(property)()
-					}
-					<!-- last name row -->
-					@defining(Util.buildTempProperty(
-						"user-last-name", "Last Name", false, true, false, null, false, user.lastName
-					)){ property =>
-						@editableRow(property)()
-					}
-					<!-- first name row -->
-					@defining(Util.buildTempProperty(
-						"user-first-name", "First Name", false, true, false, null, false, user.firstName
-					)){ property =>
-						@editableRow(property)()
-					}
-					<!-- email row -->
-					@defining(Util.buildTempProperty(
-						"user-email", "Email", false, true, false, null, false, user.email
-					)){ property =>
-						@editableRow(property)()
-					}
-				}
-				<hr/>
+				</div>
+			</div>
 		</div>
 	</div>
 	

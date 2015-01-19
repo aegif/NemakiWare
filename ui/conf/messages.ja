@@ -45,6 +45,7 @@ view.principal.name=名前
 view.principal.inheritance=継承
 view.principal.search.caption=メンバ検索
 view.principal.selected.caption=選択されたメンバ
+view.principal.group.member.caption=所属メンバ
 
 view.user.caption=ユーザ管理
 view.user.property=プロパティ

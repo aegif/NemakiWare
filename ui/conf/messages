@@ -45,6 +45,7 @@ view.principal.name=Name
 view.principal.inheritance=Inheritance
 view.principal.search.caption=Search member
 view.principal.selected.caption=Selected member
+view.principal.group.member.caption=Group member
 
 view.user.caption=Users
 view.user.property=Property
