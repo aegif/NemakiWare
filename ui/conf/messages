@@ -4,6 +4,7 @@ view.header.control-panel=Control Panel
 view.auth.login=Sign in
 view.auth.logout=Sign out
 view.auth.login.caption=Please sign in 
+view.auth.account=Account
 
 view.node.property=Property
 view.node.file=File
