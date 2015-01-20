@@ -272,11 +272,16 @@ public class CoreTracker extends CloseHook {
 
 		//Read MIME-Type filtering
 		PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
-		String _filter = pm.readValue(PropertyKey.SOLR_TRACKING_MIMETYPE_FILTER_ENABLED);
-		boolean mimeTypeFilter = "true".equals(_filter);
+		boolean mimeTypeFilter = false;
 		List<String> allowedMimeTypeFilter = new ArrayList<String>();
-		if(mimeTypeFilter){
-			allowedMimeTypeFilter = pm.readValues(PropertyKey.SOLR_TRACKING_MIMETYPE);
+		boolean fulltextEnabled = Boolean.TRUE.toString().equalsIgnoreCase(pm.readValue(PropertyKey.SOLR_TRACKING_FULLTEXT_ENABLED));
+
+		if(fulltextEnabled){
+			String _filter = pm.readValue(PropertyKey.SOLR_TRACKING_MIMETYPE_FILTER_ENABLED);
+			mimeTypeFilter = Boolean.TRUE.toString().equalsIgnoreCase(_filter);
+			if(mimeTypeFilter){
+				allowedMimeTypeFilter = pm.readValues(PropertyKey.SOLR_TRACKING_MIMETYPE);
+			}
 		}
 
 		// Extract only the last events of each objectId
@@ -284,10 +289,10 @@ public class CoreTracker extends CloseHook {
 		for (ChangeEvent ce : list) {
 			switch (ce.getChangeType()) {
 			case CREATED:
-				registerSolrDocument(ce, mimeTypeFilter, allowedMimeTypeFilter);
+				registerSolrDocument(ce, fulltextEnabled, mimeTypeFilter, allowedMimeTypeFilter);
 				break;
 			case UPDATED:
-				registerSolrDocument(ce, mimeTypeFilter, allowedMimeTypeFilter);
+				registerSolrDocument(ce, fulltextEnabled, mimeTypeFilter, allowedMimeTypeFilter);
 				break;
 			case DELETED:
 				deleteSolrDocument(ce);
@@ -404,8 +409,9 @@ public class CoreTracker extends CloseHook {
 	 * Create/Update Solr document
 	 *
 	 * @param ce
+	 * @param fulltextEnabled TODO
 	 */
-	private void registerSolrDocument(ChangeEvent ce, boolean mimeTypeFilter, List<String>allowedMimeTypes) {
+	private void registerSolrDocument(ChangeEvent ce, boolean fulltextEnabled, boolean mimeTypeFilter, List<String>allowedMimeTypes) {
 		CmisObject obj = null;
 		try {
 			obj = cmisSession.getObject(ce.getObjectId());
@@ -419,14 +425,19 @@ public class CoreTracker extends CloseHook {
 		Map<String, Object> map = buildParamMap(obj);
 		switch (obj.getBaseTypeId()) {
 		case CMIS_DOCUMENT:
-			String mimeType = (String) map.get(FIELD_CONTENT_MIMETYPE);
-			if(!mimeTypeFilter || CollectionUtils.isNotEmpty(allowedMimeTypes) && allowedMimeTypes.contains(mimeType)){
-					ContentStream cs = cmisSession.getContentStream(new ObjectIdImpl(
-							obj.getId()));
-					req = buildUpdateRequestWithFile(map, cs);
+			if(fulltextEnabled){
+				String mimeType = (String) map.get(FIELD_CONTENT_MIMETYPE);
+				if(!mimeTypeFilter || CollectionUtils.isNotEmpty(allowedMimeTypes) && allowedMimeTypes.contains(mimeType)){
+						ContentStream cs = cmisSession.getContentStream(new ObjectIdImpl(
+								obj.getId()));
+						req = buildUpdateRequestWithFile(map, cs);
+				}else{
+					req = buildUpdateRequest(map);
+				}
 			}else{
 				req = buildUpdateRequest(map);
 			}
+			
 			break;
 		case CMIS_FOLDER:
 			req = buildUpdateRequest(map);
