@@ -11,9 +11,9 @@
 		<tr>
 			<th data-class="expand" data-sort-initial="true">@NemakiConfig.getLabel("cmis:name", lang().language)</th>
 			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
-				<th data-class="expand">@NemakiConfig.getLabel(column, lang().language)</th>
+				<th class="content-size" data-class="expand">@NemakiConfig.getLabel(column, lang().language)</th>
 			}
-			<th data-sort-ignore="true">@Messages("view.action")</th>
+			<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action")</th>
 		</tr>
 	</thead>
 	<tbody>
@@ -68,8 +68,7 @@
         //Get CmisObject
        		var id = $(this).attr('cmis-id');
        		$.get("@{Util.getContextPath(request)}objects/" + id, function(html){
-       			$("#floating-pane").html(html);
-				$("#floating-pane").lightbox_me(lightbox_me_config);
+       			showLightbox('node-detail' + id, html);
        		});
         });
     });
@@ -79,14 +78,27 @@
 <script type="text/javascript">
 	$(function(){
 		$('.delete').click(function(){
-			//alert dialog
-			if(window.confirm("削除してよろしいですか？")){
+			if(window.confirm("@Messages("view.message.delete.confirm")")){
 				var id = $(this).attr('cmis-id');
-	       		$.post("@{Util.getContextPath(request)}objects/" + id + "/delete",{},function(data){
-	       			window.location.reload();
-	       		});	
+			
+				$.blockUI({message:"@Messages("view.message.please.wait")"});
+				$.ajax({
+					url : "@{Util.getContextPath(request)}objects/" + id + "/delete",
+					type : 'POST',
+					data : null,
+					success : function(data){
+						window.alert("@Messages("view.message.delete.success")");
+						window.location.reload();
+					},
+					error : function(XMLHttpRequest, textStatus, errorThrown) {
+						window.alert("@Messages("view.message.delete.failure")");
+			        },
+			        complete : function(){
+						$.unblockUI();
+					}
+				})
 			}
-		})
+		});
 	});
 </script>
 

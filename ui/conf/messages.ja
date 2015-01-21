@@ -4,6 +4,7 @@ view.header.control-panel=コントロールパネル
 view.auth.login=ログイン
 view.auth.logout=ログアウト
 view.auth.login.caption=ログインしてください
+view.auth.account=アカウント
 
 view.node.property=プロパティ
 view.node.file=ファイル
@@ -45,6 +46,7 @@ view.principal.name=名前
 view.principal.inheritance=継承
 view.principal.search.caption=メンバ検索
 view.principal.selected.caption=選択されたメンバ
+view.principal.group.member.caption=所属メンバ
 
 view.user.caption=ユーザ管理
 view.user.property=プロパティ
@@ -91,4 +93,11 @@ view.remove=除外
 view.action=アクション
 
 view.message.please.wait=しばらくお待ちください...
-
+view.message.create.success=正常に作成されました
+view.message.create.failure=作成に失敗しました
+view.message.update.success=正常に更新されました
+view.message.update.failure=更新に失敗しました
+view.message.delete.confirm=削除してよろしいですか？
+view.message.delete.success=正常に削除されました
+view.message.delete.failure=削除に失敗しました
+view.message.already.selected=既に選択されています！

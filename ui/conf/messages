@@ -4,6 +4,7 @@ view.header.control-panel=Control Panel
 view.auth.login=Sign in
 view.auth.logout=Sign out
 view.auth.login.caption=Please sign in 
+view.auth.account=Account
 
 view.node.property=Property
 view.node.file=File
@@ -45,6 +46,7 @@ view.principal.name=Name
 view.principal.inheritance=Inheritance
 view.principal.search.caption=Search member
 view.principal.selected.caption=Selected member
+view.principal.group.member.caption=Group member
 
 view.user.caption=Users
 view.user.property=Property
@@ -91,3 +93,11 @@ view.remove=Remove
 view.action=Action
 
 view.message.please.wait=Please wait...
+view.message.create.success=Successfully created
+view.message.create.failure=Failed to create
+view.message.update.success=Successfully updated
+view.message.update.failure=Failed to update
+view.message.delete.confirm=Do you really want to delete?
+view.message.delete.success=Successfully deleted
+view.message.delete.failure=Failed to delete
+view.message.already.selected=Already selected!
