@@ -19,8 +19,18 @@
 		var lightbox_me_config = {
 			centered:true
 		};
+
+		function showLightbox(domId, html){
+			var content = $(html).attr('id', 'lightbox-' + domId);
+			
+			lightbox_me_config['onClose'] = function() { 
+	        	content.remove();
+            };			
+			
+			content.lightbox_me(lightbox_me_config);
+		}
 	</script>
-	
+
 	<!-- jMenu begin -->
 	<link rel="stylesheet" type="text/css" href="@routes.Assets.at("javascripts/jMenu/css/jmenu.css")" media="screen" />
 	<script type="text/javascript" src="@routes.Assets.at("javascripts/jMenu/js/jmenu.jquery.min.js")"></script>

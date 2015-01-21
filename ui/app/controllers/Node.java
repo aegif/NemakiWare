@@ -45,7 +45,6 @@ import org.apache.commons.lang3.StringUtils;
 
 import play.data.DynamicForm;
 import play.data.Form;
-import play.i18n.Lang;
 import play.libs.Json;
 import play.mvc.Controller;
 import play.mvc.Http.MultipartFormData;
@@ -71,9 +70,7 @@ import constant.Token;
 public class Node extends Controller {
 
 	private static Session createSession() {
-		String id = session().get("loginUserId");
-		String password = session().get("loginUserPassword");
-		Session cmisSession = Util.createCmisSession(id, password);
+		Session cmisSession = Util.createCmisSession(session());
 		return cmisSession;
 	}
 

@@ -195,7 +195,7 @@ public class UserResource extends ResourceBase {
 			@FormParam(FORM_FIRSTNAME) String firstName,
 			@FormParam(FORM_LASTNAME) String lastName,
 			@FormParam(FORM_EMAIL) String email,
-			@FormParam(FORM_NEWPASSWORD) String newPassword,
+			@FormParam(FORM_PASSWORD) String password,
 			@Context HttpServletRequest httpRequest) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
@@ -222,6 +222,26 @@ public class UserResource extends ResourceBase {
 				user.setLastName(lastName);
 			if (email != null)
 				user.setEmail(email);
+			if (StringUtils.isNotBlank(password)){
+				//TODO Error handling
+				user = principalService.getUserById(userId);
+
+				// Edit & Update
+				if (status) {
+					// Edit the user info
+					String passwordHash = PasswordHasher.hash(password);
+					user.setPasswordHash(passwordHash);
+					setModifiedSignature(getUserInfo(httpRequest), user);
+
+					try{
+						principalService.updateUser(user);
+					}catch(Exception e){
+						e.printStackTrace();
+						status = false;
+						addErrMsg(errMsg, ITEM_USER, ERR_UPDATE);
+					}
+				}
+			}
 			setModifiedSignature(getUserInfo(httpRequest), user);
 
 			try{

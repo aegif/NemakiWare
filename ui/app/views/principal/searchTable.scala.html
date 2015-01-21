@@ -10,19 +10,16 @@
 @contentTemplate() = {
 	@defining("ps-"){prefix =>
 		<div>
-			<legend>@title</legend>
-		</div>
-		<div>
-			<button class='btn btn-default btn-xs' id='@{prefix}add'><i class="fa fa-arrow-circle-o-right"></i>@Messages("view.add")</button>
+			<h4>追加可能なメンバの検索結果</h4>
 		</div>
 		
-		<table class="footable" id="@{prefix}search-table" data-sort="true" data-page-navigation=".pagination" data-page-size="5">
+		<table class="footable principal-table" id="@{prefix}search-table" data-sort="true" data-page-navigation=".pagination" data-page-size="5">
 			<thead>
 				<tr>
-					<th data-sort-ignore="true"><!-- checkbox --></th>
-					<th data-sort-ignore="true">@Messages("view.principal.type")</th>
-					<th data-sort-initial="true">@Messages("view.principal.id")</th>
-					<th>@Messages("view.principal.name")</th>
+					<th class="column-action" data-sort-ignore="true" class="principal-table-action"><button class='btn btn-default btn-sm' id='@{prefix}add'><i class="fa fa-plus-square fa-lg"></i></button></th>
+					<th class="column-genre" data-sort-ignore="true">@Messages("view.principal.type")</th>
+					<th class="column-id" data-sort-initial="true">@Messages("view.principal.id")</th>
+					<th class="column-name">@Messages("view.principal.name")</th>
 				</tr>
 			</thead>
 			<tbody>

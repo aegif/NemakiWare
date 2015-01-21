@@ -9,4 +9,7 @@ public interface Token {
 	final String REST_SUCCESS = "success";
 	final String REST_RESULT = "result";
 	final String REST_ERROR = "error";
+	
+	final String PRINCIPAL_GENRE_USER = "user";
+	final String PRINCIPAL_GENRE_GROUP = "group";
 }
