@@ -142,6 +142,10 @@ input.form-control.principal-searach{
 	vertical-align: center !important;
 }
 
+.principal-table .column-id, .principal-table .column-name{
+	word-break: break-all;
+}
+
 .nopadding {
    padding: 0 !important;
    margin: 0 !important;
