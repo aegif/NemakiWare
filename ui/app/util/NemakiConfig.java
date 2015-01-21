@@ -68,9 +68,9 @@ public class NemakiConfig {
 	public static String getLabel(String propertyId, String language){
 		String _propertyId = propertyId.replaceAll(":", "-");
 		
-		String v = getValue("property-label-" + _propertyId + "_" + language);
+		String v = getValue("label-" + _propertyId + "_" + language);
 		if(StringUtils.isEmpty(v)){
-			v = getValue("property-label-" + _propertyId);
+			v = getValue("label-" + _propertyId);
 		}
 		if(StringUtils.isEmpty(v)){
 			return propertyId;

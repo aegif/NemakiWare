@@ -21,6 +21,7 @@
 						@session.get(Token.LOGIN_USER_ID)<span class="caret" />
 					</a>
 					<ul class="dropdown-menu" role="menu">
+						<li><a href="#" id="account" user-id='@session.get(Token.LOGIN_USER_ID)'><i class="fa fa-user"></i>@Messages("view.auth.account")</a></li>
 						<li><a href="@routes.Application.logout().absoluteURL(request)" id="logout"><i class="fa fa-sign-out"></i>@Messages("view.auth.logout")</a></li>
 					</ul>
 				</li>
@@ -55,16 +56,20 @@
 	</div>
 </div>
 
-<!-- floating pane for lightbox_me-->
-<div id="floating-pane" style="display:none"></div>
-
 <!-- scripts -->
 <script type="text/javascript">
 	$(function(){
+		//binding: account
+		$('#account').click(function(){
+			$.get("@{Util.getContextPath(request)}users/" + "@session.get(Token.LOGIN_USER_ID)", function(html){
+				showLightbox('user-detail-' + "@session.get(Token.LOGIN_USER_ID)", html);
+       		});
+		});
+		
+		//binding: search engine cosole
 		$("#search-engine-console").click(function(){
 			$.get("@{Util.getContextPath(request)}search-engine", function(html){
-				$("#floating-pane").html(html);	
-				$("#floating-pane").lightbox_me(lightbox_me_config);
+				showLightbox('search-engine-panel', html);
 			});
 		});
 	});

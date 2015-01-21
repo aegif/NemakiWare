@@ -1,52 +1,44 @@
 @import table._
-@import principal._
 @import util.Util
 
 @(group:model.Group)
 
 @lightbox{
-	<section class="container">
-		
+	<div class="container">
 		<div class="row">
-			<div class="col-sm-5">
-				<h3><i class="fa fa-user">@group.name</i>@Messages("view.group.create.caption")</h3>
-			</div>
-		</div>
-
-		<div class="row" style="margin-bottom:15px">
-			<div class="col-sm-5">
-				<button class="btn btn-default btn-primary" id="group-create"><i class="fa fa-save"></i>@Messages("view.save")</button>
-			</div>
-		</div>
-		
-		<div class="row">
-			<div class="col-sm-8">
-				<div><h4>@Messages("view.group.property")</h4></div>
+			<div class="col-sm-12 col-md-12">
+				<div>
+					<h3><i class="fa fa-user">@group.name</i>@Messages("view.group.create.caption")</h3>
+				</div>
 				
-				@editableTable("group-property-table")(10){
-					<!-- id row -->
-					@defining(Util.buildTempProperty(
-						"group-id", Messages("view.group.id"), true, true, false, null, false, group.id
-					)){ property =>
-						@editableRow(property)()
+				<div style="margin-bottom:15px">
+					<button class="btn btn-default btn-primary" id="group-create"><i class="fa fa-save"></i>@Messages("view.save")</button>
+				</div>
+			
+				<div>
+					<div><h4>@Messages("view.group.property")</h4></div>
+					@editableTable("group-property-table")(10){
+						<!-- id row -->
+						@defining(Util.buildTempProperty(
+							"group-id", Messages("view.group.id"), true, true, false, null, false, group.id
+						)){ property =>
+							@editableRow(property)()
+						}
+						<!-- name row -->
+						@defining(Util.buildTempProperty(
+							"group-name", Messages("view.group.name"), true, true, false, null, false, group.name
+						)){ property =>
+							@editableRow(property)()
+						}
 					}
-					<!-- name row -->
-					@defining(Util.buildTempProperty(
-						"group-name", Messages("view.group.name"), true, true, false, null, false, group.name
-					)){ property =>
-						@editableRow(property)()
-					}
-				}
-				<hr/>
-
+				</div>
+				
+			
 			</div>
 		</div>
-			
-		<div class="row">
-			<div class="col-sm-8">@Messages("view.group.member.add")</div>
-		</div>
-		@principalSearch()
-	</section>
+
+		@memberSearch()()
+	</div>
 }
 
 
@@ -67,7 +59,8 @@
 				}
 			});
 
-			//post
+			//call
+			$.blockUI({message:"@Messages("view.message.please.wait")"});
 			$.ajax({
 				url : "@routes.Group.create().absoluteURL(request)",
 				type: 'POST',
@@ -75,9 +68,16 @@
 						groupName : editedValue('#group-name'),
 						users: JSON.stringify(users),
 						groups: JSON.stringify(groups)},
-				success : function(data){
-					window.location.reload();
-				}
+						success : function(data){
+							window.alert("@Messages("view.message.create.success")");
+							window.location.reload();
+						},
+						error : function(XMLHttpRequest, textStatus, errorThrown) {
+							window.alert("@Messages("view.message.create.failure")");
+				         },
+				        complete: function(){
+							$.unblockUI();
+						}
 			});
 		});
 	});
