@@ -70,7 +70,6 @@ import org.apache.http.message.BasicNameValuePair;
 import play.Play;
 import play.api.http.MediaRange;
 import play.data.DynamicForm;
-import play.i18n.Messages;
 import play.libs.Json;
 import play.mvc.Http.MultipartFormData.FilePart;
 import play.mvc.Http.Request;
@@ -82,6 +81,12 @@ import constant.Token;
 import constant.UpdateContext;
 
 public class Util {
+	public static Session createCmisSession(play.mvc.Http.Session session){
+		String id = session.get(Token.LOGIN_USER_ID);
+		String password = session.get(Token.LOGIN_USER_PASSWORD);
+		return createCmisSession(id, password);
+	}
+	
 	public static Session createCmisSession(String id, String password){
 		Map<String, String> parameter = new HashMap<String, String>();
 

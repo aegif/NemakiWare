@@ -3,6 +3,7 @@ package jp.aegif.nemaki.util;
 public interface PropertyKey {
 	public final String SOLR_TRACKING_CRON_ENABLED = "solr.tracking.cron.enabled";
 	public final String SOLR_TRACKING_CRON_EXPRESSION = "solr.tracking.cron.expression";
+	public final String SOLR_TRACKING_FULLTEXT_ENABLED = "solr.tracking.fulltext.enabled";
 	public final String SOLR_TRACKING_MIMETYPE_FILTER_ENABLED = "solr.tracking.mimetype.filter.enabled";
 	public final String SOLR_TRACKING_MIMETYPE = "solr.tracking.mimetype";
 	public final String SOLR_CORE_MAIN = "solr.core.main";

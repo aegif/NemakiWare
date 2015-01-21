@@ -52,7 +52,7 @@
 									<th>@Messages("view.user.last.name")</th>
 									<th>@Messages("view.user.first.name")</th>
 									<th>@Messages("view.user.email")</th>
-									<th data-sort-ignore="true">@Messages("view.action")</th>
+									<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action")</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -90,8 +90,7 @@
 		//binding: create button
 		$('#user-create-button').bind('click', function(){
 			$.get("@routes.User.showBlank().absoluteURL(request)", function(html){
-				$("#floating-pane").html(html);
-				$("#floating-pane").lightbox_me(lightbox_me_config);
+				showLightbox('user-blank', html);
 			});
 		});
 	
@@ -100,23 +99,33 @@
 			var id = $(this).attr('user-id');
        		
 			$.get("@{Util.getContextPath(request)}users/" + id, function(html){
-				$("#floating-pane").html(html);
-				$("#floating-pane").lightbox_me(lightbox_me_config);
+				showLightbox('user-detail-' + id, html);
        		});	
 			
 		});
 	
 		//binding: delete button
 		$('.user-delete').click(function(){
-			//alert dialog
-			if(window.confirm("削除してよろしいですか？")){
+			if(window.confirm("@Messages("view.message.delete.confirm")")){
 				var id = $(this).attr('user-id');
-	       		$.post("@{Util.getContextPath(request)}users/" + id + "/delete",{},function(data){
-	       			window.location.reload();
-	       		});	
-			}
 			
+				$.blockUI({message:"@Messages("view.message.please.wait")"});
+				$.ajax({
+					url : "@{Util.getContextPath(request)}users/" + id + "/delete",
+					type : 'POST',
+					data : null,
+					success : function(data){
+						window.alert("@Messages("view.message.delete.success")");
+						window.location.reload();
+					},
+					error : function(XMLHttpRequest, textStatus, errorThrown) {
+						window.alert("@Messages("view.message.delete.failure")");
+			        },
+			        complete : function(){
+						$.unblockUI();
+					}
+				})
+			}
 		});
-	
 	});
 </script>

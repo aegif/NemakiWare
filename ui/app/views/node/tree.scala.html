@@ -54,15 +54,13 @@
 	$(function(){
 		$(document).on('click', '#create-folder-in-tree', function(){
 			$.get("@routes.Node.showBlank().absoluteURL(request)" + "?objectType=" + "cmis:folder" + "&baseType=" + "cmis:folder" + "&parentId=@parent.getId()"  , function(html){
-				$("#floating-pane").html(html);
-				$("#floating-pane").lightbox_me(lightbox_me_config);
+				showLightbox('node-blank', html);
 			});	
 		});
 		
 		$(document).on('click', '#create-file-in-tree', function(){
 			$.get("@routes.Node.showBlank().absoluteURL(request)" + "?objectType=" + "cmis:document" + "&baseType=" + "cmis:document" + "&parentId=@parent.getId()"  , function(html){
-				$("#floating-pane").html(html);
-				$("#floating-pane").lightbox_me(lightbox_me_config);
+				showLightbox('node-blank', html);
 			});	
 		});
 
