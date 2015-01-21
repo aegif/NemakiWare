@@ -6,6 +6,8 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
+import org.apache.chemistry.opencmis.client.api.Session;
+
 import play.libs.Json;
 import play.mvc.Controller;
 import play.mvc.Result;
@@ -14,6 +16,8 @@ import util.Util;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
+import constant.Token;
 
 
 @Authenticated(Secured.class)
@@ -34,7 +38,7 @@ public class Principal extends Controller{
 			while(userItr.hasNext()){
 				JsonNode user = userItr.next();
 				
-				model.Principal p = new model.Principal("user", user.get("userId").asText(), user.get("userName").asText());
+				model.Principal p = new model.Principal(Token.PRINCIPAL_GENRE_USER, user.get("userId").asText(), user.get("userName").asText());
 				principals.add(p);
 			}
 		}
@@ -48,7 +52,7 @@ public class Principal extends Controller{
 			while(groupItr.hasNext()){
 				JsonNode group = groupItr.next();
 				
-				model.Principal p = new model.Principal("group", group.get("groupId").asText(), group.get("groupName").asText());
+				model.Principal p = new model.Principal(Token.PRINCIPAL_GENRE_GROUP, group.get("groupId").asText(), group.get("groupName").asText());
 				
 				//Remove the same group id when called from a group member search
 				if(p.id != null && p.id.equals(groupId)){
@@ -58,7 +62,10 @@ public class Principal extends Controller{
 				principals.add(p);
 			}
 		}
-    	
+		
+		//Add anyone group
+		principals.add(getAnyone());
+
 		//convert
 		final ByteArrayOutputStream out = new ByteArrayOutputStream();
 		ObjectMapper mapper = new ObjectMapper();
@@ -75,5 +82,12 @@ public class Principal extends Controller{
 		}
 		
 		return ok();
+	}
+	
+	private static model.Principal getAnyone(){
+		Session session = Util.createCmisSession(session());
+		String anyone = session.getRepositoryInfo().getPrincipalIdAnyone();
+		model.Principal p = new model.Principal(Token.PRINCIPAL_GENRE_GROUP, anyone, anyone);
+		return p;
 	}
 }
