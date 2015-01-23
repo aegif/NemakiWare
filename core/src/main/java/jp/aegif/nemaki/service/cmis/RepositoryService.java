@@ -24,10 +24,10 @@ package jp.aegif.nemaki.service.cmis;
 import java.math.BigInteger;
 import java.util.List;
 
+import jp.aegif.nemaki.repository.info.NemakiRepositoryInfo;
 import jp.aegif.nemaki.repository.type.TypeManager;
 
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
-import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionList;
@@ -46,7 +46,7 @@ public interface RepositoryService {
 	 * Returns information about the CMIS repository, the optional capabilities
 	 * it supports and its access control information if applicable.
 	 */
-	public abstract RepositoryInfo getRepositoryInfo();
+	public abstract NemakiRepositoryInfo getRepositoryInfo();
 
 	/**
 	 * Gets the CMIS types.

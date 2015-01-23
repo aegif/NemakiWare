@@ -19,10 +19,12 @@
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
-package jp.aegif.nemaki.repository.info;
+package jp.aegif.nemaki.repository.info.impl;
 
 import java.util.ArrayList;
 import java.util.List;
+
+import jp.aegif.nemaki.repository.info.NemakiRepositoryInfo;
 
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.RepositoryInfoImpl;
@@ -31,12 +33,11 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.RepositoryInfoImpl
  * Information about the CMIS repository, the optional capabilities it supports
  * and its access control information.
  */
-public class NemakiRepositoryInfoImpl extends RepositoryInfoImpl {
+public class NemakiRepositoryInfoImpl extends RepositoryInfoImpl implements NemakiRepositoryInfo{
 
 	private static final long serialVersionUID = -8027732136814092210L;
 	//Custom info property
 	private String nameSpace;
-	
 	
 	public void setup(){
 		//Set changesOnType property
@@ -46,7 +47,7 @@ public class NemakiRepositoryInfoImpl extends RepositoryInfoImpl {
 		setChangesOnType(baseTypes);
 	}
 
-	
+	@Override
 	public String getNameSpace() {
 		return nameSpace;
 	}

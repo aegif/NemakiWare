@@ -37,7 +37,7 @@ import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.VersionSeries;
-import jp.aegif.nemaki.repository.info.NemakiRepositoryInfoImpl;
+import jp.aegif.nemaki.repository.info.NemakiRepositoryInfo;
 import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.cmis.PermissionService;
@@ -95,7 +95,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 	private TypeManager typeManager;
 	private ContentService contentService;
 	private PermissionService permissionService;
-	private NemakiRepositoryInfoImpl repositoryInfo;
+	private NemakiRepositoryInfo repositoryInfo;
 	private PrincipalService principalService;
 	private PropertyUtil propertyUtil;
 
@@ -1181,7 +1181,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 		this.permissionService = permissionService;
 	}
 
-	public void setRepositoryInfo(NemakiRepositoryInfoImpl repositoryInfo) {
+	public void setRepositoryInfo(NemakiRepositoryInfo repositoryInfo) {
 		this.repositoryInfo = repositoryInfo;
 	}
 

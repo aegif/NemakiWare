@@ -4,6 +4,8 @@ import java.util.HashMap;
 
 import javax.servlet.ServletContext;
 
+import jp.aegif.nemaki.repository.factory.NemakiCmisServiceFactory;
+
 import org.apache.chemistry.opencmis.server.impl.CmisRepositoryContextListener;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.InitializingBean;

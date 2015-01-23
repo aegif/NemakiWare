@@ -25,6 +25,8 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 
+import javax.annotation.PostConstruct;
+
 import jp.aegif.nemaki.util.NemakiPropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
@@ -36,16 +38,15 @@ import org.apache.commons.logging.LogFactory;
  */
 public class RepositoryMap {
 
-	private final Map<String, NemakiRepository> repositories;
+	private Map<String, NemakiRepository> repositories;
 	private String mainRepositoryId;
 	private NemakiPropertyManager propertyManager;
 
 	private static final Log log = LogFactory
 			.getLog(RepositoryMap.class);
 	
-	public RepositoryMap(NemakiPropertyManager propertyManager) {
-		setPropertyManager(propertyManager);
-		
+	@PostConstruct
+	public void init() {
 		repositories = new HashMap<String, NemakiRepository>();
 		new HashMap<String, String>();
 

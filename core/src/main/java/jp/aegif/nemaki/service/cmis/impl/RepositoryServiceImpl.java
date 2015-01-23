@@ -32,7 +32,7 @@ import jp.aegif.nemaki.model.NemakiPropertyDefinition;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
-import jp.aegif.nemaki.repository.info.NemakiRepositoryInfoImpl;
+import jp.aegif.nemaki.repository.info.NemakiRepositoryInfo;
 import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.cmis.RepositoryService;
@@ -55,7 +55,7 @@ import org.springframework.beans.factory.InitializingBean;
 public class RepositoryServiceImpl implements RepositoryService,
 		InitializingBean {
 
-	private NemakiRepositoryInfoImpl repositoryInfo;
+	private NemakiRepositoryInfo repositoryInfo;
 	private TypeManager typeManager;
 	private TypeService typeService;
 	private ContentService contentService;
@@ -73,7 +73,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 	}
 
 	@Override
-	public NemakiRepositoryInfoImpl getRepositoryInfo() {
+	public NemakiRepositoryInfo getRepositoryInfo() {
 		repositoryInfo.setLatestChangeLogToken(contentService.getLatestChangeToken());
 		return repositoryInfo;
 	}
@@ -337,7 +337,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 	public void afterPropertiesSet() throws Exception {
 	}
 
-	public void setRepositoryInfo(NemakiRepositoryInfoImpl repositoryInfo) {
+	public void setRepositoryInfo(NemakiRepositoryInfo repositoryInfo) {
 		this.repositoryInfo = repositoryInfo;
 	}
 

@@ -24,6 +24,7 @@ package jp.aegif.nemaki.repository;
 import java.math.BigInteger;
 import java.util.List;
 
+import jp.aegif.nemaki.repository.factory.NemakiCmisService;
 import jp.aegif.nemaki.service.cmis.AclService;
 import jp.aegif.nemaki.service.cmis.DiscoveryService;
 import jp.aegif.nemaki.service.cmis.NavigationService;

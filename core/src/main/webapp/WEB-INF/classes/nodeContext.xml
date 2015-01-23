@@ -15,11 +15,6 @@
 		<property name="target">
 			<ref bean="contentService" />
 		</property>
-		<property name="interceptorNames">
-			<list>
-				<value>debugInterceptor</value>
-			</list>
-		</property>
 	</bean>
 	<bean id="contentService" class="jp.aegif.nemaki.service.node.impl.ContentServiceImpl">
 		<property name="contentDaoService">
@@ -48,11 +43,6 @@
 		<property name="target">
 			<ref bean="principalService" />
 		</property>
-		<property name="interceptorNames">
-			<list>
-				<value>debugInterceptor</value>
-			</list>
-		</property>
 	</bean>
 	<bean id="principalService" class="jp.aegif.nemaki.service.node.impl.PrincipalServiceImpl">
 		<property name="principalDaoService">
@@ -74,11 +64,6 @@
 		</property>
 		<property name="target">
 			<ref bean="typeService" />
-		</property>
-		<property name="interceptorNames">
-			<list>
-				<value>debugInterceptor</value>
-			</list>
 		</property>
 	</bean>
 	<bean id="typeService" class="jp.aegif.nemaki.service.node.impl.TypeServiceImpl">
