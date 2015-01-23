@@ -8,13 +8,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map.Entry;
 
+import jp.aegif.nemaki.repository.info.NemakiRepositoryInfo;
 import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
-import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.CapabilityOrderBy;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
@@ -30,7 +30,7 @@ public class SortUtil {
 	private static final Log log = LogFactory.getLog(SortUtil.class);
 
 	private TypeManager typeManager;
-	private RepositoryInfo repositoryInfo;
+	private NemakiRepositoryInfo repositoryInfo;
 	private NemakiPropertyManager propertyManager;
 
 	@SuppressWarnings("unchecked")
@@ -241,7 +241,7 @@ public class SortUtil {
 		this.typeManager = typeManager;
 	}
 
-	public void setRepositoryInfo(RepositoryInfo repositoryInfo) {
+	public void setRepositoryInfo(NemakiRepositoryInfo repositoryInfo) {
 		this.repositoryInfo = repositoryInfo;
 	}
 

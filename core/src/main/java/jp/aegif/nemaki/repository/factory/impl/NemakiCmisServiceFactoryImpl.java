@@ -19,24 +19,28 @@
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
-package jp.aegif.nemaki.repository;
+package jp.aegif.nemaki.repository.factory.impl;
 
 import java.math.BigInteger;
 import java.util.Map;
 
+import jp.aegif.nemaki.repository.NemakiRepository;
+import jp.aegif.nemaki.repository.RepositoryMap;
+import jp.aegif.nemaki.repository.factory.NemakiCmisService;
 import jp.aegif.nemaki.service.cmis.AuthenticationService;
 import jp.aegif.nemaki.util.constant.NemakiConstant;
 
 import org.apache.chemistry.opencmis.commons.impl.server.AbstractServiceFactory;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.server.CmisService;
+import org.apache.chemistry.opencmis.commons.server.CmisServiceFactory;
 import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
 import org.apache.chemistry.opencmis.server.support.CmisServiceWrapper;
 
 /**
  * Service factory class, specified in repository.properties.
  */
-public class NemakiCmisServiceFactory extends AbstractServiceFactory {
+public class NemakiCmisServiceFactoryImpl extends AbstractServiceFactory implements CmisServiceFactory{
 
 	private static final BigInteger DEFAULT_MAX_ITEMS_TYPES = BigInteger
 			.valueOf(50);
@@ -51,7 +55,7 @@ public class NemakiCmisServiceFactory extends AbstractServiceFactory {
 
 	private AuthenticationService authenticationService;
 
-	public NemakiCmisServiceFactory(){
+	public NemakiCmisServiceFactoryImpl(){
 		super();
 	}
 

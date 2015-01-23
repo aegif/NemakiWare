@@ -21,4 +21,13 @@
 			</list>
 		</property>
 	</bean>
+	
+	<!-- Property Manager -->
+    <bean id="nemakiPropertyManager" class="jp.aegif.nemaki.util.NemakiPropertyManager">
+        <property name="nemakiProperties" ref="propertyConfigurer" />
+    </bean>
+
+    <bean id="propertyUtil" class="jp.aegif.nemaki.util.PropertyUtil">
+        <property name="propertyManager" ref="nemakiPropertyManager" />
+    </bean>
 </beans>

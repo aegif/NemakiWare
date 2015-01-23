@@ -6,29 +6,26 @@
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:aop="http://www.springframework.org/schema/aop"
     xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
 
-
-    <!-- Interceptor for Debugging -->
-    <bean id="debugInterceptor" class="jp.aegif.nemaki.spring.DebugInterceptor">
-    </bean>
-
-    <!-- Property Manager -->
-    <bean id="nemakiPropertyManager" class="jp.aegif.nemaki.util.NemakiPropertyManager">
-        <property name="nemakiProperties" ref="propertyConfigurer" />
-    </bean>
-
-    <bean id="propertyUtil" class="jp.aegif.nemaki.util.PropertyUtil">
-        <property name="propertyManager" ref="nemakiPropertyManager" />
-    </bean>
-
     <!-- CMIS Repository Beans -->
-    <bean id="CmisLifecycleBean" class="jp.aegif.nemaki.repository.CmisLifecycleBean">
-        <property name="cmisServiceFactory" ref="nemakiCmisServiceFactory" />
+    <bean id="CmisLifecycleBean" class="jp.aegif.nemaki.repository.CmisLifecycleBean" >
+        <property name="cmisServiceFactory" ref="NemakiCmisServiceFactory" />
     </bean>
 
     <bean id="requestDurationCache" class="jp.aegif.nemaki.repository.RequestDurationCacheBean">
     </bean>
 
-    <bean id="nemakiCmisServiceFactory" class="jp.aegif.nemaki.repository.NemakiCmisServiceFactory">
+	<bean id="NemakiCmisServiceFactory" class="org.springframework.aop.framework.ProxyFactoryBean">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.repository.factory.NemakiCmisServiceFactory</value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="nemakiCmisServiceFactory" />
+        </property>
+    </bean>
+
+    <bean id="nemakiCmisServiceFactory" class="jp.aegif.nemaki.repository.factory.impl.NemakiCmisServiceFactoryImpl">
         <property name="nemakiRepository">
             <ref bean="nemakiRepository" />
         </property>
@@ -40,14 +37,25 @@
         </property>
     </bean>
     
-    <bean id="repositoryMap" class="jp.aegif.nemaki.repository.RepositoryMap">
-        <constructor-arg>
+    <bean id="repositoryMap" class="jp.aegif.nemaki.repository.RepositoryMap" init-method="init">
+        <property name="propertyManager">
             <ref bean="nemakiPropertyManager" />
-        </constructor-arg>
+        </property>
     </bean>
 
-    <bean id="RepositoryInfo"
-        class="jp.aegif.nemaki.repository.info.NemakiRepositoryInfoImpl"
+	<bean id="RepositoryInfo" class="org.springframework.aop.framework.ProxyFactoryBean">
+		 <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.repository.info.NemakiRepositoryInfo</value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="repositoryInfo" />
+        </property>
+	</bean>
+
+    <bean id="repositoryInfo"
+        class="jp.aegif.nemaki.repository.info.impl.NemakiRepositoryInfoImpl"
         init-method="setup">
         <property name="id">
             <value>${cmis.repository.main}</value>
@@ -95,19 +103,20 @@
             <value>true</value>
         </property>
     </bean>
-
+ 
     <bean id="capabilities"
-        class="jp.aegif.nemaki.repository.info.NemakiCapabilitiesImpl">
-        <constructor-arg>
+        class="jp.aegif.nemaki.repository.info.impl.NemakiCapabilitiesImpl" init-method="init">
+        <property name="propertyManager">
             <ref bean="nemakiPropertyManager" />
-        </constructor-arg>
+        </property>
     </bean>
 
     <bean id="aclCapabilities"
-        class="jp.aegif.nemaki.repository.info.NemakiAclCapabilitiesDataImpl">
-        <constructor-arg>
+        class="jp.aegif.nemaki.repository.info.impl.NemakiAclCapabilitiesDataImpl"
+        init-method="init">
+        <property name="propertyUtil">
             <ref bean="propertyUtil" />
-        </constructor-arg>
+        </property>
     </bean>
 
     <bean id="TypeManager" class="org.springframework.aop.framework.ProxyFactoryBean">
@@ -120,14 +129,8 @@
         <property name="target">
             <ref bean="typeManager" />
         </property>
-        <property name="interceptorNames">
-            <list>
-                <value>debugInterceptor</value>
-            </list>
-        </property>
     </bean>
-    <bean id="typeManager" class="jp.aegif.nemaki.repository.type.impl.TypeManagerImpl"
-        init-method="init" depends-on="typeService">
+    <bean id="typeManager" class="jp.aegif.nemaki.repository.type.impl.TypeManagerImpl" init-method="init" depends-on="typeService">
         <property name="typeService">
             <ref bean="TypeService" />
         </property>
@@ -175,11 +178,6 @@
         <property name="target">
             <ref bean="repositoryService" />
         </property>
-        <property name="interceptorNames">
-            <list>
-                <value>debugInterceptor</value>
-            </list>
-        </property>
     </bean>
     <bean id="repositoryService"
         class="jp.aegif.nemaki.service.cmis.impl.RepositoryServiceImpl">
@@ -210,11 +208,6 @@
         <property name="target">
             <ref bean="navigationService" />
         </property>
-        <property name="interceptorNames">
-            <list>
-                <value>debugInterceptor</value>
-            </list>
-        </property>
     </bean>
     <bean id="navigationService"
         class="jp.aegif.nemaki.service.cmis.impl.NavigationServiceImpl">
@@ -236,8 +229,8 @@
     </bean>
     
     <bean id="sortUtil" class="jp.aegif.nemaki.util.SortUtil">
-        <property name="typeManager" ref="TypeManager" />
-        <property name="repositoryInfo" ref="RepositoryInfo" />
+    	<property name="typeManager" ref="TypeManager" />
+    	<property name="repositoryInfo" ref="RepositoryInfo" />
         <property name="propertyManager" ref="nemakiPropertyManager" />
     </bean>
 
@@ -250,11 +243,6 @@
         </property>
         <property name="target">
             <ref bean="objectService" />
-        </property>
-        <property name="interceptorNames">
-            <list>
-                <value>debugInterceptor</value>
-            </list>
         </property>
     </bean>
     <bean id="objectService" class="jp.aegif.nemaki.service.cmis.impl.ObjectServiceImpl">
@@ -288,11 +276,6 @@
         <property name="target">
             <ref bean="discoveryService" />
         </property>
-        <property name="interceptorNames">
-            <list>
-                <value>debugInterceptor</value>
-            </list>
-        </property>
     </bean>
     <bean id="discoveryService"
         class="jp.aegif.nemaki.service.cmis.impl.DiscoveryServiceImpl">
@@ -320,11 +303,6 @@
         <property name="target">
             <ref bean="versioningService" />
         </property>
-        <property name="interceptorNames">
-            <list>
-                <value>debugInterceptor</value>
-            </list>
-        </property>
     </bean>
     <bean id="versioningService"
         class="jp.aegif.nemaki.service.cmis.impl.VersioningServiceImpl">
@@ -348,11 +326,6 @@
         </property>
         <property name="target">
             <ref bean="relationshipService" />
-        </property>
-        <property name="interceptorNames">
-            <list>
-                <value>debugInterceptor</value>
-            </list>
         </property>
     </bean>
 
@@ -383,11 +356,6 @@
         <property name="target">
             <ref bean="policyService" />
         </property>
-        <property name="interceptorNames">
-            <list>
-                <value>debugInterceptor</value>
-            </list>
-        </property>
     </bean>
     <bean id="policyService" class="jp.aegif.nemaki.service.cmis.impl.PolicyServiceImpl">
         <property name="contentService">
@@ -409,11 +377,6 @@
         </property>
         <property name="target">
             <ref bean="aclService" />
-        </property>
-        <property name="interceptorNames">
-            <list>
-                <value>debugInterceptor</value>
-            </list>
         </property>
     </bean>
 
@@ -444,11 +407,6 @@
         <property name="target">
             <ref bean="authenticationService" />
         </property>
-        <property name="interceptorNames">
-            <list>
-                <value>debugInterceptor</value>
-            </list>
-        </property>
     </bean>
     <bean id="authenticationService"
         class="jp.aegif.nemaki.service.cmis.impl.AuthenticationServiceImpl">
@@ -466,11 +424,6 @@
         </property>
         <property name="target">
             <ref bean="compileObjectService" />
-        </property>
-        <property name="interceptorNames">
-            <list>
-                <value>debugInterceptor</value>
-            </list>
         </property>
     </bean>
     <bean id="compileObjectService"
@@ -505,11 +458,6 @@
         <property name="target">
             <ref bean="permissionService" />
         </property>
-        <property name="interceptorNames">
-            <list>
-                <value>debugInterceptor</value>
-            </list>
-        </property>
     </bean>
     <bean id="permissionService"
         class="jp.aegif.nemaki.service.cmis.impl.PermissionServiceImpl">
@@ -539,11 +487,6 @@
         </property>
         <property name="target">
             <ref bean="exceptionService" />
-        </property>
-        <property name="interceptorNames">
-            <list>
-                <value>debugInterceptor</value>
-            </list>
         </property>
     </bean>
     <bean id="exceptionService"
@@ -578,11 +521,6 @@
         </property>
         <property name="target">
             <ref bean="queryProcessor" />
-        </property>
-        <property name="interceptorNames">
-            <list>
-                <value>debugInterceptor</value>
-            </list>
         </property>
     </bean>
 
@@ -661,16 +599,12 @@
 		<property name="target">
 			<ref bean="jodRenditionManager" />
 		</property>
-		<property name="interceptorNames">
-			<list>
-				<value>debugInterceptor</value>
-			</list>
-		</property>
 	</bean>
-	<bean id="jodRenditionManager" class="jp.aegif.nemaki.service.rendition.impl.JodRenditionManagerImpl">
-		<constructor-arg>
+	<bean id="jodRenditionManager" class="jp.aegif.nemaki.service.rendition.impl.JodRenditionManagerImpl"
+	 init-method="init">
+        <property name="propertyUtil">
             <ref bean="propertyUtil" />
-        </constructor-arg>
+        </property>
 	</bean>
 
 </beans>

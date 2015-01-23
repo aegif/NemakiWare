@@ -33,6 +33,7 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.VersionSeries;
+import jp.aegif.nemaki.repository.info.NemakiRepositoryInfo;
 import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.cmis.PermissionService;
 import jp.aegif.nemaki.service.node.ContentService;
@@ -63,7 +64,7 @@ public class PermissionServiceImpl implements PermissionService {
 	private PrincipalService principalService;
 	private ContentService contentService;
 	private TypeManager typeManager;
-	private RepositoryInfo repositoryInfo;
+	private NemakiRepositoryInfo repositoryInfo;
 	private PropertyUtil propertyUtil;
 
 
@@ -404,7 +405,7 @@ public class PermissionServiceImpl implements PermissionService {
 		this.typeManager = typeManager;
 	}
 
-	public void setRepositoryInfo(RepositoryInfo repositoryInfo) {
+	public void setRepositoryInfo(NemakiRepositoryInfo repositoryInfo) {
 		this.repositoryInfo = repositoryInfo;
 	}
 

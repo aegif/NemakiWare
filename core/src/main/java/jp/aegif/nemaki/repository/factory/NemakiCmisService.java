@@ -19,11 +19,14 @@
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
-package jp.aegif.nemaki.repository;
+package jp.aegif.nemaki.repository.factory;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
+
+import jp.aegif.nemaki.repository.NemakiRepository;
+import jp.aegif.nemaki.repository.RepositoryMap;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Acl;

@@ -113,6 +113,12 @@
 		</dependency>
 
 		<dependency>
+			<groupId>org.aspectj</groupId>
+			<artifactId>aspectjweaver</artifactId>
+			<version>1.8.4</version>
+		</dependency>
+
+		<dependency>
 			<groupId>org.mindrot</groupId>
 			<artifactId>jbcrypt</artifactId>
 			<version>0.3m</version>
@@ -274,12 +280,12 @@
 						<scanTarget>src/main/webapp</scanTarget>
 					</scanTargets>
 
-					<systemProperties>
+					<!-- <systemProperties>
 						<systemProperty>
 							<name>log4j.configuration</name>
 							<value>file:///${basedir}/log4j-jetty.properties</value>
 						</systemProperty>
-					</systemProperties>
+					</systemProperties> -->
 				</configuration>
 			</plugin>
 			<plugin>

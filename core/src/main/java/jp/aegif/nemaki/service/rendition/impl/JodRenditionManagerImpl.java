@@ -10,6 +10,8 @@ import java.math.BigInteger;
 import java.util.List;
 import java.util.Map;
 
+import javax.annotation.PostConstruct;
+
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.commons.collections.CollectionUtils;
@@ -18,10 +20,8 @@ import org.apache.commons.logging.LogFactory;
 import org.artofsolving.jodconverter.OfficeDocumentConverter;
 import org.artofsolving.jodconverter.document.DefaultDocumentFormatRegistry;
 import org.artofsolving.jodconverter.document.DocumentFormat;
-import org.artofsolving.jodconverter.document.DocumentFormatRegistry;
 import org.artofsolving.jodconverter.office.DefaultOfficeManagerConfiguration;
 import org.artofsolving.jodconverter.office.OfficeManager;
-import org.codehaus.jackson.format.DataFormatDetector;
 
 import jp.aegif.nemaki.service.rendition.RenditionManager;
 import jp.aegif.nemaki.util.PropertyUtil;
@@ -35,13 +35,9 @@ public class JodRenditionManagerImpl implements RenditionManager {
 	private static final Log log = LogFactory
 			.getLog(JodRenditionManagerImpl.class);
 	
-	public JodRenditionManagerImpl(){
-		
-	}
 	
-	public JodRenditionManagerImpl(PropertyUtil propertyUtil){
-		setPropertyUtil(propertyUtil);
-		
+	@PostConstruct
+	public void init(){
 		registry = new DefaultDocumentFormatRegistry();
 
 		String definitionFile = "";
@@ -177,7 +173,6 @@ public class JodRenditionManagerImpl implements RenditionManager {
 		DocumentFormat df = registry.getFormatByMediaType(mediatype);
 		return df != null;
 	}
-	
 
 	public void setPropertyUtil(PropertyUtil propertyUtil) {
 		this.propertyUtil = propertyUtil;

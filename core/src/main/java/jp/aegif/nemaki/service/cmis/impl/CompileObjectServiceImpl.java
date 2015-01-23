@@ -44,7 +44,8 @@ import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
-import jp.aegif.nemaki.repository.info.NemakiRepositoryInfoImpl;
+import jp.aegif.nemaki.repository.info.NemakiRepositoryInfo;
+import jp.aegif.nemaki.repository.info.impl.NemakiRepositoryInfoImpl;
 import jp.aegif.nemaki.repository.type.TypeManager;
 import jp.aegif.nemaki.service.cmis.CompileObjectService;
 import jp.aegif.nemaki.service.cmis.PermissionService;
@@ -99,7 +100,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	private static final Log log = LogFactory
 			.getLog(CompileObjectServiceImpl.class);
 
-	private NemakiRepositoryInfoImpl repositoryInfo;
+	private NemakiRepositoryInfo repositoryInfo;
 	private RepositoryService repositoryService;
 	private ContentService contentService;
 	private PermissionService permissionService;
@@ -1290,7 +1291,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		return null;
 	}
 
-	public void setRepositoryInfo(NemakiRepositoryInfoImpl repositoryInfo) {
+	public void setRepositoryInfo(NemakiRepositoryInfo repositoryInfo) {
 		this.repositoryInfo = repositoryInfo;
 	}
 

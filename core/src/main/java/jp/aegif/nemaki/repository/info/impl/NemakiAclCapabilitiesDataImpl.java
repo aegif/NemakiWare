@@ -19,20 +19,18 @@
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
-package jp.aegif.nemaki.repository.info;
+package jp.aegif.nemaki.repository.info.impl;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Map.Entry;
 
+import javax.annotation.PostConstruct;
+
 import jp.aegif.nemaki.model.NemakiPermissionDefinition;
-import jp.aegif.nemaki.util.NemakiPropertyManager;
 import jp.aegif.nemaki.util.PropertyUtil;
-import jp.aegif.nemaki.util.YamlManager;
-import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
@@ -52,13 +50,8 @@ public class NemakiAclCapabilitiesDataImpl extends AclCapabilitiesDataImpl {
 
 	private PropertyUtil propertyUtil;
 	
-	public NemakiAclCapabilitiesDataImpl() {
-		
-	}
-	
-	public NemakiAclCapabilitiesDataImpl(PropertyUtil propertyUtil) {
-		setPropertyUtil(propertyUtil);
-		
+	@PostConstruct
+	public void init(){
 		setSupportedPermissions(SupportedPermissions.BOTH);
 		setAclPropagation(AclPropagation.PROPAGATE);
 		setPermissionDefinitionData(buildPermissionDefinitions());

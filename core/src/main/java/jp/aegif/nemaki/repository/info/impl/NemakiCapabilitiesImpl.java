@@ -19,11 +19,13 @@
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
-package jp.aegif.nemaki.repository.info;
+package jp.aegif.nemaki.repository.info.impl;
 
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+
+import javax.annotation.PostConstruct;
 
 import jp.aegif.nemaki.util.NemakiPropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
@@ -47,9 +49,8 @@ public class NemakiCapabilitiesImpl extends RepositoryCapabilitiesImpl {
 
 	private NemakiPropertyManager pm;
 	
-	public NemakiCapabilitiesImpl(NemakiPropertyManager propertyManager) {
-		setPropertyManager(propertyManager);
-		
+	@PostConstruct
+	public void init() {
 		//////////////////////////////////////////////////////////////////
 		// Navigation Capabilities
 		//////////////////////////////////////////////////////////////////
