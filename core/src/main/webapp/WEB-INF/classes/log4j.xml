@@ -27,8 +27,9 @@
 			<param name="ConversionPattern" value="%d{ISO8601} %-5p \[%t\] : %m%n" />
 		</layout>
 	</appender>
-	
-	<logger name="jp.aegif.nemaki.spring.LoggingAspect">
+
+	<!-- <logger name="jp.aegif.nemaki.spring.LoggingAspect"> -->
+	<logger name="${log.aspect.default}">
 		<level value ="info" />
 		<appender-ref ref="stdout" />
 		<appender-ref ref="dailyRollingFile" />
