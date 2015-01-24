@@ -21,8 +21,8 @@
 		<property name="nonCachedContentDaoService">
 			<ref bean="nonCachedContentDaoService" />
 		</property>
-		<property name="requestDurationCache">
-			<ref bean="requestDurationCache" />
+		<property name="nemakiCache">
+			<ref bean="nemakiCache" />
 		</property>
 	</bean>
 	
@@ -39,6 +39,9 @@
 	<bean id="principalDaoService" class="jp.aegif.nemaki.service.dao.impl.PrincipalDaoServiceImpl">
 		<property name="nonCachedPrincipalDaoService">
 			<ref bean="nonCachedPrincipalDaoService" />
+		</property>
+		<property name="nemakiCache">
+			<ref bean="nemakiCache" />
 		</property>
 	</bean>
 	

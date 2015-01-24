@@ -25,6 +25,8 @@ import java.util.Map;
 
 import javax.servlet.http.HttpServletRequest;
 
+import jp.aegif.nemaki.service.cache.NemakiCache;
+
 import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
 import org.apache.chemistry.opencmis.server.shared.BasicAuthCallContextHandler;
 import org.apache.commons.logging.Log;
@@ -53,16 +55,8 @@ public class DefaultContextHandler extends BasicAuthCallContextHandler {
 	 */
 	@Override
 	public Map<String, String> getCallContextMap(HttpServletRequest request) {
-
 		// Call superclass to get user and password via basic authentication.
 		Map<String, String> ctxMap = super.getCallContextMap(request);
-
-
-		//clear latest change cache
-		WebApplicationContext context = WebApplicationContextUtils.getWebApplicationContext(request.getSession().getServletContext());
-		RequestDurationCacheBean rdc = context.getBean("requestDurationCache", RequestDurationCacheBean.class);
-		rdc.getLatestChangeCache().clear();
-
 		return ctxMap;
 	}
 }

@@ -43,4 +43,6 @@ public interface NemakiConstant {
 	final String PRINCIPAL_ANONYMOUS ="CMIS_ANONYMOUS";
 
 	final String CALL_CONTEXT_IS_ADMIN = "isAdmin";
+	
+	final String TOKEN_CACHE_LATEST_CHANGE_TOKEN = "lc";
 }
