@@ -7,7 +7,7 @@
 	
 	<aop:config>
   		<aop:aspect id="aspect" ref="logAdvice">
-  			<aop:pointcut id="pointcut-default" expression="execution(* jp.aegif.nemaki..*Impl.*(..))"/>
+  			<aop:pointcut id="pointcut-default" expression="${log.aspect.expression}"/>
   			<aop:around pointcut-ref="pointcut-default" method="aroundMethod" />
   		</aop:aspect>
 	</aop:config>
