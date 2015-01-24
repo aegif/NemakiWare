@@ -5,8 +5,6 @@ import net.sf.ehcache.Cache;
 public interface NemakiCache {
 	public Cache getTypeCache();
 	public Cache getContentCache();
-	public Cache getDocumentCache();
-	public Cache getFolderCache();
 	public Cache getVersionSeriesCache();
 	public Cache getAttachmentCache();
 	public Cache getChangeEventCache();

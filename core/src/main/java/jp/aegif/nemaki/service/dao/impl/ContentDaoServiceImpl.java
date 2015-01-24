@@ -230,18 +230,22 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Document getDocument(String objectId) {
-		Cache documentCache = nemakiCache.getDocumentCache();
-		Element v = documentCache.get(objectId);
+		Cache contentCache = nemakiCache.getContentCache();
+		Element v = contentCache.get(objectId);
 
 		if (v != null) {
-			return (Document) v.getObjectValue();
+			try{
+				return (Document) v.getObjectValue();
+			}catch(ClassCastException e){
+				throw e;
+			}
 		}
 
 		Document doc = nonCachedContentDaoService.getDocument(objectId);
 		if (doc == null) {
 			return null;
 		} else {
-			documentCache.put(new Element(objectId, doc));
+			contentCache.put(new Element(objectId, doc));
 			return doc;
 		}
 	}
@@ -290,11 +294,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Folder getFolder(String objectId) {
-		Cache folderCache = nemakiCache.getFolderCache();
-		Element v = folderCache.get(objectId);
+		Cache contentCache = nemakiCache.getContentCache();
+		Element v = contentCache.get(objectId);
 
 		if (v != null) {
-			return (Folder) v.getObjectValue();
+			try{
+				return (Folder) v.getObjectValue();
+			}catch(ClassCastException e){
+				throw e;
+			}
 		}
 
 		Folder folder = nonCachedContentDaoService.getFolder(objectId);
@@ -302,7 +310,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		if (folder == null) {
 			return null;
 		} else {
-			folderCache.put(new Element(objectId, folder));
+			contentCache.put(new Element(objectId, folder));
 			return folder;
 		}
 	}
@@ -355,8 +363,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Document create(Document document) {
 		Document d = nonCachedContentDaoService.create(document);
-		Cache documentCache = nemakiCache.getDocumentCache();
-		documentCache.put(new Element(d.getId(), d));
+		nemakiCache.getContentCache().put(new Element(d.getId(), d));
 		return d;
 	}
 
@@ -380,8 +387,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Folder create(Folder folder) {
 		Folder created = nonCachedContentDaoService.create(folder);
-		Cache folderCache = nemakiCache.getFolderCache();
-		folderCache.put(new Element(created.getId(), created));
+		nemakiCache.getContentCache().put(new Element(created.getId(), created));
 		return created;
 	}
 
@@ -405,8 +411,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Document update(Document document) {
 		Document updated = nonCachedContentDaoService.update(document);
-		Cache documentCache = nemakiCache.getDocumentCache();
-		documentCache.put(new Element(updated.getId(), updated));
+		nemakiCache.getContentCache().put(new Element(updated.getId(), updated));
 		return updated;
 	}
 
@@ -422,8 +427,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Folder update(Folder folder) {
 		Folder updated = nonCachedContentDaoService.update(folder);
-		Cache folderCache = nemakiCache.getFolderCache();
-		folderCache.put(new Element(updated.getId(), updated));
+		nemakiCache.getContentCache().put(new Element(updated.getId(), updated));
 		return updated;
 	}
 
@@ -451,24 +455,18 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 		// remove from cache
 		String id = objectId;
-		Cache folderCache = nemakiCache.getFolderCache();
 		Cache contentCache = nemakiCache.getContentCache();
-		Cache documentCache = nemakiCache.getDocumentCache();
 		Cache versionSeriesCache = nemakiCache.getVersionSeriesCache();
 		Cache attachmentCache = nemakiCache.getAttachmentCache();
 
 		contentCache.remove(id);
-		folderCache.remove(id);
 
 		if (nb.isDocument()) {
 			Document d = this.getDocument(objectId);
 			// we can delete versionSeries or not?
 			versionSeriesCache.remove(d.getVersionSeriesId());
 			attachmentCache.remove(d.getAttachmentNodeId());
-			documentCache.remove(id);
-		}
-
-		if (nb.isAttachment()) {
+		}else if (nb.isAttachment()) {
 			attachmentCache.remove(id);
 		}
 	}
