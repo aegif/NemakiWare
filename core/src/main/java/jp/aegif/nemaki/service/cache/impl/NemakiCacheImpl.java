@@ -9,8 +9,6 @@ public class NemakiCacheImpl implements NemakiCache{
 	private final CacheManager cacheManager;
 	private final String TYPE_CACHE = "typeCache";
 	private final String CONTENT_CACHE = "contentCache";
-	private final String DOCUMENT_CACHE = "documentCache";
-	private final String FOLDER_CACHE = "folderCache";
 	private final String VERSION_SERIES_CACHE = "versionSeriesCache";
 	private final String ATTACHMENTS_CACHE = "attachmentCache";
 	private final String CHANGE_EVENT_CACHE = "changeEventCache";
@@ -25,8 +23,6 @@ public class NemakiCacheImpl implements NemakiCache{
 		
 		cacheManager.addCache(new Cache(TYPE_CACHE, 1, false, false, 60 * 60, 60 * 60));
 		cacheManager.addCache(new Cache(CONTENT_CACHE, 10000, false, false, 60 * 60, 60 * 60));
-		cacheManager.addCache(new Cache(DOCUMENT_CACHE, 10000, false, false, 60 * 60, 60 * 60));
-		cacheManager.addCache(new Cache(FOLDER_CACHE, 10000, false, false, 60 * 60, 60 * 60));
 		cacheManager.addCache(new Cache(VERSION_SERIES_CACHE, 10000, false, false, 60 * 60, 60 * 60));
 		cacheManager.addCache(new Cache(ATTACHMENTS_CACHE, 10000, false, false, 60 * 60, 60 * 60));
 		cacheManager.addCache(new Cache(CHANGE_EVENT_CACHE, 10000, false, false, 60 * 60, 60 * 60));
@@ -45,16 +41,6 @@ public class NemakiCacheImpl implements NemakiCache{
 	@Override
 	public Cache getContentCache() {
 		return cacheManager.getCache(CONTENT_CACHE);
-	}
-
-	@Override
-	public Cache getDocumentCache() {
-		return cacheManager.getCache(DOCUMENT_CACHE);
-	}
-
-	@Override
-	public Cache getFolderCache() {
-		return cacheManager.getCache(FOLDER_CACHE);
 	}
 
 	@Override
