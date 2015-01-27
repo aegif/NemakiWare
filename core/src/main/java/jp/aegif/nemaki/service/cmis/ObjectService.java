@@ -24,8 +24,6 @@ package jp.aegif.nemaki.service.cmis;
 import java.math.BigInteger;
 import java.util.List;
 
-import jp.aegif.nemaki.model.Content;
-
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.AllowableActions;
 import org.apache.chemistry.opencmis.commons.data.BulkUpdateObjectIdAndChangeToken;
@@ -118,7 +116,7 @@ public interface ObjectService {
 	 * @param changeToken TODO
 	 * @return TODO
 	 */
-	public abstract Content updateProperties(CallContext callContext,
+	public abstract void updateProperties(CallContext callContext,
 			Holder<String> objectId, Properties properties, Holder<String> changeToken);
 
 	public abstract List<BulkUpdateObjectIdAndChangeToken> bulkUpdateProperties(CallContext callContext,

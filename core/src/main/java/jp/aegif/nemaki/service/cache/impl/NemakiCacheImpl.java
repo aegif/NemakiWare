@@ -1,12 +1,21 @@
 package jp.aegif.nemaki.service.cache.impl;
 
+import javax.annotation.PostConstruct;
 
 import net.sf.ehcache.Cache;
 import net.sf.ehcache.CacheManager;
+import jp.aegif.nemaki.service.cache.CustomCache;
 import jp.aegif.nemaki.service.cache.NemakiCache;
+import jp.aegif.nemaki.util.PropertyUtil;
+import jp.aegif.nemaki.util.constant.PropertyKey;
 
 public class NemakiCacheImpl implements NemakiCache{
+	private PropertyUtil propertyUtil;
+	private boolean cacheEnabled;
+	
 	private final CacheManager cacheManager;
+	private final String OBJECT_DATA_CACHE = "objectDataCache";
+	private final String PROPERTIES_CACHE = "propertisCache";
 	private final String TYPE_CACHE = "typeCache";
 	private final String CONTENT_CACHE = "contentCache";
 	private final String VERSION_SERIES_CACHE = "versionSeriesCache";
@@ -21,6 +30,8 @@ public class NemakiCacheImpl implements NemakiCache{
 	public NemakiCacheImpl() {
 		cacheManager = CacheManager.newInstance();
 		
+		cacheManager.addCache(new Cache(OBJECT_DATA_CACHE, 10000, false, false, 60 * 60, 60 * 60));
+		cacheManager.addCache(new Cache(PROPERTIES_CACHE, 10000, false, false, 60 * 60, 60 * 60));
 		cacheManager.addCache(new Cache(TYPE_CACHE, 1, false, false, 60 * 60, 60 * 60));
 		cacheManager.addCache(new Cache(CONTENT_CACHE, 10000, false, false, 60 * 60, 60 * 60));
 		cacheManager.addCache(new Cache(VERSION_SERIES_CACHE, 10000, false, false, 60 * 60, 60 * 60));
@@ -33,6 +44,23 @@ public class NemakiCacheImpl implements NemakiCache{
 		cacheManager.addCache(new Cache(GROUPS_CACHE, 10000, false, false, 60 * 60, 60 * 60));
 	}
 	
+	@PostConstruct
+	public void init(){
+		cacheEnabled = propertyUtil.getPropertyManager().readBoolean(PropertyKey.CACHE_CMIS_ENABLED);
+	}
+	
+	@Override
+	public CustomCache getObjectDataCache() {
+		CustomCache cc = new CustomCache(cacheEnabled);
+		cc.setCache(cacheManager.getCache(OBJECT_DATA_CACHE));
+		return cc; 
+	}
+
+	@Override
+	public Cache getPropertiesCache() {
+		return cacheManager.getCache(PROPERTIES_CACHE);
+	}
+
 	@Override
 	public Cache getTypeCache() {
 		return cacheManager.getCache(TYPE_CACHE);
@@ -83,4 +111,13 @@ public class NemakiCacheImpl implements NemakiCache{
 		return cacheManager.getCache(GROUPS_CACHE);
 	}
 
+	@Override
+	public void removeCmisCache(String objectId) {
+		getPropertiesCache().remove(objectId);
+		getObjectDataCache().remove(objectId);
+	}
+
+	public void setPropertyUtil(PropertyUtil propertyUtil) {
+		this.propertyUtil = propertyUtil;
+	}	
 }

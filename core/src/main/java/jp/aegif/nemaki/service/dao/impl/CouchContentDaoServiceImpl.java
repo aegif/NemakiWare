@@ -21,13 +21,9 @@
  ******************************************************************************/
 package jp.aegif.nemaki.service.dao.impl;
 
-import java.awt.image.BufferedImage;
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
-
-import javax.imageio.ImageIO;
 
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.AttachmentNode;
@@ -64,6 +60,7 @@ import jp.aegif.nemaki.service.db.CouchConnector;
 import jp.aegif.nemaki.util.constant.NodeType;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
@@ -74,8 +71,10 @@ import org.ektorp.CouchDbConnector;
 import org.ektorp.ViewQuery;
 import org.ektorp.ViewResult;
 import org.ektorp.ViewResult.Row;
-import org.json.simple.JSONObject;
 import org.springframework.stereotype.Component;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Dao Service implementation for CouchDB.
@@ -282,13 +281,41 @@ public class CouchContentDaoServiceImpl implements ContentDaoService {
 	public Content getContent(String objectId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("contentsById").key(objectId);
-		List<CouchContent> l = connector.queryView(query, CouchContent.class);
 
-		if (CollectionUtils.isEmpty(l)) {
+		ViewResult result = connector.queryView(query);
+		return convertJsonToEachBaeType(result);
+	}
+	
+	private Content convertJsonToEachBaeType(ViewResult result){
+		if(result.getRows().isEmpty()){
 			return null;
-		} else {
-			return l.get(0).convert();
+		}else{
+			Iterator<Row> iterator = result.getRows().iterator();
+			while(iterator.hasNext()){
+				ObjectMapper mapper = new ObjectMapper();
+				JsonNode jn = iterator.next().getValueAsNode();
+				String baseType = jn.path("type").textValue();
+				
+				if(BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)){
+					CouchDocument cd = mapper.convertValue(jn, CouchDocument.class);
+					return cd.convert();
+				}else if(BaseTypeId.CMIS_FOLDER.value().equals(baseType)){
+					CouchFolder cf = mapper.convertValue(jn, CouchFolder.class);
+					return cf.convert();
+				}else if(BaseTypeId.CMIS_POLICY.value().equals(baseType)){
+					CouchPolicy cp = mapper.convertValue(jn, CouchPolicy.class);
+					return cp.convert();
+				}else if(BaseTypeId.CMIS_RELATIONSHIP.value().equals(baseType)){
+					CouchRelationship cr = mapper.convertValue(jn, CouchRelationship.class);
+					return cr.convert();
+				}else if(BaseTypeId.CMIS_ITEM.value().equals(baseType)){
+					CouchItem ci = mapper.convertValue(jn, CouchItem.class);
+					return ci.convert();
+				}
+			}
 		}
+		
+		return null;
 	}
 
 	// TODO Use view
@@ -345,7 +372,7 @@ public class CouchContentDaoServiceImpl implements ContentDaoService {
 				.viewName("versionSeries").key(nodeId);
 		List<CouchVersionSeries> l = connector.queryView(query,
 				CouchVersionSeries.class);
-
+		
 		if (CollectionUtils.isEmpty(l)) {
 			return null;
 		} else {
@@ -470,12 +497,9 @@ public class CouchContentDaoServiceImpl implements ContentDaoService {
 		
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("childByName").key(new ViewKey(parentId,name));
-		List<CouchContent> list = connector
-				.queryView(query, CouchContent.class);
-
-		if (CollectionUtils.isEmpty(list))
-			return null;
-		return list.get(0).convert();
+		ViewResult result = connector.queryView(query);
+		
+		return convertJsonToEachBaeType(result);
 	}
 
 	@Override

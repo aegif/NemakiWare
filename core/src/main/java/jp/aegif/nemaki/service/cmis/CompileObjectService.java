@@ -23,7 +23,6 @@ package jp.aegif.nemaki.service.cmis;
 
 import java.math.BigInteger;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import jp.aegif.nemaki.model.Change;
@@ -32,27 +31,25 @@ import jp.aegif.nemaki.model.Content;
 import org.apache.chemistry.opencmis.commons.data.AllowableActions;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.data.ObjectList;
-import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
-import org.apache.chemistry.opencmis.commons.impl.server.ObjectInfoImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 
 public interface CompileObjectService {
 	public ObjectData compileObjectData(CallContext context,
 			Content content, String filter, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl, Map<String, String> aliases);
+			IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl);
 	
 	public <T> ObjectList compileObjectDataList(CallContext callContext,
 			List<T> contents, String filter, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl, BigInteger maxItems, BigInteger skipCount, boolean folderOnly, Map<String, String> aliases);
+			IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl, BigInteger maxItems, BigInteger skipCount, boolean folderOnly);
 	
 	public ObjectList compileChangeDataList(CallContext context, List<Change> changes,
 			Holder<String> changeLogToken, Boolean includeProperties, String filter,
 			Boolean includePolicyIds, Boolean includeAcl);
 	
-	public Properties compileProperties(CallContext callContext, Content content,
-			Set<String> filter, ObjectInfoImpl objectInfo);
+	public PropertiesImpl compileProperties(CallContext callContext, Content content);
 	
 	public AllowableActions compileAllowableActions(CallContext callContext,
 			Content content);

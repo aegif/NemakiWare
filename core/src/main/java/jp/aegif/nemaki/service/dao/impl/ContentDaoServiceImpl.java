@@ -38,7 +38,6 @@ import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
-import jp.aegif.nemaki.repository.RequestDurationCacheBean;
 import jp.aegif.nemaki.service.cache.NemakiCache;
 import jp.aegif.nemaki.service.dao.ContentDaoService;
 import jp.aegif.nemaki.util.constant.NemakiConstant;
@@ -264,9 +263,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		if (v != null) {
 			return (VersionSeries) v.getObjectValue();
 		}
-
 		VersionSeries vs = nonCachedContentDaoService.getVersionSeries(nodeId);
-
 		if (vs == null) {
 			return null;
 		} else {
@@ -332,7 +329,14 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Relationship getRelationship(String objectId) {
-		return nonCachedContentDaoService.getRelationship(objectId);
+		Cache cache = nemakiCache.getContentCache();
+		Element v = cache.get(objectId);
+		
+		if(v == null){
+			return (Relationship)v.getObjectValue();
+		}else{
+			return nonCachedContentDaoService.getRelationship(objectId);
+		}
 	}
 
 	@Override
@@ -394,18 +398,22 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Relationship create(Relationship relationship) {
 		Relationship created = nonCachedContentDaoService.create(relationship);
+		nemakiCache.getContentCache().put(new Element(created.getId(), created));
 		return created;
 	}
 
 	@Override
 	public Policy create(Policy policy) {
 		Policy created = nonCachedContentDaoService.create(policy);
+		nemakiCache.getContentCache().put(new Element(created.getId(), created));
 		return created;
 	}
 
 	@Override
 	public Item create(Item item) {
-		return nonCachedContentDaoService.create(item);
+		Item created = nonCachedContentDaoService.create(item);
+		nemakiCache.getContentCache().put(new Element(created.getId(), created));
+		return created;
 	}
 
 	@Override
@@ -433,17 +441,23 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Relationship update(Relationship relationship) {
-		return nonCachedContentDaoService.update(relationship);
+		Relationship updated = nonCachedContentDaoService.update(relationship);
+		nemakiCache.getContentCache().put(new Element(updated.getId(), updated));
+		return updated;
 	}
 
 	@Override
 	public Policy update(Policy policy) {
-		return nonCachedContentDaoService.update(policy);
+		Policy updated = nonCachedContentDaoService.update(policy);
+		nemakiCache.getContentCache().put(new Element(updated.getId(), updated));
+		return updated;
 	}
 
 	@Override
 	public Item update(Item item) {
-		return nonCachedContentDaoService.update(item);
+		Item updated = nonCachedContentDaoService.update(item);
+		nemakiCache.getContentCache().put(new Element(updated.getId(), updated));
+		return updated;
 	}
 
 	@Override
@@ -455,20 +469,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 		// remove from cache
 		String id = objectId;
-		Cache contentCache = nemakiCache.getContentCache();
-		Cache versionSeriesCache = nemakiCache.getVersionSeriesCache();
-		Cache attachmentCache = nemakiCache.getAttachmentCache();
-
-		contentCache.remove(id);
 
 		if (nb.isDocument()) {
 			Document d = this.getDocument(objectId);
 			// we can delete versionSeries or not?
-			versionSeriesCache.remove(d.getVersionSeriesId());
-			attachmentCache.remove(d.getAttachmentNodeId());
+			nemakiCache.getVersionSeriesCache().remove(d.getVersionSeriesId());
+			nemakiCache.getAttachmentCache().remove(d.getAttachmentNodeId());
 		}else if (nb.isAttachment()) {
-			attachmentCache.remove(id);
+			nemakiCache.getAttachmentCache().remove(id);
 		}
+
+		 nemakiCache.getContentCache().remove(id);
 	}
 
 	// ///////////////////////////////////////

@@ -37,6 +37,7 @@ import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.query.solr.SolrUtil;
 import jp.aegif.nemaki.repository.type.TypeManager;
+import jp.aegif.nemaki.service.cache.NemakiCache;
 import jp.aegif.nemaki.service.cmis.CompileObjectService;
 import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.cmis.ObjectService;
@@ -44,7 +45,6 @@ import jp.aegif.nemaki.service.cmis.RepositoryService;
 import jp.aegif.nemaki.service.node.ContentService;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.constant.DomainType;
-
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.AllowableActions;
@@ -69,19 +69,24 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.BulkUpdateObjectId
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.FailedToDeleteDataImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.RenditionDataImpl;
-import org.apache.chemistry.opencmis.commons.impl.server.ObjectInfoImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 public class ObjectServiceImpl implements ObjectService {
 
+	private static final Log log = LogFactory
+			.getLog(ObjectServiceImpl.class);
+	
 	private TypeManager typeManager;
 	private ContentService contentService;
 	private RepositoryService repositoryService;
 	private ExceptionService exceptionService;
 	private CompileObjectService compileObjectService;
 	private SolrUtil solrUtil;
+	private NemakiCache nemakiCache;
 
 	@Override
 	public ObjectData getObjectByPath(CallContext callContext, String path,
@@ -105,7 +110,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		return compileObjectService.compileObjectData(callContext, content,
 				filter, includeAllowableActions, includeRelationships,
-				renditionFilter, includeAcl, null);
+				renditionFilter, includeAcl);
 	}
 
 	@Override
@@ -137,7 +142,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		ObjectData object = compileObjectService.compileObjectData(callContext,
 				content, filter, includeAllowableActions, includeRelationships,
-				null, includeAcl, null);
+				null, includeAcl);
 
 		return object;
 	}
@@ -285,7 +290,7 @@ public class ObjectServiceImpl implements ObjectService {
 
 		return compileObjectService.compileObjectData(callContext,
 				contentService.getContent(objectId), null, false,
-				IncludeRelationships.NONE, null, false, null);
+				IncludeRelationships.NONE, null, false);
 	}
 
 	@Override
@@ -440,12 +445,10 @@ public class ObjectServiceImpl implements ObjectService {
 				.invalidArgumentRequired("contentStream", contentStream);
 		Document doc = (Document) contentService.getContent(id);
 		exceptionService.objectNotFound(DomainType.OBJECT, doc, id);
-		Properties properties = compileObjectService.compileProperties(callContext,
-				doc, compileObjectService.splitFilter(""), new ObjectInfoImpl());
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_SET_CONTENT_DOCUMENT, doc);
 		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
-				.getTypeDefinition(DataUtil.getObjectTypeId(properties));
+				.getTypeDefinition(doc.getObjectType());
 		exceptionService.constraintImmutable(doc, td);
 
 		// //////////////////
@@ -461,6 +464,8 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
+		String oldId = objectId.getValue(); 
+		
 		// TODO Externalize versioningState
 		if(doc.isPrivateWorkingCopy()){
 			Document result = contentService.replacePwc(callContext, doc,
@@ -471,6 +476,8 @@ public class ObjectServiceImpl implements ObjectService {
 					contentStream);
 			objectId.setValue(result.getId());
 		}
+		
+		nemakiCache.removeCmisCache(oldId);
 	}
 
 	@Override
@@ -491,6 +498,8 @@ public class ObjectServiceImpl implements ObjectService {
 		// Body of the method
 		// //////////////////
 		contentService.deleteContentStream(callContext, objectId);
+		
+		nemakiCache.removeCmisCache(objectId.getValue());
 	}
 
 	@Override
@@ -508,12 +517,10 @@ public class ObjectServiceImpl implements ObjectService {
 				.invalidArgumentRequired("contentStream", contentStream);
 		Document doc = (Document) contentService.getContent(id);
 		exceptionService.objectNotFound(DomainType.OBJECT, doc, id);
-		Properties properties = compileObjectService.compileProperties(callContext,
-				doc, compileObjectService.splitFilter(""), new ObjectInfoImpl());
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_SET_CONTENT_DOCUMENT, doc);
 		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
-				.getTypeDefinition(DataUtil.getObjectTypeId(properties));
+				.getTypeDefinition(doc.getObjectType());
 		exceptionService.constraintImmutable(doc, td);
 
 		// //////////////////
@@ -528,6 +535,8 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		contentService.appendAttachment(callContext, objectId, changeToken,
 				contentStream, isLastChunk, extension);
+		
+		nemakiCache.removeCmisCache(objectId.getValue());
 	}
 
 	@Override
@@ -655,7 +664,7 @@ public class ObjectServiceImpl implements ObjectService {
 	}
 
 	@Override
-	public Content updateProperties(CallContext callContext,
+	public void updateProperties(CallContext callContext,
 			Holder<String> objectId, Properties properties,
 			Holder<String> changeToken) {
 
@@ -668,8 +677,11 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		return contentService
-				.updateProperties(callContext, properties, content);
+		String id = objectId.getValue();
+		
+		contentService.updateProperties(callContext, properties, content);
+		
+		nemakiCache.removeCmisCache(id);
 	}
 
 	private Content checkExceptionBeforeUpdateProperties(
@@ -732,6 +744,7 @@ public class ObjectServiceImpl implements ObjectService {
 						new Holder<String>(idAndToken.getChangeToken()));
 				contentService.updateProperties(callContext, properties,
 						content);
+				nemakiCache.removeCmisCache(content.getId());
 
 				BulkUpdateObjectIdAndChangeToken result = new BulkUpdateObjectIdAndChangeTokenImpl(
 						idAndToken.getId(), content.getId(),
@@ -778,11 +791,12 @@ public class ObjectServiceImpl implements ObjectService {
 		// Body of the method
 		// //////////////////
 		contentService.move(content, target);
+		
+		nemakiCache.removeCmisCache(content.getId());
 	}
 
-	@Override
-	public void deleteObject(CallContext callContext, String objectId,
-			Boolean allVersions) {
+	private void deleteObjectInternal(CallContext callContext, String objectId,
+			Boolean allVersions, Boolean deleteWithParent) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -797,7 +811,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		if (content.isDocument()) {
 			contentService.deleteDocument(callContext, content.getId(),
-					allVersions, false);
+					allVersions, deleteWithParent);
 		} else if (content.isFolder()) {
 			List<Content> children = contentService.getChildren(objectId);
 			if (!CollectionUtils.isEmpty(children)) {
@@ -805,10 +819,19 @@ public class ObjectServiceImpl implements ObjectService {
 						.constraint(objectId,
 								"deleteObject method is invoked on a folder containing objects.");
 			}
-			contentService.delete(callContext, objectId, false);
+			contentService.delete(callContext, objectId, deleteWithParent);
+			
 		} else {
-			contentService.delete(callContext, objectId, false);
+			contentService.delete(callContext, objectId, deleteWithParent);
 		}
+
+		nemakiCache.removeCmisCache(content.getId());
+	}
+	
+	@Override
+	public void deleteObject(CallContext callContext, String objectId,
+			Boolean allVersions) {
+		deleteObjectInternal(callContext, objectId, allVersions, false);
 	}
 
 	@Override
@@ -836,8 +859,48 @@ public class ObjectServiceImpl implements ObjectService {
 		// Delete descendants
 		List<String> failureIds = new ArrayList<String>();
 	
-		failureIds = contentService.deleteTree(callContext, folderId, allVersions,
-				continueOnFailure, false);
+		List<Content> children = contentService.getChildren(folderId);
+		if (!CollectionUtils.isEmpty(children)) {
+			for (Content child : children) {
+				try {
+					if (child.isFolder()) {
+						deleteTree(callContext, child.getId(), allVersions, unfileObjects,
+								continueOnFailure, extension);
+					} else {
+						deleteObjectInternal(callContext, child.getId(), allVersions, true);
+					}
+				} catch (Exception e) {
+					StringBuilder sb = new StringBuilder();
+					sb.append("objectId:").append(child.getId()).append(" failed to be deleted.");
+					
+					if (continueOnFailure) {
+						failureIds.add(child.getId());
+						log.warn(sb.toString(), e);
+						continue;
+					} else {
+						log.error(sb.toString(), e);
+					}
+				}
+			}
+		}
+
+		// Delete the folder itself
+		try {
+			deleteObjectInternal(callContext, folderId, allVersions, false);
+		} catch (Exception e) {
+			StringBuilder sb = new StringBuilder();
+			sb.append("objectId:").append(folderId).append(" failed to be deleted.");
+			
+			if (continueOnFailure) {
+				failureIds.add(folderId);
+				log.warn(sb.toString(), e);
+			} else {
+				log.error(sb.toString(), e);
+			}
+		}
+		
+		/*failureIds = contentService.deleteTree(callContext, folderId, allVersions,
+				continueOnFailure, false);*/
 		solrUtil.callSolrIndexing();
 
 		// Check FailedToDeleteData
@@ -875,5 +938,9 @@ public class ObjectServiceImpl implements ObjectService {
 
 	public void setSolrUtil(SolrUtil solrUtil) {
 		this.solrUtil = solrUtil;
+	}
+
+	public void setNemakiCache(NemakiCache nemakiCache) {
+		this.nemakiCache = nemakiCache;
 	}
 }

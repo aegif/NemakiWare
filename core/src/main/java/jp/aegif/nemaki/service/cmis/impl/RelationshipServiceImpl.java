@@ -102,7 +102,7 @@ public class RelationshipServiceImpl implements RelationshipService {
 		// Compile to ObjectData
 		return compileObjectService.compileObjectDataList(callContext,
 				extracted, filter, includeAllowableActions,
-				IncludeRelationships.NONE, null, false, maxItems, skipCount, false, null);
+				IncludeRelationships.NONE, null, false, maxItems, skipCount, false);
 	}
 
 	public void setTypeManager(TypeManager typeManager) {
@@ -125,5 +125,4 @@ public class RelationshipServiceImpl implements RelationshipService {
 	public void setExceptionService(ExceptionService exceptionService) {
 		this.exceptionService = exceptionService;
 	}
-
 }

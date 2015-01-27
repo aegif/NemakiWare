@@ -244,6 +244,12 @@
 			<scope>system</scope>
 			<systemPath>${basedir}/src/main/webapp/WEB-INF/lib/jodconverter-core-3.0-beta-4.jar</systemPath>
 		</dependency>
+		
+		<dependency>
+			<groupId>uk.com.robust-it</groupId>
+			<artifactId>cloning</artifactId>
+			<version>1.9.1</version>
+		</dependency>
 
 	</dependencies>
 

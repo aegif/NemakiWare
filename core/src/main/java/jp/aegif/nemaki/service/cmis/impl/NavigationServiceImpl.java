@@ -61,7 +61,6 @@ import org.apache.commons.lang.StringUtils;
 public class NavigationServiceImpl implements NavigationService {
 
 	private ContentService contentService;
-	private PermissionService permissionService;
 	private ExceptionService exceptionService;
 	private CompileObjectService compileObjectService;
 	private SortUtil sortUtil;
@@ -93,7 +92,7 @@ public class NavigationServiceImpl implements NavigationService {
 		// Set ObjectData of parent folder for ObjectInfo
 		ObjectData _parent = compileObjectService.compileObjectData(
 				callContext, folder, filter, includeAllowableActions,
-				includeRelationships, renditionFilter, false, null);
+				includeRelationships, renditionFilter, false);
 		parentObjectData.setValue(_parent);
 
 		return getChildrenInternal(callContext, folderId, filter, orderBy,
@@ -119,7 +118,7 @@ public class NavigationServiceImpl implements NavigationService {
 		ObjectList ol = compileObjectService.compileObjectDataList(callContext,
 				contents, filter, includeAllowableActions,
 				includeRelationships, renditionFilter, false, maxItems,
-				skipCount, folderOnly, null);
+				skipCount, folderOnly);
 
 		// Sort
 		sortUtil.sort(ol.getObjects(), orderBy);
@@ -178,7 +177,7 @@ public class NavigationServiceImpl implements NavigationService {
 		// Set ObjectData of the starting folder for ObjectInfo
 		ObjectData _folder = compileObjectService.compileObjectData(
 				callContext, folder, filter, includeAllowableActions,
-				includeRelationships, renditionFilter, false, null);
+				includeRelationships, renditionFilter, false);
 		anscestorObjectData.setValue(_folder);
 
 		// get the tree.
@@ -252,7 +251,7 @@ public class NavigationServiceImpl implements NavigationService {
 		// Body of the method
 		// //////////////////
 		return compileObjectService.compileObjectData(callContext, parent,
-				filter, true, IncludeRelationships.NONE, null, true, null);
+				filter, true, IncludeRelationships.NONE, null, true);
 	}
 
 	@Override
@@ -282,7 +281,7 @@ public class NavigationServiceImpl implements NavigationService {
 		ObjectParentDataImpl result = new ObjectParentDataImpl();
 		ObjectData o = compileObjectService.compileObjectData(callContext,
 				parent, filter, includeAllowableActions, includeRelationships,
-				null, true, null);
+				null, true);
 		result.setObject(o);
 		boolean irps = (includeRelativePathSegment == null ? false
 				: includeRelativePathSegment.booleanValue());
@@ -324,7 +323,7 @@ public class NavigationServiceImpl implements NavigationService {
 		ObjectList list = compileObjectService.compileObjectDataList(
 				callContext, checkedOuts, filter, includeAllowableActions,
 				includeRelationships, renditionFilter, false, maxItems,
-				skipCount, false, null);
+				skipCount, false);
 		sortUtil.sort(list.getObjects(), orderBy);
 
 		return list;
@@ -332,10 +331,6 @@ public class NavigationServiceImpl implements NavigationService {
 
 	public void setContentService(ContentService contentService) {
 		this.contentService = contentService;
-	}
-
-	public void setPermissionService(PermissionService permissionService) {
-		this.permissionService = permissionService;
 	}
 
 	public void setExceptionService(ExceptionService exceptionService) {
