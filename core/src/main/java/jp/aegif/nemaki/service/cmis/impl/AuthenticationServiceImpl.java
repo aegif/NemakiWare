@@ -42,7 +42,9 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 	@Override
 	public boolean login(String userName, String password) {
+		
 		User u = principalService.getUserById(userName);
+		
 		// succeeded
 		if (u != null ) {
 			if(passwordMatches(password, u.getPasswordHash())){

@@ -43,8 +43,10 @@ import jp.aegif.nemaki.util.PropertyUtil;
 import jp.aegif.nemaki.util.constant.CmisPermission;
 import jp.aegif.nemaki.util.constant.NemakiConstant;
 
+import org.apache.chemistry.opencmis.commons.data.AllowableActions;
+import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
-import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
+import org.apache.chemistry.opencmis.commons.enums.Action;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
@@ -71,7 +73,21 @@ public class PermissionServiceImpl implements PermissionService {
 	// //////////////////////////////////////////////////////////////////////////
 	// Permission Check called from each CMIS method
 	// //////////////////////////////////////////////////////////////////////////
-
+	@Override
+	public boolean checkPermission(CallContext callContext, Action action, ObjectData objectData){
+		AllowableActions _actions = objectData.getAllowableActions();
+		if(_actions == null){
+			return false;
+		}else{
+			Set<Action> actions = _actions.getAllowableActions();
+			if(CollectionUtils.isEmpty(actions)){
+				return false;
+			}else{
+				return actions.contains(action);
+			}
+		}
+	}
+	
 	/**
 	 *
 	 */
@@ -146,7 +162,7 @@ public class PermissionServiceImpl implements PermissionService {
 	 * @param userPermissions
 	 * @return
 	 */
-	private Boolean checkCalculatedPermissions(String key, Set<String> userPermissions) {
+	private boolean checkCalculatedPermissions(String key, Set<String> userPermissions) {
 		Map<String, PermissionMapping> table = repositoryInfo.getAclCapabilities().getPermissionMapping();
 		List<String> actionPermissions = table.get(key).getPermissions();
 

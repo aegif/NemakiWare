@@ -26,6 +26,8 @@ import java.util.List;
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Content;
 
+import org.apache.chemistry.opencmis.commons.data.ObjectData;
+import org.apache.chemistry.opencmis.commons.enums.Action;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 
 /**
@@ -40,6 +42,8 @@ public interface PermissionService {
 	 */
 	public Boolean checkPermission(CallContext context, String key, Acl acl, String baseObjectType, Content content);
 	
+	public boolean checkPermission(CallContext callContext, Action action, ObjectData objectData);
+	
 	/**
 	 * 
 	 * @param callContext
@@ -47,4 +51,5 @@ public interface PermissionService {
 	 * @return
 	 */
 	public <T> List<T> getFiltered(CallContext callContext,List<T>contents);
+	
 }

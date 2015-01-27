@@ -27,6 +27,7 @@ import java.util.List;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.repository.type.TypeManager;
+import jp.aegif.nemaki.service.cache.NemakiCache;
 import jp.aegif.nemaki.service.cmis.CompileObjectService;
 import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.cmis.PolicyService;
@@ -47,6 +48,7 @@ public class PolicyServiceImpl implements PolicyService {
 	private CompileObjectService compileObjectService;
 	private ExceptionService exceptionService;
 	private TypeManager typeManager;
+	private NemakiCache nemakiCache;
 
 	@Override
 	public void applyPolicy(CallContext callContext, String policyId,
@@ -78,6 +80,8 @@ public class PolicyServiceImpl implements PolicyService {
 		// Body of the method
 		// //////////////////
 		contentService.applyPolicy(callContext, policyId, objectId, extension);
+		
+		nemakiCache.removeCmisCache(objectId);
 	}
 
 	@Override
@@ -101,6 +105,8 @@ public class PolicyServiceImpl implements PolicyService {
 		// Body of the method
 		// //////////////////
 		contentService.removePolicy(callContext, policyId, objectId, extension);
+	
+		nemakiCache.removeCmisCache(objectId);
 	}
 
 	@Override
@@ -125,7 +131,7 @@ public class PolicyServiceImpl implements PolicyService {
 			for (Policy policy : policies) {
 				objects.add(compileObjectService.compileObjectData(callContext,
 						policy, filter, true, IncludeRelationships.NONE, null,
-						true, null));
+						true));
 			}
 		}
 		return objects;
@@ -150,5 +156,9 @@ public class PolicyServiceImpl implements PolicyService {
 
 	public void setTypeManager(TypeManager typeManager) {
 		this.typeManager = typeManager;
+	}
+
+	public void setNemakiCache(NemakiCache nemakiCache) {
+		this.nemakiCache = nemakiCache;
 	}
 }

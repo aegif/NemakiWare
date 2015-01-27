@@ -28,7 +28,6 @@ import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.service.cache.NemakiCache;
 import jp.aegif.nemaki.service.dao.PrincipalDaoService;
 import net.sf.ehcache.Cache;
-import net.sf.ehcache.CacheManager;
 import net.sf.ehcache.Element;
 
 import org.apache.commons.logging.Log;

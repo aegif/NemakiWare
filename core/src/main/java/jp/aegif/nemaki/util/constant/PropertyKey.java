@@ -27,6 +27,7 @@ public interface PropertyKey {
 	final String OVRRIDE_FILE= "override.file";
 	final String CAPABILITY_EXTENDED_ORDERBY_DEFAULT = "capability.extended.orderBy.default";
 	final String CAPABILITY_EXTENDED_PREVIEW = "capability.extended.preview";
+	final String CAPABILITY_EXTENDED_INCLUDE_RELATIONSHIPS = "capability.extended.include.relationships";
 	
 	//Rest
 	final String REST_USER_ENABLED = "rest.user.enabled";
@@ -231,4 +232,16 @@ public interface PropertyKey {
 	//Rendition service
 	final String JODCONVERTER_REGISTRY_DATAFORMATS = "jodconverter.registry.dataformats";
 	final String JODCONVERTER_OFFICEHOME = "jodconverter.officehome";
+	
+	//Log
+	final String LOG_ASPECT_DEFAULT = "log.aspect.default";
+	final String LOG_ASPECT_EXPRESSION = "log.aspect.expression";
+	final String LOG_CONFIG_PATH = "log.config.path";
+	final String LOG_LEVEL = "log.level";
+	final String LOG_RETURN_VALUE = "log.return.value";
+	final String LOG_FQN = "log.fqn";
+	final String LOG_ARGUMENTS = "log.arguments";
+	
+	//Cache
+	final String CACHE_CMIS_ENABLED = "cache.cmis.enabled";
 }

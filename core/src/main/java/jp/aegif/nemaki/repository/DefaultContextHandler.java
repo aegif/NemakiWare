@@ -25,14 +25,10 @@ import java.util.Map;
 
 import javax.servlet.http.HttpServletRequest;
 
-import jp.aegif.nemaki.service.cache.NemakiCache;
-
 import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
 import org.apache.chemistry.opencmis.server.shared.BasicAuthCallContextHandler;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.springframework.web.context.WebApplicationContext;
-import org.springframework.web.context.support.WebApplicationContextUtils;
 
 /**
  * Context handler class to do basic authentication

@@ -30,6 +30,7 @@ import java.util.List;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.VersionSeries;
+import jp.aegif.nemaki.service.cache.NemakiCache;
 import jp.aegif.nemaki.service.cmis.CompileObjectService;
 import jp.aegif.nemaki.service.cmis.ExceptionService;
 import jp.aegif.nemaki.service.cmis.VersioningService;
@@ -51,6 +52,7 @@ public class VersioningServiceImpl implements VersioningService {
 	private ContentService contentService;
 	private CompileObjectService compileObjectService;
 	private ExceptionService exceptionService;
+	private NemakiCache nemakiCache;
 
 	@Override
 	/**
@@ -84,6 +86,8 @@ public class VersioningServiceImpl implements VersioningService {
 		objectId.setValue(pwc.getId());
 		Holder<Boolean> copied = new Holder<Boolean>(true);
 		contentCopied = copied;
+		
+		nemakiCache.removeCmisCache(id);
 	}
 
 	@Override
@@ -107,6 +111,11 @@ public class VersioningServiceImpl implements VersioningService {
 		// Body of the method
 		// //////////////////
 		contentService.cancelCheckOut(callContext, objectId, extension);
+		
+		VersionSeries vs = contentService.getVersionSeries(document);
+		Document latest = contentService.getDocumentOfLatestVersion(vs.getId());
+		nemakiCache.removeCmisCache(objectId);
+		nemakiCache.removeCmisCache(latest.getId());
 	}
 
 	@Override
@@ -139,6 +148,8 @@ public class VersioningServiceImpl implements VersioningService {
 				major, properties, contentStream, checkinComment, policies,
 				addAces, removeAces, extension);
 		objectId.setValue(checkedIn.getId());
+		
+		nemakiCache.removeCmisCache(id);
 	}
 
 	@Override
@@ -179,7 +190,7 @@ public class VersioningServiceImpl implements VersioningService {
 		// //////////////////
 		ObjectData objectData = compileObjectService.compileObjectData(context,
 				document, filter, includeAllowableActions,
-				includeRelationships, renditionFilter, includeAcl, null);
+				includeRelationships, renditionFilter, includeAcl);
 		return objectData;
 	}
 
@@ -226,7 +237,7 @@ public class VersioningServiceImpl implements VersioningService {
 		for (Content content : allVersions) {
 			ObjectData objectData = compileObjectService.compileObjectData(
 					context, content, filter, includeAllowableActions,
-					IncludeRelationships.NONE, null, true, null);
+					IncludeRelationships.NONE, null, true);
 			result.add(objectData);
 		}
 
@@ -266,5 +277,9 @@ public class VersioningServiceImpl implements VersioningService {
 
 	public void setExceptionService(ExceptionService exceptionService) {
 		this.exceptionService = exceptionService;
+	}
+
+	public void setNemakiCache(NemakiCache nemakiCache) {
+		this.nemakiCache = nemakiCache;
 	}
 }
