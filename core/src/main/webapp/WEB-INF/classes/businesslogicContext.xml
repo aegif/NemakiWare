@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:aop="http://www.springframework.org/schema/aop"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
+	
+	<bean id="ContentService" class="org.springframework.aop.framework.ProxyFactoryBean">
+		<property name="proxyInterfaces">
+			<list>
+				<value>jp.aegif.nemaki.businesslogic.ContentService</value>
+			</list>
+		</property>
+		<property name="target">
+			<ref bean="contentService" />
+		</property>
+	</bean>
+	<bean id="contentService" class="jp.aegif.nemaki.businesslogic.impl.ContentServiceImpl">
+		<property name="contentDaoService">
+			<ref bean="ContentDaoService" />
+		</property>
+		<property name="typeManager">
+			<ref bean="TypeManager" />
+		</property>
+		<property name="renditionManager">
+			<ref bean="RenditionManager" />
+		</property>
+        <property name="propertyUtil">
+            <ref bean="propertyUtil" />
+        </property>
+        <property name="solrUtil">
+            <ref bean="solrUtil" />
+        </property>
+	</bean>
+	
+	<bean id="PrincipalService" class="org.springframework.aop.framework.ProxyFactoryBean">
+		<property name="proxyInterfaces">
+			<list>
+				<value>jp.aegif.nemaki.businesslogic.PrincipalService</value>
+			</list>
+		</property>
+		<property name="target">
+			<ref bean="principalService" />
+		</property>
+	</bean>
+	<bean id="principalService" class="jp.aegif.nemaki.businesslogic.impl.PrincipalServiceImpl">
+		<property name="principalDaoService">
+			<ref bean="PrincipalDaoService" />
+		</property>
+		<property name="anonymous">
+            <value>${cmis.repository.main.principal.anonymous}</value>
+        </property>
+        <property name="anyone">
+            <value>${cmis.repository.main.principal.anyone}</value>
+        </property>
+	</bean>
+	
+	<bean id="TypeService" class="org.springframework.aop.framework.ProxyFactoryBean">
+		<property name="proxyInterfaces">
+			<list>
+				<value>jp.aegif.nemaki.businesslogic.TypeService</value>
+			</list>
+		</property>
+		<property name="target">
+			<ref bean="typeService" />
+		</property>
+	</bean>
+	<bean id="typeService" class="jp.aegif.nemaki.businesslogic.impl.TypeServiceImpl">
+		<constructor-arg>
+			<ref bean="contentDaoService" />
+		</constructor-arg>
+	</bean>
+	
+	<!-- Rendition builder -->
+	<bean id="RenditionManager" class="org.springframework.aop.framework.ProxyFactoryBean">
+		<property name="proxyInterfaces">
+			<list>
+				<value>jp.aegif.nemaki.businesslogic.rendition.RenditionManager</value>
+			</list>
+		</property>
+		<property name="target">
+			<ref bean="jodRenditionManager" />
+		</property>
+	</bean>
+	<bean id="jodRenditionManager" class="jp.aegif.nemaki.businesslogic.rendition.impl.JodRenditionManagerImpl"
+	init-method="init">
+        <property name="propertyUtil">
+            <ref bean="propertyUtil" />
+        </property>
+	</bean>
+</beans>

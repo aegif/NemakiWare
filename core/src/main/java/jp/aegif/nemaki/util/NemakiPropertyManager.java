@@ -2,7 +2,7 @@ package jp.aegif.nemaki.util;
 
 import java.util.List;
 
-import jp.aegif.nemaki.spring.SpringPropertiesUtil;
+import jp.aegif.nemaki.util.spring.SpringPropertiesUtil;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
