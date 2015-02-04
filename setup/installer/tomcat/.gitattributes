@@ -1,1 +1,1 @@
-setenv.sh -crlf -diff
+setenv.sh eol=lf
