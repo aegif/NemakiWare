@@ -45,4 +45,6 @@ public interface NemakiConstant {
 	final String CALL_CONTEXT_IS_ADMIN = "isAdmin";
 	
 	final String TOKEN_CACHE_LATEST_CHANGE_TOKEN = "lc";
+	
+	final String AUTH_TOKEN_PREFIX = "nemaki-basic-auth-token_";
 }
