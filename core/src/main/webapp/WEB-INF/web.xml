@@ -49,7 +49,7 @@
 		<servlet-class>org.apache.chemistry.opencmis.server.impl.atompub.CmisAtomPubServlet</servlet-class>
 		<init-param>
 			<param-name>callContextHandler</param-name>
-			<param-value>jp.aegif.nemaki.repository.DefaultContextHandler</param-value>
+			<param-value>jp.aegif.nemaki.cmis.factory.BasicAuthContextHandler</param-value>
         </init-param>
 		<init-param>
  			<param-name>cmisVersion</param-name>
@@ -68,7 +68,7 @@
 	</servlet>
 	<filter>
 		<filter-name>RestAuthenticationFilter</filter-name>
-		<filter-class>jp.aegif.nemaki.api.resources.AuthenticationFilter</filter-class>		
+		<filter-class>jp.aegif.nemaki.rest.AuthenticationFilter</filter-class>		
 	</filter>
 	<filter-mapping>
 		<filter-name>RestAuthenticationFilter</filter-name>

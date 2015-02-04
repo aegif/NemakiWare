@@ -12,7 +12,7 @@
   		</aop:aspect>
 	</aop:config>
 
-	<bean id="logAdvice" class="jp.aegif.nemaki.spring.LoggingAspect" init-method="init">
+	<bean id="logAdvice" class="jp.aegif.nemaki.util.spring.LoggingAspect" init-method="init">
 		<property name="logLevel" value="${log.level}"/>
 		<property name="returnValue" value="${log.return.value}"/>
 		<property name="fullQualifiedName" value="${log.fqn}"/>

@@ -6,7 +6,7 @@
 		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
 	
 	<!-- Property Configurer -->
-	<bean id="propertyConfigurer" class="jp.aegif.nemaki.spring.SpringPropertiesUtil">
+	<bean id="propertyConfigurer" class="jp.aegif.nemaki.util.spring.SpringPropertiesUtil">
 		
 		<property name="locations">
 			<list>

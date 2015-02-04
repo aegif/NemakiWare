@@ -12,7 +12,7 @@
             <ref bean="nemakiCache" />
         </property>
 	</bean>
-	<bean id="nemakiCache" class="jp.aegif.nemaki.service.cache.impl.NemakiCacheImpl"
+	<bean id="nemakiCache" class="jp.aegif.nemaki.util.cache.impl.NemakiCacheImpl"
 	init-method="init">
 		<property name="propertyUtil">
             <ref bean="propertyUtil" />
@@ -20,24 +20,13 @@
 	</bean>
 
     <!-- CMIS Repository Beans -->
-    <bean id="CmisLifecycleBean" class="jp.aegif.nemaki.repository.CmisLifecycleBean" >
-        <property name="cmisServiceFactory" ref="NemakiCmisServiceFactory" />
+    <bean id="CmisLifecycleBean" class="jp.aegif.nemaki.cmis.factory.CmisLifecycleBean" >
+        <property name="cmisServiceFactory" ref="CmisServiceFactory" />
     </bean>
-
-	<bean id="NemakiCmisServiceFactory" class="org.springframework.aop.framework.ProxyFactoryBean">
-        <property name="proxyInterfaces">
-            <list>
-                <value>jp.aegif.nemaki.repository.factory.NemakiCmisServiceFactory</value>
-            </list>
-        </property>
-        <property name="target">
-            <ref bean="nemakiCmisServiceFactory" />
-        </property>
-    </bean>
-
-    <bean id="nemakiCmisServiceFactory" class="jp.aegif.nemaki.repository.factory.impl.NemakiCmisServiceFactoryImpl">
-        <property name="nemakiRepository">
-            <ref bean="nemakiRepository" />
+	
+    <bean id="CmisServiceFactory" class="jp.aegif.nemaki.cmis.factory.CmisServiceFactory">
+        <property name="repository">
+            <ref bean="repository" />
         </property>
         <property name="repositoryMap">
             <ref bean="repositoryMap" />
@@ -47,7 +36,7 @@
         </property>
     </bean>
    
-    <bean id="repositoryMap" class="jp.aegif.nemaki.repository.RepositoryMap" init-method="init">
+    <bean id="repositoryMap" class="jp.aegif.nemaki.cmis.factory.RepositoryMap" init-method="init">
         <property name="propertyManager">
             <ref bean="nemakiPropertyManager" />
         </property>
@@ -56,7 +45,7 @@
 	<bean id="RepositoryInfo" class="org.springframework.aop.framework.ProxyFactoryBean">
 		<property name="proxyInterfaces">
             <list>
-                <value>jp.aegif.nemaki.repository.info.NemakiRepositoryInfo</value>
+                <value>jp.aegif.nemaki.cmis.factory.info.RepositoryInfo</value>
             </list>
         </property>
         <property name="target">
@@ -65,7 +54,7 @@
 	</bean>
 
     <bean id="repositoryInfo"
-        class="jp.aegif.nemaki.repository.info.impl.NemakiRepositoryInfoImpl"
+        class="jp.aegif.nemaki.cmis.factory.info.impl.RepositoryInfoImpl"
         init-method="setup">
         <property name="id">
             <value>${cmis.repository.main}</value>
@@ -80,13 +69,13 @@
             <value>1.1</value>
         </property>
         <property name="capabilities">
-            <ref bean="capabilities" />
+            <ref bean="Capabilities" />
         </property>
         <property name="rootFolder">
             <value>${cmis.repository.main.root}</value>
         </property>
         <property name="aclCapabilities">
-            <ref bean="aclCapabilities" />
+            <ref bean="AclCapabilities" />
         </property>
         <property name="principalAnonymous">
             <value>${cmis.repository.main.principal.anonymous}</value>
@@ -114,15 +103,15 @@
         </property>
     </bean>
  
-    <bean id="capabilities"
-        class="jp.aegif.nemaki.repository.info.impl.NemakiCapabilitiesImpl" init-method="init">
+    <bean id="Capabilities"
+        class="jp.aegif.nemaki.cmis.factory.info.CapabilitiesImpl" init-method="init">
         <property name="propertyManager">
             <ref bean="nemakiPropertyManager" />
         </property>
     </bean>
 
-    <bean id="aclCapabilities"
-        class="jp.aegif.nemaki.repository.info.impl.NemakiAclCapabilitiesDataImpl"
+    <bean id="AclCapabilities"
+        class="jp.aegif.nemaki.cmis.factory.info.AclCapabilitiesDataImpl"
         init-method="init">
         <property name="propertyUtil">
             <ref bean="propertyUtil" />
@@ -132,7 +121,7 @@
     <bean id="TypeManager" class="org.springframework.aop.framework.ProxyFactoryBean">
         <property name="proxyInterfaces">
             <list>
-                <value>jp.aegif.nemaki.repository.type.TypeManager
+                <value>jp.aegif.nemaki.cmis.aspect.type.TypeManager
                 </value>
             </list>
         </property>
@@ -140,7 +129,7 @@
             <ref bean="typeManager" />
         </property>
     </bean>
-    <bean id="typeManager" class="jp.aegif.nemaki.repository.type.impl.TypeManagerImpl" init-method="init" depends-on="typeService">
+    <bean id="typeManager" class="jp.aegif.nemaki.cmis.aspect.type.impl.TypeManagerImpl" init-method="init" depends-on="typeService">
         <property name="typeService">
             <ref bean="TypeService" />
         </property>
@@ -149,7 +138,7 @@
         </property>
     </bean>
 
-    <bean id="nemakiRepository" class="jp.aegif.nemaki.repository.NemakiRepository">
+    <bean id="repository" class="jp.aegif.nemaki.cmis.factory.Repository">
         <property name="repositoryService">
             <ref bean="RepositoryService" />
         </property>
@@ -181,7 +170,7 @@
     <bean id="RepositoryService" class="org.springframework.aop.framework.ProxyFactoryBean">
         <property name="proxyInterfaces">
             <list>
-                <value>jp.aegif.nemaki.service.cmis.RepositoryService
+                <value>jp.aegif.nemaki.cmis.service.RepositoryService
                 </value>
             </list>
         </property>
@@ -190,7 +179,7 @@
         </property>
     </bean>
     <bean id="repositoryService"
-        class="jp.aegif.nemaki.service.cmis.impl.RepositoryServiceImpl">
+        class="jp.aegif.nemaki.cmis.service.impl.RepositoryServiceImpl">
         <property name="repositoryInfo">
             <ref bean="RepositoryInfo" />
         </property>
@@ -211,7 +200,7 @@
     <bean id="NavigationService" class="org.springframework.aop.framework.ProxyFactoryBean">
         <property name="proxyInterfaces">
             <list>
-                <value>jp.aegif.nemaki.service.cmis.NavigationService
+                <value>jp.aegif.nemaki.cmis.service.NavigationService
                 </value>
             </list>
         </property>
@@ -220,7 +209,7 @@
         </property>
     </bean>
     <bean id="navigationService"
-        class="jp.aegif.nemaki.service.cmis.impl.NavigationServiceImpl">
+        class="jp.aegif.nemaki.cmis.service.impl.NavigationServiceImpl">
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
@@ -235,7 +224,7 @@
         </property>
     </bean>
    
-    <bean id="sortUtil" class="jp.aegif.nemaki.util.SortUtil">
+    <bean id="sortUtil" class="jp.aegif.nemaki.cmis.aspect.SortUtil">
     	<property name="typeManager" ref="TypeManager" />
     	<property name="repositoryInfo" ref="RepositoryInfo" />
         <property name="propertyManager" ref="nemakiPropertyManager" />
@@ -244,7 +233,7 @@
     <bean id="ObjectService" class="org.springframework.aop.framework.ProxyFactoryBean">
         <property name="proxyInterfaces">
             <list>
-                <value>jp.aegif.nemaki.service.cmis.ObjectService
+                <value>jp.aegif.nemaki.cmis.service.ObjectService
                 </value>
             </list>
         </property>
@@ -252,7 +241,7 @@
             <ref bean="objectService" />
         </property>
     </bean>
-    <bean id="objectService" class="jp.aegif.nemaki.service.cmis.impl.ObjectServiceImpl">
+    <bean id="objectService" class="jp.aegif.nemaki.cmis.service.impl.ObjectServiceImpl">
         <property name="typeManager">
             <ref bean="TypeManager" />
         </property>
@@ -279,7 +268,7 @@
     <bean id="DiscoveryService" class="org.springframework.aop.framework.ProxyFactoryBean">
         <property name="proxyInterfaces">
             <list>
-                <value>jp.aegif.nemaki.service.cmis.DiscoveryService
+                <value>jp.aegif.nemaki.cmis.service.DiscoveryService
                 </value>
             </list>
         </property>
@@ -288,7 +277,7 @@
         </property>
     </bean>
     <bean id="discoveryService"
-        class="jp.aegif.nemaki.service.cmis.impl.DiscoveryServiceImpl">
+        class="jp.aegif.nemaki.cmis.service.impl.DiscoveryServiceImpl">
         <property name="queryProcessor">
             <ref bean="QueryProcessor" />
         </property>
@@ -306,7 +295,7 @@
     <bean id="VersioningService" class="org.springframework.aop.framework.ProxyFactoryBean">
         <property name="proxyInterfaces">
             <list>
-                <value>jp.aegif.nemaki.service.cmis.VersioningService
+                <value>jp.aegif.nemaki.cmis.service.VersioningService
                 </value>
             </list>
         </property>
@@ -315,7 +304,7 @@
         </property>
     </bean>
     <bean id="versioningService"
-        class="jp.aegif.nemaki.service.cmis.impl.VersioningServiceImpl">
+        class="jp.aegif.nemaki.cmis.service.impl.VersioningServiceImpl">
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
@@ -333,7 +322,7 @@
     <bean id="RelationshipService" class="org.springframework.aop.framework.ProxyFactoryBean">
         <property name="proxyInterfaces">
             <list>
-                <value>jp.aegif.nemaki.service.cmis.RelationshipService
+                <value>jp.aegif.nemaki.cmis.service.RelationshipService
                 </value>
             </list>
         </property>
@@ -344,7 +333,7 @@
 
 
     <bean id="relationshipService"
-        class="jp.aegif.nemaki.service.cmis.impl.RelationshipServiceImpl">
+        class="jp.aegif.nemaki.cmis.service.impl.RelationshipServiceImpl">
         <property name="typeManager">
             <ref bean="TypeManager" />
         </property>
@@ -362,7 +351,7 @@
     <bean id="PolicyService" class="org.springframework.aop.framework.ProxyFactoryBean">
         <property name="proxyInterfaces">
             <list>
-                <value>jp.aegif.nemaki.service.cmis.PolicyService
+                <value>jp.aegif.nemaki.cmis.service.PolicyService
                 </value>
             </list>
         </property>
@@ -370,7 +359,7 @@
             <ref bean="policyService" />
         </property>
     </bean>
-    <bean id="policyService" class="jp.aegif.nemaki.service.cmis.impl.PolicyServiceImpl">
+    <bean id="policyService" class="jp.aegif.nemaki.cmis.service.impl.PolicyServiceImpl">
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
@@ -388,7 +377,7 @@
     <bean id="AclService" class="org.springframework.aop.framework.ProxyFactoryBean">
         <property name="proxyInterfaces">
             <list>
-                <value>jp.aegif.nemaki.service.cmis.AclService</value>
+                <value>jp.aegif.nemaki.cmis.service.AclService</value>
             </list>
         </property>
         <property name="target">
@@ -396,7 +385,7 @@
         </property>
     </bean>
 
-    <bean id="aclService" class="jp.aegif.nemaki.service.cmis.impl.AclServiceImpl">
+    <bean id="aclService" class="jp.aegif.nemaki.cmis.service.impl.AclServiceImpl">
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
@@ -419,7 +408,7 @@
     <bean id="AuthenticationService" class="org.springframework.aop.framework.ProxyFactoryBean">
         <property name="proxyInterfaces">
             <list>
-                <value>jp.aegif.nemaki.service.cmis.AuthenticationService
+                <value>jp.aegif.nemaki.cmis.factory.auth.AuthenticationService
                 </value>
             </list>
         </property>
@@ -428,7 +417,7 @@
         </property>
     </bean>
     <bean id="authenticationService"
-        class="jp.aegif.nemaki.service.cmis.impl.AuthenticationServiceImpl">
+        class="jp.aegif.nemaki.cmis.factory.auth.impl.AuthenticationServiceImpl">
         <property name="principalService">
             <ref bean="PrincipalService" />
         </property>
@@ -440,7 +429,7 @@
     <bean id="TokenService" class="org.springframework.aop.framework.ProxyFactoryBean">
         <property name="proxyInterfaces">
             <list>
-                <value>jp.aegif.nemaki.repository.auth.TokenService
+                <value>jp.aegif.nemaki.cmis.factory.auth.TokenService
                 </value>
             </list>
         </property>
@@ -449,13 +438,13 @@
         </property>
     </bean>
     <bean id="tokenService"
-        class="jp.aegif.nemaki.repository.auth.impl.TokenServiceImpl">
+        class="jp.aegif.nemaki.cmis.factory.auth.impl.TokenServiceImpl">
     </bean>
 
     <bean id="CompileObjectService" class="org.springframework.aop.framework.ProxyFactoryBean">
         <property name="proxyInterfaces">
             <list>
-                <value>jp.aegif.nemaki.service.cmis.CompileObjectService
+                <value>jp.aegif.nemaki.cmis.aspect.CompileObjectService
                 </value>
             </list>
         </property>
@@ -464,7 +453,7 @@
         </property>
     </bean>
     <bean id="compileObjectService"
-        class="jp.aegif.nemaki.service.cmis.impl.CompileObjectServiceImpl">
+        class="jp.aegif.nemaki.cmis.aspect.impl.CompileObjectServiceImpl">
         <property name="repositoryInfo">
             <ref bean="RepositoryInfo" />
         </property>
@@ -494,7 +483,7 @@
     <bean id="PermissionService" class="org.springframework.aop.framework.ProxyFactoryBean">
         <property name="proxyInterfaces">
             <list>
-                <value>jp.aegif.nemaki.service.cmis.PermissionService
+                <value>jp.aegif.nemaki.cmis.aspect.PermissionService
                 </value>
             </list>
         </property>
@@ -503,7 +492,7 @@
         </property>
     </bean>
     <bean id="permissionService"
-        class="jp.aegif.nemaki.service.cmis.impl.PermissionServiceImpl">
+        class="jp.aegif.nemaki.cmis.aspect.impl.PermissionServiceImpl">
         <property name="principalService">
             <ref bean="PrincipalService" />
         </property>
@@ -524,7 +513,7 @@
     <bean id="ExceptionService" class="org.springframework.aop.framework.ProxyFactoryBean">
         <property name="proxyInterfaces">
             <list>
-                <value>jp.aegif.nemaki.service.cmis.ExceptionService
+                <value>jp.aegif.nemaki.cmis.aspect.ExceptionService
                 </value>
             </list>
         </property>
@@ -533,7 +522,7 @@
         </property>
     </bean>
     <bean id="exceptionService"
-        class="jp.aegif.nemaki.service.cmis.impl.ExceptionServiceImpl">
+        class="jp.aegif.nemaki.cmis.aspect.impl.ExceptionServiceImpl">
         <property name="repositoryInfo">
             <ref bean="RepositoryInfo" />
         </property>
@@ -559,7 +548,7 @@
     <bean id="QueryProcessor" class="org.springframework.aop.framework.ProxyFactoryBean">
         <property name="proxyInterfaces">
             <list>
-                <value>jp.aegif.nemaki.query.QueryProcessor</value>
+                <value>jp.aegif.nemaki.cmis.aspect.query.QueryProcessor</value>
             </list>
         </property>
         <property name="target">
@@ -567,7 +556,7 @@
         </property>
     </bean>
 
-    <bean id="queryProcessor" class="jp.aegif.nemaki.query.solr.SolrQueryProcessor">
+    <bean id="queryProcessor" class="jp.aegif.nemaki.cmis.aspect.query.solr.SolrQueryProcessor">
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
@@ -588,7 +577,7 @@
         </property>
     </bean>
 
-    <bean id="solrUtil" class="jp.aegif.nemaki.query.solr.SolrUtil">
+    <bean id="solrUtil" class="jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil">
         <property name="propertyManager">
             <ref bean="nemakiPropertyManager" />
         </property>
@@ -596,7 +585,7 @@
 
 
     <!-- Extra Rest API implemented by Jersey -->
-    <bean id="archiveResource" class="jp.aegif.nemaki.api.resources.ArchiveResource">
+    <bean id="archiveResource" class="jp.aegif.nemaki.rest.ArchiveResource">
         <property name="principalService">
             <ref bean="PrincipalService" />
         </property>
@@ -605,19 +594,19 @@
         </property>
     </bean>
 
-    <bean id="userResource" class="jp.aegif.nemaki.api.resources.UserResource">
+    <bean id="userResource" class="jp.aegif.nemaki.rest.UserResource">
         <property name="principalService">
             <ref bean="PrincipalService" />
         </property>
     </bean>
 
-    <bean id="groupResource" class="jp.aegif.nemaki.api.resources.GroupResource">
+    <bean id="groupResource" class="jp.aegif.nemaki.rest.GroupResource">
         <property name="principalService">
             <ref bean="PrincipalService" />
         </property>
     </bean>
 
-    <bean id="typeResource" class="jp.aegif.nemaki.api.resources.TypeResource">
+    <bean id="typeResource" class="jp.aegif.nemaki.rest.TypeResource">
         <property name="typeService">
             <ref bean="TypeService" />
         </property>
@@ -626,28 +615,9 @@
         </property>
     </bean>
    
-    <bean id="solrResource" class="jp.aegif.nemaki.api.resources.SolrResource">
+    <bean id="solrResource" class="jp.aegif.nemaki.rest.SolrResource">
     	<property name="solrUtil">
        		<ref bean="solrUtil" />
         </property>
     </bean>
-
-	<!-- Rendition builder -->
-	<bean id="RenditionManager" class="org.springframework.aop.framework.ProxyFactoryBean">
-		<property name="proxyInterfaces">
-			<list>
-				<value>jp.aegif.nemaki.service.rendition.RenditionManager</value>
-			</list>
-		</property>
-		<property name="target">
-			<ref bean="jodRenditionManager" />
-		</property>
-	</bean>
-	<bean id="jodRenditionManager" class="jp.aegif.nemaki.service.rendition.impl.JodRenditionManagerImpl"
-	init-method="init">
-        <property name="propertyUtil">
-            <ref bean="propertyUtil" />
-        </property>
-	</bean>
-
 </beans>

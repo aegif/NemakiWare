@@ -44,7 +44,7 @@ http://www.springframework.org/schema/util/spring-util-3.0.xsd">
 		</property>
     </bean>
 
-    <bean id="nemakiApplicationContextLoader" class="jp.aegif.nemaki.spring.NemakiApplicationContextLoader">
+    <bean id="nemakiApplicationContextLoader" class="jp.aegif.nemaki.util.spring.NemakiApplicationContextLoader">
         <property name="propertyConfigurer">
            <ref bean="propertyConfigurer" />
         </property>
@@ -53,8 +53,9 @@ http://www.springframework.org/schema/util/spring-util-3.0.xsd">
             	<value>classpath*:${context.aop}</value>
             	<value>classpath:propertyContext.xml</value>
                 <value>classpath:nemakiContext.xml</value>
-                <value>classpath*:${context.node}</value>
-                <value>classpath*:${context.database}</value>
+                <value>classpath*:${context.businesslogic}</value>
+                <value>classpath*:${context.dao}</value>
+                <value>classpath*:${context.dao.implementation}</value>
             </list>
         </property>
     </bean>
