@@ -37,17 +37,18 @@
  */
 package jp.aegif.nemaki.service.cmis;
 
+import jp.aegif.nemaki.model.User;
+
+import org.apache.chemistry.opencmis.commons.server.CallContext;
+
 
 /**
  * Authentication Service interface.
  */
 public interface AuthenticationService {
-
-	/**
-	 * Authenticate a user. If failed, it throws CmisPermissionDeniedException.
-	 * @param userName
-	 * @param passWord
-	 * @return The flag whether the authenticated user is admin
-	 */
-	boolean login(String userName, String passWord);
+	
+	public boolean authenticateUserByToken(String userName, String token);
+    public boolean authenticateAdminByToken(String userName);
+    public String registerToken(CallContext callContext);
+    public User getAuthenticatedUser(String userName, String passWord);
 }

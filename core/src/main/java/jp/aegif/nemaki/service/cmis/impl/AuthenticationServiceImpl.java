@@ -21,10 +21,11 @@
 package jp.aegif.nemaki.service.cmis.impl;
 
 import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.repository.auth.TokenService;
 import jp.aegif.nemaki.service.cmis.AuthenticationService;
 import jp.aegif.nemaki.service.node.PrincipalService;
 
-import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -35,48 +36,63 @@ import org.mindrot.jbcrypt.BCrypt;
  */
 public class AuthenticationServiceImpl implements AuthenticationService {
 
-	private static final Log log = LogFactory
-			.getLog(AuthenticationServiceImpl.class);
+     private static final Log log = LogFactory
+               .getLog(AuthenticationServiceImpl.class);
 
-	private PrincipalService principalService;
+     private PrincipalService principalService;
+     private TokenService tokenService;
+    
+     @Override
+     public boolean authenticateUserByToken(String userName, String token){
+          String registeredToken = tokenService.getToken(userName);
+          return StringUtils.isNotEmpty(registeredToken) && registeredToken.equals(token);
+     }
 
-	@Override
-	public boolean login(String userName, String password) {
-		
-		User u = principalService.getUserById(userName);
-		
-		// succeeded
-		if (u != null ) {
-			if(passwordMatches(password, u.getPasswordHash())){
-				log.debug("[" + userName + "]Authentication succeeded");
-				
-				boolean isAdmin = (u.isAdmin() == null) ? false : true;
-				return isAdmin;
-			}
-		}
+     @Override
+     public boolean authenticateAdminByToken(String userName) {
+          return tokenService.isAdmin(userName);
+     }
 
-		// Check anonymous
-		String anonymousId = principalService.getAnonymous();
-		if(StringUtils.isNotBlank(anonymousId) && anonymousId.equals(userName)){
-			if(u != null){
-				log.warn(anonymousId + " should have not been registered in the database.");
-			}
-			return false;
-		}
+     @Override
+     public User getAuthenticatedUser(String userName, String password) {
+          User u = principalService.getUserById(userName);
+         
+          // succeeded
+          if (u != null ) {
+               if(passwordMatches(password, u.getPasswordHash())){
+                    log.debug("[" + userName + "]Authentication succeeded");
+                    return u;
+               }
+          }
 
-		// failed
-		log.error("[userName=" + userName + ", password=" + password + "]" + "Authentication failed");
-		throw new CmisPermissionDeniedException("[userName=" + userName + "]" + "Authentication failed");
-	}
+          // Check anonymous
+          String anonymousId = principalService.getAnonymous();
+          if(StringUtils.isNotBlank(anonymousId) && anonymousId.equals(userName)){
+               if(u != null){
+                    log.warn(anonymousId + " should have not been registered in the database.");
+               }
+               return null;
+          }
 
-	/**
-	 * Check whether a password matches a hash.
-	 */
-	private boolean passwordMatches(String candidate, String hashed) {
-		return BCrypt.checkpw(candidate, hashed);
-	}
+          return null;
+     }
 
-	public void setPrincipalService(PrincipalService principalService) {
-		this.principalService = principalService;
-	}
+     public String registerToken(CallContext callContext){
+          return tokenService.setToken(callContext.getUsername());
+     }
+    
+     /**
+      * Check whether a password matches a hash.
+      */
+     private boolean passwordMatches(String candidate, String hashed) {
+          return BCrypt.checkpw(candidate, hashed);
+     }
+
+     public void setPrincipalService(PrincipalService principalService) {
+          this.principalService = principalService;
+     }
+
+     public void setTokenService(TokenService tokenService) {
+          this.tokenService = tokenService;
+     }
 }

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- This context file needs in another file: ContentService/PrincipalService/TypeService 
+<!-- This context file needs in another file: ContentService/PrincipalService/TypeService
     bean definition -->
 
 <beans xmlns="http://www.springframework.org/schema/beans"
@@ -46,7 +46,7 @@
             <ref bean="AuthenticationService" />
         </property>
     </bean>
-    
+   
     <bean id="repositoryMap" class="jp.aegif.nemaki.repository.RepositoryMap" init-method="init">
         <property name="propertyManager">
             <ref bean="nemakiPropertyManager" />
@@ -54,7 +54,7 @@
     </bean>
 
 	<bean id="RepositoryInfo" class="org.springframework.aop.framework.ProxyFactoryBean">
-		 <property name="proxyInterfaces">
+		<property name="proxyInterfaces">
             <list>
                 <value>jp.aegif.nemaki.repository.info.NemakiRepositoryInfo</value>
             </list>
@@ -234,7 +234,7 @@
             <ref bean="sortUtil" />
         </property>
     </bean>
-    
+   
     <bean id="sortUtil" class="jp.aegif.nemaki.util.SortUtil">
     	<property name="typeManager" ref="TypeManager" />
     	<property name="repositoryInfo" ref="RepositoryInfo" />
@@ -432,6 +432,24 @@
         <property name="principalService">
             <ref bean="PrincipalService" />
         </property>
+        <property name="tokenService">
+            <ref bean="TokenService" />
+        </property>
+    </bean>
+   
+    <bean id="TokenService" class="org.springframework.aop.framework.ProxyFactoryBean">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.repository.auth.TokenService
+                </value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="tokenService" />
+        </property>
+    </bean>
+    <bean id="tokenService"
+        class="jp.aegif.nemaki.repository.auth.impl.TokenServiceImpl">
     </bean>
 
     <bean id="CompileObjectService" class="org.springframework.aop.framework.ProxyFactoryBean">
@@ -607,7 +625,7 @@
             <ref bean="TypeManager" />
         </property>
     </bean>
-    
+   
     <bean id="solrResource" class="jp.aegif.nemaki.api.resources.SolrResource">
     	<property name="solrUtil">
        		<ref bean="solrUtil" />
@@ -626,7 +644,7 @@
 		</property>
 	</bean>
 	<bean id="jodRenditionManager" class="jp.aegif.nemaki.service.rendition.impl.JodRenditionManagerImpl"
-	 init-method="init">
+	init-method="init">
         <property name="propertyUtil">
             <ref bean="propertyUtil" />
         </property>
