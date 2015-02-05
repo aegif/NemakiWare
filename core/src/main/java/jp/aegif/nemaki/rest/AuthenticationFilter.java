@@ -38,6 +38,7 @@ import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
+import org.apache.commons.codec.binary.Base64;
 import org.mindrot.jbcrypt.BCrypt;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.context.support.WebApplicationContextUtils;
@@ -132,9 +133,8 @@ public class AuthenticationFilter implements Filter {
 
 		try {
 			String encStr = header.substring(6);
-			sun.misc.BASE64Decoder decoder = new sun.misc.BASE64Decoder();
-			byte[] dec = decoder.decodeBuffer(encStr);
-			ret = new String(dec);
+			byte[] dec = (new Base64()).decode(encStr);
+			ret = new String(dec, "utf-8");
 		} catch (Exception ex) {
 			ret = "";
 		}
