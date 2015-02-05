@@ -27,7 +27,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
-import jp.aegif.nemaki.cmis.aspect.CompileObjectService;
+import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
@@ -85,7 +85,7 @@ public class ObjectServiceImpl implements ObjectService {
 	private ContentService contentService;
 	private RepositoryService repositoryService;
 	private ExceptionService exceptionService;
-	private CompileObjectService compileObjectService;
+	private CompileService compileService;
 	private SolrUtil solrUtil;
 	private NemakiCache nemakiCache;
 
@@ -109,7 +109,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		return compileObjectService.compileObjectData(callContext, content,
+		return compileService.compileObjectData(callContext, content,
 				filter, includeAllowableActions, includeRelationships,
 				renditionFilter, includeAcl);
 	}
@@ -141,7 +141,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		ObjectData object = compileObjectService.compileObjectData(callContext,
+		ObjectData object = compileService.compileObjectData(callContext,
 				content, filter, includeAllowableActions, includeRelationships,
 				null, includeAcl);
 
@@ -249,7 +249,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		return compileObjectService.compileAllowableActions(callContext,
+		return compileService.compileAllowableActions(callContext,
 				content);
 	}
 
@@ -289,7 +289,7 @@ public class ObjectServiceImpl implements ObjectService {
 					"Cannot create object of type '" + typeId + "'!");
 		}
 
-		return compileObjectService.compileObjectData(callContext,
+		return compileService.compileObjectData(callContext,
 				contentService.getContent(objectId), null, false,
 				IncludeRelationships.NONE, null, false);
 	}
@@ -928,9 +928,8 @@ public class ObjectServiceImpl implements ObjectService {
 		this.exceptionService = exceptionService;
 	}
 
-	public void setCompileObjectService(
-			CompileObjectService compileObjectService) {
-		this.compileObjectService = compileObjectService;
+	public void setCompileService(CompileService compileService) {
+		this.compileService = compileService;
 	}
 
 	public void setTypeManager(TypeManager typeManager) {

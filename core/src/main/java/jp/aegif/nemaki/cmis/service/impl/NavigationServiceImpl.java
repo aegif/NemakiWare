@@ -27,7 +27,7 @@ import java.util.Collections;
 import java.util.List;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
-import jp.aegif.nemaki.cmis.aspect.CompileObjectService;
+import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.aspect.SortUtil;
 import jp.aegif.nemaki.cmis.service.NavigationService;
@@ -61,7 +61,7 @@ public class NavigationServiceImpl implements NavigationService {
 
 	private ContentService contentService;
 	private ExceptionService exceptionService;
-	private CompileObjectService compileObjectService;
+	private CompileService compileService;
 	private SortUtil sortUtil;
 
 	@Override
@@ -89,7 +89,7 @@ public class NavigationServiceImpl implements NavigationService {
 		// Body of the method
 		// //////////////////
 		// Set ObjectData of parent folder for ObjectInfo
-		ObjectData _parent = compileObjectService.compileObjectData(
+		ObjectData _parent = compileService.compileObjectData(
 				callContext, folder, filter, includeAllowableActions,
 				includeRelationships, renditionFilter, false);
 		parentObjectData.setValue(_parent);
@@ -114,7 +114,7 @@ public class NavigationServiceImpl implements NavigationService {
 		// Build ObjectList
 		List<Content> contents = contentService.getChildren(folderId);
 
-		ObjectList ol = compileObjectService.compileObjectDataList(callContext,
+		ObjectList ol = compileService.compileObjectDataList(callContext,
 				contents, filter, includeAllowableActions,
 				includeRelationships, renditionFilter, false, maxItems,
 				skipCount, folderOnly);
@@ -174,7 +174,7 @@ public class NavigationServiceImpl implements NavigationService {
 				.booleanValue());
 
 		// Set ObjectData of the starting folder for ObjectInfo
-		ObjectData _folder = compileObjectService.compileObjectData(
+		ObjectData _folder = compileService.compileObjectData(
 				callContext, folder, filter, includeAllowableActions,
 				includeRelationships, renditionFilter, false);
 		anscestorObjectData.setValue(_folder);
@@ -249,7 +249,7 @@ public class NavigationServiceImpl implements NavigationService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		return compileObjectService.compileObjectData(callContext, parent,
+		return compileService.compileObjectData(callContext, parent,
 				filter, true, IncludeRelationships.NONE, null, true);
 	}
 
@@ -278,7 +278,7 @@ public class NavigationServiceImpl implements NavigationService {
 		// Body of the method
 		// //////////////////
 		ObjectParentDataImpl result = new ObjectParentDataImpl();
-		ObjectData o = compileObjectService.compileObjectData(callContext,
+		ObjectData o = compileService.compileObjectData(callContext,
 				parent, filter, includeAllowableActions, includeRelationships,
 				null, true);
 		result.setObject(o);
@@ -319,7 +319,7 @@ public class NavigationServiceImpl implements NavigationService {
 		List<Document> checkedOuts = contentService.getCheckedOutDocs(folderId,
 				orderBy, extension);
 
-		ObjectList list = compileObjectService.compileObjectDataList(
+		ObjectList list = compileService.compileObjectDataList(
 				callContext, checkedOuts, filter, includeAllowableActions,
 				includeRelationships, renditionFilter, false, maxItems,
 				skipCount, false);
@@ -336,9 +336,8 @@ public class NavigationServiceImpl implements NavigationService {
 		this.exceptionService = exceptionService;
 	}
 
-	public void setCompileObjectService(
-			CompileObjectService compileObjectService) {
-		this.compileObjectService = compileObjectService;
+	public void setCompileService(CompileService compileService) {
+		this.compileService = compileService;
 	}
 
 	public void setSortUtil(SortUtil sortUtil) {

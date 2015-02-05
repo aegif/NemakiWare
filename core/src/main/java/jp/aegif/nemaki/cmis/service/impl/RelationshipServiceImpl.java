@@ -28,7 +28,7 @@ import java.util.List;
 import java.util.Set;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
-import jp.aegif.nemaki.cmis.aspect.CompileObjectService;
+import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.service.RelationshipService;
@@ -47,7 +47,7 @@ import org.apache.chemistry.opencmis.commons.server.CallContext;
 public class RelationshipServiceImpl implements RelationshipService {
 	private TypeManager typeManager;
 	private ContentService contentService;
-	private CompileObjectService compileObjectService;
+	private CompileService compileService;
 	private ExceptionService exceptionService;
 
 	@Override
@@ -100,7 +100,7 @@ public class RelationshipServiceImpl implements RelationshipService {
 		}
 
 		// Compile to ObjectData
-		return compileObjectService.compileObjectDataList(callContext,
+		return compileService.compileObjectDataList(callContext,
 				extracted, filter, includeAllowableActions,
 				IncludeRelationships.NONE, null, false, maxItems, skipCount, false);
 	}
@@ -112,14 +112,9 @@ public class RelationshipServiceImpl implements RelationshipService {
 	public void setContentService(ContentService contentService) {
 		this.contentService = contentService;
 	}
-
-	public CompileObjectService getCompileObjectService() {
-		return compileObjectService;
-	}
-
-	public void setCompileObjectService(
-			CompileObjectService compileObjectService) {
-		this.compileObjectService = compileObjectService;
+	
+	public void setCompileService(CompileService compileService) {
+		this.compileService = compileService;
 	}
 
 	public void setExceptionService(ExceptionService exceptionService) {

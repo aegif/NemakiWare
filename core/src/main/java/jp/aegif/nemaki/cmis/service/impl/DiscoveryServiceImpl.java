@@ -25,7 +25,7 @@ import java.math.BigInteger;
 import java.util.List;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
-import jp.aegif.nemaki.cmis.aspect.CompileObjectService;
+import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.aspect.query.QueryProcessor;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
@@ -49,7 +49,7 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 	private QueryProcessor queryProcessor;
 	private ContentService contentService;
 	private ExceptionService exceptionService;
-	private CompileObjectService compileObjectService;
+	private CompileService compileService;
 
 	public ObjectList query(TypeManager typeManager, CallContext context,
 			String repositoryId, String statement, Boolean searchAllVersions,
@@ -104,7 +104,7 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 			changeLogToken.setValue(latestToken);
 		}
 		
-		return compileObjectService.compileChangeDataList(context, changes, changeLogToken, includeProperties, filter, includePolicyIds, includeAcl);
+		return compileService.compileChangeDataList(context, changes, changeLogToken, includeProperties, filter, includePolicyIds, includeAcl);
 	}
 	
 	public void setQueryProcessor(QueryProcessor queryProcessor) {
@@ -119,7 +119,7 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 		this.exceptionService = exceptionService;
 	}
 
-	public void setCompileObjectService(CompileObjectService compileObjectService) {
-		this.compileObjectService = compileObjectService;
+	public void setCompileService(CompileService compileService) {
+		this.compileService = compileService;
 	}
 }
