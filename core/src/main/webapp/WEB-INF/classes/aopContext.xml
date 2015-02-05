@@ -6,13 +6,13 @@
 		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
 	
 	<aop:config>
-  		<aop:aspect id="aspect" ref="logAdvice">
+  		<aop:aspect id="aspect" ref="defaultLogAspect">
   			<aop:pointcut id="pointcut-default" expression="${log.aspect.expression}"/>
   			<aop:around pointcut-ref="pointcut-default" method="aroundMethod" />
   		</aop:aspect>
 	</aop:config>
 
-	<bean id="logAdvice" class="jp.aegif.nemaki.util.spring.LoggingAspect" init-method="init">
+	<bean id="defaultLogAspect" class="${log.aspect.default}" init-method="init">
 		<property name="logLevel" value="${log.level}"/>
 		<property name="returnValue" value="${log.return.value}"/>
 		<property name="fullQualifiedName" value="${log.fqn}"/>
