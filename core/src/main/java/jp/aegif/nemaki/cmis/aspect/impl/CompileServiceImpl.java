@@ -35,7 +35,7 @@ import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
-import jp.aegif.nemaki.cmis.factory.info.AclCapabilitiesDataImpl;
+import jp.aegif.nemaki.cmis.factory.info.AclCapabilities;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.cmis.service.RepositoryService;
 import jp.aegif.nemaki.model.Ace;
@@ -119,7 +119,7 @@ public class CompileServiceImpl implements CompileService {
 	private ContentService contentService;
 	private PermissionService permissionService;
 	private TypeManager typeManager;
-	private AclCapabilitiesDataImpl aclCapabilities;
+	private AclCapabilities aclCapabilities;
 	private NemakiCache nemakiCache;
 
 	private boolean includeRelationshipsEnabled = true;
@@ -1454,7 +1454,7 @@ public class CompileServiceImpl implements CompileService {
 		this.permissionService = permissionService;
 	}
 
-	public void setAclCapabilities(AclCapabilitiesDataImpl aclCapabilities) {
+	public void setAclCapabilities(AclCapabilities aclCapabilities) {
 		this.aclCapabilities = aclCapabilities;
 	}
 

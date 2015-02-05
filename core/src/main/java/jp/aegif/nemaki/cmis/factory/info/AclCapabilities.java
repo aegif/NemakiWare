@@ -45,10 +45,10 @@ import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
-public class AclCapabilitiesDataImpl extends org.apache.chemistry.opencmis.commons.impl.dataobjects.AclCapabilitiesDataImpl {
+public class AclCapabilities extends org.apache.chemistry.opencmis.commons.impl.dataobjects.AclCapabilitiesDataImpl {
 
 	private static final long serialVersionUID = 8654484629504222836L;
-	private static final Log log = LogFactory.getLog(AclCapabilitiesDataImpl.class);
+	private static final Log log = LogFactory.getLog(AclCapabilities.class);
 
 	private List<NemakiPermissionDefinition> nemakiPermissions;
 	private PropertyManager propertyManager;

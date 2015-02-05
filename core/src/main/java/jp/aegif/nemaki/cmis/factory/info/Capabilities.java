@@ -42,7 +42,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.CreatablePropertyT
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.NewTypeSettableAttributesImpl;
 import org.apache.commons.collections.CollectionUtils;
 
-public class CapabilitiesImpl extends org.apache.chemistry.opencmis.commons.impl.dataobjects.RepositoryCapabilitiesImpl {
+public class Capabilities extends org.apache.chemistry.opencmis.commons.impl.dataobjects.RepositoryCapabilitiesImpl {
 
 	private static final long serialVersionUID = -7037495456587139344L;
 

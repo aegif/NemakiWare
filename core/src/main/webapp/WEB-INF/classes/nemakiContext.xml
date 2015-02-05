@@ -42,19 +42,8 @@
         </property>
     </bean>
 
-	<bean id="RepositoryInfo" class="org.springframework.aop.framework.ProxyFactoryBean">
-		<property name="proxyInterfaces">
-            <list>
-                <value>jp.aegif.nemaki.cmis.factory.info.RepositoryInfo</value>
-            </list>
-        </property>
-        <property name="target">
-            <ref bean="repositoryInfo" />
-        </property>
-	</bean>
-
     <bean id="repositoryInfo"
-        class="jp.aegif.nemaki.cmis.factory.info.impl.RepositoryInfoImpl"
+        class="jp.aegif.nemaki.cmis.factory.info.RepositoryInfo"
         init-method="setup">
         <property name="id">
             <value>${cmis.repository.main}</value>
@@ -69,13 +58,13 @@
             <value>1.1</value>
         </property>
         <property name="capabilities">
-            <ref bean="Capabilities" />
+            <ref bean="capabilities" />
         </property>
         <property name="rootFolder">
             <value>${cmis.repository.main.root}</value>
         </property>
         <property name="aclCapabilities">
-            <ref bean="AclCapabilities" />
+            <ref bean="aclCapabilities" />
         </property>
         <property name="principalAnonymous">
             <value>${cmis.repository.main.principal.anonymous}</value>
@@ -103,15 +92,15 @@
         </property>
     </bean>
  
-    <bean id="Capabilities"
-        class="jp.aegif.nemaki.cmis.factory.info.CapabilitiesImpl" init-method="init">
+    <bean id="capabilities"
+        class="jp.aegif.nemaki.cmis.factory.info.Capabilities" init-method="init">
         <property name="propertyManager">
             <ref bean="propertyManager" />
         </property>
     </bean>
 
-    <bean id="AclCapabilities"
-        class="jp.aegif.nemaki.cmis.factory.info.AclCapabilitiesDataImpl"
+    <bean id="aclCapabilities"
+        class="jp.aegif.nemaki.cmis.factory.info.AclCapabilities"
         init-method="init">
         <property name="propertyManager">
             <ref bean="propertyManager" />
@@ -181,7 +170,7 @@
     <bean id="repositoryService"
         class="jp.aegif.nemaki.cmis.service.impl.RepositoryServiceImpl">
         <property name="repositoryInfo">
-            <ref bean="RepositoryInfo" />
+            <ref bean="repositoryInfo" />
         </property>
         <property name="typeManager">
             <ref bean="TypeManager" />
@@ -226,7 +215,7 @@
    
     <bean id="sortUtil" class="jp.aegif.nemaki.cmis.aspect.SortUtil">
     	<property name="typeManager" ref="TypeManager" />
-    	<property name="repositoryInfo" ref="RepositoryInfo" />
+    	<property name="repositoryInfo" ref="repositoryInfo" />
         <property name="propertyManager" ref="propertyManager" />
     </bean>
 
@@ -458,7 +447,7 @@
     <bean id="compileService"
         class="jp.aegif.nemaki.cmis.aspect.impl.CompileServiceImpl">
         <property name="repositoryInfo">
-            <ref bean="RepositoryInfo" />
+            <ref bean="repositoryInfo" />
         </property>
         <property name="repositoryService">
             <ref bean="RepositoryService" />
@@ -470,7 +459,7 @@
             <ref bean="PermissionService" />
         </property>
         <property name="aclCapabilities">
-            <ref bean="AclCapabilities" />
+            <ref bean="aclCapabilities" />
         </property>
         <property name="typeManager">
             <ref bean="TypeManager" />
@@ -506,7 +495,7 @@
             <ref bean="TypeManager" />
         </property>
         <property name="repositoryInfo">
-            <ref bean="RepositoryInfo" />
+            <ref bean="repositoryInfo" />
         </property>
     </bean>
 
@@ -524,7 +513,7 @@
     <bean id="exceptionService"
         class="jp.aegif.nemaki.cmis.aspect.impl.ExceptionServiceImpl">
         <property name="repositoryInfo">
-            <ref bean="RepositoryInfo" />
+            <ref bean="repositoryInfo" />
         </property>
         <property name="typeManager">
             <ref bean="TypeManager" />
