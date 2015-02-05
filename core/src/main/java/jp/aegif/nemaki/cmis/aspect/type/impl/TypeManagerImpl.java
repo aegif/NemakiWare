@@ -80,16 +80,6 @@ public class TypeManagerImpl implements TypeManager {
 	/**
 	 * Constant
 	 */
-	public final static String DOCUMENT_TYPE_ID = BaseTypeId.CMIS_DOCUMENT
-			.value();
-	public final static String FOLDER_TYPE_ID = BaseTypeId.CMIS_FOLDER.value();
-	public final static String RELATIONSHIP_TYPE_ID = BaseTypeId.CMIS_RELATIONSHIP
-			.value();
-	public final static String POLICY_TYPE_ID = BaseTypeId.CMIS_POLICY.value();
-	public final static String ITEM_TYPE_ID = BaseTypeId.CMIS_ITEM.value();
-	public final static String SECONDARY_TYPE_ID = BaseTypeId.CMIS_SECONDARY
-			.value();
-
 	private final static boolean REQUIRED = true;
 	private final static boolean QUERYABLE = true;
 	private final static boolean ORDERABLE = true;
@@ -192,10 +182,10 @@ public class TypeManagerImpl implements TypeManager {
 
 		// Set attributes
 		DocumentTypeDefinitionImpl documentType = new DocumentTypeDefinitionImpl();
-		documentType.setId(DOCUMENT_TYPE_ID);
+		documentType.setId(BaseTypeId.CMIS_DOCUMENT.value());
 		documentType.setLocalName(localName);
 		documentType.setLocalNamespace(NAMESPACE);
-		documentType.setQueryName(DOCUMENT_TYPE_ID);
+		documentType.setQueryName(BaseTypeId.CMIS_DOCUMENT.value());
 		documentType.setDisplayName(displayName);
 		documentType.setDescription(description);
 		documentType.setBaseTypeId(BaseTypeId.CMIS_DOCUMENT);
@@ -251,10 +241,10 @@ public class TypeManagerImpl implements TypeManager {
 
 		// Set attributes
 		FolderTypeDefinitionImpl folderType = new FolderTypeDefinitionImpl();
-		folderType.setId(FOLDER_TYPE_ID);
+		folderType.setId(BaseTypeId.CMIS_FOLDER.value());
 		folderType.setLocalName(localName);
 		folderType.setLocalNamespace(NAMESPACE);
-		folderType.setQueryName(FOLDER_TYPE_ID);
+		folderType.setQueryName(BaseTypeId.CMIS_FOLDER.value());
 		folderType.setDisplayName(displayName);
 		folderType.setBaseTypeId(BaseTypeId.CMIS_FOLDER);
 		folderType.setDescription(description);
@@ -312,10 +302,10 @@ public class TypeManagerImpl implements TypeManager {
 
 		// Set attributes
 		RelationshipTypeDefinitionImpl relationshipType = new RelationshipTypeDefinitionImpl();
-		relationshipType.setId(RELATIONSHIP_TYPE_ID);
+		relationshipType.setId(BaseTypeId.CMIS_RELATIONSHIP.value());
 		relationshipType.setLocalName(localName);
 		relationshipType.setLocalNamespace(NAMESPACE);
-		relationshipType.setQueryName(RELATIONSHIP_TYPE_ID);
+		relationshipType.setQueryName(BaseTypeId.CMIS_RELATIONSHIP.value());
 		relationshipType.setDisplayName(displayName);
 		relationshipType.setBaseTypeId(BaseTypeId.CMIS_RELATIONSHIP);
 		relationshipType.setDescription(description);
@@ -375,10 +365,10 @@ public class TypeManagerImpl implements TypeManager {
 
 		// Set attributes
 		PolicyTypeDefinitionImpl policyType = new PolicyTypeDefinitionImpl();
-		policyType.setId(POLICY_TYPE_ID);
+		policyType.setId(BaseTypeId.CMIS_POLICY.value());
 		policyType.setLocalName(localName);
 		policyType.setLocalNamespace(NAMESPACE);
-		policyType.setQueryName(POLICY_TYPE_ID);
+		policyType.setQueryName(BaseTypeId.CMIS_POLICY.value());
 		policyType.setDisplayName(displayName);
 		policyType.setBaseTypeId(BaseTypeId.CMIS_POLICY);
 		policyType.setDescription(description);
@@ -434,10 +424,10 @@ public class TypeManagerImpl implements TypeManager {
 
 		// Set attributes
 		ItemTypeDefinitionImpl itemType = new ItemTypeDefinitionImpl();
-		itemType.setId(ITEM_TYPE_ID);
+		itemType.setId(BaseTypeId.CMIS_ITEM.value());
 		itemType.setLocalName(localName);
 		itemType.setLocalNamespace(NAMESPACE);
-		itemType.setQueryName(ITEM_TYPE_ID);
+		itemType.setQueryName(BaseTypeId.CMIS_ITEM.value());
 		itemType.setDisplayName(displayName);
 		itemType.setBaseTypeId(BaseTypeId.CMIS_ITEM);
 		itemType.setDescription(description);
@@ -484,10 +474,10 @@ public class TypeManagerImpl implements TypeManager {
 
 		// Set attributes
 		SecondaryTypeDefinitionImpl secondaryType = new SecondaryTypeDefinitionImpl();
-		secondaryType.setId(SECONDARY_TYPE_ID);
+		secondaryType.setId(BaseTypeId.CMIS_SECONDARY.value());
 		secondaryType.setLocalName(localName);
 		secondaryType.setLocalNamespace(NAMESPACE);
-		secondaryType.setQueryName(SECONDARY_TYPE_ID);
+		secondaryType.setQueryName(BaseTypeId.CMIS_SECONDARY.value());
 		secondaryType.setDisplayName(displayName);
 		secondaryType.setBaseTypeId(BaseTypeId.CMIS_SECONDARY);
 		secondaryType.setDescription(description);
@@ -1075,15 +1065,15 @@ public class TypeManagerImpl implements TypeManager {
 
 	private void buildPropertyDefinitionCores() {
 		// CMIS default property cores
-		Map<String, PropertyDefinition<?>> d = types.get(DOCUMENT_TYPE_ID)
+		Map<String, PropertyDefinition<?>> d = types.get(BaseTypeId.CMIS_DOCUMENT.value())
 				.getTypeDefinition().getPropertyDefinitions();
-		Map<String, PropertyDefinition<?>> f = types.get(FOLDER_TYPE_ID)
+		Map<String, PropertyDefinition<?>> f = types.get(BaseTypeId.CMIS_FOLDER.value())
 				.getTypeDefinition().getPropertyDefinitions();
-		Map<String, PropertyDefinition<?>> r = types.get(RELATIONSHIP_TYPE_ID)
+		Map<String, PropertyDefinition<?>> r = types.get(BaseTypeId.CMIS_RELATIONSHIP.value())
 				.getTypeDefinition().getPropertyDefinitions();
-		Map<String, PropertyDefinition<?>> p = types.get(POLICY_TYPE_ID)
+		Map<String, PropertyDefinition<?>> p = types.get(BaseTypeId.CMIS_POLICY.value())
 				.getTypeDefinition().getPropertyDefinitions();
-		Map<String, PropertyDefinition<?>> i = types.get(ITEM_TYPE_ID)
+		Map<String, PropertyDefinition<?>> i = types.get(BaseTypeId.CMIS_ITEM.value())
 				.getTypeDefinition().getPropertyDefinitions();
 
 		copyToPropertyDefinitionCore(d);
@@ -1310,17 +1300,17 @@ public class TypeManagerImpl implements TypeManager {
 				: includePropertyDefinitions.booleanValue());
 
 		if (typeId == null) {
-			flattenTypeDefinitionContainer(types.get(FOLDER_TYPE_ID), result,
+			flattenTypeDefinitionContainer(types.get(BaseTypeId.CMIS_FOLDER.value()), result,
 					d, ipd);
-			flattenTypeDefinitionContainer(types.get(DOCUMENT_TYPE_ID), result,
+			flattenTypeDefinitionContainer(types.get(BaseTypeId.CMIS_DOCUMENT.value()), result,
 					d, ipd);
-			flattenTypeDefinitionContainer(types.get(RELATIONSHIP_TYPE_ID),
+			flattenTypeDefinitionContainer(types.get(BaseTypeId.CMIS_RELATIONSHIP.value()),
 					result, d, ipd);
-			flattenTypeDefinitionContainer(types.get(POLICY_TYPE_ID), result,
+			flattenTypeDefinitionContainer(types.get(BaseTypeId.CMIS_POLICY.value()), result,
 					d, ipd);
-			flattenTypeDefinitionContainer(types.get(ITEM_TYPE_ID), result, d,
+			flattenTypeDefinitionContainer(types.get(BaseTypeId.CMIS_ITEM.value()), result, d,
 					ipd);
-			flattenTypeDefinitionContainer(types.get(SECONDARY_TYPE_ID),
+			flattenTypeDefinitionContainer(types.get(BaseTypeId.CMIS_SECONDARY.value()),
 					result, d, ipd);
 		} else {
 			TypeDefinitionContainer tdc = types.get(typeId);
