@@ -4,13 +4,13 @@ import javax.annotation.PostConstruct;
 
 import net.sf.ehcache.Cache;
 import net.sf.ehcache.CacheManager;
-import jp.aegif.nemaki.util.PropertyUtil;
+import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.cache.CustomCache;
 import jp.aegif.nemaki.util.cache.NemakiCache;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
 public class NemakiCacheImpl implements NemakiCache{
-	private PropertyUtil propertyUtil;
+	private PropertyManager propertyManager;
 	private boolean cacheEnabled;
 	
 	private final CacheManager cacheManager;
@@ -46,7 +46,7 @@ public class NemakiCacheImpl implements NemakiCache{
 	
 	@PostConstruct
 	public void init(){
-		cacheEnabled = propertyUtil.getPropertyManager().readBoolean(PropertyKey.CACHE_CMIS_ENABLED);
+		cacheEnabled = propertyManager.readBoolean(PropertyKey.CACHE_CMIS_ENABLED);
 	}
 	
 	@Override
@@ -117,7 +117,8 @@ public class NemakiCacheImpl implements NemakiCache{
 		getObjectDataCache().remove(objectId);
 	}
 
-	public void setPropertyUtil(PropertyUtil propertyUtil) {
-		this.propertyUtil = propertyUtil;
+	public void setPropertyManager(PropertyManager propertyManager) {
+		this.propertyManager = propertyManager;
 	}	
+	
 }

@@ -39,7 +39,7 @@ import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.util.DataUtil;
-import jp.aegif.nemaki.util.NemakiPropertyManager;
+import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
@@ -74,7 +74,7 @@ import org.apache.commons.collections.MapUtils;
 public class TypeManagerImpl implements TypeManager {
 
 	private TypeService typeService;
-	private NemakiPropertyManager propertyManager;
+	private PropertyManager propertyManager;
 	private String NAMESPACE;
 
 	/**
@@ -1486,7 +1486,7 @@ public class TypeManagerImpl implements TypeManager {
 		this.typeService = typeService;
 	}
 
-	public void setPropertyManager(NemakiPropertyManager propertyManager) {
+	public void setPropertyManager(PropertyManager propertyManager) {
 		this.propertyManager = propertyManager;
 	}
 }

@@ -62,7 +62,7 @@ import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.DataUtil;
-import jp.aegif.nemaki.util.PropertyUtil;
+import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.NemakiConstant;
 import jp.aegif.nemaki.util.constant.NodeType;
 import jp.aegif.nemaki.util.constant.PropertyKey;
@@ -104,7 +104,7 @@ public class ContentServiceImpl implements ContentService {
 	private ContentDaoService contentDaoService;
 	private TypeManager typeManager;
 	private RenditionManager renditionManager;
-	private PropertyUtil propertyUtil;
+	private PropertyManager propertyManager;
 	private SolrUtil solrUtil;
 	
 	private static final Log log = LogFactory
@@ -115,8 +115,13 @@ public class ContentServiceImpl implements ContentService {
 	// Content
 	// ///////////////////////////////////////
 	@Override
-	public boolean isRoot(Folder folder){
-		return propertyUtil.isRoot(folder);
+	public boolean isRoot(Content content){
+		String rootObjectId = propertyManager.readValue(PropertyKey.CMIS_REPOSITORY_MAIN_ROOT);
+		if(content.isFolder() && rootObjectId.equals(content.getId())){
+			return true;
+		}else{
+			return false;
+		}
 	}
 
 	@Override
@@ -295,7 +300,7 @@ public class ContentServiceImpl implements ContentService {
 			Content content) {
 		path.add(0, content.getName());
 
-		if (propertyUtil.isRoot(content)) {
+		if (isRoot(content)) {
 			return path;
 		} else {
 			Content parent = getParent(content.getId());
@@ -1455,7 +1460,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 	
 	private boolean isPreviewEnabled(){
-		String _cpbltyPreview = propertyUtil.getPropertyManager().readValue(PropertyKey.CAPABILITY_EXTENDED_PREVIEW);
+		String _cpbltyPreview = propertyManager.readValue(PropertyKey.CAPABILITY_EXTENDED_PREVIEW);
 		boolean cpbltyPreview = (Boolean.valueOf(_cpbltyPreview) == null)? false : Boolean.valueOf(_cpbltyPreview);
 		return cpbltyPreview;
 	}
@@ -1521,7 +1526,7 @@ public class ContentServiceImpl implements ContentService {
 		boolean iht = (content.isAclInherited() == null) ? false : content
 				.isAclInherited();
 
-		if (!propertyUtil.isRoot(content) && iht) {
+		if (!isRoot(content) && iht) {
 			// Caching the results of calculation
 			List<Ace> aces = new ArrayList<Ace>();
 			List<Ace> result = calculateAclInternal(aces, content);
@@ -1545,7 +1550,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	private List<Ace> calculateAclInternal(List<Ace> result, Content content) {
-		if (propertyUtil.isRoot(content)) {
+		if (isRoot(content)) {
 			List<Ace> rootAces = new ArrayList<Ace>();
 			List<Ace> aces = content.getAcl().getLocalAces();
 			for (Ace ace : aces) {
@@ -1626,12 +1631,12 @@ public class ContentServiceImpl implements ContentService {
 	private void convertSystemPrincipalId(List<Ace> aces) {
 		for (Ace ace : aces) {
 			if (NemakiConstant.PRINCIPAL_ANONYMOUS.equals(ace.getPrincipalId())) {
-				String anonymous = propertyUtil.getPropertyManager().readValue(
+				String anonymous = propertyManager.readValue(
 						PropertyKey.CMIS_REPOSITORY_MAIN_PRINCIPAL_ANONYMOUS);
 				ace.setPrincipalId(anonymous);
 			}
 			if (NemakiConstant.PRINCIPAL_ANYONE.equals(ace.getPrincipalId())) {
-				String anyone = propertyUtil.getPropertyManager().readValue(
+				String anyone = propertyManager.readValue(
 						PropertyKey.CMIS_REPOSITORY_MAIN_PRINCIPAL_ANYONE);
 				ace.setPrincipalId(anyone);
 			}
@@ -2004,8 +2009,8 @@ public class ContentServiceImpl implements ContentService {
 		this.renditionManager = renditionManager;
 	}
 
-	public void setPropertyUtil(PropertyUtil propertyUtil) {
-		this.propertyUtil = propertyUtil;
+	public void setPropertyManager(PropertyManager propertyManager) {
+		this.propertyManager = propertyManager;
 	}
 
 	public void setSolrUtil(SolrUtil solrUtil) {

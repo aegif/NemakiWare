@@ -25,8 +25,8 @@
 		<property name="renditionManager">
 			<ref bean="RenditionManager" />
 		</property>
-        <property name="propertyUtil">
-            <ref bean="propertyUtil" />
+       <property name="propertyManager">
+            <ref bean="propertyManager" />
         </property>
         <property name="solrUtil">
             <ref bean="solrUtil" />
@@ -84,8 +84,8 @@
 	</bean>
 	<bean id="jodRenditionManager" class="jp.aegif.nemaki.businesslogic.rendition.impl.JodRenditionManagerImpl"
 	init-method="init">
-        <property name="propertyUtil">
-            <ref bean="propertyUtil" />
+        <property name="propertyManager">
+            <ref bean="propertyManager" />
         </property>
 	</bean>
 </beans>

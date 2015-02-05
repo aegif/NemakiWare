@@ -25,6 +25,7 @@ import java.math.BigInteger;
 import java.util.List;
 import java.util.Set;
 
+import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
 
@@ -48,6 +49,9 @@ public interface CompileObjectService {
 	public ObjectList compileChangeDataList(CallContext context, List<Change> changes,
 			Holder<String> changeLogToken, Boolean includeProperties, String filter,
 			Boolean includePolicyIds, Boolean includeAcl);
+	
+	public org.apache.chemistry.opencmis.commons.data.Acl compileAcl(
+			Acl acl, Boolean isInherited, Boolean onlyBasicPermissions);
 	
 	public PropertiesImpl compileProperties(CallContext callContext, Content content);
 	

@@ -50,11 +50,10 @@ public interface ContentService {
 	// Content
 	// ///////////////////////////////////////
 	/**
-	 * Check if a folder is the root folder
-	 * @param folder
+	 * @param content
 	 * @return
 	 */
-	public boolean isRoot(Folder folder);
+	public boolean isRoot(Content content);
 
 	/**
 	 * Check if any object of a type exists

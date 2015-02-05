@@ -44,7 +44,6 @@ import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.DataUtil;
-import jp.aegif.nemaki.util.PropertyUtil;
 import jp.aegif.nemaki.util.constant.DomainType;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
@@ -97,7 +96,6 @@ public class ExceptionServiceImpl implements ExceptionService,
 	private PermissionService permissionService;
 	private RepositoryInfo repositoryInfo;
 	private PrincipalService principalService;
-	private PropertyUtil propertyUtil;
 
 	private static final Log log = LogFactory
 			.getLog(ExceptionServiceImpl.class);
@@ -146,7 +144,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void invalidArgumentRootFolder(Content content) {
-		if (propertyUtil.isRoot(content))
+		if (contentService.isRoot(content))
 			invalidArgument("Cannot specify the root folder as an input parameter");
 	}
 
@@ -1187,9 +1185,5 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	public void setPrincipalService(PrincipalService principalService) {
 		this.principalService = principalService;
-	}
-
-	public void setPropertyUtil(PropertyUtil propertyUtil) {
-		this.propertyUtil = propertyUtil;
 	}
 }

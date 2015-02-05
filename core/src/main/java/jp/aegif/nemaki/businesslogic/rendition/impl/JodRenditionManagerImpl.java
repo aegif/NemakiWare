@@ -24,45 +24,45 @@ import org.artofsolving.jodconverter.office.DefaultOfficeManagerConfiguration;
 import org.artofsolving.jodconverter.office.OfficeManager;
 
 import jp.aegif.nemaki.businesslogic.rendition.RenditionManager;
-import jp.aegif.nemaki.util.PropertyUtil;
+import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.YamlManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
 public class JodRenditionManagerImpl implements RenditionManager {
 
-	private PropertyUtil propertyUtil;
+	private PropertyManager propertyManager;
 	private DefaultDocumentFormatRegistry registry;
 	private static final Log log = LogFactory
 			.getLog(JodRenditionManagerImpl.class);
-	
-	
+
 	@PostConstruct
-	public void init(){
+	public void init() {
 		registry = new DefaultDocumentFormatRegistry();
 
 		String definitionFile = "";
 		try {
-			definitionFile = propertyUtil.getPropertyManager()
-					.readValue(PropertyKey.JODCONVERTER_REGISTRY_DATAFORMATS);
+			definitionFile = propertyManager.readValue(
+					PropertyKey.JODCONVERTER_REGISTRY_DATAFORMATS);
 		} catch (Exception e) {
 			log.error("Cannot read a permission definition file", e);
 		}
 
-		//Parse definition file
+		// Parse definition file
 		YamlManager manager = new YamlManager(definitionFile);
 		List<Map<String, Object>> yml = (List<Map<String, Object>>) manager
 				.loadYml();
 
-		if(CollectionUtils.isNotEmpty(yml)){
-			for(Map<String, Object> format : yml){
-				String name = (String)(format.get("name"));
-				String extension = (String)(format.get("extension"));
-				String mediaType = (String)(format.get("mediaType"));
-				
-				DocumentFormat df = new DocumentFormat(name, extension, mediaType);
+		if (CollectionUtils.isNotEmpty(yml)) {
+			for (Map<String, Object> format : yml) {
+				String name = (String) (format.get("name"));
+				String extension = (String) (format.get("extension"));
+				String mediaType = (String) (format.get("mediaType"));
+
+				DocumentFormat df = new DocumentFormat(name, extension,
+						mediaType);
 				registry.addFormat(df);
 			}
-			
+
 		}
 	}
 
@@ -77,9 +77,9 @@ public class JodRenditionManagerImpl implements RenditionManager {
 			inputFile.deleteOnExit();
 			File outputFile = File.createTempFile("output", ".pdf");
 			outputFile.deleteOnExit();
-			
-			String officehome = propertyUtil.getPropertyManager().readValue(
-					PropertyKey.JODCONVERTER_OFFICEHOME);
+
+			String officehome = propertyManager
+					.readValue(PropertyKey.JODCONVERTER_OFFICEHOME);
 
 			OfficeManager officeManager = new DefaultOfficeManagerConfiguration()
 					.setPortNumber(8100).setOfficeHome(officehome)
@@ -168,13 +168,13 @@ public class JodRenditionManagerImpl implements RenditionManager {
 		}
 		return fileName;
 	}
-	
-	public boolean checkConvertible(String mediatype){
+
+	public boolean checkConvertible(String mediatype) {
 		DocumentFormat df = registry.getFormatByMediaType(mediatype);
 		return df != null;
 	}
 
-	public void setPropertyUtil(PropertyUtil propertyUtil) {
-		this.propertyUtil = propertyUtil;
+	public void setPropertyManager(PropertyManager propertyManager) {
+		this.propertyManager = propertyManager;
 	}
 }

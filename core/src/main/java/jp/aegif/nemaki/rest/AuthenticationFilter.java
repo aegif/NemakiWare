@@ -35,7 +35,7 @@ import javax.servlet.http.HttpSession;
 
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.model.User;
-import jp.aegif.nemaki.util.NemakiPropertyManager;
+import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.mindrot.jbcrypt.BCrypt;
@@ -45,7 +45,7 @@ import org.springframework.web.context.support.WebApplicationContextUtils;
 public class AuthenticationFilter implements Filter {
 
 	private PrincipalService principalService;
-	private NemakiPropertyManager propertyManager;
+	private PropertyManager propertyManager;
 	private final String TOKEN_FALSE = "false";
 
 	@Override
@@ -56,8 +56,8 @@ public class AuthenticationFilter implements Filter {
 		principalService = (PrincipalService) context
 		.getBean("principalService");
 		
-		propertyManager = (NemakiPropertyManager)context
-				.getBean("nemakiPropertyManager");
+		propertyManager = (PropertyManager)context
+				.getBean("propertyManager");
 		
 	}
 
