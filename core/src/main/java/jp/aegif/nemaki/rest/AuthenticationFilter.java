@@ -40,25 +40,27 @@ import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.apache.commons.codec.binary.Base64;
 import org.mindrot.jbcrypt.BCrypt;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.context.support.WebApplicationContextUtils;
 
 public class AuthenticationFilter implements Filter {
 
-	private PrincipalService principalService;
+	@Autowired
 	private PropertyManager propertyManager;
+	private PrincipalService principalService;
 	private final String TOKEN_FALSE = "false";
 
 	@Override
 	public void init(FilterConfig filterConfig) throws ServletException {
 
-		WebApplicationContext context = WebApplicationContextUtils.getWebApplicationContext(filterConfig.getServletContext());
+		//WebApplicationContext context = WebApplicationContextUtils.getWebApplicationContext(filterConfig.getServletContext());
 		
-		principalService = (PrincipalService) context
+		/*principalService = (PrincipalService) context
 		.getBean("principalService");
 		
 		propertyManager = (PropertyManager)context
-				.getBean("propertyManager");
+				.getBean("propertyManager");*/
 		
 	}
 
@@ -178,5 +180,13 @@ public class AuthenticationFilter implements Filter {
 		}
 		
 		return enabled;
+	}
+
+	public void setPropertyManager(PropertyManager propertyManager) {
+		this.propertyManager = propertyManager;
+	}
+
+	public void setPrincipalService(PrincipalService principalService) {
+		this.principalService = principalService;
 	}
 }
