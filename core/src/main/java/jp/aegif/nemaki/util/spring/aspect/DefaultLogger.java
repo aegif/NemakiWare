@@ -8,9 +8,9 @@ import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import org.aspectj.lang.ProceedingJoinPoint;
 
-public class DefaultLogAspect {
+public class DefaultLogger {
 
-	private static Logger log = Logger.getLogger(DefaultLogAspect.class);
+	private static Logger log = Logger.getLogger(DefaultLogger.class);
 	private String logLevel;
 	private boolean returnValue;
 	private boolean fullQualifiedName;
