@@ -10,7 +10,7 @@ import java.util.Map.Entry;
 
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
-import jp.aegif.nemaki.util.NemakiPropertyManager;
+import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
@@ -32,7 +32,7 @@ public class SortUtil {
 
 	private TypeManager typeManager;
 	private RepositoryInfo repositoryInfo;
-	private NemakiPropertyManager propertyManager;
+	private PropertyManager propertyManager;
 
 	@SuppressWarnings("unchecked")
 	public void sort(List<ObjectData> list, String orderBy) {
@@ -246,7 +246,7 @@ public class SortUtil {
 		this.repositoryInfo = repositoryInfo;
 	}
 
-	public void setPropertyManager(NemakiPropertyManager propertyManager) {
+	public void setPropertyManager(PropertyManager propertyManager) {
 		this.propertyManager = propertyManager;
 	}
 }

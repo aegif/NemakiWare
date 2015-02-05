@@ -23,11 +23,12 @@ package jp.aegif.nemaki.cmis.service.impl;
 import java.util.List;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.cmis.aspect.CompileObjectService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.service.AclService;
 import jp.aegif.nemaki.model.Content;
-import jp.aegif.nemaki.util.PropertyUtil;
+import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.cache.NemakiCache;
 import jp.aegif.nemaki.util.constant.DomainType;
 import jp.aegif.nemaki.util.constant.NemakiConstant;
@@ -49,9 +50,10 @@ import org.apache.commons.collections.CollectionUtils;
 public class AclServiceImpl implements AclService {
 
 	private ContentService contentService;
+	private CompileObjectService compileObjectService;
 	private ExceptionService exceptionService;
 	private TypeManager typeManager;
-	private PropertyUtil propertyUtil;
+	private PropertyManager propertyManager;
 	private NemakiCache nemakiCache;
 
 	@Override
@@ -69,7 +71,7 @@ public class AclServiceImpl implements AclService {
 		// Body of the method
 		// //////////////////
 		jp.aegif.nemaki.model.Acl acl = contentService.calculateAcl(content);
-		return propertyUtil.convertToCmisAcl(acl, content.isAclInherited(), onlyBasicPermissions);
+		return compileObjectService.compileAcl(acl, content.isAclInherited(), onlyBasicPermissions);
 	}
 
 	@Override
@@ -129,14 +131,14 @@ public class AclServiceImpl implements AclService {
 		List<jp.aegif.nemaki.model.Ace> aces = acl.getAllAces();
 		for (jp.aegif.nemaki.model.Ace ace : aces) {
 			//Convert anonymous to the form of database
-			String anonymous = propertyUtil.getPropertyManager().readValue(
+			String anonymous = propertyManager.readValue(
 					PropertyKey.CMIS_REPOSITORY_MAIN_PRINCIPAL_ANONYMOUS);
 			if (anonymous.equals(ace.getPrincipalId())) {
 				ace.setPrincipalId(NemakiConstant.PRINCIPAL_ANONYMOUS);
 			}
 
 			//Convert anyone to the form of database
-			String anyone = propertyUtil.getPropertyManager().readValue(
+			String anyone = propertyManager.readValue(
 					PropertyKey.CMIS_REPOSITORY_MAIN_PRINCIPAL_ANYONE);
 			if (anyone.equals(ace.getPrincipalId())) {
 				ace.setPrincipalId(NemakiConstant.PRINCIPAL_ANYONE);
@@ -156,11 +158,15 @@ public class AclServiceImpl implements AclService {
 		this.typeManager = typeManager;
 	}
 
-	public void setPropertyUtil(PropertyUtil propertyUtil) {
-		this.propertyUtil = propertyUtil;
+	public void setPropertyManager(PropertyManager propertyManager) {
+		this.propertyManager = propertyManager;
 	}
 
 	public void setNemakiCache(NemakiCache nemakiCache) {
 		this.nemakiCache = nemakiCache;
+	}
+
+	public void setCompileObjectService(CompileObjectService compileObjectService) {
+		this.compileObjectService = compileObjectService;
 	}
 }

@@ -14,8 +14,8 @@
 	</bean>
 	<bean id="nemakiCache" class="jp.aegif.nemaki.util.cache.impl.NemakiCacheImpl"
 	init-method="init">
-		<property name="propertyUtil">
-            <ref bean="propertyUtil" />
+		<property name="propertyManager">
+            <ref bean="propertyManager" />
         </property>
 	</bean>
 
@@ -38,7 +38,7 @@
    
     <bean id="repositoryMap" class="jp.aegif.nemaki.cmis.factory.RepositoryMap" init-method="init">
         <property name="propertyManager">
-            <ref bean="nemakiPropertyManager" />
+            <ref bean="propertyManager" />
         </property>
     </bean>
 
@@ -106,15 +106,15 @@
     <bean id="Capabilities"
         class="jp.aegif.nemaki.cmis.factory.info.CapabilitiesImpl" init-method="init">
         <property name="propertyManager">
-            <ref bean="nemakiPropertyManager" />
+            <ref bean="propertyManager" />
         </property>
     </bean>
 
     <bean id="AclCapabilities"
         class="jp.aegif.nemaki.cmis.factory.info.AclCapabilitiesDataImpl"
         init-method="init">
-        <property name="propertyUtil">
-            <ref bean="propertyUtil" />
+        <property name="propertyManager">
+            <ref bean="propertyManager" />
         </property>
     </bean>
 
@@ -134,7 +134,7 @@
             <ref bean="TypeService" />
         </property>
         <property name="propertyManager">
-            <ref bean="nemakiPropertyManager" />
+            <ref bean="propertyManager" />
         </property>
     </bean>
 
@@ -227,7 +227,7 @@
     <bean id="sortUtil" class="jp.aegif.nemaki.cmis.aspect.SortUtil">
     	<property name="typeManager" ref="TypeManager" />
     	<property name="repositoryInfo" ref="RepositoryInfo" />
-        <property name="propertyManager" ref="nemakiPropertyManager" />
+        <property name="propertyManager" ref="propertyManager" />
     </bean>
 
     <bean id="ObjectService" class="org.springframework.aop.framework.ProxyFactoryBean">
@@ -389,14 +389,17 @@
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
+        <property name="compileObjectService">
+            <ref bean="CompileObjectService" />
+        </property>
         <property name="exceptionService">
             <ref bean="ExceptionService" />
         </property>
         <property name="typeManager">
             <ref bean="TypeManager" />
         </property>
-        <property name="propertyUtil">
-            <ref bean="propertyUtil" />
+        <property name="propertyManager">
+            <ref bean="propertyManager" />
         </property>
         <property name="nemakiCache">
             <ref bean="nemakiCache" />
@@ -466,11 +469,11 @@
         <property name="permissionService">
             <ref bean="PermissionService" />
         </property>
+        <property name="aclCapabilities">
+            <ref bean="AclCapabilities" />
+        </property>
         <property name="typeManager">
             <ref bean="TypeManager" />
-        </property>
-        <property name="propertyUtil">
-            <ref bean="propertyUtil" />
         </property>
         <property name="nemakiCache">
             <ref bean="nemakiCache" />
@@ -505,9 +508,6 @@
         <property name="repositoryInfo">
             <ref bean="RepositoryInfo" />
         </property>
-        <property name="propertyUtil">
-            <ref bean="propertyUtil" />
-        </property>
     </bean>
 
     <bean id="ExceptionService" class="org.springframework.aop.framework.ProxyFactoryBean">
@@ -537,9 +537,6 @@
         </property>
         <property name="principalService">
             <ref bean="PrincipalService" />
-        </property>
-        <property name="propertyUtil">
-            <ref bean="propertyUtil" />
         </property>
     </bean>
 
@@ -579,7 +576,7 @@
 
     <bean id="solrUtil" class="jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil">
         <property name="propertyManager">
-            <ref bean="nemakiPropertyManager" />
+            <ref bean="propertyManager" />
         </property>
     </bean>
 

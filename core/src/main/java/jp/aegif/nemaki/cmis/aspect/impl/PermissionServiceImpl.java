@@ -38,8 +38,6 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.VersionSeries;
-import jp.aegif.nemaki.util.NemakiPropertyManager;
-import jp.aegif.nemaki.util.PropertyUtil;
 import jp.aegif.nemaki.util.constant.CmisPermission;
 import jp.aegif.nemaki.util.constant.NemakiConstant;
 
@@ -67,7 +65,6 @@ public class PermissionServiceImpl implements PermissionService {
 	private ContentService contentService;
 	private TypeManager typeManager;
 	private RepositoryInfo repositoryInfo;
-	private PropertyUtil propertyUtil;
 
 
 	// //////////////////////////////////////////////////////////////////////////
@@ -229,13 +226,13 @@ public class PermissionServiceImpl implements PermissionService {
 		if (PermissionMapping.CAN_GET_CHILDREN_FOLDER.equals(key))
 			return BaseTypeId.CMIS_FOLDER.value().equals(baseType);
 		if (PermissionMapping.CAN_GET_FOLDER_PARENT_OBJECT.equals(key))
-			if(propertyUtil.isRoot(content)){
+			if(contentService.isRoot(content)){
 				return false;
 			}else{
 				return BaseTypeId.CMIS_FOLDER.value().equals(baseType);
 			}
 		if (PermissionMapping.CAN_GET_PARENTS_FOLDER.equals(key))
-			if(propertyUtil.isRoot(content)){
+			if(contentService.isRoot(content)){
 				return false;
 			}else{
 				return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType) || BaseTypeId.CMIS_FOLDER.value().equals(baseType)
@@ -272,7 +269,7 @@ public class PermissionServiceImpl implements PermissionService {
 					|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM
 					.value().equals(baseType));
 		if (PermissionMapping.CAN_MOVE_OBJECT.equals(key))
-			if(propertyUtil.isRoot(content)){
+			if(contentService.isRoot(content)){
 				return false;
 			}else{
 				return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)
@@ -285,7 +282,7 @@ public class PermissionServiceImpl implements PermissionService {
 		if (PermissionMapping.CAN_MOVE_SOURCE.equals(key))
 			return BaseTypeId.CMIS_FOLDER.value().equals(baseType);
 		if (PermissionMapping.CAN_DELETE_OBJECT.equals(key))
-			if(propertyUtil.isRoot(content)){
+			if(contentService.isRoot(content)){
 				return false;
 			}else{
 				return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)
@@ -423,12 +420,5 @@ public class PermissionServiceImpl implements PermissionService {
 
 	public void setRepositoryInfo(RepositoryInfo repositoryInfo) {
 		this.repositoryInfo = repositoryInfo;
-	}
-
-	public void setPropertyManager(NemakiPropertyManager propertyManager) {
-	}
-
-	public void setPropertyUtil(PropertyUtil propertyUtil) {
-		this.propertyUtil = propertyUtil;
 	}
 }

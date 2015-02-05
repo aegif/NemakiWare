@@ -7,13 +7,13 @@ import jp.aegif.nemaki.util.spring.SpringPropertiesUtil;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
-public class NemakiPropertyManager{
+public class PropertyManager{
 	private static final Log log = LogFactory
-			.getLog(NemakiPropertyManager.class);
+			.getLog(PropertyManager.class);
 
-	private SpringPropertiesUtil nemakiProperties;
+	private SpringPropertiesUtil propertyConfigurer;
 
-	public NemakiPropertyManager(){
+	public PropertyManager(){
 
 	}
 
@@ -24,23 +24,23 @@ public class NemakiPropertyManager{
 	 * @throws Exception
 	 */
 	public String readValue(String key){
-		return nemakiProperties.getValue(key);
+		return propertyConfigurer.getValue(key);
 	}
 
 	public String readHeadValue(String key) throws Exception{
-		return nemakiProperties.getHeadValue(key);
+		return propertyConfigurer.getHeadValue(key);
 	}
 
 	public List<String> readValues(String key) {
-		return nemakiProperties.getValues(key);
+		return propertyConfigurer.getValues(key);
 	}
 	
 	public boolean readBoolean(String key){
 		String val = readValue(key);
 		return Boolean.valueOf(val);
 	}
-	
-	public void setNemakiProperties(SpringPropertiesUtil nemakiProperties) {
-		this.nemakiProperties = nemakiProperties;
+
+	public void setPropertyConfigurer(SpringPropertiesUtil propertyConfigurer) {
+		this.propertyConfigurer = propertyConfigurer;
 	}
 }

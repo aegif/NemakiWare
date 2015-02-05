@@ -27,7 +27,7 @@ import java.util.Set;
 
 import javax.annotation.PostConstruct;
 
-import jp.aegif.nemaki.util.NemakiPropertyManager;
+import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.apache.chemistry.opencmis.commons.enums.CapabilityAcl;
@@ -46,7 +46,7 @@ public class CapabilitiesImpl extends org.apache.chemistry.opencmis.commons.impl
 
 	private static final long serialVersionUID = -7037495456587139344L;
 
-	private NemakiPropertyManager pm;
+	private PropertyManager pm;
 	
 	@PostConstruct
 	public void init() {
@@ -140,7 +140,7 @@ public class CapabilitiesImpl extends org.apache.chemistry.opencmis.commons.impl
 		setCapabilityAcl(CapabilityAcl.fromValue(pm.readValue(PropertyKey.CAPABILITY_ACL)));
 	}
 
-	public void setPropertyManager(NemakiPropertyManager propertyManager) {
+	public void setPropertyManager(PropertyManager propertyManager) {
 		this.pm = propertyManager;
 	}
 }

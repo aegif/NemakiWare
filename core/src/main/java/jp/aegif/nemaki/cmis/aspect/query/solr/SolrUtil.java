@@ -28,7 +28,7 @@ import java.util.HashMap;
 import java.util.List;
 
 import jp.aegif.nemaki.cmis.aspect.SortUtil;
-import jp.aegif.nemaki.util.NemakiPropertyManager;
+import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.antlr.runtime.tree.Tree;
@@ -53,7 +53,7 @@ public class SolrUtil {
 
 	private final HashMap<String, String> map;
 
-	private NemakiPropertyManager propertyManager;
+	private PropertyManager propertyManager;
 
 	public SolrUtil() {
 		map = new HashMap<String, String>();
@@ -157,7 +157,7 @@ public class SolrUtil {
 		return url;
 	}
 
-	public void setPropertyManager(NemakiPropertyManager propertyManager) {
+	public void setPropertyManager(PropertyManager propertyManager) {
 		this.propertyManager = propertyManager;
 	}
 }

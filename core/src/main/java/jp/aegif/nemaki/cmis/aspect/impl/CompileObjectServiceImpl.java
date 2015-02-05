@@ -35,8 +35,10 @@ import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.CompileObjectService;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
+import jp.aegif.nemaki.cmis.factory.info.AclCapabilitiesDataImpl;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.cmis.service.RepositoryService;
+import jp.aegif.nemaki.model.Ace;
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Aspect;
 import jp.aegif.nemaki.model.AttachmentNode;
@@ -45,21 +47,24 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.Item;
+import jp.aegif.nemaki.model.NemakiPermissionDefinition;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.DataUtil;
-import jp.aegif.nemaki.util.PropertyUtil;
 import jp.aegif.nemaki.util.cache.NemakiCache;
+import jp.aegif.nemaki.util.constant.NemakiConstant;
 import net.sf.ehcache.Element;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.AllowableActions;
+import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
+import org.apache.chemistry.opencmis.commons.data.Principal;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.data.RenditionData;
@@ -78,10 +83,15 @@ import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyData;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlListImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AllowableActionsImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ChangeEventInfoDataImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.CmisExtensionElementImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectDataImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectListImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PermissionDefinitionDataImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PolicyIdListImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyBooleanImpl;
@@ -93,7 +103,6 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.RenditionDataImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -110,7 +119,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 	private ContentService contentService;
 	private PermissionService permissionService;
 	private TypeManager typeManager;
-	private PropertyUtil propertyUtil;
+	private AclCapabilitiesDataImpl aclCapabilities;
 	private NemakiCache nemakiCache;
 
 	private boolean includeRelationshipsEnabled = true;
@@ -151,7 +160,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		// Set Acl
 		Acl acl = contentService.calculateAcl(content);
 		result.setIsExactAcl(true);
-		result.setAcl(propertyUtil.convertToCmisAcl(acl, content.isAclInherited(), false));
+		result.setAcl(compileAcl(acl, content.isAclInherited(), false));
 		
 		//Set Relationship(BOTH)
 		if (!content.isRelationship()) {
@@ -449,8 +458,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		if (iacl) {
 			if (content != null) {
 				Acl acl = contentService.calculateAcl(content);
-				object.setAcl(propertyUtil.convertToCmisAcl(acl,
-						content.isAclInherited(), false));
+				object.setAcl(compileAcl(acl, content.isAclInherited(), false));
 			}
 		}
 	}
@@ -508,7 +516,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 			if (!isAllowableByType(key, content, tdf)) {
 				continue;
 			}
-			if (propertyUtil.isRoot(content)) {
+			if (contentService.isRoot(content)) {
 				if (Action.CAN_MOVE_OBJECT == convertKeyToAction(key)) {
 					continue;
 				}
@@ -724,7 +732,7 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		if (content.isFolder()) {
 			Folder folder = (Folder) content;
 			// Root folder
-			if (propertyUtil.isRoot(folder)) {
+			if (contentService.isRoot(folder)) {
 				properties = compileRootFolderProperties(folder, properties,
 						tdf);
 				// Other than root folder
@@ -1357,6 +1365,79 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		return null;
 	}
 
+	@Override
+	public org.apache.chemistry.opencmis.commons.data.Acl compileAcl(
+			Acl acl, Boolean isInherited, Boolean onlyBasicPermissions){
+		//Default to FALSE
+				boolean obp = (onlyBasicPermissions == null) ? false : onlyBasicPermissions;
+
+				AccessControlListImpl cmisAcl = new AccessControlListImpl();
+				cmisAcl.setAces(new ArrayList<org.apache.chemistry.opencmis.commons.data.Ace>());
+				if(acl != null){
+					// Set local ACEs
+					buildCmisAce(cmisAcl, true, acl.getLocalAces(), obp);
+
+					// Set inherited ACEs
+					buildCmisAce(cmisAcl, false, acl.getInheritedAces(), obp);
+				}
+
+				// Set "exact" property
+				cmisAcl.setExact(true);
+
+				// Set "inherited" property, which is out of bounds to CMIS
+				String namespace = NemakiConstant.NAMESPACE_ACL_INHERITANCE;
+				boolean iht = (isInherited == null)? false : isInherited;
+				CmisExtensionElementImpl inherited = new CmisExtensionElementImpl(
+						namespace, NemakiConstant.EXTNAME_ACL_INHERITED, null, String.valueOf(iht));
+				List<CmisExtensionElement> exts = new ArrayList<CmisExtensionElement>();
+				exts.add(inherited);
+				cmisAcl.setExtensions(exts);
+
+				return cmisAcl;
+	}
+	
+	private void buildCmisAce(AccessControlListImpl cmisAcl, boolean direct, List<Ace> aces, boolean onlyBasicPermissions){
+		if(CollectionUtils.isNotEmpty(aces)){
+			for (Ace ace : aces) {
+				//Set principal
+				Principal principal = new AccessControlPrincipalDataImpl(
+						ace.getPrincipalId());
+
+				//Set permissions
+				List<String> permissions= new ArrayList<String>();
+				if(onlyBasicPermissions && CollectionUtils.isNotEmpty(ace.getPermissions())){
+					HashMap<String,String> map = aclCapabilities.getBasicPermissionConversion();
+
+					//Translate permissions as CMIS Basic permissions
+					for(String p : ace.getPermissions()){
+						permissions.add(map.get(p));
+					}
+				}else{
+					permissions = ace.getPermissions();
+				}
+
+				
+				
+				//Build CMIS ACE
+				AccessControlEntryImpl cmisAce = new AccessControlEntryImpl(
+						principal, permissions);
+
+				//Set direct flag
+				cmisAce.setDirect(direct);
+
+				cmisAcl.getAces().add(cmisAce);
+			}
+		}
+	}
+	
+	private HashMap<String, String> getBasicPermissionConversion (List<NemakiPermissionDefinition> list){
+		HashMap<String, String> result = new HashMap<String, String>();
+		for(NemakiPermissionDefinition p : list){
+			result.put(p.getId(), p.getAsCmisBasicPermission());
+		}
+		return result;
+	}
+	
 	public void setRepositoryInfo(RepositoryInfo repositoryInfo) {
 		this.repositoryInfo = repositoryInfo;
 	}
@@ -1373,12 +1454,12 @@ public class CompileObjectServiceImpl implements CompileObjectService {
 		this.permissionService = permissionService;
 	}
 
-	public void setTypeManager(TypeManager typeManager) {
-		this.typeManager = typeManager;
+	public void setAclCapabilities(AclCapabilitiesDataImpl aclCapabilities) {
+		this.aclCapabilities = aclCapabilities;
 	}
 
-	public void setPropertyUtil(PropertyUtil propertyUtil) {
-		this.propertyUtil = propertyUtil;
+	public void setTypeManager(TypeManager typeManager) {
+		this.typeManager = typeManager;
 	}
 
 	public void setNemakiCache(NemakiCache nemakiCache) {
