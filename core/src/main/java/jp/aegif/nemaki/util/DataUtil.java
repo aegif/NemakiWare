@@ -507,4 +507,13 @@ public class DataUtil {
 			return true;
 		}
 	}
+	
+	public static BigInteger convertToBigInteger(String string){
+		if(StringUtils.isBlank(string)){
+			return null;
+		}else{
+			Long l = Long.valueOf(string);
+			return BigInteger.valueOf(l);
+		}
+	}
 }

@@ -24,7 +24,11 @@
         <property name="cmisServiceFactory" ref="CmisServiceFactory" />
     </bean>
 	
-    <bean id="CmisServiceFactory" class="jp.aegif.nemaki.cmis.factory.CmisServiceFactory">
+    <bean id="CmisServiceFactory" class="jp.aegif.nemaki.cmis.factory.CmisServiceFactory"
+    init-method="setup">
+        <property name="propertyManager">
+            <ref bean="propertyManager" />
+        </property>
         <property name="repository">
             <ref bean="repository" />
         </property>

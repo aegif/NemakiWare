@@ -5,6 +5,10 @@ public interface PropertyKey {
 	final String DB_COUCHDB_HOST= "db.couchdb.host";
 	final String DB_COUCHDB_PORT= "db.couchdb.port";
 	final String DB_COUCHDB_MAX_CONNECTIONS= "db.couchdb.max.connections";
+	final String CMIS_SERVER_DEFAULT_MAX_ITEMS_TYPES = "cmis.server.default.max.items.types";
+	final String CMIS_SERVER_DEFAULT_DEPTH_TYPES = "cmis.server.default.depth.types";
+	final String CMIS_SERVER_DEFAULT_MAX_ITEMS_OBJECTS = "cmis.server.default.max.items.objects";
+	final String CMIS_SERVER_DEFAULT_MAX_DEPTH_OBJECTS = "cmis.server.default.depth.objects";
 	final String CMIS_REPOSITORY_MAIN = "cmis.repository.main";
 	final String CMIS_REPOSITORY_MAIN_DESCRIPTION= "cmis.repository.main.description";
 	final String CMIS_REPOSITORY_MAIN_ROOT= "cmis.repository.main.root";
