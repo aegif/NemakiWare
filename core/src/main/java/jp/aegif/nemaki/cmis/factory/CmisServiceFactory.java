@@ -3,6 +3,7 @@ package jp.aegif.nemaki.cmis.factory;
 import java.math.BigInteger;
 import java.util.Map;
 
+import javax.annotation.PostConstruct;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -10,7 +11,10 @@ import javax.servlet.http.HttpServletResponse;
 import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
 import jp.aegif.nemaki.cmis.factory.auth.impl.AuthenticationServiceImpl;
 import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.util.DataUtil;
+import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.NemakiConstant;
+import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
 import org.apache.chemistry.opencmis.commons.impl.server.AbstractServiceFactory;
@@ -27,29 +31,31 @@ import org.apache.commons.logging.LogFactory;
 public class CmisServiceFactory extends AbstractServiceFactory implements
 		org.apache.chemistry.opencmis.commons.server.CmisServiceFactory {
 
-	private static final BigInteger DEFAULT_MAX_ITEMS_TYPES = BigInteger
-			.valueOf(50);
-	private static final BigInteger DEFAULT_DEPTH_TYPES = BigInteger
-			.valueOf(-1);
-	private static final BigInteger DEFAULT_MAX_ITEMS_OBJECTS = BigInteger
-			.valueOf(200);
-	private static final BigInteger DEFAULT_DEPTH_OBJECTS = BigInteger
-			.valueOf(10);
+	private PropertyManager propertyManager;
+	private Repository repository;
+	private AuthenticationService authenticationService;
+	
+	private RepositoryMap repositoryMap;
+	private static BigInteger DEFAULT_MAX_ITEMS_TYPES;
+	private static BigInteger DEFAULT_DEPTH_TYPES;
+	private static BigInteger DEFAULT_MAX_ITEMS_OBJECTS;
+	private static BigInteger DEFAULT_DEPTH_OBJECTS;
 
 	private static final Log log = LogFactory
 			.getLog(AuthenticationServiceImpl.class);
-	private Repository repository;
-	private AuthenticationService authenticationService;
-
+	
 	public CmisServiceFactory() {
 		super();
 	}
-
-	/**
-	 * Repository reference to all repositories.
-	 */
-	private RepositoryMap repositoryMap;
-
+	
+	@PostConstruct
+	public void setup(){
+		DEFAULT_MAX_ITEMS_TYPES = DataUtil.convertToBigInteger(propertyManager.readValue(PropertyKey.CMIS_SERVER_DEFAULT_MAX_ITEMS_TYPES));
+		DEFAULT_DEPTH_TYPES = DataUtil.convertToBigInteger(propertyManager.readValue(PropertyKey.CMIS_SERVER_DEFAULT_DEPTH_TYPES));
+		DEFAULT_MAX_ITEMS_OBJECTS = DataUtil.convertToBigInteger(propertyManager.readValue(PropertyKey.CMIS_SERVER_DEFAULT_MAX_ITEMS_OBJECTS));
+		DEFAULT_DEPTH_OBJECTS = DataUtil.convertToBigInteger(propertyManager.readValue(PropertyKey.CMIS_SERVER_DEFAULT_MAX_DEPTH_OBJECTS));
+	}
+	
 	/**
 	 * Add NemakiRepository into repository map at first.
 	 */
@@ -161,6 +167,10 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 	@Override
 	public void destroy() {
 		super.destroy();
+	}
+
+	public void setPropertyManager(PropertyManager propertyManager) {
+		this.propertyManager = propertyManager;
 	}
 
 	public void setAuthenticationService(
