@@ -1,4 +1,4 @@
-package jp.aegif.nemaki.util.spring;
+package jp.aegif.nemaki.util.spring.aspect;
 
 import java.util.Arrays;
 
@@ -8,9 +8,9 @@ import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import org.aspectj.lang.ProceedingJoinPoint;
 
-public class LoggingAspect {
+public class DefaultLogAspect {
 
-	private static Logger log = Logger.getLogger(LoggingAspect.class);
+	private static Logger log = Logger.getLogger(DefaultLogAspect.class);
 	private String logLevel;
 	private boolean returnValue;
 	private boolean fullQualifiedName;
