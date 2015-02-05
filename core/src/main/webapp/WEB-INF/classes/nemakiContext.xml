@@ -575,6 +575,15 @@
 
 
     <!-- Extra Rest API implemented by Jersey -->
+    <bean id="restAuthenticationFilter" class="jp.aegif.nemaki.rest.AuthenticationFilter">
+    	<property name="propertyManager">
+            <ref bean="propertyManager" />
+        </property>
+    	<property name="principalService">
+            <ref bean="PrincipalService" />
+        </property>
+    </bean>
+    
     <bean id="archiveResource" class="jp.aegif.nemaki.rest.ArchiveResource">
         <property name="principalService">
             <ref bean="PrincipalService" />

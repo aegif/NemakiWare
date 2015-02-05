@@ -67,11 +67,11 @@
 		<load-on-startup>2</load-on-startup>
 	</servlet>
 	<filter>
-		<filter-name>RestAuthenticationFilter</filter-name>
-		<filter-class>jp.aegif.nemaki.rest.AuthenticationFilter</filter-class>		
+		<filter-name>restAuthenticationFilter</filter-name>
+		<filter-class>org.springframework.web.filter.DelegatingFilterProxy</filter-class>		
 	</filter>
 	<filter-mapping>
-		<filter-name>RestAuthenticationFilter</filter-name>
+		<filter-name>restAuthenticationFilter</filter-name>
 		<url-pattern>/rest/*</url-pattern>
 	</filter-mapping>	
 	<servlet>
