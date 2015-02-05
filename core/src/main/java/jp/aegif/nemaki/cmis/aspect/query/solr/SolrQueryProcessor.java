@@ -23,13 +23,12 @@ package jp.aegif.nemaki.cmis.aspect.query.solr;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
-import jp.aegif.nemaki.cmis.aspect.CompileObjectService;
+import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.cmis.aspect.SortUtil;
@@ -65,7 +64,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 	private ContentService contentService;
 	private PermissionService permissionService;
-	private CompileObjectService compileObjectService;
+	private CompileService compileService;
 	private ExceptionService exceptionService;
 	private SolrUtil solrUtil;
 	private SortUtil sortUtil;
@@ -191,7 +190,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 			}
 
 			// Build ObjectList
-			ObjectList result = compileObjectService.compileObjectDataList(
+			ObjectList result = compileService.compileObjectDataList(
 					callContext, permitted, filter, includeAllowableActions,
 					includeRelationships, renditionFilter, false, maxItems,
 					skipCount, false);
@@ -228,9 +227,8 @@ public class SolrQueryProcessor implements QueryProcessor {
 		this.permissionService = permissionService;
 	}
 
-	public void setCompileObjectService(
-			CompileObjectService compileObjectService) {
-		this.compileObjectService = compileObjectService;
+	public void setCompileService(CompileService compileService) {
+		this.compileService = compileService;
 	}
 
 	public void setExceptionService(ExceptionService exceptionService) {

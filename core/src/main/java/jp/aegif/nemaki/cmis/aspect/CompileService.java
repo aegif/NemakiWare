@@ -37,7 +37,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 
-public interface CompileObjectService {
+public interface CompileService {
 	public ObjectData compileObjectData(CallContext context,
 			Content content, String filter, Boolean includeAllowableActions,
 			IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl);

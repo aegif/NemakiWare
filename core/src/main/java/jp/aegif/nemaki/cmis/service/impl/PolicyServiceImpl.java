@@ -25,7 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
-import jp.aegif.nemaki.cmis.aspect.CompileObjectService;
+import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.service.PolicyService;
@@ -45,7 +45,7 @@ import org.apache.commons.collections.CollectionUtils;
 public class PolicyServiceImpl implements PolicyService {
 
 	private ContentService contentService;
-	private CompileObjectService compileObjectService;
+	private CompileService compileService;
 	private ExceptionService exceptionService;
 	private TypeManager typeManager;
 	private NemakiCache nemakiCache;
@@ -129,7 +129,7 @@ public class PolicyServiceImpl implements PolicyService {
 		List<ObjectData> objects = new ArrayList<ObjectData>();
 		if (!CollectionUtils.isEmpty(policies)) {
 			for (Policy policy : policies) {
-				objects.add(compileObjectService.compileObjectData(callContext,
+				objects.add(compileService.compileObjectData(callContext,
 						policy, filter, true, IncludeRelationships.NONE, null,
 						true));
 			}
@@ -141,9 +141,8 @@ public class PolicyServiceImpl implements PolicyService {
 		this.contentService = contentService;
 	}
 
-	public void setCompileObjectService(
-			CompileObjectService compileObjectService) {
-		this.compileObjectService = compileObjectService;
+	public void setCompileService(CompileService compileService) {
+		this.compileService = compileService;
 	}
 
 	public ExceptionService getExceptionService() {

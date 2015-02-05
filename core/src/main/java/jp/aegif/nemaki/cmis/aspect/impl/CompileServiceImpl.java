@@ -32,7 +32,7 @@ import java.util.Map.Entry;
 import java.util.Set;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
-import jp.aegif.nemaki.cmis.aspect.CompileObjectService;
+import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.factory.info.AclCapabilitiesDataImpl;
@@ -109,10 +109,10 @@ import org.apache.commons.logging.LogFactory;
 
 import com.rits.cloning.Cloner;
 
-public class CompileObjectServiceImpl implements CompileObjectService {
+public class CompileServiceImpl implements CompileService {
 
 	private static final Log log = LogFactory
-			.getLog(CompileObjectServiceImpl.class);
+			.getLog(CompileServiceImpl.class);
 
 	private RepositoryInfo repositoryInfo;
 	private RepositoryService repositoryService;

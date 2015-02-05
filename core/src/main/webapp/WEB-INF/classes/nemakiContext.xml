@@ -216,8 +216,8 @@
         <property name="exceptionService">
             <ref bean="ExceptionService" />
         </property>
-        <property name="compileObjectService">
-            <ref bean="CompileObjectService" />
+        <property name="compileService">
+            <ref bean="CompileService" />
         </property>
         <property name="sortUtil">
             <ref bean="sortUtil" />
@@ -254,8 +254,8 @@
         <property name="exceptionService">
             <ref bean="ExceptionService" />
         </property>
-        <property name="compileObjectService">
-            <ref bean="CompileObjectService" />
+        <property name="compileService">
+            <ref bean="CompileService" />
         </property>
         <property name="solrUtil">
             <ref bean="solrUtil" />
@@ -287,8 +287,8 @@
         <property name="exceptionService">
             <ref bean="ExceptionService" />
         </property>
-        <property name="compileObjectService">
-            <ref bean="CompileObjectService" />
+        <property name="compileService">
+            <ref bean="CompileService" />
         </property>
     </bean>
 
@@ -308,8 +308,8 @@
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
-        <property name="compileObjectService">
-            <ref bean="CompileObjectService" />
+        <property name="compileService">
+            <ref bean="CompileService" />
         </property>
         <property name="exceptionService">
             <ref bean="ExceptionService" />
@@ -340,8 +340,8 @@
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
-        <property name="compileObjectService">
-            <ref bean="CompileObjectService" />
+        <property name="compileService">
+            <ref bean="CompileService" />
         </property>
         <property name="exceptionService">
             <ref bean="ExceptionService" />
@@ -363,8 +363,8 @@
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
-        <property name="compileObjectService">
-            <ref bean="CompileObjectService" />
+        <property name="compileService">
+            <ref bean="CompileService" />
         </property>
         <property name="exceptionService">
             <ref bean="ExceptionService" />
@@ -389,8 +389,8 @@
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
-        <property name="compileObjectService">
-            <ref bean="CompileObjectService" />
+        <property name="compileService">
+            <ref bean="CompileService" />
         </property>
         <property name="exceptionService">
             <ref bean="ExceptionService" />
@@ -444,19 +444,19 @@
         class="jp.aegif.nemaki.cmis.factory.auth.impl.TokenServiceImpl">
     </bean>
 
-    <bean id="CompileObjectService" class="org.springframework.aop.framework.ProxyFactoryBean">
+    <bean id="CompileService" class="org.springframework.aop.framework.ProxyFactoryBean">
         <property name="proxyInterfaces">
             <list>
-                <value>jp.aegif.nemaki.cmis.aspect.CompileObjectService
+                <value>jp.aegif.nemaki.cmis.aspect.CompileService
                 </value>
             </list>
         </property>
         <property name="target">
-            <ref bean="compileObjectService" />
+            <ref bean="compileService" />
         </property>
     </bean>
-    <bean id="compileObjectService"
-        class="jp.aegif.nemaki.cmis.aspect.impl.CompileObjectServiceImpl">
+    <bean id="compileService"
+        class="jp.aegif.nemaki.cmis.aspect.impl.CompileServiceImpl">
         <property name="repositoryInfo">
             <ref bean="RepositoryInfo" />
         </property>
@@ -560,8 +560,8 @@
         <property name="permissionService">
             <ref bean="PermissionService" />
         </property>
-        <property name="compileObjectService">
-            <ref bean="CompileObjectService" />
+        <property name="compileService">
+            <ref bean="CompileService" />
         </property>
         <property name="exceptionService">
             <ref bean="ExceptionService" />

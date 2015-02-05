@@ -23,7 +23,7 @@ package jp.aegif.nemaki.cmis.service.impl;
 import java.util.List;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
-import jp.aegif.nemaki.cmis.aspect.CompileObjectService;
+import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.service.AclService;
@@ -50,7 +50,7 @@ import org.apache.commons.collections.CollectionUtils;
 public class AclServiceImpl implements AclService {
 
 	private ContentService contentService;
-	private CompileObjectService compileObjectService;
+	private CompileService compileService;
 	private ExceptionService exceptionService;
 	private TypeManager typeManager;
 	private PropertyManager propertyManager;
@@ -71,7 +71,7 @@ public class AclServiceImpl implements AclService {
 		// Body of the method
 		// //////////////////
 		jp.aegif.nemaki.model.Acl acl = contentService.calculateAcl(content);
-		return compileObjectService.compileAcl(acl, content.isAclInherited(), onlyBasicPermissions);
+		return compileService.compileAcl(acl, content.isAclInherited(), onlyBasicPermissions);
 	}
 
 	@Override
@@ -166,7 +166,8 @@ public class AclServiceImpl implements AclService {
 		this.nemakiCache = nemakiCache;
 	}
 
-	public void setCompileObjectService(CompileObjectService compileObjectService) {
-		this.compileObjectService = compileObjectService;
+	public void setCompileService(CompileService compileService) {
+		this.compileService = compileService;
 	}
+	
 }

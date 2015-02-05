@@ -28,7 +28,7 @@ import java.util.GregorianCalendar;
 import java.util.List;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
-import jp.aegif.nemaki.cmis.aspect.CompileObjectService;
+import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.service.VersioningService;
 import jp.aegif.nemaki.model.Content;
@@ -50,7 +50,7 @@ import org.apache.commons.lang.StringUtils;
 
 public class VersioningServiceImpl implements VersioningService {
 	private ContentService contentService;
-	private CompileObjectService compileObjectService;
+	private CompileService compileService;
 	private ExceptionService exceptionService;
 	private NemakiCache nemakiCache;
 
@@ -188,7 +188,7 @@ public class VersioningServiceImpl implements VersioningService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		ObjectData objectData = compileObjectService.compileObjectData(context,
+		ObjectData objectData = compileService.compileObjectData(context,
 				document, filter, includeAllowableActions,
 				includeRelationships, renditionFilter, includeAcl);
 		return objectData;
@@ -235,7 +235,7 @@ public class VersioningServiceImpl implements VersioningService {
 		// //////////////////
 		List<ObjectData> result = new ArrayList<ObjectData>();
 		for (Content content : allVersions) {
-			ObjectData objectData = compileObjectService.compileObjectData(
+			ObjectData objectData = compileService.compileObjectData(
 					context, content, filter, includeAllowableActions,
 					IncludeRelationships.NONE, null, true);
 			result.add(objectData);
@@ -270,9 +270,8 @@ public class VersioningServiceImpl implements VersioningService {
 		this.contentService = contentService;
 	}
 
-	public void setCompileObjectService(
-			CompileObjectService compileObjectService) {
-		this.compileObjectService = compileObjectService;
+	public void setCompileService(CompileService compileService) {
+		this.compileService = compileService;
 	}
 
 	public void setExceptionService(ExceptionService exceptionService) {
