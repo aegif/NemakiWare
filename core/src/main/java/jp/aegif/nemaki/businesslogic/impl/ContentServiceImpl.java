@@ -63,13 +63,12 @@ import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
-import jp.aegif.nemaki.util.constant.NemakiConstant;
+import jp.aegif.nemaki.util.constant.PrincipalId;
 import jp.aegif.nemaki.util.constant.NodeType;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 import jp.aegif.nemaki.util.constant.RenditionKind;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
-import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.Properties;
@@ -109,7 +108,8 @@ public class ContentServiceImpl implements ContentService {
 	
 	private static final Log log = LogFactory
 			.getLog(ContentDaoServiceImpl.class);
-	final static String FIRST_TOKEN = "1";
+	private final static String FIRST_TOKEN = "1";
+	private final static String PATH_SEPARATOR = "/";
 
 	// ///////////////////////////////////////
 	// Content
@@ -160,12 +160,12 @@ public class ContentServiceImpl implements ContentService {
 		if (splittedPath.size() <= 0) {
 			return null;
 		} else if (splittedPath.size() == 1) {
-			if (!splittedPath.get(0).equals(NemakiConstant.PATH_SEPARATOR))
+			if (!splittedPath.get(0).equals(PATH_SEPARATOR))
 				return null;
-			return contentDaoService.getFolder(NemakiConstant.PATH_SEPARATOR);
+			return contentDaoService.getFolder(PATH_SEPARATOR);
 		} else if (splittedPath.size() >= 1) {
 			Content content = contentDaoService
-					.getFolder(NemakiConstant.PATH_SEPARATOR);
+					.getFolder(PATH_SEPARATOR);
 			// Get the the leaf node
 			for (int i = 1; i < splittedPath.size(); i++) {
 				Content child = contentDaoService.getChildByName(
@@ -179,22 +179,21 @@ public class ContentServiceImpl implements ContentService {
 
 	private List<String> splitLeafPathSegment(String path) {
 		List<String> splitted = new LinkedList<String>();
-		if (path.equals(NemakiConstant.PATH_SEPARATOR)) {
-			splitted.add(NemakiConstant.PATH_SEPARATOR);
+		if (path.equals(PATH_SEPARATOR)) {
+			splitted.add(PATH_SEPARATOR);
 			return splitted;
 		}
 
 		// TODO validation for irregular path
 		splitted = new LinkedList<String>(Arrays.asList(path
-				.split(NemakiConstant.PATH_SEPARATOR)));
+				.split(PATH_SEPARATOR)));
 		splitted.remove(0);
-		splitted.add(0, NemakiConstant.PATH_SEPARATOR);
+		splitted.add(0, PATH_SEPARATOR);
 		return splitted;
 	}
 
 	@Override
 	public Folder getParent(String objectId) {
-		// As a model within Nemaki, content have the parentId?
 		Content content = contentDaoService.getContent(objectId);
 		return getFolder(content.getParentId());
 	}
@@ -292,8 +291,8 @@ public class ContentServiceImpl implements ContentService {
 		List<String> path = calculatePathInternal(new ArrayList<String>(),
 				content);
 		path.remove(0);
-		return NemakiConstant.PATH_SEPARATOR
-				+ StringUtils.join(path, NemakiConstant.PATH_SEPARATOR);
+		return PATH_SEPARATOR
+				+ StringUtils.join(path, PATH_SEPARATOR);
 	}
 
 	private List<String> calculatePathInternal(List<String> path,
@@ -706,10 +705,6 @@ public class ContentServiceImpl implements ContentService {
 		d.setImmutable(DataUtil.getBooleanProperty(properties,
 				PropertyIds.IS_IMMUTABLE));
 		setSignature(callContext, d);
-		// Aspect
-		List<Aspect> aspects = buildAspects(properties);
-		if (aspects != null)
-			d.setAspects(aspects);
 		// Acl
 		d.setAclInherited(true);
 		d.setAcl(new Acl());
@@ -855,7 +850,7 @@ public class ContentServiceImpl implements ContentService {
 		setSignature(callContext, f);
 		f.setAclInherited(true);
 		f.setAcl(new Acl());
-		f.setAspects(buildAspects(properties));
+
 		// Create
 		Folder folder = contentDaoService.create(f);
 
@@ -1630,12 +1625,12 @@ public class ContentServiceImpl implements ContentService {
 
 	private void convertSystemPrincipalId(List<Ace> aces) {
 		for (Ace ace : aces) {
-			if (NemakiConstant.PRINCIPAL_ANONYMOUS.equals(ace.getPrincipalId())) {
+			if (PrincipalId.ANONYMOUS_IN_DB.equals(ace.getPrincipalId())) {
 				String anonymous = propertyManager.readValue(
 						PropertyKey.CMIS_REPOSITORY_MAIN_PRINCIPAL_ANONYMOUS);
 				ace.setPrincipalId(anonymous);
 			}
-			if (NemakiConstant.PRINCIPAL_ANYONE.equals(ace.getPrincipalId())) {
+			if (PrincipalId.ANYONE_IN_DB.equals(ace.getPrincipalId())) {
 				String anyone = propertyManager.readValue(
 						PropertyKey.CMIS_REPOSITORY_MAIN_PRINCIPAL_ANYONE);
 				ace.setPrincipalId(anyone);
@@ -1746,7 +1741,7 @@ public class ContentServiceImpl implements ContentService {
 		CallContextImpl dummyContext = new CallContextImpl(null, null, null,
 				null, null, null, null, null);
 		dummyContext
-				.put(dummyContext.USERNAME, NemakiConstant.PRINCIPAL_SYSTEM);
+				.put(dummyContext.USERNAME, PrincipalId.SYSTEM_IN_DB);
 
 		// Switch over the operation depending on the type of archive
 		if (archive.isFolder()) {
@@ -1900,61 +1895,6 @@ public class ContentServiceImpl implements ContentService {
 		} else {
 			return bodyOfFileName;
 		}
-	}
-
-	/**
-	 * Parse CMIS extension to Nemaki Aspect model
-	 *
-	 * @param properties
-	 * @return aspects
-	 */
-	private List<Aspect> buildAspects(Properties properties) {
-		List<CmisExtensionElement> exts = properties.getExtensions();
-		if (CollectionUtils.isEmpty(exts))
-			return null;
-
-		CmisExtensionElement aspectsExt = extractAspectsExtension(exts);
-		List<Aspect> aspects = new ArrayList<Aspect>();
-
-		List<CmisExtensionElement> aspectsList = aspectsExt.getChildren();
-		if (aspectsList != null && CollectionUtils.isNotEmpty(aspectsList)) {
-			// Aspect
-			for (CmisExtensionElement aspectExt : aspectsList) {
-				if (aspectExt.getAttributes() == null
-						|| StringUtils.isBlank(aspectExt.getAttributes().get(
-								NemakiConstant.EXTATTR_ASPECT_ID))) {
-					log.equals("Cusotm aspect must have the id attribute");
-					continue;
-				}
-				// Property
-				List<Property> props = new ArrayList<Property>();
-				List<CmisExtensionElement> propsList = aspectExt.getChildren();
-				for (CmisExtensionElement propExt : propsList) {
-					if (propExt.getAttributes() == null
-							|| StringUtils.isBlank(propExt.getAttributes().get(
-									NemakiConstant.EXTATTR_ASPECT_ID))) {
-						log.equals("Cusotm aspect's property must have the id attribute");
-						continue;
-					}
-					props.add(new Property(propExt.getAttributes().get(
-							NemakiConstant.EXTATTR_ASPECT_ID), propExt
-							.getValue()));
-				}
-				aspects.add(new Aspect(aspectExt.getAttributes().get(
-						NemakiConstant.EXTATTR_ASPECT_ID), props));
-			}
-		}
-		return aspects;
-	}
-
-	private CmisExtensionElement extractAspectsExtension(
-			List<CmisExtensionElement> list) {
-		for (CmisExtensionElement ce : list) {
-			if ("aspects".equals(ce.getName())) {
-				return ce;
-			}
-		}
-		return null;
 	}
 
 	private String increasedVersionLabel(Document document,

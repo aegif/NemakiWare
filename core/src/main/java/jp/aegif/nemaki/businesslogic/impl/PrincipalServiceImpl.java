@@ -30,7 +30,7 @@ import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.dao.PrincipalDaoService;
 import jp.aegif.nemaki.model.Group;
 import jp.aegif.nemaki.model.User;
-import jp.aegif.nemaki.util.constant.NemakiConstant;
+import jp.aegif.nemaki.util.constant.PrincipalId;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -171,20 +171,20 @@ public class PrincipalServiceImpl implements PrincipalService {
 			log.warn("CMIS 'anonymous':" +  anonymous + " should have not been registered in the database.");
 		}
 		principalIds.add(anonymous);
-		if(principalIds.contains(NemakiConstant.PRINCIPAL_ANONYMOUS)){
+		if(principalIds.contains(PrincipalId.ANONYMOUS_IN_DB)){
 			log.warn("CMIS 'anonymous':" +  anonymous + " should have not been registered in the database.(For system use)");
 		}
-		principalIds.add(NemakiConstant.PRINCIPAL_ANONYMOUS);
+		principalIds.add(PrincipalId.ANONYMOUS_IN_DB);
 
 		//Anyone
 		if(principalIds.contains(anyone) ){
 			log.warn("CMIS 'anyone': " + anyone + " should have not been registered in the database.");
 		}
 		principalIds.add(anyone);
-		if(principalIds.contains(NemakiConstant.PRINCIPAL_ANYONE)){
-			log.warn("CMIS 'anyone':" + NemakiConstant.PRINCIPAL_ANYONE + " should have not been registered in the database.(For system use)");
+		if(principalIds.contains(PrincipalId.ANYONE_IN_DB)){
+			log.warn("CMIS 'anyone':" + PrincipalId.ANYONE_IN_DB + " should have not been registered in the database.(For system use)");
 		}
-		principalIds.add(NemakiConstant.PRINCIPAL_ANYONE);
+		principalIds.add(PrincipalId.ANYONE_IN_DB);
 
 		return principalIds;
 	}

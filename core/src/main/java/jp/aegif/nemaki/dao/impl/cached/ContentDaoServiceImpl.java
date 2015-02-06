@@ -40,7 +40,6 @@ import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.cache.NemakiCache;
-import jp.aegif.nemaki.util.constant.NemakiConstant;
 import net.sf.ehcache.Cache;
 import net.sf.ehcache.Element;
 
@@ -59,6 +58,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	private ContentDaoService nonCachedContentDaoService;
 	private NemakiCache nemakiCache;
+	
+	private final String TOKEN_CACHE_LATEST_CHANGE_TOKEN = "lc";
 
 	public ContentDaoServiceImpl() {
 		
@@ -384,7 +385,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		Change created = nonCachedContentDaoService.create(change);
 		Change latest = nonCachedContentDaoService.getLatestChange();
 		nemakiCache.getLatestChangeTokenCache().removeAll();
-		nemakiCache.getLatestChangeTokenCache().put(new Element(NemakiConstant.TOKEN_CACHE_LATEST_CHANGE_TOKEN, latest));
+		nemakiCache.getLatestChangeTokenCache().put(new Element(TOKEN_CACHE_LATEST_CHANGE_TOKEN, latest));
 		return created;
 	}
 
@@ -568,7 +569,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		} else {
 			change = nonCachedContentDaoService.getLatestChange();
 			if (change != null) {
-				nemakiCache.getLatestChangeTokenCache().put(new Element(NemakiConstant.TOKEN_CACHE_LATEST_CHANGE_TOKEN, change));
+				nemakiCache.getLatestChangeTokenCache().put(new Element(TOKEN_CACHE_LATEST_CHANGE_TOKEN, change));
 			}
 			return change;
 		}

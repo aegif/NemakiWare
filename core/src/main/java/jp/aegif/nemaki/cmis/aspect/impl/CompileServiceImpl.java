@@ -55,7 +55,7 @@ import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.cache.NemakiCache;
-import jp.aegif.nemaki.util.constant.NemakiConstant;
+import jp.aegif.nemaki.util.constant.CmisExtensionToken;
 import net.sf.ehcache.Element;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
@@ -1384,10 +1384,10 @@ public class CompileServiceImpl implements CompileService {
 				cmisAcl.setExact(true);
 
 				// Set "inherited" property, which is out of bounds to CMIS
-				String namespace = NemakiConstant.NAMESPACE_ACL_INHERITANCE;
+				String namespace = CmisExtensionToken.ACL_INHERITANCE_NAMESPACE;
 				boolean iht = (isInherited == null)? false : isInherited;
 				CmisExtensionElementImpl inherited = new CmisExtensionElementImpl(
-						namespace, NemakiConstant.EXTNAME_ACL_INHERITED, null, String.valueOf(iht));
+						namespace, CmisExtensionToken.ACL_INHERITANCE_INHERITED, null, String.valueOf(iht));
 				List<CmisExtensionElement> exts = new ArrayList<CmisExtensionElement>();
 				exts.add(inherited);
 				cmisAcl.setExtensions(exts);

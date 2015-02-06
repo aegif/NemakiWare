@@ -13,7 +13,7 @@ import jp.aegif.nemaki.cmis.factory.auth.impl.AuthenticationServiceImpl;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
-import jp.aegif.nemaki.util.constant.NemakiConstant;
+import jp.aegif.nemaki.util.constant.CallContextToken;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
@@ -109,7 +109,7 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 		Cookie[] cookies = req.getCookies();
 		if (cookies != null) {
 			for (Cookie cookie : req.getCookies()) {
-				if ((NemakiConstant.AUTH_TOKEN_PREFIX + callContext
+				if ((CallContextToken.COOKIE_AUTH_TOKEN_PREFIX + callContext
 						.getUsername()).equals(cookie.getName())) {
 					// Token based auth
 					String token = cookie.getValue();
@@ -150,12 +150,12 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 
 	private void setAdminFlagInContext(CallContext callContext, Boolean isAdmin) {
 		((CallContextImpl) callContext).put(
-				NemakiConstant.CALL_CONTEXT_IS_ADMIN, isAdmin);
+				CallContextToken.IS_ADMIN, isAdmin);
 	}
 
 	private void setTokenCookie(CallContext callContext) {
 		String token = authenticationService.registerToken(callContext);
-		Cookie cookie = new Cookie(NemakiConstant.AUTH_TOKEN_PREFIX
+		Cookie cookie = new Cookie(CallContextToken.COOKIE_AUTH_TOKEN_PREFIX
 				+ callContext.getUsername(), token);
 		cookie.setMaxAge(60 * 60 * 12);
 
