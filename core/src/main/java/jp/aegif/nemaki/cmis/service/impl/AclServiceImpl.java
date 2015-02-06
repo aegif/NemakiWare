@@ -31,7 +31,7 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.cache.NemakiCache;
 import jp.aegif.nemaki.util.constant.DomainType;
-import jp.aegif.nemaki.util.constant.NemakiConstant;
+import jp.aegif.nemaki.util.constant.PrincipalId;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.apache.chemistry.opencmis.commons.data.Ace;
@@ -134,14 +134,15 @@ public class AclServiceImpl implements AclService {
 			String anonymous = propertyManager.readValue(
 					PropertyKey.CMIS_REPOSITORY_MAIN_PRINCIPAL_ANONYMOUS);
 			if (anonymous.equals(ace.getPrincipalId())) {
-				ace.setPrincipalId(NemakiConstant.PRINCIPAL_ANONYMOUS);
+				ace.setPrincipalId(PrincipalId.ANONYMOUS_IN_DB);
 			}
 
 			//Convert anyone to the form of database
 			String anyone = propertyManager.readValue(
 					PropertyKey.CMIS_REPOSITORY_MAIN_PRINCIPAL_ANYONE);
 			if (anyone.equals(ace.getPrincipalId())) {
-				ace.setPrincipalId(NemakiConstant.PRINCIPAL_ANYONE);
+				ace.setPrincipalId(PrincipalId.ANYONE_IN_DB);
+				
 			}
 		}
 	}

@@ -38,8 +38,8 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.VersionSeries;
+import jp.aegif.nemaki.util.constant.CallContextToken;
 import jp.aegif.nemaki.util.constant.CmisPermission;
-import jp.aegif.nemaki.util.constant.NemakiConstant;
 
 import org.apache.chemistry.opencmis.commons.data.AllowableActions;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
@@ -99,7 +99,7 @@ public class PermissionServiceImpl implements PermissionService {
 		
 		// Admin always pass a permission check
 		CallContextImpl cci = (CallContextImpl) callContext;
-		Boolean _isAdmin = (Boolean) cci.get(NemakiConstant.CALL_CONTEXT_IS_ADMIN);
+		Boolean _isAdmin = (Boolean) cci.get(CallContextToken.IS_ADMIN);
 		boolean isAdmin = (_isAdmin == null) ? false : _isAdmin;
 		if (isAdmin) return true;
 
