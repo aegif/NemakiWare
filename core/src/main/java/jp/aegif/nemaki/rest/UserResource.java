@@ -257,50 +257,6 @@ public class UserResource extends ResourceBase {
 		return result.toJSONString();
 	}
 
-	@PUT
-	@Path("/updatePassword/{id}")
-	@Produces(MediaType.APPLICATION_JSON)
-	@Consumes(MediaType.APPLICATION_FORM_URLENCODED)
-	public String updatePassword(@PathParam("id") String userId,
-			@FormParam(FORM_NEWPASSWORD) String newPassword,
-			@Context HttpServletRequest httpRequest) {
-		boolean status = true;
-		JSONObject result = new JSONObject();
-		JSONArray errMsg = new JSONArray();
-
-		//Existing user
-		User user = principalService.getUserById(userId);
-		if(user == null){
-			status = false;
-			addErrMsg(errMsg, ITEM_USER, ERR_NOTFOUND);
-		}
-
-		// Validation
-		status = checkAuthorityForUser(status, errMsg, httpRequest, userId);
-		status = validateUserPassword(status, errMsg, userId, newPassword);
-
-		//TODO Error handling
-		user = principalService.getUserById(userId);
-
-		// Edit & Update
-		if (status) {
-			// Edit the user info
-			String passwordHash = BCrypt.hashpw(newPassword, BCrypt.gensalt());
-			user.setPasswordHash(passwordHash);
-			setModifiedSignature(getUserInfo(httpRequest), user);
-
-			try{
-				principalService.updateUser(user);
-			}catch(Exception e){
-				e.printStackTrace();
-				status = false;
-				addErrMsg(errMsg, ITEM_USER, ERR_UPDATE);
-			}
-		}
-		result = makeResult(status, result, errMsg);
-		return result.toJSONString();
-	}
-
 	@DELETE
 	@Path("/delete/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
