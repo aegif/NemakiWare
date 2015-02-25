@@ -358,7 +358,6 @@ public class ContentServiceImpl implements ContentService {
 		Change latest = contentDaoService.getLatestChange();
 
 		Change change = new Change();
-		change.setType(NodeType.CHANGE.value());
 		change.setObjectId(content.getId());
 		change.setChangeType(changeType);
 		switch (changeType) {
@@ -805,7 +804,6 @@ public class ContentServiceImpl implements ContentService {
 	private VersionSeries createVersionSeries(CallContext callContext,
 			VersioningState versioningState) {
 		VersionSeries vs = new VersionSeries();
-		vs.setType(NodeType.VERSION_SERIES.value());
 		vs.setVersionSeriesCheckedOut(false);
 		setSignature(callContext, vs);
 
@@ -981,7 +979,6 @@ public class ContentServiceImpl implements ContentService {
 		copy.setName(original.getName());
 		copy.setLength(original.getLength());
 		copy.setMimeType(original.getMimeType());
-		copy.setType(NodeType.ATTACHMENT.value());
 		setSignature(callContext, copy);
 
 		return contentDaoService.createAttachment(copy, cs);
@@ -1005,7 +1002,6 @@ public class ContentServiceImpl implements ContentService {
 			copy.setWidth(original.getWidth());
 			copy.setLength(original.getLength());
 			copy.setMimetype(original.getMimetype());
-			copy.setType(NodeType.RENDITION.value());
 			setSignature(callContext, copy);
 
 			String createdId = contentDaoService.createRendition(copy, cs);
@@ -1419,7 +1415,6 @@ public class ContentServiceImpl implements ContentService {
 	private String createAttachment(CallContext callContext,
 			ContentStream contentStream) {
 		AttachmentNode a = new AttachmentNode();
-		a.setType(AttachmentNode.TYPE);
 		a.setMimeType(contentStream.getMimeType());
 		a.setLength(contentStream.getLength());
 		setSignature(callContext, a);
@@ -1434,7 +1429,6 @@ public class ContentServiceImpl implements ContentService {
 		rendition.setKind(RenditionKind.CMIS_PREVIEW.value());
 		rendition.setMimetype(contentStream.getMimeType());
 		rendition.setLength(contentStream.getLength());
-		rendition.setType(Rendition.TYPE);
 		
 		ContentStream converted = renditionManager.convertToPdf(contentStream, document.getName());
 		
