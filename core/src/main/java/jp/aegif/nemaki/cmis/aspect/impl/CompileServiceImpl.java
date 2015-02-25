@@ -353,8 +353,8 @@ public class CompileServiceImpl implements CompileService {
 		if(CollectionUtils.isEmpty(list.getObjects())){
 			return list;
 		}else{
-			list.setNumItems(BigInteger.valueOf(list.getObjects().size()));
-			if(max + skip < list.getObjects().size()){
+			list.setNumItems(BigInteger.valueOf(contents.size()));
+			if(max + skip < contents.size()){
 				list.setHasMoreItems(true);
 			}
 		}
@@ -1415,8 +1415,6 @@ public class CompileServiceImpl implements CompileService {
 					permissions = ace.getPermissions();
 				}
 
-				
-				
 				//Build CMIS ACE
 				AccessControlEntryImpl cmisAce = new AccessControlEntryImpl(
 						principal, permissions);
