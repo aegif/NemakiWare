@@ -257,7 +257,6 @@ public class RepositoryServiceImpl implements RepositoryService,
 			TypeDefinition typeDefinition) {
 		NemakiTypeDefinition ntd = new NemakiTypeDefinition();
 
-		ntd.setType("typeDefinition");
 		// To avoid the conflict of typeId, add suffix
 		if (typeManager.getTypeById(typeDefinition.getId()) == null) {
 			ntd.setTypeId(typeDefinition.getId());

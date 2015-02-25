@@ -721,7 +721,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			an.setId(can.getId());
 			an.setMimeType(a.getContentType());
 			an.setLength(a.getContentLength());
-			an.setType(NodeType.ATTACHMENT.value());
 
 			return an;
 		}
@@ -748,7 +747,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			Attachment a = crd.getAttachments().get(ATTACHMENT_NAME);
 			
 			Rendition rd = new Rendition();
-			rd.setType(NodeType.RENDITION.value());
 			rd.setId(objectId);
 			rd.setTitle(crd.getTitle());
 			rd.setKind(crd.getKind());

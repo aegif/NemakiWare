@@ -110,7 +110,6 @@ public class TypeResource extends ResourceBase{
 			// type
 			// ////
 			NemakiTypeDefinition tdf = new NemakiTypeDefinition();
-			tdf.setType(NodeType.TYPE_DEFINITION.value());
 
 			// typeId
 			String typeId = getAttributeValue(type, "name");
@@ -196,8 +195,6 @@ public class TypeResource extends ResourceBase{
 			// ////
 			// core
 			// ////
-			core.setType(NodeType.PROPERTY_DEFINITION_CORE.value());
-
 			// propertyId
 			core.setPropertyId(propName);
 
