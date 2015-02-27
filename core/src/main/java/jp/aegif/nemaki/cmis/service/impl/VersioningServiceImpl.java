@@ -111,11 +111,7 @@ public class VersioningServiceImpl implements VersioningService {
 		// Body of the method
 		// //////////////////
 		contentService.cancelCheckOut(callContext, objectId, extension);
-		
-		VersionSeries vs = contentService.getVersionSeries(document);
-		Document latest = contentService.getDocumentOfLatestVersion(vs.getId());
 		nemakiCache.removeCmisCache(objectId);
-		nemakiCache.removeCmisCache(latest.getId());
 	}
 
 	@Override
