@@ -35,6 +35,7 @@ import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
+import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
@@ -654,9 +655,15 @@ public class Node extends Controller {
 
 	public static Result delete(String id) {
 		Session session = createSession();
-		ObjectId objectId = new ObjectIdImpl(id);
-		session.delete(objectId);
 
+		CmisObject object = session.getObject(id);
+		if(BaseTypeId.CMIS_FOLDER == object.getBaseTypeId()){
+			Folder folder = (Folder)object;
+			folder.deleteTree(true, null, true);
+		}else{
+			session.delete(new ObjectIdImpl(id));
+		}
+		
 		return redirect(routes.Node.index());
 	}
 
