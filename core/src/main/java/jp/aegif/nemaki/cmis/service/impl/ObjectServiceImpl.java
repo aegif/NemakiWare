@@ -553,7 +553,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		exceptionService.invalidArgumentRequiredCollection("properties",
 				properties.getPropertyList());
-		String sourceId = DataUtil.getStringProperty(properties,
+		String sourceId = DataUtil.getIdProperty(properties,
 				PropertyIds.SOURCE_ID);
 		if (sourceId != null) {
 			Content source = contentService.getContent(DataUtil
@@ -563,7 +563,7 @@ public class ObjectServiceImpl implements ObjectService {
 			exceptionService.permissionDenied(callContext,
 					PermissionMapping.CAN_CREATE_RELATIONSHIP_SOURCE, source);
 		}
-		String targetId = DataUtil.getStringProperty(properties,
+		String targetId = DataUtil.getIdProperty(properties,
 				PropertyIds.TARGET_ID);
 		if (targetId != null) {
 			Content target = contentService.getContent(DataUtil
@@ -592,6 +592,9 @@ public class ObjectServiceImpl implements ObjectService {
 		Relationship relationship = contentService.createRelationship(
 				callContext, properties, policies, addAces, removeAces,
 				extension);
+		nemakiCache.removeCmisCache(relationship.getSourceId());
+		nemakiCache.removeCmisCache(relationship.getTargetId());
+		
 		return relationship.getId();
 	}
 
