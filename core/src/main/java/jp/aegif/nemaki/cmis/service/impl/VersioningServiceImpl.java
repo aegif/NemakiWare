@@ -111,7 +111,14 @@ public class VersioningServiceImpl implements VersioningService {
 		// Body of the method
 		// //////////////////
 		contentService.cancelCheckOut(callContext, objectId, extension);
+
+		//remove cache
 		nemakiCache.removeCmisCache(objectId);
+		Document latest = contentService.getDocumentOfLatestVersion(document.getVersionSeriesId());
+		//Latest document does not exit when pwc is created as the first version
+		if(latest != null){
+			nemakiCache.removeCmisCache(latest.getId());
+		}
 	}
 
 	@Override
