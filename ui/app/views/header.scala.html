@@ -15,21 +15,7 @@
 
 	<!-- lightbox_me.js begin-->
 	<script type="text/javascript" src="@routes.Assets.at("javascripts/lightbox_me/jquery.lightbox_me.js")"></script>
-	<script type="text/javascript">
-		var lightbox_me_config = {
-			centered:true
-		};
-
-		function showLightbox(domId, html){
-			var content = $(html).attr('id', 'lightbox-' + domId);
-			
-			lightbox_me_config['onClose'] = function() { 
-	        	content.remove();
-            };			
-			
-			content.lightbox_me(lightbox_me_config);
-		}
-	</script>
+	<script type="text/javascript" src="@routes.Assets.at("javascripts/lightbox-control.js")"></script>
 
 	<!-- jMenu begin -->
 	<link rel="stylesheet" type="text/css" href="@routes.Assets.at("javascripts/jMenu/css/jmenu.css")" media="screen" />
