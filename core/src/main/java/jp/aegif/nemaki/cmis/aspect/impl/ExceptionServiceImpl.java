@@ -1085,6 +1085,13 @@ public class ExceptionServiceImpl implements ExceptionService,
 			constraint(msg);
 		}
 	}
+	
+	public void constraintDeleteRootFolder(String objectId){
+		String rootFolderId = repositoryInfo.getRootFolderId();
+		if(rootFolderId.equals(objectId)){
+			constraint(objectId, "Cannot delete root folder");
+		}
+	}
 
 	@Override
 	public void contentAlreadyExists(Content content, Boolean overwriteFlag) {
