@@ -96,6 +96,7 @@ public interface ExceptionService {
 	void constraintContentStreamDownload(Document document);
 	void constraintRenditionStreamDownload(Content content, String streamId);
 	void constraintPropertyDefinition(TypeDefinition typeDefinition, PropertyDefinition<?> propertyDefinition);
+	void constraintDeleteRootFolder(String objectId);
 	void contentAlreadyExists(Content content, Boolean overwriteFlag);
 	void streamNotSupported(DocumentTypeDefinition documentTypeDefinition, ContentStream contentStream);
 	void nameConstraintViolation(Properties properties, Folder parentFolder);

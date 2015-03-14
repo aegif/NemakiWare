@@ -809,6 +809,7 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_DELETE_OBJECT, content);
+		exceptionService.constraintDeleteRootFolder(objectId);
 
 		// //////////////////
 		// Body of the method
@@ -849,6 +850,7 @@ public class ObjectServiceImpl implements ObjectService {
 		Folder folder = contentService.getFolder(folderId);
 		exceptionService.permissionDenied(callContext,
 				PermissionMapping.CAN_DELETE_TREE_FOLDER, folder);
+		exceptionService.constraintDeleteRootFolder(folderId);
 
 		// //////////////////
 		// Specific Exception
