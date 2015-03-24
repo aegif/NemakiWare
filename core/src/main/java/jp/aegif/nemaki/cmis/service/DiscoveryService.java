@@ -39,7 +39,7 @@ public interface DiscoveryService {
 	/**
 	 * Executes a CMIS query statement against the contents of the repository.
 	 */
-	ObjectList query(TypeManager typeManager, CallContext Context,
+	ObjectList query(CallContext Context, TypeManager typeManager,
 			String repositoryId, String statement, Boolean searchAllVersions,
 			Boolean includeAllowableActions,
 			IncludeRelationships includeRelationships, String renditionFilter,

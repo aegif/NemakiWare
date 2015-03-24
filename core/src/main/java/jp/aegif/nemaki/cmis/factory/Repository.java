@@ -380,8 +380,8 @@ public class Repository {
 			IncludeRelationships includeRelationships, String renditionFilter,
 			BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
 
-		return discoveryService.query(repositoryService.getTypeManager(),
-				callContext, repositoryService.getRepositoryInfo().getId(),
+		return discoveryService.query(callContext,
+				repositoryService.getTypeManager(), repositoryService.getRepositoryInfo().getId(),
 				statement, searchAllVersions, includeAllowableActions,
 				includeRelationships, renditionFilter, maxItems, skipCount,
 				extension);
