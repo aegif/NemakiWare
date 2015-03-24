@@ -78,6 +78,11 @@ view.search-engine.reindex=インデクスの再作成
 view.search-engine.reindex.confirm=インデクスの再作成には時間がかかる場合があります。よろしいですか？
 view.search-engine.reindex.success=検索エンジンのインデクスを再作成しました
 
+view.type.caption=タイプ管理
+view.type.id=タイプID
+view.type.create.caption=タイプの新規作成
+view.type.update.caption=タイプの更新
+
 view.table.key=キー
 view.table.editable=編集可能
 view.table.requred=必須
@@ -87,6 +92,7 @@ view.execute=実行
 view.create=作成
 view.save=保存
 view.detail=詳細
+view.update=更新
 view.delete=削除
 view.add=追加
 view.remove=除外

@@ -78,6 +78,11 @@ view.search-engine.reindex=Reindex
 view.search-engine.reindex.confirm=Reindexing may take some time. Continue？
 view.search-engine.reindex.success=Reindexed search engine.
 
+view.type.caption=Types
+view.type.id=Type ID
+view.type.create.caption=New Type
+view.type.update.caption=Update Type
+
 view.table.key=Key
 view.table.editable=Editable
 view.table.requred=Required
@@ -87,6 +92,7 @@ view.execute=Execute
 view.create=Create
 view.save=Save
 view.detail=Detail
+view.update=Update
 view.delete=Delete
 view.add=Add
 view.remove=Remove
