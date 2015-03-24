@@ -51,7 +51,7 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 	private ExceptionService exceptionService;
 	private CompileService compileService;
 
-	public ObjectList query(TypeManager typeManager, CallContext context,
+	public ObjectList query(CallContext context, TypeManager typeManager,
 			String repositoryId, String statement, Boolean searchAllVersions,
 			Boolean includeAllowableActions,
 			IncludeRelationships includeRelationships, String renditionFilter,
