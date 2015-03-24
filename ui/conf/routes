@@ -66,3 +66,12 @@ GET		/principals/search				controllers.Principal.search(term:String ?= "", group
 GET		/search-engine					controllers.SearchEngine.index()		
 GET		/search-engine/init				controllers.SearchEngine.init()
 GET		/search-engine/reindex			controllers.SearchEngine.reindex()
+
+# ObjectType API
+GET		/types							controllers.Type.index()
+GET		/types/:id/download				controllers.Type.download(id:String)
+GET		/types/new						controllers.Type.showBlank()
+POST	/types/create					controllers.Type.create()
+GET		/types/edit						controllers.Type.edit()
+POST	/types/update					controllers.Type.update()
+POST	/types/:id/delete				controllers.Type.delete(id:String)

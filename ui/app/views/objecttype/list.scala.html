@@ -1,0 +1,136 @@
+@import helper.twitterBootstrap._
+@import util.Util
+@import util.NemakiConfig
+@import util.Formatter
+@import org.apache.chemistry.opencmis.commons.PropertyIds
+
+@(objectTypes: List[org.apache.chemistry.opencmis.client.api.ObjectType])
+<!DOCTYPE html>
+<html>
+	@header()
+	<body>
+		@menubar()
+		<div class="container">
+			<div class="row">
+	  			<div class="col-md-11">
+	  				<h3><i class="fa fa-cog"></i>@Messages("view.type.caption")</h3>
+	  			</div>
+	  		</div>
+		
+	  		<div class="row">
+				<div class="col-md-11">
+					<!-- create button -->
+					<button type="button" class="btn btn-default create"><i class="fa fa-plus"></i>@Messages("view.create")</button>
+					<button type="button" class="btn btn-default update"><i class="fa fa-edit"></i>@Messages("view.update")</button>
+					<br/><br/>
+				</div>
+				
+				
+				<div class="col-md-11">
+					<table class="footable" id="objects-table" data-sort="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
+						<thead>
+							<tr>
+								<th data-class="expand" data-sort-initial="true">@Messages("view.type.id")</th>
+								<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action")</th>
+							</tr>
+						</thead>
+						<tbody>
+						@for(objectType <- objectTypes){
+							<tr>
+								<td>
+									<a href="@routes.Type.download(objectType.getId)">@objectType.getId</a>
+								</td>
+								
+								<td>
+									<div class="btn-group">
+										<button type="button" class="btn btn-default delete" cmis-id="@objectType.getId"><i class="fa fa-trash"></i>@Messages("view.delete")</button>
+									</div> 
+								</td>							
+							</tr>
+						}
+						</tbody>
+						<tfoot>
+							<tr>
+								@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 2){colSpan =>
+									<td colspan="@colSpan">
+								}
+									<div class="pagination pagination-centered hide-if-no-paging"></div>
+								</td>
+							</tr>
+						</tfoot>
+					</table>
+				</div>
+	  		</div>
+		</div>
+	</body>
+</html>
+
+
+<!-- ------------------------------------------------ -->	
+
+<script type="text/javascript">
+$(function(){
+	$('.update').bind('click', function(){
+    	$.ajax({
+       		url: "@{Util.getContextPath(request)}types/edit",
+       		dataType: "html",
+       		success: function(data, textStatus){
+       			showLightbox('type-update', data);
+       		},
+       	    error: function(xhr, textStatus, errorThrown){
+       	      // TODO
+       	    }
+       	});
+    })
+   	
+	$('.create').bind('click', function(){
+       	$.ajax({
+       		url: "@{Util.getContextPath(request)}types/new",
+       		dataType: "html",
+       		success: function(data, textStatus){
+       			showLightbox('type-blank', data);
+       		},
+       	    error: function(xhr, textStatus, errorThrown){
+       	      // TODO
+       	    }
+       	});
+    });
+});
+</script>
+
+<!-- delete -->
+<script type="text/javascript">
+	$(function(){
+		$('.delete').click(function(){
+			if(window.confirm("@Messages("view.message.delete.confirm")")){
+				var id = $(this).attr('cmis-id');
+			
+				$.blockUI({message:"@Messages("view.message.please.wait")"});
+				$.ajax({
+					url : "@{Util.getContextPath(request)}types/" + id + "/delete",
+					type : 'POST',
+					data : null,
+					success : function(data){
+						window.alert("@Messages("view.message.delete.success")");
+						window.location.reload();
+					},
+					error : function(XMLHttpRequest, textStatus, errorThrown) {
+						window.alert("@Messages("view.message.delete.failure")");
+			        },
+			        complete : function(){
+						$.unblockUI();
+					}
+				})
+			}
+		});
+	});
+</script>
+
+
+
+<!-- footable -->
+<script type="text/javascript">
+        $(function () {
+            $('#objects-table').footable();
+        });
+</script> 

@@ -41,6 +41,7 @@ import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.util.constant.DomainType;
 
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
+import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
@@ -286,11 +287,19 @@ public class RepositoryServiceImpl implements RepositoryService,
 			ntd.setTypeMutabilityUpdate(typeMutability.canUpdate());
 		} else {
 			// These default values are repository-specific.
-			ntd.setTypeMutabilityCreate(false);
+			ntd.setTypeMutabilityCreate(true);
 			ntd.setTypeMutabilityDelete(true);
-			ntd.setTypeMutabilityUpdate(false);
+			ntd.setTypeMutabilityUpdate(true);
 		}
 
+		//specific to DocumentTypeDefinition
+		if(typeDefinition instanceof DocumentTypeDefinition){
+			DocumentTypeDefinition dtdf = (DocumentTypeDefinition)typeDefinition;
+			ntd.setVersionable(dtdf.isVersionable());
+			ntd.setContentStreamAllowed(dtdf.getContentStreamAllowed());
+		}
+		
+		
 		return ntd;
 	}
 
