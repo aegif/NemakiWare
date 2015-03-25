@@ -32,11 +32,13 @@ import org.apache.chemistry.opencmis.client.runtime.ObjectIdImpl;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
+import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
@@ -114,7 +116,16 @@ public class Node extends Controller {
 			results.add(obj);
 		}
 
-		return ok(tree.render(_parent, results));
+		//TODO TEST code
+		List<Tree<ObjectType>> typeFolders = session.getTypeDescendants(BaseTypeId.CMIS_FOLDER.value(), -1, false);
+		List<Tree<ObjectType>> typeDocs = session.getTypeDescendants(BaseTypeId.CMIS_DOCUMENT.value(), -1, false);
+		
+		
+		List<Tree<ObjectType>> types = new ArrayList<Tree<ObjectType>>();
+		types.addAll(typeFolders);
+		types.addAll(typeDocs);
+		
+		return ok(tree.render(_parent, results, types));
 	}
 
 	public static Result showChildrenByPath(String path) {
@@ -162,31 +173,18 @@ public class Node extends Controller {
 	}
 
 	public static Result showBlank() {
-		String objectType = request().getQueryString("objectType");
-		String baseType = request().getQueryString("baseType");
 		String parentId = request().getQueryString("parentId");
+		String objectTypeId = request().getQueryString("objectType");
+		
 
-		if (StringUtils.isEmpty(objectType)) {
-			objectType = "cmis:folder"; // default
-		} else if (baseType.equals("cmis:folder")) {
-
-		} else if (baseType.equals("cmis:document")) {
-
+		if (StringUtils.isEmpty(objectTypeId)) {
+			objectTypeId = "cmis:folder"; // default
 		}
 
 		Session session = createSession();
-		// ProeprtyDefinitions
-		Map<String, PropertyDefinition<?>> _propertyDefinitions = session
-				.getTypeDefinition(objectType).getPropertyDefinitions();
-		List<PropertyDefinition<?>> propertyDefinitions = new ArrayList<PropertyDefinition<?>>(
-				_propertyDefinitions.values());
-
-		// ObjectTypes(of the baseType)
-		List<Tree<ObjectType>> typeDescendants = session.getTypeDescendants(
-				baseType, -1, true);
-
-		return ok(blank.render(baseType, objectType, parentId,
-				propertyDefinitions, typeDescendants));
+		ObjectType objectType = session.getTypeDefinition(objectTypeId);
+		
+		return ok(blank.render(parentId, objectType));
 	}
 
 	public static Result showDetail(String id) {
@@ -427,6 +425,9 @@ public class Node extends Controller {
 						VersioningState.MAJOR);
 			}
 		} else {
+
+			ObjectType objectType = session.getTypeDefinition(objectTypeId);
+			
 			// Set CMIS parameter
 			Map<String, PropertyDefinition<?>> pdfs = session
 					.getTypeDefinition(objectTypeId).getPropertyDefinitions();
@@ -440,21 +441,47 @@ public class Node extends Controller {
 			// Document/Folder specific
 			switch (Util.getBaseType(session, objectTypeId)) {
 			case CMIS_DOCUMENT:
-				MultipartFormData body = request().body().asMultipartFormData();
-				List<FilePart> files = body.getFiles();
-
-				if (CollectionUtils.isEmpty(files)) {
-					// TODO error
-				} else if (files.size() == 1) {
-					ContentStream cs = Util.convertFileToContentStream(session,
-							files.get(0));
-					if (param.get(PropertyIds.NAME) == null) {
-						param.put(PropertyIds.NAME, cs.getFileName());
+				ContentStreamAllowed csa = ((DocumentTypeDefinition)objectType).getContentStreamAllowed();
+				if(csa == ContentStreamAllowed.REQUIRED){
+					List<FilePart> files = null;
+					MultipartFormData body = request().body().asMultipartFormData();
+					if(body != null && CollectionUtils.isNotEmpty(body.getFiles())){
+						files = body.getFiles();
 					}
-					session.createDocument(param, parentId, cs,
-							VersioningState.MAJOR);
-				} else {
-					// TODO
+
+					if (CollectionUtils.isEmpty(files)) {
+						// TODO error
+						System.err.println(objectTypeId + ":This type requires a file");
+					} else {
+						ContentStream cs = Util.convertFileToContentStream(session,
+								files.get(0));
+						if (param.get(PropertyIds.NAME) == null) {
+							param.put(PropertyIds.NAME, cs.getFileName());
+						}
+						session.createDocument(param, parentId, cs,
+								VersioningState.MAJOR);
+					}
+				}else if(csa == ContentStreamAllowed.ALLOWED){
+					//Retrieve a file
+					List<FilePart> files = null;
+					MultipartFormData body = request().body().asMultipartFormData();
+					if(body != null && CollectionUtils.isNotEmpty(body.getFiles())){
+						files = body.getFiles();
+					}
+					
+					//Set content stream if there is a file
+					if (CollectionUtils.isNotEmpty(files)) {
+						ContentStream cs = Util.convertFileToContentStream(session,
+								files.get(0));
+						if (param.get(PropertyIds.NAME) == null) {
+							param.put(PropertyIds.NAME, cs.getFileName());
+						}
+						session.createDocument(param, parentId, cs,
+								VersioningState.MAJOR);
+					}
+				}else if(csa == ContentStreamAllowed.NOTALLOWED){
+					//don't set content stream
+					session.createDocument(param, parentId, null, VersioningState.MAJOR);
 				}
 
 				break;
@@ -480,7 +507,6 @@ public class Node extends Controller {
 		input = input.bindFromRequest();
 
 		// Build upadte properties
-		// TODO multi-valued properties
 		Map<String, Object> properties = new HashMap<String, Object>();
 		for (Entry<String, PropertyDefinition<?>> entry : o.getType()
 				.getPropertyDefinitions().entrySet()) {
@@ -496,7 +522,6 @@ public class Node extends Controller {
 					// TODO type conversion
 					properties.put(pdf.getId(), value);
 				} else {
-					System.out.println();
 					// TODO find better way
 					List<String> list = new ArrayList<String>();
 					for (int i = 0; i < input.data().keySet().size(); i++) {
@@ -632,17 +657,24 @@ public class Node extends Controller {
 
 	public static Result upload(String id) {
 
-		Session session = createSession();
-
-		CmisObject o = session.getObject(id);
-
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
-
+		
+		Session session = createSession();
+		CmisObject o = session.getObject(id);
+		if(o.getType() instanceof DocumentTypeDefinition){
+			ContentStreamAllowed csa = ((DocumentTypeDefinition)(o.getType())).getContentStreamAllowed();
+			if(csa == ContentStreamAllowed.NOTALLOWED){
+				return redirectToParent(input);
+			}
+		}
+		
+		
 		MultipartFormData body = request().body().asMultipartFormData();
 		List<FilePart> files = body.getFiles();
 		if (files.isEmpty()) {
 			// TODO error
+			System.err.println("There is no file when uploading");
 		}
 		FilePart file = files.get(0);
 

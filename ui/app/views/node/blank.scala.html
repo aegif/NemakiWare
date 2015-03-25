@@ -5,9 +5,12 @@
 @import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition
 @import org.apache.chemistry.opencmis.client.api.Tree
 @import org.apache.chemistry.opencmis.client.api.ObjectType
+@import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition
 @import org.apache.chemistry.opencmis.commons.PropertyIds
+@import org.apache.chemistry.opencmis.commons.enums.BaseTypeId
+@import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed
 
-@(baseTypeId:String)(objectTypeId:String)(parentId:String)(primaries: List[PropertyDefinition[_]])(typeDescendants:List[Tree[ObjectType]])
+@(parentId:String)(objectType:ObjectType)
 
 @lightbox{
 	<!-- html -->
@@ -15,7 +18,7 @@
 		@helper.form(action=routes.Node.create, 'id -> "node-blank-form", 'enctype -> "multipart/form-data"){
 			<!-- caption -->
 			<div class="row">
-				@if(baseTypeId=="cmis:document"){
+				@if(objectType.getBaseTypeId==BaseTypeId.CMIS_DOCUMENT){
 					<h4><i class="fa fa-file"></i>@Messages("view.node.document.create")</h4>
 				}else{
 					<h4><i class="fa fa-folder"></i>@Messages("view.node.folder.create")</h4>
@@ -29,40 +32,43 @@
 				</div>
 			</div>
 			
-			<!-- ObjectType select -->
+			<!-- ObjectType -->
 			<div class="row" style="margin-bottom: 15px">
 				<div class="col-sm-5">
 					<h4>@Messages("view.node.type")</h4>
-					<select class="selectpicker" id="select-object-type">
-						@for(ot <- typeDescendants){
-							<option @if(ot.getItem.getId == objectTypeId){ selected}>
-								@ot.getItem.getId
-							</option>
-						}
-					    
-					</select>
+					@objectType.getId
 				</div>
 			</div>
 			
 			<!-- file input -->
-			@if(baseTypeId=="cmis:document"){
-				<div class="row" style="margin-bottom: 15px">
-					<div class="col-sm-8">
-						<div>
-							<h4>@Messages("view.node.file")</h4>
-						</div>
-						<label>@Messages("view.node.file.select")</label> <input type="file" name="file"
-							id="file" />
+			<div class="row" style="margin-bottom: 15px">
+				<div class="col-sm-8">
+					<div>
+						<h4>@Messages("view.node.file")</h4>
 					</div>
+					
+					@objectType match{
+						case docObjectType:DocumentTypeDefinition =>{
+							@if(docObjectType.getContentStreamAllowed == ContentStreamAllowed.NOTALLOWED){
+								@Messages("view.node.file.this.type.has.no.file")<br/>
+							}else{
+								<label>@Messages("view.node.file.select")</label> <input type="file" name="file"
+									id="file" />
+							}
+						}
+						
+						case _ => {
+						}
+					}
 				</div>
-			}
+			</div>
 			
 			<!-- property table -->
 			<div class="row">
 				<div class="col-sm-8">
 					<div><h4>@Messages("view.node.property")</h4></div>
 					@editableTable("obj-property-table")(10){
-						@for(p <- primaries){
+						@for(p <- objectType.getPropertyDefinitions().values()){
 							@editableRow(Util.buildTempProperty(p, ""))(Util.isEditableOnNodeBlank(p))
 						}
 					}
@@ -75,17 +81,6 @@
 	</div>
 
 	<!-- scripts -->
-	<script type="text/javascript">
-		//enable selectpicker
-		$('.selectpicker').selectpicker();
-	</script>
-	<script type="text/javascript">
-		$(document).on('change', '#select-object-type', function(){
-			$.get("@routes.Node.showBlank().absoluteURL(request)" + "?objectType=" + $(this).val() + "&baseType=@baseTypeId" + "&parentId=@parentId"  , function(html){
-				showLightbox('node-blank', html);
-			});	
-		});
-	</script>
 	<script type="text/javascript">
 		//file name interlock
 		$(document).on('change', '#file', function(){
@@ -103,18 +98,20 @@
 
 			//FormData
 			var formData = new FormData();
-			@for(p <- primaries){
+			@for(p <- objectType.getPropertyDefinitions().values()){
 				@if(Util.isEditableOnNodeBlank(p)){
 					formData.append("@p.getId",editedValue("#@p.getId"));	
 				}
 			}
 
-			@if(baseTypeId=="cmis:document"){
-				formData.append('file', document.getElementById("file").files[0]);
+			@if(objectType.getBaseTypeId==BaseTypeId.CMIS_DOCUMENT){
+				if(document.getElementById("file") != null){
+					formData.append('file', document.getElementById("file").files[0]);	
+				}
 			}
 			
 			formData.append("cmis:parentId", '@parentId');
-			formData.append("cmis:objectTypeId", '@objectTypeId');
+			formData.append("cmis:objectTypeId", '@objectType.getId');
 
 			//Ajax call
 			$(function(){
