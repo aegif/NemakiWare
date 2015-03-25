@@ -73,14 +73,17 @@ import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
+import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.ChangeType;
+import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
 import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.DocumentTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
@@ -443,20 +446,28 @@ public class ContentServiceImpl implements ContentService {
 			String versionSeriesId) {
 		Document d = buildNewBasicDocument(callContext, properties,
 				parentFolder);
-
-		//Prepare ContentStream(to read it twice)
-		Map<String,ContentStream> contentStreamMap = copyContentStream(contentStream);
 		
-		// Create Attachment node
-		String attachmentId = createAttachment(callContext, contentStreamMap.get("attachment"));
-		d.setAttachmentNodeId(attachmentId);
+		//Check contentStreamAllowed
+		DocumentTypeDefinition tdf = (DocumentTypeDefinition)(typeManager.getTypeDefinition(d));
+		
+		ContentStreamAllowed csa = tdf.getContentStreamAllowed();
+		if(csa == ContentStreamAllowed.REQUIRED || 
+			csa == ContentStreamAllowed.ALLOWED && contentStream != null){
+			
+			//Prepare ContentStream(to read it twice)
+			Map<String,ContentStream> contentStreamMap = copyContentStream(contentStream);
+			
+			// Create Attachment node
+			String attachmentId = createAttachment(callContext, contentStreamMap.get("attachment"));
+			d.setAttachmentNodeId(attachmentId);
 
-		// Create Renditions
-		ContentStream previewCS = contentStreamMap.get("preview");
-		if(isPreviewEnabled() && renditionManager.checkConvertible(previewCS.getMimeType())){
-			createPreview(callContext, previewCS, d);
+			// Create Renditions
+			ContentStream previewCS = contentStreamMap.get("preview");
+			if(isPreviewEnabled() && renditionManager.checkConvertible(previewCS.getMimeType())){
+				createPreview(callContext, previewCS, d);
+			}
 		}
-
+		
 		// Set version properties
 		VersionSeries vs = setVersionProperties(callContext, versioningState, d);
 

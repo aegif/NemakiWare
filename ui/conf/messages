@@ -18,6 +18,7 @@ view.node.folder=Folder
 view.node.document.create=Create a new document
 view.node.folder.create=Create a new folder
 view.node.file.select=Select a file
+view.node.file.this.type.has.no.file=This type has no file.
 view.node.file.checkout.caption=Lock for offline editing
 view.node.file.checkout.description-1=The document will be locked and can be edited only by the editor.
 view.node.file.checkout.description-2=Download a copy to edit it.
