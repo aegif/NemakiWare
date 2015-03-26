@@ -27,7 +27,6 @@ import jp.aegif.nemaki.util.constant.NodeType;
 
 
 public class Rendition extends NodeBase{
-	public static final String TYPE = "rendition";
 	
 	private String mimetype;
 	private long length;

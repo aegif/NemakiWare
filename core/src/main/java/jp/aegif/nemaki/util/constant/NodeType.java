@@ -21,15 +21,17 @@
  ******************************************************************************/
 package jp.aegif.nemaki.util.constant;
 
+import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
+
 public enum NodeType {
 	TYPE_DEFINITION("typeDefinition"),
 	PROPERTY_DEFINITION_CORE("propertyDefinitionCore"),
 	PROPERTY_DEFINITION_DETAIL("propertyDefinitionDetail"),
-	CMIS_DOCUMENT("cmis:document"),
-	CMIS_FOLDER("cmis:folder"),
-	CMIS_RELATIONSHIP("cmis:relationship"),
-	CMIS_POLICY("cmis:policy"),
-	CMIS_ITEM("cmis:item"),
+	CMIS_DOCUMENT(BaseTypeId.CMIS_DOCUMENT.value()),
+	CMIS_FOLDER(BaseTypeId.CMIS_FOLDER.value()),
+	CMIS_RELATIONSHIP(BaseTypeId.CMIS_RELATIONSHIP.value()),
+	CMIS_POLICY(BaseTypeId.CMIS_POLICY.value()),
+	CMIS_ITEM(BaseTypeId.CMIS_ITEM.value()),
 	ATTACHMENT("attachment"),
 	RENDITION("rendition"),
 	VERSION_SERIES("versionSeries"),
