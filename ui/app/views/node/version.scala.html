@@ -1,0 +1,43 @@
+@import util.Formatter
+@import util.NemakiConfig
+@(versions: List[org.apache.chemistry.opencmis.client.api.Document])
+
+<div class="container tab-pane">
+	<div class="row">
+		<div class="col-sm-8">
+			<table class="footable" id="version-table">
+				<thead>
+					<tr>
+						<th>@NemakiConfig.getLabel("cmis:versionLabel", lang().language)</th>
+						<th>@NemakiConfig.getLabel("cmis:name", lang().language)</th>
+						<th>@NemakiConfig.getLabel("cmis:createdBy", lang().language)</th>
+						<th>@NemakiConfig.getLabel("cmis:creationDate", lang().language)</th>
+					</tr>
+				</thead>
+				<tbody>
+					@for(version <- versions){
+						<tr>
+							<td>
+								<a href="@routes.Node.download(version.getId).absoluteURL(request)">
+									<i class="fa fa-download"></i>
+									@version.getVersionLabel()
+								</a>
+							</td>
+							<td>@version.getName()</td>
+							<td>@version.getCreatedBy()</td>
+							<td>@Formatter.calToString(version.getCreationDate())</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+		
+	</div>
+</div>
+		
+<!-- footable -->
+<script type="text/javascript">
+	$(function () {
+	    $('#version-table').footable();
+	});
+</script>  

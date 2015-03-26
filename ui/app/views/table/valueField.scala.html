@@ -1,0 +1,15 @@
+@import util.Util
+@import org.apache.commons.collections.CollectionUtils
+@import org.apache.chemistry.opencmis.client.api.Property
+
+@(property:Property[_])
+
+@if(Util.isMultiple(property.getDefinition)){
+	@multiValueField(property)
+}else{
+	<div class="editable-value-field-container">
+		<div class="antiscroll-wrap">
+			<div class="editable-value-field antiscroll-inner">@property.getValueAsString</div>
+		</div>
+	</div>
+}

@@ -1,0 +1,134 @@
+@import helper.twitterBootstrap._
+@import util.Util
+@import util.NemakiConfig
+@import util.Formatter
+@import org.apache.chemistry.opencmis.commons.PropertyIds
+@import org.apache.chemistry.opencmis.client.api.Document
+@import org.apache.chemistry.opencmis.client.api.Folder
+@import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition
+@import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed
+
+@(objects: List[org.apache.chemistry.opencmis.client.api.CmisObject])
+
+<table class="footable" id="objects-table" data-sort="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
+	<thead>
+		<tr>
+			<th data-class="expand" data-sort-initial="true">@NemakiConfig.getLabel("cmis:name", lang().language)</th>
+			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
+				<th class="content-size" data-class="expand">@NemakiConfig.getLabel(column, lang().language)</th>
+			}
+			<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action")</th>
+		</tr>
+	</thead>
+	<tbody>
+	@for(obj <- objects){
+		<tr>
+			<td>
+				@obj match {
+					case document:Document =>{
+						@if(document.isVersionSeriesCheckedOut){
+							<i class="fa fa-lock"></i>
+						}
+						
+						@if(Util.hasContentStream(document)){
+							<a href="@routes.Node.download(document.getId)">
+						}else{
+							<a href="#" class="no-content-stream">
+						}
+					}
+					
+					case folder:Folder =>{
+						<a href="@routes.Node.showChildren(folder.getId)">
+					}
+					
+					case _ =>{
+					
+					}
+				}
+					<i class="fa @Util.getIconName(obj)"></i>@obj.getName()
+				</a>
+			</td>
+			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
+				<td>@Util.displayValue(obj, column)</td>
+			}
+			<td>
+				<div class="btn-group">
+					<button type="button" class="btn btn-default show-detail" cmis-id="@obj.getId()"><i class="fa fa-wrench"></i>@Messages("view.detail")</button>
+					<button type="button" class="btn btn-default delete" cmis-id="@obj.getId()"><i class="fa fa-trash"></i>@Messages("view.delete")</button>
+				</div> 
+			</td>							
+		</tr>
+	}
+	</tbody>
+	<tfoot>
+		<tr>
+			@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 2){colSpan =>
+				<td colspan="@colSpan">
+			}
+				<div class="pagination pagination-centered hide-if-no-paging"></div>
+			</td>
+		</tr>
+	</tfoot>
+</table>
+
+
+
+<!-- ------------------------------------------------ -->	
+<!-- detail -->
+<script type="text/javascript">
+	$(function(){
+    	//Detail
+        $(".show-detail").bind('click', function(){
+        //Get CmisObject
+       		var id = $(this).attr('cmis-id');
+       		$.get("@{Util.getContextPath(request)}objects/" + id, function(html){
+       			showLightbox('node-detail' + id, html);
+       		});
+        });
+    });
+</script>
+    
+<!-- delete -->
+<script type="text/javascript">
+	$(function(){
+		$('.delete').click(function(){
+			if(window.confirm("@Messages("view.message.delete.confirm")")){
+				var id = $(this).attr('cmis-id');
+			
+				$.blockUI({message:"@Messages("view.message.please.wait")"});
+				$.ajax({
+					url : "@{Util.getContextPath(request)}objects/" + id + "/delete",
+					type : 'POST',
+					data : null,
+					success : function(data){
+						window.alert("@Messages("view.message.delete.success")");
+						window.location.reload();
+					},
+					error : function(XMLHttpRequest, textStatus, errorThrown) {
+						window.alert("@Messages("view.message.delete.failure")");
+			        },
+			        complete : function(){
+						$.unblockUI();
+					}
+				})
+			}
+		});
+	});
+</script>
+
+<!-- no content stream link -->
+<script type="text/javascript">
+	$(function(){
+    	//Detail
+        $("a.no-content-stream").bind('click', function(){
+       		alert("This document has no content stream.");
+        });
+    });
+</script>
+
+<!-- footable -->
+<script type="text/javascript">
+        $(function () {
+            $('#objects-table').footable();
+        });
+</script>           

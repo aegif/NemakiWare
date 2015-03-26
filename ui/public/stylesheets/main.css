@@ -1,0 +1,157 @@
+body {
+	/*For menu bar*/
+    padding-top: 70px;
+}
+
+i.fa {
+	padding-right:2px;
+}
+
+div.menubar {
+   background-color: #cccccc;
+}
+div.lightbox-me-container{
+	border-style:solid;
+	border-width: 3px;
+	background-color: #eeeeee;
+	overflow: auto; 
+	height: 600px;
+	width: 800px;
+	padding-top: 20px;
+	padding-left: 20px;
+}
+
+div.lightbox-me-container div.container, div.lightbox-me-container div.row{
+	width: 760px !important;
+}
+	
+div.tab-pane{
+	padding-top:20px;
+}
+	
+/*検索窓*/		
+.navbar-search {
+    position: relative;
+}
+ 
+.navbar-search .search-query {
+    padding-left: 29px;
+}
+ 
+.navbar-search .icon-search {
+    position: absolute;
+    top: 7px;
+    left: 11px;
+}
+ 
+.navbar-search .search-query:focus, .navbar-search .search-query.focused {
+    padding-left: 30px;
+}​
+
+.table {
+  width: 100%;
+  table-layout: fixed;
+  word-wrap: break-word;
+}
+
+table.editable-table .key{
+	width: 1%;
+	white-space:nowrap;
+}
+
+table.editable-table .editable{
+	width: 1%;
+	white-space:nowrap;
+}
+
+table.editable-table .required{
+	width: 1%;
+	white-space:nowrap;
+}
+
+table.editable-table .value{
+	width: 310px;
+	padding-top:2px　!important;
+	padding-bottom:0px !important;
+}
+
+div.editable-value-field, input.editable-value-input {
+	width: 300px;
+}
+
+div.editable-value-field.multi, div.editable-value-field.multi input.editable-value-input{
+	width: 230px;
+}
+
+div.editable-value-field{
+	height: 28px;
+}
+
+div.antiscroll-wrap *{
+	overflow:hidden;
+}
+
+div.editable-value-field {
+	white-space:nowrap;
+	background: url(../images/transparent.gif) repeat;	/*so that empty field can be clicked*/
+}
+
+input.editable-value-input {
+	height:25px;
+	background-color : #f8f8f8;
+	
+	border:0;
+	color:#aaa;
+	
+	-webkit-border-radius: 3px;
+	-moz-border-radius: 3px;
+	border-radius: 3px;
+	
+	-moz-box-shadow: inset 1px 4px 9px -6px rgba(0,0,0,0.5);
+	-webkit-box-shadow: inset 1px 4px 9px -6px rgba(0, 0, 0, 0.5);
+	box-shadow: inset 1px 4px 9px -6px rgba(0,0,0,0.5);
+}
+
+input.editable-value-input:focus{
+	border:solid 1px #7eb0e0;
+}
+
+tr.ace-inherited{
+	background-color:#f0f0f0;
+}
+
+input.ace-direct{
+	display:none;
+}
+
+input.form-control.principal-searach{
+	width:290px;
+}
+
+.principal-table .column-action{
+	width:1px;
+	white-space:nowrap;
+	text-align: center !important;,
+	vertical-align: center !important;
+}
+
+.principal-table .column-genre{
+	width:1px;
+	white-space:nowrap;
+	text-align: center !important;,
+	vertical-align: center !important;
+}
+
+.principal-table .column-id, .principal-table .column-name{
+	word-break: break-all;
+}
+
+.nopadding {
+   padding: 0 !important;
+   margin: 0 !important;
+}
+
+.content-size{
+	width:1px;
+	white-space:nowrap;	
+}

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:aop="http://www.springframework.org/schema/aop"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
+	
+	<!-- CouchDB Beans -->
+	<bean id="connector" class="jp.aegif.nemaki.dao.impl.couch.connector.CouchConnector" init-method="init">
+		<property name="repositoryId">
+			<value>${cmis.repository.main}</value>
+		</property>
+		<property name="host">
+			<value>${db.couchdb.host}</value>
+		</property>
+		<property name="port">
+			<value>${db.couchdb.port}</value>
+		</property>
+		<property name="maxConnections">
+			<value>${db.couchdb.max.connections}</value>
+		</property>
+	</bean>
+	
+	<bean id="archiveConnector" class="jp.aegif.nemaki.dao.impl.couch.connector.CouchConnector" init-method="init">
+		<property name="repositoryId">
+			<value>${cmis.repository.archive}</value>
+		</property>
+		<property name="host">
+			<value>${db.couchdb.host}</value>
+		</property>
+		<property name="port">
+			<value>${db.couchdb.port}</value>
+		</property>
+		<property name="maxConnections">
+			<value>${db.couchdb.max.connections}</value>
+		</property>
+	</bean>
+	
+	<bean id="nonCachedContentDaoService" class="jp.aegif.nemaki.dao.impl.couch.ContentDaoServiceImpl">
+		<property name="connector">
+			<ref bean="connector" />
+		</property>
+		<property name="archiveConnector">
+			<ref bean="archiveConnector" />
+		</property>
+	</bean>
+	
+	<bean id="nonCachedPrincipalDaoService" class="jp.aegif.nemaki.dao.impl.couch.PrincipalDaoServiceImpl">
+		<property name="connector">
+			<ref bean="connector" />
+		</property>
+	</bean>
+	
+</beans>

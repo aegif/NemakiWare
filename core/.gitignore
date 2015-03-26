@@ -1,0 +1,11 @@
+bin/
+build/
+doc/
+load_test/
+target/
+tmp/
+tags
+.DS_Store
+*.class
+src/main/resources/*
+logs/*

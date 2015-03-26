@@ -1,0 +1,35 @@
+@import util.Util
+@import util.NemakiConfig
+@import constant.UpdateContext
+
+@import org.apache.commons.collections.CollectionUtils
+@import org.apache.chemistry.opencmis.client.api.Property
+
+@(property:Property[_])(filter:Boolean = true)
+
+@if(filter){
+	<tr id="@property.getDefinition.getId">
+		<td class="key">
+			@NemakiConfig.getLabel(property.getDefinition.getId, lang().language)
+		</td>
+		<td class="editable">
+			@if(Util.isReadWrite(property.getDefinition)){
+				<i class="fa fa-check editable"></i>
+				<div style="display:none">1</div>
+			}else{
+				<div style="display:none">0</div>
+			}
+		</td>
+		<td class="required">
+			@if(property.getDefinition.isRequired){
+				<i class="fa fa-check editable"></i>
+				<div style="display:none">1</div>
+			}else{
+				<div style="display:none">0</div>
+			}
+		</td>
+		<td class="value @if(Util.isReadWrite(property.getDefinition)){editable-value}">
+			@valueField(property)
+		</td>
+	</tr>
+}
