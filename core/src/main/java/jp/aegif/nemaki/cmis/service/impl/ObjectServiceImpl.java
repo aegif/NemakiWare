@@ -260,8 +260,7 @@ public class ObjectServiceImpl implements ObjectService {
 			ExtensionsData extension) {
 
 		String typeId = DataUtil.getObjectTypeId(properties);
-		TypeDefinition type = repositoryService.getTypeManager()
-				.getTypeDefinition(typeId);
+		TypeDefinition type = typeManager.getTypeDefinition(typeId);
 		if (type == null) {
 			throw new CmisObjectNotFoundException("Type '" + typeId
 					+ "' is unknown!");

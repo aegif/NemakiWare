@@ -245,6 +245,9 @@ public interface PropertyKey {
 	final String LOG_RETURN_VALUE = "log.return.value";
 	final String LOG_FQN = "log.fqn";
 	final String LOG_ARGUMENTS = "log.arguments";
+	final String LOG_BEFORE = "log.before";
+	final String LOG_AFTER = "log.after";
+	final String LOG_CALLCONTEXT = "log.callcontext";
 	
 	//Cache
 	final String CACHE_CMIS_ENABLED = "cache.cmis.enabled";

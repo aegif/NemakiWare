@@ -23,16 +23,13 @@ package jp.aegif.nemaki.cmis.aspect.query;
 
 import java.math.BigInteger;
 
-import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
-
 import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 
 public interface QueryProcessor {
-	ObjectList query(TypeManager typeManager, CallContext callContext, String username, String id,
-			String statement, Boolean searchAllVersions,
-			Boolean includeAllowableActions,
+	ObjectList query(CallContext callContext, String statement,
+			Boolean searchAllVersions, Boolean includeAllowableActions,
 			IncludeRelationships includeRelationships, String renditionFilter,
 			BigInteger maxItems, BigInteger skipCount);
 }

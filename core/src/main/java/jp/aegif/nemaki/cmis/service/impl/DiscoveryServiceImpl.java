@@ -51,32 +51,31 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 	private ExceptionService exceptionService;
 	private CompileService compileService;
 
-	public ObjectList query(CallContext context, TypeManager typeManager,
-			String repositoryId, String statement, Boolean searchAllVersions,
-			Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
-			BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
+	public ObjectList query(CallContext context, String statement,
+			Boolean searchAllVersions, Boolean includeAllowableActions,
+			IncludeRelationships includeRelationships,
+			String renditionFilter, BigInteger maxItems,
+			BigInteger skipCount, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("statement", statement);
-		
+
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		//TODO implement
-		
+		// TODO implement
+
 		// //////////////////
 		// Body of the method
-		return queryProcessor.query(typeManager,
-				context, context.getUsername(), repositoryId, statement,
-				searchAllVersions, includeAllowableActions,
-				includeRelationships, renditionFilter, maxItems, skipCount);
+		return queryProcessor.query(context, statement, searchAllVersions,
+				includeAllowableActions, includeRelationships, renditionFilter,
+				maxItems, skipCount);
 	}
 
 	/**
-	 *Return ChangeLog just for Documents & Folder type, and Not for their attachments 
-	 *TODO includeAcl,includePolicyIds is not valid
+	 * Return ChangeLog just for Documents & Folder type, and Not for their
+	 * attachments TODO includeAcl,includePolicyIds is not valid
 	 */
 	public ObjectList getContentChanges(CallContext context,
 			Holder<String> changeLogToken, Boolean includeProperties,
@@ -85,28 +84,36 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 		// //////////////////
 		// General Exception
 		// //////////////////
-		//NONE
-		
+		// NONE
+
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		if(changeLogToken != null && StringUtils.isNotBlank(changeLogToken.getValue())){
-			//If changelogToken is not specified, return the first in the repository 
-			exceptionService.invalidArgumentChangeEventNotAvailable(changeLogToken);
+		if (changeLogToken != null
+				&& StringUtils.isNotBlank(changeLogToken.getValue())) {
+			// If changelogToken is not specified, return the first in the
+			// repository
+			exceptionService
+					.invalidArgumentChangeEventNotAvailable(changeLogToken);
 		}
-		
+
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		List<Change> changes = contentService.getLatestChanges(context, changeLogToken, includeProperties, filter, includePolicyIds, includeAcl, maxItems, extension);
-		if(!CollectionUtils.isEmpty(changes)){
-			String latestToken = String.valueOf(changes.get(changes.size()-1).getChangeToken());
+		List<Change> changes = contentService.getLatestChanges(context,
+				changeLogToken, includeProperties, filter, includePolicyIds,
+				includeAcl, maxItems, extension);
+		if (!CollectionUtils.isEmpty(changes)) {
+			String latestToken = String.valueOf(changes.get(changes.size() - 1)
+					.getChangeToken());
 			changeLogToken.setValue(latestToken);
 		}
-		
-		return compileService.compileChangeDataList(context, changes, changeLogToken, includeProperties, filter, includePolicyIds, includeAcl);
+
+		return compileService.compileChangeDataList(context, changes,
+				changeLogToken, includeProperties, filter, includePolicyIds,
+				includeAcl);
 	}
-	
+
 	public void setQueryProcessor(QueryProcessor queryProcessor) {
 		this.queryProcessor = queryProcessor;
 	}

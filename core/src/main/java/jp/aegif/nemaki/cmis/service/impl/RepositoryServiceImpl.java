@@ -64,11 +64,6 @@ public class RepositoryServiceImpl implements RepositoryService,
 	private ExceptionService exceptionService;
 
 	@Override
-	public TypeManager getTypeManager() {
-		return typeManager;
-	}
-
-	@Override
 	public boolean hasThisRepositoryId(String repositoryId) {
 		return (repositoryId.equals(repositoryInfo.getId()));
 	}
