@@ -14,9 +14,12 @@
 	<ul class="nav nav-tabs">
   		<li class="active"><a href="@routes.Node.showProperty(obj.getId).absoluteURL(request)" data-toggle="tab" data-target="#property">@Messages("view.node.property")</a></li>
   		@if(Util.isDocument(obj)){
-  		<li class=""><a href="@routes.Node.showFile(obj.getId).absoluteURL(request)" data-toggle="tab" data-target="#file">@Messages("view.node.file")</a></li>
-  		<li class=""><a href="@routes.Node.showVersion(obj.getId).absoluteURL(request)" data-toggle="tab" data-target="#version">@Messages("view.node.version")</a></li>
-  		<li class=""><a href="@routes.Node.showPreview(obj.getId).absoluteURL(request)" data-toggle="tab" data-target="#preview">@Messages("view.node.preview")</a></li>
+  			<!-- TODO: Implement 'allowed' case correctly -->
+ 			@if(Util.hasContentStream(obj)){
+ 				<li class=""><a href="@routes.Node.showFile(obj.getId).absoluteURL(request)" data-toggle="tab" data-target="#file">@Messages("view.node.file")</a></li>
+ 				<li class=""><a href="@routes.Node.showPreview(obj.getId).absoluteURL(request)" data-toggle="tab" data-target="#preview">@Messages("view.node.preview")</a></li>
+ 			}
+	  		<li class=""><a href="@routes.Node.showVersion(obj.getId).absoluteURL(request)" data-toggle="tab" data-target="#version">@Messages("view.node.version")</a></li>
   		}
   		<li class=""><a href="@routes.Node.showPermission(obj.getId).absoluteURL(request)" data-toggle="tab" data-target="#permission">@Messages("view.node.permission")</a></li>
 	</ul>

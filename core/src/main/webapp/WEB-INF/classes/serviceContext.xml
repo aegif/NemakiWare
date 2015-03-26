@@ -1,0 +1,625 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- This context file needs in another file: ContentService/PrincipalService/TypeService
+    bean definition -->
+
+<beans xmlns="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:aop="http://www.springframework.org/schema/aop"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
+
+	<!-- Cache -->
+	<bean id="NemakiCache" class="org.springframework.aop.framework.ProxyFactoryBean">
+        <property name="target">
+            <ref bean="nemakiCache" />
+        </property>
+	</bean>
+	<bean id="nemakiCache" class="jp.aegif.nemaki.util.cache.impl.NemakiCacheImpl"
+	init-method="init">
+		<property name="propertyManager">
+            <ref bean="propertyManager" />
+        </property>
+	</bean>
+
+    <!-- CMIS Repository Beans -->
+    <bean id="CmisLifecycleBean" class="jp.aegif.nemaki.cmis.factory.CmisLifecycleBean" >
+        <property name="cmisServiceFactory" ref="CmisServiceFactory" />
+    </bean>
+	
+    <bean id="CmisServiceFactory" class="jp.aegif.nemaki.cmis.factory.CmisServiceFactory"
+    init-method="setup">
+        <property name="propertyManager">
+            <ref bean="propertyManager" />
+        </property>
+        <property name="repository">
+            <ref bean="repository" />
+        </property>
+        <property name="repositoryMap">
+            <ref bean="repositoryMap" />
+        </property>
+        <property name="authenticationService">
+            <ref bean="AuthenticationService" />
+        </property>
+    </bean>
+   
+    <bean id="repositoryMap" class="jp.aegif.nemaki.cmis.factory.RepositoryMap" init-method="init">
+        <property name="propertyManager">
+            <ref bean="propertyManager" />
+        </property>
+    </bean>
+
+    <bean id="repositoryInfo"
+        class="jp.aegif.nemaki.cmis.factory.info.RepositoryInfo"
+        init-method="setup">
+        <property name="id">
+            <value>${cmis.repository.main}</value>
+        </property>
+        <property name="name">
+            <value>${cmis.repository.main}</value>
+        </property>
+        <property name="description">
+            <value>${cmis.repository.main.description}</value>
+        </property>
+        <property name="cmisVersionSupported">
+            <value>1.1</value>
+        </property>
+        <property name="capabilities">
+            <ref bean="capabilities" />
+        </property>
+        <property name="rootFolder">
+            <value>${cmis.repository.main.root}</value>
+        </property>
+        <property name="aclCapabilities">
+            <ref bean="aclCapabilities" />
+        </property>
+        <property name="principalAnonymous">
+            <value>${cmis.repository.main.principal.anonymous}</value>
+        </property>
+        <property name="principalAnyone">
+            <value>${cmis.repository.main.principal.anyone}</value>
+        </property>
+        <property name="thinClientUri">
+            <value>${cmis.repository.main.thinClientUri}</value>
+        </property>
+        <property name="vendorName">
+            <value>${cmis.repository.main.vendor}</value>
+        </property>
+        <property name="productName">
+            <value>${cmis.repository.main.product.name}</value>
+        </property>
+        <property name="productVersion">
+            <value>${cmis.repository.main.product.version}</value>
+        </property>
+        <property name="nameSpace">
+            <value>${cmis.repository.main.namespace}</value>
+        </property>
+        <property name="changesIncomplete">
+            <value>true</value>
+        </property>
+    </bean>
+ 
+    <bean id="capabilities"
+        class="jp.aegif.nemaki.cmis.factory.info.Capabilities" init-method="init">
+        <property name="propertyManager">
+            <ref bean="propertyManager" />
+        </property>
+    </bean>
+
+    <bean id="aclCapabilities"
+        class="jp.aegif.nemaki.cmis.factory.info.AclCapabilities"
+        init-method="init">
+        <property name="propertyManager">
+            <ref bean="propertyManager" />
+        </property>
+    </bean>
+
+    <bean id="TypeManager" class="org.springframework.aop.framework.ProxyFactoryBean">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.cmis.aspect.type.TypeManager
+                </value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="typeManager" />
+        </property>
+    </bean>
+    <bean id="typeManager" class="jp.aegif.nemaki.cmis.aspect.type.impl.TypeManagerImpl" init-method="init" depends-on="typeService">
+        <property name="typeService">
+            <ref bean="TypeService" />
+        </property>
+        <property name="propertyManager">
+            <ref bean="propertyManager" />
+        </property>
+    </bean>
+
+    <bean id="repository" class="jp.aegif.nemaki.cmis.factory.Repository">
+        <property name="repositoryService">
+            <ref bean="RepositoryService" />
+        </property>
+        <property name="navigationService">
+            <ref bean="NavigationService" />
+        </property>
+        <property name="objectService">
+            <ref bean="ObjectService" />
+        </property>
+        <property name="discoveryService">
+            <ref bean="DiscoveryService" />
+        </property>
+        <property name="versioningService">
+            <ref bean="VersioningService" />
+        </property>
+        <property name="RelationshipService">
+            <ref bean="RelationshipService" />
+        </property>
+        <property name="policyService">
+            <ref bean="PolicyService" />
+        </property>
+        <property name="aclService">
+            <ref bean="AclService" />
+        </property>
+    </bean>
+
+
+    <!-- CMIS Service Beans -->
+    <bean id="RepositoryService" class="org.springframework.aop.framework.ProxyFactoryBean">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.cmis.service.RepositoryService
+                </value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="repositoryService" />
+        </property>
+    </bean>
+    <bean id="repositoryService"
+        class="jp.aegif.nemaki.cmis.service.impl.RepositoryServiceImpl">
+        <property name="repositoryInfo">
+            <ref bean="repositoryInfo" />
+        </property>
+        <property name="typeManager">
+            <ref bean="TypeManager" />
+        </property>
+        <property name="exceptionService">
+            <ref bean="ExceptionService" />
+        </property>
+        <property name="typeService">
+            <ref bean="TypeService" />
+        </property>
+        <property name="contentService">
+            <ref bean="ContentService" />
+        </property>
+    </bean>
+
+    <bean id="NavigationService" class="org.springframework.aop.framework.ProxyFactoryBean">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.cmis.service.NavigationService
+                </value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="navigationService" />
+        </property>
+    </bean>
+    <bean id="navigationService"
+        class="jp.aegif.nemaki.cmis.service.impl.NavigationServiceImpl">
+        <property name="contentService">
+            <ref bean="ContentService" />
+        </property>
+        <property name="exceptionService">
+            <ref bean="ExceptionService" />
+        </property>
+        <property name="compileService">
+            <ref bean="CompileService" />
+        </property>
+        <property name="sortUtil">
+            <ref bean="sortUtil" />
+        </property>
+    </bean>
+   
+    <bean id="sortUtil" class="jp.aegif.nemaki.cmis.aspect.SortUtil">
+    	<property name="typeManager" ref="TypeManager" />
+    	<property name="repositoryInfo" ref="repositoryInfo" />
+        <property name="propertyManager" ref="propertyManager" />
+    </bean>
+
+    <bean id="ObjectService" class="org.springframework.aop.framework.ProxyFactoryBean">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.cmis.service.ObjectService
+                </value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="objectService" />
+        </property>
+    </bean>
+    <bean id="objectService" class="jp.aegif.nemaki.cmis.service.impl.ObjectServiceImpl">
+        <property name="typeManager">
+            <ref bean="TypeManager" />
+        </property>
+        <property name="contentService">
+            <ref bean="ContentService" />
+        </property>
+        <property name="repositoryService">
+            <ref bean="RepositoryService" />
+        </property>
+        <property name="exceptionService">
+            <ref bean="ExceptionService" />
+        </property>
+        <property name="compileService">
+            <ref bean="CompileService" />
+        </property>
+        <property name="solrUtil">
+            <ref bean="solrUtil" />
+        </property>
+        <property name="nemakiCache">
+			<ref bean="nemakiCache" />
+        </property>
+    </bean>
+
+    <bean id="DiscoveryService" class="org.springframework.aop.framework.ProxyFactoryBean">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.cmis.service.DiscoveryService
+                </value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="discoveryService" />
+        </property>
+    </bean>
+    <bean id="discoveryService"
+        class="jp.aegif.nemaki.cmis.service.impl.DiscoveryServiceImpl">
+        <property name="queryProcessor">
+            <ref bean="QueryProcessor" />
+        </property>
+        <property name="contentService">
+            <ref bean="ContentService" />
+        </property>
+        <property name="exceptionService">
+            <ref bean="ExceptionService" />
+        </property>
+        <property name="compileService">
+            <ref bean="CompileService" />
+        </property>
+    </bean>
+
+    <bean id="VersioningService" class="org.springframework.aop.framework.ProxyFactoryBean">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.cmis.service.VersioningService
+                </value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="versioningService" />
+        </property>
+    </bean>
+    <bean id="versioningService"
+        class="jp.aegif.nemaki.cmis.service.impl.VersioningServiceImpl">
+        <property name="contentService">
+            <ref bean="ContentService" />
+        </property>
+        <property name="compileService">
+            <ref bean="CompileService" />
+        </property>
+        <property name="exceptionService">
+            <ref bean="ExceptionService" />
+        </property>
+        <property name="nemakiCache">
+            <ref bean="nemakiCache" />
+        </property>
+    </bean>
+
+    <bean id="RelationshipService" class="org.springframework.aop.framework.ProxyFactoryBean">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.cmis.service.RelationshipService
+                </value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="relationshipService" />
+        </property>
+    </bean>
+
+
+    <bean id="relationshipService"
+        class="jp.aegif.nemaki.cmis.service.impl.RelationshipServiceImpl">
+        <property name="typeManager">
+            <ref bean="TypeManager" />
+        </property>
+        <property name="contentService">
+            <ref bean="ContentService" />
+        </property>
+        <property name="compileService">
+            <ref bean="CompileService" />
+        </property>
+        <property name="exceptionService">
+            <ref bean="ExceptionService" />
+        </property>
+    </bean>
+
+    <bean id="PolicyService" class="org.springframework.aop.framework.ProxyFactoryBean">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.cmis.service.PolicyService
+                </value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="policyService" />
+        </property>
+    </bean>
+    <bean id="policyService" class="jp.aegif.nemaki.cmis.service.impl.PolicyServiceImpl">
+        <property name="contentService">
+            <ref bean="ContentService" />
+        </property>
+        <property name="compileService">
+            <ref bean="CompileService" />
+        </property>
+        <property name="exceptionService">
+            <ref bean="ExceptionService" />
+        </property>
+        <property name="nemakiCache">
+            <ref bean="nemakiCache" />
+        </property>
+    </bean>
+
+    <bean id="AclService" class="org.springframework.aop.framework.ProxyFactoryBean">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.cmis.service.AclService</value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="aclService" />
+        </property>
+    </bean>
+
+    <bean id="aclService" class="jp.aegif.nemaki.cmis.service.impl.AclServiceImpl">
+        <property name="contentService">
+            <ref bean="ContentService" />
+        </property>
+        <property name="compileService">
+            <ref bean="CompileService" />
+        </property>
+        <property name="exceptionService">
+            <ref bean="ExceptionService" />
+        </property>
+        <property name="typeManager">
+            <ref bean="TypeManager" />
+        </property>
+        <property name="propertyManager">
+            <ref bean="propertyManager" />
+        </property>
+        <property name="nemakiCache">
+            <ref bean="nemakiCache" />
+        </property>
+    </bean>
+
+
+    <!-- CMIS Service Beans(Utility) -->
+    <bean id="AuthenticationService" class="org.springframework.aop.framework.ProxyFactoryBean">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.cmis.factory.auth.AuthenticationService
+                </value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="authenticationService" />
+        </property>
+    </bean>
+    <bean id="authenticationService"
+        class="jp.aegif.nemaki.cmis.factory.auth.impl.AuthenticationServiceImpl">
+        <property name="principalService">
+            <ref bean="PrincipalService" />
+        </property>
+        <property name="tokenService">
+            <ref bean="TokenService" />
+        </property>
+    </bean>
+   
+    <bean id="TokenService" class="org.springframework.aop.framework.ProxyFactoryBean">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.cmis.factory.auth.TokenService
+                </value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="tokenService" />
+        </property>
+    </bean>
+    <bean id="tokenService"
+        class="jp.aegif.nemaki.cmis.factory.auth.impl.TokenServiceImpl">
+    </bean>
+
+    <bean id="CompileService" class="org.springframework.aop.framework.ProxyFactoryBean">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.cmis.aspect.CompileService
+                </value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="compileService" />
+        </property>
+    </bean>
+    <bean id="compileService"
+        class="jp.aegif.nemaki.cmis.aspect.impl.CompileServiceImpl">
+        <property name="repositoryInfo">
+            <ref bean="repositoryInfo" />
+        </property>
+        <property name="repositoryService">
+            <ref bean="RepositoryService" />
+        </property>
+        <property name="contentService">
+            <ref bean="ContentService" />
+        </property>
+        <property name="permissionService">
+            <ref bean="PermissionService" />
+        </property>
+        <property name="aclCapabilities">
+            <ref bean="aclCapabilities" />
+        </property>
+        <property name="typeManager">
+            <ref bean="TypeManager" />
+        </property>
+        <property name="nemakiCache">
+            <ref bean="nemakiCache" />
+        </property>
+        <property name="includeRelationshipsEnabled">
+        	<value>${capability.extended.include.relationships}</value>
+        </property>
+    </bean>
+
+    <bean id="PermissionService" class="org.springframework.aop.framework.ProxyFactoryBean">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.cmis.aspect.PermissionService
+                </value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="permissionService" />
+        </property>
+    </bean>
+    <bean id="permissionService"
+        class="jp.aegif.nemaki.cmis.aspect.impl.PermissionServiceImpl">
+        <property name="principalService">
+            <ref bean="PrincipalService" />
+        </property>
+        <property name="contentService">
+            <ref bean="ContentService" />
+        </property>
+        <property name="typeManager">
+            <ref bean="TypeManager" />
+        </property>
+        <property name="repositoryInfo">
+            <ref bean="repositoryInfo" />
+        </property>
+    </bean>
+
+    <bean id="ExceptionService" class="org.springframework.aop.framework.ProxyFactoryBean">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.cmis.aspect.ExceptionService
+                </value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="exceptionService" />
+        </property>
+    </bean>
+    <bean id="exceptionService"
+        class="jp.aegif.nemaki.cmis.aspect.impl.ExceptionServiceImpl">
+        <property name="repositoryInfo">
+            <ref bean="repositoryInfo" />
+        </property>
+        <property name="typeManager">
+            <ref bean="TypeManager" />
+        </property>
+        <property name="contentService">
+            <ref bean="ContentService" />
+        </property>
+        <property name="permissionService">
+            <ref bean="PermissionService" />
+        </property>
+        <property name="principalService">
+            <ref bean="PrincipalService" />
+        </property>
+    </bean>
+
+
+    <!-- Search Engine Beans -->
+    <bean id="QueryProcessor" class="org.springframework.aop.framework.ProxyFactoryBean">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.cmis.aspect.query.QueryProcessor</value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="queryProcessor" />
+        </property>
+    </bean>
+
+    <bean id="queryProcessor" class="jp.aegif.nemaki.cmis.aspect.query.solr.SolrQueryProcessor">
+        <property name="typeManager">
+            <ref bean="TypeManager" />
+        </property>
+        <property name="contentService">
+            <ref bean="ContentService" />
+        </property>
+        <property name="permissionService">
+            <ref bean="PermissionService" />
+        </property>
+        <property name="compileService">
+            <ref bean="CompileService" />
+        </property>
+        <property name="exceptionService">
+            <ref bean="ExceptionService" />
+        </property>
+        <property name="solrUtil">
+            <ref bean="solrUtil" />
+        </property>
+         <property name="sortUtil">
+            <ref bean="sortUtil" />
+        </property>
+    </bean>
+
+    <bean id="solrUtil" class="jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil">
+        <property name="propertyManager">
+            <ref bean="propertyManager" />
+        </property>
+    </bean>
+
+
+    <!-- Extra Rest API implemented by Jersey -->
+    <bean id="restAuthenticationFilter" class="jp.aegif.nemaki.rest.AuthenticationFilter">
+    	<property name="propertyManager">
+            <ref bean="propertyManager" />
+        </property>
+    	<property name="principalService">
+            <ref bean="PrincipalService" />
+        </property>
+    </bean>
+    
+    <bean id="archiveResource" class="jp.aegif.nemaki.rest.ArchiveResource">
+        <property name="principalService">
+            <ref bean="PrincipalService" />
+        </property>
+        <property name="ContentService">
+            <ref bean="ContentService" />
+        </property>
+    </bean>
+
+    <bean id="userResource" class="jp.aegif.nemaki.rest.UserResource">
+        <property name="principalService">
+            <ref bean="PrincipalService" />
+        </property>
+    </bean>
+
+    <bean id="groupResource" class="jp.aegif.nemaki.rest.GroupResource">
+        <property name="principalService">
+            <ref bean="PrincipalService" />
+        </property>
+    </bean>
+
+    <bean id="typeResource" class="jp.aegif.nemaki.rest.TypeResource">
+        <property name="typeService">
+            <ref bean="TypeService" />
+        </property>
+        <property name="typeManager">
+            <ref bean="TypeManager" />
+        </property>
+    </bean>
+   
+    <bean id="solrResource" class="jp.aegif.nemaki.rest.SolrResource">
+    	<property name="solrUtil">
+       		<ref bean="solrUtil" />
+        </property>
+    </bean>
+</beans>

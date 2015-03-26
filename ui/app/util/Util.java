@@ -35,11 +35,13 @@ import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.definitions.Choice;
+import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.BindingType;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
+import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
@@ -132,6 +134,27 @@ public class Util {
 	
 	public static boolean isDocument(CmisObject obj) {
 		return obj.getBaseTypeId().equals(BaseTypeId.CMIS_DOCUMENT);
+	}
+	
+	public static boolean hasContentStream(CmisObject object){
+		if(object instanceof Document){
+			Document doc = (Document)object;
+			
+			DocumentTypeDefinition type = (DocumentTypeDefinition) (doc.getType());
+			ContentStreamAllowed csa = type.getContentStreamAllowed();
+			switch (csa){
+				case REQUIRED:
+					return true;
+				case ALLOWED:
+					return doc.getContentStream() != null;
+				case NOTALLOWED:
+					return false;
+				default:
+					return true;
+			}
+		}else{
+			return false;
+		}
 	}
 
 	public static Document convertToDocument(CmisObject obj) {

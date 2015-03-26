@@ -5,7 +5,7 @@
 	<groupId>jp.aegif.nemaki</groupId>
 	<artifactId>core</artifactId>
 	<packaging>war</packaging>
-	<version>2.0</version>
+	<version>2.1</version>
 	<name>core</name>
 	<description>NemakiWare server</description>
 	<url>https://github.com/NemakiWare/NemakiWare</url>
@@ -113,6 +113,12 @@
 		</dependency>
 
 		<dependency>
+			<groupId>org.aspectj</groupId>
+			<artifactId>aspectjweaver</artifactId>
+			<version>1.8.4</version>
+		</dependency>
+
+		<dependency>
 			<groupId>org.mindrot</groupId>
 			<artifactId>jbcrypt</artifactId>
 			<version>0.3m</version>
@@ -135,13 +141,13 @@
 			<artifactId>jersey-multipart</artifactId>
 			<version>${jersey.version}</version>
 		</dependency>
-		
+
 		<dependency>
-    		<groupId>com.sun.jersey</groupId>
-		    <artifactId>jersey-client</artifactId>
-		    <version>${jersey.version}</version>
+			<groupId>com.sun.jersey</groupId>
+			<artifactId>jersey-client</artifactId>
+			<version>${jersey.version}</version>
 		</dependency>
-		
+
 		<dependency>
 			<groupId>com.sun.jersey.contribs</groupId>
 			<artifactId>jersey-spring</artifactId>
@@ -174,11 +180,11 @@
 			</exclusions>
 		</dependency>
 
-        <dependency>
-            <groupId>net.java.dev</groupId>
-            <artifactId>jvyaml</artifactId>
-            <version>0.2.1</version>
-        </dependency>
+		<dependency>
+			<groupId>net.java.dev</groupId>
+			<artifactId>jvyaml</artifactId>
+			<version>0.2.1</version>
+		</dependency>
 
 		<dependency>
 			<groupId>com.sun.jersey.jersey-test-framework</groupId>
@@ -224,7 +230,7 @@
 			<artifactId>ehcache</artifactId>
 			<version>2.7.2</version>
 		</dependency>
-		
+
 		<dependency>
 			<groupId>dom4j</groupId>
 			<artifactId>dom4j</artifactId>
@@ -232,13 +238,25 @@
 		</dependency>
 		
 		<dependency>
+			<groupId>commons-codec</groupId>
+			<artifactId>commons-codec</artifactId>
+			<version>1.10</version>
+		</dependency>
+
+		<dependency>
 			<groupId>jodconverter-core-3.0-beta-4.jar</groupId>
-		    <artifactId>jodconverter-core-3.0-beta-4.jar</artifactId>
-		    <version>3.0-beta-4</version>
-		    <scope>system</scope>
-		    <systemPath>${basedir}/src/main/webapp/WEB-INF/lib/jodconverter-core-3.0-beta-4.jar</systemPath>
+			<artifactId>jodconverter-core-3.0-beta-4.jar</artifactId>
+			<version>3.0-beta-4</version>
+			<scope>system</scope>
+			<systemPath>${basedir}/src/main/webapp/WEB-INF/lib/jodconverter-core-3.0-beta-4.jar</systemPath>
 		</dependency>
 		
+		<dependency>
+			<groupId>uk.com.robust-it</groupId>
+			<artifactId>cloning</artifactId>
+			<version>1.9.1</version>
+		</dependency>
+
 	</dependencies>
 
 	<build>
@@ -273,13 +291,6 @@
 					<scanTargets>
 						<scanTarget>src/main/webapp</scanTarget>
 					</scanTargets>
-
-					<systemProperties>
-						<systemProperty>
-							<name>log4j.configuration</name>
-							<value>file:///${basedir}/log4j-jetty.properties</value>
-						</systemProperty>
-					</systemProperties>
 				</configuration>
 			</plugin>
 			<plugin>
@@ -304,11 +315,33 @@
 				</configuration>
 			</plugin>
 		</plugins>
-		<resources>
-			<resource>
-				<directory>src/main/resources</directory>
-			</resource>
-		</resources>
 	</build>
-
+	
+	<profiles>
+		<profile>
+			<id>development</id>
+			<activation>
+				<activeByDefault>true</activeByDefault>
+			</activation>
+			<properties>
+				<maven.test.skip>true</maven.test.skip>
+			</properties>
+		</profile>
+		<profile>
+			<id>product</id>
+			<properties>
+				<maven.test.skip>true</maven.test.skip>
+			</properties>
+			<build>
+				<resources>
+					<resource>
+						<directory>${basedir}/src/main/resources</directory>
+						<excludes>
+							<exclude>custom-nemakiware.properties</exclude>
+						</excludes>
+					</resource>
+				</resources>
+			</build>
+		</profile>
+	</profiles>
 </project>
