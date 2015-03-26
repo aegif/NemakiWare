@@ -18,17 +18,21 @@
 	<welcome-file-list>
 		<welcome-file>index.html</welcome-file>
 	</welcome-file-list>
-
+	
+	<listener>
+ 		<listener-class>org.springframework.web.util.Log4jConfigListener</listener-class>
+	</listener>
+	
 	<context-param>
 		<param-name>contextConfigLocation</param-name>
 		<param-value>classpath:applicationContext.xml</param-value>
 	</context-param>
+    <listener>
+		<listener-class>org.springframework.web.context.ContextLoaderListener</listener-class>
+    </listener>
 
 	<listener>
 		<listener-class>com.sun.xml.ws.transport.http.servlet.WSServletContextListener</listener-class>
-    </listener>
-    <listener>
-		<listener-class>org.springframework.web.context.ContextLoaderListener</listener-class>
     </listener>
 
 	<servlet>
@@ -45,7 +49,7 @@
 		<servlet-class>org.apache.chemistry.opencmis.server.impl.atompub.CmisAtomPubServlet</servlet-class>
 		<init-param>
 			<param-name>callContextHandler</param-name>
-			<param-value>jp.aegif.nemaki.repository.DefaultContextHandler</param-value>
+			<param-value>jp.aegif.nemaki.cmis.factory.BasicAuthContextHandler</param-value>
         </init-param>
 		<init-param>
  			<param-name>cmisVersion</param-name>
@@ -63,11 +67,11 @@
 		<load-on-startup>2</load-on-startup>
 	</servlet>
 	<filter>
-		<filter-name>RestAuthenticationFilter</filter-name>
-		<filter-class>jp.aegif.nemaki.api.resources.AuthenticationFilter</filter-class>		
+		<filter-name>restAuthenticationFilter</filter-name>
+		<filter-class>org.springframework.web.filter.DelegatingFilterProxy</filter-class>		
 	</filter>
 	<filter-mapping>
-		<filter-name>RestAuthenticationFilter</filter-name>
+		<filter-name>restAuthenticationFilter</filter-name>
 		<url-pattern>/rest/*</url-pattern>
 	</filter-mapping>	
 	<servlet>

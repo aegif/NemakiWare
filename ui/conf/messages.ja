@@ -18,6 +18,7 @@ view.node.folder=フォルダ
 view.node.document.create=ドキュメントを新規作成します
 view.node.folder.create=フォルダを新規作成します
 view.node.file.select=ファイルを選択してください
+view.node.file.this.type.has.no.file=このタイプのドキュメントにはファイルがありません。
 view.node.file.checkout.caption=オフライン編集のためファイルをロックする
 view.node.file.checkout.description-1=ドキュメントはロックされ、編集者以外は操作できません。
 view.node.file.checkout.description-2=編集用のコピーをダウンロードして編集してください。
@@ -78,6 +79,11 @@ view.search-engine.reindex=インデクスの再作成
 view.search-engine.reindex.confirm=インデクスの再作成には時間がかかる場合があります。よろしいですか？
 view.search-engine.reindex.success=検索エンジンのインデクスを再作成しました
 
+view.type.caption=タイプ管理
+view.type.id=タイプID
+view.type.create.caption=タイプの新規作成
+view.type.update.caption=タイプの更新
+
 view.table.key=キー
 view.table.editable=編集可能
 view.table.requred=必須
@@ -87,6 +93,7 @@ view.execute=実行
 view.create=作成
 view.save=保存
 view.detail=詳細
+view.update=更新
 view.delete=削除
 view.add=追加
 view.remove=除外

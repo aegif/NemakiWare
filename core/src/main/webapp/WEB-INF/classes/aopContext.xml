@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:aop="http://www.springframework.org/schema/aop"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
+	
+	<aop:config>
+  		<aop:aspect id="aspect" ref="defaultLogger">
+  			<aop:pointcut id="pointcut-default" expression="${log.aspect.expression}"/>
+  			<aop:around pointcut-ref="pointcut-default" method="aroundMethod" />
+  		</aop:aspect>
+	</aop:config>
+
+	<bean id="defaultLogger" class="${log.aspect.default}" init-method="init">
+		<property name="logLevel" value="${log.level}"/>
+		<property name="returnValue" value="${log.return.value}"/>
+		<property name="fullQualifiedName" value="${log.fqn}"/>
+		<property name="arguments" value="${log.arguments}"/>
+		<property name="beforeEnabled" value="${log.before}"/>
+		<property name="afterEnabled" value="${log.after}"/>
+		<property name="callContextEnabled" value="${log.callcontext}"/>
+	</bean>
+
+</beans>

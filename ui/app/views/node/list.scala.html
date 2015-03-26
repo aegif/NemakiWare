@@ -3,6 +3,10 @@
 @import util.NemakiConfig
 @import util.Formatter
 @import org.apache.chemistry.opencmis.commons.PropertyIds
+@import org.apache.chemistry.opencmis.client.api.Document
+@import org.apache.chemistry.opencmis.client.api.Folder
+@import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition
+@import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed
 
 @(objects: List[org.apache.chemistry.opencmis.client.api.CmisObject])
 
@@ -20,16 +24,26 @@
 	@for(obj <- objects){
 		<tr>
 			<td>
-				@if(Util.isDocument(obj)){
-					@if(Util.convertToDocument(obj).isVersionSeriesCheckedOut()){
-						<i class="fa fa-lock"></i>
+				@obj match {
+					case document:Document =>{
+						@if(document.isVersionSeriesCheckedOut){
+							<i class="fa fa-lock"></i>
+						}
+						
+						@if(Util.hasContentStream(document)){
+							<a href="@routes.Node.download(document.getId)">
+						}else{
+							<a href="#" class="no-content-stream">
+						}
 					}
-				}
-				
-				@if(Util.isDocument(obj)){
-					<a href="@routes.Node.download(obj.getId)">
-				}else{
-					<a href="@routes.Node.showChildren(obj.getId)">
+					
+					case folder:Folder =>{
+						<a href="@routes.Node.showChildren(folder.getId)">
+					}
+					
+					case _ =>{
+					
+					}
 				}
 					<i class="fa @Util.getIconName(obj)"></i>@obj.getName()
 				</a>
@@ -72,7 +86,7 @@
        		});
         });
     });
-    </script>
+</script>
     
 <!-- delete -->
 <script type="text/javascript">
@@ -102,9 +116,19 @@
 	});
 </script>
 
+<!-- no content stream link -->
+<script type="text/javascript">
+	$(function(){
+    	//Detail
+        $("a.no-content-stream").bind('click', function(){
+       		alert("This document has no content stream.");
+        });
+    });
+</script>
+
 <!-- footable -->
 <script type="text/javascript">
         $(function () {
             $('#objects-table').footable();
         });
-</script>      
+</script>           

@@ -72,6 +72,7 @@ public class NemakiPropertyDefinition extends NodeBase {
 
 	public NemakiPropertyDefinition() {
 		super();
+		setType(NodeType.TYPE_DEFINITION.value());
 	}
 
 	public NemakiPropertyDefinition(NodeBase n) {
