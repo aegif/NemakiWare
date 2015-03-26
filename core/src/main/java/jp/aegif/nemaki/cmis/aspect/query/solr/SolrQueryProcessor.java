@@ -62,6 +62,7 @@ import org.apache.solr.common.SolrDocumentList;
 
 public class SolrQueryProcessor implements QueryProcessor {
 
+	private TypeManager typeManager;
 	private ContentService contentService;
 	private PermissionService permissionService;
 	private CompileService compileService;
@@ -76,8 +77,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 	}
 
 	@Override
-	public ObjectList query(TypeManager typeManager, CallContext callContext,
-			String username, String id, String statement,
+	public ObjectList query(CallContext callContext, String statement,
 			Boolean searchAllVersions, Boolean includeAllowableActions,
 			IncludeRelationships includeRelationships, String renditionFilter,
 			BigInteger maxItems, BigInteger skipCount) {
@@ -217,6 +217,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 			nullList.setNumItems(BigInteger.ZERO);
 			return nullList;
 		}
+	}
+
+	public void setTypeManager(TypeManager typeManager) {
+		this.typeManager = typeManager;
 	}
 
 	public void setContentService(ContentService contentService) {

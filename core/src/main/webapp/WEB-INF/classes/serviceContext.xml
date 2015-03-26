@@ -547,6 +547,9 @@
     </bean>
 
     <bean id="queryProcessor" class="jp.aegif.nemaki.cmis.aspect.query.solr.SolrQueryProcessor">
+        <property name="typeManager">
+            <ref bean="TypeManager" />
+        </property>
         <property name="contentService">
             <ref bean="ContentService" />
         </property>

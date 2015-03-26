@@ -724,7 +724,7 @@ public class CompileServiceImpl implements CompileService {
 	 */
 	@Override
 	public PropertiesImpl compileProperties(CallContext callContext, Content content) {
-		TypeDefinitionContainer tdfc = repositoryService.getTypeManager().getTypeById(content.getObjectType());
+		TypeDefinitionContainer tdfc = typeManager.getTypeById(content.getObjectType());
 		TypeDefinition tdf = tdfc.getTypeDefinition();
 		
 		PropertiesImpl properties = new PropertiesImpl();
@@ -1047,7 +1047,7 @@ public class CompileServiceImpl implements CompileService {
 			List<Property> properties = (aspect == null) ? new ArrayList<Property>()
 					: aspect.getProperties();
 
-			SecondaryTypeDefinition stdf = (SecondaryTypeDefinition)repositoryService.getTypeManager().getTypeDefinition(secondaryId);
+			SecondaryTypeDefinition stdf = (SecondaryTypeDefinition)typeManager.getTypeDefinition(secondaryId);
 			for (PropertyDefinition<?> secondaryPropertyDefinition : secondaryPropertyDefinitions) {
 				Property property = extractProperty(properties,
 						secondaryPropertyDefinition.getId());

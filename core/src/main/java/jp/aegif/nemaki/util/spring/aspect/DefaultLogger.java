@@ -4,6 +4,7 @@ import java.util.Arrays;
 
 import javax.annotation.PostConstruct;
 
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import org.aspectj.lang.ProceedingJoinPoint;
@@ -15,6 +16,9 @@ public class DefaultLogger {
 	private boolean returnValue;
 	private boolean fullQualifiedName;
 	private boolean arguments;
+	private boolean beforeEnabled;
+	private boolean afterEnabled;
+	private boolean callContextEnabled;
 
    @PostConstruct
 	public void init() {
@@ -24,8 +28,22 @@ public class DefaultLogger {
 	}
 
 	public Object aroundMethod(ProceedingJoinPoint jp) throws Throwable{
-		//Before advice
+		
 		StringBuilder sb = new StringBuilder();
+		Object[] args = jp.getArgs();
+
+		//Parse callContext
+		if(callContextEnabled){
+			CallContext callContext = getCallContext(args);
+			if(callContext == null){
+				sb.append("N/A : ");
+			}else{
+				String userId = callContext.getUsername();
+				sb.append(userId + " : ");
+			}
+		}
+		
+		//Method name
 		if(fullQualifiedName){
 			sb.append(jp.getTarget().getClass().getName());
 		}else{
@@ -33,22 +51,27 @@ public class DefaultLogger {
 		}
 		sb.append("#").append(jp.getSignature().getName());
 		if(arguments){
-			Object[] args = jp.getArgs();
 			sb.append(Arrays.asList(args));
 		}
 		
-		log.debug(sb.toString());
-
+		//Before advice
+		if(beforeEnabled){
+			log.debug(sb.toString());
+		}
+		
 		//Execute method
 		try{
 			Object result = jp.proceed();
 
 			//After advice
-			sb.append(" returned ");
-			if (returnValue && result != null)
-				sb.append(result.toString());
-			log.debug(sb.toString());
-
+			if(afterEnabled){
+				sb.append(" returned ");
+				if (returnValue && result != null)
+					sb.append(result.toString());
+				
+				log.debug(sb.toString());
+			}
+			
 			return result;
 		}catch(Exception e){
 			log.error("Error:", e);
@@ -56,6 +79,19 @@ public class DefaultLogger {
 		}
 	}
 
+	private CallContext getCallContext(Object[] args){
+		if(args != null && args.length > 0){
+			for(int i=0; i < args.length; i++){
+				Object arg = args[i];
+				if(arg != null && arg instanceof CallContext){
+					CallContext callContext = (CallContext)arg;
+					return callContext;
+				}
+			}
+		}
+		return null;
+	}
+	
 	public void setLogLevel(String logLevel) {
 		this.logLevel = logLevel;
 	}
@@ -70,5 +106,17 @@ public class DefaultLogger {
 
 	public void setArguments(boolean arguments) {
 		this.arguments = arguments;
+	}
+
+	public void setBeforeEnabled(boolean beforeEnabled) {
+		this.beforeEnabled = beforeEnabled;
+	}
+
+	public void setAfterEnabled(boolean afterEnabled) {
+		this.afterEnabled = afterEnabled;
+	}
+
+	public void setCallContextEnabled(boolean callContextEnabled) {
+		this.callContextEnabled = callContextEnabled;
 	}
 }

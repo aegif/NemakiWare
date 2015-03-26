@@ -261,7 +261,8 @@ public class Repository {
 			Boolean includeAllowableActions,
 			IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includePathSegments, BigInteger maxItems,
-			BigInteger skipCount, ExtensionsData extension, Holder<ObjectData> parentObjectData) {
+			BigInteger skipCount, ExtensionsData extension,
+			Holder<ObjectData> parentObjectData) {
 
 		return navigationService.getChildren(callContext, folderId, filter,
 				orderBy, includeAllowableActions, includeRelationships,
@@ -278,7 +279,8 @@ public class Repository {
 
 		return navigationService.getDescendants(callContext, folderId, depth,
 				filter, includeAllowableActions, includeRelationships,
-				renditionFilter, includePathSegment, foldersOnly, extension, anscestorObjectData);
+				renditionFilter, includePathSegment, foldersOnly, extension,
+				anscestorObjectData);
 	}
 
 	public ObjectData getFolderParent(CallContext callContext, String folderId,
@@ -380,9 +382,8 @@ public class Repository {
 			IncludeRelationships includeRelationships, String renditionFilter,
 			BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
 
-		return discoveryService.query(callContext,
-				repositoryService.getTypeManager(), repositoryService.getRepositoryInfo().getId(),
-				statement, searchAllVersions, includeAllowableActions,
+		return discoveryService.query(callContext, statement,
+				searchAllVersions, includeAllowableActions,
 				includeRelationships, renditionFilter, maxItems, skipCount,
 				extension);
 	}

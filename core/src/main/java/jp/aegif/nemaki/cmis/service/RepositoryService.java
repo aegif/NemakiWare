@@ -24,7 +24,6 @@ package jp.aegif.nemaki.cmis.service;
 import java.math.BigInteger;
 import java.util.List;
 
-import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
@@ -34,8 +33,6 @@ import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionList;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 
 public interface RepositoryService {
-
-	public abstract TypeManager getTypeManager();
 
 	/**
 	 * Checks whether this repository has the given identifier or not.

@@ -23,8 +23,6 @@ package jp.aegif.nemaki.cmis.service;
 
 import java.math.BigInteger;
 
-import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
-
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
@@ -39,11 +37,11 @@ public interface DiscoveryService {
 	/**
 	 * Executes a CMIS query statement against the contents of the repository.
 	 */
-	ObjectList query(CallContext Context, TypeManager typeManager,
-			String repositoryId, String statement, Boolean searchAllVersions,
-			Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
-			BigInteger maxItems, BigInteger skipCount, ExtensionsData extension);
+	ObjectList query(CallContext Context, String statement,
+			Boolean searchAllVersions, Boolean includeAllowableActions, IncludeRelationships includeRelationships,
+			String renditionFilter,
+			BigInteger maxItems, BigInteger skipCount,
+			ExtensionsData extension);
 
 	/**
 	 * Get the list of object that have changed since a given point in the past.
