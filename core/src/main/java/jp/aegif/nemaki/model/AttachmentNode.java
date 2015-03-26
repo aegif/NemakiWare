@@ -58,8 +58,6 @@ public class AttachmentNode extends NodeBase {
 	private static final Log log = LogFactory
 			.getLog(AttachmentNode.class);
 
-	public static final String TYPE = "attachment";
-	
 	private String name;
 	private long length;
 	private String mimeType;
@@ -73,16 +71,6 @@ public class AttachmentNode extends NodeBase {
 		setType(NodeType.ATTACHMENT.value());
 	}
 	
-	public AttachmentNode(String name, String mimeType, long length,
-			GregorianCalendar created, String creator) {
-		super();
-		this.name = name;
-		this.mimeType = mimeType;
-		this.length = length;
-		this.created = created;
-		this.creator = creator;
-	}
-	
 	public AttachmentNode(NodeBase n){
 		setId(n.getId());
 		setType(n.getType());
@@ -91,7 +79,6 @@ public class AttachmentNode extends NodeBase {
 		setModified(n.getModified());
 		setModifier(n.getModifier());
 	}
-
 	
 	/**
 	 * Getter & Setter

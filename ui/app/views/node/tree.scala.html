@@ -1,7 +1,10 @@
 @import util.Util
 @import org.apache.commons.collections.CollectionUtils
+@import org.apache.chemistry.opencmis.client.api.Tree
+@import org.apache.chemistry.opencmis.client.api.ObjectType
+@import org.apache.chemistry.opencmis.commons.enums.BaseTypeId
 
-@(parent: org.apache.chemistry.opencmis.client.api.Folder, objects: List[org.apache.chemistry.opencmis.client.api.CmisObject])
+@(parent: org.apache.chemistry.opencmis.client.api.Folder, objects: List[org.apache.chemistry.opencmis.client.api.CmisObject], types: List[Tree[ObjectType]])
 
 <!DOCTYPE html>
 <html>
@@ -29,8 +32,17 @@
 						<div class="dropdown">
 							<button class="btn btn-default dropdown-toggle" data-toggle="dropdown"><i class="fa fa-plus"></i>@Messages("view.node.create.caption")<span class="caret"></span></button>
 							<ul class="dropdown-menu" role="menu">
-								<li id="create-folder-in-tree"><a href="#"><i class="fa fa-folder-o"></i>@Messages("view.node.folder")</a></li>
-								<li id="create-file-in-tree"><a href="#"><i class="fa fa-file-o"></i>@Messages("view.node.file")</a></li>
+								@for(ot <- types){
+									<li id="create-object-in-tree" typeId="@ot.getItem.getId"><a href="#">
+										@if(ot.getItem.getBaseTypeId == BaseTypeId.CMIS_FOLDER){
+											<i class="fa fa-folder-o"></i>
+										}
+										@if(ot.getItem.getBaseTypeId == BaseTypeId.CMIS_DOCUMENT){
+											<i class="fa fa-file-o"></i>
+										}
+										@ot.getItem.getId
+									</a></li>
+								}
 							</ul>
 						</div>
 					
@@ -52,18 +64,13 @@
 <script type="text/javascript">
 	//create button
 	$(function(){
-		$(document).on('click', '#create-folder-in-tree', function(){
-			$.get("@routes.Node.showBlank().absoluteURL(request)" + "?objectType=" + "cmis:folder" + "&baseType=" + "cmis:folder" + "&parentId=@parent.getId()"  , function(html){
+		$(document).on('click', '#create-object-in-tree', function(){
+			var typeId = $(this).attr('typeId');
+			$.get("@routes.Node.showBlank().absoluteURL(request)" + "?objectType=" + typeId + "&parentId=@parent.getId()"  , function(html){
 				showLightbox('node-blank', html);
 			});	
 		});
 		
-		$(document).on('click', '#create-file-in-tree', function(){
-			$.get("@routes.Node.showBlank().absoluteURL(request)" + "?objectType=" + "cmis:document" + "&baseType=" + "cmis:document" + "&parentId=@parent.getId()"  , function(html){
-				showLightbox('node-blank', html);
-			});	
-		});
-
 	});
 </script>
 

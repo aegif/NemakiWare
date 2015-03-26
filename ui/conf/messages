@@ -18,6 +18,7 @@ view.node.folder=Folder
 view.node.document.create=Create a new document
 view.node.folder.create=Create a new folder
 view.node.file.select=Select a file
+view.node.file.this.type.has.no.file=This type has no file.
 view.node.file.checkout.caption=Lock for offline editing
 view.node.file.checkout.description-1=The document will be locked and can be edited only by the editor.
 view.node.file.checkout.description-2=Download a copy to edit it.
@@ -78,6 +79,11 @@ view.search-engine.reindex=Reindex
 view.search-engine.reindex.confirm=Reindexing may take some time. Continue？
 view.search-engine.reindex.success=Reindexed search engine.
 
+view.type.caption=Types
+view.type.id=Type ID
+view.type.create.caption=New Type
+view.type.update.caption=Update Type
+
 view.table.key=Key
 view.table.editable=Editable
 view.table.requred=Required
@@ -87,6 +93,7 @@ view.execute=Execute
 view.create=Create
 view.save=Save
 view.detail=Detail
+view.update=Update
 view.delete=Delete
 view.add=Add
 view.remove=Remove

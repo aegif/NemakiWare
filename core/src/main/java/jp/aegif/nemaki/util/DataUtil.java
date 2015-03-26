@@ -10,6 +10,7 @@ import java.util.TimeZone;
 import jp.aegif.nemaki.model.Content;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
+import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.PropertyBoolean;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
@@ -19,6 +20,7 @@ import org.apache.chemistry.opencmis.commons.definitions.Choice;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
+import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
 import org.apache.chemistry.opencmis.commons.enums.DateTimeResolution;
 import org.apache.chemistry.opencmis.commons.enums.DecimalPrecision;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
@@ -27,6 +29,7 @@ import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentExcep
 import org.apache.chemistry.opencmis.commons.impl.WSConverter;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyDefinition;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ChoiceImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectDataImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyBooleanDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDecimalDefinitionImpl;
@@ -116,16 +119,12 @@ public class DataUtil {
 
 	public static TypeDefinition copyTypeDefinition(TypeDefinition type) {
 		try {
-			if (type.getId().equals("cincom:courrier_standard")) {
-				System.out.println();
-			}
 			return WSConverter.convert(WSConverter.convert(type));
 		} catch (Exception e) {
 			return null;
 		}
-
 	}
-
+	
 	public static PropertyDefinition<?> createPropDef(String id,
 			String localName, String localNameSpace, String queryName,
 			String displayName, String description, PropertyType datatype,
@@ -458,6 +457,29 @@ public class DataUtil {
 		return core;
 	}
 	
+	public static ObjectData copyObjectData(ObjectData objectData) {
+		try {
+			return WSConverter.convert(WSConverter.convert(objectData, CmisVersion.CMIS_1_1));
+		} catch (Exception e) {
+			return null;
+		}
+	}
+	
+	public static ObjectDataImpl convertObjectDataImpl(ObjectData objectData){
+		ObjectDataImpl result = new ObjectDataImpl();
+		result.setAcl(objectData.getAcl());
+		result.setAllowableActions(objectData.getAllowableActions());
+		result.setChangeEventInfo(objectData.getChangeEventInfo());
+		result.setExtensions(objectData.getExtensions());
+		result.setIsExactAcl(objectData.isExactAcl());
+		result.setPolicyIds(objectData.getPolicyIds());
+		result.setProperties(objectData.getProperties());
+		result.setRelationships(objectData.getRelationships());
+		result.setRenditions(objectData.getRenditions());
+		
+		return result;
+	}
+	
 	public static String buildPrefixTypeProperty(String typeId, String propertyId){
 		List<String> list = new ArrayList<String>();
 		if(StringUtils.isNotBlank(typeId)){
@@ -483,6 +505,15 @@ public class DataUtil {
 		}else{
 			//TODO what if ["", null,null,...] case?
 			return true;
+		}
+	}
+	
+	public static BigInteger convertToBigInteger(String string){
+		if(StringUtils.isBlank(string)){
+			return null;
+		}else{
+			Long l = Long.valueOf(string);
+			return BigInteger.valueOf(l);
 		}
 	}
 }
