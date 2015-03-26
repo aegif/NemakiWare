@@ -1,0 +1,16 @@
+@(title:String)
+
+@defining("ps-"){prefix =>
+	<ul class="nav nav-pills">
+		<li>
+			<div class="input-group">
+				<form class="navbar-form" style="padding-left:0px;">
+					<input type="text" id="@{prefix}search-box" class="form-control principal-searach" placeholder="@title" name="term"/>
+					<div class="input-group-btn">
+				    	<button class="btn btn-default" id="@{prefix}search-button"><i class="fa fa-search"></i></button>
+				   	</div>
+				</form>
+			</div>
+		</li>
+	</ul>
+}

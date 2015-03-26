@@ -1,0 +1,19 @@
+@import util.Util
+@import org.apache.chemistry.opencmis.client.api.CmisObject
+@import org.apache.chemistry.opencmis.client.api.Rendition
+
+@(obj:CmisObject)
+
+<div class="container tab-pane">
+	<div class="row">
+		<div class="col-sm-5">
+			@if(Util.existPreview(obj)){
+				<a href="@routes.Node.downloadPreview(obj.getId)">
+					<button class="btn btn-default btn-primary"><i class="fa fa-eye"></i>@Messages("view.node.preview.open")</button>
+				</a>					
+			}else{
+				<div>@Messages("view.node.preview.none")</div>
+			}
+		</div>
+	</div>
+</div>

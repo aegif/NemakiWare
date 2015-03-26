@@ -1,0 +1,131 @@
+@import util.Util
+@import org.apache.commons.collections.CollectionUtils
+
+@(users:List[model.User])
+
+<!DOCTYPE html>
+<html>
+	@header()
+	<body>
+		@menubar()
+		<div class="container">
+			<div class="row">
+	  			<div class="col-md-11">
+	  				<h3><i class="fa fa-user"></i>@Messages("view.user.caption")</h3>
+	  			</div>
+	  		</div>
+		
+	  		<div class="row">
+	  			<div class="col-md-11">
+	  				<ul class="nav nav-pills">
+	  					<li>
+							<!-- create button -->
+							<form class="navbar-form" style="padding-left:0px;">
+								<button type="button" class="btn btn-default" id="user-create-button">
+			  						<i class="fa fa-plus"></i>@Messages("view.user.create")
+		  						</button>
+							</form>
+						</li>
+						<li>
+							<!-- search box -->
+							<div class="input-group">
+								@helper.form(action = routes.User.search(), 'class -> "navbar-form"){
+									<input type="text" class="form-control" placeholder="Search" name="term" id="user-search-box">
+							     	<div class="input-group-btn">
+							        	<button class="btn btn-default" id="user-search" type="submit"><i class="fa fa-search"></i></button>
+							     	</div>
+								}
+						    	
+						 	</div>
+						</li>
+	  				</ul>
+				</div>
+				
+				<div class="col-md-11">
+					<!-- search result -->
+					<div id="user-result">
+						<table class="footable" id="user-table" data-sort="true">
+							<thead>
+								<tr>
+									<th data-sort-initial="true">@Messages("view.user.id")</th>
+									<th>@Messages("view.user.name")</th>
+									<th>@Messages("view.user.last.name")</th>
+									<th>@Messages("view.user.first.name")</th>
+									<th>@Messages("view.user.email")</th>
+									<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action")</th>
+								</tr>
+							</thead>
+							<tbody>
+								@for(user <- users; if(CollectionUtils.isNotEmpty(users))){
+									<tr>
+										<td>@user.id</td>
+										<td>@user.name</td>
+										<td>@user.firstName</td>
+										<td>@user.lastName</td>
+										<td>@user.email</td>
+										<td>
+											<button type='button' class='btn btn-default user-detail' user-id='@user.id'><i class="fa fa-wrench"></i>@Messages("view.detail")</button>
+											<button type='button' class='btn btn-default user-delete' user-id='@user.id'><i class="fa fa-trash"></i>@Messages("view.delete")</button>
+										</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+		</div>
+	</body>
+</html>
+
+<!-- scripts -->
+<script type="text/javascript">
+	$(function () {
+		$('#user-table').footable();	
+	});
+</script>
+
+<script type="text/javascript">
+	$(function () {
+		//binding: create button
+		$('#user-create-button').bind('click', function(){
+			$.get("@routes.User.showBlank().absoluteURL(request)", function(html){
+				showLightbox('user-blank', html);
+			});
+		});
+	
+		//binding: show button
+		$('.user-detail').click(function(){
+			var id = $(this).attr('user-id');
+       		
+			$.get("@{Util.getContextPath(request)}users/" + id, function(html){
+				showLightbox('user-detail-' + id, html);
+       		});	
+			
+		});
+	
+		//binding: delete button
+		$('.user-delete').click(function(){
+			if(window.confirm("@Messages("view.message.delete.confirm")")){
+				var id = $(this).attr('user-id');
+			
+				$.blockUI({message:"@Messages("view.message.please.wait")"});
+				$.ajax({
+					url : "@{Util.getContextPath(request)}users/" + id + "/delete",
+					type : 'POST',
+					data : null,
+					success : function(data){
+						window.alert("@Messages("view.message.delete.success")");
+						window.location.reload();
+					},
+					error : function(XMLHttpRequest, textStatus, errorThrown) {
+						window.alert("@Messages("view.message.delete.failure")");
+			        },
+			        complete : function(){
+						$.unblockUI();
+					}
+				})
+			}
+		});
+	});
+</script>

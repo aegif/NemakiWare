@@ -31,10 +31,10 @@ for %%i in (%*) do (
 rem Location
 if [%1] == [] (
 	set BAT_DIR=%~dp0
-	cd /d %BAT_DIR%
-	cd /d ../../
+	pushd %BAT_DIR%
+	cd  ../../
 	FOR /F %%i in ('CD') do set SOURCE_HOME=%%i
-	cd /d %ORIGINAL_PWD%
+	pushd %ORIGINAL_PWD%
 ) ELSE (
 	set SOURCE_HOME=%1
 )
@@ -63,17 +63,17 @@ rem nemakishare
 @echo on
 echo NemakiShare configuration...
 @echo off
-cd /d %SOURCE_HOME%\nemakishare
+pushd %SOURCE_HOME%\nemakishare
 call bundle install --path vendor\bundle
 call rake db:migrate:reset
-cd /d %ORIGINAL_PWD%
+pushd %ORIGINAL_PWD%
 @echo on
 echo NemakiShare configuration done.
 @echo off
 
 rem Run applications
 if "%FLG_E%" == "TRUE" (
-	call %BAT_DIR%¥start.bat
+	call %BAT_DIR%\start.bat
 )
 
 endlocal

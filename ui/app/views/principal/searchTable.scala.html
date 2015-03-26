@@ -1,0 +1,36 @@
+@import org.apache.commons.collections.CollectionUtils
+@import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition
+
+@(title:String)(principals:List[model.Principal]=null)
+
+@*no more need for contentTemplate frame*@
+@contentTemplate()
+
+@*********functions*********@
+@contentTemplate() = {
+	@defining("ps-"){prefix =>
+		<div>
+			<h4>追加可能なメンバの検索結果</h4>
+		</div>
+		
+		<table class="footable principal-table" id="@{prefix}search-table" data-sort="true" data-page-navigation=".pagination" data-page-size="5">
+			<thead>
+				<tr>
+					<th class="column-action" data-sort-ignore="true" class="principal-table-action"><button class='btn btn-default btn-sm' id='@{prefix}add'><i class="fa fa-plus-square fa-lg"></i></button></th>
+					<th class="column-genre" data-sort-ignore="true">@Messages("view.principal.type")</th>
+					<th class="column-id" data-sort-initial="true">@Messages("view.principal.id")</th>
+					<th class="column-name">@Messages("view.principal.name")</th>
+				</tr>
+			</thead>
+			<tbody>
+			</tbody>
+			<tfoot>
+				<tr>
+					<td colspan="5">
+						<div class="pagination pagination-centered hide-if-no-paging"></div>
+					</td>
+				</tr>
+			</tfoot>
+		</table>
+	}
+}			

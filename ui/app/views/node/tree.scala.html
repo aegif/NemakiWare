@@ -1,0 +1,135 @@
+@import util.Util
+@import org.apache.commons.collections.CollectionUtils
+@import org.apache.chemistry.opencmis.client.api.Tree
+@import org.apache.chemistry.opencmis.client.api.ObjectType
+@import org.apache.chemistry.opencmis.commons.enums.BaseTypeId
+
+@(parent: org.apache.chemistry.opencmis.client.api.Folder, objects: List[org.apache.chemistry.opencmis.client.api.CmisObject], types: List[Tree[ObjectType]])
+
+<!DOCTYPE html>
+<html>
+	@header()
+	<body>
+		@menubar()
+		<div class="container">
+	  		<div class="row">
+	  			<!-- breadcrumb -->
+	  			<div class="col-md-11">
+	  				<ul class="breadcrumb">
+	  					<li><a href="@routes.Node.index().absoluteURL(request)" title="root"><i class="fa fa-home fa-lg"></i></a></li>
+	  					@defining(Util.dividePath(parent.getPath)){ segments =>
+	  						@for(i <- 0 to segments.length - 1; if(CollectionUtils.isNotEmpty(segments))){
+	  							@defining(segments.take(i+1).mkString("/")){url=>
+	  								<li><a href="@routes.Node.showChildrenByPath('/' + url).absoluteURL(request)"><i class="fa fa-folder-open"></i> @segments(i)</a></li>
+	  							}
+	  						}
+	  					}
+	  				</ul>
+	  			</div>
+	  			
+	  			<div class="col-md-11">
+					<!-- create button -->
+						<div class="dropdown">
+							<button class="btn btn-default dropdown-toggle" data-toggle="dropdown"><i class="fa fa-plus"></i>@Messages("view.node.create.caption")<span class="caret"></span></button>
+							<ul class="dropdown-menu" role="menu">
+								@for(ot <- types){
+									<li id="create-object-in-tree" typeId="@ot.getItem.getId"><a href="#">
+										@if(ot.getItem.getBaseTypeId == BaseTypeId.CMIS_FOLDER){
+											<i class="fa fa-folder-o"></i>
+										}
+										@if(ot.getItem.getBaseTypeId == BaseTypeId.CMIS_DOCUMENT){
+											<i class="fa fa-file-o"></i>
+										}
+										@ot.getItem.getId
+									</a></li>
+								}
+							</ul>
+						</div>
+					
+					<br/><br/>
+				</div>
+				
+				<div class="col-md-11">
+				 	<div id="list" class="dropzone" ondragover="handleDragStart(event);" ondragleave="hadleDragLeave(event);" ondrop="handleDrop(event);">
+						@list(objects) 		
+				 	</div>
+				</div>
+	  		</div>
+		</div>
+	</body>
+</html>
+
+
+<!-- scripts -->
+<script type="text/javascript">
+	//create button
+	$(function(){
+		$(document).on('click', '#create-object-in-tree', function(){
+			var typeId = $(this).attr('typeId');
+			$.get("@routes.Node.showBlank().absoluteURL(request)" + "?objectType=" + typeId + "&parentId=@parent.getId()"  , function(html){
+				showLightbox('node-blank', html);
+			});	
+		});
+		
+	});
+</script>
+
+<script type="text/javascript">
+	//drag&drop
+	function handleDragStart(event){
+		event.preventDefault();
+		$(".dropzone").css("border", "3px solid #74A9D6");
+	}
+	
+	function hadleDragLeave(event){
+		event.preventDefault();
+		$(".dropzone").css("border", "none");
+	}
+	
+	function escape(selector){
+		return selector.replace(':',"\\:");
+	}
+	
+	function handleDrop(event)
+	{
+		event.preventDefault();
+		
+		if(!window.FormData){
+			alert("@Messages("view.node.drag-and-drop.out-of-support")");
+		}
+		
+		$(".dropzone").css("border", "none");
+	
+		var formData = new FormData();
+		formData.append("dragAndDrop", 'true');
+		
+		for(var i=0; i < event.dataTransfer.files.length; i++){
+			formData.append('file_' + i, event.dataTransfer.files[i]);	
+		}
+		
+		formData.append("cmis:parentId", '@parent.getId()');
+		formData.append("cmis:objectTypeId", 'cmis:document');
+		 
+		 $(function(){
+			$.blockUI({message:"@Messages("view.message.please.wait")"});
+			$.ajax("@routes.Node.create().absoluteURL(request)",
+			{
+				 type: 'post',
+			      processData: false,
+			      contentType: false,
+			      data: formData,
+			      //dataType: 'html',
+			      success: function(data){
+			        window.alert("@Messages("view.node.drag-and-drop.success")");
+			        window.location.reload();
+			      },
+			      error: function(XMLHttpRequest, textStatus, errorThrown) {
+					alert("some error:" + textStatus);
+				  },
+			      complete: function(){
+				    $.unblockUI();
+			      }
+			});
+		 });
+	}
+</script>

@@ -1,0 +1,130 @@
+@import util.Util
+@import org.apache.commons.collections.CollectionUtils
+
+@(groups:List[model.Group])
+
+<!DOCTYPE html>
+<html>
+	@header()
+	<body>
+		@menubar()
+		<div class="container">
+	  		<div class="row">
+	  			<div class="col-md-11">
+	  				<h3><i class="fa fa-users"></i>@Messages("view.group.caption")</h3>
+	  			</div>
+	  		</div>
+	  		
+	  		<div class="row">
+	  			<div class="col-md-11">
+	  				<ul class="nav nav-pills">
+	  					<li>
+							<!-- create button -->
+							<form class="navbar-form" style="padding-left:0px;">
+								<button type="button" class="btn btn-default" id="group-create-button">
+			  						<i class="fa fa-plus"></i>@Messages("view.group.create")
+			  					</button>
+							</form>
+			  				
+						</li>
+						<li>
+							<!-- search box -->
+							<div class="input-group">
+								@helper.form(action = routes.Group.search(), 'class -> "navbar-form"){
+									<input type="text" class="form-control" placeholder="Search" name="term" id="group-search-box">
+							     	<div class="input-group-btn">
+							        	<button class="btn btn-default" id="group-search" type="submit"><i class="fa fa-search"></i></button>
+							     	</div>
+								}
+						 	</div>
+						</li>
+	  				</ul>
+				</div>
+				
+				<div class="col-md-11">
+					<!-- search result -->
+					<div id="group-result">
+						<table class="footable" id="group-table" data-sort="true">
+							<thead>
+								<tr>
+									<th data-sort-initial="true">@Messages("view.group.id")</th>
+									<th>@Messages("view.group.name")</th>
+									<th class="content-size" >@Messages("view.group.member.user")</th>
+									<th class="content-size">@Messages("view.group.member.group")</th>
+									<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action")</th>
+								</tr>
+							</thead>
+							<tbody>
+								@for(group <- groups; if(CollectionUtils.isNotEmpty(groups))){
+									<tr>
+										<td>@group.id</td>
+										<td>@group.name</td>
+										<td>@group.users.length</td>
+										<td>@group.groups.length</td>
+										<td>
+											<button type='button' class='btn btn-default group-detail' group-id='@group.id'><i class="fa fa-wrench"></i>@Messages("view.detail")</button>
+											<button type='button' class='btn btn-default group-delete' group-id='@group.id'><i class="fa fa-trash"></i>@Messages("view.delete")</button>
+										</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+		</div>
+	</body>
+</html>
+
+
+<!-- scripts -->
+<script type="text/javascript">
+	$(function () {
+		$('#user-table').footable();	
+	});
+</script>
+
+<script type="text/javascript">
+	$(function () {
+		//binding: create button
+		$('#group-create-button').bind('click', function(){
+			$.get("@routes.Group.showBlank().absoluteURL(request)", function(html){
+				showLightbox('group-blank', html);
+			});
+		});
+	
+		//binding: detail button
+		$('.group-detail').click(function(){
+			var id = $(this).attr('group-id');
+
+			$.get("@{Util.getContextPath(request)}groups/" + id, function(html){
+				showLightbox('group-detail-' + id, html);
+       		});	
+			
+		});
+	
+		//binding: delete button
+		$('.group-delete').click(function(){
+			if(window.confirm("@Messages("view.message.delete.confirm")")){
+				var id = $(this).attr('group-id');
+				alert("hgoe");
+				$.blockUI({message:"@Messages("view.message.please.wait")"});
+				$.ajax({
+					url : "@{Util.getContextPath(request)}groups/" + id + "/delete",
+					type : 'POST',
+					data : null,
+					success : function(data){
+						window.alert("@Messages("view.message.delete.success")");
+						window.location.reload();
+					},
+					error : function(XMLHttpRequest, textStatus, errorThrown) {
+						window.alert("@Messages("view.message.delete.failure")");
+			        },
+			        complete : function(){
+						$.unblockUI();
+					}
+				})
+			}
+		});
+	});
+</script>

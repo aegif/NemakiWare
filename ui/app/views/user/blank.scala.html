@@ -1,0 +1,97 @@
+@import table._
+@import util.Util
+
+@(user:model.User)
+
+@lightbox{
+	<!-- html -->
+	<div class="container">
+		<div class="row">
+			<div class="col-sm-12 col-md-12">
+				<div>
+					<h3><i class="fa fa-user">@user.name</i>@Messages("view.user.create.caption")</h3>
+				</div>
+			
+				<div style="margin-bottom:15px">
+					<button class="btn btn-default btn-primary" id="user-create"><i class="fa fa-save"></i>@Messages("view.save")</button>
+				</div>
+				
+				<div>
+					<div><h4>@Messages("view.user.property")</h4></div>
+					@editableTable("obj-property-table")(10){
+						<!-- id row -->
+						@defining(Util.buildTempProperty(
+							"user-id", Messages("view.user.id"), true, true, false, null, false, user.id
+						)){ property =>
+							@editableRow(property)()
+						}
+						<!-- name row -->
+						@defining(Util.buildTempProperty(
+							"user-name", Messages("view.user.name"), true, true, false, null, false, user.name
+						)){ property =>
+							@editableRow(property)()
+						}
+						<!-- password row -->
+						@defining(Util.buildTempProperty(
+							"user-password", Messages("view.user.password"), true, true, false, null, false, user.password
+						)){ property =>
+							@editableRow(property)()
+						}
+						<!-- last name row -->
+						@defining(Util.buildTempProperty(
+							"user-last-name", Messages("view.user.last.name"), false, true, false, null, false, user.lastName
+						)){ property =>
+							@editableRow(property)()
+						}
+						<!-- first name row -->
+						@defining(Util.buildTempProperty(
+							"user-first-name", Messages("view.user.first.name"), false, true, false, null, false, user.firstName
+						)){ property =>
+							@editableRow(property)()
+						}
+						<!-- email row -->
+						@defining(Util.buildTempProperty(
+							"user-email", Messages("view.user.email"), false, true, false, null, false, user.email
+						)){ property =>
+							@editableRow(property)()
+						}
+					}
+				
+				</div>
+			</div>
+		</div>
+	</div>
+	
+	<!-- scripts -->
+	<script type="text/javascript">
+		//binding: udpate button
+		$(document).on('click','#user-create', function(){
+			//build data
+			var data = {};
+			data['userId'] = editedValue('#user-id');
+			data['userName'] = editedValue('#user-name');
+			data['password'] = editedValue('#user-password');
+			data['firstName'] = editedValue('#user-first-name');
+			data['lastName'] = editedValue('#user-last-name');
+			data['email'] = editedValue('#user-email');
+			
+			//call
+			$.blockUI({message:"@Messages("view.message.please.wait")"});
+			$.ajax({
+				url : "@routes.User.create().absoluteURL(request)",
+				type: 'POST',
+				data : data,
+				success : function(data){
+					window.alert("@Messages("view.message.create.success")");
+					window.location.reload();
+				},
+				error : function(XMLHttpRequest, textStatus, errorThrown) {
+					window.alert("@Messages("view.message.create.failure")");
+		         },
+		        complete: function(){
+					$.unblockUI();
+				}
+			});
+		});
+	</script>
+}
