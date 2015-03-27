@@ -1,10 +1,15 @@
 package jp.aegif.nemaki.util.constant;
 
 public interface PropertyKey {
+	//DB
 	final String DB_COUCHDB_PROTOCOL = "db.couchdb.protocol";
 	final String DB_COUCHDB_HOST= "db.couchdb.host";
 	final String DB_COUCHDB_PORT= "db.couchdb.port";
 	final String DB_COUCHDB_MAX_CONNECTIONS= "db.couchdb.max.connections";
+	final String DB_COUCHDB_CONNECTION_TIMEOUT= "db.couchdb.connection.timeout";
+	final String DB_COUCHDB_SOCKET_TIMEOUT= "db.couchdb.socket.timeout";
+	
+	//CMIS
 	final String CMIS_SERVER_DEFAULT_MAX_ITEMS_TYPES = "cmis.server.default.max.items.types";
 	final String CMIS_SERVER_DEFAULT_DEPTH_TYPES = "cmis.server.default.depth.types";
 	final String CMIS_SERVER_DEFAULT_MAX_ITEMS_OBJECTS = "cmis.server.default.max.items.objects";
@@ -21,14 +26,20 @@ public interface PropertyKey {
 	final String CMIS_REPOSITORY_MAIN_NAMESPACE= "cmis.repository.main.namespace";
 	final String CMIS_REPOSITORY_ARCHIVE= "cmis.repository.archive";
 	final String CMIS_REPOSITORIES= "cmis.repositories";
+	
+	//Solr
 	final String SOLR_PROTOCOL = "solr.protocol";
 	final String SOLR_HOST = "solr.host";
 	final String SOLR_PORT = "solr.port";
 	final String SOLR_CONTEXT = "solr.context";
 	final String SOLR_INDEXING_FORCE= "solr.indexing.force";
+	
+	//Config file path
 	final String PERMISSION_DEFINITION= "permission.definition";
 	final String PERMISSION_MAPPING_DEFINITION= "permission.mapping.definition";
 	final String OVRRIDE_FILE= "override.file";
+	
+	//Capability
 	final String CAPABILITY_EXTENDED_ORDERBY_DEFAULT = "capability.extended.orderBy.default";
 	final String CAPABILITY_EXTENDED_PREVIEW = "capability.extended.preview";
 	final String CAPABILITY_EXTENDED_INCLUDE_RELATIONSHIPS = "capability.extended.include.relationships";
