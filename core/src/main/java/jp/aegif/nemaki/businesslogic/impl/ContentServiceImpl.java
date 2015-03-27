@@ -21,6 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.businesslogic.impl;
 
+import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -63,8 +64,8 @@ import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
-import jp.aegif.nemaki.util.constant.PrincipalId;
 import jp.aegif.nemaki.util.constant.NodeType;
+import jp.aegif.nemaki.util.constant.PrincipalId;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 import jp.aegif.nemaki.util.constant.RenditionKind;
 
@@ -83,7 +84,6 @@ import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.DocumentTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
@@ -421,23 +421,6 @@ public class ContentServiceImpl implements ContentService {
 		return change.getChangeToken();
 	}
 	
-	private Map<String, ContentStream>copyContentStream(ContentStream contentStream){
-		BigInteger length = contentStream.getBigLength();
-		byte[]bytes = readContentStreamToByte(contentStream);
-		
-		ByteArrayInputStream bais1 = new ByteArrayInputStream(bytes);
-		ContentStream attachment = new ContentStreamImpl(contentStream.getFileName(), length, contentStream.getMimeType(), bais1);
-		
-		ByteArrayInputStream bais2 = new ByteArrayInputStream(bytes);
-		ContentStream preview = new ContentStreamImpl(contentStream.getFileName(), length, contentStream.getMimeType(), bais2);
-
-		Map<String, ContentStream> map = new HashMap<String, ContentStream>();
-		map.put("attachment", attachment);
-		map.put("preview", preview);
-		
-		return map;
-	}
-
 	// TODO Create a rendition
 	@Override
 	public Document createDocument(CallContext callContext,
@@ -455,16 +438,21 @@ public class ContentServiceImpl implements ContentService {
 			csa == ContentStreamAllowed.ALLOWED && contentStream != null){
 			
 			//Prepare ContentStream(to read it twice)
-			Map<String,ContentStream> contentStreamMap = copyContentStream(contentStream);
+			//Map<String,ContentStream> contentStreamMap = copyContentStream(contentStream);
 			
 			// Create Attachment node
-			String attachmentId = createAttachment(callContext, contentStreamMap.get("attachment"));
+			String attachmentId = createAttachment(callContext, contentStream);
 			d.setAttachmentNodeId(attachmentId);
 
 			// Create Renditions
-			ContentStream previewCS = contentStreamMap.get("preview");
-			if(isPreviewEnabled() && renditionManager.checkConvertible(previewCS.getMimeType())){
-				createPreview(callContext, previewCS, d);
+			if(isPreviewEnabled()){
+				AttachmentNode an = getAttachment(attachmentId);
+				ContentStream previewCS = new ContentStreamImpl(contentStream.getFileName(), contentStream.getBigLength(), contentStream.getMimeType(), an.getInputStream());
+				
+				//ContentStream previewCS = contentStreamMap.get("preview");
+				if(renditionManager.checkConvertible(previewCS.getMimeType())){
+					createPreview(callContext, previewCS, d);
+				}
 			}
 		}
 		
@@ -531,18 +519,18 @@ public class ContentServiceImpl implements ContentService {
 			Document original, ContentStream contentStream) {
 		Document copy = buildCopyDocumentWithBasicProperties(callContext,
 				original);
-
-		//Prepare ContentStream(to read it twice)
-		Map<String,ContentStream> contentStreamMap = copyContentStream(contentStream);
 		
 		//Attachment
-		String attachmentId = createAttachment(callContext, contentStreamMap.get("attachment"));
+		String attachmentId = createAttachment(callContext, contentStream);
 		copy.setAttachmentNodeId(attachmentId);
 		
 		//Rendition
-		ContentStream previewCS = contentStreamMap.get("preview");
-		if(isPreviewEnabled() && renditionManager.checkConvertible(previewCS.getMimeType())){
-			createPreview(callContext, contentStreamMap.get("preview"), copy);
+		if(isPreviewEnabled()){
+			AttachmentNode an = getAttachment(attachmentId);
+			ContentStream previewCS = new ContentStreamImpl(contentStream.getFileName(), contentStream.getBigLength(), contentStream.getMimeType(), an.getInputStream());
+			if(renditionManager.checkConvertible(previewCS.getMimeType())){
+				createPreview(callContext, previewCS, copy);
+			}
 		}
 
 		// Set other properties
@@ -563,29 +551,36 @@ public class ContentServiceImpl implements ContentService {
 	}
 	
 	public Document replacePwc(CallContext callContext, Document originalPwc, ContentStream contentStream){
-		//Prepare ContentStream(to read it twice)
-		Map<String,ContentStream> contentStreamMap = copyContentStream(contentStream);
-				
 		//Update attachment contentStream
-		AttachmentNode attachment = contentDaoService.getAttachment(originalPwc.getAttachmentNodeId());
-		contentDaoService.updateAttachment(attachment, contentStreamMap.get("attachment"));
+		AttachmentNode an = contentDaoService.getAttachment(originalPwc.getAttachmentNodeId());
+		contentDaoService.updateAttachment(an, contentStream);
 		
 		//Update rendition contentStream
-		ContentStream previewCS = contentStreamMap.get("preview");		
-		if(isPreviewEnabled() && renditionManager.checkConvertible(previewCS.getMimeType())){
-			List<String> renditionIds = originalPwc.getRenditionIds();
-			if(CollectionUtils.isNotEmpty(renditionIds)){
-				for(String renditionId : renditionIds){
-					Rendition rd = contentDaoService.getRendition(renditionId);
-					if(RenditionKind.CMIS_PREVIEW.equals(rd.getKind())){
-						rd.setInputStream(previewCS.getStream());
-						rd.setLength(previewCS.getLength());
-						rd.setMimetype(previewCS.getMimeType());
+		
+		if(isPreviewEnabled()){
+			ContentStream previewCS = new ContentStreamImpl(contentStream.getFileName(), contentStream.getBigLength(), contentStream.getMimeType(), an.getInputStream());
+			
+			if(renditionManager.checkConvertible(previewCS.getMimeType())){
+				List<String> renditionIds = originalPwc.getRenditionIds();
+				if(CollectionUtils.isNotEmpty(renditionIds)){
+					List<String> removedRenditionIds = new ArrayList<String>();
+			
+					//Create preview
+					for(String renditionId : renditionIds){
+						Rendition rd = contentDaoService.getRendition(renditionId);
+						if(RenditionKind.CMIS_PREVIEW.equals(rd.getKind())){
+							removedRenditionIds.add(renditionId);
+							createPreview(callContext, previewCS, originalPwc);
+						}
 					}
+					
+					//Update reference to preview ID
+					renditionIds.removeAll(removedRenditionIds);
+					originalPwc.setRenditionIds(renditionIds);
 				}
 			}
 		}
-
+		
 		//Modify signature of pwc
 		setSignature(callContext, originalPwc);
 		
@@ -1432,7 +1427,7 @@ public class ContentServiceImpl implements ContentService {
 		return contentDaoService.createAttachment(a, contentStream);
 	}
 
-	private void createPreview(CallContext callContext,
+	private String createPreview(CallContext callContext,
 			ContentStream contentStream, Document document) {
 		
 		Rendition rendition = new Rendition();
@@ -1446,7 +1441,7 @@ public class ContentServiceImpl implements ContentService {
 		setSignature(callContext, rendition);
 		if(converted == null){
 			//TODO logging
-			return;
+			return null;
 		}else{
 			String renditionId = contentDaoService.createRendition(rendition, converted);
 			List<String> renditionIds = document.getRenditionIds();
@@ -1455,6 +1450,8 @@ public class ContentServiceImpl implements ContentService {
 			}
 			
 			document.getRenditionIds().add(renditionId);
+			
+			return renditionId;
 		}
 		
 	}
