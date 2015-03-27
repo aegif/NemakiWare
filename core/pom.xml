@@ -293,27 +293,8 @@
 					</scanTargets>
 				</configuration>
 			</plugin>
-			<plugin>
-				<groupId>org.codehaus.mojo</groupId>
-				<artifactId>cobertura-maven-plugin</artifactId>
-				<version>2.5.2</version>
-				<configuration>
-					<formats>
-						<format>html</format>
-						<format>xml</format>
-					</formats>
-				</configuration>
-			</plugin>
-			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-surefire-plugin</artifactId>
-				<configuration>
-					<redirectTestOutputToFile>true</redirectTestOutputToFile>
-					<additionalClasspathElements>
-						<additionalClasspathElement>src/main/webapp/WEB-INF/classes</additionalClasspathElement>
-					</additionalClasspathElements>
-				</configuration>
-			</plugin>
+			
+			
 		</plugins>
 	</build>
 	
@@ -332,12 +313,25 @@
 			<properties>
 				<maven.test.skip>true</maven.test.skip>
 			</properties>
+
 			<build>
+				<plugins>
+					<plugin>
+					  <groupId>org.apache.maven.plugins</groupId>
+					  <artifactId>maven-compiler-plugin</artifactId>
+					  <configuration>
+					    <excludes>
+					      <exclude>jp/aegif/nemaki/development/**/*.*</exclude>
+					    </excludes>
+					  </configuration>
+					</plugin>
+				</plugins>
+			
 				<resources>
 					<resource>
 						<directory>${basedir}/src/main/resources</directory>
 						<excludes>
-							<exclude>custom-nemakiware.properties</exclude>
+							<exclude>**</exclude>
 						</excludes>
 					</resource>
 				</resources>
