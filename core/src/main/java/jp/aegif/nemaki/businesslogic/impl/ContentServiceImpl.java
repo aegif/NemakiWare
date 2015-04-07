@@ -21,8 +21,6 @@
  ******************************************************************************/
 package jp.aegif.nemaki.businesslogic.impl;
 
-import java.io.BufferedInputStream;
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -35,7 +33,6 @@ import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.Map.Entry;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -1819,6 +1816,11 @@ public class ContentServiceImpl implements ContentService {
 	// ///////////////////////////////////////
 	private String buildUniqueName(String originalName, String folderId,
 			String existingId) {
+		boolean bun = propertyManager.readBoolean(PropertyKey.CAPABILITY_EXTENDED_BUILD_UNIQUE_NAME);
+		if(!bun){
+			return originalName;
+		}
+		
 		List<Content> children = getChildren(folderId);
 
 		List<String> conflicts = new ArrayList<String>();

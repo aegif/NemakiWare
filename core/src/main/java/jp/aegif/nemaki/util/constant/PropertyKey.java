@@ -43,6 +43,7 @@ public interface PropertyKey {
 	final String CAPABILITY_EXTENDED_ORDERBY_DEFAULT = "capability.extended.orderBy.default";
 	final String CAPABILITY_EXTENDED_PREVIEW = "capability.extended.preview";
 	final String CAPABILITY_EXTENDED_INCLUDE_RELATIONSHIPS = "capability.extended.include.relationships";
+	final String CAPABILITY_EXTENDED_BUILD_UNIQUE_NAME = "capability.extended.build.unique.name";
 	
 	//Rest
 	final String REST_USER_ENABLED = "rest.user.enabled";
