@@ -56,7 +56,7 @@ public class DefaultLogger {
 		
 		//Before advice
 		if(beforeEnabled){
-			log.debug(sb.toString());
+			log.info(sb.toString());
 		}
 		
 		//Execute method
@@ -69,7 +69,7 @@ public class DefaultLogger {
 				if (returnValue && result != null)
 					sb.append(result.toString());
 				
-				log.debug(sb.toString());
+				log.info(sb.toString());
 			}
 			
 			return result;
