@@ -150,9 +150,8 @@
 
       <!-- Import configuration scripts -->
       <file src="setup/couchdb/bjornloka/target/bjornloka.jar" targetdir="$INSTALL_PATH/setup/couchdb" />
-      <fileset dir="setup/couchdb" targetdir="$INSTALL_PATH/setup/couchdb">
-        <include name="**"/>
-        <exclude name="bjornloka/**" />
+      <fileset dir="setup/couchdb" targetdir="$INSTALL_PATH/setup/couchdb">        
+        <include name="initial_import/*" />
       </fileset>
      
       <!-- Import initial data -->
