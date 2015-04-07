@@ -104,7 +104,7 @@ public class PrincipalServiceImpl implements PrincipalService {
 	}
 
 	@Override
-	public void createUser(User user) {
+	public synchronized void createUser(User user) {
 		//UserID uniqueness
 		List<String> principalIds = getPrincipalIds();
 		if(principalIds.contains(user.getUserId())){
@@ -115,17 +115,17 @@ public class PrincipalServiceImpl implements PrincipalService {
 	}
 
 	@Override
-	public void updateUser(User user) {
+	public synchronized void updateUser(User user) {
 		principalDaoService.updateUser(user);
 	}
 
 	@Override
-	public void deleteUser(String id) {
+	public synchronized void deleteUser(String id) {
 		principalDaoService.delete(User.class, id);
 	}
 
 	@Override
-	public void createGroup(Group group) {
+	public synchronized void createGroup(Group group) {
 		//GroupID uniqueness
 		List<String> principalIds = getPrincipalIds();
 		if(principalIds.contains(group.getGroupId())){
@@ -136,12 +136,12 @@ public class PrincipalServiceImpl implements PrincipalService {
 	}
 
 	@Override
-	public void updateGroup(Group group) {
+	public synchronized void updateGroup(Group group) {
 		principalDaoService.updateGroup(group);
 	}
 
 	@Override
-	public void deleteGroup(String id) {
+	public synchronized void deleteGroup(String id) {
 		principalDaoService.delete(Group.class, id);
 	}
 
