@@ -423,7 +423,7 @@ public class ContentServiceImpl implements ContentService {
 	
 	// TODO Create a rendition
 	@Override
-	public Document createDocument(CallContext callContext,
+	public synchronized Document createDocument(CallContext callContext,
 			Properties properties, Folder parentFolder,
 			ContentStream contentStream, VersioningState versioningState,
 			String versionSeriesId) {
@@ -477,7 +477,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public Document createDocumentFromSource(CallContext callContext,
+	public synchronized Document createDocumentFromSource(CallContext callContext,
 			Properties properties, Folder target, Document original,
 			VersioningState versioningState, List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
@@ -515,7 +515,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public Document createDocumentWithNewStream(CallContext callContext,
+	public synchronized Document createDocumentWithNewStream(CallContext callContext,
 			Document original, ContentStream contentStream) {
 		Document copy = buildCopyDocumentWithBasicProperties(callContext,
 				original);
@@ -550,7 +550,7 @@ public class ContentServiceImpl implements ContentService {
 		return result;
 	}
 	
-	public Document replacePwc(CallContext callContext, Document originalPwc, ContentStream contentStream){
+	public synchronized Document replacePwc(CallContext callContext, Document originalPwc, ContentStream contentStream){
 		//Update attachment contentStream
 		AttachmentNode an = contentDaoService.getAttachment(originalPwc.getAttachmentNodeId());
 		contentDaoService.updateAttachment(an, contentStream);
@@ -594,7 +594,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public Document checkOut(CallContext callContext, String objectId,
+	public synchronized Document checkOut(CallContext callContext, String objectId,
 			ExtensionsData extension) {
 		Document latest = getDocument(objectId);
 		Document pwc = buildCopyDocumentWithBasicProperties(callContext, latest);
@@ -628,7 +628,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public void cancelCheckOut(CallContext callContext, String objectId,
+	public synchronized void cancelCheckOut(CallContext callContext, String objectId,
 			ExtensionsData extension) {
 		Document pwc = getDocument(objectId);
 		VersionSeries vs = getVersionSeries(pwc);
@@ -651,7 +651,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public Document checkIn(CallContext callContext, Holder<String> objectId,
+	public synchronized Document checkIn(CallContext callContext, Holder<String> objectId,
 			Boolean major, Properties properties, ContentStream contentStream,
 			String checkinComment, List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
@@ -834,7 +834,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public Folder createFolder(CallContext callContext, Properties properties,
+	public synchronized Folder createFolder(CallContext callContext, Properties properties,
 			Folder parentFolder) {
 		Folder f = new Folder();
 		setBaseProperties(callContext, properties, f, parentFolder.getId());
@@ -868,7 +868,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public Relationship createRelationship(CallContext callContext,
+	public synchronized Relationship createRelationship(CallContext callContext,
 			Properties properties, List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces,
@@ -893,7 +893,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public Policy createPolicy(CallContext callContext, Properties properties,
+	public synchronized Policy createPolicy(CallContext callContext, Properties properties,
 			List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces,
@@ -918,7 +918,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public Item createItem(CallContext callContext, Properties properties,
+	public synchronized Item createItem(CallContext callContext, Properties properties,
 			String folderId, List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces,
@@ -1162,7 +1162,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public Content updateProperties(CallContext callContext,
+	public synchronized Content updateProperties(CallContext callContext,
 			Properties properties, Content content) {
 
 		Content modified = modifyProperties(callContext, properties, content);
@@ -1176,7 +1176,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public Content update(Content content) {
+	public synchronized Content update(Content content) {
 		Content result = null;
 
 		if (content instanceof Document) {
@@ -1222,7 +1222,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public void move(Content content, Folder target) {
+	public synchronized void move(Content content, Folder target) {
 		content.setParentId(target.getId());
 		String uniqueName = buildUniqueName(content.getName(), target.getId(),
 				null);
@@ -1234,7 +1234,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public void applyPolicy(CallContext callContext, String policyId,
+	public synchronized void applyPolicy(CallContext callContext, String policyId,
 			String objectId, ExtensionsData extension) {
 		Policy policy = getPolicy(policyId);
 		List<String> ids = policy.getAppliedIds();
@@ -1248,7 +1248,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public void removePolicy(CallContext callContext, String policyId,
+	public synchronized void removePolicy(CallContext callContext, String policyId,
 			String objectId, ExtensionsData extension) {
 		Policy policy = getPolicy(policyId);
 		List<String> ids = policy.getAppliedIds();
@@ -1265,7 +1265,7 @@ public class ContentServiceImpl implements ContentService {
 	 * Delete a Content.
 	 */
 	@Override
-	public void delete(CallContext callContext, String objectId,
+	public synchronized void delete(CallContext callContext, String objectId,
 			Boolean deletedWithParent) {
 		Content content = getContent(objectId);
 
@@ -1281,20 +1281,20 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public void deleteAttachment(CallContext callContext, String attachmentId) {
+	public synchronized void deleteAttachment(CallContext callContext, String attachmentId) {
 		createAttachmentArchive(callContext, attachmentId);
 		contentDaoService.delete(attachmentId);
 	}
 
 	@Override
-	public void deleteContentStream(CallContext callContext,
+	public synchronized void deleteContentStream(CallContext callContext,
 			Holder<String> objectId) {
 		// TODO Auto-generated method stub
 
 	}
 
 	@Override
-	public void deleteDocument(CallContext callContext, String objectId,
+	public synchronized void deleteDocument(CallContext callContext, String objectId,
 			Boolean allVersions, Boolean deleteWithParent) {
 		Document document = (Document) getContent(objectId);
 
@@ -1344,7 +1344,7 @@ public class ContentServiceImpl implements ContentService {
 	// deletedWithParent flag controls whether it's deleted with the parent all
 	// together.
 	@Override
-	public List<String> deleteTree(CallContext callContext, String folderId,
+	public synchronized List<String> deleteTree(CallContext callContext, String folderId,
 			Boolean allVersions, Boolean continueOnFailure,
 			Boolean deletedWithParent){
 		List<String> failureIds = new ArrayList<String>();
@@ -1463,7 +1463,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 	
 	@Override
-	public void appendAttachment(CallContext callContext,
+	public synchronized void appendAttachment(CallContext callContext,
 			Holder<String> objectId, Holder<String> changeToken,
 			ContentStream contentStream, boolean isLastChunk,
 			ExtensionsData extension) {
