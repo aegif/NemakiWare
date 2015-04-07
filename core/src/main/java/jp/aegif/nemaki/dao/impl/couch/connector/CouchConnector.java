@@ -71,7 +71,7 @@ public class CouchConnector {
 		HttpClient httpClient = new StdHttpClient.Builder().host(host)
 				.port(port).maxConnections(maxConnections)
 				.connectionTimeout(connectionTimeout)
-				.socketTimeout(socketTimeout).build();
+				.socketTimeout(socketTimeout).cleanupIdleConnections(true).build();
 		CouchDbInstance dbInstance = new StdCouchDbInstance(httpClient);
 
 		String repo = "";
@@ -86,7 +86,7 @@ public class CouchConnector {
 	public CouchDbConnector getConnection() {
 		return connector;
 	}
-
+	
 	public void setRepositoryId(String repositoryId) {
 		this.repositoryId = repositoryId;
 	}
