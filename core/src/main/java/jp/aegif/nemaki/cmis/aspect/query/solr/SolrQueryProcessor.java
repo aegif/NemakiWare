@@ -59,6 +59,7 @@ import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
+import org.apache.solr.common.params.CommonParams;
 
 public class SolrQueryProcessor implements QueryProcessor {
 
@@ -148,6 +149,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 		SolrQuery solrQuery = new SolrQuery();
 		solrQuery.setQuery(whereQueryString);
 		solrQuery.setFilterQueries(fromQueryString);
+		
+		//TEST
+		solrQuery.set(CommonParams.START, 0);
+		solrQuery.set(CommonParams.ROWS, maxItems.intValue());
+		
 
 		QueryResponse resp = null;
 		try {
