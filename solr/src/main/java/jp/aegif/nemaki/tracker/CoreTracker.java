@@ -368,8 +368,8 @@ public class CoreTracker extends CloseHook {
 		String latestToken = (trackingType.equals(Constant.MODE_FULL) || StringUtils
 				.isEmpty(_latestToken)) ? null : _latestToken;
 
-		String _numItems = cmisMgr.readValue(PropertyKey.CMIS_CHANGELOG_ITEMS);
-		long numItems = (StringUtils.isEmpty(_numItems)) ? 100 : Long.valueOf(_numItems);
+		long _numItems = Long.valueOf(cmisMgr.readValue(PropertyKey.CMIS_CHANGELOG_ITEMS));
+		long numItems = (-1 == _numItems) ? Long.MAX_VALUE : Long.valueOf(_numItems);
 
 		ChangeEvents changeEvents = cmisSession.getContentChanges(latestToken,
 				false, numItems);
