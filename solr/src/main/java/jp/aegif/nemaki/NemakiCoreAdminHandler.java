@@ -167,6 +167,9 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 		if (a.equalsIgnoreCase("INDEX")) {
 			// Action=INDEX: track documents(by FULL or DELTA)
 			tracker.setupCmisSession();
+			if(tracking.equals(Constant.MODE_FULL)){
+				tracker.initCore();
+			}
 			tracker.index(tracking);
 			// TODO More info
 			rsp.add("Result", "Successfully tracked!");
