@@ -250,11 +250,10 @@ public class CoreTracker extends CloseHook {
 			// Extract only the last events of each objectId
 			List<ChangeEvent> list = extractChangeEvent(events);
 
-			// Test
 			PropertyManager propMgr = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
-			int numberPerThread = Integer.valueOf(propMgr.readValue(PropertyKey.SOLR_TRACKING_NUMBER_PER_THREAD));
-			int threadNum = (list.size() / numberPerThread) + 1;
-			for (int i = 0; i < threadNum; i++) {
+			int numberOfThread = Integer.valueOf(propMgr.readValue(PropertyKey.SOLR_TRACKING_NUMBER_OF_THREAD));
+			int numberPerThread = list.size() / numberOfThread;
+			for (int i = 0; i < numberOfThread; i++) {
 				int toIndex = (numberPerThread * (i + 1) > list.size()) ? list
 						.size() : numberPerThread * (i + 1);
 

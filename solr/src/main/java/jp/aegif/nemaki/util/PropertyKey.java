@@ -8,7 +8,7 @@ public interface PropertyKey {
 	public final String SOLR_TRACKING_FULLTEXT_ENABLED = "solr.tracking.fulltext.enabled";
 	public final String SOLR_TRACKING_MIMETYPE_FILTER_ENABLED = "solr.tracking.mimetype.filter.enabled";
 	public final String SOLR_TRACKING_MIMETYPE = "solr.tracking.mimetype";
-	public final String SOLR_TRACKING_NUMBER_PER_THREAD = "solr.tracking.number.per.thread";
+	public final String SOLR_TRACKING_NUMBER_OF_THREAD = "solr.tracking.number.of.thread";
 
 	public final String CMIS_SERVER_PROTOCOL = "cmis.server.protocol";
 	public final String CMIS_SERVER_HOST = "cmis.server.host";
