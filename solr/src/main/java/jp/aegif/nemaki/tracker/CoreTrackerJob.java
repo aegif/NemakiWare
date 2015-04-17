@@ -30,31 +30,33 @@ import org.quartz.JobExecutionException;
 
 /**
  * Job class of index tracking
+ * 
  * @author linzhixing
  *
  */
-public class CoreTrackerJob implements Job{
+public class CoreTrackerJob implements Job {
 
 	Logger logger = Logger.getLogger(CoreTrackerJob.class);
 
-	public CoreTrackerJob(){
+	public CoreTrackerJob() {
 		super();
 	}
 
 	@Override
-	public void execute(JobExecutionContext jec) throws JobExecutionException{
-		CoreTracker coreTracker = (CoreTracker) jec.getJobDetail().getJobDataMap().get("TRACKER");
+	public void execute(JobExecutionContext jec) throws JobExecutionException {
+		CoreTracker coreTracker = (CoreTracker) jec.getJobDetail()
+				.getJobDataMap().get("TRACKER");
 
-		if ( !coreTracker.isConnectionSetup() ) {
+		if (!coreTracker.isConnectionSetup()) {
 			coreTracker.setupCmisSession();
 		}
 
-		if(coreTracker.cmisSession == null){
+		if (coreTracker.cmisSession == null) {
 			coreTracker.setupCmisSession();
 		}
-		if(coreTracker.cmisSession == null){
+		if (coreTracker.cmisSession == null) {
 			logger.error("Tracking is not executed because the session to the CMIS server is not established.");
-		}else{
+		} else {
 			coreTracker.index(Constant.MODE_DELTA);
 		}
 	}
