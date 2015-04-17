@@ -272,6 +272,11 @@ public class CoreTracker extends CloseHook {
 
 			// Save the latest token
 			storeLatestChangeToken(changeEvents.getLatestChangeLogToken());
+			
+			//In case of FUll mode, repeat until indexing all change logs
+			if(Constant.MODE_FULL.equals(trackingType)){
+				index(Constant.MODE_FULL);
+			}
 		}
 	}
 
@@ -337,13 +342,18 @@ public class CoreTracker extends CloseHook {
 				StringPool.PROPERTIES_NAME);
 
 		String _latestToken = readLatestChangeToken();
-		String latestToken = (trackingType.equals(Constant.MODE_FULL) || StringUtils
-				.isEmpty(_latestToken)) ? null : _latestToken;
+		String latestToken = (StringUtils.isEmpty(_latestToken)) ? null : _latestToken;
 
-		long _numItems = Long.valueOf(propMgr
-				.readValue(PropertyKey.CMIS_CHANGELOG_ITEMS));
-		long numItems = (-1 == _numItems || trackingType
-				.equals(Constant.MODE_FULL)) ? Long.MAX_VALUE : Long
+		long _numItems = 0;
+		if(Constant.MODE_DELTA.equals(trackingType)){
+			_numItems = Long.valueOf(propMgr
+					.readValue(PropertyKey.CMIS_CHANGELOG_ITEMS_DELTA)); 
+		}else if(Constant.MODE_FULL.equals(trackingType)){
+			_numItems = Long.valueOf(propMgr
+					.readValue(PropertyKey.CMIS_CHANGELOG_ITEMS_FULL)); 
+		}
+		
+		long numItems = (-1 == _numItems) ? Long.MAX_VALUE : Long
 				.valueOf(_numItems);
 
 		ChangeEvents changeEvents = cmisSession.getContentChanges(latestToken,
