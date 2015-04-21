@@ -252,7 +252,12 @@ public class CoreTracker extends CloseHook {
 
 			PropertyManager propMgr = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
 			int numberOfThread = Integer.valueOf(propMgr.readValue(PropertyKey.SOLR_TRACKING_NUMBER_OF_THREAD));
-			int numberPerThread = list.size() / numberOfThread;
+			int numberPerThread = list.size()/ numberOfThread;
+			if(list.size() < numberOfThread){
+				numberOfThread = list.size();
+				numberPerThread = 1;
+			}
+			
 			for (int i = 0; i < numberOfThread; i++) {
 				int toIndex = (numberPerThread * (i + 1) > list.size()) ? list
 						.size() : numberPerThread * (i + 1);
