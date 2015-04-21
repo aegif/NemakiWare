@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 import jp.aegif.nemaki.bjornloka.model.Entry;
+import jp.aegif.nemaki.bjornloka.util.Indicator;
 
 import org.ektorp.AttachmentInputStream;
 import org.ektorp.CouchDbConnector;
@@ -80,6 +81,7 @@ public class Dump {
 
 		// Retrieve all data as json
 		List<Entry> entries = new ArrayList<Entry>();
+		Indicator indicator = new Indicator(docIds.size());
 		for (String docId : docIds) {
 			InputStream is = connector.getAsStream(docId);
 			ObjectNode document = new ObjectMapper().readValue(is,
@@ -90,7 +92,8 @@ public class Dump {
 			entry.setAttachments(getAttachments(connector, document));
 
 			entries.add(entry);
-
+			
+			indicator.increment();
 		}
 
 		// Write
@@ -100,8 +103,11 @@ public class Dump {
 			file = null;
 			file = new File(newFilePath);
 		}
+		
+		System.out.println("Writing to " + file.getAbsolutePath() + " ...");
 		new ObjectMapper().writeValue(file, entries);
-
+		System.out.println("Writing completed");
+		
 		return file.getAbsolutePath();
 	}
 

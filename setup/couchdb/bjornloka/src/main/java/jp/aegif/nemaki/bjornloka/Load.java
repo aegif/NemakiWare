@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
+import jp.aegif.nemaki.bjornloka.util.Indicator;
+
 import org.ektorp.AttachmentInputStream;
 import org.ektorp.CouchDbConnector;
 import org.ektorp.CouchDbInstance;
@@ -117,13 +119,16 @@ public class Load {
 		}
 
 		//Load documents to DB
+		System.out.println("Loading documents to DB");
 		List<DocumentOperationResult> documentsResult = connector.executeAllOrNothing(documents);
 		if(documentsResult != null && documentsResult.size() > 0){
 			System.err.println("Documents are not imported because of some error.");
 			return false;
 		}
+		System.out.println("Completed loading documents");
 
 		//Load all attachments to DB
+		System.out.println("Loading attachments to DB");
 		for(Entry<String, ObjectNode> entry : payloads.entrySet()){
 			ObjectNode attachments = entry.getValue();
 			Iterator<String> it = attachments.fieldNames();
@@ -158,10 +163,10 @@ public class Load {
 					e.printStackTrace();
 					return false;
 				}
-
 			}
 		}
 
+		System.out.println("Completed loading attachments");
 		return true;
 	}
 
