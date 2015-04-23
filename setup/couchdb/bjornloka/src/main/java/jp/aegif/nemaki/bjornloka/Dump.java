@@ -22,6 +22,7 @@ import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 public class Dump {
@@ -60,6 +61,13 @@ public class Dump {
 		} catch (Exception e) {
 			// do nothing
 		}
+		
+		if (!omitTimestamp) {
+			String timestamp = getCurrentDateString();
+			String newFilePath = file.getAbsolutePath() + "_" + timestamp;
+			file = null;
+			file = new File(newFilePath);
+		}
 
 		// Execute dumping
 		try {
@@ -97,15 +105,9 @@ public class Dump {
 		}
 
 		// Write
-		if (!omitTimestamp) {
-			String timestamp = getCurrentDateString();
-			String newFilePath = file.getAbsolutePath() + "_" + timestamp;
-			file = null;
-			file = new File(newFilePath);
-		}
-		
 		System.out.println("Writing to " + file.getAbsolutePath() + " ...");
-		new ObjectMapper().writeValue(file, entries);
+		new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT).writeValue(file, entries);
+			
 		System.out.println("Writing completed");
 		
 		return file.getAbsolutePath();
