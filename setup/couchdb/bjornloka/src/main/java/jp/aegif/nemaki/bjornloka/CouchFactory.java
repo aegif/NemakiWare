@@ -9,7 +9,7 @@ import org.ektorp.impl.StdCouchDbInstance;
 public class CouchFactory {
 	public static CouchDbInstance createCouchDbInstance(String host, int port){
 		HttpClient httpClient = new StdHttpClient.Builder().host(host)
-				.maxConnections(1000).socketTimeout(1000000).build();
+				.maxConnections(1000).socketTimeout(100000000).build();
 		return new StdCouchDbInstance(httpClient);
 	}
 
