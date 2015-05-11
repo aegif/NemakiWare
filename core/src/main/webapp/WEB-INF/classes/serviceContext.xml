@@ -434,7 +434,13 @@
         </property>
     </bean>
     <bean id="tokenService"
-        class="jp.aegif.nemaki.cmis.factory.auth.impl.TokenServiceImpl">
+        class="jp.aegif.nemaki.cmis.factory.auth.impl.TokenServiceImpl" init-method="init" depends-on="PrincipalService">
+        <property name="propertyManager">
+            <ref bean="propertyManager" />
+        </property>
+        <property name="principalService">
+            <ref bean="PrincipalService" />
+        </property>
     </bean>
 
     <bean id="CompileService" class="org.springframework.aop.framework.ProxyFactoryBean">
@@ -620,6 +626,12 @@
     <bean id="solrResource" class="jp.aegif.nemaki.rest.SolrResource">
     	<property name="solrUtil">
        		<ref bean="solrUtil" />
+        </property>
+    </bean>
+    
+    <bean id="authtokenResource" class="jp.aegif.nemaki.rest.AuthTokenResource">
+    	<property name="tokenService">
+       		<ref bean="TokenService" />
         </property>
     </bean>
 </beans>

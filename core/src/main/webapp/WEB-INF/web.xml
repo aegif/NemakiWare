@@ -49,7 +49,7 @@
 		<servlet-class>org.apache.chemistry.opencmis.server.impl.atompub.CmisAtomPubServlet</servlet-class>
 		<init-param>
 			<param-name>callContextHandler</param-name>
-			<param-value>jp.aegif.nemaki.cmis.factory.BasicAuthContextHandler</param-value>
+			<param-value>jp.aegif.nemaki.cmis.factory.auth.NemakiAuthCallContextHandler</param-value>
         </init-param>
 		<init-param>
  			<param-name>cmisVersion</param-name>

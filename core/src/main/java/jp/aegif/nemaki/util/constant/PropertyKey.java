@@ -44,6 +44,7 @@ public interface PropertyKey {
 	final String CAPABILITY_EXTENDED_PREVIEW = "capability.extended.preview";
 	final String CAPABILITY_EXTENDED_INCLUDE_RELATIONSHIPS = "capability.extended.include.relationships";
 	final String CAPABILITY_EXTENDED_BUILD_UNIQUE_NAME = "capability.extended.build.unique.name";
+	final String CAPABILITY_EXTENDED_AUTH_TOKEN = "capability.extended.auth.token";
 	
 	//Rest
 	final String REST_USER_ENABLED = "rest.user.enabled";
@@ -51,6 +52,7 @@ public interface PropertyKey {
 	final String REST_TYPE_ENABLED = "rest.type.enabled";
 	final String REST_ARCHIVE_ENABLED = "rest.archive.enabled";
 	final String REST_SOLR_ENABLED = "rest.solr.enabled";
+	final String REST_AUTHTOKEN_ENABLED = "rest.authtoken.enabled";
 	
 	//Capabilities
 	final String CAPABILITY_GET_DESCENDENTS = "capability.getDescendants";
@@ -263,4 +265,7 @@ public interface PropertyKey {
 	
 	//Cache
 	final String CACHE_CMIS_ENABLED = "cache.cmis.enabled";
+	
+	//Auth token
+	final String AUTH_TOKEN_EXPIRATION = "auth.token.expiration";
 }

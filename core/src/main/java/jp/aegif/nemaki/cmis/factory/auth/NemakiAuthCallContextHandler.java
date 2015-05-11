@@ -19,11 +19,13 @@
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
-package jp.aegif.nemaki.cmis.factory;
+package jp.aegif.nemaki.cmis.factory.auth;
 
 import java.util.Map;
 
 import javax.servlet.http.HttpServletRequest;
+
+import jp.aegif.nemaki.util.constant.CallContextKey;
 
 import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
 import org.apache.commons.logging.Log;
@@ -32,15 +34,15 @@ import org.apache.commons.logging.LogFactory;
 /**
  * Context handler class to do basic authentication
  */
-public class BasicAuthContextHandler extends org.apache.chemistry.opencmis.server.shared.BasicAuthCallContextHandler {
+public class NemakiAuthCallContextHandler extends org.apache.chemistry.opencmis.server.shared.BasicAuthCallContextHandler {
 
 	private static final long serialVersionUID = -8877261669069241258L;
-	private static final Log log = LogFactory.getLog(BasicAuthContextHandler.class);
+	private static final Log log = LogFactory.getLog(NemakiAuthCallContextHandler.class);
 
 	/**
 	 * Constructor. Initialize authenticationService here.
 	 */
-	public BasicAuthContextHandler() {
+	public NemakiAuthCallContextHandler() {
 	}
 
 	/**
@@ -52,6 +54,8 @@ public class BasicAuthContextHandler extends org.apache.chemistry.opencmis.serve
 	public Map<String, String> getCallContextMap(HttpServletRequest request) {
 		// Call superclass to get user and password via basic authentication.
 		Map<String, String> ctxMap = super.getCallContextMap(request);
+		ctxMap.put(CallContextKey.AUTH_TOKEN, request.getHeader(CallContextKey.AUTH_TOKEN));
+		ctxMap.put(CallContextKey.AUTH_TOKEN_APP, request.getHeader(CallContextKey.AUTH_TOKEN_APP));
 		return ctxMap;
 	}
 }
