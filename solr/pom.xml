@@ -12,7 +12,7 @@
 		<url>https://github.com/NemakiWare/NemakiWare</url>
 		
 		<properties>
-			<org.apache.chemistry.opencmis.version>0.10.0</org.apache.chemistry.opencmis.version>
+			<org.apache.chemistry.opencmis.version>0.13.0</org.apache.chemistry.opencmis.version>
 		</properties>
 		
 		<dependencies>
