@@ -93,6 +93,11 @@
 				<artifactId>chemistry-opencmis-client-bindings</artifactId>
 				<version>${org.apache.chemistry.opencmis.version}</version>
 			</dependency>
+			<dependency>
+				<groupId>com.sun.jersey</groupId>
+				<artifactId>jersey-client</artifactId>
+				<version>1.19</version>
+			</dependency>
 		</dependencies>
 		
 		<build>

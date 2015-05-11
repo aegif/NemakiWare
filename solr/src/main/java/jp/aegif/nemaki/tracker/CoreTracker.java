@@ -35,11 +35,13 @@ import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Set;
+
 import jp.aegif.nemaki.NemakiCoreAdminHandler;
 import jp.aegif.nemaki.util.Constant;
 import jp.aegif.nemaki.util.PropertyKey;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.StringPool;
+import jp.aegif.nemaki.util.NemakiTokenManager;
 import jp.aegif.nemaki.util.impl.PropertyManagerImpl;
 
 import org.apache.chemistry.opencmis.client.api.ChangeEvent;
@@ -50,6 +52,7 @@ import org.apache.chemistry.opencmis.client.api.SessionFactory;
 import org.apache.chemistry.opencmis.client.runtime.SessionFactoryImpl;
 import org.apache.chemistry.opencmis.commons.SessionParameter;
 import org.apache.chemistry.opencmis.commons.enums.BindingType;
+import org.apache.chemistry.opencmis.commons.spi.CmisBinding;
 import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
 import org.apache.solr.client.solrj.SolrQuery;
@@ -80,6 +83,8 @@ public class CoreTracker extends CloseHook {
 	SolrServer repositoryServer;
 	SolrServer tokenServer;
 	Session cmisSession;
+	CmisBinding cmisBinding;
+	NemakiTokenManager nemakiTokenManager;
 
 	public CoreTracker(NemakiCoreAdminHandler adminHandler, SolrCore core,
 			SolrServer repositoryServer, SolrServer tokenServer) {
@@ -89,8 +94,11 @@ public class CoreTracker extends CloseHook {
 		this.core = core;
 		this.repositoryServer = repositoryServer;
 		this.tokenServer = tokenServer;
+		this.nemakiTokenManager = new NemakiTokenManager();
+		
+		setupCmisSession();
 	}
-
+	
 	public void setupCmisSession() {
 		PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
 
@@ -145,6 +153,16 @@ public class CoreTracker extends CloseHook {
 		parameter.put(SessionParameter.WEBSERVICES_VERSIONING_SERVICE, url
 				+ "VersioningService?wsdl");
 
+		//Auth token
+		Boolean authTokenEnabled = 
+				Boolean.valueOf(pm.readValue(PropertyKey.NEMAKI_CAPABILITY_EXTENDED_AUTH_TOKEN));
+		if(authTokenEnabled){
+			parameter.put(SessionParameter.AUTHENTICATION_PROVIDER_CLASS, "jp.aegif.nemaki.util.NemakiAuthenticationProvider");
+			String authToken = nemakiTokenManager.getOrRegister(user, password);
+			parameter.put(Constant.AUTH_TOKEN, authToken);
+			parameter.put(Constant.AUTH_TOKEN_APP, "ui");
+		}
+		
 		// create session
 		try {
 			cmisSession = f.createSession(parameter);
@@ -152,6 +170,7 @@ public class CoreTracker extends CloseHook {
 					.createOperationContext(null, false, false, false, null,
 							null, false, null, true, 100);
 			cmisSession.setDefaultContext(operationContext);
+			
 		} catch (Exception e) {
 			logger.error("Failed to create a session to CMIS server", e);
 		}
@@ -258,7 +277,7 @@ public class CoreTracker extends CloseHook {
 				numberPerThread = 1;
 			}
 			
-			for (int i = 0; i < numberOfThread; i++) {
+			for (int i = 0; i <= numberOfThread; i++) {
 				int toIndex = (numberPerThread * (i + 1) > list.size()) ? list
 						.size() : numberPerThread * (i + 1);
 
@@ -361,8 +380,7 @@ public class CoreTracker extends CloseHook {
 		long numItems = (-1 == _numItems) ? Long.MAX_VALUE : Long
 				.valueOf(_numItems);
 
-		ChangeEvents changeEvents = cmisSession.getContentChanges(latestToken,
-				false, numItems);
+		ChangeEvents changeEvents = cmisSession.getContentChanges(latestToken,false, numItems);
 
 		// No need for Sorting
 		// (Specification requires they are returned by ASCENDING)
