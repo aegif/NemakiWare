@@ -46,18 +46,6 @@ public class CoreTrackerJob implements Job {
 	public void execute(JobExecutionContext jec) throws JobExecutionException {
 		CoreTracker coreTracker = (CoreTracker) jec.getJobDetail()
 				.getJobDataMap().get("TRACKER");
-
-		if (!coreTracker.isConnectionSetup()) {
-			coreTracker.setupCmisSession();
-		}
-
-		if (coreTracker.cmisSession == null) {
-			coreTracker.setupCmisSession();
-		}
-		if (coreTracker.cmisSession == null) {
-			logger.error("Tracking is not executed because the session to the CMIS server is not established.");
-		} else {
-			coreTracker.index(Constant.MODE_DELTA);
-		}
+		coreTracker.index(Constant.MODE_DELTA);
 	}
 }

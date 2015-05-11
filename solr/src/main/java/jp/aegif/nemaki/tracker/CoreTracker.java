@@ -95,8 +95,6 @@ public class CoreTracker extends CloseHook {
 		this.repositoryServer = repositoryServer;
 		this.tokenServer = tokenServer;
 		this.nemakiTokenManager = new NemakiTokenManager();
-		
-		setupCmisSession();
 	}
 	
 	public void setupCmisSession() {
@@ -152,25 +150,24 @@ public class CoreTracker extends CloseHook {
 				+ "RepositoryService?wsdl");
 		parameter.put(SessionParameter.WEBSERVICES_VERSIONING_SERVICE, url
 				+ "VersioningService?wsdl");
-
-		//Auth token
-		Boolean authTokenEnabled = 
-				Boolean.valueOf(pm.readValue(PropertyKey.NEMAKI_CAPABILITY_EXTENDED_AUTH_TOKEN));
-		if(authTokenEnabled){
-			parameter.put(SessionParameter.AUTHENTICATION_PROVIDER_CLASS, "jp.aegif.nemaki.util.NemakiAuthenticationProvider");
-			String authToken = nemakiTokenManager.getOrRegister(user, password);
-			parameter.put(Constant.AUTH_TOKEN, authToken);
-			parameter.put(Constant.AUTH_TOKEN_APP, "ui");
-		}
 		
-		// create session
+			//Auth token
+			Boolean authTokenEnabled = 
+					Boolean.valueOf(pm.readValue(PropertyKey.NEMAKI_CAPABILITY_EXTENDED_AUTH_TOKEN));
+			if(authTokenEnabled){
+				parameter.put(SessionParameter.AUTHENTICATION_PROVIDER_CLASS, "jp.aegif.nemaki.util.NemakiAuthenticationProvider");
+				String authToken = nemakiTokenManager.getOrRegister(user, password);
+				parameter.put(Constant.AUTH_TOKEN, authToken);
+				parameter.put(Constant.AUTH_TOKEN_APP, "ui");
+			}
+		
 		try {
+			// create session
 			cmisSession = f.createSession(parameter);
 			OperationContext operationContext = cmisSession
 					.createOperationContext(null, false, false, false, null,
 							null, false, null, true, 100);
 			cmisSession.setDefaultContext(operationContext);
-			
 		} catch (Exception e) {
 			logger.error("Failed to create a session to CMIS server", e);
 		}
@@ -207,6 +204,10 @@ public class CoreTracker extends CloseHook {
 	 */
 	public void initCore() {
 		synchronized (LOCK) {
+			if(!isConnectionSetup()){
+				setupCmisSession();
+			}
+			
 			try {
 				// Initialize all documents
 				repositoryServer.deleteByQuery("*:*");
@@ -230,6 +231,10 @@ public class CoreTracker extends CloseHook {
 	 */
 	public void index(String trackingType) {
 		synchronized (LOCK) {
+			if(!isConnectionSetup()){
+				setupCmisSession();
+			}
+			
 			ChangeEvents changeEvents = getCmisChangeLog(trackingType);
 			List<ChangeEvent> events = changeEvents.getChangeEvents();
 
