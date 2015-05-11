@@ -23,5 +23,7 @@ public interface PropertyKey {
 	public final String CMIS_PRINCIPAL_ADMIN_ID = "cmis.principal.admin.id";
 	public final String CMIS_PRINCIPAL_ADMIN_PASSWORD = "cmis.principal.admin.password";
 
+	public final String NEMAKI_CAPABILITY_EXTENDED_AUTH_TOKEN = "nemaki.capability.extended.auth.token";
+	
 	public final String OVERRIDE_FILES = "override.files";
 }
