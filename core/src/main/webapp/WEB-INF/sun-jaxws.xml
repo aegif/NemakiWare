@@ -29,7 +29,7 @@
 		<handler-chains xmlns="http://java.sun.com/xml/ns/javaee">
 			<handler-chain>
 				<handler>
-					<handler-class>org.apache.chemistry.opencmis.server.impl.webservices.AuthHandler</handler-class>
+					<handler-class>jp.aegif.nemaki.cmis.factory.auth.NemakiWSAuthHandler</handler-class>
 				</handler>
 			</handler-chain>
 		</handler-chains>
@@ -43,7 +43,7 @@
 		<handler-chains xmlns="http://java.sun.com/xml/ns/javaee">
 			<handler-chain>
 				<handler>
-					<handler-class>org.apache.chemistry.opencmis.server.impl.webservices.AuthHandler</handler-class>
+					<handler-class>jp.aegif.nemaki.cmis.factory.auth.NemakiWSAuthHandler</handler-class>
 				</handler>
 			</handler-chain>
 		</handler-chains>
@@ -57,7 +57,7 @@
 		<handler-chains xmlns="http://java.sun.com/xml/ns/javaee">
 			<handler-chain>
 				<handler>
-					<handler-class>org.apache.chemistry.opencmis.server.impl.webservices.AuthHandler</handler-class>
+					<handler-class>jp.aegif.nemaki.cmis.factory.auth.NemakiWSAuthHandler</handler-class>
 				</handler>
 			</handler-chain>
 		</handler-chains>
@@ -71,7 +71,7 @@
 		<handler-chains xmlns="http://java.sun.com/xml/ns/javaee">
 			<handler-chain>
 				<handler>
-					<handler-class>org.apache.chemistry.opencmis.server.impl.webservices.AuthHandler</handler-class>
+					<handler-class>jp.aegif.nemaki.cmis.factory.auth.NemakiWSAuthHandler</handler-class>
 				</handler>
 			</handler-chain>
 		</handler-chains>
@@ -85,7 +85,7 @@
 		<handler-chains xmlns="http://java.sun.com/xml/ns/javaee">
 			<handler-chain>
 				<handler>
-					<handler-class>org.apache.chemistry.opencmis.server.impl.webservices.AuthHandler</handler-class>
+					<handler-class>jp.aegif.nemaki.cmis.factory.auth.NemakiWSAuthHandler</handler-class>
 				</handler>
 			</handler-chain>
 		</handler-chains>
@@ -99,7 +99,7 @@
 		<handler-chains xmlns="http://java.sun.com/xml/ns/javaee">
 			<handler-chain>
 				<handler>
-					<handler-class>org.apache.chemistry.opencmis.server.impl.webservices.AuthHandler</handler-class>
+					<handler-class>jp.aegif.nemaki.cmis.factory.auth.NemakiWSAuthHandler</handler-class>
 				</handler>
 			</handler-chain>
 		</handler-chains>
@@ -113,7 +113,7 @@
 		<handler-chains xmlns="http://java.sun.com/xml/ns/javaee">
 			<handler-chain>
 				<handler>
-					<handler-class>org.apache.chemistry.opencmis.server.impl.webservices.AuthHandler</handler-class>
+					<handler-class>jp.aegif.nemaki.cmis.factory.auth.NemakiWSAuthHandler</handler-class>
 				</handler>
 			</handler-chain>
 		</handler-chains>
@@ -127,7 +127,7 @@
 		<handler-chains xmlns="http://java.sun.com/xml/ns/javaee">
 			<handler-chain>
 				<handler>
-					<handler-class>org.apache.chemistry.opencmis.server.impl.webservices.AuthHandler</handler-class>
+					<handler-class>jp.aegif.nemaki.cmis.factory.auth.NemakiWSAuthHandler</handler-class>
 				</handler>
 			</handler-chain>
 		</handler-chains>
@@ -141,7 +141,7 @@
 		<handler-chains xmlns="http://java.sun.com/xml/ns/javaee">
 			<handler-chain>
 				<handler>
-					<handler-class>org.apache.chemistry.opencmis.server.impl.webservices.AuthHandler</handler-class>
+					<handler-class>jp.aegif.nemaki.cmis.factory.auth.NemakiWSAuthHandler</handler-class>
 				</handler>
 			</handler-chain>
 		</handler-chains>
@@ -157,7 +157,7 @@
 		<handler-chains xmlns="http://java.sun.com/xml/ns/javaee">
 			<handler-chain>
 				<handler>
-					<handler-class>org.apache.chemistry.opencmis.server.impl.webservices.AuthHandler</handler-class>
+					<handler-class>jp.aegif.nemaki.cmis.factory.auth.NemakiWSAuthHandler</handler-class>
 				</handler>
 			</handler-chain>
 		</handler-chains>
@@ -171,7 +171,7 @@
 		<handler-chains xmlns="http://java.sun.com/xml/ns/javaee">
 			<handler-chain>
 				<handler>
-					<handler-class>org.apache.chemistry.opencmis.server.impl.webservices.AuthHandler</handler-class>
+					<handler-class>jp.aegif.nemaki.cmis.factory.auth.NemakiWSAuthHandler</handler-class>
 				</handler>
 			</handler-chain>
 		</handler-chains>
@@ -185,7 +185,7 @@
 		<handler-chains xmlns="http://java.sun.com/xml/ns/javaee">
 			<handler-chain>
 				<handler>
-					<handler-class>org.apache.chemistry.opencmis.server.impl.webservices.AuthHandler</handler-class>
+					<handler-class>jp.aegif.nemaki.cmis.factory.auth.NemakiWSAuthHandler</handler-class>
 				</handler>
 			</handler-chain>
 		</handler-chains>
@@ -199,7 +199,7 @@
 		<handler-chains xmlns="http://java.sun.com/xml/ns/javaee">
 			<handler-chain>
 				<handler>
-					<handler-class>org.apache.chemistry.opencmis.server.impl.webservices.AuthHandler</handler-class>
+					<handler-class>jp.aegif.nemaki.cmis.factory.auth.NemakiWSAuthHandler</handler-class>
 				</handler>
 			</handler-chain>
 		</handler-chains>
@@ -213,7 +213,7 @@
 		<handler-chains xmlns="http://java.sun.com/xml/ns/javaee">
 			<handler-chain>
 				<handler>
-					<handler-class>org.apache.chemistry.opencmis.server.impl.webservices.AuthHandler</handler-class>
+					<handler-class>jp.aegif.nemaki.cmis.factory.auth.NemakiWSAuthHandler</handler-class>
 				</handler>
 			</handler-chain>
 		</handler-chains>
@@ -227,7 +227,7 @@
 		<handler-chains xmlns="http://java.sun.com/xml/ns/javaee">
 			<handler-chain>
 				<handler>
-					<handler-class>org.apache.chemistry.opencmis.server.impl.webservices.AuthHandler</handler-class>
+					<handler-class>jp.aegif.nemaki.cmis.factory.auth.NemakiWSAuthHandler</handler-class>
 				</handler>
 			</handler-chain>
 		</handler-chains>
@@ -241,7 +241,7 @@
 		<handler-chains xmlns="http://java.sun.com/xml/ns/javaee">
 			<handler-chain>
 				<handler>
-					<handler-class>org.apache.chemistry.opencmis.server.impl.webservices.AuthHandler</handler-class>
+					<handler-class>jp.aegif.nemaki.cmis.factory.auth.NemakiWSAuthHandler</handler-class>
 				</handler>
 			</handler-chain>
 		</handler-chains>
@@ -255,7 +255,7 @@
 		<handler-chains xmlns="http://java.sun.com/xml/ns/javaee">
 			<handler-chain>
 				<handler>
-					<handler-class>org.apache.chemistry.opencmis.server.impl.webservices.AuthHandler</handler-class>
+					<handler-class>jp.aegif.nemaki.cmis.factory.auth.NemakiWSAuthHandler</handler-class>
 				</handler>
 			</handler-chain>
 		</handler-chains>
@@ -269,7 +269,7 @@
 		<handler-chains xmlns="http://java.sun.com/xml/ns/javaee">
 			<handler-chain>
 				<handler>
-					<handler-class>org.apache.chemistry.opencmis.server.impl.webservices.AuthHandler</handler-class>
+					<handler-class>jp.aegif.nemaki.cmis.factory.auth.NemakiWSAuthHandler</handler-class>
 				</handler>
 			</handler-chain>
 		</handler-chains>
