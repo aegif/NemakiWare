@@ -43,13 +43,16 @@
   <resources>
     <res id="Installer.image" src="setup/installer/images/logo.jpg" />
     <res id="LicencePanel.licence" src="legal/LICENSE.txt"/>
+    <res id="HTMLInfoPanel.infoCouchDB" src="setup/installer/resources/infoCouchDB.html"/>
+    <res id="HTMLInfoPanel.infoCouchDB_jpn" src="setup/installer/resources/infoCouchDB_jpn.html"/>
+    <res id="HTMLInfoPanel.infoCouchDB_fra" src="setup/installer/resources/infoCouchDB_fra.html"/>
     <res id="userInputSpec.xml" src="setup/installer/user-input-spec_modified.xml" parse="yes" type="xml" />
 
-    <res id="packsLang.xml_jpn" src="setup/installer/i18n/packsLang.xml_jpn"/>
-    <res id="packsLang.xml_fra" src="setup/installer/i18n/packsLang.xml_fra"/>
+    <res id="packsLang.xml_jpn" src="setup/installer/i18n/packsLang_jpn.xml"/>
+    <res id="packsLang.xml_fra" src="setup/installer/i18n/packsLang_fra.xml"/>
 
-    <res id="userInputLang.xml_jpn" src="setup/installer/i18n/userInputLang.xml_jpn"/>
-    <res id="userInputLang.xml_fra" src="setup/installer/i18n/userInputLang.xml_fra"/>
+    <res id="userInputLang.xml_jpn" src="setup/installer/i18n/userInputLang_jpn.xml"/>
+    <res id="userInputLang.xml_fra" src="setup/installer/i18n/userInputLang_fra.xml"/>
   </resources>
 
   <!-- Conditions -->
@@ -75,6 +78,7 @@
   <panels>
     <panel classname="HelloPanel" />
     <panel classname="LicencePanel"/>
+    <panel classname="HTMLInfoPanel" id="infoCouchDB" />
     <panel classname="TargetPanel" />
     <panel classname="TreePacksPanel"/>
     <panel classname="SummaryPanel"/>
@@ -145,8 +149,8 @@
     </pack>
 
     <!-- Pack: CouchDB configuration -->
-    <pack id="pack.couchdb.configuration" name="CouchDB initial data import" required="no">
-      <description>CouchDB MUST be installed in advance</description>
+    <pack id="pack.couchdb.configuration" name="DB initialization(with working CouchDB)" required="no">
+      <description>DB initialization</description>
 
       <!-- Import configuration scripts -->
       <file src="setup/couchdb/bjornloka/target/bjornloka.jar" targetdir="$INSTALL_PATH/setup/couchdb" />

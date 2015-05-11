@@ -7,11 +7,11 @@
     <str id="pack.application.server" txt="Tomcat" />
     <str id="pack.core" txt="Core" />
     <str id="pack.core.description" txt="CMISサーバ" />
-    <str id="pack.couchdb.configuration" txt="CouchDB初期データのインポート " />
-    <str id="pack.couchdb.configuration.description" txt="CouchDBが既にインストールされている必要があります" />
+    <str id="pack.couchdb.configuration" txt="DB初期化(起動済みCouchDBが必要)" />
+    <str id="pack.couchdb.configuration.description" txt="CouchDB初期化" />
     <str id="pack.solr" txt="Solr" />
     <str id="pack.solr.description" txt="検索エンジン" />
     <str id="pack.ui" txt="UI" />
     <str id="pack.ui.description" txt="CMISクライアント" />
-    <str id="pack.delete.tmp" txt="インストール用一時ファイルの削除 " />
+    <str id="pack.delete.tmp" txt="インストール用一時ファイルの削除" />
 </langpack>
