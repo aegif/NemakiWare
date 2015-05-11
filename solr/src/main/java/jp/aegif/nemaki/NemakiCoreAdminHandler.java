@@ -141,7 +141,7 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 	 * which relate to the persistence of action results to the core.
 	 */
 	@Override
-	protected boolean handleCustomAction(SolrQueryRequest req,
+	protected void handleCustomAction(SolrQueryRequest req,
 			SolrQueryResponse rsp) {
 
 		SolrParams params = req.getParams();
@@ -229,7 +229,7 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 
 		}
 
-		return false;
+		//return false;
 	}
 
 	/**
