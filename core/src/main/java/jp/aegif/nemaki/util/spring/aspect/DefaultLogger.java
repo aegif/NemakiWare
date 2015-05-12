@@ -5,8 +5,10 @@ import java.util.Arrays;
 import javax.annotation.PostConstruct;
 
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.log4j.Appender;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
+import org.apache.log4j.xml.DOMConfigurator;
 import org.aspectj.lang.ProceedingJoinPoint;
 
 public class DefaultLogger {
