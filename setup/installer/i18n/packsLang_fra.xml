@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+
+<!-- The French langpack -->
+
+<langpack>
+    <str id="pack.utility" txt="Utilitaire d'installation" />
+    <str id="pack.application.server" txt="Tomcat" />
+    <str id="pack.core" txt="Core" />
+    <str id="pack.core.description" txt="CMISサーバ" />
+    <str id="pack.couchdb.configuration" txt="Initialisation de CouchDB(déjà démarré)" />
+    <str id="pack.couchdb.configuration.description" txt="Initialisation de CouchDB" />
+    <str id="pack.solr" txt="Solr" />
+    <str id="pack.solr.description" txt="Moteur de recherche" />
+    <str id="pack.ui" txt="UI" />
+    <str id="pack.ui.description" txt="Client de CMIS" />
+    <str id="pack.delete.tmp" txt="Supprimer les fichiers temporaires" />
+</langpack>

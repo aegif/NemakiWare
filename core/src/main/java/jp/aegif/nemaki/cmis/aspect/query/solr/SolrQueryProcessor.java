@@ -59,6 +59,7 @@ import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
+import org.apache.solr.common.params.CommonParams;
 
 public class SolrQueryProcessor implements QueryProcessor {
 
@@ -93,12 +94,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 		try {
 			util.processStatement();
 			Tree tree = util.parseStatement();
-			for (int i = 0; i < tree.getChildCount(); i++) {
-				Tree t = tree.getChild(i);
-				if ("WHERE".equals(t.getText())) {
-					whereTree = t.getChild(0);
-				}
-			}
+			whereTree = extractWhereTree(tree);
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
@@ -148,6 +144,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 		SolrQuery solrQuery = new SolrQuery();
 		solrQuery.setQuery(whereQueryString);
 		solrQuery.setFilterQueries(fromQueryString);
+		
+		//TEST
+		solrQuery.set(CommonParams.START, 0);
+		solrQuery.set(CommonParams.ROWS, maxItems.intValue());
+		
 
 		QueryResponse resp = null;
 		try {
@@ -219,6 +220,23 @@ public class SolrQueryProcessor implements QueryProcessor {
 		}
 	}
 
+	private Tree extractWhereTree(Tree tree){
+		for (int i = 0; i < tree.getChildCount(); i++) {
+			Tree selectTree = tree.getChild(i);
+			if ("SELECT".equals(selectTree.getText())) {
+				for(int j=0; j < selectTree.getChildCount(); j++){
+					Tree whereTree = selectTree.getChild(j);
+					if("WHERE".equals(whereTree.getText())){
+						return whereTree.getChild(0);
+					}
+				}
+				
+			}
+		}
+		
+		return null;
+	}
+	
 	public void setTypeManager(TypeManager typeManager) {
 		this.typeManager = typeManager;
 	}

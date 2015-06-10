@@ -6,7 +6,7 @@ version := "2.1"
 
 lazy val root = (project in file(".")).enablePlugins(PlayJava)
 
-scalaVersion := "2.11.1"
+scalaVersion := "2.11.6"
 
 libraryDependencies ++= Seq(
   javaJdbc,
@@ -27,6 +27,6 @@ libraryDependencies ++= Seq(
 
 Play2WarPlugin.play2WarSettings
 
-Play2WarKeys.servletVersion := "3.0"
+Play2WarKeys.servletVersion := "3.1"
 
 Play2WarKeys.targetName := Option("ui")

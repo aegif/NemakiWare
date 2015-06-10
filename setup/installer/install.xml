@@ -3,13 +3,13 @@
   <!-- Application info -->
   <info>
     <appname>NemakiWare</appname>
-    <appversion>2.1</appversion>
+    <appversion>2.2</appversion>
     <url>http://www.nemakiware.com/</url>
-    <!-- 
+    <!--
     If you a general user install on C:¥Program Files on Windows,
     some commands will fail. RUNAS command doesn't somehow work.
     <run-privileged condition="izpack.windowsinstall" />
-    -->    
+    -->
   </info>
 
   <!-- GUI settings -->
@@ -36,20 +36,23 @@
 
   <!-- Variables in this fhile-->
   <variables>
-    <variable name="TOMCAT" value="apache-tomcat-8.0.14" />
+    <variable name="TOMCAT" value="apache-tomcat-8.0.21" />
   </variables>
 
   <!-- Resource import -->
   <resources>
     <res id="Installer.image" src="setup/installer/images/logo.jpg" />
     <res id="LicencePanel.licence" src="legal/LICENSE.txt"/>
+    <res id="HTMLInfoPanel.infoCouchDB" src="setup/installer/resources/infoCouchDB.html"/>
+    <res id="HTMLInfoPanel.infoCouchDB_jpn" src="setup/installer/resources/infoCouchDB_jpn.html"/>
+    <res id="HTMLInfoPanel.infoCouchDB_fra" src="setup/installer/resources/infoCouchDB_fra.html"/>
     <res id="userInputSpec.xml" src="setup/installer/user-input-spec_modified.xml" parse="yes" type="xml" />
 
-    <res id="packsLang.xml_jpn" src="setup/installer/i18n/packsLang.xml_jpn"/>
-    <res id="packsLang.xml_fra" src="setup/installer/i18n/packsLang.xml_fra"/>
+    <res id="packsLang.xml_jpn" src="setup/installer/i18n/packsLang_jpn.xml"/>
+    <res id="packsLang.xml_fra" src="setup/installer/i18n/packsLang_fra.xml"/>
 
-    <res id="userInputLang.xml_jpn" src="setup/installer/i18n/userInputLang.xml_jpn"/>
-    <res id="userInputLang.xml_fra" src="setup/installer/i18n/userInputLang.xml_fra"/>
+    <res id="userInputLang.xml_jpn" src="setup/installer/i18n/userInputLang_jpn.xml"/>
+    <res id="userInputLang.xml_fra" src="setup/installer/i18n/userInputLang_fra.xml"/>
   </resources>
 
   <!-- Conditions -->
@@ -75,13 +78,14 @@
   <panels>
     <panel classname="HelloPanel" />
     <panel classname="LicencePanel"/>
+    <panel classname="HTMLInfoPanel" id="infoCouchDB" />
     <panel classname="TargetPanel" />
     <panel classname="TreePacksPanel"/>
     <panel classname="SummaryPanel"/>
-    <panel classname="UserInputPanel" id="user.inputpanel.appserver" 
+    <panel classname="UserInputPanel" id="user.inputpanel.appserver"
       condition="condition.pack.application.server" />
-    <panel classname="UserInputPanel" id="user.inputpanel.repository" 
-      condition="condition.pack.core|condition.pack.couchdb.configuration" />    
+    <panel classname="UserInputPanel" id="user.inputpanel.repository"
+      condition="condition.pack.core|condition.pack.couchdb.configuration" />
     <panel classname="UserInputPanel" id="user.inputpanel.couchdb.configuration" condition="condition.pack.couchdb.configuration"/>
     <!--<panel classname="UserInputPanel" id="user.inputpanel.solr" condition="condition.pack.solr"/>
     -->
@@ -96,7 +100,7 @@
     <!-- Pack: Utilities -->
     <pack id="pack.utility" name="Installation utility" required="yes" hidden="true">
       <description></description>
-      
+
        <!-- Import configuration scripts -->
       <file src="setup/installer/install-util/target/install-util.jar" targetdir="$INSTALL_PATH/setup" />
       <fileset dir="setup/installer/tomcat" targetdir="$INSTALL_PATH/setup/tomcat">
@@ -105,19 +109,19 @@
     </pack>
 
     <!-- Pack: Application server -->
-    <pack id="pack.application.server" name="Tomcat" required="no"> 
+    <pack id="pack.application.server" name="Tomcat" required="no">
       <description></description>
-      
+
       <!-- Expand Tomcat -->
       <file src="setup/installer/tomcat/${TOMCAT}.zip" targetdir="$INSTALL_PATH" unpack="true" />
-      
+
       <!-- Create setenv -->
       <file src="setup/installer/tomcat/setenv.sh" targetdir="$INSTALL_PATH/${TOMCAT}/bin" />
       <file src="setup/installer/tomcat/setenv.bat" targetdir="$INSTALL_PATH/${TOMCAT}/bin" />
 
       <!-- Create log folder-->
       <file src="setup/installer/tomcat/logs/catalina.out" targetdir="$INSTALL_PATH/${TOMCAT}/logs" />
-      
+
       <!-- Configure tomcat -->
       <executable targetfile="$INSTALL_PATH/setup/install-util.jar" stage="postinstall" type="jar" keep="true">
         <args>
@@ -138,25 +142,24 @@
 
       <!-- Deploy WAR file -->
       <file src="core/target/core.war" targetdir="$INSTALL_PATH/${TOMCAT}/webapps" />
-      
+
       <!-- Create general custom setting file -->
-      <file src="setup/installer/tomcat/app-server-general.properties" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
-      <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-general.properties"/>
+      <file src="setup/installer/tomcat/app-server-core.properties" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
+      <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-core.properties"/>
     </pack>
 
     <!-- Pack: CouchDB configuration -->
-    <pack id="pack.couchdb.configuration" name="CouchDB initial data import" required="no">
-      <description>CouchDB MUST be installed in advance</description>
+    <pack id="pack.couchdb.configuration" name="DB initialization(with working CouchDB)" required="no">
+      <description>DB initialization</description>
 
       <!-- Import configuration scripts -->
       <file src="setup/couchdb/bjornloka/target/bjornloka.jar" targetdir="$INSTALL_PATH/setup/couchdb" />
       <fileset dir="setup/couchdb" targetdir="$INSTALL_PATH/setup/couchdb">
-        <include name="**"/>
-        <exclude name="bjornloka/**" />
+        <include name="initial_import/*" />
       </fileset>
-     
+
       <!-- Import initial data -->
-      <executable targetfile="$INSTALL_PATH/setup/couchdb/bjornloka.jar" stage="postinstall" 
+      <executable targetfile="$INSTALL_PATH/setup/couchdb/bjornloka.jar" stage="postinstall"
         type="jar" keep="true">
         <args>
           <arg value="${db.couchdb.host}" />
@@ -167,10 +170,10 @@
           <arg value="$INSTALL_PATH/setup/couchdb/initial_import/archive_init.dump" />
         </args>
       </executable>
-      
+
       <!-- Create CouchDB setting file-->
-      <file src="setup/installer/tomcat/app-server-couchdb.properties" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
-      <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-couchdb.properties"/>
+      <file src="setup/installer/tomcat/app-server-core.properties" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
+      <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-core.properties"/>
     </pack>
 
 
@@ -178,7 +181,7 @@
     <pack id="pack.solr" name="Solr" required="no" predefined="no">
       <description>Search engine</description>
       <depends packname="Tomcat" />
-      
+
       <!-- Deploy WAR file -->
       <file src="solr/target/solr.war" targetdir="$INSTALL_PATH/${TOMCAT}/webapps" />
 
