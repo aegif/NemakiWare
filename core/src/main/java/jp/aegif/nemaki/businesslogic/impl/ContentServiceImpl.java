@@ -21,7 +21,6 @@
  ******************************************************************************/
 package jp.aegif.nemaki.businesslogic.impl;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -34,7 +33,6 @@ import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.Map.Entry;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -63,8 +61,8 @@ import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
-import jp.aegif.nemaki.util.constant.PrincipalId;
 import jp.aegif.nemaki.util.constant.NodeType;
+import jp.aegif.nemaki.util.constant.PrincipalId;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 import jp.aegif.nemaki.util.constant.RenditionKind;
 
@@ -83,7 +81,6 @@ import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.DocumentTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
@@ -421,26 +418,9 @@ public class ContentServiceImpl implements ContentService {
 		return change.getChangeToken();
 	}
 	
-	private Map<String, ContentStream>copyContentStream(ContentStream contentStream){
-		BigInteger length = contentStream.getBigLength();
-		byte[]bytes = readContentStreamToByte(contentStream);
-		
-		ByteArrayInputStream bais1 = new ByteArrayInputStream(bytes);
-		ContentStream attachment = new ContentStreamImpl(contentStream.getFileName(), length, contentStream.getMimeType(), bais1);
-		
-		ByteArrayInputStream bais2 = new ByteArrayInputStream(bytes);
-		ContentStream preview = new ContentStreamImpl(contentStream.getFileName(), length, contentStream.getMimeType(), bais2);
-
-		Map<String, ContentStream> map = new HashMap<String, ContentStream>();
-		map.put("attachment", attachment);
-		map.put("preview", preview);
-		
-		return map;
-	}
-
 	// TODO Create a rendition
 	@Override
-	public Document createDocument(CallContext callContext,
+	public synchronized Document createDocument(CallContext callContext,
 			Properties properties, Folder parentFolder,
 			ContentStream contentStream, VersioningState versioningState,
 			String versionSeriesId) {
@@ -455,16 +435,21 @@ public class ContentServiceImpl implements ContentService {
 			csa == ContentStreamAllowed.ALLOWED && contentStream != null){
 			
 			//Prepare ContentStream(to read it twice)
-			Map<String,ContentStream> contentStreamMap = copyContentStream(contentStream);
+			//Map<String,ContentStream> contentStreamMap = copyContentStream(contentStream);
 			
 			// Create Attachment node
-			String attachmentId = createAttachment(callContext, contentStreamMap.get("attachment"));
+			String attachmentId = createAttachment(callContext, contentStream);
 			d.setAttachmentNodeId(attachmentId);
 
 			// Create Renditions
-			ContentStream previewCS = contentStreamMap.get("preview");
-			if(isPreviewEnabled() && renditionManager.checkConvertible(previewCS.getMimeType())){
-				createPreview(callContext, previewCS, d);
+			if(isPreviewEnabled()){
+				AttachmentNode an = getAttachment(attachmentId);
+				ContentStream previewCS = new ContentStreamImpl(contentStream.getFileName(), contentStream.getBigLength(), contentStream.getMimeType(), an.getInputStream());
+				
+				//ContentStream previewCS = contentStreamMap.get("preview");
+				if(renditionManager.checkConvertible(previewCS.getMimeType())){
+					createPreview(callContext, previewCS, d);
+				}
 			}
 		}
 		
@@ -489,7 +474,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public Document createDocumentFromSource(CallContext callContext,
+	public synchronized Document createDocumentFromSource(CallContext callContext,
 			Properties properties, Folder target, Document original,
 			VersioningState versioningState, List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
@@ -527,22 +512,22 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public Document createDocumentWithNewStream(CallContext callContext,
+	public synchronized Document createDocumentWithNewStream(CallContext callContext,
 			Document original, ContentStream contentStream) {
 		Document copy = buildCopyDocumentWithBasicProperties(callContext,
 				original);
-
-		//Prepare ContentStream(to read it twice)
-		Map<String,ContentStream> contentStreamMap = copyContentStream(contentStream);
 		
 		//Attachment
-		String attachmentId = createAttachment(callContext, contentStreamMap.get("attachment"));
+		String attachmentId = createAttachment(callContext, contentStream);
 		copy.setAttachmentNodeId(attachmentId);
 		
 		//Rendition
-		ContentStream previewCS = contentStreamMap.get("preview");
-		if(isPreviewEnabled() && renditionManager.checkConvertible(previewCS.getMimeType())){
-			createPreview(callContext, contentStreamMap.get("preview"), copy);
+		if(isPreviewEnabled()){
+			AttachmentNode an = getAttachment(attachmentId);
+			ContentStream previewCS = new ContentStreamImpl(contentStream.getFileName(), contentStream.getBigLength(), contentStream.getMimeType(), an.getInputStream());
+			if(renditionManager.checkConvertible(previewCS.getMimeType())){
+				createPreview(callContext, previewCS, copy);
+			}
 		}
 
 		// Set other properties
@@ -562,30 +547,37 @@ public class ContentServiceImpl implements ContentService {
 		return result;
 	}
 	
-	public Document replacePwc(CallContext callContext, Document originalPwc, ContentStream contentStream){
-		//Prepare ContentStream(to read it twice)
-		Map<String,ContentStream> contentStreamMap = copyContentStream(contentStream);
-				
+	public synchronized Document replacePwc(CallContext callContext, Document originalPwc, ContentStream contentStream){
 		//Update attachment contentStream
-		AttachmentNode attachment = contentDaoService.getAttachment(originalPwc.getAttachmentNodeId());
-		contentDaoService.updateAttachment(attachment, contentStreamMap.get("attachment"));
+		AttachmentNode an = contentDaoService.getAttachment(originalPwc.getAttachmentNodeId());
+		contentDaoService.updateAttachment(an, contentStream);
 		
 		//Update rendition contentStream
-		ContentStream previewCS = contentStreamMap.get("preview");		
-		if(isPreviewEnabled() && renditionManager.checkConvertible(previewCS.getMimeType())){
-			List<String> renditionIds = originalPwc.getRenditionIds();
-			if(CollectionUtils.isNotEmpty(renditionIds)){
-				for(String renditionId : renditionIds){
-					Rendition rd = contentDaoService.getRendition(renditionId);
-					if(RenditionKind.CMIS_PREVIEW.equals(rd.getKind())){
-						rd.setInputStream(previewCS.getStream());
-						rd.setLength(previewCS.getLength());
-						rd.setMimetype(previewCS.getMimeType());
+		
+		if(isPreviewEnabled()){
+			ContentStream previewCS = new ContentStreamImpl(contentStream.getFileName(), contentStream.getBigLength(), contentStream.getMimeType(), an.getInputStream());
+			
+			if(renditionManager.checkConvertible(previewCS.getMimeType())){
+				List<String> renditionIds = originalPwc.getRenditionIds();
+				if(CollectionUtils.isNotEmpty(renditionIds)){
+					List<String> removedRenditionIds = new ArrayList<String>();
+			
+					//Create preview
+					for(String renditionId : renditionIds){
+						Rendition rd = contentDaoService.getRendition(renditionId);
+						if(RenditionKind.CMIS_PREVIEW.equals(rd.getKind())){
+							removedRenditionIds.add(renditionId);
+							createPreview(callContext, previewCS, originalPwc);
+						}
 					}
+					
+					//Update reference to preview ID
+					renditionIds.removeAll(removedRenditionIds);
+					originalPwc.setRenditionIds(renditionIds);
 				}
 			}
 		}
-
+		
 		//Modify signature of pwc
 		setSignature(callContext, originalPwc);
 		
@@ -599,7 +591,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public Document checkOut(CallContext callContext, String objectId,
+	public synchronized Document checkOut(CallContext callContext, String objectId,
 			ExtensionsData extension) {
 		Document latest = getDocument(objectId);
 		Document pwc = buildCopyDocumentWithBasicProperties(callContext, latest);
@@ -633,7 +625,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public void cancelCheckOut(CallContext callContext, String objectId,
+	public synchronized void cancelCheckOut(CallContext callContext, String objectId,
 			ExtensionsData extension) {
 		Document pwc = getDocument(objectId);
 		VersionSeries vs = getVersionSeries(pwc);
@@ -656,7 +648,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public Document checkIn(CallContext callContext, Holder<String> objectId,
+	public synchronized Document checkIn(CallContext callContext, Holder<String> objectId,
 			Boolean major, Properties properties, ContentStream contentStream,
 			String checkinComment, List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
@@ -839,7 +831,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public Folder createFolder(CallContext callContext, Properties properties,
+	public synchronized Folder createFolder(CallContext callContext, Properties properties,
 			Folder parentFolder) {
 		Folder f = new Folder();
 		setBaseProperties(callContext, properties, f, parentFolder.getId());
@@ -873,7 +865,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public Relationship createRelationship(CallContext callContext,
+	public synchronized Relationship createRelationship(CallContext callContext,
 			Properties properties, List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces,
@@ -898,7 +890,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public Policy createPolicy(CallContext callContext, Properties properties,
+	public synchronized Policy createPolicy(CallContext callContext, Properties properties,
 			List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces,
@@ -923,7 +915,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public Item createItem(CallContext callContext, Properties properties,
+	public synchronized Item createItem(CallContext callContext, Properties properties,
 			String folderId, List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces,
@@ -1167,7 +1159,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public Content updateProperties(CallContext callContext,
+	public synchronized Content updateProperties(CallContext callContext,
 			Properties properties, Content content) {
 
 		Content modified = modifyProperties(callContext, properties, content);
@@ -1181,7 +1173,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public Content update(Content content) {
+	public synchronized Content update(Content content) {
 		Content result = null;
 
 		if (content instanceof Document) {
@@ -1227,7 +1219,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public void move(Content content, Folder target) {
+	public synchronized void move(Content content, Folder target) {
 		content.setParentId(target.getId());
 		String uniqueName = buildUniqueName(content.getName(), target.getId(),
 				null);
@@ -1239,7 +1231,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public void applyPolicy(CallContext callContext, String policyId,
+	public synchronized void applyPolicy(CallContext callContext, String policyId,
 			String objectId, ExtensionsData extension) {
 		Policy policy = getPolicy(policyId);
 		List<String> ids = policy.getAppliedIds();
@@ -1253,7 +1245,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public void removePolicy(CallContext callContext, String policyId,
+	public synchronized void removePolicy(CallContext callContext, String policyId,
 			String objectId, ExtensionsData extension) {
 		Policy policy = getPolicy(policyId);
 		List<String> ids = policy.getAppliedIds();
@@ -1270,7 +1262,7 @@ public class ContentServiceImpl implements ContentService {
 	 * Delete a Content.
 	 */
 	@Override
-	public void delete(CallContext callContext, String objectId,
+	public synchronized void delete(CallContext callContext, String objectId,
 			Boolean deletedWithParent) {
 		Content content = getContent(objectId);
 
@@ -1286,20 +1278,20 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public void deleteAttachment(CallContext callContext, String attachmentId) {
+	public synchronized void deleteAttachment(CallContext callContext, String attachmentId) {
 		createAttachmentArchive(callContext, attachmentId);
 		contentDaoService.delete(attachmentId);
 	}
 
 	@Override
-	public void deleteContentStream(CallContext callContext,
+	public synchronized void deleteContentStream(CallContext callContext,
 			Holder<String> objectId) {
 		// TODO Auto-generated method stub
 
 	}
 
 	@Override
-	public void deleteDocument(CallContext callContext, String objectId,
+	public synchronized void deleteDocument(CallContext callContext, String objectId,
 			Boolean allVersions, Boolean deleteWithParent) {
 		Document document = (Document) getContent(objectId);
 
@@ -1349,7 +1341,7 @@ public class ContentServiceImpl implements ContentService {
 	// deletedWithParent flag controls whether it's deleted with the parent all
 	// together.
 	@Override
-	public List<String> deleteTree(CallContext callContext, String folderId,
+	public synchronized List<String> deleteTree(CallContext callContext, String folderId,
 			Boolean allVersions, Boolean continueOnFailure,
 			Boolean deletedWithParent){
 		List<String> failureIds = new ArrayList<String>();
@@ -1432,7 +1424,7 @@ public class ContentServiceImpl implements ContentService {
 		return contentDaoService.createAttachment(a, contentStream);
 	}
 
-	private void createPreview(CallContext callContext,
+	private String createPreview(CallContext callContext,
 			ContentStream contentStream, Document document) {
 		
 		Rendition rendition = new Rendition();
@@ -1446,7 +1438,7 @@ public class ContentServiceImpl implements ContentService {
 		setSignature(callContext, rendition);
 		if(converted == null){
 			//TODO logging
-			return;
+			return null;
 		}else{
 			String renditionId = contentDaoService.createRendition(rendition, converted);
 			List<String> renditionIds = document.getRenditionIds();
@@ -1455,6 +1447,8 @@ public class ContentServiceImpl implements ContentService {
 			}
 			
 			document.getRenditionIds().add(renditionId);
+			
+			return renditionId;
 		}
 		
 	}
@@ -1466,7 +1460,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 	
 	@Override
-	public void appendAttachment(CallContext callContext,
+	public synchronized void appendAttachment(CallContext callContext,
 			Holder<String> objectId, Holder<String> changeToken,
 			ContentStream contentStream, boolean isLastChunk,
 			ExtensionsData extension) {
@@ -1822,6 +1816,11 @@ public class ContentServiceImpl implements ContentService {
 	// ///////////////////////////////////////
 	private String buildUniqueName(String originalName, String folderId,
 			String existingId) {
+		boolean bun = propertyManager.readBoolean(PropertyKey.CAPABILITY_EXTENDED_BUILD_UNIQUE_NAME);
+		if(!bun){
+			return originalName;
+		}
+		
 		List<Content> children = getChildren(folderId);
 
 		List<String> conflicts = new ArrayList<String>();

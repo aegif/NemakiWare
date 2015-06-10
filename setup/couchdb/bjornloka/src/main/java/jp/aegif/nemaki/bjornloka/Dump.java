@@ -2,6 +2,7 @@ package jp.aegif.nemaki.bjornloka;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.text.SimpleDateFormat;
@@ -13,14 +14,19 @@ import java.util.List;
 import java.util.Map;
 
 import jp.aegif.nemaki.bjornloka.model.Entry;
+import jp.aegif.nemaki.bjornloka.util.Indicator;
 
 import org.ektorp.AttachmentInputStream;
 import org.ektorp.CouchDbConnector;
+import org.ektorp.ViewQuery;
+import org.ektorp.ViewResult;
+import org.ektorp.ViewResult.Row;
 
 import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 public class Dump {
@@ -59,6 +65,13 @@ public class Dump {
 		} catch (Exception e) {
 			// do nothing
 		}
+		
+		if (!omitTimestamp) {
+			String timestamp = getCurrentDateString();
+			String newFilePath = file.getAbsolutePath() + "_" + timestamp;
+			file = null;
+			file = new File(newFilePath);
+		}
 
 		// Execute dumping
 		try {
@@ -75,38 +88,45 @@ public class Dump {
 			JsonMappingException, IOException {
 		CouchDbConnector connector = CouchFactory.createCouchDbConnector(host,
 				port, repositoryId);
-
+		
 		List<String> docIds = connector.getAllDocIds();
 
-		// Retrieve all data as json
-		List<Entry> entries = new ArrayList<Entry>();
-		for (String docId : docIds) {
-			InputStream is = connector.getAsStream(docId);
-			ObjectNode document = new ObjectMapper().readValue(is,
-					ObjectNode.class);
-
-			Entry entry = new Entry();
-			entry.setDocument(document);
-			entry.setAttachments(getAttachments(connector, document));
-
-			entries.add(entry);
-
+		//TEST
+		try {
+			file.createNewFile();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
 		}
+		
+		Indicator indicator = new Indicator(docIds.size());
 
-		// Write
-		if (!omitTimestamp) {
-			String timestamp = getCurrentDateString();
-			String newFilePath = file.getAbsolutePath() + "_" + timestamp;
-			file = null;
-			file = new File(newFilePath);
+		int unit = 500;
+		int turn = docIds.size() / unit;
+		System.out.println("Writing to " + file.getAbsolutePath() + " ...");
+		for(int i=0; i <= turn ; i++){
+			int toIndex = (unit*(i+1) > docIds.size()) ? docIds.size() : unit*(i+1);
+
+			List<String> keys = docIds.subList(i*unit, toIndex);
+			ViewQuery query = new ViewQuery().allDocs().includeDocs(true).keys(keys);
+			List<ObjectNode> results = connector.queryView(query, ObjectNode.class);
+			
+			List<Entry> entries = new ArrayList<Entry>();
+			for(ObjectNode document : results){
+				Entry entry = new Entry();
+				entry.setDocument(document);
+				entry.setAttachments(getAttachments(connector, document));
+				entries.add(entry);
+				indicator.indicate();
+			}
+			new ObjectMapper().writerWithDefaultPrettyPrinter().writeValue(new FileOutputStream(file, true), entries);
 		}
-		new ObjectMapper().writeValue(file, entries);
-
+		
 		return file.getAbsolutePath();
 	}
 
 	private static Map<String, Map<String, Object>> getAttachments(
-			CouchDbConnector connector, ObjectNode o) throws IOException {
+			CouchDbConnector connector, JsonNode o) throws IOException {
 		String docId = o.get(StringPool.FIELD_ID).textValue();
 		JsonNode _attachments = o.get(StringPool.FIELD_ATTACHMENTS);
 

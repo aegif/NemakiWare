@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
+import jp.aegif.nemaki.bjornloka.util.Indicator;
+
 import org.ektorp.AttachmentInputStream;
 import org.ektorp.CouchDbConnector;
 import org.ektorp.CouchDbInstance;
@@ -85,7 +87,7 @@ public class Load {
 		CouchDbConnector connector = CouchFactory.createCouchDbConnector(host, port, repositoryId);
 
 		//CouchDB documents(without attachments)
-		List<JsonNode> documents = new ArrayList<JsonNode>();
+		List<ObjectNode> documents = new ArrayList<ObjectNode>();
 		//All attachments
 		Map<String,ObjectNode> payloads = new HashMap<String, ObjectNode>();
 
@@ -117,13 +119,30 @@ public class Load {
 		}
 
 		//Load documents to DB
-		List<DocumentOperationResult> documentsResult = connector.executeAllOrNothing(documents);
+		System.out.println("Loading metadata: START");
+		
+		//TEST
+		List<DocumentOperationResult> documentsResult = new ArrayList<DocumentOperationResult>();
+		int unit = 500;
+		int turn = documents.size() / unit;
+		Indicator metadataIndicator = new Indicator(documents.size());
+		for(int i=0; i <= turn ; i++){
+			int toIndex = (unit*(i+1) > documents.size()) ? documents.size() : unit*(i+1);
+			List<ObjectNode> subList = documents.subList(i*unit, toIndex);
+			documentsResult.addAll(connector.executeAllOrNothing(subList));
+			
+			metadataIndicator.indicate(unit);
+		}
+		
 		if(documentsResult != null && documentsResult.size() > 0){
 			System.err.println("Documents are not imported because of some error.");
 			return false;
 		}
+		System.out.println("Loading metadata: END");
 
 		//Load all attachments to DB
+		System.out.println("Loading attachments: START");
+		Indicator attachmentIndicator = new Indicator(payloads.size());
 		for(Entry<String, ObjectNode> entry : payloads.entrySet()){
 			ObjectNode attachments = entry.getValue();
 			Iterator<String> it = attachments.fieldNames();
@@ -158,10 +177,12 @@ public class Load {
 					e.printStackTrace();
 					return false;
 				}
-
 			}
+			
+			attachmentIndicator.indicate();
 		}
 
+		System.out.println("Loading attachments: END");
 		return true;
 	}
 
