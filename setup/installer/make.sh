@@ -58,7 +58,6 @@ USER_INPUT_SPEC_MODIFIED=$SCRIPT_HOME/user-input-spec_modified.xml
 java -cp $SCRIPT_HOME/install-util/target/install-util.jar jp.aegif.nemaki.installer.ProcessTemplate $USER_INPUT_SPEC $PROPERTIES $PROPERTIES_CUSTOM
 
 #Prepare WAR
-TEST_P="-P product"
 mvn -f $SOURCE_HOME/core/pom.xml clean
 mvn -f $SOURCE_HOME/core/pom.xml package $PROFILE_PRODUCT
 mvn -f $SOURCE_HOME/solr/pom.xml clean

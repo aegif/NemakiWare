@@ -14,9 +14,7 @@
                 <value>classpath:nemakiware-basetype.properties</value>
                 <value>classpath:nemakiware-property.properties</value>
 				<value>classpath*:custom-nemakiware.properties</value>
-				<value>classpath*:app-server-couchdb.properties</value>
-				<value>classpath*:app-server-solr.properties</value>
-				<value>classpath*:app-server-general.properties</value>
+				<value>classpath*:app-server-core.properties</value>
 			</list>
 		</property>
 	</bean>

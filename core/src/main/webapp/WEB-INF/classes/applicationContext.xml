@@ -42,7 +42,7 @@
 		<property name="targetMethod"><value>initLogging</value></property>
 		<property name="arguments">
 			<list>
-				<value>${log.config.path}</value>
+				<value>classpath:${log.config.path}</value>
 			</list>
 		</property>
     </bean>
