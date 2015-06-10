@@ -21,21 +21,13 @@
  ******************************************************************************/
 package jp.aegif.nemaki.tracker;
 
-import static org.apache.solr.handler.extraction.ExtractingParams.LITERALS_PREFIX;
 import static org.apache.solr.handler.extraction.ExtractingParams.UNKNOWN_FIELD_PREFIX;
 
-import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -43,43 +35,34 @@ import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Set;
-import java.util.TimeZone;
 
 import jp.aegif.nemaki.NemakiCoreAdminHandler;
 import jp.aegif.nemaki.util.Constant;
 import jp.aegif.nemaki.util.PropertyKey;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.StringPool;
+import jp.aegif.nemaki.util.NemakiTokenManager;
 import jp.aegif.nemaki.util.impl.PropertyManagerImpl;
 
 import org.apache.chemistry.opencmis.client.api.ChangeEvent;
 import org.apache.chemistry.opencmis.client.api.ChangeEvents;
-import org.apache.chemistry.opencmis.client.api.CmisObject;
 import org.apache.chemistry.opencmis.client.api.OperationContext;
-import org.apache.chemistry.opencmis.client.api.SecondaryType;
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.client.api.SessionFactory;
-import org.apache.chemistry.opencmis.client.runtime.ObjectIdImpl;
 import org.apache.chemistry.opencmis.client.runtime.SessionFactoryImpl;
-import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.SessionParameter;
-import org.apache.chemistry.opencmis.commons.data.ContentStream;
-import org.apache.chemistry.opencmis.commons.data.ObjectParentData;
-import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BindingType;
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.chemistry.opencmis.commons.spi.CmisBinding;
 import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.request.AbstractUpdateRequest;
-import org.apache.solr.client.solrj.request.ContentStreamUpdateRequest;
 import org.apache.solr.client.solrj.request.UpdateRequest;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrInputDocument;
-import org.apache.solr.common.params.ModifiableSolrParams;
 import org.apache.solr.core.CloseHook;
 import org.apache.solr.core.SolrCore;
 
@@ -91,6 +74,8 @@ import org.apache.solr.core.SolrCore;
  */
 public class CoreTracker extends CloseHook {
 
+	private static final Object LOCK = new Object();
+
 	Logger logger = Logger.getLogger(CoreTracker.class);
 
 	NemakiCoreAdminHandler adminHandler;
@@ -98,37 +83,8 @@ public class CoreTracker extends CloseHook {
 	SolrServer repositoryServer;
 	SolrServer tokenServer;
 	Session cmisSession;
-
-	private final String FIELD_ID = "id";
-	private final String FIELD_NAME = "name";
-	private final String FIELD_DESCRIPTION = "cmis_description";
-	private final String FIELD_BASE_TYPE = "basetype";
-	private final String FIELD_OBJECT_TYPE = "objecttype";
-	private final String FIELD_SECONDARY_OBJECT_TYPE_IDS = "secondary_object_type_ids";
-	private final String FIELD_CREATED = "created";
-	private final String FIELD_CREATOR = "creator";
-	private final String FIELD_MODIFIED = "modified";
-	private final String FIELD_MODIFIER = "modifier";
-
-	private final String FIELD_CONTENT_ID = "content_id";
-	private final String FIELD_CONTENT_NAME = "content_name";
-	private final String FIELD_CONTENT_MIMETYPE = "content_mimetype";
-	private final String FIELD_CONTENT_LENGTH = "content_length";
-	private final String FIELD_IS_MAJOR_VEERSION = "is_major_version";
-	private final String FIELD_IS_PRIVATE_WORKING_COPY = "is_pwc";
-	private final String FIELD_IS_CHECKEDOUT = "is_checkedout";
-	private final String FIELD_CHECKEDOUT_BY = "checkedout_by";
-	private final String FIELD_CHECKEDOUT_ID = "checkedout_id";
-	private final String FIELD_CHECKIN_COMMENT = "checkein_comment";
-	private final String FIELD_VERSION_LABEL = "version_label";
-	private final String FIELD_VERSION_SERIES_ID = "version_series_id";
-
-	private final String FIELD_PARENT_ID = "parent_id";
-	private final String FIELD_PATH = "path";
-
-	private final String FIELD_TOKEN = "change_token";
-
-	private final String separator = ".";
+	CmisBinding cmisBinding;
+	NemakiTokenManager nemakiTokenManager;
 
 	public CoreTracker(NemakiCoreAdminHandler adminHandler, SolrCore core,
 			SolrServer repositoryServer, SolrServer tokenServer) {
@@ -138,8 +94,9 @@ public class CoreTracker extends CloseHook {
 		this.core = core;
 		this.repositoryServer = repositoryServer;
 		this.tokenServer = tokenServer;
+		this.nemakiTokenManager = new NemakiTokenManager();
 	}
-
+	
 	public void setupCmisSession() {
 		PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
 
@@ -154,7 +111,8 @@ public class CoreTracker extends CloseHook {
 		String country = pm.readValue(PropertyKey.CMIS_LOCALE_COUNTRY);
 		String language = pm.readValue(PropertyKey.CMIS_LOCALE_LANGUAGE);
 		String user = pm.readValue(PropertyKey.CMIS_PRINCIPAL_ADMIN_ID);
-		String password = pm.readValue(PropertyKey.CMIS_PRINCIPAL_ADMIN_PASSWORD);
+		String password = pm
+				.readValue(PropertyKey.CMIS_PRINCIPAL_ADMIN_PASSWORD);
 
 		SessionFactory f = SessionFactoryImpl.newInstance();
 		Map<String, String> parameter = new HashMap<String, String>();
@@ -192,19 +150,31 @@ public class CoreTracker extends CloseHook {
 				+ "RepositoryService?wsdl");
 		parameter.put(SessionParameter.WEBSERVICES_VERSIONING_SERVICE, url
 				+ "VersioningService?wsdl");
-
-		// create session
+		
+			//Auth token
+			Boolean authTokenEnabled = 
+					Boolean.valueOf(pm.readValue(PropertyKey.NEMAKI_CAPABILITY_EXTENDED_AUTH_TOKEN));
+			if(authTokenEnabled){
+				parameter.put(SessionParameter.AUTHENTICATION_PROVIDER_CLASS, "jp.aegif.nemaki.util.NemakiAuthenticationProvider");
+				String authToken = nemakiTokenManager.getOrRegister(user, password);
+				parameter.put(Constant.AUTH_TOKEN, authToken);
+				parameter.put(Constant.AUTH_TOKEN_APP, "ui");
+			}
+		
 		try {
+			// create session
 			cmisSession = f.createSession(parameter);
-			OperationContext operationContext = cmisSession.createOperationContext(null,
-					false, false, false, null, null, false, null, true, 100);
+			OperationContext operationContext = cmisSession
+					.createOperationContext(null, false, false, false, null,
+							null, false, null, true, 100);
 			cmisSession.setDefaultContext(operationContext);
 		} catch (Exception e) {
 			logger.error("Failed to create a session to CMIS server", e);
 		}
 	}
 
-	private String getCmisUrl(String protocol, String host, String port, String context, String wsEndpoint){
+	private String getCmisUrl(String protocol, String host, String port,
+			String context, String wsEndpoint) {
 		try {
 			URL url = new URL(protocol, host, Integer.parseInt(port), "");
 			return url.toString() + "/" + context + "/" + wsEndpoint + "/";
@@ -233,18 +203,24 @@ public class CoreTracker extends CloseHook {
 	 * Initialize a specified Solr core
 	 */
 	public void initCore() {
-		try {
-			// Initialize all documents
-			repositoryServer.deleteByQuery("*:*");
-			repositoryServer.commit();
-			logger.info(core.getName() + ":Successfully initialized!");
+		synchronized (LOCK) {
+			if(!isConnectionSetup()){
+				setupCmisSession();
+			}
+			
+			try {
+				// Initialize all documents
+				repositoryServer.deleteByQuery("*:*");
+				repositoryServer.commit();
+				logger.info(core.getName() + ":Successfully initialized!");
 
-			storeLatestChangeToken("");
+				storeLatestChangeToken("");
 
-		} catch (SolrServerException e) {
-			logger.error(core.getName() + ":Initialization failed!", e);
-		} catch (IOException e) {
-			logger.error(core.getName() + ":Initialization failed!", e);
+			} catch (SolrServerException e) {
+				logger.error(core.getName() + ":Initialization failed!", e);
+			} catch (IOException e) {
+				logger.error(core.getName() + ":Initialization failed!", e);
+			}
 		}
 	}
 
@@ -254,65 +230,93 @@ public class CoreTracker extends CloseHook {
 	 * @param trackingType
 	 */
 	public void index(String trackingType) {
-		ChangeEvents changeEvents = getCmisChangeLog(trackingType);
-		List<ChangeEvent> events = changeEvents.getChangeEvents();
+		synchronized (LOCK) {
+			if(!isConnectionSetup()){
+				setupCmisSession();
+			}
+			
+			ChangeEvents changeEvents = getCmisChangeLog(trackingType);
+			List<ChangeEvent> events = changeEvents.getChangeEvents();
 
-		// After 2nd crawling, discard the first item
-		// Because the specs say that it's included in the results
-		String token = readLatestChangeToken();
+			// After 2nd crawling, discard the first item
+			// Because the specs say that it's included in the results
+			String token = readLatestChangeToken();
 
-		if (!StringUtils.isEmpty(token)) {
-			if (!org.apache.commons.collections.CollectionUtils.isEmpty(events)) {
-				events.remove(0);
+			if (!StringUtils.isEmpty(token)) {
+				if (!org.apache.commons.collections.CollectionUtils
+						.isEmpty(events)) {
+					events.remove(0);
+				}
+			}
+
+			if (events.isEmpty())
+				return;
+
+			// Read MIME-Type filtering
+			PropertyManager pm = new PropertyManagerImpl(
+					StringPool.PROPERTIES_NAME);
+			boolean mimeTypeFilter = false;
+			new ArrayList<String>();
+			boolean fulltextEnabled = Boolean.TRUE.toString().equalsIgnoreCase(
+					pm.readValue(PropertyKey.SOLR_TRACKING_FULLTEXT_ENABLED));
+
+			if (fulltextEnabled) {
+				String _filter = pm
+						.readValue(PropertyKey.SOLR_TRACKING_MIMETYPE_FILTER_ENABLED);
+				mimeTypeFilter = Boolean.TRUE.toString().equalsIgnoreCase(
+						_filter);
+				if (mimeTypeFilter) {
+					pm
+							.readValues(PropertyKey.SOLR_TRACKING_MIMETYPE);
+				}
+			}
+
+			// Extract only the last events of each objectId
+			List<ChangeEvent> list = extractChangeEvent(events);
+
+			PropertyManager propMgr = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
+			int numberOfThread = Integer.valueOf(propMgr.readValue(PropertyKey.SOLR_TRACKING_NUMBER_OF_THREAD));
+			int numberPerThread = list.size()/ numberOfThread;
+			if(list.size() < numberOfThread){
+				numberOfThread = list.size();
+				numberPerThread = 1;
+			}
+			
+			for (int i = 0; i <= numberOfThread; i++) {
+				int toIndex = (numberPerThread * (i + 1) > list.size()) ? list
+						.size() : numberPerThread * (i + 1);
+
+				List<ChangeEvent> listPerThread = list.subList(numberPerThread
+						* i, toIndex);
+				Registration registration = new Registration(cmisSession, core,
+						repositoryServer, listPerThread);
+				Thread t = new Thread(registration);
+				t.start();
+				try {
+					t.join();
+				} catch (InterruptedException e) {
+					logger.error(e);
+				}
+			}
+
+			// Save the latest token
+			storeLatestChangeToken(changeEvents.getLatestChangeLogToken());
+			
+			//In case of FUll mode, repeat until indexing all change logs
+			if(Constant.MODE_FULL.equals(trackingType)){
+				index(Constant.MODE_FULL);
 			}
 		}
-
-		if (events.isEmpty())
-			return;
-
-		//Read MIME-Type filtering
-		PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
-		boolean mimeTypeFilter = false;
-		List<String> allowedMimeTypeFilter = new ArrayList<String>();
-		boolean fulltextEnabled = Boolean.TRUE.toString().equalsIgnoreCase(pm.readValue(PropertyKey.SOLR_TRACKING_FULLTEXT_ENABLED));
-
-		if(fulltextEnabled){
-			String _filter = pm.readValue(PropertyKey.SOLR_TRACKING_MIMETYPE_FILTER_ENABLED);
-			mimeTypeFilter = Boolean.TRUE.toString().equalsIgnoreCase(_filter);
-			if(mimeTypeFilter){
-				allowedMimeTypeFilter = pm.readValues(PropertyKey.SOLR_TRACKING_MIMETYPE);
-			}
-		}
-
-		// Extract only the last events of each objectId
-		List<ChangeEvent> list = extractChangeEvent(events);
-		for (ChangeEvent ce : list) {
-			switch (ce.getChangeType()) {
-			case CREATED:
-				registerSolrDocument(ce, fulltextEnabled, mimeTypeFilter, allowedMimeTypeFilter);
-				break;
-			case UPDATED:
-				registerSolrDocument(ce, fulltextEnabled, mimeTypeFilter, allowedMimeTypeFilter);
-				break;
-			case DELETED:
-				deleteSolrDocument(ce);
-				continue;
-			default:
-				break;
-			}
-		}
-
-		// Save the latest token
-		storeLatestChangeToken(changeEvents.getLatestChangeLogToken());
 	}
 
 	/**
 	 * Get the last change token stored in Solr
+	 * 
 	 * @return
 	 */
-	private String readLatestChangeToken(){
+	private String readLatestChangeToken() {
 		SolrQuery solrQuery = new SolrQuery();
-		solrQuery.setQuery(FIELD_ID + ":" + FIELD_TOKEN);
+		solrQuery.setQuery(Constant.FIELD_ID + ":" + Constant.FIELD_TOKEN);
 
 		QueryResponse resp = null;
 		try {
@@ -325,9 +329,9 @@ public class CoreTracker extends CloseHook {
 		if (resp != null && resp.getResults() != null
 				&& resp.getResults().getNumFound() != 0) {
 			SolrDocument doc = resp.getResults().get(0);
-			latestChangeToken = (String)doc.get(FIELD_TOKEN);
+			latestChangeToken = (String) doc.get(Constant.FIELD_TOKEN);
 
-		}else{
+		} else {
 			logger.error("Failed to read the latest change token in Solr!");
 		}
 
@@ -336,13 +340,14 @@ public class CoreTracker extends CloseHook {
 
 	/**
 	 * Store the last change token in Solr
+	 * 
 	 * @return
 	 */
-	private void storeLatestChangeToken(String token){
+	private void storeLatestChangeToken(String token) {
 
 		Map<String, Object> map = new HashMap<String, Object>();
-		map.put(FIELD_ID, FIELD_TOKEN);
-		map.put(FIELD_TOKEN, token);
+		map.put(Constant.FIELD_ID, Constant.FIELD_TOKEN);
+		map.put(Constant.FIELD_TOKEN, token);
 
 		AbstractUpdateRequest req = buildUpdateRequest(map);
 
@@ -362,17 +367,25 @@ public class CoreTracker extends CloseHook {
 	 * @return
 	 */
 	private ChangeEvents getCmisChangeLog(String trackingType) {
-		PropertyManager cmisMgr = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
+		PropertyManager propMgr = new PropertyManagerImpl(
+				StringPool.PROPERTIES_NAME);
 
 		String _latestToken = readLatestChangeToken();
-		String latestToken = (trackingType.equals(Constant.MODE_FULL) || StringUtils
-				.isEmpty(_latestToken)) ? null : _latestToken;
+		String latestToken = (StringUtils.isEmpty(_latestToken)) ? null : _latestToken;
 
-		String _numItems = cmisMgr.readValue(PropertyKey.CMIS_CHANGELOG_ITEMS);
-		long numItems = (StringUtils.isEmpty(_numItems)) ? 100 : Long.valueOf(_numItems);
+		long _numItems = 0;
+		if(Constant.MODE_DELTA.equals(trackingType)){
+			_numItems = Long.valueOf(propMgr
+					.readValue(PropertyKey.CMIS_CHANGELOG_ITEMS_DELTA)); 
+		}else if(Constant.MODE_FULL.equals(trackingType)){
+			_numItems = Long.valueOf(propMgr
+					.readValue(PropertyKey.CMIS_CHANGELOG_ITEMS_FULL)); 
+		}
+		
+		long numItems = (-1 == _numItems) ? Long.MAX_VALUE : Long
+				.valueOf(_numItems);
 
-		ChangeEvents changeEvents = cmisSession.getContentChanges(latestToken,
-				false, numItems);
+		ChangeEvents changeEvents = cmisSession.getContentChanges(latestToken,false, numItems);
 
 		// No need for Sorting
 		// (Specification requires they are returned by ASCENDING)
@@ -406,167 +419,12 @@ public class CoreTracker extends CloseHook {
 	}
 
 	/**
-	 * Create/Update Solr document
-	 *
-	 * @param ce
-	 * @param fulltextEnabled TODO
-	 */
-	private void registerSolrDocument(ChangeEvent ce, boolean fulltextEnabled, boolean mimeTypeFilter, List<String>allowedMimeTypes) {
-		CmisObject obj = null;
-		try {
-			obj = cmisSession.getObject(ce.getObjectId());
-		} catch (Exception e) {
-			logger.warn("[objectId=" + ce.getObjectId()
-					+ "]object is deleted. Skip reading a change event.");
-			return;
-		}
-
-		AbstractUpdateRequest req = null;
-		Map<String, Object> map = buildParamMap(obj);
-		switch (obj.getBaseTypeId()) {
-		case CMIS_DOCUMENT:
-			if(fulltextEnabled){
-				String mimeType = (String) map.get(FIELD_CONTENT_MIMETYPE);
-				if(!mimeTypeFilter || CollectionUtils.isNotEmpty(allowedMimeTypes) && allowedMimeTypes.contains(mimeType)){
-						ContentStream cs = cmisSession.getContentStream(new ObjectIdImpl(
-								obj.getId()));
-						req = buildUpdateRequestWithFile(map, cs);
-				}else{
-					req = buildUpdateRequest(map);
-				}
-			}else{
-				req = buildUpdateRequest(map);
-			}
-			
-			break;
-		case CMIS_FOLDER:
-			req = buildUpdateRequest(map);
-			break;
-		default:
-			break;
-		}
-
-		String successMsg = "";
-		String errMsg = "";
-		switch (ce.getChangeType()) {
-		case CREATED:
-			successMsg = "Successfully created";
-			errMsg = "Failed to create";
-			break;
-		case UPDATED:
-			successMsg = "Successfully updated";
-			errMsg = "Failed to update";
-			break;
-		default:
-			break;
-		}
-
-		// Send a request to Solr
-		try {
-			repositoryServer.request(req);
-			logger.info(logPrefix(ce) + successMsg);
-		} catch (Exception e) {
-			logger.error(logPrefix(ce) + errMsg, e);
-		}
-	}
-
-	/**
-	 * Delete Solr document
-	 *
-	 * @param ce
-	 */
-	private void deleteSolrDocument(ChangeEvent ce) {
-		try {
-			// Check if the SolrDocument exists
-			SolrQuery solrQuery = new SolrQuery();
-			solrQuery.setQuery(FIELD_ID + ":" + ce.getObjectId());
-			QueryResponse resp = repositoryServer.query(solrQuery);
-			if (resp != null && resp.getResults() != null) {
-				if (resp.getResults().getNumFound() == 0) {
-					logger.info(logPrefix(ce)
-							+ "DELETED type change event is skipped because there is no SolrDocument");
-					return;
-				}
-			} else {
-				logger.error(core.getName()
-						+ ":Something wrong in the connection to Solr server");
-			}
-
-			// Delete
-			repositoryServer.deleteById(ce.getObjectId());
-			repositoryServer.commit();
-			logger.info(logPrefix(ce) + "Successfully deleted");
-		} catch (Exception e) {
-			logger.error(logPrefix(ce) + "Failed to ", e);
-		}
-	}
-
-	private String logPrefix(ChangeEvent ce) {
-		return "[objectId=" + ce.getObjectId() + "]";
-	}
-
-	/**
-	 * Build update request with file to Solr
-	 *
-	 * @param content
-	 * @param inputStream
-	 * @return
-	 */
-	// NOTION: SolrCell seems not to accept a capital property name.
-	// For example, "parentId" doesn't work.
-	private AbstractUpdateRequest buildUpdateRequestWithFile(
-			Map<String, Object> map, ContentStream inputStream) {
-		ContentStreamUpdateRequest up = new ContentStreamUpdateRequest(
-				"/update/extract");
-
-		// Set File Stream
-		try {
-			File file = convertInputStreamToFile(inputStream.getStream());
-			up.addFile(file, inputStream.getMimeType());
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-
-		// Set field values
-		// NOTION:
-		// Cast to String works on the assumption they are already String
-		// so that ModifiableSolrParams can have an argument Map<String,
-		// String[]>.
-		// Any other better way?
-		Map<String, String[]> m = new HashMap<String, String[]>();
-		// for a field with capital letters
-		m.put("lowernames", new String[] { "false" });
-		// Ignored(for schema.xml, ignoring some SolrCell meta fields)
-		m.put(UNKNOWN_FIELD_PREFIX, new String[] { "ignored_" });
-
-		Set<String> keys = map.keySet();
-		Iterator<String> iterator = keys.iterator();
-		while (iterator.hasNext()) {
-			String key = iterator.next();
-			// Multi value
-			Object val = map.get(key);
-			if (val instanceof List<?>) {
-				m.put(LITERALS_PREFIX + key,
-						((List<String>) val).toArray(new String[0]));
-				// Single value
-			} else if (val instanceof String) {
-				String[] _val = { (String) val };
-				m.put(LITERALS_PREFIX + key, _val);
-			}
-		}
-
-		up.setParams(new ModifiableSolrParams(m));
-
-		up.setAction(AbstractUpdateRequest.ACTION.COMMIT, true, true);
-		return up;
-	}
-
-	/**
 	 * Build an update request to Solr without file
 	 *
 	 * @param content
 	 * @return
 	 */
+	//TODO Unify that of Registration class
 	private AbstractUpdateRequest buildUpdateRequest(Map<String, Object> map) {
 		UpdateRequest up = new UpdateRequest();
 		SolrInputDocument sid = new SolrInputDocument();
@@ -587,203 +445,4 @@ public class CoreTracker extends CloseHook {
 		up.setAction(AbstractUpdateRequest.ACTION.COMMIT, true, true);
 		return up;
 	}
-
-	/**
-	 * @param inputStream
-	 * @return
-	 * @throws IOException
-	 */
-	private File convertInputStreamToFile(InputStream inputStream)
-			throws IOException {
-
-		File file = File.createTempFile(
-				String.valueOf(System.currentTimeMillis()), null);
-		try {
-			// write the inputStream to a FileOutputStream
-			OutputStream out = new FileOutputStream(file);
-
-			int read = 0;
-			byte[] bytes = new byte[1024];
-
-			while ((read = inputStream.read(bytes)) != -1) {
-				out.write(bytes, 0, read);
-			}
-			inputStream.close();
-			out.flush();
-			out.close();
-		} catch (IOException e) {
-			System.out.println(e.getMessage());
-		}
-		return file;
-	}
-
-	/**
-	 *
-	 * @param content
-	 * @return
-	 */
-	private Map<String, Object> buildParamMap(CmisObject object) {
-		Map<String, Object> map = new HashMap<String, Object>();
-
-		buildBaseParamMap(map, object);
-
-		// BaseType specific property
-		switch (object.getBaseTypeId()) {
-		case CMIS_DOCUMENT:
-			map.put(FIELD_CONTENT_ID,
-					object.getPropertyValue(PropertyIds.CONTENT_STREAM_ID));
-			map.put(FIELD_CONTENT_NAME, object
-					.getPropertyValue(PropertyIds.CONTENT_STREAM_FILE_NAME));
-			map.put(FIELD_CONTENT_MIMETYPE, object
-					.getPropertyValue(PropertyIds.CONTENT_STREAM_MIME_TYPE));
-			map.put(FIELD_CONTENT_LENGTH,
-					object.getPropertyValue(PropertyIds.CONTENT_STREAM_LENGTH)
-							.toString());
-			map.put(FIELD_VERSION_LABEL,
-					object.getPropertyValue(PropertyIds.VERSION_LABEL));
-			String isMajorVersion = (object
-					.getPropertyValue(PropertyIds.IS_MAJOR_VERSION) == null) ? null
-					: object.getPropertyValue(PropertyIds.IS_MAJOR_VERSION)
-							.toString();
-			map.put(FIELD_IS_MAJOR_VEERSION, isMajorVersion);
-			map.put(FIELD_VERSION_SERIES_ID,
-					object.getPropertyValue(PropertyIds.VERSION_SERIES_ID));
-			String isCheckedOut = (object
-					.getPropertyValue(PropertyIds.IS_VERSION_SERIES_CHECKED_OUT) == null) ? null
-					: object.getPropertyValue(
-							PropertyIds.IS_VERSION_SERIES_CHECKED_OUT)
-							.toString();
-			map.put(FIELD_IS_CHECKEDOUT, isCheckedOut);
-			map.put(FIELD_CHECKEDOUT_ID,
-					object.getPropertyValue(PropertyIds.VERSION_SERIES_CHECKED_OUT_ID));
-			map.put(FIELD_CHECKEDOUT_BY,
-					object.getPropertyValue(PropertyIds.VERSION_SERIES_CHECKED_OUT_BY));
-			map.put(FIELD_CHECKIN_COMMENT,
-					object.getPropertyValue(PropertyIds.CHECKIN_COMMENT));
-			String isPrivateWorkingCopy = (object
-					.getPropertyValue(PropertyIds.IS_PRIVATE_WORKING_COPY) == null) ? null
-					: object.getPropertyValue(
-							PropertyIds.IS_PRIVATE_WORKING_COPY).toString();
-			map.put(FIELD_IS_PRIVATE_WORKING_COPY, isPrivateWorkingCopy);
-
-			ObjectParentData parent= getParent(object);
-			map.put(FIELD_PARENT_ID,
-					parent.getObject().getId());
-			break;
-		case CMIS_FOLDER:
-			map.put(FIELD_PARENT_ID,
-					object.getPropertyValue(PropertyIds.PARENT_ID));
-			map.put(FIELD_PATH, object.getPropertyValue(PropertyIds.PATH));
-		default:
-			break;
-		}
-
-		// SubType & Secondary property
-		buildDynamicParamMap(map, object);
-
-		return map;
-	}
-
-	private void buildBaseParamMap(Map<String, Object> map, CmisObject object) {
-		map.put(FIELD_NAME, object.getName());
-		map.put(FIELD_DESCRIPTION, object.getDescription());
-		map.put(FIELD_ID, object.getId());
-		map.put(FIELD_BASE_TYPE, object.getBaseTypeId().value());
-		map.put(FIELD_OBJECT_TYPE, object.getType().getQueryName());
-		map.put(FIELD_SECONDARY_OBJECT_TYPE_IDS, getSecondaryIds(object));
-		map.put(FIELD_CREATED, getUTC(object.getCreationDate()));
-		map.put(FIELD_CREATOR, object.getCreatedBy());
-		map.put(FIELD_MODIFIED, getUTC(object.getLastModificationDate()));
-		map.put(FIELD_MODIFIER, object.getLastModifiedBy());
-	}
-
-	private List<String> getSecondaryIds(CmisObject object) {
-		List<SecondaryType> secondaryTypes = object.getSecondaryTypes();
-		if (CollectionUtils.isEmpty(secondaryTypes)) {
-			return new ArrayList<String>();
-		} else {
-			List<String> list = new ArrayList<String>();
-			Iterator<SecondaryType> iterator = secondaryTypes.iterator();
-			while (iterator.hasNext()) {
-				list.add(iterator.next().getId());
-			}
-			return list;
-		}
-	}
-
-	/**
-	 * For properties other than those of baseType. They are indexed regardless
-	 * of its "queryable" flag in case the flag is changed later.
-	 *
-	 * @param map
-	 * @param object
-	 */
-	private void buildDynamicParamMap(Map<String, Object> map, CmisObject object) {
-		Map<String, PropertyDefinition<?>> propDefs = object.getType()
-				.getPropertyDefinitions();
-		Map<String, PropertyDefinition<?>> basePropDefs = object.getBaseType()
-				.getPropertyDefinitions();
-
-		for (String propId : propDefs.keySet()) {
-			if (!basePropDefs.containsKey(propId)) {
-				boolean isSecondary = false;
-
-				// Secondary type
-				List<SecondaryType> secs = object.getSecondaryTypes();
-				if (CollectionUtils.isNotEmpty(secs)) {
-					for (SecondaryType sec : secs) {
-						Map<String, PropertyDefinition<?>> secondaryPropDefs = sec
-								.getPropertyDefinitions();
-						// Secondary specific property
-						if (secondaryPropDefs.containsKey(propId)) {
-							String type = "dynamic.property."
-									+ sec.getQueryName() + separator + propId;
-							map.put(type, object.getPropertyValue(propId));
-							isSecondary = true;
-							break;
-						}
-					}
-				}
-
-				// Non-Secondary type
-				if (!isSecondary) {
-					String type = "dynamic.property." + propId;
-					map.put(type, object.getPropertyValue(propId));
-				}
-			}
-		}
-	}
-
-	private ObjectParentData getParent(CmisObject object){
-		List<ObjectParentData> parents =
-		cmisSession
-		.getBinding()
-		.getNavigationService()
-		.getObjectParents(cmisSession.getRepositoryInfo().getId(),
-				object.getId(), null, false, null, null, true, null);
-		return parents.get(0);
-	}
-
-	/**
-	 *
-	 * @param cal
-	 * @return
-	 */
-	private String getUTC(GregorianCalendar cal) {
-		DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
-		df.setTimeZone(TimeZone.getTimeZone("UTC"));
-		String timestamp = df.format(cal.getTime());
-		return timestamp;
-	}
-
-	private String sanitizeUrl(String url) {
-		String end = url.substring(url.length() - 1, url.length() - 1);
-		if (end.equals("/")) {
-			return url;
-		} else {
-			return url + "/";
-		}
-	}
-
-
 }

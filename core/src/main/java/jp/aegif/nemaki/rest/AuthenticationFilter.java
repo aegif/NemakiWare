@@ -41,8 +41,6 @@ import jp.aegif.nemaki.util.constant.PropertyKey;
 import org.apache.commons.codec.binary.Base64;
 import org.mindrot.jbcrypt.BCrypt;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.context.WebApplicationContext;
-import org.springframework.web.context.support.WebApplicationContextUtils;
 
 public class AuthenticationFilter implements Filter {
 
@@ -175,6 +173,9 @@ public class AuthenticationFilter implements Filter {
 		}else if(pathInfo.startsWith("/search-engine")){
 			String solrResourceEnabled = propertyManager.readValue(PropertyKey.REST_SOLR_ENABLED);
 			enabled = TOKEN_FALSE.equals(solrResourceEnabled) ? false : true;
+		}else if(pathInfo.startsWith("/authtoken")){
+			String authtokenResourceEnabled = propertyManager.readValue(PropertyKey.REST_AUTHTOKEN_ENABLED);
+			enabled = TOKEN_FALSE.equals(authtokenResourceEnabled) ? false : true;
 		}else{
 			enabled = false;
 		}

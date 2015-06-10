@@ -22,6 +22,7 @@ package jp.aegif.nemaki.cmis.factory.auth.impl;
 
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
+import jp.aegif.nemaki.cmis.factory.auth.Token;
 import jp.aegif.nemaki.cmis.factory.auth.TokenService;
 import jp.aegif.nemaki.model.User;
 
@@ -43,9 +44,19 @@ public class AuthenticationServiceImpl implements AuthenticationService {
      private TokenService tokenService;
     
      @Override
-     public boolean authenticateUserByToken(String userName, String token){
-          String registeredToken = tokenService.getToken(userName);
-          return StringUtils.isNotEmpty(registeredToken) && registeredToken.equals(token);
+     public boolean authenticateUserByToken(String app, String userName, String token){
+          Token registeredToken = tokenService.getToken(app, userName);
+          if(registeredToken == null) {
+        	  return false;
+          }else{
+        	  long expiration = registeredToken.getExpiration();
+        	  if(System.currentTimeMillis() > expiration){
+        		  return false;
+        	  }else{
+        		  String _registeredToken = registeredToken.getToken();
+        		  return StringUtils.isNotEmpty(_registeredToken) && _registeredToken.equals(token);
+        	  }
+          }
      }
 
      @Override
@@ -77,8 +88,8 @@ public class AuthenticationServiceImpl implements AuthenticationService {
           return null;
      }
 
-     public String registerToken(CallContext callContext){
-          return tokenService.setToken(callContext.getUsername());
+     public Token registerToken(String app, CallContext callContext){
+          return tokenService.setToken(app, callContext.getUsername());
      }
     
      /**
