@@ -25,6 +25,15 @@
 		<property name="socketTimeout">
 			<value>${db.couchdb.socket.timeout}</value>
 		</property>
+		<property name="authEnabled">
+			<value>${db.couchdb.auth.enabled}</value>
+		</property>
+		<property name="authUserName">
+			<value>${db.couchdb.auth.username}</value>
+		</property>
+		<property name="authPassword">
+			<value>${db.couchdb.auth.password}</value>
+		</property>
 	</bean>
 	
 	<bean id="archiveConnector" class="jp.aegif.nemaki.dao.impl.couch.connector.CouchConnector" init-method="init">
@@ -45,6 +54,15 @@
 		</property>
 		<property name="socketTimeout">
 			<value>${db.couchdb.socket.timeout}</value>
+		</property>
+		<property name="authEnabled">
+			<value>${db.couchdb.auth.enabled}</value>
+		</property>
+		<property name="authUserName">
+			<value>${db.couchdb.auth.username}</value>
+		</property>
+		<property name="authPassword">
+			<value>${db.couchdb.auth.password}</value>
 		</property>
 	</bean>
 	
