@@ -141,7 +141,7 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 	 * which relate to the persistence of action results to the core.
 	 */
 	@Override
-	protected boolean handleCustomAction(SolrQueryRequest req,
+	protected void handleCustomAction(SolrQueryRequest req,
 			SolrQueryResponse rsp) {
 
 		SolrParams params = req.getParams();
@@ -166,8 +166,29 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 
 		if (a.equalsIgnoreCase("INDEX")) {
 			// Action=INDEX: track documents(by FULL or DELTA)
-			tracker.setupCmisSession();
-			tracker.index(tracking);
+			if(tracking.equals(Constant.MODE_FULL)){
+				tracker.initCore();
+				
+				try {
+					scheduler.standby();
+				} catch (SchedulerException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			
+				tracker.index(tracking);
+				
+				try {
+					scheduler.start();
+				} catch (SchedulerException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+				
+			}else if(tracking.equals(Constant.MODE_DELTA)){
+				tracker.index(tracking);
+			}
+			
 			// TODO More info
 			rsp.add("Result", "Successfully tracked!");
 
@@ -186,13 +207,29 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 
 		} else if (a.equalsIgnoreCase("INIT")) {
 			// Action=INIT: initialize core
+			
+			try {
+				scheduler.standby();
+			} catch (SchedulerException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+			
 			tracker.initCore();
+			
+			try {
+				scheduler.start();
+			} catch (SchedulerException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+			
 			rsp.add("Result", "Successfully initialized!");
 		} else {
 
 		}
 
-		return false;
+		//return false;
 	}
 
 	/**

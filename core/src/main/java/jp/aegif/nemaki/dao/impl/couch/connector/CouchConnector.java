@@ -60,12 +60,18 @@ public class CouchConnector {
 	 */
 	private int maxConnections;
 
+	private int connectionTimeout;
+
+	private int socketTimeout;
+
 	/**
 	 * Initialize this class with host, maxConnections.
 	 */
 	public void init() {
 		HttpClient httpClient = new StdHttpClient.Builder().host(host)
-				.port(port).maxConnections(maxConnections).build();
+				.port(port).maxConnections(maxConnections)
+				.connectionTimeout(connectionTimeout)
+				.socketTimeout(socketTimeout).cleanupIdleConnections(true).build();
 		CouchDbInstance dbInstance = new StdCouchDbInstance(httpClient);
 
 		String repo = "";
@@ -80,7 +86,7 @@ public class CouchConnector {
 	public CouchDbConnector getConnection() {
 		return connector;
 	}
-
+	
 	public void setRepositoryId(String repositoryId) {
 		this.repositoryId = repositoryId;
 	}
@@ -97,4 +103,11 @@ public class CouchConnector {
 		this.maxConnections = maxConnections;
 	}
 
+	public void setConnectionTimeout(int connectionTimeout) {
+		this.connectionTimeout = connectionTimeout;
+	}
+
+	public void setSocketTimeout(int socketTimeout) {
+		this.socketTimeout = socketTimeout;
+	}
 }

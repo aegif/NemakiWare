@@ -9,14 +9,13 @@ import org.ektorp.impl.StdCouchDbInstance;
 public class CouchFactory {
 	public static CouchDbInstance createCouchDbInstance(String host, int port){
 		HttpClient httpClient = new StdHttpClient.Builder().host(host)
-				.maxConnections(100).build();
+				.maxConnections(1000).socketTimeout(100000000).build();
 		return new StdCouchDbInstance(httpClient);
 	}
 
 	public static CouchDbConnector createCouchDbConnector(String host, int port, String repositoryId){
 		CouchDbInstance dbInstance = createCouchDbInstance(host, port);
 		CouchDbConnector connector = dbInstance.createConnector(repositoryId, true);
-
 		return connector;
 	}
 }
