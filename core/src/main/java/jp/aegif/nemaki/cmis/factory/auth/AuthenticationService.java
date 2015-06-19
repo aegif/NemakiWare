@@ -47,8 +47,8 @@ import org.apache.chemistry.opencmis.commons.server.CallContext;
  */
 public interface AuthenticationService {
 	
-	public boolean authenticateUserByToken(String userName, String token);
+	public boolean authenticateUserByToken(String app, String userName, String token);
     public boolean authenticateAdminByToken(String userName);
-    public String registerToken(CallContext callContext);
+    public Token registerToken(String app, CallContext callContext);
     public User getAuthenticatedUser(String userName, String passWord);
 }

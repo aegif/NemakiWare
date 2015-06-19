@@ -5,8 +5,10 @@ import java.util.Arrays;
 import javax.annotation.PostConstruct;
 
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.log4j.Appender;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
+import org.apache.log4j.xml.DOMConfigurator;
 import org.aspectj.lang.ProceedingJoinPoint;
 
 public class DefaultLogger {
@@ -56,7 +58,7 @@ public class DefaultLogger {
 		
 		//Before advice
 		if(beforeEnabled){
-			log.debug(sb.toString());
+			log.info(sb.toString());
 		}
 		
 		//Execute method
@@ -69,7 +71,7 @@ public class DefaultLogger {
 				if (returnValue && result != null)
 					sb.append(result.toString());
 				
-				log.debug(sb.toString());
+				log.info(sb.toString());
 			}
 			
 			return result;

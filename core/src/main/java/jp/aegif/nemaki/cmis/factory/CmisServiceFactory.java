@@ -4,24 +4,23 @@ import java.math.BigInteger;
 import java.util.Map;
 
 import javax.annotation.PostConstruct;
-import javax.servlet.http.Cookie;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 
 import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
 import jp.aegif.nemaki.cmis.factory.auth.impl.AuthenticationServiceImpl;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
-import jp.aegif.nemaki.util.constant.CallContextToken;
+import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisProxyAuthenticationException;
 import org.apache.chemistry.opencmis.commons.impl.server.AbstractServiceFactory;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.server.CmisService;
 import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
 import org.apache.chemistry.opencmis.server.support.wrapper.ConformanceCmisServiceWrapper;
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -80,56 +79,46 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 					+ "Authentication succeeded");
 			return wrapper;
 		} else {
-			throw new CmisPermissionDeniedException("[userName="
+			throw new CmisProxyAuthenticationException("[userName="
 					+ callContext.getUsername() + "]" + "Authentication failed");
 		}
 	}
 
 	private boolean login(CallContext callContext) {
-		boolean tokenAuth = loginWithToken(callContext);
-
-		// Cookie token Authentication
-		if (tokenAuth) {
-			return true;
+		boolean authenticated = false;
+		
+		Object _authToken = callContext.get("nemaki_auth_token");
+		
+		//To use token auth, don't put in password value
+		if(_authToken != null && StringUtils.isNotBlank((String)_authToken)){
+			authenticated = loginWithToken(callContext);
 		}
-
-		// Basic Authentication
-		boolean basicAuth = loginWithBasicAuth(callContext);
-		if (basicAuth) {
-			setTokenCookie(callContext);
+		
+		if(authenticated){
 			return true;
+		}else{
+			return loginWithBasicAuth(callContext);
 		}
-
-		return false;
+		
 	}
 
 	private boolean loginWithToken(CallContext callContext) {
-		HttpServletRequest req = (HttpServletRequest) callContext
-				.get("httpServletRequest");
-		Cookie[] cookies = req.getCookies();
-		if (cookies != null) {
-			for (Cookie cookie : req.getCookies()) {
-				if ((CallContextToken.COOKIE_AUTH_TOKEN_PREFIX + callContext
-						.getUsername()).equals(cookie.getName())) {
-					// Token based auth
-					String token = cookie.getValue();
-					String userName = callContext.getUsername();
-					if (authenticationService.authenticateUserByToken(userName,
-							token)) {
-						if (authenticationService
-								.authenticateAdminByToken(userName)) {
-							setAdminFlagInContext(callContext, true);
-						} else {
-							setAdminFlagInContext(callContext, false);
-						}
-						return true;
-					}
-				}
+		String userName = callContext.getUsername();
+		String token = (String)callContext.get("nemaki_auth_token");
+		Object _app = callContext.get("nemaki_auth_token_app");
+		String app = (_app == null) ? "" : (String)_app;
+		
+		if (authenticationService.authenticateUserByToken(app, userName,
+				token)) {
+			if (authenticationService
+					.authenticateAdminByToken(userName)) {
+				setAdminFlagInContext(callContext, true);
+			} else {
+				setAdminFlagInContext(callContext, false);
 			}
+			return true;
 		}
-
-		log.info("[userName=" + callContext.getUsername() + "]"
-				+ "has no basic authentication token");
+		
 		return false;
 	}
 
@@ -150,18 +139,7 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 
 	private void setAdminFlagInContext(CallContext callContext, Boolean isAdmin) {
 		((CallContextImpl) callContext).put(
-				CallContextToken.IS_ADMIN, isAdmin);
-	}
-
-	private void setTokenCookie(CallContext callContext) {
-		String token = authenticationService.registerToken(callContext);
-		Cookie cookie = new Cookie(CallContextToken.COOKIE_AUTH_TOKEN_PREFIX
-				+ callContext.getUsername(), token);
-		cookie.setMaxAge(60 * 60 * 12);
-
-		HttpServletResponse response = (HttpServletResponse) callContext
-				.get("httpServletResponse");
-		response.addCookie(cookie);
+				CallContextKey.IS_ADMIN, isAdmin);
 	}
 
 	@Override
