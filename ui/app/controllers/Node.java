@@ -116,11 +116,9 @@ public class Node extends Controller {
 			results.add(obj);
 		}
 
-		//TODO TEST code
+		//Fill in CMIS types
 		List<Tree<ObjectType>> typeFolders = session.getTypeDescendants(BaseTypeId.CMIS_FOLDER.value(), -1, false);
 		List<Tree<ObjectType>> typeDocs = session.getTypeDescendants(BaseTypeId.CMIS_DOCUMENT.value(), -1, false);
-		
-		
 		List<Tree<ObjectType>> types = new ArrayList<Tree<ObjectType>>();
 		types.addAll(typeFolders);
 		types.addAll(typeDocs);
