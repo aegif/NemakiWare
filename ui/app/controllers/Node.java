@@ -185,7 +185,7 @@ public class Node extends Controller {
 		return ok(blank.render(parentId, objectType));
 	}
 
-	public static Result showDetail(String id) {
+	public static Result showDetail(String id, Boolean activatePreviewTab) {
 		Session session = createSession();
 
 		FileableCmisObject o = (FileableCmisObject) session.getObject(id);
@@ -193,7 +193,7 @@ public class Node extends Controller {
 		// Get parentId
 		String parentId = o.getParents().get(0).getId();
 
-		return ok(detail.render(o, parentId));
+		return ok(detail.render(o, parentId, activatePreviewTab));
 	}
 
 	public static Result showProperty(String id) {
