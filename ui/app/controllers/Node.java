@@ -329,10 +329,9 @@ public class Node extends Controller {
 		// TODO better solution for encoding file name
 
 		response().setHeader("Content-disposition",
-				"attachment; filename=" + obj.getName() + ".pdf");
+				"filename=" + obj.getName() + ".pdf");
 		response().setContentType(preview.getContentStream().getMimeType());
-
-		return ok(tmpFile);
+		return ok(tmpFile, true);
 	}
 
 	public static Result showVersion(String id) {
