@@ -21,6 +21,10 @@
  ******************************************************************************/
 package jp.aegif.nemaki.model.couch;
 
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
 import jp.aegif.nemaki.model.User;
 
 public class CouchUser extends CouchNodeBase{
@@ -33,6 +37,7 @@ public class CouchUser extends CouchNodeBase{
 	private String email;
 	private String passwordHash;
 	private Boolean admin;
+	private Set<String> favorites;
 
 	public CouchUser() {
 		super();
@@ -47,6 +52,7 @@ public class CouchUser extends CouchNodeBase{
 		setEmail(u.getEmail());
 		setPasswordHash(u.getPasswordHash());
 		setAdmin(u.isAdmin());
+		setFavorites(u.getFavorites());
 	}
 
 	public String getUserId() {
@@ -105,6 +111,14 @@ public class CouchUser extends CouchNodeBase{
 		this.admin = admin;
 	}
 
+	public Set<String> getFavorites() {
+		return favorites;
+	}
+
+	public void setFavorites(Set<String> favorites) {
+		this.favorites = favorites;
+	}
+
 	@Override
 	public User convert(){
 		User u = new User(super.convert());
@@ -115,6 +129,7 @@ public class CouchUser extends CouchNodeBase{
 		u.setEmail(getEmail());
 		u.setPasswordHash(getPasswordHash());
 		u.setAdmin(isAdmin());
+		u.setFavorites(getFavorites());
 		return u;
 	}
 }
