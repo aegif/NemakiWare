@@ -22,7 +22,10 @@
 package jp.aegif.nemaki.model;
 
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import jp.aegif.nemaki.util.constant.NodeType;
 
@@ -44,6 +47,7 @@ public class User extends NodeBase {
 	private String email;
 	private String passwordHash;
 	private Boolean admin;
+	private Set<String> favorites;
 
 	public User() {
 		super();
@@ -52,7 +56,7 @@ public class User extends NodeBase {
 
 	public User(String id, String name, String firstName, String lastName,
 			String email, String passwordHash) {
-		setType(NodeType.USER.value());
+		this();
 		setUserId(id);
 		setName(name);
 		setFirstName(firstName);
@@ -127,6 +131,14 @@ public class User extends NodeBase {
 
 	public void setAdmin(Boolean admin) {
 		this.admin = admin;
+	}
+
+	public Set<String> getFavorites() {
+		return favorites;
+	}
+
+	public void setFavorites(Set<String> favorites) {
+		this.favorites = favorites;
 	}
 
 	@Override
