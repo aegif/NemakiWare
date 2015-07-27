@@ -49,6 +49,8 @@ POST	/users/create					controllers.User.create()
 GET		/users/:id						controllers.User.showDetail(id:String)
 POST	/users/:id/update				controllers.User.update(id:String)
 POST	/users/:id/delete				controllers.User.delete(id:String)
+GET     /users/:id/favorites            controllers.User.showFavorites(id:String)
+PUT		/users/:userId/favorites/:objectId			controllers.User.toggleFavorite(userId:String, objectId:String)
 
 # Group API
 GET		/groups							controllers.Group.index()

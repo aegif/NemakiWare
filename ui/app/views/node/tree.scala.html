@@ -38,6 +38,7 @@
 										@ot.getItem.getBaseTypeId match {
 											case BaseTypeId.CMIS_FOLDER => {<i class="fa fa-folder-o"></i>}
 											case BaseTypeId.CMIS_DOCUMENT => {<i class="fa fa-file-o"></i>}
+											case _ => {}
 										}
 										@NemakiConfig.getLabel(ot.getItem.getId, lang().language)
 									</a></li>
