@@ -1,6 +1,6 @@
 @import util._
 
-@(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(parentId:String)(activatePreviewTab:Boolean)
+@(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(parentId:String)(activatePreviewTab:Boolean)(user:model.User)
 
 @lightbox{
 	<!-- html -->
@@ -8,6 +8,14 @@
 		<h4>
 			<i class="fa @Util.getIconName(obj)"></i>@obj.getName()
 			@if(Util.isFreezeCopy(obj, session)){<i class="fa fa-lock"></i>}
+			<!-- fav star -->
+			<span class="favorite-toggle">
+			@if(user.favorites.contains(obj.getId)){
+				<i id="favorite-star" class="fa fa-star" title="@{Messages("view.user.favorite.toggled.desc1")}&#10;@{Messages("view.user.favorite.toggled.desc2")}"></i>
+			}else{
+				<i id="favorite-star" class="fa fa-star-o" title="@{Messages("view.user.favorite.untoggled.desc1")}&#10;@{Messages("view.user.favorite.untoggled.desc2")}"></i>
+			}
+			</span>
 		</h4>
 	</div>
 	
@@ -75,5 +83,24 @@
 		      }
 		  });
 		})
+		
+		$('.favorite-toggle').on('click', function(){
+			$.ajax({
+				type: "PUT",
+			    url: "@routes.User.toggleFavorite(user.id, obj.getId).absoluteURL(request)",
+			}).done(function(){
+				if($('#favorite-star').hasClass('fa-star')){
+					$('#favorite-star').removeClass('fa-star');
+					$('#favorite-star').addClass('fa-star-o');
+					$('#favorite-star').attr('title', "@Messages("view.user.favorite.untoggled.desc1")" + "\n" + "@Messages("view.user.favorite.untoggled.desc2")");
+				}else{
+					$('#favorite-star').addClass('fa-star');
+					$('#favorite-star').removeClass('fa-star-o');
+					$('#favorite-star').attr('title', "@Messages("view.user.favorite.toggled.desc1")" + "\n" + "@Messages("view.user.favorite.toggled.desc2")");
+				}
+			}).fail(function(xhr, status, error){
+				alert(xhr.status + " " + xhr.statusText + ": Failed to swith favorite star");	
+			});
+		});
 	</script>
 } 

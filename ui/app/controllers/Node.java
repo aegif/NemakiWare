@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 
 import model.Principal;
+import model.User;
 
 import org.apache.chemistry.opencmis.client.api.CmisObject;
 import org.apache.chemistry.opencmis.client.api.Document;
@@ -193,7 +194,19 @@ public class Node extends Controller {
 		// Get parentId
 		String parentId = o.getParents().get(0).getId();
 
-		return ok(detail.render(o, parentId, activatePreviewTab));
+		//Get user
+		final String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
+		final String endPoint = coreRestUri + "user/";
+		JsonNode result = Util.getJsonResponse(session(), endPoint + "show/" + session().get(Token.LOGIN_USER_ID));
+		model.User user = new model.User();
+		if("success".equals(result.get("status").asText())){
+			JsonNode _user = result.get("user");
+			user = new model.User(_user);
+		}else{
+			internalServerError("User retrieveing failure");
+		}
+		
+		return ok(detail.render(o, parentId, activatePreviewTab, user));
 	}
 
 	public static Result showProperty(String id) {
