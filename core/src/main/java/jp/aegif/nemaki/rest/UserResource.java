@@ -22,7 +22,10 @@
 package jp.aegif.nemaki.rest;
 
 import java.text.SimpleDateFormat;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.Consumes;
@@ -41,9 +44,13 @@ import javax.ws.rs.core.MediaType;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.model.User;
 
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
+import org.codehaus.jackson.JsonFactory;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
+import org.json.simple.parser.ParseException;
 import org.mindrot.jbcrypt.BCrypt;
 import org.springframework.stereotype.Component;
 
@@ -195,6 +202,8 @@ public class UserResource extends ResourceBase {
 			@FormParam(FORM_FIRSTNAME) String firstName,
 			@FormParam(FORM_LASTNAME) String lastName,
 			@FormParam(FORM_EMAIL) String email,
+			@FormParam("addFavorites") String addFavorites,
+			@FormParam("removeFavorites") String removeFavorites,
 			@FormParam(FORM_PASSWORD) String password,
 			@Context HttpServletRequest httpRequest) {
 		boolean status = true;
@@ -206,7 +215,7 @@ public class UserResource extends ResourceBase {
 
 		// Validation
 		status = checkAuthorityForUser(status, errMsg, httpRequest, userId);
-		status = validateUser(status, errMsg, userId, name, firstName, lastName);
+		//status = validateUser(status, errMsg, userId, name, firstName, lastName);
 
 		// Edit & Update
 		if (status) {
@@ -222,6 +231,31 @@ public class UserResource extends ResourceBase {
 				user.setLastName(lastName);
 			if (email != null)
 				user.setEmail(email);
+			if(addFavorites != null){
+				try {
+					JSONArray l = (JSONArray)(new JSONParser().parse(addFavorites));
+					Set<String>fs = user.getFavorites();
+					if(CollectionUtils.isEmpty(fs)){
+						fs = new HashSet<String>();
+					}
+					fs.addAll(l);
+					user.setFavorites(fs);
+					System.out.println();
+					//fs.addAll(l);
+				} catch (ParseException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			}
+			if(removeFavorites != null){
+				try {
+					JSONArray l = (JSONArray)(new JSONParser().parse(removeFavorites));
+					user.getFavorites().removeAll(l);
+				} catch (ParseException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			}
 			if (StringUtils.isNotBlank(password)){
 				//TODO Error handling
 				user = principalService.getUserById(userId);
@@ -372,6 +406,16 @@ public class UserResource extends ResourceBase {
 		boolean isAdmin = (user.isAdmin() == null) ? false : true; 
 		userJSON.put(ITEM_IS_ADMIN, isAdmin);
 
+		JSONArray jfs = new JSONArray();
+		Set<String>ufs = user.getFavorites();
+		if(CollectionUtils.isNotEmpty(ufs)){
+			Iterator<String> ufsItr = ufs.iterator();
+			while(ufsItr.hasNext()){
+				jfs.add(ufsItr.next());
+			}
+		}
+		userJSON.put("favorites", jfs);
+		
 		return userJSON;
 	}
 

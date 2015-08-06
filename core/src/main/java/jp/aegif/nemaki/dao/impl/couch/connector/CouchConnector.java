@@ -25,6 +25,7 @@ import org.ektorp.CouchDbConnector;
 import org.ektorp.CouchDbInstance;
 import org.ektorp.http.HttpClient;
 import org.ektorp.http.StdHttpClient;
+import org.ektorp.http.StdHttpClient.Builder;
 import org.ektorp.impl.StdCouchDbInstance;
 import org.springframework.beans.factory.annotation.Value;
 
@@ -63,15 +64,28 @@ public class CouchConnector {
 	private int connectionTimeout;
 
 	private int socketTimeout;
+	
+	private boolean authEnabled;
+	private String authUserName;
+	private String authPassword;
 
 	/**
 	 * Initialize this class with host, maxConnections.
 	 */
 	public void init() {
-		HttpClient httpClient = new StdHttpClient.Builder().host(host)
-				.port(port).maxConnections(maxConnections)
-				.connectionTimeout(connectionTimeout)
-				.socketTimeout(socketTimeout).cleanupIdleConnections(true).build();
+		Builder builder = new StdHttpClient.Builder()
+		.host(host)
+		.port(port)
+		.maxConnections(maxConnections)
+		.connectionTimeout(connectionTimeout)
+		.socketTimeout(socketTimeout)
+		.cleanupIdleConnections(true);
+		
+		if(authEnabled){
+			builder.username(authUserName).password(authPassword);
+		}
+		
+		HttpClient httpClient = builder.build();
 		CouchDbInstance dbInstance = new StdCouchDbInstance(httpClient);
 
 		String repo = "";
@@ -110,4 +124,17 @@ public class CouchConnector {
 	public void setSocketTimeout(int socketTimeout) {
 		this.socketTimeout = socketTimeout;
 	}
+
+	public void setAuthEnabled(boolean authEnabled) {
+		this.authEnabled = authEnabled;
+	}
+
+	public void setAuthUserName(String authUserName) {
+		this.authUserName = authUserName;
+	}
+
+	public void setAuthPassword(String authPassword) {
+		this.authPassword = authPassword;
+	}
+	
 }

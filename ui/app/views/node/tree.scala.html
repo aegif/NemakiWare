@@ -1,4 +1,5 @@
 @import util.Util
+@import util.NemakiConfig
 @import org.apache.commons.collections.CollectionUtils
 @import org.apache.chemistry.opencmis.client.api.Tree
 @import org.apache.chemistry.opencmis.client.api.ObjectType
@@ -34,13 +35,12 @@
 							<ul class="dropdown-menu" role="menu">
 								@for(ot <- types){
 									<li id="create-object-in-tree" typeId="@ot.getItem.getId"><a href="#">
-										@if(ot.getItem.getBaseTypeId == BaseTypeId.CMIS_FOLDER){
-											<i class="fa fa-folder-o"></i>
+										@ot.getItem.getBaseTypeId match {
+											case BaseTypeId.CMIS_FOLDER => {<i class="fa fa-folder-o"></i>}
+											case BaseTypeId.CMIS_DOCUMENT => {<i class="fa fa-file-o"></i>}
+											case _ => {}
 										}
-										@if(ot.getItem.getBaseTypeId == BaseTypeId.CMIS_DOCUMENT){
-											<i class="fa fa-file-o"></i>
-										}
-										@ot.getItem.getId
+										@NemakiConfig.getLabel(ot.getItem.getId, lang().language)
 									</a></li>
 								}
 							</ul>

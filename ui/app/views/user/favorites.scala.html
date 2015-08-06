@@ -1,0 +1,27 @@
+@import node.list
+
+@(user:model.User)(objects: List[org.apache.chemistry.opencmis.client.api.CmisObject])
+
+<!DOCTYPE html>
+<html>
+	@header()
+	<body>
+		@menubar()
+		<div class="container">
+	  		<div class="row">
+	  			<div class="col-md-11">
+					<div class="fav caption">
+						@Messages("view.user.favorite.caption")
+					</div>
+					<br/><br/>
+				</div>
+				
+				<div class="col-md-11">
+				 	<div id="list">
+						@list(objects) 		
+				 	</div>
+				</div>
+	  		</div>
+		</div>
+	</body>
+</html>
