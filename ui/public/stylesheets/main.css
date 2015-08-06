@@ -155,3 +155,14 @@ input.form-control.principal-searach{
 	width:1px;
 	white-space:nowrap;	
 }
+
+div.fav.caption{
+	float:left;
+	font-size:x-large;
+	border: 3px black solid;
+	border-radius: 20px;
+	padding: 5px;
+	margin: 10px;
+	border-color:#CCC;
+	background-color:#EEE;
+}
