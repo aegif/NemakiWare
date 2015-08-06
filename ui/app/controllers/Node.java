@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 
 import model.Principal;
+import model.User;
 
 import org.apache.chemistry.opencmis.client.api.CmisObject;
 import org.apache.chemistry.opencmis.client.api.Document;
@@ -116,11 +117,9 @@ public class Node extends Controller {
 			results.add(obj);
 		}
 
-		//TODO TEST code
+		//Fill in CMIS types
 		List<Tree<ObjectType>> typeFolders = session.getTypeDescendants(BaseTypeId.CMIS_FOLDER.value(), -1, false);
 		List<Tree<ObjectType>> typeDocs = session.getTypeDescendants(BaseTypeId.CMIS_DOCUMENT.value(), -1, false);
-		
-		
 		List<Tree<ObjectType>> types = new ArrayList<Tree<ObjectType>>();
 		types.addAll(typeFolders);
 		types.addAll(typeDocs);
@@ -187,7 +186,7 @@ public class Node extends Controller {
 		return ok(blank.render(parentId, objectType));
 	}
 
-	public static Result showDetail(String id) {
+	public static Result showDetail(String id, Boolean activatePreviewTab) {
 		Session session = createSession();
 
 		FileableCmisObject o = (FileableCmisObject) session.getObject(id);
@@ -195,7 +194,19 @@ public class Node extends Controller {
 		// Get parentId
 		String parentId = o.getParents().get(0).getId();
 
-		return ok(detail.render(o, parentId));
+		//Get user
+		final String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
+		final String endPoint = coreRestUri + "user/";
+		JsonNode result = Util.getJsonResponse(session(), endPoint + "show/" + session().get(Token.LOGIN_USER_ID));
+		model.User user = new model.User();
+		if("success".equals(result.get("status").asText())){
+			JsonNode _user = result.get("user");
+			user = new model.User(_user);
+		}else{
+			internalServerError("User retrieveing failure");
+		}
+		
+		return ok(detail.render(o, parentId, activatePreviewTab, user));
 	}
 
 	public static Result showProperty(String id) {
@@ -331,10 +342,9 @@ public class Node extends Controller {
 		// TODO better solution for encoding file name
 
 		response().setHeader("Content-disposition",
-				"attachment; filename=" + obj.getName() + ".pdf");
+				"filename=" + obj.getName() + ".pdf");
 		response().setContentType(preview.getContentStream().getMimeType());
-
-		return ok(tmpFile);
+		return ok(tmpFile, true);
 	}
 
 	public static Result showVersion(String id) {
