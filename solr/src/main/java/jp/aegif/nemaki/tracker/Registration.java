@@ -52,13 +52,15 @@ public class Registration implements Runnable{
 	SolrCore core;
 	SolrServer repositoryServer;
 	List<ChangeEvent> list;
+	List<String> allowedMimeTypeFilter;
 	Logger logger = Logger.getLogger(Registration.class);
 	
-	public Registration(Session cmisSession, SolrCore core, SolrServer repositoryServer, List<ChangeEvent> list){
+	public Registration(Session cmisSession, SolrCore core, SolrServer repositoryServer, List<ChangeEvent> list, List<String> allowedMimeTypeFilter){
 		this.cmisSession = cmisSession;
 		this.core = core;
 		this.repositoryServer = repositoryServer;
 		this.list = list;
+		this.allowedMimeTypeFilter = allowedMimeTypeFilter;
 	}
 	
 	@Override
@@ -68,14 +70,6 @@ public class Registration implements Runnable{
 		boolean mimeTypeFilter = false;
 		List<String> allowedMimeTypeFilter = new ArrayList<String>();
 		boolean fulltextEnabled = Boolean.TRUE.toString().equalsIgnoreCase(pm.readValue(PropertyKey.SOLR_TRACKING_FULLTEXT_ENABLED));
-
-		if(fulltextEnabled){
-			String _filter = pm.readValue(PropertyKey.SOLR_TRACKING_MIMETYPE_FILTER_ENABLED);
-			mimeTypeFilter = Boolean.TRUE.toString().equalsIgnoreCase(_filter);
-			if(mimeTypeFilter){
-				allowedMimeTypeFilter = pm.readValues(PropertyKey.SOLR_TRACKING_MIMETYPE);
-			}
-		}
 		
 		for (ChangeEvent ce : list) {
 			switch (ce.getChangeType()) {
@@ -464,14 +458,4 @@ public class Registration implements Runnable{
 		String timestamp = df.format(cal.getTime());
 		return timestamp;
 	}
-
-	private String sanitizeUrl(String url) {
-		String end = url.substring(url.length() - 1, url.length() - 1);
-		if (end.equals("/")) {
-			return url;
-		} else {
-			return url + "/";
-		}
-	}
-
 }

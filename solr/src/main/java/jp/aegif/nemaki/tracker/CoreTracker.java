@@ -253,6 +253,7 @@ public class CoreTracker extends CloseHook {
 				return;
 
 			// Read MIME-Type filtering
+			List<String> allowedMimeTypeFilter = new ArrayList<String>();
 			PropertyManager pm = new PropertyManagerImpl(
 					StringPool.PROPERTIES_NAME);
 			boolean mimeTypeFilter = false;
@@ -266,8 +267,7 @@ public class CoreTracker extends CloseHook {
 				mimeTypeFilter = Boolean.TRUE.toString().equalsIgnoreCase(
 						_filter);
 				if (mimeTypeFilter) {
-					pm
-							.readValues(PropertyKey.SOLR_TRACKING_MIMETYPE);
+					allowedMimeTypeFilter = pm.readValues(PropertyKey.SOLR_TRACKING_MIMETYPE);
 				}
 			}
 
@@ -289,7 +289,7 @@ public class CoreTracker extends CloseHook {
 				List<ChangeEvent> listPerThread = list.subList(numberPerThread
 						* i, toIndex);
 				Registration registration = new Registration(cmisSession, core,
-						repositoryServer, listPerThread);
+						repositoryServer, listPerThread, allowedMimeTypeFilter);
 				Thread t = new Thread(registration);
 				t.start();
 				try {

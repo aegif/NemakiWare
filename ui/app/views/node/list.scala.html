@@ -54,6 +54,9 @@
 			<td>
 				<div class="btn-group">
 					<button type="button" class="btn btn-default show-detail" cmis-id="@obj.getId()"><i class="fa fa-wrench"></i>@Messages("view.detail")</button>
+					@if(Util.hasContentStream(obj)){
+						<button type="button" class="btn btn-default show-preview" cmis-id="@obj.getId()"><i class="fa fa-file-pdf-o"></i>@Messages("view.node.preview")</button>
+					}
 					<button type="button" class="btn btn-default delete" cmis-id="@obj.getId()"><i class="fa fa-trash"></i>@Messages("view.delete")</button>
 				</div> 
 			</td>							
@@ -83,6 +86,20 @@
        		var id = $(this).attr('cmis-id');
        		$.get("@{Util.getContextPath(request)}objects/" + id, function(html){
        			showLightbox('node-detail' + id, html);
+       		});
+        });
+    });
+</script>
+
+<!-- preview -->
+<script type="text/javascript">
+	$(function(){
+    	//Detail
+        $(".show-preview").bind('click', function(){
+        //Get CmisObject
+       		var id = $(this).attr('cmis-id');
+       		$.get("@{Util.getContextPath(request)}objects/" + id + "?activatePreviewTab=true", function(html){
+       			showLightbox('node-preview' + id, html);
        		});
         });
     });

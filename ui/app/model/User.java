@@ -1,6 +1,10 @@
 package model;
 
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Set;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 
 public class User {
 	public String id;
@@ -10,6 +14,7 @@ public class User {
 	public String lastName;
 	public String email;
 	public boolean isAdmin;
+	public Set<String> favorites;
 	
 	public User(){
 		
@@ -22,10 +27,21 @@ public class User {
 		this.lastName = json.get("lastName").asText();
 		this.email = json.get("email").asText();
 		this.isAdmin = json.get("isAdmin").asBoolean();
+		
+		JsonNode jfs = json.get("favorites");
+		Set<String> ufs = new HashSet<String>();
+		if(jfs != null && jfs.isArray()){
+			ArrayNode _jfs = (ArrayNode)jfs;
+			Iterator<JsonNode> itrJfs = _jfs.iterator();
+			while(itrJfs.hasNext()){
+				ufs.add(itrJfs.next().textValue());
+			}
+		}
+		this.favorites = ufs;
 	}
 
 	public User(String id, String password, String name, String firstName,
-			String lastName, String email, boolean isAdmin) {
+			String lastName, String email, boolean isAdmin, Set<String>favorites) {
 		super();
 		this.id = id;
 		this.password = password;
@@ -34,5 +50,6 @@ public class User {
 		this.lastName = lastName;
 		this.email = email;
 		this.isAdmin = isAdmin;
+		this.favorites = favorites;
 	}
 }
