@@ -8,9 +8,7 @@
 	<div class="row">
 		<div class="col-sm-5">
 			@if(Util.existPreview(obj)){
-				<a href="@routes.Node.downloadPreview(obj.getId)">
-					<button class="btn btn-default btn-primary"><i class="fa fa-eye"></i>@Messages("view.node.preview.open")</button>
-				</a>					
+				<object type="application/pdf" data="http://localhost:9000@{routes.Node.downloadPreview(obj.getId)}" width="600" height="800"></object>
 			}else{
 				<div>@Messages("view.node.preview.none")</div>
 			}
