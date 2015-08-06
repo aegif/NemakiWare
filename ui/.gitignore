@@ -15,3 +15,4 @@ dist
 /.settings
 conf/custom.properties
 *.log
+/bin/
