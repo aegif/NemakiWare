@@ -23,6 +23,7 @@ GET     /objects/search               	controllers.Node.search(term:String ?= ""
 GET     /objects/new               		controllers.Node.showBlank()
 POST	/objects/create               	controllers.Node.create()
 GET		/objects/js/:objectId/ace/:principalId	controllers.Node.jsGetAce(objectId:String, principalId:String)
+POST     /objects/drag-and-drop          controllers.Node.dragAndDrop(action:String ?= "")
 GET     /objects/:id               		controllers.Node.showDetail(id:String, activatePreviewTab:Boolean ?= false)
 GET     /objects/:id/property           controllers.Node.showProperty(id:String)
 GET     /objects/:id/download           controllers.Node.download(id:String)
@@ -77,3 +78,6 @@ POST	/types/create					controllers.Type.create()
 GET		/types/edit						controllers.Type.edit()
 POST	/types/update					controllers.Type.update()
 POST	/types/:id/delete				controllers.Type.delete(id:String)
+
+# Javascript scala template API
+GET		/jstemplate/duplicateNameCheck.js	controllers.JsTemplate.duplicateNameCheck()

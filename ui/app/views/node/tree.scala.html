@@ -4,6 +4,7 @@
 @import org.apache.chemistry.opencmis.client.api.Tree
 @import org.apache.chemistry.opencmis.client.api.ObjectType
 @import org.apache.chemistry.opencmis.commons.enums.BaseTypeId
+@import node.js._
 
 @(parent: org.apache.chemistry.opencmis.client.api.Folder, objects: List[org.apache.chemistry.opencmis.client.api.CmisObject], types: List[Tree[ObjectType]])
 
@@ -50,17 +51,21 @@
 				</div>
 				
 				<div class="col-md-11">
-				 	<div id="list" class="dropzone" ondragover="handleDragStart(event);" ondragleave="hadleDragLeave(event);" ondrop="handleDrop(event);">
+				 	<div id="list" parentId="@parent.getId()" class="dropzone" ondragover="nmk.dragAndDrop.handleDragStart(event);" ondragleave="nmk.dragAndDrop.hadleDragLeave(event);" ondrop="nmk.dragAndDrop.handleDrop(event);">
 						@list(objects) 		
 				 	</div>
 				</div>
+				
+				<!-- Modal html code-->
+				@duplicateNameCheckPopup()
+				
 	  		</div>
 		</div>
 	</body>
 </html>
 
+<script src="@routes.JsTemplate.duplicateNameCheck()" type="text/javascript"></script>
 
-<!-- scripts -->
 <script type="text/javascript">
 	//create button
 	$(function(){
@@ -72,64 +77,4 @@
 		});
 		
 	});
-</script>
-
-<script type="text/javascript">
-	//drag&drop
-	function handleDragStart(event){
-		event.preventDefault();
-		$(".dropzone").css("border", "3px solid #74A9D6");
-	}
-	
-	function hadleDragLeave(event){
-		event.preventDefault();
-		$(".dropzone").css("border", "none");
-	}
-	
-	function escape(selector){
-		return selector.replace(':',"\\:");
-	}
-	
-	function handleDrop(event)
-	{
-		event.preventDefault();
-		
-		if(!window.FormData){
-			alert("@Messages("view.node.drag-and-drop.out-of-support")");
-		}
-		
-		$(".dropzone").css("border", "none");
-	
-		var formData = new FormData();
-		formData.append("dragAndDrop", 'true');
-		
-		for(var i=0; i < event.dataTransfer.files.length; i++){
-			formData.append('file_' + i, event.dataTransfer.files[i]);	
-		}
-		
-		formData.append("cmis:parentId", '@parent.getId()');
-		formData.append("cmis:objectTypeId", 'cmis:document');
-		 
-		 $(function(){
-			$.blockUI({message:"@Messages("view.message.please.wait")"});
-			$.ajax("@routes.Node.create().absoluteURL(request)",
-			{
-				 type: 'post',
-			      processData: false,
-			      contentType: false,
-			      data: formData,
-			      //dataType: 'html',
-			      success: function(data){
-			        window.alert("@Messages("view.node.drag-and-drop.success")");
-			        window.location.reload();
-			      },
-			      error: function(XMLHttpRequest, textStatus, errorThrown) {
-					alert("some error:" + textStatus);
-				  },
-			      complete: function(){
-				    $.unblockUI();
-			      }
-			});
-		 });
-	}
 </script>

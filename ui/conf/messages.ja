@@ -42,8 +42,7 @@ view.node.permission.search.caption=ユーザ/グループ検索
 view.node.permission.table.caption=権限テーブル
 view.node.version.label=バージョン
 view.node.search.term=検索ワード
-view.node.drag-and-drop.out-of-support=ファイルのドラッグ&ドロップにブラウザが対応していません
-view.node.drag-and-drop.success=ファイルがアップロードされました
+view.node.drag-and-drop.out-of-support=このブラウザはファイルのドラッグ&ドロップに対応していません
 view.node.freeze-copy.cannot-update=このドキュメントは"{0}"にロックされています。更新できません。
 
 view.principal.type=種類

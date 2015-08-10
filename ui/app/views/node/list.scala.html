@@ -45,7 +45,7 @@
 					
 					}
 				}
-					<i class="fa @Util.getIconName(obj)"></i>@obj.getName()
+					<i class="fa @Util.getIconName(obj)"></i><div class="obj-name" objectId="@obj.getId">@obj.getName()</div>
 				</a>
 			</td>
 			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
@@ -148,4 +148,8 @@
         $(function () {
             $('#objects-table').footable();
         });
-</script>           
+</script>  
+
+
+ 
+         

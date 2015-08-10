@@ -14,7 +14,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 
 import model.Principal;
-import model.User;
 
 import org.apache.chemistry.opencmis.client.api.CmisObject;
 import org.apache.chemistry.opencmis.client.api.Document;
@@ -117,13 +116,15 @@ public class Node extends Controller {
 			results.add(obj);
 		}
 
-		//Fill in CMIS types
-		List<Tree<ObjectType>> typeFolders = session.getTypeDescendants(BaseTypeId.CMIS_FOLDER.value(), -1, false);
-		List<Tree<ObjectType>> typeDocs = session.getTypeDescendants(BaseTypeId.CMIS_DOCUMENT.value(), -1, false);
+		// Fill in CMIS types
+		List<Tree<ObjectType>> typeFolders = session.getTypeDescendants(
+				BaseTypeId.CMIS_FOLDER.value(), -1, false);
+		List<Tree<ObjectType>> typeDocs = session.getTypeDescendants(
+				BaseTypeId.CMIS_DOCUMENT.value(), -1, false);
 		List<Tree<ObjectType>> types = new ArrayList<Tree<ObjectType>>();
 		types.addAll(typeFolders);
 		types.addAll(typeDocs);
-		
+
 		return ok(tree.render(_parent, results, types));
 	}
 
@@ -174,7 +175,6 @@ public class Node extends Controller {
 	public static Result showBlank() {
 		String parentId = request().getQueryString("parentId");
 		String objectTypeId = request().getQueryString("objectType");
-		
 
 		if (StringUtils.isEmpty(objectTypeId)) {
 			objectTypeId = "cmis:folder"; // default
@@ -182,7 +182,7 @@ public class Node extends Controller {
 
 		Session session = createSession();
 		ObjectType objectType = session.getTypeDefinition(objectTypeId);
-		
+
 		return ok(blank.render(parentId, objectType));
 	}
 
@@ -194,18 +194,19 @@ public class Node extends Controller {
 		// Get parentId
 		String parentId = o.getParents().get(0).getId();
 
-		//Get user
+		// Get user
 		final String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 		final String endPoint = coreRestUri + "user/";
-		JsonNode result = Util.getJsonResponse(session(), endPoint + "show/" + session().get(Token.LOGIN_USER_ID));
+		JsonNode result = Util.getJsonResponse(session(), endPoint + "show/"
+				+ session().get(Token.LOGIN_USER_ID));
 		model.User user = new model.User();
-		if("success".equals(result.get("status").asText())){
+		if ("success".equals(result.get("status").asText())) {
 			JsonNode _user = result.get("user");
 			user = new model.User(_user);
-		}else{
+		} else {
 			internalServerError("User retrieveing failure");
 		}
-		
+
 		return ok(detail.render(o, parentId, activatePreviewTab, user));
 	}
 
@@ -403,6 +404,65 @@ public class Node extends Controller {
 				permissionDefs));
 	}
 
+	public static Result dragAndDrop(String action) {
+		// Bind input parameters
+		DynamicForm input = Form.form();
+		input = input.bindFromRequest();
+		
+		// Process the file
+		MultipartFormData body = request().body().asMultipartFormData();
+		List<FilePart> files = body.getFiles();
+		if (CollectionUtils.isEmpty(files)) {
+			// Do nothing
+			return ok();
+		} else {
+			if ("create".equals(action)) {
+				dragAndDropCreate(files.get(0), input);
+			} else if ("update".equals(action)) {
+				dragAndDropUpdate(files.get(0), input);
+			} else{
+				System.out.println("Specify drag & drop action type");
+			}
+
+			return ok();
+		}
+	}
+
+	private static void setParam(Map<String, Object> param, DynamicForm input,
+			String key) {
+		param.put(key, Util.getFormData(input, key));
+	}
+
+	private static void dragAndDropCreate(FilePart file, DynamicForm input) {
+		// Parse parameters
+		Map<String, Object> param = new HashMap<String, Object>();
+		ObjectId parentId = new ObjectIdImpl(Util.getFormData(input,
+				PropertyIds.PARENT_ID));
+		setParam(param, input, PropertyIds.OBJECT_TYPE_ID);
+		setParam(param, input, PropertyIds.NAME);
+
+		// Execute
+		Session session = createSession();
+		ContentStream cs = Util.convertFileToContentStream(session, file);
+		session.createDocument(param, parentId, cs, VersioningState.MAJOR);
+	}
+
+	private static void dragAndDropUpdate(FilePart file, DynamicForm input) {
+		// Parse parameters
+		Map<String, Object> param = new HashMap<String, Object>();
+		ObjectId objectId = new ObjectIdImpl(Util.getFormData(input,
+				PropertyIds.OBJECT_ID));
+		setParam(param, input, PropertyIds.OBJECT_TYPE_ID);
+		//setParam(param, input, PropertyIds.NAME);
+
+		// Execute
+		Session session = createSession();
+		ContentStream cs = Util.convertFileToContentStream(session, file);
+		Document d0 = (Document) session.getObject(objectId);
+		Document d1 = d0.setContentStream(cs, true);
+		//d1.updateProperties(param);
+	}
+
 	public static Result create() {
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
@@ -418,93 +478,81 @@ public class Node extends Controller {
 				: Boolean.valueOf(Util.getFormData(input, "dragAndDrop"));
 
 		Session session = createSession();
-		if (dragAndDrop) {
-			// multiple file upload
-			MultipartFormData body = request().body().asMultipartFormData();
-			List<FilePart> files = body.getFiles();
-			for (FilePart file : files) {
-				ContentStream cs = Util.convertFileToContentStream(session,
-						file);
 
-				// Set minimum required property
-				HashMap<String, Object> param = new HashMap<String, Object>();
-				param.put(PropertyIds.OBJECT_TYPE_ID, objectTypeId);
-				param.put(PropertyIds.NAME, cs.getFileName());
+		ObjectType objectType = session.getTypeDefinition(objectTypeId);
 
-				session.createDocument(param, parentId, cs,
-						VersioningState.MAJOR);
-			}
-		} else {
+		// Set CMIS parameter
+		Map<String, PropertyDefinition<?>> pdfs = session.getTypeDefinition(
+				objectTypeId).getPropertyDefinitions();
+		List<Updatability> upds = new ArrayList<Updatability>();
+		upds.add(Updatability.ONCREATE);
+		upds.add(Updatability.READWRITE);
+		HashMap<String, Object> param = Util.buildProperties(pdfs, input, upds);
+		param.put(PropertyIds.OBJECT_TYPE_ID, objectTypeId);
 
-			ObjectType objectType = session.getTypeDefinition(objectTypeId);
-			
-			// Set CMIS parameter
-			Map<String, PropertyDefinition<?>> pdfs = session
-					.getTypeDefinition(objectTypeId).getPropertyDefinitions();
-			List<Updatability> upds = new ArrayList<Updatability>();
-			upds.add(Updatability.ONCREATE);
-			upds.add(Updatability.READWRITE);
-			HashMap<String, Object> param = Util.buildProperties(pdfs, input,
-					upds);
-			param.put(PropertyIds.OBJECT_TYPE_ID, objectTypeId);
-
-			// Document/Folder specific
-			switch (Util.getBaseType(session, objectTypeId)) {
-			case CMIS_DOCUMENT:
-				ContentStreamAllowed csa = ((DocumentTypeDefinition)objectType).getContentStreamAllowed();
-				if(csa == ContentStreamAllowed.REQUIRED){
-					List<FilePart> files = null;
-					MultipartFormData body = request().body().asMultipartFormData();
-					if(body != null && CollectionUtils.isNotEmpty(body.getFiles())){
-						files = body.getFiles();
-					}
-
-					if (CollectionUtils.isEmpty(files)) {
-						// TODO error
-						System.err.println(objectTypeId + ":This type requires a file");
-					} else {
-						ContentStream cs = Util.convertFileToContentStream(session,
-								files.get(0));
-						if (param.get(PropertyIds.NAME) == null) {
-							param.put(PropertyIds.NAME, cs.getFileName());
-						}
-						session.createDocument(param, parentId, cs,
-								VersioningState.MAJOR);
-					}
-				}else if(csa == ContentStreamAllowed.ALLOWED){
-					//Retrieve a file
-					List<FilePart> files = null;
-					MultipartFormData body = request().body().asMultipartFormData();
-					if(body != null && CollectionUtils.isNotEmpty(body.getFiles())){
-						files = body.getFiles();
-					}
-					
-					//Set content stream if there is a file
-					if (CollectionUtils.isNotEmpty(files)) {
-						ContentStream cs = Util.convertFileToContentStream(session,
-								files.get(0));
-						if (param.get(PropertyIds.NAME) == null) {
-							param.put(PropertyIds.NAME, cs.getFileName());
-						}
-						session.createDocument(param, parentId, cs,
-								VersioningState.MAJOR);
-					}
-				}else if(csa == ContentStreamAllowed.NOTALLOWED){
-					//don't set content stream
-					session.createDocument(param, parentId, null, VersioningState.MAJOR);
+		// Document/Folder specific
+		switch (Util.getBaseType(session, objectTypeId)) {
+		case CMIS_DOCUMENT:
+			ContentStreamAllowed csa = ((DocumentTypeDefinition) objectType)
+					.getContentStreamAllowed();
+			if (csa == ContentStreamAllowed.REQUIRED) {
+				List<FilePart> files = null;
+				MultipartFormData body = request().body().asMultipartFormData();
+				if (body != null && CollectionUtils.isNotEmpty(body.getFiles())) {
+					files = body.getFiles();
 				}
 
-				break;
-			case CMIS_FOLDER:
-				session.createFolder(param, parentId);
-				break;
-			default:
-				break;
+				if (CollectionUtils.isEmpty(files)) {
+					// TODO error
+					System.err.println(objectTypeId
+							+ ":This type requires a file");
+				} else {
+					ContentStream cs = Util.convertFileToContentStream(session,
+							files.get(0));
+					if (param.get(PropertyIds.NAME) == null) {
+						param.put(PropertyIds.NAME, cs.getFileName());
+					}
+					session.createDocument(param, parentId, cs,
+							VersioningState.MAJOR);
+				}
+			} else if (csa == ContentStreamAllowed.ALLOWED) {
+				// Retrieve a file
+				List<FilePart> files = null;
+				MultipartFormData body = request().body().asMultipartFormData();
+				if (body != null && CollectionUtils.isNotEmpty(body.getFiles())) {
+					files = body.getFiles();
+				}
 
+				// Set content stream if there is a file
+				if (CollectionUtils.isNotEmpty(files)) {
+					ContentStream cs = Util.convertFileToContentStream(session,
+							files.get(0));
+					if (param.get(PropertyIds.NAME) == null) {
+						param.put(PropertyIds.NAME, cs.getFileName());
+					}
+					session.createDocument(param, parentId, cs,
+							VersioningState.MAJOR);
+				}
+			} else if (csa == ContentStreamAllowed.NOTALLOWED) {
+				// don't set content stream
+				session.createDocument(param, parentId, null,
+						VersioningState.MAJOR);
 			}
+
+			break;
+		case CMIS_FOLDER:
+			session.createFolder(param, parentId);
+			break;
+		default:
+			break;
+
 		}
 
-		return redirectToParent(input);
+		if(dragAndDrop){
+			return ok();
+		}else{
+			return redirectToParent(input);
+		}
 	}
 
 	public static Result update(String id) {
@@ -515,7 +563,7 @@ public class Node extends Controller {
 		// Get input form data
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
-
+		
 		// Build upadte properties
 		Map<String, Object> properties = new HashMap<String, Object>();
 		for (Entry<String, PropertyDefinition<?>> entry : o.getType()
@@ -608,19 +656,24 @@ public class Node extends Controller {
 					addAces.add(newAce);
 				} else {
 					// add or remove permissions of an existing ACE row
-					List<String> original = (originalAce.isDirect()) ? originalAce.getPermissions() : new ArrayList<String>();
-					List<String> remove = Util.difference(original, newAce.getPermissions());
-					List<String> add = Util.difference(newAce.getPermissions(), original);
+					List<String> original = (originalAce.isDirect()) ? originalAce
+							.getPermissions() : new ArrayList<String>();
+					List<String> remove = Util.difference(original,
+							newAce.getPermissions());
+					List<String> add = Util.difference(newAce.getPermissions(),
+							original);
 
 					AccessControlPrincipalDataImpl principal = new AccessControlPrincipalDataImpl(
 							principalId);
-					if(CollectionUtils.isNotEmpty(add)){
-						Ace addAce = new AccessControlEntryImpl(principal, new ArrayList<String>(add));
+					if (CollectionUtils.isNotEmpty(add)) {
+						Ace addAce = new AccessControlEntryImpl(principal,
+								new ArrayList<String>(add));
 						addAces.add(addAce);
 					}
-					
-					if(CollectionUtils.isNotEmpty(remove)){
-						Ace removeAce = new AccessControlEntryImpl(principal, new ArrayList<String>(remove));
+
+					if (CollectionUtils.isNotEmpty(remove)) {
+						Ace removeAce = new AccessControlEntryImpl(principal,
+								new ArrayList<String>(remove));
 						removeAces.add(removeAce);
 					}
 				}
@@ -669,17 +722,17 @@ public class Node extends Controller {
 
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
-		
+
 		Session session = createSession();
 		CmisObject o = session.getObject(id);
-		if(o.getType() instanceof DocumentTypeDefinition){
-			ContentStreamAllowed csa = ((DocumentTypeDefinition)(o.getType())).getContentStreamAllowed();
-			if(csa == ContentStreamAllowed.NOTALLOWED){
+		if (o.getType() instanceof DocumentTypeDefinition) {
+			ContentStreamAllowed csa = ((DocumentTypeDefinition) (o.getType()))
+					.getContentStreamAllowed();
+			if (csa == ContentStreamAllowed.NOTALLOWED) {
 				return redirectToParent(input);
 			}
 		}
-		
-		
+
 		MultipartFormData body = request().body().asMultipartFormData();
 		List<FilePart> files = body.getFiles();
 		if (files.isEmpty()) {
@@ -699,13 +752,13 @@ public class Node extends Controller {
 		Session session = createSession();
 
 		CmisObject object = session.getObject(id);
-		if(BaseTypeId.CMIS_FOLDER == object.getBaseTypeId()){
-			Folder folder = (Folder)object;
+		if (BaseTypeId.CMIS_FOLDER == object.getBaseTypeId()) {
+			Folder folder = (Folder) object;
 			folder.deleteTree(true, null, true);
-		}else{
+		} else {
 			session.delete(new ObjectIdImpl(id));
 		}
-		
+
 		return redirect(routes.Node.index());
 	}
 
@@ -834,14 +887,13 @@ public class Node extends Controller {
 
 		Map<String, Ace> map = Util.zipWithId(obj.getAcl());
 		Ace ace = map.get(principalId);
-		
-		if(ace == null){
+
+		if (ace == null) {
 			return ok(Util.emptyJsonObject());
-		}else{
+		} else {
 			JsonNode json = Json.toJson(ace);
 			return ok(json);
 		}
 	}
-	
-	
+
 }
