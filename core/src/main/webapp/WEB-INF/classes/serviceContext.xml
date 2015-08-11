@@ -38,6 +38,9 @@
         <property name="authenticationService">
             <ref bean="AuthenticationService" />
         </property>
+        <property name="principalService">
+            <ref bean="PrincipalService" />
+        </property>
     </bean>
    
     <bean id="repositoryMap" class="jp.aegif.nemaki.cmis.factory.RepositoryMap" init-method="init">

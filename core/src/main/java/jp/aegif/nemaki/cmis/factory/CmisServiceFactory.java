@@ -5,6 +5,7 @@ import java.util.Map;
 
 import javax.annotation.PostConstruct;
 
+import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
 import jp.aegif.nemaki.cmis.factory.auth.impl.AuthenticationServiceImpl;
 import jp.aegif.nemaki.model.User;
@@ -23,6 +24,7 @@ import org.apache.chemistry.opencmis.server.support.wrapper.ConformanceCmisServi
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.mindrot.jbcrypt.BCrypt;
 
 /**
  * Service factory class, specified in repository.properties.
@@ -33,6 +35,7 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 	private PropertyManager propertyManager;
 	private Repository repository;
 	private AuthenticationService authenticationService;
+	private PrincipalService principalService;
 	
 	private RepositoryMap repositoryMap;
 	private static BigInteger DEFAULT_MAX_ITEMS_TYPES;
@@ -85,26 +88,50 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 	}
 
 	private boolean login(CallContext callContext) {
-		boolean authenticated = false;
-		
-		Object _authToken = callContext.get("nemaki_auth_token");
-		
-		//To use token auth, don't put in password value
-		if(_authToken != null && StringUtils.isNotBlank((String)_authToken)){
-			authenticated = loginWithToken(callContext);
-		}
-		
-		if(authenticated){
+		//SSO
+		if(loginWithExternalAuth(callContext)){
 			return true;
-		}else{
-			return loginWithBasicAuth(callContext);
 		}
 		
+		//Token for Basic auth
+		if(loginWithToken(callContext)){
+			return true;
+		}
+		
+		//Basic auth
+		return loginWithBasicAuth(callContext);
 	}
 
+	private boolean loginWithExternalAuth(CallContext callContext){
+		String proxyHeaderKey = propertyManager.readValue(PropertyKey.EXTERNAL_AUTHENTICATION_PROXY_HEADER);
+		String proxyUserId = (String) callContext.get(proxyHeaderKey);
+		if(StringUtils.isBlank(proxyUserId)){
+			log.warn("Not authenticated user");
+			return false;
+		}else{
+			User user = principalService.getUserById(proxyUserId);
+			if(user == null){
+				User newUser = new User(proxyUserId, proxyUserId, "", "", "", BCrypt.hashpw(proxyUserId, BCrypt.gensalt()));
+				principalService.createUser(newUser);
+				log.debug("Authenticated userId=" + newUser.getUserId());
+			}else{
+				log.debug("Authenticated userId=" + user.getUserId());
+			}
+			return true;
+		}
+	}
+	
 	private boolean loginWithToken(CallContext callContext) {
 		String userName = callContext.getUsername();
-		String token = (String)callContext.get("nemaki_auth_token");
+		String token;
+		if(callContext.get("nemaki_auth_token") == null){
+			return false;
+		}else{
+			token = (String)callContext.get("nemaki_auth_token");
+			if(StringUtils.isBlank(token)){
+				return false;
+			}
+		}
 		Object _app = callContext.get("nemaki_auth_token_app");
 		String app = (_app == null) ? "" : (String)_app;
 		
@@ -154,6 +181,10 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 	public void setAuthenticationService(
 			AuthenticationService authenticationService) {
 		this.authenticationService = authenticationService;
+	}
+
+	public void setPrincipalService(PrincipalService principalService) {
+		this.principalService = principalService;
 	}
 
 	public void setRepository(Repository repository) {

@@ -268,4 +268,7 @@ public interface PropertyKey {
 	
 	//Auth token
 	final String AUTH_TOKEN_EXPIRATION = "auth.token.expiration";
+	
+	//External authentication
+	final String EXTERNAL_AUTHENTICATION_PROXY_HEADER = "external.authenticaion.proxyHeader";
 }
