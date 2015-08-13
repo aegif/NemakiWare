@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import jp.aegif.nemaki.dao.PrincipalDaoService;
+import jp.aegif.nemaki.dao.impl.couch.connector.ConnectorPool;
 import jp.aegif.nemaki.dao.impl.couch.connector.CouchConnector;
 import jp.aegif.nemaki.model.Group;
 import jp.aegif.nemaki.model.User;
@@ -48,6 +49,7 @@ import org.springframework.stereotype.Component;
 public class PrincipalDaoServiceImpl implements
 		PrincipalDaoService {
 
+	private ConnectorPool connectorPool;
 	private CouchDbConnector connector;
 	private static final Log logger = LogFactory
 			.getLog(PrincipalDaoServiceImpl.class);
@@ -219,5 +221,9 @@ public class PrincipalDaoServiceImpl implements
 
 	public void setConnector(CouchConnector connector) {
 		this.connector = connector.getConnection();
+	}
+	
+	public void setConnectorPool(ConnectorPool connectorPool) {
+		this.connectorPool = connectorPool;
 	}
 }
