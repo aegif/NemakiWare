@@ -4,6 +4,34 @@
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
 		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
+
+	<!-- multi repo test -->
+	<bean id="connectorPool" class="jp.aegif.nemaki.dao.impl.couch.connector.ConnectorPool" init-method="init">
+		<property name="host">
+			<value>${db.couchdb.host}</value>
+		</property>
+		<property name="port">
+			<value>${db.couchdb.port}</value>
+		</property>
+		<property name="maxConnections">
+			<value>${db.couchdb.max.connections}</value>
+		</property>
+		<property name="connectionTimeout">
+			<value>${db.couchdb.connection.timeout}</value>
+		</property>
+		<property name="socketTimeout">
+			<value>${db.couchdb.socket.timeout}</value>
+		</property>
+		<property name="authEnabled">
+			<value>${db.couchdb.auth.enabled}</value>
+		</property>
+		<property name="authUserName">
+			<value>${db.couchdb.auth.username}</value>
+		</property>
+		<property name="authPassword">
+			<value>${db.couchdb.auth.password}</value>
+		</property>
+	</bean>
 	
 	<!-- CouchDB Beans -->
 	<bean id="connector" class="jp.aegif.nemaki.dao.impl.couch.connector.CouchConnector" init-method="init">
@@ -73,11 +101,17 @@
 		<property name="archiveConnector">
 			<ref bean="archiveConnector" />
 		</property>
+		<property name="connectorPool">
+			<ref bean="connectorPool" />
+		</property>
 	</bean>
 	
 	<bean id="nonCachedPrincipalDaoService" class="jp.aegif.nemaki.dao.impl.couch.PrincipalDaoServiceImpl">
 		<property name="connector">
 			<ref bean="connector" />
+		</property>
+		<property name="connectorPool">
+			<ref bean="connectorPool" />
 		</property>
 	</bean>
 	

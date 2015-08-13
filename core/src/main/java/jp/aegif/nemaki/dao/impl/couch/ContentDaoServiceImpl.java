@@ -26,6 +26,7 @@ import java.util.Iterator;
 import java.util.List;
 
 import jp.aegif.nemaki.dao.ContentDaoService;
+import jp.aegif.nemaki.dao.impl.couch.connector.ConnectorPool;
 import jp.aegif.nemaki.dao.impl.couch.connector.CouchConnector;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.AttachmentNode;
@@ -85,6 +86,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @Component
 public class ContentDaoServiceImpl implements ContentDaoService {
 
+	private ConnectorPool connectorPool;
 	private CouchDbConnector connector;
 	private CouchDbConnector archiveConnector;
 
@@ -1076,4 +1078,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public void setArchiveConnector(CouchConnector archiveConnector) {
 		this.archiveConnector = archiveConnector.getConnection();
 	}
+
+	public void setConnectorPool(ConnectorPool connectorPool) {
+		this.connectorPool = connectorPool;
+	}
+	
 }
