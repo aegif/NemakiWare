@@ -33,14 +33,10 @@ import jp.aegif.nemaki.util.spring.SpringContext;
 
 import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.springframework.beans.BeansException;
 import org.springframework.context.ApplicationContext;
-import org.springframework.context.ApplicationContextAware;
-import org.springframework.context.support.ClassPathXmlApplicationContext;
-import org.springframework.web.context.support.WebApplicationContextUtils;
-import org.springframework.web.context.support.XmlWebApplicationContext;
 
 /**
  * Context handler class to do basic authentication
@@ -75,7 +71,9 @@ public class NemakiAuthCallContextHandler extends org.apache.chemistry.opencmis.
 		String proxyHeaderKey = manager.readValue(PropertyKey.EXTERNAL_AUTHENTICATION_PROXY_HEADER);
 		String proxyHeaderVal = request.getHeader(proxyHeaderKey);
 		ctxMap.put(proxyHeaderKey, proxyHeaderVal);
-		ctxMap.put(CallContext.USERNAME, proxyHeaderVal);
+		if(StringUtils.isNotBlank(proxyHeaderVal)){
+			ctxMap.put(CallContext.USERNAME, proxyHeaderVal);
+		}
 		
 		//Nemaki auth token
 		ctxMap.put(CallContextKey.AUTH_TOKEN, request.getHeader(CallContextKey.AUTH_TOKEN));
