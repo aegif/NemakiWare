@@ -23,7 +23,6 @@ package jp.aegif.nemaki.cmis.service.impl;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,8 +32,8 @@ import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.TypeService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
-import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.cmis.service.RepositoryService;
 import jp.aegif.nemaki.model.NemakiPropertyDefinition;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
@@ -42,7 +41,6 @@ import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.util.constant.DomainType;
 
-import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
@@ -51,7 +49,6 @@ import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionList;
 import org.apache.chemistry.opencmis.commons.definitions.TypeMutability;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.CmisExtensionElementImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
@@ -60,32 +57,40 @@ import org.springframework.beans.factory.InitializingBean;
 public class RepositoryServiceImpl implements RepositoryService,
 		InitializingBean {
 
-	private RepositoryInfo repositoryInfo;
+	private RepositoryInfoMap repositoryInfoMap;
 	private TypeManager typeManager;
 	private TypeService typeService;
 	private ContentService contentService;
-	private AuthenticationService authenticationService;
-
 	private ExceptionService exceptionService;
 
 	@Override
 	public boolean hasThisRepositoryId(String repositoryId) {
-		return (repositoryId.equals(repositoryInfo.getId()));
+		return (repositoryInfoMap.get(repositoryId) != null);
 	}
 
 	@Override
-	public RepositoryInfo getRepositoryInfo() {
-		repositoryInfo.setLatestChangeLogToken(contentService.getLatestChangeToken());
-		return repositoryInfo;
+	public RepositoryInfo getRepositoryInfo(String repositoryId) {
+		RepositoryInfo info = repositoryInfoMap.get(repositoryId);
+		info.setLatestChangeLogToken(contentService.getLatestChangeToken());
+		return info;
 	}
 
+	public List<org.apache.chemistry.opencmis.commons.data.RepositoryInfo> getRepositoryInfos(){
+		List<org.apache.chemistry.opencmis.commons.data.RepositoryInfo> result = 
+				new ArrayList<org.apache.chemistry.opencmis.commons.data.RepositoryInfo>();
+		for(String key : repositoryInfoMap.keys()){
+			result.add(repositoryInfoMap.get(key));
+		}
+		return result;
+	}
+	
 	/**
 	 * CMIS Service method
 	 */
 	@Override
 	public TypeDefinitionList getTypeChildren(CallContext callContext,
-			String typeId, Boolean includePropertyDefinitions,
-			BigInteger maxItems, BigInteger skipCount) {
+			String repositoryId, String typeId,
+			Boolean includePropertyDefinitions, BigInteger maxItems, BigInteger skipCount) {
 
 		return typeManager.getTypesChildren(callContext, typeId,
 				includePropertyDefinitions, maxItems, skipCount);
@@ -93,15 +98,15 @@ public class RepositoryServiceImpl implements RepositoryService,
 
 	@Override
 	public List<TypeDefinitionContainer> getTypeDescendants(
-			CallContext callContext, String typeId, BigInteger depth,
-			Boolean includePropertyDefinitions) {
+			CallContext callContext, String repositoryId, String typeId,
+			BigInteger depth, Boolean includePropertyDefinitions) {
 		return typeManager.getTypesDescendants(typeId, depth,
 				includePropertyDefinitions);
 	}
 
 	@Override
 	public TypeDefinition getTypeDefinition(CallContext callContext,
-			String typeId) {
+			String repositoryId, String typeId) {
 		TypeDefinition typeDefinition = typeManager.getTypeDefinition(typeId);
 		exceptionService.objectNotFound(DomainType.OBJECT_TYPE, typeDefinition,
 				typeId);
@@ -110,7 +115,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 
 	@Override
 	public TypeDefinition createType(CallContext callContext,
-			TypeDefinition type, ExtensionsData extension) {
+			String repositoryId, TypeDefinition type, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -160,8 +165,8 @@ public class RepositoryServiceImpl implements RepositoryService,
 	}
 
 	@Override
-	public void deleteType(CallContext callContext, String typeId,
-			ExtensionsData extension) {
+	public void deleteType(CallContext callContext, String repositoryId,
+			String typeId, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -181,7 +186,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 
 	@Override
 	public TypeDefinition updateType(CallContext callContext,
-			TypeDefinition type, ExtensionsData extension) {
+			String repositoryId, TypeDefinition type, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -345,8 +350,8 @@ public class RepositoryServiceImpl implements RepositoryService,
 	public void afterPropertiesSet() throws Exception {
 	}
 
-	public void setRepositoryInfo(RepositoryInfo repositoryInfo) {
-		this.repositoryInfo = repositoryInfo;
+	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
+		this.repositoryInfoMap = repositoryInfoMap;
 	}
 
 	public void setTypeManager(TypeManager typeManager) {

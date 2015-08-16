@@ -36,6 +36,7 @@ import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
@@ -94,7 +95,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 	private TypeManager typeManager;
 	private ContentService contentService;
 	private PermissionService permissionService;
-	private RepositoryInfo repositoryInfo;
+	private RepositoryInfoMap repositoryInfoMap;
 	private PrincipalService principalService;
 
 	private static final Log log = LogFactory
@@ -181,14 +182,14 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void invalidArgumentRequiredParentFolderId(String folderId) {
-		if (!repositoryInfo.getCapabilities().isMultifilingSupported())
+	public void invalidArgumentRequiredParentFolderId(String repositoryId, String folderId) {
+		if (!repositoryInfoMap.get(repositoryId).getCapabilities().isMultifilingSupported())
 			invalidArgumentRequiredString("folderId", folderId);
 	}
 
 	@Override
-	public void invalidArgumentOrderBy(String orderBy) {
-		if (repositoryInfo.getCapabilities().getOrderByCapability() == CapabilityOrderBy.NONE
+	public void invalidArgumentOrderBy(String repositoryId, String orderBy) {
+		if (repositoryInfoMap.get(repositoryId).getCapabilities().getOrderByCapability() == CapabilityOrderBy.NONE
 				&& orderBy != null)
 			invalidArgument("OrderBy capability is not supported");
 	}
@@ -325,8 +326,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void objectNotFoundParentFolder(String id, Content content) {
-		if (!!repositoryInfo.getCapabilities().isMultifilingSupported())
+	public void objectNotFoundParentFolder(String repositoryId, String id, Content content) {
+		if (!repositoryInfoMap.get(repositoryId).getCapabilities().isMultifilingSupported())
 			objectNotFound(DomainType.OBJECT, content, id,
 					"The specified parent folder is not found");
 	}
@@ -336,18 +337,18 @@ public class ExceptionServiceImpl implements ExceptionService,
 	 */
 	// TODO Show also stack errors
 	@Override
-	public void permissionDenied(CallContext context, String key,
-			Content content) {
+	public void permissionDenied(CallContext context, String repositoryId,
+			String key, Content content) {
 		String baseTypeId = content.getType();
 		Acl acl = contentService.calculateAcl(content);
-		permissionDeniedInternal(context, key, acl, baseTypeId, content);
+		permissionDeniedInternal(context, repositoryId, key, acl, baseTypeId, content);
 	}
 
-	private void permissionDeniedInternal(CallContext callContext, String key,
-			Acl acl, String baseTypeId, Content content) {
+	private void permissionDeniedInternal(CallContext callContext, String repositoryId,
+			String key, Acl acl, String baseTypeId, Content content) {
 
-		if (!permissionService.checkPermission(callContext, key, acl,
-				baseTypeId, content)) {
+		if (!permissionService.checkPermission(callContext, repositoryId, key,
+				acl, baseTypeId, content)) {
 			String msg = "Permission Denied!";
 			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
 		}
@@ -627,11 +628,11 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void constraintPermissionDefined(
-			org.apache.chemistry.opencmis.commons.data.Acl acl, String objectId) {
+			String repositoryId, org.apache.chemistry.opencmis.commons.data.Acl acl, String objectId) {
 		boolean aclIsEmpty = (acl == null)
 				|| (acl != null && CollectionUtils.isEmpty(acl.getAces())) ? true
 				: false;
-		List<PermissionDefinition> definitions = repositoryInfo
+		List<PermissionDefinition> definitions = repositoryInfoMap.get(repositoryId)
 				.getAclCapabilities().getPermissions();
 		List<String> definedIds = new ArrayList<String>();
 		for (PermissionDefinition pdf : definitions) {
@@ -1086,8 +1087,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 		}
 	}
 	
-	public void constraintDeleteRootFolder(String objectId){
-		String rootFolderId = repositoryInfo.getRootFolderId();
+	public void constraintDeleteRootFolder(String repositoryId, String objectId){
+		String rootFolderId = repositoryInfoMap.get(repositoryId).getRootFolderId();
 		if(rootFolderId.equals(objectId)){
 			constraint(objectId, "Cannot delete root folder");
 		}
@@ -1186,8 +1187,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 		this.permissionService = permissionService;
 	}
 
-	public void setRepositoryInfo(RepositoryInfo repositoryInfo) {
-		this.repositoryInfo = repositoryInfo;
+	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
+		this.repositoryInfoMap = repositoryInfoMap;
 	}
 
 	public void setPrincipalService(PrincipalService principalService) {

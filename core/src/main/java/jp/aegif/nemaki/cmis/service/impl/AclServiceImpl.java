@@ -57,15 +57,15 @@ public class AclServiceImpl implements AclService {
 	private NemakiCache nemakiCache;
 
 	@Override
-	public Acl getAcl(CallContext callContext, String objectId,
-			Boolean onlyBasicPermissions) {
+	public Acl getAcl(CallContext callContext, String repositoryId,
+			String objectId, Boolean onlyBasicPermissions) {
 		// //////////////////
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequired("objectId", objectId);
 		Content content = contentService.getContent(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
-		exceptionService.permissionDenied(callContext,PermissionMapping.CAN_GET_ACL_OBJECT, content);
+		exceptionService.permissionDenied(callContext,repositoryId, PermissionMapping.CAN_GET_ACL_OBJECT, content);
 
 		// //////////////////
 		// Body of the method
@@ -75,15 +75,15 @@ public class AclServiceImpl implements AclService {
 	}
 
 	@Override
-	public Acl applyAcl(CallContext callContext, String objectId, Acl acl,
-			AclPropagation aclPropagation) {
+	public Acl applyAcl(CallContext callContext, String repositoryId, String objectId,
+			Acl acl, AclPropagation aclPropagation) {
 		// //////////////////
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequired("objectId", objectId);
 		Content content = contentService.getContent(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
-		exceptionService.permissionDenied(callContext,PermissionMapping.CAN_APPLY_ACL_OBJECT, content);
+		exceptionService.permissionDenied(callContext,repositoryId, PermissionMapping.CAN_APPLY_ACL_OBJECT, content);
 
 		// //////////////////
 		// Specific Exception
@@ -91,7 +91,7 @@ public class AclServiceImpl implements AclService {
 		TypeDefinition td = typeManager.getTypeDefinition(content);
 		if(!td.isControllableAcl()) exceptionService.constraint(objectId, "applyAcl cannot be performed on the object whose controllableAcl = false");
 		exceptionService.constraintAclPropagationDoesNotMatch(aclPropagation);
-		exceptionService.constraintPermissionDefined(acl, objectId);
+		exceptionService.constraintPermissionDefined(repositoryId, acl, objectId);
 
 		// //////////////////
 		// Body of the method
@@ -124,7 +124,7 @@ public class AclServiceImpl implements AclService {
 		
 		nemakiCache.removeCmisCache(objectId);
 		
-		return getAcl(callContext, objectId, false);
+		return getAcl(callContext, repositoryId, objectId, false);
 	}
 
 	private void convertSystemPrinciaplId(jp.aegif.nemaki.model.Acl acl){

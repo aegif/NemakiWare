@@ -39,16 +39,16 @@ import org.apache.chemistry.opencmis.commons.spi.Holder;
 
 public interface CompileService {
 	public ObjectData compileObjectData(CallContext context,
-			Content content, String filter, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl);
+			String repositoryId, Content content, String filter,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl);
 	
 	public <T> ObjectList compileObjectDataList(CallContext callContext,
-			List<T> contents, String filter, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl, BigInteger maxItems, BigInteger skipCount, boolean folderOnly);
+			String repositoryId, List<T> contents, String filter,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl, BigInteger maxItems, BigInteger skipCount, boolean folderOnly);
 	
-	public ObjectList compileChangeDataList(CallContext context, List<Change> changes,
-			Holder<String> changeLogToken, Boolean includeProperties, String filter,
-			Boolean includePolicyIds, Boolean includeAcl);
+	public ObjectList compileChangeDataList(CallContext context, String repositoryId,
+			List<Change> changes, Holder<String> changeLogToken, Boolean includeProperties,
+			String filter, Boolean includePolicyIds, Boolean includeAcl);
 	
 	public org.apache.chemistry.opencmis.commons.data.Acl compileAcl(
 			Acl acl, Boolean isInherited, Boolean onlyBasicPermissions);
@@ -56,7 +56,7 @@ public interface CompileService {
 	public PropertiesImpl compileProperties(CallContext callContext, Content content);
 	
 	public AllowableActions compileAllowableActions(CallContext callContext,
-			Content content);
+			String repositoryId, Content content);
 	
 	public Set<String> splitFilter(String filter);
 }
