@@ -46,7 +46,7 @@ import org.apache.chemistry.opencmis.commons.server.CallContext;
  */
 public interface AclService {
 
-	Acl getAcl(CallContext context, String objectId, Boolean onlyBasicPermissions);
+	Acl getAcl(CallContext context, String repositoryId, String objectId, Boolean onlyBasicPermissions);
 
 	/**
 	 * Applies a new ACL to an object. Since it is not possible to transmit an
@@ -55,8 +55,9 @@ public interface AclService {
 	 * ACL.<br/>
 	 * 
 	 * TODO re-design ACL system in Nemaki
+	 * @param repositoryId TODO
 	 */
-	Acl applyAcl(CallContext callContext, String objectId, Acl aces,
-			AclPropagation aclPropagation);
+	Acl applyAcl(CallContext callContext, String repositoryId, String objectId,
+			Acl aces, AclPropagation aclPropagation);
 
 }

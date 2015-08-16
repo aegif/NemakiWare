@@ -51,8 +51,8 @@ public class PolicyServiceImpl implements PolicyService {
 	private NemakiCache nemakiCache;
 
 	@Override
-	public void applyPolicy(CallContext callContext, String policyId,
-			String objectId, ExtensionsData extension) {
+	public void applyPolicy(CallContext callContext, String repositoryId,
+			String policyId, String objectId, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -61,11 +61,11 @@ public class PolicyServiceImpl implements PolicyService {
 		Content content = contentService.getContent(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,
-				PermissionMapping.CAN_ADD_POLICY_OBJECT, content);
+				repositoryId, PermissionMapping.CAN_ADD_POLICY_OBJECT, content);
 		Policy policy = contentService.getPolicy(policyId);
 		exceptionService.objectNotFound(DomainType.OBJECT, policy, policyId);
 		exceptionService.permissionDenied(callContext,
-				PermissionMapping.CAN_ADD_POLICY_POLICY, policy);
+				repositoryId, PermissionMapping.CAN_ADD_POLICY_POLICY, policy);
 
 		// //////////////////
 		// Specific Exception
@@ -85,8 +85,8 @@ public class PolicyServiceImpl implements PolicyService {
 	}
 
 	@Override
-	public void removePolicy(CallContext callContext, String policyId,
-			String objectId, ExtensionsData extension) {
+	public void removePolicy(CallContext callContext, String repositoryId,
+			String policyId, String objectId, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -95,11 +95,11 @@ public class PolicyServiceImpl implements PolicyService {
 		Content content = contentService.getContent(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,
-				PermissionMapping.CAN_REMOVE_POLICY_OBJECT, content);
+				repositoryId, PermissionMapping.CAN_REMOVE_POLICY_OBJECT, content);
 		Policy policy = contentService.getPolicy(policyId);
 		exceptionService.objectNotFound(DomainType.OBJECT, policy, policyId);
 		exceptionService.permissionDenied(callContext,
-				PermissionMapping.CAN_REMOVE_POLICY_POLICY, policy);
+				repositoryId, PermissionMapping.CAN_REMOVE_POLICY_POLICY, policy);
 
 		// //////////////////
 		// Body of the method
@@ -111,7 +111,7 @@ public class PolicyServiceImpl implements PolicyService {
 
 	@Override
 	public List<ObjectData> getAppliedPolicies(CallContext callContext,
-			String objectId, String filter, ExtensionsData extension) {
+			String repositoryId, String objectId, String filter, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -119,7 +119,7 @@ public class PolicyServiceImpl implements PolicyService {
 		Content content = contentService.getContent(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,
-				PermissionMapping.CAN_GET_APPLIED_POLICIES_OBJECT, content);
+				repositoryId, PermissionMapping.CAN_GET_APPLIED_POLICIES_OBJECT, content);
 
 		// //////////////////
 		// Body of the method
@@ -130,8 +130,8 @@ public class PolicyServiceImpl implements PolicyService {
 		if (!CollectionUtils.isEmpty(policies)) {
 			for (Policy policy : policies) {
 				objects.add(compileService.compileObjectData(callContext,
-						policy, filter, true, IncludeRelationships.NONE, null,
-						true));
+						repositoryId, policy, filter, true, IncludeRelationships.NONE,
+						null, true));
 			}
 		}
 		return objects;

@@ -31,33 +31,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 
-import jp.aegif.nemaki.businesslogic.ContentService;
-import jp.aegif.nemaki.cmis.aspect.CompileService;
-import jp.aegif.nemaki.cmis.aspect.PermissionService;
-import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
-import jp.aegif.nemaki.cmis.factory.info.AclCapabilities;
-import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
-import jp.aegif.nemaki.cmis.service.RepositoryService;
-import jp.aegif.nemaki.model.Ace;
-import jp.aegif.nemaki.model.Acl;
-import jp.aegif.nemaki.model.Aspect;
-import jp.aegif.nemaki.model.AttachmentNode;
-import jp.aegif.nemaki.model.Change;
-import jp.aegif.nemaki.model.Content;
-import jp.aegif.nemaki.model.Document;
-import jp.aegif.nemaki.model.Folder;
-import jp.aegif.nemaki.model.Item;
-import jp.aegif.nemaki.model.NemakiPermissionDefinition;
-import jp.aegif.nemaki.model.Policy;
-import jp.aegif.nemaki.model.Property;
-import jp.aegif.nemaki.model.Relationship;
-import jp.aegif.nemaki.model.Rendition;
-import jp.aegif.nemaki.model.VersionSeries;
-import jp.aegif.nemaki.util.DataUtil;
-import jp.aegif.nemaki.util.cache.NemakiCache;
-import jp.aegif.nemaki.util.constant.CmisExtensionToken;
-import net.sf.ehcache.Element;
-
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.AllowableActions;
 import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
@@ -108,12 +81,39 @@ import org.apache.commons.logging.LogFactory;
 
 import com.rits.cloning.Cloner;
 
+import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.cmis.aspect.CompileService;
+import jp.aegif.nemaki.cmis.aspect.PermissionService;
+import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
+import jp.aegif.nemaki.cmis.factory.info.AclCapabilities;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
+import jp.aegif.nemaki.cmis.service.RepositoryService;
+import jp.aegif.nemaki.model.Ace;
+import jp.aegif.nemaki.model.Acl;
+import jp.aegif.nemaki.model.Aspect;
+import jp.aegif.nemaki.model.AttachmentNode;
+import jp.aegif.nemaki.model.Change;
+import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.model.Document;
+import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.Item;
+import jp.aegif.nemaki.model.Policy;
+import jp.aegif.nemaki.model.Property;
+import jp.aegif.nemaki.model.Relationship;
+import jp.aegif.nemaki.model.Rendition;
+import jp.aegif.nemaki.model.VersionSeries;
+import jp.aegif.nemaki.util.DataUtil;
+import jp.aegif.nemaki.util.cache.NemakiCache;
+import jp.aegif.nemaki.util.constant.CmisExtensionToken;
+import net.sf.ehcache.Element;
+
 public class CompileServiceImpl implements CompileService {
 
 	private static final Log log = LogFactory
 			.getLog(CompileServiceImpl.class);
 
-	private RepositoryInfo repositoryInfo;
+	private RepositoryInfoMap repositoryInfoMap;
 	private RepositoryService repositoryService;
 	private ContentService contentService;
 	private PermissionService permissionService;
@@ -127,26 +127,26 @@ public class CompileServiceImpl implements CompileService {
 	 * Builds a CMIS ObjectData from the given CouchDB content.
 	 */
 	@Override
-	public ObjectData compileObjectData(CallContext callContext, Content content,
-			String filter, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
-			Boolean includeAcl) {
+	public ObjectData compileObjectData(CallContext callContext, String repositoryId,
+			Content content, String filter,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
+			String renditionFilter, Boolean includeAcl) {
 		
 		ObjectDataImpl _result = new ObjectDataImpl();
 		
 		Element v = nemakiCache.getObjectDataCache().get(content.getId());
 		if(v == null){
-			_result = compileObjectDataWithFullAttributes(callContext, content);
+			_result = compileObjectDataWithFullAttributes(callContext, repositoryId, content);
 		}else{
 			_result = (ObjectDataImpl)v.getObjectValue();
 		}
 		
-		ObjectData result = filterObjectData(_result, filter, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
+		ObjectData result = filterObjectData(repositoryId, _result, filter, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
 		
 		return result;
 	}
 	
-	private ObjectDataImpl compileObjectDataWithFullAttributes(CallContext callContext, Content content){
+	private ObjectDataImpl compileObjectDataWithFullAttributes(CallContext callContext, String repositoryId, Content content){
 		ObjectDataImpl result = new ObjectDataImpl();
 		
 		//Filter(any property filter MUST be done here
@@ -154,7 +154,7 @@ public class CompileServiceImpl implements CompileService {
 		result.setProperties(properties);
 		
 		// Set Allowable actions
-		result.setAllowableActions(compileAllowableActions(callContext, content));
+		result.setAllowableActions(compileAllowableActions(callContext, repositoryId, content));
 
 		// Set Acl
 		Acl acl = contentService.calculateAcl(content);
@@ -164,7 +164,7 @@ public class CompileServiceImpl implements CompileService {
 		//Set Relationship(BOTH)
 		if (!content.isRelationship()) {
 			if(includeRelationshipsEnabled){
-				result.setRelationships(compileRelationships(callContext, content, IncludeRelationships.BOTH));
+				result.setRelationships(compileRelationships(callContext, repositoryId, content, IncludeRelationships.BOTH));
 			}
 		}
 			
@@ -178,10 +178,10 @@ public class CompileServiceImpl implements CompileService {
 		return result;
 	}
 	
-	private ObjectData filterObjectData(ObjectData fullObjectData,
-			String filter, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
-			Boolean includeAcl){
+	private ObjectData filterObjectData(String repositoryId,
+			ObjectData fullObjectData, String filter,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
+			String renditionFilter, Boolean includeAcl){
 		
 		//Deep copy ObjectData
 		//Shallow copy will cause a destructive effect after filtering some attributes
@@ -211,20 +211,20 @@ public class CompileServiceImpl implements CompileService {
 		
 		// Filter Renditions
 		if (fullObjectData.getBaseTypeId() == BaseTypeId.CMIS_DOCUMENT
-				&& repositoryInfo.getCapabilities().getRenditionsCapability() == CapabilityRenditions.NONE) {
+				&& repositoryInfoMap.get(repositoryId).getCapabilities().getRenditionsCapability() == CapabilityRenditions.NONE) {
 			result.setRenditions(null);
 		}
 		
 		return result;
 	}
 	
-	private ObjectData filterObjectDataInList(CallContext callContext, ObjectData fullObjectData,
-			String filter, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
-			Boolean includeAcl){
+	private ObjectData filterObjectDataInList(CallContext callContext, String repositoryId,
+			ObjectData fullObjectData, String filter,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
+			String renditionFilter, Boolean includeAcl){
 		boolean allowed = permissionService.checkPermission(callContext, Action.CAN_GET_PROPERTIES, fullObjectData);
 		if(allowed){
-			return filterObjectData(fullObjectData, filter, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
+			return filterObjectData(repositoryId, fullObjectData, filter, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
 		}else{
 			return null;
 		}
@@ -277,10 +277,10 @@ public class CompileServiceImpl implements CompileService {
 	
 	@Override
 	public <T> ObjectList compileObjectDataList(CallContext callContext,
-			List<T> contents, String filter, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
-			Boolean includeAcl, BigInteger maxItems, BigInteger skipCount,
-			boolean folderOnly) {
+			String repositoryId, List<T> contents, String filter,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
+			String renditionFilter, Boolean includeAcl, BigInteger maxItems,
+			BigInteger skipCount, boolean folderOnly) {
 		ObjectListImpl list = new ObjectListImpl();
 		list.setObjects(new ArrayList<ObjectData>());
 		
@@ -337,12 +337,12 @@ public class CompileServiceImpl implements CompileService {
 			ObjectData _od;
 			Element v = nemakiCache.getObjectDataCache().get(c.getId());
 			if(v == null){
-				_od = compileObjectDataWithFullAttributes(callContext, c);
+				_od = compileObjectDataWithFullAttributes(callContext, repositoryId, c);
 			}else{
 				_od = (ObjectDataImpl)v.getObjectValue();
 			}
 			
-			ObjectData od = filterObjectDataInList(callContext, _od, filter, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
+			ObjectData od = filterObjectDataInList(callContext, repositoryId, _od, filter, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
 			if(od != null){
 				ods.add(od);
 			}
@@ -364,9 +364,9 @@ public class CompileServiceImpl implements CompileService {
 
 	@Override
 	public ObjectList compileChangeDataList(CallContext context,
-			List<Change> changes, Holder<String> changeLogToken,
-			Boolean includeProperties, String filter, Boolean includePolicyIds,
-			Boolean includeAcl) {
+			String repositoryId, List<Change> changes,
+			Holder<String> changeLogToken, Boolean includeProperties, String filter,
+			Boolean includePolicyIds, Boolean includeAcl) {
 		ObjectListImpl results = new ObjectListImpl();
 		results.setObjects(new ArrayList<ObjectData>());
 
@@ -391,7 +391,7 @@ public class CompileServiceImpl implements CompileService {
 
 		results.setNumItems(BigInteger.valueOf(results.getObjects().size()));
 
-		String latestInRepository = repositoryService.getRepositoryInfo()
+		String latestInRepository = repositoryService.getRepositoryInfo(repositoryId)
 				.getLatestChangeLogToken();
 		String latestInResults = changeLogToken.getValue();
 		if (latestInResults != null && latestInResults.equals(latestInRepository)) {
@@ -472,12 +472,11 @@ public class CompileServiceImpl implements CompileService {
 
 	/**
 	 * Sets allowable action for the content
-	 * 
 	 * @param content
 	 */
 	@Override
 	public AllowableActions compileAllowableActions(CallContext callContext,
-			Content content) {
+			String repositoryId, Content content) {
 		// Get parameters to calculate AllowableActions
 		TypeDefinition tdf = typeManager.getTypeDefinition(content
 				.getObjectType());
@@ -485,7 +484,7 @@ public class CompileServiceImpl implements CompileService {
 		if (tdf.isControllableAcl() && contentAcl == null)
 			return null;
 		Acl acl = contentService.calculateAcl(content);
-		Map<String, PermissionMapping> permissionMap = repositoryInfo
+		Map<String, PermissionMapping> permissionMap = repositoryInfoMap.get(repositoryId)
 				.getAclCapabilities().getPermissionMapping();
 		String baseType = content.getType();
 
@@ -509,7 +508,7 @@ public class CompileServiceImpl implements CompileService {
 			}
 
 			// Additional check
-			if (!isAllowableByCapability(key)) {
+			if (!isAllowableByCapability(repositoryId, key)) {
 				continue;
 			}
 			if (!isAllowableByType(key, content, tdf)) {
@@ -531,7 +530,7 @@ public class CompileServiceImpl implements CompileService {
 
 			// Add an allowable action
 			boolean allowable = permissionService.checkPermission(callContext,
-					mappingEntry.getKey(), acl, baseType, content);
+					repositoryId, mappingEntry.getKey(), acl, baseType, content);
 
 			if (allowable) {
 				actionSet.add(convertKeyToAction(key));
@@ -590,8 +589,8 @@ public class CompileServiceImpl implements CompileService {
 				|| key.equals(PermissionMapping.CAN_REMOVE_POLICY_OBJECT);
 	}
 
-	private boolean isAllowableByCapability(String key) {
-		RepositoryCapabilities capabilities = repositoryInfo.getCapabilities();
+	private boolean isAllowableByCapability(String repositoryId, String key) {
+		RepositoryCapabilities capabilities = repositoryInfoMap.get(repositoryId).getCapabilities();
 
 		// Multifiling or Unfiling Capabilities
 		if (PermissionMapping.CAN_ADD_TO_FOLDER_OBJECT.equals(key)
@@ -659,7 +658,7 @@ public class CompileServiceImpl implements CompileService {
 	}
 
 	private List<ObjectData> compileRelationships(CallContext context,
-			Content content, IncludeRelationships irl) {
+			String repositoryId, Content content, IncludeRelationships irl) {
 		if (IncludeRelationships.NONE == irl) {
 			return null;
 		}
@@ -685,8 +684,8 @@ public class CompileServiceImpl implements CompileService {
 		List<ObjectData> rels = new ArrayList<ObjectData>();
 		if (CollectionUtils.isNotEmpty(_rels)) {
 			for (Relationship _rel : _rels) {
-				ObjectData rel = compileObjectData(context, _rel, null, false,
-						IncludeRelationships.NONE, null, false);
+				ObjectData rel = compileObjectData(context, repositoryId, _rel, null,
+						false, IncludeRelationships.NONE, null, false);
 				rels.add(rel);
 			}
 		}
@@ -1427,16 +1426,8 @@ public class CompileServiceImpl implements CompileService {
 		}
 	}
 	
-	private HashMap<String, String> getBasicPermissionConversion (List<NemakiPermissionDefinition> list){
-		HashMap<String, String> result = new HashMap<String, String>();
-		for(NemakiPermissionDefinition p : list){
-			result.put(p.getId(), p.getAsCmisBasicPermission());
-		}
-		return result;
-	}
-	
-	public void setRepositoryInfo(RepositoryInfo repositoryInfo) {
-		this.repositoryInfo = repositoryInfo;
+	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
+		this.repositoryInfoMap = repositoryInfoMap;
 	}
 
 	public void setRepositoryService(RepositoryService repositoryService) {

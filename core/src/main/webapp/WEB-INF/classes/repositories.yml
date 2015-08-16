@@ -1,0 +1,17 @@
+default:
+  description: NemakiWare, Lightweight CMIS Server
+  root: /
+  principal.anonymous: anonymous
+  principal.anyone: GROUP_EVERYONE
+  thinClientUri: http://localhost:8080/ui/
+  vendor: aegif
+  product.name: NemakiWare
+  product.version: 2.3
+  namespace: http://www.aegif.jp/NemakiWare/
+  archive: archive
+repositories:
+  - id: bedroom
+    name: bedroom
+  - id: bedroom2
+    name: bedroom2
+    description: Another repository

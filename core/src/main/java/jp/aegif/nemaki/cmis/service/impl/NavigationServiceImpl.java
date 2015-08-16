@@ -66,19 +66,19 @@ public class NavigationServiceImpl implements NavigationService {
 
 	@Override
 	public ObjectInFolderList getChildren(CallContext callContext,
-			String folderId, String filter, String orderBy,
-			Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
-			Boolean includePathSegments, BigInteger maxItems,
-			BigInteger skipCount, ExtensionsData extension,
-			Holder<ObjectData> parentObjectData) {
+			String repositoryId, String folderId, String filter,
+			String orderBy,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
+			String renditionFilter, Boolean includePathSegments,
+			BigInteger maxItems, BigInteger skipCount,
+			ExtensionsData extension, Holder<ObjectData> parentObjectData) {
 		// //////////////////
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("folderId", folderId);
 		Folder folder = contentService.getFolder(folderId);
 		exceptionService.permissionDenied(callContext,
-				PermissionMapping.CAN_GET_CHILDREN_FOLDER, folder);
+				repositoryId, PermissionMapping.CAN_GET_CHILDREN_FOLDER, folder);
 
 		// //////////////////
 		// Specific Exception
@@ -90,21 +90,21 @@ public class NavigationServiceImpl implements NavigationService {
 		// //////////////////
 		// Set ObjectData of parent folder for ObjectInfo
 		ObjectData _parent = compileService.compileObjectData(
-				callContext, folder, filter, includeAllowableActions,
-				includeRelationships, renditionFilter, false);
+				callContext, repositoryId, folder, filter,
+				includeAllowableActions, includeRelationships, renditionFilter, false);
 		parentObjectData.setValue(_parent);
 
-		return getChildrenInternal(callContext, folderId, filter, orderBy,
-				includeAllowableActions, includeRelationships, renditionFilter,
-				includePathSegments, maxItems, skipCount, false);
+		return getChildrenInternal(callContext, repositoryId, folderId, filter,
+				orderBy, includeAllowableActions, includeRelationships,
+				renditionFilter, includePathSegments, maxItems, skipCount, false);
 	}
 
 	private ObjectInFolderList getChildrenInternal(CallContext callContext,
-			String folderId, String filter, String orderBy,
-			Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
-			Boolean includePathSegments, BigInteger maxItems,
-			BigInteger skipCount, boolean folderOnly) {
+			String repositoryId, String folderId, String filter,
+			String orderBy,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
+			String renditionFilter, Boolean includePathSegments,
+			BigInteger maxItems, BigInteger skipCount, boolean folderOnly) {
 
 		// Prepare
 		ObjectInFolderListImpl result = new ObjectInFolderListImpl();
@@ -115,12 +115,12 @@ public class NavigationServiceImpl implements NavigationService {
 		List<Content> contents = contentService.getChildren(folderId);
 
 		ObjectList ol = compileService.compileObjectDataList(callContext,
-				contents, filter, includeAllowableActions,
-				includeRelationships, renditionFilter, false, maxItems,
-				skipCount, folderOnly);
+				repositoryId, contents, filter,
+				includeAllowableActions, includeRelationships, renditionFilter, false,
+				maxItems, skipCount, folderOnly);
 
 		// Sort
-		sortUtil.sort(ol.getObjects(), orderBy);
+		sortUtil.sort(repositoryId, ol.getObjects(), orderBy);
 
 		// Build ObjectInFolderList
 		for (ObjectData od : ol.getObjects()) {
@@ -141,11 +141,11 @@ public class NavigationServiceImpl implements NavigationService {
 
 	@Override
 	public List<ObjectInFolderContainer> getDescendants(
-			CallContext callContext, String folderId, BigInteger depth,
-			String filter, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
-			Boolean includePathSegment, boolean foldersOnly,
-			ExtensionsData extension, Holder<ObjectData> anscestorObjectData) {
+			CallContext callContext, String repositoryId, String folderId,
+			BigInteger depth, String filter,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
+			String renditionFilter, Boolean includePathSegment,
+			boolean foldersOnly, ExtensionsData extension, Holder<ObjectData> anscestorObjectData) {
 
 		// //////////////////
 		// General Exception
@@ -153,7 +153,7 @@ public class NavigationServiceImpl implements NavigationService {
 		exceptionService.invalidArgumentRequiredString("folderId", folderId);
 		Folder folder = contentService.getFolder(folderId);
 		exceptionService.permissionDenied(callContext,
-				PermissionMapping.CAN_GET_DESCENDENTS_FOLDER, folder);
+				repositoryId, PermissionMapping.CAN_GET_DESCENDENTS_FOLDER, folder);
 
 		// //////////////////
 		// Specific Exception
@@ -175,21 +175,21 @@ public class NavigationServiceImpl implements NavigationService {
 
 		// Set ObjectData of the starting folder for ObjectInfo
 		ObjectData _folder = compileService.compileObjectData(
-				callContext, folder, filter, includeAllowableActions,
-				includeRelationships, renditionFilter, false);
+				callContext, repositoryId, folder, filter,
+				includeAllowableActions, includeRelationships, renditionFilter, false);
 		anscestorObjectData.setValue(_folder);
 
 		// get the tree.
-		return getDescendantsInternal(callContext, _folder, filter, iaa, false,
-				includeRelationships, null, ips, 0, d, foldersOnly);
+		return getDescendantsInternal(callContext, repositoryId, _folder, filter, iaa,
+				false, includeRelationships, null, ips, 0, d, foldersOnly);
 	}
 
 	private List<ObjectInFolderContainer> getDescendantsInternal(
-			CallContext callContext, ObjectData node, String filter,
-			Boolean includeAllowableActions, Boolean includeAcl,
-			IncludeRelationships includeRelationships, String renditionFilter,
-			Boolean includePathSegments, int level, int maxLevels,
-			boolean folderOnly) {
+			CallContext callContext, String repositoryId, ObjectData node,
+			String filter, Boolean includeAllowableActions,
+			Boolean includeAcl, IncludeRelationships includeRelationships,
+			String renditionFilter, Boolean includePathSegments, int level,
+			int maxLevels, boolean folderOnly) {
 
 		List<ObjectInFolderContainer> childrenOfFolder = new ArrayList<ObjectInFolderContainer>();
 		// Check specified folderId is folder(if not, it's a leaf node)
@@ -200,10 +200,10 @@ public class NavigationServiceImpl implements NavigationService {
 		String folderId = node.getId();
 		if (maxLevels == -1 || level < maxLevels) {
 			ObjectInFolderList children = getChildrenInternal(callContext,
-					folderId, filter, null, includeAllowableActions,
-					includeRelationships, renditionFilter, includePathSegments,
-					BigInteger.valueOf(Integer.MAX_VALUE),
-					BigInteger.valueOf(0), folderOnly);
+					repositoryId, folderId, filter, null,
+					includeAllowableActions, includeRelationships, renditionFilter,
+					includePathSegments,
+					BigInteger.valueOf(Integer.MAX_VALUE), BigInteger.valueOf(0), folderOnly);
 
 			childrenOfFolder = new ArrayList<ObjectInFolderContainer>();
 			if (null != children
@@ -211,11 +211,11 @@ public class NavigationServiceImpl implements NavigationService {
 				for (ObjectInFolderData child : children.getObjects()) {
 					ObjectInFolderContainerImpl oifc = new ObjectInFolderContainerImpl();
 					List<ObjectInFolderContainer> subChildren = getDescendantsInternal(
-							callContext, child.getObject(), filter,
-							includeAllowableActions, includeAcl,
-							includeRelationships, renditionFilter,
-							includePathSegments, level + 1, maxLevels,
-							folderOnly);
+							callContext, repositoryId, child.getObject(),
+							filter, includeAllowableActions,
+							includeAcl, includeRelationships,
+							renditionFilter, includePathSegments, level + 1,
+							maxLevels, folderOnly);
 
 					oifc.setObject(child);
 					if (CollectionUtils.isNotEmpty(subChildren))
@@ -228,8 +228,8 @@ public class NavigationServiceImpl implements NavigationService {
 	}
 
 	@Override
-	public ObjectData getFolderParent(CallContext callContext, String folderId,
-			String filter) {
+	public ObjectData getFolderParent(CallContext callContext, String repositoryId,
+			String folderId, String filter) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -237,27 +237,27 @@ public class NavigationServiceImpl implements NavigationService {
 		Folder folder = (Folder) contentService.getContent(folderId);
 		exceptionService.objectNotFound(DomainType.OBJECT, folder, folderId);
 		exceptionService.permissionDenied(callContext,
-				PermissionMapping.CAN_GET_FOLDER_PARENT_OBJECT, folder);
+				repositoryId, PermissionMapping.CAN_GET_FOLDER_PARENT_OBJECT, folder);
 
 		// //////////////////
 		// Specific Exception
 		// //////////////////
 		Folder parent = contentService.getParent(folderId);
-		exceptionService.objectNotFoundParentFolder(folderId, parent);
+		exceptionService.objectNotFoundParentFolder(repositoryId, folderId, parent);
 		exceptionService.invalidArgumentRootFolder(folder);
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		return compileService.compileObjectData(callContext, parent,
-				filter, true, IncludeRelationships.NONE, null, true);
+		return compileService.compileObjectData(callContext, repositoryId,
+				parent, filter, true, IncludeRelationships.NONE, null, true);
 	}
 
 	@Override
 	public List<ObjectParentData> getObjectParents(CallContext callContext,
-			String objectId, String filter, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
-			Boolean includeRelativePathSegment, ExtensionsData extension) {
+			String repositoryId, String objectId, String filter,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
+			String renditionFilter, Boolean includeRelativePathSegment, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -265,13 +265,13 @@ public class NavigationServiceImpl implements NavigationService {
 		Content content = contentService.getContent(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,
-				PermissionMapping.CAN_GET_PARENTS_FOLDER, content);
+				repositoryId, PermissionMapping.CAN_GET_PARENTS_FOLDER, content);
 
 		// //////////////////
 		// Specific Exception
 		// //////////////////
 		Folder parent = contentService.getParent(objectId);
-		exceptionService.objectNotFoundParentFolder(objectId, parent);
+		exceptionService.objectNotFoundParentFolder(repositoryId, objectId, parent);
 		exceptionService.invalidArgumentRootFolder(content);
 
 		// //////////////////
@@ -279,8 +279,8 @@ public class NavigationServiceImpl implements NavigationService {
 		// //////////////////
 		ObjectParentDataImpl result = new ObjectParentDataImpl();
 		ObjectData o = compileService.compileObjectData(callContext,
-				parent, filter, includeAllowableActions, includeRelationships,
-				null, true);
+				repositoryId, parent, filter, includeAllowableActions,
+				includeRelationships, null, true);
 		result.setObject(o);
 		boolean irps = (includeRelativePathSegment == null ? false
 				: includeRelativePathSegment.booleanValue());
@@ -293,10 +293,10 @@ public class NavigationServiceImpl implements NavigationService {
 
 	@Override
 	public ObjectList getCheckedOutDocs(CallContext callContext,
-			String folderId, String filter, String orderBy,
-			Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
-			BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
+			String repositoryId, String folderId, String filter,
+			String orderBy,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
+			String renditionFilter, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -308,9 +308,9 @@ public class NavigationServiceImpl implements NavigationService {
 		//Folder ID can be null, which means all PWCs are returned.
 		if(StringUtils.isNotBlank(folderId)){
 			Folder folder = contentService.getFolder(folderId);
-			exceptionService.objectNotFoundParentFolder(folderId, folder);
+			exceptionService.objectNotFoundParentFolder(repositoryId, folderId, folder);
 		}
-		exceptionService.invalidArgumentOrderBy(orderBy);
+		exceptionService.invalidArgumentOrderBy(repositoryId, orderBy);
 
 		// //////////////////
 		// Body of the method
@@ -320,10 +320,10 @@ public class NavigationServiceImpl implements NavigationService {
 				orderBy, extension);
 
 		ObjectList list = compileService.compileObjectDataList(
-				callContext, checkedOuts, filter, includeAllowableActions,
-				includeRelationships, renditionFilter, false, maxItems,
-				skipCount, false);
-		sortUtil.sort(list.getObjects(), orderBy);
+				callContext, repositoryId, checkedOuts, filter,
+				includeAllowableActions, includeRelationships, renditionFilter, false,
+				maxItems, skipCount, false);
+		sortUtil.sort(repositoryId, list.getObjects(), orderBy);
 
 		return list;
 	}

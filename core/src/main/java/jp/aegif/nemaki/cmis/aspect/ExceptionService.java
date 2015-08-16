@@ -54,8 +54,8 @@ public interface ExceptionService {
 	void invalidArgumentRequiredString(String argumentName, String argument);
 	void invalidArgumentRequiredHolderString(String argumentName, Holder<String> argument);
 	void invalidArgumentRequiredCollection(String argumentName, Collection collection);
-	void invalidArgumentRequiredParentFolderId(String folderId);
-	void invalidArgumentOrderBy(String orderBy);
+	void invalidArgumentRequiredParentFolderId(String repositoryId, String folderId);
+	void invalidArgumentOrderBy(String repositoryId, String orderBy);
 	void invalidArgumentFolderId(Folder folder, String folderId);
 	void invalidArgumentRootFolder(Content content);
 	void invalidArgumentDepth(BigInteger depth);
@@ -68,8 +68,8 @@ public interface ExceptionService {
 	void objectNotFound(DomainType type, Object object, String id, String msg);
 	void objectNotFound(DomainType type, Object object, String id);
 	void objectNotFoundVersionSeries(String id, Collection collection);
-	void objectNotFoundParentFolder(String id, Content content);
-	void permissionDenied(CallContext context, String key, Content content);
+	void objectNotFoundParentFolder(String repositoryId, String id, Content content);
+	void permissionDenied(CallContext context, String repositoryId, String key, Content content);
 	void perimissionAdmin(CallContext context);
 	void constraint(String objectId, String msg);
 	void constraintBaseTypeId(Properties properties, BaseTypeId baseTypeId);
@@ -78,7 +78,7 @@ public interface ExceptionService {
 	void constraintControllableVersionable(DocumentTypeDefinition documentTypeDefinition, VersioningState versioningState, String objectId);
 	void constraintCotrollablePolicies(TypeDefinition typeDefinition, List<String> policies, Properties properties);
 	void constraintCotrollableAcl(TypeDefinition typeDefinition, Acl addAces, Acl removeAces, Properties properties);
-	void constraintPermissionDefined(Acl acl, String objectId);
+	void constraintPermissionDefined(String repositoryId, Acl acl, String objectId);
 	void constraintAllowedSourceTypes(RelationshipTypeDefinition relationshipTypeDefinition, Content source);
 	void constraintAllowedTargetTypes(RelationshipTypeDefinition relationshipTypeDefinition, Content target);
 	void constraintVersionable(String typeId);
@@ -96,7 +96,7 @@ public interface ExceptionService {
 	void constraintContentStreamDownload(Document document);
 	void constraintRenditionStreamDownload(Content content, String streamId);
 	void constraintPropertyDefinition(TypeDefinition typeDefinition, PropertyDefinition<?> propertyDefinition);
-	void constraintDeleteRootFolder(String objectId);
+	void constraintDeleteRootFolder(String repositoryId, String objectId);
 	void contentAlreadyExists(Content content, Boolean overwriteFlag);
 	void streamNotSupported(DocumentTypeDefinition documentTypeDefinition, ContentStream contentStream);
 	void nameConstraintViolation(Properties properties, Folder parentFolder);

@@ -78,10 +78,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 	}
 
 	@Override
-	public ObjectList query(CallContext callContext, String statement,
-			Boolean searchAllVersions, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
-			BigInteger maxItems, BigInteger skipCount) {
+	public ObjectList query(CallContext callContext, String repositoryId,
+			String statement, Boolean searchAllVersions,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
+			String renditionFilter, BigInteger maxItems, BigInteger skipCount) {
 
 		SolrServer solrServer = solrUtil.getSolrServer();
 
@@ -179,7 +179,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 			// Filter out by permissions
 			List<Content> permitted = permissionService.getFiltered(
-					callContext, contents);
+					callContext, repositoryId, contents);
 
 			// Filter return value with SELECT clause
 			Map<String, String> requestedWithAliasKey = queryObject
@@ -192,9 +192,9 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 			// Build ObjectList
 			ObjectList result = compileService.compileObjectDataList(
-					callContext, permitted, filter, includeAllowableActions,
-					includeRelationships, renditionFilter, false, maxItems,
-					skipCount, false);
+					callContext, repositoryId, permitted, filter,
+					includeAllowableActions, includeRelationships, renditionFilter, false,
+					maxItems, skipCount, false);
 
 			// Sort
 			List<SortSpec> sortSpecs = queryObject.getOrderBys();
@@ -209,7 +209,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 				_orderBy.add(StringUtils.join(_sortSpec, " "));
 			}
 			String orderBy = StringUtils.join(_orderBy, ",");
-			sortUtil.sort(result.getObjects(), orderBy);
+			sortUtil.sort(repositoryId, result.getObjects(), orderBy);
 
 			return result;
 		} else {

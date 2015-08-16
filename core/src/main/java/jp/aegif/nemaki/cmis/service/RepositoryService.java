@@ -42,57 +42,64 @@ public interface RepositoryService {
 	/**
 	 * Returns information about the CMIS repository, the optional capabilities
 	 * it supports and its access control information if applicable.
+	 * @param repositoryId TODO
 	 */
-	public abstract RepositoryInfo getRepositoryInfo();
+	public abstract RepositoryInfo getRepositoryInfo(String repositoryId);
 
+	public abstract List<org.apache.chemistry.opencmis.commons.data.RepositoryInfo> getRepositoryInfos();
+	
 	/**
 	 * Gets the CMIS types.
+	 * @param repositoryId TODO
 	 */
 	public abstract TypeDefinitionList getTypeChildren(CallContext callContext,
-			String typeId, Boolean includePropertyDefinitions,
-			BigInteger maxItems, BigInteger skipCount);
+			String repositoryId, String typeId,
+			Boolean includePropertyDefinitions, BigInteger maxItems, BigInteger skipCount);
 
 	/**
 	 * Returns the set of descendant object type defined for the repository
 	 * under the specified type.
+	 * @param repositoryId TODO
 	 */
 	public abstract List<TypeDefinitionContainer> getTypeDescendants(
-			CallContext callContext, String typeId, BigInteger depth,
-			Boolean includePropertyDefinitions);
+			CallContext callContext, String repositoryId, String typeId,
+			BigInteger depth, Boolean includePropertyDefinitions);
 
 	/**
 	 * Gets the definition of the specified object type.
+	 * @param repositoryId TODO
 	 */
 	public abstract TypeDefinition getTypeDefinition(CallContext callContext,
-			String typeId);
+			String repositoryId, String typeId);
 
 	/**
 	 * Create a type
 	 * @param callContext TODO
+	 * @param repositoryId TODO
 	 * @param type
 	 * @param extension
-	 * 
 	 * @return
 	 */
 	public TypeDefinition createType(CallContext callContext,
-			TypeDefinition type, ExtensionsData extension);
+			String repositoryId, TypeDefinition type, ExtensionsData extension);
 
 	/**
 	 * Delete a type
 	 * @param callContext TODO
+	 * @param repositoryId TODO
 	 * @param typeId
 	 * @param extension
 	 */
-	public void deleteType(CallContext callContext, String typeId, ExtensionsData extension);
+	public void deleteType(CallContext callContext, String repositoryId, String typeId, ExtensionsData extension);
 
 	/**
 	 * Update a type
 	 * @param callContext TODO
+	 * @param repositoryId TODO
 	 * @param type
 	 * @param extension
-	 * 
 	 * @return
 	 */
 	public TypeDefinition updateType(CallContext callContext,
-			TypeDefinition type, ExtensionsData extension);
+			String repositoryId, TypeDefinition type, ExtensionsData extension);
 }

@@ -8,17 +8,16 @@ import javax.annotation.PostConstruct;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
 import jp.aegif.nemaki.cmis.factory.auth.impl.AuthenticationServiceImpl;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
-import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisProxyAuthenticationException;
 import org.apache.chemistry.opencmis.commons.impl.server.AbstractServiceFactory;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
-import org.apache.chemistry.opencmis.commons.server.CmisService;
 import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
 import org.apache.chemistry.opencmis.server.support.wrapper.ConformanceCmisServiceWrapper;
 import org.apache.commons.lang.StringUtils;
@@ -33,11 +32,12 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 		org.apache.chemistry.opencmis.commons.server.CmisServiceFactory {
 
 	private PropertyManager propertyManager;
-	private Repository repository;
+	
+	private jp.aegif.nemaki.cmis.factory.CmisService cmisService;
+	
 	private AuthenticationService authenticationService;
 	private PrincipalService principalService;
 	
-	private RepositoryMap repositoryMap;
 	private static BigInteger DEFAULT_MAX_ITEMS_TYPES;
 	private static BigInteger DEFAULT_DEPTH_TYPES;
 	private static BigInteger DEFAULT_MAX_ITEMS_OBJECTS;
@@ -63,18 +63,17 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 	 */
 	@Override
 	public void init(Map<String, String> parameters) {
-		repositoryMap.addRepository(repository);
 	}
 
 	@Override
-	public CmisService getService(CallContext callContext) {
+	public org.apache.chemistry.opencmis.commons.server.CmisService getService(CallContext callContext) {
 		// Create CmisService
 		ConformanceCmisServiceWrapper wrapper = new ConformanceCmisServiceWrapper(
-				new jp.aegif.nemaki.cmis.factory.CmisService(repositoryMap),
+				cmisService,
 				DEFAULT_MAX_ITEMS_TYPES, DEFAULT_DEPTH_TYPES,
 				DEFAULT_MAX_ITEMS_OBJECTS, DEFAULT_DEPTH_OBJECTS);
 		wrapper.setCallContext(callContext);
-
+		
 		// Authentication
 		boolean auth = login(callContext);
 		if (auth) {
@@ -86,7 +85,7 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 					+ callContext.getUsername() + "]" + "Authentication failed");
 		}
 	}
-
+	
 	private boolean login(CallContext callContext) {
 		//SSO
 		if(loginWithExternalAuth(callContext)){
@@ -156,12 +155,8 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 		if (user == null)
 			return false;
 		boolean isAdmin = user.isAdmin() == null ? false : true;
-		if (user == null) {
-			return false;
-		} else {
-			setAdminFlagInContext(callContext, isAdmin);
-			return true;
-		}
+		setAdminFlagInContext(callContext, isAdmin);
+		return true;
 	}
 
 	private void setAdminFlagInContext(CallContext callContext, Boolean isAdmin) {
@@ -187,12 +182,7 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 		this.principalService = principalService;
 	}
 
-	public void setRepository(Repository repository) {
-		this.repository = repository;
+	public void setCmisService(CmisService cmisService) {
+		this.cmisService = cmisService;
 	}
-
-	public void setRepositoryMap(RepositoryMap repositoryMap) {
-		this.repositoryMap = repositoryMap;
-	}
-
 }

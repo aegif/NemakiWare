@@ -58,8 +58,8 @@ public class VersioningServiceImpl implements VersioningService {
 	/**
 	 * Repository only allow the latest version to be checked out
 	 */
-	public void checkOut(CallContext callContext, Holder<String> objectId,
-			ExtensionsData extension, Holder<Boolean> contentCopied) {
+	public void checkOut(CallContext callContext, String repositoryId,
+			Holder<String> objectId, ExtensionsData extension, Holder<Boolean> contentCopied) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -68,7 +68,7 @@ public class VersioningServiceImpl implements VersioningService {
 		Document document = contentService.getDocument(id);
 		exceptionService.objectNotFound(DomainType.OBJECT, document, id);
 		exceptionService.permissionDenied(callContext,
-				PermissionMapping.CAN_CHECKOUT_DOCUMENT, document);
+				repositoryId, PermissionMapping.CAN_CHECKOUT_DOCUMENT, document);
 
 		// //////////////////
 		// Specific Exception
@@ -91,8 +91,8 @@ public class VersioningServiceImpl implements VersioningService {
 	}
 
 	@Override
-	public void cancelCheckOut(CallContext callContext, String objectId,
-			ExtensionsData extension) {
+	public void cancelCheckOut(CallContext callContext, String repositoryId,
+			String objectId, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -100,7 +100,7 @@ public class VersioningServiceImpl implements VersioningService {
 		Document document = contentService.getDocument(objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, document, objectId);
 		exceptionService.permissionDenied(callContext,
-				PermissionMapping.CAN_CHECKIN_DOCUMENT, document);
+				repositoryId, PermissionMapping.CAN_CHECKIN_DOCUMENT, document);
 
 		// //////////////////
 		// Specific Exception
@@ -122,10 +122,10 @@ public class VersioningServiceImpl implements VersioningService {
 	}
 
 	@Override
-	public void checkIn(CallContext callContext, Holder<String> objectId,
-			Boolean major, Properties properties, ContentStream contentStream,
-			String checkinComment, List<String> policies, Acl addAces,
-			Acl removeAces, ExtensionsData extension) {
+	public void checkIn(CallContext callContext, String repositoryId,
+			Holder<String> objectId, Boolean major, Properties properties,
+			ContentStream contentStream, String checkinComment, List<String> policies,
+			Acl addAces, Acl removeAces, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -134,7 +134,7 @@ public class VersioningServiceImpl implements VersioningService {
 		Document document = contentService.getDocument(id);
 		exceptionService.objectNotFound(DomainType.OBJECT, document, id);
 		exceptionService.permissionDenied(callContext,
-				PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT, document);
+				repositoryId, PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT, document);
 
 		// //////////////////
 		// Specific Exception
@@ -157,11 +157,11 @@ public class VersioningServiceImpl implements VersioningService {
 
 	@Override
 	public ObjectData getObjectOfLatestVersion(CallContext context,
-			String objectId, String versionSeriesId, Boolean major,
-			String filter, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
-			Boolean includePolicyIds, Boolean includeAcl,
-			ExtensionsData extension) {
+			String repositoryId, String objectId, String versionSeriesId,
+			Boolean major, String filter,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
+			String renditionFilter, Boolean includePolicyIds,
+			Boolean includeAcl, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -186,21 +186,21 @@ public class VersioningServiceImpl implements VersioningService {
 		exceptionService.objectNotFound(DomainType.OBJECT, document,
 				versionSeriesId);
 		exceptionService.permissionDenied(context,
-				PermissionMapping.CAN_GET_PROPERTIES_OBJECT, document);
+				repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT, document);
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
 		ObjectData objectData = compileService.compileObjectData(context,
-				document, filter, includeAllowableActions,
-				includeRelationships, renditionFilter, includeAcl);
+				repositoryId, document, filter,
+				includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
 		return objectData;
 	}
 
 	@Override
 	public List<ObjectData> getAllVersions(CallContext context,
-			String objectId, String versionSeriesId, String filter,
-			Boolean includeAllowableActions, ExtensionsData extension) {
+			String repositoryId, String objectId, String versionSeriesId,
+			String filter, Boolean includeAllowableActions, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -239,8 +239,8 @@ public class VersioningServiceImpl implements VersioningService {
 		List<ObjectData> result = new ArrayList<ObjectData>();
 		for (Content content : allVersions) {
 			ObjectData objectData = compileService.compileObjectData(
-					context, content, filter, includeAllowableActions,
-					IncludeRelationships.NONE, null, true);
+					context, repositoryId, content, filter,
+					includeAllowableActions, IncludeRelationships.NONE, null, true);
 			result.add(objectData);
 		}
 

@@ -28,7 +28,6 @@ import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.aspect.query.QueryProcessor;
-import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.service.DiscoveryService;
 import jp.aegif.nemaki.model.Change;
 
@@ -51,11 +50,11 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 	private ExceptionService exceptionService;
 	private CompileService compileService;
 
-	public ObjectList query(CallContext context, String statement,
-			Boolean searchAllVersions, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships,
-			String renditionFilter, BigInteger maxItems,
-			BigInteger skipCount, ExtensionsData extension) {
+	public ObjectList query(CallContext context, String repositoryId,
+			String statement, Boolean searchAllVersions,
+			Boolean includeAllowableActions,
+			IncludeRelationships includeRelationships, String renditionFilter,
+			BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -68,9 +67,9 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 
 		// //////////////////
 		// Body of the method
-		return queryProcessor.query(context, statement, searchAllVersions,
-				includeAllowableActions, includeRelationships, renditionFilter,
-				maxItems, skipCount);
+		return queryProcessor.query(context, repositoryId, statement,
+				searchAllVersions, includeAllowableActions, includeRelationships,
+				renditionFilter, maxItems, skipCount);
 	}
 
 	/**
@@ -78,9 +77,9 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 	 * attachments TODO includeAcl,includePolicyIds is not valid
 	 */
 	public ObjectList getContentChanges(CallContext context,
-			Holder<String> changeLogToken, Boolean includeProperties,
-			String filter, Boolean includePolicyIds, Boolean includeAcl,
-			BigInteger maxItems, ExtensionsData extension) {
+			String repositoryId, Holder<String> changeLogToken,
+			Boolean includeProperties, String filter, Boolean includePolicyIds,
+			Boolean includeAcl, BigInteger maxItems, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -109,9 +108,9 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 			changeLogToken.setValue(latestToken);
 		}
 
-		return compileService.compileChangeDataList(context, changes,
-				changeLogToken, includeProperties, filter, includePolicyIds,
-				includeAcl);
+		return compileService.compileChangeDataList(context, repositoryId,
+				changes, changeLogToken, includeProperties, filter,
+				includePolicyIds, includeAcl);
 	}
 
 	public void setQueryProcessor(QueryProcessor queryProcessor) {
