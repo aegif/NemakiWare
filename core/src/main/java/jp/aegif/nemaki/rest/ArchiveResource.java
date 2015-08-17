@@ -33,18 +33,16 @@ import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
-import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.util.constant.NodeType;
 
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
-@Path("/archive")
+@Path("/archive/{repositoryId}")
 public class ArchiveResource extends ResourceBase {
 	
 	private ContentService contentService;
-	private PrincipalService principalService;
 	private final String repositoryId = "bedroom";//TODO hard coding
 	
 	public void setContentService(ContentService contentService) {
@@ -56,7 +54,7 @@ public class ArchiveResource extends ResourceBase {
 	@GET
 	@Path("/index")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String index(){
+	public String index(@PathParam("repositoryId") String repositoryId){
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray list = new JSONArray();
@@ -94,7 +92,7 @@ public class ArchiveResource extends ResourceBase {
 	@PUT
 	@Path("/restore/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String restore(@PathParam("id") String id){
+	public String restore(@PathParam("repositoryId") String repositoryId, @PathParam("id") String id){
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
@@ -122,9 +120,5 @@ public class ArchiveResource extends ResourceBase {
 		archiveJson.put("created", sdf.format(created.getTime()));
 		archiveJson.put("creator", creator);
 		return archiveJson;
-	}
-
-	public void setPrincipalService(PrincipalService principalService) {
-		this.principalService = principalService;
 	}
 }

@@ -547,9 +547,6 @@
     </bean>
     
     <bean id="archiveResource" class="jp.aegif.nemaki.rest.ArchiveResource">
-        <property name="principalService">
-            <ref bean="PrincipalService" />
-        </property>
         <property name="ContentService">
             <ref bean="ContentService" />
         </property>

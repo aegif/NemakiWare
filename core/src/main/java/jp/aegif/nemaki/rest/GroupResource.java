@@ -50,17 +50,16 @@ import org.json.simple.JSONValue;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
-@Path("/group")
+@Path("/group/{repositoryId}")
 public class GroupResource extends ResourceBase{
 
 	PrincipalService principalService;
-	private final String repositoryId = "bedroom"; //TODO hard coding
 	
 	@SuppressWarnings("unchecked")
 	@GET
 	@Path("/search")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String search(@QueryParam("query") String query){
+	public String search(@PathParam("repositoryId") String repositoryId, @QueryParam("query") String query){
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
@@ -90,7 +89,7 @@ public class GroupResource extends ResourceBase{
 	@GET
 	@Path("/list")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String list(){
+	public String list(@PathParam("repositoryId") String repositoryId){
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray listJSON = new JSONArray();
@@ -116,7 +115,7 @@ public class GroupResource extends ResourceBase{
 	@GET
 	@Path("/show/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String show(@PathParam("id") String groupId){
+	public String show(@PathParam("repositoryId") String repositoryId, @PathParam("id") String groupId){
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
@@ -137,7 +136,8 @@ public class GroupResource extends ResourceBase{
 	@Path("/create/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.APPLICATION_FORM_URLENCODED)
-	public String create(@PathParam("id") String groupId,
+	public String create(@PathParam("repositoryId") String repositoryId,
+						 @PathParam("id") String groupId,
 						 @FormParam(FORM_GROUPNAME) String name,
 						 @FormParam("users") String users,
 						 @FormParam("groups") String groups,
@@ -149,7 +149,7 @@ public class GroupResource extends ResourceBase{
 		JSONArray errMsg = new JSONArray();
 
 		//Validation
-		status = validateNewGroup(status, errMsg, groupId, name);
+		status = validateNewGroup(repositoryId, status, errMsg, groupId, name);
 
 		//Edit group info
 		JSONArray _users = parseJsonArray(users);
@@ -175,7 +175,8 @@ public class GroupResource extends ResourceBase{
 	@Path("/update/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.APPLICATION_FORM_URLENCODED)
-	public String update(@PathParam("id") String groupId,
+	public String update(@PathParam("repositoryId") String repositoryId,
+						 @PathParam("id") String groupId,
 						 @FormParam(FORM_GROUPNAME) String name,
 						 @FormParam("users") String users,
 						 @FormParam("groups") String groups,
@@ -216,7 +217,8 @@ public class GroupResource extends ResourceBase{
 	@Path("/delete/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.APPLICATION_FORM_URLENCODED)
-	public String delete(@PathParam("id") String groupId){
+	public String delete(@PathParam("repositoryId") String repositoryId,
+			@PathParam("id") String groupId){
 
 		boolean status = true;
 		JSONObject result = new JSONObject();
@@ -245,7 +247,8 @@ public class GroupResource extends ResourceBase{
 	@Path("/{apiType: add|remove}/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.APPLICATION_FORM_URLENCODED)
-	public String updateMembers(@PathParam("id") String groupId,
+	public String updateMembers(@PathParam("repositoryId") String repositoryId,
+					  @PathParam("id") String groupId,
 				      @PathParam("apiType") String apiType,
 					  @FormParam(FORM_MEMBER_USERS) String users,
 					  @FormParam(FORM_MEMBER_GROUPS) String groups,
@@ -290,11 +293,11 @@ public class GroupResource extends ResourceBase{
 			setModifiedSignature(getUserInfo(httpRequest), group);
 
 			//Member(User) info
-			List<String> usersList = editUserMembers(usersAry, errMsg, apiType, group);
+			List<String> usersList = editUserMembers(repositoryId, usersAry, errMsg, apiType, group);
 			group.setUsers(usersList);
 
 			//Member(Group) info
-			List<String> groupsList = editGroupMembers(groupsAry, errMsg, apiType, group);
+			List<String> groupsList = editGroupMembers(repositoryId, groupsAry, errMsg, apiType, group);
 			group.setGroups(groupsList);
 
 			//Update
@@ -343,13 +346,14 @@ public class GroupResource extends ResourceBase{
 
 	/**
 	 * edit group's members(users)
+	 * @param repositoryId TODO
 	 * @param usersAry
 	 * @param errMsg
 	 * @param apiType
 	 * @param group
 	 * @return
 	 */
-	private List<String> editUserMembers(JSONArray usersAry, JSONArray errMsg, String apiType, Group group){
+	private List<String> editUserMembers(String repositoryId, JSONArray usersAry, JSONArray errMsg, String apiType, Group group){
 		List<String> usersList = new ArrayList<String>();
 
 		List<String> ul = group.getUsers();
@@ -393,13 +397,14 @@ public class GroupResource extends ResourceBase{
 
 	/**
 	 * edit group's members(groups)
+	 * @param repositoryId TODO
 	 * @param groupsAry
 	 * @param errMsg
 	 * @param apiType
 	 * @param group
 	 * @return
 	 */
-	private List<String>editGroupMembers(JSONArray groupsAry, JSONArray errMsg, String apiType, Group group){	//check only when "add" API
+	private List<String>editGroupMembers(String repositoryId, JSONArray groupsAry, JSONArray errMsg, String apiType, Group group){	//check only when "add" API
 		List<String>groupsList = new ArrayList<String>();
 
 		List<String> gl = group.getGroups();
@@ -451,7 +456,7 @@ public class GroupResource extends ResourceBase{
 		return groupsList;
 	}
 
-	boolean validateNewGroup(boolean status, JSONArray errMsg, String groupId, String name){
+	boolean validateNewGroup(String repositoryId, boolean status, JSONArray errMsg, String groupId, String name){
 		if(StringUtils.isBlank(groupId)){
 			status = false;
 			addErrMsg(errMsg, ITEM_GROUPID, ERR_MANDATORY);
