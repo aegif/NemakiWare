@@ -63,14 +63,14 @@ public class AclServiceImpl implements AclService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequired("objectId", objectId);
-		Content content = contentService.getContent(objectId);
+		Content content = contentService.getContent(repositoryId, objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,repositoryId, PermissionMapping.CAN_GET_ACL_OBJECT, content);
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		jp.aegif.nemaki.model.Acl acl = contentService.calculateAcl(content);
+		jp.aegif.nemaki.model.Acl acl = contentService.calculateAcl(repositoryId, content);
 		return compileService.compileAcl(acl, content.isAclInherited(), onlyBasicPermissions);
 	}
 
@@ -81,7 +81,7 @@ public class AclServiceImpl implements AclService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequired("objectId", objectId);
-		Content content = contentService.getContent(objectId);
+		Content content = contentService.getContent(repositoryId, objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,repositoryId, PermissionMapping.CAN_APPLY_ACL_OBJECT, content);
 
@@ -120,7 +120,7 @@ public class AclServiceImpl implements AclService {
 
 		convertSystemPrinciaplId(nemakiAcl);
 		content.setAcl(nemakiAcl);
-		contentService.update(content);
+		contentService.update(repositoryId, content);
 		
 		nemakiCache.removeCmisCache(objectId);
 		

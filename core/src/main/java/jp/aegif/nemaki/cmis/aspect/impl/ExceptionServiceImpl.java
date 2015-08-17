@@ -30,23 +30,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 
-import jp.aegif.nemaki.businesslogic.ContentService;
-import jp.aegif.nemaki.businesslogic.PrincipalService;
-import jp.aegif.nemaki.cmis.aspect.ExceptionService;
-import jp.aegif.nemaki.cmis.aspect.PermissionService;
-import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
-import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
-import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
-import jp.aegif.nemaki.model.Acl;
-import jp.aegif.nemaki.model.Change;
-import jp.aegif.nemaki.model.Content;
-import jp.aegif.nemaki.model.Document;
-import jp.aegif.nemaki.model.Folder;
-import jp.aegif.nemaki.model.User;
-import jp.aegif.nemaki.model.VersionSeries;
-import jp.aegif.nemaki.util.DataUtil;
-import jp.aegif.nemaki.util.constant.DomainType;
-
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.Properties;
@@ -89,6 +72,22 @@ import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.BeansException;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
+
+import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.businesslogic.PrincipalService;
+import jp.aegif.nemaki.cmis.aspect.ExceptionService;
+import jp.aegif.nemaki.cmis.aspect.PermissionService;
+import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
+import jp.aegif.nemaki.model.Acl;
+import jp.aegif.nemaki.model.Change;
+import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.model.Document;
+import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.model.VersionSeries;
+import jp.aegif.nemaki.util.DataUtil;
+import jp.aegif.nemaki.util.constant.DomainType;
 
 public class ExceptionServiceImpl implements ExceptionService,
 		ApplicationContextAware {
@@ -144,8 +143,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void invalidArgumentRootFolder(Content content) {
-		if (contentService.isRoot(content))
+	public void invalidArgumentRootFolder(String repositoryId, Content content) {
+		if (contentService.isRoot(repositoryId, content))
 			invalidArgument("Cannot specify the root folder as an input parameter");
 	}
 
@@ -196,9 +195,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void invalidArgumentChangeEventNotAvailable(
-			Holder<String> changeLogToken) {
+			String repositoryId, Holder<String> changeLogToken) {
 		if (changeLogToken != null && changeLogToken.getValue() != null) {
-			Change change = contentService.getChangeEvent(changeLogToken
+			Change change = contentService.getChangeEvent(repositoryId, changeLogToken
 					.getValue());
 			if (change == null)
 				invalidArgument("changeLogToken:" + changeLogToken.getValue()
@@ -340,7 +339,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 	public void permissionDenied(CallContext context, String repositoryId,
 			String key, Content content) {
 		String baseTypeId = content.getType();
-		Acl acl = contentService.calculateAcl(content);
+		Acl acl = contentService.calculateAcl(repositoryId, content);
 		permissionDeniedInternal(context, repositoryId, key, acl, baseTypeId, content);
 	}
 
@@ -691,8 +690,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void constraintAlreadyCheckedOut(Document document) {
-		VersionSeries vs = contentService.getVersionSeries(document);
+	public void constraintAlreadyCheckedOut(String repositoryId, Document document) {
+		VersionSeries vs = contentService.getVersionSeries(repositoryId, document);
 		if (vs.isVersionSeriesCheckedOut()) {
 			if (!(document.isPrivateWorkingCopy())) {
 				constraint(document.getId(),
@@ -702,9 +701,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void constraintUpdateWhenCheckedOut(String currentUserId,
-			Document document) {
-		VersionSeries vs = contentService.getVersionSeries(document);
+	public void constraintUpdateWhenCheckedOut(String repositoryId,
+			String currentUserId, Document document) {
+		VersionSeries vs = contentService.getVersionSeries(repositoryId, document);
 		if (vs.isVersionSeriesCheckedOut()) {
 			if (document.isPrivateWorkingCopy()) {
 				// Can update by only the use who has checked it out
@@ -730,13 +729,13 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void constraintContentStreamRequired(Document document) {
+	public void constraintContentStreamRequired(String repositoryId, Document document) {
 		String objectTypeId = document.getObjectType();
 		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
 				.getTypeDefinition(objectTypeId);
 		if (td.getContentStreamAllowed() == ContentStreamAllowed.REQUIRED) {
 			if (document.getAttachmentNodeId() == null
-					|| contentService.getAttachment(document
+					|| contentService.getAttachment(repositoryId, document
 							.getAttachmentNodeId()) == null) {
 				constraint(document.getId(),
 						"This document type does not allow no content stream");
@@ -768,8 +767,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void constraintObjectsStillExist(String objectTypeId) {
-		if (contentService.existContent(objectTypeId)) {
+	public void constraintObjectsStillExist(String repositoryId, String objectTypeId) {
+		if (contentService.existContent(repositoryId, objectTypeId)) {
 			String msg = "There still exists objects of the specified object type"
 					+ " [objectTypeId = " + objectTypeId + "]";
 			throw new CmisConstraintException(msg, HTTP_STATUS_CODE_409);

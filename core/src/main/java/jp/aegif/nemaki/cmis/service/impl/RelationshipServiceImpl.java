@@ -60,7 +60,7 @@ public class RelationshipServiceImpl implements RelationshipService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("objectId", objectId);
-		Content content = contentService.getContent(objectId);
+		Content content = contentService.getContent(repositoryId, objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,
 				repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, content);
@@ -73,7 +73,7 @@ public class RelationshipServiceImpl implements RelationshipService {
 				: relationshipDirection;
 
 		List<Relationship> rels = contentService.getRelationsipsOfObject(
-				objectId, relationshipDirection);
+				repositoryId, objectId, relationshipDirection);
 
 		// Filtering results
 		List<Relationship> extracted = new ArrayList<Relationship>();

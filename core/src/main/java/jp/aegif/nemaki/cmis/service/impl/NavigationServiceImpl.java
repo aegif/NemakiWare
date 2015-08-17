@@ -76,7 +76,7 @@ public class NavigationServiceImpl implements NavigationService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("folderId", folderId);
-		Folder folder = contentService.getFolder(folderId);
+		Folder folder = contentService.getFolder(repositoryId, folderId);
 		exceptionService.permissionDenied(callContext,
 				repositoryId, PermissionMapping.CAN_GET_CHILDREN_FOLDER, folder);
 
@@ -112,7 +112,7 @@ public class NavigationServiceImpl implements NavigationService {
 		result.setHasMoreItems(false);
 
 		// Build ObjectList
-		List<Content> contents = contentService.getChildren(folderId);
+		List<Content> contents = contentService.getChildren(repositoryId, folderId);
 
 		ObjectList ol = compileService.compileObjectDataList(callContext,
 				repositoryId, contents, filter,
@@ -151,7 +151,7 @@ public class NavigationServiceImpl implements NavigationService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("folderId", folderId);
-		Folder folder = contentService.getFolder(folderId);
+		Folder folder = contentService.getFolder(repositoryId, folderId);
 		exceptionService.permissionDenied(callContext,
 				repositoryId, PermissionMapping.CAN_GET_DESCENDENTS_FOLDER, folder);
 
@@ -234,7 +234,7 @@ public class NavigationServiceImpl implements NavigationService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("folderId", folderId);
-		Folder folder = (Folder) contentService.getContent(folderId);
+		Folder folder = (Folder) contentService.getContent(repositoryId, folderId);
 		exceptionService.objectNotFound(DomainType.OBJECT, folder, folderId);
 		exceptionService.permissionDenied(callContext,
 				repositoryId, PermissionMapping.CAN_GET_FOLDER_PARENT_OBJECT, folder);
@@ -242,9 +242,9 @@ public class NavigationServiceImpl implements NavigationService {
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		Folder parent = contentService.getParent(folderId);
+		Folder parent = contentService.getParent(repositoryId, folderId);
 		exceptionService.objectNotFoundParentFolder(repositoryId, folderId, parent);
-		exceptionService.invalidArgumentRootFolder(folder);
+		exceptionService.invalidArgumentRootFolder(repositoryId, folder);
 
 		// //////////////////
 		// Body of the method
@@ -262,7 +262,7 @@ public class NavigationServiceImpl implements NavigationService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequired("objectId", objectId);
-		Content content = contentService.getContent(objectId);
+		Content content = contentService.getContent(repositoryId, objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,
 				repositoryId, PermissionMapping.CAN_GET_PARENTS_FOLDER, content);
@@ -270,9 +270,9 @@ public class NavigationServiceImpl implements NavigationService {
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		Folder parent = contentService.getParent(objectId);
+		Folder parent = contentService.getParent(repositoryId, objectId);
 		exceptionService.objectNotFoundParentFolder(repositoryId, objectId, parent);
-		exceptionService.invalidArgumentRootFolder(content);
+		exceptionService.invalidArgumentRootFolder(repositoryId, content);
 
 		// //////////////////
 		// Body of the method
@@ -307,7 +307,7 @@ public class NavigationServiceImpl implements NavigationService {
 		// //////////////////
 		//Folder ID can be null, which means all PWCs are returned.
 		if(StringUtils.isNotBlank(folderId)){
-			Folder folder = contentService.getFolder(folderId);
+			Folder folder = contentService.getFolder(repositoryId, folderId);
 			exceptionService.objectNotFoundParentFolder(repositoryId, folderId, folder);
 		}
 		exceptionService.invalidArgumentOrderBy(repositoryId, orderBy);
@@ -316,8 +316,8 @@ public class NavigationServiceImpl implements NavigationService {
 		// Body of the method
 		// //////////////////
 		//Folder ID can be null, which means all PWCs are returned.
-		List<Document> checkedOuts = contentService.getCheckedOutDocs(folderId,
-				orderBy, extension);
+		List<Document> checkedOuts = contentService.getCheckedOutDocs(repositoryId,
+				folderId, orderBy, extension);
 
 		ObjectList list = compileService.compileObjectDataList(
 				callContext, repositoryId, checkedOuts, filter,

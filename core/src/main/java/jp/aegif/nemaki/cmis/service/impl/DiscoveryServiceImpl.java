@@ -93,15 +93,15 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 			// If changelogToken is not specified, return the first in the
 			// repository
 			exceptionService
-					.invalidArgumentChangeEventNotAvailable(changeLogToken);
+					.invalidArgumentChangeEventNotAvailable(repositoryId, changeLogToken);
 		}
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		List<Change> changes = contentService.getLatestChanges(context,
-				changeLogToken, includeProperties, filter, includePolicyIds,
-				includeAcl, maxItems, extension);
+		List<Change> changes = contentService.getLatestChanges(repositoryId,
+				context, changeLogToken, includeProperties, filter,
+				includePolicyIds, includeAcl, maxItems, extension);
 		if (!CollectionUtils.isEmpty(changes)) {
 			String latestToken = String.valueOf(changes.get(changes.size() - 1)
 					.getChangeToken());

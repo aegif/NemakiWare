@@ -65,7 +65,7 @@ public class VersioningServiceImpl implements VersioningService {
 		// //////////////////
 		String id = objectId.getValue();
 		exceptionService.invalidArgumentRequiredString("objectId", id);
-		Document document = contentService.getDocument(id);
+		Document document = contentService.getDocument(repositoryId, id);
 		exceptionService.objectNotFound(DomainType.OBJECT, document, id);
 		exceptionService.permissionDenied(callContext,
 				repositoryId, PermissionMapping.CAN_CHECKOUT_DOCUMENT, document);
@@ -75,14 +75,14 @@ public class VersioningServiceImpl implements VersioningService {
 		// //////////////////
 		// CMIS doesn't define the error type when checkOut is performed
 		// repeatedly
-		exceptionService.constraintAlreadyCheckedOut(document);
+		exceptionService.constraintAlreadyCheckedOut(repositoryId, document);
 		exceptionService.constraintVersionable(document.getObjectType());
 		exceptionService.versioning(document);
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		Document pwc = contentService.checkOut(callContext, id, extension);
+		Document pwc = contentService.checkOut(callContext, repositoryId, id, extension);
 		objectId.setValue(pwc.getId());
 		Holder<Boolean> copied = new Holder<Boolean>(true);
 		contentCopied = copied;
@@ -97,7 +97,7 @@ public class VersioningServiceImpl implements VersioningService {
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("objectId", objectId);
-		Document document = contentService.getDocument(objectId);
+		Document document = contentService.getDocument(repositoryId, objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, document, objectId);
 		exceptionService.permissionDenied(callContext,
 				repositoryId, PermissionMapping.CAN_CHECKIN_DOCUMENT, document);
@@ -110,11 +110,11 @@ public class VersioningServiceImpl implements VersioningService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		contentService.cancelCheckOut(callContext, objectId, extension);
+		contentService.cancelCheckOut(callContext, repositoryId, objectId, extension);
 
 		//remove cache
 		nemakiCache.removeCmisCache(objectId);
-		Document latest = contentService.getDocumentOfLatestVersion(document.getVersionSeriesId());
+		Document latest = contentService.getDocumentOfLatestVersion(repositoryId, document.getVersionSeriesId());
 		//Latest document does not exit when pwc is created as the first version
 		if(latest != null){
 			nemakiCache.removeCmisCache(latest.getId());
@@ -131,7 +131,7 @@ public class VersioningServiceImpl implements VersioningService {
 		// //////////////////
 		String id = objectId.getValue();
 		exceptionService.invalidArgumentRequiredString("objectId", id);
-		Document document = contentService.getDocument(id);
+		Document document = contentService.getDocument(repositoryId, id);
 		exceptionService.objectNotFound(DomainType.OBJECT, document, id);
 		exceptionService.permissionDenied(callContext,
 				repositoryId, PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT, document);
@@ -147,9 +147,9 @@ public class VersioningServiceImpl implements VersioningService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		Document checkedIn = contentService.checkIn(callContext, objectId,
-				major, properties, contentStream, checkinComment, policies,
-				addAces, removeAces, extension);
+		Document checkedIn = contentService.checkIn(callContext, repositoryId,
+				objectId, major, properties, contentStream, checkinComment,
+				policies, addAces, removeAces, extension);
 		objectId.setValue(checkedIn.getId());
 		
 		nemakiCache.removeCmisCache(id);
@@ -169,7 +169,7 @@ public class VersioningServiceImpl implements VersioningService {
 		if (versionSeriesId == null) {
 			exceptionService
 					.invalidArgumentRequiredString("objectId", objectId);
-			Document d = contentService.getDocument(objectId);
+			Document d = contentService.getDocument(repositoryId, objectId);
 			versionSeriesId = d.getVersionSeriesId();
 		}
 
@@ -178,10 +178,10 @@ public class VersioningServiceImpl implements VersioningService {
 		Document document = null;
 		if (_major) {
 			document = contentService
-					.getDocumentOfLatestMajorVersion(versionSeriesId);
+					.getDocumentOfLatestMajorVersion(repositoryId, versionSeriesId);
 		} else {
 			document = contentService
-					.getDocumentOfLatestVersion(versionSeriesId);
+					.getDocumentOfLatestVersion(repositoryId, versionSeriesId);
 		}
 		exceptionService.objectNotFound(DomainType.OBJECT, document,
 				versionSeriesId);
@@ -209,12 +209,12 @@ public class VersioningServiceImpl implements VersioningService {
 		if (StringUtils.isBlank(versionSeriesId)) {
 			exceptionService
 					.invalidArgumentRequiredString("objectId", objectId);
-			Document d = contentService.getDocument(objectId);
+			Document d = contentService.getDocument(repositoryId, objectId);
 			versionSeriesId = d.getVersionSeriesId();
 		}
 		
 		List<Document> allVersions = contentService
-				.getAllVersions(context, versionSeriesId);
+				.getAllVersions(context, repositoryId, versionSeriesId);
 		exceptionService.objectNotFoundVersionSeries(versionSeriesId,
 				allVersions);
 		// Sort by the descending order
@@ -227,7 +227,7 @@ public class VersioningServiceImpl implements VersioningService {
 		 */
 		Document latest = allVersions.get(0);
 		if(latest.isPrivateWorkingCopy()){
-			VersionSeries vs = contentService.getVersionSeries(latest);
+			VersionSeries vs = contentService.getVersionSeries(repositoryId, latest);
 			if(!context.getUsername().equals(vs.getVersionSeriesCheckedOutBy())){
 				allVersions.remove(latest);
 			}

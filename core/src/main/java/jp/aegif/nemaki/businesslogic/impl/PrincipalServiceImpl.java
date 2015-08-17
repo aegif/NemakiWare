@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Set;
 
 import jp.aegif.nemaki.businesslogic.PrincipalService;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.dao.PrincipalDaoService;
 import jp.aegif.nemaki.model.Group;
 import jp.aegif.nemaki.model.User;
@@ -43,9 +44,8 @@ public class PrincipalServiceImpl implements PrincipalService {
 
 	private static final Log log = LogFactory.getLog(PrincipalServiceImpl.class);
 
+	private RepositoryInfoMap repositoryInfoMap; 
 	private PrincipalDaoService principalDaoService;
-	private String anonymous;
-	private String anyone;
 
 	@Override
 	public List<User> getUsers() {
@@ -63,6 +63,9 @@ public class PrincipalServiceImpl implements PrincipalService {
 
 	@Override
 	public Set<String> getGroupIdsContainingUser(String userId) {
+		String anonymous = getAnonymous();
+		String anyone = getAnyone();
+		
 		Set<String> groupIds = new HashSet<String>();
 
 		//Anonymous user doesn't belong to any group, even to Anyone.
@@ -146,6 +149,9 @@ public class PrincipalServiceImpl implements PrincipalService {
 	}
 
 	private List<String> getPrincipalIds(){
+		String anonymous = getAnonymous();
+		String anyone = getAnyone();
+		
 		List<String> principalIds = new ArrayList<String>();
 
 		//UserId
@@ -194,25 +200,24 @@ public class PrincipalServiceImpl implements PrincipalService {
 		return principalDaoService.getAdmin();
 	}
 
-	@Override
-	public String getAnonymous() {
-		return anonymous;
+	public void setPrincipalDaoService(PrincipalDaoService principalDaoService) {
+		this.principalDaoService = principalDaoService;
 	}
 
-	public void setAnonymous(String anonymous) {
-		this.anonymous = anonymous;
+	@Override
+	public String getAnonymous() {
+		// TODO hard coding
+		return "anonymous";
 	}
 
 	@Override
 	public String getAnyone() {
-		return anyone;
+		// TODO hard coding
+		return "GROUP_EVERYONE";
 	}
 
-	public void setAnyone(String anyone) {
-		this.anyone = anyone;
+	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
+		this.repositoryInfoMap = repositoryInfoMap;
 	}
-
-	public void setPrincipalDaoService(PrincipalDaoService principalDaoService) {
-		this.principalDaoService = principalDaoService;
-	}
+	
 }

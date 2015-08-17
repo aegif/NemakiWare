@@ -105,7 +105,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 			whereQueryString = "*:*";
 		} else {
 			try {
-				SolrPredicateWalker solrPredicateWalker = new SolrPredicateWalker(
+				SolrPredicateWalker solrPredicateWalker = new SolrPredicateWalker(repositoryId,
 						queryObject, solrUtil, contentService);
 				Query whereQuery = solrPredicateWalker.walkPredicate(whereTree);
 				whereQueryString = whereQuery.toString();
@@ -165,7 +165,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 			List<Content> contents = new ArrayList<Content>();
 			for (SolrDocument doc : docs) {
 				String docId = (String) doc.getFieldValue("id");
-				Content c = contentService.getContent(docId);
+				Content c = contentService.getContent(repositoryId, docId);
 
 				// When for some reason the content is missed, pass through
 				if (c == null) {

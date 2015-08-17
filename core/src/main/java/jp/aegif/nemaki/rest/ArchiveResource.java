@@ -45,6 +45,7 @@ public class ArchiveResource extends ResourceBase {
 	
 	private ContentService contentService;
 	private PrincipalService principalService;
+	private final String repositoryId = "bedroom";//TODO hard coding
 	
 	public void setContentService(ContentService contentService) {
 		this.contentService = contentService;
@@ -62,7 +63,7 @@ public class ArchiveResource extends ResourceBase {
 		JSONArray errMsg = new JSONArray();
 		
 		try{
-			List<Archive> archives = contentService.getAllArchives();
+			List<Archive> archives = contentService.getAllArchives(repositoryId);
 			for(Archive a : archives){
 				//Filter out Attachment & old Versions
 				if (NodeType.ATTACHMENT.value().equals(a.getType())){
@@ -99,7 +100,7 @@ public class ArchiveResource extends ResourceBase {
 		JSONArray errMsg = new JSONArray();
 		
 		try{
-			contentService.restoreArchive(id);
+			contentService.restoreArchive(repositoryId, id);
 		}catch(Exception e){
 			status = false;
 			addErrMsg(errMsg, ITEM_ARCHIVE, ERR_RESTORE);
