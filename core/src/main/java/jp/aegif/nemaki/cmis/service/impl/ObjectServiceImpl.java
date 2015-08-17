@@ -204,7 +204,7 @@ public class ObjectServiceImpl implements ObjectService {
 		
 		exceptionService.constraintRenditionStreamDownload(content, streamId);
 		
-		Rendition rendition = contentService.getRendition(streamId);
+		Rendition rendition = contentService.getRendition(repositoryId, streamId);
 
 		BigInteger length = BigInteger.valueOf(rendition.getLength());
 		String mimeType = rendition.getMimetype();

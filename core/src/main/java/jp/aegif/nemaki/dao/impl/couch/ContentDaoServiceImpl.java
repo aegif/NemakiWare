@@ -25,9 +25,26 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
+import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
+import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.lang.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.ektorp.Attachment;
+import org.ektorp.AttachmentInputStream;
+import org.ektorp.CouchDbConnector;
+import org.ektorp.ViewQuery;
+import org.ektorp.ViewResult;
+import org.ektorp.ViewResult.Row;
+import org.springframework.stereotype.Component;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.dao.impl.couch.connector.ConnectorPool;
-import jp.aegif.nemaki.dao.impl.couch.connector.CouchConnector;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Change;
@@ -60,23 +77,6 @@ import jp.aegif.nemaki.model.couch.CouchTypeDefinition;
 import jp.aegif.nemaki.model.couch.CouchVersionSeries;
 import jp.aegif.nemaki.util.constant.NodeType;
 
-import org.apache.chemistry.opencmis.commons.data.ContentStream;
-import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
-import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.lang.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
-import org.ektorp.Attachment;
-import org.ektorp.AttachmentInputStream;
-import org.ektorp.CouchDbConnector;
-import org.ektorp.ViewQuery;
-import org.ektorp.ViewResult;
-import org.ektorp.ViewResult.Row;
-import org.springframework.stereotype.Component;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
 /**
  * Dao Service implementation for CouchDB.
  *
@@ -86,10 +86,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @Component
 public class ContentDaoServiceImpl implements ContentDaoService {
 
+	private RepositoryInfoMap repositoryInfoMap;
 	private ConnectorPool connectorPool;
-	private CouchDbConnector connector;
-	private CouchDbConnector archiveConnector;
-
 	private static final Log log = LogFactory
 			.getLog(ContentDaoServiceImpl.class);
 
@@ -104,10 +102,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	// Type & Property definition
 	// ///////////////////////////////////////
 	@Override
-	public List<NemakiTypeDefinition> getTypeDefinitions() {
+	public List<NemakiTypeDefinition> getTypeDefinitions(String repositoryId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("typeDefinitions");
-		List<CouchTypeDefinition> l = connector.queryView(query,
+		List<CouchTypeDefinition> l = connectorPool.get(repositoryId).queryView(query,
 				CouchTypeDefinition.class);
 
 		if (CollectionUtils.isEmpty(l)) {
@@ -122,7 +120,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public NemakiTypeDefinition getTypeDefinition(String typeId) {
+	public NemakiTypeDefinition getTypeDefinition(String repositoryId, String typeId) {
 		throw new UnsupportedOperationException(
 				Thread.currentThread().getStackTrace()[0].getMethodName()
 						+ ":this method is only for cahced service. No need for implementation.");
@@ -130,34 +128,34 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public NemakiTypeDefinition createTypeDefinition(
-			NemakiTypeDefinition typeDefinition) {
+			String repositoryId, NemakiTypeDefinition typeDefinition) {
 		CouchTypeDefinition ct = new CouchTypeDefinition(typeDefinition);
-		connector.create(ct);
+		connectorPool.get(repositoryId).create(ct);
 		return ct.convert();
 	}
 
 	@Override
 	public NemakiTypeDefinition updateTypeDefinition(
-			NemakiTypeDefinition typeDefinition) {
-		CouchTypeDefinition cp = connector.get(CouchTypeDefinition.class,
+			String repositoryId, NemakiTypeDefinition typeDefinition) {
+		CouchTypeDefinition cp = connectorPool.get(repositoryId).get(CouchTypeDefinition.class,
 				typeDefinition.getId());
 		CouchTypeDefinition update = new CouchTypeDefinition(typeDefinition);
 		update.setRevision(cp.getRevision());
 
-		connector.update(update);
+		connectorPool.get(repositoryId).update(update);
 		return update.convert();
 	}
 
 	@Override
-	public void deleteTypeDefinition(String nodeId) {
-		delete(nodeId);
+	public void deleteTypeDefinition(String repositoryId, String nodeId) {
+		delete(repositoryId, nodeId);
 	}
 
 	@Override
-	public List<NemakiPropertyDefinitionCore> getPropertyDefinitionCores() {
+	public List<NemakiPropertyDefinitionCore> getPropertyDefinitionCores(String repositoryId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("propertyDefinitionCores");
-		List<CouchPropertyDefinitionCore> l = connector.queryView(query,
+		List<CouchPropertyDefinitionCore> l = connectorPool.get(repositoryId).queryView(query,
 				CouchPropertyDefinitionCore.class);
 
 		if (CollectionUtils.isEmpty(l)) {
@@ -172,10 +170,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public NemakiPropertyDefinitionCore getPropertyDefinitionCore(String nodeId) {
+	public NemakiPropertyDefinitionCore getPropertyDefinitionCore(String repositoryId, String nodeId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("propertyDefinitionCores").key(nodeId);
-		List<CouchPropertyDefinitionCore> l = connector.queryView(query,
+		List<CouchPropertyDefinitionCore> l = connectorPool.get(repositoryId).queryView(query,
 				CouchPropertyDefinitionCore.class);
 
 		if (CollectionUtils.isEmpty(l)) {
@@ -187,11 +185,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public NemakiPropertyDefinitionCore getPropertyDefinitionCoreByPropertyId(
-			String propertyId) {
+			String repositoryId, String propertyId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("propertyDefinitionCoresByPropertyId")
 				.key(propertyId);
-		List<CouchPropertyDefinitionCore> l = connector.queryView(query,
+		List<CouchPropertyDefinitionCore> l = connectorPool.get(repositoryId).queryView(query,
 				CouchPropertyDefinitionCore.class);
 
 		if (CollectionUtils.isEmpty(l)) {
@@ -203,10 +201,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public NemakiPropertyDefinitionDetail getPropertyDefinitionDetail(
-			String nodeId) {
+			String repositoryId, String nodeId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("propertyDefinitionDetails").key(nodeId);
-		List<CouchPropertyDefinitionDetail> l = connector.queryView(query,
+		List<CouchPropertyDefinitionDetail> l = connectorPool.get(repositoryId).queryView(query,
 				CouchPropertyDefinitionDetail.class);
 
 		if (CollectionUtils.isEmpty(l)) {
@@ -218,11 +216,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetailByCoreNodeId(
-			String coreNodeId) {
+			String repositoryId, String coreNodeId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("propertyDefinitionDetailsByCoreNodeId")
 				.key(coreNodeId);
-		List<CouchPropertyDefinitionDetail> l = connector.queryView(query,
+		List<CouchPropertyDefinitionDetail> l = connectorPool.get(repositoryId).queryView(query,
 				CouchPropertyDefinitionDetail.class);
 
 		if (CollectionUtils.isEmpty(l)) {
@@ -238,27 +236,27 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public NemakiPropertyDefinitionCore createPropertyDefinitionCore(
-			NemakiPropertyDefinitionCore propertyDefinitionCore) {
+			String repositoryId, NemakiPropertyDefinitionCore propertyDefinitionCore) {
 		CouchPropertyDefinitionCore cpc = new CouchPropertyDefinitionCore(
 				propertyDefinitionCore);
-		connector.create(cpc);
+		connectorPool.get(repositoryId).create(cpc);
 		return cpc.convert();
 	}
 
 	@Override
 	public NemakiPropertyDefinitionDetail createPropertyDefinitionDetail(
-			NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
+			String repositoryId, NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
 		CouchPropertyDefinitionDetail cpd = new CouchPropertyDefinitionDetail(
 				propertyDefinitionDetail);
-		connector.create(cpd);
+		connectorPool.get(repositoryId).create(cpd);
 		return cpd.convert();
 	}
 
 	@Override
 	public NemakiPropertyDefinitionDetail updatePropertyDefinitionDetail(
-			NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
+			String repositoryId, NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
 
-		CouchPropertyDefinitionDetail cpd = connector.get(
+		CouchPropertyDefinitionDetail cpd = connectorPool.get(repositoryId).get(
 				CouchPropertyDefinitionDetail.class,
 				propertyDefinitionDetail.getId());
 
@@ -266,7 +264,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				propertyDefinitionDetail);
 		update.setRevision(cpd.getRevision());
 
-		connector.update(update);
+		connectorPool.get(repositoryId).update(update);
 		return update.convert();
 	}
 
@@ -274,17 +272,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	// Content
 	// ///////////////////////////////////////
 	@Override
-	public NodeBase getNodeBase(String objectId) {
-		CouchNodeBase cnb = connector.get(CouchNodeBase.class, objectId);
+	public NodeBase getNodeBase(String repositoryId, String objectId) {
+		CouchNodeBase cnb = connectorPool.get(repositoryId).get(CouchNodeBase.class, objectId);
 		return cnb.convert();
 	}
 
 	@Override
-	public Content getContent(String objectId) {
+	public Content getContent(String repositoryId, String objectId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("contentsById").key(objectId);
 
-		ViewResult result = connector.queryView(query);
+		ViewResult result = connectorPool.get(repositoryId).queryView(query);
 		return convertJsonToEachBaeType(result);
 	}
 	
@@ -322,17 +320,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	// TODO Use view
 	@Override
-	public Document getDocument(String objectId) {
-		CouchDocument cd = connector.get(CouchDocument.class, objectId);
+	public Document getDocument(String repositoryId, String objectId) {
+		CouchDocument cd = connectorPool.get(repositoryId).get(CouchDocument.class, objectId);
 		Document doc = cd.convert();
 		return doc;
 	}
 
 	@Override
-	public boolean existContent(String objectTypeId) {
+	public boolean existContent(String repositoryId, String objectTypeId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("countByObjectType").key(objectTypeId);
-		ViewResult l = connector.queryView(query);
+		ViewResult l = connectorPool.get(repositoryId).queryView(query);
 		List<Row> rows = l.getRows();
 		if (CollectionUtils.isEmpty(rows)) {
 			return false;
@@ -352,12 +350,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public List<Document> getCheckedOutDocuments(String parentFolderId) {
+	public List<Document> getCheckedOutDocuments(String repositoryId, String parentFolderId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("privateWorkingCopies");
 		if (parentFolderId != null)
 			query.key(parentFolderId);
-		List<CouchDocument> l = connector.queryView(query, CouchDocument.class);
+		List<CouchDocument> l = connectorPool.get(repositoryId).queryView(query, CouchDocument.class);
 
 		if (CollectionUtils.isEmpty(l))
 			return null;
@@ -369,10 +367,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public VersionSeries getVersionSeries(String nodeId) {
+	public VersionSeries getVersionSeries(String repositoryId, String nodeId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("versionSeries").key(nodeId);
-		List<CouchVersionSeries> l = connector.queryView(query,
+		List<CouchVersionSeries> l = connectorPool.get(repositoryId).queryView(query,
 				CouchVersionSeries.class);
 		
 		if (CollectionUtils.isEmpty(l)) {
@@ -383,11 +381,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public List<Document> getAllVersions(String versionSeriesId) {
+	public List<Document> getAllVersions(String repositoryId, String versionSeriesId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("documentsByVersionSeriesId").key(versionSeriesId);
 
-		List<CouchDocument> cds = connector.queryView(query,
+		List<CouchDocument> cds = connectorPool.get(repositoryId).queryView(query,
 				CouchDocument.class);
 		if (CollectionUtils.isEmpty(cds))
 			return null;
@@ -400,12 +398,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public Document getDocumentOfLatestVersion(String versionSeriesId) {
+	public Document getDocumentOfLatestVersion(String repositoryId, String versionSeriesId) {
 		if (versionSeriesId == null)
 			return null;
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("latestVersions").key(versionSeriesId);
-		List<CouchDocument> list = connector.queryView(query,
+		List<CouchDocument> list = connectorPool.get(repositoryId).queryView(query,
 				CouchDocument.class);
 
 		if (list.size() == 1) {
@@ -420,12 +418,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public Document getDocumentOfLatestMajorVersion(String versionSeriesId) {
+	public Document getDocumentOfLatestMajorVersion(String repositoryId, String versionSeriesId) {
 		if (versionSeriesId == null)
 			return null;
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("latestMajorVersions").key(versionSeriesId);
-		List<CouchDocument> list = connector.queryView(query,
+		List<CouchDocument> list = connectorPool.get(repositoryId).queryView(query,
 				CouchDocument.class);
 
 		if (list.size() == 1) {
@@ -440,10 +438,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public Folder getFolder(String objectId) {
+	public Folder getFolder(String repositoryId, String objectId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("folders").key(objectId);
-		List<CouchFolder> list = connector.queryView(query, CouchFolder.class);
+		List<CouchFolder> list = connectorPool.get(repositoryId).queryView(query, CouchFolder.class);
 
 		if (CollectionUtils.isEmpty(list)) {
 			return null;
@@ -453,10 +451,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public Folder getFolderByPath(String path) {
+	public Folder getFolderByPath(String repositoryId, String path) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("foldersByPath").key(path);
-		List<CouchFolder> l = connector.queryView(query, CouchFolder.class);
+		List<CouchFolder> l = connectorPool.get(repositoryId).queryView(query, CouchFolder.class);
 
 		if (CollectionUtils.isEmpty(l))
 			return null;
@@ -464,10 +462,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public List<Content> getLatestChildrenIndex(String parentId) {
+	public List<Content> getLatestChildrenIndex(String repositoryId, String parentId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("children").key(parentId);
-		List<CouchContent> list = connector
+		List<CouchContent> list = connectorPool.get(repositoryId)
 				.queryView(query, CouchContent.class);
 
 		if (list != null && !list.isEmpty()) {
@@ -482,39 +480,44 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public Content getChildByName(String parentId, String name) {
+	public Content getChildByName(String repositoryId, String parentId, String name) {
 		class ViewKey{
-			public String parentId;
-			public String name;
-			
-			public ViewKey(){
-				
-			};
+			private String parentId;
+			private String name;
 			
 			public ViewKey(String parentId, String name){
 				this.parentId = parentId;
 				this.name = name;
 			}
+
+			public String getParentId() {
+				return parentId;
+			}
+
+			public String getName() {
+				return name;
+			}
+			
 		}
 		
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("childByName").key(new ViewKey(parentId,name));
-		ViewResult result = connector.queryView(query);
+		ViewResult result = connectorPool.get(repositoryId).queryView(query);
 		
 		return convertJsonToEachBaeType(result);
 	}
 
 	@Override
-	public Relationship getRelationship(String objectId) {
-		CouchRelationship cr = connector.get(CouchRelationship.class, objectId);
+	public Relationship getRelationship(String repositoryId, String objectId) {
+		CouchRelationship cr = connectorPool.get(repositoryId).get(CouchRelationship.class, objectId);
 		return cr.convert();
 	}
 
 	@Override
-	public List<Relationship> getRelationshipsBySource(String sourceId) {
+	public List<Relationship> getRelationshipsBySource(String repositoryId, String sourceId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("relationshipsBySource").key(sourceId);
-		List<CouchRelationship> crs = connector.queryView(query,
+		List<CouchRelationship> crs = connectorPool.get(repositoryId).queryView(query,
 				CouchRelationship.class);
 
 		List<Relationship> result = new ArrayList<Relationship>();
@@ -527,10 +530,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public List<Relationship> getRelationshipsByTarget(String targetId) {
+	public List<Relationship> getRelationshipsByTarget(String repositoryId, String targetId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("relationshipsByTarget").key(targetId);
-		List<CouchRelationship> crs = connector.queryView(query,
+		List<CouchRelationship> crs = connectorPool.get(repositoryId).queryView(query,
 				CouchRelationship.class);
 
 		List<Relationship> result = new ArrayList<Relationship>();
@@ -543,10 +546,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public Policy getPolicy(String objectId) {
+	public Policy getPolicy(String repositoryId, String objectId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("policies").key(objectId);
-		List<CouchPolicy> cps = connector.queryView(query, CouchPolicy.class);
+		List<CouchPolicy> cps = connectorPool.get(repositoryId).queryView(query, CouchPolicy.class);
 		if (!CollectionUtils.isEmpty(cps)) {
 			return cps.get(0).convert();
 		} else {
@@ -555,10 +558,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public List<Policy> getAppliedPolicies(String objectId) {
+	public List<Policy> getAppliedPolicies(String repositoryId, String objectId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("policiesByAppliedObject").key(objectId);
-		List<CouchPolicy> cps = connector.queryView(query, CouchPolicy.class);
+		List<CouchPolicy> cps = connectorPool.get(repositoryId).queryView(query, CouchPolicy.class);
 		if (!CollectionUtils.isEmpty(cps)) {
 			List<Policy> policies = new ArrayList<Policy>();
 			for (CouchPolicy cp : cps) {
@@ -571,10 +574,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public Item getItem(String objectId) {
+	public Item getItem(String repositoryId, String objectId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("items").key(objectId);
-		List<CouchItem> cpi = connector.queryView(query, CouchItem.class);
+		List<CouchItem> cpi = connectorPool.get(repositoryId).queryView(query, CouchItem.class);
 		if (!CollectionUtils.isEmpty(cpi)) {
 			return cpi.get(0).convert();
 		} else {
@@ -583,133 +586,133 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public Document create(Document document) {
+	public Document create(String repositoryId, Document document) {
 		CouchDocument cd = new CouchDocument(document);
-		connector.create(cd);
+		connectorPool.get(repositoryId).create(cd);
 		return cd.convert();
 	}
 
 	@Override
-	public VersionSeries create(VersionSeries versionSeries) {
+	public VersionSeries create(String repositoryId, VersionSeries versionSeries) {
 		CouchVersionSeries cvs = new CouchVersionSeries(versionSeries);
-		connector.create(cvs);
+		connectorPool.get(repositoryId).create(cvs);
 		return cvs.convert();
 	}
 
 	@Override
-	public Folder create(Folder folder) {
+	public Folder create(String repositoryId, Folder folder) {
 		CouchFolder cf = new CouchFolder(folder);
-		connector.create(cf);
+		connectorPool.get(repositoryId).create(cf);
 		return cf.convert();
 	}
 
 	@Override
-	public Relationship create(Relationship relationship) {
+	public Relationship create(String repositoryId, Relationship relationship) {
 		CouchRelationship cr = new CouchRelationship(relationship);
-		connector.create(cr);
+		connectorPool.get(repositoryId).create(cr);
 		return cr.convert();
 	}
 
 	@Override
-	public Policy create(Policy policy) {
+	public Policy create(String repositoryId, Policy policy) {
 		CouchPolicy cp = new CouchPolicy(policy);
-		connector.create(cp);
+		connectorPool.get(repositoryId).create(cp);
 		return cp.convert();
 	}
 
 	@Override
-	public Item create(Item item) {
+	public Item create(String repositoryId, Item item) {
 		CouchItem ci = new CouchItem(item);
-		connector.create(ci);
+		connectorPool.get(repositoryId).create(ci);
 		return ci.convert();
 	}
 
 	@Override
-	public Document update(Document document) {
-		CouchDocument cd = connector.get(CouchDocument.class, document.getId());
+	public Document update(String repositoryId, Document document) {
+		CouchDocument cd = connectorPool.get(repositoryId).get(CouchDocument.class, document.getId());
 
 		// Set the latest revision for avoid conflict
 		CouchDocument update = new CouchDocument(document);
 		update.setRevision(cd.getRevision());
 
-		connector.update(update);
+		connectorPool.get(repositoryId).update(update);
 		return update.convert();
 	}
 
 	@Override
-	public VersionSeries update(VersionSeries versionSeries) {
-		CouchVersionSeries cvs = connector.get(CouchVersionSeries.class,
+	public VersionSeries update(String repositoryId, VersionSeries versionSeries) {
+		CouchVersionSeries cvs = connectorPool.get(repositoryId).get(CouchVersionSeries.class,
 				versionSeries.getId());
 
 		// Set the latest revision for avoid conflict
 		CouchVersionSeries update = new CouchVersionSeries(versionSeries);
 		update.setRevision(cvs.getRevision());
 
-		connector.update(update);
+		connectorPool.get(repositoryId).update(update);
 		return update.convert();
 	}
 
 	@Override
-	public Folder update(Folder folder) {
-		CouchFolder cf = connector.get(CouchFolder.class, folder.getId());
+	public Folder update(String repositoryId, Folder folder) {
+		CouchFolder cf = connectorPool.get(repositoryId).get(CouchFolder.class, folder.getId());
 		// Set the latest revision for avoid conflict
 		CouchFolder update = new CouchFolder(folder);
 		update.setRevision(cf.getRevision());
 
-		connector.update(update);
+		connectorPool.get(repositoryId).update(update);
 
 		return update.convert();
 	}
 
 	@Override
-	public Relationship update(Relationship relationship) {
-		CouchRelationship cp = connector.get(CouchRelationship.class,
+	public Relationship update(String repositoryId, Relationship relationship) {
+		CouchRelationship cp = connectorPool.get(repositoryId).get(CouchRelationship.class,
 				relationship.getId());
 		// Set the latest revision for avoid conflict
 		CouchRelationship update = new CouchRelationship(relationship);
 		update.setRevision(cp.getRevision());
 
-		connector.update(update);
+		connectorPool.get(repositoryId).update(update);
 		return update.convert();
 	}
 
 	@Override
-	public Policy update(Policy policy) {
-		CouchPolicy cp = connector.get(CouchPolicy.class, policy.getId());
+	public Policy update(String repositoryId, Policy policy) {
+		CouchPolicy cp = connectorPool.get(repositoryId).get(CouchPolicy.class, policy.getId());
 		// Set the latest revision for avoid conflict
 		CouchPolicy update = new CouchPolicy(policy);
 		update.setRevision(cp.getRevision());
 
-		connector.update(update);
+		connectorPool.get(repositoryId).update(update);
 		return update.convert();
 	}
 
 	@Override
-	public Item update(Item item) {
-		CouchItem ci = connector.get(CouchItem.class, item.getId());
+	public Item update(String repositoryId, Item item) {
+		CouchItem ci = connectorPool.get(repositoryId).get(CouchItem.class, item.getId());
 		// Set the latest revision for avoid conflict
 		CouchItem update = new CouchItem(item);
 		update.setRevision(ci.getRevision());
 
-		connector.update(update);
+		connectorPool.get(repositoryId).update(update);
 		return update.convert();
 	}
 
 	@Override
-	public void delete(String objectId) {
-		CouchNodeBase cnb = connector.get(CouchNodeBase.class, objectId);
-		connector.delete(cnb);
+	public void delete(String repositoryId, String objectId) {
+		CouchNodeBase cnb = connectorPool.get(repositoryId).get(CouchNodeBase.class, objectId);
+		connectorPool.get(repositoryId).delete(cnb);
 	}
 
 	// ///////////////////////////////////////
 	// Attachment
 	// ///////////////////////////////////////
 	@Override
-	public AttachmentNode getAttachment(String attachmentId) {
+	public AttachmentNode getAttachment(String repositoryId, String attachmentId) {
 
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("attachments").key(attachmentId);
-		List<CouchAttachmentNode> list = connector.queryView(query,
+		List<CouchAttachmentNode> list = connectorPool.get(repositoryId).queryView(query,
 				CouchAttachmentNode.class);
 
 		if (CollectionUtils.isEmpty(list)) {
@@ -729,17 +732,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public void setStream(AttachmentNode attachmentNode) {
-		AttachmentInputStream ais = connector.getAttachment(
+	public void setStream(String repositoryId, AttachmentNode attachmentNode) {
+		AttachmentInputStream ais = connectorPool.get(repositoryId).getAttachment(
 				attachmentNode.getId(), ATTACHMENT_NAME);
 		attachmentNode.setInputStream(ais);
 	}
 
 	@Override
-	public Rendition getRendition(String objectId) {
+	public Rendition getRendition(String repositoryId, String objectId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("renditions").key(objectId);
-		List<CouchRendition> list = connector.queryView(query,
+		List<CouchRendition> list = connectorPool.get(repositoryId).queryView(query,
 				CouchRendition.class);
 		
 		if (CollectionUtils.isEmpty(list)) {
@@ -754,7 +757,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			rd.setKind(crd.getKind());
 			rd.setMimetype(a.getContentType());
 			rd.setLength(a.getContentLength());
-			AttachmentInputStream ais = connector.getAttachment(
+			AttachmentInputStream ais = connectorPool.get(repositoryId).getAttachment(
 					objectId, ATTACHMENT_NAME);
 			rd.setInputStream(ais);
 			
@@ -775,47 +778,47 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public String createAttachment(AttachmentNode attachment,
-			ContentStream contentStream) {
+	public String createAttachment(String repositoryId,
+			AttachmentNode attachment, ContentStream contentStream) {
 		CouchAttachmentNode ca = new CouchAttachmentNode(attachment);
-		connector.create(ca);
+		connectorPool.get(repositoryId).create(ca);
 
 		AttachmentInputStream ais = new AttachmentInputStream(ATTACHMENT_NAME,
 				contentStream.getStream(), contentStream.getMimeType(),
 				contentStream.getLength());
-		connector.createAttachment(ca.getId(), ca.getRevision(), ais);
+		connectorPool.get(repositoryId).createAttachment(ca.getId(), ca.getRevision(), ais);
 
 		return ca.getId();
 	}
 	
 	@Override
-	public String createRendition(Rendition rendition, ContentStream contentStream){
+	public String createRendition(String repositoryId, Rendition rendition, ContentStream contentStream){
 		CouchRendition cr = new CouchRendition(rendition);
-		connector.create(cr);
+		connectorPool.get(repositoryId).create(cr);
 
 		AttachmentInputStream ais = new AttachmentInputStream(ATTACHMENT_NAME,
 				contentStream.getStream(), contentStream.getMimeType(),
 				contentStream.getLength());
-		connector.createAttachment(cr.getId(), cr.getRevision(), ais);
+		connectorPool.get(repositoryId).createAttachment(cr.getId(), cr.getRevision(), ais);
 
 		return cr.getId();
 	}
 
 	@Override
-	public void updateAttachment(AttachmentNode attachment,
-			ContentStream contentStream) {
-		CouchAttachmentNode ca = connector.get(CouchAttachmentNode.class,
+	public void updateAttachment(String repositoryId,
+			AttachmentNode attachment, ContentStream contentStream) {
+		CouchAttachmentNode ca = connectorPool.get(repositoryId).get(CouchAttachmentNode.class,
 				attachment.getId());
 		CouchAttachmentNode update = new CouchAttachmentNode(attachment);
 		// Set the latest revision for avoid conflict
 		update.setRevision(ca.getRevision());
 
-		String revisionAfterDeleted = connector.deleteAttachment(ca.getId(),
+		String revisionAfterDeleted = connectorPool.get(repositoryId).deleteAttachment(ca.getId(),
 				ca.getRevision(), ATTACHMENT_NAME);
 
 		AttachmentInputStream ais = new AttachmentInputStream(ATTACHMENT_NAME,
 				contentStream.getStream(), contentStream.getMimeType());
-		connector.createAttachment(attachment.getId(), revisionAfterDeleted,
+		connectorPool.get(repositoryId).createAttachment(attachment.getId(), revisionAfterDeleted,
 				ais);
 	}
 
@@ -823,7 +826,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	// Change event
 	// ///////////////////////////////////////
 	@Override
-	public Change getChangeEvent(String token) {
+	public Change getChangeEvent(String repositoryId, String token) {
 		Long _token =  null;
 		try{
 			_token = Long.valueOf(token);
@@ -833,7 +836,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("changesByToken").key(_token);
-		List<CouchChange> l = connector.queryView(query, CouchChange.class);
+		List<CouchChange> l = connectorPool.get(repositoryId).queryView(query, CouchChange.class);
 
 		if (CollectionUtils.isEmpty(l))
 			return null;
@@ -841,10 +844,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public Change getLatestChange() {
+	public Change getLatestChange(String repositoryId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("changesByCreated").descending(true).limit(1);
-		List<CouchChange> l = connector.queryView(query, CouchChange.class);
+		List<CouchChange> l = connectorPool.get(repositoryId).queryView(query, CouchChange.class);
 		if (CollectionUtils.isEmpty(l)) {
 			return null;
 		} else {
@@ -853,7 +856,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public List<Change> getLatestChanges(String startToken, int maxItems) {
+	public List<Change> getLatestChanges(String repositoryId, String startToken, int maxItems) {
 		long _startToken = 0;
 		if(StringUtils.isNotBlank(startToken)){
 			//null startToken means the first entry in the repository
@@ -864,7 +867,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			}
 		}
 
-		Change latest = getLatestChange();
+		Change latest = getLatestChange(repositoryId);
 		long latestToken = 0;
 		try{
 			latestToken = Long.parseLong(latest.getChangeToken());
@@ -885,7 +888,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		if (maxItems > 0)
 			query.limit(maxItems);
 
-		List<CouchChange> l = connector.queryView(query, CouchChange.class);
+		List<CouchChange> l = connectorPool.get(repositoryId).queryView(query, CouchChange.class);
 		if (CollectionUtils.isEmpty(l))
 			return null;
 		List<Change> result = new ArrayList<Change>();
@@ -896,9 +899,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public Change create(Change change) {
+	public Change create(String repositoryId, Change change) {
 		CouchChange cc = new CouchChange(change);
-		connector.create(cc);
+		connectorPool.get(repositoryId).create(cc);
 		return cc.convert();
 	}
 
@@ -906,16 +909,18 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	// Archive
 	// ///////////////////////////////////////
 	@Override
-	public Archive getArchive(String archiveId) {
-		CouchArchive ca = archiveConnector.get(CouchArchive.class, archiveId);
+	public Archive getArchive(String repositoryId, String objectId) {
+		String archive = repositoryInfoMap.getArchiveId(repositoryId);
+		CouchArchive ca = connectorPool.get(archive).get(CouchArchive.class, objectId);
 		return ca.convert();
 	}
 
 	@Override
-	public Archive getArchiveByOriginalId(String originalId) {
+	public Archive getArchiveByOriginalId(String repositoryId, String originalId) {
+		String archive = repositoryInfoMap.getArchiveId(repositoryId);
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("all").key(originalId);
-		List<CouchArchive> list = archiveConnector.queryView(query,
+		List<CouchArchive> list = connectorPool.get(archive).queryView(query,
 				CouchArchive.class);
 
 		if (list != null && !list.isEmpty()) {
@@ -926,13 +931,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public Archive getAttachmentArchive(Archive archive) {
+	public Archive getAttachmentArchive(String repositoryId, Archive archive) {
+		String archiveId = repositoryInfoMap.getArchiveId(repositoryId);
+		
 		if (!archive.isDocument())
 			return null;
 		String attachmentId = archive.getAttachmentNodeId();
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("attachments").key(attachmentId);
-		List<CouchArchive> list = archiveConnector.queryView(query,
+		List<CouchArchive> list = connectorPool.get(archiveId).queryView(query,
 				CouchArchive.class);
 
 		if (list != null && !list.isEmpty()) {
@@ -943,10 +950,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public List<Archive> getChildArchives(Archive archive) {
+	public List<Archive> getChildArchives(String repositoryId, Archive archive) {
+		String archiveId = repositoryInfoMap.getArchiveId(repositoryId);
+		
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("children").key(archive.getOriginalId());
-		List<CouchArchive> list = archiveConnector.queryView(query,
+		List<CouchArchive> list = connectorPool.get(archiveId).queryView(query,
 				CouchArchive.class);
 
 		if (list != null && !list.isEmpty()) {
@@ -961,10 +970,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public List<Archive> getArchivesOfVersionSeries(String versionSeriesId) {
+	public List<Archive> getArchivesOfVersionSeries(String repositoryId, String versionSeriesId) {
+		String archiveId = repositoryInfoMap.getArchiveId(repositoryId);
+		
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("versionSeries").key(versionSeriesId);
-		List<CouchArchive> list = archiveConnector.queryView(query,
+		List<CouchArchive> list = connectorPool.get(archiveId).queryView(query,
 				CouchArchive.class);
 
 		if (list != null && !list.isEmpty()) {
@@ -979,10 +990,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public List<Archive> getAllArchives() {
+	public List<Archive> getAllArchives(String repositoryId) {
+		String archiveId = repositoryInfoMap.getArchiveId(repositoryId);
+		
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("all");
-		List<CouchArchive> list = archiveConnector.queryView(query,
+		List<CouchArchive> list = connectorPool.get(archiveId).queryView(query,
 				CouchArchive.class);
 
 		List<Archive> archives = new ArrayList<Archive>();
@@ -994,35 +1007,41 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public Archive createArchive(Archive archive, Boolean deletedWithParent) {
-		CouchNodeBase cnb = connector.get(CouchNodeBase.class,
+	public Archive createArchive(String repositoryId, Archive archive, Boolean deletedWithParent) {
+		String archiveId = repositoryInfoMap.getArchiveId(repositoryId);
+		
+		CouchNodeBase cnb = connectorPool.get(repositoryId).get(CouchNodeBase.class,
 				archive.getOriginalId());
 		CouchArchive ca = new CouchArchive(archive);
 		ca.setLastRevision(cnb.getRevision());
 
 		// Write to DB
-		archiveConnector.create(ca);
+		connectorPool.get(archiveId).create(ca);
 		return ca.convert();
 	}
 
 	@Override
-	public Archive createAttachmentArchive(Archive archive) {
+	public Archive createAttachmentArchive(String repositoryId, Archive archive) {
+		String archiveId = repositoryInfoMap.getArchiveId(repositoryId);
+		
 		CouchArchive ca = new CouchArchive(archive);
-		CouchNodeBase cnb = connector.get(CouchNodeBase.class,
+		CouchNodeBase cnb = connectorPool.get(repositoryId).get(CouchNodeBase.class,
 				archive.getOriginalId());
 		ca.setLastRevision(cnb.getRevision());
 
-		archiveConnector.create(ca);
+		connectorPool.get(archiveId).create(ca);
 		return ca.convert();
 	}
 
 	@Override
 	// FIXME return archiveId or something when successfully deleted
-	public void deleteArchive(String archiveId) {
+	public void deleteArchive(String repositoryId, String archiveId) {
+		String archive = repositoryInfoMap.getArchiveId(repositoryId);
+		
 		try {
-			CouchArchive ca = archiveConnector.get(CouchArchive.class,
+			CouchArchive ca = connectorPool.get(archive).get(CouchArchive.class,
 					archiveId);
-			archiveConnector.delete(ca);
+			connectorPool.get(archive).delete(ca);
 		} catch (Exception e) {
 			log.warn(buildLogMsg(archiveId, "the archive not found on db"));
 			return;
@@ -1031,18 +1050,18 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@SuppressWarnings("deprecation")
 	@Override
-	public void restoreContent(Archive archive) {
+	public void restoreContent(String repositoryId, Archive archive) {
 		if (archive.isDocument()) {
 			// Restore a content
-			CouchDocument cd = connector.get(CouchDocument.class,
+			CouchDocument cd = connectorPool.get(repositoryId).get(CouchDocument.class,
 					archive.getOriginalId(), archive.getLastRevision());
 			cd.setRevision(null);
-			connector.update(cd);
+			connectorPool.get(repositoryId).update(cd);
 		} else if (archive.isFolder()) {
-			CouchFolder cf = connector.get(CouchFolder.class,
+			CouchFolder cf = connectorPool.get(repositoryId).get(CouchFolder.class,
 					archive.getOriginalId(), archive.getLastRevision());
 			cf.setRevision(null);
-			connector.update(cf);
+			connectorPool.get(repositoryId).update(cf);
 		} else {
 			// TODO Do nothing?
 		}
@@ -1050,7 +1069,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@SuppressWarnings("deprecation")
 	@Override
-	public void restoreAttachment(Archive archive) {
+	public void restoreAttachment(String repositoryId, Archive archive) {
+		CouchDbConnector connector = connectorPool.get(repositoryId);
+		
 		// Restore its attachment
 		CouchAttachmentNode can = connector.get(CouchAttachmentNode.class,
 				archive.getOriginalId(), archive.getLastRevision());
@@ -1071,16 +1092,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		return "[objectId:" + objectId + "]" + msg;
 	}
 
-	public void setConnector(CouchConnector connector) {
-		this.connector = connector.getConnection();
-	}
-
-	public void setArchiveConnector(CouchConnector archiveConnector) {
-		this.archiveConnector = archiveConnector.getConnection();
-	}
-
 	public void setConnectorPool(ConnectorPool connectorPool) {
 		this.connectorPool = connectorPool;
+	}
+
+	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
+		this.repositoryInfoMap = repositoryInfoMap;
 	}
 	
 }

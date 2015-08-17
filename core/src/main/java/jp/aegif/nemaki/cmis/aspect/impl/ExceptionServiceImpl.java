@@ -269,7 +269,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 		TypeDefinition type = typeManager.getTypeDefinition(repositoryId, typeId);
 		if (type == null) {
 			msg = "Specified type does not exist";
-			msg = msg + " [objectTypeId = " + type.getId() + "]";
+			msg = msg + " [objectTypeId = " + typeId + "]";
 			invalidArgument(msg);
 		}
 	}

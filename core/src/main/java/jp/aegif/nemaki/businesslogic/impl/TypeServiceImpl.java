@@ -31,12 +31,12 @@ public class TypeServiceImpl implements TypeService{
 
 	@Override
 	public NemakiTypeDefinition getTypeDefinition(String repositoryId, String typeId) {
-		return contentDaoService.getTypeDefinition(typeId);
+		return contentDaoService.getTypeDefinition(repositoryId, typeId);
 	}
 
 	@Override
 	public List<NemakiTypeDefinition> getTypeDefinitions(String repositoryId) {
-		return contentDaoService.getTypeDefinitions();
+		return contentDaoService.getTypeDefinitions(repositoryId);
 	}
 
 	@Override
@@ -52,42 +52,42 @@ public class TypeServiceImpl implements TypeService{
 
 	@Override
 	public NemakiPropertyDefinitionCore getPropertyDefinitionCore(String repositoryId, String coreId) {
-		return contentDaoService.getPropertyDefinitionCore(coreId);
+		return contentDaoService.getPropertyDefinitionCore(repositoryId, coreId);
 	}
 
 	@Override
 	public NemakiPropertyDefinitionCore getPropertyDefinitionCoreByPropertyId(
 			String repositoryId, String propertyId) {
-		return contentDaoService.getPropertyDefinitionCoreByPropertyId(propertyId);
+		return contentDaoService.getPropertyDefinitionCoreByPropertyId(repositoryId, propertyId);
 	}
 
 	@Override
 	public List<NemakiPropertyDefinitionCore> getPropertyDefinitionCores(String repositoryId) {
-		return contentDaoService.getPropertyDefinitionCores();
+		return contentDaoService.getPropertyDefinitionCores(repositoryId);
 	}
 
 	@Override
 	public NemakiPropertyDefinitionDetail getPropertyDefinitionDetail(
 			String repositoryId, String detailId) {
-		return contentDaoService.getPropertyDefinitionDetail(detailId);
+		return contentDaoService.getPropertyDefinitionDetail(repositoryId, detailId);
 	}
 
 	@Override
 	public List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetailByCoreNodeId(
 			String repositoryId, String coreNodeId){
-		return contentDaoService.getPropertyDefinitionDetailByCoreNodeId(coreNodeId);
+		return contentDaoService.getPropertyDefinitionDetailByCoreNodeId(repositoryId, coreNodeId);
 	}
 
 	@Override
 	public NemakiTypeDefinition createTypeDefinition(
 			String repositoryId, NemakiTypeDefinition typeDefinition) {
-		return contentDaoService.createTypeDefinition(typeDefinition);
+		return contentDaoService.createTypeDefinition(repositoryId, typeDefinition);
 	}
 
 	@Override
 	public NemakiTypeDefinition updateTypeDefinition(
 			String repositoryId, NemakiTypeDefinition typeDefinition) {
-		return contentDaoService.updateTypeDefinition(typeDefinition);
+		return contentDaoService.updateTypeDefinition(repositoryId, typeDefinition);
 	}
 
 	@Override
@@ -100,18 +100,18 @@ public class TypeServiceImpl implements TypeService{
 			NemakiPropertyDefinitionDetail detail = getPropertyDefinitionDetail(repositoryId, detailId);
 			NemakiPropertyDefinitionCore core = getPropertyDefinitionCore(repositoryId, detail.getCoreNodeId());
 			//Delete a detail
-			contentDaoService.delete(detail.getId());
+			contentDaoService.delete(repositoryId, detail.getId());
 
 			//Delete a core only if no details exist
 			List<NemakiPropertyDefinitionDetail> l =
-					contentDaoService.getPropertyDefinitionDetailByCoreNodeId(core.getId());
+					contentDaoService.getPropertyDefinitionDetailByCoreNodeId(repositoryId, core.getId());
 			if(CollectionUtils.isEmpty(l)){
-				contentDaoService.delete(core.getId());
+				contentDaoService.delete(repositoryId, core.getId());
 			}
 		}
 
 		//Delete the type definition
-		contentDaoService.deleteTypeDefinition(ntd.getId());
+		contentDaoService.deleteTypeDefinition(repositoryId, ntd.getId());
 
 	}
 
@@ -133,7 +133,7 @@ public class TypeServiceImpl implements TypeService{
 			_core.setPropertyId(buildUniquePropertyId(repositoryId, _core.getPropertyId()));
 			// Create a property core
 			NemakiPropertyDefinitionCore core = contentDaoService
-					.createPropertyDefinitionCore(_core);
+					.createPropertyDefinitionCore(repositoryId, _core);
 			coreNodeId = core.getId();
 		} else {
 			NemakiPropertyDefinitionCore existing = corePropertyIds.get(_core
@@ -145,7 +145,7 @@ public class TypeServiceImpl implements TypeService{
 		NemakiPropertyDefinitionDetail _detail = new NemakiPropertyDefinitionDetail(
 				propertyDefinition, coreNodeId);
 		NemakiPropertyDefinitionDetail detail = contentDaoService
-				.createPropertyDefinitionDetail(_detail);
+				.createPropertyDefinitionDetail(repositoryId, _detail);
 
 		return detail;
 	}
@@ -153,7 +153,7 @@ public class TypeServiceImpl implements TypeService{
 	@Override
 	public NemakiPropertyDefinitionDetail updatePropertyDefinitionDetail(
 			String repositoryId, NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
-		return contentDaoService.updatePropertyDefinitionDetail(propertyDefinitionDetail);
+		return contentDaoService.updatePropertyDefinitionDetail(repositoryId, propertyDefinitionDetail);
 	}
 
 
