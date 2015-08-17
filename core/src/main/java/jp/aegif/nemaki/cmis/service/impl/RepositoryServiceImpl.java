@@ -92,22 +92,22 @@ public class RepositoryServiceImpl implements RepositoryService,
 			String repositoryId, String typeId,
 			Boolean includePropertyDefinitions, BigInteger maxItems, BigInteger skipCount) {
 
-		return typeManager.getTypesChildren(callContext, typeId,
-				includePropertyDefinitions, maxItems, skipCount);
+		return typeManager.getTypesChildren(callContext, repositoryId,
+				typeId, includePropertyDefinitions, maxItems, skipCount);
 	}
 
 	@Override
 	public List<TypeDefinitionContainer> getTypeDescendants(
 			CallContext callContext, String repositoryId, String typeId,
 			BigInteger depth, Boolean includePropertyDefinitions) {
-		return typeManager.getTypesDescendants(typeId, depth,
-				includePropertyDefinitions);
+		return typeManager.getTypesDescendants(repositoryId, typeId,
+				depth, includePropertyDefinitions);
 	}
 
 	@Override
 	public TypeDefinition getTypeDefinition(CallContext callContext,
 			String repositoryId, String typeId) {
-		TypeDefinition typeDefinition = typeManager.getTypeDefinition(typeId);
+		TypeDefinition typeDefinition = typeManager.getTypeDefinition(repositoryId, typeId);
 		exceptionService.objectNotFound(DomainType.OBJECT_TYPE, typeDefinition,
 				typeId);
 		return typeDefinition;
@@ -121,14 +121,14 @@ public class RepositoryServiceImpl implements RepositoryService,
 		// //////////////////
 		exceptionService.perimissionAdmin(callContext, repositoryId);
 		exceptionService.invalidArgumentRequired("typeDefinition", type);
-		exceptionService.invalidArgumentCreatableType(type);
-		exceptionService.constraintDuplicatePropertyDefinition(type);
+		exceptionService.invalidArgumentCreatableType(repositoryId, type);
+		exceptionService.constraintDuplicatePropertyDefinition(repositoryId, type);
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
 		// Attributes
-		NemakiTypeDefinition ntd = setNemakiTypeDefinitionAttributes(type);
+		NemakiTypeDefinition ntd = setNemakiTypeDefinitionAttributes(repositoryId, type);
 
 		// Property definitions
 		List<String> systemIds = typeManager.getSystemPropertyIds();
@@ -147,7 +147,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 					NemakiPropertyDefinition create = new NemakiPropertyDefinition(
 							propDef);
 					NemakiPropertyDefinitionDetail created = typeService
-							.createPropertyDefinition(create);
+							.createPropertyDefinition(repositoryId, create);
 
 					List<String> l = ntd.getProperties();
 					l.add(created.getId());
@@ -157,11 +157,11 @@ public class RepositoryServiceImpl implements RepositoryService,
 		}
 
 		// Create
-		NemakiTypeDefinition created = typeService.createTypeDefinition(ntd);
+		NemakiTypeDefinition created = typeService.createTypeDefinition(repositoryId, ntd);
 		typeManager.refreshTypes();
 
 		// Sort the order of properties
-		return sortPropertyDefinitions(created, type);
+		return sortPropertyDefinitions(repositoryId, created, type);
 	}
 
 	@Override
@@ -172,15 +172,15 @@ public class RepositoryServiceImpl implements RepositoryService,
 		// //////////////////
 		exceptionService.perimissionAdmin(callContext, repositoryId);
 		exceptionService.invalidArgumentRequiredString("typeId", typeId);
-		exceptionService.invalidArgumentDoesNotExistType(typeId);
-		exceptionService.invalidArgumentDeletableType(typeId);
-		exceptionService.constraintOnlyLeafTypeDefinition(typeId);
+		exceptionService.invalidArgumentDoesNotExistType(repositoryId, typeId);
+		exceptionService.invalidArgumentDeletableType(repositoryId, typeId);
+		exceptionService.constraintOnlyLeafTypeDefinition(repositoryId, typeId);
 		exceptionService.constraintObjectsStillExist(repositoryId, typeId);
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		typeService.deleteTypeDefinition(typeId);
+		typeService.deleteTypeDefinition(repositoryId, typeId);
 		typeManager.refreshTypes();
 	}
 
@@ -192,19 +192,19 @@ public class RepositoryServiceImpl implements RepositoryService,
 		// //////////////////
 		exceptionService.perimissionAdmin(callContext, repositoryId);
 		exceptionService.invalidArgumentRequired("typeDefinition", type);
-		exceptionService.invalidArgumentDoesNotExistType(type.getId());
+		exceptionService.invalidArgumentDoesNotExistType(repositoryId, type.getId());
 		exceptionService.invalidArgumentUpdatableType(type);
-		exceptionService.constraintOnlyLeafTypeDefinition(type.getId());
-		exceptionService.constraintDuplicatePropertyDefinition(type);
+		exceptionService.constraintOnlyLeafTypeDefinition(repositoryId, type.getId());
+		exceptionService.constraintDuplicatePropertyDefinition(repositoryId, type);
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
 		NemakiTypeDefinition existingType = typeService
-				.getTypeDefinition(type.getId());
+				.getTypeDefinition(repositoryId, type.getId());
 
 		// Attributes
-		NemakiTypeDefinition ntd = setNemakiTypeDefinitionAttributes(type);
+		NemakiTypeDefinition ntd = setNemakiTypeDefinitionAttributes(repositoryId, type);
 
 		// Property definitions
 		List<String> systemIds = typeManager.getSystemPropertyIds();
@@ -222,26 +222,26 @@ public class RepositoryServiceImpl implements RepositoryService,
 						.isEmpty(existingType.getProperties())) ? new ArrayList<String>()
 						: existingType.getProperties();
 
-				String propNodeId = typeService.getPropertyDefinitionCoreByPropertyId(key).getId();
+				String propNodeId = typeService.getPropertyDefinitionCoreByPropertyId(repositoryId, key).getId();
 				if (existingPropertyNodeIds.contains(propNodeId)) {
 					// update
-					PropertyDefinition<?> oldPropDef = typeManager.getTypeDefinition(existingType.getTypeId()).getPropertyDefinitions().get(propNodeId);
+					PropertyDefinition<?> oldPropDef = typeManager.getTypeDefinition(repositoryId, existingType.getTypeId()).getPropertyDefinitions().get(propNodeId);
 					exceptionService.constraintUpdatePropertyDefinition(propDef, oldPropDef);
 					exceptionService.constraintQueryName(propDef);
 					exceptionService.constraintPropertyDefinition(type, propDef);
 
 					NemakiPropertyDefinition _update = new NemakiPropertyDefinition(
 							propDef);
-					NemakiPropertyDefinitionCore core = typeService.getPropertyDefinitionCoreByPropertyId(_update.getPropertyId());
+					NemakiPropertyDefinitionCore core = typeService.getPropertyDefinitionCoreByPropertyId(repositoryId, _update.getPropertyId());
 					NemakiPropertyDefinitionDetail update = new NemakiPropertyDefinitionDetail(_update, core.getId());
-					typeService.updatePropertyDefinitionDetail(update);
+					typeService.updatePropertyDefinitionDetail(repositoryId, update);
 				} else {
 					// create
 					exceptionService.constraintQueryName(propDef);
 					NemakiPropertyDefinition create = new NemakiPropertyDefinition(
 							propDef);
 					NemakiPropertyDefinitionDetail created = typeService
-							.createPropertyDefinition(create);
+							.createPropertyDefinition(repositoryId, create);
 
 					List<String> l = ntd.getProperties();
 					l.add(created.getId());
@@ -252,19 +252,19 @@ public class RepositoryServiceImpl implements RepositoryService,
 		}
 
 		// Update
-		NemakiTypeDefinition updated = typeService.updateTypeDefinition(ntd);
+		NemakiTypeDefinition updated = typeService.updateTypeDefinition(repositoryId, ntd);
 		typeManager.refreshTypes();
 
 		// Sort
-		return sortPropertyDefinitions(updated, type);
+		return sortPropertyDefinitions(repositoryId, updated, type);
 	}
 
 	private NemakiTypeDefinition setNemakiTypeDefinitionAttributes(
-			TypeDefinition typeDefinition) {
+			String repositoryId, TypeDefinition typeDefinition) {
 		NemakiTypeDefinition ntd = new NemakiTypeDefinition();
 
 		// To avoid the conflict of typeId, add suffix
-		if (typeManager.getTypeById(typeDefinition.getId()) == null) {
+		if (typeManager.getTypeById(repositoryId, typeDefinition.getId()) == null) {
 			ntd.setTypeId(typeDefinition.getId());
 		} else {
 			ntd.setTypeId(typeDefinition.getId() + "_"
@@ -309,9 +309,9 @@ public class RepositoryServiceImpl implements RepositoryService,
 	}
 
 	private TypeDefinition sortPropertyDefinitions(
-			NemakiTypeDefinition nemakiTypeDefinition, TypeDefinition criterion) {
+			String repositoryId, NemakiTypeDefinition nemakiTypeDefinition, TypeDefinition criterion) {
 		AbstractTypeDefinition tdf = typeManager
-				.buildTypeDefinitionFromDB(nemakiTypeDefinition);
+				.buildTypeDefinitionFromDB(repositoryId, nemakiTypeDefinition);
 		Map<String, PropertyDefinition<?>> propDefs = tdf
 				.getPropertyDefinitions();
 

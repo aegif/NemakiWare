@@ -76,7 +76,7 @@ public class VersioningServiceImpl implements VersioningService {
 		// CMIS doesn't define the error type when checkOut is performed
 		// repeatedly
 		exceptionService.constraintAlreadyCheckedOut(repositoryId, document);
-		exceptionService.constraintVersionable(document.getObjectType());
+		exceptionService.constraintVersionable(repositoryId, document.getObjectType());
 		exceptionService.versioning(document);
 
 		// //////////////////
@@ -105,7 +105,7 @@ public class VersioningServiceImpl implements VersioningService {
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		exceptionService.constraintVersionable(document.getObjectType());
+		exceptionService.constraintVersionable(repositoryId, document.getObjectType());
 
 		// //////////////////
 		// Body of the method
@@ -139,7 +139,7 @@ public class VersioningServiceImpl implements VersioningService {
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		exceptionService.constraintVersionable(document.getObjectType());
+		exceptionService.constraintVersionable(repositoryId, document.getObjectType());
 		// TODO implement
 		// exceptionService.streamNotSupported(documentTypeDefinition,
 		// contentStream);

@@ -43,6 +43,7 @@ import com.sun.jersey.multipart.FormDataParam;
 @Path("/type")
 public class TypeResource extends ResourceBase{
 
+	private final String repositoryId = "bedroom"; //TODO hard coding
 	private TypeService typeService;
 	private TypeManager typeManager;
 
@@ -346,9 +347,9 @@ public class TypeResource extends ResourceBase{
 				.entrySet()) {
 			NemakiPropertyDefinition p = new NemakiPropertyDefinition(
 					coreEntry.getValue(), detailMaps.get(coreEntry.getKey()));
-			typeService.createPropertyDefinition(p);
+			typeService.createPropertyDefinition(repositoryId, p);
 			NemakiPropertyDefinitionCore createdCore = typeService
-					.getPropertyDefinitionCoreByPropertyId(p.getPropertyId());
+					.getPropertyDefinitionCoreByPropertyId(repositoryId, p.getPropertyId());
 
 			coreEntry.getValue().setId(createdCore.getId());
 		}
@@ -364,10 +365,10 @@ public class TypeResource extends ResourceBase{
 			if(CollectionUtils.isNotEmpty(propertyIds)){
 				for (String propertyId : typeProperties.get(t.getTypeId())) {
 					NemakiPropertyDefinitionCore core = typeService
-							.getPropertyDefinitionCoreByPropertyId(propertyId);
+							.getPropertyDefinitionCoreByPropertyId(repositoryId, propertyId);
 					//propertyNodeIds.add(core.getId());
 					List<NemakiPropertyDefinitionDetail> details =
-							typeService.getPropertyDefinitionDetailByCoreNodeId(core.getId());
+							typeService.getPropertyDefinitionDetailByCoreNodeId(repositoryId, core.getId());
 					if(CollectionUtils.isEmpty(details)){
 						log.warn(buildMsg(t.getTypeId(), propertyId,
 								"Skipped to add this property because of incorrect data in DB."));
@@ -385,7 +386,7 @@ public class TypeResource extends ResourceBase{
 				log.warn(buildMsg(t.getId(), null,
 						"Skipped to create this type because it has an unknown parent type."));
 			}else{
-				typeService.createTypeDefinition(t);
+				typeService.createTypeDefinition(repositoryId, t);
 			}
 		}
 	}
@@ -463,7 +464,7 @@ public class TypeResource extends ResourceBase{
 	}
 
 	private boolean existType(String typeId) {
-		NemakiTypeDefinition existing = typeService.getTypeDefinition(typeId);
+		NemakiTypeDefinition existing = typeService.getTypeDefinition(repositoryId, typeId);
 		if (existing == null) {
 			return false;
 		} else {
@@ -473,7 +474,7 @@ public class TypeResource extends ResourceBase{
 
 	private boolean existProperty(String propertyId) {
 		NemakiPropertyDefinitionCore existing = typeService
-				.getPropertyDefinitionCoreByPropertyId(propertyId);
+				.getPropertyDefinitionCoreByPropertyId(repositoryId, propertyId);
 		if (existing == null) {
 			return false;
 		} else {

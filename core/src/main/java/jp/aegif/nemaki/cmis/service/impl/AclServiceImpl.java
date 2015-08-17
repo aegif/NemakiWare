@@ -88,7 +88,7 @@ public class AclServiceImpl implements AclService {
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		TypeDefinition td = typeManager.getTypeDefinition(content);
+		TypeDefinition td = typeManager.getTypeDefinition(repositoryId, content);
 		if(!td.isControllableAcl()) exceptionService.constraint(objectId, "applyAcl cannot be performed on the object whose controllableAcl = false");
 		exceptionService.constraintAclPropagationDoesNotMatch(aclPropagation);
 		exceptionService.constraintPermissionDefined(repositoryId, acl, objectId);
