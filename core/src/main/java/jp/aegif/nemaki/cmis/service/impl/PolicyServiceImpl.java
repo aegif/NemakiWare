@@ -32,6 +32,7 @@ import jp.aegif.nemaki.cmis.service.PolicyService;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.util.cache.NemakiCache;
+import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.DomainType;
 
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
@@ -48,7 +49,7 @@ public class PolicyServiceImpl implements PolicyService {
 	private CompileService compileService;
 	private ExceptionService exceptionService;
 	private TypeManager typeManager;
-	private NemakiCache nemakiCache;
+	private NemakiCachePool nemakiCachePool;
 
 	@Override
 	public void applyPolicy(CallContext callContext, String repositoryId,
@@ -81,7 +82,7 @@ public class PolicyServiceImpl implements PolicyService {
 		// //////////////////
 		contentService.applyPolicy(callContext, repositoryId, policyId, objectId, extension);
 		
-		nemakiCache.removeCmisCache(objectId);
+		nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
 	}
 
 	@Override
@@ -106,7 +107,7 @@ public class PolicyServiceImpl implements PolicyService {
 		// //////////////////
 		contentService.removePolicy(callContext, repositoryId, policyId, objectId, extension);
 	
-		nemakiCache.removeCmisCache(objectId);
+		nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
 	}
 
 	@Override
@@ -157,7 +158,7 @@ public class PolicyServiceImpl implements PolicyService {
 		this.typeManager = typeManager;
 	}
 
-	public void setNemakiCache(NemakiCache nemakiCache) {
-		this.nemakiCache = nemakiCache;
+	public void setNemakiCachePool(NemakiCachePool nemakiCachePool) {
+		this.nemakiCachePool = nemakiCachePool;
 	}
 }

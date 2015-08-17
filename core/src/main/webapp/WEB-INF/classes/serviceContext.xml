@@ -7,15 +7,13 @@
     xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
 
 	<!-- Cache -->
-	<bean id="NemakiCache" class="org.springframework.aop.framework.ProxyFactoryBean">
-        <property name="target">
-            <ref bean="nemakiCache" />
-        </property>
-	</bean>
-	<bean id="nemakiCache" class="jp.aegif.nemaki.util.cache.impl.NemakiCacheImpl"
+	<bean id="nemakiCachePool" class="jp.aegif.nemaki.util.cache.impl.NemakiCachePoolImpl"
 	init-method="init">
 		<property name="propertyManager">
             <ref bean="propertyManager" />
+        </property>
+        <property name="repositoryInfoMap">
+            <ref bean="repositoryInfoMap" />
         </property>
 	</bean>
 
@@ -208,8 +206,8 @@
         <property name="solrUtil">
             <ref bean="solrUtil" />
         </property>
-        <property name="nemakiCache">
-			<ref bean="nemakiCache" />
+        <property name="nemakiCachePool">
+			<ref bean="nemakiCachePool" />
         </property>
     </bean>
 
@@ -262,8 +260,8 @@
         <property name="exceptionService">
             <ref bean="ExceptionService" />
         </property>
-        <property name="nemakiCache">
-            <ref bean="nemakiCache" />
+        <property name="nemakiCachePool">
+            <ref bean="nemakiCachePool" />
         </property>
     </bean>
 
@@ -317,8 +315,8 @@
         <property name="exceptionService">
             <ref bean="ExceptionService" />
         </property>
-        <property name="nemakiCache">
-            <ref bean="nemakiCache" />
+        <property name="nemakiCachePool">
+            <ref bean="nemakiCachePool" />
         </property>
     </bean>
 
@@ -349,8 +347,8 @@
         <property name="propertyManager">
             <ref bean="propertyManager" />
         </property>
-        <property name="nemakiCache">
-            <ref bean="nemakiCache" />
+        <property name="nemakiCachePool">
+            <ref bean="nemakiCachePool" />
         </property>
     </bean>
 
@@ -429,8 +427,8 @@
         <property name="typeManager">
             <ref bean="TypeManager" />
         </property>
-        <property name="nemakiCache">
-            <ref bean="nemakiCache" />
+        <property name="nemakiCachePool">
+            <ref bean="nemakiCachePool" />
         </property>
         <property name="includeRelationshipsEnabled">
         	<value>${capability.extended.include.relationships}</value>

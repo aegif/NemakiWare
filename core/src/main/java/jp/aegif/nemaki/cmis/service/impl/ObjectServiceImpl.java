@@ -73,6 +73,7 @@ import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.cache.NemakiCache;
+import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.DomainType;
 
 public class ObjectServiceImpl implements ObjectService {
@@ -85,7 +86,7 @@ public class ObjectServiceImpl implements ObjectService {
 	private ExceptionService exceptionService;
 	private CompileService compileService;
 	private SolrUtil solrUtil;
-	private NemakiCache nemakiCache;
+	private NemakiCachePool nemakiCachePool;
 
 	@Override
 	public ObjectData getObjectByPath(CallContext callContext, String repositoryId,
@@ -475,7 +476,7 @@ public class ObjectServiceImpl implements ObjectService {
 			objectId.setValue(result.getId());
 		}
 		
-		nemakiCache.removeCmisCache(oldId);
+		nemakiCachePool.get(repositoryId).removeCmisCache(oldId);
 	}
 
 	@Override
@@ -497,7 +498,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		contentService.deleteContentStream(callContext, repositoryId, objectId);
 		
-		nemakiCache.removeCmisCache(objectId.getValue());
+		nemakiCachePool.get(repositoryId).removeCmisCache(objectId.getValue());
 	}
 
 	@Override
@@ -534,7 +535,7 @@ public class ObjectServiceImpl implements ObjectService {
 		contentService.appendAttachment(callContext, repositoryId, objectId,
 				changeToken, contentStream, isLastChunk, extension);
 		
-		nemakiCache.removeCmisCache(objectId.getValue());
+		nemakiCachePool.get(repositoryId).removeCmisCache(objectId.getValue());
 	}
 
 	@Override
@@ -589,8 +590,8 @@ public class ObjectServiceImpl implements ObjectService {
 		Relationship relationship = contentService.createRelationship(
 				callContext, repositoryId, properties, policies, addAces,
 				removeAces, extension);
-		nemakiCache.removeCmisCache(relationship.getSourceId());
-		nemakiCache.removeCmisCache(relationship.getTargetId());
+		nemakiCachePool.get(repositoryId).removeCmisCache(relationship.getSourceId());
+		nemakiCachePool.get(repositoryId).removeCmisCache(relationship.getTargetId());
 		
 		return relationship.getId();
 	}
@@ -682,7 +683,7 @@ public class ObjectServiceImpl implements ObjectService {
 		
 		contentService.updateProperties(callContext, repositoryId, properties, content);
 		
-		nemakiCache.removeCmisCache(id);
+		nemakiCachePool.get(repositoryId).removeCmisCache(id);
 	}
 
 	private Content checkExceptionBeforeUpdateProperties(
@@ -745,7 +746,7 @@ public class ObjectServiceImpl implements ObjectService {
 						properties, new Holder<String>(idAndToken.getChangeToken()));
 				contentService.updateProperties(callContext, repositoryId,
 						properties, content);
-				nemakiCache.removeCmisCache(content.getId());
+				nemakiCachePool.get(repositoryId).removeCmisCache(content.getId());
 
 				BulkUpdateObjectIdAndChangeToken result = new BulkUpdateObjectIdAndChangeTokenImpl(
 						idAndToken.getId(), content.getId(),
@@ -793,7 +794,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		contentService.move(repositoryId, content, target);
 		
-		nemakiCache.removeCmisCache(content.getId());
+		nemakiCachePool.get(repositoryId).removeCmisCache(content.getId());
 	}
 
 	private void deleteObjectInternal(CallContext callContext, String repositoryId,
@@ -827,7 +828,7 @@ public class ObjectServiceImpl implements ObjectService {
 			contentService.delete(callContext, repositoryId, objectId, deleteWithParent);
 		}
 
-		nemakiCache.removeCmisCache(content.getId());
+		nemakiCachePool.get(repositoryId).removeCmisCache(content.getId());
 	}
 	
 	@Override
@@ -938,7 +939,7 @@ public class ObjectServiceImpl implements ObjectService {
 		this.solrUtil = solrUtil;
 	}
 
-	public void setNemakiCache(NemakiCache nemakiCache) {
-		this.nemakiCache = nemakiCache;
+	public void setNemakiCachePool(NemakiCachePool nemakiCachePool) {
+		this.nemakiCachePool = nemakiCachePool;
 	}
 }

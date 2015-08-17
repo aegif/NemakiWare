@@ -86,7 +86,6 @@ import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.factory.info.AclCapabilities;
-import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.cmis.service.RepositoryService;
 import jp.aegif.nemaki.model.Ace;
@@ -105,6 +104,7 @@ import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.cache.NemakiCache;
+import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.CmisExtensionToken;
 import net.sf.ehcache.Element;
 
@@ -119,7 +119,7 @@ public class CompileServiceImpl implements CompileService {
 	private PermissionService permissionService;
 	private TypeManager typeManager;
 	private AclCapabilities aclCapabilities;
-	private NemakiCache nemakiCache;
+	private NemakiCachePool nemakiCachePool;
 
 	private boolean includeRelationshipsEnabled = true;
 	
@@ -134,7 +134,7 @@ public class CompileServiceImpl implements CompileService {
 		
 		ObjectDataImpl _result = new ObjectDataImpl();
 		
-		Element v = nemakiCache.getObjectDataCache().get(content.getId());
+		Element v = nemakiCachePool.get(repositoryId).getObjectDataCache().get(content.getId());
 		if(v == null){
 			_result = compileObjectDataWithFullAttributes(callContext, repositoryId, content);
 		}else{
@@ -173,7 +173,7 @@ public class CompileServiceImpl implements CompileService {
 			result.setRenditions(compileRenditions(callContext, repositoryId, content));
 		}	
 		
-		nemakiCache.getObjectDataCache().put(new Element(content.getId(), result));
+		nemakiCachePool.get(repositoryId).getObjectDataCache().put(new Element(content.getId(), result));
 		
 		return result;
 	}
@@ -335,7 +335,7 @@ public class CompileServiceImpl implements CompileService {
 			
 			//Get each ObjectData
 			ObjectData _od;
-			Element v = nemakiCache.getObjectDataCache().get(c.getId());
+			Element v = nemakiCachePool.get(repositoryId).getObjectDataCache().get(c.getId());
 			if(v == null){
 				_od = compileObjectDataWithFullAttributes(callContext, repositoryId, c);
 			}else{
@@ -1450,8 +1450,8 @@ public class CompileServiceImpl implements CompileService {
 		this.typeManager = typeManager;
 	}
 
-	public void setNemakiCache(NemakiCache nemakiCache) {
-		this.nemakiCache = nemakiCache;
+	public void setNemakiCachePool(NemakiCachePool nemakiCachePool) {
+		this.nemakiCachePool = nemakiCachePool;
 	}
 
 	public void setIncludeRelationshipsEnabled(boolean includeRelationshipsEnabled) {
