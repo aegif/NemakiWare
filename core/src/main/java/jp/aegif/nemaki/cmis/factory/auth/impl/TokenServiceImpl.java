@@ -56,7 +56,8 @@ public class TokenServiceImpl implements TokenService{
 	}
 	
 	public void init() {
-		User admin = principalService.getAdmin();
+		final String repositoryId = "bedroom";	//TODO hard coding
+		User admin = principalService.getAdmin(repositoryId);
 		admins.add(admin.getId());
 	}
 

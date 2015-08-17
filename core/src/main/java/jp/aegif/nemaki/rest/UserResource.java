@@ -59,6 +59,7 @@ import org.springframework.stereotype.Component;
 public class UserResource extends ResourceBase {
 
 	PrincipalService principalService;
+	private final String repositoryId = "bedroom"; //TODO hard coding
 	
 	@SuppressWarnings("unchecked")
 	@GET
@@ -73,7 +74,7 @@ public class UserResource extends ResourceBase {
 		// Get all users list
 		List<User> userList;
 		try {
-			userList = principalService.getUsers();
+			userList = principalService.getUsers(repositoryId);
 			for (User user : userList) {
 				JSONObject userJSON = convertUserToJson(user);
 				listJSON.add(userJSON);
@@ -103,7 +104,7 @@ public class UserResource extends ResourceBase {
 			addErrMsg(errMsg, ITEM_USERID, ERR_MANDATORY);
 		}
 
-		User user = principalService.getUserById(userId);
+		User user = principalService.getUserById(repositoryId, userId);
 
 		if (user == null) {
 			status = false;
@@ -132,7 +133,7 @@ public class UserResource extends ResourceBase {
 
 		List<User> users;
 		JSONArray queriedUsers = new JSONArray();
-		users = principalService.getUsers();
+		users = principalService.getUsers(repositoryId);
 		for (User user : users) {
 			if (user.getUserId().startsWith(query) || user.getName().startsWith(query)) {
 				JSONObject userJSON = convertUserToJson(user);
@@ -186,7 +187,7 @@ public class UserResource extends ResourceBase {
 			setSignature(getUserInfo(httpRequest), user);
 
 			//TODO Error handling
-			principalService.createUser(user);
+			principalService.createUser(repositoryId, user);
 
 		}
 		result = makeResult(status, result, errMsg);
@@ -211,7 +212,7 @@ public class UserResource extends ResourceBase {
 		JSONArray errMsg = new JSONArray();
 
 		//Existing user
-		User user = principalService.getUserById(userId);
+		User user = principalService.getUserById(repositoryId, userId);
 
 		// Validation
 		status = checkAuthorityForUser(status, errMsg, httpRequest, userId);
@@ -258,7 +259,7 @@ public class UserResource extends ResourceBase {
 			}
 			if (StringUtils.isNotBlank(password)){
 				//TODO Error handling
-				user = principalService.getUserById(userId);
+				user = principalService.getUserById(repositoryId, userId);
 
 				// Edit & Update
 				if (status) {
@@ -268,7 +269,7 @@ public class UserResource extends ResourceBase {
 					setModifiedSignature(getUserInfo(httpRequest), user);
 
 					try{
-						principalService.updateUser(user);
+						principalService.updateUser(repositoryId, user);
 					}catch(Exception e){
 						e.printStackTrace();
 						status = false;
@@ -279,7 +280,7 @@ public class UserResource extends ResourceBase {
 			setModifiedSignature(getUserInfo(httpRequest), user);
 
 			try{
-				principalService.updateUser(user);
+				principalService.updateUser(repositoryId, user);
 			}catch(Exception e){
 				e.printStackTrace();
 				status = false;
@@ -301,7 +302,7 @@ public class UserResource extends ResourceBase {
 		JSONArray errMsg = new JSONArray();
 
 		//Existing user
-		User user = principalService.getUserById(userId);
+		User user = principalService.getUserById(repositoryId, userId);
 		if(user == null){
 			status = false;
 			addErrMsg(errMsg, ITEM_USER, ERR_NOTFOUND);
@@ -313,7 +314,7 @@ public class UserResource extends ResourceBase {
 		// Delete a user
 		if (status) {
 			try {
-				principalService.deleteUser(user.getId());
+				principalService.deleteUser(repositoryId, user.getId());
 			} catch (Exception ex) {
 				ex.printStackTrace();
 				status = false;
@@ -358,7 +359,7 @@ public class UserResource extends ResourceBase {
 		status = validateUser(status, errMsg, userId, userName, firstName, lastName);
 
 		//userID uniqueness
-		User user = principalService.getUserById(userId);
+		User user = principalService.getUserById(repositoryId, userId);
 		if(user != null){
 			status = false;
 			addErrMsg(errMsg, ITEM_USERID, ERR_ALREADYEXISTS);
@@ -435,7 +436,7 @@ public class UserResource extends ResourceBase {
 			return false;
 		}
 
-		User user = principalService.getUserById(userId);
+		User user = principalService.getUserById(repositoryId, userId);
 		boolean isAdmin = (user.isAdmin() == null) ? false : user.isAdmin();
 		if(isAdmin){
 			//password check
