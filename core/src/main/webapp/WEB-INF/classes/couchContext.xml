@@ -107,9 +107,6 @@
 	</bean>
 	
 	<bean id="nonCachedPrincipalDaoService" class="jp.aegif.nemaki.dao.impl.couch.PrincipalDaoServiceImpl">
-		<property name="connector">
-			<ref bean="connector" />
-		</property>
 		<property name="connectorPool">
 			<ref bean="connectorPool" />
 		</property>
