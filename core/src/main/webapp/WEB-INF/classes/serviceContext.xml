@@ -104,6 +104,9 @@
         </property>
     </bean>
     <bean id="typeManager" class="jp.aegif.nemaki.cmis.aspect.type.impl.TypeManagerImpl" init-method="init" depends-on="typeService">
+		<property name="repositoryInfoMap">
+            <ref bean="repositoryInfoMap" />
+        </property>
         <property name="typeService">
             <ref bean="TypeService" />
         </property>

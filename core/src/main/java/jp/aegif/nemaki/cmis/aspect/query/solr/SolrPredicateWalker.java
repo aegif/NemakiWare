@@ -63,7 +63,7 @@ import org.apache.solr.common.SolrDocumentList;
  * @author linzhixing
  *
  */
-public class SolrPredicateWalker {
+public class SolrPredicateWalker{
 
 	private final String repositoryId;
 	private final SolrUtil solrUtil;

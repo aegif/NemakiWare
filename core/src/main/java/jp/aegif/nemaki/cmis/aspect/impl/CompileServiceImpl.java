@@ -478,7 +478,7 @@ public class CompileServiceImpl implements CompileService {
 	public AllowableActions compileAllowableActions(CallContext callContext,
 			String repositoryId, Content content) {
 		// Get parameters to calculate AllowableActions
-		TypeDefinition tdf = typeManager.getTypeDefinition(content
+		TypeDefinition tdf = typeManager.getTypeDefinition(repositoryId, content
 				.getObjectType());
 		jp.aegif.nemaki.model.Acl contentAcl = content.getAcl();
 		if (tdf.isControllableAcl() && contentAcl == null)
@@ -723,7 +723,7 @@ public class CompileServiceImpl implements CompileService {
 	 */
 	@Override
 	public PropertiesImpl compileProperties(CallContext callContext, String repositoryId, Content content) {
-		TypeDefinitionContainer tdfc = typeManager.getTypeById(content.getObjectType());
+		TypeDefinitionContainer tdfc = typeManager.getTypeById(repositoryId, content.getObjectType());
 		TypeDefinition tdf = tdfc.getTypeDefinition();
 		
 		PropertiesImpl properties = new PropertiesImpl();
@@ -742,14 +742,14 @@ public class CompileServiceImpl implements CompileService {
 			properties = compileDocumentProperties(callContext, repositoryId, document, properties, tdf);
 		} else if (content.isRelationship()) {
 			Relationship relationship = (Relationship) content;
-			properties = compileRelationshipProperties(relationship,
-					properties, tdf);
+			properties = compileRelationshipProperties(repositoryId,
+					relationship, properties, tdf);
 		} else if (content.isPolicy()) {
 			Policy policy = (Policy) content;
-			properties = compilePolicyProperties(policy, properties, tdf);
+			properties = compilePolicyProperties(repositoryId, policy, properties, tdf);
 		} else if (content.isItem()) {
 			Item item = (Item) content;
-			properties = compileItemProperties(item, properties, tdf);
+			properties = compileItemProperties(repositoryId, item, properties, tdf);
 		}
 
 		return properties;
@@ -757,7 +757,7 @@ public class CompileServiceImpl implements CompileService {
 	
 	private PropertiesImpl compileRootFolderProperties(String repositoryId,
 			Folder folder, PropertiesImpl properties, TypeDefinition tdf) {
-		setCmisBaseProperties(properties, tdf, folder);
+		setCmisBaseProperties(repositoryId, properties, tdf, folder);
 
 		// Add parentId property without value
 		String _null = null;
@@ -770,7 +770,7 @@ public class CompileServiceImpl implements CompileService {
 
 	private PropertiesImpl compileFolderProperties(String repositoryId,
 			Folder folder, PropertiesImpl properties, TypeDefinition tdf) {
-		setCmisBaseProperties(properties, tdf, folder);
+		setCmisBaseProperties(repositoryId, properties, tdf, folder);
 		addProperty(properties, tdf, PropertyIds.PARENT_ID, folder.getParentId());
 		setCmisFolderProperties(repositoryId, properties, tdf, folder);
 		return properties;
@@ -778,36 +778,36 @@ public class CompileServiceImpl implements CompileService {
 
 	private PropertiesImpl compileDocumentProperties(CallContext callContext,
 			String repositoryId, Document document, PropertiesImpl properties, TypeDefinition tdf) {
-		setCmisBaseProperties(properties, tdf, document);
+		setCmisBaseProperties(repositoryId, properties, tdf, document);
 		setCmisDocumentProperties(callContext, repositoryId, properties, tdf, document);
 		setCmisAttachmentProperties(repositoryId, properties, tdf, document);
 		return properties;
 	}
 
 	private PropertiesImpl compileRelationshipProperties(
-			Relationship relationship, PropertiesImpl properties,
-			TypeDefinition tdf) {
-		setCmisBaseProperties(properties, tdf, relationship);
+			String repositoryId, Relationship relationship,
+			PropertiesImpl properties, TypeDefinition tdf) {
+		setCmisBaseProperties(repositoryId, properties, tdf, relationship);
 		setCmisRelationshipProperties(properties, tdf, relationship);
 		return properties;
 	}
 
-	private PropertiesImpl compilePolicyProperties(Policy policy,
-			PropertiesImpl properties, TypeDefinition tdf) {
-		setCmisBaseProperties(properties, tdf, policy);
+	private PropertiesImpl compilePolicyProperties(String repositoryId,
+			Policy policy, PropertiesImpl properties, TypeDefinition tdf) {
+		setCmisBaseProperties(repositoryId, properties, tdf, policy);
 		setCmisPolicyProperties(properties, tdf, policy);
 		return properties;
 	}
 
-	private PropertiesImpl compileItemProperties(Item item,
-			PropertiesImpl properties, TypeDefinition tdf) {
-		setCmisBaseProperties(properties, tdf, item);
+	private PropertiesImpl compileItemProperties(String repositoryId,
+			Item item, PropertiesImpl properties, TypeDefinition tdf) {
+		setCmisBaseProperties(repositoryId, properties, tdf, item);
 		setCmisItemProperties(properties, tdf, item);
 		return properties;
 	}
 
-	private void setCmisBaseProperties(PropertiesImpl properties,
-			TypeDefinition tdf, Content content) {
+	private void setCmisBaseProperties(String repositoryId,
+			PropertiesImpl properties, TypeDefinition tdf, Content content) {
 		addProperty(properties, tdf, PropertyIds.NAME, content.getName());
 
 		addProperty(properties, tdf, PropertyIds.DESCRIPTION, content.getDescription());
@@ -856,7 +856,7 @@ public class CompileServiceImpl implements CompileService {
 		}
 		
 		// Secondary properties
-		setCmisSecondaryTypes(properties, content, tdf);
+		setCmisSecondaryTypes(repositoryId, properties, content, tdf);
 	}
 
 	private Property extractSubTypeProperty(Content content, String propertyId) {
@@ -895,13 +895,13 @@ public class CompileServiceImpl implements CompileService {
 		addProperty(properties, tdf, PropertyIds.BASE_TYPE_ID, BaseTypeId.CMIS_DOCUMENT.value());
 
 		Boolean isImmutable = (document.isImmutable() == null) ? (Boolean) typeManager
-				.getSingleDefaultValue(PropertyIds.IS_IMMUTABLE, tdf.getId())
+				.getSingleDefaultValue(PropertyIds.IS_IMMUTABLE, tdf.getId(), repositoryId)
 				: document.isImmutable();
 		addProperty(properties, tdf, PropertyIds.IS_IMMUTABLE, isImmutable);
 
 		
 		DocumentTypeDefinition type = (DocumentTypeDefinition) typeManager
-				.getTypeDefinition(tdf.getId());
+				.getTypeDefinition(repositoryId, tdf.getId());
 		if (type.isVersionable()) {
 			addProperty(properties, tdf, PropertyIds.IS_PRIVATE_WORKING_COPY,
 					document.isPrivateWorkingCopy());
@@ -1019,8 +1019,8 @@ public class CompileServiceImpl implements CompileService {
 		addProperty(properties, tdf, PropertyIds.BASE_TYPE_ID, BaseTypeId.CMIS_ITEM.value());
 	}
 
-	private void setCmisSecondaryTypes(PropertiesImpl props, Content content,
-			TypeDefinition tdf) {
+	private void setCmisSecondaryTypes(String repositoryId, PropertiesImpl props,
+			Content content, TypeDefinition tdf) {
 		List<Aspect> aspects = content.getAspects();
 		List<String> secondaryIds = new ArrayList<String>();
 
@@ -1046,7 +1046,7 @@ public class CompileServiceImpl implements CompileService {
 			List<Property> properties = (aspect == null) ? new ArrayList<Property>()
 					: aspect.getProperties();
 
-			SecondaryTypeDefinition stdf = (SecondaryTypeDefinition)typeManager.getTypeDefinition(secondaryId);
+			SecondaryTypeDefinition stdf = (SecondaryTypeDefinition)typeManager.getTypeDefinition(repositoryId, secondaryId);
 			for (PropertyDefinition<?> secondaryPropertyDefinition : secondaryPropertyDefinitions) {
 				Property property = extractProperty(properties,
 						secondaryPropertyDefinition.getId());

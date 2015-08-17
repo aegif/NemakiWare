@@ -179,7 +179,7 @@ public class ObjectServiceImpl implements ObjectService {
 							"getContentStream cannnot be invoked to other than document type.");
 		}
 		Document document = (Document) content;
-		exceptionService.constraintContentStreamDownload(document);
+		exceptionService.constraintContentStreamDownload(repositoryId, document);
 		AttachmentNode attachment = contentService.getAttachment(repositoryId, document
 				.getAttachmentNodeId());
 		attachment.setRangeOffset(rangeOffset);
@@ -258,7 +258,7 @@ public class ObjectServiceImpl implements ObjectService {
 			List<String> policies, ExtensionsData extension) {
 
 		String typeId = DataUtil.getObjectTypeId(properties);
-		TypeDefinition type = typeManager.getTypeDefinition(typeId);
+		TypeDefinition type = typeManager.getTypeDefinition(repositoryId, typeId);
 		if (type == null) {
 			throw new CmisObjectNotFoundException("Type '" + typeId
 					+ "' is unknown!");
@@ -296,7 +296,7 @@ public class ObjectServiceImpl implements ObjectService {
 			Properties properties, String folderId, List<String> policies,
 			Acl addAces, Acl removeAces, ExtensionsData extension) {
 		FolderTypeDefinition td = (FolderTypeDefinition) typeManager
-				.getTypeDefinition(DataUtil.getObjectTypeId(properties));
+				.getTypeDefinition(repositoryId, DataUtil.getObjectTypeId(properties));
 		Folder parentFolder = contentService.getFolder(repositoryId, folderId);
 
 		// //////////////////
@@ -309,12 +309,12 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		exceptionService.constraintBaseTypeId(properties,
-				BaseTypeId.CMIS_FOLDER);
+		exceptionService.constraintBaseTypeId(repositoryId,
+				properties, BaseTypeId.CMIS_FOLDER);
 		exceptionService.constraintAllowedChildObjectTypeId(parentFolder,
 				properties);
-		exceptionService.constraintPropertyValue(td, properties,
-				DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
+		exceptionService.constraintPropertyValue(repositoryId, td,
+				properties, DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
 		exceptionService
 				.constraintCotrollablePolicies(td, policies, properties);
 		exceptionService.constraintCotrollableAcl(td, addAces, removeAces,
@@ -339,7 +339,7 @@ public class ObjectServiceImpl implements ObjectService {
 		String objectTypeId = DataUtil.getIdProperty(properties,
 				PropertyIds.OBJECT_TYPE_ID);
 		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
-				.getTypeDefinition(objectTypeId);
+				.getTypeDefinition(repositoryId, objectTypeId);
 		Folder parentFolder = contentService.getFolder(repositoryId, folderId);
 
 		// //////////////////
@@ -354,12 +354,12 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		exceptionService.constraintBaseTypeId(properties,
-				BaseTypeId.CMIS_DOCUMENT);
+		exceptionService.constraintBaseTypeId(repositoryId,
+				properties, BaseTypeId.CMIS_DOCUMENT);
 		exceptionService.constraintAllowedChildObjectTypeId(parentFolder,
 				properties);
-		exceptionService.constraintPropertyValue(td, properties,
-				DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
+		exceptionService.constraintPropertyValue(repositoryId, td,
+				properties, DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
 		exceptionService.constraintContentStreamRequired(td, contentStream);
 		exceptionService.constraintControllableVersionable(td, versioningState,
 				null);
@@ -388,7 +388,7 @@ public class ObjectServiceImpl implements ObjectService {
 			List<String> policies, Acl addAces, Acl removeAces) {
 		Document original = contentService.getDocument(repositoryId, sourceId);
 		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
-				.getTypeDefinition(original.getObjectType());
+				.getTypeDefinition(repositoryId, original.getObjectType());
 
 		// //////////////////
 		// General Exception
@@ -403,12 +403,12 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		exceptionService.constraintBaseTypeId(properties,
-				BaseTypeId.CMIS_DOCUMENT);
+		exceptionService.constraintBaseTypeId(repositoryId,
+				properties, BaseTypeId.CMIS_DOCUMENT);
 		exceptionService.constraintAllowedChildObjectTypeId(parentFolder,
 				properties);
-		exceptionService.constraintPropertyValue(td, properties,
-				DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
+		exceptionService.constraintPropertyValue(repositoryId, td,
+				properties, DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
 		exceptionService.constraintControllableVersionable(td, versioningState,
 				null);
 		versioningState = (td.isVersionable() && versioningState == null) ? VersioningState.MAJOR : versioningState;
@@ -446,8 +446,8 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.permissionDenied(callContext,
 				repositoryId, PermissionMapping.CAN_SET_CONTENT_DOCUMENT, doc);
 		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
-				.getTypeDefinition(doc.getObjectType());
-		exceptionService.constraintImmutable(doc, td);
+				.getTypeDefinition(repositoryId, doc.getObjectType());
+		exceptionService.constraintImmutable(repositoryId, doc, td);
 
 		// //////////////////
 		// Specific Exception
@@ -518,8 +518,8 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.permissionDenied(callContext,
 				repositoryId, PermissionMapping.CAN_SET_CONTENT_DOCUMENT, doc);
 		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
-				.getTypeDefinition(doc.getObjectType());
-		exceptionService.constraintImmutable(doc, td);
+				.getTypeDefinition(repositoryId, doc.getObjectType());
+		exceptionService.constraintImmutable(repositoryId, doc, td);
 
 		// //////////////////
 		// Specific Exception
@@ -544,7 +544,7 @@ public class ObjectServiceImpl implements ObjectService {
 		String objectTypeId = DataUtil.getIdProperty(properties,
 				PropertyIds.OBJECT_TYPE_ID);
 		RelationshipTypeDefinition td = (RelationshipTypeDefinition) typeManager
-				.getTypeDefinition(objectTypeId);
+				.getTypeDefinition(repositoryId, objectTypeId);
 		// //////////////////
 		// Exception
 		// //////////////////
@@ -571,10 +571,10 @@ public class ObjectServiceImpl implements ObjectService {
 					repositoryId, PermissionMapping.CAN_CREATE_RELATIONSHIP_TARGET, target);
 		}
 
-		exceptionService.constraintBaseTypeId(properties,
-				BaseTypeId.CMIS_RELATIONSHIP);
-		exceptionService.constraintPropertyValue(td, properties,
-				DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
+		exceptionService.constraintBaseTypeId(repositoryId,
+				properties, BaseTypeId.CMIS_RELATIONSHIP);
+		exceptionService.constraintPropertyValue(repositoryId, td,
+				properties, DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
 		exceptionService
 				.constraintCotrollablePolicies(td, policies, properties);
 		exceptionService.constraintCotrollableAcl(td, addAces, removeAces,
@@ -605,16 +605,16 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.invalidArgumentRequiredCollection("properties",
 				properties.getPropertyList());
 		// NOTE: folderId is ignored because policy is not filable in Nemaki
-		TypeDefinition td = typeManager.getTypeDefinition(DataUtil
+		TypeDefinition td = typeManager.getTypeDefinition(repositoryId, DataUtil
 				.getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID));
-		exceptionService.constraintPropertyValue(td, properties,
-				DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
+		exceptionService.constraintPropertyValue(repositoryId, td,
+				properties, DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
 
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		exceptionService.constraintBaseTypeId(properties,
-				BaseTypeId.CMIS_POLICY);
+		exceptionService.constraintBaseTypeId(repositoryId,
+				properties, BaseTypeId.CMIS_POLICY);
 		// exceptionService.constraintAllowedChildObjectTypeId(parent,
 		// properties);
 		exceptionService
@@ -638,7 +638,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// General Exception
 		// //////////////////
-		TypeDefinition td = typeManager.getTypeDefinition(DataUtil
+		TypeDefinition td = typeManager.getTypeDefinition(repositoryId, DataUtil
 				.getObjectTypeId(properties));
 		Folder parentFolder = contentService.getFolder(repositoryId, folderId);
 		exceptionService.objectNotFoundParentFolder(repositoryId, folderId, parentFolder);
@@ -648,9 +648,9 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		exceptionService.constraintBaseTypeId(properties, BaseTypeId.CMIS_ITEM);
-		exceptionService.constraintPropertyValue(td, properties,
-				DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
+		exceptionService.constraintBaseTypeId(repositoryId, properties, BaseTypeId.CMIS_ITEM);
+		exceptionService.constraintPropertyValue(repositoryId, td,
+				properties, DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
 		exceptionService
 				.constraintCotrollablePolicies(td, policies, properties);
 		exceptionService.constraintCotrollableAcl(td, addAces, removeAces,
@@ -702,8 +702,8 @@ public class ObjectServiceImpl implements ObjectService {
 			Document d = (Document) content;
 			exceptionService.versioning(d);
 			exceptionService.constraintUpdateWhenCheckedOut(repositoryId, callContext.getUsername(), d);
-			TypeDefinition typeDef = typeManager.getTypeDefinition(d);
-			exceptionService.constraintImmutable(d, typeDef);
+			TypeDefinition typeDef = typeManager.getTypeDefinition(repositoryId, d);
+			exceptionService.constraintImmutable(repositoryId, d, typeDef);
 		}
 		exceptionService.permissionDenied(callContext,
 				repositoryId, PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT, content);
@@ -711,9 +711,9 @@ public class ObjectServiceImpl implements ObjectService {
 		
 		
 
-		TypeDefinition tdf = typeManager.getTypeDefinition(content);
-		exceptionService.constraintPropertyValue(tdf, properties,
-				objectId.getValue());
+		TypeDefinition tdf = typeManager.getTypeDefinition(repositoryId, content);
+		exceptionService.constraintPropertyValue(repositoryId, tdf,
+				properties, objectId.getValue());
 
 		return content;
 	}
@@ -730,7 +730,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// Each permission is checked at each execution
 		exceptionService.invalidArgumentRequiredCollection(
 				"objectIdAndChangeToken", objectIdAndChangeToken);
-		exceptionService.invalidArgumentSecondaryTypeIds(properties);
+		exceptionService.invalidArgumentSecondaryTypeIds(repositoryId, properties);
 
 		// //////////////////
 		// Body of the method

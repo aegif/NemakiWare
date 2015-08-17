@@ -429,7 +429,7 @@ public class ContentServiceImpl implements ContentService {
 				properties, parentFolder);
 		
 		//Check contentStreamAllowed
-		DocumentTypeDefinition tdf = (DocumentTypeDefinition)(typeManager.getTypeDefinition(d));
+		DocumentTypeDefinition tdf = (DocumentTypeDefinition)(typeManager.getTypeDefinition(repositoryId, d));
 		
 		ContentStreamAllowed csa = tdf.getContentStreamAllowed();
 		if(csa == ContentStreamAllowed.REQUIRED || 
@@ -926,7 +926,7 @@ public class ContentServiceImpl implements ContentService {
 		setBaseProperties(callContext, repositoryId, properties, i, null);
 		String objectTypeId = DataUtil.getIdProperty(properties,
 				PropertyIds.OBJECT_TYPE_ID);
-		TypeDefinition tdf = typeManager.getTypeDefinition(objectTypeId);
+		TypeDefinition tdf = typeManager.getTypeDefinition(repositoryId, objectTypeId);
 		if (tdf.isFileable()) {
 			i.setParentId(folderId);
 		}
@@ -952,7 +952,7 @@ public class ContentServiceImpl implements ContentService {
 
 		// Base Type
 		TypeDefinition typeDefinition = typeManager
-				.getTypeDefinition(objectTypeId);
+				.getTypeDefinition(repositoryId, objectTypeId);
 		BaseTypeId baseTypeId = typeDefinition.getBaseTypeId();
 		content.setType(baseTypeId.value());
 
@@ -1023,7 +1023,7 @@ public class ContentServiceImpl implements ContentService {
 
 		// Primary
 		org.apache.chemistry.opencmis.commons.definitions.TypeDefinition td = typeManager
-				.getTypeDefinition(content.getObjectType());
+				.getTypeDefinition(repositoryId, content.getObjectType());
 		for (PropertyData<?> p : properties.getPropertyList()) {
 			org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition pd = td
 					.getPropertyDefinitions().get(p.getId());
@@ -1090,7 +1090,7 @@ public class ContentServiceImpl implements ContentService {
 
 		for (String secondaryTypeId : ids) {
 			org.apache.chemistry.opencmis.commons.definitions.TypeDefinition td = typeManager
-					.getTypeDefinition(secondaryTypeId);
+					.getTypeDefinition(repositoryId, secondaryTypeId);
 			Aspect aspect = new Aspect();
 			aspect.setName(secondaryTypeId);
 

@@ -70,7 +70,7 @@ public class PolicyServiceImpl implements PolicyService {
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		TypeDefinition td = typeManager.getTypeDefinition(content);
+		TypeDefinition td = typeManager.getTypeDefinition(repositoryId, content);
 		if (!td.isControllablePolicy())
 			exceptionService
 					.constraint(objectId,

@@ -83,8 +83,8 @@ public class RelationshipServiceImpl implements RelationshipService {
 
 			if (includeSubRelationshipTypes) {
 				List<TypeDefinitionContainer> descendants = typeManager
-						.getTypesDescendants(typeId, BigInteger.valueOf(-1),
-								false);
+						.getTypesDescendants(repositoryId, typeId,
+								BigInteger.valueOf(-1), false);
 				for (TypeDefinitionContainer tdc : descendants) {
 					typeIds.add(tdc.getTypeDefinition().getId());
 				}

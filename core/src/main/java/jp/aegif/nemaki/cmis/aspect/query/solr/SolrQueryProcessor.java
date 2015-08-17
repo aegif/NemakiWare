@@ -23,6 +23,7 @@ package jp.aegif.nemaki.cmis.aspect.query.solr;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +45,7 @@ import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectListImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.chemistry.opencmis.server.support.query.PredicateWalkerBase;
 import org.apache.chemistry.opencmis.server.support.query.QueryObject;
 import org.apache.chemistry.opencmis.server.support.query.QueryObject.SortSpec;
 import org.apache.chemistry.opencmis.server.support.query.QueryUtilStrict;
@@ -77,6 +79,52 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 	}
 
+	
+	private class CmisTypeManager implements org.apache.chemistry.opencmis.server.support.TypeManager{
+		private String repositoryId;
+		private TypeManager typeManager;
+		
+		public CmisTypeManager(String repositoryId){
+			this.repositoryId = repositoryId;
+			this.typeManager = typeManager;
+		}
+		@Override
+		public void addTypeDefinition(TypeDefinition arg0, boolean arg1) {
+			// TODO Auto-generated method stub
+			
+		}
+		@Override
+		public void deleteTypeDefinition(String typeId) {
+			typeManager.deleteTypeDefinition(repositoryId, typeId);
+			
+		}
+		@Override
+		public String getPropertyIdForQueryName(TypeDefinition typeDefinition, String propQueryName) {
+			return typeManager.getPropertyIdForQueryName(repositoryId, typeDefinition, propQueryName);
+		}
+		@Override
+		public List<TypeDefinitionContainer> getRootTypes() {
+			return typeManager.getRootTypes(repositoryId);
+		}
+		@Override
+		public TypeDefinitionContainer getTypeById(String typeId) {
+			return typeManager.getTypeById(repositoryId, typeId);
+		}
+		@Override
+		public TypeDefinition getTypeByQueryName(String typeQueryName) {
+			return typeManager.getTypeByQueryName(repositoryId, typeQueryName);
+		}
+		@Override
+		public Collection<TypeDefinitionContainer> getTypeDefinitionList() {
+			return typeManager.getTypeDefinitionList(repositoryId);
+		}
+		@Override
+		public void updateTypeDefinition(TypeDefinition typeDefinition) {
+			typeManager.updateTypeDefinition(repositoryId, typeDefinition);
+			
+		}
+	}
+	
 	@Override
 	public ObjectList query(CallContext callContext, String repositoryId,
 			String statement, Boolean searchAllVersions,
@@ -86,7 +134,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 		SolrServer solrServer = solrUtil.getSolrServer();
 
 		// TODO walker is required?
-		QueryUtilStrict util = new QueryUtilStrict(statement, typeManager, null);
+		QueryUtilStrict util = new QueryUtilStrict(statement, new CmisTypeManager(repositoryId), null);
 		QueryObject queryObject = util.getQueryObject();
 
 		// Get where caluse as Tree
@@ -121,7 +169,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 		TypeDefinition td = queryObject.getMainFromName();
 		// includedInSupertypeQuery
 		List<TypeDefinitionContainer> typeDescendants = typeManager
-				.getTypesDescendants(td.getId(), BigInteger.valueOf(-1), false);
+				.getTypesDescendants(repositoryId, td.getId(), BigInteger.valueOf(-1), false);
 		Iterator<TypeDefinitionContainer> iterator = typeDescendants.iterator();
 		List<String> tables = new ArrayList<String>();
 		while (iterator.hasNext()) {
