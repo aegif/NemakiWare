@@ -51,14 +51,14 @@ public class PrincipalServiceImpl implements PrincipalService {
 	@Override
 	public List<User> getUsers(String repositoryId) {
 		//refresh to cope with new user without restarting the server
-		List<User> users = principalDaoService.getUsers();
+		List<User> users = principalDaoService.getUsers(repositoryId);
 		return users;
 	}
 
 	@Override
 	public List<Group> getGroups(String repositoryId) {
 		//refresh to cope with new group without restarting the server
-		List<Group> groups = principalDaoService.getGroups();
+		List<Group> groups = principalDaoService.getGroups(repositoryId);
 		return groups;
 	}
 
@@ -99,12 +99,12 @@ public class PrincipalServiceImpl implements PrincipalService {
 
 	@Override
 	public Group getGroupById(String repositoryId, String groupId) {
-		return principalDaoService.getGroupById(groupId);
+		return principalDaoService.getGroupById(repositoryId, groupId);
 	}
 
 	@Override
 	public User getUserById(String repositoryId, String id) {
-		return principalDaoService.getUserById(id);
+		return principalDaoService.getUserById(repositoryId, id);
 	}
 
 	@Override
@@ -115,17 +115,17 @@ public class PrincipalServiceImpl implements PrincipalService {
 			log.error("userId=" + user.getUserId() + " already exists.");
 		}
 
-		principalDaoService.createUser(user);
+		principalDaoService.createUser(repositoryId, user);
 	}
 
 	@Override
 	public synchronized void updateUser(String repositoryId, User user) {
-		principalDaoService.updateUser(user);
+		principalDaoService.updateUser(repositoryId, user);
 	}
 
 	@Override
 	public synchronized void deleteUser(String repositoryId, String id) {
-		principalDaoService.delete(User.class, id);
+		principalDaoService.delete(repositoryId, User.class, id);
 	}
 
 	@Override
@@ -136,17 +136,17 @@ public class PrincipalServiceImpl implements PrincipalService {
 			log.error("groupId=" + group.getGroupId() + " already exists.");
 		}
 
-		principalDaoService.createGroup(group);
+		principalDaoService.createGroup(repositoryId, group);
 	}
 
 	@Override
 	public synchronized void updateGroup(String repositoryId, Group group) {
-		principalDaoService.updateGroup(group);
+		principalDaoService.updateGroup(repositoryId, group);
 	}
 
 	@Override
 	public synchronized void deleteGroup(String repositoryId, String id) {
-		principalDaoService.delete(Group.class, id);
+		principalDaoService.delete(repositoryId, Group.class, id);
 	}
 
 	private List<String> getPrincipalIds(String repositoryId){
@@ -156,7 +156,7 @@ public class PrincipalServiceImpl implements PrincipalService {
 		List<String> principalIds = new ArrayList<String>();
 
 		//UserId
-		List<User> users = principalDaoService.getUsers();
+		List<User> users = principalDaoService.getUsers(repositoryId);
 		for(User u : users){
 			if(principalIds.contains(u.getUserId())){
 				log.warn("userId=" + u.getUserId() + " is duplicate in the database.");
@@ -165,7 +165,7 @@ public class PrincipalServiceImpl implements PrincipalService {
 		}
 
 		//GroupId
-		List<Group> groups = principalDaoService.getGroups();
+		List<Group> groups = principalDaoService.getGroups(repositoryId);
 		for(Group g : groups){
 			if(principalIds.contains(g.getGroupId())){
 				log.warn("groupId=" + g.getGroupId() + " is duplicate in the database.");
@@ -198,7 +198,7 @@ public class PrincipalServiceImpl implements PrincipalService {
 
 	@Override
 	public User getAdmin(String repositoryId) {
-		return principalDaoService.getAdmin();
+		return principalDaoService.getAdmin(repositoryId);
 	}
 
 	public void setPrincipalDaoService(PrincipalDaoService principalDaoService) {
