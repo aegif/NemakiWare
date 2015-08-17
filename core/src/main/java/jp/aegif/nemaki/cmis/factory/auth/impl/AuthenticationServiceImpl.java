@@ -65,8 +65,8 @@ public class AuthenticationServiceImpl implements AuthenticationService {
      }
 
      @Override
-     public User getAuthenticatedUser(String userName, String password) {
-          User u = principalService.getUserById(userName);
+     public User getAuthenticatedUser(String repositoryId, String userName, String password) {
+          User u = principalService.getUserById(repositoryId, userName);
          
           // succeeded
           if (u != null ) {
@@ -77,7 +77,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
           }
 
           // Check anonymous
-          String anonymousId = principalService.getAnonymous();
+          String anonymousId = principalService.getAnonymous(repositoryId);
           if(StringUtils.isNotBlank(anonymousId) && anonymousId.equals(userName)){
                if(u != null){
                     log.warn(anonymousId + " should have not been registered in the database.");

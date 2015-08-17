@@ -102,16 +102,18 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 	}
 
 	private boolean loginWithExternalAuth(CallContext callContext){
+		final String repositoryId = "bedroom"; //TODO hard coding
+		
 		String proxyHeaderKey = propertyManager.readValue(PropertyKey.EXTERNAL_AUTHENTICATION_PROXY_HEADER);
 		String proxyUserId = (String) callContext.get(proxyHeaderKey);
 		if(StringUtils.isBlank(proxyUserId)){
 			log.warn("Not authenticated user");
 			return false;
 		}else{
-			User user = principalService.getUserById(proxyUserId);
+			User user = principalService.getUserById(repositoryId, proxyUserId);
 			if(user == null){
 				User newUser = new User(proxyUserId, proxyUserId, "", "", "", BCrypt.hashpw(proxyUserId, BCrypt.gensalt()));
-				principalService.createUser(newUser);
+				principalService.createUser(repositoryId, newUser);
 				log.debug("Authenticated userId=" + newUser.getUserId());
 			}else{
 				log.debug("Authenticated userId=" + user.getUserId());
@@ -149,9 +151,13 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 	}
 
 	private boolean loginWithBasicAuth(CallContext callContext) {
+		//TODO
+		final String repositoryId = "bedroom"; //TODO get from callContext
+		
+		
 		// Basic auth with id/password
 		User user = authenticationService.getAuthenticatedUser(
-				callContext.getUsername(), callContext.getPassword());
+				repositoryId, callContext.getUsername(), callContext.getPassword());
 		if (user == null)
 			return false;
 		boolean isAdmin = user.isAdmin() == null ? false : true;

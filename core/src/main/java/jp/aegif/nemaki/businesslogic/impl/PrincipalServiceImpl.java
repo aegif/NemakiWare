@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Set;
 
 import jp.aegif.nemaki.businesslogic.PrincipalService;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.dao.PrincipalDaoService;
 import jp.aegif.nemaki.model.Group;
@@ -48,23 +49,23 @@ public class PrincipalServiceImpl implements PrincipalService {
 	private PrincipalDaoService principalDaoService;
 
 	@Override
-	public List<User> getUsers() {
+	public List<User> getUsers(String repositoryId) {
 		//refresh to cope with new user without restarting the server
 		List<User> users = principalDaoService.getUsers();
 		return users;
 	}
 
 	@Override
-	public List<Group> getGroups() {
+	public List<Group> getGroups(String repositoryId) {
 		//refresh to cope with new group without restarting the server
 		List<Group> groups = principalDaoService.getGroups();
 		return groups;
 	}
 
 	@Override
-	public Set<String> getGroupIdsContainingUser(String userId) {
-		String anonymous = getAnonymous();
-		String anyone = getAnyone();
+	public Set<String> getGroupIdsContainingUser(String repositoryId, String userId) {
+		String anonymous = getAnonymous(repositoryId);
+		String anyone = getAnyone(repositoryId);
 		
 		Set<String> groupIds = new HashSet<String>();
 
@@ -73,9 +74,9 @@ public class PrincipalServiceImpl implements PrincipalService {
 			return groupIds;
 		}
 
-		List<Group> groups = getGroups();
+		List<Group> groups = getGroups(repositoryId);
 		for (Group g : groups) {
-			if ( containsUserInGroup(userId, g) ) {
+			if ( containsUserInGroup(repositoryId, userId, g) ) {
 				groupIds.add(g.getGroupId());
 			}
 		}
@@ -83,33 +84,33 @@ public class PrincipalServiceImpl implements PrincipalService {
 		return groupIds;
 	}
 
-	private boolean containsUserInGroup(String userId, Group group) {
+	private boolean containsUserInGroup(String repositoryId, String userId, Group group) {
 		log.debug("$$ group:" + group.getName());
 		if ( group.getUsers().contains(userId))
 			return true;
 		for(String groupId: group.getGroups() ) {
 			log.debug("$$ subgroup: " + groupId);
-			Group g = this.getGroupById(groupId);
-			boolean result = containsUserInGroup(userId, g);
+			Group g = this.getGroupById(repositoryId, groupId);
+			boolean result = containsUserInGroup(repositoryId, userId, g);
 			if ( result ) return true;
 		}
 		return false;
 	}
 
 	@Override
-	public Group getGroupById(String groupId) {
+	public Group getGroupById(String repositoryId, String groupId) {
 		return principalDaoService.getGroupById(groupId);
 	}
 
 	@Override
-	public User getUserById(String id) {
+	public User getUserById(String repositoryId, String id) {
 		return principalDaoService.getUserById(id);
 	}
 
 	@Override
-	public synchronized void createUser(User user) {
+	public synchronized void createUser(String repositoryId, User user) {
 		//UserID uniqueness
-		List<String> principalIds = getPrincipalIds();
+		List<String> principalIds = getPrincipalIds(repositoryId);
 		if(principalIds.contains(user.getUserId())){
 			log.error("userId=" + user.getUserId() + " already exists.");
 		}
@@ -118,19 +119,19 @@ public class PrincipalServiceImpl implements PrincipalService {
 	}
 
 	@Override
-	public synchronized void updateUser(User user) {
+	public synchronized void updateUser(String repositoryId, User user) {
 		principalDaoService.updateUser(user);
 	}
 
 	@Override
-	public synchronized void deleteUser(String id) {
+	public synchronized void deleteUser(String repositoryId, String id) {
 		principalDaoService.delete(User.class, id);
 	}
 
 	@Override
-	public synchronized void createGroup(Group group) {
+	public synchronized void createGroup(String repositoryId, Group group) {
 		//GroupID uniqueness
-		List<String> principalIds = getPrincipalIds();
+		List<String> principalIds = getPrincipalIds(repositoryId);
 		if(principalIds.contains(group.getGroupId())){
 			log.error("groupId=" + group.getGroupId() + " already exists.");
 		}
@@ -139,18 +140,18 @@ public class PrincipalServiceImpl implements PrincipalService {
 	}
 
 	@Override
-	public synchronized void updateGroup(Group group) {
+	public synchronized void updateGroup(String repositoryId, Group group) {
 		principalDaoService.updateGroup(group);
 	}
 
 	@Override
-	public synchronized void deleteGroup(String id) {
+	public synchronized void deleteGroup(String repositoryId, String id) {
 		principalDaoService.delete(Group.class, id);
 	}
 
-	private List<String> getPrincipalIds(){
-		String anonymous = getAnonymous();
-		String anyone = getAnyone();
+	private List<String> getPrincipalIds(String repositoryId){
+		String anonymous = getAnonymous(repositoryId);
+		String anyone = getAnyone(repositoryId);
 		
 		List<String> principalIds = new ArrayList<String>();
 
@@ -196,7 +197,7 @@ public class PrincipalServiceImpl implements PrincipalService {
 	}
 
 	@Override
-	public User getAdmin() {
+	public User getAdmin(String repositoryId) {
 		return principalDaoService.getAdmin();
 	}
 
@@ -205,15 +206,15 @@ public class PrincipalServiceImpl implements PrincipalService {
 	}
 
 	@Override
-	public String getAnonymous() {
-		// TODO hard coding
-		return "anonymous";
+	public String getAnonymous(String repositoryId) {
+		RepositoryInfo info = repositoryInfoMap.get(repositoryId);
+		return info.getPrincipalIdAnonymous();
 	}
 
 	@Override
-	public String getAnyone() {
-		// TODO hard coding
-		return "GROUP_EVERYONE";
+	public String getAnyone(String repositoryId) {
+		RepositoryInfo info = repositoryInfoMap.get(repositoryId);
+		return info.getPrincipalIdAnyone();
 	}
 
 	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {

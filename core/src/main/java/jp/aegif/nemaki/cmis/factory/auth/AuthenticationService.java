@@ -50,5 +50,5 @@ public interface AuthenticationService {
 	public boolean authenticateUserByToken(String app, String userName, String token);
     public boolean authenticateAdminByToken(String userName);
     public Token registerToken(String app, CallContext callContext);
-    public User getAuthenticatedUser(String userName, String passWord);
+    public User getAuthenticatedUser(String repositoryId, String userName, String passWord);
 }

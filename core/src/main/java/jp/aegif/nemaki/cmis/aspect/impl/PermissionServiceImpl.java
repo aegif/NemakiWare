@@ -134,7 +134,7 @@ public class PermissionServiceImpl implements PermissionService {
 		String userName = callContext.getUsername();
 		List<Ace> aces = acl.getAllAces();
 		Set<String> userPermissions = new HashSet<String>();
-		Set<String> groups = principalService.getGroupIdsContainingUser(userName);
+		Set<String> groups = principalService.getGroupIdsContainingUser(repositoryId, userName);
 		for (Ace ace : aces) {
 			// Filter ace which has not permissions
 			if (ace.getPermissions() == null)

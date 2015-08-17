@@ -70,7 +70,7 @@ public interface ExceptionService {
 	void objectNotFoundVersionSeries(String id, Collection collection);
 	void objectNotFoundParentFolder(String repositoryId, String id, Content content);
 	void permissionDenied(CallContext context, String repositoryId, String key, Content content);
-	void perimissionAdmin(CallContext context);
+	void perimissionAdmin(CallContext context, String repositoryId);
 	void constraint(String objectId, String msg);
 	void constraintBaseTypeId(Properties properties, BaseTypeId baseTypeId);
 	void constraintAllowedChildObjectTypeId(Folder folder, Properties childProperties);

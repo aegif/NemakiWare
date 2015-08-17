@@ -48,6 +48,7 @@ public class AuthenticationFilter implements Filter {
 	private PropertyManager propertyManager;
 	private PrincipalService principalService;
 	private final String TOKEN_FALSE = "false";
+	private final String repositoryId = "bedroom";//TODO hard coding
 
 	@Override
 	public void init(FilterConfig filterConfig) throws ServletException {
@@ -144,7 +145,7 @@ public class AuthenticationFilter implements Filter {
 	private UserInfo authenticateUser(String username, String password) {
 		UserInfo u = new UserInfo();
 
-		User user = principalService.getUserById(username);
+		User user = principalService.getUserById(repositoryId, username);
 		Boolean match = BCrypt.checkpw(password, user.getPasswordHash());
 		if (match) {
 			u.userId = username;

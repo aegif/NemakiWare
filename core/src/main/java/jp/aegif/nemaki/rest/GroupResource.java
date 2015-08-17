@@ -54,6 +54,7 @@ import org.json.simple.parser.ParseException;
 public class GroupResource extends ResourceBase{
 
 	PrincipalService principalService;
+	private final String repositoryId = "bedroom"; //TODO hard coding
 	
 	@SuppressWarnings("unchecked")
 	@GET
@@ -64,7 +65,7 @@ public class GroupResource extends ResourceBase{
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		List<Group> groups = this.principalService.getGroups();
+		List<Group> groups = this.principalService.getGroups(repositoryId);
 		JSONArray queriedGroups = new JSONArray();
 
 		for(Group g : groups) {
@@ -97,7 +98,7 @@ public class GroupResource extends ResourceBase{
 
 		List<Group> groupList;
 		try{
-			groupList = principalService.getGroups();
+			groupList = principalService.getGroups(repositoryId);
 			for(Group group : groupList){
 				JSONObject groupJSON = convertGroupToJson(group);
 				listJSON.add(groupJSON);
@@ -120,7 +121,7 @@ public class GroupResource extends ResourceBase{
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		Group group = principalService.getGroupById(groupId);
+		Group group = principalService.getGroupById(repositoryId, groupId);
 		if(group == null){
 			status = false;
 			addErrMsg(errMsg, ITEM_GROUP, ERR_NOTFOUND);
@@ -159,7 +160,7 @@ public class GroupResource extends ResourceBase{
 		//Create a group
 		if(status){
 			try{
-				principalService.createGroup(group);
+				principalService.createGroup(repositoryId, group);
 			}catch(Exception ex){
 				ex.printStackTrace();
 				status = false;
@@ -185,7 +186,7 @@ public class GroupResource extends ResourceBase{
 		JSONArray errMsg = new JSONArray();
 
 		//Existing group
-		Group group = principalService.getGroupById(groupId);
+		Group group = principalService.getGroupById(repositoryId, groupId);
 
 		//Validation
 		status = validateGroup(status, errMsg, groupId, name);
@@ -200,7 +201,7 @@ public class GroupResource extends ResourceBase{
 			setModifiedSignature(getUserInfo(httpRequest), group);
 
 			try{
-				principalService.updateGroup(group);
+				principalService.updateGroup(repositoryId, group);
 			}catch(Exception ex){
 				ex.printStackTrace();
 				status = false;
@@ -222,7 +223,7 @@ public class GroupResource extends ResourceBase{
 		JSONArray errMsg = new JSONArray();
 
 		//Existing group
-		Group group = principalService.getGroupById(groupId);
+		Group group = principalService.getGroupById(repositoryId, groupId);
 		if(group == null){
 			status = false;
 			addErrMsg(errMsg, ITEM_GROUP, ERR_NOTFOUND);
@@ -231,7 +232,7 @@ public class GroupResource extends ResourceBase{
 		//Delete the group
 		if(status){
 			try{
-				principalService.deleteGroup(group.getId());
+				principalService.deleteGroup(repositoryId, group.getId());
 			}catch(Exception ex){
 				addErrMsg(errMsg, ITEM_GROUP, ERR_DELETE);
 			}
@@ -254,7 +255,7 @@ public class GroupResource extends ResourceBase{
 		JSONArray errMsg = new JSONArray();
 
 		//Existing Group
-		Group group = principalService.getGroupById(groupId);
+		Group group = principalService.getGroupById(repositoryId, groupId);
 		if(group == null){
 			status = false;
 			addErrMsg(errMsg, ITEM_GROUP, ERR_NOTFOUND);
@@ -299,7 +300,7 @@ public class GroupResource extends ResourceBase{
 			//Update
 			if(apiType.equals(API_ADD)){
 				try{
-					principalService.updateGroup(group);
+					principalService.updateGroup(repositoryId, group);
 				}catch(Exception ex){
 					ex.printStackTrace();
 					status = false;
@@ -307,7 +308,7 @@ public class GroupResource extends ResourceBase{
 				}
 			}else if(apiType.equals(API_REMOVE)){
 				try{
-					principalService.updateGroup(group);
+					principalService.updateGroup(repositoryId, group);
 				}catch(Exception ex){
 					ex.printStackTrace();
 					status = false;
@@ -361,7 +362,7 @@ public class GroupResource extends ResourceBase{
 
 			//check only when "add" API
 			if(apiType.equals(API_ADD)){
-				User existingUser = principalService.getUserById(userId);
+				User existingUser = principalService.getUserById(repositoryId, userId);
 				if(existingUser == null){
 					notSkip = false;
 					addErrMsg(errMsg, ITEM_USER + ":" + userId, ERR_NOTFOUND);
@@ -404,7 +405,7 @@ public class GroupResource extends ResourceBase{
 		List<String> gl = group.getGroups();
 		if(gl != null) groupsList = gl;
 
-		List<Group> allGroupsList = principalService.getGroups();
+		List<Group> allGroupsList = principalService.getGroups(repositoryId);
 		List<String> allGroupsStringList = new ArrayList<String>();
 		for(final Group g : allGroupsList){
 			allGroupsStringList.add(g.getId());
@@ -416,7 +417,7 @@ public class GroupResource extends ResourceBase{
 			boolean notSkip = true;
 
 			//Existance check
-			Group g = principalService.getGroupById(groupId);
+			Group g = principalService.getGroupById(repositoryId, groupId);
 			if(g == null && apiType.equals(API_ADD)){
 				notSkip = false;
 				addErrMsg(errMsg, ITEM_GROUP + ":" + groupId, ERR_NOTFOUND);
@@ -456,7 +457,7 @@ public class GroupResource extends ResourceBase{
 			addErrMsg(errMsg, ITEM_GROUPID, ERR_MANDATORY);
 		}
 		//groupID uniqueness
-		Group group = principalService.getGroupById(groupId);
+		Group group = principalService.getGroupById(repositoryId, groupId);
 		if(group != null){
 			status = false;
 			addErrMsg(errMsg, ITEM_GROUPID, ERR_ALREADYEXISTS);

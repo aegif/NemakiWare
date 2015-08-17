@@ -119,7 +119,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 		// //////////////////
 		// General Exception
 		// //////////////////
-		exceptionService.perimissionAdmin(callContext);
+		exceptionService.perimissionAdmin(callContext, repositoryId);
 		exceptionService.invalidArgumentRequired("typeDefinition", type);
 		exceptionService.invalidArgumentCreatableType(type);
 		exceptionService.constraintDuplicatePropertyDefinition(type);
@@ -170,7 +170,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 		// //////////////////
 		// General Exception
 		// //////////////////
-		exceptionService.perimissionAdmin(callContext);
+		exceptionService.perimissionAdmin(callContext, repositoryId);
 		exceptionService.invalidArgumentRequiredString("typeId", typeId);
 		exceptionService.invalidArgumentDoesNotExistType(typeId);
 		exceptionService.invalidArgumentDeletableType(typeId);
@@ -190,7 +190,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 		// //////////////////
 		// General Exception
 		// //////////////////
-		exceptionService.perimissionAdmin(callContext);
+		exceptionService.perimissionAdmin(callContext, repositoryId);
 		exceptionService.invalidArgumentRequired("typeDefinition", type);
 		exceptionService.invalidArgumentDoesNotExistType(type.getId());
 		exceptionService.invalidArgumentUpdatableType(type);
