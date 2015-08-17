@@ -7,6 +7,9 @@
 
 	<!-- multi repo test -->
 	<bean id="connectorPool" class="jp.aegif.nemaki.dao.impl.couch.connector.ConnectorPool" init-method="init">
+		<property name="repositoryInfoMap">
+			<ref bean="repositoryInfoMap" />
+		</property>
 		<property name="host">
 			<value>${db.couchdb.host}</value>
 		</property>
@@ -95,14 +98,11 @@
 	</bean>
 	
 	<bean id="nonCachedContentDaoService" class="jp.aegif.nemaki.dao.impl.couch.ContentDaoServiceImpl">
-		<property name="connector">
-			<ref bean="connector" />
-		</property>
-		<property name="archiveConnector">
-			<ref bean="archiveConnector" />
-		</property>
 		<property name="connectorPool">
 			<ref bean="connectorPool" />
+		</property>
+		<property name="repositoryInfoMap">
+			<ref bean="repositoryInfoMap" />
 		</property>
 	</bean>
 	

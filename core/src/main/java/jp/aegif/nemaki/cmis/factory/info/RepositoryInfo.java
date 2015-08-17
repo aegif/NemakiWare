@@ -37,6 +37,7 @@ public class RepositoryInfo extends org.apache.chemistry.opencmis.commons.impl.d
 	private static final long serialVersionUID = -8027732136814092210L;
 	//Custom info property
 	private String nameSpace;
+	private String archiveId;
 	
 	public void setup(){
 		//Set changesOnType property
@@ -52,5 +53,13 @@ public class RepositoryInfo extends org.apache.chemistry.opencmis.commons.impl.d
 
 	public void setNameSpace(String nameSpace) {
 		this.nameSpace = nameSpace;
+	}
+
+	public String getArchiveId() {
+		return archiveId;
+	}
+
+	public void setArchiveId(String archiveId) {
+		this.archiveId = archiveId;
 	}
 }

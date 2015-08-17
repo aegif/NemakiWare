@@ -10,8 +10,11 @@ import org.ektorp.http.StdHttpClient;
 import org.ektorp.http.StdHttpClient.Builder;
 import org.ektorp.impl.StdCouchDbInstance;
 
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
+
 public class ConnectorPool {
 
+	private RepositoryInfoMap repositoryInfoMap;
 	private String host;
 	private int port;
 	private int maxConnections;
@@ -37,9 +40,11 @@ public class ConnectorPool {
 			builder.username(authUserName).password(authPassword);
 		}
 		
-		//Create connectors TODO
-		add("bedroom");
-		add("archive");
+		//Create connectors
+		for(String key : repositoryInfoMap.keys()){
+			add(key);
+			add(repositoryInfoMap.getArchiveId(key));
+		}
 	}
 	
 	public CouchDbConnector get(String repositoryId){
@@ -56,6 +61,10 @@ public class ConnectorPool {
 		}
 			
 		return connector;
+	}
+
+	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
+		this.repositoryInfoMap = repositoryInfoMap;
 	}
 
 	public void setHost(String host) {

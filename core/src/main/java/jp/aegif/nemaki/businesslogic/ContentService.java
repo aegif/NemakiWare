@@ -532,11 +532,12 @@ public interface ContentService {
 
 	/**
 	 * Get a rendition
-	 *
+	 * @param repositoryId TODO
 	 * @param streamId
+	 *
 	 * @return
 	 */
-	Rendition getRendition(String streamId);
+	Rendition getRendition(String repositoryId, String streamId);
 
 	/**
 	 * Get renditions of a content

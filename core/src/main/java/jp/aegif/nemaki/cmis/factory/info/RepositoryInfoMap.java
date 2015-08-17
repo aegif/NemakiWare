@@ -29,6 +29,10 @@ public class RepositoryInfoMap {
 		return map.keySet();
 	}
 	
+	public String getArchiveId(String repositoryId){
+		return map.get(repositoryId).getArchiveId();
+	}
+	
 	private void loadRepositoriesSetting(){
 		YamlManager ymlMgr = new YamlManager("repositories.yml");
 		Map<String, Object> data = (Map<String, Object>)ymlMgr.loadYml();
@@ -73,6 +77,8 @@ public class RepositoryInfoMap {
 				info.setProductVersion(val);
 			}else if(key.equals("nameSpace")){
 				info.setNameSpace(val);
+			}else if(key.equals("archive")){
+				info.setArchiveId(val);
 			}
 		}
 	}
