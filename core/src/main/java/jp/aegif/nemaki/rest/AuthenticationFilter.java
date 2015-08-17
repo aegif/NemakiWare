@@ -52,15 +52,6 @@ public class AuthenticationFilter implements Filter {
 
 	@Override
 	public void init(FilterConfig filterConfig) throws ServletException {
-
-		//WebApplicationContext context = WebApplicationContextUtils.getWebApplicationContext(filterConfig.getServletContext());
-		
-		/*principalService = (PrincipalService) context
-		.getBean("principalService");
-		
-		propertyManager = (PropertyManager)context
-				.getBean("propertyManager");*/
-		
 	}
 
 	public static UserInfo getUserInfo(HttpServletRequest httpRequest){
