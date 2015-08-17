@@ -75,7 +75,7 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 		wrapper.setCallContext(callContext);
 		
 		// Authentication
-		boolean auth = login(callContext);
+		boolean auth = authenticationService.login(callContext);
 		if (auth) {
 			log.info("[userName=" + callContext.getUsername() + "]"
 					+ "Authentication succeeded");
@@ -86,90 +86,6 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 		}
 	}
 	
-	private boolean login(CallContext callContext) {
-		//SSO
-		if(loginWithExternalAuth(callContext)){
-			return true;
-		}
-		
-		//Token for Basic auth
-		if(loginWithToken(callContext)){
-			return true;
-		}
-		
-		//Basic auth
-		return loginWithBasicAuth(callContext);
-	}
-
-	private boolean loginWithExternalAuth(CallContext callContext){
-		final String repositoryId = "bedroom"; //TODO hard coding
-		
-		String proxyHeaderKey = propertyManager.readValue(PropertyKey.EXTERNAL_AUTHENTICATION_PROXY_HEADER);
-		String proxyUserId = (String) callContext.get(proxyHeaderKey);
-		if(StringUtils.isBlank(proxyUserId)){
-			log.warn("Not authenticated user");
-			return false;
-		}else{
-			User user = principalService.getUserById(repositoryId, proxyUserId);
-			if(user == null){
-				User newUser = new User(proxyUserId, proxyUserId, "", "", "", BCrypt.hashpw(proxyUserId, BCrypt.gensalt()));
-				principalService.createUser(repositoryId, newUser);
-				log.debug("Authenticated userId=" + newUser.getUserId());
-			}else{
-				log.debug("Authenticated userId=" + user.getUserId());
-			}
-			return true;
-		}
-	}
-	
-	private boolean loginWithToken(CallContext callContext) {
-		String userName = callContext.getUsername();
-		String token;
-		if(callContext.get("nemaki_auth_token") == null){
-			return false;
-		}else{
-			token = (String)callContext.get("nemaki_auth_token");
-			if(StringUtils.isBlank(token)){
-				return false;
-			}
-		}
-		Object _app = callContext.get("nemaki_auth_token_app");
-		String app = (_app == null) ? "" : (String)_app;
-		
-		if (authenticationService.authenticateUserByToken(app, userName,
-				token)) {
-			if (authenticationService
-					.authenticateAdminByToken(userName)) {
-				setAdminFlagInContext(callContext, true);
-			} else {
-				setAdminFlagInContext(callContext, false);
-			}
-			return true;
-		}
-		
-		return false;
-	}
-
-	private boolean loginWithBasicAuth(CallContext callContext) {
-		//TODO
-		final String repositoryId = "bedroom"; //TODO get from callContext
-		
-		
-		// Basic auth with id/password
-		User user = authenticationService.getAuthenticatedUser(
-				repositoryId, callContext.getUsername(), callContext.getPassword());
-		if (user == null)
-			return false;
-		boolean isAdmin = user.isAdmin() == null ? false : true;
-		setAdminFlagInContext(callContext, isAdmin);
-		return true;
-	}
-
-	private void setAdminFlagInContext(CallContext callContext, Boolean isAdmin) {
-		((CallContextImpl) callContext).put(
-				CallContextKey.IS_ADMIN, isAdmin);
-	}
-
 	@Override
 	public void destroy() {
 		super.destroy();
