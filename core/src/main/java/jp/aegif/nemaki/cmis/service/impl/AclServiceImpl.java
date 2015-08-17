@@ -30,6 +30,7 @@ import jp.aegif.nemaki.cmis.service.AclService;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.cache.NemakiCache;
+import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.DomainType;
 import jp.aegif.nemaki.util.constant.PrincipalId;
 import jp.aegif.nemaki.util.constant.PropertyKey;
@@ -54,7 +55,7 @@ public class AclServiceImpl implements AclService {
 	private ExceptionService exceptionService;
 	private TypeManager typeManager;
 	private PropertyManager propertyManager;
-	private NemakiCache nemakiCache;
+	private NemakiCachePool nemakiCachePool;
 
 	@Override
 	public Acl getAcl(CallContext callContext, String repositoryId,
@@ -122,7 +123,7 @@ public class AclServiceImpl implements AclService {
 		content.setAcl(nemakiAcl);
 		contentService.update(repositoryId, content);
 		
-		nemakiCache.removeCmisCache(objectId);
+		nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
 		
 		return getAcl(callContext, repositoryId, objectId, false);
 	}
@@ -163,8 +164,8 @@ public class AclServiceImpl implements AclService {
 		this.propertyManager = propertyManager;
 	}
 
-	public void setNemakiCache(NemakiCache nemakiCache) {
-		this.nemakiCache = nemakiCache;
+	public void setNemakiCachePool(NemakiCachePool nemakiCachePool) {
+		this.nemakiCachePool = nemakiCachePool;
 	}
 
 	public void setCompileService(CompileService compileService) {

@@ -34,7 +34,7 @@ import jp.aegif.nemaki.cmis.service.VersioningService;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.VersionSeries;
-import jp.aegif.nemaki.util.cache.NemakiCache;
+import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.DomainType;
 
 import org.apache.chemistry.opencmis.commons.data.Acl;
@@ -52,7 +52,7 @@ public class VersioningServiceImpl implements VersioningService {
 	private ContentService contentService;
 	private CompileService compileService;
 	private ExceptionService exceptionService;
-	private NemakiCache nemakiCache;
+	private NemakiCachePool nemakiCachePool;
 
 	@Override
 	/**
@@ -87,7 +87,7 @@ public class VersioningServiceImpl implements VersioningService {
 		Holder<Boolean> copied = new Holder<Boolean>(true);
 		contentCopied = copied;
 		
-		nemakiCache.removeCmisCache(id);
+		nemakiCachePool.get(repositoryId).removeCmisCache(id);
 	}
 
 	@Override
@@ -113,11 +113,11 @@ public class VersioningServiceImpl implements VersioningService {
 		contentService.cancelCheckOut(callContext, repositoryId, objectId, extension);
 
 		//remove cache
-		nemakiCache.removeCmisCache(objectId);
+		nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
 		Document latest = contentService.getDocumentOfLatestVersion(repositoryId, document.getVersionSeriesId());
 		//Latest document does not exit when pwc is created as the first version
 		if(latest != null){
-			nemakiCache.removeCmisCache(latest.getId());
+			nemakiCachePool.get(repositoryId).removeCmisCache(latest.getId());
 		}
 	}
 
@@ -152,7 +152,7 @@ public class VersioningServiceImpl implements VersioningService {
 				policies, addAces, removeAces, extension);
 		objectId.setValue(checkedIn.getId());
 		
-		nemakiCache.removeCmisCache(id);
+		nemakiCachePool.get(repositoryId).removeCmisCache(id);
 	}
 
 	@Override
@@ -281,7 +281,7 @@ public class VersioningServiceImpl implements VersioningService {
 		this.exceptionService = exceptionService;
 	}
 
-	public void setNemakiCache(NemakiCache nemakiCache) {
-		this.nemakiCache = nemakiCache;
+	public void setNemakiCachePool(NemakiCachePool nemakiCachePool) {
+		this.nemakiCachePool = nemakiCachePool;
 	}
 }
