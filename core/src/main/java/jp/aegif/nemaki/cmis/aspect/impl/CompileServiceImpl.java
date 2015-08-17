@@ -150,14 +150,14 @@ public class CompileServiceImpl implements CompileService {
 		ObjectDataImpl result = new ObjectDataImpl();
 		
 		//Filter(any property filter MUST be done here
-		PropertiesImpl properties = compileProperties(callContext, content);
+		PropertiesImpl properties = compileProperties(callContext, repositoryId, content);
 		result.setProperties(properties);
 		
 		// Set Allowable actions
 		result.setAllowableActions(compileAllowableActions(callContext, repositoryId, content));
 
 		// Set Acl
-		Acl acl = contentService.calculateAcl(content);
+		Acl acl = contentService.calculateAcl(repositoryId, content);
 		result.setIsExactAcl(true);
 		result.setAcl(compileAcl(acl, content.isAclInherited(), false));
 		
@@ -170,7 +170,7 @@ public class CompileServiceImpl implements CompileService {
 			
 		// Set Renditions
 		if (content.isDocument()){
-			result.setRenditions(compileRenditions(callContext, content));
+			result.setRenditions(compileRenditions(callContext, repositoryId, content));
 		}	
 		
 		nemakiCache.getObjectDataCache().put(new Element(content.getId(), result));
@@ -379,13 +379,13 @@ public class CompileServiceImpl implements CompileService {
 				if (cachedContents.containsKey(objectId)) {
 					content = cachedContents.get(objectId);
 				} else {
-					content = contentService.getContent(objectId);
+					content = contentService.getContent(repositoryId, objectId);
 					cachedContents.put(objectId, content);
 				}
 				// Compile a change object data depending on its type
 				results.getObjects().add(
-						compileChangeObjectData(change, content,
-								includePolicyIds, includeAcl));
+						compileChangeObjectData(repositoryId, change,
+								content, includePolicyIds, includeAcl));
 			}
 		}
 
@@ -402,8 +402,8 @@ public class CompileServiceImpl implements CompileService {
 		return results;
 	}
 
-	private ObjectData compileChangeObjectData(Change change, Content content,
-			Boolean includePolicyIds, Boolean includeAcl) {
+	private ObjectData compileChangeObjectData(String repositoryId, Change change,
+			Content content, Boolean includePolicyIds, Boolean includeAcl) {
 		ObjectDataImpl o = new ObjectDataImpl();
 
 		// Set Properties
@@ -414,7 +414,7 @@ public class CompileServiceImpl implements CompileService {
 		setPolcyIds(o, change, includePolicyIds);
 		// Set Acl
 		if (!change.getChangeType().equals(ChangeType.DELETED)) {
-			setAcl(o, content, includeAcl);
+			setAcl(repositoryId, o, content, includeAcl);
 		}
 		// Set Change Event
 		setChangeEvent(o, change);
@@ -451,12 +451,12 @@ public class CompileServiceImpl implements CompileService {
 		}
 	}
 
-	private void setAcl(ObjectDataImpl object, Content content,
-			Boolean includeAcl) {
+	private void setAcl(String repositoryId, ObjectDataImpl object,
+			Content content, Boolean includeAcl) {
 		boolean iacl = (includeAcl == null ? false : includeAcl.booleanValue());
 		if (iacl) {
 			if (content != null) {
-				Acl acl = contentService.calculateAcl(content);
+				Acl acl = contentService.calculateAcl(repositoryId, content);
 				object.setAcl(compileAcl(acl, content.isAclInherited(), false));
 			}
 		}
@@ -483,7 +483,7 @@ public class CompileServiceImpl implements CompileService {
 		jp.aegif.nemaki.model.Acl contentAcl = content.getAcl();
 		if (tdf.isControllableAcl() && contentAcl == null)
 			return null;
-		Acl acl = contentService.calculateAcl(content);
+		Acl acl = contentService.calculateAcl(repositoryId, content);
 		Map<String, PermissionMapping> permissionMap = repositoryInfoMap.get(repositoryId)
 				.getAclCapabilities().getPermissionMapping();
 		String baseType = content.getType();
@@ -493,7 +493,7 @@ public class CompileServiceImpl implements CompileService {
 		VersionSeries versionSeries = null;
 		if(content.isDocument()){
 			Document d = (Document)content;
-			versionSeries = contentService.getVersionSeries(d);
+			versionSeries = contentService.getVersionSeries(repositoryId, d);
  		}
 		
 		
@@ -514,7 +514,7 @@ public class CompileServiceImpl implements CompileService {
 			if (!isAllowableByType(key, content, tdf)) {
 				continue;
 			}
-			if (contentService.isRoot(content)) {
+			if (contentService.isRoot(repositoryId, content)) {
 				if (Action.CAN_MOVE_OBJECT == convertKeyToAction(key)) {
 					continue;
 				}
@@ -679,7 +679,7 @@ public class CompileServiceImpl implements CompileService {
 			break;
 		}
 		List<Relationship> _rels = contentService.getRelationsipsOfObject(
-				content.getId(), rd);
+				repositoryId, content.getId(), rd);
 
 		List<ObjectData> rels = new ArrayList<ObjectData>();
 		if (CollectionUtils.isNotEmpty(_rels)) {
@@ -694,10 +694,10 @@ public class CompileServiceImpl implements CompileService {
 	}
 
 	private List<RenditionData> compileRenditions(CallContext callContext,
-			Content content) {
+			String repositoryId, Content content) {
 		List<RenditionData> renditions = new ArrayList<RenditionData>();
 
-		List<Rendition> _renditions = contentService.getRenditions(content
+		List<Rendition> _renditions = contentService.getRenditions(repositoryId, content
 				.getId());
 		if (CollectionUtils.isNotEmpty(_renditions)) {
 			for (Rendition _rd : _renditions) {
@@ -722,7 +722,7 @@ public class CompileServiceImpl implements CompileService {
 	 * Compiles properties of a piece of content.
 	 */
 	@Override
-	public PropertiesImpl compileProperties(CallContext callContext, Content content) {
+	public PropertiesImpl compileProperties(CallContext callContext, String repositoryId, Content content) {
 		TypeDefinitionContainer tdfc = typeManager.getTypeById(content.getObjectType());
 		TypeDefinition tdf = tdfc.getTypeDefinition();
 		
@@ -730,16 +730,16 @@ public class CompileServiceImpl implements CompileService {
 		if (content.isFolder()) {
 			Folder folder = (Folder) content;
 			// Root folder
-			if (contentService.isRoot(folder)) {
-				properties = compileRootFolderProperties(folder, properties,
-						tdf);
+			if (contentService.isRoot(repositoryId, folder)) {
+				properties = compileRootFolderProperties(repositoryId, folder,
+						properties, tdf);
 				// Other than root folder
 			} else {
-				properties = compileFolderProperties(folder, properties, tdf);
+				properties = compileFolderProperties(repositoryId, folder, properties, tdf);
 			}
 		} else if (content.isDocument()) {
 			Document document = (Document) content;
-			properties = compileDocumentProperties(callContext, document, properties, tdf);
+			properties = compileDocumentProperties(callContext, repositoryId, document, properties, tdf);
 		} else if (content.isRelationship()) {
 			Relationship relationship = (Relationship) content;
 			properties = compileRelationshipProperties(relationship,
@@ -755,32 +755,32 @@ public class CompileServiceImpl implements CompileService {
 		return properties;
 	}
 	
-	private PropertiesImpl compileRootFolderProperties(Folder folder,
-			PropertiesImpl properties, TypeDefinition tdf) {
+	private PropertiesImpl compileRootFolderProperties(String repositoryId,
+			Folder folder, PropertiesImpl properties, TypeDefinition tdf) {
 		setCmisBaseProperties(properties, tdf, folder);
 
 		// Add parentId property without value
 		String _null = null;
 		PropertyIdImpl parentId = new PropertyIdImpl(PropertyIds.PARENT_ID, _null);
 		properties.addProperty(parentId);
-		setCmisFolderProperties(properties, tdf, folder);
+		setCmisFolderProperties(repositoryId, properties, tdf, folder);
 
 		return properties;
 	}
 
-	private PropertiesImpl compileFolderProperties(Folder folder,
-			PropertiesImpl properties, TypeDefinition tdf) {
+	private PropertiesImpl compileFolderProperties(String repositoryId,
+			Folder folder, PropertiesImpl properties, TypeDefinition tdf) {
 		setCmisBaseProperties(properties, tdf, folder);
 		addProperty(properties, tdf, PropertyIds.PARENT_ID, folder.getParentId());
-		setCmisFolderProperties(properties, tdf, folder);
+		setCmisFolderProperties(repositoryId, properties, tdf, folder);
 		return properties;
 	}
 
 	private PropertiesImpl compileDocumentProperties(CallContext callContext,
-			Document document, PropertiesImpl properties, TypeDefinition tdf) {
+			String repositoryId, Document document, PropertiesImpl properties, TypeDefinition tdf) {
 		setCmisBaseProperties(properties, tdf, document);
-		setCmisDocumentProperties(callContext, properties, tdf, document);
-		setCmisAttachmentProperties(properties, tdf, document);
+		setCmisDocumentProperties(callContext, repositoryId, properties, tdf, document);
+		setCmisAttachmentProperties(repositoryId, properties, tdf, document);
 		return properties;
 	}
 
@@ -872,11 +872,11 @@ public class CompileServiceImpl implements CompileService {
 		return null;
 	}
 
-	private void setCmisFolderProperties(PropertiesImpl properties,
-			TypeDefinition tdf, Folder folder) {
+	private void setCmisFolderProperties(String repositoryId,
+			PropertiesImpl properties, TypeDefinition tdf, Folder folder) {
 
 		addProperty(properties, tdf, PropertyIds.BASE_TYPE_ID, BaseTypeId.CMIS_FOLDER.value());
-		addProperty(properties, tdf, PropertyIds.PATH, contentService.calculatePath(folder));
+		addProperty(properties, tdf, PropertyIds.PATH, contentService.calculatePath(repositoryId, folder));
 
 		if (checkAddProperty(properties, tdf, PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS)) {
 			List<String> values = new ArrayList<String>();
@@ -891,7 +891,7 @@ public class CompileServiceImpl implements CompileService {
 	}
 
 	private void setCmisDocumentProperties(CallContext callContext,
-			PropertiesImpl properties, TypeDefinition tdf, Document document) {
+			String repositoryId, PropertiesImpl properties, TypeDefinition tdf, Document document) {
 		addProperty(properties, tdf, PropertyIds.BASE_TYPE_ID, BaseTypeId.CMIS_DOCUMENT.value());
 
 		Boolean isImmutable = (document.isImmutable() == null) ? (Boolean) typeManager
@@ -917,7 +917,7 @@ public class CompileServiceImpl implements CompileService {
 			addProperty(properties, tdf, PropertyIds.CHECKIN_COMMENT,
 					document.getCheckinComment());
 
-			VersionSeries vs = contentService.getVersionSeries(document);
+			VersionSeries vs = contentService.getVersionSeries(repositoryId, document);
 			addProperty(properties, tdf, PropertyIds.IS_VERSION_SERIES_CHECKED_OUT,
 					vs.isVersionSeriesCheckedOut());
 			if (vs.isVersionSeriesCheckedOut()) {
@@ -968,8 +968,8 @@ public class CompileServiceImpl implements CompileService {
 		}
 	}
 
-	private void setCmisAttachmentProperties(PropertiesImpl properties,
-			TypeDefinition tdf, Document document) {
+	private void setCmisAttachmentProperties(String repositoryId,
+			PropertiesImpl properties, TypeDefinition tdf, Document document) {
 		Long length = null;
 		String mimeType = null;
 		String fileName = null;
@@ -981,7 +981,7 @@ public class CompileServiceImpl implements CompileService {
 		if(ContentStreamAllowed.REQUIRED == csa ||
 			ContentStreamAllowed.ALLOWED == csa && StringUtils.isNotBlank(document.getAttachmentNodeId())){
 			
-			AttachmentNode attachment = contentService.getAttachmentRef(document
+			AttachmentNode attachment = contentService.getAttachmentRef(repositoryId, document
 					.getAttachmentNodeId());
 			
 			length = attachment.getLength();

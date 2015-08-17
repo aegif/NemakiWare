@@ -65,6 +65,7 @@ import org.apache.solr.common.SolrDocumentList;
  */
 public class SolrPredicateWalker {
 
+	private final String repositoryId;
 	private final SolrUtil solrUtil;
 	private final QueryObject queryObject;
 	private final ContentService contentService;
@@ -72,7 +73,8 @@ public class SolrPredicateWalker {
 	public static final String FLD = "field";
 	public static final String CND = "cond";
 
-	public SolrPredicateWalker(QueryObject queryObject, SolrUtil solrUtil, ContentService contentService) {
+	public SolrPredicateWalker(String repositoryId, QueryObject queryObject, SolrUtil solrUtil, ContentService contentService) {
+		this.repositoryId = repositoryId;
 		this.queryObject = queryObject;
 		this.solrUtil = solrUtil;
 		this.contentService = contentService;
@@ -126,9 +128,9 @@ public class SolrPredicateWalker {
 			}
 		case CmisQlStrictLexer.IN_TREE:
 			if (node.getChildCount() == 1) {
-				return walkInTree(null, node.getChild(0));
+				return walkInTree(null, node.getChild(0), repositoryId);
 			} else {
-				return walkInTree(node.getChild(0), node.getChild(1));
+				return walkInTree(node.getChild(0), node.getChild(1), repositoryId);
 			}
 			// Full-text search type walk
 		case CmisQlStrictLexer.CONTAINS:
@@ -356,7 +358,7 @@ public class SolrPredicateWalker {
 		return q;
 	}
 
-	private Query walkInTree(Tree qualNode, Tree paramNode) {
+	private Query walkInTree(Tree qualNode, Tree paramNode, String repositoryId) {
 		// Check for CMIS SQL specification
 		Object lit = walkExpr(paramNode);
 		if (!(lit instanceof String)) {
@@ -365,7 +367,7 @@ public class SolrPredicateWalker {
 		}
 
 		// Build a Statement
-		Query q = walkInTreeInternal(paramNode);
+		Query q = walkInTreeInternal(paramNode, repositoryId);
 		if (qualNode != null) {
 			String qualifier = walkExpr(qualNode).toString();
 			Term tQual = new Term("type", buildQualField(qualifier));
@@ -378,19 +380,19 @@ public class SolrPredicateWalker {
 		return q;
 	}
 
-	private Query walkInTreeInternal(Tree paramNode) {
+	private Query walkInTreeInternal(Tree paramNode, String repositoryId) {
 		//Build first query for descendant folders
 		BooleanQuery query1 = new BooleanQuery();
 
 		String s = paramNode.getText();
 		String folderId = s.substring(1, s.length() - 1);
 
-		Folder folder = contentService.getFolder(folderId);
+		Folder folder = contentService.getFolder(repositoryId, folderId);
 
-		String folderPath = contentService.calculatePath(folder);
+		String folderPath = contentService.calculatePath(repositoryId, folder);
 		String _folderPath = folderPath.replaceAll("\\/", "\\\\/"); //escape in Solr query
 
-		if(contentService.isRoot(folder)){
+		if(contentService.isRoot(repositoryId, folder)){
 			Term t = new Term(solrUtil.getPropertyNameInSolr(PropertyIds.PATH), _folderPath + "*");
 			query1.add(new TermQuery(t), Occur.MUST);
 		}else{

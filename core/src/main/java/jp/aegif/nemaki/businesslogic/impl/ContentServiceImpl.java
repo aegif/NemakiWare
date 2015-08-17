@@ -21,8 +21,6 @@
  ******************************************************************************/
 package jp.aegif.nemaki.businesslogic.impl;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.SequenceInputStream;
 import java.math.BigInteger;
@@ -41,6 +39,8 @@ import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.rendition.RenditionManager;
 import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.dao.impl.cached.ContentDaoServiceImpl;
 import jp.aegif.nemaki.model.Ace;
@@ -100,6 +100,7 @@ import org.apache.commons.logging.LogFactory;
  */
 public class ContentServiceImpl implements ContentService {
 
+	private RepositoryInfoMap repositoryInfoMap;
 	private ContentDaoService contentDaoService;
 	private TypeManager typeManager;
 	private RenditionManager renditionManager;
@@ -115,9 +116,9 @@ public class ContentServiceImpl implements ContentService {
 	// Content
 	// ///////////////////////////////////////
 	@Override
-	public boolean isRoot(Content content){
-		String rootObjectId = propertyManager.readValue(PropertyKey.CMIS_REPOSITORY_MAIN_ROOT);
-		if(content.isFolder() && rootObjectId.equals(content.getId())){
+	public boolean isRoot(String repositoryId, Content content){
+		String rootId = repositoryInfoMap.get(repositoryId).getRootFolderId();
+		if(content.isFolder() && rootId.equals(content.getId())){
 			return true;
 		}else{
 			return false;
@@ -125,12 +126,12 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public boolean existContent(String objectTypeId) {
+	public boolean existContent(String repositoryId, String objectTypeId) {
 		return contentDaoService.existContent(objectTypeId);
 	}
 
 	@Override
-	public Content getContent(String objectId) {
+	public Content getContent(String repositoryId, String objectId) {
 		Content content = contentDaoService.getContent(objectId);
 		if (content == null)
 			return null;
@@ -154,7 +155,7 @@ public class ContentServiceImpl implements ContentService {
 	 * Get the pieces of content available at that path.
 	 */
 	@Override
-	public Content getContentByPath(String path) {
+	public Content getContentByPath(String repositoryId, String path) {
 		List<String> splittedPath = splitLeafPathSegment(path);
 
 		if (splittedPath.size() <= 0) {
@@ -172,7 +173,7 @@ public class ContentServiceImpl implements ContentService {
 						content.getId(), splittedPath.get(i));
 				content = child;
 			}
-			return getContent(content.getId());
+			return getContent(repositoryId, content.getId());
 		}
 		return null;
 	}
@@ -193,16 +194,16 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public Folder getParent(String objectId) {
+	public Folder getParent(String repositoryId, String objectId) {
 		Content content = contentDaoService.getContent(objectId);
-		return getFolder(content.getParentId());
+		return getFolder(repositoryId, content.getParentId());
 	}
 
 	/**
 	 * Get children contents in a given folder
 	 */
 	@Override
-	public List<Content> getChildren(String folderId) {
+	public List<Content> getChildren(String repositoryId, String folderId) {
 		List<Content> children = new ArrayList<Content>();
 
 		List<Content> indices = contentDaoService
@@ -229,24 +230,24 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public Document getDocument(String objectId) {
+	public Document getDocument(String repositoryId, String objectId) {
 		return contentDaoService.getDocument(objectId);
 	}
 
 	@Override
-	public Document getDocumentOfLatestVersion(String versionSeriesId) {
+	public Document getDocumentOfLatestVersion(String repositoryId, String versionSeriesId) {
 		return contentDaoService.getDocumentOfLatestVersion(versionSeriesId);
 	}
 
 	@Override
-	public Document getDocumentOfLatestMajorVersion(String versionSeriesId) {
+	public Document getDocumentOfLatestMajorVersion(String repositoryId, String versionSeriesId) {
 		return contentDaoService
 				.getDocumentOfLatestMajorVersion(versionSeriesId);
 	}
 
 	@Override
 	public List<Document> getAllVersions(CallContext callContext,
-			String versionSeriesId) {
+			String repositoryId, String versionSeriesId) {
 		List<Document> results = new ArrayList<Document>();
 
 		// TODO hide PWC from a non-owner user
@@ -266,57 +267,57 @@ public class ContentServiceImpl implements ContentService {
 
 	// TODO enable orderBy
 	@Override
-	public List<Document> getCheckedOutDocs(String folderId, String orderBy,
-			ExtensionsData extension) {
+	public List<Document> getCheckedOutDocs(String repositoryId, String folderId,
+			String orderBy, ExtensionsData extension) {
 		return contentDaoService.getCheckedOutDocuments(folderId);
 	}
 
 	@Override
-	public VersionSeries getVersionSeries(Document document) {
-		return getVersionSeries(document.getVersionSeriesId());
+	public VersionSeries getVersionSeries(String repositoryId, Document document) {
+		return getVersionSeries(repositoryId, document.getVersionSeriesId());
 	}
 
 	@Override
-	public VersionSeries getVersionSeries(String versionSeriesId) {
+	public VersionSeries getVersionSeries(String repositoryId, String versionSeriesId) {
 		return contentDaoService.getVersionSeries(versionSeriesId);
 	}
 
 	@Override
-	public Folder getFolder(String objectId) {
+	public Folder getFolder(String repositoryId, String objectId) {
 		return contentDaoService.getFolder(objectId);
 	}
 
 	@Override
-	public String calculatePath(Content content) {
+	public String calculatePath(String repositoryId, Content content) {
 		List<String> path = calculatePathInternal(new ArrayList<String>(),
-				content);
+				content, repositoryId);
 		path.remove(0);
 		return PATH_SEPARATOR
 				+ StringUtils.join(path, PATH_SEPARATOR);
 	}
 
 	private List<String> calculatePathInternal(List<String> path,
-			Content content) {
+			Content content, String repositoryId) {
 		path.add(0, content.getName());
 
-		if (isRoot(content)) {
+		if (isRoot(repositoryId, content)) {
 			return path;
 		} else {
-			Content parent = getParent(content.getId());
-			calculatePathInternal(path, parent);
+			Content parent = getParent(repositoryId, content.getId());
+			calculatePathInternal(path, parent, repositoryId);
 		}
 		return path;
 	}
 
 	@Override
-	public Relationship getRelationship(String objectId) {
+	public Relationship getRelationship(String repositoryId, String objectId) {
 		return contentDaoService.getRelationship(objectId);
 	}
 
 	@SuppressWarnings("unchecked")
 	@Override
-	public List<Relationship> getRelationsipsOfObject(String objectId,
-			RelationshipDirection relationshipDirection) {
+	public List<Relationship> getRelationsipsOfObject(String repositoryId,
+			String objectId, RelationshipDirection relationshipDirection) {
 		// Set default (according to the specification)
 		relationshipDirection = (relationshipDirection == null) ? RelationshipDirection.SOURCE
 				: relationshipDirection;
@@ -338,23 +339,23 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public Policy getPolicy(String objectId) {
+	public Policy getPolicy(String repositoryId, String objectId) {
 		return contentDaoService.getPolicy(objectId);
 	}
 
 	@Override
-	public List<Policy> getAppliedPolicies(String objectId,
-			ExtensionsData extension) {
+	public List<Policy> getAppliedPolicies(String repositoryId,
+			String objectId, ExtensionsData extension) {
 		return contentDaoService.getAppliedPolicies(objectId);
 	}
 
 	@Override
-	public Item getItem(String objectId) {
+	public Item getItem(String repositoryId, String objectId) {
 		return contentDaoService.getItem(objectId);
 	}
 
-	private String writeChangeEvent(CallContext callContext, Content content,
-			ChangeType changeType) {
+	private String writeChangeEvent(CallContext callContext, String repositoryId,
+			Content content, ChangeType changeType) {
 		Change latest = contentDaoService.getLatestChange();
 
 		Change change = new Change();
@@ -393,7 +394,7 @@ public class ContentServiceImpl implements ContentService {
 		change.setObjectType(content.getObjectType());
 		change.setParentId(content.getParentId());
 		List<String> policyIds = new ArrayList<String>();
-		List<Policy> policies = getAppliedPolicies(content.getId(), null);
+		List<Policy> policies = getAppliedPolicies(repositoryId, content.getId(), null);
 		if (!CollectionUtils.isEmpty(policies)) {
 			for (Policy p : policies) {
 				policyIds.add(p.getId());
@@ -413,7 +414,7 @@ public class ContentServiceImpl implements ContentService {
 
 		// Update change token of the content
 		content.setChangeToken(change.getChangeToken());
-		update(content);
+		update(repositoryId, content);
 
 		return change.getChangeToken();
 	}
@@ -421,11 +422,11 @@ public class ContentServiceImpl implements ContentService {
 	// TODO Create a rendition
 	@Override
 	public synchronized Document createDocument(CallContext callContext,
-			Properties properties, Folder parentFolder,
-			ContentStream contentStream, VersioningState versioningState,
-			String versionSeriesId) {
-		Document d = buildNewBasicDocument(callContext, properties,
-				parentFolder);
+			String repositoryId, Properties properties,
+			Folder parentFolder, ContentStream contentStream,
+			VersioningState versioningState, String versionSeriesId) {
+		Document d = buildNewBasicDocument(callContext, repositoryId,
+				properties, parentFolder);
 		
 		//Check contentStreamAllowed
 		DocumentTypeDefinition tdf = (DocumentTypeDefinition)(typeManager.getTypeDefinition(d));
@@ -438,34 +439,34 @@ public class ContentServiceImpl implements ContentService {
 			//Map<String,ContentStream> contentStreamMap = copyContentStream(contentStream);
 			
 			// Create Attachment node
-			String attachmentId = createAttachment(callContext, contentStream);
+			String attachmentId = createAttachment(callContext, repositoryId, contentStream);
 			d.setAttachmentNodeId(attachmentId);
 
 			// Create Renditions
 			if(isPreviewEnabled()){
-				AttachmentNode an = getAttachment(attachmentId);
+				AttachmentNode an = getAttachment(repositoryId, attachmentId);
 				ContentStream previewCS = new ContentStreamImpl(contentStream.getFileName(), contentStream.getBigLength(), contentStream.getMimeType(), an.getInputStream());
 				
 				//ContentStream previewCS = contentStreamMap.get("preview");
 				if(renditionManager.checkConvertible(previewCS.getMimeType())){
-					createPreview(callContext, previewCS, d);
+					createPreview(callContext, repositoryId, previewCS, d);
 				}
 			}
 		}
 		
 		// Set version properties
-		VersionSeries vs = setVersionProperties(callContext, versioningState, d);
+		VersionSeries vs = setVersionProperties(callContext, repositoryId, versioningState, d);
 
 		// Create
 		Document document = contentDaoService.create(d);
 
 		// Update versionSeriesId#versionSeriesCheckedOutId after creating a PWC
 		if (versioningState == VersioningState.CHECKEDOUT) {
-			updateVersionSeriesWithPwc(callContext, vs, document);
+			updateVersionSeriesWithPwc(callContext, repositoryId, vs, document);
 		}
 
 		// Write change event
-		writeChangeEvent(callContext, document, ChangeType.CREATED);
+		writeChangeEvent(callContext, repositoryId, document, ChangeType.CREATED);
 
 		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing();
@@ -475,22 +476,22 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public synchronized Document createDocumentFromSource(CallContext callContext,
-			Properties properties, Folder target, Document original,
-			VersioningState versioningState, List<String> policies,
-			org.apache.chemistry.opencmis.commons.data.Acl addAces,
-			org.apache.chemistry.opencmis.commons.data.Acl removeAces) {
+			String repositoryId, Properties properties, Folder target,
+			Document original, VersioningState versioningState,
+			List<String> policies,
+			org.apache.chemistry.opencmis.commons.data.Acl addAces, org.apache.chemistry.opencmis.commons.data.Acl removeAces) {
 		Document copy = buildCopyDocumentWithBasicProperties(callContext,
 				original);
 
 		String attachmentId = copyAttachment(callContext,
-				original.getAttachmentNodeId());
+				repositoryId, original.getAttachmentNodeId());
 		copy.setAttachmentNodeId(attachmentId);
 
-		setVersionProperties(callContext, versioningState, copy);
+		setVersionProperties(callContext, repositoryId, versioningState, copy);
 
 		copy.setParentId(target.getId());
 		// Set updated properties
-		updateProperties(callContext, properties, copy);
+		updateProperties(callContext, repositoryId, properties, copy);
 		setSignature(callContext, copy);
 
 		// Create
@@ -498,12 +499,12 @@ public class ContentServiceImpl implements ContentService {
 
 		// Update versionSeriesId#versionSeriesCheckedOutId after creating a PWC
 		if (versioningState == VersioningState.CHECKEDOUT) {
-			updateVersionSeriesWithPwc(callContext, getVersionSeries(result),
-					result);
+			updateVersionSeriesWithPwc(callContext, repositoryId,
+					getVersionSeries(repositoryId, result), result);
 		}
 
 		// Record the change event
-		writeChangeEvent(callContext, result, ChangeType.CREATED);
+		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 
 		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing();
@@ -513,33 +514,33 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public synchronized Document createDocumentWithNewStream(CallContext callContext,
-			Document original, ContentStream contentStream) {
+			String repositoryId, Document original, ContentStream contentStream) {
 		Document copy = buildCopyDocumentWithBasicProperties(callContext,
 				original);
 		
 		//Attachment
-		String attachmentId = createAttachment(callContext, contentStream);
+		String attachmentId = createAttachment(callContext, repositoryId, contentStream);
 		copy.setAttachmentNodeId(attachmentId);
 		
 		//Rendition
 		if(isPreviewEnabled()){
-			AttachmentNode an = getAttachment(attachmentId);
+			AttachmentNode an = getAttachment(repositoryId, attachmentId);
 			ContentStream previewCS = new ContentStreamImpl(contentStream.getFileName(), contentStream.getBigLength(), contentStream.getMimeType(), an.getInputStream());
 			if(renditionManager.checkConvertible(previewCS.getMimeType())){
-				createPreview(callContext, previewCS, copy);
+				createPreview(callContext, repositoryId, previewCS, copy);
 			}
 		}
 
 		// Set other properties
 		// TODO externalize versionigState
-		updateVersionProperties(callContext, VersioningState.MINOR, copy,
-				original);
+		updateVersionProperties(callContext, repositoryId, VersioningState.MINOR,
+				copy, original);
 
 		// Create
 		Document result = contentDaoService.create(copy);
 
 		// Record the change event
-		writeChangeEvent(callContext, result, ChangeType.CREATED);
+		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 
 		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing();
@@ -547,7 +548,7 @@ public class ContentServiceImpl implements ContentService {
 		return result;
 	}
 	
-	public synchronized Document replacePwc(CallContext callContext, Document originalPwc, ContentStream contentStream){
+	public synchronized Document replacePwc(CallContext callContext, String repositoryId, Document originalPwc, ContentStream contentStream){
 		//Update attachment contentStream
 		AttachmentNode an = contentDaoService.getAttachment(originalPwc.getAttachmentNodeId());
 		contentDaoService.updateAttachment(an, contentStream);
@@ -567,7 +568,7 @@ public class ContentServiceImpl implements ContentService {
 						Rendition rd = contentDaoService.getRendition(renditionId);
 						if(RenditionKind.CMIS_PREVIEW.equals(rd.getKind())){
 							removedRenditionIds.add(renditionId);
-							createPreview(callContext, previewCS, originalPwc);
+							createPreview(callContext, repositoryId, previewCS, originalPwc);
 						}
 					}
 					
@@ -582,7 +583,7 @@ public class ContentServiceImpl implements ContentService {
 		setSignature(callContext, originalPwc);
 		
 		// Record the change event
-		writeChangeEvent(callContext, originalPwc, ChangeType.UPDATED);
+		writeChangeEvent(callContext, repositoryId, originalPwc, ChangeType.UPDATED);
 		
 		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing();
@@ -591,32 +592,32 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public synchronized Document checkOut(CallContext callContext, String objectId,
-			ExtensionsData extension) {
-		Document latest = getDocument(objectId);
+	public synchronized Document checkOut(CallContext callContext, String repositoryId,
+			String objectId, ExtensionsData extension) {
+		Document latest = getDocument(repositoryId, objectId);
 		Document pwc = buildCopyDocumentWithBasicProperties(callContext, latest);
 
 		// Create PWC attachment
 		String attachmentId = copyAttachment(callContext,
-				latest.getAttachmentNodeId());
+				repositoryId, latest.getAttachmentNodeId());
 		pwc.setAttachmentNodeId(attachmentId);
 
 		// Create PWC renditions
-		copyRenditions(callContext, latest.getRenditionIds());
+		copyRenditions(callContext, repositoryId, latest.getRenditionIds());
 
 		// Set other properties
-		updateVersionProperties(callContext, VersioningState.CHECKEDOUT, pwc,
-				latest);
+		updateVersionProperties(callContext, repositoryId, VersioningState.CHECKEDOUT,
+				pwc, latest);
 
 		// Create PWC itself
 		Document result = contentDaoService.create(pwc);
 
 		// Modify versionSeries
-		updateVersionSeriesWithPwc(callContext, getVersionSeries(result),
-				result);
+		updateVersionSeriesWithPwc(callContext, repositoryId,
+				getVersionSeries(repositoryId, result), result);
 
 		// Write change event
-		writeChangeEvent(callContext, result, ChangeType.CREATED);
+		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 		
 		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing();
@@ -625,12 +626,12 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public synchronized void cancelCheckOut(CallContext callContext, String objectId,
-			ExtensionsData extension) {
-		Document pwc = getDocument(objectId);
-		VersionSeries vs = getVersionSeries(pwc);
+	public synchronized void cancelCheckOut(CallContext callContext, String repositoryId,
+			String objectId, ExtensionsData extension) {
+		Document pwc = getDocument(repositoryId, objectId);
+		VersionSeries vs = getVersionSeries(repositoryId, pwc);
 
-		writeChangeEvent(callContext, pwc, ChangeType.DELETED);
+		writeChangeEvent(callContext, repositoryId, pwc, ChangeType.DELETED);
 		
 		// Delete attachment & document itself(without archiving)
 		contentDaoService.delete(pwc.getAttachmentNodeId());
@@ -648,39 +649,39 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public synchronized Document checkIn(CallContext callContext, Holder<String> objectId,
-			Boolean major, Properties properties, ContentStream contentStream,
-			String checkinComment, List<String> policies,
+	public synchronized Document checkIn(CallContext callContext, String repositoryId,
+			Holder<String> objectId, Boolean major, Properties properties,
+			ContentStream contentStream, String checkinComment,
+			List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
-			org.apache.chemistry.opencmis.commons.data.Acl removeAces,
-			ExtensionsData extension) {
+			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension) {
 		String id = objectId.getValue();
-		Document pwc = getDocument(id);
+		Document pwc = getDocument(repositoryId, id);
 		Document checkedIn = buildCopyDocumentWithBasicProperties(callContext,
 				pwc);
 
-		Document latest = getDocumentOfLatestVersion(pwc.getVersionSeriesId());
+		Document latest = getDocumentOfLatestVersion(repositoryId, pwc.getVersionSeriesId());
 
 		// When PWCUpdatable is true
 		if (contentStream == null) {
 			checkedIn.setAttachmentNodeId(copyAttachment(callContext,
-					pwc.getAttachmentNodeId()));
+					repositoryId, pwc.getAttachmentNodeId()));
 			// When PWCUpdatable is false
 		} else {
 			checkedIn.setAttachmentNodeId(createAttachment(callContext,
-					contentStream));
+					repositoryId, contentStream));
 		}
 
 		// Set updated properties
 		// updateProperties(callContext, properties, checkedIn);
-		modifyProperties(callContext, properties, checkedIn);
+		modifyProperties(callContext, repositoryId, properties, checkedIn);
 		setSignature(callContext, checkedIn);
 		checkedIn.setCheckinComment(checkinComment);
 
 		// update version information
 		VersioningState versioningState = (major) ? VersioningState.MAJOR
 				: VersioningState.MINOR;
-		updateVersionProperties(callContext, versioningState, checkedIn, latest);
+		updateVersionProperties(callContext, repositoryId, versioningState, checkedIn, latest);
 
 		// TODO set policies & ACEs
 
@@ -688,10 +689,10 @@ public class ContentServiceImpl implements ContentService {
 		Document result = contentDaoService.create(checkedIn);
 
 		// Record the change event
-		writeChangeEvent(callContext, result, ChangeType.CREATED);
+		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 
 		// Reverse the effect of checkedout
-		cancelCheckOut(callContext, id, extension);
+		cancelCheckOut(callContext, repositoryId, id, extension);
 		
 		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing();
@@ -700,9 +701,9 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	private Document buildNewBasicDocument(CallContext callContext,
-			Properties properties, Folder parentFolder) {
+			String repositoryId, Properties properties, Folder parentFolder) {
 		Document d = new Document();
-		setBaseProperties(callContext, properties, d, parentFolder.getId());
+		setBaseProperties(callContext, repositoryId, properties, d, parentFolder.getId());
 		d.setParentId(parentFolder.getId());
 		d.setImmutable(DataUtil.getBooleanProperty(properties,
 				PropertyIds.IS_IMMUTABLE));
@@ -734,11 +735,11 @@ public class ContentServiceImpl implements ContentService {
 	
 
 	private VersionSeries setVersionProperties(CallContext callContext,
-			VersioningState versioningState, Document d) {
+			String repositoryId, VersioningState versioningState, Document d) {
 		// Version properties
 		// CASE:New VersionSeries
 		VersionSeries vs;
-		vs = createVersionSeries(callContext, versioningState);
+		vs = createVersionSeries(callContext, repositoryId, versioningState);
 		d.setVersionSeriesId(vs.getId());
 		switch (versioningState) {
 		// TODO NONE is not allowed
@@ -770,7 +771,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	private void updateVersionProperties(CallContext callContext,
-			VersioningState versioningState, Document d, Document former) {
+			String repositoryId, VersioningState versioningState, Document d, Document former) {
 		d.setVersionSeriesId(former.getVersionSeriesId());
 
 		switch (versioningState) {
@@ -805,7 +806,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	private VersionSeries createVersionSeries(CallContext callContext,
-			VersioningState versioningState) {
+			String repositoryId, VersioningState versioningState) {
 		VersionSeries vs = new VersionSeries();
 		vs.setVersionSeriesCheckedOut(false);
 		setSignature(callContext, vs);
@@ -818,11 +819,12 @@ public class ContentServiceImpl implements ContentService {
 	 * Update versionSeriesId#versionSeriesCheckedOutId after creating a PWC
 	 *
 	 * @param callContext
+	 * @param repositoryId TODO
 	 * @param versionSeries
 	 * @param pwc
 	 */
 	private void updateVersionSeriesWithPwc(CallContext callContext,
-			VersionSeries versionSeries, Document pwc) {
+			String repositoryId, VersionSeries versionSeries, Document pwc) {
 
 		versionSeries.setVersionSeriesCheckedOut(true);
 		versionSeries.setVersionSeriesCheckedOutId(pwc.getId());
@@ -831,10 +833,10 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public synchronized Folder createFolder(CallContext callContext, Properties properties,
-			Folder parentFolder) {
+	public synchronized Folder createFolder(CallContext callContext, String repositoryId,
+			Properties properties, Folder parentFolder) {
 		Folder f = new Folder();
-		setBaseProperties(callContext, properties, f, parentFolder.getId());
+		setBaseProperties(callContext, repositoryId, properties, f, parentFolder.getId());
 		f.setParentId(parentFolder.getId());
 		// Defaults to document / folder / item if not specified
 		List<String> allowedTypes = DataUtil.getIdListProperty(properties,
@@ -856,7 +858,7 @@ public class ContentServiceImpl implements ContentService {
 		Folder folder = contentDaoService.create(f);
 
 		// Record the change event
-		writeChangeEvent(callContext, folder, ChangeType.CREATED);
+		writeChangeEvent(callContext, repositoryId, folder, ChangeType.CREATED);
 
 		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing();
@@ -866,13 +868,13 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public synchronized Relationship createRelationship(CallContext callContext,
-			Properties properties, List<String> policies,
+			String repositoryId, Properties properties,
+			List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
-			org.apache.chemistry.opencmis.commons.data.Acl removeAces,
-			ExtensionsData extension) {
+			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension) {
 
 		Relationship rel = new Relationship();
-		setBaseProperties(callContext, properties, rel, null);
+		setBaseProperties(callContext, repositoryId, properties, rel, null);
 		rel.setSourceId(DataUtil.getIdProperty(properties,
 				PropertyIds.SOURCE_ID));
 		rel.setTargetId(DataUtil.getIdProperty(properties,
@@ -884,20 +886,20 @@ public class ContentServiceImpl implements ContentService {
 		Relationship relationship = contentDaoService.create(rel);
 
 		// Record the change event
-		writeChangeEvent(callContext, relationship, ChangeType.CREATED);
+		writeChangeEvent(callContext, repositoryId, relationship, ChangeType.CREATED);
 
 		return relationship;
 	}
 
 	@Override
-	public synchronized Policy createPolicy(CallContext callContext, Properties properties,
+	public synchronized Policy createPolicy(CallContext callContext, String repositoryId,
+			Properties properties,
 			List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
-			org.apache.chemistry.opencmis.commons.data.Acl removeAces,
-			ExtensionsData extension) {
+			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension) {
 
 		Policy p = new Policy();
-		setBaseProperties(callContext, properties, p, null);
+		setBaseProperties(callContext, repositoryId, properties, p, null);
 		p.setPolicyText(DataUtil.getStringProperty(properties,
 				PropertyIds.POLICY_TEXT));
 		p.setAppliedIds(new ArrayList<String>());
@@ -909,19 +911,19 @@ public class ContentServiceImpl implements ContentService {
 		Policy policy = contentDaoService.create(p);
 
 		// Record the change event
-		writeChangeEvent(callContext, policy, ChangeType.CREATED);
+		writeChangeEvent(callContext, repositoryId, policy, ChangeType.CREATED);
 
 		return policy;
 	}
 
 	@Override
-	public synchronized Item createItem(CallContext callContext, Properties properties,
-			String folderId, List<String> policies,
+	public synchronized Item createItem(CallContext callContext, String repositoryId,
+			Properties properties, String folderId,
+			List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
-			org.apache.chemistry.opencmis.commons.data.Acl removeAces,
-			ExtensionsData extension) {
+			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension) {
 		Item i = new Item();
-		setBaseProperties(callContext, properties, i, null);
+		setBaseProperties(callContext, repositoryId, properties, i, null);
 		String objectTypeId = DataUtil.getIdProperty(properties,
 				PropertyIds.OBJECT_TYPE_ID);
 		TypeDefinition tdf = typeManager.getTypeDefinition(objectTypeId);
@@ -936,13 +938,13 @@ public class ContentServiceImpl implements ContentService {
 		Item item = contentDaoService.create(i);
 
 		// Record the change event
-		writeChangeEvent(callContext, item, ChangeType.CREATED);
+		writeChangeEvent(callContext, repositoryId, item, ChangeType.CREATED);
 
 		return item;
 	}
 
 	private void setBaseProperties(CallContext callContext,
-			Properties properties, Content content, String parentFolderId) {
+			String repositoryId, Properties properties, Content content, String parentFolderId) {
 		// Object Type
 		String objectTypeId = DataUtil.getIdProperty(properties,
 				PropertyIds.OBJECT_TYPE_ID);
@@ -956,8 +958,8 @@ public class ContentServiceImpl implements ContentService {
 
 		// Name(Unique in a folder)
 		String uniqueName = buildUniqueName(
-				DataUtil.getStringProperty(properties, PropertyIds.NAME),
-				parentFolderId, null);
+				repositoryId,
+				DataUtil.getStringProperty(properties, PropertyIds.NAME), parentFolderId, null);
 		content.setName(uniqueName);
 
 		// Description
@@ -972,8 +974,8 @@ public class ContentServiceImpl implements ContentService {
 		setSignature(callContext, content);
 	}
 
-	private String copyAttachment(CallContext callContext, String attachmentId) {
-		AttachmentNode original = getAttachment(attachmentId);
+	private String copyAttachment(CallContext callContext, String repositoryId, String attachmentId) {
+		AttachmentNode original = getAttachment(repositoryId, attachmentId);
 		ContentStream cs = new ContentStreamImpl(original.getName(),
 				BigInteger.valueOf(original.getLength()),
 				original.getMimeType(), original.getInputStream());
@@ -988,7 +990,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	private List<String> copyRenditions(CallContext callContext,
-			List<String> renditionIds) {
+			String repositoryId, List<String> renditionIds) {
 		if (CollectionUtils.isEmpty(renditionIds))
 			return null;
 
@@ -1014,7 +1016,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	private Content modifyProperties(CallContext callContext,
-			Properties properties, Content content) {
+			String repositoryId, Properties properties, Content content) {
 		if (properties == null || MapUtils.isEmpty(properties.getProperties())) {
 			return content;
 		}
@@ -1030,28 +1032,28 @@ public class ContentServiceImpl implements ContentService {
 
 			// CASE: READ&WRITE(ANYTIME)
 			if (pd.getUpdatability() == Updatability.READWRITE) {
-				setUpdatePropertyValue(content, p, properties);
+				setUpdatePropertyValue(repositoryId, content, p, properties);
 			}
 			// CASE:WHEN CHECKED OUT
 			if (pd.getUpdatability() == Updatability.WHENCHECKEDOUT
 					&& content.isDocument()) {
 				Document d = (Document) content;
 				if (d.isPrivateWorkingCopy()) {
-					setUpdatePropertyValue(content, p, properties);
+					setUpdatePropertyValue(repositoryId, content, p, properties);
 				}
 			}
 		}
 
 		// TODO
 		// Subtype specific
-		List<Property> subTypeProperties = buildSubTypeProperties(properties,
-				content);
+		List<Property> subTypeProperties = buildSubTypeProperties(repositoryId,
+				properties, content);
 		if (!CollectionUtils.isEmpty(subTypeProperties)) {
 			content.setSubTypeProperties(subTypeProperties);
 		}
 
 		// Secondary
-		List<Aspect> secondary = buildSecondaryTypes(properties, content);
+		List<Aspect> secondary = buildSecondaryTypes(repositoryId, properties, content);
 		if (!CollectionUtils.isEmpty(secondary)) {
 			content.setAspects(secondary);
 		}
@@ -1062,8 +1064,8 @@ public class ContentServiceImpl implements ContentService {
 		return content;
 	}
 
-	private List<Property> buildSubTypeProperties(Properties properties,
-			Content content) {
+	private List<Property> buildSubTypeProperties(String repositoryId,
+			Properties properties, Content content) {
 		List<PropertyDefinition<?>> subTypePropertyDefinitions = typeManager
 				.getSpecificPropertyDefinitions(content.getObjectType());
 		if (CollectionUtils.isEmpty(subTypePropertyDefinitions))
@@ -1073,8 +1075,8 @@ public class ContentServiceImpl implements ContentService {
 				content);
 	}
 
-	private List<Aspect> buildSecondaryTypes(Properties properties,
-			Content content) {
+	private List<Aspect> buildSecondaryTypes(String repositoryId,
+			Properties properties, Content content) {
 		List<Aspect> aspects = new ArrayList<Aspect>();
 		PropertyData secondaryTypeIds = properties.getProperties().get(
 				PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
@@ -1160,20 +1162,20 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public synchronized Content updateProperties(CallContext callContext,
-			Properties properties, Content content) {
+			String repositoryId, Properties properties, Content content) {
 
-		Content modified = modifyProperties(callContext, properties, content);
+		Content modified = modifyProperties(callContext, repositoryId, properties, content);
 
-		Content result = update(modified);
+		Content result = update(repositoryId, modified);
 
 		// Record the change event
-		writeChangeEvent(callContext, result, ChangeType.UPDATED);
+		writeChangeEvent(callContext, repositoryId, result, ChangeType.UPDATED);
 
 		return result;
 	}
 
 	@Override
-	public synchronized Content update(Content content) {
+	public synchronized Content update(String repositoryId, Content content) {
 		Content result = null;
 
 		if (content instanceof Document) {
@@ -1195,14 +1197,14 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	// TODO updatable CMIS properties are hard-coded.
-	private void setUpdatePropertyValue(Content content,
-			PropertyData<?> propertyData, Properties properties) {
+	private void setUpdatePropertyValue(String repositoryId,
+			Content content, PropertyData<?> propertyData, Properties properties) {
 		if (propertyData.getId().equals(PropertyIds.NAME)) {
 			if (DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID) != content
 					.getId()) {
-				String uniqueName = buildUniqueName(DataUtil.getStringProperty(
-						properties, PropertyIds.NAME), content.getParentId(),
-						content.getId());
+				String uniqueName = buildUniqueName(repositoryId, DataUtil.getStringProperty(
+								properties, PropertyIds.NAME),
+						content.getParentId(), content.getId());
 				content.setName(uniqueName);
 			}
 		}
@@ -1219,58 +1221,58 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public synchronized void move(Content content, Folder target) {
+	public synchronized void move(String repositoryId, Content content, Folder target) {
 		content.setParentId(target.getId());
-		String uniqueName = buildUniqueName(content.getName(), target.getId(),
-				null);
+		String uniqueName = buildUniqueName(repositoryId, content.getName(),
+				target.getId(), null);
 		content.setName(uniqueName);
-		update(content);
+		update(repositoryId, content);
 
 		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing();
 	}
 
 	@Override
-	public synchronized void applyPolicy(CallContext callContext, String policyId,
-			String objectId, ExtensionsData extension) {
-		Policy policy = getPolicy(policyId);
+	public synchronized void applyPolicy(CallContext callContext, String repositoryId,
+			String policyId, String objectId, ExtensionsData extension) {
+		Policy policy = getPolicy(repositoryId, policyId);
 		List<String> ids = policy.getAppliedIds();
 		ids.add(objectId);
 		policy.setAppliedIds(ids);
 		contentDaoService.update(policy);
 
 		// Record the change event
-		Content content = getContent(objectId);
-		writeChangeEvent(callContext, content, ChangeType.SECURITY);
+		Content content = getContent(repositoryId, objectId);
+		writeChangeEvent(callContext, repositoryId, content, ChangeType.SECURITY);
 	}
 
 	@Override
-	public synchronized void removePolicy(CallContext callContext, String policyId,
-			String objectId, ExtensionsData extension) {
-		Policy policy = getPolicy(policyId);
+	public synchronized void removePolicy(CallContext callContext, String repositoryId,
+			String policyId, String objectId, ExtensionsData extension) {
+		Policy policy = getPolicy(repositoryId, policyId);
 		List<String> ids = policy.getAppliedIds();
 		ids.remove(objectId);
 		policy.setAppliedIds(ids);
 		contentDaoService.update(policy);
 
 		// Record the change event
-		Content content = getContent(objectId);
-		writeChangeEvent(callContext, content, ChangeType.SECURITY);
+		Content content = getContent(repositoryId, objectId);
+		writeChangeEvent(callContext, repositoryId, content, ChangeType.SECURITY);
 	}
 
 	/**
 	 * Delete a Content.
 	 */
 	@Override
-	public synchronized void delete(CallContext callContext, String objectId,
-			Boolean deletedWithParent) {
-		Content content = getContent(objectId);
+	public synchronized void delete(CallContext callContext, String repositoryId,
+			String objectId, Boolean deletedWithParent) {
+		Content content = getContent(repositoryId, objectId);
 
 		// Record the change event(Before the content is deleted!)
-		writeChangeEvent(callContext, content, ChangeType.DELETED);
+		writeChangeEvent(callContext, repositoryId, content, ChangeType.DELETED);
 
 		// Archive and then Delete
-		createArchive(callContext, objectId, deletedWithParent);
+		createArchive(callContext, repositoryId, objectId, deletedWithParent);
 		contentDaoService.delete(objectId);
 
 		// Call Solr indexing(optional)
@@ -1278,28 +1280,28 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public synchronized void deleteAttachment(CallContext callContext, String attachmentId) {
-		createAttachmentArchive(callContext, attachmentId);
+	public synchronized void deleteAttachment(CallContext callContext, String repositoryId, String attachmentId) {
+		createAttachmentArchive(callContext, repositoryId, attachmentId);
 		contentDaoService.delete(attachmentId);
 	}
 
 	@Override
 	public synchronized void deleteContentStream(CallContext callContext,
-			Holder<String> objectId) {
+			String repositoryId, Holder<String> objectId) {
 		// TODO Auto-generated method stub
 
 	}
 
 	@Override
-	public synchronized void deleteDocument(CallContext callContext, String objectId,
-			Boolean allVersions, Boolean deleteWithParent) {
-		Document document = (Document) getContent(objectId);
+	public synchronized void deleteDocument(CallContext callContext, String repositoryId,
+			String objectId, Boolean allVersions, Boolean deleteWithParent) {
+		Document document = (Document) getContent(repositoryId, objectId);
 
 		// Make the list of objects to be deleted
 		List<Document> versionList = new ArrayList<Document>();
 		String versionSeriesId = document.getVersionSeriesId();
 		if (allVersions) {
-			versionList = getAllVersions(callContext, versionSeriesId);
+			versionList = getAllVersions(callContext, repositoryId, versionSeriesId);
 		} else {
 			versionList.add(document);
 		}
@@ -1310,7 +1312,7 @@ public class ContentServiceImpl implements ContentService {
 			if (version.getAttachmentNodeId() != null) {
 				String attachmentId = version.getAttachmentNodeId();
 				// Delete an attachment
-				deleteAttachment(callContext, attachmentId);
+				deleteAttachment(callContext, repositoryId, attachmentId);
 			}
 			// Delete rendition(no need for archive)
 			if(CollectionUtils.isNotEmpty(version.getRenditionIds())){
@@ -1320,12 +1322,12 @@ public class ContentServiceImpl implements ContentService {
 			}
 			
 			// Delete a document
-			delete(callContext, version.getId(), deleteWithParent);
+			delete(callContext, repositoryId, version.getId(), deleteWithParent);
 		}
 
 		// Move up the latest version
 		if (!allVersions) {
-			Document latestVersion = getDocumentOfLatestVersion(versionSeriesId);
+			Document latestVersion = getDocumentOfLatestVersion(repositoryId, versionSeriesId);
 			if (latestVersion != null) {
 				latestVersion.setLatestVersion(true);
 				latestVersion.setLatestMajorVersion(latestVersion
@@ -1341,24 +1343,24 @@ public class ContentServiceImpl implements ContentService {
 	// deletedWithParent flag controls whether it's deleted with the parent all
 	// together.
 	@Override
-	public synchronized List<String> deleteTree(CallContext callContext, String folderId,
-			Boolean allVersions, Boolean continueOnFailure,
-			Boolean deletedWithParent){
+	public synchronized List<String> deleteTree(CallContext callContext, String repositoryId,
+			String folderId, Boolean allVersions,
+			Boolean continueOnFailure, Boolean deletedWithParent){
 		List<String> failureIds = new ArrayList<String>();
 
 		// Delete children
-		List<Content> children = getChildren(folderId);
+		List<Content> children = getChildren(repositoryId, folderId);
 		if (!CollectionUtils.isEmpty(children)) {
 			for (Content child : children) {
 				try {
 					if (child.isFolder()) {
-						deleteTree(callContext, child.getId(), allVersions,
-								continueOnFailure, true);
+						deleteTree(callContext, repositoryId, child.getId(),
+								allVersions, continueOnFailure, true);
 					} else if (child.isDocument()) {
-						deleteDocument(callContext, child.getId(), allVersions,
-								true);
+						deleteDocument(callContext, repositoryId, child.getId(),
+								allVersions, true);
 					} else {
-						delete(callContext, child.getId(), true);
+						delete(callContext, repositoryId, child.getId(), true);
 					}
 				} catch (Exception e) {
 					if (continueOnFailure) {
@@ -1373,7 +1375,7 @@ public class ContentServiceImpl implements ContentService {
 
 		// Delete the folder itself
 		try {
-			delete(callContext, folderId, deletedWithParent);
+			delete(callContext, repositoryId, folderId, deletedWithParent);
 		} catch (Exception e) {
 			if (continueOnFailure) {
 				failureIds.add(folderId);
@@ -1385,38 +1387,21 @@ public class ContentServiceImpl implements ContentService {
 		return failureIds;
 	}
 
-	// ///////////////////////////////////////
-	// Attachment
-	// ///////////////////////////////////////
-	private byte[] readContentStreamToByte(ContentStream source){
-		ByteArrayOutputStream baos = new ByteArrayOutputStream();
-		try {
-			org.apache.commons.io.IOUtils.copy(source.getStream(), baos);
-			byte[] bytes = baos.toByteArray();
-			
-			return bytes;
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		return null;
-	}
-	
 	@Override
-	public AttachmentNode getAttachment(String attachmentId) {
+	public AttachmentNode getAttachment(String repositoryId, String attachmentId) {
 		AttachmentNode an = contentDaoService.getAttachment(attachmentId);
 		contentDaoService.setStream(an);
 		return an;
 	}
 
 	@Override
-	public AttachmentNode getAttachmentRef(String attachmentId) {
+	public AttachmentNode getAttachmentRef(String repositoryId, String attachmentId) {
 		AttachmentNode an = contentDaoService.getAttachment(attachmentId);
 		return an;
 	}
 
 	private String createAttachment(CallContext callContext,
-			ContentStream contentStream) {
+			String repositoryId, ContentStream contentStream) {
 		AttachmentNode a = new AttachmentNode();
 		a.setMimeType(contentStream.getMimeType());
 		a.setLength(contentStream.getLength());
@@ -1425,7 +1410,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	private String createPreview(CallContext callContext,
-			ContentStream contentStream, Document document) {
+			String repositoryId, ContentStream contentStream, Document document) {
 		
 		Rendition rendition = new Rendition();
 		rendition.setTitle("PDF Preview");
@@ -1461,11 +1446,11 @@ public class ContentServiceImpl implements ContentService {
 	
 	@Override
 	public synchronized void appendAttachment(CallContext callContext,
-			Holder<String> objectId, Holder<String> changeToken,
-			ContentStream contentStream, boolean isLastChunk,
-			ExtensionsData extension) {
+			String repositoryId, Holder<String> objectId,
+			Holder<String> changeToken, ContentStream contentStream,
+			boolean isLastChunk, ExtensionsData extension) {
 		Document document = contentDaoService.getDocument(objectId.getValue());
-		AttachmentNode attachment = getAttachment(document
+		AttachmentNode attachment = getAttachment(repositoryId, document
 				.getAttachmentNodeId());
 		InputStream is = attachment.getInputStream();
 		// Append
@@ -1477,7 +1462,7 @@ public class ContentServiceImpl implements ContentService {
 				BigInteger.valueOf(length), attachment.getMimeType(), sis);
 		contentDaoService.updateAttachment(attachment, cs);
 
-		writeChangeEvent(callContext, document, ChangeType.UPDATED);
+		writeChangeEvent(callContext, repositoryId, document, ChangeType.UPDATED);
 	}
 
 	@Override
@@ -1486,8 +1471,8 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public List<Rendition> getRenditions(String objectId) {
-		Content c = getContent(objectId);
+	public List<Rendition> getRenditions(String repositoryId, String objectId) {
+		Content c = getContent(repositoryId, objectId);
 		List<String> ids = new ArrayList<String>();
 		if (c.isDocument()) {
 			Document d = (Document) c;
@@ -1514,16 +1499,16 @@ public class ContentServiceImpl implements ContentService {
 	// ///////////////////////////////////////
 	// Merge inherited ACL
 	@Override
-	public Acl calculateAcl(Content content) {
+	public Acl calculateAcl(String repositoryId, Content content) {
 		Acl acl = content.getAcl();
 
 		boolean iht = (content.isAclInherited() == null) ? false : content
 				.isAclInherited();
 
-		if (!isRoot(content) && iht) {
+		if (!isRoot(repositoryId, content) && iht) {
 			// Caching the results of calculation
 			List<Ace> aces = new ArrayList<Ace>();
-			List<Ace> result = calculateAclInternal(aces, content);
+			List<Ace> result = calculateAclInternal(repositoryId, aces, content);
 
 			// Convert result to Acl
 			Acl _acl = new Acl();
@@ -1538,13 +1523,13 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		// Convert anonymous and anyone
-		convertSystemPrincipalId(acl.getAllAces());
+		convertSystemPrincipalId(repositoryId, acl.getAllAces());
 
 		return acl;
 	}
 
-	private List<Ace> calculateAclInternal(List<Ace> result, Content content) {
-		if (isRoot(content)) {
+	private List<Ace> calculateAclInternal(String repositoryId, List<Ace> result, Content content) {
+		if (isRoot(repositoryId, content)) {
 			List<Ace> rootAces = new ArrayList<Ace>();
 			List<Ace> aces = content.getAcl().getLocalAces();
 			for (Ace ace : aces) {
@@ -1552,19 +1537,19 @@ public class ContentServiceImpl implements ContentService {
 				rootAce.setDirect(true);
 				rootAces.add(rootAce);
 			}
-			return mergeAcl(result, rootAces);
+			return mergeAcl(repositoryId, result, rootAces);
 		} else {
-			Content parent = getParent(content.getId());
-			return mergeAcl(content.getAcl().getLocalAces(),
-					calculateAclInternal(new ArrayList<Ace>(), parent));
+			Content parent = getParent(repositoryId, content.getId());
+			return mergeAcl(repositoryId,
+					content.getAcl().getLocalAces(), calculateAclInternal(repositoryId, new ArrayList<Ace>(), parent));
 		}
 	}
 
-	private List<Ace> mergeAcl(List<Ace> target, List<Ace> source) {
+	private List<Ace> mergeAcl(String repositoryId, List<Ace> target, List<Ace> source) {
 		HashMap<String, Ace> _result = new HashMap<String, Ace>();
 		
 		//convert Normalize system principal id token to a real one
-		convertSystemPrincipalId(target);
+		convertSystemPrincipalId(repositoryId, target);
 
 		HashMap<String, Ace> targetMap = buildAceMap(target);
 		HashMap<String, Ace> sourceMap = buildAceMap(source);
@@ -1622,16 +1607,16 @@ public class ContentServiceImpl implements ContentService {
 		return result;
 	}
 
-	private void convertSystemPrincipalId(List<Ace> aces) {
+	private void convertSystemPrincipalId(String repositoryId, List<Ace> aces) {
+		RepositoryInfo info = repositoryInfoMap.get(repositoryId);
+		
 		for (Ace ace : aces) {
 			if (PrincipalId.ANONYMOUS_IN_DB.equals(ace.getPrincipalId())) {
-				String anonymous = propertyManager.readValue(
-						PropertyKey.CMIS_REPOSITORY_MAIN_PRINCIPAL_ANONYMOUS);
+				String anonymous = info.getPrincipalIdAnonymous(); 
 				ace.setPrincipalId(anonymous);
 			}
 			if (PrincipalId.ANYONE_IN_DB.equals(ace.getPrincipalId())) {
-				String anyone = propertyManager.readValue(
-						PropertyKey.CMIS_REPOSITORY_MAIN_PRINCIPAL_ANYONE);
+				String anyone = info.getPrincipalIdAnyone();
 				ace.setPrincipalId(anyone);
 			}
 		}
@@ -1641,21 +1626,21 @@ public class ContentServiceImpl implements ContentService {
 	// Change event
 	// ///////////////////////////////////////
 	@Override
-	public Change getChangeEvent(String token) {
+	public Change getChangeEvent(String repositoryId, String token) {
 		return contentDaoService.getChangeEvent(token);
 	}
 
 	@Override
-	public List<Change> getLatestChanges(CallContext context,
-			Holder<String> changeLogToken, Boolean includeProperties,
-			String filter, Boolean includePolicyIds, Boolean includeAcl,
-			BigInteger maxItems, ExtensionsData extension) {
+	public List<Change> getLatestChanges(String repositoryId,
+			CallContext context, Holder<String> changeLogToken,
+			Boolean includeProperties, String filter, Boolean includePolicyIds,
+			Boolean includeAcl, BigInteger maxItems, ExtensionsData extension) {
 		return contentDaoService.getLatestChanges(changeLogToken.getValue(),
 				maxItems.intValue());
 	}
 
 	@Override
-	public String getLatestChangeToken() {
+	public String getLatestChangeToken(String repositoryId) {
 		Change latest = contentDaoService.getLatestChange();
 		if (latest == null) {
 			// TODO null is OK?
@@ -1669,24 +1654,24 @@ public class ContentServiceImpl implements ContentService {
 	// Archive
 	// ///////////////////////////////////////
 	@Override
-	public List<Archive> getAllArchives() {
+	public List<Archive> getAllArchives(String repositoryId) {
 		return contentDaoService.getAllArchives();
 	}
 
 	@Override
-	public Archive getArchive(String archiveId) {
+	public Archive getArchive(String repositoryId, String archiveId) {
 		return contentDaoService.getArchive(archiveId);
 	}
 
 	@Override
-	public Archive getArchiveByOriginalId(String originalId) {
+	public Archive getArchiveByOriginalId(String repositoryId, String originalId) {
 		return contentDaoService.getArchiveByOriginalId(originalId);
 	}
 
 	@Override
-	public Archive createArchive(CallContext callContext, String objectId,
-			Boolean deletedWithParent) {
-		Content content = getContent(objectId);
+	public Archive createArchive(CallContext callContext, String repositoryId,
+			String objectId, Boolean deletedWithParent) {
+		Content content = getContent(repositoryId, objectId);
 
 		// Set base info
 		Archive a = new Archive();
@@ -1712,7 +1697,7 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public Archive createAttachmentArchive(CallContext callContext,
-			String attachmentId) {
+			String repositoryId, String attachmentId) {
 		Archive a = new Archive();
 		a.setDeletedWithParent(true);
 		a.setOriginalId(attachmentId);
@@ -1724,7 +1709,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public void restoreArchive(String archiveId) {
+	public void restoreArchive(String repositoryId, String archiveId) {
 		Archive archive = contentDaoService.getArchive(archiveId);
 		if (archive == null) {
 			log.error("Archive does not exist!");
@@ -1732,7 +1717,7 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		// Check whether the destination does still extist.
-		if (!restorationTargetExists(archive)) {
+		if (!restorationTargetExists(repositoryId, archive)) {
 			log.error("The destination of the restoration doesn't exist");
 			return;
 		}
@@ -1744,11 +1729,11 @@ public class ContentServiceImpl implements ContentService {
 
 		// Switch over the operation depending on the type of archive
 		if (archive.isFolder()) {
-			Folder restored = restoreFolder(archive);
-			writeChangeEvent(dummyContext, restored, ChangeType.CREATED);
+			Folder restored = restoreFolder(repositoryId, archive);
+			writeChangeEvent(dummyContext, repositoryId, restored, ChangeType.CREATED);
 		} else if (archive.isDocument()) {
-			Document restored = restoreDocument(archive);
-			writeChangeEvent(dummyContext, restored, ChangeType.CREATED);
+			Document restored = restoreDocument(repositoryId, archive);
+			writeChangeEvent(dummyContext, repositoryId, restored, ChangeType.CREATED);
 		} else if (archive.isAttachment()) {
 			log.error("Attachment can't be restored alone");
 		} else {
@@ -1759,7 +1744,7 @@ public class ContentServiceImpl implements ContentService {
 		solrUtil.callSolrIndexing();
 	}
 
-	private Document restoreDocument(Archive archive) {
+	private Document restoreDocument(String repositoryId, Archive archive) {
 		try {
 			// Get archives of the same version series
 			List<Archive> versions = contentDaoService
@@ -1779,10 +1764,10 @@ public class ContentServiceImpl implements ContentService {
 			log.error("fail to restore a document", e);
 		}
 
-		return getDocument(archive.getOriginalId());
+		return getDocument(repositoryId, archive.getOriginalId());
 	}
 
-	private Folder restoreFolder(Archive archive) {
+	private Folder restoreFolder(String repositoryId, Archive archive) {
 		contentDaoService.restoreContent(archive);
 
 		// Restore direct children
@@ -1792,16 +1777,16 @@ public class ContentServiceImpl implements ContentService {
 				// Restore descendants recursively
 				// NOTE: Restored only when deletedWithParent flag is true
 				if (child.isDeletedWithParent()) {
-					restoreArchive(child.getId());
+					restoreArchive(repositoryId, child.getId());
 				}
 			}
 		}
 		contentDaoService.deleteArchive(archive.getId());
 
-		return getFolder(archive.getOriginalId());
+		return getFolder(repositoryId, archive.getOriginalId());
 	}
 
-	private Boolean restorationTargetExists(Archive archive) {
+	private Boolean restorationTargetExists(String repositoryId, Archive archive) {
 		String parentId = archive.getParentId();
 		Content parent = contentDaoService.getContent(parentId);
 		if (parent == null) {
@@ -1814,14 +1799,14 @@ public class ContentServiceImpl implements ContentService {
 	// ///////////////////////////////////////
 	// Utility
 	// ///////////////////////////////////////
-	private String buildUniqueName(String originalName, String folderId,
-			String existingId) {
+	private String buildUniqueName(String repositoryId, String originalName,
+			String folderId, String existingId) {
 		boolean bun = propertyManager.readBoolean(PropertyKey.CAPABILITY_EXTENDED_BUILD_UNIQUE_NAME);
 		if(!bun){
 			return originalName;
 		}
 		
-		List<Content> children = getChildren(folderId);
+		List<Content> children = getChildren(repositoryId, folderId);
 
 		List<String> conflicts = new ArrayList<String>();
 		if (CollectionUtils.isEmpty(children)) {
@@ -1939,6 +1924,10 @@ public class ContentServiceImpl implements ContentService {
 
 	private GregorianCalendar getTimeStamp() {
 		return DataUtil.millisToCalendar(System.currentTimeMillis());
+	}
+
+	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
+		this.repositoryInfoMap = repositoryInfoMap;
 	}
 
 	public void setContentDaoService(ContentDaoService contentDaoService) {

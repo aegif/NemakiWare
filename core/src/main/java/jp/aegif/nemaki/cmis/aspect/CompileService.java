@@ -53,7 +53,7 @@ public interface CompileService {
 	public org.apache.chemistry.opencmis.commons.data.Acl compileAcl(
 			Acl acl, Boolean isInherited, Boolean onlyBasicPermissions);
 	
-	public PropertiesImpl compileProperties(CallContext callContext, Content content);
+	public PropertiesImpl compileProperties(CallContext callContext, String repositoryId, Content content);
 	
 	public AllowableActions compileAllowableActions(CallContext callContext,
 			String repositoryId, Content content);

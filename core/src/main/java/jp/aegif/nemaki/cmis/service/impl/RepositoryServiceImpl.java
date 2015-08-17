@@ -71,7 +71,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 	@Override
 	public RepositoryInfo getRepositoryInfo(String repositoryId) {
 		RepositoryInfo info = repositoryInfoMap.get(repositoryId);
-		info.setLatestChangeLogToken(contentService.getLatestChangeToken());
+		info.setLatestChangeLogToken(contentService.getLatestChangeToken(repositoryId));
 		return info;
 	}
 
@@ -175,7 +175,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 		exceptionService.invalidArgumentDoesNotExistType(typeId);
 		exceptionService.invalidArgumentDeletableType(typeId);
 		exceptionService.constraintOnlyLeafTypeDefinition(typeId);
-		exceptionService.constraintObjectsStillExist(typeId);
+		exceptionService.constraintObjectsStillExist(repositoryId, typeId);
 
 		// //////////////////
 		// Body of the method
