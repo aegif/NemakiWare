@@ -54,7 +54,7 @@ import org.mindrot.jbcrypt.BCrypt;
 import org.springframework.stereotype.Component;
 
 @Component
-@Path("/user/{repositoryId}")
+@Path("/repo/{repositoryId}/user/")
 public class UserResource extends ResourceBase {
 
 	PrincipalService principalService;

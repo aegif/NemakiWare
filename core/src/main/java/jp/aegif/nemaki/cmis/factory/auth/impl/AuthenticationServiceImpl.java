@@ -29,11 +29,16 @@ import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
+import javax.servlet.http.HttpServletRequest;
+
+import org.apache.chemistry.opencmis.commons.impl.Constants;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
+import org.apache.chemistry.opencmis.server.shared.HttpUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.http.HttpRequest;
 import org.mindrot.jbcrypt.BCrypt;
 
 /**
@@ -111,11 +116,8 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	}
 
 	private boolean loginWithBasicAuth(CallContext callContext) {
-		// TODO
-		final String repositoryId = "bedroom"; // TODO get from callContext
-
 		// Basic auth with id/password
-		User user = getAuthenticatedUser(repositoryId, callContext.getUsername(), callContext.getPassword());
+		User user = getAuthenticatedUser(callContext.getRepositoryId(), callContext.getUsername(), callContext.getPassword());
 		if (user == null)
 			return false;
 		boolean isAdmin = user.isAdmin() == null ? false : true;

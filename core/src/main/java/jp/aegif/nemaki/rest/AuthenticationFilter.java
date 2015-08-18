@@ -66,10 +66,10 @@ public class AuthenticationFilter implements Filter {
 
 		HttpSession session = hreq.getSession();
 		
-		if(!checkResourceEnabled(hreq)){
+		/*if(!checkResourceEnabled(hreq)){
 			//FIXME
 			throw new ServletException("This REST API is not supported");
-		}
+		}*/
 		
 		if (session.getAttribute("USER_INFO") == null) {
 			String auth = hreq.getHeader("Authorization");

@@ -41,7 +41,7 @@ import org.json.simple.JSONObject;
 
 import com.sun.jersey.multipart.FormDataParam;
 
-@Path("/type/{repositoryId}")
+@Path("/repo/{repositoryId}/type")
 public class TypeResource extends ResourceBase{
 
 	private TypeService typeService;

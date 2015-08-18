@@ -39,11 +39,10 @@ import jp.aegif.nemaki.util.constant.NodeType;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
-@Path("/archive/{repositoryId}")
+@Path("/repo/{repositoryId}/archive")
 public class ArchiveResource extends ResourceBase {
 	
 	private ContentService contentService;
-	private final String repositoryId = "bedroom";//TODO hard coding
 	
 	public void setContentService(ContentService contentService) {
 		this.contentService = contentService;
