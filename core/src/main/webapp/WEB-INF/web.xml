@@ -74,6 +74,7 @@
 		<filter-name>restAuthenticationFilter</filter-name>
 		<url-pattern>/rest/*</url-pattern>
 	</filter-mapping>	
+	
 	<servlet>
         <servlet-name>Jersey Web Application</servlet-name>
 		<servlet-class>com.sun.jersey.spi.spring.container.servlet.SpringServlet</servlet-class>

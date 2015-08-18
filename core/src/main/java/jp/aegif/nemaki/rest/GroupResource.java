@@ -50,7 +50,7 @@ import org.json.simple.JSONValue;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
-@Path("/group/{repositoryId}")
+@Path("/repo/{repositoryId}/group")
 public class GroupResource extends ResourceBase{
 
 	PrincipalService principalService;
