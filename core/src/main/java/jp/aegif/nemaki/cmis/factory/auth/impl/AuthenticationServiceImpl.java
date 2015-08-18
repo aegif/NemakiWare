@@ -24,6 +24,7 @@ import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
 import jp.aegif.nemaki.cmis.factory.auth.Token;
 import jp.aegif.nemaki.cmis.factory.auth.TokenService;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.CallContextKey;
@@ -46,6 +47,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	private PrincipalService principalService;
 	private TokenService tokenService;
 	private PropertyManager propertyManager;
+	private RepositoryInfoMap repositoryInfoMap;
 
 	public boolean login(CallContext callContext) {
 		// SSO
@@ -111,6 +113,11 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	}
 
 	private boolean loginWithBasicAuth(CallContext callContext) {
+		//Check repositoryId exists
+		if(!repositoryInfoMap.contains(callContext.getRepositoryId())){
+			return false;
+		}
+		
 		// Basic auth with id/password
 		User user = getAuthenticatedUser(callContext.getRepositoryId(), callContext.getUsername(), callContext.getPassword());
 		if (user == null)
@@ -183,5 +190,9 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 	public void setPropertyManager(PropertyManager propertyManager) {
 		this.propertyManager = propertyManager;
+	}
+
+	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
+		this.repositoryInfoMap = repositoryInfoMap;
 	}
 }

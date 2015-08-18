@@ -376,6 +376,9 @@
         <property name="propertyManager">
             <ref bean="propertyManager" />
         </property>
+        <property name="repositoryInfoMap">
+            <ref bean="repositoryInfoMap" />
+        </property>
     </bean>
    
     <bean id="TokenService" class="org.springframework.aop.framework.ProxyFactoryBean">

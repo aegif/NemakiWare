@@ -39,6 +39,7 @@ import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
+import jp.aegif.nemaki.util.cache.NemakiCache;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import net.sf.ehcache.Cache;
 import net.sf.ehcache.Element;
@@ -68,6 +69,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	// ///////////////////////////////////////
 	// Type & Property definition
 	// ///////////////////////////////////////
+	private NemakiCache getCache(String repositoryId){
+		return nemakiCachePool.get(repositoryId);
+	}
+	
 	@Override
 	public List<NemakiTypeDefinition> getTypeDefinitions(String repositoryId) {
 		Cache typeCache = nemakiCachePool.get(repositoryId).getTypeCache();

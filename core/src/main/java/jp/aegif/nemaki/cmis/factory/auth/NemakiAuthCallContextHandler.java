@@ -69,12 +69,14 @@ public class NemakiAuthCallContextHandler extends org.apache.chemistry.opencmis.
 		final ApplicationContext applicationContext = SpringContext.getApplicationContext();
 		PropertyManager manager = applicationContext.getBean("propertyManager", PropertyManager.class);
 		String proxyHeaderKey = manager.readValue(PropertyKey.EXTERNAL_AUTHENTICATION_PROXY_HEADER);
-		String proxyHeaderVal = request.getHeader(proxyHeaderKey);
-		ctxMap.put(proxyHeaderKey, proxyHeaderVal);
-		if(StringUtils.isNotBlank(proxyHeaderVal)){
-			ctxMap.put(CallContext.USERNAME, proxyHeaderVal);
+		if(StringUtils.isNotBlank(proxyHeaderKey)){
+			String proxyHeaderVal = request.getHeader(proxyHeaderKey);
+			ctxMap.put(proxyHeaderKey, proxyHeaderVal);
+			if(StringUtils.isNotBlank(proxyHeaderVal)){
+				ctxMap.put(CallContext.USERNAME, proxyHeaderVal);
+			}
 		}
-		
+
 		//Nemaki auth token
 		ctxMap.put(CallContextKey.AUTH_TOKEN, request.getHeader(CallContextKey.AUTH_TOKEN));
 		ctxMap.put(CallContextKey.AUTH_TOKEN_APP, request.getHeader(CallContextKey.AUTH_TOKEN_APP));

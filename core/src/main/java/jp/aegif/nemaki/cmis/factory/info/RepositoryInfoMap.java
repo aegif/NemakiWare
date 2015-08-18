@@ -26,6 +26,10 @@ public class RepositoryInfoMap {
 		return map.get(repositoryId);
 	}
 	
+	public boolean contains(String repositoryId){
+		return get(repositoryId) != null;
+	}
+	
 	public Set<String> keys(){
 		return map.keySet();
 	}
