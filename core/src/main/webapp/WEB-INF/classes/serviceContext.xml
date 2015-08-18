@@ -544,8 +544,11 @@
     	<property name="propertyManager">
             <ref bean="propertyManager" />
         </property>
-    	<property name="principalService">
-            <ref bean="PrincipalService" />
+        <property name="authenticationService">
+            <ref bean="AuthenticationService" />
+        </property>
+        <property name="repositoryInfoMap">
+            <ref bean="repositoryInfoMap" />
         </property>
     </bean>
     

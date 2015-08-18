@@ -8,6 +8,7 @@ default:
   product.name: NemakiWare
   product.version: 2.3
   namespace: http://www.aegif.jp/NemakiWare/
+main: bedroom
 repositories:
   - id: bedroom
     name: bedroom
