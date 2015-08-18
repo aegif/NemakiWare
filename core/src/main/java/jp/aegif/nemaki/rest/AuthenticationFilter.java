@@ -78,10 +78,11 @@ public class AuthenticationFilter implements Filter {
 	}
 	
 	public boolean login(HttpServletRequest req, HttpServletResponse res){
+		String repositoryId = getRestRepositoryIdForAuth(req);
+
+		//Make dummy callContext
 		NemakiAuthCallContextHandler callContextHandeler = new NemakiAuthCallContextHandler();
 		Map<String, String> map = callContextHandeler.getCallContextMap(req);
-		String repositoryId = getRestRepositoryIdForAuth(req);
-		
 		CallContextImpl ctxt = new CallContextImpl(null, CmisVersion.CMIS_1_1, repositoryId, null, req, res, null, null);
 		for(String key : map.keySet()){
 			ctxt.put(key, map.get(key));
