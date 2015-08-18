@@ -12,6 +12,7 @@ public class RepositoryInfoMap {
 	private AclCapabilities aclCapabilities;
 	
 	private Map<String, RepositoryInfo> map = new HashMap<String, RepositoryInfo>();
+	private String mainId;
 	
 	public void init(){
 		loadRepositoriesSetting();
@@ -33,6 +34,10 @@ public class RepositoryInfoMap {
 		return map.get(repositoryId).getArchiveId();
 	}
 	
+	public RepositoryInfo getMain(){
+		return get(mainId);
+	}
+	
 	private void loadRepositoriesSetting(){
 		YamlManager ymlMgr = new YamlManager("repositories.yml");
 		Map<String, Object> data = (Map<String, Object>)ymlMgr.loadYml();
@@ -44,6 +49,9 @@ public class RepositoryInfoMap {
 			modifyInfo(repStg, info);
 			map.put(info.getId(), info);
 		}
+		
+		this.mainId = (String) data.get("main");
+		
 	}
 	
 	private void modifyInfo(Map<String, String> setting, RepositoryInfo info){

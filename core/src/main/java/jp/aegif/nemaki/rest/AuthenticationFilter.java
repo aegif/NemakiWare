@@ -22,6 +22,7 @@
 package jp.aegif.nemaki.rest;
 
 import java.io.IOException;
+import java.util.Map;
 
 import javax.servlet.Filter;
 import javax.servlet.FilterChain;
@@ -31,24 +32,26 @@ import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpSession;
 
-import jp.aegif.nemaki.businesslogic.PrincipalService;
-import jp.aegif.nemaki.model.User;
-import jp.aegif.nemaki.util.PropertyManager;
-import jp.aegif.nemaki.util.constant.PropertyKey;
-
-import org.apache.commons.codec.binary.Base64;
-import org.mindrot.jbcrypt.BCrypt;
+import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
+import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
+import org.apache.commons.lang.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+
+import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
+import jp.aegif.nemaki.cmis.factory.auth.NemakiAuthCallContextHandler;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
+import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.constant.CallContextKey;
+import jp.aegif.nemaki.util.constant.PropertyKey;
 
 public class AuthenticationFilter implements Filter {
 
 	@Autowired
 	private PropertyManager propertyManager;
-	private PrincipalService principalService;
+	private AuthenticationService authenticationService;
+	private RepositoryInfoMap repositoryInfoMap;
 	private final String TOKEN_FALSE = "false";
-	private final String repositoryId = "bedroom";//TODO hard coding
 
 	@Override
 	public void init(FilterConfig filterConfig) throws ServletException {
@@ -64,86 +67,42 @@ public class AuthenticationFilter implements Filter {
 		HttpServletRequest hreq = (HttpServletRequest) req;
 		HttpServletResponse hres = (HttpServletResponse) res;
 
-		HttpSession session = hreq.getSession();
-		
-		/*if(!checkResourceEnabled(hreq)){
-			//FIXME
-			throw new ServletException("This REST API is not supported");
-		}*/
-		
-		if (session.getAttribute("USER_INFO") == null) {
-			String auth = hreq.getHeader("Authorization");
-
-			if (auth == null) {
-				requireAuth(hres);
-				return;
-			} else {
-				try {
-					String decoded = decodeAuthHeader(auth);
-
-					int pos = decoded.indexOf(":");
-					String username = decoded.substring(0, pos);
-					String password = decoded.substring(pos + 1);
-
-					UserInfo user = authenticateUser(username, password);
-
-					if (user.userId == null || user.userId.equals("")) {
-						requireAuth(hres);
-						return;
-
-					} else {
-						session.setAttribute("USER_INFO", user);
-					}
-
-				} catch (Exception ex) {
-					requireAuth(hres);
-					return;
-
-				}
-			}
-
+		boolean auth = login(hreq, hres);
+		if(auth){
+			chain.doFilter(req, res);
+		}else{
+			hres.sendError(HttpServletResponse.SC_UNAUTHORIZED);
 		}
+		
 
-		chain.doFilter(req, res);
+	}
+	
+	public boolean login(HttpServletRequest req, HttpServletResponse res){
+		NemakiAuthCallContextHandler callContextHandeler = new NemakiAuthCallContextHandler();
+		Map<String, String> map = callContextHandeler.getCallContextMap(req);
+		String repositoryId = getRestRepositoryIdForAuth(req);
+		
+		CallContextImpl ctxt = new CallContextImpl(null, CmisVersion.CMIS_1_1, repositoryId, null, req, res, null, null);
+		for(String key : map.keySet()){
+			ctxt.put(key, map.get(key));
+		}
+		
+		return authenticationService.login(ctxt);
+	}
 
+	private String getRestRepositoryIdForAuth(HttpServletRequest request){
+		String id = request.getHeader(CallContextKey.REST_REPOSITORY_ID_FOR_AUTH);
+		if(StringUtils.isBlank(id)){
+			id = repositoryInfoMap.getMain().getId();
+		}
+		
+		return id;
 	}
 
 	@Override
 	public void destroy() {
 		// TODO Auto-generated method stub
 
-	}
-
-	private void requireAuth(HttpServletResponse hres) throws IOException {
-		hres.setHeader("WWW-Authenticate",
-				"BASIC realm=\"Authentication Test\"");
-		hres.sendError(HttpServletResponse.SC_UNAUTHORIZED);
-	}
-
-	public static String decodeAuthHeader(String header) {
-		String ret = "";
-
-		try {
-			String encStr = header.substring(6);
-			byte[] dec = (new Base64()).decode(encStr);
-			ret = new String(dec, "utf-8");
-		} catch (Exception ex) {
-			ret = "";
-		}
-		return ret;
-	}
-
-	private UserInfo authenticateUser(String username, String password) {
-		UserInfo u = new UserInfo();
-
-		User user = principalService.getUserById(repositoryId, username);
-		Boolean match = BCrypt.checkpw(password, user.getPasswordHash());
-		if (match) {
-			u.userId = username;
-			u.password = password;
-			u.roles = new String[] { "Users" };
-		}
-		return u;
 	}
 	
 	private boolean checkResourceEnabled(HttpServletRequest request){
@@ -174,12 +133,16 @@ public class AuthenticationFilter implements Filter {
 		
 		return enabled;
 	}
-
+	
 	public void setPropertyManager(PropertyManager propertyManager) {
 		this.propertyManager = propertyManager;
 	}
 
-	public void setPrincipalService(PrincipalService principalService) {
-		this.principalService = principalService;
+	public void setAuthenticationService(AuthenticationService authenticationService) {
+		this.authenticationService = authenticationService;
+	}
+
+	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
+		this.repositoryInfoMap = repositoryInfoMap;
 	}
 }
