@@ -81,10 +81,6 @@ public class NemakiAuthCallContextHandler extends org.apache.chemistry.opencmis.
 		ctxMap.put(CallContextKey.AUTH_TOKEN, request.getHeader(CallContextKey.AUTH_TOKEN));
 		ctxMap.put(CallContextKey.AUTH_TOKEN_APP, request.getHeader(CallContextKey.AUTH_TOKEN_APP));
 		
-		//Nemaki REST auth header
-		request.getHeader(CallContextKey.REST_REPOSITORY_ID_FOR_AUTH);
-		//ctxMap.put(CallContextKey.REST_REPOSITORY_ID_FOR_AUTH, request.getHeader(arg0))
-		
 		return ctxMap;
 	}
 }

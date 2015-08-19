@@ -35,6 +35,7 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
 import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
+import org.apache.chemistry.opencmis.server.shared.HttpUtils;
 import org.apache.commons.lang.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -77,29 +78,40 @@ public class AuthenticationFilter implements Filter {
 
 	}
 	
-	public boolean login(HttpServletRequest req, HttpServletResponse res){
-		String repositoryId = getRestRepositoryIdForAuth(req);
+	public boolean login(HttpServletRequest request, HttpServletResponse response){
+		String repositoryId = getRepositoryId(request);
 
 		//Make dummy callContext
 		NemakiAuthCallContextHandler callContextHandeler = new NemakiAuthCallContextHandler();
-		Map<String, String> map = callContextHandeler.getCallContextMap(req);
-		CallContextImpl ctxt = new CallContextImpl(null, CmisVersion.CMIS_1_1, repositoryId, null, req, res, null, null);
+		Map<String, String> map = callContextHandeler.getCallContextMap(request);
+		CallContextImpl ctxt = new CallContextImpl(null, CmisVersion.CMIS_1_1, repositoryId, null, request, response, null, null);
 		for(String key : map.keySet()){
 			ctxt.put(key, map.get(key));
 		}
 		
-		return authenticationService.login(ctxt);
+		return authenticationService.login(ctxt);	
 	}
+	
+	private String getRepositoryId(HttpServletRequest request){
+		// split path
+        String[] pathFragments = HttpUtils.splitPath(request);
 
-	private String getRestRepositoryIdForAuth(HttpServletRequest request){
-		String id = request.getHeader(CallContextKey.REST_REPOSITORY_ID_FOR_AUTH);
-		if(StringUtils.isBlank(id)){
-			id = repositoryInfoMap.getMain().getId();
-		}
-		
-		return id;
+        if(pathFragments.length > 0){
+        	if("repo".equals(pathFragments[0])){
+        		if(pathFragments.length > 1 && StringUtils.isNotBlank(pathFragments[1])){
+        			String repositoryId = pathFragments[1];
+        			return repositoryId;
+        		}else{
+        			System.err.println("repositoryId is not specified in URI.");
+        		}
+        	}else if("all".equals(pathFragments[0])){
+        		return repositoryInfoMap.getMain().getId();
+        	}
+        }
+        
+        return null;
 	}
-
+	
 	@Override
 	public void destroy() {
 		// TODO Auto-generated method stub

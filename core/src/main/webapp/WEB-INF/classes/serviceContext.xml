@@ -30,9 +30,6 @@
         <property name="authenticationService">
             <ref bean="AuthenticationService" />
         </property>
-        <property name="principalService">
-            <ref bean="PrincipalService" />
-        </property>
         <property name="cmisService">
         	<ref bean="cmisService" />
         </property>

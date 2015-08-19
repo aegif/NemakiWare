@@ -11,6 +11,8 @@ import jp.aegif.nemaki.util.cache.NemakiCachePool;
 public class NemakiCachePoolImpl implements NemakiCachePool{
 
 	private Map<String, NemakiCache> pool = new HashMap<String, NemakiCache>();
+	private NemakiCache nullCache;
+	
 	private RepositoryInfoMap repositoryInfoMap;
 	private PropertyManager propertyManager;
 	
@@ -22,11 +24,19 @@ public class NemakiCachePoolImpl implements NemakiCachePool{
 		for(String key : repositoryInfoMap.keys()){
 			add(key);
 		}
+		
+		nullCache = new NemakiCacheImpl(null, propertyManager);
 	}
 	
 	@Override
 	public NemakiCache get(String repositoryId) {
-		return pool.get(repositoryId);
+		NemakiCache cache = pool.get(repositoryId);
+		
+		if (cache == null){
+			return nullCache;
+		}else{
+			return cache;
+		}
 	}
 
 	@Override
