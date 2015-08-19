@@ -57,7 +57,7 @@ public class ConnectorPool {
 	}
 	
 	public CouchDbConnector add(String repositoryId){
-		CouchDbConnector connector = get(repositoryId);
+		CouchDbConnector connector = pool.get(repositoryId);
 		if(connector == null){
 			HttpClient httpClient = builder.build();
 			CouchDbInstance dbInstance = new StdCouchDbInstance(httpClient);
