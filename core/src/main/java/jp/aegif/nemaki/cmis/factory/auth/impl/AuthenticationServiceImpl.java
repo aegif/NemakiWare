@@ -100,8 +100,8 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		Object _app = callContext.get("nemaki_auth_token_app");
 		String app = (_app == null) ? "" : (String) _app;
 
-		if (authenticateUserByToken(app, userName, token)) {
-			if (authenticateAdminByToken(userName)) {
+		if (authenticateUserByToken(app, callContext.getRepositoryId(), userName, token)) {
+			if (authenticateAdminByToken(callContext.getRepositoryId(), userName)) {
 				setAdminFlagInContext(callContext, true);
 			} else {
 				setAdminFlagInContext(callContext, false);
@@ -131,8 +131,8 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		((CallContextImpl) callContext).put(CallContextKey.IS_ADMIN, isAdmin);
 	}
 
-	private boolean authenticateUserByToken(String app, String userName, String token) {
-		Token registeredToken = tokenService.getToken(app, userName);
+	private boolean authenticateUserByToken(String app, String repositoryId, String userName, String token) {
+		Token registeredToken = tokenService.getToken(app, repositoryId, userName);
 		if (registeredToken == null) {
 			return false;
 		} else {
@@ -146,8 +146,8 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		}
 	}
 
-	private boolean authenticateAdminByToken(String userName) {
-		return tokenService.isAdmin(userName);
+	private boolean authenticateAdminByToken(String repositoryId, String userName) {
+		return tokenService.isAdmin(repositoryId, userName);
 	}
 
 	private User getAuthenticatedUser(String repositoryId, String userName, String password) {
