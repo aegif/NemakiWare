@@ -397,6 +397,9 @@
         <property name="principalService">
             <ref bean="PrincipalService" />
         </property>
+        <property name="repositoryInfoMap">
+            <ref bean="repositoryInfoMap" />
+        </property>
     </bean>
 
     <bean id="CompileService" class="org.springframework.aop.framework.ProxyFactoryBean">

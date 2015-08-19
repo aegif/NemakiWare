@@ -12,7 +12,7 @@ import org.apache.commons.logging.LogFactory;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.cmis.factory.auth.Token;
 import jp.aegif.nemaki.cmis.factory.auth.TokenService;
-import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
@@ -22,58 +22,72 @@ public class TokenServiceImpl implements TokenService{
              .getLog(TokenServiceImpl.class);
 	private PropertyManager propertyManager;
 	private PrincipalService principalService;
+	private RepositoryInfoMap repositoryInfoMap;
 	
 	private TokenMap tokenMap = new TokenMap();
-	private Set<String> admins = new HashSet<String>();
+	private Map<String, Set<String>> admins = new HashMap<String, Set<String>>();
 	
 	private class TokenMap {
-		private Map<String, HashMap<String, Token>> map = new HashMap<String, HashMap<String, Token>>();
+		private Map<String, Map<String, Map<String, Token>>> map = new HashMap<String, Map<String,Map<String,Token>>>();
 		
-		private Token get(String app, String userName){
-			Map<String, Token> appMap = map.get(app);
+		private Token get(String app, String repositoryId, String userName){
+			Map<String, Map<String, Token>> appMap = map.get(app);
 			if(appMap == null){
 				log.warn("No such app regitered for AuthToken");
 				return null;
 			}else{
-				return appMap.get(userName);
+				 Map<String, Token> repoMap = appMap.get(repositoryId);
+				 if(repoMap == null){
+					 log.warn("No such repositoryId regitered for AuthToken");
+					 return null;
+				 }else{
+					 return repoMap.get(userName);
+				 }
 			}
 		}
 		
-		private Token set(String app, String userName){
-			Map<String, Token> appMap = map.get(app);
+		private Token set(String app, String repositoryId, String userName){
+			Map<String, Map<String, Token>> appMap = map.get(app);
 			if(appMap == null){
-				map.put(app, new HashMap<String, Token>());
+				map.put(app, new HashMap<String, Map<String, Token>>());
 				appMap = map.get(app);
+			}
+			
+			Map<String, Token> repoMap = appMap.get(repositoryId);
+			if(repoMap == null){
+				appMap.put(repositoryId, new HashMap<String, Token>());
+				repoMap = appMap.get(repositoryId);
 			}
 			
 			String token = UUID.randomUUID().toString();
 			
 			long expiration = System.currentTimeMillis() + Long.valueOf(propertyManager.readValue(PropertyKey.AUTH_TOKEN_EXPIRATION));
-			appMap.put(userName, new Token(userName, token, expiration));
+			repoMap.put(userName, new Token(userName, token, expiration));
 			
-			return appMap.get(userName);
+			return repoMap.get(userName);
 		}
 	}
 	
 	public void init() {
-		final String repositoryId = "bedroom";	//TODO hard coding
-		User admin = principalService.getAdmin(repositoryId);
-		admins.add(admin.getId());
+		for(String key : repositoryInfoMap.keys()){
+			admins.put(key, new HashSet<String>());
+			admins.get(key).add(principalService.getAdmin(key).getId());
+		}
 	}
 
 	@Override
-	public Token getToken(String app, String userName) {
-		return tokenMap.get(app, userName);
+	public Token getToken(String app, String repositoryId, String userName) {
+		return tokenMap.get(app, repositoryId, userName);
 	}
 
 	@Override
-	public Token setToken(String app, String userName) {
-		return tokenMap.set(app, userName);
+	public Token setToken(String app, String repositoryId, String userName) {
+		return tokenMap.set(app,repositoryId,  userName);
 	}
 	
 	@Override
-	public boolean isAdmin(String userName){
-		return admins.contains(userName);
+	public boolean isAdmin(String repositoryId, String userName){
+		return admins.get(repositoryId).contains(userName);
 	}
 	
 	public void setPropertyManager(PropertyManager propertyManager) {
@@ -82,5 +96,9 @@ public class TokenServiceImpl implements TokenService{
 	
 	public void setPrincipalService(PrincipalService principalService) {
 		this.principalService = principalService;
+	}
+
+	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
+		this.repositoryInfoMap = repositoryInfoMap;
 	}
 }

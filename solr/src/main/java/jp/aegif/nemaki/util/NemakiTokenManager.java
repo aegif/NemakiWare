@@ -1,6 +1,5 @@
 package jp.aegif.nemaki.util;
 
-import java.net.ConnectException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.HashMap;
@@ -17,7 +16,6 @@ import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
 import com.sun.jersey.api.client.Client;
-import com.sun.jersey.api.client.UniformInterfaceException;
 import com.sun.jersey.api.client.filter.HTTPBasicAuthFilter;
 
 public class NemakiTokenManager {
@@ -95,10 +93,11 @@ public class NemakiTokenManager {
 		String host = pm.readValue(PropertyKey.CMIS_SERVER_HOST);
 		String port = pm.readValue(PropertyKey.CMIS_SERVER_PORT);
 		String context = pm.readValue(PropertyKey.CMIS_SERVER_CONTEXT);
+		String repositoryId = pm.readValue(PropertyKey.CMIS_REPOSITORY_MAIN);
 
 		try {
 			URL url = new URL(protocol, host, Integer.parseInt(port), "");
-			return url.toString() + "/" + context + "/" + "rest/authtoken/";
+			return url.toString() + "/" + context + "/" + "rest/repo/" + repositoryId + "/authtoken/";
 		} catch (NumberFormatException e) {
 			e.printStackTrace();
 		} catch (MalformedURLException e) {
