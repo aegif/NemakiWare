@@ -48,7 +48,12 @@ public class ConnectorPool {
 	}
 	
 	public CouchDbConnector get(String repositoryId){
-		return pool.get(repositoryId);
+		CouchDbConnector connector = pool.get(repositoryId);
+		if(connector == null){
+			throw new Error("CouchDbConnector for repository:" + " cannot be found!");
+		}
+		
+		return connector;
 	}
 	
 	public CouchDbConnector add(String repositoryId){
