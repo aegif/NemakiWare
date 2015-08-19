@@ -39,7 +39,7 @@ public class RepositoryInfoMap {
 	}
 	
 	public RepositoryInfo getMain(){
-		return get(mainId);
+		return map.get(this.mainId);
 	}
 	
 	private void loadRepositoriesSetting(){
@@ -54,7 +54,7 @@ public class RepositoryInfoMap {
 			map.put(info.getId(), info);
 		}
 		
-		this.mainId = (String) data.get("main");
+		this.mainId = data.get("main").toString();
 		
 	}
 	

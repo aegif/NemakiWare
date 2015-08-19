@@ -8,22 +8,16 @@ import javax.annotation.PostConstruct;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
 import jp.aegif.nemaki.cmis.factory.auth.impl.AuthenticationServiceImpl;
-import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
-import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
-import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.apache.chemistry.opencmis.commons.exceptions.CmisProxyAuthenticationException;
 import org.apache.chemistry.opencmis.commons.impl.server.AbstractServiceFactory;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
-import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
 import org.apache.chemistry.opencmis.server.support.wrapper.ConformanceCmisServiceWrapper;
-import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.mindrot.jbcrypt.BCrypt;
 
 /**
  * Service factory class, specified in repository.properties.
@@ -36,7 +30,6 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 	private jp.aegif.nemaki.cmis.factory.CmisService cmisService;
 	
 	private AuthenticationService authenticationService;
-	private PrincipalService principalService;
 	
 	private static BigInteger DEFAULT_MAX_ITEMS_TYPES;
 	private static BigInteger DEFAULT_DEPTH_TYPES;
@@ -98,10 +91,6 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 	public void setAuthenticationService(
 			AuthenticationService authenticationService) {
 		this.authenticationService = authenticationService;
-	}
-
-	public void setPrincipalService(PrincipalService principalService) {
-		this.principalService = principalService;
 	}
 
 	public void setCmisService(CmisService cmisService) {
