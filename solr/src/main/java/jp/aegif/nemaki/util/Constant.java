@@ -5,6 +5,7 @@ public interface Constant {
 	String MODE_DELTA = "DELTA";
 
 	// Solr filed name
+	String FIELD_REPOSITORY_ID = "repository_id";
 	String FIELD_ID = "id";
 	String FIELD_NAME = "name";
 	String FIELD_DESCRIPTION = "cmis_description";
