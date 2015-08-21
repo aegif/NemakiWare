@@ -68,6 +68,9 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		final String repositoryId = "bedroom"; // TODO hard coding
 
 		String proxyHeaderKey = propertyManager.readValue(PropertyKey.EXTERNAL_AUTHENTICATION_PROXY_HEADER);
+		if(StringUtils.isBlank(proxyHeaderKey)){
+			return false;
+		}
 		String proxyUserId = (String) callContext.get(proxyHeaderKey);
 		if (StringUtils.isBlank(proxyUserId)) {
 			log.warn("Not authenticated user");
@@ -81,6 +84,10 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 				log.debug("Authenticated userId=" + newUser.getUserId());
 			} else {
 				log.debug("Authenticated userId=" + user.getUserId());
+				
+				//Admin check
+				boolean isAdmin = user.isAdmin() == null ? false : true;
+				setAdminFlagInContext(callContext, isAdmin);
 			}
 			return true;
 		}
