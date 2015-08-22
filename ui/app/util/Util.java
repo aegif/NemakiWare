@@ -64,6 +64,7 @@ import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpPut;
 import org.apache.http.client.methods.HttpUriRequest;
+import org.apache.http.impl.auth.BasicScheme;
 import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.message.BasicHeader;
@@ -312,7 +313,7 @@ public class Util {
 	
 	private static HttpClient buildClient(play.mvc.Http.Session session){
 		// configurations
-				String userAgent = "My Http Client 0.1";
+				String userAgent = "NemakiWare UI";
 
 				// headers
 				List<Header> headers = new ArrayList<Header>();
@@ -329,18 +330,20 @@ public class Util {
 				AuthScope scope = new AuthScope(host, Integer.valueOf(port));
 				CredentialsProvider credsProvider = new BasicCredentialsProvider();
 				credsProvider.setCredentials(scope, credentials);
+				
+				//CredentialsProvider doesn't add BASIC auth header
+				headers.add(new BasicScheme().authenticate(credentials, "US-ASCII", false));
 
 				// create client
 				HttpClient httpClient = HttpClientBuilder.create()
 						.setDefaultHeaders(headers)
 						.setDefaultCredentialsProvider(credsProvider)
 						.build();
-
+				
 				return httpClient;
 	}
 
 	private static JsonNode executeRequest(HttpClient client, HttpRequest request){
-
 		try {
 			HttpResponse response = client.execute((HttpUriRequest) request);
 			InputStream is = response.getEntity().getContent();
