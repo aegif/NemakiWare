@@ -21,15 +21,16 @@ import com.sun.jersey.api.client.filter.HTTPBasicAuthFilter;
 public class NemakiTokenManager {
 	Logger logger = Logger.getLogger(NemakiTokenManager.class);
 
-	private String restResourceUrl;
+	private final String restEndpoint;
 	private Map<String, Token> tokenMap;
 
 	public NemakiTokenManager() {
 		tokenMap = new HashMap<String, Token>();
-		restResourceUrl = getRestResourceUrl();
+		
+		restEndpoint = getRestEndpoint();
 	}
 
-	public String register(String userName, String password) {
+	public String register(String repositoryId, String userName, String password) {
 		String apiResult = null;
 		try {
 			Client c = Client.create();
@@ -38,8 +39,8 @@ public class NemakiTokenManager {
 			c.setFollowRedirects(Boolean.TRUE);
 			c.addFilter(new HTTPBasicAuthFilter(userName, password));
 
-			apiResult = c.resource(restResourceUrl).path("admin" + "/register")
-					.queryParam("app", "ui")
+			apiResult = c.resource(getRestUri(repositoryId)).path("admin" + "/register")
+					.queryParam("app", "solr")
 					.accept(MediaType.APPLICATION_JSON_TYPE).get(String.class);
 		} catch (Exception e) {
 			logger.error("Cannot connect to Core REST API", e);
@@ -51,7 +52,7 @@ public class NemakiTokenManager {
 				JSONObject value = (JSONObject) result.get("value");
 				String token = value.get("token").toString();
 				long expiration = (Long) value.get("expiration");
-				tokenMap.put(userName, new Token(userName, token, expiration));
+				tokenMap.put(userName, new Token(repositoryId, userName, token, expiration));
 				return token;
 			}
 
@@ -62,11 +63,11 @@ public class NemakiTokenManager {
 		return null;
 	}
 
-	public String getOrRegister(String userName, String password) {
+	public String getOrRegister(String repositoryId, String userName, String password) {
 		String token = getStoredToken(userName);
 
 		if (StringUtils.isBlank(token)) {
-			return register(userName, password);
+			return register(repositoryId, userName, password);
 		} else {
 			return token;
 		}
@@ -87,17 +88,20 @@ public class NemakiTokenManager {
 		}
 	}
 
-	private String getRestResourceUrl() {
+	private String getRestUri(String repositoryId){
+		return restEndpoint + "/repo/" + repositoryId + "/authtoken/";
+	}
+	
+	private String getRestEndpoint() {
 		PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
 		String protocol = pm.readValue(PropertyKey.CMIS_SERVER_PROTOCOL);
 		String host = pm.readValue(PropertyKey.CMIS_SERVER_HOST);
 		String port = pm.readValue(PropertyKey.CMIS_SERVER_PORT);
 		String context = pm.readValue(PropertyKey.CMIS_SERVER_CONTEXT);
-		String repositoryId = pm.readValue(PropertyKey.CMIS_REPOSITORY_MAIN);
 
 		try {
 			URL url = new URL(protocol, host, Integer.parseInt(port), "");
-			return url.toString() + "/" + context + "/" + "rest/repo/" + repositoryId + "/authtoken/";
+			return url.toString() + "/" + context + "/rest";
 		} catch (NumberFormatException e) {
 			e.printStackTrace();
 		} catch (MalformedURLException e) {
@@ -107,6 +111,7 @@ public class NemakiTokenManager {
 	}
 
 	private class Token {
+		private String repositoryId;
 		private String userName;
 		private String token;
 		private long expiration;
@@ -115,11 +120,19 @@ public class NemakiTokenManager {
 
 		}
 
-		public Token(String userName, String token, long expiration) {
+		public Token(String repositoryId, String userName, String token, long expiration) {
 			super();
 			this.userName = userName;
 			this.token = token;
 			this.expiration = expiration;
+		}
+
+		public String getRepositoryId() {
+			return repositoryId;
+		}
+
+		public void setRepositoryId(String repositoryId) {
+			this.repositoryId = repositoryId;
 		}
 
 		public String getUserName() {

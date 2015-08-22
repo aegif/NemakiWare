@@ -5,7 +5,6 @@ import java.util.Map;
 
 import javax.annotation.PostConstruct;
 
-import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
 import jp.aegif.nemaki.cmis.factory.auth.impl.AuthenticationServiceImpl;
 import jp.aegif.nemaki.util.DataUtil;

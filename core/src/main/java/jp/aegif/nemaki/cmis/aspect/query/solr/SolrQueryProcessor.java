@@ -45,7 +45,6 @@ import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectListImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
-import org.apache.chemistry.opencmis.server.support.query.PredicateWalkerBase;
 import org.apache.chemistry.opencmis.server.support.query.QueryObject;
 import org.apache.chemistry.opencmis.server.support.query.QueryObject.SortSpec;
 import org.apache.chemistry.opencmis.server.support.query.QueryUtilStrict;
@@ -79,12 +78,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 	}
 
-	
 	private class CmisTypeManager implements org.apache.chemistry.opencmis.server.support.TypeManager{
 		private String repositoryId;
 		private TypeManager typeManager;
 		
-		public CmisTypeManager(String repositoryId){
+		public CmisTypeManager(String repositoryId, TypeManager typeManager){
 			this.repositoryId = repositoryId;
 			this.typeManager = typeManager;
 		}
@@ -134,7 +132,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 		SolrServer solrServer = solrUtil.getSolrServer();
 
 		// TODO walker is required?
-		QueryUtilStrict util = new QueryUtilStrict(statement, new CmisTypeManager(repositoryId), null);
+		QueryUtilStrict util = new QueryUtilStrict(statement, new CmisTypeManager(repositoryId, typeManager), null);
 		QueryObject queryObject = util.getQueryObject();
 
 		// Get where caluse as Tree
@@ -166,6 +164,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 		// Build solr query of FROM
 		String fromQueryString = "";
+		
+		String repositoryQuery = "repository_id:" + repositoryId;
+		
+		fromQueryString += repositoryQuery + " AND ";
+		
 		TypeDefinition td = queryObject.getMainFromName();
 		// includedInSupertypeQuery
 		List<TypeDefinitionContainer> typeDescendants = typeManager
@@ -183,10 +186,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 			String table = descendant.getQueryName();
 			tables.add(table.replaceAll(":", "\\\\:"));
 		}
+		
 		Term t = new Term(
 				solrUtil.getPropertyNameInSolr(PropertyIds.OBJECT_TYPE_ID),
 				StringUtils.join(tables, " "));
-		fromQueryString = new TermQuery(t).toString();
+		fromQueryString += new TermQuery(t).toString();
 
 		// Execute query
 		SolrQuery solrQuery = new SolrQuery();
@@ -212,7 +216,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 			List<Content> contents = new ArrayList<Content>();
 			for (SolrDocument doc : docs) {
-				String docId = (String) doc.getFieldValue("id");
+				String docId = (String) doc.getFieldValue("object_id");
 				Content c = contentService.getContent(repositoryId, docId);
 
 				// When for some reason the content is missed, pass through

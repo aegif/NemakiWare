@@ -74,8 +74,6 @@ public class AuthenticationFilter implements Filter {
 		}else{
 			hres.sendError(HttpServletResponse.SC_UNAUTHORIZED);
 		}
-		
-
 	}
 	
 	public boolean login(HttpServletRequest request, HttpServletResponse response){
@@ -89,7 +87,12 @@ public class AuthenticationFilter implements Filter {
 			ctxt.put(key, map.get(key));
 		}
 		
-		return authenticationService.login(ctxt);	
+		boolean auth = authenticationService.login(ctxt);
+		
+		//Add attributes to Jersey @Context parameter
+		request.setAttribute("CallContext", ctxt);
+		
+		return auth;
 	}
 	
 	private String getRepositoryId(HttpServletRequest request){
@@ -97,14 +100,14 @@ public class AuthenticationFilter implements Filter {
         String[] pathFragments = HttpUtils.splitPath(request);
 
         if(pathFragments.length > 0){
-        	if("repo".equals(pathFragments[0])){
+        	if(ApiType.REPO.equals(pathFragments[0])){
         		if(pathFragments.length > 1 && StringUtils.isNotBlank(pathFragments[1])){
         			String repositoryId = pathFragments[1];
         			return repositoryId;
         		}else{
         			System.err.println("repositoryId is not specified in URI.");
         		}
-        	}else if("all".equals(pathFragments[0])){
+        	}else if(ApiType.ALL.equals(pathFragments[0])){
         		return repositoryInfoMap.getMain().getId();
         	}
         }
