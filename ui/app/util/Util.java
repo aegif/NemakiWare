@@ -565,7 +565,11 @@ public class Util {
 		String _ctxt = Play.application().configuration().getString("application.context");
 		String ctxt = (StringUtils.isBlank(_ctxt))? "" : _ctxt;
 		
-		return "http://" + request.host() + ctxt;
+		return getHostPath(request) + ctxt;
+	}
+	
+	public static String getHostPath(Request request){
+		return "http://" + request.host();
 	}
 	
 	 public static BaseTypeId getBaseType(Session cmisSession, String objectTypeId){
