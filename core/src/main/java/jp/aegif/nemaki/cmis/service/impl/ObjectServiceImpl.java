@@ -905,7 +905,7 @@ public class ObjectServiceImpl implements ObjectService {
 		
 		/*failureIds = contentService.deleteTree(callContext, folderId, allVersions,
 				continueOnFailure, false);*/
-		solrUtil.callSolrIndexing();
+		solrUtil.callSolrIndexing(repositoryId);
 
 		// Check FailedToDeleteData
 		// FIXME Consider orphans that was failed to be deleted

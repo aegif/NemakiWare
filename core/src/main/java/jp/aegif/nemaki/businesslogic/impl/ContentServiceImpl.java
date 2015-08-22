@@ -469,7 +469,7 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, repositoryId, document, ChangeType.CREATED);
 
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing();
+		solrUtil.callSolrIndexing(repositoryId);
 
 		return document;
 	}
@@ -507,7 +507,7 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing();
+		solrUtil.callSolrIndexing(repositoryId);
 
 		return result;
 	}
@@ -543,7 +543,7 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing();
+		solrUtil.callSolrIndexing(repositoryId);
 
 		return result;
 	}
@@ -586,7 +586,7 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, repositoryId, originalPwc, ChangeType.UPDATED);
 		
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing();
+		solrUtil.callSolrIndexing(repositoryId);
 
 		return originalPwc;
 	}
@@ -620,7 +620,7 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 		
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing();
+		solrUtil.callSolrIndexing(repositoryId);
 
 		return result;
 	}
@@ -645,7 +645,7 @@ public class ContentServiceImpl implements ContentService {
 		contentDaoService.update(repositoryId, vs);
 
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing();
+		solrUtil.callSolrIndexing(repositoryId);
 	}
 
 	@Override
@@ -695,7 +695,7 @@ public class ContentServiceImpl implements ContentService {
 		cancelCheckOut(callContext, repositoryId, id, extension);
 		
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing();
+		solrUtil.callSolrIndexing(repositoryId);
 
 		return result;
 	}
@@ -861,7 +861,7 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, repositoryId, folder, ChangeType.CREATED);
 
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing();
+		solrUtil.callSolrIndexing(repositoryId);
 
 		return folder;
 	}
@@ -1191,7 +1191,7 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing();
+		solrUtil.callSolrIndexing(repositoryId);
 
 		return result;
 	}
@@ -1229,7 +1229,7 @@ public class ContentServiceImpl implements ContentService {
 		update(repositoryId, content);
 
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing();
+		solrUtil.callSolrIndexing(repositoryId);
 	}
 
 	@Override
@@ -1276,7 +1276,7 @@ public class ContentServiceImpl implements ContentService {
 		contentDaoService.delete(repositoryId, objectId);
 
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing();
+		solrUtil.callSolrIndexing(repositoryId);
 	}
 
 	@Override
@@ -1337,7 +1337,7 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing();
+		solrUtil.callSolrIndexing(repositoryId);
 	}
 
 	// deletedWithParent flag controls whether it's deleted with the parent all
@@ -1741,7 +1741,7 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing();
+		solrUtil.callSolrIndexing(repositoryId);
 	}
 
 	private Document restoreDocument(String repositoryId, Archive archive) {

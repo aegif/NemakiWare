@@ -6,14 +6,13 @@ import java.io.InputStream;
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 
-import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.http.HttpResponse;
 import org.apache.http.HttpStatus;
 import org.apache.http.client.HttpClient;
@@ -24,8 +23,16 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.w3c.dom.Node;
 
-@Path("/repo/{repositoryId}/search-engine")
-public class SolrResource extends ResourceBase {
+import jp.aegif.nemaki.businesslogic.PrincipalService;
+import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
+import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.util.constant.CallContextKey;
+
+@Path("/all/search-engine")
+public class SolrAllResource extends ResourceBase {
+	
+	@Context private HttpServletRequest servletRequest;
 	
 	private SolrUtil solrUtil;
 
@@ -49,7 +56,7 @@ public class SolrResource extends ResourceBase {
 	@GET
 	@Path("/init")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String initialize(@PathParam("repositoryId") String repositoryId, @Context HttpServletRequest request) {
+	public String initialize(@Context HttpServletRequest request) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
@@ -92,7 +99,7 @@ public class SolrResource extends ResourceBase {
 	@GET
 	@Path("/reindex")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String reindex(@PathParam("repositoryId") String repositoryId, @Context HttpServletRequest request) {
+	public String reindex(@Context HttpServletRequest request) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
@@ -151,7 +158,7 @@ public class SolrResource extends ResourceBase {
 		//check
 		return "0".equals(status.getTextContent());
 	}
-
+	
 	public void setSolrUtil(SolrUtil solrUtil) {
 		this.solrUtil = solrUtil;
 	}

@@ -35,13 +35,10 @@ import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.StringPool;
 import jp.aegif.nemaki.util.impl.PropertyManagerImpl;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.log4j.Logger;
-import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrServer;
-import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.embedded.EmbeddedSolrServer;
-import org.apache.solr.client.solrj.response.QueryResponse;
-import org.apache.solr.common.SolrDocumentList;
 import org.apache.solr.common.params.CoreAdminParams;
 import org.apache.solr.common.params.SolrParams;
 import org.apache.solr.core.CoreContainer;
@@ -147,91 +144,88 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 		SolrParams params = req.getParams();
 
 		// Get Server & Tracker info
-		String repositoryCoreName = params.get(CoreAdminParams.CORE);
+		String indexCoreName = params.get(CoreAdminParams.CORE);
 		String tokenCoreName = "token";
 
-		SolrServer repositoryServer = new EmbeddedSolrServer(coreContainer, repositoryCoreName);
+		SolrServer indexServer = new EmbeddedSolrServer(coreContainer, indexCoreName);
 		SolrServer tokenServer = new EmbeddedSolrServer(coreContainer, tokenCoreName);
-		SolrCore core = getCoreContainer().getCore(repositoryCoreName);
-		CoreTracker tracker = new CoreTracker(this, core, repositoryServer, tokenServer);
+		SolrCore core = getCoreContainer().getCore(indexCoreName);
+		CoreTracker tracker = new CoreTracker(this, core, indexServer, tokenServer);
 
-		// Get the tracking mode: FULL or DELTA
+		// Stop cron when executing action
+		try {
+			scheduler.standby();
+		} catch (SchedulerException e) {
+			e.printStackTrace();
+		}
+		
+		// Action
+		doAction(rsp, tracker, params);
+		
+		// Restart cron
+		try {
+			scheduler.start();
+		} catch (SchedulerException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+		
+	}
+
+	private void doAction(SolrQueryResponse rsp, CoreTracker tracker, SolrParams params){
+		String action = params.get(CoreAdminParams.ACTION);
+		String repositoryId = params.get("repositoryId");
+		
+		if (action.equalsIgnoreCase("INDEX")) {
+			index(rsp, tracker, params, repositoryId);
+		} else if (action.equalsIgnoreCase("INIT")) {
+			init(rsp, tracker, repositoryId);
+		}
+	}
+	
+	private void index(SolrQueryResponse rsp, CoreTracker tracker, SolrParams params, String repositoryId){
+		// Get tracking mode: FULL or DELTA
 		String tracking = params.get("tracking"); // tracking mode
 		if (tracking == null || !tracking.equals(Constant.MODE_FULL)) {
 			tracking = Constant.MODE_DELTA; // default to DELTA
 		}
-
-		// Switch actions
-		String a = params.get(CoreAdminParams.ACTION);
-
-		if (a.equalsIgnoreCase("INDEX")) {
-			// Action=INDEX: track documents(by FULL or DELTA)
-			if(tracking.equals(Constant.MODE_FULL)){
+		
+		// Action=INDEX: track documents(by FULL or DELTA)
+		if(tracking.equals(Constant.MODE_FULL)){
+			// Init
+			if(StringUtils.isBlank(repositoryId)){
 				tracker.initCore();
-				
-				try {
-					scheduler.standby();
-				} catch (SchedulerException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-			
-				tracker.index(tracking);
-				
-				try {
-					scheduler.start();
-				} catch (SchedulerException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-				
-			}else if(tracking.equals(Constant.MODE_DELTA)){
-				tracker.index(tracking);
+			}else{
+				tracker.initCore(repositoryId);
 			}
-			
-			// TODO More info
-			rsp.add("Result", "Successfully tracked!");
-
-		} else if (a.equalsIgnoreCase("LIST")) {
-			// Action=LIST: all documents in Core
-			SolrQuery query = new SolrQuery();
-			query.setQuery("*:*");
-			try {
-				QueryResponse qrsp = repositoryServer.query(query);
-				SolrDocumentList list = qrsp.getResults();
-
-				rsp.add("Solr's doclist", list);
-			} catch (SolrServerException e) {
-				e.printStackTrace();
-			}
-
-		} else if (a.equalsIgnoreCase("INIT")) {
-			// Action=INIT: initialize core
-			
-			try {
-				scheduler.standby();
-			} catch (SchedulerException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
-			
-			tracker.initCore();
-			
-			try {
-				scheduler.start();
-			} catch (SchedulerException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
-			
-			rsp.add("Result", "Successfully initialized!");
-		} else {
-
 		}
-
-		//return false;
+		
+		// Index
+		if(StringUtils.isBlank(repositoryId)){
+			tracker.index(tracking);
+		}else{
+			tracker.index(tracking, repositoryId);
+		}
+		
+		
+		// TODO More info
+		rsp.add("Result", "Successfully tracked!");
 	}
-
+	
+	private void init(SolrQueryResponse rsp, CoreTracker tracker, String repositoryId){
+		// Action=INIT: initialize core
+		
+		if(StringUtils.isBlank(repositoryId)){
+			tracker.initCore();
+		}else{
+			tracker.initCore(repositoryId);
+		}
+		
+		rsp.add("Result", "Successfully initialized!");
+	}
+	
+	
 	/**
 	 * @return the trackers
 	 */

@@ -588,6 +588,12 @@
         </property>
     </bean>
     
+    <bean id="solrAllResource" class="jp.aegif.nemaki.rest.SolrAllResource">
+    	<property name="solrUtil">
+       		<ref bean="solrUtil" />
+        </property>
+    </bean>
+    
     <bean id="authtokenResource" class="jp.aegif.nemaki.rest.AuthTokenResource">
     	<property name="tokenService">
        		<ref bean="TokenService" />
