@@ -826,16 +826,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	// Change event
 	// ///////////////////////////////////////
 	@Override
-	public Change getChangeEvent(String repositoryId, String token) {
-		Long _token =  null;
-		try{
-			_token = Long.valueOf(token);
-		}catch(Exception e){
-			log.error("Change token must be long type value", e);
-		}
-
+	public Change getChangeEvent(String repositoryId, String changeTokenId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("changesByToken").key(_token);
+				.viewName("changesByToken").key(changeTokenId);
 		List<CouchChange> l = connectorPool.get(repositoryId).queryView(query, CouchChange.class);
 
 		if (CollectionUtils.isEmpty(l))
@@ -846,7 +839,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Change getLatestChange(String repositoryId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("changesByCreated").descending(true).limit(1);
+				.viewName("changesByToken").descending(true).limit(1);
 		List<CouchChange> l = connectorPool.get(repositoryId).queryView(query, CouchChange.class);
 		if (CollectionUtils.isEmpty(l)) {
 			return null;
@@ -857,37 +850,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public List<Change> getLatestChanges(String repositoryId, String startToken, int maxItems) {
-		long _startToken = 0;
-		if(StringUtils.isNotBlank(startToken)){
-			//null startToken means the first entry in the repository
-			try{
-				_startToken = Long.parseLong(startToken);
-			}catch(Exception e){
-				log.error("startToken=" + startToken + " must be numeric");
-			}
-		}
-
-		Change latest = getLatestChange(repositoryId);
-		long latestToken = 0;
-		try{
-			latestToken = Long.parseLong(latest.getChangeToken());
-		}catch(Exception e){
-			log.error("ChangeEvent(" + latest.getId() + ") changeToken is not numeric");
-		}
-
-
-		if (_startToken <= 0)
-			_startToken = 0;
-		if (latest == null || _startToken > latestToken){
-			return null;
-		}
-
-
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
-				.viewName("changesByToken").descending(false).startKey(_startToken).endKey(latestToken);
-		if (maxItems > 0)
+				.viewName("changesByToken").descending(false);
+		if(StringUtils.isNotBlank(startToken)){
+			CouchChange startChange = connectorPool.get(repositoryId).get(CouchChange.class, startToken);
+			Long startKey = startChange.getToken();
+			query.startKey(startKey);
+		}
+		if (maxItems > 0){
 			query.limit(maxItems);
-
+		}
+			
 		List<CouchChange> l = connectorPool.get(repositoryId).queryView(query, CouchChange.class);
 		if (CollectionUtils.isEmpty(l))
 			return null;

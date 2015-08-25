@@ -88,8 +88,8 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		if (changeLogToken != null
-				&& StringUtils.isNotBlank(changeLogToken.getValue())) {
+		if (changeLogToken == null || 
+				changeLogToken == null && StringUtils.isBlank(changeLogToken.getValue())) {
 			// If changelogToken is not specified, return the first in the
 			// repository
 			exceptionService
@@ -103,9 +103,8 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 				context, changeLogToken, includeProperties, filter,
 				includePolicyIds, includeAcl, maxItems, extension);
 		if (!CollectionUtils.isEmpty(changes)) {
-			String latestToken = String.valueOf(changes.get(changes.size() - 1)
-					.getChangeToken());
-			changeLogToken.setValue(latestToken);
+			Change latestInResults = changes.get(changes.size() - 1);
+			changeLogToken.setValue(latestInResults.getId());
 		}
 
 		return compileService.compileChangeDataList(context, repositoryId,

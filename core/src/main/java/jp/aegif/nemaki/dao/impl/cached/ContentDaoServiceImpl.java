@@ -69,10 +69,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	// ///////////////////////////////////////
 	// Type & Property definition
 	// ///////////////////////////////////////
-	private NemakiCache getCache(String repositoryId){
-		return nemakiCachePool.get(repositoryId);
-	}
-	
 	@Override
 	public List<NemakiTypeDefinition> getTypeDefinitions(String repositoryId) {
 		Cache typeCache = nemakiCachePool.get(repositoryId).getTypeCache();
@@ -556,15 +552,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	// Change events
 	// //////////////////////////////////////////////////////////////////////////////
 	@Override
-	public Change getChangeEvent(String repositoryId, String token) {
-		return nonCachedContentDaoService.getChangeEvent(repositoryId, token);
+	public Change getChangeEvent(String repositoryId, String changeTokenId) {
+		return nonCachedContentDaoService.getChangeEvent(repositoryId, changeTokenId);
 	}
 
 	@Override
 	public Change getLatestChange(String repositoryId) {
 		Change change =null;
 		
-		Element v = nemakiCachePool.get(repositoryId).getLatestChangeTokenCache().get("lc");
+		Element v = nemakiCachePool.get(repositoryId).getLatestChangeTokenCache().get(TOKEN_CACHE_LATEST_CHANGE_TOKEN);
 		if (v != null) {
 			change = (Change)v.getObjectValue();
 		}
