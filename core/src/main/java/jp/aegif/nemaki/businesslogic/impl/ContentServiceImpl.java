@@ -356,7 +356,7 @@ public class ContentServiceImpl implements ContentService {
 
 	private String writeChangeEvent(CallContext callContext, String repositoryId,
 			Content content, ChangeType changeType) {
-		Change latest = contentDaoService.getLatestChange(repositoryId);
+		//Change latest = contentDaoService.getLatestChange(repositoryId);
 
 		Change change = new Change();
 		change.setObjectId(content.getId());
@@ -374,6 +374,8 @@ public class ContentServiceImpl implements ContentService {
 		default:
 			break;
 		}
+		
+		/*//Set token property
 		if (latest == null) {
 			change.setChangeToken(FIRST_TOKEN);
 		} else {
@@ -386,13 +388,16 @@ public class ContentServiceImpl implements ContentService {
 
 			String token = String.valueOf(latestToken + 1);
 			change.setChangeToken(token);
-		}
+		}*/
 
 		change.setType(NodeType.CHANGE.value());
 		change.setName(content.getName());
 		change.setBaseType(content.getType());
 		change.setObjectType(content.getObjectType());
 		change.setParentId(content.getParentId());
+		
+		/*
+		 * //Policy
 		List<String> policyIds = new ArrayList<String>();
 		List<Policy> policies = getAppliedPolicies(repositoryId, content.getId(), null);
 		if (!CollectionUtils.isEmpty(policies)) {
@@ -400,7 +405,8 @@ public class ContentServiceImpl implements ContentService {
 				policyIds.add(p.getId());
 			}
 		}
-		change.setPolicyIds(policyIds);
+		change.setPolicyIds(policyIds);*/
+		
 		if (content.isDocument()) {
 			Document d = (Document) content;
 			change.setVersionSeriesId(d.getVersionSeriesId());
@@ -408,20 +414,27 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		setSignature(callContext, change);
+		change.setToken(generateChangeToken(change));
 
 		//  Create a new change event
-		contentDaoService.create(repositoryId, change);
+		Change created = contentDaoService.create(repositoryId, change);
 
 		// Update change token of the content
-		content.setChangeToken(change.getChangeToken());
+		//content.setChangeToken(change.getChangeToken());
+		content.setChangeToken(created.getId());
+		
 		update(repositoryId, content);
 
-		return change.getChangeToken();
+		return change.getToken();
+	}
+	
+	private String generateChangeToken(NodeBase node){
+		return String.valueOf(node.getCreated().getTimeInMillis());
 	}
 	
 	// TODO Create a rendition
 	@Override
-	public synchronized Document createDocument(CallContext callContext,
+	public Document createDocument(CallContext callContext,
 			String repositoryId, Properties properties,
 			Folder parentFolder, ContentStream contentStream,
 			VersioningState versioningState, String versionSeriesId) {
@@ -475,7 +488,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public synchronized Document createDocumentFromSource(CallContext callContext,
+	public Document createDocumentFromSource(CallContext callContext,
 			String repositoryId, Properties properties, Folder target,
 			Document original, VersioningState versioningState,
 			List<String> policies,
@@ -513,7 +526,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public synchronized Document createDocumentWithNewStream(CallContext callContext,
+	public Document createDocumentWithNewStream(CallContext callContext,
 			String repositoryId, Document original, ContentStream contentStream) {
 		Document copy = buildCopyDocumentWithBasicProperties(callContext,
 				original);
@@ -548,7 +561,7 @@ public class ContentServiceImpl implements ContentService {
 		return result;
 	}
 	
-	public synchronized Document replacePwc(CallContext callContext, String repositoryId, Document originalPwc, ContentStream contentStream){
+	public Document replacePwc(CallContext callContext, String repositoryId, Document originalPwc, ContentStream contentStream){
 		//Update attachment contentStream
 		AttachmentNode an = contentDaoService.getAttachment(repositoryId, originalPwc.getAttachmentNodeId());
 		contentDaoService.updateAttachment(repositoryId, an, contentStream);
@@ -592,7 +605,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public synchronized Document checkOut(CallContext callContext, String repositoryId,
+	public Document checkOut(CallContext callContext, String repositoryId,
 			String objectId, ExtensionsData extension) {
 		Document latest = getDocument(repositoryId, objectId);
 		Document pwc = buildCopyDocumentWithBasicProperties(callContext, latest);
@@ -626,7 +639,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public synchronized void cancelCheckOut(CallContext callContext, String repositoryId,
+	public void cancelCheckOut(CallContext callContext, String repositoryId,
 			String objectId, ExtensionsData extension) {
 		Document pwc = getDocument(repositoryId, objectId);
 		VersionSeries vs = getVersionSeries(repositoryId, pwc);
@@ -649,7 +662,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public synchronized Document checkIn(CallContext callContext, String repositoryId,
+	public Document checkIn(CallContext callContext, String repositoryId,
 			Holder<String> objectId, Boolean major, Properties properties,
 			ContentStream contentStream, String checkinComment,
 			List<String> policies,
@@ -833,7 +846,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public synchronized Folder createFolder(CallContext callContext, String repositoryId,
+	public Folder createFolder(CallContext callContext, String repositoryId,
 			Properties properties, Folder parentFolder) {
 		Folder f = new Folder();
 		setBaseProperties(callContext, repositoryId, properties, f, parentFolder.getId());
@@ -867,7 +880,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public synchronized Relationship createRelationship(CallContext callContext,
+	public Relationship createRelationship(CallContext callContext,
 			String repositoryId, Properties properties,
 			List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
@@ -892,7 +905,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public synchronized Policy createPolicy(CallContext callContext, String repositoryId,
+	public Policy createPolicy(CallContext callContext, String repositoryId,
 			Properties properties,
 			List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
@@ -917,7 +930,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public synchronized Item createItem(CallContext callContext, String repositoryId,
+	public Item createItem(CallContext callContext, String repositoryId,
 			Properties properties, String folderId,
 			List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
@@ -1264,7 +1277,7 @@ public class ContentServiceImpl implements ContentService {
 	 * Delete a Content.
 	 */
 	@Override
-	public synchronized void delete(CallContext callContext, String repositoryId,
+	public void delete(CallContext callContext, String repositoryId,
 			String objectId, Boolean deletedWithParent) {
 		Content content = getContent(repositoryId, objectId);
 
@@ -1280,20 +1293,20 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public synchronized void deleteAttachment(CallContext callContext, String repositoryId, String attachmentId) {
+	public void deleteAttachment(CallContext callContext, String repositoryId, String attachmentId) {
 		createAttachmentArchive(callContext, repositoryId, attachmentId);
 		contentDaoService.delete(repositoryId, attachmentId);
 	}
 
 	@Override
-	public synchronized void deleteContentStream(CallContext callContext,
+	public void deleteContentStream(CallContext callContext,
 			String repositoryId, Holder<String> objectId) {
 		// TODO Auto-generated method stub
 
 	}
 
 	@Override
-	public synchronized void deleteDocument(CallContext callContext, String repositoryId,
+	public void deleteDocument(CallContext callContext, String repositoryId,
 			String objectId, Boolean allVersions, Boolean deleteWithParent) {
 		Document document = (Document) getContent(repositoryId, objectId);
 
@@ -1343,7 +1356,7 @@ public class ContentServiceImpl implements ContentService {
 	// deletedWithParent flag controls whether it's deleted with the parent all
 	// together.
 	@Override
-	public synchronized List<String> deleteTree(CallContext callContext, String repositoryId,
+	public List<String> deleteTree(CallContext callContext, String repositoryId,
 			String folderId, Boolean allVersions,
 			Boolean continueOnFailure, Boolean deletedWithParent){
 		List<String> failureIds = new ArrayList<String>();
@@ -1626,8 +1639,8 @@ public class ContentServiceImpl implements ContentService {
 	// Change event
 	// ///////////////////////////////////////
 	@Override
-	public Change getChangeEvent(String repositoryId, String token) {
-		return contentDaoService.getChangeEvent(repositoryId, token);
+	public Change getChangeEvent(String repositoryId, String changeTokenId) {
+		return contentDaoService.getChangeEvent(repositoryId, changeTokenId);
 	}
 
 	@Override
@@ -1646,7 +1659,8 @@ public class ContentServiceImpl implements ContentService {
 			// TODO null is OK?
 			return null;
 		} else {
-			return String.valueOf(latest.getChangeToken());
+			//return String.valueOf(latest.getChangeToken());
+			return String.valueOf(latest.getId());
 		}
 	}
 

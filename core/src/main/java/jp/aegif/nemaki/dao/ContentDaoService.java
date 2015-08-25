@@ -515,11 +515,11 @@ public interface ContentDaoService {
 	/**
 	 * Get a change event
 	 * @param repositoryId TODO
-	 * @param token
+	 * @param changeTokenId
 	 *
 	 * @return if nothing found, return null
 	 */
-	Change getChangeEvent(String repositoryId, String token);
+	Change getChangeEvent(String repositoryId, String changeTokenId);
 
 	/**
 	 * Get the latest change event in the repository

@@ -40,7 +40,8 @@ public class Change extends NodeBase{
 	private String parentId;
 	
 	private String objectId;
-	private String changeToken;
+	private String token;
+	private Long createdInMillis;
 	private ChangeType changeType;
 	private GregorianCalendar time;
 	
@@ -113,12 +114,12 @@ public class Change extends NodeBase{
 		this.objectId = objectId;
 	}
 	
-	public String getChangeToken() {
-		return changeToken;
+	public String getToken() {
+		return token;
 	}
 
-	public void setChangeToken(String changeToken) {
-		this.changeToken = changeToken;
+	public void setToken(String token) {
+		this.token = token;
 	}
 
 	public ChangeType getChangeType() {
@@ -134,6 +135,14 @@ public class Change extends NodeBase{
 		this.time = time;
 	}
 	
+	public Long getCreatedInMillis() {
+		return createdInMillis;
+	}
+
+	public void setCreatedInMillis(Long createdInMillis) {
+		this.createdInMillis = createdInMillis;
+	}
+
 	public boolean isOnDocument(){
 		return baseType.equals(NodeType.CMIS_DOCUMENT.value()) ? true : false;
 	}

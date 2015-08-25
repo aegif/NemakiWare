@@ -559,11 +559,11 @@ public interface ContentService {
 	/**
 	 * Get a change event
 	 * @param repositoryId TODO
-	 * @param token
+	 * @param changeTokenId
 	 *
 	 * @return
 	 */
-	Change getChangeEvent(String repositoryId, String token);
+	Change getChangeEvent(String repositoryId, String changeTokenId);
 
 	/**
 	 * Get latest change events in the change log
