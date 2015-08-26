@@ -8,12 +8,11 @@ default:
   product.name: NemakiWare
   product.version: 2.3
   namespace: http://www.aegif.jp/NemakiWare/
-main: bedroom
+super.users: canopy
 repositories:
+  - id: canopy
+    name: canopy
+    archive: canopy_closet
   - id: bedroom
     name: bedroom
-    archive: archive
-  - id: bedroom2
-    name: bedroom2
-    description: Another repository
-    archive: archive2
+    archive: bedroom_closet

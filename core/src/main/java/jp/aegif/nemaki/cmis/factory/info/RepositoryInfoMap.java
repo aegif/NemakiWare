@@ -4,12 +4,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
+import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.YamlManager;
+import jp.aegif.nemaki.util.constant.PropertyKey;
 
 public class RepositoryInfoMap {
 	private Capabilities capabilities;
 	private AclCapabilities aclCapabilities;
+	private PropertyManager propertyManager;
 	
 	private Map<String, RepositoryInfo> map = new HashMap<String, RepositoryInfo>();
 	private String superUsersId;
@@ -43,7 +45,8 @@ public class RepositoryInfoMap {
 	}
 	
 	private void loadRepositoriesSetting(){
-		YamlManager ymlMgr = new YamlManager("repositories.yml");
+		String file = propertyManager.readValue(PropertyKey.REPOSITORY_DEFINITION);
+		YamlManager ymlMgr = new YamlManager(file);
 		Map<String, Object> data = (Map<String, Object>)ymlMgr.loadYml();
 		Map<String, String> defaultSetting = (Map<String, String>)data.get("default");
 		List<Map<String, String>> repositoriesSetting = (List<Map<String, String>>)data.get("repositories");
@@ -106,5 +109,9 @@ public class RepositoryInfoMap {
 
 	public void setAclCapabilities(AclCapabilities aclCapabilities) {
 		this.aclCapabilities = aclCapabilities;
+	}
+
+	public void setPropertyManager(PropertyManager propertyManager) {
+		this.propertyManager = propertyManager;
 	}
 }
