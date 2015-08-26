@@ -12,7 +12,7 @@ public class RepositoryInfoMap {
 	private AclCapabilities aclCapabilities;
 	
 	private Map<String, RepositoryInfo> map = new HashMap<String, RepositoryInfo>();
-	private String mainId;
+	private String superUsersId;
 	
 	public void init(){
 		loadRepositoriesSetting();
@@ -38,8 +38,8 @@ public class RepositoryInfoMap {
 		return map.get(repositoryId).getArchiveId();
 	}
 	
-	public RepositoryInfo getMain(){
-		return map.get(this.mainId);
+	public RepositoryInfo getSuperUsers(){
+		return map.get(this.superUsersId);
 	}
 	
 	private void loadRepositoriesSetting(){
@@ -54,8 +54,7 @@ public class RepositoryInfoMap {
 			map.put(info.getId(), info);
 		}
 		
-		this.mainId = data.get("main").toString();
-		
+		this.superUsersId = data.get("super.users").toString();
 	}
 	
 	private void modifyInfo(Map<String, String> setting, RepositoryInfo info){

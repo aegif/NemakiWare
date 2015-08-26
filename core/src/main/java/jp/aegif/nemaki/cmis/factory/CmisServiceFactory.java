@@ -6,6 +6,7 @@ import java.util.Map;
 import javax.annotation.PostConstruct;
 
 import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
+import jp.aegif.nemaki.cmis.factory.auth.CmisServiceWrapper;
 import jp.aegif.nemaki.cmis.factory.auth.impl.AuthenticationServiceImpl;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
@@ -59,18 +60,19 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 
 	@Override
 	public org.apache.chemistry.opencmis.commons.server.CmisService getService(CallContext callContext) {
-		// Create CmisService
-		ConformanceCmisServiceWrapper wrapper = new ConformanceCmisServiceWrapper(
-				cmisService,
-				DEFAULT_MAX_ITEMS_TYPES, DEFAULT_DEPTH_TYPES,
-				DEFAULT_MAX_ITEMS_OBJECTS, DEFAULT_DEPTH_OBJECTS);
-		wrapper.setCallContext(callContext);
-		
 		// Authentication
 		boolean auth = authenticationService.login(callContext);
 		if (auth) {
 			log.info("[userName=" + callContext.getUsername() + "]"
 					+ "Authentication succeeded");
+
+			// Create CmisService
+			CmisServiceWrapper wrapper = new CmisServiceWrapper(
+					cmisService,
+					DEFAULT_MAX_ITEMS_TYPES, DEFAULT_DEPTH_TYPES,
+					DEFAULT_MAX_ITEMS_OBJECTS, DEFAULT_DEPTH_OBJECTS,
+					callContext);
+			
 			return wrapper;
 		} else {
 			throw new CmisProxyAuthenticationException("[userName="
