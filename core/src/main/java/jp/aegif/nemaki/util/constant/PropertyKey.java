@@ -14,18 +14,6 @@ public interface PropertyKey {
 	final String CMIS_SERVER_DEFAULT_DEPTH_TYPES = "cmis.server.default.depth.types";
 	final String CMIS_SERVER_DEFAULT_MAX_ITEMS_OBJECTS = "cmis.server.default.max.items.objects";
 	final String CMIS_SERVER_DEFAULT_MAX_DEPTH_OBJECTS = "cmis.server.default.depth.objects";
-	final String CMIS_REPOSITORY_MAIN = "cmis.repository.main";
-	final String CMIS_REPOSITORY_MAIN_DESCRIPTION= "cmis.repository.main.description";
-	final String CMIS_REPOSITORY_MAIN_ROOT= "cmis.repository.main.root";
-	final String CMIS_REPOSITORY_MAIN_PRINCIPAL_ANONYMOUS= "cmis.repository.main.principal.anonymous";
-	final String CMIS_REPOSITORY_MAIN_PRINCIPAL_ANYONE= "cmis.repository.main.principal.anyone";
-	final String CMIS_REPOSITORY_MAIN_THINCLIENTURI= "cmis.repository.main.thinClientUri";
-	final String CMIS_REPOSITORY_MAIN_VENDOR= "cmis.repository.main.vendor";
-	final String CMIS_REPOSITORY_MAIN_PRODUCT_NAME= "cmis.repository.main.product.name";
-	final String CMIS_REPOSITORY_MAIN_PRODUCT_VERSION= "cmis.repository.main.product.version";
-	final String CMIS_REPOSITORY_MAIN_NAMESPACE= "cmis.repository.main.namespace";
-	final String CMIS_REPOSITORY_ARCHIVE= "cmis.repository.archive";
-	final String CMIS_REPOSITORIES= "cmis.repositories";
 	final String REPOSITORY_DEFINITION = "repository.definition";
 	
 	//Solr

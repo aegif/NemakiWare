@@ -36,67 +36,6 @@
 		</property>
 	</bean>
 	
-	<!-- CouchDB Beans -->
-	<bean id="connector" class="jp.aegif.nemaki.dao.impl.couch.connector.CouchConnector" init-method="init">
-		<property name="repositoryId">
-			<value>${cmis.repository.main}</value>
-		</property>
-		<property name="host">
-			<value>${db.couchdb.host}</value>
-		</property>
-		<property name="port">
-			<value>${db.couchdb.port}</value>
-		</property>
-		<property name="maxConnections">
-			<value>${db.couchdb.max.connections}</value>
-		</property>
-		<property name="connectionTimeout">
-			<value>${db.couchdb.connection.timeout}</value>
-		</property>
-		<property name="socketTimeout">
-			<value>${db.couchdb.socket.timeout}</value>
-		</property>
-		<property name="authEnabled">
-			<value>${db.couchdb.auth.enabled}</value>
-		</property>
-		<property name="authUserName">
-			<value>${db.couchdb.auth.username}</value>
-		</property>
-		<property name="authPassword">
-			<value>${db.couchdb.auth.password}</value>
-		</property>
-	</bean>
-	
-	<bean id="archiveConnector" class="jp.aegif.nemaki.dao.impl.couch.connector.CouchConnector" init-method="init">
-		<property name="repositoryId">
-			<value>${cmis.repository.archive}</value>
-		</property>
-		<property name="host">
-			<value>${db.couchdb.host}</value>
-		</property>
-		<property name="port">
-			<value>${db.couchdb.port}</value>
-		</property>
-		<property name="maxConnections">
-			<value>${db.couchdb.max.connections}</value>
-		</property>
-		<property name="connectionTimeout">
-			<value>${db.couchdb.connection.timeout}</value>
-		</property>
-		<property name="socketTimeout">
-			<value>${db.couchdb.socket.timeout}</value>
-		</property>
-		<property name="authEnabled">
-			<value>${db.couchdb.auth.enabled}</value>
-		</property>
-		<property name="authUserName">
-			<value>${db.couchdb.auth.username}</value>
-		</property>
-		<property name="authPassword">
-			<value>${db.couchdb.auth.password}</value>
-		</property>
-	</bean>
-	
 	<bean id="nonCachedContentDaoService" class="jp.aegif.nemaki.dao.impl.couch.ContentDaoServiceImpl">
 		<property name="connectorPool">
 			<ref bean="connectorPool" />

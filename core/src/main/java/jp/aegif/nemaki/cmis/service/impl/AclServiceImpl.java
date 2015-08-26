@@ -26,6 +26,8 @@ import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.cmis.service.AclService;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.util.PropertyManager;
@@ -56,6 +58,7 @@ public class AclServiceImpl implements AclService {
 	private TypeManager typeManager;
 	private PropertyManager propertyManager;
 	private NemakiCachePool nemakiCachePool;
+	private RepositoryInfoMap repositoryInfoMap;
 
 	@Override
 	public Acl getAcl(CallContext callContext, String repositoryId,
@@ -119,7 +122,7 @@ public class AclServiceImpl implements AclService {
 			}
 		}
 
-		convertSystemPrinciaplId(nemakiAcl);
+		convertSystemPrinciaplId(repositoryId, nemakiAcl);
 		content.setAcl(nemakiAcl);
 		contentService.update(repositoryId, content);
 		
@@ -128,19 +131,19 @@ public class AclServiceImpl implements AclService {
 		return getAcl(callContext, repositoryId, objectId, false);
 	}
 
-	private void convertSystemPrinciaplId(jp.aegif.nemaki.model.Acl acl){
+	private void convertSystemPrinciaplId(String repositoryId, jp.aegif.nemaki.model.Acl acl){
 		List<jp.aegif.nemaki.model.Ace> aces = acl.getAllAces();
 		for (jp.aegif.nemaki.model.Ace ace : aces) {
+			RepositoryInfo info = repositoryInfoMap.get(repositoryId);
+			
 			//Convert anonymous to the form of database
-			String anonymous = propertyManager.readValue(
-					PropertyKey.CMIS_REPOSITORY_MAIN_PRINCIPAL_ANONYMOUS);
+			String anonymous = info.getPrincipalIdAnonymous();
 			if (anonymous.equals(ace.getPrincipalId())) {
 				ace.setPrincipalId(PrincipalId.ANONYMOUS_IN_DB);
 			}
 
 			//Convert anyone to the form of database
-			String anyone = propertyManager.readValue(
-					PropertyKey.CMIS_REPOSITORY_MAIN_PRINCIPAL_ANYONE);
+			String anyone = info.getPrincipalIdAnyone();
 			if (anyone.equals(ace.getPrincipalId())) {
 				ace.setPrincipalId(PrincipalId.ANYONE_IN_DB);
 				
@@ -171,5 +174,8 @@ public class AclServiceImpl implements AclService {
 	public void setCompileService(CompileService compileService) {
 		this.compileService = compileService;
 	}
-	
+
+	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
+		this.repositoryInfoMap = repositoryInfoMap;
+	}
 }
