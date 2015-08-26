@@ -50,6 +50,11 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	private RepositoryInfoMap repositoryInfoMap;
 
 	public boolean login(CallContext callContext) {
+		// Set flag of SuperUsers
+		String suId = repositoryInfoMap.getSuperUsers().getId();
+		((CallContextImpl)callContext).put(CallContextKey.IS_SU, 
+				suId.equals(callContext.getRepositoryId()));
+		
 		// SSO
 		if (loginWithExternalAuth(callContext)) {
 			return true;

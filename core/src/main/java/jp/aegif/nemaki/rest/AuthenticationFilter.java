@@ -108,7 +108,7 @@ public class AuthenticationFilter implements Filter {
         			System.err.println("repositoryId is not specified in URI.");
         		}
         	}else if(ApiType.ALL.equals(pathFragments[0])){
-        		return repositoryInfoMap.getMain().getId();
+        		return repositoryInfoMap.getSuperUsers().getId();
         	}
         }
         
