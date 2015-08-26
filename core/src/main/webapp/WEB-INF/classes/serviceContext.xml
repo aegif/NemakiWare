@@ -70,6 +70,9 @@
     	<property name="aclCapabilities">
     		<ref bean="aclCapabilities"/>
     	</property>
+    	<property name="propertyManager">
+            <ref bean="propertyManager" />
+        </property>
     </bean>
 
     <bean id="capabilities"
