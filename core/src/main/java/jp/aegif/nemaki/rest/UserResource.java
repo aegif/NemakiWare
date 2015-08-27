@@ -44,6 +44,7 @@ import javax.ws.rs.core.MediaType;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.model.User;
 
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 import org.json.simple.JSONArray;
@@ -405,10 +406,12 @@ public class UserResource extends ResourceBase {
 	}
 
 	private boolean checkAuthorityForUser(boolean status, JSONArray errMsg, HttpServletRequest httpRequest, String resoureId, String repositoryId){
-		UserInfo userInfo = AuthenticationFilter.getUserInfo(httpRequest);
+		CallContext callContext =(CallContext) httpRequest.getAttribute("CallContext");
 
-		if(!userInfo.getUserId().equals(resoureId) &&
-				!isAdmin(repositoryId, userInfo.getUserId(), userInfo.getPassword()) ){
+		String userId = callContext.getUsername();
+		String password = callContext.getPassword();
+		if(!userId.equals(resoureId) &&
+				!isAdmin(repositoryId, userId, password) ){
 			status = false;
 			addErrMsg(errMsg, ITEM_USER, ERR_NOTAUTHENTICATED);
 		}

@@ -171,12 +171,6 @@ public class ResourceBase {
 		return calendar;
 	}
 
-	protected UserInfo getUserInfo(HttpServletRequest httpRequest){
-		HttpSession session = httpRequest.getSession();
-		UserInfo  userInfo = (UserInfo) session.getAttribute("USER_INFO");
-		return userInfo;
-	}
-
 	protected void setFirstSignature(HttpServletRequest request, NodeBase nodeBase){
 		CallContext callContext = (CallContext)request.getAttribute("CallContext");
 		nodeBase.setCreator(callContext.getUsername());

@@ -43,7 +43,6 @@ import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
 import jp.aegif.nemaki.cmis.factory.auth.NemakiAuthCallContextHandler;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.util.PropertyManager;
-import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
 public class AuthenticationFilter implements Filter {
@@ -56,10 +55,6 @@ public class AuthenticationFilter implements Filter {
 
 	@Override
 	public void init(FilterConfig filterConfig) throws ServletException {
-	}
-
-	public static UserInfo getUserInfo(HttpServletRequest httpRequest){
-		return (UserInfo)httpRequest.getSession().getAttribute("USER_INFO");
 	}
 
 	@Override
