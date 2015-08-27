@@ -177,15 +177,17 @@ public class ResourceBase {
 		return userInfo;
 	}
 
-	protected void setSignature(UserInfo userInfo, NodeBase nodeBase){
-		nodeBase.setCreator(userInfo.userId);
+	protected void setFirstSignature(HttpServletRequest request, NodeBase nodeBase){
+		CallContext callContext = (CallContext)request.getAttribute("CallContext");
+		nodeBase.setCreator(callContext.getUsername());
 		nodeBase.setCreated(millisToCalendar(System.currentTimeMillis()));
-		nodeBase.setModifier(userInfo.userId);
+		nodeBase.setModifier(callContext.getUsername());
 		nodeBase.setModified(millisToCalendar(System.currentTimeMillis()));
 	}
 
-	protected void setModifiedSignature(UserInfo userInfo, NodeBase nodeBase){
-		nodeBase.setModifier(userInfo.userId);
+	protected void setModifiedSignature(HttpServletRequest request, NodeBase nodeBase){
+		CallContext callContext = (CallContext)request.getAttribute("CallContext");
+		nodeBase.setModifier(callContext.getUsername());
 		nodeBase.setModified(millisToCalendar(System.currentTimeMillis()));
 	}
 }

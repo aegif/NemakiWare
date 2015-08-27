@@ -182,7 +182,7 @@ public class UserResource extends ResourceBase {
 
 			User user = new User(userId, name, firstName, lastName, email,
 					passwordHash);
-			setSignature(getUserInfo(httpRequest), user);
+			setFirstSignature(httpRequest, user);
 
 			//TODO Error handling
 			principalService.createUser(repositoryId, user);
@@ -264,7 +264,7 @@ public class UserResource extends ResourceBase {
 					// Edit the user info
 					String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
 					user.setPasswordHash(passwordHash);
-					setModifiedSignature(getUserInfo(httpRequest), user);
+					setModifiedSignature(httpRequest, user);
 
 					try{
 						principalService.updateUser(repositoryId, user);
@@ -275,7 +275,7 @@ public class UserResource extends ResourceBase {
 					}
 				}
 			}
-			setModifiedSignature(getUserInfo(httpRequest), user);
+			setModifiedSignature(httpRequest, user);
 
 			try{
 				principalService.updateUser(repositoryId, user);
