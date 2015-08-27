@@ -71,20 +71,20 @@ import constant.Token;
 
 @Authenticated(Secured.class)
 public class Node extends Controller {
-
-	private static Session createSession() {
-		Session cmisSession = Util.createCmisSession(session());
-		return cmisSession;
+	private static Map<String, Session> cmisSessions = new HashMap<String, Session>();
+	
+	private static Session getCmisSession(String repositoryId){
+		return CmisSessions.getCmisSession(repositoryId, session());
 	}
 
-	public static Result index() {
-		Session session = createSession();
+	public static Result index(String repositoryId) {
+		Session session = getCmisSession(repositoryId);
 		Folder root = session.getRootFolder();
-		return showChildren(root.getId());
+		return showChildren(repositoryId, root.getId());
 	}
 
-	public static Result showChildren(String id) {
-		Session session = createSession();
+	public static Result showChildren(String repositoryId, String id) {
+		Session session = getCmisSession(repositoryId);
 
 		CmisObject parent = session.getObject(id);
 		// TODO type check
@@ -125,18 +125,18 @@ public class Node extends Controller {
 		types.addAll(typeFolders);
 		types.addAll(typeDocs);
 
-		return ok(tree.render(_parent, results, types));
+		return ok(tree.render(repositoryId,_parent, results, types));
 	}
 
-	public static Result showChildrenByPath(String path) {
-		Session session = createSession();
+	public static Result showChildrenByPath(String repositoryId, String path) {
+		Session session = getCmisSession(repositoryId);
 		CmisObject o = session.getObjectByPath(path);
 
-		return showChildren(o.getId());
+		return showChildren(repositoryId, o.getId());
 	}
 
-	public static Result search(String term) {
-		Session session = createSession();
+	public static Result search(String repositoryId, String term) {
+		Session session = getCmisSession(repositoryId);
 
 		OperationContext ctxt = session.getDefaultContext();
 
@@ -169,10 +169,10 @@ public class Node extends Controller {
 			list.add(folderItr.next());
 		}
 
-		return ok(search.render(term, list));
+		return ok(search.render(repositoryId, term, list));
 	}
 
-	public static Result showBlank() {
+	public static Result showBlank(String repositoryId) {
 		String parentId = request().getQueryString("parentId");
 		String objectTypeId = request().getQueryString("objectType");
 
@@ -180,14 +180,14 @@ public class Node extends Controller {
 			objectTypeId = "cmis:folder"; // default
 		}
 
-		Session session = createSession();
+		Session session = getCmisSession(repositoryId);
 		ObjectType objectType = session.getTypeDefinition(objectTypeId);
 
-		return ok(blank.render(parentId, objectType));
+		return ok(blank.render(repositoryId, parentId, objectType));
 	}
 
-	public static Result showDetail(String id, Boolean activatePreviewTab) {
-		Session session = createSession();
+	public static Result showDetail(String repositoryId, String id, Boolean activatePreviewTab) {
+		Session session = getCmisSession(repositoryId);
 
 		FileableCmisObject o = (FileableCmisObject) session.getObject(id);
 
@@ -196,7 +196,7 @@ public class Node extends Controller {
 
 		// Get user
 		final String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
-		final String endPoint = coreRestUri + "user/";
+		final String endPoint = coreRestUri + "repo/" + repositoryId + "/user/";
 		JsonNode result = Util.getJsonResponse(session(), endPoint + "show/"
 				+ session().get(Token.LOGIN_USER_ID));
 		model.User user = new model.User();
@@ -207,11 +207,11 @@ public class Node extends Controller {
 			internalServerError("User retrieveing failure");
 		}
 
-		return ok(detail.render(o, parentId, activatePreviewTab, user));
+		return ok(detail.render(repositoryId, o, parentId, activatePreviewTab, user));
 	}
 
-	public static Result showProperty(String id) {
-		Session session = createSession();
+	public static Result showProperty(String repositoryId, String id) {
+		Session session = getCmisSession(repositoryId);
 
 		FileableCmisObject o = (FileableCmisObject) session.getObject(id);
 
@@ -250,23 +250,23 @@ public class Node extends Controller {
 
 		}
 
-		return ok(property.render(o, primaries, secondaries));
+		return ok(property.render(repositoryId, o, primaries, secondaries));
 	}
 
-	public static Result showFile(String id) {
-		Session session = createSession();
+	public static Result showFile(String repositoryId, String id) {
+		Session session = getCmisSession(repositoryId);
 
 		FileableCmisObject o = (FileableCmisObject) session.getObject(id);
 
 		// Get parentId
 		String parentId = o.getParents().get(0).getId();
 
-		return ok(file.render(o, parentId));
+		return ok(file.render(repositoryId, o, parentId));
 
 	}
 
-	public static Result download(String id) {
-		Session session = createSession();
+	public static Result download(String repositoryId, String id) {
+		Session session = getCmisSession(repositoryId);
 
 		CmisObject obj = session.getObject(id);
 		if (!Util.isDocument(obj)) {
@@ -310,8 +310,8 @@ public class Node extends Controller {
 		return ok(tmpFile);
 	}
 
-	public static Result downloadPreview(String id) {
-		Session session = createSession();
+	public static Result downloadPreview(String repositoryId, String id) {
+		Session session = getCmisSession(repositoryId);
 
 		CmisObject obj = session.getObject(id);
 		if (!Util.isDocument(obj)) {
@@ -348,8 +348,8 @@ public class Node extends Controller {
 		return ok(tmpFile, true);
 	}
 
-	public static Result showVersion(String id) {
-		Session session = createSession();
+	public static Result showVersion(String repositoryId, String id) {
+		Session session = getCmisSession(repositoryId);
 
 		CmisObject o = session.getObject(id);
 
@@ -360,19 +360,19 @@ public class Node extends Controller {
 			result = doc.getAllVersions();
 		}
 
-		return ok(version.render(result));
+		return ok(version.render(repositoryId, result));
 
 	}
 
-	public static Result showPreview(String id) {
-		Session session = createSession();
+	public static Result showPreview(String repositoryId, String id) {
+		Session session = getCmisSession(repositoryId);
 		CmisObject obj = session.getObject(id);
 
-		return ok(preview.render(obj));
+		return ok(preview.render(repositoryId, obj));
 	}
 
-	public static Result showPermission(String id) {
-		Session session = createSession();
+	public static Result showPermission(String repositoryId, String id) {
+		Session session = getCmisSession(repositoryId);
 
 		CmisObject obj = session.getObject(id);
 
@@ -392,7 +392,7 @@ public class Node extends Controller {
 				for (Ace ace : list) {
 					String principalId = ace.getPrincipalId();
 					// call API
-					Principal p = getPrincipal(principalId, anyone, anonymous);
+					Principal p = getPrincipal(repositoryId, principalId, anyone, anonymous);
 					if (p != null) {
 						members.add(p);
 					}
@@ -400,11 +400,11 @@ public class Node extends Controller {
 			}
 		}
 
-		return ok(views.html.node.permission.render(obj, members,
+		return ok(views.html.node.permission.render(repositoryId, obj, members,
 				permissionDefs));
 	}
 
-	public static Result dragAndDrop(String action) {
+	public static Result dragAndDrop(String repositoryId, String action) {
 		// Bind input parameters
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
@@ -417,9 +417,9 @@ public class Node extends Controller {
 			return ok();
 		} else {
 			if ("create".equals(action)) {
-				dragAndDropCreate(files.get(0), input);
+				dragAndDropCreate(repositoryId, files.get(0), input);
 			} else if ("update".equals(action)) {
-				dragAndDropUpdate(files.get(0), input);
+				dragAndDropUpdate(repositoryId, files.get(0), input);
 			} else{
 				System.out.println("Specify drag & drop action type");
 			}
@@ -433,7 +433,7 @@ public class Node extends Controller {
 		param.put(key, Util.getFormData(input, key));
 	}
 
-	private static void dragAndDropCreate(FilePart file, DynamicForm input) {
+	private static void dragAndDropCreate(String repositoryId, FilePart file, DynamicForm input) {
 		// Parse parameters
 		Map<String, Object> param = new HashMap<String, Object>();
 		ObjectId parentId = new ObjectIdImpl(Util.getFormData(input,
@@ -442,12 +442,12 @@ public class Node extends Controller {
 		setParam(param, input, PropertyIds.NAME);
 
 		// Execute
-		Session session = createSession();
+		Session session = getCmisSession(repositoryId);
 		ContentStream cs = Util.convertFileToContentStream(session, file);
 		session.createDocument(param, parentId, cs, VersioningState.MAJOR);
 	}
 
-	private static void dragAndDropUpdate(FilePart file, DynamicForm input) {
+	private static void dragAndDropUpdate(String repositoryId, FilePart file, DynamicForm input) {
 		// Parse parameters
 		Map<String, Object> param = new HashMap<String, Object>();
 		ObjectId objectId = new ObjectIdImpl(Util.getFormData(input,
@@ -456,14 +456,14 @@ public class Node extends Controller {
 		//setParam(param, input, PropertyIds.NAME);
 
 		// Execute
-		Session session = createSession();
+		Session session = getCmisSession(repositoryId);
 		ContentStream cs = Util.convertFileToContentStream(session, file);
 		Document d0 = (Document) session.getObject(objectId);
 		Document d1 = d0.setContentStream(cs, true);
 		//d1.updateProperties(param);
 	}
 
-	public static Result create() {
+	public static Result create(String repositoryId) {
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
 
@@ -477,7 +477,7 @@ public class Node extends Controller {
 		boolean dragAndDrop = (Util.getFormData(input, "dragAndDrop") == null) ? false
 				: Boolean.valueOf(Util.getFormData(input, "dragAndDrop"));
 
-		Session session = createSession();
+		Session session = getCmisSession(repositoryId);
 
 		ObjectType objectType = session.getTypeDefinition(objectTypeId);
 
@@ -551,13 +551,13 @@ public class Node extends Controller {
 		if(dragAndDrop){
 			return ok();
 		}else{
-			return redirectToParent(input);
+			return redirectToParent(repositoryId, input);
 		}
 	}
 
-	public static Result update(String id) {
+	public static Result update(String repositoryId, String id) {
 		// Get an object in the repository
-		Session session = createSession();
+		Session session = getCmisSession(repositoryId);
 		CmisObject o = session.getObject(id);
 
 		// Get input form data
@@ -605,9 +605,9 @@ public class Node extends Controller {
 		return ok();
 	}
 
-	public static Result updatePermission(String id) {
+	public static Result updatePermission(String repositoryId, String id) {
 		// Get an object in the repository
-		Session session = createSession();
+		Session session = getCmisSession(repositoryId);
 		CmisObject obj = session.getObject(id);
 
 		List<Ace> originalAcl = obj.getAcl().getAces();
@@ -718,18 +718,18 @@ public class Node extends Controller {
 		return ace;
 	}
 
-	public static Result upload(String id) {
+	public static Result upload(String repositoryId, String id) {
 
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
 
-		Session session = createSession();
+		Session session = getCmisSession(repositoryId);
 		CmisObject o = session.getObject(id);
 		if (o.getType() instanceof DocumentTypeDefinition) {
 			ContentStreamAllowed csa = ((DocumentTypeDefinition) (o.getType()))
 					.getContentStreamAllowed();
 			if (csa == ContentStreamAllowed.NOTALLOWED) {
-				return redirectToParent(input);
+				return redirectToParent(repositoryId, input);
 			}
 		}
 
@@ -745,11 +745,11 @@ public class Node extends Controller {
 		ContentStream cs = Util.convertFileToContentStream(session, file);
 		doc.setContentStream(cs, true);
 
-		return redirectToParent(input);
+		return redirectToParent(repositoryId, input);
 	}
 
-	public static Result delete(String id) {
-		Session session = createSession();
+	public static Result delete(String repositoryId, String id) {
+		Session session = getCmisSession(repositoryId);
 
 		CmisObject object = session.getObject(id);
 		if (BaseTypeId.CMIS_FOLDER == object.getBaseTypeId()) {
@@ -759,11 +759,11 @@ public class Node extends Controller {
 			session.delete(new ObjectIdImpl(id));
 		}
 
-		return redirect(routes.Node.index());
+		return ok();
 	}
 
-	public static Result checkOut(String id) {
-		Session session = createSession();
+	public static Result checkOut(String repositoryId, String id) {
+		Session session = getCmisSession(repositoryId);
 		CmisObject o = session.getObject(id);
 
 		DynamicForm input = Form.form();
@@ -788,8 +788,8 @@ public class Node extends Controller {
 		return ok();
 	}
 
-	public static Result cancelCheckOut(String id) {
-		Session session = createSession();
+	public static Result cancelCheckOut(String repositoryId, String id) {
+		Session session = getCmisSession(repositoryId);
 		CmisObject o = session.getObject(id);
 
 		if (!Util.isDocument(o)) {
@@ -801,11 +801,11 @@ public class Node extends Controller {
 
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
-		return redirectToParent(input);
+		return redirectToParent(repositoryId, input);
 	}
 
-	public static Result checkIn(String id) {
-		Session session = createSession();
+	public static Result checkIn(String repositoryId, String id) {
+		Session session = getCmisSession(repositoryId);
 		CmisObject obj = session.getObject(id);
 
 		DynamicForm input = Form.form();
@@ -829,11 +829,11 @@ public class Node extends Controller {
 		Map<String, Object> param = new HashMap<String, Object>();
 		doc.checkIn(true, param, cs, checkinComment);
 
-		return redirectToParent(input);
+		return redirectToParent(repositoryId, input);
 	}
 
-	private static Principal getPrincipal(String principalId, String anyone,
-			String anonymous) {
+	private static Principal getPrincipal(String repositoryId, String principalId,
+			String anyone, String anonymous) {
 		// anyone
 		if (anyone.equals(principalId)) {
 			return new Principal("group", anyone, anyone);
@@ -848,7 +848,7 @@ public class Node extends Controller {
 
 		// user
 		JsonNode resultUser = Util.getJsonResponse(session(), coreRestUri
-				+ "user/show/" + principalId);
+				+ "repo/" + repositoryId + "/user/show/" + principalId);
 		// TODO check status
 		JsonNode user = resultUser.get("user");
 		if (user != null) {
@@ -871,18 +871,18 @@ public class Node extends Controller {
 		return null;
 	}
 
-	private static Result redirectToParent(DynamicForm input) {
+	private static Result redirectToParent(String repositoryId, DynamicForm input) {
 		String parentId = Util.getFormData(input, PropertyIds.PARENT_ID);
 		// TODO fix hard code
 		if ("".equals(parentId) || "/".equals(parentId)) {
-			return redirect(routes.Node.index());
+			return redirect(routes.Node.index(repositoryId));
 		} else {
-			return redirect(routes.Node.showChildren(parentId));
+			return redirect(routes.Node.showChildren(repositoryId, parentId));
 		}
 	}
 
-	public static Result jsGetAce(String objectId, String principalId) {
-		Session session = createSession();
+	public static Result jsGetAce(String repositoryId, String objectId, String principalId) {
+		Session session = getCmisSession(repositoryId);
 		CmisObject obj = session.getObject(objectId);
 
 		Map<String, Ace> map = Util.zipWithId(obj.getAcl());

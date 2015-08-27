@@ -10,12 +10,12 @@
 @import org.apache.chemistry.opencmis.commons.enums.BaseTypeId
 @import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed
 
-@(parentId:String)(objectType:ObjectType)
+@(repositoryId:String)(parentId:String)(objectType:ObjectType)
 
 @lightbox{
 	<!-- html -->
 	<div class="container">
-		@helper.form(action=routes.Node.create, 'id -> "node-blank-form", 'enctype -> "multipart/form-data"){
+		@helper.form(action=routes.Node.create(repositoryId), 'id -> "node-blank-form", 'enctype -> "multipart/form-data"){
 			<!-- caption -->
 			<div class="row">
 				@if(objectType.getBaseTypeId==BaseTypeId.CMIS_DOCUMENT){
@@ -116,7 +116,7 @@
 			//Ajax call
 			$(function(){
 				$.blockUI({message:"@Messages("view.message.please.wait")"});
-				$.ajax("@routes.Node.create().absoluteURL(request)",
+				$.ajax("@routes.Node.create(repositoryId).absoluteURL(request)",
 				{
 					type: 'post',
 				    processData: false,

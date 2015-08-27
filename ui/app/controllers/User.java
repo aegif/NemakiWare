@@ -33,16 +33,19 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 public class User extends Controller {
 
 	private static String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
-	private static String endPoint = coreRestUri + "user/";
 	
-	public static Result index(){
+	private static Session getCmisSession(String repositoryId){
+		return CmisSessions.getCmisSession(repositoryId, session());
+	}
+	
+	public static Result index(String repositoryId){
 		List<model.User>emptyList = new ArrayList<model.User>();
 		
-	    	return ok(index.render(emptyList));
+	    	return ok(index.render(repositoryId, emptyList));
 	    }
 
-	public static Result search(String term){
-    	JsonNode result = Util.getJsonResponse(session(), endPoint + "search?query=" + term);
+	public static Result search(String repositoryId, String term){
+    	JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "search?query=" + term);
 
     	//TODO check status
     	JsonNode users = result.get("result");
@@ -70,7 +73,7 @@ public class User extends Controller {
     	
     	//render
     	if(Util.dataTypeIsHtml(request().acceptedTypes())){
-    		return ok(index.render(list));
+    		return ok(index.render(repositoryId, list));
     	}else{
     		return ok(users);
     		
@@ -78,27 +81,27 @@ public class User extends Controller {
     	
     }
 
-	public static Result showBlank(){
+	public static Result showBlank(String repositoryId){
 		model.User emptyUser = new model.User("", "", "", "", "", "", false, null);
 		
-		return ok(blank.render(emptyUser));
+		return ok(blank.render(repositoryId, emptyUser));
 	}
 
-	public static Result showDetail(String id){
-		JsonNode result = Util.getJsonResponse(session(), endPoint + "show/" + id);
+	public static Result showDetail(String repositoryId, String id){
+		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "show/" + id);
 		
 		if("success".equals(result.get("status").asText())){
 			JsonNode _user = result.get("user");
 			model.User user = new model.User(_user);
-			return ok(property.render(user));
+			return ok(property.render(repositoryId, user));
 		}else{
 			//TODO
 			return ok();
 		}
 	}
 	
-	public static Result showFavorites(String id){
-		JsonNode result = Util.getJsonResponse(session(), endPoint + "show/" + id);
+	public static Result showFavorites(String repositoryId, String id){
+		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "show/" + id);
 		
 		if("success".equals(result.get("status").asText())){
 			JsonNode _user = result.get("user");
@@ -108,7 +111,7 @@ public class User extends Controller {
 			Set<String>fs = user.favorites;
 			if(CollectionUtils.isNotEmpty(fs)){
 				//CMIS session
-				Session session =  Util.createCmisSession(session());
+				Session session =  getCmisSession(repositoryId);
 				
 				Iterator<String>fsItr = fs.iterator();
 				while(fsItr.hasNext()){
@@ -116,18 +119,18 @@ public class User extends Controller {
 					list.add(session.getObject(favId));
 				}
 			}
-			return ok(favorites.render(user, list));
+			return ok(favorites.render(repositoryId, user, list));
 		}else{
 			//TODO
 			return ok();
 		}
 	}
 	
-	public static Result toggleFavorite(String userId, String objectId){
+	public static Result toggleFavorite(String repositoryId, String userId, String objectId){
 		Map<String, String>params = new HashMap<String, String>();
 		params.put("id", userId);
 		
-		JsonNode getResult = Util.getJsonResponse(session(), endPoint + "show/" + userId);
+		JsonNode getResult = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "show/" + userId);
 		
 		if("success".equals(getResult.get("status").asText())){
 			JsonNode _user = getResult.get("user");
@@ -142,7 +145,7 @@ public class User extends Controller {
 			}
 
 			//Update
-			JsonNode putResult = Util.putJsonResponse(session(), endPoint + "update/" + userId , params);
+			JsonNode putResult = Util.putJsonResponse(session(), getEndpoint(repositoryId) + "update/" + userId , params);
 			if("success".equals(putResult.get("status").asText())){
 				return ok();
 			}else{
@@ -155,24 +158,24 @@ public class User extends Controller {
 		}
 	}
 	
-	public static Result create(){
+	public static Result create(String repositoryId){
     	Map<String, String>params = buildParams();
-    	JsonNode result = Util.postJsonResponse(session(), endPoint + "create/" + params.get("id"), params);
+    	JsonNode result = Util.postJsonResponse(session(), getEndpoint(repositoryId) + "create/" + params.get("id"), params);
 
     	if(isSuccess(result)){
     		flash("flash message");
-    		return redirect(routes.User.index());
+    		return redirect(routes.User.index(repositoryId));
     	}else{
     		//TODO error
     		return ok();
     	}
 	}
 	
-	public static Result update(String id){
+	public static Result update(String repositoryId, String id){
     	
     	Map<String, String>params = buildParams();
     	
-    	JsonNode result = Util.putJsonResponse(session(), endPoint + "update/" + id , params);
+    	JsonNode result = Util.putJsonResponse(session(), getEndpoint(repositoryId) + "update/" + id , params);
     	
     	if(isSuccess(result)){
     		return ok();
@@ -181,11 +184,10 @@ public class User extends Controller {
     	}
 	}
 
-	public static Result delete(String id){
-		JsonNode result = Util.deleteJsonResponse(session(), endPoint + "delete/" + id);
+	public static Result delete(String repositoryId, String id){
+		JsonNode result = Util.deleteJsonResponse(session(), getEndpoint(repositoryId) + "delete/" + id);
 		
-		//TODO error
-		return redirect(routes.User.index());
+		return ok();
 	}
 	
 	private static boolean isSuccess(JsonNode result){
@@ -214,5 +216,9 @@ public class User extends Controller {
     	}
     	
     	return params;
+	}
+	
+	private static String getEndpoint(String repositoryId){
+		return coreRestUri + "repo/" + repositoryId + "/user/";
 	}
 }

@@ -3,7 +3,7 @@
 @import java.util._
 @import util.Util
 
-@(group:model.Group)(member:List[model.Principal])
+@(repositoryId:String)(group:model.Group)(member:List[model.Principal])
 
 @lightbox{
 	<!-- html -->
@@ -37,7 +37,7 @@
 				</div>
 			</div>
 		</div>
-		@memberSearch(group.id)(member)
+		@memberSearch(repositoryId)(group.id)(member)
 	</div>
 	
 	<!-- scripts -->
@@ -65,7 +65,7 @@
 			//call
 			$.blockUI({message:"@Messages("view.message.please.wait")"});
 			$.ajax({
-				url : "@routes.Group.update(group.id).absoluteURL(request)",
+				url : "@routes.Group.update(repositoryId, group.id).absoluteURL(request)",
 				type: 'POST',
 				data : data,
 				success : function(data){

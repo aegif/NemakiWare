@@ -1,4 +1,4 @@
-@()
+@(repositoryId:String)
 
 /**
  */
@@ -180,7 +180,7 @@ nmk.dragAndDrop = {
 		}
 		
 		function submit(formData, action) {
-			var restUrl = "@routes.Node.dragAndDrop()";
+			var restUrl = "@routes.Node.dragAndDrop(repositoryId)";
 			var res = $.ajax(restUrl + "?action=" + action, {
 				type : 'post',
 				processData : false,

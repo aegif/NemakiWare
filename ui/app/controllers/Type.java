@@ -59,15 +59,13 @@ import play.mvc.Security.Authenticated;
 import scala.xml.Elem;
 import util.Util;
 
-@Authenticated(Secured.class)
 public class Type extends Controller {
-	private static Session createSession() {
-		Session cmisSession = Util.createCmisSession(session());
-		return cmisSession;
+	private static Session getCmisSession(String repositoryId){
+		return CmisSessions.getCmisSession(repositoryId, session());
 	}
 	
-	public static Result index() {
-		Session session = createSession();
+	public static Result index(String repositoryId) {
+		Session session = Util.createCmisSession(repositoryId, session());
 		
 		List<ObjectType> list = new ArrayList<ObjectType>();
 		
@@ -77,11 +75,11 @@ public class Type extends Controller {
 			list.add(type);
 		}
 		
-		return ok(views.html.objecttype.list.render(list));
+		return ok(views.html.objecttype.list.render(repositoryId, list));
 	}
 
-	public static Result download(String id){
-		Session session = createSession();
+	public static Result download(String repositoryId, String id){
+		Session session = getCmisSession(repositoryId);
 		ObjectType objectType = session.getTypeDefinition(id);
 		ObjectMapper mapper = new ObjectMapper();
 
@@ -186,11 +184,11 @@ public class Type extends Controller {
 		return StringEscapeUtils.escapeEcmaScript(str);
 	}
 	
-	public static Result showBlank(){
-		return ok(views.html.objecttype.blank.render());
+	public static Result showBlank(String repositoryId){
+		return ok(views.html.objecttype.blank.render(repositoryId));
 	}
 	
-	public static Result create(){
+	public static Result create(String repositoryId){
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
 		
@@ -204,7 +202,7 @@ public class Type extends Controller {
 				
 				//Call CMIS API
 				TypeDefinition tdf = parseType(json);
-				Session session = createSession();
+				Session session = getCmisSession(repositoryId);
 				ObjectType newType = session.createType(tdf);
 				
 				System.out.println();
@@ -222,14 +220,14 @@ public class Type extends Controller {
 		
 		}
 		
-		return redirect(routes.Type.index());
+		return redirect(routes.Type.index(repositoryId));
 	}
 	
-	public static Result edit(){
-		return ok(views.html.objecttype.edit.render());
+	public static Result edit(String repositoryId){
+		return ok(views.html.objecttype.edit.render(repositoryId));
 	}
 	
-	public static Result update(){
+	public static Result update(String repositoryId){
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
 		
@@ -243,7 +241,7 @@ public class Type extends Controller {
 				
 				//Call CMIS API
 				TypeDefinition tdf = parseType(json);
-				Session session = createSession();
+				Session session = getCmisSession(repositoryId);
 				ObjectType udpatedType = session.updateType(tdf);
 			} catch (JsonProcessingException e) {
 				// TODO Auto-generated catch block
@@ -255,15 +253,15 @@ public class Type extends Controller {
 		
 		}
 		
-		return redirect(routes.Type.index());
+		return redirect(routes.Type.index(repositoryId));
 		
 	}
 	
-	public static Result delete(String id){
-		Session session = createSession();
+	public static Result delete(String repositoryId, String id){
+		Session session = getCmisSession(repositoryId);
 		session.deleteType(id);
 		
-		return redirect(routes.Type.index());
+		return redirect(routes.Type.index(repositoryId));
 	}
 	
 	private static TypeDefinition parseType(JsonNode json){

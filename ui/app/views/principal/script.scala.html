@@ -1,7 +1,7 @@
 @import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition
 @import org.apache.commons.collections.CollectionUtils
 
-@(permissionDefinitions:List[PermissionDefinition] = null)(groupId:String = null)
+@(repositoryId:String)(permissionDefinitions:List[PermissionDefinition] = null)(groupId:String = null)
 
 @defining("ps-"){prefix =>
 	<!-- javascripts -->
@@ -135,7 +135,7 @@
 			//util: search user/group
 			function searchPrincipal(term){
 				//decide url
-				var url = "@routes.Principal.search().absoluteURL(request)";
+				var url = "@routes.Principal.search(repositoryId).absoluteURL(request)";
 				
 				//ajax call
 				$.ajax({
