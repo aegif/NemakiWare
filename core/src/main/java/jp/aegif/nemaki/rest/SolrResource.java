@@ -62,7 +62,7 @@ public class SolrResource extends ResourceBase {
 		//Call Solr
 		HttpClient httpClient = HttpClientBuilder.create().build();
 		String solrUrl = solrUtil.getSolrUrl();
-		String url = solrUrl + "admin/cores?core=nemaki&action=init";
+		String url = solrUrl + "admin/cores?core=nemaki&action=init&repositoryId=" + repositoryId;
 		HttpGet httpGet = new HttpGet(url);
 		try {
 			HttpResponse response = httpClient.execute(httpGet);
@@ -105,7 +105,7 @@ public class SolrResource extends ResourceBase {
 		//Call Solr
 		HttpClient httpClient = HttpClientBuilder.create().build();
 		String solrUrl = solrUtil.getSolrUrl();
-		String url = solrUrl + "admin/cores?core=nemaki&action=index&tracking=FULL";
+		String url = solrUrl + "admin/cores?core=nemaki&action=index&tracking=FULL&repositoryId=" + repositoryId;
 		HttpGet httpGet = new HttpGet(url);
 		try {
 			HttpResponse response = httpClient.execute(httpGet);

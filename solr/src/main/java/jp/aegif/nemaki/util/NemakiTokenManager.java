@@ -39,7 +39,7 @@ public class NemakiTokenManager {
 			c.setFollowRedirects(Boolean.TRUE);
 			c.addFilter(new HTTPBasicAuthFilter(userName, password));
 
-			apiResult = c.resource(getRestUri(repositoryId)).path("admin" + "/register")
+			apiResult = c.resource(getRestUri(repositoryId)).path(userName + "/register")
 					.queryParam("app", "solr")
 					.accept(MediaType.APPLICATION_JSON_TYPE).get(String.class);
 		} catch (Exception e) {
@@ -47,6 +47,9 @@ public class NemakiTokenManager {
 		}
 
 		try {
+			if(apiResult == null){
+				throw new Exception();
+			}
 			JSONObject result = (JSONObject) new JSONParser().parse(apiResult);
 			if ("success".equals(result.get("status").toString())) {
 				JSONObject value = (JSONObject) result.get("value");
@@ -56,7 +59,7 @@ public class NemakiTokenManager {
 				return token;
 			}
 
-		} catch (ParseException e) {
+		} catch (Exception e) {
 			logger.error("Cannot connect to Core REST API", e);
 		}
 

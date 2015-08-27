@@ -41,6 +41,11 @@ public class CmisSessionFactory {
 		if(!isConnectionSetup(repositoryId)){
 			sessions.put(repositoryId, setupCmisSession(repositoryId));
 		}
+		
+		Session session = sessions.get(repositoryId);
+		if(session == null){
+			logger.warn("No CMIS repositoryId:" + repositoryId);
+		}
 		return sessions.get(repositoryId);
 	}
 	
