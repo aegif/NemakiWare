@@ -37,6 +37,7 @@ import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
 import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
 import org.apache.chemistry.opencmis.server.shared.HttpUtils;
 import org.apache.commons.lang.StringUtils;
+import org.apache.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
@@ -52,6 +53,8 @@ public class AuthenticationFilter implements Filter {
 	private AuthenticationService authenticationService;
 	private RepositoryInfoMap repositoryInfoMap;
 	private final String TOKEN_FALSE = "false";
+	
+	private Logger logger = Logger.getLogger(AuthenticationFilter.class);
 
 	@Override
 	public void init(FilterConfig filterConfig) throws ServletException {
@@ -67,6 +70,7 @@ public class AuthenticationFilter implements Filter {
 		if(auth){
 			chain.doFilter(req, res);
 		}else{
+			logger.error("REST API Unauthorized!");
 			hres.sendError(HttpServletResponse.SC_UNAUTHORIZED);
 		}
 	}
