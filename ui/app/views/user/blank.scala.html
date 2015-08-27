@@ -1,7 +1,7 @@
 @import table._
 @import util.Util
 
-@(user:model.User)
+@(repositoryId:String)(user:model.User)
 
 @lightbox{
 	<!-- html -->
@@ -78,7 +78,7 @@
 			//call
 			$.blockUI({message:"@Messages("view.message.please.wait")"});
 			$.ajax({
-				url : "@routes.User.create().absoluteURL(request)",
+				url : "@routes.User.create(repositoryId).absoluteURL(request)",
 				type: 'POST',
 				data : data,
 				success : function(data){

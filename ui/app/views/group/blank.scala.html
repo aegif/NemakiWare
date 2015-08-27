@@ -1,7 +1,7 @@
 @import table._
 @import util.Util
 
-@(group:model.Group)
+@(repositoryId:String)(group:model.Group)
 
 @lightbox{
 	<div class="container">
@@ -37,7 +37,7 @@
 			</div>
 		</div>
 
-		@memberSearch()()
+		@memberSearch(repositoryId)()()
 	</div>
 }
 
@@ -62,7 +62,7 @@
 			//call
 			$.blockUI({message:"@Messages("view.message.please.wait")"});
 			$.ajax({
-				url : "@routes.Group.create().absoluteURL(request)",
+				url : "@routes.Group.create(repositoryId).absoluteURL(request)",
 				type: 'POST',
 				data : {groupId: editedValue('#group-id'),
 						groupName : editedValue('#group-name'),

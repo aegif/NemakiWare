@@ -6,19 +6,19 @@
 @import org.apache.chemistry.opencmis.commons.enums.BaseTypeId
 @import node.js._
 
-@(parent: org.apache.chemistry.opencmis.client.api.Folder, objects: List[org.apache.chemistry.opencmis.client.api.CmisObject], types: List[Tree[ObjectType]])
+@(repositoryId:String)(parent: org.apache.chemistry.opencmis.client.api.Folder, objects: List[org.apache.chemistry.opencmis.client.api.CmisObject], types: List[Tree[ObjectType]])
 
 <!DOCTYPE html>
 <html>
 	@header()
 	<body>
-		@menubar()
+		@menubar(repositoryId)
 		<div class="container">
 	  		<div class="row">
 	  			<!-- breadcrumb -->
 	  			<div class="col-md-11">
 	  				<ul class="breadcrumb">
-	  					<li><a href="@routes.Node.index().absoluteURL(request)" title="root"><i class="fa fa-home fa-lg"></i></a></li>
+	  					<li><a href="@routes.Node.index(repositoryId).absoluteURL(request)" title="root"><i class="fa fa-home fa-lg"></i></a></li>
 	  					@defining(Util.dividePath(parent.getPath)){ segments =>
 	  						@for(i <- 0 to segments.length - 1; if(CollectionUtils.isNotEmpty(segments))){
 	  							@defining(segments.take(i+1).mkString("/")){url=>
@@ -52,7 +52,7 @@
 				
 				<div class="col-md-11">
 				 	<div id="list" parentId="@parent.getId()" class="dropzone" ondragover="nmk.dragAndDrop.handleDragStart(event);" ondragleave="nmk.dragAndDrop.hadleDragLeave(event);" ondrop="nmk.dragAndDrop.handleDrop(event);">
-						@list(objects) 		
+						@list(repositoryId)(objects) 		
 				 	</div>
 				</div>
 				
@@ -64,14 +64,14 @@
 	</body>
 </html>
 
-<script src="@routes.JsTemplate.duplicateNameCheck()" type="text/javascript"></script>
+<script src="@routes.JsTemplate.duplicateNameCheck(repositoryId)" type="text/javascript"></script>
 
 <script type="text/javascript">
 	//create button
 	$(function(){
 		$(document).on('click', '#create-object-in-tree', function(){
 			var typeId = $(this).attr('typeId');
-			$.get("@routes.Node.showBlank().absoluteURL(request)" + "?objectType=" + typeId + "&parentId=@parent.getId()"  , function(html){
+			$.get("@routes.Node.showBlank(repositoryId).absoluteURL(request)" + "?objectType=" + typeId + "&parentId=@parent.getId()"  , function(html){
 				showLightbox('node-blank', html);
 			});	
 		});

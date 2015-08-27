@@ -84,18 +84,18 @@ import constant.Token;
 import constant.UpdateContext;
 
 public class Util {
-	public static Session createCmisSession(play.mvc.Http.Session session){
-		String id = session.get(Token.LOGIN_USER_ID);
+	public static Session createCmisSession(String repositoryId, play.mvc.Http.Session session){
+		String userId = session.get(Token.LOGIN_USER_ID);
 		String password = session.get(Token.LOGIN_USER_PASSWORD);
-		return createCmisSession(id, password);
+		return createCmisSession(repositoryId, userId, password);
 	}
 	
-	public static Session createCmisSession(String id, String password){
+	public static Session createCmisSession(String repositoryId, String userId, String password){
 		Map<String, String> parameter = new HashMap<String, String>();
 
 		// user credentials
 		//TODO enable change a user
-		parameter.put(SessionParameter.USER, id);
+		parameter.put(SessionParameter.USER, userId);
 		parameter.put(SessionParameter.PASSWORD, password);
 
 		// session locale
@@ -103,11 +103,13 @@ public class Util {
 		parameter.put(SessionParameter.LOCALE_ISO639_LANGUAGE, "");
 
 		// repository
-		parameter.put(SessionParameter.REPOSITORY_ID, NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_REPOSITORY));
+		//String repositoryId = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_REPOSITORY);
+		parameter.put(SessionParameter.REPOSITORY_ID, repositoryId);
+		//parameter.put(org.apache.chemistry.opencmis.commons.impl.Constants.PARAM_REPOSITORY_ID, NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_REPOSITORY));
 
 		parameter. put(SessionParameter.BINDING_TYPE, BindingType.ATOMPUB.value());
 		
-		String coreAtomUri = buildNemakiCoreUri() + "atom/";
+		String coreAtomUri = buildNemakiCoreUri() + "atom/"+ repositoryId;
 		parameter.put(SessionParameter.ATOMPUB_URL, coreAtomUri);
 
     	SessionFactory f = SessionFactoryImpl.newInstance();
@@ -645,7 +647,7 @@ public class Util {
 	 
 	 public static String getSeachEngineUrl(play.mvc.Http.Session session){
 		String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
-		String endPoint = coreRestUri + "search-engine/";
+		String endPoint = coreRestUri + "all/" + "search-engine/";
 		
 		JsonNode result = Util.getJsonResponse(session, endPoint + "url");
 		

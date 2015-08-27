@@ -1,4 +1,4 @@
-@(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(parentId:String)
+@(repositoryId:String)(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(parentId:String)
 @import component._
 @import util._
 @import org.apache.chemistry.opencmis.client.api.Document
@@ -12,7 +12,7 @@
 			}else{
 				@if(Util.convertToDocument(obj).isVersionSeriesCheckedOut()){
 					<!-- update pwc form -->
-					@helper.form(action=routes.Node.upload(obj.getId()), 'enctype -> "multipart/form-data") {
+					@helper.form(action=routes.Node.upload(repositoryId, obj.getId()), 'enctype -> "multipart/form-data") {
 					<fieldset>
 						<legend><i class="fa fa-upload"></i>@Messages("view.node.file.update.pwc.caption")</legend>
 						<div>@Messages("view.node.file.update.pwc.description")</div>
@@ -25,7 +25,7 @@
 					<br/><br/>
 					
 					<!-- checkin form -->
-					@helper.form(action=routes.Node.checkIn(obj.getId()), 'enctype -> "multipart/form-data") {
+					@helper.form(action=routes.Node.checkIn(repositoryId, obj.getId()), 'enctype -> "multipart/form-data") {
 					<fieldset>
 						<legend><i class="fa fa-upload"></i><i class="fa fa-unlock"></i>@Messages("view.node.file.checkin.caption")</legend>
 						<div>@Messages("view.node.file.checkin.description")</div>
@@ -39,7 +39,7 @@
 					<br/><br/>
 					
 					<!-- cancel checkout form -->
-					@helper.form(action = routes.Node.cancelCheckOut(obj.getId())) {
+					@helper.form(action = routes.Node.cancelCheckOut(repositoryId, obj.getId())) {
 					<fieldset>
 						<legend><i class="fa fa-undo"></i>@Messages("view.node.file.cancel.checkout.caption")</legend>
 						<div>@Messages("view.node.file.cancel.checkout.description")</div>
@@ -57,7 +57,7 @@
 					<br/><br/>
 			
 					<!-- direct upload -->
-					@helper.form(action = routes.Node.upload(obj.getId()), 'enctype -> "multipart/form-data") {
+					@helper.form(action = routes.Node.upload(repositoryId, obj.getId()), 'enctype -> "multipart/form-data") {
 						<fieldset>
 							<legend><i class="fa fa-upload"></i>@Messages("view.node.file.direct.caption")</legend>
 							<div>@Messages("view.node.file.direct.description")</div>
@@ -80,7 +80,7 @@
 			$.blockUI({message:"@Messages("view.message.please.wait")"});
 			$.ajax({
 				type: "POST",
-				  url: "@routes.Node.checkOut(obj.getId).absoluteURL(request)",
+				  url: "@routes.Node.checkOut(repositoryId, obj.getId).absoluteURL(request)",
 				  data: "",
 				  success: function(msg){
 				        alert( "正常にロックされました。ページを更新しますのでしばらくお待ちください ");
