@@ -155,7 +155,7 @@ public class GroupResource extends ResourceBase{
 		JSONArray _users = parseJsonArray(users);
 		JSONArray _groups = parseJsonArray(groups);
 		Group group = new Group(groupId, name, _users, _groups);
-		setSignature(getUserInfo(httpRequest), group);
+		setFirstSignature(httpRequest, group);
 
 		//Create a group
 		if(status){
@@ -199,7 +199,7 @@ public class GroupResource extends ResourceBase{
 			group.setName(name);
 			group.setUsers(parseJsonArray(users));
 			group.setGroups(parseJsonArray(groups));
-			setModifiedSignature(getUserInfo(httpRequest), group);
+			setModifiedSignature(httpRequest, group);
 
 			try{
 				principalService.updateGroup(repositoryId, group);
@@ -290,7 +290,7 @@ public class GroupResource extends ResourceBase{
 		//Edit members info of the group
 		if(status){
 			//Group info
-			setModifiedSignature(getUserInfo(httpRequest), group);
+			setModifiedSignature(httpRequest, group);
 
 			//Member(User) info
 			List<String> usersList = editUserMembers(repositoryId, usersAry, errMsg, apiType, group);

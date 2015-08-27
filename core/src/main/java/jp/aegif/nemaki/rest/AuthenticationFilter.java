@@ -90,6 +90,7 @@ public class AuthenticationFilter implements Filter {
 		boolean auth = authenticationService.login(ctxt);
 		
 		//Add attributes to Jersey @Context parameter
+		//TODO hard-coded key 
 		request.setAttribute("CallContext", ctxt);
 		
 		return auth;
