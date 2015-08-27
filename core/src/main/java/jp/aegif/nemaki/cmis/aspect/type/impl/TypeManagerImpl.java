@@ -817,15 +817,18 @@ public class TypeManagerImpl implements TypeManager {
 	private void addSubTypes(String repositoryId) {
 		List<NemakiTypeDefinition> subtypes = getNemakiTypeDefinitions(repositoryId);
 		List<NemakiTypeDefinition> firstGeneration = new ArrayList<NemakiTypeDefinition>();
-		for (NemakiTypeDefinition subtype : subtypes) {
-			if (subtype.getBaseId().value().equals(subtype.getParentId())) {
-				firstGeneration.add(subtype);
+		if(CollectionUtils.isNotEmpty(subtypes)){
+			for (NemakiTypeDefinition subtype : subtypes) {
+				if (subtype.getBaseId().value().equals(subtype.getParentId())) {
+					firstGeneration.add(subtype);
+				}
+			}
+
+			for (NemakiTypeDefinition type : firstGeneration) {
+				addSubTypesInternal(repositoryId, subtypes, type);
 			}
 		}
-
-		for (NemakiTypeDefinition type : firstGeneration) {
-			addSubTypesInternal(repositoryId, subtypes, type);
-		}
+		
 		return;
 	}
 
