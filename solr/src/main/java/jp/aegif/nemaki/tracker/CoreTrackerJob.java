@@ -23,13 +23,8 @@ package jp.aegif.nemaki.tracker;
 
 import jp.aegif.nemaki.util.CmisSessionFactory;
 import jp.aegif.nemaki.util.Constant;
-import jp.aegif.nemaki.util.yaml.RepositorySetting;
 import jp.aegif.nemaki.util.yaml.RepositorySettings;
 
-import java.util.List;
-import java.util.Map;
-
-import org.apache.chemistry.opencmis.client.api.Repository;
 import org.apache.log4j.Logger;
 import org.quartz.Job;
 import org.quartz.JobExecutionContext;
