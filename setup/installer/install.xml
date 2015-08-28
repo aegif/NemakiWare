@@ -146,6 +146,8 @@
       <!-- Create general custom setting file -->
       <file src="setup/installer/tomcat/app-server-core.properties" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
       <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-core.properties"/>
+      <file src="setup/installer/tomcat/app-sever-core-repositories.yml" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
+      <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-sever-core-repositories.yml"/>
     </pack>
 
     <!-- Pack: CouchDB configuration -->
@@ -165,7 +167,7 @@
           <arg value="${db.couchdb.host}" />
           <arg value="${db.couchdb.port}" />
           <arg value="${cmis.repository.main}" />
-          <arg value="${cmis.repository.archive}" />
+          <arg value="${cmis.repository.main}_closet" />
           <arg value="$INSTALL_PATH/setup/couchdb/initial_import/bedroom_init.dump" />
           <arg value="$INSTALL_PATH/setup/couchdb/initial_import/archive_init.dump" />
         </args>
@@ -194,6 +196,8 @@
         <include name="**"/>
         <exclude name="**/data/*/" />
       </fileset>
+      <file src="setup/installer/solr/app-server-solr-repositories.yml" targetdir="$INSTALL_PATH/solr" />
+      <parsable targetfile="$INSTALL_PATH/solr/app-server-solr-repositories.yml"/>
 
       <!-- Create Solr context fragment -->
       <file src="setup/installer/tomcat/solr.xml" targetdir="$INSTALL_PATH/${TOMCAT}/conf/Catalina/localhost" />
