@@ -62,9 +62,9 @@ public class CmisSessionFactory {
 			session = f.createSession(parameter);
 			OperationContext operationContext = session
 					.createOperationContext(null, false, false, false, null,
-							null, false, null, true, 100);
+							null, false, null, false, 100); //Cache disabled
 			session.setDefaultContext(operationContext);
-		
+			
 			return session;
 		} catch (Exception e) {
 			logger.error("Failed to create a session to CMIS server", e);
