@@ -113,6 +113,14 @@
 			formData.append("cmis:parentId", '@parentId');
 			formData.append("cmis:objectTypeId", '@objectType.getId');
 
+			
+			//Check duplicate
+			var duplicate = checkDuplicateOnUpdate(editedValue("#cmis:name"), "");
+			if(duplicate){
+				window.alert('その名前はすでに存在しています。変更してください。');
+				return;
+			}
+			
 			//Ajax call
 			$(function(){
 				$.blockUI({message:"@Messages("view.message.please.wait")"});
@@ -134,6 +142,18 @@
    					}
 				});
 			 });
+			
+			//duplicate name check
+			function checkDuplicateOnUpdate(newName, oldName){
+				//Read all names in the folder
+				var names = [];
+				var list = $('#objects-table').find('.obj-name');
+				list.map(function() {
+					names.push($(this).text());
+				});
+				
+				return (newName != oldName && $.inArray(newName, names) >= 0);
+			}
 			
 		});
 		

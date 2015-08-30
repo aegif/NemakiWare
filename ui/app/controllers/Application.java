@@ -79,8 +79,9 @@ public class Application extends Controller{
 		return ok(
 			Routes.javascriptRouter("jsRoutes", 
 				controllers.routes.javascript.Node.showDetail(),
-				controllers.routes.javascript.Node.delete(),
 				controllers.routes.javascript.Node.getAce(),
+				controllers.routes.javascript.Node.update(),
+				controllers.routes.javascript.Node.delete(),
 				
 				controllers.routes.javascript.Type.showBlank(),
 				controllers.routes.javascript.Type.edit(),
