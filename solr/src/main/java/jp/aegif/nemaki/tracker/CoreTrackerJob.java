@@ -21,7 +21,9 @@
  ******************************************************************************/
 package jp.aegif.nemaki.tracker;
 
+import jp.aegif.nemaki.util.CmisSessionFactory;
 import jp.aegif.nemaki.util.Constant;
+import jp.aegif.nemaki.util.yaml.RepositorySettings;
 
 import org.apache.log4j.Logger;
 import org.quartz.Job;
@@ -46,6 +48,10 @@ public class CoreTrackerJob implements Job {
 	public void execute(JobExecutionContext jec) throws JobExecutionException {
 		CoreTracker coreTracker = (CoreTracker) jec.getJobDetail()
 				.getJobDataMap().get("TRACKER");
-		coreTracker.index(Constant.MODE_DELTA);
+		
+		RepositorySettings settings = CmisSessionFactory.getRepositorySettings();
+		for(String repositoryId : settings.getIds()){
+			coreTracker.index(Constant.MODE_DELTA, repositoryId);
+		}
 	}
 }

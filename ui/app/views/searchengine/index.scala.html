@@ -1,6 +1,8 @@
 @import util.Util
 @import org.apache.commons.lang3.StringUtils
 
+@(repositoryId:String)
+
 @lightbox{
 	<div class="container">
 		<div class="row" style="padding-bottom:30px;">
@@ -31,36 +33,30 @@
 	$(function(){
 		//binding: init
 		$(document).on("click", "#search-engine-init", function(){
-			$.ajax({
-				url:"@{Util.getContextPath(request)}search-engine/init",
-				success:function(data, textStatus){
-					alert('@Messages("view.search-engine.init.success")');
-				},
-				error:function(XMLHttpRequest, textStatus, errorThrown){
-					var msg = "";
-					msg += "XMLHttpRequest:" + XMLHttpRequest.status + "\n";
-					msg += "textStatus:" + textStatus + "\n";
-					msg += "errorThrown:" + errorThrown.message + "\n";
-					alert(msg);
-				}
+			$.ajax(jsRoutes.controllers.SearchEngine.init("@repositoryId")
+			).done(function(data){
+				alert('@Messages("view.search-engine.init.success")');
+			}).fail(function(XMLHttpRequest, textStatus, errorThrown){
+				var msg = "";
+				msg += "XMLHttpRequest:" + XMLHttpRequest.status + "\n";
+				msg += "textStatus:" + textStatus + "\n";
+				msg += "errorThrown:" + errorThrown.message + "\n";
+				alert(msg);
 			});
 		});
 	
 		//binding: reindex
 		$(document).on("click", "#search-engine-reindex", function(){
 			if(window.confirm('@Messages("view.search-engine.reindex.confirm")')){
-				$.ajax({
-					url:"@{Util.getContextPath(request)}search-engine/reindex",
-					success:function(data, textStatus){
-						alert('@Messages("view.search-engine.reindex.success")');
-					},
-					error:function(XMLHttpRequest, textStatus, errorThrown){
-						var msg = "";
-						msg += "XMLHttpRequest:" + XMLHttpRequest.status + "\n";
-						msg += "textStatus:" + textStatus + "\n";
-						msg += "errorThrown:" + errorThrown.message + "\n";
-						alert(msg);
-					}
+				$.ajax(jsRoutes.controllers.SearchEngine.reindex("@repositoryId")
+				).done(function(data){
+					alert('@Messages("view.search-engine.reindex.success")');
+				}).fail(function(XMLHttpRequest, textStatus, errorThrown){
+					var msg = "";
+					msg += "XMLHttpRequest:" + XMLHttpRequest.status + "\n";
+					msg += "textStatus:" + textStatus + "\n";
+					msg += "errorThrown:" + errorThrown.message + "\n";
+					alert(msg);
 				});
 			}
 		});

@@ -62,4 +62,7 @@
             </list>
         </property>
     </bean>
+    
+	<bean id="SpringContext" class="jp.aegif.nemaki.util.spring.SpringContext">
+	</bean>
 </beans>

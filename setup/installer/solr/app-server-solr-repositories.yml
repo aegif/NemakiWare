@@ -1,0 +1,4 @@
+settings:
+  $cmis.repository.main: 
+    user: admin
+    password: admin

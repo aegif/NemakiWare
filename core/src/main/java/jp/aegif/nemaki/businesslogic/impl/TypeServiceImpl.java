@@ -30,19 +30,19 @@ public class TypeServiceImpl implements TypeService{
 	}
 
 	@Override
-	public NemakiTypeDefinition getTypeDefinition(String typeId) {
-		return contentDaoService.getTypeDefinition(typeId);
+	public NemakiTypeDefinition getTypeDefinition(String repositoryId, String typeId) {
+		return contentDaoService.getTypeDefinition(repositoryId, typeId);
 	}
 
 	@Override
-	public List<NemakiTypeDefinition> getTypeDefinitions() {
-		return contentDaoService.getTypeDefinitions();
+	public List<NemakiTypeDefinition> getTypeDefinitions(String repositoryId) {
+		return contentDaoService.getTypeDefinitions(repositoryId);
 	}
 
 	@Override
-	public NemakiPropertyDefinition getPropertyDefinition(String detailNodeId) {
-		NemakiPropertyDefinitionDetail detail = getPropertyDefinitionDetail(detailNodeId);
-		NemakiPropertyDefinitionCore core = getPropertyDefinitionCore(detail
+	public NemakiPropertyDefinition getPropertyDefinition(String repositoryId, String detailNodeId) {
+		NemakiPropertyDefinitionDetail detail = getPropertyDefinitionDetail(repositoryId, detailNodeId);
+		NemakiPropertyDefinitionCore core = getPropertyDefinitionCore(repositoryId, detail
 				.getCoreNodeId());
 
 		NemakiPropertyDefinition npd = new NemakiPropertyDefinition(core,
@@ -51,78 +51,78 @@ public class TypeServiceImpl implements TypeService{
 	}
 
 	@Override
-	public NemakiPropertyDefinitionCore getPropertyDefinitionCore(String coreId) {
-		return contentDaoService.getPropertyDefinitionCore(coreId);
+	public NemakiPropertyDefinitionCore getPropertyDefinitionCore(String repositoryId, String coreId) {
+		return contentDaoService.getPropertyDefinitionCore(repositoryId, coreId);
 	}
 
 	@Override
 	public NemakiPropertyDefinitionCore getPropertyDefinitionCoreByPropertyId(
-			String propertyId) {
-		return contentDaoService.getPropertyDefinitionCoreByPropertyId(propertyId);
+			String repositoryId, String propertyId) {
+		return contentDaoService.getPropertyDefinitionCoreByPropertyId(repositoryId, propertyId);
 	}
 
 	@Override
-	public List<NemakiPropertyDefinitionCore> getPropertyDefinitionCores() {
-		return contentDaoService.getPropertyDefinitionCores();
+	public List<NemakiPropertyDefinitionCore> getPropertyDefinitionCores(String repositoryId) {
+		return contentDaoService.getPropertyDefinitionCores(repositoryId);
 	}
 
 	@Override
 	public NemakiPropertyDefinitionDetail getPropertyDefinitionDetail(
-			String detailId) {
-		return contentDaoService.getPropertyDefinitionDetail(detailId);
+			String repositoryId, String detailId) {
+		return contentDaoService.getPropertyDefinitionDetail(repositoryId, detailId);
 	}
 
 	@Override
 	public List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetailByCoreNodeId(
-			String coreNodeId){
-		return contentDaoService.getPropertyDefinitionDetailByCoreNodeId(coreNodeId);
+			String repositoryId, String coreNodeId){
+		return contentDaoService.getPropertyDefinitionDetailByCoreNodeId(repositoryId, coreNodeId);
 	}
 
 	@Override
 	public NemakiTypeDefinition createTypeDefinition(
-			NemakiTypeDefinition typeDefinition) {
-		return contentDaoService.createTypeDefinition(typeDefinition);
+			String repositoryId, NemakiTypeDefinition typeDefinition) {
+		return contentDaoService.createTypeDefinition(repositoryId, typeDefinition);
 	}
 
 	@Override
 	public NemakiTypeDefinition updateTypeDefinition(
-			NemakiTypeDefinition typeDefinition) {
-		return contentDaoService.updateTypeDefinition(typeDefinition);
+			String repositoryId, NemakiTypeDefinition typeDefinition) {
+		return contentDaoService.updateTypeDefinition(repositoryId, typeDefinition);
 	}
 
 	@Override
-	public void deleteTypeDefinition(String typeId) {
-		NemakiTypeDefinition ntd = getTypeDefinition(typeId);
+	public void deleteTypeDefinition(String repositoryId, String typeId) {
+		NemakiTypeDefinition ntd = getTypeDefinition(repositoryId, typeId);
 
 		//Delete unnecessary property definitions
 		List<String> detailIds = ntd.getProperties();
 		for(String detailId : detailIds){
-			NemakiPropertyDefinitionDetail detail = getPropertyDefinitionDetail(detailId);
-			NemakiPropertyDefinitionCore core = getPropertyDefinitionCore(detail.getCoreNodeId());
+			NemakiPropertyDefinitionDetail detail = getPropertyDefinitionDetail(repositoryId, detailId);
+			NemakiPropertyDefinitionCore core = getPropertyDefinitionCore(repositoryId, detail.getCoreNodeId());
 			//Delete a detail
-			contentDaoService.delete(detail.getId());
+			contentDaoService.delete(repositoryId, detail.getId());
 
 			//Delete a core only if no details exist
 			List<NemakiPropertyDefinitionDetail> l =
-					contentDaoService.getPropertyDefinitionDetailByCoreNodeId(core.getId());
+					contentDaoService.getPropertyDefinitionDetailByCoreNodeId(repositoryId, core.getId());
 			if(CollectionUtils.isEmpty(l)){
-				contentDaoService.delete(core.getId());
+				contentDaoService.delete(repositoryId, core.getId());
 			}
 		}
 
 		//Delete the type definition
-		contentDaoService.deleteTypeDefinition(ntd.getId());
+		contentDaoService.deleteTypeDefinition(repositoryId, ntd.getId());
 
 	}
 
 	@Override
 	public NemakiPropertyDefinitionDetail createPropertyDefinition(
-			NemakiPropertyDefinition propertyDefinition) {
+			String repositoryId, NemakiPropertyDefinition propertyDefinition) {
 		NemakiPropertyDefinitionCore _core = new NemakiPropertyDefinitionCore(
 				propertyDefinition);
 
 		// Skip creating a core when it exists
-		List<NemakiPropertyDefinitionCore> cores = getPropertyDefinitionCores();
+		List<NemakiPropertyDefinitionCore> cores = getPropertyDefinitionCores(repositoryId);
 		Map<String, NemakiPropertyDefinitionCore> corePropertyIds = new HashMap<String, NemakiPropertyDefinitionCore>();
 		for (NemakiPropertyDefinitionCore npdc : cores) {
 			corePropertyIds.put(npdc.getPropertyId(), npdc);
@@ -130,10 +130,10 @@ public class TypeServiceImpl implements TypeService{
 		String coreNodeId = "";
 		if (!corePropertyIds.containsKey(_core.getPropertyId())) {
 			//propertyId uniqueness
-			_core.setPropertyId(buildUniquePropertyId(_core.getPropertyId()));
+			_core.setPropertyId(buildUniquePropertyId(repositoryId, _core.getPropertyId()));
 			// Create a property core
 			NemakiPropertyDefinitionCore core = contentDaoService
-					.createPropertyDefinitionCore(_core);
+					.createPropertyDefinitionCore(repositoryId, _core);
 			coreNodeId = core.getId();
 		} else {
 			NemakiPropertyDefinitionCore existing = corePropertyIds.get(_core
@@ -145,33 +145,33 @@ public class TypeServiceImpl implements TypeService{
 		NemakiPropertyDefinitionDetail _detail = new NemakiPropertyDefinitionDetail(
 				propertyDefinition, coreNodeId);
 		NemakiPropertyDefinitionDetail detail = contentDaoService
-				.createPropertyDefinitionDetail(_detail);
+				.createPropertyDefinitionDetail(repositoryId, _detail);
 
 		return detail;
 	}
 
 	@Override
 	public NemakiPropertyDefinitionDetail updatePropertyDefinitionDetail(
-			NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
-		return contentDaoService.updatePropertyDefinitionDetail(propertyDefinitionDetail);
+			String repositoryId, NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
+		return contentDaoService.updatePropertyDefinitionDetail(repositoryId, propertyDefinitionDetail);
 	}
 
 
 
 
 
-	private String buildUniquePropertyId(String propertyId){
-		if(isUniquePropertyIdInRepository(propertyId)){
+	private String buildUniquePropertyId(String repositoryId, String propertyId){
+		if(isUniquePropertyIdInRepository(repositoryId, propertyId)){
 			return propertyId;
 		}else{
 			return propertyId + "_" + String.valueOf(System.currentTimeMillis());
 		}
 	}
 
-	private boolean isUniquePropertyIdInRepository(String propertyId){
+	private boolean isUniquePropertyIdInRepository(String repositoryId, String propertyId){
 		//propertyId uniqueness
 		List<String> list = getSystemPropertyIds();
-		List<NemakiPropertyDefinitionCore>cores = getPropertyDefinitionCores();
+		List<NemakiPropertyDefinitionCore>cores = getPropertyDefinitionCores(repositoryId);
 		if(CollectionUtils.isNotEmpty(cores)){
 			for(NemakiPropertyDefinitionCore core: cores){
 				list.add(core.getPropertyId());

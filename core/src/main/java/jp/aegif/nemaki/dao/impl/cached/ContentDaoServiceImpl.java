@@ -40,6 +40,7 @@ import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.cache.NemakiCache;
+import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import net.sf.ehcache.Cache;
 import net.sf.ehcache.Element;
 
@@ -57,7 +58,7 @@ import org.springframework.util.CollectionUtils;
 public class ContentDaoServiceImpl implements ContentDaoService {
 
 	private ContentDaoService nonCachedContentDaoService;
-	private NemakiCache nemakiCache;
+	private NemakiCachePool nemakiCachePool;
 	
 	private final String TOKEN_CACHE_LATEST_CHANGE_TOKEN = "lc";
 
@@ -69,8 +70,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	// Type & Property definition
 	// ///////////////////////////////////////
 	@Override
-	public List<NemakiTypeDefinition> getTypeDefinitions() {
-		Cache typeCache = nemakiCache.getTypeCache();
+	public List<NemakiTypeDefinition> getTypeDefinitions(String repositoryId) {
+		Cache typeCache = nemakiCachePool.get(repositoryId).getTypeCache();
 		Element v = typeCache.get("typedefs");
 
 		if (v != null) {
@@ -78,7 +79,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		}
 
 		List<NemakiTypeDefinition> result = nonCachedContentDaoService
-				.getTypeDefinitions();
+				.getTypeDefinitions(repositoryId);
 
 		if (CollectionUtils.isEmpty(result)) {
 			return null;
@@ -89,14 +90,14 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public NemakiTypeDefinition getTypeDefinition(String typeId) {
+	public NemakiTypeDefinition getTypeDefinition(String repositoryId, String typeId) {
 
-		Cache typeCache = nemakiCache.getTypeCache();
+		Cache typeCache = nemakiCachePool.get(repositoryId).getTypeCache();
 		Element v = typeCache.get("typedefs");
 
 		List<NemakiTypeDefinition> typeDefs = null;
 		if (v == null) {
-			typeDefs = this.getTypeDefinitions();
+			typeDefs = this.getTypeDefinitions(repositoryId);
 		} else {
 			typeDefs = (List<NemakiTypeDefinition>) v.getObjectValue();
 		}
@@ -111,82 +112,82 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public NemakiTypeDefinition createTypeDefinition(
-			NemakiTypeDefinition typeDefinition) {
+			String repositoryId, NemakiTypeDefinition typeDefinition) {
 		NemakiTypeDefinition nt = nonCachedContentDaoService
-				.createTypeDefinition(typeDefinition);
-		Cache typeCache = nemakiCache.getTypeCache();
+				.createTypeDefinition(repositoryId, typeDefinition);
+		Cache typeCache = nemakiCachePool.get(repositoryId).getTypeCache();
 		typeCache.remove("typedefs");
 		return nt;
 	}
 
 	@Override
 	public NemakiTypeDefinition updateTypeDefinition(
-			NemakiTypeDefinition typeDefinition) {
+			String repositoryId, NemakiTypeDefinition typeDefinition) {
 		NemakiTypeDefinition nt = nonCachedContentDaoService
-				.updateTypeDefinition(typeDefinition);
-		Cache typeCache = nemakiCache.getTypeCache();
+				.updateTypeDefinition(repositoryId, typeDefinition);
+		Cache typeCache = nemakiCachePool.get(repositoryId).getTypeCache();
 		typeCache.remove("typedefs");
 		return nt;
 	}
 
 	@Override
-	public void deleteTypeDefinition(String nodeId) {
-		nonCachedContentDaoService.deleteTypeDefinition(nodeId);
+	public void deleteTypeDefinition(String repositoryId, String nodeId) {
+		nonCachedContentDaoService.deleteTypeDefinition(repositoryId, nodeId);
 
-		Cache typeCache = nemakiCache.getTypeCache();
+		Cache typeCache = nemakiCachePool.get(repositoryId).getTypeCache();
 		typeCache.remove("typedefs");
 	}
 
 	@Override
-	public List<NemakiPropertyDefinitionCore> getPropertyDefinitionCores() {
-		return nonCachedContentDaoService.getPropertyDefinitionCores();
+	public List<NemakiPropertyDefinitionCore> getPropertyDefinitionCores(String repositoryId) {
+		return nonCachedContentDaoService.getPropertyDefinitionCores(repositoryId);
 	}
 
 	@Override
-	public NemakiPropertyDefinitionCore getPropertyDefinitionCore(String nodeId) {
-		return nonCachedContentDaoService.getPropertyDefinitionCore(nodeId);
+	public NemakiPropertyDefinitionCore getPropertyDefinitionCore(String repositoryId, String nodeId) {
+		return nonCachedContentDaoService.getPropertyDefinitionCore(repositoryId, nodeId);
 	}
 
 	@Override
 	public NemakiPropertyDefinitionCore getPropertyDefinitionCoreByPropertyId(
-			String propertyId) {
+			String repositoryId, String propertyId) {
 		return nonCachedContentDaoService
-				.getPropertyDefinitionCoreByPropertyId(propertyId);
+				.getPropertyDefinitionCoreByPropertyId(repositoryId, propertyId);
 	}
 
 	@Override
 	public NemakiPropertyDefinitionDetail getPropertyDefinitionDetail(
-			String nodeId) {
-		return nonCachedContentDaoService.getPropertyDefinitionDetail(nodeId);
+			String repositoryId, String nodeId) {
+		return nonCachedContentDaoService.getPropertyDefinitionDetail(repositoryId, nodeId);
 	}
 
 	@Override
 	public List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetailByCoreNodeId(
-			String coreNodeId) {
+			String repositoryId, String coreNodeId) {
 		return nonCachedContentDaoService
-				.getPropertyDefinitionDetailByCoreNodeId(coreNodeId);
+				.getPropertyDefinitionDetailByCoreNodeId(repositoryId, coreNodeId);
 	}
 
 	@Override
 	public NemakiPropertyDefinitionCore createPropertyDefinitionCore(
-			NemakiPropertyDefinitionCore propertyDefinitionCore) {
+			String repositoryId, NemakiPropertyDefinitionCore propertyDefinitionCore) {
 		return nonCachedContentDaoService
-				.createPropertyDefinitionCore(propertyDefinitionCore);
+				.createPropertyDefinitionCore(repositoryId, propertyDefinitionCore);
 	}
 
 	@Override
 	public NemakiPropertyDefinitionDetail createPropertyDefinitionDetail(
-			NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
+			String repositoryId, NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
 		return nonCachedContentDaoService
-				.createPropertyDefinitionDetail(propertyDefinitionDetail);
+				.createPropertyDefinitionDetail(repositoryId, propertyDefinitionDetail);
 	}
 
 	@Override
 	public NemakiPropertyDefinitionDetail updatePropertyDefinitionDetail(
-			NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
+			String repositoryId, NemakiPropertyDefinitionDetail propertyDefinitionDetail) {
 		NemakiPropertyDefinitionDetail np = nonCachedContentDaoService
-				.updatePropertyDefinitionDetail(propertyDefinitionDetail);
-		Cache typeCache = nemakiCache.getTypeCache();
+				.updatePropertyDefinitionDetail(repositoryId, propertyDefinitionDetail);
+		Cache typeCache = nemakiCachePool.get(repositoryId).getTypeCache();
 		typeCache.remove("typedefs");
 		return np;
 	}
@@ -195,8 +196,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	// Content
 	// ///////////////////////////////////////
 	@Override
-	public NodeBase getNodeBase(String objectId) {
-		return nonCachedContentDaoService.getNodeBase(objectId);
+	public NodeBase getNodeBase(String repositoryId, String objectId) {
+		return nonCachedContentDaoService.getNodeBase(repositoryId, objectId);
 	}
 
 	/**
@@ -204,15 +205,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	 * devide this method into getDcoument & getFolder
 	 */
 	@Override
-	public Content getContent(String objectId) {
-		Cache contentCache = nemakiCache.getContentCache();
+	public Content getContent(String repositoryId, String objectId) {
+		Cache contentCache = nemakiCachePool.get(repositoryId).getContentCache();
 		Element v = contentCache.get(objectId);
 
 		if (v != null) {
 			return (Content) v.getObjectValue();
 		}
 
-		Content content = nonCachedContentDaoService.getContent(objectId);
+		Content content = nonCachedContentDaoService.getContent(repositoryId, objectId);
 
 		if (content == null) {
 			return null;
@@ -224,13 +225,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public boolean existContent(String objectTypeId) {
-		return nonCachedContentDaoService.existContent(objectTypeId);
+	public boolean existContent(String repositoryId, String objectTypeId) {
+		return nonCachedContentDaoService.existContent(repositoryId, objectTypeId);
 	}
 
 	@Override
-	public Document getDocument(String objectId) {
-		Cache contentCache = nemakiCache.getContentCache();
+	public Document getDocument(String repositoryId, String objectId) {
+		Cache contentCache = nemakiCachePool.get(repositoryId).getContentCache();
 		Element v = contentCache.get(objectId);
 
 		if (v != null) {
@@ -241,7 +242,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			}
 		}
 
-		Document doc = nonCachedContentDaoService.getDocument(objectId);
+		Document doc = nonCachedContentDaoService.getDocument(repositoryId, objectId);
 		if (doc == null) {
 			return null;
 		} else {
@@ -251,20 +252,20 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public List<Document> getCheckedOutDocuments(String parentFolderId) {
+	public List<Document> getCheckedOutDocuments(String repositoryId, String parentFolderId) {
 		return nonCachedContentDaoService
-				.getCheckedOutDocuments(parentFolderId);
+				.getCheckedOutDocuments(repositoryId, parentFolderId);
 	}
 
 	@Override
-	public VersionSeries getVersionSeries(String nodeId) {
-		Cache versionSeriesCache = nemakiCache.getVersionSeriesCache();
+	public VersionSeries getVersionSeries(String repositoryId, String nodeId) {
+		Cache versionSeriesCache = nemakiCachePool.get(repositoryId).getVersionSeriesCache();
 		Element v = versionSeriesCache.get(nodeId);
 
 		if (v != null) {
 			return (VersionSeries) v.getObjectValue();
 		}
-		VersionSeries vs = nonCachedContentDaoService.getVersionSeries(nodeId);
+		VersionSeries vs = nonCachedContentDaoService.getVersionSeries(repositoryId, nodeId);
 		if (vs == null) {
 			return null;
 		} else {
@@ -274,25 +275,25 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public List<Document> getAllVersions(String versionSeriesId) {
-		return nonCachedContentDaoService.getAllVersions(versionSeriesId);
+	public List<Document> getAllVersions(String repositoryId, String versionSeriesId) {
+		return nonCachedContentDaoService.getAllVersions(repositoryId, versionSeriesId);
 	}
 
 	@Override
-	public Document getDocumentOfLatestVersion(String versionSeriesId) {
+	public Document getDocumentOfLatestVersion(String repositoryId, String versionSeriesId) {
 		return nonCachedContentDaoService
-				.getDocumentOfLatestVersion(versionSeriesId);
+				.getDocumentOfLatestVersion(repositoryId, versionSeriesId);
 	}
 
 	@Override
-	public Document getDocumentOfLatestMajorVersion(String versionSeriesId) {
+	public Document getDocumentOfLatestMajorVersion(String repositoryId, String versionSeriesId) {
 		return nonCachedContentDaoService
-				.getDocumentOfLatestMajorVersion(versionSeriesId);
+				.getDocumentOfLatestMajorVersion(repositoryId, versionSeriesId);
 	}
 
 	@Override
-	public Folder getFolder(String objectId) {
-		Cache contentCache = nemakiCache.getContentCache();
+	public Folder getFolder(String repositoryId, String objectId) {
+		Cache contentCache = nemakiCachePool.get(repositoryId).getContentCache();
 		Element v = contentCache.get(objectId);
 
 		if (v != null) {
@@ -303,7 +304,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			}
 		}
 
-		Folder folder = nonCachedContentDaoService.getFolder(objectId);
+		Folder folder = nonCachedContentDaoService.getFolder(repositoryId, objectId);
 
 		if (folder == null) {
 			return null;
@@ -314,181 +315,181 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public Folder getFolderByPath(String path) {
-		return nonCachedContentDaoService.getFolderByPath(path);
+	public Folder getFolderByPath(String repositoryId, String path) {
+		return nonCachedContentDaoService.getFolderByPath(repositoryId, path);
 	}
 
 	@Override
-	public List<Content> getLatestChildrenIndex(String parentId) {
-		return nonCachedContentDaoService.getLatestChildrenIndex(parentId);
+	public List<Content> getLatestChildrenIndex(String repositoryId, String parentId) {
+		return nonCachedContentDaoService.getLatestChildrenIndex(repositoryId, parentId);
 	}
 
 	@Override
-	public Content getChildByName(String parentId, String name) {
-		return nonCachedContentDaoService.getChildByName(parentId, name);
+	public Content getChildByName(String repositoryId, String parentId, String name) {
+		return nonCachedContentDaoService.getChildByName(repositoryId, parentId, name);
 	}
 
 	@Override
-	public Relationship getRelationship(String objectId) {
-		Cache cache = nemakiCache.getContentCache();
+	public Relationship getRelationship(String repositoryId, String objectId) {
+		Cache cache = nemakiCachePool.get(repositoryId).getContentCache();
 		Element v = cache.get(objectId);
 		
 		if(v == null){
 			return (Relationship)v.getObjectValue();
 		}else{
-			return nonCachedContentDaoService.getRelationship(objectId);
+			return nonCachedContentDaoService.getRelationship(repositoryId, objectId);
 		}
 	}
 
 	@Override
-	public List<Relationship> getRelationshipsBySource(String sourceId) {
-		return nonCachedContentDaoService.getRelationshipsBySource(sourceId);
+	public List<Relationship> getRelationshipsBySource(String repositoryId, String sourceId) {
+		return nonCachedContentDaoService.getRelationshipsBySource(repositoryId, sourceId);
 	}
 
 	@Override
-	public List<Relationship> getRelationshipsByTarget(String targetId) {
-		return nonCachedContentDaoService.getRelationshipsByTarget(targetId);
+	public List<Relationship> getRelationshipsByTarget(String repositoryId, String targetId) {
+		return nonCachedContentDaoService.getRelationshipsByTarget(repositoryId, targetId);
 	}
 
 	@Override
-	public Policy getPolicy(String objectId) {
-		return nonCachedContentDaoService.getPolicy(objectId);
+	public Policy getPolicy(String repositoryId, String objectId) {
+		return nonCachedContentDaoService.getPolicy(repositoryId, objectId);
 	}
 
 	@Override
-	public List<Policy> getAppliedPolicies(String objectId) {
-		return nonCachedContentDaoService.getAppliedPolicies(objectId);
+	public List<Policy> getAppliedPolicies(String repositoryId, String objectId) {
+		return nonCachedContentDaoService.getAppliedPolicies(repositoryId, objectId);
 	}
 
 	@Override
-	public Item getItem(String objectId) {
-		return nonCachedContentDaoService.getItem(objectId);
+	public Item getItem(String repositoryId, String objectId) {
+		return nonCachedContentDaoService.getItem(repositoryId, objectId);
 	}
 
 	@Override
-	public Document create(Document document) {
-		Document d = nonCachedContentDaoService.create(document);
-		nemakiCache.getContentCache().put(new Element(d.getId(), d));
+	public Document create(String repositoryId, Document document) {
+		Document d = nonCachedContentDaoService.create(repositoryId, document);
+		nemakiCachePool.get(repositoryId).getContentCache().put(new Element(d.getId(), d));
 		return d;
 	}
 
 	@Override
-	public VersionSeries create(VersionSeries versionSeries) {
-		VersionSeries vs = nonCachedContentDaoService.create(versionSeries);
-		Cache versionSeriesCache = nemakiCache.getVersionSeriesCache();
+	public VersionSeries create(String repositoryId, VersionSeries versionSeries) {
+		VersionSeries vs = nonCachedContentDaoService.create(repositoryId, versionSeries);
+		Cache versionSeriesCache = nemakiCachePool.get(repositoryId).getVersionSeriesCache();
 		versionSeriesCache.put(new Element(vs.getId(), vs));
 		return vs;
 	}
 
 	@Override
-	public Change create(Change change) {
-		Change created = nonCachedContentDaoService.create(change);
-		Change latest = nonCachedContentDaoService.getLatestChange();
-		nemakiCache.getLatestChangeTokenCache().removeAll();
-		nemakiCache.getLatestChangeTokenCache().put(new Element(TOKEN_CACHE_LATEST_CHANGE_TOKEN, latest));
+	public Change create(String repositoryId, Change change) {
+		Change created = nonCachedContentDaoService.create(repositoryId, change);
+		Change latest = nonCachedContentDaoService.getLatestChange(repositoryId);
+		nemakiCachePool.get(repositoryId).getLatestChangeTokenCache().removeAll();
+		nemakiCachePool.get(repositoryId).getLatestChangeTokenCache().put(new Element(TOKEN_CACHE_LATEST_CHANGE_TOKEN, latest));
 		return created;
 	}
 
 	@Override
-	public Folder create(Folder folder) {
-		Folder created = nonCachedContentDaoService.create(folder);
-		nemakiCache.getContentCache().put(new Element(created.getId(), created));
+	public Folder create(String repositoryId, Folder folder) {
+		Folder created = nonCachedContentDaoService.create(repositoryId, folder);
+		nemakiCachePool.get(repositoryId).getContentCache().put(new Element(created.getId(), created));
 		return created;
 	}
 
 	@Override
-	public Relationship create(Relationship relationship) {
-		Relationship created = nonCachedContentDaoService.create(relationship);
-		nemakiCache.getContentCache().put(new Element(created.getId(), created));
+	public Relationship create(String repositoryId, Relationship relationship) {
+		Relationship created = nonCachedContentDaoService.create(repositoryId, relationship);
+		nemakiCachePool.get(repositoryId).getContentCache().put(new Element(created.getId(), created));
 		return created;
 	}
 
 	@Override
-	public Policy create(Policy policy) {
-		Policy created = nonCachedContentDaoService.create(policy);
-		nemakiCache.getContentCache().put(new Element(created.getId(), created));
+	public Policy create(String repositoryId, Policy policy) {
+		Policy created = nonCachedContentDaoService.create(repositoryId, policy);
+		nemakiCachePool.get(repositoryId).getContentCache().put(new Element(created.getId(), created));
 		return created;
 	}
 
 	@Override
-	public Item create(Item item) {
-		Item created = nonCachedContentDaoService.create(item);
-		nemakiCache.getContentCache().put(new Element(created.getId(), created));
+	public Item create(String repositoryId, Item item) {
+		Item created = nonCachedContentDaoService.create(repositoryId, item);
+		nemakiCachePool.get(repositoryId).getContentCache().put(new Element(created.getId(), created));
 		return created;
 	}
 
 	@Override
-	public Document update(Document document) {
-		Document updated = nonCachedContentDaoService.update(document);
-		nemakiCache.getContentCache().put(new Element(updated.getId(), updated));
+	public Document update(String repositoryId, Document document) {
+		Document updated = nonCachedContentDaoService.update(repositoryId, document);
+		nemakiCachePool.get(repositoryId).getContentCache().put(new Element(updated.getId(), updated));
 		return updated;
 	}
 
 	@Override
-	public VersionSeries update(VersionSeries versionSeries) {
+	public VersionSeries update(String repositoryId, VersionSeries versionSeries) {
 		VersionSeries updated = nonCachedContentDaoService
-				.update(versionSeries);
-		Cache versionSeriesCache = nemakiCache.getVersionSeriesCache();
+				.update(repositoryId, versionSeries);
+		Cache versionSeriesCache = nemakiCachePool.get(repositoryId).getVersionSeriesCache();
 		versionSeriesCache.put(new Element(updated.getId(), updated));
 		return updated;
 	}
 
 	@Override
-	public Folder update(Folder folder) {
-		Folder updated = nonCachedContentDaoService.update(folder);
-		nemakiCache.getContentCache().put(new Element(updated.getId(), updated));
+	public Folder update(String repositoryId, Folder folder) {
+		Folder updated = nonCachedContentDaoService.update(repositoryId, folder);
+		nemakiCachePool.get(repositoryId).getContentCache().put(new Element(updated.getId(), updated));
 		return updated;
 	}
 
 	@Override
-	public Relationship update(Relationship relationship) {
-		Relationship updated = nonCachedContentDaoService.update(relationship);
-		nemakiCache.getContentCache().put(new Element(updated.getId(), updated));
+	public Relationship update(String repositoryId, Relationship relationship) {
+		Relationship updated = nonCachedContentDaoService.update(repositoryId, relationship);
+		nemakiCachePool.get(repositoryId).getContentCache().put(new Element(updated.getId(), updated));
 		return updated;
 	}
 
 	@Override
-	public Policy update(Policy policy) {
-		Policy updated = nonCachedContentDaoService.update(policy);
-		nemakiCache.getContentCache().put(new Element(updated.getId(), updated));
+	public Policy update(String repositoryId, Policy policy) {
+		Policy updated = nonCachedContentDaoService.update(repositoryId, policy);
+		nemakiCachePool.get(repositoryId).getContentCache().put(new Element(updated.getId(), updated));
 		return updated;
 	}
 
 	@Override
-	public Item update(Item item) {
-		Item updated = nonCachedContentDaoService.update(item);
-		nemakiCache.getContentCache().put(new Element(updated.getId(), updated));
+	public Item update(String repositoryId, Item item) {
+		Item updated = nonCachedContentDaoService.update(repositoryId, item);
+		nemakiCachePool.get(repositoryId).getContentCache().put(new Element(updated.getId(), updated));
 		return updated;
 	}
 
 	@Override
-	public void delete(String objectId) {
-		NodeBase nb = nonCachedContentDaoService.getNodeBase(objectId);
+	public void delete(String repositoryId, String objectId) {
+		NodeBase nb = nonCachedContentDaoService.getNodeBase(repositoryId, objectId);
 
 		// remove from database
-		nonCachedContentDaoService.delete(objectId);
+		nonCachedContentDaoService.delete(repositoryId, objectId);
 
 		// remove from cache
 		String id = objectId;
 
 		if (nb.isDocument()) {
-			Document d = this.getDocument(objectId);
+			Document d = this.getDocument(repositoryId, objectId);
 			// we can delete versionSeries or not?
-			nemakiCache.getVersionSeriesCache().remove(d.getVersionSeriesId());
-			nemakiCache.getAttachmentCache().remove(d.getAttachmentNodeId());
+			nemakiCachePool.get(repositoryId).getVersionSeriesCache().remove(d.getVersionSeriesId());
+			nemakiCachePool.get(repositoryId).getAttachmentCache().remove(d.getAttachmentNodeId());
 		}else if (nb.isAttachment()) {
-			nemakiCache.getAttachmentCache().remove(id);
+			nemakiCachePool.get(repositoryId).getAttachmentCache().remove(id);
 		}
 
-		 nemakiCache.getContentCache().remove(id);
+		 nemakiCachePool.get(repositoryId).getContentCache().remove(id);
 	}
 
 	// ///////////////////////////////////////
 	// Attachment
 	// ///////////////////////////////////////
 	@Override
-	public AttachmentNode getAttachment(String attachmentId) {
-		Cache attachmentCache = nemakiCache.getAttachmentCache();
+	public AttachmentNode getAttachment(String repositoryId, String attachmentId) {
+		Cache attachmentCache = nemakiCachePool.get(repositoryId).getAttachmentCache();
 		Element v = attachmentCache.get(attachmentId);
 
 		AttachmentNode an = null;
@@ -496,7 +497,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			an = (AttachmentNode) v.getObjectValue();
 
 		} else {
-			an = nonCachedContentDaoService.getAttachment(attachmentId);
+			an = nonCachedContentDaoService.getAttachment(repositoryId, attachmentId);
 			if (an == null) {
 				return null;
 			} else {
@@ -511,8 +512,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public void setStream(AttachmentNode attachmentNode) {
-		nonCachedContentDaoService.setStream(attachmentNode);
+	public void setStream(String repositoryId, AttachmentNode attachmentNode) {
+		nonCachedContentDaoService.setStream(repositoryId, attachmentNode);
 
 		// throw new
 		// UnsupportedOperationException(Thread.currentThread().getStackTrace()[0].getMethodName()
@@ -520,30 +521,30 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public Rendition getRendition(String objectId) {
-		return nonCachedContentDaoService.getRendition(objectId);
+	public Rendition getRendition(String repositoryId, String objectId) {
+		return nonCachedContentDaoService.getRendition(repositoryId, objectId);
 	}
 
 	@Override
-	public String createRendition(Rendition rendition,
-			ContentStream contentStream) {
-		return nonCachedContentDaoService.createRendition(rendition, contentStream);
+	public String createRendition(String repositoryId,
+			Rendition rendition, ContentStream contentStream) {
+		return nonCachedContentDaoService.createRendition(repositoryId, rendition, contentStream);
 	}
 
 	@Override
-	public String createAttachment(AttachmentNode attachment, ContentStream cs) {
-		return nonCachedContentDaoService.createAttachment(attachment, cs);
+	public String createAttachment(String repositoryId, AttachmentNode attachment, ContentStream cs) {
+		return nonCachedContentDaoService.createAttachment(repositoryId, attachment, cs);
 	}
 
 	@Override
-	public void updateAttachment(AttachmentNode attachment,
-			ContentStream contentStream) {
-		Cache attachmentCache = nemakiCache.getAttachmentCache();
+	public void updateAttachment(String repositoryId,
+			AttachmentNode attachment, ContentStream contentStream) {
+		Cache attachmentCache = nemakiCachePool.get(repositoryId).getAttachmentCache();
 		Element v = attachmentCache.get(attachment.getId());
 		if (v != null) {
 			attachmentCache.remove(attachment.getId());
 		}
-		nonCachedContentDaoService.updateAttachment(attachment, contentStream);
+		nonCachedContentDaoService.updateAttachment(repositoryId, attachment, contentStream);
 
 	}
 
@@ -551,15 +552,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	// Change events
 	// //////////////////////////////////////////////////////////////////////////////
 	@Override
-	public Change getChangeEvent(String token) {
-		return nonCachedContentDaoService.getChangeEvent(token);
+	public Change getChangeEvent(String repositoryId, String changeTokenId) {
+		return nonCachedContentDaoService.getChangeEvent(repositoryId, changeTokenId);
 	}
 
 	@Override
-	public Change getLatestChange() {
+	public Change getLatestChange(String repositoryId) {
 		Change change =null;
 		
-		Element v = nemakiCache.getLatestChangeTokenCache().get("lc");
+		Element v = nemakiCachePool.get(repositoryId).getLatestChangeTokenCache().get(TOKEN_CACHE_LATEST_CHANGE_TOKEN);
 		if (v != null) {
 			change = (Change)v.getObjectValue();
 		}
@@ -567,78 +568,78 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		if (change != null) {
 			return change;
 		} else {
-			change = nonCachedContentDaoService.getLatestChange();
+			change = nonCachedContentDaoService.getLatestChange(repositoryId);
 			if (change != null) {
-				nemakiCache.getLatestChangeTokenCache().put(new Element(TOKEN_CACHE_LATEST_CHANGE_TOKEN, change));
+				nemakiCachePool.get(repositoryId).getLatestChangeTokenCache().put(new Element(TOKEN_CACHE_LATEST_CHANGE_TOKEN, change));
 			}
 			return change;
 		}
 	}
 
 	@Override
-	public List<Change> getLatestChanges(String startToken, int maxItems) {
+	public List<Change> getLatestChanges(String repositoryId, String startToken, int maxItems) {
 		return nonCachedContentDaoService
-				.getLatestChanges(startToken, maxItems);
+				.getLatestChanges(repositoryId, startToken, maxItems);
 	}
 
 	// //////////////////////////////////////////////////////////////////////////////
 	// Archive
 	// //////////////////////////////////////////////////////////////////////////////
 	@Override
-	public Archive getArchive(String archiveId) {
-		return nonCachedContentDaoService.getArchive(archiveId);
+	public Archive getArchive(String repositoryId, String archiveId) {
+		return nonCachedContentDaoService.getArchive(repositoryId, archiveId);
 	}
 
 	@Override
-	public Archive getArchiveByOriginalId(String originalId) {
-		return nonCachedContentDaoService.getArchiveByOriginalId(originalId);
+	public Archive getArchiveByOriginalId(String repositoryId, String originalId) {
+		return nonCachedContentDaoService.getArchiveByOriginalId(repositoryId, originalId);
 	}
 
 	@Override
-	public Archive getAttachmentArchive(Archive archive) {
-		return nonCachedContentDaoService.getAttachmentArchive(archive);
+	public Archive getAttachmentArchive(String repositoryId, Archive archive) {
+		return nonCachedContentDaoService.getAttachmentArchive(repositoryId, archive);
 	}
 
 	@Override
-	public List<Archive> getChildArchives(Archive archive) {
-		return nonCachedContentDaoService.getChildArchives(archive);
+	public List<Archive> getChildArchives(String repositoryId, Archive archive) {
+		return nonCachedContentDaoService.getChildArchives(repositoryId, archive);
 	}
 
 	@Override
-	public List<Archive> getArchivesOfVersionSeries(String versionSeriesId) {
+	public List<Archive> getArchivesOfVersionSeries(String repositoryId, String versionSeriesId) {
 		return nonCachedContentDaoService
-				.getArchivesOfVersionSeries(versionSeriesId);
+				.getArchivesOfVersionSeries(repositoryId, versionSeriesId);
 	}
 
 	@Override
-	public List<Archive> getAllArchives() {
-		return nonCachedContentDaoService.getAllArchives();
+	public List<Archive> getAllArchives(String repositoryId) {
+		return nonCachedContentDaoService.getAllArchives(repositoryId);
 	}
 
 	@Override
-	public Archive createArchive(Archive archive, Boolean deletedWithParent) {
-		return nonCachedContentDaoService.createArchive(archive,
-				deletedWithParent);
+	public Archive createArchive(String repositoryId, Archive archive, Boolean deletedWithParent) {
+		return nonCachedContentDaoService.createArchive(repositoryId,
+				archive, deletedWithParent);
 	}
 
 	@Override
-	public Archive createAttachmentArchive(Archive archive) {
-		return nonCachedContentDaoService.createAttachmentArchive(archive);
+	public Archive createAttachmentArchive(String repositoryId, Archive archive) {
+		return nonCachedContentDaoService.createAttachmentArchive(repositoryId, archive);
 	}
 
 	@Override
-	public void deleteArchive(String archiveId) {
-		nonCachedContentDaoService.deleteArchive(archiveId);
+	public void deleteArchive(String repositoryId, String archiveId) {
+		nonCachedContentDaoService.deleteArchive(repositoryId, archiveId);
 	}
 
 	@Override
-	public void restoreContent(Archive archive) {
-		nonCachedContentDaoService.restoreContent(archive);
+	public void restoreContent(String repositoryId, Archive archive) {
+		nonCachedContentDaoService.restoreContent(repositoryId, archive);
 	}
 
 	@Override
-	public void restoreAttachment(Archive archive) {
-		nonCachedContentDaoService.restoreAttachment(archive);
+	public void restoreAttachment(String repositoryId, Archive archive) {
+		nonCachedContentDaoService.restoreAttachment(repositoryId, archive);
 	}
 
 	// //////////////////////////////////////////////////////////////////////////////
@@ -649,7 +650,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		this.nonCachedContentDaoService = nonCachedContentDaoService;
 	}
 
-	public void setNemakiCache(NemakiCache nemakiCache) {
-		this.nemakiCache = nemakiCache;
+	public void setNemakiCachePool(NemakiCachePool nemakiCachePool) {
+		this.nemakiCachePool = nemakiCachePool;
 	}
 }

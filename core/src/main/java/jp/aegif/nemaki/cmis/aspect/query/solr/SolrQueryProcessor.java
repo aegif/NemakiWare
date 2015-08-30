@@ -23,6 +23,7 @@ package jp.aegif.nemaki.cmis.aspect.query.solr;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -77,16 +78,61 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 	}
 
+	private class CmisTypeManager implements org.apache.chemistry.opencmis.server.support.TypeManager{
+		private String repositoryId;
+		private TypeManager typeManager;
+		
+		public CmisTypeManager(String repositoryId, TypeManager typeManager){
+			this.repositoryId = repositoryId;
+			this.typeManager = typeManager;
+		}
+		@Override
+		public void addTypeDefinition(TypeDefinition arg0, boolean arg1) {
+			// TODO Auto-generated method stub
+			
+		}
+		@Override
+		public void deleteTypeDefinition(String typeId) {
+			typeManager.deleteTypeDefinition(repositoryId, typeId);
+			
+		}
+		@Override
+		public String getPropertyIdForQueryName(TypeDefinition typeDefinition, String propQueryName) {
+			return typeManager.getPropertyIdForQueryName(repositoryId, typeDefinition, propQueryName);
+		}
+		@Override
+		public List<TypeDefinitionContainer> getRootTypes() {
+			return typeManager.getRootTypes(repositoryId);
+		}
+		@Override
+		public TypeDefinitionContainer getTypeById(String typeId) {
+			return typeManager.getTypeById(repositoryId, typeId);
+		}
+		@Override
+		public TypeDefinition getTypeByQueryName(String typeQueryName) {
+			return typeManager.getTypeByQueryName(repositoryId, typeQueryName);
+		}
+		@Override
+		public Collection<TypeDefinitionContainer> getTypeDefinitionList() {
+			return typeManager.getTypeDefinitionList(repositoryId);
+		}
+		@Override
+		public void updateTypeDefinition(TypeDefinition typeDefinition) {
+			typeManager.updateTypeDefinition(repositoryId, typeDefinition);
+			
+		}
+	}
+	
 	@Override
-	public ObjectList query(CallContext callContext, String statement,
-			Boolean searchAllVersions, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
-			BigInteger maxItems, BigInteger skipCount) {
+	public ObjectList query(CallContext callContext, String repositoryId,
+			String statement, Boolean searchAllVersions,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
+			String renditionFilter, BigInteger maxItems, BigInteger skipCount) {
 
 		SolrServer solrServer = solrUtil.getSolrServer();
 
 		// TODO walker is required?
-		QueryUtilStrict util = new QueryUtilStrict(statement, typeManager, null);
+		QueryUtilStrict util = new QueryUtilStrict(statement, new CmisTypeManager(repositoryId, typeManager), null);
 		QueryObject queryObject = util.getQueryObject();
 
 		// Get where caluse as Tree
@@ -105,7 +151,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 			whereQueryString = "*:*";
 		} else {
 			try {
-				SolrPredicateWalker solrPredicateWalker = new SolrPredicateWalker(
+				SolrPredicateWalker solrPredicateWalker = new SolrPredicateWalker(repositoryId,
 						queryObject, solrUtil, contentService);
 				Query whereQuery = solrPredicateWalker.walkPredicate(whereTree);
 				whereQueryString = whereQuery.toString();
@@ -118,10 +164,15 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 		// Build solr query of FROM
 		String fromQueryString = "";
+		
+		String repositoryQuery = "repository_id:" + repositoryId;
+		
+		fromQueryString += repositoryQuery + " AND ";
+		
 		TypeDefinition td = queryObject.getMainFromName();
 		// includedInSupertypeQuery
 		List<TypeDefinitionContainer> typeDescendants = typeManager
-				.getTypesDescendants(td.getId(), BigInteger.valueOf(-1), false);
+				.getTypesDescendants(repositoryId, td.getId(), BigInteger.valueOf(-1), false);
 		Iterator<TypeDefinitionContainer> iterator = typeDescendants.iterator();
 		List<String> tables = new ArrayList<String>();
 		while (iterator.hasNext()) {
@@ -135,10 +186,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 			String table = descendant.getQueryName();
 			tables.add(table.replaceAll(":", "\\\\:"));
 		}
+		
 		Term t = new Term(
 				solrUtil.getPropertyNameInSolr(PropertyIds.OBJECT_TYPE_ID),
 				StringUtils.join(tables, " "));
-		fromQueryString = new TermQuery(t).toString();
+		fromQueryString += new TermQuery(t).toString();
 
 		// Execute query
 		SolrQuery solrQuery = new SolrQuery();
@@ -164,8 +216,8 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 			List<Content> contents = new ArrayList<Content>();
 			for (SolrDocument doc : docs) {
-				String docId = (String) doc.getFieldValue("id");
-				Content c = contentService.getContent(docId);
+				String docId = (String) doc.getFieldValue("object_id");
+				Content c = contentService.getContent(repositoryId, docId);
 
 				// When for some reason the content is missed, pass through
 				if (c == null) {
@@ -179,7 +231,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 			// Filter out by permissions
 			List<Content> permitted = permissionService.getFiltered(
-					callContext, contents);
+					callContext, repositoryId, contents);
 
 			// Filter return value with SELECT clause
 			Map<String, String> requestedWithAliasKey = queryObject
@@ -192,9 +244,9 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 			// Build ObjectList
 			ObjectList result = compileService.compileObjectDataList(
-					callContext, permitted, filter, includeAllowableActions,
-					includeRelationships, renditionFilter, false, maxItems,
-					skipCount, false);
+					callContext, repositoryId, permitted, filter,
+					includeAllowableActions, includeRelationships, renditionFilter, false,
+					maxItems, skipCount, false);
 
 			// Sort
 			List<SortSpec> sortSpecs = queryObject.getOrderBys();
@@ -209,7 +261,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 				_orderBy.add(StringUtils.join(_sortSpec, " "));
 			}
 			String orderBy = StringUtils.join(_orderBy, ",");
-			sortUtil.sort(result.getObjects(), orderBy);
+			sortUtil.sort(repositoryId, result.getObjects(), orderBy);
 
 			return result;
 		} else {

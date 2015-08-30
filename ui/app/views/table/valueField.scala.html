@@ -9,7 +9,7 @@
 }else{
 	<div class="editable-value-field-container">
 		<div class="antiscroll-wrap">
-			<div class="editable-value-field antiscroll-inner">@property.getValueAsString</div>
+			<div class="editable-value-field antiscroll-inner" property-id="@property.getId" property-required="@property.getDefinition.isRequired">@property.getValueAsString</div>
 		</div>
 	</div>
 }

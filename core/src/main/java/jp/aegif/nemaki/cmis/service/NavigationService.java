@@ -38,6 +38,7 @@ public interface NavigationService {
 
 	/**
 	 * Gets the list of child objects contained in the specified folder.
+	 * @param repositoryId TODO
 	 * @param orderBy TODO
 	 * @param includeRelationships TODO
 	 * @param renditionFilter TODO
@@ -45,44 +46,47 @@ public interface NavigationService {
 	 * @param parentObjectDa TODO
 	 */
 	public abstract ObjectInFolderList getChildren(CallContext callContext,
-			String folderId, String filter, String orderBy,
-			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
-			String renditionFilter, Boolean includePathSegments, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension, Holder<ObjectData> parentObjectDa);
+			String repositoryId, String folderId, String filter,
+			String orderBy, Boolean includeAllowableActions,
+			IncludeRelationships includeRelationships, String renditionFilter, Boolean includePathSegments, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension, Holder<ObjectData> parentObjectDa);
 
 	/**
 	 * Gets the set of descendant objects contained in the specified folder or
 	 * any of its child folders.
+	 * @param repositoryId TODO
 	 * @param includeRelationships TODO
 	 * @param renditionFilter TODO
 	 * @param extension TODO
 	 * @param anscestorObjectData TODO
 	 */
 	public abstract List<ObjectInFolderContainer> getDescendants(
-			CallContext callContext, String folderId, BigInteger depth,
-			String filter, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter, Boolean includePathSegment, boolean foldersOnly, ExtensionsData extension, Holder<ObjectData> anscestorObjectData);
+			CallContext callContext, String repositoryId, String folderId,
+			BigInteger depth, String filter,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter, Boolean includePathSegment, boolean foldersOnly, ExtensionsData extension, Holder<ObjectData> anscestorObjectData);
 
 	/**
 	 * Gets the parent folder object for the specified folder object.
+	 * @param repositoryId TODO
 	 */
 	public abstract ObjectData getFolderParent(CallContext callContext,
-			String folderId, String filter);
+			String repositoryId, String folderId, String filter);
 
 	/**
 	 * Gets the parent folder(s) for the specified non-folder, fileable object.
+	 * @param repositoryId TODO
 	 * @param includeRelationships TODO
 	 * @param renditionFilter TODO
 	 * @param extension TODO
 	 */
 	public abstract List<ObjectParentData> getObjectParents(
-			CallContext callContext, String objectId, String filter,
-			Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter, Boolean includeRelativePathSegment, ExtensionsData extension);
+			CallContext callContext, String repositoryId, String objectId,
+			String filter,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter, Boolean includeRelativePathSegment, ExtensionsData extension);
 
 	public abstract ObjectList getCheckedOutDocs(CallContext callContext,
-			String folderId, String filter, String orderBy,
-			Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
-			BigInteger maxItems, BigInteger skipCount, ExtensionsData extension);
+			String repositoryId, String folderId, String filter,
+			String orderBy,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
+			String renditionFilter, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension);
 
 }

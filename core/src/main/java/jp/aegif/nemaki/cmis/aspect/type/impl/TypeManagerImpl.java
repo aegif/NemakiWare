@@ -33,6 +33,8 @@ import java.util.Map.Entry;
 
 import jp.aegif.nemaki.businesslogic.TypeService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.NemakiPropertyDefinition;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
@@ -73,9 +75,9 @@ import org.apache.commons.collections.MapUtils;
  */
 public class TypeManagerImpl implements TypeManager {
 
+	private RepositoryInfoMap repositoryInfoMap;
 	private TypeService typeService;
 	private PropertyManager propertyManager;
-	private String NAMESPACE;
 
 	/**
 	 * Constant
@@ -88,7 +90,8 @@ public class TypeManagerImpl implements TypeManager {
 	 * Global variables containing type information
 	 */
 	// Map of all types
-	private Map<String, TypeDefinitionContainer> types;
+	//private Map<String, TypeDefinitionContainer> types;
+	private Map<String, Map<String, TypeDefinitionContainer>> TYPES;
 
 	// Map of all base types
 	private Map<String, TypeDefinitionContainer> basetypes;
@@ -103,10 +106,8 @@ public class TypeManagerImpl implements TypeManager {
 	// Constructor
 	// /////////////////////////////////////////////////
 	public void init() {
-		NAMESPACE = propertyManager
-				.readValue(PropertyKey.CMIS_REPOSITORY_MAIN_NAMESPACE);
-
-		types = new HashMap<String, TypeDefinitionContainer>();
+		initGlobalTypes();
+		
 		basetypes = new HashMap<String, TypeDefinitionContainer>();
 		subTypeProperties = new HashMap<String, List<PropertyDefinition<?>>>();
 		propertyDefinitionCoresForQueryName = new HashMap<String, PropertyDefinition<?>>();
@@ -114,20 +115,33 @@ public class TypeManagerImpl implements TypeManager {
 		generate();
 	}
 
-	private void generate() {
+	private void initGlobalTypes(){
+		TYPES = new HashMap<String, Map<String,TypeDefinitionContainer>>();
+		for(String key : repositoryInfoMap.keys()){
+			TYPES.put(key, new HashMap<String, TypeDefinitionContainer>());
+		}
+	}
+	
+	private void generate(){
+		for(String key : repositoryInfoMap.keys()){
+			generate(key);
+		}
+	}
+	
+	private void generate(String repositoryId) {
 		// Generate basetypes
-		addDocumentType();
-		addFolderType();
-		addRelationshipType();
-		addPolicyType();
-		addItemType();
-		addSecondayType();
+		addDocumentType(repositoryId);
+		addFolderType(repositoryId);
+		addRelationshipType(repositoryId);
+		addPolicyType(repositoryId);
+		addItemType(repositoryId);
+		addSecondayType(repositoryId);
 
 		// Generate subtypes
-		addSubTypes();
+		addSubTypes(repositoryId);
 
 		// Generate property definition cores
-		buildPropertyDefinitionCores();
+		buildPropertyDefinitionCores(repositoryId);
 	}
 
 	// /////////////////////////////////////////////////
@@ -135,9 +149,13 @@ public class TypeManagerImpl implements TypeManager {
 	// /////////////////////////////////////////////////
 	@Override
 	public void refreshTypes() {
-		types.clear();
+		initGlobalTypes();
+		
 		basetypes.clear();
+		basetypes = new HashMap<String, TypeDefinitionContainer>();
+		
 		subTypeProperties.clear();
+		subTypeProperties = new HashMap<String, List<PropertyDefinition<?>>>();
 
 		generate();
 	}
@@ -145,7 +163,7 @@ public class TypeManagerImpl implements TypeManager {
 	// /////////////////////////////////////////////////
 	// BaseType Generating Methods
 	// /////////////////////////////////////////////////
-	private void addDocumentType() {
+	private void addDocumentType(String repositoryId) {
 		// Read parameters
 		String localName = propertyManager
 				.readValue(PropertyKey.BASETYPE_DOCUMENT_LOCAL_NAME);
@@ -184,7 +202,7 @@ public class TypeManagerImpl implements TypeManager {
 		DocumentTypeDefinitionImpl documentType = new DocumentTypeDefinitionImpl();
 		documentType.setId(BaseTypeId.CMIS_DOCUMENT.value());
 		documentType.setLocalName(localName);
-		documentType.setLocalNamespace(NAMESPACE);
+		documentType.setLocalNamespace(getNameSpace(repositoryId));
 		documentType.setQueryName(BaseTypeId.CMIS_DOCUMENT.value());
 		documentType.setDisplayName(displayName);
 		documentType.setDescription(description);
@@ -205,14 +223,14 @@ public class TypeManagerImpl implements TypeManager {
 		typeMutability.setCanDelete(typeMutabilityCanDelete);
 		documentType.setTypeMutability(typeMutability);
 
-		addBasePropertyDefinitions(documentType);
-		addDocumentPropertyDefinitions(documentType);
+		addBasePropertyDefinitions(repositoryId, documentType);
+		addDocumentPropertyDefinitions(repositoryId, documentType);
 
-		addTypeInternal(types, documentType);
+		addTypeInternal(TYPES.get(repositoryId), documentType);
 		addTypeInternal(basetypes, documentType);
 	}
 
-	private void addFolderType() {
+	private void addFolderType(String repositoryId) {
 		// Read parameters
 		String localName = propertyManager
 				.readValue(PropertyKey.BASETYPE_FOLDER_LOCAL_NAME);
@@ -243,7 +261,7 @@ public class TypeManagerImpl implements TypeManager {
 		FolderTypeDefinitionImpl folderType = new FolderTypeDefinitionImpl();
 		folderType.setId(BaseTypeId.CMIS_FOLDER.value());
 		folderType.setLocalName(localName);
-		folderType.setLocalNamespace(NAMESPACE);
+		folderType.setLocalNamespace(getNameSpace(repositoryId));
 		folderType.setQueryName(BaseTypeId.CMIS_FOLDER.value());
 		folderType.setDisplayName(displayName);
 		folderType.setBaseTypeId(BaseTypeId.CMIS_FOLDER);
@@ -262,14 +280,14 @@ public class TypeManagerImpl implements TypeManager {
 		typeMutability.setCanDelete(typeMutabilityCanDelete);
 		folderType.setTypeMutability(typeMutability);
 
-		addBasePropertyDefinitions(folderType);
-		addFolderPropertyDefinitions(folderType);
+		addBasePropertyDefinitions(repositoryId, folderType);
+		addFolderPropertyDefinitions(repositoryId, folderType);
 
-		addTypeInternal(types, folderType);
+		addTypeInternal(TYPES.get(repositoryId), folderType);
 		addTypeInternal(basetypes, folderType);
 	}
 
-	private void addRelationshipType() {
+	private void addRelationshipType(String repositoryId) {
 		// Read parameters
 		String localName = propertyManager
 				.readValue(PropertyKey.BASETYPE_RELATIONSHIP_LOCAL_NAME);
@@ -304,7 +322,7 @@ public class TypeManagerImpl implements TypeManager {
 		RelationshipTypeDefinitionImpl relationshipType = new RelationshipTypeDefinitionImpl();
 		relationshipType.setId(BaseTypeId.CMIS_RELATIONSHIP.value());
 		relationshipType.setLocalName(localName);
-		relationshipType.setLocalNamespace(NAMESPACE);
+		relationshipType.setLocalNamespace(getNameSpace(repositoryId));
 		relationshipType.setQueryName(BaseTypeId.CMIS_RELATIONSHIP.value());
 		relationshipType.setDisplayName(displayName);
 		relationshipType.setBaseTypeId(BaseTypeId.CMIS_RELATIONSHIP);
@@ -327,14 +345,14 @@ public class TypeManagerImpl implements TypeManager {
 		relationshipType.setAllowedSourceTypes(allowedSourceTypes);
 		relationshipType.setAllowedTargetTypes(allowedTargetTypes);
 
-		addBasePropertyDefinitions(relationshipType);
-		addRelationshipPropertyDefinitions(relationshipType);
+		addBasePropertyDefinitions(repositoryId, relationshipType);
+		addRelationshipPropertyDefinitions(repositoryId, relationshipType);
 
-		addTypeInternal(types, relationshipType);
+		addTypeInternal(TYPES.get(repositoryId), relationshipType);
 		addTypeInternal(basetypes, relationshipType);
 	}
 
-	private void addPolicyType() {
+	private void addPolicyType(String repositoryId) {
 		// Read parameters
 		String localName = propertyManager
 				.readValue(PropertyKey.BASETYPE_POLICY_LOCAL_NAME);
@@ -367,7 +385,7 @@ public class TypeManagerImpl implements TypeManager {
 		PolicyTypeDefinitionImpl policyType = new PolicyTypeDefinitionImpl();
 		policyType.setId(BaseTypeId.CMIS_POLICY.value());
 		policyType.setLocalName(localName);
-		policyType.setLocalNamespace(NAMESPACE);
+		policyType.setLocalNamespace(getNameSpace(repositoryId));
 		policyType.setQueryName(BaseTypeId.CMIS_POLICY.value());
 		policyType.setDisplayName(displayName);
 		policyType.setBaseTypeId(BaseTypeId.CMIS_POLICY);
@@ -386,14 +404,14 @@ public class TypeManagerImpl implements TypeManager {
 		typeMutability.setCanDelete(typeMutabilityCanDelete);
 		policyType.setTypeMutability(typeMutability);
 
-		addBasePropertyDefinitions(policyType);
-		addPolicyPropertyDefinitions(policyType);
+		addBasePropertyDefinitions(repositoryId, policyType);
+		addPolicyPropertyDefinitions(repositoryId, policyType);
 
-		addTypeInternal(types, policyType);
+		addTypeInternal(TYPES.get(repositoryId), policyType);
 		addTypeInternal(basetypes, policyType);
 	}
 
-	private void addItemType() {
+	private void addItemType(String repositoryId) {
 		// Read parameters
 		String localName = propertyManager
 				.readValue(PropertyKey.BASETYPE_ITEM_LOCAL_NAME);
@@ -426,7 +444,7 @@ public class TypeManagerImpl implements TypeManager {
 		ItemTypeDefinitionImpl itemType = new ItemTypeDefinitionImpl();
 		itemType.setId(BaseTypeId.CMIS_ITEM.value());
 		itemType.setLocalName(localName);
-		itemType.setLocalNamespace(NAMESPACE);
+		itemType.setLocalNamespace(getNameSpace(repositoryId));
 		itemType.setQueryName(BaseTypeId.CMIS_ITEM.value());
 		itemType.setDisplayName(displayName);
 		itemType.setBaseTypeId(BaseTypeId.CMIS_ITEM);
@@ -445,13 +463,13 @@ public class TypeManagerImpl implements TypeManager {
 		typeMutability.setCanDelete(typeMutabilityCanDelete);
 		itemType.setTypeMutability(typeMutability);
 
-		addBasePropertyDefinitions(itemType);
+		addBasePropertyDefinitions(repositoryId, itemType);
 
-		addTypeInternal(types, itemType);
+		addTypeInternal(TYPES.get(repositoryId), itemType);
 		addTypeInternal(basetypes, itemType);
 	}
 
-	private void addSecondayType() {
+	private void addSecondayType(String repositoryId) {
 		// Read parameters
 		String localName = propertyManager
 				.readValue(PropertyKey.BASETYPE_SECONDARY_LOCAL_NAME);
@@ -476,7 +494,7 @@ public class TypeManagerImpl implements TypeManager {
 		SecondaryTypeDefinitionImpl secondaryType = new SecondaryTypeDefinitionImpl();
 		secondaryType.setId(BaseTypeId.CMIS_SECONDARY.value());
 		secondaryType.setLocalName(localName);
-		secondaryType.setLocalNamespace(NAMESPACE);
+		secondaryType.setLocalNamespace(getNameSpace(repositoryId));
 		secondaryType.setQueryName(BaseTypeId.CMIS_SECONDARY.value());
 		secondaryType.setDisplayName(displayName);
 		secondaryType.setBaseTypeId(BaseTypeId.CMIS_SECONDARY);
@@ -500,20 +518,20 @@ public class TypeManagerImpl implements TypeManager {
 		secondaryType
 				.setPropertyDefinitions(new HashMap<String, PropertyDefinition<?>>());
 
-		addTypeInternal(types, secondaryType);
+		addTypeInternal(TYPES.get(repositoryId), secondaryType);
 		addTypeInternal(basetypes, secondaryType);
 	}
 
 
-	private void addBasePropertyDefinitions(AbstractTypeDefinition type) {
+	private void addBasePropertyDefinitions(String repositoryId, AbstractTypeDefinition type) {
 		//cmis:name
 		String _updatability_name = propertyManager.readValue(PropertyKey.PROPERTY_NAME_UPDATABILITY);
 		Updatability updatability_name = Updatability.fromValue(_updatability_name);
 		boolean queryable_name = propertyManager.readBoolean(PropertyKey.PROPERTY_NAME_QUERYABLE);
 		boolean orderable_name = propertyManager.readBoolean(PropertyKey.PROPERTY_NAME_ORDERABLE);
-		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.NAME,
-				PropertyType.STRING, Cardinality.SINGLE,
-				updatability_name, REQUIRED, queryable_name, orderable_name, null));
+		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
+				PropertyIds.NAME, PropertyType.STRING,
+				Cardinality.SINGLE, updatability_name, REQUIRED, queryable_name, orderable_name, null));
 
 		//cmis:description
 		String _updatability_description = propertyManager.readValue(PropertyKey.PROPERTY_DESCRIPTION_UPDATABILITY);
@@ -521,246 +539,246 @@ public class TypeManagerImpl implements TypeManager {
 		boolean queryable_description = propertyManager.readBoolean(PropertyKey.PROPERTY_DESCRIPTION_QUERYABLE);
 		boolean orderable_description = propertyManager.readBoolean(PropertyKey.PROPERTY_DESCRIPTION_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
-				PropertyIds.DESCRIPTION, PropertyType.STRING,
-				Cardinality.SINGLE, updatability_description, !REQUIRED,
-				queryable_description, orderable_description, null));
+				repositoryId, PropertyIds.DESCRIPTION,
+				PropertyType.STRING, Cardinality.SINGLE, updatability_description,
+				!REQUIRED, queryable_description, orderable_description, null));
 
 		//cmis:objectId
 		boolean orderable_objectId = propertyManager.readBoolean(PropertyKey.PROPERTY_OBJECT_ID_ORDERABLE);
-		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.OBJECT_ID,
-				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, QUERYABLE, orderable_objectId, null));
+		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
+				PropertyIds.OBJECT_ID, PropertyType.ID, Cardinality.SINGLE,
+				Updatability.READONLY, !REQUIRED, QUERYABLE, orderable_objectId, null));
 
 		//cmis:baseTypeId
 		boolean queryable_baseTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_BASE_TYPE_ID_QUERYABLE);
 		boolean orderable_baseTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_BASE_TYPE_ID_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
-				PropertyIds.BASE_TYPE_ID, PropertyType.ID, Cardinality.SINGLE,
-				Updatability.READONLY, !REQUIRED, queryable_baseTypeId, orderable_baseTypeId, null));
+				repositoryId, PropertyIds.BASE_TYPE_ID, PropertyType.ID,
+				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED, queryable_baseTypeId, orderable_baseTypeId, null));
 
 		//cmis:objectTypeId
 		boolean queryable_objectTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_OBJECT_TYPE_ID_QUERYABLE);
 		boolean orderable_objectTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_OBJECT_TYPE_ID_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
-				PropertyIds.OBJECT_TYPE_ID, PropertyType.ID,
-				Cardinality.SINGLE, Updatability.ONCREATE, REQUIRED, queryable_objectTypeId,
-				orderable_objectTypeId, null));
+				repositoryId, PropertyIds.OBJECT_TYPE_ID,
+				PropertyType.ID, Cardinality.SINGLE, Updatability.ONCREATE, REQUIRED,
+				queryable_objectTypeId, orderable_objectTypeId, null));
 
 		//cmis:secondaryObjectTypeIds
 		String _updatability_secondaryObjectTypeIds = propertyManager.readValue(PropertyKey.PROPERTY_SECONDARY_OBJECT_TYPE_IDS_UPDATABILITY);
 		Updatability updatability_secondaryObjectTypeIds = Updatability.fromValue(_updatability_secondaryObjectTypeIds);
 		boolean queryable_secondaryObjectTypeIds = propertyManager.readBoolean(PropertyKey.PROPERTY_SECONDARY_OBJECT_TYPE_IDS_QUERYABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
-				PropertyIds.SECONDARY_OBJECT_TYPE_IDS, PropertyType.ID,
-				Cardinality.MULTI, updatability_secondaryObjectTypeIds, !REQUIRED,
-				queryable_secondaryObjectTypeIds, !ORDERABLE, null));
+				repositoryId, PropertyIds.SECONDARY_OBJECT_TYPE_IDS,
+				PropertyType.ID, Cardinality.MULTI, updatability_secondaryObjectTypeIds,
+				!REQUIRED, queryable_secondaryObjectTypeIds, !ORDERABLE, null));
 
-		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.CREATED_BY,
+		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
+				PropertyIds.CREATED_BY, PropertyType.STRING, Cardinality.SINGLE,
+				Updatability.READONLY, !REQUIRED, QUERYABLE, ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(
+				repositoryId, PropertyIds.CREATION_DATE,
+				PropertyType.DATETIME, Cardinality.SINGLE, Updatability.READONLY,
+				!REQUIRED, QUERYABLE, ORDERABLE, null));
+
+		type.addPropertyDefinition(createDefaultPropDef(
+				repositoryId, PropertyIds.LAST_MODIFIED_BY,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
 				!REQUIRED, QUERYABLE, ORDERABLE, null));
 
 		type.addPropertyDefinition(createDefaultPropDef(
-				PropertyIds.CREATION_DATE, PropertyType.DATETIME,
-				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				QUERYABLE, ORDERABLE, null));
+				repositoryId, PropertyIds.LAST_MODIFICATION_DATE,
+				PropertyType.DATETIME, Cardinality.SINGLE, Updatability.READONLY,
+				!REQUIRED, QUERYABLE, ORDERABLE, null));
 
 		type.addPropertyDefinition(createDefaultPropDef(
-				PropertyIds.LAST_MODIFIED_BY, PropertyType.STRING,
-				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				QUERYABLE, ORDERABLE, null));
-
-		type.addPropertyDefinition(createDefaultPropDef(
-				PropertyIds.LAST_MODIFICATION_DATE, PropertyType.DATETIME,
-				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				QUERYABLE, ORDERABLE, null));
-
-		type.addPropertyDefinition(createDefaultPropDef(
-				PropertyIds.CHANGE_TOKEN, PropertyType.STRING,
-				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				!QUERYABLE, !ORDERABLE, null));
+				repositoryId, PropertyIds.CHANGE_TOKEN,
+				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
+				!REQUIRED, !QUERYABLE, !ORDERABLE, null));
 	}
 
-	private void addFolderPropertyDefinitions(FolderTypeDefinitionImpl type) {
+	private void addFolderPropertyDefinitions(String repositoryId, FolderTypeDefinitionImpl type) {
 		//cmis:parentId
 		boolean queryable_parentId = propertyManager.readBoolean(PropertyKey.PROPERTY_PARENT_ID_QUERYABLE);
-		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.PARENT_ID,
-				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_parentId, !ORDERABLE, null));
+		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
+				PropertyIds.PARENT_ID, PropertyType.ID, Cardinality.SINGLE,
+				Updatability.READONLY, !REQUIRED, queryable_parentId, !ORDERABLE, null));
 
 		//cmis:path
 		boolean queryable_path = propertyManager.readBoolean(PropertyKey.PROPERTY_PATH_QUERYABLE);
 		boolean orderable_path = propertyManager.readBoolean(PropertyKey.PROPERTY_PATH_ORDERABLE);
-		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.PATH,
-				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
-				!REQUIRED, queryable_path, orderable_path, null));
+		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
+				PropertyIds.PATH, PropertyType.STRING, Cardinality.SINGLE,
+				Updatability.READONLY, !REQUIRED, queryable_path, orderable_path, null));
 
 		List<String> defaults = new ArrayList<String>();
 		defaults.add(BaseTypeId.CMIS_FOLDER.value());
 		defaults.add(BaseTypeId.CMIS_DOCUMENT.value());
 		type.addPropertyDefinition(createDefaultPropDef(
-				PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS, PropertyType.ID,
-				Cardinality.MULTI, Updatability.READONLY, !REQUIRED,
-				!QUERYABLE, !ORDERABLE, defaults));
+				repositoryId, PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS,
+				PropertyType.ID, Cardinality.MULTI, Updatability.READONLY,
+				!REQUIRED, !QUERYABLE, !ORDERABLE, defaults));
 	}
 
-	private void addDocumentPropertyDefinitions(DocumentTypeDefinitionImpl type) {
+	private void addDocumentPropertyDefinitions(String repositoryId, DocumentTypeDefinitionImpl type) {
 		//cmis:isImmutable
 		boolean queryable_isImmutable = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_IMMUTABLE_QUERYABLE);
 		boolean orderable_isImmutable = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_IMMUTABLE_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
-				PropertyIds.IS_IMMUTABLE, PropertyType.BOOLEAN,
-				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				queryable_isImmutable, orderable_isImmutable, Arrays.asList(false)));
+				repositoryId, PropertyIds.IS_IMMUTABLE,
+				PropertyType.BOOLEAN, Cardinality.SINGLE, Updatability.READONLY,
+				!REQUIRED, queryable_isImmutable, orderable_isImmutable, Arrays.asList(false)));
 
 		//cmis:isLatestVersion
 		boolean queryable_isLatestVersion = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_LATEST_VERSION_QUERYABLE);
 		boolean orderable_isLatestVersion = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_LATEST_VERSION_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
-				PropertyIds.IS_LATEST_VERSION, PropertyType.BOOLEAN,
-				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				queryable_isLatestVersion, orderable_isLatestVersion, null));
+				repositoryId, PropertyIds.IS_LATEST_VERSION,
+				PropertyType.BOOLEAN, Cardinality.SINGLE, Updatability.READONLY,
+				!REQUIRED, queryable_isLatestVersion, orderable_isLatestVersion, null));
 
 		//cmis:isMajorVersion
 		boolean queryable_isMajorVersion = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_MAJOR_VERSION_QUERYABLE);
 		boolean orderable_isMajorVersion = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_MAJOR_VERSION_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
-				PropertyIds.IS_MAJOR_VERSION, PropertyType.BOOLEAN,
-				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				queryable_isMajorVersion, orderable_isMajorVersion, null));
+				repositoryId, PropertyIds.IS_MAJOR_VERSION,
+				PropertyType.BOOLEAN, Cardinality.SINGLE, Updatability.READONLY,
+				!REQUIRED, queryable_isMajorVersion, orderable_isMajorVersion, null));
 
 		//cmis:isLatestMajorVersion
 		boolean queryable_isLatestMajorVersion = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_LATEST_MAJOR_VERSION_QUERYABLE);
 		boolean orderable_isLatestMajorVersion = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_LATEST_MAJOR_VERSION_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
-				PropertyIds.IS_LATEST_MAJOR_VERSION, PropertyType.BOOLEAN,
-				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				queryable_isLatestMajorVersion, orderable_isLatestMajorVersion, null));
+				repositoryId, PropertyIds.IS_LATEST_MAJOR_VERSION,
+				PropertyType.BOOLEAN, Cardinality.SINGLE, Updatability.READONLY,
+				!REQUIRED, queryable_isLatestMajorVersion, orderable_isLatestMajorVersion, null));
 
 		//cmis:isPrivateWorkingCopy
 		boolean queryable_isPrivateWorkingCopy = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_PRIVATE_WORKING_COPY_QUERYABLE);
 		boolean orderable_isPrivateWorkingCopy = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_PRIVATE_WORKING_COPY_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
-				PropertyIds.IS_PRIVATE_WORKING_COPY, PropertyType.BOOLEAN,
-				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				queryable_isPrivateWorkingCopy, orderable_isPrivateWorkingCopy, null));
+				repositoryId, PropertyIds.IS_PRIVATE_WORKING_COPY,
+				PropertyType.BOOLEAN, Cardinality.SINGLE, Updatability.READONLY,
+				!REQUIRED, queryable_isPrivateWorkingCopy, orderable_isPrivateWorkingCopy, null));
 
 		//cmis:versionLabel
 		boolean queryable_versionLabel = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_LABEL_QUERYABLE);
 		boolean orderable_versionLabel = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_LABEL_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
-				PropertyIds.VERSION_LABEL, PropertyType.STRING,
-				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				queryable_versionLabel, orderable_versionLabel, null));
+				repositoryId, PropertyIds.VERSION_LABEL,
+				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
+				!REQUIRED, queryable_versionLabel, orderable_versionLabel, null));
 
 		//cmis:versionSeriesId
 		boolean queryable_versionSeriesId = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_SERIES_ID_QUERYABLE);
 		boolean orderable_versionSeriesId = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_SERIES_ID_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
-				PropertyIds.VERSION_SERIES_ID, PropertyType.ID,
-				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				queryable_versionSeriesId, orderable_versionSeriesId, null));
+				repositoryId, PropertyIds.VERSION_SERIES_ID,
+				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
+				!REQUIRED, queryable_versionSeriesId, orderable_versionSeriesId, null));
 
 		//cmis:isVersionSeriesCheckedOut
 		boolean queryable_isVersionSeriesCheckedOut = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_VERSION_SERIES_CHECKED_OUT_QUERYABLE);
 		boolean orderable_isVersionSeriesCheckedOut = propertyManager.readBoolean(PropertyKey.PROPERTY_IS_VERSION_SERIES_CHECKED_OUT_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
-				PropertyIds.IS_VERSION_SERIES_CHECKED_OUT,
-				PropertyType.BOOLEAN, Cardinality.SINGLE,
-				Updatability.READONLY, !REQUIRED, queryable_isVersionSeriesCheckedOut, orderable_isVersionSeriesCheckedOut, null));
+				repositoryId,
+				PropertyIds.IS_VERSION_SERIES_CHECKED_OUT, PropertyType.BOOLEAN,
+				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED, queryable_isVersionSeriesCheckedOut, orderable_isVersionSeriesCheckedOut, null));
 
 		//cmis:versionSeriesCheckedOutBy
 		boolean queryable_versionSeriesCheckedOutBy = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_SERIES_CHECKED_OUT_BY_QUERYABLE);
 		boolean orderable_versionSeriesCheckedOutBy = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_SERIES_CHECKED_OUT_BY_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
-				PropertyIds.VERSION_SERIES_CHECKED_OUT_BY, PropertyType.STRING,
-				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				queryable_versionSeriesCheckedOutBy, orderable_versionSeriesCheckedOutBy, null));
+				repositoryId, PropertyIds.VERSION_SERIES_CHECKED_OUT_BY,
+				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
+				!REQUIRED, queryable_versionSeriesCheckedOutBy, orderable_versionSeriesCheckedOutBy, null));
 
 		//cmis:versionSeriesCheckedOutId
 		boolean queryable_versionSeriesCheckedOutId = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_SERIES_CHECKED_OUT_ID_QUERYABLE);
 		boolean orderable_versionSeriesCheckedOutId = propertyManager.readBoolean(PropertyKey.PROPERTY_VERSION_SERIES_CHECKED_OUT_ID_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
-				PropertyIds.VERSION_SERIES_CHECKED_OUT_ID, PropertyType.ID,
-				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				queryable_versionSeriesCheckedOutId, orderable_versionSeriesCheckedOutId, null));
+				repositoryId, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID,
+				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
+				!REQUIRED, queryable_versionSeriesCheckedOutId, orderable_versionSeriesCheckedOutId, null));
 
 		//cmis:checkInComment
 		boolean queryable_checkInComment = propertyManager.readBoolean(PropertyKey.PROPERTY_CHECK_IN_COMMENT_QUERYABLE);
 		boolean orderable_checkInComment = propertyManager.readBoolean(PropertyKey.PROPERTY_CHECK_IN_COMMENT_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
-				PropertyIds.CHECKIN_COMMENT, PropertyType.STRING,
-				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				queryable_checkInComment, orderable_checkInComment, null));
+				repositoryId, PropertyIds.CHECKIN_COMMENT,
+				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
+				!REQUIRED, queryable_checkInComment, orderable_checkInComment, null));
 
 		//cmis:contentStreamLength
 		boolean queryable_contentStreamLength = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_LENGTH_QUERYABLE);
 		boolean orderable_contentStreamLength = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_LENGTH_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
-				PropertyIds.CONTENT_STREAM_LENGTH, PropertyType.INTEGER,
-				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				queryable_contentStreamLength, orderable_contentStreamLength, null));
+				repositoryId, PropertyIds.CONTENT_STREAM_LENGTH,
+				PropertyType.INTEGER, Cardinality.SINGLE, Updatability.READONLY,
+				!REQUIRED, queryable_contentStreamLength, orderable_contentStreamLength, null));
 
 		//cmis:contentStreamMimeType
 		boolean queryable_contentStreamMimeType = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_MIME_TYPE_QUERYABLE);
 		boolean orderable_contentStreamMimeType = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_MIME_TYPE_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
-				PropertyIds.CONTENT_STREAM_MIME_TYPE, PropertyType.STRING,
-				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				queryable_contentStreamMimeType, orderable_contentStreamMimeType, null));
+				repositoryId, PropertyIds.CONTENT_STREAM_MIME_TYPE,
+				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
+				!REQUIRED, queryable_contentStreamMimeType, orderable_contentStreamMimeType, null));
 
 		//cmis:contentStreamMimeType
 		boolean queryable_contentStreamFileName = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_FILE_NAME_QUERYABLE);
 		boolean orderable_contentStreamFileName = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_FILE_NAME_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
-				PropertyIds.CONTENT_STREAM_FILE_NAME, PropertyType.STRING,
-				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				queryable_contentStreamFileName, orderable_contentStreamFileName, null));
+				repositoryId, PropertyIds.CONTENT_STREAM_FILE_NAME,
+				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
+				!REQUIRED, queryable_contentStreamFileName, orderable_contentStreamFileName, null));
 
 		//cmis:contentStreamId
 		boolean queryable_contentStreamId = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_ID_QUERYABLE);
 		boolean orderable_contentStreamId = propertyManager.readBoolean(PropertyKey.PROPERTY_CONTENT_STREAM_ID_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
-				PropertyIds.CONTENT_STREAM_ID, PropertyType.ID,
-				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				queryable_contentStreamId, orderable_contentStreamId, null));
+				repositoryId, PropertyIds.CONTENT_STREAM_ID,
+				PropertyType.ID, Cardinality.SINGLE, Updatability.READONLY,
+				!REQUIRED, queryable_contentStreamId, orderable_contentStreamId, null));
 	}
 
 	private void addRelationshipPropertyDefinitions(
-			RelationshipTypeDefinitionImpl type) {
+			String repositoryId, RelationshipTypeDefinitionImpl type) {
 		//cmis:sourceId
 		boolean queryable_sourceId = propertyManager.readBoolean(PropertyKey.PROPERTY_SOURCE_ID_QUERYABLE);
 		boolean orderable_sourceId = propertyManager.readBoolean(PropertyKey.PROPERTY_SOURCE_ID_ORDERABLE);
-		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.SOURCE_ID,
-				PropertyType.ID, Cardinality.SINGLE, Updatability.READWRITE,
-				REQUIRED, queryable_sourceId, orderable_sourceId, null));
+		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
+				PropertyIds.SOURCE_ID, PropertyType.ID, Cardinality.SINGLE,
+				Updatability.READWRITE, REQUIRED, queryable_sourceId, orderable_sourceId, null));
 
 		//cmis:targetId
 		boolean queryable_targetId = propertyManager.readBoolean(PropertyKey.PROPERTY_TARGET_ID_QUERYABLE);
 		boolean orderable_targetId = propertyManager.readBoolean(PropertyKey.PROPERTY_TARGET_ID_ORDERABLE);
-		type.addPropertyDefinition(createDefaultPropDef(PropertyIds.TARGET_ID,
-				PropertyType.ID, Cardinality.SINGLE, Updatability.READWRITE,
-				REQUIRED, queryable_targetId, orderable_targetId, null));
+		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
+				PropertyIds.TARGET_ID, PropertyType.ID, Cardinality.SINGLE,
+				Updatability.READWRITE, REQUIRED, queryable_targetId, orderable_targetId, null));
 	}
 
-	private void addPolicyPropertyDefinitions(PolicyTypeDefinitionImpl type) {
+	private void addPolicyPropertyDefinitions(String repositoryId, PolicyTypeDefinitionImpl type) {
 		//cmis:policyText
 		boolean queryable_policyText = propertyManager.readBoolean(PropertyKey.PROPERTY_POLICY_TEXT_QUERYABLE);
 		boolean orderable_policyText = propertyManager.readBoolean(PropertyKey.PROPERTY_POLICY_TEXT_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(
-				PropertyIds.POLICY_TEXT, PropertyType.STRING,
-				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED,
-				queryable_policyText, orderable_policyText, null));
+				repositoryId, PropertyIds.POLICY_TEXT,
+				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
+				!REQUIRED, queryable_policyText, orderable_policyText, null));
 	}
 
-	private PropertyDefinition<?> createDefaultPropDef(String id,
-			PropertyType datatype, Cardinality cardinality,
-			Updatability updatability, boolean required, boolean queryable,
-			boolean orderable, List<?> defaultValue) {
+	private PropertyDefinition<?> createDefaultPropDef(String repositoryId,
+			String id, PropertyType datatype,
+			Cardinality cardinality, Updatability updatability, boolean required,
+			boolean queryable, boolean orderable, List<?> defaultValue) {
 		PropertyDefinition<?> result = null;
 
 		// Default values
 		String localName = id;
-		String localNameSpace = NAMESPACE;
+		String localNameSpace = getNameSpace(repositoryId);
 		String queryName = id;
 		String displayName = id;
 		String description = id;
@@ -775,34 +793,51 @@ public class TypeManagerImpl implements TypeManager {
 
 		return result;
 	}
+	
+	private String getNameSpace(String repositoryId){
+		return repositoryInfoMap.get(repositoryId).getNameSpace();
+	}
 
 	// /////////////////////////////////////////////////
 	// Subtype
 	// /////////////////////////////////////////////////
-	private List<NemakiTypeDefinition> getNemakiTypeDefinitions() {
-		return typeService.getTypeDefinitions();
+	private List<NemakiTypeDefinition> getNemakiTypeDefinitions(String repositoryId) {
+		return typeService.getTypeDefinitions(repositoryId);
 	}
 
-	private void addSubTypes() {
-
-		List<NemakiTypeDefinition> subtypes = getNemakiTypeDefinitions();
+	
+	private void addSubTypes(){
+		for(String key : repositoryInfoMap.keys()){
+			RepositoryInfo info = repositoryInfoMap.get(key);
+			String repositoryId = info.getId();
+			addSubTypes(repositoryId);
+		}
+	}
+	
+	private void addSubTypes(String repositoryId) {
+		List<NemakiTypeDefinition> subtypes = getNemakiTypeDefinitions(repositoryId);
 		List<NemakiTypeDefinition> firstGeneration = new ArrayList<NemakiTypeDefinition>();
-		for (NemakiTypeDefinition subtype : subtypes) {
-			if (subtype.getBaseId().value().equals(subtype.getParentId())) {
-				firstGeneration.add(subtype);
+		if(CollectionUtils.isNotEmpty(subtypes)){
+			for (NemakiTypeDefinition subtype : subtypes) {
+				if (subtype.getBaseId().value().equals(subtype.getParentId())) {
+					firstGeneration.add(subtype);
+				}
+			}
+
+			for (NemakiTypeDefinition type : firstGeneration) {
+				addSubTypesInternal(repositoryId, subtypes, type);
 			}
 		}
-
-		for (NemakiTypeDefinition type : firstGeneration) {
-			addSubTypesInternal(subtypes, type);
-		}
+		
 		return;
 	}
 
-	private void addSubTypesInternal(List<NemakiTypeDefinition> subtypes,
-			NemakiTypeDefinition type) {
+	private void addSubTypesInternal(String repositoryId,
+			List<NemakiTypeDefinition> subtypes, NemakiTypeDefinition type) {
+		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
+		
 		TypeDefinitionContainerImpl container = new TypeDefinitionContainerImpl();
-		container.setTypeDefinition(buildTypeDefinitionFromDB(type));
+		container.setTypeDefinition(buildTypeDefinitionFromDB(repositoryId, type));
 		container.setChildren(new ArrayList<TypeDefinitionContainer>());
 
 		if (types.get(type.getTypeId()) == null) {
@@ -820,7 +855,7 @@ public class TypeManagerImpl implements TypeManager {
 
 		if (!CollectionUtils.isEmpty(children)) {
 			for (NemakiTypeDefinition child : children) {
-				addSubTypesInternal(subtypes, child);
+				addSubTypesInternal(repositoryId, subtypes, child);
 			}
 		}
 
@@ -831,20 +866,20 @@ public class TypeManagerImpl implements TypeManager {
 
 	@Override
 	public AbstractTypeDefinition buildTypeDefinitionFromDB(
-			NemakiTypeDefinition nemakiType) {
+			String repositoryId, NemakiTypeDefinition nemakiType) {
 		switch (nemakiType.getBaseId()) {
 		case CMIS_DOCUMENT:
-			return buildDocumentTypeDefinitionFromDB(nemakiType);
+			return buildDocumentTypeDefinitionFromDB(repositoryId, nemakiType);
 		case CMIS_FOLDER:
-			return buildFolderTypeDefinitionFromDB(nemakiType);
+			return buildFolderTypeDefinitionFromDB(repositoryId, nemakiType);
 		case CMIS_RELATIONSHIP:
-			return buildRelationshipTypeDefinitionFromDB(nemakiType);
+			return buildRelationshipTypeDefinitionFromDB(repositoryId, nemakiType);
 		case CMIS_POLICY:
-			return buildPolicyTypeDefinitionFromDB(nemakiType);
+			return buildPolicyTypeDefinitionFromDB(repositoryId, nemakiType);
 		case CMIS_ITEM:
-			return buildItemTypeDefinitionFromDB(nemakiType);
+			return buildItemTypeDefinitionFromDB(repositoryId, nemakiType);
 		case CMIS_SECONDARY:
-			return buildSecondaryTypeDefinitionFromDB(nemakiType);
+			return buildSecondaryTypeDefinitionFromDB(repositoryId, nemakiType);
 		default:
 			break;
 		}
@@ -852,8 +887,8 @@ public class TypeManagerImpl implements TypeManager {
 		return null;
 	}
 
-	private void buildTypeDefinitionBaseFromDB(AbstractTypeDefinition type,
-			AbstractTypeDefinition parentType, NemakiTypeDefinition nemakiType) {
+	private void buildTypeDefinitionBaseFromDB(String repositoryId,
+			AbstractTypeDefinition type, AbstractTypeDefinition parentType, NemakiTypeDefinition nemakiType) {
 		type.setId(nemakiType.getTypeId());
 		type.setLocalName(nemakiType.getLocalName());
 		type.setLocalNamespace(nemakiType.getLocalNameSpace());
@@ -925,9 +960,9 @@ public class TypeManagerImpl implements TypeManager {
 		if (!CollectionUtils.isEmpty(nemakiType.getProperties())) {
 			for (String propertyId : nemakiType.getProperties()) {
 				NemakiPropertyDefinitionDetail detail = typeService
-						.getPropertyDefinitionDetail(propertyId);
+						.getPropertyDefinitionDetail(repositoryId, propertyId);
 				NemakiPropertyDefinitionCore core = typeService
-						.getPropertyDefinitionCore(detail.getCoreNodeId());
+						.getPropertyDefinitionCore(repositoryId, detail.getCoreNodeId());
 
 				NemakiPropertyDefinition p = new NemakiPropertyDefinition(core,
 						detail);
@@ -972,14 +1007,16 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	private DocumentTypeDefinitionImpl buildDocumentTypeDefinitionFromDB(
-			NemakiTypeDefinition nemakiType) {
+			String repositoryId, NemakiTypeDefinition nemakiType) {
+		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
+		
 		DocumentTypeDefinitionImpl type = new DocumentTypeDefinitionImpl();
 		DocumentTypeDefinitionImpl parentType = (DocumentTypeDefinitionImpl) types
 				.get(nemakiType.getParentId()).getTypeDefinition();
 
 		// Set base attributes, and properties(with specific properties
 		// included)
-		buildTypeDefinitionBaseFromDB(type, parentType, nemakiType);
+		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
 		// Add specific attributes
 		ContentStreamAllowed contentStreamAllowed = (nemakiType
@@ -995,27 +1032,31 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	private FolderTypeDefinitionImpl buildFolderTypeDefinitionFromDB(
-			NemakiTypeDefinition nemakiType) {
+			String repositoryId, NemakiTypeDefinition nemakiType) {
+		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
+		
 		FolderTypeDefinitionImpl type = new FolderTypeDefinitionImpl();
 		FolderTypeDefinitionImpl parentType = (FolderTypeDefinitionImpl) types
 				.get(nemakiType.getParentId()).getTypeDefinition();
 
 		// Set base attributes, and properties(with specific properties
 		// included)
-		buildTypeDefinitionBaseFromDB(type, parentType, nemakiType);
+		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
 		return type;
 	}
 
 	private RelationshipTypeDefinitionImpl buildRelationshipTypeDefinitionFromDB(
-			NemakiTypeDefinition nemakiType) {
+			String repositoryId, NemakiTypeDefinition nemakiType) {
+		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
+		
 		RelationshipTypeDefinitionImpl type = new RelationshipTypeDefinitionImpl();
 		RelationshipTypeDefinitionImpl parentType = (RelationshipTypeDefinitionImpl) types
 				.get(nemakiType.getParentId()).getTypeDefinition();
 
 		// Set base attributes, and properties(with specific properties
 		// included)
-		buildTypeDefinitionBaseFromDB(type, parentType, nemakiType);
+		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
 		// Set specific attributes
 		type.setAllowedSourceTypes(nemakiType.getAllowedSourceTypes());
@@ -1025,45 +1066,53 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	private PolicyTypeDefinitionImpl buildPolicyTypeDefinitionFromDB(
-			NemakiTypeDefinition nemakiType) {
+			String repositoryId, NemakiTypeDefinition nemakiType) {
+		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
+		
 		PolicyTypeDefinitionImpl type = new PolicyTypeDefinitionImpl();
 		PolicyTypeDefinitionImpl parentType = (PolicyTypeDefinitionImpl) types
 				.get(nemakiType.getParentId()).getTypeDefinition();
 
 		// Set base attributes, and properties(with specific properties
 		// included)
-		buildTypeDefinitionBaseFromDB(type, parentType, nemakiType);
+		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
 		return type;
 	}
 
 	private ItemTypeDefinitionImpl buildItemTypeDefinitionFromDB(
-			NemakiTypeDefinition nemakiType) {
+			String repositoryId, NemakiTypeDefinition nemakiType) {
+		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
+		
 		ItemTypeDefinitionImpl type = new ItemTypeDefinitionImpl();
 		ItemTypeDefinitionImpl parentType = (ItemTypeDefinitionImpl) types.get(
 				nemakiType.getParentId()).getTypeDefinition();
 
 		// Set base attributes, and properties(with specific properties
 		// included)
-		buildTypeDefinitionBaseFromDB(type, parentType, nemakiType);
+		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
 		return type;
 	}
 
 	private SecondaryTypeDefinitionImpl buildSecondaryTypeDefinitionFromDB(
-			NemakiTypeDefinition nemakiType) {
+			String repositoryId, NemakiTypeDefinition nemakiType) {
+		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
+		
 		SecondaryTypeDefinitionImpl type = new SecondaryTypeDefinitionImpl();
 		SecondaryTypeDefinitionImpl parentType = (SecondaryTypeDefinitionImpl) types
 				.get(nemakiType.getParentId()).getTypeDefinition();
 
 		// Set base attributes, and properties(with specific properties
 		// included)
-		buildTypeDefinitionBaseFromDB(type, parentType, nemakiType);
+		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
 		return type;
 	}
 
-	private void buildPropertyDefinitionCores() {
+	private void buildPropertyDefinitionCores(String repositoryId) {
+		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
+		
 		// CMIS default property cores
 		Map<String, PropertyDefinition<?>> d = types.get(BaseTypeId.CMIS_DOCUMENT.value())
 				.getTypeDefinition().getPropertyDefinitions();
@@ -1085,7 +1134,7 @@ public class TypeManagerImpl implements TypeManager {
 		// Subtype property cores(consequently includes secondary property
 		// cores)
 		List<NemakiPropertyDefinitionCore> subTypeCores = typeService
-				.getPropertyDefinitionCores();
+				.getPropertyDefinitionCores(repositoryId);
 		if (CollectionUtils.isNotEmpty(subTypeCores)) {
 			for (NemakiPropertyDefinitionCore sc : subTypeCores) {
 				addPropertyDefinitionCore(sc.getPropertyId(),
@@ -1119,12 +1168,15 @@ public class TypeManagerImpl implements TypeManager {
 	// Type Service Methods
 	// /////////////////////////////////////////////////
 	@Override
-	public TypeDefinitionContainer getTypeById(String typeId) {
+	public TypeDefinitionContainer getTypeById(String repositoryId, String typeId) {
+		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
 		return types.get(typeId);
 	}
 
 	@Override
-	public TypeDefinition getTypeByQueryName(String typeQueryName) {
+	public TypeDefinition getTypeByQueryName(String repositoryId, String typeQueryName) {
+		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
+		
 		for (Entry<String, TypeDefinitionContainer> entry : types.entrySet()) {
 			if (entry.getValue().getTypeDefinition().getQueryName()
 					.equals(typeQueryName))
@@ -1134,7 +1186,9 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	@Override
-	public Collection<TypeDefinitionContainer> getTypeDefinitionList() {
+	public Collection<TypeDefinitionContainer> getTypeDefinitionList(String repositoryId) {
+		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
+		
 		List<TypeDefinitionContainer> typeRoots = new ArrayList<TypeDefinitionContainer>();
 		// iterate types map and return a list collecting the root types:
 		for (TypeDefinitionContainer typeDef : types.values()) {
@@ -1146,7 +1200,7 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	@Override
-	public List<TypeDefinitionContainer> getRootTypes() {
+	public List<TypeDefinitionContainer> getRootTypes(String repositoryId) {
 		List<TypeDefinitionContainer> rootTypes = new ArrayList<TypeDefinitionContainer>();
 		for (String key : basetypes.keySet()) {
 			rootTypes.add(basetypes.get(key));
@@ -1155,11 +1209,10 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	@Override
-	public String getPropertyIdForQueryName(TypeDefinition typeDefinition,
-			String propQueryName) {
-		// TODO Auto-generated method stub
+	public String getPropertyIdForQueryName(String repositoryId,
+			TypeDefinition typeDefinition, String propQueryName) {
 		PropertyDefinition<?> def = getPropertyDefinitionForQueryName(
-				typeDefinition, propQueryName);
+				repositoryId, typeDefinition, propQueryName);
 		if (def == null) {
 			return null;
 		} else {
@@ -1169,7 +1222,7 @@ public class TypeManagerImpl implements TypeManager {
 
 	@Override
 	public PropertyDefinition<?> getPropertyDefinitionForQueryName(
-			TypeDefinition typeDefinition, String propQueryName) {
+			String repositoryId, TypeDefinition typeDefinition, String propQueryName) {
 		Map<String, PropertyDefinition<?>> defs = typeDefinition
 				.getPropertyDefinitions();
 		for (Entry<String, PropertyDefinition<?>> def : defs.entrySet()) {
@@ -1188,7 +1241,8 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	@Override
-	public TypeDefinition getTypeDefinition(String typeId) {
+	public TypeDefinition getTypeDefinition(String repositoryId, String typeId) {
+		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
 		TypeDefinitionContainer tc = types.get(typeId);
 		if (tc == null) {
 			return null;
@@ -1209,8 +1263,11 @@ public class TypeManagerImpl implements TypeManager {
 	 */
 	@Override
 	public TypeDefinitionList getTypesChildren(CallContext context,
-			String typeId, boolean includePropertyDefinitions,
-			BigInteger maxItems, BigInteger skipCount) {
+			String repositoryId, String typeId,
+			boolean includePropertyDefinitions, BigInteger maxItems, BigInteger skipCount) {
+		
+		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
+		
 		TypeDefinitionListImpl result = new TypeDefinitionListImpl(
 				new ArrayList<TypeDefinition>());
 
@@ -1282,8 +1339,10 @@ public class TypeManagerImpl implements TypeManager {
 	 * CMIS getTypesDescendants.
 	 */
 	@Override
-	public List<TypeDefinitionContainer> getTypesDescendants(String typeId,
-			BigInteger depth, Boolean includePropertyDefinitions) {
+	public List<TypeDefinitionContainer> getTypesDescendants(String repositoryId,
+			String typeId, BigInteger depth, Boolean includePropertyDefinitions) {
+		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
+		
 		List<TypeDefinitionContainer> result = new ArrayList<TypeDefinitionContainer>();
 
 		// check depth
@@ -1368,15 +1427,15 @@ public class TypeManagerImpl implements TypeManager {
 
 	/**
 	 * Get a type definition Internal Use
-	 *
 	 * @param content
+	 *
 	 * @return
 	 */
 	@Override
-	public TypeDefinition getTypeDefinition(Content content) {
+	public TypeDefinition getTypeDefinition(String repositoryId, Content content) {
 		String typeId = (content.getObjectType() == null) ? content.getType()
 				: content.getObjectType();
-		return getTypeDefinition(typeId);
+		return getTypeDefinition(repositoryId, typeId);
 	}
 
 	/**
@@ -1402,18 +1461,18 @@ public class TypeManagerImpl implements TypeManager {
 		return ids;
 	}
 
-	public void addTypeDefinition(TypeDefinition typeDefinition,
-			boolean addInheritedProperties) {
+	public void addTypeDefinition(String repositoryId,
+			TypeDefinition typeDefinition, boolean addInheritedProperties) {
 		// TODO Auto-generated method stub
 
 	}
 
-	public void updateTypeDefinition(TypeDefinition typeDefinition) {
+	public void updateTypeDefinition(String repositoryId, TypeDefinition typeDefinition) {
 		// TODO Auto-generated method stub
 
 	}
 
-	public void deleteTypeDefinition(String typeId) {
+	public void deleteTypeDefinition(String repositoryId, String typeId) {
 		// TODO Auto-generated method stub
 
 	}
@@ -1465,8 +1524,8 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	@Override
-	public Object getSingleDefaultValue(String propertyId, String typeId) {
-		TypeDefinition tdf = getTypeDefinition(typeId);
+	public Object getSingleDefaultValue(String propertyId, String typeId, String repositoryId) {
+		TypeDefinition tdf = getTypeDefinition(repositoryId, typeId);
 		PropertyDefinition<?> pdf = tdf.getPropertyDefinitions()
 				.get(propertyId);
 		return pdf.getDefaultValue().get(0);
@@ -1478,5 +1537,9 @@ public class TypeManagerImpl implements TypeManager {
 
 	public void setPropertyManager(PropertyManager propertyManager) {
 		this.propertyManager = propertyManager;
+	}
+
+	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
+		this.repositoryInfoMap = repositoryInfoMap;
 	}
 }

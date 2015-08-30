@@ -1,6 +1,8 @@
 package controllers;
 
 import constant.Token;
+import play.mvc.Action;
+import play.mvc.Http;
 import play.mvc.Http.Context;
 import play.mvc.Result;
 import play.mvc.Security;
@@ -13,8 +15,9 @@ public class Secured extends Security.Authenticator{
 	}
 
 	@Override
-	public Result onUnauthorized(Context arg0) {
-		return redirect(routes.Application.login());
+	public Result onUnauthorized(Context ctx) {
+		String repositoryId = ctx.session().get("repositoryId");
+		return redirect(routes.Application.login(repositoryId));
 	}
 	
 }

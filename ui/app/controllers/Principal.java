@@ -25,12 +25,15 @@ public class Principal extends Controller{
 	
 	private static String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 	
+	private static Session getCmisSession(String repositoryId){
+		return CmisSessions.getCmisSession(repositoryId, session());
+	}
 	
-	public static Result search(String term, String groupId){
+	public static Result search(String repositoryId, String term, String groupId){
 		List<model.Principal>principals = new ArrayList<model.Principal>();
 		
 		//user search
-		JsonNode resultUsers = Util.getJsonResponse(session(), coreRestUri + "user/search?query=" + term);
+		JsonNode resultUsers = Util.getJsonResponse(session(), coreRestUri + "repo/" + repositoryId + "/user/search?query=" + term); //TODO
     	//TODO check status
     	JsonNode users = resultUsers.get("result");
 		if(users != null){
@@ -44,7 +47,7 @@ public class Principal extends Controller{
 		}
 		
 		//group search
-		JsonNode resultGroups = Util.getJsonResponse(session(), coreRestUri + "group/search?query=" + term);
+		JsonNode resultGroups = Util.getJsonResponse(session(), coreRestUri + "repo/" + repositoryId + "/group/search?query=" + term);
     	//TODO check status
     	JsonNode groups = resultGroups.get("result");
 		if(groups != null){
@@ -64,7 +67,7 @@ public class Principal extends Controller{
 		}
 		
 		//Add anyone group
-		principals.add(getAnyone());
+		principals.add(getAnyone(repositoryId));
 
 		//convert
 		final ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -84,8 +87,8 @@ public class Principal extends Controller{
 		return ok();
 	}
 	
-	private static model.Principal getAnyone(){
-		Session session = Util.createCmisSession(session());
+	private static model.Principal getAnyone(String repositoryId){
+		Session session = getCmisSession(repositoryId);
 		String anyone = session.getRepositoryInfo().getPrincipalIdAnyone();
 		model.Principal p = new model.Principal(Token.PRINCIPAL_GENRE_GROUP, anyone, anyone);
 		return p;
