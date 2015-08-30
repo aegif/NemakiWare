@@ -173,6 +173,18 @@
         </args>
       </executable>
 
+      <executable targetfile="$INSTALL_PATH/setup/couchdb/bjornloka.jar" stage="postinstall"
+        type="jar" keep="true">
+        <args>
+          <arg value="${db.couchdb.host}" />
+          <arg value="${db.couchdb.port}" />
+          <arg value="canopy" />
+          <arg value="canopy_closet" />
+          <arg value="$INSTALL_PATH/setup/couchdb/initial_import/bedroom_init.dump" />
+          <arg value="$INSTALL_PATH/setup/couchdb/initial_import/archive_init.dump" />
+        </args>
+      </executable>
+
       <!-- Create CouchDB setting file-->
       <file src="setup/installer/tomcat/app-server-core.properties" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
       <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-core.properties"/>
