@@ -881,7 +881,7 @@ public class Node extends Controller {
 		}
 	}
 
-	public static Result jsGetAce(String repositoryId, String objectId, String principalId) {
+	public static Result getAce(String repositoryId, String objectId, String principalId) {
 		Session session = getCmisSession(repositoryId);
 		CmisObject obj = session.getObject(objectId);
 

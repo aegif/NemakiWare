@@ -80,7 +80,7 @@ public class Application extends Controller{
 			Routes.javascriptRouter("jsRoutes", 
 				controllers.routes.javascript.Node.showDetail(),
 				controllers.routes.javascript.Node.delete(),
-				controllers.routes.javascript.Node.jsGetAce(),
+				controllers.routes.javascript.Node.getAce(),
 				
 				controllers.routes.javascript.Type.showBlank(),
 				controllers.routes.javascript.Type.edit(),
