@@ -22,7 +22,7 @@
 	  					@defining(Util.dividePath(parent.getPath)){ segments =>
 	  						@for(i <- 0 to segments.length - 1; if(CollectionUtils.isNotEmpty(segments))){
 	  							@defining(segments.take(i+1).mkString("/")){url=>
-	  								<li><a href="@routes.Node.showChildrenByPath('/' + url).absoluteURL(request)"><i class="fa fa-folder-open"></i> @segments(i)</a></li>
+	  								<li><a href="@routes.Node.showChildrenByPath(repositoryId, '/' + url).absoluteURL(request)"><i class="fa fa-folder-open"></i> @segments(i)</a></li>
 	  							}
 	  						}
 	  					}
