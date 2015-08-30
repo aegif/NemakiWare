@@ -125,3 +125,4 @@ view.message.delete.confirm=削除してよろしいですか？
 view.message.delete.success=正常に削除されました
 view.message.delete.failure=削除に失敗しました
 view.message.already.selected=既に選択されています！
+view.message.is-required=が必要です！

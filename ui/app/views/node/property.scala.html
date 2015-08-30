@@ -53,7 +53,15 @@
 			@for(p <- primaries){
 				@if(!masking.contains(p.getId) &&
 						Util.isEditable(p.getDefinition, UpdateContext.NORMAL)){
-					data["@p.getId"] = editedValue("#@p.getId");	
+					data["@p.getId"] = editedValue("#@p.getId");
+					
+					//Validation
+					@if(p.getDefinition.isRequired){
+						if(!data["@p.getId"]){
+							alert("@NemakiConfig.getLabel(p.getId, lang().language) @Messages("view.message.is-required")");
+							return; //End click event
+						}
+					}
 				}
 			}
 		}
@@ -62,7 +70,7 @@
 		var duplicate = checkDuplicateOnUpdate(data["cmis:name"], "@obj.getName");
 		if(duplicate){
 			window.alert("@Messages("view.node.duplicate.alert.rename")");
-			return;
+			return; //End click event
 		}
 
 		//Ajax call

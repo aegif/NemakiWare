@@ -126,3 +126,4 @@ view.message.delete.confirm=Do you really want to delete?
 view.message.delete.success=Successfully deleted
 view.message.delete.failure=Failed to delete
 view.message.already.selected=Already selected!
+view.message.is-required=is required!
