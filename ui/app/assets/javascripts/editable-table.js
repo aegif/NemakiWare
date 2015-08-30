@@ -1,6 +1,6 @@
 //Make a value field editable
 function bindEditable(valueFieldSelector){
-	$(document).on('dblclick', valueFieldSelector, function(){
+	$(document).off().on('dblclick', valueFieldSelector, function(){
 		var txt = "";
 		if($(this).attr('on') != 'on'){
 			$(this).attr('on', 'on');
@@ -10,12 +10,12 @@ function bindEditable(valueFieldSelector){
 		}
 
 		//end of editing
-		$(this).children('.editable-value-input:first').focus().blur(function(){
+		$(this).children('.editable-value-input:first').blur(function(){
 			revertField($(this));
 		});
 		
 		//binding: keypress
-		$(document).on('keypress', valueFieldSelector + ' > .editable-value-input:first', function(event){
+		$(valueFieldSelector + ' > .editable-value-input:first').off().on('keypress', function(event){
 			if(event.which == 13){
 				revertField($(this));
 			}
@@ -29,13 +29,14 @@ function revertField(inputboxDom){
 	var wrap = inputboxDom.closest("div.antiscroll-wrap");
 	var inner = inputboxDom.closest("div.antiscroll-inner");
 	
-	//Validate
+	/*//Validate
 	if(inputVal === ""){
 		if(parentDiv.attr('property-required') == 'true'){
 			alert("Please input: " + parentDiv.attr('property-id'));
+			inputboxDom.focus();
 			return;
 		}
-	}
+	}*/
 	
 	parentDiv.text(inputVal);
 	parentDiv.removeAttr('on');
