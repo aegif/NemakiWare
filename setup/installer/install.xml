@@ -146,8 +146,8 @@
       <!-- Create general custom setting file -->
       <file src="setup/installer/tomcat/app-server-core.properties" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
       <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-core.properties"/>
-      <file src="setup/installer/tomcat/app-sever-core-repositories.yml" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
-      <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-sever-core-repositories.yml"/>
+      <file src="setup/installer/tomcat/app-server-core-repositories.yml" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
+      <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-core-repositories.yml"/>
     </pack>
 
     <!-- Pack: CouchDB configuration -->
