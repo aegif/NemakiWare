@@ -13,8 +13,7 @@
     <str id="tomcat.shutdown.port" txt="Tomcat ポート(シャットダウン)" />
     <str id="tomcat.ajp.port" txt="Tomcat ポート(AJP)" />
 
-    <str id="cmis.repository.main" txt="リポジトリID(メイン)" />
-    <str id="cmis.repository.archive" txt="リポジトリID(アーカイブ)" />
+    <str id="cmis.repository.main" txt="リポジトリID" />
 
     <str id="db.couchdb.host" txt="CouchDB ホスト" />
     <str id="db.couchdb.port" txt="CouchDB ポート" />

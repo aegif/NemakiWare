@@ -57,7 +57,7 @@ public class SolrUtil {
 
 	public SolrUtil() {
 		map = new HashMap<String, String>();
-		map.put(PropertyIds.OBJECT_ID, "id");
+		map.put(PropertyIds.OBJECT_ID, "object_id");
 		map.put(PropertyIds.BASE_TYPE_ID, "basetype");
 		map.put(PropertyIds.OBJECT_TYPE_ID, "objecttype");
 		map.put(PropertyIds.NAME, "name");
@@ -120,7 +120,7 @@ public class SolrUtil {
 		return StringUtils.join(_string, ".");
 	}
 
-	public void callSolrIndexing() {
+	public void callSolrIndexing(String repositoryId) {
 		String _force = propertyManager
 				.readValue(PropertyKey.SOLR_INDEXING_FORCE);
 		boolean force = (Boolean.TRUE.toString().equals(_force)) ? true : false;
@@ -133,7 +133,7 @@ public class SolrUtil {
 		Client client = Client.create();
 		// TODO Regardless a slash on the last, build the correct URL
 		WebResource webResource = client.resource(url
-				+ "admin/cores?core=nemaki&action=index&tracking=AUTO");
+				+ "admin/cores?core=nemaki&action=index&tracking=AUTO&repositoryId=" + repositoryId);
 		 String xml = webResource.accept("application/xml").get(String.class);
 		// TODO log according to the response status
 	}

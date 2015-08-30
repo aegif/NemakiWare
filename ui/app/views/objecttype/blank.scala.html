@@ -7,12 +7,12 @@
 @import org.apache.chemistry.opencmis.client.api.ObjectType
 @import org.apache.chemistry.opencmis.commons.PropertyIds
 
-@()
+@(repositoryId:String)
 
 @lightbox{
 	<!-- html -->
 	<div class="container">
-		@helper.form(action=routes.Type.create, 'id -> "type-blank-form", 'enctype -> "multipart/form-data"){
+		@helper.form(action=routes.Type.create(repositoryId), 'id -> "type-blank-form", 'enctype -> "multipart/form-data"){
 			<!-- caption -->
 			<div class="row">
 				<h4><i class="fa fa-file"></i>@Messages("view.type.create.caption")</h4>

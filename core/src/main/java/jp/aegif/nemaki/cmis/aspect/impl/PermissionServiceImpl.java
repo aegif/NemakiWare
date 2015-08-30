@@ -32,6 +32,7 @@ import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.model.Ace;
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Content;
@@ -64,7 +65,7 @@ public class PermissionServiceImpl implements PermissionService {
 	private PrincipalService principalService;
 	private ContentService contentService;
 	private TypeManager typeManager;
-	private RepositoryInfo repositoryInfo;
+	private RepositoryInfoMap repositoryInfoMap;
 
 
 	// //////////////////////////////////////////////////////////////////////////
@@ -91,11 +92,11 @@ public class PermissionServiceImpl implements PermissionService {
 	//TODO Merge arguments(acl, content)
 	//FIXME Refactor duplicate isAllowableBaseType
 	@Override
-	public Boolean checkPermission(CallContext callContext, String key, Acl acl,
-			String baseType, Content content) {
+	public Boolean checkPermission(CallContext callContext, String repositoryId, String key,
+			Acl acl, String baseType, Content content) {
 		
 		//All permission checks must go through baseType check
-		if(!isAllowableBaseType(key, baseType, content)) return false;
+		if(!isAllowableBaseType(key, baseType, content, repositoryId)) return false;
 		
 		// Admin always pass a permission check
 		CallContextImpl cci = (CallContextImpl) callContext;
@@ -108,7 +109,7 @@ public class PermissionServiceImpl implements PermissionService {
 		if(content.isDocument()){
 			Document document = (Document)content;
 			if(document.isPrivateWorkingCopy()){
-				VersionSeries vs = contentService.getVersionSeries(document);
+				VersionSeries vs = contentService.getVersionSeries(repositoryId, document);
 				if(!callContext.getUsername().equals(vs.getVersionSeriesCheckedOutBy())){
 					return false;
 				}
@@ -120,7 +121,7 @@ public class PermissionServiceImpl implements PermissionService {
 		// Some other direct actions is needed to be set here.
 		if(content.isRelationship()){
 			Relationship relationship = (Relationship)content;
-			return checkRelationshipPermission(callContext, key, relationship);
+			return checkRelationshipPermission(callContext, repositoryId, key, relationship);
 		}
 
 		// Void Acl fails(but Admin can do an action)
@@ -133,7 +134,7 @@ public class PermissionServiceImpl implements PermissionService {
 		String userName = callContext.getUsername();
 		List<Ace> aces = acl.getAllAces();
 		Set<String> userPermissions = new HashSet<String>();
-		Set<String> groups = principalService.getGroupIdsContainingUser(userName);
+		Set<String> groups = principalService.getGroupIdsContainingUser(repositoryId, userName);
 		for (Ace ace : aces) {
 			// Filter ace which has not permissions
 			if (ace.getPermissions() == null)
@@ -150,17 +151,18 @@ public class PermissionServiceImpl implements PermissionService {
 		}
 
 		// Check mapping between the user and the content
-		return checkCalculatedPermissions(key, userPermissions);
+		return checkCalculatedPermissions(repositoryId, key, userPermissions);
 	}
 
 	/**
 	 *
+	 * @param repositoryId TODO
 	 * @param key
 	 * @param userPermissions
 	 * @return
 	 */
-	private boolean checkCalculatedPermissions(String key, Set<String> userPermissions) {
-		Map<String, PermissionMapping> table = repositoryInfo.getAclCapabilities().getPermissionMapping();
+	private boolean checkCalculatedPermissions(String repositoryId, String key, Set<String> userPermissions) {
+		Map<String, PermissionMapping> table = repositoryInfoMap.get(repositoryId).getAclCapabilities().getPermissionMapping();
 		List<String> actionPermissions = table.get(key).getPermissions();
 
 		for (String up : userPermissions) {
@@ -176,13 +178,14 @@ public class PermissionServiceImpl implements PermissionService {
 	/**
 	 * TODO In the future, enable different configuration for Read/Update/Delete.
 	 * @param callContext
+	 * @param repositoryId TODO
 	 * @param key
 	 * @param relationship
 	 * @return
 	 */
-	private Boolean checkRelationshipPermission(CallContext callContext, String key, Relationship relationship){
-		Content source = contentService.getRelationship(relationship.getSourceId());
-		Content target = contentService.getRelationship(relationship.getTargetId());
+	private Boolean checkRelationshipPermission(CallContext callContext, String repositoryId, String key, Relationship relationship){
+		Content source = contentService.getRelationship(repositoryId, relationship.getSourceId());
+		Content target = contentService.getRelationship(repositoryId, relationship.getTargetId());
 
 		if(source == null || target == null){
 			log.warn("[objectId=" + relationship.getId() + "]Source or target of this relationship is missing");
@@ -192,47 +195,47 @@ public class PermissionServiceImpl implements PermissionService {
 		//Read action when a relationship is specified directly
 		if(PermissionMapping.CAN_GET_PROPERTIES_OBJECT.equals(key)){
 			boolean readSource =
-					checkPermission(callContext, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(source), source.getType(), source);
+					checkPermission(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, source), source.getType(), source);
 			boolean readTarget =
-					checkPermission(callContext, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(target), target.getType(), target);
+					checkPermission(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, target), target.getType(), target);
 			return readSource | readTarget;
 		}
 
 		//Update action
 		if(PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT.equals(key)){
 			boolean updateSource =
-					checkPermission(callContext, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(source), source.getType(), source);
+					checkPermission(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, source), source.getType(), source);
 			boolean updateTarget =
-					checkPermission(callContext, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(target), target.getType(), target);
+					checkPermission(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, target), target.getType(), target);
 			return updateSource | updateTarget;
 		}
 
 		//Delete action
 		if(PermissionMapping.CAN_DELETE_OBJECT.equals(key)){
 			boolean deleteSource =
-					checkPermission(callContext, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(source), source.getType(), source);
+					checkPermission(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, source), source.getType(), source);
 			boolean deleteTarget =
-					checkPermission(callContext, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(target), target.getType(), target);
+					checkPermission(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, target), target.getType(), target);
 			return deleteSource | deleteTarget;
 		}
 
 		return false;
 	}
 
-	private Boolean isAllowableBaseType(String key, String baseType, Content content) {
+	private Boolean isAllowableBaseType(String key, String baseType, Content content, String repositoryId) {
 		// NavigationServices
 		if (PermissionMapping.CAN_GET_DESCENDENTS_FOLDER.equals(key))
 			return BaseTypeId.CMIS_FOLDER.value().equals(baseType);
 		if (PermissionMapping.CAN_GET_CHILDREN_FOLDER.equals(key))
 			return BaseTypeId.CMIS_FOLDER.value().equals(baseType);
 		if (PermissionMapping.CAN_GET_FOLDER_PARENT_OBJECT.equals(key))
-			if(contentService.isRoot(content)){
+			if(contentService.isRoot(repositoryId, content)){
 				return false;
 			}else{
 				return BaseTypeId.CMIS_FOLDER.value().equals(baseType);
 			}
 		if (PermissionMapping.CAN_GET_PARENTS_FOLDER.equals(key))
-			if(contentService.isRoot(content)){
+			if(contentService.isRoot(repositoryId, content)){
 				return false;
 			}else{
 				return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType) || BaseTypeId.CMIS_FOLDER.value().equals(baseType)
@@ -269,7 +272,7 @@ public class PermissionServiceImpl implements PermissionService {
 					|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM
 					.value().equals(baseType));
 		if (PermissionMapping.CAN_MOVE_OBJECT.equals(key))
-			if(contentService.isRoot(content)){
+			if(contentService.isRoot(repositoryId, content)){
 				return false;
 			}else{
 				return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)
@@ -282,7 +285,7 @@ public class PermissionServiceImpl implements PermissionService {
 		if (PermissionMapping.CAN_MOVE_SOURCE.equals(key))
 			return BaseTypeId.CMIS_FOLDER.value().equals(baseType);
 		if (PermissionMapping.CAN_DELETE_OBJECT.equals(key))
-			if(contentService.isRoot(content)){
+			if(contentService.isRoot(repositoryId, content)){
 				return false;
 			}else{
 				return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)
@@ -375,7 +378,7 @@ public class PermissionServiceImpl implements PermissionService {
 	 */
 	@Override
 	public <T> List<T> getFiltered(CallContext callContext,
-			List<T> contents) {
+			String repositoryId, List<T> contents) {
 		List<T> result = new ArrayList<T>();
 
 		// Validation
@@ -387,10 +390,10 @@ public class PermissionServiceImpl implements PermissionService {
 		// Filtering
 		for (T _content : contents) {
 			Content content = (Content) _content;
-			Acl acl = contentService.calculateAcl(content);
+			Acl acl = contentService.calculateAcl(repositoryId, content);
 
 			Boolean filtered = checkPermission(callContext,
-					PermissionMapping.CAN_GET_PROPERTIES_OBJECT, acl, content.getType(), content);
+					repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT, acl, content.getType(), content);
 			if (filtered) {
 				result.add(_content);
 			}
@@ -418,7 +421,8 @@ public class PermissionServiceImpl implements PermissionService {
 		this.typeManager = typeManager;
 	}
 
-	public void setRepositoryInfo(RepositoryInfo repositoryInfo) {
-		this.repositoryInfo = repositoryInfo;
+	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
+		this.repositoryInfoMap = repositoryInfoMap;
 	}
+	
 }

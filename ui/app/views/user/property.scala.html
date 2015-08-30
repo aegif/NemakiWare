@@ -1,7 +1,8 @@
 @import table._
 @import util.Util
+@import util.NemakiConfig
 
-@(user:model.User)
+@(repositoryId:String)(user:model.User)
 
 @lightbox{
 	<!-- html -->
@@ -74,10 +75,24 @@
 			data['email'] = editedValue('#user-email');
 			data['password'] = editedValue('#user-password');
 			
+			//Validation
+			if(!data['userId']){
+				alert("@NemakiConfig.getLabel("user-id", lang().language) @Messages("view.message.is-required")");
+				return;  //End click event
+			}
+			if(!data['userName']){
+				alert("@NemakiConfig.getLabel("user-name", lang().language) @Messages("view.message.is-required")");
+				return;  //End click event
+			}
+			if(!data['password']){
+				alert("@NemakiConfig.getLabel("user-password", lang().language) @Messages("view.message.is-required")");
+				return;  //End click event
+			}
+			
 			//call
 			$.blockUI({message:"@Messages("view.message.please.wait")"});
 			$.ajax({
-				url : "@routes.User.update(user.id).absoluteURL(request)",
+				url : "@routes.User.update(repositoryId, user.id).absoluteURL(request)",
 				type: 'POST',
 				data : data,
 				success : function(data){

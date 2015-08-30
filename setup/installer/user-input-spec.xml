@@ -10,11 +10,11 @@
 			<validator class="com.izforge.izpack.util.IsPortValidator" txt="Invalid server port!" />
 		</field>
 		<field type="text" variable="tomcat.shutdown.port">
-			<spec id="tomcat.shutdown.port" size="6" set="8005" txt="Tomcat port(shutdown)"/>
+			<spec id="tomcat.shutdown.port" size="6" set="8005" txt="Tomcat port (shutdown)"/>
 			<validator class="com.izforge.izpack.util.IsPortValidator" txt="Invalid server shutdown port!" />
 		</field>
 		<field type="text" variable="tomcat.ajp.port">
-			<spec id="tomcat.ajp.port" size="6" set="8009" txt="Tomcat port(AJP)"/>
+			<spec id="tomcat.ajp.port" size="6" set="8009" txt="Tomcat port (AJP)"/>
 			<validator class="com.izforge.izpack.util.IsPortValidator" txt="Invalid AJP port!" />
 		</field>
 	</panel>
@@ -23,15 +23,17 @@
 	<panel id="user.inputpanel.repository">
 		<field type="title" id="user.inputpanel.repository.title" txt="Repository configuration " />
 		<field type="text" variable="cmis.repository.main">
-			<spec id="cmis.repository.main" size="25" set="${cmis.repository.main}" txt="Repository ID(main)" />
+			<spec id="cmis.repository.main" size="25" set="bedroom" txt="Repository ID" />
 			<validator class="com.izforge.izpack.util.NotEmptyValidator" txt="Empty value!" />
 		</field>
+		<!--
 		<field type="text" variable="cmis.repository.archive">
-			<spec id="cmis.repository.archive" size="25" set="${cmis.repository.archive}" txt="Repository ID(archive)" />
+			<spec id="cmis.repository.archive" size="25" set="bedroom_closet" txt="Repository ID(archive)" />
 			<validator class="com.izforge.izpack.util.NotEmptyValidator" txt="Empty value!" />
 		</field>
-	</panel>	
-	
+		-->
+	</panel>
+
 	<!-- CouchDB configuration -->
 	<panel id="user.inputpanel.couchdb.configuration">
 		<field type="title" id="user.inputpanel.couchdb.title" txt="CouchDB configuration " />
