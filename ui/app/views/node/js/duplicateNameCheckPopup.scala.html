@@ -5,36 +5,35 @@
 			<div class="modal-header">
 				<button type="button" class="close" data-dismiss="modal"
 					aria-hidden="true">&times;</button>
-				<!-- closeボタン -->
-				<h4 class="modal-title">ファイル名の重複</h4>
+				<h4 class="modal-title">@Messages("view.node.duplicate.template.title")</h4>
 			</div>
 			<div class="modal-body">
 				<div>
-					<div><h4>作成しようとしているファイル</h4></div>
+					<div><h4>@Messages("view.node.duplicate.template.file-to-be-created")</h4></div>
 					<div><h4>
 						<i class="fa fa-file-o"></i>
 						<span class="old-name"></span>
 						</h4>
 					</div>
-					<div>この場所には同じ名前のファイルが既にあります。</div>
+					<div>@Messages("view.node.duplicate.template.already-exist")</div>
 				</div>
 
 				<hr/>
 
 				<div>
-					<p>アクションを選択してください。</p>
+					<p>@Messages("view.node.duplicate.template.select-action")</p>
 					<div class="nmk-action replace" data-flg="replace">
 						<p><h4><i class="fa fa-arrow-circle-o-right"></i>
-						サーバ上のファイルを置き換える</h4></p>
-						<p>このフォルダにあるファイルを以下の新しいファイルで置き換えます。(バージョンも上がります)</p>
+						@Messages("view.node.duplicate.template.action.replace.caption")</h4></p>
+						<p>@Messages("view.node.duplicate.template.action.replace.desc")</p>
 					</div>
 					<div class="nmk-action donothing">
-						<p><h4><i class="fa fa-arrow-circle-o-right"></i>ファイルをアップロードしない</h4></p>
-						<p>どのファイルも変更されません。このフォルダにある以下のファイルは変更されません。</p>
+						<p><h4><i class="fa fa-arrow-circle-o-right"></i>@Messages("view.node.duplicate.template.action.do-nothing.caption")</h4></p>
+						<p>@Messages("view.node.duplicate.template.action.do-nothing.desc")</p>
 					</div>
 					<div class="nmk-action rename" data-flg="rename">
-						<p><h4><i class="fa fa-arrow-circle-o-right"></i>サーバ上のファイルとは別のファイルとしてアップロードする</h4></p>
-						<p>新しいファイルは"<span class="new-name"></span>"という名前に変更されて保存されます。</p>
+						<p><h4><i class="fa fa-arrow-circle-o-right"></i>@Messages("view.node.duplicate.template.action.rename.caption")</h4></p>
+						<p>@Messages("view.node.duplicate.template.action.rename.desc1")"<span class="new-name"></span>"@Messages("view.node.duplicate.template.action.rename.desc2")</p>
 					</div>
 				</div>				
 				

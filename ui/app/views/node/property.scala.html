@@ -61,7 +61,7 @@
 		//Check duplicate
 		var duplicate = checkDuplicateOnUpdate(data["cmis:name"], "@obj.getName");
 		if(duplicate){
-			window.alert('その名前はすでに存在しています。変更してください。');
+			window.alert("@Messages("view.node.duplicate.alert.rename")");
 			return;
 		}
 
