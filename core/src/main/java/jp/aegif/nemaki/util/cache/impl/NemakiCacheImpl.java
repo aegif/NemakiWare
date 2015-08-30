@@ -1,6 +1,5 @@
 package jp.aegif.nemaki.util.cache.impl;
 
-import javax.annotation.PostConstruct;
 
 import net.sf.ehcache.Cache;
 import net.sf.ehcache.CacheManager;
@@ -10,7 +9,6 @@ import jp.aegif.nemaki.util.cache.NemakiCache;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
 public class NemakiCacheImpl implements NemakiCache{
-	private PropertyManager propertyManager;
 	private boolean cacheEnabled;
 	
 	private final CacheManager cacheManager;
@@ -27,88 +25,89 @@ public class NemakiCacheImpl implements NemakiCache{
 	private final String GROUP_CACHE = "groupCache";
 	private final String GROUPS_CACHE = "groupsCache";
 	
-	public NemakiCacheImpl() {
+	private final String repositoryId;
+	
+	public NemakiCacheImpl(String repositoryId, PropertyManager propertyManager) {
+		this.repositoryId = repositoryId;
+		
+		cacheEnabled = propertyManager.readBoolean(PropertyKey.CACHE_CMIS_ENABLED);
+		
 		cacheManager = CacheManager.newInstance();
 		
-		cacheManager.addCache(new Cache(OBJECT_DATA_CACHE, 10000, false, false, 60 * 60, 60 * 60));
-		cacheManager.addCache(new Cache(PROPERTIES_CACHE, 10000, false, false, 60 * 60, 60 * 60));
-		cacheManager.addCache(new Cache(TYPE_CACHE, 1, false, false, 60 * 60, 60 * 60));
-		cacheManager.addCache(new Cache(CONTENT_CACHE, 10000, false, false, 60 * 60, 60 * 60));
-		cacheManager.addCache(new Cache(VERSION_SERIES_CACHE, 10000, false, false, 60 * 60, 60 * 60));
-		cacheManager.addCache(new Cache(ATTACHMENTS_CACHE, 10000, false, false, 60 * 60, 60 * 60));
-		cacheManager.addCache(new Cache(CHANGE_EVENT_CACHE, 10000, false, false, 60 * 60, 60 * 60));
-		cacheManager.addCache(new Cache(LATEST_CHANGE_TOKEN_CACHE, 10000, false, false, 60 * 60, 60 * 60));
-		cacheManager.addCache(new Cache(USER_CACHE, 10000, false, false, 60 * 60, 60 * 60));
-		cacheManager.addCache(new Cache(USERS_CACHE, 10000, false, false, 60 * 60, 60 * 60));
-		cacheManager.addCache(new Cache(GROUP_CACHE, 10000, false, false, 60 * 60, 60 * 60));
-		cacheManager.addCache(new Cache(GROUPS_CACHE, 10000, false, false, 60 * 60, 60 * 60));
-	}
-	
-	@PostConstruct
-	public void init(){
-		cacheEnabled = propertyManager.readBoolean(PropertyKey.CACHE_CMIS_ENABLED);
+		cacheManager.addCache(new Cache(repositoryId + "_" + OBJECT_DATA_CACHE, 10000, false, false, 60 * 60, 60 * 60));
+		cacheManager.addCache(new Cache(repositoryId + "_" + PROPERTIES_CACHE, 10000, false, false, 60 * 60, 60 * 60));
+		cacheManager.addCache(new Cache(repositoryId + "_" + TYPE_CACHE, 1, false, false, 60 * 60, 60 * 60));
+		cacheManager.addCache(new Cache(repositoryId + "_" + CONTENT_CACHE, 10000, false, false, 60 * 60, 60 * 60));
+		cacheManager.addCache(new Cache(repositoryId + "_" + VERSION_SERIES_CACHE, 10000, false, false, 60 * 60, 60 * 60));
+		cacheManager.addCache(new Cache(repositoryId + "_" + ATTACHMENTS_CACHE, 10000, false, false, 60 * 60, 60 * 60));
+		cacheManager.addCache(new Cache(repositoryId + "_" + CHANGE_EVENT_CACHE, 10000, false, false, 60 * 60, 60 * 60));
+		cacheManager.addCache(new Cache(repositoryId + "_" + LATEST_CHANGE_TOKEN_CACHE, 10000, false, false, 60 * 60, 60 * 60));
+		cacheManager.addCache(new Cache(repositoryId + "_" + USER_CACHE, 10000, false, false, 60 * 60, 60 * 60));
+		cacheManager.addCache(new Cache(repositoryId + "_" + USERS_CACHE, 10000, false, false, 60 * 60, 60 * 60));
+		cacheManager.addCache(new Cache(repositoryId + "_" + GROUP_CACHE, 10000, false, false, 60 * 60, 60 * 60));
+		cacheManager.addCache(new Cache(repositoryId + "_" + GROUPS_CACHE, 10000, false, false, 60 * 60, 60 * 60));
 	}
 	
 	@Override
 	public CustomCache getObjectDataCache() {
 		CustomCache cc = new CustomCache(cacheEnabled);
-		cc.setCache(cacheManager.getCache(OBJECT_DATA_CACHE));
+		cc.setCache(cacheManager.getCache(repositoryId + "_" + OBJECT_DATA_CACHE));
 		return cc; 
 	}
 
 	@Override
 	public Cache getPropertiesCache() {
-		return cacheManager.getCache(PROPERTIES_CACHE);
+		return cacheManager.getCache(repositoryId + "_" + PROPERTIES_CACHE);
 	}
 
 	@Override
 	public Cache getTypeCache() {
-		return cacheManager.getCache(TYPE_CACHE);
+		return cacheManager.getCache(repositoryId + "_" + TYPE_CACHE);
 	}
 
 	@Override
 	public Cache getContentCache() {
-		return cacheManager.getCache(CONTENT_CACHE);
+		return cacheManager.getCache(repositoryId + "_" + CONTENT_CACHE);
 	}
 
 	@Override
 	public Cache getVersionSeriesCache() {
-		return cacheManager.getCache(VERSION_SERIES_CACHE);
+		return cacheManager.getCache(repositoryId + "_" + VERSION_SERIES_CACHE);
 	}
 
 	@Override
 	public Cache getAttachmentCache() {
-		return cacheManager.getCache(ATTACHMENTS_CACHE);
+		return cacheManager.getCache(repositoryId + "_" + ATTACHMENTS_CACHE);
 	}
 
 	@Override
 	public Cache getChangeEventCache() {
-		return cacheManager.getCache(CHANGE_EVENT_CACHE);
+		return cacheManager.getCache(repositoryId + "_" + CHANGE_EVENT_CACHE);
 	}
 
 	@Override
 	public Cache getLatestChangeTokenCache() {
-		return cacheManager.getCache(LATEST_CHANGE_TOKEN_CACHE);
+		return cacheManager.getCache(repositoryId + "_" + LATEST_CHANGE_TOKEN_CACHE);
 	}
 
 	@Override
 	public Cache getUserCache() {
-		return cacheManager.getCache(USER_CACHE);
+		return cacheManager.getCache(repositoryId + "_" + USER_CACHE);
 	}
 
 	@Override
 	public Cache getUsersCache() {
-		return cacheManager.getCache(USERS_CACHE);
+		return cacheManager.getCache(repositoryId + "_" + USERS_CACHE);
 	}
 
 	@Override
 	public Cache getGroupCache() {
-		return cacheManager.getCache(GROUP_CACHE);
+		return cacheManager.getCache(repositoryId + "_" + GROUP_CACHE);
 	}
 
 	@Override
 	public Cache getGroupsCache() {
-		return cacheManager.getCache(GROUPS_CACHE);
+		return cacheManager.getCache(repositoryId + "_" + GROUPS_CACHE);
 	}
 
 	@Override
@@ -116,9 +115,4 @@ public class NemakiCacheImpl implements NemakiCache{
 		getPropertiesCache().remove(objectId);
 		getObjectDataCache().remove(objectId);
 	}
-
-	public void setPropertyManager(PropertyManager propertyManager) {
-		this.propertyManager = propertyManager;
-	}	
-	
 }

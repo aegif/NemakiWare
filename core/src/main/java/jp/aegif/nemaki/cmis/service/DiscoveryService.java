@@ -36,21 +36,23 @@ public interface DiscoveryService {
 
 	/**
 	 * Executes a CMIS query statement against the contents of the repository.
+	 * @param repositoryId TODO
 	 */
-	ObjectList query(CallContext Context, String statement,
-			Boolean searchAllVersions, Boolean includeAllowableActions, IncludeRelationships includeRelationships,
-			String renditionFilter,
-			BigInteger maxItems, BigInteger skipCount,
-			ExtensionsData extension);
+	ObjectList query(CallContext Context, String repositoryId,
+			String statement, Boolean searchAllVersions, Boolean includeAllowableActions,
+			IncludeRelationships includeRelationships,
+			String renditionFilter, BigInteger maxItems,
+			BigInteger skipCount, ExtensionsData extension);
 
 	/**
 	 * Get the list of object that have changed since a given point in the past.
 	 * 
 	 * TODO Not Yet Implemented
+	 * @param repositoryId TODO
 	 */
 	ObjectList getContentChanges(CallContext context,
-			Holder<String> changeLogToken, Boolean includeProperties,
-			String filter, Boolean includePolicyIds, Boolean includeAcl,
-			BigInteger maxItems, ExtensionsData extension);
+			String repositoryId, Holder<String> changeLogToken,
+			Boolean includeProperties, String filter, Boolean includePolicyIds,
+			Boolean includeAcl, BigInteger maxItems, ExtensionsData extension);
 
 }

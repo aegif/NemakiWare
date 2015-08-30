@@ -3,7 +3,7 @@
   <!-- Application info -->
   <info>
     <appname>NemakiWare</appname>
-    <appversion>2.3Beta1</appversion>
+    <appversion>2.3</appversion>
     <url>http://www.nemakiware.com/</url>
     <!--
     If you a general user install on C:¥Program Files on Windows,
@@ -36,7 +36,7 @@
 
   <!-- Variables in this fhile-->
   <variables>
-    <variable name="TOMCAT" value="apache-tomcat-8.0.21" />
+    <variable name="TOMCAT" value="apache-tomcat-8.0.26" />
   </variables>
 
   <!-- Resource import -->
@@ -146,10 +146,12 @@
       <!-- Create general custom setting file -->
       <file src="setup/installer/tomcat/app-server-core.properties" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
       <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-core.properties"/>
+      <file src="setup/installer/tomcat/app-server-core-repositories.yml" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
+      <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-core-repositories.yml"/>
     </pack>
 
     <!-- Pack: CouchDB configuration -->
-    <pack id="pack.couchdb.configuration" name="DB initialization(with working CouchDB)" required="no">
+    <pack id="pack.couchdb.configuration" name="DB initialization (with working CouchDB)" required="no">
       <description>DB initialization</description>
 
       <!-- Import configuration scripts -->
@@ -165,7 +167,19 @@
           <arg value="${db.couchdb.host}" />
           <arg value="${db.couchdb.port}" />
           <arg value="${cmis.repository.main}" />
-          <arg value="${cmis.repository.archive}" />
+          <arg value="${cmis.repository.main}_closet" />
+          <arg value="$INSTALL_PATH/setup/couchdb/initial_import/bedroom_init.dump" />
+          <arg value="$INSTALL_PATH/setup/couchdb/initial_import/archive_init.dump" />
+        </args>
+      </executable>
+
+      <executable targetfile="$INSTALL_PATH/setup/couchdb/bjornloka.jar" stage="postinstall"
+        type="jar" keep="true">
+        <args>
+          <arg value="${db.couchdb.host}" />
+          <arg value="${db.couchdb.port}" />
+          <arg value="canopy" />
+          <arg value="canopy_closet" />
           <arg value="$INSTALL_PATH/setup/couchdb/initial_import/bedroom_init.dump" />
           <arg value="$INSTALL_PATH/setup/couchdb/initial_import/archive_init.dump" />
         </args>
@@ -194,6 +208,8 @@
         <include name="**"/>
         <exclude name="**/data/*/" />
       </fileset>
+      <file src="setup/installer/solr/app-server-solr-repositories.yml" targetdir="$INSTALL_PATH/solr" />
+      <parsable targetfile="$INSTALL_PATH/solr/app-server-solr-repositories.yml"/>
 
       <!-- Create Solr context fragment -->
       <file src="setup/installer/tomcat/solr.xml" targetdir="$INSTALL_PATH/${TOMCAT}/conf/Catalina/localhost" />

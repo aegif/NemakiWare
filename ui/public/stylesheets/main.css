@@ -166,3 +166,11 @@ div.fav.caption{
 	border-color:#CCC;
 	background-color:#EEE;
 }
+
+.nmk-action.hover{
+	background-color:#f0f8ff;
+}
+
+#nmk-dd-duplicate-confirm .modal-header{
+	background-color:#DCE9F9;
+}

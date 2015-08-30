@@ -3,15 +3,17 @@ package jp.aegif.nemaki.rest;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 
+import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
+import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 
 import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
-
 import org.apache.http.HttpResponse;
 import org.apache.http.HttpStatus;
 import org.apache.http.client.HttpClient;
@@ -22,7 +24,7 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.w3c.dom.Node;
 
-@Path("/search-engine")
+@Path("/repo/{repositoryId}/search-engine")
 public class SolrResource extends ResourceBase {
 	
 	private SolrUtil solrUtil;
@@ -47,15 +49,20 @@ public class SolrResource extends ResourceBase {
 	@GET
 	@Path("/init")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String initialize() {
+	public String initialize(@PathParam("repositoryId") String repositoryId, @Context HttpServletRequest request) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 		
+		//Check admin
+		if(!checkAdmin(errMsg, request)){
+			return makeResult(status, result, errMsg).toString();
+		}
+		
 		//Call Solr
 		HttpClient httpClient = HttpClientBuilder.create().build();
 		String solrUrl = solrUtil.getSolrUrl();
-		String url = solrUrl + "admin/cores?core=nemaki&action=init";
+		String url = solrUrl + "admin/cores?core=nemaki&action=init&repositoryId=" + repositoryId;
 		HttpGet httpGet = new HttpGet(url);
 		try {
 			HttpResponse response = httpClient.execute(httpGet);
@@ -85,15 +92,20 @@ public class SolrResource extends ResourceBase {
 	@GET
 	@Path("/reindex")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String reindex() {
+	public String reindex(@PathParam("repositoryId") String repositoryId, @Context HttpServletRequest request) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 		
+		//Check admin
+		if(!checkAdmin(errMsg, request)){
+			return makeResult(status, result, errMsg).toString();
+		}
+		
 		//Call Solr
 		HttpClient httpClient = HttpClientBuilder.create().build();
 		String solrUrl = solrUtil.getSolrUrl();
-		String url = solrUrl + "admin/cores?core=nemaki&action=index&tracking=FULL";
+		String url = solrUrl + "admin/cores?core=nemaki&action=index&tracking=FULL&repositoryId=" + repositoryId;
 		HttpGet httpGet = new HttpGet(url);
 		try {
 			HttpResponse response = httpClient.execute(httpGet);

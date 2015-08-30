@@ -20,8 +20,8 @@
 		<property name="nonCachedContentDaoService">
 			<ref bean="nonCachedContentDaoService" />
 		</property>
-		<property name="nemakiCache">
-			<ref bean="nemakiCache" />
+		<property name="nemakiCachePool">
+			<ref bean="nemakiCachePool" />
 		</property>
 	</bean>
 	
@@ -39,8 +39,8 @@
 		<property name="nonCachedPrincipalDaoService">
 			<ref bean="nonCachedPrincipalDaoService" />
 		</property>
-		<property name="nemakiCache">
-			<ref bean="nemakiCache" />
+		<property name="nemakiCachePool">
+			<ref bean="nemakiCachePool" />
 		</property>
 	</bean>
 		

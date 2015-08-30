@@ -30,79 +30,90 @@ import jp.aegif.nemaki.model.User;
  * DAO Service interface.
  */
 public interface PrincipalDaoService {
-	User getUser(String nodeId);
+	User getUser(String repositoryId, String nodeId);
 
 	/**
 	 * Get a user by userId(It's supposed to be unique)
+	 * @param repositoryId TODO
 	 * @param userId
 	 * @return
 	 */
-	User getUserById(String userId);
+	User getUserById(String repositoryId, String userId);
 
 	/**
 	 * Get a users
+	 * @param repositoryId TODO
 	 * @return
 	 */
-	List<User> getUsers();
+	List<User> getUsers(String repositoryId);
 
 	/**
 	 * Get Admin user
+	 * @param repositoryId TODO
 	 * @return
 	 */
-	User getAdmin();
+	User getAdmin(String repositoryId);
 
 	/**
 	 * Get a group
+	 * @param repositoryId TODO
 	 * @param nodeId
 	 * @return
 	 */
-	Group getGroup(String nodeId);
+	Group getGroup(String repositoryId, String nodeId);
 
 	/**
 	 * Get a group by groupId(It's supposed to be unique)
+	 * @param repositoryId TODO
 	 * @param groupId
 	 * @return
 	 */
-	Group getGroupById(String groupId);
+	Group getGroupById(String repositoryId, String groupId);
 
 	/**
 	 * Get all the groups
+	 * @param repositoryId TODO
 	 * @return
 	 */
-	List<Group> getGroups();
+	List<Group> getGroups(String repositoryId);
 
 	/**
 	 * Create a user
+	 * @param repositoryId TODO
 	 * @param user
 	 * @return newly created user
 	 */
-	User createUser(User user);
+	User createUser(String repositoryId, User user);
 
 	/**
 	 * Create a group
+	 * @param repositoryId TODO
 	 * @param group
 	 * @return newly created group
 	 */
-	Group createGroup(Group group);
+	Group createGroup(String repositoryId, Group group);
 
 	/**
 	 * Update a user
+	 * @param repositoryId TODO
 	 * @param user
 	 * @return updated user
 	 */
-	User updateUser(User user);
+	User updateUser(String repositoryId, User user);
 
 	/**
 	 * Update a group
+	 * @param repositoryId TODO
 	 * @param group
 	 * @return updated group
 	 */
-	Group updateGroup(Group group);
+	Group updateGroup(String repositoryId, Group group);
 
 	/**
 	 * Delete a user / group
+	 * @param repositoryId TODO
 	 * @param clazz
 	 * @param id
 	 */
-	void delete(Class<?> clazz, String nodeId);
+	void delete(String repositoryId, Class<?> clazz, String nodeId);
 }

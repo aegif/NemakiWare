@@ -28,7 +28,6 @@ import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.aspect.query.QueryProcessor;
-import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.service.DiscoveryService;
 import jp.aegif.nemaki.model.Change;
 
@@ -51,11 +50,11 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 	private ExceptionService exceptionService;
 	private CompileService compileService;
 
-	public ObjectList query(CallContext context, String statement,
-			Boolean searchAllVersions, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships,
-			String renditionFilter, BigInteger maxItems,
-			BigInteger skipCount, ExtensionsData extension) {
+	public ObjectList query(CallContext context, String repositoryId,
+			String statement, Boolean searchAllVersions,
+			Boolean includeAllowableActions,
+			IncludeRelationships includeRelationships, String renditionFilter,
+			BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -68,9 +67,9 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 
 		// //////////////////
 		// Body of the method
-		return queryProcessor.query(context, statement, searchAllVersions,
-				includeAllowableActions, includeRelationships, renditionFilter,
-				maxItems, skipCount);
+		return queryProcessor.query(context, repositoryId, statement,
+				searchAllVersions, includeAllowableActions, includeRelationships,
+				renditionFilter, maxItems, skipCount);
 	}
 
 	/**
@@ -78,9 +77,9 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 	 * attachments TODO includeAcl,includePolicyIds is not valid
 	 */
 	public ObjectList getContentChanges(CallContext context,
-			Holder<String> changeLogToken, Boolean includeProperties,
-			String filter, Boolean includePolicyIds, Boolean includeAcl,
-			BigInteger maxItems, ExtensionsData extension) {
+			String repositoryId, Holder<String> changeLogToken,
+			Boolean includeProperties, String filter, Boolean includePolicyIds,
+			Boolean includeAcl, BigInteger maxItems, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -89,29 +88,28 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		if (changeLogToken != null
-				&& StringUtils.isNotBlank(changeLogToken.getValue())) {
+		if (changeLogToken == null || 
+				changeLogToken == null && StringUtils.isBlank(changeLogToken.getValue())) {
 			// If changelogToken is not specified, return the first in the
 			// repository
 			exceptionService
-					.invalidArgumentChangeEventNotAvailable(changeLogToken);
+					.invalidArgumentChangeEventNotAvailable(repositoryId, changeLogToken);
 		}
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		List<Change> changes = contentService.getLatestChanges(context,
-				changeLogToken, includeProperties, filter, includePolicyIds,
-				includeAcl, maxItems, extension);
+		List<Change> changes = contentService.getLatestChanges(repositoryId,
+				context, changeLogToken, includeProperties, filter,
+				includePolicyIds, includeAcl, maxItems, extension);
 		if (!CollectionUtils.isEmpty(changes)) {
-			String latestToken = String.valueOf(changes.get(changes.size() - 1)
-					.getChangeToken());
-			changeLogToken.setValue(latestToken);
+			Change latestInResults = changes.get(changes.size() - 1);
+			changeLogToken.setValue(latestInResults.getId());
 		}
 
-		return compileService.compileChangeDataList(context, changes,
-				changeLogToken, includeProperties, filter, includePolicyIds,
-				includeAcl);
+		return compileService.compileChangeDataList(context, repositoryId,
+				changes, changeLogToken, includeProperties, filter,
+				includePolicyIds, includeAcl);
 	}
 
 	public void setQueryProcessor(QueryProcessor queryProcessor) {
