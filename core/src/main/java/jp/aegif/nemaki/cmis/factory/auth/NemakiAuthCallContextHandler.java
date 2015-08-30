@@ -21,24 +21,31 @@
  ******************************************************************************/
 package jp.aegif.nemaki.cmis.factory.auth;
 
+import java.util.HashMap;
 import java.util.Map;
 
 import javax.servlet.http.HttpServletRequest;
 
+import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.CallContextKey;
+import jp.aegif.nemaki.util.constant.PropertyKey;
+import jp.aegif.nemaki.util.spring.SpringContext;
 
 import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
+import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.springframework.context.ApplicationContext;
 
 /**
  * Context handler class to do basic authentication
  */
-public class NemakiAuthCallContextHandler extends org.apache.chemistry.opencmis.server.shared.BasicAuthCallContextHandler {
+public class NemakiAuthCallContextHandler extends org.apache.chemistry.opencmis.server.shared.BasicAuthCallContextHandler{
 
 	private static final long serialVersionUID = -8877261669069241258L;
 	private static final Log log = LogFactory.getLog(NemakiAuthCallContextHandler.class);
-
+	
 	/**
 	 * Constructor. Initialize authenticationService here.
 	 */
@@ -54,8 +61,26 @@ public class NemakiAuthCallContextHandler extends org.apache.chemistry.opencmis.
 	public Map<String, String> getCallContextMap(HttpServletRequest request) {
 		// Call superclass to get user and password via basic authentication.
 		Map<String, String> ctxMap = super.getCallContextMap(request);
+		if(ctxMap == null){
+			ctxMap = new HashMap<String, String>();
+		}
+		
+		//SSO header
+		final ApplicationContext applicationContext = SpringContext.getApplicationContext();
+		PropertyManager manager = applicationContext.getBean("propertyManager", PropertyManager.class);
+		String proxyHeaderKey = manager.readValue(PropertyKey.EXTERNAL_AUTHENTICATION_PROXY_HEADER);
+		if(StringUtils.isNotBlank(proxyHeaderKey)){
+			String proxyHeaderVal = request.getHeader(proxyHeaderKey);
+			ctxMap.put(proxyHeaderKey, proxyHeaderVal);
+			if(StringUtils.isNotBlank(proxyHeaderVal)){
+				ctxMap.put(CallContext.USERNAME, proxyHeaderVal);
+			}
+		}
+
+		//Nemaki auth token
 		ctxMap.put(CallContextKey.AUTH_TOKEN, request.getHeader(CallContextKey.AUTH_TOKEN));
 		ctxMap.put(CallContextKey.AUTH_TOKEN_APP, request.getHeader(CallContextKey.AUTH_TOKEN_APP));
+		
 		return ctxMap;
 	}
 }

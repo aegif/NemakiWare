@@ -3,7 +3,7 @@
 # ShellScript to generate NemakiWare installer from source code
 #
 # Usage:
-# ./make.sh 
+# ./make.sh
 # or
 # ./make.sh PATH_TO_NEMAKIWARE_SOURCECODE
 #
@@ -17,7 +17,7 @@
 while getopts ep opt
 do
 	case ${opt} in
-		e) 
+		e)
 			shift
 			FLG_E="TRUE"
 			;;
@@ -61,7 +61,7 @@ java -cp $SCRIPT_HOME/install-util/target/install-util.jar jp.aegif.nemaki.insta
 mvn -f $SOURCE_HOME/core/pom.xml clean
 mvn -f $SOURCE_HOME/core/pom.xml package $PROFILE_PRODUCT
 mvn -f $SOURCE_HOME/solr/pom.xml clean
-mvn -f $SOURCE_HOME/solr/pom.xml -Dmaven.test.skip=true package
+mvn -f $SOURCE_HOME/solr/pom.xml package $PROFILE_PRODUCT
 cd $SOURCE_HOME/ui/
 ./activator war
 cd $EXECUTION_DIRECTORY

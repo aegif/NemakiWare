@@ -4,12 +4,12 @@
 @import util.Formatter
 @import org.apache.chemistry.opencmis.commons.PropertyIds
 
-@(objectTypes: List[org.apache.chemistry.opencmis.client.api.ObjectType])
+@(repositoryId:String)(objectTypes: List[org.apache.chemistry.opencmis.client.api.ObjectType])
 <!DOCTYPE html>
 <html>
 	@header()
 	<body>
-		@menubar()
+		@menubar(repositoryId)
 		<div class="container">
 			<div class="row">
 	  			<div class="col-md-11">
@@ -38,7 +38,7 @@
 						@for(objectType <- objectTypes){
 							<tr>
 								<td>
-									<a href="@routes.Type.download(objectType.getId)">@objectType.getId</a>
+									<a href="@routes.Type.download(repositoryId, objectType.getId)">@objectType.getId</a>
 								</td>
 								
 								<td>
@@ -70,63 +70,47 @@
 
 <script type="text/javascript">
 $(function(){
-	$('.update').bind('click', function(){
-    	$.ajax({
-       		url: "@{Util.getContextPath(request)}types/edit",
-       		dataType: "html",
-       		success: function(data, textStatus){
-       			showLightbox('type-update', data);
-       		},
-       	    error: function(xhr, textStatus, errorThrown){
-       	      // TODO
-       	    }
-       	});
-    })
-   	
 	$('.create').bind('click', function(){
-       	$.ajax({
-       		url: "@{Util.getContextPath(request)}types/new",
-       		dataType: "html",
-       		success: function(data, textStatus){
-       			showLightbox('type-blank', data);
-       		},
-       	    error: function(xhr, textStatus, errorThrown){
-       	      // TODO
-       	    }
-       	});
-    });
+		$.ajax(jsRoutes.controllers.Type.showBlank("@repositoryId")
+		).done(function(data){
+			showLightbox('type-blank', data);
+		}).fail(function(XMLHttpRequest, textStatus, errorThrown){
+			//TODO
+		}).always(function(){
+			//TODO
+		});
+    })
+	
+	$('.update').bind('click', function(){
+		$.ajax(jsRoutes.controllers.Type.edit("@repositoryId")
+		).done(function(data){
+			showLightbox('type-update', data);
+		}).fail(function(XMLHttpRequest, textStatus, errorThrown){
+			//TODO
+		}).always(function(){
+			//TODO
+		});
+    })
+    
+    $('.delete').click(function(){
+		if(window.confirm("@Messages("view.message.delete.confirm")")){
+			var id = $(this).attr('cmis-id');
+		
+			$.blockUI({message:"@Messages("view.message.please.wait")"});
+			
+			$.ajax(jsRoutes.controllers.Type.delete("@repositoryId", id)
+			).done(function(data){
+				window.alert("@Messages("view.message.delete.success")");
+				window.location.reload();
+			}).fail(function(XMLHttpRequest, textStatus, errorThrown){
+				window.alert("@Messages("view.message.delete.failure")");
+			}).always(function(){
+				$.unblockUI();
+			});
+		}
+	});
 });
 </script>
-
-<!-- delete -->
-<script type="text/javascript">
-	$(function(){
-		$('.delete').click(function(){
-			if(window.confirm("@Messages("view.message.delete.confirm")")){
-				var id = $(this).attr('cmis-id');
-			
-				$.blockUI({message:"@Messages("view.message.please.wait")"});
-				$.ajax({
-					url : "@{Util.getContextPath(request)}types/" + id + "/delete",
-					type : 'POST',
-					data : null,
-					success : function(data){
-						window.alert("@Messages("view.message.delete.success")");
-						window.location.reload();
-					},
-					error : function(XMLHttpRequest, textStatus, errorThrown) {
-						window.alert("@Messages("view.message.delete.failure")");
-			        },
-			        complete : function(){
-						$.unblockUI();
-					}
-				})
-			}
-		});
-	});
-</script>
-
-
 
 <!-- footable -->
 <script type="text/javascript">

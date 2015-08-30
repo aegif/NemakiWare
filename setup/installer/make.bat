@@ -18,10 +18,13 @@ rem Parse options
 set ORIGINAL_PWD=%CD%
 
 set FLG_E=FALSE
+set FLG_P=
 for %%i in (%*) do (
 	if %%i == -e (
 		set FLG_E=TRUE
 		shift
+	) ELSE IF %%i == -p (
+		set FLG_P=-P product
 	) ELSE (
 		set FLG_E=FALSE
 	)
@@ -29,7 +32,7 @@ for %%i in (%*) do (
 
 rem Location
 if [%1] == [] (
-	cd /d %~dp0	
+	cd /d %~dp0
 	cd /d ../../
 	FOR /F %%i in ('CD') do set SOURCE_HOME=%%i
 	cd /d %ORIGINAL_PWD%
@@ -56,9 +59,9 @@ java -cp %SCRIPT_HOME%\install-util\target\install-util.jar jp.aegif.nemaki.inst
 
 rem Prepare WAR
 call mvn -f %SOURCE_HOME%\core clean
-call mvn -f %SOURCE_HOME%\core -Dmaven.test.skip=true package
+call mvn -f %SOURCE_HOME%\core package %FLG_P%
 call mvn -f %SOURCE_HOME%\solr clean
-call mvn -f %SOURCE_HOME%\solr -Dmaven.test.skip=true package
+call mvn -f %SOURCE_HOME%\solr package %FLG_P%
 cd /d %SOURCE_HOME%\ui
 call activator.bat war
 cd /d %ORIGINAL_PWD%
@@ -75,9 +78,9 @@ pause
 
 rem Execute isntaller
 if "%FLG_E%" == "TRUE" (
-	
+
 	echo Continue to install...
-	
+
 	java -jar %SCRIPT_HOME%\install.jar
 )
 

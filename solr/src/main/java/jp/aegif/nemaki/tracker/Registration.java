@@ -162,7 +162,7 @@ public class Registration implements Runnable{
 		try {
 			// Check if the SolrDocument exists
 			SolrQuery solrQuery = new SolrQuery();
-			solrQuery.setQuery(Constant.FIELD_ID + ":" + ce.getObjectId());
+			solrQuery.setQuery(Constant.FIELD_OBJECT_ID + ":" + ce.getObjectId());
 			QueryResponse resp = repositoryServer.query(solrQuery);
 			if (resp != null && resp.getResults() != null) {
 				if (resp.getResults().getNumFound() == 0) {
@@ -368,9 +368,13 @@ public class Registration implements Runnable{
 	}
 
 	private void buildBaseParamMap(Map<String, Object> map, CmisObject object) {
+		String repositoryId = cmisSession.getRepositoryInfo().getId();
+		String objectId = object.getId();
+		map.put(Constant.FIELD_ID, buildUniqueId(repositoryId, objectId));
+		map.put(Constant.FIELD_REPOSITORY_ID, repositoryId);
+		map.put(Constant.FIELD_OBJECT_ID, objectId);
 		map.put(Constant.FIELD_NAME, object.getName());
 		map.put(Constant.FIELD_DESCRIPTION, object.getDescription());
-		map.put(Constant.FIELD_ID, object.getId());
 		map.put(Constant.FIELD_BASE_TYPE, object.getBaseTypeId().value());
 		map.put(Constant.FIELD_OBJECT_TYPE, object.getType().getQueryName());
 		map.put(Constant.FIELD_SECONDARY_OBJECT_TYPE_IDS, getSecondaryIds(object));
@@ -378,6 +382,10 @@ public class Registration implements Runnable{
 		map.put(Constant.FIELD_CREATOR, object.getCreatedBy());
 		map.put(Constant.FIELD_MODIFIED, getUTC(object.getLastModificationDate()));
 		map.put(Constant.FIELD_MODIFIER, object.getLastModifiedBy());
+	}
+	
+	private String buildUniqueId(String repositoryId, String objectId){
+		return repositoryId + "_" + objectId;
 	}
 
 	private List<String> getSecondaryIds(CmisObject object) {

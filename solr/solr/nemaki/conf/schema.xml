@@ -101,7 +101,9 @@
    <field name="change_token" type="string" indexed="true" stored="true" required="false" multiValued="false" />
    		
    <!-- NemakiWare CMIS properties -->     
-   <field name="id" type="string" indexed="true" stored="true" required="true" multiValued="false" />
+	<field name="id" type="string" indexed="true" stored="true" required="true" multiValued="false" />
+   <field name="repository_id" type="string" indexed="true" stored="true" required="true" multiValued="false" />
+   <field name="object_id" type="string" indexed="true" stored="true" required="true" multiValued="false" />
    <field name="name" type="string" indexed="true" stored="true" multiValued="false" />
    <field name="cmis_description" type="string" indexed="true" stored="true"/>
    <field name="created" type="date" indexed="true" stored="true" multiValued="false" />

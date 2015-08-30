@@ -16,6 +16,9 @@
 		</property>
 	</bean>
 	<bean id="contentService" class="jp.aegif.nemaki.businesslogic.impl.ContentServiceImpl">
+		<property name="repositoryInfoMap">
+			<ref bean="repositoryInfoMap" />
+		</property>
 		<property name="contentDaoService">
 			<ref bean="ContentDaoService" />
 		</property>
@@ -47,12 +50,9 @@
 		<property name="principalDaoService">
 			<ref bean="PrincipalDaoService" />
 		</property>
-		<property name="anonymous">
-            <value>${cmis.repository.main.principal.anonymous}</value>
-        </property>
-        <property name="anyone">
-            <value>${cmis.repository.main.principal.anyone}</value>
-        </property>
+		<property name="repositoryInfoMap">
+			<ref bean="repositoryInfoMap" />
+		</property>
 	</bean>
 	
 	<bean id="TypeService" class="org.springframework.aop.framework.ProxyFactoryBean">

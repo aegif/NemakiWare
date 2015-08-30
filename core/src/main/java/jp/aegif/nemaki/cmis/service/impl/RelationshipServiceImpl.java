@@ -52,18 +52,18 @@ public class RelationshipServiceImpl implements RelationshipService {
 
 	@Override
 	public ObjectList getObjectRelationships(CallContext callContext,
-			String objectId, Boolean includeSubRelationshipTypes,
-			RelationshipDirection relationshipDirection, String typeId,
-			String filter, Boolean includeAllowableActions,
-			BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
+			String repositoryId, String objectId,
+			Boolean includeSubRelationshipTypes, RelationshipDirection relationshipDirection,
+			String typeId, String filter,
+			Boolean includeAllowableActions, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("objectId", objectId);
-		Content content = contentService.getContent(objectId);
+		Content content = contentService.getContent(repositoryId, objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,
-				PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, content);
+				repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, content);
 
 		// //////////////////
 		// Body of the method
@@ -73,7 +73,7 @@ public class RelationshipServiceImpl implements RelationshipService {
 				: relationshipDirection;
 
 		List<Relationship> rels = contentService.getRelationsipsOfObject(
-				objectId, relationshipDirection);
+				repositoryId, objectId, relationshipDirection);
 
 		// Filtering results
 		List<Relationship> extracted = new ArrayList<Relationship>();
@@ -83,8 +83,8 @@ public class RelationshipServiceImpl implements RelationshipService {
 
 			if (includeSubRelationshipTypes) {
 				List<TypeDefinitionContainer> descendants = typeManager
-						.getTypesDescendants(typeId, BigInteger.valueOf(-1),
-								false);
+						.getTypesDescendants(repositoryId, typeId,
+								BigInteger.valueOf(-1), false);
 				for (TypeDefinitionContainer tdc : descendants) {
 					typeIds.add(tdc.getTypeDefinition().getId());
 				}
@@ -101,8 +101,8 @@ public class RelationshipServiceImpl implements RelationshipService {
 
 		// Compile to ObjectData
 		return compileService.compileObjectDataList(callContext,
-				extracted, filter, includeAllowableActions,
-				IncludeRelationships.NONE, null, false, maxItems, skipCount, false);
+				repositoryId, extracted, filter,
+				includeAllowableActions, IncludeRelationships.NONE, null, false, maxItems, skipCount, false);
 	}
 
 	public void setTypeManager(TypeManager typeManager) {

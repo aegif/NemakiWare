@@ -2,13 +2,13 @@
 @import org.apache.chemistry.opencmis.client.api.CmisObject
 @import org.apache.chemistry.opencmis.client.api.Rendition
 
-@(obj:CmisObject)
+@(repositoryId:String)(obj:CmisObject)
 
 <div class="container tab-pane">
 	<div class="row">
 		<div class="col-sm-5">
 			@if(Util.existPreview(obj)){
-				<object type="application/pdf" data="http://localhost:9000@{routes.Node.downloadPreview(obj.getId)}" width="600" height="800"></object>
+				<object type="application/pdf" data="@{Util.getHostPath(request)}@{routes.Node.downloadPreview(repositoryId, obj.getId)}" width="600" height="800"></object>
 			}else{
 				<div>@Messages("view.node.preview.none")</div>
 			}
