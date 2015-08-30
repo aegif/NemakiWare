@@ -10,7 +10,9 @@ function bindEditable(valueFieldSelector){
 		}
 
 		//end of editing
-		$(this).children('.editable-value-input:first').blur(function(){
+		$(document).on('blur.editable-value', valueFieldSelector + ' > .editable-value-input:first', function(){
+			$(document).off('.editable-value');
+			alert('uhh');
 			revertField($(this));
 		});
 		
