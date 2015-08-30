@@ -12,7 +12,6 @@ function bindEditable(valueFieldSelector){
 		//end of editing
 		$(document).on('blur.editable-value', valueFieldSelector + ' > .editable-value-input:first', function(){
 			$(document).off('.editable-value');
-			alert('uhh');
 			revertField($(this));
 		});
 		
