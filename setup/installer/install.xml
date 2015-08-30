@@ -151,7 +151,7 @@
     </pack>
 
     <!-- Pack: CouchDB configuration -->
-    <pack id="pack.couchdb.configuration" name="DB initialization(with working CouchDB)" required="no">
+    <pack id="pack.couchdb.configuration" name="DB initialization (with working CouchDB)" required="no">
       <description>DB initialization</description>
 
       <!-- Import configuration scripts -->

@@ -10,8 +10,8 @@
     <str id="user.inputpanel.rails.title" txt="Configuration de Rails" />
 
     <str id="tomcat.port" txt="Tomcat port" />
-    <str id="tomcat.shutdown.port" txt="Tomcat port(arrêt)" />
-    <str id="tomcat.ajp.port" txt="Tomcat port(AJP)" />
+    <str id="tomcat.shutdown.port" txt="Tomcat port (arrêt)" />
+    <str id="tomcat.ajp.port" txt="Tomcat port (AJP)" />
 
     <str id="cmis.repository.main" txt="Référentiel ID" />
 
@@ -20,6 +20,4 @@
 
     <str id="solr.host" txt="Solr hôte" />
     <str id="solr.port" txt="Solr port" />
-
-    <str id="ruby.bin" txt="Chosissez le chemin de Ruby(bin)" />
 </langpack>
