@@ -1,6 +1,7 @@
 @import table._
 @import component._
 @import util.Util
+@import util.NemakiConfig
 @import constant.UpdateContext
 @import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition
 @import org.apache.chemistry.opencmis.client.api.Tree
@@ -100,7 +101,19 @@
 			var formData = new FormData();
 			@for(p <- objectType.getPropertyDefinitions().values()){
 				@if(Util.isEditableOnNodeBlank(p)){
-					formData.append("@p.getId",editedValue("#@p.getId"));	
+					var inputVal = editedValue("#@p.getId");
+
+					//Validation
+					@if(p.isRequired){
+						if(!inputVal){
+							alert("@NemakiConfig.getLabel(p.getId, lang().language) @Messages("view.message.is-required")");
+							return;  //End click event
+						}	
+
+					}
+					
+					//Add value
+					formData.append("@p.getId", inputVal);	
 				}
 			}
 
