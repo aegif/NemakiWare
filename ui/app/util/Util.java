@@ -563,13 +563,6 @@ public class Util {
 		return result;
 	}
 	
-	public static String getContextPath(Request request){
-		String _ctxt = Play.application().configuration().getString("application.context");
-		String ctxt = (StringUtils.isBlank(_ctxt))? "" : _ctxt;
-		
-		return getHostPath(request) + ctxt;
-	}
-	
 	public static String getHostPath(Request request){
 		return "http://" + request.host();
 	}
