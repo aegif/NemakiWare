@@ -29,6 +29,14 @@ function revertField(inputboxDom){
 	var wrap = inputboxDom.closest("div.antiscroll-wrap");
 	var inner = inputboxDom.closest("div.antiscroll-inner");
 	
+	//Validate
+	if(inputVal === ""){
+		if(parentDiv.attr('property-required') == 'true'){
+			alert("Please input: " + parentDiv.attr('property-id'));
+			return;
+		}
+	}
+	
 	parentDiv.text(inputVal);
 	parentDiv.removeAttr('on');
 	
@@ -40,7 +48,6 @@ function revertField(inputboxDom){
 		wrap.antiscroll();
 		inner.height(height);
 		inner.width(width);
-		
 	});
 }
 

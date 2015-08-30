@@ -56,12 +56,7 @@ view.node.duplicate.template.action.do-nothing.desc=このフォルダにある�
 view.node.duplicate.template.action.rename.caption=サーバ上のファイルとは別のファイルとしてアップロードする
 view.node.duplicate.template.action.rename.desc1=新しいファイルは
 view.node.duplicate.template.action.rename.desc2=という名前に変更されて保存されます。
-
-
-
-
-
-
+view.node.validate.file=ファイルがありません
 
 view.principal.type=種類
 view.principal.id=ID

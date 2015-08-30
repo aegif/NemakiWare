@@ -57,6 +57,7 @@ view.node.duplicate.template.action.do-nothing.desc=The following file in this f
 view.node.duplicate.template.action.rename.caption=Upload this file as a different one from that of the server
 view.node.duplicate.template.action.rename.desc1=The new file will be saved with modified name 
 view.node.duplicate.template.action.rename.desc2=.
+view.node.validate.file=There is no file.
 
 view.principal.type=Type
 view.principal.id=ID

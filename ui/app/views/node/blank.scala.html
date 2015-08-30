@@ -106,6 +106,12 @@
 
 			@if(objectType.getBaseTypeId==BaseTypeId.CMIS_DOCUMENT){
 				if(document.getElementById("file") != null){
+					//Validation: no file
+					if(!document.getElementById("file").files[0]){
+						window.alert("@Messages("view.node.validate.file")");
+						return;
+					}
+					
 					formData.append('file', document.getElementById("file").files[0]);	
 				}
 			}
