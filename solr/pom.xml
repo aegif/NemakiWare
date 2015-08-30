@@ -12,23 +12,24 @@
 
 	<properties>
 		<org.apache.chemistry.opencmis.version>0.13.0</org.apache.chemistry.opencmis.version>
+		<org.apache.solr.version>4.7.2</org.apache.solr.version>
 	</properties>
 
 	<dependencies>
 		<dependency>
 			<groupId>org.apache.solr</groupId>
 			<artifactId>solr-core</artifactId>
-			<version>4.10.4</version>
+			<version>${org.apache.solr.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.solr</groupId>
 			<artifactId>solr-solrj</artifactId>
-			<version>4.10.4</version>
+			<version>${org.apache.solr.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.solr</groupId>
 			<artifactId>solr-cell</artifactId>
-			<version>4.10.4</version>
+			<version>${org.apache.solr.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.quartz-scheduler</groupId>
