@@ -36,7 +36,7 @@
 
   <!-- Variables in this fhile-->
   <variables>
-    <variable name="TOMCAT" value="apache-tomcat-8.0.21" />
+    <variable name="TOMCAT" value="apache-tomcat-8.0.26" />
   </variables>
 
   <!-- Resource import -->
