@@ -117,7 +117,7 @@
 			//Check duplicate
 			var duplicate = checkDuplicateOnUpdate(editedValue("#cmis:name"), "");
 			if(duplicate){
-				window.alert('その名前はすでに存在しています。変更してください。');
+				window.alert("@Messages("view.node.duplicate.alert.rename")");
 				return;
 			}
 			
