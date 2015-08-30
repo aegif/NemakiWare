@@ -10,11 +10,11 @@
 			<validator class="com.izforge.izpack.util.IsPortValidator" txt="Invalid server port!" />
 		</field>
 		<field type="text" variable="tomcat.shutdown.port">
-			<spec id="tomcat.shutdown.port" size="6" set="8005" txt="Tomcat port(shutdown)"/>
+			<spec id="tomcat.shutdown.port" size="6" set="8005" txt="Tomcat port (shutdown)"/>
 			<validator class="com.izforge.izpack.util.IsPortValidator" txt="Invalid server shutdown port!" />
 		</field>
 		<field type="text" variable="tomcat.ajp.port">
-			<spec id="tomcat.ajp.port" size="6" set="8009" txt="Tomcat port(AJP)"/>
+			<spec id="tomcat.ajp.port" size="6" set="8009" txt="Tomcat port (AJP)"/>
 			<validator class="com.izforge.izpack.util.IsPortValidator" txt="Invalid AJP port!" />
 		</field>
 	</panel>
