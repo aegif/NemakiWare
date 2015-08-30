@@ -1,6 +1,6 @@
 //Make a value field editable
 function bindEditable(valueFieldSelector){
-	$(document).off().on('dblclick', valueFieldSelector, function(){
+	$(valueFieldSelector).off().on('dblclick', function(){
 		var txt = "";
 		if($(this).attr('on') != 'on'){
 			$(this).attr('on', 'on');
