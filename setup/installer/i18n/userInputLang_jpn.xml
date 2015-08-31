@@ -15,8 +15,7 @@
 
     <str id="cmis.repository.main" txt="リポジトリID" />
 
-    <str id="db.couchdb.host" txt="CouchDB ホスト" />
-    <str id="db.couchdb.port" txt="CouchDB ポート" />
+    <str id="db.couchdb.url" txt="CouchDB URL" />
 
     <str id="solr.host" txt="Solr ホスト" />
     <str id="solr.port" txt="Solr ポート" />
