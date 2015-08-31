@@ -18,49 +18,36 @@ import jp.aegif.nemaki.bjornloka.util.Indicator;
 
 import org.ektorp.AttachmentInputStream;
 import org.ektorp.CouchDbConnector;
+import org.ektorp.CouchDbInstance;
 import org.ektorp.ViewQuery;
-import org.ektorp.ViewResult;
-import org.ektorp.ViewResult.Row;
-
 import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 public class Dump {
 	public static void main(String[] args) {
-		if (args.length < 4) {
+		if (args.length < 3) {
 			System.err
-					.println("Wrong number of arguments: host, port, repositoryId, filePath, omitTimestamp");
+					.println("Wrong number of arguments: url, repositoryId, filePath, omitTimestamp");
 			return;
 		}
 
-		// host
-		String host = args[0];
-
-		// port
-		String _port = args[1];
-		int port = 0;
-		try {
-			port = Integer.parseInt(_port);
-		} catch (Exception e) {
-			System.err.println("Port must be integer");
-			return;
-		}
+		// url
+		String url = args[0];
 
 		// repositoryId
-		String repositoryId = args[2];
+		String repositoryId = args[1];
 
 		// filePath
-		String filePath = args[3];
+		String filePath = args[2];
 		File file = new File(filePath);
 
 		// omitTimestamp(optional)
 		boolean omitTimestamp = false;
 		try {
-			String _omitTimestamp = args[4];
+			String _omitTimestamp = args[3];
 			omitTimestamp = StringPool.BOOLEAN_TRUE.equals(_omitTimestamp);
 		} catch (Exception e) {
 			// do nothing
@@ -75,7 +62,7 @@ public class Dump {
 
 		// Execute dumping
 		try {
-			String createdFilePath = dump(host, port, repositoryId, file, omitTimestamp);
+			String createdFilePath = dump(url, repositoryId, file, omitTimestamp);
 			System.out.println("Dump successfully: " + createdFilePath);
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -83,19 +70,17 @@ public class Dump {
 		}
 	}
 
-	public static String dump(String host, int port, String repositoryId,
+	public static String dump(String url, String repositoryId,
 			File file, boolean omitTimestamp) throws JsonParseException,
 			JsonMappingException, IOException {
-		CouchDbConnector connector = CouchFactory.createCouchDbConnector(host,
-				port, repositoryId);
+		CouchDbInstance dbInstance = CouchFactory.createCouchDbInstance(url);
+		CouchDbConnector connector = CouchFactory.createCouchDbConnector(dbInstance, repositoryId);
 		
 		List<String> docIds = connector.getAllDocIds();
 
-		//TEST
 		try {
 			file.createNewFile();
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 		
