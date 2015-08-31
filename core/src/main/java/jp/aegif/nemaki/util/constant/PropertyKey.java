@@ -2,9 +2,7 @@ package jp.aegif.nemaki.util.constant;
 
 public interface PropertyKey {
 	//DB
-	final String DB_COUCHDB_PROTOCOL = "db.couchdb.protocol";
-	final String DB_COUCHDB_HOST= "db.couchdb.host";
-	final String DB_COUCHDB_PORT= "db.couchdb.port";
+	final String DB_COUCHDB_URL= "db.couchdb.url";
 	final String DB_COUCHDB_MAX_CONNECTIONS= "db.couchdb.max.connections";
 	final String DB_COUCHDB_CONNECTION_TIMEOUT= "db.couchdb.connection.timeout";
 	final String DB_COUCHDB_SOCKET_TIMEOUT= "db.couchdb.socket.timeout";
