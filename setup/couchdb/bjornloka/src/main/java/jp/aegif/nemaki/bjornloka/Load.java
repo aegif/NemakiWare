@@ -28,41 +28,31 @@ public class Load {
 
 	public static void main(String[]args){
 		if(args.length < 3){
-			System.err.println("Wrong number of arguments: host, port, repositoryId, filePath, force");
+			System.err.println("Wrong number of arguments: url, repositoryId, filePath, force");
 			return;
 		}
 
-		//host
-		String host = args[0];
-
-		//port
-		String _port = args[1];
-		int port = 0;
-		try{
-			port = Integer.parseInt(_port);
-		}catch(Exception e){
-			System.err.println("Port must be integer: " + _port);
-			return;
-		}
+		//url
+		String url = args[0];
 
 		//repositoryId
-		String repositoryId = args[2];
+		String repositoryId = args[1];
 
 		//filePath
-		String filePath = args[3];
+		String filePath = args[2];
 		File file = new File(filePath);
 
 		//force(optional)
 		boolean force = false;
 		try{
-			String _force = args[4];
+			String _force = args[3];
 			force = StringPool.BOOLEAN_TRUE.equals(_force);
 		}catch(Exception e){
 
 		}
 
 		//Execute loading
-		boolean success = load(host, port, repositoryId, file, force);
+		boolean success = load(url, repositoryId, file, force);
 		if(success){
 			System.out.println(repositoryId + ":Data imported successfully");
 		}else{
@@ -71,8 +61,8 @@ public class Load {
 
 	}
 
-	public static boolean load(String host, int port, String repositoryId, File file, boolean force){
-		CouchDbInstance dbInstance = CouchFactory.createCouchDbInstance(host, port);
+	public static boolean load(String url, String repositoryId, File file, boolean force){
+		CouchDbInstance dbInstance = CouchFactory.createCouchDbInstance(url);
 		//Initialize database
 		if(dbInstance.checkIfDbExists(repositoryId)){
 			if(!force){
@@ -84,8 +74,7 @@ public class Load {
 		dbInstance.createDatabase(repositoryId);
 
 		//Get connector
-		CouchDbConnector connector = CouchFactory.createCouchDbConnector(host, port, repositoryId);
-
+		CouchDbConnector connector = CouchFactory.createCouchDbConnector(dbInstance, repositoryId);
 		//CouchDB documents(without attachments)
 		List<ObjectNode> documents = new ArrayList<ObjectNode>();
 		//All attachments
