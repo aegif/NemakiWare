@@ -8,12 +8,9 @@ import java.util.List;
 
 import org.apache.commons.lang3.StringUtils;
 
-
-
 public class Setup {
 	public static void main(String[] args) throws IOException {
-		String host = null;
-		String port = null;
+		String url = null;
 		String mainRepositoryId = null;
 		String archiveRepositoryId = null;
 		String mainFilePath = null;
@@ -23,23 +20,22 @@ public class Setup {
 
 		//Read arguments
 		try{
-			host = args[0];
-			port = args[1];
-			mainRepositoryId = args[2];
-			archiveRepositoryId = args[3];
-			mainFilePath = args[4];
-			archiveFilePath = args[5];
+			url = args[0];
+			mainRepositoryId = args[1];
+			archiveRepositoryId = args[2];
+			mainFilePath = args[3];
+			archiveFilePath = args[4];
 		}catch(Exception e){
 
 		}
 
 		try{
-			suggestedMainFilePath = args[6];
+			suggestedMainFilePath = args[5];
 		}catch (Exception e){
 
 		}
 		try{
-			suggestedArchiveFilePath = args[7];
+			suggestedArchiveFilePath = args[6];
 		}catch (Exception e){
 
 		}
@@ -47,21 +43,12 @@ public class Setup {
 		//Read input from console if it's not provided
 		BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
 
-		if(StringUtils.isBlank(host)){
-			String defVal = "127.0.0.1";
-			System.out.print("CouchDB Host[default:" + defVal + "]：");
-			host = in.readLine();
-			if(StringUtils.isBlank(host)){
-				host = defVal;
-			}
-		}
-
-		if(StringUtils.isBlank(port)){
-			String defVal = "5984";
-			System.out.print("CouchDB Port[default:" + defVal + "]：");
-			port = in.readLine();
-			if(StringUtils.isBlank(port)){
-				port = defVal;
+		if(StringUtils.isBlank(url)){
+			String defVal = "http://127.0.0.1:5984";
+			System.out.print("CouchDB URL[default:" + defVal + "]：");
+			url = in.readLine();
+			if(StringUtils.isBlank(url)){
+				url = defVal;
 			}
 		}
 
@@ -75,7 +62,7 @@ public class Setup {
 		}
 
 		if(StringUtils.isBlank(archiveRepositoryId)){
-			String defVal = "archive";
+			String defVal = mainRepositoryId + "_closet";
 			System.out.print("Archive repository ID[default:" + defVal + "]：");
 			archiveRepositoryId = in.readLine();
 			if(StringUtils.isBlank(archiveRepositoryId)){
@@ -103,8 +90,7 @@ public class Setup {
 
 		//Build parameters
 		List<String> mainParams = new ArrayList<String>();
-		mainParams.add(host);
-		mainParams.add(port);
+		mainParams.add(url);
 		mainParams.add(mainRepositoryId);
 		mainParams.add(mainFilePath);
 		mainParams.add(StringPool.BOOLEAN_TRUE);
@@ -112,8 +98,7 @@ public class Setup {
 		System.out.println("mainParams:" + mainParams.toString());
 
 		List<String> archiveParams = new ArrayList<String>();
-		archiveParams.add(host);
-		archiveParams.add(port);
+		archiveParams.add(url);
 		archiveParams.add(archiveRepositoryId);
 		archiveParams.add(archiveFilePath);
 		archiveParams.add(StringPool.BOOLEAN_TRUE);
