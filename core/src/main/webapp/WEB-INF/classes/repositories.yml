@@ -1,6 +1,6 @@
 default:
   description: NemakiWare, Lightweight CMIS Server
-  root: /
+  root: e02f784f8360a02cc14d1314c10038ff
   principal.anonymous: anonymous
   principal.anyone: GROUP_EVERYONE
   thinClientUri: http://localhost:8080/ui/
