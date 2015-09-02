@@ -13,9 +13,9 @@ import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.apache.chemistry.opencmis.commons.exceptions.CmisProxyAuthenticationException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisUnauthorizedException;
 import org.apache.chemistry.opencmis.commons.impl.server.AbstractServiceFactory;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
-import org.apache.chemistry.opencmis.server.support.wrapper.ConformanceCmisServiceWrapper;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -75,8 +75,8 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 			
 			return wrapper;
 		} else {
-			throw new CmisProxyAuthenticationException("[userName="
-					+ callContext.getUsername() + "]" + "Authentication failed");
+			throw new CmisUnauthorizedException("[userName="
+					+ callContext.getUsername() + "]" + "Authentication failed", BigInteger.valueOf(401));
 		}
 	}
 	
