@@ -24,7 +24,8 @@ for %%i in (%*) do (
 		set FLG_E=TRUE
 		shift
 	) ELSE IF %%i == -p (
-		set FLG_P=-P product
+		set PROFILE_PRODUCT
+		set FLG_P=TRUE
 	) ELSE (
 		set FLG_E=FALSE
 	)
@@ -55,13 +56,19 @@ set PROPERTIES_CUSTOM=%CUSTOM_PROP_PATH%\custom-nemakiware.properties
 
 set USER_INPUT_SPEC=%SCRIPT_HOME%\user-input-spec.xml
 set USER_INPUT_SPEC_MODIFIED=%SCRIPT_HOME%\user-input-spec_modified.xml
+if FLG_P == TRUE (
+	java -cp %SCRIPT_HOME%\install-util\target\install-util.jar jp.aegif.nemaki.installer.ProcessTemplate %USER_INPUT_SPEC% %PROPERTIES%
+) ELSE (
+	java -cp %SCRIPT_HOME%\install-util\target\install-util.jar jp.aegif.nemaki.installer.ProcessTemplate %USER_INPUT_SPEC% %PROPERTIES% %PROPERTIES_CUSTOM%
+)
+
 java -cp %SCRIPT_HOME%\install-util\target\install-util.jar jp.aegif.nemaki.installer.ProcessTemplate %USER_INPUT_SPEC% %PROPERTIES% %PROPERTIES_CUSTOM%
 
 rem Prepare WAR
 call mvn -f %SOURCE_HOME%\core clean
-call mvn -f %SOURCE_HOME%\core package %FLG_P%
+call mvn -f %SOURCE_HOME%\core package %PROFILE_PRODUCT%
 call mvn -f %SOURCE_HOME%\solr clean
-call mvn -f %SOURCE_HOME%\solr package %FLG_P%
+call mvn -f %SOURCE_HOME%\solr package %PROFILE_PRODUCT%
 cd /d %SOURCE_HOME%\ui
 call activator.bat war
 cd /d %ORIGINAL_PWD%
