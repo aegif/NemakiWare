@@ -26,7 +26,7 @@ public abstract class DumpAction {
 	
 	public DumpAction(String url, String repositoryId, File file, boolean omitTimestamp) {
 		super();
-		this.url = url;
+		this.url = Util.sanitizeUrl(url);
 		this.repositoryId = repositoryId;
 		this.file = file;
 		this.omitTimestamp = omitTimestamp;

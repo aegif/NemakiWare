@@ -27,7 +27,7 @@ public abstract class LoadAction {
 	
 	protected LoadAction(String url, String repositoryId, File file, boolean force) {
 		super();
-		this.url = url;
+		this.url = Util.sanitizeUrl(url);
 		this.repositoryId = repositoryId;
 		this.file = file;
 		this.force = force;
