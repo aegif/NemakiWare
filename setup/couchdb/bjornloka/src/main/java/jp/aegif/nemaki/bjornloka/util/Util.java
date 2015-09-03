@@ -78,6 +78,6 @@ public class Util {
 	
 	//izPack replace "/" to "¥" in arguments
 	public static String sanitizeUrl(String url){
-		return url.replaceAll("¥", "/");
+		return url.replaceAll("\\\\", "/");
 	}
 }
