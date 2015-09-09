@@ -14,7 +14,7 @@
 }, {
   "document" : {
     "_id" : "83c150a42ffdcc49bb08041078b85b57",
-    "_rev" : "2-7b13813827990a99c04167b8c23425b4",
+    "_rev" : "1-b59d6f44b380e453acc48f553288a356",
     "creator" : "system",
     "policyIds" : [ ],
     "objectType" : "cmis:folder",
@@ -34,7 +34,7 @@
 }, {
   "document" : {
     "_id" : "83c150a42ffdcc49bb08041078b85c77",
-    "_rev" : "2-8d39ffd4868d74bf5e75803969f050ab",
+    "_rev" : "1-daebf58c10b8662b9d35d9cf49413398",
     "creator" : "system",
     "policyIds" : [ ],
     "objectType" : "cmis:folder",
@@ -49,6 +49,40 @@
     "changeType" : "CREATED",
     "latest" : false,
     "token" : 1356998460000
+  },
+  "attachments" : { }
+}, {
+  "document" : {
+    "_id" : "94ee2cb22e260d582b5d66903f001436",
+    "_rev" : "1-49a133bae51f4f6dad983e0721cc0946",
+    "admin" : true,
+    "created" : "2013-01-01T00:00:00.000+0000",
+    "creator" : "system",
+    "email" : "",
+    "firstName" : "admin",
+    "lastName" : "",
+    "modified" : "2013-01-01T00:00:00.000+0000",
+    "modifier" : "system",
+    "name" : "admin",
+    "passwordHash" : "$2a$10$0goveaxLj.2UJAlVN1Ru2OmGID6q04ugln/HAkVpzb5bwvZ.kvEne",
+    "type" : "user",
+    "userId" : "admin"
+  },
+  "attachments" : { }
+}, {
+  "document" : {
+    "_id" : "94ee2cb22e260d582b5d66903f002175",
+    "_rev" : "1-28d8dffb424a3dc8c5558cfca16003a8",
+    "created" : "2013-01-01T00:00:00.000+0000",
+    "creator" : "system",
+    "email" : "",
+    "firstName" : "system",
+    "lastName" : "",
+    "modified" : "2013-01-01T00:00:00.000+0000",
+    "modifier" : "system",
+    "name" : "system",
+    "type" : "user",
+    "userId" : "system"
   },
   "attachments" : { }
 }, {
@@ -159,26 +193,8 @@
   "attachments" : { }
 }, {
   "document" : {
-    "_id" : "admin",
-    "_rev" : "1-685b3bcd63a0db81aff3f2e49dff6e95",
-    "name" : "admin",
-    "firstName" : "admin",
-    "creator" : "system",
-    "admin" : true,
-    "lastName" : "admin",
-    "passwordHash" : "$2a$10$0goveaxLj.2UJAlVN1Ru2OmGID6q04ugln/HAkVpzb5bwvZ.kvEne",
-    "userId" : "admin",
-    "modified" : "2013-01-01T00:00:00.000+0000",
-    "created" : "2013-01-01T00:00:00.000+0000",
-    "modifier" : "system",
-    "type" : "user",
-    "email" : ""
-  },
-  "attachments" : { }
-}, {
-  "document" : {
     "_id" : "b11bf1bf25317a8fa2941b8f140148b6",
-    "_rev" : "2-702853253429b150507212acc542525f",
+    "_rev" : "1-43b53806f0c4bad630eff0aa0c1da294",
     "changeToken" : "b11bf1bf25317a8fa2941b8f14014d7e",
     "name" : "Sample Site",
     "creator" : "admin",
@@ -292,22 +308,6 @@
     "objectType" : "cmis:folder",
     "parentId" : "e02f784f8360a02cc14d1314c10038ff",
     "type" : "cmis:folder"
-  },
-  "attachments" : { }
-}, {
-  "document" : {
-    "_id" : "system",
-    "_rev" : "1-3323c013855adb02a4dccf60bed49779",
-    "name" : "system",
-    "firstName" : "",
-    "creator" : "system",
-    "lastName" : "",
-    "created" : "2013-01-01T00:00:00.000+0000",
-    "userId" : "system",
-    "modified" : "2013-01-01T00:00:00.000+0000",
-    "modifier" : "system",
-    "type" : "user",
-    "email" : ""
   },
   "attachments" : { }
 } ]
