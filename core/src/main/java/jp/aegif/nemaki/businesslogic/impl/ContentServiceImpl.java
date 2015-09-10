@@ -355,8 +355,6 @@ public class ContentServiceImpl implements ContentService {
 
 	private String writeChangeEvent(CallContext callContext, String repositoryId,
 			Content content, ChangeType changeType) {
-		//Change latest = contentDaoService.getLatestChange(repositoryId);
-
 		Change change = new Change();
 		change.setObjectId(content.getId());
 		change.setChangeType(changeType);
@@ -374,21 +372,6 @@ public class ContentServiceImpl implements ContentService {
 			break;
 		}
 		
-		/*//Set token property
-		if (latest == null) {
-			change.setChangeToken(FIRST_TOKEN);
-		} else {
-			Long latestToken = null;
-			try{
-				latestToken = Long.valueOf(latest.getChangeToken());
-			}catch(Exception e){
-				log.error("ChangeToken " + latest.getChangeToken() + " is not numeric", e);
-			}
-
-			String token = String.valueOf(latestToken + 1);
-			change.setChangeToken(token);
-		}*/
-
 		change.setType(NodeType.CHANGE.value());
 		change.setName(content.getName());
 		change.setBaseType(content.getType());
@@ -419,7 +402,6 @@ public class ContentServiceImpl implements ContentService {
 		Change created = contentDaoService.create(repositoryId, change);
 
 		// Update change token of the content
-		//content.setChangeToken(change.getChangeToken());
 		content.setChangeToken(created.getId());
 		
 		update(repositoryId, content);
