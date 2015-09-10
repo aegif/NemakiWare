@@ -109,7 +109,6 @@ public class ContentServiceImpl implements ContentService {
 	
 	private static final Log log = LogFactory
 			.getLog(ContentDaoServiceImpl.class);
-	private final static String FIRST_TOKEN = "1";
 	private final static String PATH_SEPARATOR = "/";
 
 	// ///////////////////////////////////////
