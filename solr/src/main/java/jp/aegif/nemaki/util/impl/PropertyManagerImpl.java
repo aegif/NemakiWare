@@ -71,9 +71,15 @@ public class PropertyManagerImpl implements PropertyManager{
 			if(StringUtils.isNotBlank(_overrideFiles)){
 				overrideFiles = split(_overrideFiles);
 			}
-		}
-		catch(Exception e) {
+		}catch(Exception e) {
 			e.printStackTrace();
+		}finally{
+			try {
+				loader.close();
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
 		}
 	}
 
