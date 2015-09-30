@@ -88,7 +88,7 @@
 	$(function () {
 		//binding: create button
 		$('#group-create-button').bind('click', function(){
-			$.get("@routes.Group.showBlank(repositoryId).absoluteURL(request)", function(html){
+			$.get("@routes.Group.showBlank(repositoryId)", function(html){
 				showLightbox('group-blank', html);
 			});
 		});
