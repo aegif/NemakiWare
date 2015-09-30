@@ -89,7 +89,7 @@
 	$(function () {
 		//binding: create button
 		$('#user-create-button').bind('click', function(){
-			$.get("@routes.User.showBlank(repositoryId).absoluteURL(request)", function(html){
+			$.get("@routes.User.showBlank(repositoryId)", function(html){
 				showLightbox('user-blank', html);
 			});
 		});
