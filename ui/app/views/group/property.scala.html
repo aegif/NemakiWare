@@ -76,7 +76,7 @@
 			//call
 			$.blockUI({message:"@Messages("view.message.please.wait")"});
 			$.ajax({
-				url : "@routes.Group.update(repositoryId, group.id).absoluteURL(request)",
+				url : "@routes.Group.update(repositoryId, group.id)",
 				type: 'POST',
 				data : data,
 				success : function(data){

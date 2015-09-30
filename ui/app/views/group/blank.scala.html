@@ -80,7 +80,7 @@
 			//call
 			$.blockUI({message:"@Messages("view.message.please.wait")"});
 			$.ajax({
-				url : "@routes.Group.create(repositoryId).absoluteURL(request)",
+				url : "@routes.Group.create(repositoryId)",
 				type: 'POST',
 				data : data,
 				error : function(XMLHttpRequest, textStatus, errorThrown) {
