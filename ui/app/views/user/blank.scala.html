@@ -93,7 +93,7 @@
 			//call
 			$.blockUI({message:"@Messages("view.message.please.wait")"});
 			$.ajax({
-				url : "@routes.User.create(repositoryId).absoluteURL(request)",
+				url : "@routes.User.create(repositoryId)",
 				type: 'POST',
 				data : data,
 				success : function(data){

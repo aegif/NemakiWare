@@ -18,11 +18,11 @@
 	  			<!-- breadcrumb -->
 	  			<div class="col-md-11">
 	  				<ul class="breadcrumb">
-	  					<li><a href="@routes.Node.index(repositoryId).absoluteURL(request)" title="root"><i class="fa fa-home fa-lg"></i></a></li>
+	  					<li><a href="@routes.Node.index(repositoryId)" title="root"><i class="fa fa-home fa-lg"></i></a></li>
 	  					@defining(Util.dividePath(parent.getPath)){ segments =>
 	  						@for(i <- 0 to segments.length - 1; if(CollectionUtils.isNotEmpty(segments))){
 	  							@defining(segments.take(i+1).mkString("/")){url=>
-	  								<li><a href="@routes.Node.showChildrenByPath(repositoryId, '/' + url).absoluteURL(request)"><i class="fa fa-folder-open"></i> @segments(i)</a></li>
+	  								<li><a href="@routes.Node.showChildrenByPath(repositoryId, '/' + url)"><i class="fa fa-folder-open"></i> @segments(i)</a></li>
 	  							}
 	  						}
 	  					}
@@ -71,7 +71,7 @@
 	$(function(){
 		$(document).on('click', '#create-object-in-tree', function(){
 			var typeId = $(this).attr('typeId');
-			$.get("@routes.Node.showBlank(repositoryId).absoluteURL(request)" + "?objectType=" + typeId + "&parentId=@parent.getId()"  , function(html){
+			$.get("@routes.Node.showBlank(repositoryId)" + "?objectType=" + typeId + "&parentId=@parent.getId()"  , function(html){
 				showLightbox('node-blank', html);
 			});	
 		});

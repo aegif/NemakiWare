@@ -80,7 +80,7 @@
 			$.blockUI({message:"@Messages("view.message.please.wait")"});
 			$.ajax({
 				type: "POST",
-				  url: "@routes.Node.checkOut(repositoryId, obj.getId).absoluteURL(request)",
+				  url: "@routes.Node.checkOut(repositoryId, obj.getId)",
 				  data: "",
 				  success: function(msg){
 				        alert( "正常にロックされました。ページを更新しますのでしばらくお待ちください ");
