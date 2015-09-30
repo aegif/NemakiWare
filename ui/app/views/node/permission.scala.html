@@ -80,7 +80,7 @@
 		};
 		
 		$.ajax({
-			url : "@routes.Node.updatePermission(repositoryId, obj.getId).absoluteURL(request)",
+			url : "@routes.Node.updatePermission(repositoryId, obj.getId)",
 			type : 'POST',
 			data : data,
 			success : function(data){
