@@ -564,7 +564,11 @@ public class Util {
 	}
 	
 	public static String getHostPath(Request request){
-		return "http://" + request.host();
+		if(request.secure()){
+			return "https://" + request.host();
+		}else{
+			return "http://" + request.host();
+		}
 	}
 	
 	 public static BaseTypeId getBaseType(Session cmisSession, String objectTypeId){
