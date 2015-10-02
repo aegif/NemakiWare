@@ -6,9 +6,9 @@
 @import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition
 @import org.apache.chemistry.opencmis.commons.data.Ace
 
-@(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(members:List[model.Principal])(permissionDefinitions:List[PermissionDefinition] = null)
+@(repositoryId:String)(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(members:List[model.Principal])(permissionDefinitions:List[PermissionDefinition] = null)
 
-@script(permissionDefinitions)()
+@script(repositoryId)(permissionDefinitions)()
 
 <div class="container tab-pane">
 	<div class="row" style="margin-bottom:15px">
@@ -40,7 +40,6 @@
 	</div>
 </div>
 
-<script type="text/javascript" src="@routes.Application.getJSRoutes()"></script>
 <script type="text/javascript">
 	//binding:update
 	$(document).on('click', "#permission-update", function(){
@@ -81,7 +80,7 @@
 		};
 		
 		$.ajax({
-			url : "@routes.Node.updatePermission(obj.getId).absoluteURL(request)",
+			url : "@routes.Node.updatePermission(repositoryId, obj.getId)",
 			type : 'POST',
 			data : data,
 			success : function(data){
@@ -133,18 +132,21 @@
 		//processing
 		var principal = $(row.find('.ps-id')).html();
 		var originalPermissions = [];
-		$.ajax({
-			url : "/ui/objects/js/@{obj.getId}/ace/" + principal,
-			success: function(data){
-				originalPermissions = data["permissions"];
-				@if(CollectionUtils.isNotEmpty(permissionDefinitions)){
-					@for(pdf <- permissionDefinitions){
-						var checked = ($.inArray("@pdf.getId", originalPermissions) >= 0) ;
-						$(row.find('.permission-' + escape("@pdf.getId") + ' > input')[0]).prop('checked',
-								checked);
-					}
+		
+		$.ajax(jsRoutes.controllers.Node.jsGetAce("@repositoryId", "@obj.getId", principal)
+		).done(function(data){
+			originalPermissions = data["permissions"];
+			@if(CollectionUtils.isNotEmpty(permissionDefinitions)){
+				@for(pdf <- permissionDefinitions){
+					var checked = ($.inArray("@pdf.getId", originalPermissions) >= 0) ;
+					$(row.find('.permission-' + escape("@pdf.getId") + ' > input')[0]).prop('checked',
+							checked);
 				}
 			}
+		}).fail(function(XMLHttpRequest, textStatus, errorThrown){
+			//TODO
+		}).always(function(){
+			//TODO
 		});
 	});
 	

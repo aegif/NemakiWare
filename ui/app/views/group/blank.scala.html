@@ -1,7 +1,8 @@
 @import table._
 @import util.Util
+@import util.NemakiConfig
 
-@(group:model.Group)
+@(repositoryId:String)(group:model.Group)
 
 @lightbox{
 	<div class="container">
@@ -37,7 +38,7 @@
 			</div>
 		</div>
 
-		@memberSearch()()
+		@memberSearch(repositoryId)()()
 	</div>
 }
 
@@ -59,25 +60,35 @@
 				}
 			});
 
+			//Build data
+			var data = {};
+			data['groupId'] = editedValue('#group-id');
+			data['groupName'] = editedValue('#group-name');
+			data['users'] = JSON.stringify(users);
+			data['groups'] = JSON.stringify(groups);
+			
+			//Validation
+			if(!data['groupId']){
+				alert("@NemakiConfig.getLabel("group-id", lang().language) @Messages("view.message.is-required")");
+				return;  //End click event
+			}
+			if(!data['groupName']){
+				alert("@NemakiConfig.getLabel("group-name", lang().language) @Messages("view.message.is-required")");
+				return;  //End click event
+			}
+			
 			//call
 			$.blockUI({message:"@Messages("view.message.please.wait")"});
 			$.ajax({
-				url : "@routes.Group.create().absoluteURL(request)",
+				url : "@routes.Group.create(repositoryId)",
 				type: 'POST',
-				data : {groupId: editedValue('#group-id'),
-						groupName : editedValue('#group-name'),
-						users: JSON.stringify(users),
-						groups: JSON.stringify(groups)},
-						success : function(data){
-							window.alert("@Messages("view.message.create.success")");
-							window.location.reload();
-						},
-						error : function(XMLHttpRequest, textStatus, errorThrown) {
-							window.alert("@Messages("view.message.create.failure")");
-				         },
-				        complete: function(){
-							$.unblockUI();
-						}
+				data : data,
+				error : function(XMLHttpRequest, textStatus, errorThrown) {
+					window.alert("@Messages("view.message.create.failure")");
+				},
+				complete: function(){
+					$.unblockUI();
+				}
 			});
 		});
 	});

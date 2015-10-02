@@ -1,0 +1,20 @@
+default:
+  description: NemakiWare, Lightweight CMIS Server
+  root: /
+  principal.anonymous: anonymous
+  principal.anyone: GROUP_EVERYONE
+  thinClientUri: http://localhost:8080/ui/
+  vendor: aegif
+  product.name: NemakiWare
+  product.version: 2.3.1
+  namespace: http://www.aegif.jp/NemakiWare/
+super.users: canopy
+repositories:
+  - id: canopy
+    name: canopy
+    archive: canopy_closet
+    thinClientUri: http://localhost:8080/ui/repo/canopy/
+  - id: $cmis.repository.main
+    name: $cmis.repository.main
+    archive: ${cmis.repository.main}_closet
+    thinClientUri: http://localhost:8080/ui/repo/$cmis.repository.main/

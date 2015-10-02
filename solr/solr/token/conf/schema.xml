@@ -97,8 +97,8 @@
       trailing underscores (e.g. _version_) are reserved.
    -->
    
-   
-   <field name="id" type="string" indexed="true" stored="true" required="true" multiValued="false" />
+   <!-- id is use as repositoryId -->
+   <field name="repository_id" type="string" indexed="true" stored="true" required="true" multiValued="false" />
    <field name="change_token" type="string" indexed="true" stored="true" required="false" multiValued="false" />
 
    <!-- Common metadata fields, named specifically to match up with
@@ -165,7 +165,7 @@
  <!-- Field to use to determine and enforce document uniqueness. 
       Unless this field is marked with required="false", it will be a required field
    -->
- <uniqueKey>id</uniqueKey>
+ <uniqueKey>repository_id</uniqueKey>
 
  <!-- DEPRECATED: The defaultSearchField is consulted by various query parsers when
   parsing a query string that isn't explicit about the field.  Machine (non-user)

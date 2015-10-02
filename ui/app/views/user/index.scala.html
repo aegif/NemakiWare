@@ -1,13 +1,13 @@
 @import util.Util
 @import org.apache.commons.collections.CollectionUtils
 
-@(users:List[model.User])
+@(repositoryId:String)(users:List[model.User])
 
 <!DOCTYPE html>
 <html>
 	@header()
 	<body>
-		@menubar()
+		@menubar(repositoryId)
 		<div class="container">
 			<div class="row">
 	  			<div class="col-md-11">
@@ -29,7 +29,7 @@
 						<li>
 							<!-- search box -->
 							<div class="input-group">
-								@helper.form(action = routes.User.search(), 'class -> "navbar-form"){
+								@helper.form(action = routes.User.search(repositoryId), 'class -> "navbar-form"){
 									<input type="text" class="form-control" placeholder="Search" name="term" id="user-search-box">
 							     	<div class="input-group-btn">
 							        	<button class="btn btn-default" id="user-search" type="submit"><i class="fa fa-search"></i></button>
@@ -89,7 +89,7 @@
 	$(function () {
 		//binding: create button
 		$('#user-create-button').bind('click', function(){
-			$.get("@routes.User.showBlank().absoluteURL(request)", function(html){
+			$.get("@routes.User.showBlank(repositoryId)", function(html){
 				showLightbox('user-blank', html);
 			});
 		});
@@ -98,10 +98,14 @@
 		$('.user-detail').click(function(){
 			var id = $(this).attr('user-id');
        		
-			$.get("@{Util.getContextPath(request)}users/" + id, function(html){
-				showLightbox('user-detail-' + id, html);
-       		});	
-			
+			$.ajax(jsRoutes.controllers.User.showDetail("@repositoryId", id)
+			).done(function(data){
+				showLightbox('user-detail-' + id, data);
+			}).fail(function(XMLHttpRequest, textStatus, errorThrown){
+				//TODO
+			}).always(function(){
+				//TODO
+			});
 		});
 	
 		//binding: delete button
@@ -110,21 +114,16 @@
 				var id = $(this).attr('user-id');
 			
 				$.blockUI({message:"@Messages("view.message.please.wait")"});
-				$.ajax({
-					url : "@{Util.getContextPath(request)}users/" + id + "/delete",
-					type : 'POST',
-					data : null,
-					success : function(data){
-						window.alert("@Messages("view.message.delete.success")");
-						window.location.reload();
-					},
-					error : function(XMLHttpRequest, textStatus, errorThrown) {
-						window.alert("@Messages("view.message.delete.failure")");
-			        },
-			        complete : function(){
-						$.unblockUI();
-					}
-				})
+				
+				$.ajax(jsRoutes.controllers.User.delete("@repositoryId", id)
+				).done(function(data){
+					window.alert("@Messages("view.message.delete.success")");
+					window.location.reload();
+				}).fail(function(XMLHttpRequest, textStatus, errorThrown){
+					window.alert("@Messages("view.message.delete.failure")");
+				}).always(function(){
+					$.unblockUI();
+				});
 			}
 		});
 	});

@@ -11,3 +11,4 @@ log/
 tracking.properties
 log4j.log
 src/main/resources/custom-nemakisolr.properties
+solr/conf/custom-repositories.yml

@@ -11,14 +11,13 @@ import views.html.searchengine.index;
 public class SearchEngine extends Controller{
 	
 	private static String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
-	private static String endPoint = coreRestUri + "search-engine/";
 	
-	public static Result index(){
-		return ok(index.render());
+	public static Result index(String repositoryId){
+		return ok(index.render(repositoryId));
 	}
 	
-	public static Result init(){
-		JsonNode result = Util.getJsonResponse(session(), endPoint + "init");
+	public static Result init(String repositoryId){
+		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "init");
 		
 		String status = result.get(Token.REST_STATUS).textValue();
 		if(Token.REST_SUCCESS.equals(status)){
@@ -28,8 +27,8 @@ public class SearchEngine extends Controller{
 		}
 	}
 	
-	public static Result reindex(){
-		JsonNode result = Util.getJsonResponse(session(), endPoint + "reindex");
+	public static Result reindex(String repositoryId){
+		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "reindex");
 		
 		String status = result.get(Token.REST_STATUS).textValue();
 		if(Token.REST_SUCCESS.equals(status)){
@@ -37,5 +36,9 @@ public class SearchEngine extends Controller{
 		}else{
 			return badRequest(result.get(Token.REST_ERROR));
 		}
+	}
+	
+	private static String getEndpoint(String repositoryId){
+		return coreRestUri + "repo/" + repositoryId + "/search-engine/";
 	}
 }

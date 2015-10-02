@@ -18,10 +18,14 @@ rem Parse options
 set ORIGINAL_PWD=%CD%
 
 set FLG_E=FALSE
+set FLG_P=
 for %%i in (%*) do (
 	if %%i == -e (
 		set FLG_E=TRUE
 		shift
+	) ELSE IF %%i == -p (
+		set PROFILE_PRODUCT
+		set FLG_P=TRUE
 	) ELSE (
 		set FLG_E=FALSE
 	)
@@ -29,7 +33,7 @@ for %%i in (%*) do (
 
 rem Location
 if [%1] == [] (
-	cd /d %~dp0	
+	cd /d %~dp0
 	cd /d ../../
 	FOR /F %%i in ('CD') do set SOURCE_HOME=%%i
 	cd /d %ORIGINAL_PWD%
@@ -52,13 +56,19 @@ set PROPERTIES_CUSTOM=%CUSTOM_PROP_PATH%\custom-nemakiware.properties
 
 set USER_INPUT_SPEC=%SCRIPT_HOME%\user-input-spec.xml
 set USER_INPUT_SPEC_MODIFIED=%SCRIPT_HOME%\user-input-spec_modified.xml
+if FLG_P == TRUE (
+	java -cp %SCRIPT_HOME%\install-util\target\install-util.jar jp.aegif.nemaki.installer.ProcessTemplate %USER_INPUT_SPEC% %PROPERTIES%
+) ELSE (
+	java -cp %SCRIPT_HOME%\install-util\target\install-util.jar jp.aegif.nemaki.installer.ProcessTemplate %USER_INPUT_SPEC% %PROPERTIES% %PROPERTIES_CUSTOM%
+)
+
 java -cp %SCRIPT_HOME%\install-util\target\install-util.jar jp.aegif.nemaki.installer.ProcessTemplate %USER_INPUT_SPEC% %PROPERTIES% %PROPERTIES_CUSTOM%
 
 rem Prepare WAR
 call mvn -f %SOURCE_HOME%\core clean
-call mvn -f %SOURCE_HOME%\core -Dmaven.test.skip=true package
+call mvn -f %SOURCE_HOME%\core package %PROFILE_PRODUCT%
 call mvn -f %SOURCE_HOME%\solr clean
-call mvn -f %SOURCE_HOME%\solr -Dmaven.test.skip=true package
+call mvn -f %SOURCE_HOME%\solr package %PROFILE_PRODUCT%
 cd /d %SOURCE_HOME%\ui
 call activator.bat war
 cd /d %ORIGINAL_PWD%
@@ -75,9 +85,9 @@ pause
 
 rem Execute isntaller
 if "%FLG_E%" == "TRUE" (
-	
+
 	echo Continue to install...
-	
+
 	java -jar %SCRIPT_HOME%\install.jar
 )
 

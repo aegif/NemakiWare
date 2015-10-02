@@ -8,7 +8,7 @@
 @import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition
 @import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed
 
-@(objects: List[org.apache.chemistry.opencmis.client.api.CmisObject])
+@(repositoryId:String)(objects: List[org.apache.chemistry.opencmis.client.api.CmisObject])
 
 <table class="footable" id="objects-table" data-sort="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
 	<thead>
@@ -31,21 +31,21 @@
 						}
 						
 						@if(Util.hasContentStream(document)){
-							<a href="@routes.Node.download(document.getId)">
+							<a href="@routes.Node.download(repositoryId, document.getId)">
 						}else{
 							<a href="#" class="no-content-stream">
 						}
 					}
 					
 					case folder:Folder =>{
-						<a href="@routes.Node.showChildren(folder.getId)">
+						<a href="@routes.Node.showChildren(repositoryId, folder.getId)">
 					}
 					
 					case _ =>{
 					
 					}
 				}
-					<i class="fa @Util.getIconName(obj)"></i>@obj.getName()
+					<i class="fa @Util.getIconName(obj)"></i><div class="obj-name" objectId="@obj.getId">@obj.getName()</div>
 				</a>
 			</td>
 			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
@@ -80,13 +80,17 @@
 <!-- detail -->
 <script type="text/javascript">
 	$(function(){
-    	//Detail
         $(".show-detail").bind('click', function(){
-        //Get CmisObject
        		var id = $(this).attr('cmis-id');
-       		$.get("@{Util.getContextPath(request)}objects/" + id, function(html){
-       			showLightbox('node-detail' + id, html);
-       		});
+       		//Execute
+			$.ajax(jsRoutes.controllers.Node.showDetail("@repositoryId", id, false)
+			).done(function(data){
+				showLightbox('node-preview' + id, data);
+			}).fail(function(XMLHttpRequest, textStatus, errorThrown){
+				//TODO
+			}).always(function(){
+				//TODO
+			});
         });
     });
 </script>
@@ -94,13 +98,18 @@
 <!-- preview -->
 <script type="text/javascript">
 	$(function(){
-    	//Detail
         $(".show-preview").bind('click', function(){
-        //Get CmisObject
        		var id = $(this).attr('cmis-id');
-       		$.get("@{Util.getContextPath(request)}objects/" + id + "?activatePreviewTab=true", function(html){
-       			showLightbox('node-preview' + id, html);
-       		});
+       		
+       		//Execute
+			$.ajax(jsRoutes.controllers.Node.showDetail("@repositoryId", id, true)
+			).done(function(data){
+				showLightbox('node-preview' + id, data);
+			}).fail(function(XMLHttpRequest, textStatus, errorThrown){
+				//TODO
+			}).always(function(){
+				//TODO
+			});
         });
     });
 </script>
@@ -113,21 +122,17 @@
 				var id = $(this).attr('cmis-id');
 			
 				$.blockUI({message:"@Messages("view.message.please.wait")"});
-				$.ajax({
-					url : "@{Util.getContextPath(request)}objects/" + id + "/delete",
-					type : 'POST',
-					data : null,
-					success : function(data){
-						window.alert("@Messages("view.message.delete.success")");
-						window.location.reload();
-					},
-					error : function(XMLHttpRequest, textStatus, errorThrown) {
-						window.alert("@Messages("view.message.delete.failure")");
-			        },
-			        complete : function(){
-						$.unblockUI();
-					}
-				})
+				
+				//Execute
+				$.ajax(jsRoutes.controllers.Node.delete("@repositoryId", id)
+				).done(function(data){
+					window.alert("@Messages("view.message.delete.success")");
+					window.location.reload();
+				}).fail(function(XMLHttpRequest, textStatus, errorThrown){
+					window.alert("@Messages("view.message.delete.failure")");
+				}).always(function(){
+					$.unblockUI();
+				});
 			}
 		});
 	});
@@ -148,4 +153,8 @@
         $(function () {
             $('#objects-table').footable();
         });
-</script>           
+</script>  
+
+
+ 
+         

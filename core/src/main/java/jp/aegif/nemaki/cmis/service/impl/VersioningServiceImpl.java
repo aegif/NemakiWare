@@ -34,7 +34,7 @@ import jp.aegif.nemaki.cmis.service.VersioningService;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.VersionSeries;
-import jp.aegif.nemaki.util.cache.NemakiCache;
+import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.DomainType;
 
 import org.apache.chemistry.opencmis.commons.data.Acl;
@@ -52,94 +52,94 @@ public class VersioningServiceImpl implements VersioningService {
 	private ContentService contentService;
 	private CompileService compileService;
 	private ExceptionService exceptionService;
-	private NemakiCache nemakiCache;
+	private NemakiCachePool nemakiCachePool;
 
 	@Override
 	/**
 	 * Repository only allow the latest version to be checked out
 	 */
-	public void checkOut(CallContext callContext, Holder<String> objectId,
-			ExtensionsData extension, Holder<Boolean> contentCopied) {
+	public void checkOut(CallContext callContext, String repositoryId,
+			Holder<String> objectId, ExtensionsData extension, Holder<Boolean> contentCopied) {
 		// //////////////////
 		// General Exception
 		// //////////////////
 		String id = objectId.getValue();
 		exceptionService.invalidArgumentRequiredString("objectId", id);
-		Document document = contentService.getDocument(id);
+		Document document = contentService.getDocument(repositoryId, id);
 		exceptionService.objectNotFound(DomainType.OBJECT, document, id);
 		exceptionService.permissionDenied(callContext,
-				PermissionMapping.CAN_CHECKOUT_DOCUMENT, document);
+				repositoryId, PermissionMapping.CAN_CHECKOUT_DOCUMENT, document);
 
 		// //////////////////
 		// Specific Exception
 		// //////////////////
 		// CMIS doesn't define the error type when checkOut is performed
 		// repeatedly
-		exceptionService.constraintAlreadyCheckedOut(document);
-		exceptionService.constraintVersionable(document.getObjectType());
+		exceptionService.constraintAlreadyCheckedOut(repositoryId, document);
+		exceptionService.constraintVersionable(repositoryId, document.getObjectType());
 		exceptionService.versioning(document);
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		Document pwc = contentService.checkOut(callContext, id, extension);
+		Document pwc = contentService.checkOut(callContext, repositoryId, id, extension);
 		objectId.setValue(pwc.getId());
 		Holder<Boolean> copied = new Holder<Boolean>(true);
 		contentCopied = copied;
 		
-		nemakiCache.removeCmisCache(id);
+		nemakiCachePool.get(repositoryId).removeCmisCache(id);
 	}
 
 	@Override
-	public void cancelCheckOut(CallContext callContext, String objectId,
-			ExtensionsData extension) {
+	public void cancelCheckOut(CallContext callContext, String repositoryId,
+			String objectId, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("objectId", objectId);
-		Document document = contentService.getDocument(objectId);
+		Document document = contentService.getDocument(repositoryId, objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, document, objectId);
 		exceptionService.permissionDenied(callContext,
-				PermissionMapping.CAN_CHECKIN_DOCUMENT, document);
+				repositoryId, PermissionMapping.CAN_CHECKIN_DOCUMENT, document);
 
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		exceptionService.constraintVersionable(document.getObjectType());
+		exceptionService.constraintVersionable(repositoryId, document.getObjectType());
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		contentService.cancelCheckOut(callContext, objectId, extension);
+		contentService.cancelCheckOut(callContext, repositoryId, objectId, extension);
 
 		//remove cache
-		nemakiCache.removeCmisCache(objectId);
-		Document latest = contentService.getDocumentOfLatestVersion(document.getVersionSeriesId());
+		nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
+		Document latest = contentService.getDocumentOfLatestVersion(repositoryId, document.getVersionSeriesId());
 		//Latest document does not exit when pwc is created as the first version
 		if(latest != null){
-			nemakiCache.removeCmisCache(latest.getId());
+			nemakiCachePool.get(repositoryId).removeCmisCache(latest.getId());
 		}
 	}
 
 	@Override
-	public void checkIn(CallContext callContext, Holder<String> objectId,
-			Boolean major, Properties properties, ContentStream contentStream,
-			String checkinComment, List<String> policies, Acl addAces,
-			Acl removeAces, ExtensionsData extension) {
+	public void checkIn(CallContext callContext, String repositoryId,
+			Holder<String> objectId, Boolean major, Properties properties,
+			ContentStream contentStream, String checkinComment, List<String> policies,
+			Acl addAces, Acl removeAces, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
 		String id = objectId.getValue();
 		exceptionService.invalidArgumentRequiredString("objectId", id);
-		Document document = contentService.getDocument(id);
+		Document document = contentService.getDocument(repositoryId, id);
 		exceptionService.objectNotFound(DomainType.OBJECT, document, id);
 		exceptionService.permissionDenied(callContext,
-				PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT, document);
+				repositoryId, PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT, document);
 
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		exceptionService.constraintVersionable(document.getObjectType());
+		exceptionService.constraintVersionable(repositoryId, document.getObjectType());
 		// TODO implement
 		// exceptionService.streamNotSupported(documentTypeDefinition,
 		// contentStream);
@@ -147,21 +147,21 @@ public class VersioningServiceImpl implements VersioningService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		Document checkedIn = contentService.checkIn(callContext, objectId,
-				major, properties, contentStream, checkinComment, policies,
-				addAces, removeAces, extension);
+		Document checkedIn = contentService.checkIn(callContext, repositoryId,
+				objectId, major, properties, contentStream, checkinComment,
+				policies, addAces, removeAces, extension);
 		objectId.setValue(checkedIn.getId());
 		
-		nemakiCache.removeCmisCache(id);
+		nemakiCachePool.get(repositoryId).removeCmisCache(id);
 	}
 
 	@Override
 	public ObjectData getObjectOfLatestVersion(CallContext context,
-			String objectId, String versionSeriesId, Boolean major,
-			String filter, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
-			Boolean includePolicyIds, Boolean includeAcl,
-			ExtensionsData extension) {
+			String repositoryId, String objectId, String versionSeriesId,
+			Boolean major, String filter,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
+			String renditionFilter, Boolean includePolicyIds,
+			Boolean includeAcl, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -169,7 +169,7 @@ public class VersioningServiceImpl implements VersioningService {
 		if (versionSeriesId == null) {
 			exceptionService
 					.invalidArgumentRequiredString("objectId", objectId);
-			Document d = contentService.getDocument(objectId);
+			Document d = contentService.getDocument(repositoryId, objectId);
 			versionSeriesId = d.getVersionSeriesId();
 		}
 
@@ -178,29 +178,29 @@ public class VersioningServiceImpl implements VersioningService {
 		Document document = null;
 		if (_major) {
 			document = contentService
-					.getDocumentOfLatestMajorVersion(versionSeriesId);
+					.getDocumentOfLatestMajorVersion(repositoryId, versionSeriesId);
 		} else {
 			document = contentService
-					.getDocumentOfLatestVersion(versionSeriesId);
+					.getDocumentOfLatestVersion(repositoryId, versionSeriesId);
 		}
 		exceptionService.objectNotFound(DomainType.OBJECT, document,
 				versionSeriesId);
 		exceptionService.permissionDenied(context,
-				PermissionMapping.CAN_GET_PROPERTIES_OBJECT, document);
+				repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT, document);
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
 		ObjectData objectData = compileService.compileObjectData(context,
-				document, filter, includeAllowableActions,
-				includeRelationships, renditionFilter, includeAcl);
+				repositoryId, document, filter,
+				includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
 		return objectData;
 	}
 
 	@Override
 	public List<ObjectData> getAllVersions(CallContext context,
-			String objectId, String versionSeriesId, String filter,
-			Boolean includeAllowableActions, ExtensionsData extension) {
+			String repositoryId, String objectId, String versionSeriesId,
+			String filter, Boolean includeAllowableActions, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -209,12 +209,12 @@ public class VersioningServiceImpl implements VersioningService {
 		if (StringUtils.isBlank(versionSeriesId)) {
 			exceptionService
 					.invalidArgumentRequiredString("objectId", objectId);
-			Document d = contentService.getDocument(objectId);
+			Document d = contentService.getDocument(repositoryId, objectId);
 			versionSeriesId = d.getVersionSeriesId();
 		}
 		
 		List<Document> allVersions = contentService
-				.getAllVersions(context, versionSeriesId);
+				.getAllVersions(context, repositoryId, versionSeriesId);
 		exceptionService.objectNotFoundVersionSeries(versionSeriesId,
 				allVersions);
 		// Sort by the descending order
@@ -227,7 +227,7 @@ public class VersioningServiceImpl implements VersioningService {
 		 */
 		Document latest = allVersions.get(0);
 		if(latest.isPrivateWorkingCopy()){
-			VersionSeries vs = contentService.getVersionSeries(latest);
+			VersionSeries vs = contentService.getVersionSeries(repositoryId, latest);
 			if(!context.getUsername().equals(vs.getVersionSeriesCheckedOutBy())){
 				allVersions.remove(latest);
 			}
@@ -239,8 +239,8 @@ public class VersioningServiceImpl implements VersioningService {
 		List<ObjectData> result = new ArrayList<ObjectData>();
 		for (Content content : allVersions) {
 			ObjectData objectData = compileService.compileObjectData(
-					context, content, filter, includeAllowableActions,
-					IncludeRelationships.NONE, null, true);
+					context, repositoryId, content, filter,
+					includeAllowableActions, IncludeRelationships.NONE, null, true);
 			result.add(objectData);
 		}
 
@@ -281,7 +281,7 @@ public class VersioningServiceImpl implements VersioningService {
 		this.exceptionService = exceptionService;
 	}
 
-	public void setNemakiCache(NemakiCache nemakiCache) {
-		this.nemakiCache = nemakiCache;
+	public void setNemakiCachePool(NemakiCachePool nemakiCachePool) {
+		this.nemakiCachePool = nemakiCachePool;
 	}
 }

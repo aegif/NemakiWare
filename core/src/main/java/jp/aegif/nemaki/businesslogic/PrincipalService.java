@@ -34,74 +34,88 @@ public interface PrincipalService {
 
 	/**
 	 * Get a list of all users
+	 * @param repositoryId TODO
 	 */
-	List<User> getUsers();
+	List<User> getUsers(String repositoryId);
 
 	/**
 	 * Get a list of all groups
+	 * @param repositoryId TODO
 	 */
-	List<Group> getGroups();
+	List<Group> getGroups(String repositoryId);
 
 	/**
 	 * Get a list of all groups that contain a given user.
+	 * @param repositoryId TODO
 	 */
-	Set<String> getGroupIdsContainingUser(String username);
+	Set<String> getGroupIdsContainingUser(String repositoryId, String username);
 
 	/**
 	 * Get a user, given its id.
+	 * @param repositoryId TODO
 	 */
-	User getUserById(String userId);
+	User getUserById(String repositoryId, String userId);
 
 	/**
 	 * Get a group, given its identifier.
+	 * @param repositoryId TODO
 	 */
-	Group getGroupById(String groupId);
+	Group getGroupById(String repositoryId, String groupId);
 
 	/**
 	 * Create a user, given its user object.
+	 * @param repositoryId TODO
 	 */
-	void createUser(User user);
+	void createUser(String repositoryId, User user);
 
 	/**
 	 * Update a user, given its user object;
+	 * @param repositoryId TODO
 	 */
-	void updateUser(User user);
+	void updateUser(String repositoryId, User user);
 
 	/**
 	 * Delete a user, given its class and user identifier
+	 * @param repositoryId TODO
 	 */
-	void deleteUser(String userId);
+	void deleteUser(String repositoryId, String userId);
 
 	/**
 	 * Create a group, given its group object.
+	 * @param repositoryId TODO
 	 */
-	void createGroup(Group group);
+	void createGroup(String repositoryId, Group group);
 
 	/**
 	 * Update a group, given its group object
+	 * @param repositoryId TODO
 	 */
-	void updateGroup(Group group);
+	void updateGroup(String repositoryId, Group group);
 
 	/**
 	 * Delete a group, given its class and group identifier.
+	 * @param repositoryId TODO
 	 */
-	void deleteGroup(String groupId);
+	void deleteGroup(String repositoryId, String groupId);
 
 	/**
 	 *  Get admin user
+	 * @param repositoryId TODO
 	 * @return
 	 */
-	User getAdmin();
+	User getAdmin(String repositoryId);
 
 	/**
 	 * Get anonymous Id(non authenticated user)
+	 * @param repositoryId TODO
 	 * @return
 	 */
-	String getAnonymous();
+	String getAnonymous(String repositoryId);
 
 	/**
 	 * Get anyone Id(any authenticated user)
+	 * @param repositoryId TODO
 	 * @return
 	 */
-	String getAnyone();
+	String getAnyone(String repositoryId);
 }

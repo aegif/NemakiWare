@@ -14,7 +14,7 @@ import org.json.simple.JSONObject;
 import jp.aegif.nemaki.cmis.factory.auth.Token;
 import jp.aegif.nemaki.cmis.factory.auth.TokenService;
 
-@Path("/authtoken")
+@Path("/repo/{repositoryId}/authtoken/")
 public class AuthTokenResource extends ResourceBase{
 
 	private TokenService tokenService;
@@ -22,7 +22,7 @@ public class AuthTokenResource extends ResourceBase{
 	@GET
 	@Path("/{userName}")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String get(@PathParam("userName") String userName, @QueryParam("app") String app){
+	public String get(@PathParam("repositoryId") String repositoryId, @PathParam("userName") String userName, @QueryParam("app") String app){
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
@@ -31,7 +31,7 @@ public class AuthTokenResource extends ResourceBase{
 			app = "";
 		}
 		
-		Token token = tokenService.getToken(app, userName);
+		Token token = tokenService.getToken(app, repositoryId, userName);
 		
 		if(token == null){
 			status = false;
@@ -39,6 +39,7 @@ public class AuthTokenResource extends ResourceBase{
 		}else{
 			JSONObject obj = new JSONObject();
 			obj.put("app", app);
+			obj.put("repositoryId", repositoryId);
 			obj.put("userName", userName);
 			obj.put("token", token.getToken());
 			obj.put("expiration", token.getExpiration());
@@ -52,19 +53,29 @@ public class AuthTokenResource extends ResourceBase{
 	@GET
 	@Path("/{userName}/register")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String register(@PathParam("userName") String userName, @QueryParam("app") String app){
+	public String register(@PathParam("repositoryId") String repositoryId, @PathParam("userName") String userName, @QueryParam("app") String app){
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 		
+		//Validation
 		if(StringUtils.isBlank(app)){
 			app = "";
 		}
+		if(StringUtils.isBlank(userName)){
+			addErrMsg(errMsg, "username", "isNull");
+			return makeResult(status, result, errMsg).toString();
+		}
+		if(StringUtils.isBlank(repositoryId)){
+			addErrMsg(errMsg, "repositoryId", "isNull");
+			return makeResult(status, result, errMsg).toString();
+		}
 		
-		Token token = tokenService.setToken(app, userName);
 		
+		Token token = tokenService.setToken(app, repositoryId, userName);
 		JSONObject obj = new JSONObject();
 		obj.put("app", app);
+		obj.put("repositoryId", repositoryId);
 		obj.put("userName", userName);
 		obj.put("token", token.getToken());
 		obj.put("expiration", token.getExpiration());
@@ -76,8 +87,4 @@ public class AuthTokenResource extends ResourceBase{
 	public void setTokenService(TokenService tokenService) {
 		this.tokenService = tokenService;
 	}
-	
-	
-	
-	
 }

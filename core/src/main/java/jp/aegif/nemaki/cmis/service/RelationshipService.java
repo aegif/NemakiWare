@@ -30,7 +30,7 @@ import org.apache.chemistry.opencmis.commons.server.CallContext;
 
 public interface RelationshipService {
 	public ObjectList getObjectRelationships(CallContext callContext,
-			String objectId, Boolean includeSubRelationshipTypes,
-			RelationshipDirection relationshipDirection, String typeId,
-			String filter, Boolean includeAllowableActions, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension);
+			String repositoryId, String objectId,
+			Boolean includeSubRelationshipTypes, RelationshipDirection relationshipDirection,
+			String typeId, String filter, Boolean includeAllowableActions, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension);
 }

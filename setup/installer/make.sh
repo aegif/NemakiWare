@@ -3,7 +3,7 @@
 # ShellScript to generate NemakiWare installer from source code
 #
 # Usage:
-# ./make.sh 
+# ./make.sh
 # or
 # ./make.sh PATH_TO_NEMAKIWARE_SOURCECODE
 #
@@ -17,12 +17,13 @@
 while getopts ep opt
 do
 	case ${opt} in
-		e) 
+		e)
 			shift
 			FLG_E="TRUE"
 			;;
 		p)
 			shift
+			FLG_P="TRUE"
 			PROFILE_PRODUCT="-P product"
 			;;
 		*)
@@ -55,13 +56,17 @@ PROPERTIES_CUSTOM=$CUSTOM_PROP_PATH/custom-nemakiware.properties
 
 USER_INPUT_SPEC=$SCRIPT_HOME/user-input-spec.xml
 USER_INPUT_SPEC_MODIFIED=$SCRIPT_HOME/user-input-spec_modified.xml
-java -cp $SCRIPT_HOME/install-util/target/install-util.jar jp.aegif.nemaki.installer.ProcessTemplate $USER_INPUT_SPEC $PROPERTIES $PROPERTIES_CUSTOM
+if [ "$FLG_P" = "TRUE" ]; then
+	java -cp $SCRIPT_HOME/install-util/target/install-util.jar jp.aegif.nemaki.installer.ProcessTemplate $USER_INPUT_SPEC $PROPERTIES
+else
+	java -cp $SCRIPT_HOME/install-util/target/install-util.jar jp.aegif.nemaki.installer.ProcessTemplate $USER_INPUT_SPEC $PROPERTIES $PROPERTIES_CUSTOM
+fi
 
 #Prepare WAR
 mvn -f $SOURCE_HOME/core/pom.xml clean
 mvn -f $SOURCE_HOME/core/pom.xml package $PROFILE_PRODUCT
 mvn -f $SOURCE_HOME/solr/pom.xml clean
-mvn -f $SOURCE_HOME/solr/pom.xml -Dmaven.test.skip=true package
+mvn -f $SOURCE_HOME/solr/pom.xml package $PROFILE_PRODUCT
 cd $SOURCE_HOME/ui/
 ./activator war
 cd $EXECUTION_DIRECTORY

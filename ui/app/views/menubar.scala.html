@@ -1,3 +1,5 @@
+@(repositoryId:String)
+
 @import constant.Token
 @import util.Util
 
@@ -10,7 +12,7 @@
 					class="icon-bar"></span> <span class="icon-bar"></span> <span
 					class="icon-bar"></span>
 			</button>
-			<a class="navbar-brand" href="@routes.Node.index().absoluteURL(request)">@Messages("view.header.product.name")</a>
+			<a class="navbar-brand" href="@routes.Node.index(repositoryId)">@Messages("view.header.product.name")</a>
 		</div>
 		<div class="navbar-collapse collapse">
 			<ul class="nav navbar-nav">
@@ -22,8 +24,8 @@
 					</a>
 					<ul class="dropdown-menu" role="menu">
 						<li><a href="#" id="account" user-id='@session.get(Token.LOGIN_USER_ID)'><i class="fa fa-user"></i>@Messages("view.auth.account")</a></li>
-						<li><a href="@routes.User.showFavorites(session.get(Token.LOGIN_USER_ID))" id="favorites"><i class="fa fa-star"></i>お気に入り</a></li>
-						<li><a href="@routes.Application.logout().absoluteURL(request)" id="logout"><i class="fa fa-sign-out"></i>@Messages("view.auth.logout")</a></li>
+						<li><a href="@routes.User.showFavorites(repositoryId, session.get(Token.LOGIN_USER_ID))" id="favorites"><i class="fa fa-star"></i>お気に入り</a></li>
+						<li><a href="@routes.Application.logout(repositoryId)" id="logout"><i class="fa fa-sign-out"></i>@Messages("view.auth.logout")</a></li>
 					</ul>
 				</li>
 			
@@ -31,19 +33,19 @@
 				<li class="dropdown"><a href="#" class="dropdown-toggle"
 					data-toggle="dropdown"><i class="fa fa-cog"></i>@Messages("view.header.control-panel")<span class="caret"></span></a>
 					<ul class="dropdown-menu" role="menu">
-						<li><a href="@routes.User.index().absoluteURL(request)" id="user-console"><i class="fa fa-user"></i>@Messages("view.user.caption")</a></li>
-						<li><a href="@routes.Group.index().absoluteURL(request)" id="group-console"><i class="fa fa-users"></i>@Messages("view.group.caption")</a></li>
+						<li><a href="@routes.User.index(repositoryId)" id="user-console"><i class="fa fa-user"></i>@Messages("view.user.caption")</a></li>
+						<li><a href="@routes.Group.index(repositoryId)" id="group-console"><i class="fa fa-users"></i>@Messages("view.group.caption")</a></li>
 						@if(session.get(Token.LOGIN_USER_IS_ADMIN) == "true"){
 							<li class="divider"></li>
 							<li><a href="#" id="search-engine-console"><i class="fa fa-search"></i>@Messages("view.search-engine.caption")</a></li>
-							<li><a href="@routes.Type.index().absoluteURL(request)"><i class="fa fa-cog"></i>@Messages("view.type.caption")</a></li>
+							<li><a href="@routes.Type.index(repositoryId)"><i class="fa fa-cog"></i>@Messages("view.type.caption")</a></li>
 						}
 					</ul>
 				</li>
 					
 				<!-- search box -->
 				<li>
-			        <form class="navbar-form" role="search" action="@routes.Node.search().absoluteURL(request)" method="GET">
+			        <form class="navbar-form" role="search" action="@routes.Node.search(repositoryId)" method="GET">
 				        <div class="input-group">
 				            <input type="text" class="form-control" placeholder="Search" name="term" id="srch-term">
 				            <div class="input-group-btn">
@@ -63,15 +65,17 @@
 	$(function(){
 		//binding: account
 		$('#account').click(function(){
-			$.get("@{Util.getContextPath(request)}users/" + "@session.get(Token.LOGIN_USER_ID)", function(html){
-				showLightbox('user-detail-' + "@session.get(Token.LOGIN_USER_ID)", html);
-       		});
+			$.ajax(jsRoutes.controllers.User.showDetail("@repositoryId", "@session.get(Token.LOGIN_USER_ID)")
+			).done(function(data){
+				showLightbox('user-detail-' + "@session.get(Token.LOGIN_USER_ID)", data);
+			});
 		});
 	
 		//binding: search engine cosole
 		$("#search-engine-console").click(function(){
-			$.get("@{Util.getContextPath(request)}search-engine", function(html){
-				showLightbox('search-engine-panel', html);
+			$.ajax(jsRoutes.controllers.SearchEngine.index("@repositoryId")
+			).done(function(data){
+				showLightbox('search-engine-panel', data);
 			});
 		});
 	});

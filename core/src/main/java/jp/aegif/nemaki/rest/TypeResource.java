@@ -10,6 +10,7 @@ import java.util.Map.Entry;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
 
@@ -40,7 +41,7 @@ import org.json.simple.JSONObject;
 
 import com.sun.jersey.multipart.FormDataParam;
 
-@Path("/type")
+@Path("/repo/{repositoryId}/type")
 public class TypeResource extends ResourceBase{
 
 	private TypeService typeService;
@@ -57,14 +58,15 @@ public class TypeResource extends ResourceBase{
 	@Path("/register")
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.MULTIPART_FORM_DATA)
-	public String register(@FormDataParam("data") InputStream is) {
+	public String register(@PathParam("repositoryId") String repositoryId,
+			@FormDataParam("data") InputStream is) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
 		try{
-			parse(is);
-			create();
+			parse(repositoryId, is);
+			create(repositoryId);
 			typeManager.refreshTypes();
 
 			status = true;
@@ -77,7 +79,7 @@ public class TypeResource extends ResourceBase{
 		return result.toJSONString();
 	}
 
-	private void parse(InputStream is){
+	private void parse(String repositoryId, InputStream is){
 		SAXReader saxReader = new SAXReader();
 		Document document;
 
@@ -88,12 +90,12 @@ public class TypeResource extends ResourceBase{
 			//Types
 			Element _types = getElement(model, "types");
 			List<Element> types = getElements(_types, "type");
-			parseTypes(types);
+			parseTypes(repositoryId, types);
 
 			//Aspects
 			Element _aspects = getElement(model, "aspects");
 			List<Element> aspects = getElements(_aspects, "aspect");
-			parseTypes(aspects);
+			parseTypes(repositoryId, aspects);
 
 		} catch (DocumentException e) {
 			// TODO Auto-generated catch block
@@ -101,7 +103,7 @@ public class TypeResource extends ResourceBase{
 		}
 	}
 
-	private void parseTypes(List<Element> types) {
+	private void parseTypes(String repositoryId, List<Element> types) {
 		for (Element type : types) {
 			// Extract values
 			// TODO "enabled"
@@ -116,7 +118,7 @@ public class TypeResource extends ResourceBase{
 			if (StringUtils.isEmpty(typeId)) {
 				log.warn("typeId should be specified. SKIP.");
 			} else {
-				if (existType(typeId)) {
+				if (existType(repositoryId, typeId)) {
 					log.warn("typeId:" + typeId
 							+ " already exists in DB! SKIP.");
 					continue;
@@ -166,7 +168,7 @@ public class TypeResource extends ResourceBase{
 			Element _properties = getElement(type, "properties");
 			List<Element> properties = getElements(_properties, "property");
 			if(CollectionUtils.isNotEmpty(properties)){
-				parseProperties(typeId, properties);
+				parseProperties(repositoryId, typeId, properties);
 			}
 
 			// Put to map
@@ -175,7 +177,7 @@ public class TypeResource extends ResourceBase{
 
 	}
 
-	private void parseProperties(String typeId, List<Element> properties){
+	private void parseProperties(String repositoryId, String typeId, List<Element> properties){
 		List<String> propertyIds = new ArrayList<String>();
 
 		for (Element property : properties) {
@@ -185,7 +187,7 @@ public class TypeResource extends ResourceBase{
 			// propertyId
 			String propName = getAttributeValue(property, "name");
 			// Check existing property definitions
-			if (existProperty(propName)) {
+			if (existProperty(repositoryId, propName)) {
 				log.warn("propertyId:" + propName
 						+ " already exists in DB! SKIP.");
 				continue;
@@ -340,15 +342,15 @@ public class TypeResource extends ResourceBase{
 		}
 	}
 
-	private void create() {
+	private void create(String repositoryId) {
 		// First, create properties
 		for (Entry<String, NemakiPropertyDefinitionCore> coreEntry : coreMaps
 				.entrySet()) {
 			NemakiPropertyDefinition p = new NemakiPropertyDefinition(
 					coreEntry.getValue(), detailMaps.get(coreEntry.getKey()));
-			typeService.createPropertyDefinition(p);
+			typeService.createPropertyDefinition(repositoryId, p);
 			NemakiPropertyDefinitionCore createdCore = typeService
-					.getPropertyDefinitionCoreByPropertyId(p.getPropertyId());
+					.getPropertyDefinitionCoreByPropertyId(repositoryId, p.getPropertyId());
 
 			coreEntry.getValue().setId(createdCore.getId());
 		}
@@ -364,10 +366,10 @@ public class TypeResource extends ResourceBase{
 			if(CollectionUtils.isNotEmpty(propertyIds)){
 				for (String propertyId : typeProperties.get(t.getTypeId())) {
 					NemakiPropertyDefinitionCore core = typeService
-							.getPropertyDefinitionCoreByPropertyId(propertyId);
+							.getPropertyDefinitionCoreByPropertyId(repositoryId, propertyId);
 					//propertyNodeIds.add(core.getId());
 					List<NemakiPropertyDefinitionDetail> details =
-							typeService.getPropertyDefinitionDetailByCoreNodeId(core.getId());
+							typeService.getPropertyDefinitionDetailByCoreNodeId(repositoryId, core.getId());
 					if(CollectionUtils.isEmpty(details)){
 						log.warn(buildMsg(t.getTypeId(), propertyId,
 								"Skipped to add this property because of incorrect data in DB."));
@@ -385,7 +387,7 @@ public class TypeResource extends ResourceBase{
 				log.warn(buildMsg(t.getId(), null,
 						"Skipped to create this type because it has an unknown parent type."));
 			}else{
-				typeService.createTypeDefinition(t);
+				typeService.createTypeDefinition(repositoryId, t);
 			}
 		}
 	}
@@ -462,8 +464,8 @@ public class TypeResource extends ResourceBase{
 		}
 	}
 
-	private boolean existType(String typeId) {
-		NemakiTypeDefinition existing = typeService.getTypeDefinition(typeId);
+	private boolean existType(String repositoryId, String typeId) {
+		NemakiTypeDefinition existing = typeService.getTypeDefinition(repositoryId, typeId);
 		if (existing == null) {
 			return false;
 		} else {
@@ -471,9 +473,9 @@ public class TypeResource extends ResourceBase{
 		}
 	}
 
-	private boolean existProperty(String propertyId) {
+	private boolean existProperty(String repositoryId, String propertyId) {
 		NemakiPropertyDefinitionCore existing = typeService
-				.getPropertyDefinitionCoreByPropertyId(propertyId);
+				.getPropertyDefinitionCoreByPropertyId(repositoryId, propertyId);
 		if (existing == null) {
 			return false;
 		} else {
