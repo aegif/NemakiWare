@@ -1,6 +1,6 @@
 @import util.Formatter
 @import util.NemakiConfig
-@(versions: List[org.apache.chemistry.opencmis.client.api.Document])
+@(repositoryId:String)(versions: List[org.apache.chemistry.opencmis.client.api.Document])
 
 <div class="container tab-pane">
 	<div class="row">
@@ -18,7 +18,7 @@
 					@for(version <- versions){
 						<tr>
 							<td>
-								<a href="@routes.Node.download(version.getId).absoluteURL(request)">
+								<a href="@routes.Node.download(repositoryId, version.getId)">
 									<i class="fa fa-download"></i>
 									@version.getVersionLabel()
 								</a>

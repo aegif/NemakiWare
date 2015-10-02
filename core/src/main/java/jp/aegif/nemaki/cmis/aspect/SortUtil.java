@@ -10,6 +10,7 @@ import java.util.Map.Entry;
 
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
@@ -31,11 +32,11 @@ public class SortUtil {
 	private static final Log log = LogFactory.getLog(SortUtil.class);
 
 	private TypeManager typeManager;
-	private RepositoryInfo repositoryInfo;
+	private RepositoryInfoMap repositoryInfoMap;
 	private PropertyManager propertyManager;
 
 	@SuppressWarnings("unchecked")
-	public void sort(List<ObjectData> list, String orderBy) {
+	public void sort(String repositoryId, List<ObjectData> list, String orderBy) {
 		//Check empty list
 		if(CollectionUtils.isEmpty(list)){
 			return;
@@ -53,8 +54,7 @@ public class SortUtil {
 		}
 
 		// Check CapabilityOrderBy
-		CapabilityOrderBy capabilityOrderBy = repositoryInfo.getCapabilities()
-				.getOrderByCapability();
+		CapabilityOrderBy capabilityOrderBy = repositoryInfoMap.get(repositoryId).getCapabilities().getOrderByCapability();
 		if (CapabilityOrderBy.NONE == capabilityOrderBy) {
 			return;
 		}
@@ -241,9 +241,9 @@ public class SortUtil {
 	public void setTypeManager(TypeManager typeManager) {
 		this.typeManager = typeManager;
 	}
-
-	public void setRepositoryInfo(RepositoryInfo repositoryInfo) {
-		this.repositoryInfo = repositoryInfo;
+	
+	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
+		this.repositoryInfoMap = repositoryInfoMap;
 	}
 
 	public void setPropertyManager(PropertyManager propertyManager) {

@@ -37,8 +37,6 @@
  */
 package jp.aegif.nemaki.cmis.factory.auth;
 
-import jp.aegif.nemaki.model.User;
-
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 
 
@@ -47,8 +45,5 @@ import org.apache.chemistry.opencmis.commons.server.CallContext;
  */
 public interface AuthenticationService {
 	
-	public boolean authenticateUserByToken(String app, String userName, String token);
-    public boolean authenticateAdminByToken(String userName);
-    public Token registerToken(String app, CallContext callContext);
-    public User getAuthenticatedUser(String userName, String passWord);
+	public boolean login(CallContext callContext);
 }

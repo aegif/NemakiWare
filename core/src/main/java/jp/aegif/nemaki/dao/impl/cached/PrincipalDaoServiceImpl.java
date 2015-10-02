@@ -23,16 +23,16 @@ package jp.aegif.nemaki.dao.impl.cached;
 
 import java.util.List;
 
-import jp.aegif.nemaki.dao.PrincipalDaoService;
-import jp.aegif.nemaki.model.Group;
-import jp.aegif.nemaki.model.User;
-import jp.aegif.nemaki.util.cache.NemakiCache;
-import net.sf.ehcache.Cache;
-import net.sf.ehcache.Element;
-
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.stereotype.Component;
+
+import jp.aegif.nemaki.dao.PrincipalDaoService;
+import jp.aegif.nemaki.model.Group;
+import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.util.cache.NemakiCachePool;
+import net.sf.ehcache.Cache;
+import net.sf.ehcache.Element;
 
 /**
  * Dao Service for Principal(User/Group) Implementation for CouchDB
@@ -46,90 +46,86 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 			.getLog(PrincipalDaoServiceImpl.class);
 
 	private PrincipalDaoService nonCachedPrincipalDaoService;
-	private NemakiCache nemakiCache;
-	
-	/**
-	 *
-	 */
+	private NemakiCachePool nemakiCachePool;
 
 	public PrincipalDaoServiceImpl() {
 	}
 
 	@Override
-	public User createUser(User user) {
-		User created = nonCachedPrincipalDaoService.createUser(user);
+	public User createUser(String repositoryId, User user) {
+		User created = nonCachedPrincipalDaoService.createUser(repositoryId, user);
 
-		Cache userCache = nemakiCache.getUserCache();
+		Cache userCache = nemakiCachePool.get(repositoryId).getUserCache();
 		userCache.put(new Element(created.getUserId(), created));
-		Cache usersCache = nemakiCache.getUsersCache();
+		Cache usersCache = nemakiCachePool.get(repositoryId).getUsersCache();
 		usersCache.removeAll();
 		return created;
 	}
 
 	@Override
-	public Group createGroup(Group group) {
-		Group created = nonCachedPrincipalDaoService.createGroup(group);
+	public Group createGroup(String repositoryId, Group group) {
+		Group created = nonCachedPrincipalDaoService.createGroup(repositoryId, group);
 
-		Cache groupCache = nemakiCache.getGroupCache();
+		Cache groupCache = nemakiCachePool.get(repositoryId).getGroupCache();
 		groupCache.put(new Element(created.getGroupId(), created));
-		Cache groupsCache = nemakiCache.getGroupsCache();
+		Cache groupsCache = nemakiCachePool.get(repositoryId).getGroupsCache();
 		groupsCache.removeAll();
 		return created;
 	}
 
 	@Override
-	public User updateUser(User user) {
-		User u = nonCachedPrincipalDaoService.updateUser(user);
+	public User updateUser(String repositoryId, User user) {
+		User u = nonCachedPrincipalDaoService.updateUser(repositoryId, user);
 
-		Cache userCache = nemakiCache.getUserCache();
+		Cache userCache = nemakiCachePool.get(repositoryId).getUserCache();
 		userCache.put(new Element(u.getUserId(), u));
-		Cache usersCache = nemakiCache.getUsersCache();
+		Cache usersCache = nemakiCachePool.get(repositoryId).getUsersCache();
 		usersCache.removeAll();
 
 		return u;
 	}
 
 	@Override
-	public Group updateGroup(Group group) {
-		Group g = nonCachedPrincipalDaoService.updateGroup(group);
+	public Group updateGroup(String repositoryId, Group group) {
+		Group g = nonCachedPrincipalDaoService.updateGroup(repositoryId, group);
 
-		Cache groupCache = nemakiCache.getGroupCache();
+		Cache groupCache = nemakiCachePool.get(repositoryId).getGroupCache();
 		groupCache.put(new Element(g.getGroupId(), g));
 
-		Cache groupsCache = nemakiCache.getGroupsCache();
+		Cache groupsCache = nemakiCachePool.get(repositoryId).getGroupsCache();
 		groupsCache.removeAll();
 
 		return g;
 	}
 
 	@Override
-	public void delete(Class<?> clazz, String nodeId) {
+	public void delete(String repositoryId, Class<?> clazz, String nodeId) {
 		if (clazz.equals(User.class)) {
-			User exising = getUser(nodeId);
+			User exising = getUser(repositoryId, nodeId);
 
-			nonCachedPrincipalDaoService.delete(null, nodeId);
+			nonCachedPrincipalDaoService.delete(repositoryId, null, nodeId);
 
-			Cache userCache = nemakiCache.getUserCache();
+			Cache userCache = nemakiCachePool.get(repositoryId).getUserCache();
 			userCache.remove(exising.getUserId());
-			Cache usersCache = nemakiCache.getUsersCache();
+			Cache usersCache = nemakiCachePool.get(repositoryId).getUsersCache();
 			usersCache.removeAll();
 		} else if(clazz.equals(Group.class)){
-			Group exising = getGroup(nodeId);
+			Group exising = getGroup(repositoryId, nodeId);
 
-			nonCachedPrincipalDaoService.delete(null, nodeId);
+			nonCachedPrincipalDaoService.delete(repositoryId, null, nodeId);
 
-			Cache groupCache = nemakiCache.getGroupCache();
+			Cache groupCache = nemakiCachePool.get(repositoryId).getGroupCache();
 			groupCache.remove(exising.getGroupId());
-			Cache groupsCache = nemakiCache.getGroupsCache();
+			Cache groupsCache = nemakiCachePool.get(repositoryId).getGroupsCache();
 			groupsCache.removeAll();
 		}
 	}
 
 	@Override
-	public User getUser(String nodeId) {
-		Cache userCache = nemakiCache.getUserCache();
+	public User getUser(String repositoryId, String nodeId) {
+		Cache userCache = nemakiCachePool.get(repositoryId).getUserCache();
 
-		User user = nonCachedPrincipalDaoService.getUser(nodeId);
+		User user = nonCachedPrincipalDaoService.getUser(repositoryId, nodeId);
 		if (user != null) {
 			userCache.put(new Element(user.getUserId(), user));
 		}
@@ -138,8 +134,8 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 	}
 
 	@Override
-	public User getAdmin() {
-		User admin = nonCachedPrincipalDaoService.getAdmin();
+	public User getAdmin(String repositoryId) {
+		User admin = nonCachedPrincipalDaoService.getAdmin(repositoryId);
 		return admin;
 	}
 
@@ -147,16 +143,16 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 	 *
 	 */
 	@Override
-	public User getUserById(String userId) {
+	public User getUserById(String repositoryId, String userId) {
 
-		Cache userCache = nemakiCache.getUserCache();
+		Cache userCache = nemakiCachePool.get(repositoryId).getUserCache();
 		Element e = userCache.get(userId);
 
 		if (e != null) {
 			return (User) e.getObjectValue();
 		}
 
-		User user = nonCachedPrincipalDaoService.getUserById(userId);
+		User user = nonCachedPrincipalDaoService.getUserById(repositoryId, userId);
 		if (user != null) {
 			userCache.put(new Element(userId, user));
 		}
@@ -168,15 +164,15 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 	 *
 	 */
 	@Override
-	public List<User> getUsers() {
-		Cache usersCache = nemakiCache.getUsersCache();
+	public List<User> getUsers(String repositoryId) {
+		Cache usersCache = nemakiCachePool.get(repositoryId).getUsersCache();
 		Element userEl = usersCache.get("users");
 
 		if (userEl != null) {
 			return (List<User>) userEl.getObjectValue();
 		}
 
-		List<User> users = nonCachedPrincipalDaoService.getUsers();
+		List<User> users = nonCachedPrincipalDaoService.getUsers(repositoryId);
 
 		usersCache.put(new Element("users", users));
 
@@ -185,10 +181,10 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 	}
 
 	@Override
-	public Group getGroup(String nodeId) {
-		Cache groupCache = nemakiCache.getGroupCache();
+	public Group getGroup(String repositoryId, String nodeId) {
+		Cache groupCache = nemakiCachePool.get(repositoryId).getGroupCache();
 
-		Group group = nonCachedPrincipalDaoService.getGroup(nodeId);
+		Group group = nonCachedPrincipalDaoService.getGroup(repositoryId, nodeId);
 		if (group != null) {
 			groupCache.put(new Element(group.getGroupId(), group));
 		}
@@ -200,15 +196,15 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 	 *
 	 */
 	@Override
-	public Group getGroupById(String groupId) {
-		Cache groupCache = nemakiCache.getGroupCache();
+	public Group getGroupById(String repositoryId, String groupId) {
+		Cache groupCache = nemakiCachePool.get(repositoryId).getGroupCache();
 		Element groupEl = groupCache.get(groupId);
 
 		if (groupEl != null) {
 			return (Group) groupEl.getObjectValue();
 		}
 
-		Group group = nonCachedPrincipalDaoService.getGroupById(groupId);
+		Group group = nonCachedPrincipalDaoService.getGroupById(repositoryId, groupId);
 		if (group != null) {
 			groupCache.put(new Element(groupId, group));
 		}
@@ -220,15 +216,15 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 	 *
 	 */
 	@Override
-	public List<Group> getGroups() {
-		Cache groupsCache = nemakiCache.getGroupsCache();
+	public List<Group> getGroups(String repositoryId) {
+		Cache groupsCache = nemakiCachePool.get(repositoryId).getGroupsCache();
 		Element groupEl = groupsCache.get("groups");
 
 		if (groupEl != null) {
 			return (List<Group>) groupEl.getObjectValue();
 		}
 
-		List<Group> groups = nonCachedPrincipalDaoService.getGroups();
+		List<Group> groups = nonCachedPrincipalDaoService.getGroups(repositoryId);
 
 		groupsCache.put(new Element("groups", groups));
 
@@ -240,7 +236,7 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 		this.nonCachedPrincipalDaoService = nonCachedPrincipalDaoService;
 	}
 
-	public void setNemakiCache(NemakiCache nemakiCache) {
-		this.nemakiCache = nemakiCache;
+	public void setNemakiCachePool(NemakiCachePool nemakiCachePool) {
+		this.nemakiCachePool = nemakiCachePool;
 	}
 }

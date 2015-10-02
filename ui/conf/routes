@@ -3,77 +3,82 @@
 # ~~~~
 
 # Map static resources from the /public folder to the /assets URL path
-GET     /assets/*file               	controllers.Assets.at(path="/public", file)
-GET     /webjars/*file                  controllers.WebJarAssets.at(file)
-
-# Login
-GET		/login							controllers.Application.login()
-GET		/authenticate					controllers.Application.authenticate()
-GET		/logout							controllers.Application.logout()
-
-# Home page
-GET     /                           	controllers.Node.index()
 
 # Javascript Router
-GET	/assets/javascripts/routes	controllers.Application.getJSRoutes()
+GET		/assets/javascripts/routes							controllers.Application.jsRoutes()
+
+GET     /assets/*file               						controllers.Assets.at(path="/public", file)
+GET     /webjars/*file                  					controllers.WebJarAssets.at(file)
+
+# Login
+GET		/repo/:repoId/login									controllers.Application.login(repoId)
+GET		/repo/:repoId/authenticate							controllers.Application.authenticate(repoId)
+GET		/repo/:repoId/logout								controllers.Application.logout(repoId)
+
+# Home page
+GET     /repo/:repoId/                           			controllers.Node.index(repoId:String)
 
 # CMIS Rest API
-GET     /objects               			controllers.Node.showChildren(id="/")
-GET     /objects/search               	controllers.Node.search(term:String ?= "")
-GET     /objects/new               		controllers.Node.showBlank()
-POST	/objects/create               	controllers.Node.create()
-GET		/objects/js/:objectId/ace/:principalId	controllers.Node.jsGetAce(objectId:String, principalId:String)
-GET     /objects/:id               		controllers.Node.showDetail(id:String, activatePreviewTab:Boolean ?= false)
-GET     /objects/:id/property           controllers.Node.showProperty(id:String)
-GET     /objects/:id/download           controllers.Node.download(id:String)
-GET     /objects/:id/file               controllers.Node.showFile(id:String)
-GET     /objects/:id/preview            controllers.Node.showPreview(id:String)
-GET     /objects/:id/download-preview   controllers.Node.downloadPreview(id:String)
-GET     /objects/:id/version            controllers.Node.showVersion(id:String)
-GET		/objects/:id/permission			controllers.Node.showPermission(id:String)
-GET     /objects/:id/children           controllers.Node.showChildren(id)
-POST    /objects/:id/update            	controllers.Node.update(id:String)
-POST    /objects/:id/update-permission  controllers.Node.updatePermission(id:String)
-POST    /objects/:id/upload            	controllers.Node.upload(id:String)
-POST    /objects/:id/checkout          	controllers.Node.checkOut(id:String)
-POST    /objects/:id/checkin           	controllers.Node.checkIn(id:String)
-POST    /objects/:id/cancel-checkout   	controllers.Node.cancelCheckOut(id:String)
-POST 	/objects/:id/delete				controllers.Node.delete(id:String)
-GET		/path/children					controllers.Node.showChildrenByPath(path:String ?= "/")
+GET     /repo/:repoId/objects               				controllers.Node.showChildren(repoId:String, id="/")
+GET		/repo/:repoId/objects/children-by-path				controllers.Node.showChildrenByPath(repoId:String, path:String ?= "/")
+GET     /repo/:repoId/objects/search               			controllers.Node.search(repoId:String, term:String ?= "")
+GET     /repo/:repoId/objects/new               			controllers.Node.showBlank(repoId:String)
+POST	/repo/:repoId/objects/create               			controllers.Node.create(repoId:String)
+POST    /repo/:repoId/objects/drag-and-drop          		controllers.Node.dragAndDrop(repoId:String, action:String ?= "")
+GET     /repo/:repoId/objects/:id               			controllers.Node.showDetail(repoId:String, id:String, activatePreviewTab:Boolean ?= false)
+GET     /repo/:repoId/objects/:id/property           		controllers.Node.showProperty(repoId:String, id:String)
+GET     /repo/:repoId/objects/:id/download           		controllers.Node.download(repoId:String, id:String)
+GET     /repo/:repoId/objects/:id/file               		controllers.Node.showFile(repoId:String, id:String)
+GET     /repo/:repoId/objects/:id/preview            		controllers.Node.showPreview(repoId:String, id:String)
+GET     /repo/:repoId/objects/:id/download-preview   		controllers.Node.downloadPreview(repoId:String, id:String)
+GET     /repo/:repoId/objects/:id/version            		controllers.Node.showVersion(repoId:String, id:String)
+GET		/repo/:repoId/objects/:id/permission				controllers.Node.showPermission(repoId:String, id:String)
+GET		/repo/:repoId/objects/:id/permission/:principalId	controllers.Node.getAce(repoId:String, id:String, principalId:String)
+GET     /repo/:repoId/objects/:id/children           		controllers.Node.showChildren(repoId:String, id:String)
+POST    /repo/:repoId/objects/:id/update            		controllers.Node.update(repoId:String, id:String)
+POST    /repo/:repoId/objects/:id/update-permission  		controllers.Node.updatePermission(repoId:String, id:String)
+POST    /repo/:repoId/objects/:id/upload            		controllers.Node.upload(repoId:String, id:String)
+POST    /repo/:repoId/objects/:id/checkout          		controllers.Node.checkOut(repoId:String, id:String)
+POST    /repo/:repoId/objects/:id/checkin           		controllers.Node.checkIn(repoId:String, id:String)
+POST    /repo/:repoId/objects/:id/cancel-checkout   		controllers.Node.cancelCheckOut(repoId:String, id:String)
+POST 	/repo/:repoId/objects/:id/delete					controllers.Node.delete(repoId:String, id:String)
 
 # User API
-GET     /users               			controllers.User.index()
-GET		/users/search					controllers.User.search(term: String ?= "")
-GET     /users/new               		controllers.User.showBlank()
-POST	/users/create					controllers.User.create()
-GET		/users/:id						controllers.User.showDetail(id:String)
-POST	/users/:id/update				controllers.User.update(id:String)
-POST	/users/:id/delete				controllers.User.delete(id:String)
-GET     /users/:id/favorites            controllers.User.showFavorites(id:String)
-PUT		/users/:userId/favorites/:objectId			controllers.User.toggleFavorite(userId:String, objectId:String)
+GET     /repo/:repoId/users               					controllers.User.index(repoId:String)
+GET		/repo/:repoId/users/search							controllers.User.search(repoId:String, term: String ?= "")
+GET     /repo/:repoId/users/new               				controllers.User.showBlank(repoId:String)
+POST	/repo/:repoId/users/create							controllers.User.create(repoId:String)
+GET		/repo/:repoId/users/:id								controllers.User.showDetail(repoId:String, id:String)
+POST	/repo/:repoId/users/:id/update						controllers.User.update(repoId:String, id:String)
+POST	/repo/:repoId/users/:id/delete						controllers.User.delete(repoId:String, id:String)
+GET     /repo/:repoId/:repoId/users/:id/favorites           controllers.User.showFavorites(repoId:String, id:String)
+PUT		/repo/:repoId/users/:userId/favorites/:objectId		controllers.User.toggleFavorite(repoId:String, userId:String, objectId:String)
 
 # Group API
-GET		/groups							controllers.Group.index()
-GET		/groups/search					controllers.Group.search(term:String ?= "")
-GET		/groups/new						controllers.Group.showBlank()
-POST	/groups/create					controllers.Group.create()
-GET		/groups/:id						controllers.Group.showProperty(id:String)
-POST	/groups/:id/update				controllers.Group.update(id:String)
-POST	/groups/:id/delete				controllers.Group.delete(id:String)
+GET		/repo/:repoId/groups								controllers.Group.index(repoId:String)
+GET		/repo/:repoId/groups/search							controllers.Group.search(repoId:String, term:String ?= "")
+GET		/repo/:repoId/groups/new							controllers.Group.showBlank(repoId:String)
+POST	/repo/:repoId/groups/create							controllers.Group.create(repoId:String)
+GET		/repo/:repoId/groups/:id							controllers.Group.showDetail(repoId:String, id:String)
+POST	/repo/:repoId/groups/:id/update						controllers.Group.update(repoId:String, id:String)
+POST	/repo/:repoId/groups/:id/delete						controllers.Group.delete(repoId:String, id:String)
 
 # Principal API
-GET		/principals/search				controllers.Principal.search(term:String ?= "", groupId:String ?= "")
+GET		/repo/:repoId/principals/search						controllers.Principal.search(repoId:String, term:String ?= "", groupId:String ?= "")
 
 # Search engine API
-GET		/search-engine					controllers.SearchEngine.index()		
-GET		/search-engine/init				controllers.SearchEngine.init()
-GET		/search-engine/reindex			controllers.SearchEngine.reindex()
+GET		/repo/:repoId/search-engine							controllers.SearchEngine.index(repoId:String)		
+GET		/repo/:repoId/search-engine/init					controllers.SearchEngine.init(repoId:String)
+GET		/repo/:repoId/search-engine/reindex					controllers.SearchEngine.reindex(repoId:String)
 
 # ObjectType API
-GET		/types							controllers.Type.index()
-GET		/types/:id/download				controllers.Type.download(id:String)
-GET		/types/new						controllers.Type.showBlank()
-POST	/types/create					controllers.Type.create()
-GET		/types/edit						controllers.Type.edit()
-POST	/types/update					controllers.Type.update()
-POST	/types/:id/delete				controllers.Type.delete(id:String)
+GET		/repo/:repoId/types									controllers.Type.index(repoId:String)
+GET		/repo/:repoId/types/:id/download					controllers.Type.download(repoId:String, id:String)
+GET		/repo/:repoId/types/new								controllers.Type.showBlank(repoId:String)
+POST	/repo/:repoId/types/create							controllers.Type.create(repoId:String)
+GET		/repo/:repoId/types/edit							controllers.Type.edit(repoId:String)
+POST	/repo/:repoId/types/update							controllers.Type.update(repoId:String)
+POST	/repo/:repoId/types/:id/delete						controllers.Type.delete(repoId:String, id:String)
+
+# Javascript scala template API
+GET		/jstemplate/duplicateNameCheck.js					controllers.JsTemplate.duplicateNameCheck(repoId:String)

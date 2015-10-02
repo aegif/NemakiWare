@@ -1,13 +1,13 @@
 @import util.Util
 @import org.apache.commons.collections.CollectionUtils
 
-@(groups:List[model.Group])
+@(repositoryId:String)(groups:List[model.Group])
 
 <!DOCTYPE html>
 <html>
 	@header()
 	<body>
-		@menubar()
+		@menubar(repositoryId)
 		<div class="container">
 	  		<div class="row">
 	  			<div class="col-md-11">
@@ -30,7 +30,7 @@
 						<li>
 							<!-- search box -->
 							<div class="input-group">
-								@helper.form(action = routes.Group.search(), 'class -> "navbar-form"){
+								@helper.form(action = routes.Group.search(repositoryId), 'class -> "navbar-form"){
 									<input type="text" class="form-control" placeholder="Search" name="term" id="group-search-box">
 							     	<div class="input-group-btn">
 							        	<button class="btn btn-default" id="group-search" type="submit"><i class="fa fa-search"></i></button>
@@ -88,7 +88,7 @@
 	$(function () {
 		//binding: create button
 		$('#group-create-button').bind('click', function(){
-			$.get("@routes.Group.showBlank().absoluteURL(request)", function(html){
+			$.get("@routes.Group.showBlank(repositoryId)", function(html){
 				showLightbox('group-blank', html);
 			});
 		});
@@ -97,33 +97,31 @@
 		$('.group-detail').click(function(){
 			var id = $(this).attr('group-id');
 
-			$.get("@{Util.getContextPath(request)}groups/" + id, function(html){
-				showLightbox('group-detail-' + id, html);
-       		});	
-			
+			$.ajax(jsRoutes.controllers.Group.showDetail("@repositoryId", id)
+			).done(function(data){
+				showLightbox('group-detail-' + id, data);
+			}).fail(function(XMLHttpRequest, textStatus, errorThrown){
+				//TODO
+			}).always(function(){
+				//TODO
+			});
 		});
 	
 		//binding: delete button
 		$('.group-delete').click(function(){
 			if(window.confirm("@Messages("view.message.delete.confirm")")){
 				var id = $(this).attr('group-id');
-				alert("hgoe");
 				$.blockUI({message:"@Messages("view.message.please.wait")"});
-				$.ajax({
-					url : "@{Util.getContextPath(request)}groups/" + id + "/delete",
-					type : 'POST',
-					data : null,
-					success : function(data){
-						window.alert("@Messages("view.message.delete.success")");
-						window.location.reload();
-					},
-					error : function(XMLHttpRequest, textStatus, errorThrown) {
-						window.alert("@Messages("view.message.delete.failure")");
-			        },
-			        complete : function(){
-						$.unblockUI();
-					}
-				})
+				
+				$.ajax(jsRoutes.controllers.Group.delete("@repositoryId", id)
+				).done(function(data){
+					window.alert("@Messages("view.message.delete.success")");
+					window.location.reload();
+				}).fail(function(XMLHttpRequest, textStatus, errorThrown){
+					window.alert("@Messages("view.message.delete.failure")");
+				}).always(function(){
+					$.unblockUI();
+				});				
 			}
 		});
 	});

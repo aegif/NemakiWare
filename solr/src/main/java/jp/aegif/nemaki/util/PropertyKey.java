@@ -20,10 +20,10 @@ public interface PropertyKey {
 	public final String CMIS_LOCALE_COUNTRY = "cmis.locale.country";
 	public final String CMIS_LOCALE_LANGUAGE = "cmis.locale.language";
 	public final String CMIS_REPOSITORY_MAIN = "cmis.repository.main";
-	public final String CMIS_PRINCIPAL_ADMIN_ID = "cmis.principal.admin.id";
-	public final String CMIS_PRINCIPAL_ADMIN_PASSWORD = "cmis.principal.admin.password";
 
 	public final String NEMAKI_CAPABILITY_EXTENDED_AUTH_TOKEN = "nemaki.capability.extended.auth.token";
+	
+	public final String REPOSITORIES_SETTING_FILE = "repositories.setting.file";
 	
 	public final String OVERRIDE_FILES = "override.files";
 }

@@ -32,6 +32,7 @@ import jp.aegif.nemaki.cmis.service.PolicyService;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.util.cache.NemakiCache;
+import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.DomainType;
 
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
@@ -48,29 +49,29 @@ public class PolicyServiceImpl implements PolicyService {
 	private CompileService compileService;
 	private ExceptionService exceptionService;
 	private TypeManager typeManager;
-	private NemakiCache nemakiCache;
+	private NemakiCachePool nemakiCachePool;
 
 	@Override
-	public void applyPolicy(CallContext callContext, String policyId,
-			String objectId, ExtensionsData extension) {
+	public void applyPolicy(CallContext callContext, String repositoryId,
+			String policyId, String objectId, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("objectId", objectId);
 		exceptionService.invalidArgumentRequiredString("policyId", policyId);
-		Content content = contentService.getContent(objectId);
+		Content content = contentService.getContent(repositoryId, objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,
-				PermissionMapping.CAN_ADD_POLICY_OBJECT, content);
-		Policy policy = contentService.getPolicy(policyId);
+				repositoryId, PermissionMapping.CAN_ADD_POLICY_OBJECT, content);
+		Policy policy = contentService.getPolicy(repositoryId, policyId);
 		exceptionService.objectNotFound(DomainType.OBJECT, policy, policyId);
 		exceptionService.permissionDenied(callContext,
-				PermissionMapping.CAN_ADD_POLICY_POLICY, policy);
+				repositoryId, PermissionMapping.CAN_ADD_POLICY_POLICY, policy);
 
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		TypeDefinition td = typeManager.getTypeDefinition(content);
+		TypeDefinition td = typeManager.getTypeDefinition(repositoryId, content);
 		if (!td.isControllablePolicy())
 			exceptionService
 					.constraint(objectId,
@@ -79,59 +80,59 @@ public class PolicyServiceImpl implements PolicyService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		contentService.applyPolicy(callContext, policyId, objectId, extension);
+		contentService.applyPolicy(callContext, repositoryId, policyId, objectId, extension);
 		
-		nemakiCache.removeCmisCache(objectId);
+		nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
 	}
 
 	@Override
-	public void removePolicy(CallContext callContext, String policyId,
-			String objectId, ExtensionsData extension) {
+	public void removePolicy(CallContext callContext, String repositoryId,
+			String policyId, String objectId, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("objectId", objectId);
 		exceptionService.invalidArgumentRequiredString("policyId", policyId);
-		Content content = contentService.getContent(objectId);
+		Content content = contentService.getContent(repositoryId, objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,
-				PermissionMapping.CAN_REMOVE_POLICY_OBJECT, content);
-		Policy policy = contentService.getPolicy(policyId);
+				repositoryId, PermissionMapping.CAN_REMOVE_POLICY_OBJECT, content);
+		Policy policy = contentService.getPolicy(repositoryId, policyId);
 		exceptionService.objectNotFound(DomainType.OBJECT, policy, policyId);
 		exceptionService.permissionDenied(callContext,
-				PermissionMapping.CAN_REMOVE_POLICY_POLICY, policy);
+				repositoryId, PermissionMapping.CAN_REMOVE_POLICY_POLICY, policy);
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		contentService.removePolicy(callContext, policyId, objectId, extension);
+		contentService.removePolicy(callContext, repositoryId, policyId, objectId, extension);
 	
-		nemakiCache.removeCmisCache(objectId);
+		nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
 	}
 
 	@Override
 	public List<ObjectData> getAppliedPolicies(CallContext callContext,
-			String objectId, String filter, ExtensionsData extension) {
+			String repositoryId, String objectId, String filter, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("objectId", objectId);
-		Content content = contentService.getContent(objectId);
+		Content content = contentService.getContent(repositoryId, objectId);
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,
-				PermissionMapping.CAN_GET_APPLIED_POLICIES_OBJECT, content);
+				repositoryId, PermissionMapping.CAN_GET_APPLIED_POLICIES_OBJECT, content);
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		List<Policy> policies = contentService.getAppliedPolicies(objectId,
-				extension);
+		List<Policy> policies = contentService.getAppliedPolicies(repositoryId,
+				objectId, extension);
 		List<ObjectData> objects = new ArrayList<ObjectData>();
 		if (!CollectionUtils.isEmpty(policies)) {
 			for (Policy policy : policies) {
 				objects.add(compileService.compileObjectData(callContext,
-						policy, filter, true, IncludeRelationships.NONE, null,
-						true));
+						repositoryId, policy, filter, true, IncludeRelationships.NONE,
+						null, true));
 			}
 		}
 		return objects;
@@ -157,7 +158,7 @@ public class PolicyServiceImpl implements PolicyService {
 		this.typeManager = typeManager;
 	}
 
-	public void setNemakiCache(NemakiCache nemakiCache) {
-		this.nemakiCache = nemakiCache;
+	public void setNemakiCachePool(NemakiCachePool nemakiCachePool) {
+		this.nemakiCachePool = nemakiCachePool;
 	}
 }

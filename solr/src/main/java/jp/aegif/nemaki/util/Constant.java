@@ -6,6 +6,8 @@ public interface Constant {
 
 	// Solr filed name
 	String FIELD_ID = "id";
+	String FIELD_REPOSITORY_ID = "repository_id";
+	String FIELD_OBJECT_ID = "object_id";
 	String FIELD_NAME = "name";
 	String FIELD_DESCRIPTION = "cmis_description";
 	String FIELD_BASE_TYPE = "basetype";

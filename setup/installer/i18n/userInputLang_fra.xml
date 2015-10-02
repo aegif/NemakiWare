@@ -8,19 +8,16 @@
     <str id="user.inputpanel.couchdb.title" txt="Configuration de CouchDB" />
     <str id="user.inputpanel.solr.title" txt="Configuration de Solr" />
     <str id="user.inputpanel.rails.title" txt="Configuration de Rails" />
-    
-    <str id="tomcat.port" txt="Tomcat port" />
-    <str id="tomcat.shutdown.port" txt="Tomcat port(arrêt)" />
-    <str id="tomcat.ajp.port" txt="Tomcat port(AJP)" />
 
-    <str id="cmis.repository.main" txt="Référentiel ID(principal)" />
-    <str id="cmis.repository.archive" txt="Référentiel ID(archive)" />
+    <str id="tomcat.port" txt="Tomcat port" />
+    <str id="tomcat.shutdown.port" txt="Tomcat port (arrêt)" />
+    <str id="tomcat.ajp.port" txt="Tomcat port (AJP)" />
+
+    <str id="cmis.repository.main" txt="Référentiel ID" />
 
     <str id="db.couchdb.host" txt="CouchDB hôte" />
     <str id="db.couchdb.port" txt="CouchDB port" />
 
     <str id="solr.host" txt="Solr hôte" />
     <str id="solr.port" txt="Solr port" />
-
-    <str id="ruby.bin" txt="Chosissez le chemin de Ruby(bin)" />
 </langpack>

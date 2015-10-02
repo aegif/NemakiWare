@@ -26,9 +26,12 @@ import java.util.TimeZone;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpSession;
+import javax.ws.rs.core.Context;
 
 import jp.aegif.nemaki.model.NodeBase;
+import jp.aegif.nemaki.util.constant.CallContextKey;
 
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
@@ -119,6 +122,7 @@ public class ResourceBase {
 	static final String ERR_REMOVE_REPOSITORY = "failToRemoveRepository";
 	static final String ERR_GET_ARCHIVES = "failToGetArchives";
 	static final String ERR_RESTORE = "failToRestore";
+	static final String ERR_ONLY_ALLOWED_FOR_ADMIN = "onlyAllowedForAdmin";
 
 	//Set daoService
 	public ResourceBase(){
@@ -143,6 +147,16 @@ public class ResourceBase {
 		return result;
 	}
 
+	protected boolean checkAdmin(JSONArray errMsg, HttpServletRequest request){
+		CallContext callContext = (CallContext) request.getAttribute("CallContext");
+		Boolean _isAdmin = (Boolean) callContext.get(CallContextKey.IS_ADMIN);
+		boolean isAdmin = (_isAdmin == null) ? false : _isAdmin;
+		if(!isAdmin){
+			addErrMsg(errMsg, ERR_ONLY_ALLOWED_FOR_ADMIN, callContext.getRepositoryId());
+		}
+		return isAdmin;
+	}
+	
 	protected boolean nonZeroString(String param){
 		if (param == null || param.equals("")){
 			return false;
@@ -157,21 +171,17 @@ public class ResourceBase {
 		return calendar;
 	}
 
-	protected UserInfo getUserInfo(HttpServletRequest httpRequest){
-		HttpSession session = httpRequest.getSession();
-		UserInfo  userInfo = (UserInfo) session.getAttribute("USER_INFO");
-		return userInfo;
-	}
-
-	protected void setSignature(UserInfo userInfo, NodeBase nodeBase){
-		nodeBase.setCreator(userInfo.userId);
+	protected void setFirstSignature(HttpServletRequest request, NodeBase nodeBase){
+		CallContext callContext = (CallContext)request.getAttribute("CallContext");
+		nodeBase.setCreator(callContext.getUsername());
 		nodeBase.setCreated(millisToCalendar(System.currentTimeMillis()));
-		nodeBase.setModifier(userInfo.userId);
+		nodeBase.setModifier(callContext.getUsername());
 		nodeBase.setModified(millisToCalendar(System.currentTimeMillis()));
 	}
 
-	protected void setModifiedSignature(UserInfo userInfo, NodeBase nodeBase){
-		nodeBase.setModifier(userInfo.userId);
+	protected void setModifiedSignature(HttpServletRequest request, NodeBase nodeBase){
+		CallContext callContext = (CallContext)request.getAttribute("CallContext");
+		nodeBase.setModifier(callContext.getUsername());
 		nodeBase.setModified(millisToCalendar(System.currentTimeMillis()));
 	}
 }

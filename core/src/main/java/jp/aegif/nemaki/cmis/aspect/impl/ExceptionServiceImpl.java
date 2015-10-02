@@ -30,22 +30,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 
-import jp.aegif.nemaki.businesslogic.ContentService;
-import jp.aegif.nemaki.businesslogic.PrincipalService;
-import jp.aegif.nemaki.cmis.aspect.ExceptionService;
-import jp.aegif.nemaki.cmis.aspect.PermissionService;
-import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
-import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
-import jp.aegif.nemaki.model.Acl;
-import jp.aegif.nemaki.model.Change;
-import jp.aegif.nemaki.model.Content;
-import jp.aegif.nemaki.model.Document;
-import jp.aegif.nemaki.model.Folder;
-import jp.aegif.nemaki.model.User;
-import jp.aegif.nemaki.model.VersionSeries;
-import jp.aegif.nemaki.util.DataUtil;
-import jp.aegif.nemaki.util.constant.DomainType;
-
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.Properties;
@@ -89,12 +73,28 @@ import org.springframework.beans.BeansException;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 
+import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.businesslogic.PrincipalService;
+import jp.aegif.nemaki.cmis.aspect.ExceptionService;
+import jp.aegif.nemaki.cmis.aspect.PermissionService;
+import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
+import jp.aegif.nemaki.model.Acl;
+import jp.aegif.nemaki.model.Change;
+import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.model.Document;
+import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.model.VersionSeries;
+import jp.aegif.nemaki.util.DataUtil;
+import jp.aegif.nemaki.util.constant.DomainType;
+
 public class ExceptionServiceImpl implements ExceptionService,
 		ApplicationContextAware {
 	private TypeManager typeManager;
 	private ContentService contentService;
 	private PermissionService permissionService;
-	private RepositoryInfo repositoryInfo;
+	private RepositoryInfoMap repositoryInfoMap;
 	private PrincipalService principalService;
 
 	private static final Log log = LogFactory
@@ -143,8 +143,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void invalidArgumentRootFolder(Content content) {
-		if (contentService.isRoot(content))
+	public void invalidArgumentRootFolder(String repositoryId, Content content) {
+		if (contentService.isRoot(repositoryId, content))
 			invalidArgument("Cannot specify the root folder as an input parameter");
 	}
 
@@ -181,23 +181,23 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void invalidArgumentRequiredParentFolderId(String folderId) {
-		if (!repositoryInfo.getCapabilities().isMultifilingSupported())
+	public void invalidArgumentRequiredParentFolderId(String repositoryId, String folderId) {
+		if (!repositoryInfoMap.get(repositoryId).getCapabilities().isMultifilingSupported())
 			invalidArgumentRequiredString("folderId", folderId);
 	}
 
 	@Override
-	public void invalidArgumentOrderBy(String orderBy) {
-		if (repositoryInfo.getCapabilities().getOrderByCapability() == CapabilityOrderBy.NONE
+	public void invalidArgumentOrderBy(String repositoryId, String orderBy) {
+		if (repositoryInfoMap.get(repositoryId).getCapabilities().getOrderByCapability() == CapabilityOrderBy.NONE
 				&& orderBy != null)
 			invalidArgument("OrderBy capability is not supported");
 	}
 
 	@Override
 	public void invalidArgumentChangeEventNotAvailable(
-			Holder<String> changeLogToken) {
+			String repositoryId, Holder<String> changeLogToken) {
 		if (changeLogToken != null && changeLogToken.getValue() != null) {
-			Change change = contentService.getChangeEvent(changeLogToken
+			Change change = contentService.getChangeEvent(repositoryId, changeLogToken
 					.getValue());
 			if (change == null)
 				invalidArgument("changeLogToken:" + changeLogToken.getValue()
@@ -207,14 +207,14 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void invalidArgumentCreatableType(TypeDefinition type) {
+	public void invalidArgumentCreatableType(String repositoryId, TypeDefinition type) {
 		String msg = "";
 
 		String parentId = type.getParentTypeId();
-		if (typeManager.getTypeById(parentId) == null) {
+		if (typeManager.getTypeById(repositoryId, parentId) == null) {
 			msg = "Specified parent type does not exist";
 		} else {
-			TypeDefinition parent = typeManager.getTypeById(parentId)
+			TypeDefinition parent = typeManager.getTypeById(repositoryId, parentId)
 					.getTypeDefinition();
 			if (parent.getTypeMutability() == null) {
 				msg = "Specified parent type does not have TypeMutability";
@@ -247,8 +247,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void invalidArgumentDeletableType(String typeId) {
-		TypeDefinition type = typeManager.getTypeDefinition(typeId);
+	public void invalidArgumentDeletableType(String repositoryId, String typeId) {
+		TypeDefinition type = typeManager.getTypeDefinition(repositoryId, typeId);
 
 		String msg = "";
 		TypeMutability typeMutability = type.getTypeMutability();
@@ -263,19 +263,19 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void invalidArgumentDoesNotExistType(String typeId) {
+	public void invalidArgumentDoesNotExistType(String repositoryId, String typeId) {
 		String msg = "";
 
-		TypeDefinition type = typeManager.getTypeDefinition(typeId);
+		TypeDefinition type = typeManager.getTypeDefinition(repositoryId, typeId);
 		if (type == null) {
 			msg = "Specified type does not exist";
-			msg = msg + " [objectTypeId = " + type.getId() + "]";
+			msg = msg + " [objectTypeId = " + typeId + "]";
 			invalidArgument(msg);
 		}
 	}
 
 	@Override
-	public void invalidArgumentSecondaryTypeIds(Properties properties) {
+	public void invalidArgumentSecondaryTypeIds(String repositoryId, Properties properties) {
 		if (properties == null)
 			return;
 		Map<String, PropertyData<?>> map = properties.getProperties();
@@ -288,7 +288,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 			return;
 		for (Object _id : ids.getValues()) {
 			String id = (String) _id;
-			TypeDefinitionContainer tdc = typeManager.getTypeById(id);
+			TypeDefinitionContainer tdc = typeManager.getTypeById(repositoryId, id);
 			if (tdc == null) {
 				results.add(id);
 			}
@@ -325,8 +325,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void objectNotFoundParentFolder(String id, Content content) {
-		if (!!repositoryInfo.getCapabilities().isMultifilingSupported())
+	public void objectNotFoundParentFolder(String repositoryId, String id, Content content) {
+		if (!repositoryInfoMap.get(repositoryId).getCapabilities().isMultifilingSupported())
 			objectNotFound(DomainType.OBJECT, content, id,
 					"The specified parent folder is not found");
 	}
@@ -336,26 +336,26 @@ public class ExceptionServiceImpl implements ExceptionService,
 	 */
 	// TODO Show also stack errors
 	@Override
-	public void permissionDenied(CallContext context, String key,
-			Content content) {
+	public void permissionDenied(CallContext context, String repositoryId,
+			String key, Content content) {
 		String baseTypeId = content.getType();
-		Acl acl = contentService.calculateAcl(content);
-		permissionDeniedInternal(context, key, acl, baseTypeId, content);
+		Acl acl = contentService.calculateAcl(repositoryId, content);
+		permissionDeniedInternal(context, repositoryId, key, acl, baseTypeId, content);
 	}
 
-	private void permissionDeniedInternal(CallContext callContext, String key,
-			Acl acl, String baseTypeId, Content content) {
+	private void permissionDeniedInternal(CallContext callContext, String repositoryId,
+			String key, Acl acl, String baseTypeId, Content content) {
 
-		if (!permissionService.checkPermission(callContext, key, acl,
-				baseTypeId, content)) {
+		if (!permissionService.checkPermission(callContext, repositoryId, key,
+				acl, baseTypeId, content)) {
 			String msg = "Permission Denied!";
 			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
 		}
 	}
 
 	@Override
-	public void perimissionAdmin(CallContext context) {
-		User admin = principalService.getAdmin();
+	public void perimissionAdmin(CallContext context, String repositoryId) {
+		User admin = principalService.getAdmin(repositoryId);
 
 		if (!admin.getUserId().equals(context.getUsername())) {
 			String msg = "This operation if permitted only for administrator";
@@ -378,10 +378,10 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void constraintBaseTypeId(Properties properties,
-			BaseTypeId baseTypeId) {
+	public void constraintBaseTypeId(String repositoryId,
+			Properties properties, BaseTypeId baseTypeId) {
 		String objectTypeId = DataUtil.getObjectTypeId(properties);
-		TypeDefinition td = typeManager.getTypeDefinition(objectTypeId);
+		TypeDefinition td = typeManager.getTypeDefinition(repositoryId, objectTypeId);
 
 		if (!td.getBaseTypeId().equals(baseTypeId))
 			constraint(null,
@@ -411,8 +411,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public <T> void constraintPropertyValue(TypeDefinition typeDefinition,
-			Properties properties, String objectId) {
+	public <T> void constraintPropertyValue(String repositoryId,
+			TypeDefinition typeDefinition, Properties properties, String objectId) {
 		Map<String, PropertyDefinition<?>> propertyDefinitions = typeDefinition
 				.getPropertyDefinitions();
 
@@ -422,7 +422,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 				PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
 		if (CollectionUtils.isNotEmpty(secIds)) {
 			for (String secId : secIds) {
-				TypeDefinition sec = typeManager.getTypeById(secId)
+				TypeDefinition sec = typeManager.getTypeById(repositoryId, secId)
 						.getTypeDefinition();
 				for (Entry<String, PropertyDefinition<?>> entry : sec
 						.getPropertyDefinitions().entrySet()) {
@@ -627,11 +627,11 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void constraintPermissionDefined(
-			org.apache.chemistry.opencmis.commons.data.Acl acl, String objectId) {
+			String repositoryId, org.apache.chemistry.opencmis.commons.data.Acl acl, String objectId) {
 		boolean aclIsEmpty = (acl == null)
 				|| (acl != null && CollectionUtils.isEmpty(acl.getAces())) ? true
 				: false;
-		List<PermissionDefinition> definitions = repositoryInfo
+		List<PermissionDefinition> definitions = repositoryInfoMap.get(repositoryId)
 				.getAclCapabilities().getPermissions();
 		List<String> definedIds = new ArrayList<String>();
 		for (PermissionDefinition pdf : definitions) {
@@ -679,9 +679,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void constraintVersionable(String typeId) {
+	public void constraintVersionable(String repositoryId, String typeId) {
 		DocumentTypeDefinition type = (DocumentTypeDefinition) typeManager
-				.getTypeDefinition(typeId);
+				.getTypeDefinition(repositoryId, typeId);
 		if (!type.isVersionable()) {
 			String msg = "Object type: " + type.getId() + " is not versionbale";
 			throw new CmisConstraintException(msg, HTTP_STATUS_CODE_409);
@@ -690,8 +690,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void constraintAlreadyCheckedOut(Document document) {
-		VersionSeries vs = contentService.getVersionSeries(document);
+	public void constraintAlreadyCheckedOut(String repositoryId, Document document) {
+		VersionSeries vs = contentService.getVersionSeries(repositoryId, document);
 		if (vs.isVersionSeriesCheckedOut()) {
 			if (!(document.isPrivateWorkingCopy())) {
 				constraint(document.getId(),
@@ -701,9 +701,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void constraintUpdateWhenCheckedOut(String currentUserId,
-			Document document) {
-		VersionSeries vs = contentService.getVersionSeries(document);
+	public void constraintUpdateWhenCheckedOut(String repositoryId,
+			String currentUserId, Document document) {
+		VersionSeries vs = contentService.getVersionSeries(repositoryId, document);
 		if (vs.isVersionSeriesCheckedOut()) {
 			if (document.isPrivateWorkingCopy()) {
 				// Can update by only the use who has checked it out
@@ -729,13 +729,13 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void constraintContentStreamRequired(Document document) {
+	public void constraintContentStreamRequired(String repositoryId, Document document) {
 		String objectTypeId = document.getObjectType();
 		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
-				.getTypeDefinition(objectTypeId);
+				.getTypeDefinition(repositoryId, objectTypeId);
 		if (td.getContentStreamAllowed() == ContentStreamAllowed.REQUIRED) {
 			if (document.getAttachmentNodeId() == null
-					|| contentService.getAttachment(document
+					|| contentService.getAttachment(repositoryId, document
 							.getAttachmentNodeId()) == null) {
 				constraint(document.getId(),
 						"This document type does not allow no content stream");
@@ -757,8 +757,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void constraintOnlyLeafTypeDefinition(String objectTypeId) {
-		TypeDefinitionContainer tdc = typeManager.getTypeById(objectTypeId);
+	public void constraintOnlyLeafTypeDefinition(String repositoryId, String objectTypeId) {
+		TypeDefinitionContainer tdc = typeManager.getTypeById(repositoryId, objectTypeId);
 		if (!CollectionUtils.isEmpty(tdc.getChildren())) {
 			String msg = "Cannot delete a type definition which has sub types"
 					+ " [objectTypeId = " + objectTypeId + "]";
@@ -767,8 +767,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void constraintObjectsStillExist(String objectTypeId) {
-		if (contentService.existContent(objectTypeId)) {
+	public void constraintObjectsStillExist(String repositoryId, String objectTypeId) {
+		if (contentService.existContent(repositoryId, objectTypeId)) {
 			String msg = "There still exists objects of the specified object type"
 					+ " [objectTypeId = " + objectTypeId + "]";
 			throw new CmisConstraintException(msg, HTTP_STATUS_CODE_409);
@@ -777,13 +777,13 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void constraintDuplicatePropertyDefinition(
-			TypeDefinition typeDefinition) {
+			String repositoryId, TypeDefinition typeDefinition) {
 		Map<String, PropertyDefinition<?>> props = typeDefinition
 				.getPropertyDefinitions();
 		if (MapUtils.isNotEmpty(props)) {
 			Set<String> keys = props.keySet();
 			TypeDefinition parent = typeManager
-					.getTypeDefinition(typeDefinition.getParentTypeId());
+					.getTypeDefinition(repositoryId, typeDefinition.getParentTypeId());
 			Map<String, PropertyDefinition<?>> parentProps = parent
 					.getPropertyDefinitions();
 			if (MapUtils.isNotEmpty(parentProps)) {
@@ -1024,9 +1024,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void constraintContentStreamDownload(Document document) {
+	public void constraintContentStreamDownload(String repositoryId, Document document) {
 		DocumentTypeDefinition documentTypeDefinition = (DocumentTypeDefinition) typeManager
-				.getTypeDefinition(document);
+				.getTypeDefinition(repositoryId, document);
 		ContentStreamAllowed csa = documentTypeDefinition
 				.getContentStreamAllowed();
 		if (ContentStreamAllowed.NOTALLOWED == csa
@@ -1049,10 +1049,10 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void constraintImmutable(Document document,
-			TypeDefinition typeDefinition) {
+	public void constraintImmutable(String repositoryId,
+			Document document, TypeDefinition typeDefinition) {
 		Boolean defaultVal = (Boolean) typeManager.getSingleDefaultValue(
-				PropertyIds.IS_IMMUTABLE, typeDefinition.getId());
+				PropertyIds.IS_IMMUTABLE, typeDefinition.getId(), repositoryId);
 
 		boolean flag = false;
 		if (document.isImmutable() == null) {
@@ -1086,8 +1086,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 		}
 	}
 	
-	public void constraintDeleteRootFolder(String objectId){
-		String rootFolderId = repositoryInfo.getRootFolderId();
+	public void constraintDeleteRootFolder(String repositoryId, String objectId){
+		String rootFolderId = repositoryInfoMap.get(repositoryId).getRootFolderId();
 		if(rootFolderId.equals(objectId)){
 			constraint(objectId, "Cannot delete root folder");
 		}
@@ -1186,8 +1186,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 		this.permissionService = permissionService;
 	}
 
-	public void setRepositoryInfo(RepositoryInfo repositoryInfo) {
-		this.repositoryInfo = repositoryInfo;
+	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
+		this.repositoryInfoMap = repositoryInfoMap;
 	}
 
 	public void setPrincipalService(PrincipalService principalService) {

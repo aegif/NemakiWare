@@ -37,19 +37,21 @@ public interface PermissionService {
 
 	/**
 	 * permissionDenied Exception check 
+	 * @param repositoryId TODO
 	 * @param content TODO
 	 * @return
 	 */
-	public Boolean checkPermission(CallContext context, String key, Acl acl, String baseObjectType, Content content);
+	public Boolean checkPermission(CallContext context, String repositoryId, String key, Acl acl, String baseObjectType, Content content);
 	
 	public boolean checkPermission(CallContext callContext, Action action, ObjectData objectData);
 	
 	/**
 	 * 
 	 * @param callContext
+	 * @param repositoryId TODO
 	 * @param contents
 	 * @return
 	 */
-	public <T> List<T> getFiltered(CallContext callContext,List<T>contents);
+	public <T> List<T> getFiltered(CallContext callContext,String repositoryId, List<T>contents);
 	
 }

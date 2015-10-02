@@ -1,6 +1,7 @@
 @import table._
 @import component._
 @import util.Util
+@import util.NemakiConfig
 @import constant.UpdateContext
 @import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition
 @import org.apache.chemistry.opencmis.client.api.Tree
@@ -10,12 +11,12 @@
 @import org.apache.chemistry.opencmis.commons.enums.BaseTypeId
 @import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed
 
-@(parentId:String)(objectType:ObjectType)
+@(repositoryId:String)(parentId:String)(objectType:ObjectType)
 
 @lightbox{
 	<!-- html -->
 	<div class="container">
-		@helper.form(action=routes.Node.create, 'id -> "node-blank-form", 'enctype -> "multipart/form-data"){
+		@helper.form(action=routes.Node.create(repositoryId), 'id -> "node-blank-form", 'enctype -> "multipart/form-data"){
 			<!-- caption -->
 			<div class="row">
 				@if(objectType.getBaseTypeId==BaseTypeId.CMIS_DOCUMENT){
@@ -100,12 +101,30 @@
 			var formData = new FormData();
 			@for(p <- objectType.getPropertyDefinitions().values()){
 				@if(Util.isEditableOnNodeBlank(p)){
-					formData.append("@p.getId",editedValue("#@p.getId"));	
+					var inputVal = editedValue("#@p.getId");
+
+					//Validation
+					@if(p.isRequired){
+						if(!inputVal){
+							alert("@NemakiConfig.getLabel(p.getId, lang().language) @Messages("view.message.is-required")");
+							return;  //End click event
+						}	
+
+					}
+					
+					//Add value
+					formData.append("@p.getId", inputVal);	
 				}
 			}
 
 			@if(objectType.getBaseTypeId==BaseTypeId.CMIS_DOCUMENT){
 				if(document.getElementById("file") != null){
+					//Validation: no file
+					if(!document.getElementById("file").files[0]){
+						window.alert("@Messages("view.node.validate.file")");
+						return;
+					}
+					
 					formData.append('file', document.getElementById("file").files[0]);	
 				}
 			}
@@ -113,10 +132,18 @@
 			formData.append("cmis:parentId", '@parentId');
 			formData.append("cmis:objectTypeId", '@objectType.getId');
 
+			
+			//Check duplicate
+			var duplicate = checkDuplicateOnUpdate(editedValue("#cmis:name"), "");
+			if(duplicate){
+				window.alert("@Messages("view.node.duplicate.alert.rename")");
+				return;
+			}
+			
 			//Ajax call
 			$(function(){
 				$.blockUI({message:"@Messages("view.message.please.wait")"});
-				$.ajax("@routes.Node.create().absoluteURL(request)",
+				$.ajax("@routes.Node.create(repositoryId)",
 				{
 					type: 'post',
 				    processData: false,
@@ -134,6 +161,18 @@
    					}
 				});
 			 });
+			
+			//duplicate name check
+			function checkDuplicateOnUpdate(newName, oldName){
+				//Read all names in the folder
+				var names = [];
+				var list = $('#objects-table').find('.obj-name');
+				list.map(function() {
+					names.push($(this).text());
+				});
+				
+				return (newName != oldName && $.inArray(newName, names) >= 0);
+			}
 			
 		});
 		
