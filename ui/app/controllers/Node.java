@@ -143,7 +143,7 @@ public class Node extends Controller {
 		List<CmisObject> list = new ArrayList<CmisObject>();
 		// Build WHERE clause(cmis:document)
 		MessageFormat docFormat = new MessageFormat(
-				"cmis:name LIKE ''%{0}%'' OR CONTAINS(''{0}'')");
+				"cmis:name LIKE ''%{0}%'' OR cmis:description LIKE ''%{0}%'' OR CONTAINS(''{0}'')");
 		String docStatement = "";
 		if (StringUtils.isNotBlank(term)) {
 			docStatement = docFormat.format(new String[] { term });
@@ -157,7 +157,7 @@ public class Node extends Controller {
 
 		// Build WHERE clause(cmis:folder)
 		MessageFormat folderFormat = new MessageFormat(
-				"cmis:name LIKE ''%{0}%''");
+				"cmis:name LIKE ''%{0}%'' OR cmis:description LIKE ''%{0}%''");
 		String folderStatement = "";
 		if (StringUtils.isNotBlank(term)) {
 			folderStatement = folderFormat.format(new String[] { term });
