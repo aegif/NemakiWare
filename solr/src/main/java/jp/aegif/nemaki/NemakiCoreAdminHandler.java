@@ -154,7 +154,7 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 
 		// Stop cron when executing action
 		try {
-			scheduler.standby();
+			if(scheduler != null) scheduler.standby();
 		} catch (SchedulerException e) {
 			e.printStackTrace();
 		}
@@ -164,7 +164,7 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 		
 		// Restart cron
 		try {
-			scheduler.start();
+			if(scheduler != null) scheduler.start();
 		} catch (SchedulerException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
