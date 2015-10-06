@@ -9,6 +9,7 @@ import java.net.URL;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 
 import org.apache.chemistry.opencmis.client.api.OperationContext;
 import org.apache.chemistry.opencmis.client.api.Repository;
@@ -146,6 +147,15 @@ public class CmisSessionFactory {
 	}
 	
 	private static void buildRepositorySettings(){
+		
+		
+		//TEST
+		pm.addValue("hoge", "fuga");
+		
+		
+		
+		
+		
 		SolrResourceLoader loader = new SolrResourceLoader(null);
 		try {
 			String location = pm.readValue(PropertyKey.REPOSITORIES_SETTING_FILE);
