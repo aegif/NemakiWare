@@ -146,8 +146,8 @@ public class CmisSessionFactory {
 	}
 	
 	private static void buildRepositorySettings(){
+		SolrResourceLoader loader = new SolrResourceLoader(null);
 		try {
-			SolrResourceLoader loader = new SolrResourceLoader(null);
 			String location = pm.readValue(PropertyKey.REPOSITORIES_SETTING_FILE);
 			InputStream in = loader.openResource(location);
 			
@@ -161,6 +161,13 @@ public class CmisSessionFactory {
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
+		}finally{
+			try {
+				loader.close();
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
 		}
 	}
 	
