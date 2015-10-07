@@ -1,9 +1,12 @@
 package jp.aegif.nemaki.util;
 
+import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.Writer;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.HashMap;
@@ -22,6 +25,7 @@ import org.apache.commons.collections.CollectionUtils;
 import org.apache.log4j.Logger;
 
 import com.esotericsoftware.yamlbeans.YamlReader;
+import com.esotericsoftware.yamlbeans.YamlWriter;
 
 import org.apache.solr.core.SolrResourceLoader;
 
@@ -147,24 +151,19 @@ public class CmisSessionFactory {
 	}
 	
 	private static void buildRepositorySettings(){
-		
-		
-		//TEST
-		pm.addValue("hoge", "fuga");
-		
-		
-		
-		
-		
+		String location = pm.readValue(PropertyKey.REPOSITORIES_SETTING_FILE);
+		CmisSessionFactory.repositorySettings = readRepositorySettings(location);
+	}
+	
+	private static RepositorySettings readRepositorySettings(String location){
 		SolrResourceLoader loader = new SolrResourceLoader(null);
 		try {
-			String location = pm.readValue(PropertyKey.REPOSITORIES_SETTING_FILE);
-			InputStream in = loader.openResource(location);
-			
+			InputStream in = loader.openResource(location); 
 			YamlReader reader = new YamlReader(new InputStreamReader(in));
 			reader.getConfig().setPropertyElementType(RepositorySettings.class, "settings", RepositorySetting.class);
 			RepositorySettings settings = reader.read(RepositorySettings.class);
-			CmisSessionFactory.repositorySettings = settings;
+			
+			return settings;
 		} catch (FileNotFoundException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -179,7 +178,36 @@ public class CmisSessionFactory {
 				e.printStackTrace();
 			}
 		}
+		return null;
 	}
+	
+	public static void modifyRepositorySettings(RepositorySettings settings){
+		String location = pm.readValue(PropertyKey.REPOSITORIES_SETTING_FILE);
+		SolrResourceLoader loader = new SolrResourceLoader(null);
+		try {
+			
+			String configDir = loader.getConfigDir();
+			File file = new File(configDir + location);
+			YamlWriter writer = new YamlWriter(new FileWriter(file));
+			writer.write(settings);
+			writer.close();
+		} catch (FileNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}finally{
+			try {
+				loader.close();
+				
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+	}
+	
 	
 	private static String getCmisUrl(String protocol, String host, String port,
 			String context, String wsEndpoint) {
