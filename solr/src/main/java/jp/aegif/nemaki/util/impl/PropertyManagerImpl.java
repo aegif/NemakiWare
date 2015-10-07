@@ -181,7 +181,7 @@ public class PropertyManagerImpl implements PropertyManager{
 	@Override
 	public void addValue(String key, String value){
 		String currentVal = config.getProperty(key);
-		String[] currentVals = currentVal.split(",");
+		String[] currentVals = (StringUtils.isEmpty(currentVal)) ? new String[0] : currentVal.split(",");
 		List<String>valList = new ArrayList<String>();
 		Collections.addAll(valList, currentVals);
 
