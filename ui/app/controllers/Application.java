@@ -70,7 +70,12 @@ public class Application extends Controller{
 	}
 
 	public static Result logout(String repositoryId){
+		//CMIS session
+		CmisSessions.disconnect(repositoryId, session());
+		
+		//Play session
 		session().remove("loginUserId");
+		
 		return redirect(routes.Application.login(repositoryId));
 	}
 	
