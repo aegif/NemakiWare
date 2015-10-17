@@ -71,7 +71,6 @@ import constant.Token;
 
 @Authenticated(Secured.class)
 public class Node extends Controller {
-	private static Map<String, Session> cmisSessions = new HashMap<String, Session>();
 	
 	private static Session getCmisSession(String repositoryId){
 		return CmisSessions.getCmisSession(repositoryId, session());
