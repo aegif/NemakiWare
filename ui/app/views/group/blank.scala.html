@@ -83,6 +83,10 @@
 				url : "@routes.Group.create(repositoryId)",
 				type: 'POST',
 				data : data,
+				success : function(data){
+					window.alert("@Messages("view.message.create.success")");
+					window.location.reload();
+				},
 				error : function(XMLHttpRequest, textStatus, errorThrown) {
 					window.alert("@Messages("view.message.create.failure")");
 				},
