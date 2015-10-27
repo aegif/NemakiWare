@@ -28,8 +28,9 @@
 						<li><a href="@routes.Application.logout(repositoryId)" id="logout"><i class="fa fa-sign-out"></i>@Messages("view.auth.logout")</a></li>
 					</ul>
 				</li>
-			
+
 				<!-- console -->
+				@if(session.get(Token.LOGIN_USER_IS_ADMIN) == "true"){
 				<li class="dropdown"><a href="#" class="dropdown-toggle"
 					data-toggle="dropdown"><i class="fa fa-cog"></i>@Messages("view.header.control-panel")<span class="caret"></span></a>
 					<ul class="dropdown-menu" role="menu">
@@ -42,7 +43,8 @@
 						}
 					</ul>
 				</li>
-					
+				}
+
 				<!-- search box -->
 				<li>
 			        <form class="navbar-form" role="search" action="@routes.Node.search(repositoryId)" method="GET">
@@ -70,7 +72,7 @@
 				showLightbox('user-detail-' + "@session.get(Token.LOGIN_USER_ID)", data);
 			});
 		});
-	
+
 		//binding: search engine cosole
 		$("#search-engine-console").click(function(){
 			$.ajax(jsRoutes.controllers.SearchEngine.index("@repositoryId")
