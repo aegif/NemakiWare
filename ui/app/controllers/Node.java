@@ -71,8 +71,8 @@ import constant.Token;
 
 @Authenticated(Secured.class)
 public class Node extends Controller {
-	
-	private static Session getCmisSession(String repositoryId){
+
+	private static Session getCmisSession(String repositoryId) {
 		return CmisSessions.getCmisSession(repositoryId, session());
 	}
 
@@ -116,15 +116,13 @@ public class Node extends Controller {
 		}
 
 		// Fill in CMIS types
-		List<Tree<ObjectType>> typeFolders = session.getTypeDescendants(
-				BaseTypeId.CMIS_FOLDER.value(), -1, false);
-		List<Tree<ObjectType>> typeDocs = session.getTypeDescendants(
-				BaseTypeId.CMIS_DOCUMENT.value(), -1, false);
+		List<Tree<ObjectType>> typeFolders = session.getTypeDescendants(BaseTypeId.CMIS_FOLDER.value(), -1, false);
+		List<Tree<ObjectType>> typeDocs = session.getTypeDescendants(BaseTypeId.CMIS_DOCUMENT.value(), -1, false);
 		List<Tree<ObjectType>> types = new ArrayList<Tree<ObjectType>>();
 		types.addAll(typeFolders);
 		types.addAll(typeDocs);
 
-		return ok(tree.render(repositoryId,_parent, results, types));
+		return ok(tree.render(repositoryId, _parent, results, types));
 	}
 
 	public static Result showChildrenByPath(String repositoryId, String path) {
@@ -141,31 +139,33 @@ public class Node extends Controller {
 
 		List<CmisObject> list = new ArrayList<CmisObject>();
 		// Build WHERE clause(cmis:document)
-		MessageFormat docFormat = new MessageFormat(
-				"cmis:name LIKE ''%{0}%'' OR cmis:description LIKE ''%{0}%'' OR CONTAINS(''{0}'')");
+		MessageFormat docFormat = new MessageFormat("cmis:name LIKE ''%{0}%'' OR cmis:description LIKE ''%{0}%'' OR CONTAINS(''{0}'')");
 		String docStatement = "";
 		if (StringUtils.isNotBlank(term)) {
 			docStatement = docFormat.format(new String[] { term });
 		}
-		ItemIterable<CmisObject> docResults = session.queryObjects(
-				"cmis:document", docStatement, false, ctxt);
+		ItemIterable<CmisObject> docResults = session.queryObjects("cmis:document", docStatement, false, ctxt);
 		Iterator<CmisObject> docItr = docResults.iterator();
 		while (docItr.hasNext()) {
-			list.add(docItr.next());
+			CmisObject doc = docItr.next();
+			boolean val = doc.getPropertyValue("cmis:isLatestVersion");
+			if (!val)
+				continue;
+			list.add(doc);
 		}
 
 		// Build WHERE clause(cmis:folder)
-		MessageFormat folderFormat = new MessageFormat(
-				"cmis:name LIKE ''%{0}%'' OR cmis:description LIKE ''%{0}%''");
-		String folderStatement = "";
-		if (StringUtils.isNotBlank(term)) {
-			folderStatement = folderFormat.format(new String[] { term });
-		}
-		ItemIterable<CmisObject> folderResults = session.queryObjects(
-				"cmis:folder", folderStatement, false, ctxt);
-		Iterator<CmisObject> folderItr = folderResults.iterator();
-		while (folderItr.hasNext()) {
-			list.add(folderItr.next());
+		if (false) { //フォルダはデフォルトでは検索しない
+			MessageFormat folderFormat = new MessageFormat("cmis:name LIKE ''%{0}%'' OR cmis:description LIKE ''%{0}%''");
+			String folderStatement = "";
+			if (StringUtils.isNotBlank(term)) {
+				folderStatement = folderFormat.format(new String[] { term });
+			}
+			ItemIterable<CmisObject> folderResults = session.queryObjects("cmis:folder", folderStatement, false, ctxt);
+			Iterator<CmisObject> folderItr = folderResults.iterator();
+			while (folderItr.hasNext()) {
+				list.add(folderItr.next());
+			}
 		}
 
 		return ok(search.render(repositoryId, term, list));
@@ -196,8 +196,7 @@ public class Node extends Controller {
 		// Get user
 		final String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 		final String endPoint = coreRestUri + "repo/" + repositoryId + "/user/";
-		JsonNode result = Util.getJsonResponse(session(), endPoint + "show/"
-				+ session().get(Token.LOGIN_USER_ID));
+		JsonNode result = Util.getJsonResponse(session(), endPoint + "show/" + session().get(Token.LOGIN_USER_ID));
 		model.User user = new model.User();
 		if ("success".equals(result.get("status").asText())) {
 			JsonNode _user = result.get("user");
@@ -287,19 +286,14 @@ public class Node extends Controller {
 		try {
 			if (request().getHeader("User-Agent").indexOf("MSIE") == -1) {
 				// Firefox, Opera 11
-				response().setHeader(
-						"Content-Disposition",
-						String.format(Locale.JAPAN,
-								"attachment; filename*=utf-8'jp'%s",
-								URLEncoder.encode(doc.getName(), "utf-8")));
+				response().setHeader("Content-Disposition", String
+						.format(Locale.JAPAN, "attachment; filename*=utf-8'jp'%s", URLEncoder
+								.encode(doc.getName(), "utf-8")));
 			} else {
 				// IE7, 8, 9
-				response().setHeader(
-						"Content-Disposition",
-						String.format(Locale.JAPAN,
-								"attachment; filename=\"%s\"", new String(doc
-										.getName().getBytes("MS932"),
-										"ISO8859_1")));
+				response().setHeader("Content-Disposition", String
+						.format(Locale.JAPAN, "attachment; filename=\"%s\"", new String(doc.getName()
+								.getBytes("MS932"), "ISO8859_1")));
 			}
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -341,8 +335,7 @@ public class Node extends Controller {
 
 		// TODO better solution for encoding file name
 
-		response().setHeader("Content-disposition",
-				"filename=" + obj.getName() + ".pdf");
+		response().setHeader("Content-disposition", "filename=" + obj.getName() + ".pdf");
 		response().setContentType(preview.getContentStream().getMimeType());
 		return ok(tmpFile, true);
 	}
@@ -376,18 +369,16 @@ public class Node extends Controller {
 		CmisObject obj = session.getObject(id);
 
 		// Get permission types
-		List<PermissionDefinition> permissionDefs = Util.trimForDisplay(session
-				.getRepositoryInfo().getAclCapabilities().getPermissions());
+		List<PermissionDefinition> permissionDefs = Util
+				.trimForDisplay(session.getRepositoryInfo().getAclCapabilities().getPermissions());
 
 		// Principals
 		List<Principal> members = new ArrayList<Principal>();
 		if (obj.getAcl() != null) {
 			List<Ace> list = obj.getAcl().getAces();
 			if (CollectionUtils.isNotEmpty(list)) {
-				String anyone = session.getRepositoryInfo()
-						.getPrincipalIdAnyone();
-				String anonymous = session.getRepositoryInfo()
-						.getPrincipalIdAnonymous();
+				String anyone = session.getRepositoryInfo().getPrincipalIdAnyone();
+				String anonymous = session.getRepositoryInfo().getPrincipalIdAnonymous();
 				for (Ace ace : list) {
 					String principalId = ace.getPrincipalId();
 					// call API
@@ -399,15 +390,14 @@ public class Node extends Controller {
 			}
 		}
 
-		return ok(views.html.node.permission.render(repositoryId, obj, members,
-				permissionDefs));
+		return ok(views.html.node.permission.render(repositoryId, obj, members, permissionDefs));
 	}
 
 	public static Result dragAndDrop(String repositoryId, String action) {
 		// Bind input parameters
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
-		
+
 		// Process the file
 		MultipartFormData body = request().body().asMultipartFormData();
 		List<FilePart> files = body.getFiles();
@@ -419,7 +409,7 @@ public class Node extends Controller {
 				dragAndDropCreate(repositoryId, files.get(0), input);
 			} else if ("update".equals(action)) {
 				dragAndDropUpdate(repositoryId, files.get(0), input);
-			} else{
+			} else {
 				System.out.println("Specify drag & drop action type");
 			}
 
@@ -427,16 +417,14 @@ public class Node extends Controller {
 		}
 	}
 
-	private static void setParam(Map<String, Object> param, DynamicForm input,
-			String key) {
+	private static void setParam(Map<String, Object> param, DynamicForm input, String key) {
 		param.put(key, Util.getFormData(input, key));
 	}
 
 	private static void dragAndDropCreate(String repositoryId, FilePart file, DynamicForm input) {
 		// Parse parameters
 		Map<String, Object> param = new HashMap<String, Object>();
-		ObjectId parentId = new ObjectIdImpl(Util.getFormData(input,
-				PropertyIds.PARENT_ID));
+		ObjectId parentId = new ObjectIdImpl(Util.getFormData(input, PropertyIds.PARENT_ID));
 		setParam(param, input, PropertyIds.OBJECT_TYPE_ID);
 		setParam(param, input, PropertyIds.NAME);
 
@@ -449,17 +437,16 @@ public class Node extends Controller {
 	private static void dragAndDropUpdate(String repositoryId, FilePart file, DynamicForm input) {
 		// Parse parameters
 		Map<String, Object> param = new HashMap<String, Object>();
-		ObjectId objectId = new ObjectIdImpl(Util.getFormData(input,
-				PropertyIds.OBJECT_ID));
+		ObjectId objectId = new ObjectIdImpl(Util.getFormData(input, PropertyIds.OBJECT_ID));
 		setParam(param, input, PropertyIds.OBJECT_TYPE_ID);
-		//setParam(param, input, PropertyIds.NAME);
+		// setParam(param, input, PropertyIds.NAME);
 
 		// Execute
 		Session session = getCmisSession(repositoryId);
 		ContentStream cs = Util.convertFileToContentStream(session, file);
 		Document d0 = (Document) session.getObject(objectId);
 		Document d1 = d0.setContentStream(cs, true);
-		//d1.updateProperties(param);
+		// d1.updateProperties(param);
 	}
 
 	public static Result create(String repositoryId) {
@@ -467,8 +454,7 @@ public class Node extends Controller {
 		input = input.bindFromRequest();
 
 		// Extract special property
-		String objectTypeId = Util.getFormData(input,
-				PropertyIds.OBJECT_TYPE_ID);
+		String objectTypeId = Util.getFormData(input, PropertyIds.OBJECT_TYPE_ID);
 		String _parentId = Util.getFormData(input, PropertyIds.PARENT_ID);
 		ObjectId parentId = new ObjectIdImpl(_parentId);
 
@@ -481,8 +467,7 @@ public class Node extends Controller {
 		ObjectType objectType = session.getTypeDefinition(objectTypeId);
 
 		// Set CMIS parameter
-		Map<String, PropertyDefinition<?>> pdfs = session.getTypeDefinition(
-				objectTypeId).getPropertyDefinitions();
+		Map<String, PropertyDefinition<?>> pdfs = session.getTypeDefinition(objectTypeId).getPropertyDefinitions();
 		List<Updatability> upds = new ArrayList<Updatability>();
 		upds.add(Updatability.ONCREATE);
 		upds.add(Updatability.READWRITE);
@@ -492,8 +477,7 @@ public class Node extends Controller {
 		// Document/Folder specific
 		switch (Util.getBaseType(session, objectTypeId)) {
 		case CMIS_DOCUMENT:
-			ContentStreamAllowed csa = ((DocumentTypeDefinition) objectType)
-					.getContentStreamAllowed();
+			ContentStreamAllowed csa = ((DocumentTypeDefinition) objectType).getContentStreamAllowed();
 			if (csa == ContentStreamAllowed.REQUIRED) {
 				List<FilePart> files = null;
 				MultipartFormData body = request().body().asMultipartFormData();
@@ -503,16 +487,13 @@ public class Node extends Controller {
 
 				if (CollectionUtils.isEmpty(files)) {
 					// TODO error
-					System.err.println(objectTypeId
-							+ ":This type requires a file");
+					System.err.println(objectTypeId + ":This type requires a file");
 				} else {
-					ContentStream cs = Util.convertFileToContentStream(session,
-							files.get(0));
+					ContentStream cs = Util.convertFileToContentStream(session, files.get(0));
 					if (param.get(PropertyIds.NAME) == null) {
 						param.put(PropertyIds.NAME, cs.getFileName());
 					}
-					session.createDocument(param, parentId, cs,
-							VersioningState.MAJOR);
+					session.createDocument(param, parentId, cs, VersioningState.MAJOR);
 				}
 			} else if (csa == ContentStreamAllowed.ALLOWED) {
 				// Retrieve a file
@@ -524,18 +505,15 @@ public class Node extends Controller {
 
 				// Set content stream if there is a file
 				if (CollectionUtils.isNotEmpty(files)) {
-					ContentStream cs = Util.convertFileToContentStream(session,
-							files.get(0));
+					ContentStream cs = Util.convertFileToContentStream(session, files.get(0));
 					if (param.get(PropertyIds.NAME) == null) {
 						param.put(PropertyIds.NAME, cs.getFileName());
 					}
-					session.createDocument(param, parentId, cs,
-							VersioningState.MAJOR);
+					session.createDocument(param, parentId, cs, VersioningState.MAJOR);
 				}
 			} else if (csa == ContentStreamAllowed.NOTALLOWED) {
 				// don't set content stream
-				session.createDocument(param, parentId, null,
-						VersioningState.MAJOR);
+				session.createDocument(param, parentId, null, VersioningState.MAJOR);
 			}
 
 			break;
@@ -547,9 +525,9 @@ public class Node extends Controller {
 
 		}
 
-		if(dragAndDrop){
+		if (dragAndDrop) {
 			return ok();
-		}else{
+		} else {
 			return redirectToParent(repositoryId, input);
 		}
 	}
@@ -562,11 +540,10 @@ public class Node extends Controller {
 		// Get input form data
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
-		
+
 		// Build upadte properties
 		Map<String, Object> properties = new HashMap<String, Object>();
-		for (Entry<String, PropertyDefinition<?>> entry : o.getType()
-				.getPropertyDefinitions().entrySet()) {
+		for (Entry<String, PropertyDefinition<?>> entry : o.getType().getPropertyDefinitions().entrySet()) {
 			PropertyDefinition<?> pdf = entry.getValue();
 			if (Updatability.READWRITE == pdf.getUpdatability()) {
 				// TODO work around
@@ -655,24 +632,19 @@ public class Node extends Controller {
 					addAces.add(newAce);
 				} else {
 					// add or remove permissions of an existing ACE row
-					List<String> original = (originalAce.isDirect()) ? originalAce
-							.getPermissions() : new ArrayList<String>();
-					List<String> remove = Util.difference(original,
-							newAce.getPermissions());
-					List<String> add = Util.difference(newAce.getPermissions(),
-							original);
+					List<String> original = (originalAce.isDirect()) ? originalAce.getPermissions()
+							: new ArrayList<String>();
+					List<String> remove = Util.difference(original, newAce.getPermissions());
+					List<String> add = Util.difference(newAce.getPermissions(), original);
 
-					AccessControlPrincipalDataImpl principal = new AccessControlPrincipalDataImpl(
-							principalId);
+					AccessControlPrincipalDataImpl principal = new AccessControlPrincipalDataImpl(principalId);
 					if (CollectionUtils.isNotEmpty(add)) {
-						Ace addAce = new AccessControlEntryImpl(principal,
-								new ArrayList<String>(add));
+						Ace addAce = new AccessControlEntryImpl(principal, new ArrayList<String>(add));
 						addAces.add(addAce);
 					}
 
 					if (CollectionUtils.isNotEmpty(remove)) {
-						Ace removeAce = new AccessControlEntryImpl(principal,
-								new ArrayList<String>(remove));
+						Ace removeAce = new AccessControlEntryImpl(principal, new ArrayList<String>(remove));
 						removeAces.add(removeAce);
 					}
 				}
@@ -696,8 +668,7 @@ public class Node extends Controller {
 
 	private static Ace convertNoneAce(String principalId, Ace ace) {
 		if (CollectionUtils.isEmpty(ace.getPermissions())) {
-			AccessControlPrincipalDataImpl principal = new AccessControlPrincipalDataImpl(
-					principalId);
+			AccessControlPrincipalDataImpl principal = new AccessControlPrincipalDataImpl(principalId);
 			List<String> cmisNone = Arrays.asList("cmis:none");
 			Ace none = new AccessControlEntryImpl(principal, cmisNone);
 			return none;
@@ -709,8 +680,7 @@ public class Node extends Controller {
 	private static Ace buildAce(String principalId, List<String> permission) {
 
 		AccessControlEntryImpl ace = new AccessControlEntryImpl();
-		AccessControlPrincipalDataImpl principal = new AccessControlPrincipalDataImpl(
-				principalId);
+		AccessControlPrincipalDataImpl principal = new AccessControlPrincipalDataImpl(principalId);
 		ace.setPrincipal(principal);
 		ace.setPermissions(permission);
 
@@ -725,8 +695,7 @@ public class Node extends Controller {
 		Session session = getCmisSession(repositoryId);
 		CmisObject o = session.getObject(id);
 		if (o.getType() instanceof DocumentTypeDefinition) {
-			ContentStreamAllowed csa = ((DocumentTypeDefinition) (o.getType()))
-					.getContentStreamAllowed();
+			ContentStreamAllowed csa = ((DocumentTypeDefinition) (o.getType())).getContentStreamAllowed();
 			if (csa == ContentStreamAllowed.NOTALLOWED) {
 				return redirectToParent(repositoryId, input);
 			}
@@ -821,8 +790,7 @@ public class Node extends Controller {
 		ContentStream cs = Util.convertFileToContentStream(session, file);
 
 		// Comment
-		String checkinComment = Util.getFormData(input,
-				PropertyIds.CHECKIN_COMMENT);
+		String checkinComment = Util.getFormData(input, PropertyIds.CHECKIN_COMMENT);
 
 		// Execute
 		Map<String, Object> param = new HashMap<String, Object>();
@@ -831,8 +799,7 @@ public class Node extends Controller {
 		return redirectToParent(repositoryId, input);
 	}
 
-	private static Principal getPrincipal(String repositoryId, String principalId,
-			String anyone, String anonymous) {
+	private static Principal getPrincipal(String repositoryId, String principalId, String anyone, String anonymous) {
 		// anyone
 		if (anyone.equals(principalId)) {
 			return new Principal("group", anyone, anyone);
@@ -846,24 +813,21 @@ public class Node extends Controller {
 		String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 
 		// user
-		JsonNode resultUser = Util.getJsonResponse(session(), coreRestUri
-				+ "repo/" + repositoryId + "/user/show/" + principalId);
+		JsonNode resultUser = Util
+				.getJsonResponse(session(), coreRestUri + "repo/" + repositoryId + "/user/show/" + principalId);
 		// TODO check status
 		JsonNode user = resultUser.get("user");
 		if (user != null) {
-			Principal p = new Principal("user", user.get("userId").asText(),
-					user.get("userName").asText());
+			Principal p = new Principal("user", user.get("userId").asText(), user.get("userName").asText());
 			return p;
 		}
 
 		// group
-		JsonNode resultGroup = Util.getJsonResponse(session(), coreRestUri
-				+ "group/show/" + principalId);
+		JsonNode resultGroup = Util.getJsonResponse(session(), coreRestUri + "group/show/" + principalId);
 		// TODO check status
 		JsonNode group = resultGroup.get("group");
 		if (group != null) {
-			Principal p = new Principal("group", group.get("groupId").asText(),
-					group.get("groupName").asText());
+			Principal p = new Principal("group", group.get("groupId").asText(), group.get("groupName").asText());
 			return p;
 		}
 
