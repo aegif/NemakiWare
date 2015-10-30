@@ -2,3 +2,9 @@ settings:
   bedroom: 
     user: admin
     password: admin
+  canopy: 
+    user: admin
+    password: admin
+  aegif: 
+    user: admin
+    password: admin

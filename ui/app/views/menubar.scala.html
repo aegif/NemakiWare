@@ -24,6 +24,7 @@
 					</a>
 					<ul class="dropdown-menu" role="menu">
 						<li><a href="#" id="account" user-id='@session.get(Token.LOGIN_USER_ID)'><i class="fa fa-user"></i>@Messages("view.auth.account")</a></li>
+						<li><a href="#" id="password-changer" user-id='@session.get(Token.LOGIN_USER_ID)'><i class="fa fa-user"></i>@Messages("view.user.change-password.caption")</a></li>
 						<li><a href="@routes.User.showFavorites(repositoryId, session.get(Token.LOGIN_USER_ID))" id="favorites"><i class="fa fa-star"></i>お気に入り</a></li>
 						<li><a href="@routes.Application.logout(repositoryId)" id="logout"><i class="fa fa-sign-out"></i>@Messages("view.auth.logout")</a></li>
 					</ul>
@@ -72,6 +73,15 @@
 				showLightbox('user-detail-' + "@session.get(Token.LOGIN_USER_ID)", data);
 			});
 		});
+
+		//binding: changePassword
+		$('#password-changer').click(function(){
+			$.ajax(jsRoutes.controllers.User.showPasswordChanger("@repositoryId", "@session.get(Token.LOGIN_USER_ID)")
+			).done(function(data){
+				showLightbox('user-password-' + "@session.get(Token.LOGIN_USER_ID)", data);
+			});
+		});
+
 
 		//binding: search engine cosole
 		$("#search-engine-console").click(function(){

@@ -43,6 +43,7 @@ import javax.ws.rs.core.MediaType;
 
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.util.AuthenticationUtil;
 
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.collections.CollectionUtils;
@@ -59,7 +60,7 @@ import org.springframework.stereotype.Component;
 public class UserResource extends ResourceBase {
 
 	PrincipalService principalService;
-	
+
 	@SuppressWarnings("unchecked")
 	@GET
 	@Path("/list")
@@ -97,8 +98,8 @@ public class UserResource extends ResourceBase {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		//Validation
-		if(StringUtils.isBlank(userId)){
+		// Validation
+		if (StringUtils.isBlank(userId)) {
 			status = false;
 			addErrMsg(errMsg, ITEM_USERID, ERR_MANDATORY);
 		}
@@ -109,15 +110,15 @@ public class UserResource extends ResourceBase {
 			status = false;
 			addErrMsg(errMsg, ITEM_USER, ERR_NOTFOUND);
 		} else {
-			result.put("user",  convertUserToJson(user));
+			result.put("user", convertUserToJson(user));
 		}
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
 	}
 
 	/**
-	 * Search user by id
-	 * TODO Use Solr
+	 * Search user by id TODO Use Solr
+	 *
 	 * @param query
 	 * @return
 	 */
@@ -156,12 +157,9 @@ public class UserResource extends ResourceBase {
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.APPLICATION_FORM_URLENCODED)
 	public String create(@PathParam("repositoryId") String repositoryId, @PathParam("id") String userId,
-			@FormParam(FORM_USERNAME) String name,
-			@FormParam(FORM_PASSWORD) String password,
-			@FormParam(FORM_FIRSTNAME) String firstName,
-			@FormParam(FORM_LASTNAME) String lastName,
-			@FormParam(FORM_EMAIL) String email,
-			@Context HttpServletRequest httpRequest) {
+			@FormParam(FORM_USERNAME) String name, @FormParam(FORM_PASSWORD) String password,
+			@FormParam(FORM_FIRSTNAME) String firstName, @FormParam(FORM_LASTNAME) String lastName,
+			@FormParam(FORM_EMAIL) String email, @Context HttpServletRequest httpRequest) {
 
 		boolean status = true;
 		JSONObject result = new JSONObject();
@@ -181,11 +179,10 @@ public class UserResource extends ResourceBase {
 			// Generate a password hash
 			String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
 
-			User user = new User(userId, name, firstName, lastName, email,
-					passwordHash);
+			User user = new User(userId, name, firstName, lastName, email, passwordHash);
 			setFirstSignature(httpRequest, user);
 
-			//TODO Error handling
+			// TODO Error handling
 			principalService.createUser(repositoryId, user);
 
 		}
@@ -194,28 +191,78 @@ public class UserResource extends ResourceBase {
 	}
 
 	@PUT
-	@Path("/update/{id}")
+	@Path("/changePassword/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.APPLICATION_FORM_URLENCODED)
-	public String update(@PathParam("repositoryId") String repositoryId, @PathParam("id") String userId,
-			@FormParam(FORM_USERNAME) String name,
-			@FormParam(FORM_FIRSTNAME) String firstName,
-			@FormParam(FORM_LASTNAME) String lastName,
-			@FormParam(FORM_EMAIL) String email,
-			@FormParam("addFavorites") String addFavorites,
-			@FormParam("removeFavorites") String removeFavorites,
-			@FormParam(FORM_PASSWORD) String password,
+	public String changePassword(@PathParam("repositoryId") String repositoryId, @PathParam("id") String userId,
+			@FormParam(FORM_OLDPASSWORD) String oldPassword, @FormParam(FORM_NEWPASSWORD) String newPassword,
 			@Context HttpServletRequest httpRequest) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		//Existing user
 		User user = principalService.getUserById(repositoryId, userId);
 
 		// Validation
 		status = checkAuthorityForUser(status, errMsg, httpRequest, userId, repositoryId);
-		//status = validateUser(status, errMsg, userId, name, firstName, lastName);
+		if (status) {
+
+			if (!AuthenticationUtil.passwordMatches(oldPassword, user.getPasswordHash())) {
+				status = false;
+				addErrMsg(errMsg, ITEM_USER, ERR_UPDATE);
+			}
+
+			// Edit & Update
+			if (status) {
+				// Edit the user info
+				String passwordHash = BCrypt.hashpw(newPassword, BCrypt.gensalt());
+				user.setPasswordHash(passwordHash);
+				setModifiedSignature(httpRequest, user);
+
+				try {
+					principalService.updateUser(repositoryId, user);
+				} catch (Exception e) {
+					e.printStackTrace();
+					status = false;
+					addErrMsg(errMsg, ITEM_USER, ERR_UPDATE);
+				}
+
+				setModifiedSignature(httpRequest, user);
+
+				try {
+					principalService.updateUser(repositoryId, user);
+				} catch (Exception e) {
+					e.printStackTrace();
+					status = false;
+					addErrMsg(errMsg, ITEM_USER, ERR_UPDATE);
+				}
+			}
+		}
+		makeResult(status, result, errMsg);
+		return result.toJSONString();
+
+	}
+
+	@PUT
+	@Path("/update/{id}")
+	@Produces(MediaType.APPLICATION_JSON)
+	@Consumes(MediaType.APPLICATION_FORM_URLENCODED)
+	public String update(@PathParam("repositoryId") String repositoryId, @PathParam("id") String userId,
+			@FormParam(FORM_USERNAME) String name, @FormParam(FORM_FIRSTNAME) String firstName,
+			@FormParam(FORM_LASTNAME) String lastName, @FormParam(FORM_EMAIL) String email,
+			@FormParam("addFavorites") String addFavorites, @FormParam("removeFavorites") String removeFavorites,
+			@FormParam(FORM_PASSWORD) String password, @Context HttpServletRequest httpRequest) {
+		boolean status = true;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		// Existing user
+		User user = principalService.getUserById(repositoryId, userId);
+
+		// Validation
+		status = checkAuthorityForUser(status, errMsg, httpRequest, userId, repositoryId);
+		// status = validateUser(status, errMsg, userId, name, firstName,
+		// lastName);
 
 		// Edit & Update
 		if (status) {
@@ -231,33 +278,33 @@ public class UserResource extends ResourceBase {
 				user.setLastName(lastName);
 			if (email != null)
 				user.setEmail(email);
-			if(addFavorites != null){
+			if (addFavorites != null) {
 				try {
-					JSONArray l = (JSONArray)(new JSONParser().parse(addFavorites));
-					Set<String>fs = user.getFavorites();
-					if(CollectionUtils.isEmpty(fs)){
+					JSONArray l = (JSONArray) (new JSONParser().parse(addFavorites));
+					Set<String> fs = user.getFavorites();
+					if (CollectionUtils.isEmpty(fs)) {
 						fs = new HashSet<String>();
 					}
 					fs.addAll(l);
 					user.setFavorites(fs);
 					System.out.println();
-					//fs.addAll(l);
+					// fs.addAll(l);
 				} catch (ParseException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
 				}
 			}
-			if(removeFavorites != null){
+			if (removeFavorites != null) {
 				try {
-					JSONArray l = (JSONArray)(new JSONParser().parse(removeFavorites));
+					JSONArray l = (JSONArray) (new JSONParser().parse(removeFavorites));
 					user.getFavorites().removeAll(l);
 				} catch (ParseException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
 				}
 			}
-			if (StringUtils.isNotBlank(password)){
-				//TODO Error handling
+			if (StringUtils.isNotBlank(password)) {
+				// TODO Error handling
 				user = principalService.getUserById(repositoryId, userId);
 
 				// Edit & Update
@@ -267,9 +314,9 @@ public class UserResource extends ResourceBase {
 					user.setPasswordHash(passwordHash);
 					setModifiedSignature(httpRequest, user);
 
-					try{
+					try {
 						principalService.updateUser(repositoryId, user);
-					}catch(Exception e){
+					} catch (Exception e) {
 						e.printStackTrace();
 						status = false;
 						addErrMsg(errMsg, ITEM_USER, ERR_UPDATE);
@@ -278,9 +325,9 @@ public class UserResource extends ResourceBase {
 			}
 			setModifiedSignature(httpRequest, user);
 
-			try{
+			try {
 				principalService.updateUser(repositoryId, user);
-			}catch(Exception e){
+			} catch (Exception e) {
 				e.printStackTrace();
 				status = false;
 				addErrMsg(errMsg, ITEM_USER, ERR_UPDATE);
@@ -300,9 +347,9 @@ public class UserResource extends ResourceBase {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		//Existing user
+		// Existing user
 		User user = principalService.getUserById(repositoryId, userId);
-		if(user == null){
+		if (user == null) {
 			status = false;
 			addErrMsg(errMsg, ITEM_USER, ERR_NOTFOUND);
 		}
@@ -324,8 +371,8 @@ public class UserResource extends ResourceBase {
 		return result.toJSONString();
 	}
 
-	private boolean validateUser(boolean status, JSONArray errMsg,
-			String userId, String userName, String firstName, String lastName) {
+	private boolean validateUser(boolean status, JSONArray errMsg, String userId, String userName, String firstName,
+			String lastName) {
 		if (StringUtils.isBlank(userId)) {
 			status = false;
 			addErrMsg(errMsg, ITEM_USERID, ERR_MANDATORY);
@@ -339,13 +386,13 @@ public class UserResource extends ResourceBase {
 		return status;
 	}
 
-	private boolean validateNewUser(boolean status, JSONArray errMsg,
-			String userId, String userName, String firstName, String lastName, String password, String repositoryId) {
+	private boolean validateNewUser(boolean status, JSONArray errMsg, String userId, String userName, String firstName,
+			String lastName, String password, String repositoryId) {
 		status = validateUser(status, errMsg, userId, userName, firstName, lastName);
 
-		//userID uniqueness
+		// userID uniqueness
 		User user = principalService.getUserById(repositoryId, userId);
-		if(user != null){
+		if (user != null) {
 			status = false;
 			addErrMsg(errMsg, ITEM_USERID, ERR_ALREADYEXISTS);
 		}
@@ -388,30 +435,30 @@ public class UserResource extends ResourceBase {
 		userJSON.put(ITEM_CREATED, created);
 		userJSON.put(ITEM_MODIFIER, user.getModifier());
 		userJSON.put(ITEM_MODIFIED, modified);
-		
-		boolean isAdmin = (user.isAdmin() == null) ? false : true; 
+
+		boolean isAdmin = (user.isAdmin() == null) ? false : true;
 		userJSON.put(ITEM_IS_ADMIN, isAdmin);
 
 		JSONArray jfs = new JSONArray();
-		Set<String>ufs = user.getFavorites();
-		if(CollectionUtils.isNotEmpty(ufs)){
+		Set<String> ufs = user.getFavorites();
+		if (CollectionUtils.isNotEmpty(ufs)) {
 			Iterator<String> ufsItr = ufs.iterator();
-			while(ufsItr.hasNext()){
+			while (ufsItr.hasNext()) {
 				jfs.add(ufsItr.next());
 			}
 		}
 		userJSON.put("favorites", jfs);
-		
+
 		return userJSON;
 	}
 
-	private boolean checkAuthorityForUser(boolean status, JSONArray errMsg, HttpServletRequest httpRequest, String resoureId, String repositoryId){
-		CallContext callContext =(CallContext) httpRequest.getAttribute("CallContext");
+	private boolean checkAuthorityForUser(boolean status, JSONArray errMsg, HttpServletRequest httpRequest,
+			String resoureId, String repositoryId) {
+		CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
 
 		String userId = callContext.getUsername();
 		String password = callContext.getPassword();
-		if(!userId.equals(resoureId) &&
-				!isAdmin(repositoryId, userId, password) ){
+		if (!userId.equals(resoureId) && !isAdmin(repositoryId, userId, password)) {
 			status = false;
 			addErrMsg(errMsg, ITEM_USER, ERR_NOTAUTHENTICATED);
 		}
@@ -419,20 +466,21 @@ public class UserResource extends ResourceBase {
 	}
 
 	private boolean isAdmin(String repositoryId, String userId, String password) {
-		if(StringUtils.isBlank(userId) || StringUtils.isBlank(password)){
+		if (StringUtils.isBlank(userId) || StringUtils.isBlank(password)) {
 			return false;
 		}
 
 		User user = principalService.getUserById(repositoryId, userId);
 		boolean isAdmin = (user.isAdmin() == null) ? false : user.isAdmin();
-		if(isAdmin){
-			//password check
+		if (isAdmin) {
+			// password check
 			boolean match = BCrypt.checkpw(password, user.getPasswordHash());
-			if(match) return true;
+			if (match)
+				return true;
 		}
 		return false;
 	}
-	
+
 	public void setPrincipalService(PrincipalService principalService) {
 		this.principalService = principalService;
 	}
