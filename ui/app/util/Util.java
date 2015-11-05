@@ -50,6 +50,7 @@ import org.apache.commons.collections.MapUtils;
 import org.apache.http.Header;
 import org.apache.http.HttpRequest;
 import org.apache.http.HttpResponse;
+import org.apache.http.HttpStatus;
 import org.apache.http.NameValuePair;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.Credentials;
@@ -346,6 +347,10 @@ public class Util {
 	private static JsonNode executeRequest(HttpClient client, HttpRequest request){
 		try {
 			HttpResponse response = client.execute((HttpUriRequest) request);
+			int responseStatus = response.getStatusLine().getStatusCode();
+			if (HttpStatus.SC_OK != responseStatus) {
+				throw new Exception("Solr server connection failed");
+			}
 
 			InputStream is = response.getEntity().getContent();
 
@@ -365,10 +370,10 @@ public class Util {
 			return jn;
 
 		} catch (ClientProtocolException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (Exception e) {
 			e.printStackTrace();
 		}
 

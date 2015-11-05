@@ -60,6 +60,14 @@ import org.springframework.stereotype.Component;
 public class UserResource extends ResourceBase {
 
 	PrincipalService principalService;
+	public void setPrincipalService(PrincipalService principalService) {
+		this.principalService = principalService;
+	}
+
+	SolrResource solrResource;
+	public void setSolrResource(SolrResource value){
+		this.solrResource = value;
+	}
 
 	@SuppressWarnings("unchecked")
 	@GET
@@ -228,13 +236,21 @@ public class UserResource extends ResourceBase {
 				}
 
 				setModifiedSignature(httpRequest, user);
-
 				try {
 					principalService.updateUser(repositoryId, user);
 				} catch (Exception e) {
 					e.printStackTrace();
 					status = false;
 					addErrMsg(errMsg, ITEM_USER, ERR_UPDATE);
+				}
+
+				if(status & user.isAdmin()){
+					JSONObject capResult = solrResource.changeAdminPasswordImpl(repositoryId, newPassword, oldPassword, httpRequest);
+					if (capResult.get(ITEM_STATUS).toString()  != SUCCESS){
+						// TODO: Error handling
+						status = false;
+						addErrMsg(errMsg, ITEM_USER, capResult.get(ITEM_ERROR).toString());
+					}
 				}
 			}
 		}
@@ -481,7 +497,5 @@ public class UserResource extends ResourceBase {
 		return false;
 	}
 
-	public void setPrincipalService(PrincipalService principalService) {
-		this.principalService = principalService;
-	}
+
 }

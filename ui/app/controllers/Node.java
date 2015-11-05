@@ -41,6 +41,7 @@ import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisUnauthorizedException;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
 import org.apache.commons.collections.CollectionUtils;
@@ -78,8 +79,13 @@ public class Node extends Controller {
 
 	public static Result index(String repositoryId) {
 		Session session = getCmisSession(repositoryId);
-		Folder root = session.getRootFolder();
-		return showChildren(repositoryId, root.getId());
+		try{
+			Folder root = session.getRootFolder();
+			return showChildren(repositoryId, root.getId());
+		}catch(CmisUnauthorizedException ex){
+			CmisSessions.disconnect(repositoryId, session());
+			return redirect(routes.Application.login(repositoryId));
+		}
 	}
 
 	public static Result showChildren(String repositoryId, String id) {
