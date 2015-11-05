@@ -147,13 +147,19 @@ public class SolrResource extends ResourceBase {
 	public String changeAdminPassword(@FormParam("repositoryId") String repositoryId,
 			@FormParam("password") String password, @FormParam("currentPassword") String currentPassword,
 			@Context HttpServletRequest request) {
+		JSONObject result = changeAdminPasswordImpl(repositoryId, password, currentPassword, request);
+		return result.toString();
+	}
+
+	public  JSONObject changeAdminPasswordImpl(String repositoryId, String password, String currentPassword,
+			HttpServletRequest request) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
 		// Check admin
 		if (!checkAdmin(errMsg, request)) {
-			return makeResult(status, result, errMsg).toString();
+			return makeResult(status, result, errMsg);
 		}
 
 		// Call Solr
@@ -193,8 +199,7 @@ public class SolrResource extends ResourceBase {
 		}
 
 		// Output
-		result = makeResult(status, result, errMsg);
-		return result.toString();
+		return makeResult(status, result, errMsg);
 	}
 
 	private boolean checkSuccess(String xml) throws Exception {

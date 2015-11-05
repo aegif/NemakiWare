@@ -21,7 +21,7 @@
     <bean id="CmisLifecycleBean" class="jp.aegif.nemaki.cmis.factory.CmisLifecycleBean" >
         <property name="cmisServiceFactory" ref="CmisServiceFactory" />
     </bean>
-	
+
     <bean id="CmisServiceFactory" class="jp.aegif.nemaki.cmis.factory.CmisServiceFactory"
     init-method="setup" depends-on="cmisService">
         <property name="propertyManager">
@@ -34,7 +34,7 @@
         	<ref bean="cmisService" />
         </property>
     </bean>
-   
+
 	<bean id="cmisService" class="jp.aegif.nemaki.cmis.factory.CmisService">
 		<property name="repositoryService">
             <ref bean="RepositoryService" />
@@ -128,7 +128,7 @@
     <bean id="repositoryService"
         class="jp.aegif.nemaki.cmis.service.impl.RepositoryServiceImpl"
         depends-on="repositoryInfoMap">
-        
+
         <property name="repositoryInfoMap">
             <ref bean="repositoryInfoMap" />
         </property>
@@ -172,7 +172,7 @@
             <ref bean="sortUtil" />
         </property>
     </bean>
-   
+
     <bean id="sortUtil" class="jp.aegif.nemaki.cmis.aspect.SortUtil">
     	<property name="repositoryInfoMap" ref="repositoryInfoMap" />
     	<property name="typeManager" ref="TypeManager" />
@@ -383,7 +383,7 @@
             <ref bean="repositoryInfoMap" />
         </property>
     </bean>
-   
+
     <bean id="TokenService" class="org.springframework.aop.framework.ProxyFactoryBean">
         <property name="proxyInterfaces">
             <list>
@@ -560,18 +560,14 @@
             <ref bean="repositoryInfoMap" />
         </property>
     </bean>
-    
+
     <bean id="archiveResource" class="jp.aegif.nemaki.rest.ArchiveResource">
         <property name="ContentService">
             <ref bean="ContentService" />
         </property>
     </bean>
 
-    <bean id="userResource" class="jp.aegif.nemaki.rest.UserResource">
-        <property name="principalService">
-            <ref bean="PrincipalService" />
-        </property>
-    </bean>
+
 
     <bean id="groupResource" class="jp.aegif.nemaki.rest.GroupResource">
         <property name="principalService">
@@ -587,19 +583,28 @@
             <ref bean="TypeManager" />
         </property>
     </bean>
-   
+
     <bean id="solrResource" class="jp.aegif.nemaki.rest.SolrResource">
     	<property name="solrUtil">
        		<ref bean="solrUtil" />
         </property>
     </bean>
-    
+
+    <bean id="userResource" class="jp.aegif.nemaki.rest.UserResource">
+        <property name="principalService">
+            <ref bean="PrincipalService" />
+        </property>
+        <property name="solrResource">
+            <ref bean="solrResource" />
+        </property>
+    </bean>
+
     <bean id="solrAllResource" class="jp.aegif.nemaki.rest.SolrAllResource">
     	<property name="solrUtil">
        		<ref bean="solrUtil" />
         </property>
     </bean>
-    
+
     <bean id="authtokenResource" class="jp.aegif.nemaki.rest.AuthTokenResource">
     	<property name="tokenService">
        		<ref bean="TokenService" />
