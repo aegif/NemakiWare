@@ -3,7 +3,7 @@ view.header.control-panel=Control Panel
 
 view.auth.login=Sign in
 view.auth.logout=Sign out
-view.auth.login.caption=Please sign in 
+view.auth.login.caption=Please sign in
 view.auth.account=Account
 
 view.node.property=Property
@@ -55,7 +55,7 @@ view.node.duplicate.template.action.replace.desc=The corresponding file in this 
 view.node.duplicate.template.action.do-nothing.caption=Do not upload this file
 view.node.duplicate.template.action.do-nothing.desc=The following file in this folder is not modified.
 view.node.duplicate.template.action.rename.caption=Upload this file as a different one from that of the server
-view.node.duplicate.template.action.rename.desc1=The new file will be saved with modified name 
+view.node.duplicate.template.action.rename.desc1=The new file will be saved with modified name
 view.node.duplicate.template.action.rename.desc2=.
 view.node.validate.file=There is no file.
 
@@ -77,6 +77,8 @@ view.user.name=Display Name
 view.user.first.name=First Name
 view.user.last.name=Last Name
 view.user.email=E-Mail
+
+view.user.change-password.caption=Change Password
 
 view.group.caption=Groups
 view.group.property=Property
@@ -127,3 +129,4 @@ view.message.delete.success=Successfully deleted
 view.message.delete.failure=Failed to delete
 view.message.already.selected=Already selected!
 view.message.is-required=is required!
+view.message.is-same=New passwords should be same!

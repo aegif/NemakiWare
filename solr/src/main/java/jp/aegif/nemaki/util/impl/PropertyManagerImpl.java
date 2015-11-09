@@ -71,9 +71,15 @@ public class PropertyManagerImpl implements PropertyManager{
 			if(StringUtils.isNotBlank(_overrideFiles)){
 				overrideFiles = split(_overrideFiles);
 			}
-		}
-		catch(Exception e) {
+		}catch(Exception e) {
 			e.printStackTrace();
+		}finally{
+			try {
+				loader.close();
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
 		}
 	}
 
@@ -175,7 +181,7 @@ public class PropertyManagerImpl implements PropertyManager{
 	@Override
 	public void addValue(String key, String value){
 		String currentVal = config.getProperty(key);
-		String[] currentVals = currentVal.split(",");
+		String[] currentVals = (StringUtils.isEmpty(currentVal)) ? new String[0] : currentVal.split(",");
 		List<String>valList = new ArrayList<String>();
 		Collections.addAll(valList, currentVals);
 

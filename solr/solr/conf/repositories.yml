@@ -1,4 +1,11 @@
+!jp.aegif.nemaki.util.yaml.RepositorySettings
 settings: 
-  bedroom: 
-    user: admin
-    password: admin
+   canopy: !jp.aegif.nemaki.util.yaml.RepositorySetting
+      password: admin
+      user: admin
+   aegif: !jp.aegif.nemaki.util.yaml.RepositorySetting
+      password: admin
+      user: admin
+   bedroom: !jp.aegif.nemaki.util.yaml.RepositorySetting
+      password: admin2
+      user: admin

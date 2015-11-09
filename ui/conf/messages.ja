@@ -77,6 +77,8 @@ view.user.first.name=名
 view.user.last.name=姓
 view.user.email=メール
 
+view.user.change-password.caption=パスワード変更
+
 view.group.caption=グループ管理
 view.group.property=プロパティ
 view.group.create=新規作成
@@ -126,3 +128,4 @@ view.message.delete.success=正常に削除されました
 view.message.delete.failure=削除に失敗しました
 view.message.already.selected=既に選択されています！
 view.message.is-required=が必要です！
+view.message.is-same=新しいパスワードは一致する必要があります！

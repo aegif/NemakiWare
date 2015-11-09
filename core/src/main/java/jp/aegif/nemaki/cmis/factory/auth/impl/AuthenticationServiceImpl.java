@@ -26,6 +26,7 @@ import jp.aegif.nemaki.cmis.factory.auth.Token;
 import jp.aegif.nemaki.cmis.factory.auth.TokenService;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.util.AuthenticationUtil;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.util.constant.PropertyKey;
@@ -52,9 +53,9 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	public boolean login(CallContext callContext) {
 		// Set flag of SuperUsers
 		String suId = repositoryInfoMap.getSuperUsers().getId();
-		((CallContextImpl)callContext).put(CallContextKey.IS_SU, 
+		((CallContextImpl)callContext).put(CallContextKey.IS_SU,
 				suId.equals(callContext.getRepositoryId()));
-		
+
 		// SSO
 		if (loginWithExternalAuth(callContext)) {
 			return true;
@@ -89,7 +90,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 				log.debug("Authenticated userId=" + newUser.getUserId());
 			} else {
 				log.debug("Authenticated userId=" + user.getUserId());
-				
+
 				//Admin check
 				boolean isAdmin = user.isAdmin() == null ? false : true;
 				setAdminFlagInContext(callContext, isAdmin);
@@ -129,7 +130,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		if(!repositoryInfoMap.contains(callContext.getRepositoryId())){
 			return false;
 		}
-		
+
 		// Basic auth with id/password
 		User user = getAuthenticatedUser(callContext.getRepositoryId(), callContext.getUsername(), callContext.getPassword());
 		if (user == null)
@@ -138,7 +139,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		setAdminFlagInContext(callContext, isAdmin);
 		return true;
 	}
-	
+
 	private void setAdminFlagInContext(CallContext callContext, Boolean isAdmin) {
 		((CallContextImpl) callContext).put(CallContextKey.IS_ADMIN, isAdmin);
 	}
@@ -167,7 +168,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 		// succeeded
 		if (u != null) {
-			if (passwordMatches(password, u.getPasswordHash())) {
+			if (AuthenticationUtil.passwordMatches(password, u.getPasswordHash())) {
 				log.debug("[" + userName + "]Authentication succeeded");
 				return u;
 			}
@@ -184,13 +185,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 		return null;
 	}
-	
-	/**
-	 * Check whether a password matches a hash.
-	 */
-	private boolean passwordMatches(String candidate, String hashed) {
-		return BCrypt.checkpw(candidate, hashed);
-	}
+
 
 	public void setPrincipalService(PrincipalService principalService) {
 		this.principalService = principalService;

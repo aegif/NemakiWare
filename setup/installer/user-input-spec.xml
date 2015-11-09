@@ -37,13 +37,9 @@
 	<!-- CouchDB configuration -->
 	<panel id="user.inputpanel.couchdb.configuration">
 		<field type="title" id="user.inputpanel.couchdb.title" txt="CouchDB configuration " />
-		<field type="text" variable="db.couchdb.host">
-			<spec id="db.couchdb.host" size="25" set="${db.couchdb.host}" txt="CouchDB host" />
-			<validator class="com.izforge.izpack.util.NotEmptyValidator" txt="Invalid host!" />
-		</field>
-		<field type="text" variable="db.couchdb.port">
-			<spec id="db.couchdb.port" size="6" set="${db.couchdb.port}" txt="CouchDB port" />
-			<validator class="com.izforge.izpack.util.IsPortValidator" txt="Invalid port!" />
+		<field type="text" variable="db.couchdb.url">
+			<spec id="db.couchdb.url" size="25" set="${db.couchdb.url}" txt="CouchDB URL" />
+			<validator class="com.izforge.izpack.util.NotEmptyValidator" txt="Invalid url!" />
 		</field>
 	</panel>
 
