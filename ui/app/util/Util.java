@@ -333,7 +333,7 @@ public class Util {
 				credsProvider.setCredentials(scope, credentials);
 
 				//CredentialsProvider doesn't add BASIC auth header
-				headers.add(new BasicScheme().authenticate(credentials, "US-ASCII", false));
+				headers.add(BasicScheme.authenticate(credentials, "US-ASCII", false));
 
 				// create client
 				HttpClient httpClient = HttpClientBuilder.create()
@@ -671,29 +671,36 @@ public class Util {
 		}
 	 }
 
-	 public static Property buildTempProperty(String id, String name, boolean required, boolean updatable, boolean multiple, List<Choice>choices, boolean openChoice, Object values){
+	 @SuppressWarnings("rawtypes")
+	public static Property buildTempProperty(String id, String name, boolean required, boolean updatable, boolean multiple, List<Choice>choices, boolean openChoice, Object values){
 		 PropertyDefinition pdf = buildTempStringDefinition(id, name, required, updatable, multiple, choices, openChoice);
 
-		 PropertyImpl prop = new PropertyImpl(pdf, listify(values));
+		@SuppressWarnings("unchecked")
+		PropertyImpl prop = new PropertyImpl(pdf, listify(values));
 		 return prop;
 	 }
 
-	 public static Property buildTempProperty(PropertyDefinition pdf, Object values){
-		 PropertyImpl prop = new PropertyImpl(pdf, listify(values));
+	 @SuppressWarnings("rawtypes")
+	public static Property buildTempProperty(PropertyDefinition pdf, Object values){
+		 @SuppressWarnings("unchecked")
+		PropertyImpl prop = new PropertyImpl(pdf, listify(values));
 		 return prop;
 	 }
 
-	 public static List<?> listify(Object obj){
+	 @SuppressWarnings("unchecked")
+	public static List<?> listify(Object obj){
 		 if (obj instanceof List<?>) {
 			 return (List<?>)obj;
 		 }else{
-			 List list = new ArrayList<Object>();
+			 @SuppressWarnings("rawtypes")
+			List list = new ArrayList<Object>();
 			 list.add(obj);
 			 return list;
 		 }
 	 }
 
-	 public static PropertyDefinition buildTempStringDefinition(String id, String name, boolean required, boolean updatable, boolean multiple, List<Choice>choices, boolean openChoice){
+	 @SuppressWarnings("rawtypes")
+	public static PropertyDefinition buildTempStringDefinition(String id, String name, boolean required, boolean updatable, boolean multiple, List<Choice>choices, boolean openChoice){
 		PropertyStringDefinitionImpl pdf = new PropertyStringDefinitionImpl();
 		pdf.setId(id);
 		pdf.setDisplayName(name);
@@ -709,7 +716,7 @@ public class Util {
 		 return Cardinality.MULTI == pdf.getCardinality();
 	 }
 
-	 public static boolean isEditable(PropertyDefinition pdf, UpdateContext updateContext){
+	 public static boolean isEditable(@SuppressWarnings("rawtypes") PropertyDefinition pdf, UpdateContext updateContext){
 		 switch(updateContext){
 		 case NORMAL:
 			 return isReadWrite(pdf);

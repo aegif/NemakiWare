@@ -16,6 +16,3 @@ repositories:
   - id: bedroom
     name: bedroom
     archive: bedroom_closet
-  - id: aegif
-    name: aegif
-    archive: aegif_closet
