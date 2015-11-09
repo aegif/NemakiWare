@@ -202,7 +202,8 @@ public class Node extends Controller {
 		// Get user
 		final String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 		final String endPoint = coreRestUri + "repo/" + repositoryId + "/user/";
-		JsonNode result = Util.getJsonResponse(session(), endPoint + "show/" + session().get(Token.LOGIN_USER_ID));
+		String url = endPoint + "show/" + session().get(Token.LOGIN_USER_ID);
+		JsonNode result = Util.getJsonResponse(session(), url);
 		model.User user = new model.User();
 		if ("success".equals(result.get("status").asText())) {
 			JsonNode _user = result.get("user");
