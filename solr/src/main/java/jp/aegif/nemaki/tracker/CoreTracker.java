@@ -47,6 +47,7 @@ import jp.aegif.nemaki.util.yaml.RepositorySettings;
 import org.apache.chemistry.opencmis.client.api.ChangeEvent;
 import org.apache.chemistry.opencmis.client.api.ChangeEvents;
 import org.apache.chemistry.opencmis.client.api.Session;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
 import org.apache.chemistry.opencmis.commons.spi.CmisBinding;
 import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
@@ -232,7 +233,7 @@ public class CoreTracker extends CloseHook {
 
 	/**
 	 * Get the last change token stored in Solr
-	 * 
+	 *
 	 * @return
 	 */
 	private String readLatestChangeToken(String repositoryId) {
@@ -262,7 +263,7 @@ public class CoreTracker extends CloseHook {
 
 	/**
 	 * Store the last change token in Solr
-	 * 
+	 *
 	 * @return
 	 */
 	private void storeLatestChangeToken(String token, String repositoryId) {
@@ -307,12 +308,16 @@ public class CoreTracker extends CloseHook {
 		if(cmisSession == null){
 			return null;
 		}
-		ChangeEvents changeEvents = cmisSession.getContentChanges(latestToken, false, numItems);
 
-		// No need for Sorting
-		// (Specification requires they are returned by ASCENDING)
-
-		return changeEvents;
+		try{
+			// No need for Sorting
+			// (Specification requires they are returned by ASCENDING)
+				return cmisSession.getContentChanges(latestToken, false, numItems);
+		}catch(CmisRuntimeException ex){
+			//On error reset session.
+			CmisSessionFactory.clearSession(repositoryId);
+			throw ex;
+		}
 	}
 
 	/**

@@ -47,10 +47,10 @@ import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.http.Header;
 import org.apache.http.HttpRequest;
 import org.apache.http.HttpResponse;
+import org.apache.http.HttpStatus;
 import org.apache.http.NameValuePair;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.Credentials;
@@ -70,7 +70,6 @@ import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.message.BasicHeader;
 import org.apache.http.message.BasicNameValuePair;
 
-import play.Play;
 import play.api.http.MediaRange;
 import play.data.DynamicForm;
 import play.libs.Json;
@@ -89,7 +88,7 @@ public class Util {
 		String password = session.get(Token.LOGIN_USER_PASSWORD);
 		return createCmisSession(repositoryId, userId, password);
 	}
-	
+
 	public static Session createCmisSession(String repositoryId, String userId, String password){
 		Map<String, String> parameter = new HashMap<String, String>();
 
@@ -108,7 +107,7 @@ public class Util {
 		//parameter.put(org.apache.chemistry.opencmis.commons.impl.Constants.PARAM_REPOSITORY_ID, NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_REPOSITORY));
 
 		parameter. put(SessionParameter.BINDING_TYPE, BindingType.ATOMPUB.value());
-		
+
 		String coreAtomUri = buildNemakiCoreUri() + "atom/"+ repositoryId;
 		parameter.put(SessionParameter.ATOMPUB_URL, coreAtomUri);
 
@@ -120,7 +119,7 @@ public class Util {
 
 		return session;
 	}
-	
+
 	public static String buildNemakiCoreUri(){
 		String protocol = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_PROTOCOL);
 		String host = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_HOST);
@@ -128,21 +127,21 @@ public class Util {
 		String context = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_CONTEXT);
 		return buildUri(protocol, host, port, context);
 	}
-	
+
 	private static String buildUri(String protocol, String host, String port, String context){
 		StringBuilder sb = new StringBuilder();
 		sb.append(protocol).append("://").append(host).append(":").append(port).append("/").append(context).append("/");
 		return sb.toString();
 	}
-	
+
 	public static boolean isDocument(CmisObject obj) {
 		return obj.getBaseTypeId().equals(BaseTypeId.CMIS_DOCUMENT);
 	}
-	
+
 	public static boolean hasContentStream(CmisObject object){
 		if(object instanceof Document){
 			Document doc = (Document)object;
-			
+
 			DocumentTypeDefinition type = (DocumentTypeDefinition) (doc.getType());
 			ContentStreamAllowed csa = type.getContentStreamAllowed();
 			switch (csa){
@@ -221,7 +220,7 @@ public class Util {
 			while ((read = inputStream.read(bytes)) != -1) {
 				out.write(bytes, 0, read);
 			}
-			
+
 		} catch (IOException e) {
 			System.out.println(e.getMessage());
 		}finally{
@@ -229,7 +228,7 @@ public class Util {
 			out.flush();
 			out.close();
 		}
-		
+
 		file.deleteOnExit();
 		return file;
 	}
@@ -312,7 +311,7 @@ public class Util {
 
 		return fileName;
 	}
-	
+
 	private static HttpClient buildClient(play.mvc.Http.Session session){
 		// configurations
 				String userAgent = "NemakiWare UI";
@@ -332,25 +331,30 @@ public class Util {
 				AuthScope scope = new AuthScope(host, Integer.valueOf(port));
 				CredentialsProvider credsProvider = new BasicCredentialsProvider();
 				credsProvider.setCredentials(scope, credentials);
-				
+
 				//CredentialsProvider doesn't add BASIC auth header
-				headers.add(new BasicScheme().authenticate(credentials, "US-ASCII", false));
+				headers.add(BasicScheme.authenticate(credentials, "US-ASCII", false));
 
 				// create client
 				HttpClient httpClient = HttpClientBuilder.create()
 						.setDefaultHeaders(headers)
 						.setDefaultCredentialsProvider(credsProvider)
 						.build();
-				
+
 				return httpClient;
 	}
 
 	private static JsonNode executeRequest(HttpClient client, HttpRequest request){
 		try {
 			HttpResponse response = client.execute((HttpUriRequest) request);
+			int responseStatus = response.getStatusLine().getStatusCode();
+			if (HttpStatus.SC_OK != responseStatus) {
+				throw new Exception("Solr server connection failed");
+			}
+
 			InputStream is = response.getEntity().getContent();
 
-			BufferedReader br = new BufferedReader(new InputStreamReader(is));
+			BufferedReader br = new BufferedReader(new InputStreamReader(is, "UTF-8"));
 
 			StringBuilder sb = new StringBuilder();
 
@@ -366,10 +370,10 @@ public class Util {
 			return jn;
 
 		} catch (ClientProtocolException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (Exception e) {
 			e.printStackTrace();
 		}
 
@@ -404,7 +408,7 @@ public class Util {
 
 		return executeRequest(client, request);
 	}
-	
+
 	public static JsonNode putJsonResponse(play.mvc.Http.Session session, String url, Map<String, String>params) {
 		// create client
 		HttpClient client = buildClient(session);
@@ -432,30 +436,30 @@ public class Util {
 		HttpDelete request = new HttpDelete(url);
 		return executeRequest(client, request);
 	}
-	
+
 	public static String escapeLikeQuery(String query){
 		String result = query;
 		result = query.replaceAll("%", "\\%");
 		result = query.replaceAll("_", "\\_");
 		return result;
 	}
-	
+
 	public static String escapeContainsQuery(String query){
 		String result = query;
 		result = query.replaceAll("*", "\\*");
 		result = query.replaceAll("?", "\\?");
 		return result;
 	}
-	
+
 	public static String escapeSelector(String selector){
 		String result = selector;
 		result = selector.replaceAll(":", "\\\\\\\\:");
 		return result;
 	}
-	
+
 	public static List<String> dividePath(String path){
 		String[] ary = path.split("/");
-		
+
 		if(ary.length == 0){
 			return new ArrayList<String>();
 		}else{
@@ -468,7 +472,7 @@ public class Util {
 			return result;
 		}
 	}
-	
+
 	public static boolean dataTypeIsHtml(List<MediaRange>accepted){
 		if(CollectionUtils.isNotEmpty(accepted)){
 			for(MediaRange mr : accepted){
@@ -479,24 +483,24 @@ public class Util {
 		}
 		return false;
 	}
-	
+
 
 	public static List<String> convertToList(JsonNode jsonArray){
 		List<String> result = new ArrayList<String>();
-		
+
 		Iterator<JsonNode> itr = jsonArray.iterator();
 		while(itr.hasNext()){
 			result.add(itr.next().asText());
 		}
-		
+
 		return result;
 	}
-	
+
 	public static Boolean isOnCreate(Property<?>property){
 		PropertyDefinition<?> pdf = property.getDefinition();
 		return isOnCreate(pdf);
 	}
-	
+
 	public static Boolean isOnCreate(PropertyDefinition<?>propertyDefinition){
 		Updatability updatability = propertyDefinition.getUpdatability();
 		if(Updatability.ONCREATE == updatability){
@@ -505,12 +509,12 @@ public class Util {
 			return false;
 		}
 	}
-	
+
 	public static Boolean isReadWrite(Property<?>property){
 		PropertyDefinition<?> pdf = property.getDefinition();
 		return isEditable(pdf);
 	}
-	
+
 	public static Boolean isReadWrite(PropertyDefinition<?>propertyDefinition){
 		Updatability updatability = propertyDefinition.getUpdatability();
 		if(Updatability.READWRITE == updatability || Updatability.WHENCHECKEDOUT == updatability){
@@ -519,12 +523,12 @@ public class Util {
 			return false;
 		}
 	}
-	
+
 	public static Boolean isWhenCheckedOut(Property<?>property){
 		PropertyDefinition<?> pdf = property.getDefinition();
 		return isEditable(pdf);
 	}
-	
+
 	public static Boolean isWhenCheckedOut(PropertyDefinition<?>propertyDefinition){
 		Updatability updatability = propertyDefinition.getUpdatability();
 		if(Updatability.READWRITE == updatability || Updatability.WHENCHECKEDOUT == updatability){
@@ -533,12 +537,12 @@ public class Util {
 			return false;
 		}
 	}
-	
+
 	public static Boolean isEditable(Property<?>property){
 		PropertyDefinition<?> pdf = property.getDefinition();
 		return isEditable(pdf);
 	}
-	
+
 	public static Boolean isEditable(PropertyDefinition<?>propertyDefinition){
 		Updatability updatability = propertyDefinition.getUpdatability();
 		if(Updatability.READWRITE == updatability || Updatability.WHENCHECKEDOUT == updatability){
@@ -547,10 +551,10 @@ public class Util {
 			return false;
 		}
 	}
-	
+
 	public static Map<String, Ace> zipWithId(Acl acl){
 		Map<String, Ace>result = new HashMap<String, Ace>();
-		
+
 		if(acl != null){
 			List<Ace> list = acl.getAces();
 			if(CollectionUtils.isNotEmpty(list)){
@@ -559,19 +563,23 @@ public class Util {
 				}
 			}
 		}
-		
+
 		return result;
 	}
-	
+
 	public static String getHostPath(Request request){
-		return "http://" + request.host();
+		if(request.secure()){
+			return "https://" + request.host();
+		}else{
+			return "http://" + request.host();
+		}
 	}
-	
+
 	 public static BaseTypeId getBaseType(Session cmisSession, String objectTypeId){
 		 ObjectType objectType = cmisSession.getTypeDefinition(objectTypeId, true);
 		 return objectType.getBaseTypeId();
 	 }
-	 
+
 	 public static String getFormData(DynamicForm input, String key){
 		 String value = input.get(key);
 		 if(value == null){
@@ -580,46 +588,46 @@ public class Util {
 			 return value;
 		 }
 	 }
-	 
+
 	 public static String getFormDataWithoutColon(DynamicForm input, String keyWithColon){
 		 String key = keyWithColon.replace(":", "");
 		 return input.get(key);
 	 }
-	 
+
 	 public static HashMap<String,Object> buildProperties(Map<String, PropertyDefinition<?>>propertyDefinitions, DynamicForm input, List<Updatability>updatabilities){
 		 HashMap<String,Object>data = new HashMap<String, Object>();
-		 
+
 		 for(Entry<String, PropertyDefinition<?>> entry : propertyDefinitions.entrySet()){
 			 PropertyDefinition<?>pdf = entry.getValue();
-			 
+
 			//TODO work around
 			 if(pdf.getId().equals(PropertyIds.SECONDARY_OBJECT_TYPE_IDS) ||
 				pdf.getId().equals(PropertyIds.OBJECT_TYPE_ID)){
 				 continue;
 			 }
-			 
+
 			 //TODO work around: skip multiple value
 			 if(pdf.getCardinality() == Cardinality.MULTI){
 				 continue;
 			 }
-			 
+
 			 //TODO work around: skip obligatory choice value
 			 if(CollectionUtils.isNotEmpty(pdf.getChoices()) && !pdf.isOpenChoice()){
 				 continue;
 			 }
-			 
+
 			 if(updatabilities.contains(pdf.getUpdatability())){
 				 data.put(pdf.getId(), getFormData(input, pdf.getId()));
 			 }
 		 }
-		 
+
 		 return data;
 	 }
-	 
+
 	 public static String tail(String str){
 		 return str.substring(1, str.length());
 	 }
-	 
+
 	 public static boolean existPreview(CmisObject obj){
 		 List<Rendition>renditions = obj.getRenditions();
 		 if(CollectionUtils.isNotEmpty(renditions)){
@@ -629,30 +637,30 @@ public class Util {
 				 }
 			 }
 		 }
-    	
+
 	    return false;
 	 }
-	 
+
 	 public static int getNavigationPagingSize(){
 		 String _size = NemakiConfig.getValue(PropertyKey.NAVIGATION_PAGING_SIZE);
 		 return Integer.valueOf(_size);
 	 }
-	 
+
 	 public static String getSeachEngineUrl(play.mvc.Http.Session session){
 		String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 		String endPoint = coreRestUri + "all/" + "search-engine/";
-		
+
 		JsonNode result = Util.getJsonResponse(session, endPoint + "url");
-		
+
 		String status = result.get(Token.REST_STATUS).textValue();
 		try {
 			if(Token.REST_SUCCESS.equals(status)){
 				String _url = result.get("url").textValue();
 				String url;
-				
+
 					url = URLDecoder.decode(_url, "UTF-8");
 					return url;
-			
+
 			}else{
 				throw new Exception("REST API returned failure.");
 			}
@@ -662,30 +670,37 @@ public class Util {
 			return null;
 		}
 	 }
-	 
-	 public static Property buildTempProperty(String id, String name, boolean required, boolean updatable, boolean multiple, List<Choice>choices, boolean openChoice, Object values){
+
+	 @SuppressWarnings("rawtypes")
+	public static Property buildTempProperty(String id, String name, boolean required, boolean updatable, boolean multiple, List<Choice>choices, boolean openChoice, Object values){
 		 PropertyDefinition pdf = buildTempStringDefinition(id, name, required, updatable, multiple, choices, openChoice);
-		 
-		 PropertyImpl prop = new PropertyImpl(pdf, listify(values));
+
+		@SuppressWarnings("unchecked")
+		PropertyImpl prop = new PropertyImpl(pdf, listify(values));
 		 return prop;
 	 }
-	 
-	 public static Property buildTempProperty(PropertyDefinition pdf, Object values){
-		 PropertyImpl prop = new PropertyImpl(pdf, listify(values));
+
+	 @SuppressWarnings("rawtypes")
+	public static Property buildTempProperty(PropertyDefinition pdf, Object values){
+		 @SuppressWarnings("unchecked")
+		PropertyImpl prop = new PropertyImpl(pdf, listify(values));
 		 return prop;
 	 }
-	 
-	 public static List<?> listify(Object obj){
+
+	 @SuppressWarnings("unchecked")
+	public static List<?> listify(Object obj){
 		 if (obj instanceof List<?>) {
 			 return (List<?>)obj;
 		 }else{
-			 List list = new ArrayList<Object>();
+			 @SuppressWarnings("rawtypes")
+			List list = new ArrayList<Object>();
 			 list.add(obj);
 			 return list;
 		 }
 	 }
 
-	 public static PropertyDefinition buildTempStringDefinition(String id, String name, boolean required, boolean updatable, boolean multiple, List<Choice>choices, boolean openChoice){
+	 @SuppressWarnings("rawtypes")
+	public static PropertyDefinition buildTempStringDefinition(String id, String name, boolean required, boolean updatable, boolean multiple, List<Choice>choices, boolean openChoice){
 		PropertyStringDefinitionImpl pdf = new PropertyStringDefinitionImpl();
 		pdf.setId(id);
 		pdf.setDisplayName(name);
@@ -696,12 +711,12 @@ public class Util {
 		pdf.setIsOpenChoice(openChoice);
 		return pdf;
 	 }
-	 
+
 	 public static boolean isMultiple(PropertyDefinition<?> pdf){
 		 return Cardinality.MULTI == pdf.getCardinality();
 	 }
-	 
-	 public static boolean isEditable(PropertyDefinition pdf, UpdateContext updateContext){
+
+	 public static boolean isEditable(@SuppressWarnings("rawtypes") PropertyDefinition pdf, UpdateContext updateContext){
 		 switch(updateContext){
 		 case NORMAL:
 			 return isReadWrite(pdf);
@@ -713,13 +728,13 @@ public class Util {
 			 return false;
 		 }
 	 }
-	 
+
 	 public static boolean isEditableOnNodeBlank(PropertyDefinition<?> pdf){
-		 return isEditable(pdf, UpdateContext.CREATE) && 
+		 return isEditable(pdf, UpdateContext.CREATE) &&
 			!PropertyIds.OBJECT_TYPE_ID.equals(pdf.getId()) &&
 			!PropertyIds.SECONDARY_OBJECT_TYPE_IDS.equals(pdf.getId());
 	 }
-	 
+
 	 public static String displayValue(CmisObject obj, String propertyId){
 		 if(PropertyIds.CREATED_BY.equals(propertyId)){
 			 return obj.getCreatedBy();
@@ -737,11 +752,11 @@ public class Util {
 				 return null;
 			 }
 		 }
-		 
-		 
+
+
 		 return "#Error!";
 	 }
-	 
+
 	 public static boolean isFreezeCopy(CmisObject obj, play.mvc.Http.Session session){
 		 String loginUserId = session.get(Token.LOGIN_USER_ID);
 		 if(isDocument(obj)){
@@ -753,7 +768,7 @@ public class Util {
 		 }
 		return false;
 	 }
-	 
+
 	 public static List<PermissionDefinition> trimForDisplay(List<PermissionDefinition> list){
 		 List<PermissionDefinition> result = new ArrayList<PermissionDefinition>();
 		 for(PermissionDefinition def:list){
@@ -761,22 +776,22 @@ public class Util {
 				 result.add(def);
 			 }
 		 }
-		 
+
 		 return result;
 	 }
-	 
+
 	 public static List<String> difference(List<String> target, List<String> source){
 		 List<String> result = new ArrayList<String>();
-		 
+
 		 for(String s : target){
 			 if(!source.contains(s)){
 				 result.add(s);
 			 }
 		 }
-		 
+
 		 return result;
 	 }
-	 
+
 	 public static JsonNode emptyJsonObject(){
 		 return Json.toJson(new HashMap<String, String>());
 	 }

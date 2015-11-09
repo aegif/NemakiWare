@@ -1,8 +1,10 @@
 package jp.aegif.nemaki.dao.impl.couch.connector;
 
+import java.net.MalformedURLException;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.apache.log4j.Logger;
 import org.ektorp.CouchDbConnector;
 import org.ektorp.CouchDbInstance;
 import org.ektorp.http.HttpClient;
@@ -15,8 +17,7 @@ import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 public class ConnectorPool {
 
 	private RepositoryInfoMap repositoryInfoMap;
-	private String host;
-	private int port;
+	private String url;
 	private int maxConnections;
 	private int connectionTimeout;
 	private int socketTimeout;
@@ -27,15 +28,21 @@ public class ConnectorPool {
 	private Builder builder;
 	private Map<String, CouchDbConnector> pool = new HashMap<String, CouchDbConnector>();
 	
+	private Logger logger = Logger.getLogger(ConnectorPool.class);
+	
 	public void init() {
 		//Builder
-		this.builder = new StdHttpClient.Builder()
-		.host(host)
-		.port(port)
-		.maxConnections(maxConnections)
-		.connectionTimeout(connectionTimeout)
-		.socketTimeout(socketTimeout)
-		.cleanupIdleConnections(true);
+		try {
+			this.builder = new StdHttpClient.Builder()
+			.url(url)
+			.maxConnections(maxConnections)
+			.connectionTimeout(connectionTimeout)
+			.socketTimeout(socketTimeout)
+			.cleanupIdleConnections(true);
+		} catch (MalformedURLException e) {
+			logger.error("CouchDB URL is not well-formed!: " + url, e);
+			e.printStackTrace();
+		}
 		if(authEnabled){
 			builder.username(authUserName).password(authPassword);
 		}
@@ -72,12 +79,8 @@ public class ConnectorPool {
 		this.repositoryInfoMap = repositoryInfoMap;
 	}
 
-	public void setHost(String host) {
-		this.host = host;
-	}
-
-	public void setPort(int port) {
-		this.port = port;
+	public void setUrl(String url) {
+		this.url = url;
 	}
 
 	public void setMaxConnections(int maxConnections) {

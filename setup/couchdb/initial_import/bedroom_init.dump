@@ -1,27 +1,5 @@
 [ {
   "document" : {
-    "_id" : "/",
-    "_rev" : "2-ed9215693cde4bdce0de4794d5be6501",
-    "aspects" : [ ],
-    "name" : "/",
-    "creator" : "system",
-    "created" : "2013-01-01T00:00:00.000+0000",
-    "modified" : "2013-01-01T00:00:00.000+0000",
-    "acl" : {
-      "entries" : [ {
-        "principal" : "CMIS_ANYONE",
-        "direct" : true,
-        "permissions" : [ "cmis:read" ]
-      } ]
-    },
-    "modifier" : "system",
-    "type" : "cmis:folder",
-    "objectType" : "cmis:folder",
-    "changeToken" : "83c150a42ffdcc49bb08041078b85b57"
-  },
-  "attachments" : { }
-}, {
-  "document" : {
     "_id" : "18d9eb1d9a6c624a63013e9e2a2ca16c",
     "_rev" : "1-024e41d0dd6b3597be78fc5db866c76b",
     "creator" : "system",
@@ -36,12 +14,12 @@
 }, {
   "document" : {
     "_id" : "83c150a42ffdcc49bb08041078b85b57",
-    "_rev" : "4-fa2b5941ad7680ba07ab5671fbdcd228",
+    "_rev" : "1-b59d6f44b380e453acc48f553288a356",
     "creator" : "system",
     "policyIds" : [ ],
     "objectType" : "cmis:folder",
     "name" : "/",
-    "objectId" : "/",
+    "objectId" : "e02f784f8360a02cc14d1314c10038ff",
     "baseType" : "cmis:folder",
     "created" : "2013-01-01T00:00:00.000+0000",
     "modified" : "2013-01-01T00:00:00.000+0000",
@@ -56,12 +34,12 @@
 }, {
   "document" : {
     "_id" : "83c150a42ffdcc49bb08041078b85c77",
-    "_rev" : "4-3b98771db5b1572a418987df380eb4ad",
+    "_rev" : "1-daebf58c10b8662b9d35d9cf49413398",
     "creator" : "system",
     "policyIds" : [ ],
     "objectType" : "cmis:folder",
     "name" : "sites",
-    "objectId" : "sites",
+    "objectId" : "e02f784f8360a02cc14d1314c1003f06",
     "baseType" : "cmis:folder",
     "created" : "2013-01-01T00:00:00.000+0000",
     "modified" : "2013-01-01T00:00:00.000+0000",
@@ -75,8 +53,42 @@
   "attachments" : { }
 }, {
   "document" : {
+    "_id" : "94ee2cb22e260d582b5d66903f001436",
+    "_rev" : "1-49a133bae51f4f6dad983e0721cc0946",
+    "admin" : true,
+    "created" : "2013-01-01T00:00:00.000+0000",
+    "creator" : "system",
+    "email" : "",
+    "firstName" : "admin",
+    "lastName" : "",
+    "modified" : "2013-01-01T00:00:00.000+0000",
+    "modifier" : "system",
+    "name" : "admin",
+    "passwordHash" : "$2a$10$0goveaxLj.2UJAlVN1Ru2OmGID6q04ugln/HAkVpzb5bwvZ.kvEne",
+    "type" : "user",
+    "userId" : "admin"
+  },
+  "attachments" : { }
+}, {
+  "document" : {
+    "_id" : "94ee2cb22e260d582b5d66903f002175",
+    "_rev" : "1-28d8dffb424a3dc8c5558cfca16003a8",
+    "created" : "2013-01-01T00:00:00.000+0000",
+    "creator" : "system",
+    "email" : "",
+    "firstName" : "system",
+    "lastName" : "",
+    "modified" : "2013-01-01T00:00:00.000+0000",
+    "modifier" : "system",
+    "name" : "system",
+    "type" : "user",
+    "userId" : "system"
+  },
+  "attachments" : { }
+}, {
+  "document" : {
     "_id" : "_design/_repo",
-    "_rev" : "4-a64d420f7ef64f2a78e61828884edff7",
+    "_rev" : "1-cd9c679217df0f60f328b5ac93e23692",
     "language" : "javascript",
     "views" : {
       "attachments" : {
@@ -181,26 +193,8 @@
   "attachments" : { }
 }, {
   "document" : {
-    "_id" : "admin",
-    "_rev" : "1-685b3bcd63a0db81aff3f2e49dff6e95",
-    "name" : "admin",
-    "firstName" : "admin",
-    "creator" : "system",
-    "admin" : true,
-    "lastName" : "admin",
-    "passwordHash" : "$2a$10$0goveaxLj.2UJAlVN1Ru2OmGID6q04ugln/HAkVpzb5bwvZ.kvEne",
-    "userId" : "admin",
-    "modified" : "2013-01-01T00:00:00.000+0000",
-    "created" : "2013-01-01T00:00:00.000+0000",
-    "modifier" : "system",
-    "type" : "user",
-    "email" : ""
-  },
-  "attachments" : { }
-}, {
-  "document" : {
     "_id" : "b11bf1bf25317a8fa2941b8f140148b6",
-    "_rev" : "2-49c4f510beae7610a94d2d70c5dcd652",
+    "_rev" : "1-43b53806f0c4bad630eff0aa0c1da294",
     "changeToken" : "b11bf1bf25317a8fa2941b8f14014d7e",
     "name" : "Sample Site",
     "creator" : "admin",
@@ -211,7 +205,7 @@
     },
     "secondaryIds" : [ ],
     "aclInherited" : true,
-    "parentId" : "sites",
+    "parentId" : "e02f784f8360a02cc14d1314c1003f06",
     "modifier" : "admin",
     "type" : "cmis:folder",
     "objectType" : "cmis:folder"
@@ -220,7 +214,7 @@
 }, {
   "document" : {
     "_id" : "b11bf1bf25317a8fa2941b8f14014d7e",
-    "_rev" : "4-04c87d53e0470aa63b3e80c1a1f7a384",
+    "_rev" : "1-a8ab25ea3f3b10a81811759d269d3b9f",
     "creator" : "admin",
     "policyIds" : [ ],
     "objectType" : "cmis:folder",
@@ -276,38 +270,44 @@
   "attachments" : { }
 }, {
   "document" : {
-    "_id" : "sites",
-    "_rev" : "2-0d46c23fd1a13aae3c319acbf1272f6c",
-    "aspects" : [ ],
-    "name" : "sites",
-    "creator" : "system",
-    "created" : "2013-01-01T00:00:00.000+0000",
-    "modified" : "2013-01-01T00:00:00.000+0000",
+    "_id" : "e02f784f8360a02cc14d1314c10038ff",
+    "_rev" : "1-a23ddb7ad1a6a1a54038e9e2e7ef1ce9",
     "acl" : {
-      "entries" : [ ]
+      "entries" : [ {
+        "principal" : "CMIS_ANYONE",
+        "direct" : true,
+        "permissions" : [ "cmis:read" ]
+      } ]
     },
-    "aclInherited" : true,
-    "parentId" : "/",
+    "aspects" : [ ],
+    "changeToken" : "83c150a42ffdcc49bb08041078b85b57",
+    "created" : "2013-01-01T00:00:00.000+0000",
+    "creator" : "system",
+    "modified" : "2013-01-01T00:00:00.000+0000",
     "modifier" : "system",
-    "type" : "cmis:folder",
+    "name" : "/",
     "objectType" : "cmis:folder",
-    "changeToken" : "83c150a42ffdcc49bb08041078b85c77"
+    "type" : "cmis:folder"
   },
   "attachments" : { }
 }, {
   "document" : {
-    "_id" : "system",
-    "_rev" : "1-3323c013855adb02a4dccf60bed49779",
-    "name" : "system",
-    "firstName" : "",
-    "creator" : "system",
-    "lastName" : "",
+    "_id" : "e02f784f8360a02cc14d1314c1003f06",
+    "_rev" : "1-d98f6d4457fc0a15aef16fe95d184ce7",
+    "acl" : {
+      "entries" : [ ]
+    },
+    "aclInherited" : true,
+    "aspects" : [ ],
+    "changeToken" : "83c150a42ffdcc49bb08041078b85c77",
     "created" : "2013-01-01T00:00:00.000+0000",
-    "userId" : "system",
+    "creator" : "system",
     "modified" : "2013-01-01T00:00:00.000+0000",
     "modifier" : "system",
-    "type" : "user",
-    "email" : ""
+    "name" : "sites",
+    "objectType" : "cmis:folder",
+    "parentId" : "e02f784f8360a02cc14d1314c10038ff",
+    "type" : "cmis:folder"
   },
   "attachments" : { }
 } ]

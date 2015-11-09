@@ -1,14 +1,18 @@
 package jp.aegif.nemaki.util;
 
+import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.Writer;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 
 import org.apache.chemistry.opencmis.client.api.OperationContext;
 import org.apache.chemistry.opencmis.client.api.Repository;
@@ -21,6 +25,7 @@ import org.apache.commons.collections.CollectionUtils;
 import org.apache.log4j.Logger;
 
 import com.esotericsoftware.yamlbeans.YamlReader;
+import com.esotericsoftware.yamlbeans.YamlWriter;
 
 import org.apache.solr.core.SolrResourceLoader;
 
@@ -30,30 +35,35 @@ import jp.aegif.nemaki.util.yaml.RepositorySettings;
 
 public class CmisSessionFactory {
 	private static final Logger logger = Logger.getLogger(CmisSessionFactory.class);
-	
+
 	private static Map<String,Session> sessions = new HashMap<String,Session>();
 	private static NemakiTokenManager nemakiTokenManager = new NemakiTokenManager();
 	private static RepositorySettings repositorySettings;
 	private static PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
-	
-	
+
+
 	public static Session getSession(String repositoryId){
 		if(!isConnectionSetup(repositoryId)){
 			sessions.put(repositoryId, setupCmisSession(repositoryId));
 		}
-		
+
 		Session session = sessions.get(repositoryId);
 		if(session == null){
 			logger.warn("No CMIS repositoryId:" + repositoryId);
 		}
 		return sessions.get(repositoryId);
 	}
-	
+	public static void clearSession(String repositoryId){
+		Session session = sessions.get(repositoryId);
+		if(session == null) return;
+		sessions.remove(repositoryId);
+	}
+
 	private static Session setupCmisSession(String repositoryId){
 		// Parameter
 		Map<String, String> parameter = buildCommonParam();
 		buildRepositoryParam(parameter, repositoryId);
-		
+
 		// Create session
 		Session session = null;
 		try {
@@ -64,18 +74,18 @@ public class CmisSessionFactory {
 					.createOperationContext(null, false, false, false, null,
 							null, false, null, false, 100); //Cache disabled
 			session.setDefaultContext(operationContext);
-			
+
 			return session;
 		} catch (Exception e) {
 			logger.error("Failed to create a session to CMIS server", e);
 		}
-		
+
 		return null;
 	}
 
 	private static Map<String,String> buildCommonParam(){
 		Map<String, String> parameter = new HashMap<>();
-		
+
 		String protocol = pm.readValue(PropertyKey.CMIS_SERVER_PROTOCOL);
 		String host = pm.readValue(PropertyKey.CMIS_SERVER_HOST);
 		String port = pm.readValue(PropertyKey.CMIS_SERVER_PORT);
@@ -84,7 +94,7 @@ public class CmisSessionFactory {
 		String url = getCmisUrl(protocol, host, port, context, wsEndpoint);
 		String country = pm.readValue(PropertyKey.CMIS_LOCALE_COUNTRY);
 		String language = pm.readValue(PropertyKey.CMIS_LOCALE_LANGUAGE);
-		
+
 		// session locale
 		parameter.put(SessionParameter.LOCALE_ISO3166_COUNTRY, country);
 		parameter.put(SessionParameter.LOCALE_ISO639_LANGUAGE, language);
@@ -111,24 +121,24 @@ public class CmisSessionFactory {
 				+ "RepositoryService?wsdl");
 		parameter.put(SessionParameter.WEBSERVICES_VERSIONING_SERVICE, url
 				+ "VersioningService?wsdl");
-		
+
 		return parameter;
 	}
-	
+
 	private static void buildRepositoryParam(Map<String, String> parameter, String repositoryId){
 		// repository
 		parameter.put(SessionParameter.REPOSITORY_ID, repositoryId);
-				
+
 		RepositorySetting setting = getRepositorySettings().get(repositoryId);
-		
+
 		// user credentials
 		String user = setting.getUser();
 		parameter.put(SessionParameter.USER, setting.getUser());
 		String password = setting.getPassword();
 		parameter.put(SessionParameter.PASSWORD, setting.getPassword());
-		
+
 		//Auth token
-		Boolean authTokenEnabled = 
+		Boolean authTokenEnabled =
 				Boolean.valueOf(pm.readValue(PropertyKey.NEMAKI_CAPABILITY_EXTENDED_AUTH_TOKEN));
 		if(authTokenEnabled){
 			parameter.put(SessionParameter.AUTHENTICATION_PROVIDER_CLASS, "jp.aegif.nemaki.util.NemakiAuthenticationProvider");
@@ -137,33 +147,73 @@ public class CmisSessionFactory {
 			parameter.put(Constant.AUTH_TOKEN_APP, "ui");
 		}
 	}
-	
+
 	public static RepositorySettings getRepositorySettings(){
 		if (repositorySettings == null){
 			buildRepositorySettings();
 		}
 		return repositorySettings;
 	}
-	
+
 	private static void buildRepositorySettings(){
+		String location = pm.readValue(PropertyKey.REPOSITORIES_SETTING_FILE);
+		CmisSessionFactory.repositorySettings = readRepositorySettings(location);
+	}
+
+	private static RepositorySettings readRepositorySettings(String location){
+		SolrResourceLoader loader = new SolrResourceLoader(null);
 		try {
-			SolrResourceLoader loader = new SolrResourceLoader(null);
-			String location = pm.readValue(PropertyKey.REPOSITORIES_SETTING_FILE);
 			InputStream in = loader.openResource(location);
-			
 			YamlReader reader = new YamlReader(new InputStreamReader(in));
 			reader.getConfig().setPropertyElementType(RepositorySettings.class, "settings", RepositorySetting.class);
 			RepositorySettings settings = reader.read(RepositorySettings.class);
-			CmisSessionFactory.repositorySettings = settings;
+
+			return settings;
 		} catch (FileNotFoundException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
+		}finally{
+			try {
+				loader.close();
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+		return null;
+	}
+
+	public static void modifyRepositorySettings(RepositorySettings settings){
+		String location = pm.readValue(PropertyKey.REPOSITORIES_SETTING_FILE);
+		SolrResourceLoader loader = new SolrResourceLoader(null);
+		try {
+
+			String configDir = loader.getConfigDir();
+			File file = new File(configDir + location);
+			YamlWriter writer = new YamlWriter(new FileWriter(file));
+			writer.write(settings);
+			writer.close();
+		} catch (FileNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}finally{
+			try {
+				loader.close();
+
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
 		}
 	}
-	
+
+
 	private static String getCmisUrl(String protocol, String host, String port,
 			String context, String wsEndpoint) {
 		try {
@@ -181,17 +231,17 @@ public class CmisSessionFactory {
 	public static boolean isConnectionSetup(String repositoryId) {
 		return (sessions.get(repositoryId) != null);
 	}
-	
+
 	public static List<Repository> getRepositories(){
 		Map<String,String> parameter = buildCommonParam();
 		SessionFactory f = SessionFactoryImpl.newInstance();
 		List<Repository> repositories = f.getRepositories(parameter);
-		
+
 		if(CollectionUtils.isEmpty(repositories)){
 			logger.error("No CMIS repository!");
 		}
-		
+
 		return repositories;
-		
+
 	}
 }
