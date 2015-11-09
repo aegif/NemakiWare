@@ -17,13 +17,13 @@ public class Application extends Controller{
 	public static Result login(String repositoryId) {
 	    return ok(login.render(repositoryId, new Form<Login>(Login.class)));
 	}
-	
+
 	public static Result authenticate(String repositoryId){
 		Form<Login> input = Form.form(Login.class);
 		input = input.bindFromRequest();
 		String id = input.data().get("id");
 		String password = input.data().get("password");
-		
+
 		if(validate(repositoryId, id, password)){
 			session().clear();
 			session(Token.LOGIN_USER_ID, id);
@@ -35,7 +35,7 @@ public class Application extends Controller{
 			return badRequest(login.render(repositoryId, input));
 		}
 	}
-	
+
 	private static boolean validate(String repositoryId, String id, String password){
 		try{
 			Session cmisSession = Util.createCmisSession(repositoryId, id, password);
@@ -43,61 +43,67 @@ public class Application extends Controller{
 			e.printStackTrace();
 			return false;
 		}
-		
+
 		return true;
 	}
-	
+
 	private static boolean isAdmin(String repositoryId, String id){
 		boolean isAdmin = false;
-		
+
 		String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 		String endPoint = coreRestUri + "repo/" + repositoryId + "/user/";
-		
+
 		try{
 			JsonNode result = Util.getJsonResponse(session(), endPoint + "show/" + id);
 			if("success".equals(result.get("status").asText())){
 				JsonNode _user = result.get("user");
 				model.User user = new model.User(_user);
-				
+
 				isAdmin = user.isAdmin;
 			}
 		}catch(Exception e){
 			//TODO logging
 			System.out.println("This user is not returned in REST API:" + id);
 		}
-		
+
 		return isAdmin;
 	}
 
 	public static Result logout(String repositoryId){
+		//CMIS session
+		CmisSessions.disconnect(repositoryId, session());
+
+		//Play session
 		session().remove("loginUserId");
+
 		return redirect(routes.Application.login(repositoryId));
 	}
-	
+
 	public static Result jsRoutes() {
 		response().setContentType("text/javascript");
 		return ok(
-			Routes.javascriptRouter("jsRoutes", 
+			Routes.javascriptRouter("jsRoutes",
 				controllers.routes.javascript.Node.showDetail(),
 				controllers.routes.javascript.Node.getAce(),
 				controllers.routes.javascript.Node.update(),
 				controllers.routes.javascript.Node.delete(),
-				
+
 				controllers.routes.javascript.Type.showBlank(),
 				controllers.routes.javascript.Type.edit(),
 				controllers.routes.javascript.Type.delete(),
-				
+
 				controllers.routes.javascript.User.showDetail(),
 				controllers.routes.javascript.User.delete(),
-				
+				controllers.routes.javascript.User.showPasswordChanger(),
+
 				controllers.routes.javascript.Group.showDetail(),
 				controllers.routes.javascript.Group.delete(),
-				
+
 				controllers.routes.javascript.SearchEngine.index(),
 				controllers.routes.javascript.SearchEngine.init(),
 				controllers.routes.javascript.SearchEngine.reindex()
 			)
 		);
 	}
-	
+
 }

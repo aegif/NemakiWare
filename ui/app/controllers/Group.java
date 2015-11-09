@@ -96,13 +96,9 @@ public class Group extends Controller {
     	JsonNode result = Util.postJsonResponse(session(), getEndpoint(repositoryId) + "create/" + params.get("id"), params);
 
     	if(isSuccess(result)){
-    		flash("flash message");
-
-    		
-    		return redirect(routes.Group.index(repositoryId));
-    	}else{
-    		//TODO error
     		return ok();
+    	}else{
+    		return internalServerError("Failed to create a group");
     	}
 	}
 

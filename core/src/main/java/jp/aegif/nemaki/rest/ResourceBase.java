@@ -53,7 +53,6 @@ public class ResourceBase {
 
 	static final String FORM_USERNAME = "name";
 	static final String FORM_PASSWORD = "password";
-	static final String FORM_NEWPASSWORD = "newPassword";
 	static final String FORM_FIRSTNAME = "firstName";
 	static final String FORM_LASTNAME = "lastName";
 	static final String FORM_EMAIL = "email";
@@ -63,6 +62,9 @@ public class ResourceBase {
 	static final String FORM_MEMBER_USERS = "users";
 	static final String FORM_MEMBER_GROUPS = "groups";
 	static final String FORM_ID = "id";
+
+	static final String FORM_NEWPASSWORD = "newPassword";
+	static final String FORM_OLDPASSWORD = "oldPassword";
 
 	static final String ITEM_USERID = "userId";
 	static final String ITEM_USER = "user";
@@ -156,7 +158,7 @@ public class ResourceBase {
 		}
 		return isAdmin;
 	}
-	
+
 	protected boolean nonZeroString(String param){
 		if (param == null || param.equals("")){
 			return false;

@@ -15,8 +15,7 @@
 
     <str id="cmis.repository.main" txt="Référentiel ID" />
 
-    <str id="db.couchdb.host" txt="CouchDB hôte" />
-    <str id="db.couchdb.port" txt="CouchDB port" />
+    <str id="db.couchdb.url" txt="CouchDB URL" />
 
     <str id="solr.host" txt="Solr hôte" />
     <str id="solr.port" txt="Solr port" />

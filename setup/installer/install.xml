@@ -164,8 +164,7 @@
       <executable targetfile="$INSTALL_PATH/setup/couchdb/bjornloka.jar" stage="postinstall"
         type="jar" keep="true">
         <args>
-          <arg value="${db.couchdb.host}" />
-          <arg value="${db.couchdb.port}" />
+          <arg value="${db.couchdb.url}" />
           <arg value="${cmis.repository.main}" />
           <arg value="${cmis.repository.main}_closet" />
           <arg value="$INSTALL_PATH/setup/couchdb/initial_import/bedroom_init.dump" />
@@ -176,8 +175,7 @@
       <executable targetfile="$INSTALL_PATH/setup/couchdb/bjornloka.jar" stage="postinstall"
         type="jar" keep="true">
         <args>
-          <arg value="${db.couchdb.host}" />
-          <arg value="${db.couchdb.port}" />
+          <arg value="${db.couchdb.url}" />
           <arg value="canopy" />
           <arg value="canopy_closet" />
           <arg value="$INSTALL_PATH/setup/couchdb/initial_import/bedroom_init.dump" />
