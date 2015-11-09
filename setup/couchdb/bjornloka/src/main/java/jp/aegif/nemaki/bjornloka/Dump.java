@@ -1,73 +1,57 @@
 package jp.aegif.nemaki.bjornloka;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 
+import jp.aegif.nemaki.bjornloka.dump.DumpAction;
 import jp.aegif.nemaki.bjornloka.model.Entry;
+import jp.aegif.nemaki.bjornloka.proxy.CloudantFactory;
+import jp.aegif.nemaki.bjornloka.proxy.CloudantProxy;
+import jp.aegif.nemaki.bjornloka.proxy.CouchProxy;
+import jp.aegif.nemaki.bjornloka.proxy.EktorpFactory;
+import jp.aegif.nemaki.bjornloka.proxy.EktorpProxy;
 import jp.aegif.nemaki.bjornloka.util.Indicator;
+import jp.aegif.nemaki.bjornloka.util.Util;
 
-import org.ektorp.AttachmentInputStream;
-import org.ektorp.CouchDbConnector;
-import org.ektorp.ViewQuery;
-import org.ektorp.ViewResult;
-import org.ektorp.ViewResult.Row;
-
+import com.fasterxml.jackson.core.JsonGenerationException;
 import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.databind.JsonMappingException;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 public class Dump {
 	public static void main(String[] args) {
-		if (args.length < 4) {
+		if (args.length < 3) {
 			System.err
-					.println("Wrong number of arguments: host, port, repositoryId, filePath, omitTimestamp");
+					.println("Wrong number of arguments: url, repositoryId, filePath, omitTimestamp");
 			return;
 		}
 
-		// host
-		String host = args[0];
-
-		// port
-		String _port = args[1];
-		int port = 0;
-		try {
-			port = Integer.parseInt(_port);
-		} catch (Exception e) {
-			System.err.println("Port must be integer");
-			return;
-		}
+		// url
+		String url = args[0];
 
 		// repositoryId
-		String repositoryId = args[2];
+		String repositoryId = args[1];
 
 		// filePath
-		String filePath = args[3];
+		String filePath = args[2];
 		File file = new File(filePath);
 
 		// omitTimestamp(optional)
 		boolean omitTimestamp = false;
 		try {
-			String _omitTimestamp = args[4];
+			String _omitTimestamp = args[3];
 			omitTimestamp = StringPool.BOOLEAN_TRUE.equals(_omitTimestamp);
 		} catch (Exception e) {
 			// do nothing
 		}
 		
 		if (!omitTimestamp) {
-			String timestamp = getCurrentDateString();
+			String timestamp = Util.getCurrentDateString();
 			String newFilePath = file.getAbsolutePath() + "_" + timestamp;
 			file = null;
 			file = new File(newFilePath);
@@ -75,27 +59,23 @@ public class Dump {
 
 		// Execute dumping
 		try {
-			String createdFilePath = dump(host, port, repositoryId, file, omitTimestamp);
+			DumpAction dumpAction = DumpAction.getInstance(url, repositoryId, file, omitTimestamp);
+			String createdFilePath = dumpAction.dump();;
 			System.out.println("Dump successfully: " + createdFilePath);
 		} catch (Exception e) {
 			e.printStackTrace();
 			System.err.println("Dump failed");
 		}
 	}
+	
+	public static String dump(CouchProxy client,
+			File file, boolean omitTimestamp){
+		List<String> docIds = client.getAllDocIds();
+		System.out.println("alldoc keys:" + docIds.toString());
 
-	public static String dump(String host, int port, String repositoryId,
-			File file, boolean omitTimestamp) throws JsonParseException,
-			JsonMappingException, IOException {
-		CouchDbConnector connector = CouchFactory.createCouchDbConnector(host,
-				port, repositoryId);
-		
-		List<String> docIds = connector.getAllDocIds();
-
-		//TEST
 		try {
 			file.createNewFile();
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 		
@@ -108,82 +88,50 @@ public class Dump {
 			int toIndex = (unit*(i+1) > docIds.size()) ? docIds.size() : unit*(i+1);
 
 			List<String> keys = docIds.subList(i*unit, toIndex);
-			ViewQuery query = new ViewQuery().allDocs().includeDocs(true).keys(keys);
-			List<ObjectNode> results = connector.queryView(query, ObjectNode.class);
+			System.out.println("subsystem keys:" + keys.toString());
+			List<ObjectNode> results = client.getDocs(keys);
 			
 			List<Entry> entries = new ArrayList<Entry>();
 			for(ObjectNode document : results){
 				Entry entry = new Entry();
 				entry.setDocument(document);
-				entry.setAttachments(getAttachments(connector, document));
+				entry.setAttachments(client.getAttachments(document));
 				entries.add(entry);
 				indicator.indicate();
 			}
-			new ObjectMapper().writerWithDefaultPrettyPrinter().writeValue(new FileOutputStream(file, true), entries);
+			try {
+				new ObjectMapper().writerWithDefaultPrettyPrinter().writeValue(new FileOutputStream(file, true), entries);
+			} catch (JsonGenerationException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (JsonMappingException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (FileNotFoundException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
 		}
 		
 		return file.getAbsolutePath();
+		
+	}
+	
+	public static String dumpEktorp(String url, String repositoryId,
+			File file, boolean omitTimestamp) throws JsonParseException,
+			JsonMappingException, IOException {
+		EktorpProxy proxy = EktorpFactory.getInstance().createProxy(url, repositoryId);
+		return dump(proxy, file, omitTimestamp);
 	}
 
-	private static Map<String, Map<String, Object>> getAttachments(
-			CouchDbConnector connector, JsonNode o) throws IOException {
-		String docId = o.get(StringPool.FIELD_ID).textValue();
-		JsonNode _attachments = o.get(StringPool.FIELD_ATTACHMENTS);
-
-		// Example:
-		// "attachments":{
-		// "foo.txt":{
-		// "data":<binary data>,
-		// "content_type":"text/plain"
-		// }
-		// }
-		Map<String, Map<String, Object>> attachments = new HashMap<String, Map<String, Object>>();
-
-		if (_attachments != null) {
-			// Parse each attachment
-			Iterator<String> iterator = _attachments.fieldNames();
-			while (iterator.hasNext()) {
-				String attachmentId = iterator.next();
-				JsonNode _attachment = _attachments.get(attachmentId);
-
-				Map<String, Object> attachment = new HashMap<String, Object>();
-
-				// Content type
-				String contentType = _attachment.get(
-						StringPool.FIELD_CONTENT_TYPE).textValue();
-				attachment.put(StringPool.FIELD_CONTENT_TYPE, contentType);
-
-				// Data
-				AttachmentInputStream ais = connector.getAttachment(docId,
-						attachmentId);
-				Object bytes = readAll(ais);
-				attachment.put(StringPool.FIELD_DATA, bytes);
-				attachments.put(attachmentId, attachment);
-			}
-		}
-
-		return attachments;
+	//TODO implement
+	public static String dumpCloudant(String url, String repositoryId,
+			File file, boolean omitTimestamp){
+		CloudantProxy proxy = CloudantFactory.getInstance().createProxy(url, repositoryId);
+		return dump(proxy, file, omitTimestamp);
 	}
-
-	private static byte[] readAll(InputStream inputStream) throws IOException {
-		ByteArrayOutputStream bout = new ByteArrayOutputStream();
-		byte[] buffer = new byte[1024];
-		while (true) {
-			int len = inputStream.read(buffer);
-			if (len < 0) {
-				break;
-			}
-			bout.write(buffer, 0, len);
-		}
-
-		byte[] result = bout.toByteArray();
-		bout.close();
-		return result;
-	}
-
-	private static String getCurrentDateString() {
-		Date date = new Date();
-		SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMddHHmmss");
-		return sdf.format(date);
-	}
+	
 }

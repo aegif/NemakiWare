@@ -49,7 +49,9 @@ GET		/repo/:repoId/users/search							controllers.User.search(repoId:String, ter
 GET     /repo/:repoId/users/new               				controllers.User.showBlank(repoId:String)
 POST	/repo/:repoId/users/create							controllers.User.create(repoId:String)
 GET		/repo/:repoId/users/:id								controllers.User.showDetail(repoId:String, id:String)
+GET		/repo/:repoId/users/:id/password								controllers.User.showPasswordChanger(repoId:String, id:String)
 POST	/repo/:repoId/users/:id/update						controllers.User.update(repoId:String, id:String)
+POST	/repo/:repoId/users/:id/changePassword						controllers.User.changePassword(repoId:String, id:String)
 POST	/repo/:repoId/users/:id/delete						controllers.User.delete(repoId:String, id:String)
 GET     /repo/:repoId/:repoId/users/:id/favorites           controllers.User.showFavorites(repoId:String, id:String)
 PUT		/repo/:repoId/users/:userId/favorites/:objectId		controllers.User.toggleFavorite(repoId:String, userId:String, objectId:String)
@@ -67,7 +69,7 @@ POST	/repo/:repoId/groups/:id/delete						controllers.Group.delete(repoId:String
 GET		/repo/:repoId/principals/search						controllers.Principal.search(repoId:String, term:String ?= "", groupId:String ?= "")
 
 # Search engine API
-GET		/repo/:repoId/search-engine							controllers.SearchEngine.index(repoId:String)		
+GET		/repo/:repoId/search-engine							controllers.SearchEngine.index(repoId:String)
 GET		/repo/:repoId/search-engine/init					controllers.SearchEngine.init(repoId:String)
 GET		/repo/:repoId/search-engine/reindex					controllers.SearchEngine.reindex(repoId:String)
 

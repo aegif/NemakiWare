@@ -10,11 +10,8 @@
 		<property name="repositoryInfoMap">
 			<ref bean="repositoryInfoMap" />
 		</property>
-		<property name="host">
-			<value>${db.couchdb.host}</value>
-		</property>
-		<property name="port">
-			<value>${db.couchdb.port}</value>
+		<property name="url">
+			<value>${db.couchdb.url}</value>
 		</property>
 		<property name="maxConnections">
 			<value>${db.couchdb.max.connections}</value>

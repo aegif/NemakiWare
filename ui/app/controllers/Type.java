@@ -32,6 +32,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyDe
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.DocumentTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.FolderTypeDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.ItemTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyBooleanDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDecimalDefinitionImpl;
@@ -271,6 +272,8 @@ public class Type extends Controller {
 			return parseDocumentType(json);
 		}else if(BaseTypeId.CMIS_FOLDER.value().equals(baseId)){
 			return parseFolder(json);
+		}else if(BaseTypeId.CMIS_ITEM.value().equals(baseId)){
+			return parseItem(json);
 		}
 		
 		return null;
@@ -334,6 +337,12 @@ public class Type extends Controller {
 	
 	private static TypeDefinition parseFolder(JsonNode json){
 		FolderTypeDefinitionImpl pdf = new FolderTypeDefinitionImpl();
+		parseCommonType(pdf, json);
+		return pdf;
+	}
+	
+	private static TypeDefinition parseItem(JsonNode json){
+		ItemTypeDefinitionImpl pdf = new ItemTypeDefinitionImpl();
 		parseCommonType(pdf, json);
 		return pdf;
 	}

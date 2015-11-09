@@ -29,11 +29,14 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import jp.aegif.nemaki.tracker.CoreTracker;
 import jp.aegif.nemaki.tracker.CoreTrackerJob;
+import jp.aegif.nemaki.util.CmisSessionFactory;
 import jp.aegif.nemaki.util.Constant;
 import jp.aegif.nemaki.util.PropertyKey;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.StringPool;
 import jp.aegif.nemaki.util.impl.PropertyManagerImpl;
+import jp.aegif.nemaki.util.yaml.RepositorySetting;
+import jp.aegif.nemaki.util.yaml.RepositorySettings;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.log4j.Logger;
@@ -154,7 +157,7 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 
 		// Stop cron when executing action
 		try {
-			scheduler.standby();
+			if(scheduler != null) scheduler.standby();
 		} catch (SchedulerException e) {
 			e.printStackTrace();
 		}
@@ -164,7 +167,7 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 		
 		// Restart cron
 		try {
-			scheduler.start();
+			if(scheduler != null) scheduler.start();
 		} catch (SchedulerException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -181,6 +184,8 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 			index(rsp, tracker, params, repositoryId);
 		} else if (action.equalsIgnoreCase("INIT")) {
 			init(rsp, tracker, repositoryId);
+		} else if (action.equalsIgnoreCase("CHANGE_PASSWORD")) {
+			changePassword(rsp, tracker, repositoryId, params);
 		}
 	}
 	
@@ -208,7 +213,6 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 			tracker.index(tracking, repositoryId);
 		}
 		
-		
 		// TODO More info
 		rsp.add("Result", "Successfully tracked!");
 	}
@@ -225,6 +229,42 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 		rsp.add("Result", "Successfully initialized!");
 	}
 	
+	private void changePassword(SolrQueryResponse rsp, CoreTracker tracker, String repositoryId, SolrParams params){
+		//Validation
+		if(StringUtils.isEmpty(repositoryId)){
+			rsp.setException(new Exception("repositoryId is not set."));
+			return;
+		}
+		
+		String password = params.get("password");
+		if(StringUtils.isEmpty(password)){
+			rsp.setException(new Exception("New password is not set."));
+			return;
+		}
+		
+		String currentPassword = params.get("currentPassword");
+		if(StringUtils.isEmpty(password)){
+			rsp.setException(new Exception("Current password is not set."));
+			return;
+		}
+		
+		//Execute
+		RepositorySettings settings = CmisSessionFactory.getRepositorySettings();
+		RepositorySetting setting = settings.get(repositoryId);
+		if(setting == null){
+			rsp.setException(new Exception("Specified repository does not exist."));
+			return;
+		}
+		if(!currentPassword.equals(setting.getPassword())){
+			rsp.setException(new Exception("Current password does not match."));
+			return;
+		}
+		setting.setPassword(password);
+		CmisSessionFactory.modifyRepositorySettings(settings);
+		
+		rsp.add("Result", "Successfully password changed!");
+		
+	}
 	
 	/**
 	 * @return the trackers
