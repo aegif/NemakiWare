@@ -7,6 +7,10 @@ i.fa {
 	padding-right:2px;
 }
 
+.error{
+	color: red;
+}
+
 div.menubar {
    background-color: #cccccc;
 }

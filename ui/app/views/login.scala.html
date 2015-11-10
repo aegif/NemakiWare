@@ -1,4 +1,6 @@
-@(repositoryId:String)(form: Form[model.Login])
+@(repositoryId:String)(loginForm: Form[model.Login])
+@import helper._
+
 <html>
 	@header()
 	<body>
@@ -7,19 +9,23 @@
 		    	<div class="col-md-4 col-md-offset-4">
 					<img src="@routes.Assets.at("images/nemaki-logo.png")" width="300" />
 		    		<div class="panel panel-default">
-					  	<div class="panel-heading">
-					    	<h3 class="panel-title">@Messages("view.auth.login.caption")</h3>
+						<div class="panel-heading">
+							<h3 class="panel-title">@Messages("view.auth.login.caption")</h3>
+							@if(loginForm.hasGlobalErrors) {
+								<div class="error"> @loginForm.globalError.message </div>
+							}
 					 	</div>
 					  	<div class="panel-body">
-					    	@helper.form(action=routes.Application.authenticate(repositoryId)){
+					    	@form(action=routes.Application.authenticate(repositoryId)){
 					    		<fieldset>
+					    			<input type="hidden" name="repositoryId" value="@repositoryId" />
 						    	  	<div class="form-group">
 						    		    <input class="form-control" placeholder="@Messages("view.user.id")" name="id" type="text">
 						    		</div>
 						    		<div class="form-group">
 						    			<input class="form-control" placeholder="@Messages("view.user.password")" name="password" type="password" value="">
 						    		</div>
-						    		<!-- 
+						    		<!--
 						    		<div class="checkbox">
 						    	    	<label>
 						    	    		<input name="remember" type="checkbox" value="Remember Me"> Remember Me
