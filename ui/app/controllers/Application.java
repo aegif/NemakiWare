@@ -1,51 +1,40 @@
 package controllers;
 
-import org.apache.chemistry.opencmis.client.api.Session;
+import java.util.Map;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
 import constant.Token;
 import model.Login;
 import play.Routes;
-import play.data.Form;
+import play.data.*;
 import play.mvc.Controller;
 import play.mvc.Result;
 import util.Util;
 import views.html.login;
 
 public class Application extends Controller{
+
 	public static Result login(String repositoryId) {
-	    return ok(login.render(repositoryId, new Form<Login>(Login.class)));
+	    return ok(login.render(repositoryId, Form.form(Login.class)));
 	}
 
 	public static Result authenticate(String repositoryId){
-		Form<Login> input = Form.form(Login.class);
-		input = input.bindFromRequest();
-		String id = input.data().get("id");
-		String password = input.data().get("password");
+		Form<Login> formData = Form.form(Login.class);
+		formData = formData.bindFromRequest();
+		if(formData.hasErrors())
+			return badRequest(login.render(repositoryId, formData));
 
-		if(validate(repositoryId, id, password)){
-			session().clear();
-			session(Token.LOGIN_USER_ID, id);
-			session(Token.LOGIN_USER_PASSWORD, password);
-			session(Token.LOGIN_USER_IS_ADMIN, String.valueOf(isAdmin(repositoryId, id)));
-			session("repositoryId", repositoryId);
-			return redirect(routes.Node.index(repositoryId));
-		}else{
-			return badRequest(login.render(repositoryId, input));
-		}
+		Login loginModel = formData.get();
+		session().clear();
+		session(Token.LOGIN_USER_ID, loginModel.id);
+		session(Token.LOGIN_USER_PASSWORD, loginModel.password);
+		session(Token.LOGIN_USER_IS_ADMIN, String.valueOf(isAdmin(repositoryId, loginModel.id)));
+		session("repositoryId", repositoryId);
+		return redirect(routes.Node.index(repositoryId));
 	}
 
-	private static boolean validate(String repositoryId, String id, String password){
-		try{
-			Session cmisSession = Util.createCmisSession(repositoryId, id, password);
-		}catch(Exception e){
-			e.printStackTrace();
-			return false;
-		}
 
-		return true;
-	}
 
 	private static boolean isAdmin(String repositoryId, String id){
 		boolean isAdmin = false;

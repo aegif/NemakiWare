@@ -12,7 +12,7 @@ GET     /webjars/*file                  					controllers.WebJarAssets.at(file)
 
 # Login
 GET		/repo/:repoId/login									controllers.Application.login(repoId)
-GET		/repo/:repoId/authenticate							controllers.Application.authenticate(repoId)
+POST		/repo/:repoId/authenticate							controllers.Application.authenticate(repoId)
 GET		/repo/:repoId/logout								controllers.Application.logout(repoId)
 
 # Home page
