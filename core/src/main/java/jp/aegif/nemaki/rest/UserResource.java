@@ -484,14 +484,24 @@ public class UserResource extends ResourceBase {
 
 		String userId = callContext.getUsername();
 		String password = callContext.getPassword();
-		if (!userId.equals(resoureId) && !isAdmin(repositoryId, userId, password)) {
+		if (!userId.equals(resoureId) && !isAdminOperaiton(repositoryId, userId, password) && !isSolrUser(repositoryId, resoureId)) {
 			status = false;
 			addErrMsg(errMsg, ITEM_USER, ERR_NOTAUTHENTICATED);
 		}
 		return status;
 	}
 
-	private boolean isAdmin(String repositoryId, String userId, String password) {
+	private boolean isSolrUser(String repositoryId, String userId){
+		boolean result = false;
+
+		User user = principalService.getUserById(repositoryId, userId);
+		String solrUserId = propertyManager.readValue(PropertyKey.SOLR_NEMAKI_USERID);
+		result = user.getUserId().equals(solrUserId);
+
+		return result;
+	}
+
+	private boolean isAdminOperaiton(String repositoryId, String userId, String password) {
 		if (StringUtils.isBlank(userId) || StringUtils.isBlank(password)) {
 			return false;
 		}

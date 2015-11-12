@@ -26,11 +26,11 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 		org.apache.chemistry.opencmis.commons.server.CmisServiceFactory {
 
 	private PropertyManager propertyManager;
-	
+
 	private jp.aegif.nemaki.cmis.factory.CmisService cmisService;
-	
+
 	private AuthenticationService authenticationService;
-	
+
 	private static BigInteger DEFAULT_MAX_ITEMS_TYPES;
 	private static BigInteger DEFAULT_DEPTH_TYPES;
 	private static BigInteger DEFAULT_MAX_ITEMS_OBJECTS;
@@ -38,11 +38,11 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 
 	private static final Log log = LogFactory
 			.getLog(AuthenticationServiceImpl.class);
-	
+
 	public CmisServiceFactory() {
 		super();
 	}
-	
+
 	@PostConstruct
 	public void setup(){
 		DEFAULT_MAX_ITEMS_TYPES = DataUtil.convertToBigInteger(propertyManager.readValue(PropertyKey.CMIS_SERVER_DEFAULT_MAX_ITEMS_TYPES));
@@ -50,7 +50,7 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 		DEFAULT_MAX_ITEMS_OBJECTS = DataUtil.convertToBigInteger(propertyManager.readValue(PropertyKey.CMIS_SERVER_DEFAULT_MAX_ITEMS_OBJECTS));
 		DEFAULT_DEPTH_OBJECTS = DataUtil.convertToBigInteger(propertyManager.readValue(PropertyKey.CMIS_SERVER_DEFAULT_MAX_DEPTH_OBJECTS));
 	}
-	
+
 	/**
 	 * Add NemakiRepository into repository map at first.
 	 */
@@ -60,11 +60,16 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 
 	@Override
 	public org.apache.chemistry.opencmis.commons.server.CmisService getService(CallContext callContext) {
+		String repositryId = callContext.getRepositoryId();
+		String userName = callContext.getUsername();
+
 		// Authentication
 		boolean auth = authenticationService.login(callContext);
+
+
 		if (auth) {
-			log.info("[userName=" + callContext.getUsername() + "]"
-					+ "Authentication succeeded");
+			String msg = String.format("[repository=%1$s][userName=%2$s]Authentication succeeded",repositryId, userName);
+			log.info(msg);
 
 			// Create CmisService
 			CmisServiceWrapper wrapper = new CmisServiceWrapper(
@@ -72,14 +77,14 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 					DEFAULT_MAX_ITEMS_TYPES, DEFAULT_DEPTH_TYPES,
 					DEFAULT_MAX_ITEMS_OBJECTS, DEFAULT_DEPTH_OBJECTS,
 					callContext);
-			
+
 			return wrapper;
 		} else {
-			throw new CmisUnauthorizedException("[userName="
-					+ callContext.getUsername() + "]" + "Authentication failed", BigInteger.valueOf(401));
+			String msg = String.format("[repository=%1$s][userName=%2$s]Authentication failed",repositryId, userName);
+			throw new CmisUnauthorizedException(msg, BigInteger.valueOf(401));
 		}
 	}
-	
+
 	@Override
 	public void destroy() {
 		super.destroy();
