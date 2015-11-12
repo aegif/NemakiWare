@@ -392,6 +392,9 @@ public class UserResource extends ResourceBase {
 				status = false;
 				addErrMsg(errMsg, ITEM_USER, ERR_DELETE);
 			}
+		} else {
+			status = false;
+			addErrMsg(errMsg, ITEM_USER, ERR_DELETE);
 		}
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
@@ -484,19 +487,23 @@ public class UserResource extends ResourceBase {
 
 		String userId = callContext.getUsername();
 		String password = callContext.getPassword();
-		if (!userId.equals(resoureId) && !isAdminOperaiton(repositoryId, userId, password) && !isSolrUser(repositoryId, resoureId)) {
+		if (!userId.equals(resoureId) && !isAdminOperaiton(repositoryId, userId, password) && !isSystemUser(repositoryId, resoureId)) {
 			status = false;
 			addErrMsg(errMsg, ITEM_USER, ERR_NOTAUTHENTICATED);
 		}
 		return status;
 	}
 
-	private boolean isSolrUser(String repositoryId, String userId){
+	private boolean isSystemUser(String repositoryId, String userId){
 		boolean result = false;
-
 		User user = principalService.getUserById(repositoryId, userId);
+
+		result = user.isAdmin();
+		if(result) return true;
+
 		String solrUserId = propertyManager.readValue(PropertyKey.SOLR_NEMAKI_USERID);
 		result = user.getUserId().equals(solrUserId);
+		if(result) return true;
 
 		return result;
 	}
