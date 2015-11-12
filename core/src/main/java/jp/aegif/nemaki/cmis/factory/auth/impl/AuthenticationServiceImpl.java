@@ -126,8 +126,9 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	}
 
 	private boolean loginWithBasicAuth(CallContext callContext) {
+		String repositoryId = callContext.getRepositoryId();
 		//Check repositoryId exists
-		if(!repositoryInfoMap.contains(callContext.getRepositoryId())){
+		if(!repositoryInfoMap.contains(repositoryId)){
 			return false;
 		}
 
@@ -135,8 +136,19 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		User user = getAuthenticatedUser(callContext.getRepositoryId(), callContext.getUsername(), callContext.getPassword());
 		if (user == null)
 			return false;
+
 		boolean isAdmin = user.isAdmin() == null ? false : true;
 		setAdminFlagInContext(callContext, isAdmin);
+
+		//if not exist create solr user
+		String solrUserId = propertyManager.readValue(PropertyKey.SOLR_NEMAKI_USERID);
+		User solrUser = principalService.getUserById(repositoryId, solrUserId);
+		if (solrUser == null) {
+			User newSolrUser = new User(solrUserId, solrUserId, "", "", "", BCrypt.hashpw(solrUserId, BCrypt.gensalt()));
+			principalService.createUser(repositoryId, newSolrUser);
+		}
+
+
 		return true;
 	}
 

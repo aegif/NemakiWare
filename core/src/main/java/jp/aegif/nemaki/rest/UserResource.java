@@ -44,6 +44,8 @@ import javax.ws.rs.core.MediaType;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.util.AuthenticationUtil;
+import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.collections.CollectionUtils;
@@ -67,6 +69,11 @@ public class UserResource extends ResourceBase {
 	SolrResource solrResource;
 	public void setSolrResource(SolrResource value){
 		this.solrResource = value;
+	}
+
+	private PropertyManager propertyManager;
+	public void setPropertyManager(PropertyManager propertyManager) {
+		this.propertyManager = propertyManager;
 	}
 
 	@SuppressWarnings("unchecked")
@@ -244,12 +251,15 @@ public class UserResource extends ResourceBase {
 					addErrMsg(errMsg, ITEM_USER, ERR_UPDATE);
 				}
 
-				if(status & user.isAdmin()){
-					JSONObject capResult = solrResource.changeAdminPasswordImpl(repositoryId, newPassword, oldPassword, httpRequest);
-					if (capResult.get(ITEM_STATUS).toString()  != SUCCESS){
-						// TODO: Error handling
-						status = false;
-						addErrMsg(errMsg, ITEM_USER, capResult.get(ITEM_ERROR).toString());
+				if(status){
+					String solrUserId = propertyManager.readValue(PropertyKey.SOLR_NEMAKI_USERID);
+					if(user.getUserId().equals(solrUserId)){
+						JSONObject capResult = solrResource.changeAdminPasswordImpl(repositoryId, newPassword, oldPassword, httpRequest);
+						if (capResult.get(ITEM_STATUS).toString()  != SUCCESS){
+							// TODO: Error handling
+							status = false;
+							addErrMsg(errMsg, ITEM_USER, capResult.get(ITEM_ERROR).toString());
+						}
 					}
 				}
 			}
