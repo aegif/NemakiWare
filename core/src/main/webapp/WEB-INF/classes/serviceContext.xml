@@ -597,6 +597,9 @@
         <property name="solrResource">
             <ref bean="solrResource" />
         </property>
+         <property name="propertyManager">
+            <ref bean="propertyManager" />
+        </property>
     </bean>
 
     <bean id="solrAllResource" class="jp.aegif.nemaki.rest.SolrAllResource">

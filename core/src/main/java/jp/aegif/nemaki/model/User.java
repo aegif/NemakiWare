@@ -46,6 +46,7 @@ public class User extends NodeBase {
 	private String firstName;
 	private String email;
 	private String passwordHash;
+	private Boolean fullTextIndexSearchAdmin;
 	private Boolean admin;
 	private Set<String> favorites;
 
@@ -132,6 +133,7 @@ public class User extends NodeBase {
 	public void setAdmin(Boolean admin) {
 		this.admin = admin;
 	}
+
 
 	public Set<String> getFavorites() {
 		return favorites;
