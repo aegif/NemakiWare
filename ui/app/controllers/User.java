@@ -40,10 +40,8 @@ public class User extends Controller {
 	}
 
 	public static Result index(String repositoryId){
-		List<model.User>emptyList = new ArrayList<model.User>();
-
-	    	return ok(index.render(repositoryId, emptyList));
-	    }
+	    	return search(repositoryId, "");
+	  }
 
 	public static Result search(String repositoryId, String term){
     	JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "search?query=" + term);

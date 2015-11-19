@@ -28,17 +28,16 @@ import com.fasterxml.jackson.databind.JsonNode;
 public class Group extends Controller {
 
 	private static String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
-	
+
 	public static Result index(String repositoryId){
-		List<model.Group>emptyList = new ArrayList<model.Group>();
-	    return ok(views.html.group.index.render(repositoryId,emptyList));
+	    return  search( repositoryId, "");
 	}
 
 	public static Result search(String repositoryId, String term){
     	JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "search?query=" + term);
 
     	List<model.Group> list = new ArrayList<model.Group>();
-    	
+
     	//TODO check status
     	JsonNode groups = result.get("result");
     	if(groups == null){
@@ -47,7 +46,7 @@ public class Group extends Controller {
     		Iterator<JsonNode>itr = groups.elements();
         	while(itr.hasNext()){
         		JsonNode node = itr.next();
-        		
+
         		model.Group group = new model.Group();
         		group.id = node.get("groupId").asText();
         		group.name = node.get("groupName").asText();
@@ -69,21 +68,21 @@ public class Group extends Controller {
             		}
             		group.groups = memberGroups;
         		}
-        		    		
+
         		list.add(group);
-        				
+
         	}
     	}
-    	
+
 
     	//render
     	if(Util.dataTypeIsHtml(request().acceptedTypes())){
     		return ok(index.render(repositoryId, list));
     	}else{
     		return ok(groups);
-    		
+
     	}
-    	
+
     }
 
 	public static Result showBlank(String repositoryId){
@@ -104,19 +103,19 @@ public class Group extends Controller {
 
 	public static Result delete(String repositoryId, String id){
 		JsonNode result = Util.deleteJsonResponse(session(), getEndpoint(repositoryId) + "delete/" + id);
-		
+
 		//TODO error
 		return ok();
 	}
 
 	public static Result showDetail(String repositoryId, String id){
 		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "show/" + id);
-		
+
 		if(isSuccess(result)){
 			JsonNode _group = result.get("group");
 			model.Group group = new model.Group(_group);
-			
-			
+
+
 			//List of (userId,userName)
 			List<Principal> users = new ArrayList<Principal>();
 			List<String> userIds = group.users;
@@ -129,7 +128,7 @@ public class Group extends Controller {
 					}
 				}
 			}
-			
+
 			//List of (groupId,groupName)
 			List<Principal> groups = new ArrayList<Principal>();
 			List<String> groupIds = group.groups;
@@ -142,37 +141,37 @@ public class Group extends Controller {
 					}
 				}
 			}
-			
+
 			List<Principal>principals = new ArrayList<Principal>();
 			principals.addAll(users);
 			principals.addAll(groups);
-			
+
 			return ok(property.render(repositoryId, group, principals));
 		}else{
 			//TODO
 			return internalServerError();
 		}
 	}
-	
+
 	public static Result update(String repositoryId, String id){
-    	
+
     	Map<String, String>params = buildParams();
-    	
-    	
+
+
     	JsonNode result = Util.putJsonResponse(session(), getEndpoint(repositoryId) + "update/" + id , params);
-    	
+
     	if(isSuccess(result)){
     		return ok();
     	}else{
     		return internalServerError();
     	}
 	}
-	
+
 	private static boolean isSuccess(JsonNode result){
 		return "success".equals(result.get("status").asText()) ||
 				("failure".equals(result.get("status").asText()) && "notFound".equals(result.get("error").get("group")));
 	}
-	
+
 	private static Map<String, String> buildParams(){
 		DynamicForm input = Form.form();
     	input = input.bindFromRequest();
@@ -181,21 +180,21 @@ public class Group extends Controller {
     	String groupName = input.get("groupName");
     	String users = input.get("users");
     	String groups = input.get("groups");
-    	
+
     	Map<String, String>params = new HashMap<String, String>();
     	params.put("id", groupId);
     	params.put("name", groupName);
     	params.put("users", users);
     	params.put("groups", groups);
-    	
+
     	return params;
 	}
-	
+
 	private static String getEndpoint(String repositoryId){
 		return coreRestUri + "repo/" + repositoryId + "/group/";
-		
+
 	}
-	
+
 	private static String getEndpointForUser(String repositoryId){
 		return coreRestUri + "repo/" + repositoryId + "/user/";
 	}
