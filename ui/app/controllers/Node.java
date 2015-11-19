@@ -78,11 +78,11 @@ public class Node extends Controller {
 	}
 
 	public static Result index(String repositoryId) {
-		Session session = getCmisSession(repositoryId);
 		try{
+			Session session = getCmisSession(repositoryId);
 			Folder root = session.getRootFolder();
 			return showChildren(repositoryId, root.getId());
-		}catch(CmisUnauthorizedException ex){
+		}catch(Exception ex){
 			CmisSessions.disconnect(repositoryId, session());
 			return redirect(routes.Application.login(repositoryId));
 		}
