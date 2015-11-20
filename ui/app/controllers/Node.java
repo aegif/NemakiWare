@@ -200,9 +200,8 @@ public class Node extends Controller {
 		String parentId = o.getParents().get(0).getId();
 
 		// Get user
-		final String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
-		final String endPoint = coreRestUri + "repo/" + repositoryId + "/user/";
-		String url = endPoint + "show/" + session().get(Token.LOGIN_USER_ID);
+		final String endPoint = Util.buildNemakiCoreRestRepositoryUri(repositoryId);
+		String url = endPoint + "user/show/" + session().get(Token.LOGIN_USER_ID);
 		JsonNode result = Util.getJsonResponse(session(), url);
 		model.User user = new model.User();
 		if ("success".equals(result.get("status").asText())) {
@@ -817,11 +816,10 @@ public class Node extends Controller {
 			return new Principal("user", anonymous, anonymous);
 		}
 
-		String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
+		String coreRestUri = Util.buildNemakiCoreRestRepositoryUri(repositoryId);
 
 		// user
-		JsonNode resultUser = Util
-				.getJsonResponse(session(), coreRestUri + "repo/" + repositoryId + "/user/show/" + principalId);
+		JsonNode resultUser = Util.getJsonResponse(session(), coreRestUri + "user/show/" + principalId);
 		// TODO check status
 		JsonNode user = resultUser.get("user");
 		if (user != null) {
@@ -830,7 +828,7 @@ public class Node extends Controller {
 		}
 
 		// group
-		JsonNode resultGroup = Util.getJsonResponse(session(), coreRestUri + "group/show/" + principalId);
+		JsonNode resultGroup = Util.getJsonResponse(session(), coreRestUri +"group/show/" + principalId);
 		// TODO check status
 		JsonNode group = resultGroup.get("group");
 		if (group != null) {
