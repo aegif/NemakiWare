@@ -168,6 +168,9 @@
         <property name="compileService">
             <ref bean="CompileService" />
         </property>
+       <property name="permissionService">
+            <ref bean="PermissionService" />
+        </property>
         <property name="sortUtil">
             <ref bean="sortUtil" />
         </property>

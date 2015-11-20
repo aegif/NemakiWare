@@ -29,6 +29,7 @@ import java.util.List;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
+import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.cmis.aspect.SortUtil;
 import jp.aegif.nemaki.cmis.service.NavigationService;
 import jp.aegif.nemaki.model.Content;
@@ -62,6 +63,7 @@ public class NavigationServiceImpl implements NavigationService {
 	private ContentService contentService;
 	private ExceptionService exceptionService;
 	private CompileService compileService;
+	private PermissionService permissionService;
 	private SortUtil sortUtil;
 
 	@Override
@@ -113,6 +115,8 @@ public class NavigationServiceImpl implements NavigationService {
 
 		// Build ObjectList
 		List<Content> contents = contentService.getChildren(repositoryId, folderId);
+
+		contents = permissionService.getFiltered(callContext, repositoryId, contents);
 
 		ObjectList ol = compileService.compileObjectDataList(callContext,
 				repositoryId, contents, filter,
@@ -340,7 +344,13 @@ public class NavigationServiceImpl implements NavigationService {
 		this.compileService = compileService;
 	}
 
+	public void setPermissionService(PermissionService permissionService) {
+		this.permissionService = permissionService;
+	}
+
+
 	public void setSortUtil(SortUtil sortUtil) {
 		this.sortUtil = sortUtil;
 	}
+
 }
