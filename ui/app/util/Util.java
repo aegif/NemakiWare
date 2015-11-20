@@ -128,6 +128,15 @@ public class Util {
 		return buildUri(protocol, host, port, context);
 	}
 
+	public static String buildNemakiCoreRestRepositoryUri(String repositoryId){
+		String coreUri = Util.buildNemakiCoreUri();
+		StringBuilder sb = new StringBuilder(coreUri);
+		String rest = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_REST);
+		String repo = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_REPOSITORY);
+		sb.append(rest).append("/").append(repo).append("/").append(repositoryId).append("/");
+		return sb.toString();
+	}
+
 	private static String buildUri(String protocol, String host, String port, String context){
 		StringBuilder sb = new StringBuilder();
 		sb.append(protocol).append("://").append(host).append(":").append(port).append("/").append(context).append("/");
