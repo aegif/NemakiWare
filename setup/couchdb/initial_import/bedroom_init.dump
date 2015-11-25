@@ -71,9 +71,28 @@
   "attachments" : { }
 }, {
   "document" : {
+   "_id" : "6174536bc714bfc3294b00306f000d5d",
+   "_rev" : "1-896182b5dcbb926e5209c3cbadb445fe",
+   "admin" : true,
+   "created" : "2013-01-01T00:00:00.000+0000",
+   "creator" : "system",
+   "email" : "",
+   "lastName" : "solr",
+   "firstName" : "",
+   "modified" : "2013-01-01T00:00:00.000+0000",
+   "modifier" : "system",
+   "name" : "solr",
+   "passwordHash": "$2a$10$YTaQCKmmf.f2XkcOPjVAVe1q3RR.Z2/YD6sotC/Kz.ZVlBYqhjIW6",
+   "type" : "user",
+   "userId" : "solr"
+  },
+  "attachments" : { }
+}, {
+  "document" : {
     "_id" : "94ee2cb22e260d582b5d66903f002175",
     "_rev" : "1-28d8dffb424a3dc8c5558cfca16003a8",
     "created" : "2013-01-01T00:00:00.000+0000",
+    "admin" : true,
     "creator" : "system",
     "email" : "",
     "firstName" : "system",
