@@ -64,6 +64,7 @@ public class User extends Controller {
         		user.firstName = node.get("firstName").asText();
         		user.lastName = node.get("lastName").asText();
         		user.email = node.get("email").asText();
+        		user.isAdmin = node.get("isAdmin").asBoolean();
 
         		list.add(user);
         	}

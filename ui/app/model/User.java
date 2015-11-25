@@ -14,12 +14,14 @@ public class User {
 	public String lastName;
 	public String email;
 	public boolean isAdmin;
+	public DateTime created;
+
 	public Set<String> favorites;
-	
+
 	public User(){
-		
+
 	}
-	
+
 	public User(JsonNode json){
 		this.id = json.get("userId").asText();
 		this.name = json.get("userName").asText();
@@ -27,7 +29,7 @@ public class User {
 		this.lastName = json.get("lastName").asText();
 		this.email = json.get("email").asText();
 		this.isAdmin = json.get("isAdmin").asBoolean();
-		
+
 		JsonNode jfs = json.get("favorites");
 		Set<String> ufs = new HashSet<String>();
 		if(jfs != null && jfs.isArray()){
