@@ -1,5 +1,6 @@
 package model;
 
+import java.util.GregorianCalendar;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
@@ -14,7 +15,10 @@ public class User {
 	public String lastName;
 	public String email;
 	public boolean isAdmin;
-	public DateTime created;
+	protected GregorianCalendar created;
+	protected String creator;
+	protected GregorianCalendar modified;
+	protected String modifier;
 
 	public Set<String> favorites;
 
