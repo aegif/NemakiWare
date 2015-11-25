@@ -179,8 +179,8 @@ public class User extends Controller {
     		flash("flash message");
     		return redirect(routes.User.index(repositoryId));
     	}else{
-    		//TODO error
-    		return ok();
+    		String errorMsg = result.get("error").get("userId").asText();
+    		return internalServerError(errorMsg);
     	}
 	}
 

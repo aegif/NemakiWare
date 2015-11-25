@@ -50,14 +50,6 @@
 						)){ property =>
 							@editableRow(property)()
 						}
-						<!-- new password row -->
-						<!--  -
-						@defining(Util.buildTempProperty(
-							"user-password", "Password", false, true, false, null, false, user.password
-						)){ property =>
-							@editableRow(property)()
-						}
-						-->
 					}
 				</div>
 			</div>
@@ -75,7 +67,6 @@
 			data['firstName'] = editedValue('#user-first-name');
 			data['lastName'] = editedValue('#user-last-name');
 			data['email'] = editedValue('#user-email');
-			//data['password'] = editedValue('#user-password');
 
 			//Validation
 			if(!data['userId']){
@@ -86,12 +77,6 @@
 				alert("@NemakiConfig.getLabel("user-name", lang().language) @Messages("view.message.is-required")");
 				return;  //End click event
 			}
-			/*
-			if(!data['password']){
-				alert("@NemakiConfig.getLabel("user-password", lang().language) @Messages("view.message.is-required")");
-				return;  //End click event
-			}
-			*/
 
 			//call
 			$.blockUI({message:"@Messages("view.message.please.wait")"});
