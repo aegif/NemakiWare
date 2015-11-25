@@ -75,6 +75,7 @@ view.user.create.caption=Create a new user
 view.user.id=ID
 view.user.password=Password
 view.user.name=Display Name
+view.user.is-admin=Admin User
 view.user.first.name=First Name
 view.user.last.name=Last Name
 view.user.email=E-Mail

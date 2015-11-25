@@ -14,7 +14,7 @@
 	  				<h3><i class="fa fa-user"></i>@Messages("view.user.caption")</h3>
 	  			</div>
 	  		</div>
-		
+
 	  		<div class="row">
 	  			<div class="col-md-11">
 	  				<ul class="nav nav-pills">
@@ -35,12 +35,12 @@
 							        	<button class="btn btn-default" id="user-search" type="submit"><i class="fa fa-search"></i></button>
 							     	</div>
 								}
-						    	
+
 						 	</div>
 						</li>
 	  				</ul>
 				</div>
-				
+
 				<div class="col-md-11">
 					<!-- search result -->
 					<div id="user-result">
@@ -49,6 +49,7 @@
 								<tr>
 									<th data-sort-initial="true">@Messages("view.user.id")</th>
 									<th>@Messages("view.user.name")</th>
+									<th>@Messages("view.user.is-admin")</th>
 									<th>@Messages("view.user.last.name")</th>
 									<th>@Messages("view.user.first.name")</th>
 									<th>@Messages("view.user.email")</th>
@@ -60,12 +61,15 @@
 									<tr>
 										<td>@user.id</td>
 										<td>@user.name</td>
+										<td>@user.isAdmin</td>
 										<td>@user.lastName</td>
 										<td>@user.firstName</td>
 										<td>@user.email</td>
 										<td>
 											<button type='button' class='btn btn-default user-detail' user-id='@user.id'><i class="fa fa-wrench"></i>@Messages("view.detail")</button>
-											<button type='button' class='btn btn-default user-delete' user-id='@user.id'><i class="fa fa-trash"></i>@Messages("view.delete")</button>
+											@if(!user.isAdmin){
+												<button type='button' class='btn btn-default user-delete' user-id='@user.id'><i class="fa fa-trash"></i>@Messages("view.delete")</button>
+											}
 										</td>
 									</tr>
 								}
@@ -81,7 +85,7 @@
 <!-- scripts -->
 <script type="text/javascript">
 	$(function () {
-		$('#user-table').footable();	
+		$('#user-table').footable();
 	});
 </script>
 
@@ -93,11 +97,11 @@
 				showLightbox('user-blank', html);
 			});
 		});
-	
+
 		//binding: show button
 		$('.user-detail').click(function(){
 			var id = $(this).attr('user-id');
-       		
+
 			$.ajax(jsRoutes.controllers.User.showDetail("@repositoryId", id)
 			).done(function(data){
 				showLightbox('user-detail-' + id, data);
@@ -107,14 +111,14 @@
 				//TODO
 			});
 		});
-	
+
 		//binding: delete button
 		$('.user-delete').click(function(){
 			if(window.confirm("@Messages("view.message.delete.confirm")")){
 				var id = $(this).attr('user-id');
-			
+
 				$.blockUI({message:"@Messages("view.message.please.wait")"});
-				
+
 				$.ajax(jsRoutes.controllers.User.delete("@repositoryId", id)
 				).done(function(data){
 					window.alert("@Messages("view.message.delete.success")");
