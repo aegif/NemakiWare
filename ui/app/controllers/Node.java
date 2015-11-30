@@ -55,6 +55,7 @@ import play.mvc.Http.MultipartFormData;
 import play.mvc.Http.MultipartFormData.FilePart;
 import play.mvc.Result;
 import play.mvc.Security.Authenticated;
+import util.ResponseUtil;
 import util.Util;
 import views.html.node.blank;
 import views.html.node.detail;
@@ -158,20 +159,6 @@ public class Node extends Controller {
 			if (!val)
 				continue;
 			list.add(doc);
-		}
-
-		// Build WHERE clause(cmis:folder)
-		if (false) { //フォルダはデフォルトでは検索しない
-			MessageFormat folderFormat = new MessageFormat("cmis:name LIKE ''%{0}%'' OR cmis:description LIKE ''%{0}%''");
-			String folderStatement = "";
-			if (StringUtils.isNotBlank(term)) {
-				folderStatement = folderFormat.format(new String[] { term });
-			}
-			ItemIterable<CmisObject> folderResults = session.queryObjects("cmis:folder", folderStatement, false, ctxt);
-			Iterator<CmisObject> folderItr = folderResults.iterator();
-			while (folderItr.hasNext()) {
-				list.add(folderItr.next());
-			}
 		}
 
 		return ok(search.render(repositoryId, term, list));
@@ -396,6 +383,8 @@ public class Node extends Controller {
 			}
 		}
 
+		//for IE
+		//ResponseUtil.setNoCache(response());
 		return ok(views.html.node.permission.render(repositoryId, obj, members, permissionDefs));
 	}
 
