@@ -23,7 +23,6 @@ import play.mvc.Security.Authenticated;
 import scala.Tuple2;
 import scala.collection.JavaConversions;
 import util.Util;
-import util.ResponseUtil;
 import views.html.user.blank;
 import views.html.user.index;
 import views.html.user.property;

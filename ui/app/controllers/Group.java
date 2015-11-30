@@ -17,7 +17,6 @@ import play.libs.Json;
 import play.mvc.Controller;
 import play.mvc.Result;
 import play.mvc.Security.Authenticated;
-import util.ResponseUtil;
 import util.Util;
 import views.html.group.blank;
 import views.html.group.index;
