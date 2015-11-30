@@ -11,11 +11,11 @@
 				<div>
 					<h3><i class="fa fa-user">@group.name</i>@Messages("view.group.create.caption")</h3>
 				</div>
-				
+
 				<div style="margin-bottom:15px">
 					<button class="btn btn-default btn-primary" id="group-create"><i class="fa fa-save"></i>@Messages("view.save")</button>
 				</div>
-			
+
 				<div>
 					<div><h4>@Messages("view.group.property")</h4></div>
 					@editableTable("group-property-table")(10){
@@ -33,28 +33,25 @@
 						}
 					}
 				</div>
-				
-			
+
+
 			</div>
 		</div>
 
 		@memberSearch(repositoryId)()()
 	</div>
-}
+
 
 
 <!-- scripts -->
 <script type="text/javascript">
-	//TODO unify similar codes
-	$(function () {
-		
 		//binding: create button
 		$(document).on('click','#group-create', function(){
 			var users = [];
 			var groups = [];
 			$('#ps-selected-table :checkbox').each(function(i,chkbx){
 				if($(chkbx).attr('principal-genre') == 'user'){
-					users.push($(chkbx).attr('principal-id'));	
+					users.push($(chkbx).attr('principal-id'));
 				}else if($(chkbx).attr('principal-genre') == 'group'){
 					groups.push($(chkbx).attr('principal-id'));
 				}
@@ -66,7 +63,7 @@
 			data['groupName'] = editedValue('#group-name');
 			data['users'] = JSON.stringify(users);
 			data['groups'] = JSON.stringify(groups);
-			
+
 			//Validation
 			if(!data['groupId']){
 				alert("@NemakiConfig.getLabel("group-id", lang().language) @Messages("view.message.is-required")");
@@ -76,7 +73,7 @@
 				alert("@NemakiConfig.getLabel("group-name", lang().language) @Messages("view.message.is-required")");
 				return;  //End click event
 			}
-			
+
 			//call
 			$.blockUI({message:"@Messages("view.message.please.wait")"});
 			$.ajax({
@@ -95,6 +92,5 @@
 				}
 			});
 		});
-	});
 </script>
-
+}
