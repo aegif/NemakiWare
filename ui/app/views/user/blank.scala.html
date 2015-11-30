@@ -12,11 +12,11 @@
 				<div>
 					<h3><i class="fa fa-user">@user.name</i>@Messages("view.user.create.caption")</h3>
 				</div>
-			
+
 				<div style="margin-bottom:15px">
 					<button class="btn btn-default btn-primary" id="user-create"><i class="fa fa-save"></i>@Messages("view.save")</button>
 				</div>
-				
+
 				<div>
 					<div><h4>@Messages("view.user.property")</h4></div>
 					@editableTable("obj-property-table")(10){
@@ -57,15 +57,15 @@
 							@editableRow(property)()
 						}
 					}
-				
+
 				</div>
 			</div>
 		</div>
 	</div>
-	
+
 	<!-- scripts -->
 	<script type="text/javascript">
-		//binding: udpate button
+		//binding: create button
 		$(document).on('click','#user-create', function(){
 			//build data
 			var data = {};
@@ -75,7 +75,7 @@
 			data['firstName'] = editedValue('#user-first-name');
 			data['lastName'] = editedValue('#user-last-name');
 			data['email'] = editedValue('#user-email');
-			
+
 			//Validation
 			if(!data['userId']){
 				alert("@NemakiConfig.getLabel("user-id", lang().language) @Messages("view.message.is-required")");
@@ -89,7 +89,7 @@
 				alert("@NemakiConfig.getLabel("user-password", lang().language) @Messages("view.message.is-required")");
 				return;  //End click event
 			}
-			
+
 			//call
 			$.blockUI({message:"@Messages("view.message.please.wait")"});
 			$.ajax({
