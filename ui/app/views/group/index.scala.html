@@ -14,7 +14,7 @@
 	  				<h3><i class="fa fa-users"></i>@Messages("view.group.caption")</h3>
 	  			</div>
 	  		</div>
-	  		
+
 	  		<div class="row">
 	  			<div class="col-md-11">
 	  				<ul class="nav nav-pills">
@@ -25,7 +25,7 @@
 			  						<i class="fa fa-plus"></i>@Messages("view.group.create")
 			  					</button>
 							</form>
-			  				
+
 						</li>
 						<li>
 							<!-- search box -->
@@ -40,7 +40,7 @@
 						</li>
 	  				</ul>
 				</div>
-				
+
 				<div class="col-md-11">
 					<!-- search result -->
 					<div id="group-result">
@@ -68,6 +68,15 @@
 									</tr>
 								}
 							</tbody>
+							<tfoot>
+								<tr>
+									@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 2){colSpan =>
+										<td colspan="@colSpan">
+									}
+										<div class="pagination pagination-centered hide-if-no-paging"></div>
+									</td>
+								</tr>
+							</tfoot>
 						</table>
 					</div>
 				</div>
@@ -80,7 +89,7 @@
 <!-- scripts -->
 <script type="text/javascript">
 	$(function () {
-		$('#user-table').footable();	
+		$('#user-table').footable();
 	});
 </script>
 
@@ -92,7 +101,7 @@
 				showLightbox('group-blank', html);
 			});
 		});
-	
+
 		//binding: detail button
 		$('.group-detail').click(function(){
 			var id = $(this).attr('group-id');
@@ -106,13 +115,13 @@
 				//TODO
 			});
 		});
-	
+
 		//binding: delete button
 		$('.group-delete').click(function(){
 			if(window.confirm("@Messages("view.message.delete.confirm")")){
 				var id = $(this).attr('group-id');
 				$.blockUI({message:"@Messages("view.message.please.wait")"});
-				
+
 				$.ajax(jsRoutes.controllers.Group.delete("@repositoryId", id)
 				).done(function(data){
 					window.alert("@Messages("view.message.delete.success")");
@@ -121,7 +130,7 @@
 					window.alert("@Messages("view.message.delete.failure")");
 				}).always(function(){
 					$.unblockUI();
-				});				
+				});
 			}
 		});
 	});

@@ -74,6 +74,15 @@
 									</tr>
 								}
 							</tbody>
+							<tfoot>
+								<tr>
+									@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 2){colSpan =>
+										<td colspan="@colSpan">
+									}
+										<div class="pagination pagination-centered hide-if-no-paging"></div>
+									</td>
+								</tr>
+							</tfoot>
 						</table>
 					</div>
 				</div>
