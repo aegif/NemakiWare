@@ -17,6 +17,7 @@ import play.libs.Json;
 import play.mvc.Controller;
 import play.mvc.Result;
 import play.mvc.Security.Authenticated;
+import util.ResponseUtil;
 import util.Util;
 import views.html.group.blank;
 import views.html.group.index;
@@ -70,7 +71,6 @@ public class Group extends Controller {
         		}
 
         		list.add(group);
-
         	}
     	}
 
@@ -80,7 +80,6 @@ public class Group extends Controller {
     		return ok(index.render(repositoryId, list));
     	}else{
     		return ok(groups);
-
     	}
 
     }

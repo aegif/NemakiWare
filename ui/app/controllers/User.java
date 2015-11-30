@@ -11,14 +11,19 @@ import org.apache.chemistry.opencmis.client.api.CmisObject;
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.http.HttpHeaders;
 
 import play.data.DynamicForm;
 import play.data.Form;
 import play.libs.Json;
 import play.mvc.Controller;
+import play.mvc.Http.Response;
 import play.mvc.Result;
 import play.mvc.Security.Authenticated;
+import scala.Tuple2;
+import scala.collection.JavaConversions;
 import util.Util;
+import util.ResponseUtil;
 import views.html.user.blank;
 import views.html.user.index;
 import views.html.user.property;
@@ -93,12 +98,15 @@ public class User extends Controller {
 		if("success".equals(result.get("status").asText())){
 			JsonNode _user = result.get("user");
 			model.User user = new model.User(_user);
+
 			return ok(property.render(repositoryId, user));
 		}else{
 			//TODO
-			return ok();
+			return internalServerError();
 		}
 	}
+
+
 
 	public static Result showPasswordChanger(String repositoryId, String id){
 		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "show/" + id);
@@ -106,10 +114,11 @@ public class User extends Controller {
 		if("success".equals(result.get("status").asText())){
 			JsonNode _user = result.get("user");
 			model.User user = new model.User(_user);
+
 			return ok(password.render(repositoryId, user));
 		}else{
 			//TODO
-			return ok();
+			return internalServerError();
 		}
 	}
 
@@ -135,7 +144,7 @@ public class User extends Controller {
 			return ok(favorites.render(repositoryId, user, list));
 		}else{
 			//TODO
-			return ok();
+			return internalServerError();
 		}
 	}
 
