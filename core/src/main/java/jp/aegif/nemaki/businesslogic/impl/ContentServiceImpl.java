@@ -441,12 +441,17 @@ public class ContentServiceImpl implements ContentService {
 
 			// Create Renditions
 			if(isPreviewEnabled()){
-				AttachmentNode an = getAttachment(repositoryId, attachmentId);
-				ContentStream previewCS = new ContentStreamImpl(contentStream.getFileName(), contentStream.getBigLength(), contentStream.getMimeType(), an.getInputStream());
+				try{
+					AttachmentNode an = getAttachment(repositoryId, attachmentId);
+					ContentStream previewCS = new ContentStreamImpl(contentStream.getFileName(), contentStream.getBigLength(), contentStream.getMimeType(), an.getInputStream());
 
-				//ContentStream previewCS = contentStreamMap.get("preview");
-				if(renditionManager.checkConvertible(previewCS.getMimeType())){
-					createPreview(callContext, repositoryId, previewCS, d);
+					//ContentStream previewCS = contentStreamMap.get("preview");
+					if(renditionManager.checkConvertible(previewCS.getMimeType())){
+						createPreview(callContext, repositoryId, previewCS, d);
+					}
+				}catch(Exception ex){
+					//not stop follow sequence
+					log.error(ex);
 				}
 			}
 		}

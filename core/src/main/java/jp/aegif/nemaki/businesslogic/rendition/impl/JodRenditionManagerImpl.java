@@ -49,8 +49,7 @@ public class JodRenditionManagerImpl implements RenditionManager {
 
 		// Parse definition file
 		YamlManager manager = new YamlManager(definitionFile);
-		List<Map<String, Object>> yml = (List<Map<String, Object>>) manager
-				.loadYml();
+		List<Map<String, Object>> yml = (List<Map<String, Object>>) manager.loadYml();
 
 		if (CollectionUtils.isNotEmpty(yml)) {
 			for (Map<String, Object> format : yml) {
