@@ -224,7 +224,7 @@ public class UserResource extends ResourceBase {
 
 			if (!AuthenticationUtil.passwordMatches(oldPassword, user.getPasswordHash())) {
 				status = false;
-				addErrMsg(errMsg, ITEM_USER, ERR_UPDATE);
+				addErrMsg(errMsg, ITEM_USER, ERR_WRONGPASSWORD);
 			}
 
 			// Edit & Update
