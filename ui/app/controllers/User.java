@@ -22,6 +22,7 @@ import play.mvc.Result;
 import play.mvc.Security.Authenticated;
 import scala.Tuple2;
 import scala.collection.JavaConversions;
+import util.ErrorMessage;
 import util.Util;
 import views.html.user.blank;
 import views.html.user.index;
@@ -217,8 +218,8 @@ public class User extends Controller {
     	if(isSuccess(changeResult)){
     		return redirect(routes.Application.logout(repositoryId));
     	}else{
-    		String error = changeResult.get("error").get(0).get("user").asText();
-    		return internalServerError(error);
+    		String errorCode = changeResult.get("error").get(0).get("user").asText();
+    		return internalServerError(ErrorMessage.getMessage(errorCode));
     	}
 	}
 
