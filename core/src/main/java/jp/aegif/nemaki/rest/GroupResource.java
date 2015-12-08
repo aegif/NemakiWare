@@ -21,6 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.rest;
 
+import jp.aegif.nemaki.common.ErrorCode;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.List;
@@ -54,7 +55,7 @@ import org.json.simple.parser.ParseException;
 public class GroupResource extends ResourceBase{
 
 	PrincipalService principalService;
-	
+
 	@SuppressWarnings("unchecked")
 	@GET
 	@Path("/search")
@@ -75,7 +76,7 @@ public class GroupResource extends ResourceBase{
 
 		if( queriedGroups.size() == 0 ){
 			status = false;
-			addErrMsg(errMsg, ITEM_GROUP, ERR_NOTFOUND);
+			addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_NOTFOUND);
 		}
 		else {
 			result.put("result", queriedGroups);
@@ -105,7 +106,7 @@ public class GroupResource extends ResourceBase{
 			result.put(ITEM_ALLGROUPS, listJSON);
 		}catch(Exception ex){
 			ex.printStackTrace();
-			addErrMsg(errMsg, ITEM_ALLGROUPS, ERR_LIST);
+			addErrMsg(errMsg, ITEM_ALLGROUPS, ErrorCode.ERR_LIST);
 		}
 		result = makeResult(status, result, errMsg);
 		return result.toString();
@@ -123,7 +124,7 @@ public class GroupResource extends ResourceBase{
 		Group group = principalService.getGroupById(repositoryId, groupId);
 		if(group == null){
 			status = false;
-			addErrMsg(errMsg, ITEM_GROUP, ERR_NOTFOUND);
+			addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_NOTFOUND);
 		}else{
 			result.put("group", convertGroupToJson(group));
 		}
@@ -164,7 +165,7 @@ public class GroupResource extends ResourceBase{
 			}catch(Exception ex){
 				ex.printStackTrace();
 				status = false;
-				addErrMsg(errMsg, ITEM_GROUP, ERR_CREATE);
+				addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_CREATE);
 			}
 		}
 		result = makeResult(status, result, errMsg);
@@ -206,7 +207,7 @@ public class GroupResource extends ResourceBase{
 			}catch(Exception ex){
 				ex.printStackTrace();
 				status = false;
-				addErrMsg(errMsg, ITEM_GROUP, ERR_UPDATE);
+				addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_UPDATE);
 			}
 		}
 		result = makeResult(status, result, errMsg);
@@ -228,7 +229,7 @@ public class GroupResource extends ResourceBase{
 		Group group = principalService.getGroupById(repositoryId, groupId);
 		if(group == null){
 			status = false;
-			addErrMsg(errMsg, ITEM_GROUP, ERR_NOTFOUND);
+			addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_NOTFOUND);
 		}
 
 		//Delete the group
@@ -236,7 +237,7 @@ public class GroupResource extends ResourceBase{
 			try{
 				principalService.deleteGroup(repositoryId, group.getId());
 			}catch(Exception ex){
-				addErrMsg(errMsg, ITEM_GROUP, ERR_DELETE);
+				addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_DELETE);
 			}
 		}
 		result = makeResult(status, result, errMsg);
@@ -261,7 +262,7 @@ public class GroupResource extends ResourceBase{
 		Group group = principalService.getGroupById(repositoryId, groupId);
 		if(group == null){
 			status = false;
-			addErrMsg(errMsg, ITEM_GROUP, ERR_NOTFOUND);
+			addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_NOTFOUND);
 		}
 
 		//Parse JSON string from input parameter
@@ -272,7 +273,7 @@ public class GroupResource extends ResourceBase{
 			}catch(Exception ex){
 				ex.printStackTrace();
 				status = false;
-				addErrMsg(errMsg, ITEM_MEMBER_USERS, ERR_PARSEJSON);
+				addErrMsg(errMsg, ITEM_MEMBER_USERS, ErrorCode.ERR_PARSEJSON);
 			}
 		}
 
@@ -283,7 +284,7 @@ public class GroupResource extends ResourceBase{
 			}catch(Exception ex){
 				ex.printStackTrace();
 				status = false;
-				addErrMsg(errMsg, ITEM_MEMBER_GROUPS, ERR_PARSEJSON);
+				addErrMsg(errMsg, ITEM_MEMBER_GROUPS, ErrorCode.ERR_PARSEJSON);
 			}
 		}
 
@@ -307,7 +308,7 @@ public class GroupResource extends ResourceBase{
 				}catch(Exception ex){
 					ex.printStackTrace();
 					status = false;
-					addErrMsg(errMsg, ITEM_GROUP, ERR_UPDATEMEMBERS);
+					addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_UPDATEMEMBERS);
 				}
 			}else if(apiType.equals(API_REMOVE)){
 				try{
@@ -315,7 +316,7 @@ public class GroupResource extends ResourceBase{
 				}catch(Exception ex){
 					ex.printStackTrace();
 					status = false;
-					addErrMsg(errMsg, ITEM_GROUP, ERR_UPDATEMEMBERS);
+					addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_UPDATEMEMBERS);
 				}
 			}
 		}
@@ -369,7 +370,7 @@ public class GroupResource extends ResourceBase{
 				User existingUser = principalService.getUserById(repositoryId, userId);
 				if(existingUser == null){
 					notSkip = false;
-					addErrMsg(errMsg, ITEM_USER + ":" + userId, ERR_NOTFOUND);
+					addErrMsg(errMsg, ITEM_USER + ":" + userId, ErrorCode.ERR_NOTFOUND);
 				}
 			}
 
@@ -379,14 +380,14 @@ public class GroupResource extends ResourceBase{
 					if(isNewRecord(errMsg, userId, usersList)){
 						usersList.add(userId);
 					}else{
-						addErrMsg(errMsg, ITEM_USER + ":" + userId, ERR_ALREADYMEMBER);
+						addErrMsg(errMsg, ITEM_USER + ":" + userId, ErrorCode.ERR_ALREADYMEMBER);
 					}
 				//"remove" method
 				}else if(apiType.equals(API_REMOVE)){
 					if(!isNewRecord(errMsg, userId, usersList)){
 						usersList.remove(userId);
 					}else{
-						addErrMsg(errMsg, ITEM_USER + ":" + userId, ERR_NOTMEMBER);
+						addErrMsg(errMsg, ITEM_USER + ":" + userId, ErrorCode.ERR_NOTMEMBER);
 					}
 				}
 			}
@@ -425,7 +426,7 @@ public class GroupResource extends ResourceBase{
 			Group g = principalService.getGroupById(repositoryId, groupId);
 			if(g == null && apiType.equals(API_ADD)){
 				notSkip = false;
-				addErrMsg(errMsg, ITEM_GROUP + ":" + groupId, ERR_NOTFOUND);
+				addErrMsg(errMsg, ITEM_GROUP + ":" + groupId, ErrorCode.ERR_NOTFOUND);
 			}
 
 			if(notSkip){
@@ -434,13 +435,13 @@ public class GroupResource extends ResourceBase{
 					if(isNewRecord(errMsg, groupId, groupsList)){
 						if(groupId.equals(group.getId())){
 							//skip and error when trying to add the group to itself
-							addErrMsg(errMsg, ITEM_GROUP, ERR_GROUPITSELF);
+							addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_GROUPITSELF);
 						}else{
 							groupsList.add(groupId);
 						}
 					}else{
 						//skip and message
-						addErrMsg(errMsg, ITEM_GROUP + ":" + groupId, ERR_ALREADYMEMBER);
+						addErrMsg(errMsg, ITEM_GROUP + ":" + groupId, ErrorCode.ERR_ALREADYMEMBER);
 					}
 				//"remove" method
 				}else if(apiType.equals(API_REMOVE)){
@@ -448,7 +449,7 @@ public class GroupResource extends ResourceBase{
 						groupsList.remove(groupId);
 					}else{
 						//skip
-						addErrMsg(errMsg, ITEM_GROUP + ":" + groupId, ERR_NOTMEMBER);
+						addErrMsg(errMsg, ITEM_GROUP + ":" + groupId, ErrorCode.ERR_NOTMEMBER);
 					}
 				}
 			}
@@ -459,18 +460,18 @@ public class GroupResource extends ResourceBase{
 	boolean validateNewGroup(String repositoryId, boolean status, JSONArray errMsg, String groupId, String name){
 		if(StringUtils.isBlank(groupId)){
 			status = false;
-			addErrMsg(errMsg, ITEM_GROUPID, ERR_MANDATORY);
+			addErrMsg(errMsg, ITEM_GROUPID, ErrorCode.ERR_MANDATORY);
 		}
 		//groupID uniqueness
 		Group group = principalService.getGroupById(repositoryId, groupId);
 		if(group != null){
 			status = false;
-			addErrMsg(errMsg, ITEM_GROUPID, ERR_ALREADYEXISTS);
+			addErrMsg(errMsg, ITEM_GROUPID, ErrorCode.ERR_ALREADYEXISTS);
 		}
 
 		if(StringUtils.isBlank(name)){
 			status = false;
-			addErrMsg(errMsg, ITEM_GROUPNAME, ERR_MANDATORY);
+			addErrMsg(errMsg, ITEM_GROUPNAME, ErrorCode.ERR_MANDATORY);
 		}
 
 		return status;
@@ -479,7 +480,7 @@ public class GroupResource extends ResourceBase{
 	boolean validateGroup(boolean status, JSONArray errMsg, String groupId, String name){
 		if(StringUtils.isBlank(name)){
 			status = false;
-			addErrMsg(errMsg, ITEM_GROUPNAME, ERR_MANDATORY);
+			addErrMsg(errMsg, ITEM_GROUPNAME, ErrorCode.ERR_MANDATORY);
 		}
 
 		return status;
@@ -515,7 +516,7 @@ public class GroupResource extends ResourceBase{
 
 		return groupJSON;
 	}
-	
+
 	private JSONArray parseJsonArray(String str){
 		JSONParser parser = new JSONParser();
 		Object obj;
@@ -527,10 +528,10 @@ public class GroupResource extends ResourceBase{
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-		
+
 		return new JSONArray();
 	}
-	
+
 	public void setPrincipalService(PrincipalService principalService) {
 		this.principalService = principalService;
 	}
