@@ -4,7 +4,7 @@
 
   <groupId>jp.aegif.nemakiware</groupId>
   <artifactId>nemakiware-common</artifactId>
-  <version>2.3.6-SNAPSHOT</version>
+  <version>2.3.6</version>
   <packaging>jar</packaging>
 
   <name>common</name>
