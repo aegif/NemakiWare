@@ -132,5 +132,5 @@ view.message.already.selected=既に選択されています！
 view.message.is-required=が必要です！
 
 view.message.password-change.is-same=新しいパスワードは一致する必要があります！
-view.message.password-change.wrong-old-password=古いパスワードが間違っています。
+view.message.password-change.wrong-old-password=現在のパスワードが間違っています
 
