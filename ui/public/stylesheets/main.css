@@ -18,7 +18,7 @@ div.lightbox-me-container{
 	border-style:solid;
 	border-width: 3px;
 	background-color: #eeeeee;
-	overflow: auto; 
+	overflow: auto;
 	height: 600px;
 	width: 800px;
 	padding-top: 20px;
@@ -28,29 +28,29 @@ div.lightbox-me-container{
 div.lightbox-me-container div.container, div.lightbox-me-container div.row{
 	width: 760px !important;
 }
-	
+
 div.tab-pane{
 	padding-top:20px;
 }
-	
-/*検索窓*/		
+
+/*讀懃ｴ｢遯�*/
 .navbar-search {
     position: relative;
 }
- 
+
 .navbar-search .search-query {
     padding-left: 29px;
 }
- 
+
 .navbar-search .icon-search {
     position: absolute;
     top: 7px;
     left: 11px;
 }
- 
+
 .navbar-search .search-query:focus, .navbar-search .search-query.focused {
     padding-left: 30px;
-}​
+}窶�
 
 .table {
   width: 100%;
@@ -75,7 +75,7 @@ table.editable-table .required{
 
 table.editable-table .value{
 	width: 310px;
-	padding-top:2px　!important;
+	padding-top:2px縲�!important;
 	padding-bottom:0px !important;
 }
 
@@ -103,14 +103,14 @@ div.editable-value-field {
 input.editable-value-input {
 	height:25px;
 	background-color : #f8f8f8;
-	
+
 	border:0;
 	color:#aaa;
-	
+
 	-webkit-border-radius: 3px;
 	-moz-border-radius: 3px;
 	border-radius: 3px;
-	
+
 	-moz-box-shadow: inset 1px 4px 9px -6px rgba(0,0,0,0.5);
 	-webkit-box-shadow: inset 1px 4px 9px -6px rgba(0, 0, 0, 0.5);
 	box-shadow: inset 1px 4px 9px -6px rgba(0,0,0,0.5);
@@ -157,7 +157,7 @@ input.form-control.principal-searach{
 
 .content-size{
 	width:1px;
-	white-space:nowrap;	
+	white-space:nowrap;
 }
 
 div.fav.caption{

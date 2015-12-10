@@ -42,6 +42,7 @@ import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 
 import jp.aegif.nemaki.businesslogic.PrincipalService;
+import jp.aegif.nemaki.common.ErrorCode;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.util.AuthenticationUtil;
 import jp.aegif.nemaki.util.PropertyManager;
@@ -98,7 +99,7 @@ public class UserResource extends ResourceBase {
 		} catch (Exception e) {
 			status = false;
 			e.printStackTrace();
-			addErrMsg(errMsg, ITEM_ALLUSERS, ERR_LIST);
+			addErrMsg(errMsg, ITEM_ALLUSERS, ErrorCode.ERR_LIST);
 		}
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
@@ -116,14 +117,14 @@ public class UserResource extends ResourceBase {
 		// Validation
 		if (StringUtils.isBlank(userId)) {
 			status = false;
-			addErrMsg(errMsg, ITEM_USERID, ERR_MANDATORY);
+			addErrMsg(errMsg, ITEM_USERID, ErrorCode.ERR_MANDATORY);
 		}
 
 		User user = principalService.getUserById(repositoryId, userId);
 
 		if (user == null) {
 			status = false;
-			addErrMsg(errMsg, ITEM_USER, ERR_NOTFOUND);
+			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTFOUND);
 		} else {
 			result.put("user", convertUserToJson(user));
 		}
@@ -158,7 +159,7 @@ public class UserResource extends ResourceBase {
 
 		if (queriedUsers.isEmpty()) {
 			status = false;
-			addErrMsg(errMsg, ITEM_USER, ERR_NOTFOUND);
+			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTFOUND);
 		} else {
 			result.put("result", queriedUsers);
 		}
@@ -224,7 +225,7 @@ public class UserResource extends ResourceBase {
 
 			if (!AuthenticationUtil.passwordMatches(oldPassword, user.getPasswordHash())) {
 				status = false;
-				addErrMsg(errMsg, ITEM_USER, ERR_UPDATE);
+				addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_WRONGPASSWORD);
 			}
 
 			// Edit & Update
@@ -239,7 +240,7 @@ public class UserResource extends ResourceBase {
 				} catch (Exception e) {
 					e.printStackTrace();
 					status = false;
-					addErrMsg(errMsg, ITEM_USER, ERR_UPDATE);
+					addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATE);
 				}
 
 				setModifiedSignature(httpRequest, user);
@@ -248,7 +249,7 @@ public class UserResource extends ResourceBase {
 				} catch (Exception e) {
 					e.printStackTrace();
 					status = false;
-					addErrMsg(errMsg, ITEM_USER, ERR_UPDATE);
+					addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATE);
 				}
 
 				if(status){
@@ -345,7 +346,7 @@ public class UserResource extends ResourceBase {
 					} catch (Exception e) {
 						e.printStackTrace();
 						status = false;
-						addErrMsg(errMsg, ITEM_USER, ERR_UPDATE);
+						addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATE);
 					}
 				}
 			}
@@ -356,7 +357,7 @@ public class UserResource extends ResourceBase {
 			} catch (Exception e) {
 				e.printStackTrace();
 				status = false;
-				addErrMsg(errMsg, ITEM_USER, ERR_UPDATE);
+				addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATE);
 			}
 		}
 
@@ -377,7 +378,7 @@ public class UserResource extends ResourceBase {
 		User user = principalService.getUserById(repositoryId, userId);
 		if (user == null) {
 			status = false;
-			addErrMsg(errMsg, ITEM_USER, ERR_NOTFOUND);
+			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTFOUND);
 		}
 
 		// Validation
@@ -390,11 +391,11 @@ public class UserResource extends ResourceBase {
 			} catch (Exception ex) {
 				ex.printStackTrace();
 				status = false;
-				addErrMsg(errMsg, ITEM_USER, ERR_DELETE);
+				addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_DELETE);
 			}
 		} else {
 			status = false;
-			addErrMsg(errMsg, ITEM_USER, ERR_DELETE);
+			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_DELETE);
 		}
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
@@ -404,12 +405,12 @@ public class UserResource extends ResourceBase {
 			String lastName) {
 		if (StringUtils.isBlank(userId)) {
 			status = false;
-			addErrMsg(errMsg, ITEM_USERID, ERR_MANDATORY);
+			addErrMsg(errMsg, ITEM_USERID, ErrorCode.ERR_MANDATORY);
 		}
 
 		if (StringUtils.isBlank(userName)) {
 			status = false;
-			addErrMsg(errMsg, ITEM_USERNAME, ERR_MANDATORY);
+			addErrMsg(errMsg, ITEM_USERNAME, ErrorCode.ERR_MANDATORY);
 		}
 
 		return status;
@@ -423,12 +424,12 @@ public class UserResource extends ResourceBase {
 		User user = principalService.getUserById(repositoryId, userId);
 		if (user != null) {
 			status = false;
-			addErrMsg(errMsg, ITEM_USERID, ERR_ALREADYEXISTS);
+			addErrMsg(errMsg, ITEM_USERID, ErrorCode.ERR_ALREADYEXISTS);
 		}
 
 		if (StringUtils.isBlank(password)) {
 			status = false;
-			addErrMsg(errMsg, ITEM_PASSWORD, ERR_MANDATORY);
+			addErrMsg(errMsg, ITEM_PASSWORD, ErrorCode.ERR_MANDATORY);
 		}
 		return status;
 	}
@@ -489,7 +490,7 @@ public class UserResource extends ResourceBase {
 		String password = callContext.getPassword();
 		if (!userId.equals(resoureId) && !isAdminOperaiton(repositoryId, userId, password) && !isSystemUser(repositoryId, resoureId)) {
 			status = false;
-			addErrMsg(errMsg, ITEM_USER, ERR_NOTAUTHENTICATED);
+			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTAUTHENTICATED);
 		}
 		return status;
 	}

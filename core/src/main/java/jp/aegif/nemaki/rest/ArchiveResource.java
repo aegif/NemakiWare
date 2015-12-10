@@ -1,26 +1,27 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
 package jp.aegif.nemaki.rest;
 
+import jp.aegif.nemaki.common.ErrorCode;
 import java.text.SimpleDateFormat;
 import java.util.GregorianCalendar;
 import java.util.List;
@@ -41,9 +42,9 @@ import org.json.simple.JSONObject;
 
 @Path("/repo/{repositoryId}/archive")
 public class ArchiveResource extends ResourceBase {
-	
+
 	private ContentService contentService;
-	
+
 	public void setContentService(ContentService contentService) {
 		this.contentService = contentService;
 	}
@@ -58,7 +59,7 @@ public class ArchiveResource extends ResourceBase {
 		JSONObject result = new JSONObject();
 		JSONArray list = new JSONArray();
 		JSONArray errMsg = new JSONArray();
-		
+
 		try{
 			List<Archive> archives = contentService.getAllArchives(repositoryId);
 			for(Archive a : archives){
@@ -66,28 +67,28 @@ public class ArchiveResource extends ResourceBase {
 				if (NodeType.ATTACHMENT.value().equals(a.getType())){
 					continue;
 				}else if (NodeType.CMIS_DOCUMENT.value().equals(a.getType())){
-					boolean ilv = (a.isLatestVersion() != null) ? a.isLatestVersion() : false; 
+					boolean ilv = (a.isLatestVersion() != null) ? a.isLatestVersion() : false;
 					if (!ilv) continue;
 				}
 
 				JSONObject o = buildArchiveJson(a.getId(), a.getType(), a.getName(), a.getParentId(), a.isDeletedWithParent(), a.getCreated(), a.getCreator());
-				
+
 				if(a.isDocument()){
 					o.put("mimeType", a.getMimeType());
 				}
-				
+
 				list.add(o);
 			}
 			result.put("archives", list);
 		}catch(Exception e){
 			e.printStackTrace();
 			status = false;
-			addErrMsg(errMsg, ITEM_ARCHIVE, ERR_GET_ARCHIVES);
+			addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_GET_ARCHIVES);
 		}
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
 	}
-	
+
 	@PUT
 	@Path("/restore/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
@@ -95,17 +96,17 @@ public class ArchiveResource extends ResourceBase {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
-		
+
 		try{
 			contentService.restoreArchive(repositoryId, id);
 		}catch(Exception e){
 			status = false;
-			addErrMsg(errMsg, ITEM_ARCHIVE, ERR_RESTORE);
+			addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_RESTORE);
 		}
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
 	}
-	
+
 
 	@SuppressWarnings("unchecked")
 	private JSONObject buildArchiveJson(String objectId, String type, String name, String parentId, Boolean deletedWithParent, GregorianCalendar created, String creator){

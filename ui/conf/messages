@@ -131,4 +131,6 @@ view.message.delete.success=Successfully deleted
 view.message.delete.failure=Failed to delete
 view.message.already.selected=Already selected!
 view.message.is-required=is required!
-view.message.is-same=New passwords should be same!
+
+view.message.password-change.is-same=New passwords should be same!
+view.message.password-change.wrong-old-password=Current password is wrong!
