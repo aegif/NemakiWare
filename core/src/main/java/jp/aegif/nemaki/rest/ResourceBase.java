@@ -21,6 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.rest;
 
+import jp.aegif.nemaki.common.*;
 import java.util.GregorianCalendar;
 import java.util.TimeZone;
 
@@ -102,29 +103,7 @@ public class ResourceBase {
 	static final String ITEM_PROPERTIESFILE = "propertiesFile";
 	static final String ITEM_ARCHIVE = "archive";
 
-	static final String ERR_NOTAUTHENTICATED = "notAuthenticated";
-	static final String ERR_MANDATORY = "mandatory";
-	static final String ERR_ALREADYEXISTS = "alreadyExists";
-	static final String ERR_ALREADYMEMBER = "alreadyMember";
-	static final String ERR_NOTMEMBER = "notMember";
-	static final String ERR_LIST = "failToList";
-	static final String ERR_CREATE = "failToCreate";
-	static final String ERR_UPDATE = "failToUpdate";
-	static final String ERR_UPDATEPASSWORD = "failToUpdatePassword";
-	static final String ERR_UPDATEMEMBERS = "failToUpdateMembers";
-	static final String ERR_DELETE = "failToDelete";
-	static final String ERR_NOTFOUND = "notFound";
-	static final String ERR_WRONGPASSWORD = "wrong";
-	static final String ERR_PARSEJSON = "failToParseStringToJSON";
-	static final String ERR_PARSEURL = "failToParseUrl";
-	static final String ERR_GROUPITSELF = "failToAddGroupToItself";
-	static final String ERR_READ = "failToRead";
-	static final String ERR_STATUSCODE = "statusCode:";
-	static final String ERR_ADD_REPOSITORY = "failToAddRepository";
-	static final String ERR_REMOVE_REPOSITORY = "failToRemoveRepository";
-	static final String ERR_GET_ARCHIVES = "failToGetArchives";
-	static final String ERR_RESTORE = "failToRestore";
-	static final String ERR_ONLY_ALLOWED_FOR_ADMIN = "onlyAllowedForAdmin";
+
 
 	//Set daoService
 	public ResourceBase(){
@@ -154,7 +133,7 @@ public class ResourceBase {
 		Boolean _isAdmin = (Boolean) callContext.get(CallContextKey.IS_ADMIN);
 		boolean isAdmin = (_isAdmin == null) ? false : _isAdmin;
 		if(!isAdmin){
-			addErrMsg(errMsg, ERR_ONLY_ALLOWED_FOR_ADMIN, callContext.getRepositoryId());
+			addErrMsg(errMsg, ErrorCode.ERR_ONLY_ALLOWED_FOR_ADMIN, callContext.getRepositoryId());
 		}
 		return isAdmin;
 	}

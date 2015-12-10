@@ -1,12 +1,13 @@
 function showLightbox(domId, html){
 	var lightbox_me_config = {
 			centered:true,
-			onClose: function() { 
+			onClose: function() {
 				content.remove();
-            }	
+				location.reload();
+            }
 		};
-	
+
 	var content = $(html).attr('id', 'lightbox-' + domId);
-	
+
 	content.lightbox_me(lightbox_me_config);
 }
