@@ -166,7 +166,7 @@ public class ContentServiceImpl implements ContentService {
 			// root
 			return contentDaoService.getFolder(repositoryId, rootId);
 		} else if (splittedPath.size() >= 1) {
-			Content content = contentDaoService.getFolderByPath(repositoryId, rootId);
+			Content content = contentDaoService.getFolder(repositoryId, rootId);
 			// Get the the leaf node
 			for (int i = 1; i < splittedPath.size(); i++) {
 				String leafName = splittedPath.get(i);
