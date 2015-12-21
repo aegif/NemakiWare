@@ -29,27 +29,27 @@
 						@if(document.isVersionSeriesCheckedOut){
 							<i class="fa fa-lock"></i>
 						}
-						
+
 						@if(Util.hasContentStream(document)){
 							<a href="@routes.Node.download(repositoryId, document.getId)">
 						}else{
 							<a href="#" class="no-content-stream">
 						}
 					}
-					
+
 					case folder:Folder =>{
 						<a href="@routes.Node.showChildren(repositoryId, folder.getId)">
 					}
-					
+
 					case _ =>{
-					
+
 					}
 				}
 					<i class="fa @Util.getIconName(obj)"></i><div class="obj-name" objectId="@obj.getId">@obj.getName()</div>
 				</a>
 			</td>
 			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
-				<td>@Util.displayValue(obj, column)</td>
+				<td>@Util.displayValue(obj, column, lang.toLocale)</td>
 			}
 			<td>
 				<div class="btn-group">
@@ -58,8 +58,8 @@
 						<button type="button" class="btn btn-default show-preview" cmis-id="@obj.getId()"><i class="fa fa-file-pdf-o"></i>@Messages("view.node.preview")</button>
 					}
 					<button type="button" class="btn btn-default delete" cmis-id="@obj.getId()"><i class="fa fa-trash"></i>@Messages("view.delete")</button>
-				</div> 
-			</td>							
+				</div>
+			</td>
 		</tr>
 	}
 	</tbody>
@@ -76,7 +76,7 @@
 
 
 
-<!-- ------------------------------------------------ -->	
+<!-- ------------------------------------------------ -->
 <!-- detail -->
 <script type="text/javascript">
 	$(function(){
@@ -100,7 +100,7 @@
 	$(function(){
         $(".show-preview").bind('click', function(){
        		var id = $(this).attr('cmis-id');
-       		
+
        		//Execute
 			$.ajax(jsRoutes.controllers.Node.showDetail("@repositoryId", id, true)
 			).done(function(data){
@@ -113,16 +113,16 @@
         });
     });
 </script>
-    
+
 <!-- delete -->
 <script type="text/javascript">
 	$(function(){
 		$('.delete').click(function(){
 			if(window.confirm("@Messages("view.message.delete.confirm")")){
 				var id = $(this).attr('cmis-id');
-			
+
 				$.blockUI({message:"@Messages("view.message.please.wait")"});
-				
+
 				//Execute
 				$.ajax(jsRoutes.controllers.Node.delete("@repositoryId", id)
 				).done(function(data){
@@ -153,8 +153,7 @@
         $(function () {
             $('#objects-table').footable();
         });
-</script>  
+</script>
 
 
- 
-         
+
