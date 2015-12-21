@@ -2,6 +2,9 @@ package controllers;
 
 import java.util.Map;
 
+import org.apache.chemistry.opencmis.client.api.Session;
+import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
+
 import com.fasterxml.jackson.databind.JsonNode;
 
 import constant.Token;
@@ -31,10 +34,14 @@ public class Application extends Controller{
 		session(Token.LOGIN_USER_PASSWORD, loginModel.password);
 		session(Token.LOGIN_USER_IS_ADMIN, String.valueOf(isAdmin(repositoryId, loginModel.id)));
 		session("repositoryId", repositoryId);
+		session(Token.NEMAKIWARE_VERSION,getVersion(repositoryId));
 		return redirect(routes.Node.index(repositoryId));
 	}
-
-
+	public static String getVersion(String repositoryId){
+		Session session = CmisSessions.getCmisSession(repositoryId, session());
+		RepositoryInfo repo = session.getRepositoryInfo();
+		return repo.getProductVersion();
+	}
 
 	private static boolean isAdmin(String repositoryId, String id){
 		boolean isAdmin = false;
