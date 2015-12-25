@@ -52,6 +52,7 @@ import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.log4j.Logger;
 
 /**
  * Permission Service implementation.
@@ -85,7 +86,7 @@ public class PermissionServiceImpl implements PermissionService {
 			}
 		}
 	}
-	
+
 	/**
 	 *
 	 */
@@ -94,14 +95,15 @@ public class PermissionServiceImpl implements PermissionService {
 	@Override
 	public Boolean checkPermission(CallContext callContext, String repositoryId, String key,
 			Acl acl, String baseType, Content content) {
-		
+
 		//All permission checks must go through baseType check
 		if(!isAllowableBaseType(key, baseType, content, repositoryId)) return false;
-		
+
 		// Admin always pass a permission check
 		CallContextImpl cci = (CallContextImpl) callContext;
 		Boolean _isAdmin = (Boolean) cci.get(CallContextKey.IS_ADMIN);
 		boolean isAdmin = (_isAdmin == null) ? false : _isAdmin;
+	    log.debug(String.format("[%s][User:%s][Permission:true]  is_admin? => %s", content.getName(), callContext.getUsername(), isAdmin));
 		if (isAdmin) return true;
 
 		//PWC doesn't accept any actions from a non-owner user
@@ -111,6 +113,7 @@ public class PermissionServiceImpl implements PermissionService {
 			if(document.isPrivateWorkingCopy()){
 				VersionSeries vs = contentService.getVersionSeries(repositoryId, document);
 				if(!callContext.getUsername().equals(vs.getVersionSeriesCheckedOutBy())){
+					log.debug(String.format("[%s][User:%s][Permission:false] PWS  correct user => %s ", content.getName(),callContext.getUsername(),  vs.getVersionSeriesCheckedOutBy()));
 					return false;
 				}
 			}
@@ -120,13 +123,19 @@ public class PermissionServiceImpl implements PermissionService {
 		// Though some actions are defined in the specs,
 		// Some other direct actions is needed to be set here.
 		if(content.isRelationship()){
+
+
 			Relationship relationship = (Relationship)content;
-			return checkRelationshipPermission(callContext, repositoryId, key, relationship);
+			boolean hasRelationshipPermission =  checkRelationshipPermission(callContext, repositoryId, key, relationship);
+			log.debug(String.format("[%s][User:%s][Permission:%s]  Is relationship. ", content.getName(), callContext.getUsername(),hasRelationshipPermission));
+			return hasRelationshipPermission;
 		}
 
 		// Void Acl fails(but Admin can do an action)
-		if (acl == null)
+		if (acl == null){
+			log.debug(String.format("[%s][User:%s][Permission:false]  No Acl! ", content.getName(), callContext.getUsername()));
 			return false;
+		}
 
 		// Even if a user has multiple ACEs, the permissions is pushed into
 		// Set<String> and remain unique.
@@ -151,7 +160,9 @@ public class PermissionServiceImpl implements PermissionService {
 		}
 
 		// Check mapping between the user and the content
-		return checkCalculatedPermissions(repositoryId, key, userPermissions);
+		boolean calcPermission =  checkCalculatedPermissions(repositoryId, key, userPermissions);
+		log.debug(String.format("[%s][User:%s][Permission:%s]  Check Mapping. ", content.getName(), callContext.getUsername(), calcPermission));
+		return calcPermission;
 	}
 
 	/**
@@ -169,6 +180,7 @@ public class PermissionServiceImpl implements PermissionService {
 			if (actionPermissions.contains(up) ||
 				CmisPermission.ALL.equals(up)) {
 				//If any one of user permissions is contained, action is allowed.
+
 				return true;
 			}
 		}
@@ -424,5 +436,5 @@ public class PermissionServiceImpl implements PermissionService {
 	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
 		this.repositoryInfoMap = repositoryInfoMap;
 	}
-	
+
 }
