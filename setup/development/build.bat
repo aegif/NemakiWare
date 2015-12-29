@@ -22,7 +22,7 @@ if not exist "%OUTPUT_WAR_DIR%" (
 
 rem for aws beanstalk
 if not exist "%OUTPUT_WAR_DIR%.ebextensions" (
-    mkdir "%OUTPUT_WAR_DIR%.ebextensions"
+    xcopy "%BAT_DIR%.ebextensions" "%OUTPUT_WAR_DIR%" /Y
 )
 
 
