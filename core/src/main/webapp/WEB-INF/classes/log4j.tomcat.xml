@@ -10,7 +10,7 @@
 	</appender>
 
    <appender name="file" class="org.apache.log4j.FileAppender">
-		<param name="File" value="${catalina.home}/logs/core" />
+		<param name="File" value="${catalina.home}/logs/nemakicore.log" />
 		<param name="Append" value="true" />
 		<param name="Encoding" value="UTF-8" />
 		<layout class="org.apache.log4j.PatternLayout">

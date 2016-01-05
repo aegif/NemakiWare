@@ -30,7 +30,7 @@ public class DefaultLogger {
 	}
 
 	public Object aroundMethod(ProceedingJoinPoint jp) throws Throwable{
-		
+
 		StringBuilder sb = new StringBuilder();
 		Object[] args = jp.getArgs();
 
@@ -44,7 +44,7 @@ public class DefaultLogger {
 				sb.append(userId + " : ");
 			}
 		}
-		
+
 		//Method name
 		if(fullQualifiedName){
 			sb.append(jp.getTarget().getClass().getName());
@@ -55,12 +55,12 @@ public class DefaultLogger {
 		if(arguments){
 			sb.append(Arrays.asList(args));
 		}
-		
+
 		//Before advice
 		if(beforeEnabled){
 			log.info(sb.toString());
 		}
-		
+
 		//Execute method
 		try{
 			Object result = jp.proceed();
@@ -70,10 +70,10 @@ public class DefaultLogger {
 				sb.append(" returned ");
 				if (returnValue && result != null)
 					sb.append(result.toString());
-				
+
 				log.info(sb.toString());
 			}
-			
+
 			return result;
 		}catch(Exception e){
 			log.error("Error:", e);
@@ -93,7 +93,7 @@ public class DefaultLogger {
 		}
 		return null;
 	}
-	
+
 	public void setLogLevel(String logLevel) {
 		this.logLevel = logLevel;
 	}

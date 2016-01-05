@@ -49,7 +49,7 @@ import com.sun.jersey.api.client.WebResource;
  *
  */
 public class SolrUtil {
-	private static final Log log = LogFactory.getFactory().getInstance(SortUtil.class);
+	private static final Log log = LogFactory.getLog(SortUtil.class);
 
 	private final HashMap<String, String> map;
 

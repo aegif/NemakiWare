@@ -347,7 +347,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 			String key, Acl acl, String baseTypeId, Content content) {
 
 		if (!permissionService.checkPermission(callContext, repositoryId, key, acl, baseTypeId, content)) {
-			String msg = String.format( "Permission Denied! repositoryId=%s key=%s acl=%s contentName=%s ", repositoryId, key, acl, baseTypeId, content.getName()) ;
+			String msg = String.format( "Permission Denied! repositoryId=%s key=%s acl=%s  contentName=%s ", repositoryId, key, acl, content.getName()) ;
 			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
 		}
 	}
