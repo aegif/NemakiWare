@@ -287,11 +287,11 @@ public class ObjectServiceImpl implements ObjectService {
 					"Cannot create object of type '" + typeId + "'!");
 		}
 
-		log.debug(String.format("[%s][%s][%s]Creating object data by compileService ...",repositoryId, objectId, contentStream.getFileName()));
+		log.debug(String.format("[Repository=%s][ObjectId=%s][FileName=%s]Creating object data by compileService ...",repositoryId, objectId, contentStream.getFileName()));
 		ObjectData object = compileService.compileObjectData(callContext,
 				repositoryId, contentService.getContent(repositoryId, objectId), null,
 				false, IncludeRelationships.NONE, null, false);
-		log.debug(String.format("[%s][%s][%s]Create object data by compileService successfully.",repositoryId, objectId, contentStream.getFileName()));
+		log.debug(String.format("[Repository=%s][ObjectId=%s][FileName=%s]Create object data by compileService successfully.",repositoryId, objectId, contentStream.getFileName()));
 
 		return object;
 	}

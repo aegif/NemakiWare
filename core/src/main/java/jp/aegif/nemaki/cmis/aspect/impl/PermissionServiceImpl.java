@@ -111,7 +111,7 @@ public class PermissionServiceImpl implements PermissionService {
 
 
 		if (u != null & u.isAdmin()) {
-		    log.debug(String.format("[%s][User:%s][Permission:true]  is_admin? => %s" , content.getName(), callContext.getUsername(), u.isAdmin()));
+		    log.debug(String.format("[Repository=%s][FileName=%s][User=%s][Permission=true]  is_admin? => %s" ,repositoryId, content.getName(), callContext.getUsername(), u.isAdmin()));
 			return true;
 		}
 
@@ -122,7 +122,7 @@ public class PermissionServiceImpl implements PermissionService {
 			if(document.isPrivateWorkingCopy()){
 				VersionSeries vs = contentService.getVersionSeries(repositoryId, document);
 				if(!callContext.getUsername().equals(vs.getVersionSeriesCheckedOutBy())){
-					log.debug(String.format("[%s][User:%s][Permission:false] PWS  correct user => %s ", content.getName(),callContext.getUsername(),  vs.getVersionSeriesCheckedOutBy()));
+					log.debug(String.format("[Repository=%s][FileName=%s][User=%s][Permission=false] PWS  correct user => %s ",repositoryId, content.getName(),callContext.getUsername(),  vs.getVersionSeriesCheckedOutBy()));
 					return false;
 				}
 			}
@@ -136,13 +136,13 @@ public class PermissionServiceImpl implements PermissionService {
 
 			Relationship relationship = (Relationship)content;
 			boolean hasRelationshipPermission =  checkRelationshipPermission(callContext, repositoryId, key, relationship);
-			log.debug(String.format("[%s][User:%s][Permission:%s]  Is relationship. ", content.getName(), callContext.getUsername(),hasRelationshipPermission));
+			log.debug(String.format("[Repository=%s][FileName=%s][User=%s][Permission=%s]  Is relationship. ",repositoryId, content.getName(), callContext.getUsername(),hasRelationshipPermission));
 			return hasRelationshipPermission;
 		}
 
 		// Void Acl fails(but Admin can do an action)
 		if (acl == null){
-			log.debug(String.format("[%s][User:%s][Permission:false]  No Acl! ", content.getName(), callContext.getUsername()));
+			log.debug(String.format("[Repository=%s][FileName=%s][User=%s][Permission=false]  No Acl! ",repositoryId, content.getName(), callContext.getUsername()));
 			return false;
 		}
 
@@ -170,7 +170,7 @@ public class PermissionServiceImpl implements PermissionService {
 
 		// Check mapping between the user and the content
 		boolean calcPermission =  checkCalculatedPermissions(repositoryId, key, userPermissions);
-		log.debug(String.format("[%s][User:%s][Permission:%s]  Check Mapping. ", content.getName(), callContext.getUsername(), calcPermission));
+		log.debug(String.format("[Repository=%s][FileName=%s][User=%s][Permission=%s]  Check Mapping. ",repositoryId, content.getName(), callContext.getUsername(), calcPermission));
 		return calcPermission;
 	}
 
