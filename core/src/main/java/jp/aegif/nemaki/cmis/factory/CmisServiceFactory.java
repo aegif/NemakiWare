@@ -77,6 +77,7 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 
 			return wrapper;
 		} else {
+			String msg = String.format("[Repository=%1$s][UserName=%2$s]Authentication failed",repositryId, userName);
 			throw new CmisUnauthorizedException(msg, BigInteger.valueOf(401));
 		}
 	}
