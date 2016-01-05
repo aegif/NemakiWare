@@ -127,7 +127,7 @@ public class User extends NodeBase {
 	}
 
 	public Boolean isAdmin() {
-		return admin;
+		return admin == null ? false : admin;
 	}
 
 	public void setAdmin(Boolean admin) {

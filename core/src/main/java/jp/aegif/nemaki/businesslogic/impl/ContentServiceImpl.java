@@ -106,7 +106,7 @@ public class ContentServiceImpl implements ContentService {
 	private PropertyManager propertyManager;
 	private SolrUtil solrUtil;
 
-	private static final Log logger = LogFactory.getLog(ContentServiceImpl.class);
+	private static final Log log = LogFactory.getLog(ContentServiceImpl.class);
 	private final static String PATH_SEPARATOR = "/";
 
 	// ///////////////////////////////////////
@@ -171,7 +171,7 @@ public class ContentServiceImpl implements ContentService {
 			for (int i = 1; i < splittedPath.size(); i++) {
 				String leafName = splittedPath.get(i);
 				if (content == null) {
-					logger.warn("Leaf node '" + leafName + "' in  path '" + path + "' is not found.");
+					log.warn("Leaf node '" + leafName + "' in  path '" + path + "' is not found.");
 					return null;
 				} else {
 					Content child = contentDaoService.getChildByName(repositoryId, content.getId(), leafName);
@@ -437,7 +437,7 @@ public class ContentServiceImpl implements ContentService {
 					}
 				} catch (Exception ex) {
 					// not stop follow sequence
-					logger.error(ex);
+					log.error(ex);
 				}
 			}
 		}
@@ -447,6 +447,7 @@ public class ContentServiceImpl implements ContentService {
 
 		// Create
 		Document document = contentDaoService.create(repositoryId, d);
+		log.debug(String.format("[%s][%s][%s]Create entry on couchdb  successfully.",repositoryId, document.getId(), contentStream.getFileName()));
 
 		// Update versionSeriesId#versionSeriesCheckedOutId after creating a PWC
 		if (versioningState == VersioningState.CHECKEDOUT) {
@@ -457,7 +458,11 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, repositoryId, document, ChangeType.CREATED);
 
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing(repositoryId);
+		try{
+			solrUtil.callSolrIndexing(repositoryId);
+		}catch(Exception ex){
+			log.error(String.format("[%s][%s][%s]Solr indexing falure : %s",repositoryId, document.getId(), contentStream.getFileName(), ex));
+		}
 
 		return document;
 	}
@@ -1301,7 +1306,7 @@ public class ContentServiceImpl implements ContentService {
 						failureIds.add(child.getId());
 						continue;
 					} else {
-						logger.error("", e);
+						log.error("", e);
 					}
 				}
 			}
@@ -1314,7 +1319,7 @@ public class ContentServiceImpl implements ContentService {
 			if (continueOnFailure) {
 				failureIds.add(folderId);
 			} else {
-				logger.error("", e);
+				log.error("", e);
 			}
 		}
 
@@ -1637,13 +1642,13 @@ public class ContentServiceImpl implements ContentService {
 	public void restoreArchive(String repositoryId, String archiveId) {
 		Archive archive = contentDaoService.getArchive(repositoryId, archiveId);
 		if (archive == null) {
-			logger.error("Archive does not exist!");
+			log.error("Archive does not exist!");
 			return;
 		}
 
 		// Check whether the destination does still extist.
 		if (!restorationTargetExists(repositoryId, archive)) {
-			logger.error("The destination of the restoration doesn't exist");
+			log.error("The destination of the restoration doesn't exist");
 			return;
 		}
 
@@ -1658,9 +1663,9 @@ public class ContentServiceImpl implements ContentService {
 			Document restored = restoreDocument(repositoryId, archive);
 			writeChangeEvent(dummyContext, repositoryId, restored, ChangeType.CREATED);
 		} else if (archive.isAttachment()) {
-			logger.error("Attachment can't be restored alone");
+			log.error("Attachment can't be restored alone");
 		} else {
-			logger.error("Only document or folder is supported for restoration");
+			log.error("Only document or folder is supported for restoration");
 		}
 
 		// Call Solr indexing(optional)
@@ -1683,7 +1688,7 @@ public class ContentServiceImpl implements ContentService {
 				contentDaoService.deleteArchive(repositoryId, attachmentArchive.getId());
 			}
 		} catch (Exception e) {
-			logger.error("fail to restore a document", e);
+			log.error("fail to restore a document", e);
 		}
 
 		return getDocument(repositoryId, archive.getOriginalId());

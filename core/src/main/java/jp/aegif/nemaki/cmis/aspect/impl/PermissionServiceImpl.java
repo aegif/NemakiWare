@@ -38,6 +38,7 @@ import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Relationship;
+import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.util.constant.CmisPermission;
@@ -60,8 +61,7 @@ import org.apache.log4j.Logger;
  */
 public class PermissionServiceImpl implements PermissionService {
 
-	private static final Log log = LogFactory
-			.getLog(PermissionServiceImpl.class);
+	private static final Log log = LogFactory.getLog(PermissionServiceImpl.class);
 
 	private PrincipalService principalService;
 	private ContentService contentService;
@@ -100,11 +100,20 @@ public class PermissionServiceImpl implements PermissionService {
 		if(!isAllowableBaseType(key, baseType, content, repositoryId)) return false;
 
 		// Admin always pass a permission check
+		String userName = callContext.getUsername();
+		User u = principalService.getUserById(repositoryId, userName);
+
+		/*
 		CallContextImpl cci = (CallContextImpl) callContext;
 		Boolean _isAdmin = (Boolean) cci.get(CallContextKey.IS_ADMIN);
 		boolean isAdmin = (_isAdmin == null) ? false : _isAdmin;
-	    log.debug(String.format("[%s][User:%s][Permission:true]  is_admin? => %s", content.getName(), callContext.getUsername(), isAdmin));
-		if (isAdmin) return true;
+		*/
+
+
+		if (u != null & u.isAdmin()) {
+		    log.debug(String.format("[%s][User:%s][Permission:true]  is_admin? => %s" , content.getName(), callContext.getUsername(), u.isAdmin()));
+			return true;
+		}
 
 		//PWC doesn't accept any actions from a non-owner user
 		//TODO admin can manipulate PWC even when it is checked out ?
@@ -140,7 +149,7 @@ public class PermissionServiceImpl implements PermissionService {
 		// Even if a user has multiple ACEs, the permissions is pushed into
 		// Set<String> and remain unique.
 		// Get ACL for the current user
-		String userName = callContext.getUsername();
+
 		List<Ace> aces = acl.getAllAces();
 		Set<String> userPermissions = new HashSet<String>();
 		Set<String> groups = principalService.getGroupIdsContainingUser(repositoryId, userName);
