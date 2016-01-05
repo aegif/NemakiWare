@@ -11,7 +11,7 @@
 		</layout>
 	</appender>
 
-	<logger name="jp.aegif">
+	<logger name="jp.aegif"  additivity="false">
 		<appender-ref ref="file" />
 		<level value="debug" />
 	</logger>

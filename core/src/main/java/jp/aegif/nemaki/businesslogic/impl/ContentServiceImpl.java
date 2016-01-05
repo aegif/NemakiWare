@@ -447,7 +447,7 @@ public class ContentServiceImpl implements ContentService {
 
 		// Create
 		Document document = contentDaoService.create(repositoryId, d);
-		log.debug(String.format("[%s][%s][%s]Create entry on couchdb  successfully.",repositoryId, document.getId(), contentStream.getFileName()));
+		log.debug(String.format("[Repository=%s][DocumentId=%s][FileName=%s]Create entry on couchdb  successfully.",repositoryId, document.getId(), contentStream.getFileName()));
 
 		// Update versionSeriesId#versionSeriesCheckedOutId after creating a PWC
 		if (versioningState == VersioningState.CHECKEDOUT) {
@@ -456,13 +456,11 @@ public class ContentServiceImpl implements ContentService {
 
 		// Write change event
 		writeChangeEvent(callContext, repositoryId, document, ChangeType.CREATED);
+		log.debug(String.format("[Repository=%s][DocumentId=%s][FileName=%s]Write change event  successfully.",repositoryId, document.getId(), contentStream.getFileName()));
+
 
 		// Call Solr indexing(optional)
-		try{
-			solrUtil.callSolrIndexing(repositoryId);
-		}catch(Exception ex){
-			log.error(String.format("[%s][%s][%s]Solr indexing falure : %s",repositoryId, document.getId(), contentStream.getFileName(), ex));
-		}
+		solrUtil.callSolrIndexing(repositoryId);
 
 		return document;
 	}
@@ -526,6 +524,7 @@ public class ContentServiceImpl implements ContentService {
 
 		// Create
 		Document result = contentDaoService.create(repositoryId, copy);
+
 
 		// Record the change event
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
