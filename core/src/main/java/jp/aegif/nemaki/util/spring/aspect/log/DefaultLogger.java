@@ -1,15 +1,13 @@
-package jp.aegif.nemaki.util.spring.aspect;
-
-import java.util.Arrays;
+package jp.aegif.nemaki.util.spring.aspect.log;
 
 import javax.annotation.PostConstruct;
 
 import org.apache.chemistry.opencmis.commons.server.CallContext;
-import org.apache.log4j.Appender;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
-import org.apache.log4j.xml.DOMConfigurator;
 import org.aspectj.lang.ProceedingJoinPoint;
+
+import jp.aegif.nemaki.util.spring.aspect.log.impl.CustomToStringImpl;
 
 public class DefaultLogger {
 
@@ -21,6 +19,8 @@ public class DefaultLogger {
 	private boolean beforeEnabled;
 	private boolean afterEnabled;
 	private boolean callContextEnabled;
+	
+	private CustomToStringImpl customToString;
 
    @PostConstruct
 	public void init() {
@@ -38,10 +38,10 @@ public class DefaultLogger {
 		if(callContextEnabled){
 			CallContext callContext = getCallContext(args);
 			if(callContext == null){
-				sb.append("N/A : ");
+				sb.append("N/A; ");
 			}else{
 				String userId = callContext.getUsername();
-				sb.append(userId + " : ");
+				sb.append("UserId=" + userId + " executes; ");
 			}
 		}
 
@@ -53,12 +53,12 @@ public class DefaultLogger {
 		}
 		sb.append("#").append(jp.getSignature().getName());
 		if(arguments){
-			sb.append(Arrays.asList(args));
+			sb.append(customToString.parseList(args));
 		}
 
 		//Before advice
 		if(beforeEnabled){
-			log.info(sb.toString());
+			log.info("nemaki_log[BEFORE]; " + sb.append("; ").toString());
 		}
 
 		//Execute method
@@ -67,11 +67,13 @@ public class DefaultLogger {
 
 			//After advice
 			if(afterEnabled){
-				sb.append(" returned ");
-				if (returnValue && result != null)
-					sb.append(result.toString());
-
-				log.info(sb.toString());
+				sb.append("returned ");
+				if (returnValue && result != null){
+					String resultString = customToString.parse(result);
+					sb.append(resultString);
+				}				
+					
+				log.info("nemaki_log[AFTER]; " + sb.append("; ").toString());
 			}
 
 			return result;
@@ -121,4 +123,9 @@ public class DefaultLogger {
 	public void setCallContextEnabled(boolean callContextEnabled) {
 		this.callContextEnabled = callContextEnabled;
 	}
+
+	public void setCustomToString(CustomToStringImpl customToString) {
+		this.customToString = customToString;
+	}
+	
 }
