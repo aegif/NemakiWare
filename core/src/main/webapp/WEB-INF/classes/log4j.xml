@@ -2,23 +2,39 @@
 <!DOCTYPE log4j:configuration SYSTEM "log4j.dtd">
 <log4j:configuration xmlns:log4j="http://jakarta.apache.org/log4j/">
 
-   <appender name="file" class="org.apache.log4j.FileAppender">
-		<param name="File" value="${catalina.home}/logs/nemakicore.log" />
+	<appender name="stdout" class="org.apache.log4j.ConsoleAppender">
+		<param name="Target" value="System.out" />
+		<layout class="org.apache.log4j.PatternLayout">
+			<param name="ConversionPattern" value="%d{ISO8601} %-5p \[%t\] : %m%n" />
+		</layout>
+	</appender>
+
+<!-- 	<appender name="file" class="org.apache.log4j.FileAppender">
+		<param name="File" value="./logs/core" />
 		<param name="Append" value="true" />
 		<param name="Encoding" value="UTF-8" />
 		<layout class="org.apache.log4j.PatternLayout">
 			<param name="ConversionPattern" value="%d{ISO8601} %-5p \[%t\] %c: %m%n" />
 		</layout>
+	</appender> -->
+	
+	<appender name="dailyRollingFile" class="org.apache.log4j.DailyRollingFileAppender">
+		<param name="File" value="./logs/core" />
+		<param name="Append" value="true" />
+		<param name="Encoding" value="UTF-8" />
+		<param name="DatePattern" value="'.'yyyy-MM-dd" />
+		<layout class="org.apache.log4j.PatternLayout">
+			<param name="ConversionPattern" value="%d{ISO8601} %-5p \[%t\] : %m%n" />
+		</layout>
 	</appender>
 
-	<logger name="jp.aegif"  additivity="false">
-		<appender-ref ref="file" />
-		<level value="debug" />
+	
+	<logger name="org.apache.chemistry.opencmis">
+		<appender-ref ref="stdout" />
+		<appender-ref ref="dailyRollingFile" />
 	</logger>
 
 	<root>
-		<appender-ref ref="file" />
-		<level value="warn" />
+		<level value ="info" />
 	</root>
-
 </log4j:configuration>
