@@ -1,7 +1,5 @@
 package controllers;
 
-import java.util.Map;
-
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
 
