@@ -27,6 +27,7 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -1148,7 +1149,7 @@ public class ContentServiceImpl implements ContentService {
 		if (propertyData.getId().equals(PropertyIds.NAME)) {
 			if (DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID) != content.getId()) {
 				String uniqueName = buildUniqueName(repositoryId, DataUtil
-						.getStringProperty(properties, PropertyIds.NAME), content.getParentId(), content.getId());
+						.getStringProperty(properties, PropertyIds.NAME), content.getParentId(), content);
 				content.setName(uniqueName);
 			}
 		}
@@ -1722,55 +1723,33 @@ public class ContentServiceImpl implements ContentService {
 	// ///////////////////////////////////////
 	// Utility
 	// ///////////////////////////////////////
-	private String buildUniqueName(String repositoryId, String originalName, String folderId, String existingId) {
+	private String buildUniqueName(String repositoryId, String proposedName, String folderId, Content current) {
 		boolean bun = propertyManager.readBoolean(PropertyKey.CAPABILITY_EXTENDED_BUILD_UNIQUE_NAME);
 		if (!bun) {
-			return originalName;
+			return proposedName;
 		}
-
-		List<Content> children = getChildren(repositoryId, folderId);
-
-		List<String> conflicts = new ArrayList<String>();
-		if (CollectionUtils.isEmpty(children)) {
-			return originalName;
-		} else {
-			// Get collection of conflict names
-			for (Content child : children) {
-				// Exclude update of existing content in the folder
-				if (nameConflicts(originalName, child.getName())) {
-					if (!child.getId().equals(existingId)) {
-						conflicts.add(child.getName());
-					}
-				}
-			}
-
-			if (CollectionUtils.isEmpty(conflicts)) {
-				return originalName;
-			} else {
-				// Insert unused suffix
-				String nameWithSuffix = originalName;
-				for (int i = 0; i < conflicts.size() + 1; i++) {
-					nameWithSuffix = buildNameWithSuffix(originalName, i + 1);
-					if (!conflicts.contains(nameWithSuffix)) {
-						break;
-					}
-				}
-				return nameWithSuffix;
+		
+		//Check if update method
+		if(current != null && current.getName().equals(proposedName)){
+			return proposedName;
+		}
+		
+		List<String>names = contentDaoService.getChildrenNames(repositoryId, folderId);
+		String[] splitted = splitFileName(proposedName);
+		String originalNameBody = splitted[0];
+		String extension = splitted[1];
+		
+		String newNameBody = originalNameBody;
+		for(Integer i = 1; i <= names.size(); i++){
+			if(names.contains(newNameBody + extension)){
+				newNameBody = originalNameBody + " ~" + i;
+				continue;
+			}else{
+				break;
 			}
 		}
-	}
-
-	private boolean nameConflicts(String originalName, String targetName) {
-		String[] original = splitFileName(originalName);
-		String[] target = splitFileName(targetName);
-
-		if (!original[1].equals(target[1]))
-			return false;
-		if (removeCopySuffix(original[0]).equals(removeCopySuffix(target[0]))) {
-			return true;
-		} else {
-			return false;
-		}
+		
+		return newNameBody + extension;
 	}
 
 	private String[] splitFileName(String name) {
@@ -1789,23 +1768,6 @@ public class ContentServiceImpl implements ContentService {
 
 		String[] ary = { body, suffix };
 		return ary;
-	}
-
-	private String buildNameWithSuffix(String fileName, int suffixNumber) {
-		String[] split = splitFileName(fileName);
-		String inserted = split[0] + "(" + suffixNumber + ")" + split[1];
-		return inserted;
-	}
-
-	private String removeCopySuffix(String bodyOfFileName) {
-		String regexp = "\\([0-9]+\\)$";
-		Pattern pattern = Pattern.compile(regexp);
-		Matcher matcher = pattern.matcher(bodyOfFileName);
-		if (matcher.find()) {
-			return matcher.replaceFirst("");
-		} else {
-			return bodyOfFileName;
-		}
 	}
 
 	private String increasedVersionLabel(Document document, VersioningState versioningState) {

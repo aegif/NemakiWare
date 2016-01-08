@@ -13,6 +13,24 @@
   "attachments" : { }
 }, {
   "document" : {
+    "_id" : "6174536bc714bfc3294b00306f000d5d",
+    "_rev" : "1-49dc721289fcc2baa2005a1dec576d98",
+    "admin" : true,
+    "created" : "2013-01-01T00:00:00.000+0000",
+    "creator" : "system",
+    "email" : "",
+    "lastName" : "solr",
+    "firstName" : "",
+    "modified" : "2013-01-01T00:00:00.000+0000",
+    "modifier" : "system",
+    "name" : "solr",
+    "passwordHash" : "$2a$10$YTaQCKmmf.f2XkcOPjVAVe1q3RR.Z2/YD6sotC/Kz.ZVlBYqhjIW6",
+    "type" : "user",
+    "userId" : "solr"
+  },
+  "attachments" : { }
+}, {
+  "document" : {
     "_id" : "83c150a42ffdcc49bb08041078b85b57",
     "_rev" : "1-b59d6f44b380e453acc48f553288a356",
     "creator" : "system",
@@ -71,26 +89,8 @@
   "attachments" : { }
 }, {
   "document" : {
-   "_id" : "6174536bc714bfc3294b00306f000d5d",
-   "_rev" : "1-896182b5dcbb926e5209c3cbadb445fe",
-   "admin" : true,
-   "created" : "2013-01-01T00:00:00.000+0000",
-   "creator" : "system",
-   "email" : "",
-   "lastName" : "solr",
-   "firstName" : "",
-   "modified" : "2013-01-01T00:00:00.000+0000",
-   "modifier" : "system",
-   "name" : "solr",
-   "passwordHash": "$2a$10$YTaQCKmmf.f2XkcOPjVAVe1q3RR.Z2/YD6sotC/Kz.ZVlBYqhjIW6",
-   "type" : "user",
-   "userId" : "solr"
-  },
-  "attachments" : { }
-}, {
-  "document" : {
     "_id" : "94ee2cb22e260d582b5d66903f002175",
-    "_rev" : "1-28d8dffb424a3dc8c5558cfca16003a8",
+    "_rev" : "1-b060c4a5fbe02c8baf6b33bdfb7eb3fe",
     "created" : "2013-01-01T00:00:00.000+0000",
     "admin" : true,
     "creator" : "system",
@@ -107,7 +107,7 @@
 }, {
   "document" : {
     "_id" : "_design/_repo",
-    "_rev" : "1-cd9c679217df0f60f328b5ac93e23692",
+    "_rev" : "2-b150f447e433264ee7424bc238b676b2",
     "language" : "javascript",
     "views" : {
       "attachments" : {
@@ -206,6 +206,9 @@
       },
       "changes" : {
         "map" : "function(doc) { if (doc.type == 'change')  emit(doc._id, doc) }"
+      },
+      "childrenNames" : {
+        "map" : "function(doc) {var result={}; result[doc.name]=doc._id; if (doc.type == 'cmis:document' || doc.type == 'cmis:folder')   emit(doc.parentId, doc.name);}"
       }
     }
   },
