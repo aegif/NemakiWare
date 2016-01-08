@@ -7,3 +7,4 @@ jetty.log
 .settings
 !.gitkeep
 setup/installer/*/log
+target

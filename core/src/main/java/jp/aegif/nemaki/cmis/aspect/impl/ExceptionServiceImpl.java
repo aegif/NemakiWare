@@ -346,9 +346,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 	private void permissionDeniedInternal(CallContext callContext, String repositoryId,
 			String key, Acl acl, String baseTypeId, Content content) {
 
-		if (!permissionService.checkPermission(callContext, repositoryId, key,
-				acl, baseTypeId, content)) {
-			String msg = "Permission Denied!";
+		if (!permissionService.checkPermission(callContext, repositoryId, key, acl, baseTypeId, content)) {
+			String msg = String.format( "Permission Denied! repositoryId=%s key=%s acl=%s  contentName=%s ", repositoryId, key, acl, content.getName()) ;
 			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
 		}
 	}
@@ -364,7 +363,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	/**
-	 * 
+	 *
 	 * NOTE:Check the condition before calling this method
 	 */
 	@Override
@@ -1085,7 +1084,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 			constraint(msg);
 		}
 	}
-	
+
 	public void constraintDeleteRootFolder(String repositoryId, String objectId){
 		String rootFolderId = repositoryInfoMap.get(repositoryId).getRootFolderId();
 		if(rootFolderId.equals(objectId)){

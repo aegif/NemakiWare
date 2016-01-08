@@ -37,6 +37,8 @@ import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
 import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
 import org.apache.chemistry.opencmis.server.shared.HttpUtils;
 import org.apache.commons.lang.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -53,8 +55,8 @@ public class AuthenticationFilter implements Filter {
 	private AuthenticationService authenticationService;
 	private RepositoryInfoMap repositoryInfoMap;
 	private final String TOKEN_FALSE = "false";
-	
-	private Logger logger = Logger.getLogger(AuthenticationFilter.class);
+
+	private  Log log = LogFactory.getLog(AuthenticationFilter.class);
 
 	@Override
 	public void init(FilterConfig filterConfig) throws ServletException {
@@ -70,11 +72,11 @@ public class AuthenticationFilter implements Filter {
 		if(auth){
 			chain.doFilter(req, res);
 		}else{
-			logger.error("REST API Unauthorized!");
+			log.error("REST API Unauthorized!");
 			hres.sendError(HttpServletResponse.SC_UNAUTHORIZED);
 		}
 	}
-	
+
 	public boolean login(HttpServletRequest request, HttpServletResponse response){
 		String repositoryId = getRepositoryId(request);
 
@@ -85,16 +87,16 @@ public class AuthenticationFilter implements Filter {
 		for(String key : map.keySet()){
 			ctxt.put(key, map.get(key));
 		}
-		
+
 		boolean auth = authenticationService.login(ctxt);
-		
+
 		//Add attributes to Jersey @Context parameter
-		//TODO hard-coded key 
+		//TODO hard-coded key
 		request.setAttribute("CallContext", ctxt);
-		
+
 		return auth;
 	}
-	
+
 	private String getRepositoryId(HttpServletRequest request){
 		// split path
         String[] pathFragments = HttpUtils.splitPath(request);
@@ -111,19 +113,19 @@ public class AuthenticationFilter implements Filter {
         		return repositoryInfoMap.getSuperUsers().getId();
         	}
         }
-        
+
         return null;
 	}
-	
+
 	@Override
 	public void destroy() {
 		// TODO Auto-generated method stub
 
 	}
-	
+
 	private boolean checkResourceEnabled(HttpServletRequest request){
 		boolean enabled = true;
-		
+
 		String pathInfo = request.getPathInfo();
 		if(pathInfo.startsWith("/user")){
 			String userResourceEnabled = propertyManager.readValue(PropertyKey.REST_USER_ENABLED);
@@ -146,10 +148,10 @@ public class AuthenticationFilter implements Filter {
 		}else{
 			enabled = false;
 		}
-		
+
 		return enabled;
 	}
-	
+
 	public void setPropertyManager(PropertyManager propertyManager) {
 		this.propertyManager = propertyManager;
 	}

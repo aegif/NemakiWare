@@ -475,6 +475,24 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		return convertJsonToEachBaeType(result);
 	}
 
+	public List<String> getChildrenNames(String repositoryId, String parentId){
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("childrenNames")
+				.key(parentId);
+		ViewResult result = connectorPool.get(repositoryId).queryView(query);
+		
+		List<String>list =  new ArrayList<String>();
+		if(result == null || result.isEmpty()){
+			return new ArrayList<String>();
+		}else{
+			Iterator<Row> itr = result.iterator();
+			while(itr.hasNext()){
+				list.add(itr.next().getValue());
+			}
+		}
+		
+		return list;
+	}
+	
 	@Override
 	public Relationship getRelationship(String repositoryId, String objectId) {
 		CouchRelationship cr = connectorPool.get(repositoryId).get(CouchRelationship.class, objectId);

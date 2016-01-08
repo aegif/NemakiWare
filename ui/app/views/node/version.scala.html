@@ -25,19 +25,19 @@
 							</td>
 							<td>@version.getName()</td>
 							<td>@version.getCreatedBy()</td>
-							<td>@Formatter.calToString(version.getCreationDate())</td>
+							<td>@Formatter.calToString(version.getCreationDate(), lang.toLocale)</td>
 						</tr>
 					}
 				</tbody>
 			</table>
 		</div>
-		
+
 	</div>
 </div>
-		
+
 <!-- footable -->
 <script type="text/javascript">
 	$(function () {
 	    $('#version-table').footable();
 	});
-</script>  
+</script>
