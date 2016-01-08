@@ -3,6 +3,7 @@ package util;
 import java.text.DateFormat;
 import java.util.Date;
 import java.util.GregorianCalendar;
+import java.util.Locale;
 
 import org.apache.chemistry.opencmis.client.api.CmisObject;
 import org.apache.chemistry.opencmis.client.api.Document;
@@ -10,9 +11,9 @@ import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 
 public class Formatter {
 
-	public static String calToString(GregorianCalendar gc){
+	public static String calToString(GregorianCalendar gc, Locale locale){
 		Date date = gc.getTime();
-		DateFormat df = DateFormat.getInstance();
+		DateFormat df = DateFormat.getDateTimeInstance(DateFormat.LONG, DateFormat.MEDIUM,  locale);
 		String result = df.format(date);
 		return result;
 	}

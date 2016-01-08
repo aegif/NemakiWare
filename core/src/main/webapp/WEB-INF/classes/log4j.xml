@@ -35,6 +35,8 @@
 	</logger>
 
 	<root>
+		<appender-ref ref="stdout" />
+		<appender-ref ref="dailyRollingFile" />
 		<level value ="info" />
 	</root>
 </log4j:configuration>

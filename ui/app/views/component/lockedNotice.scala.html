@@ -3,4 +3,4 @@
 @import org.apache.chemistry.opencmis.commons.PropertyIds
 
 @(obj:CmisObject)
-<i class="fa fa-lock"></i>@Messages("view.node.freeze-copy.cannot-update", Util.displayValue(obj,PropertyIds.VERSION_SERIES_CHECKED_OUT_BY)) 
+<i class="fa fa-lock"></i>@Messages("view.node.freeze-copy.cannot-update", Util.displayValue(obj,PropertyIds.VERSION_SERIES_CHECKED_OUT_BY, lang.toLocale))
