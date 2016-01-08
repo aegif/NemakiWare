@@ -330,6 +330,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public List<String> getChildrenNames(String repositoryId, String parentId) {
+		return nonCachedContentDaoService.getChildrenNames(repositoryId, parentId);
+	}
+
+	@Override
 	public Relationship getRelationship(String repositoryId, String objectId) {
 		Cache cache = nemakiCachePool.get(repositoryId).getContentCache();
 		Element v = cache.get(objectId);
