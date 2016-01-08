@@ -466,7 +466,7 @@ public class UserResource extends ResourceBase {
 		userJSON.put(ITEM_MODIFIER, user.getModifier());
 		userJSON.put(ITEM_MODIFIED, modified);
 
-		boolean isAdmin = (user.isAdmin() == null) ? false : true;
+		boolean isAdmin = (user.isAdmin() == null) ? false : user.isAdmin();
 		userJSON.put(ITEM_IS_ADMIN, isAdmin);
 
 		JSONArray jfs = new JSONArray();

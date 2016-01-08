@@ -284,6 +284,14 @@ public interface ContentDaoService {
 	Content getChildByName(String repositoryId, String parentId, String name);
 
 	/**
+	 * Get children name index in a folder
+	 * @param repositoryId
+	 * @param parentId
+	 * @return
+	 */
+	List<String> getChildrenNames(String repositoryId, String parentId);
+	
+	/**
 	 * Get a relationship
 	 * @param repositoryId TODO
 	 * @param objectId

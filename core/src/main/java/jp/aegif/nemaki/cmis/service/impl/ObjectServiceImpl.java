@@ -80,7 +80,7 @@ public class ObjectServiceImpl implements ObjectService {
 
 	private static final Log log = LogFactory
 			.getLog(ObjectServiceImpl.class);
-	
+
 	private TypeManager typeManager;
 	private ContentService contentService;
 	private ExceptionService exceptionService;
@@ -202,9 +202,9 @@ public class ObjectServiceImpl implements ObjectService {
 					.constraint(content.getId(),
 							"getRenditionStream cannnot be invoked to other than document or folder type.");
 		}
-		
+
 		exceptionService.constraintRenditionStreamDownload(content, streamId);
-		
+
 		Rendition rendition = contentService.getRendition(repositoryId, streamId);
 
 		BigInteger length = BigInteger.valueOf(rendition.getLength());
@@ -214,7 +214,7 @@ public class ObjectServiceImpl implements ObjectService {
 
 		return cs;
 	}
-	
+
 	@Override
 	public List<RenditionData> getRenditions(CallContext callContext,
 			String repositoryId, String objectId, String renditionFilter,
@@ -287,9 +287,11 @@ public class ObjectServiceImpl implements ObjectService {
 					"Cannot create object of type '" + typeId + "'!");
 		}
 
-		return compileService.compileObjectData(callContext,
+		ObjectData object = compileService.compileObjectData(callContext,
 				repositoryId, contentService.getContent(repositoryId, objectId), null,
 				false, IncludeRelationships.NONE, null, false);
+
+		return object;
 	}
 
 	@Override
@@ -463,8 +465,8 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		String oldId = objectId.getValue(); 
-		
+		String oldId = objectId.getValue();
+
 		// TODO Externalize versioningState
 		if(doc.isPrivateWorkingCopy()){
 			Document result = contentService.replacePwc(callContext, repositoryId,
@@ -475,7 +477,7 @@ public class ObjectServiceImpl implements ObjectService {
 					doc, contentStream);
 			objectId.setValue(result.getId());
 		}
-		
+
 		nemakiCachePool.get(repositoryId).removeCmisCache(oldId);
 	}
 
@@ -492,12 +494,12 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.objectNotFound(DomainType.OBJECT, document,
 				document.getId());
 		exceptionService.constraintContentStreamRequired(repositoryId, document);
-		
+
 		// //////////////////
 		// Body of the method
 		// //////////////////
 		contentService.deleteContentStream(callContext, repositoryId, objectId);
-		
+
 		nemakiCachePool.get(repositoryId).removeCmisCache(objectId.getValue());
 	}
 
@@ -534,7 +536,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		contentService.appendAttachment(callContext, repositoryId, objectId,
 				changeToken, contentStream, isLastChunk, extension);
-		
+
 		nemakiCachePool.get(repositoryId).removeCmisCache(objectId.getValue());
 	}
 
@@ -592,7 +594,7 @@ public class ObjectServiceImpl implements ObjectService {
 				removeAces, extension);
 		nemakiCachePool.get(repositoryId).removeCmisCache(relationship.getSourceId());
 		nemakiCachePool.get(repositoryId).removeCmisCache(relationship.getTargetId());
-		
+
 		return relationship.getId();
 	}
 
@@ -680,9 +682,9 @@ public class ObjectServiceImpl implements ObjectService {
 		// Body of the method
 		// //////////////////
 		String id = objectId.getValue();
-		
+
 		contentService.updateProperties(callContext, repositoryId, properties, content);
-		
+
 		nemakiCachePool.get(repositoryId).removeCmisCache(id);
 	}
 
@@ -709,8 +711,8 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.permissionDenied(callContext,
 				repositoryId, PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT, content);
 		exceptionService.updateConflict(content, changeToken);
-		
-		
+
+
 
 		TypeDefinition tdf = typeManager.getTypeDefinition(repositoryId, content);
 		exceptionService.constraintPropertyValue(repositoryId, tdf,
@@ -793,7 +795,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// Body of the method
 		// //////////////////
 		contentService.move(repositoryId, content, target);
-		
+
 		nemakiCachePool.get(repositoryId).removeCmisCache(content.getId());
 	}
 
@@ -823,14 +825,14 @@ public class ObjectServiceImpl implements ObjectService {
 								"deleteObject method is invoked on a folder containing objects.");
 			}
 			contentService.delete(callContext, repositoryId, objectId, deleteWithParent);
-			
+
 		} else {
 			contentService.delete(callContext, repositoryId, objectId, deleteWithParent);
 		}
 
 		nemakiCachePool.get(repositoryId).removeCmisCache(content.getId());
 	}
-	
+
 	@Override
 	public void deleteObject(CallContext callContext, String repositoryId,
 			String objectId, Boolean allVersions) {
@@ -862,7 +864,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// Delete descendants
 		List<String> failureIds = new ArrayList<String>();
-	
+
 		List<Content> children = contentService.getChildren(repositoryId, folderId);
 		if (!CollectionUtils.isEmpty(children)) {
 			for (Content child : children) {
@@ -876,7 +878,7 @@ public class ObjectServiceImpl implements ObjectService {
 				} catch (Exception e) {
 					StringBuilder sb = new StringBuilder();
 					sb.append("objectId:").append(child.getId()).append(" failed to be deleted.");
-					
+
 					if (continueOnFailure) {
 						failureIds.add(child.getId());
 						log.warn(sb.toString(), e);
@@ -894,7 +896,7 @@ public class ObjectServiceImpl implements ObjectService {
 		} catch (Exception e) {
 			StringBuilder sb = new StringBuilder();
 			sb.append("objectId:").append(folderId).append(" failed to be deleted.");
-			
+
 			if (continueOnFailure) {
 				failureIds.add(folderId);
 				log.warn(sb.toString(), e);
@@ -902,7 +904,7 @@ public class ObjectServiceImpl implements ObjectService {
 				log.error(sb.toString(), e);
 			}
 		}
-		
+
 		/*failureIds = contentService.deleteTree(callContext, folderId, allVersions,
 				continueOnFailure, false);*/
 		solrUtil.callSolrIndexing(repositoryId);
@@ -910,7 +912,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// Check FailedToDeleteData
 		// FIXME Consider orphans that was failed to be deleted
 		FailedToDeleteDataImpl fdd = new FailedToDeleteDataImpl();
-		
+
 		if (CollectionUtils.isNotEmpty(failureIds)) {
 			fdd.setIds(failureIds);
 		} else {

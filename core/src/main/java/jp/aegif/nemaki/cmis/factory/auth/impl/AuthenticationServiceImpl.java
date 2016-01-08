@@ -145,8 +145,10 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		User solrUser = principalService.getUserById(repositoryId, solrUserId);
 		if (solrUser == null) {
 			User newSolrUser = new User(solrUserId, solrUserId, "", "", "", BCrypt.hashpw(solrUserId, BCrypt.gensalt()));
+			newSolrUser.setAdmin(true);
 			principalService.createUser(repositoryId, newSolrUser);
 		}
+
 
 
 		return true;
@@ -181,7 +183,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		// succeeded
 		if (u != null) {
 			if (AuthenticationUtil.passwordMatches(password, u.getPasswordHash())) {
-				log.debug("[" + userName + "]Authentication succeeded");
+				log.debug(String.format( "[%s][%s]Get authenticated user successfully ! , Is admin?  : %s", repositoryId, userName , u.isAdmin()));
 				return u;
 			}
 		}

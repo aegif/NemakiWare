@@ -122,7 +122,7 @@ public class CompileServiceImpl implements CompileService {
 	private NemakiCachePool nemakiCachePool;
 
 	private boolean includeRelationshipsEnabled = true;
-	
+
 	/**
 	 * Builds a CMIS ObjectData from the given CouchDB content.
 	 */
@@ -131,28 +131,28 @@ public class CompileServiceImpl implements CompileService {
 			Content content, String filter,
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
 			String renditionFilter, Boolean includeAcl) {
-		
+
 		ObjectDataImpl _result = new ObjectDataImpl();
-		
+
 		Element v = nemakiCachePool.get(repositoryId).getObjectDataCache().get(content.getId());
 		if(v == null){
 			_result = compileObjectDataWithFullAttributes(callContext, repositoryId, content);
 		}else{
 			_result = (ObjectDataImpl)v.getObjectValue();
 		}
-		
+
 		ObjectData result = filterObjectData(repositoryId, _result, filter, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
-		
+
 		return result;
 	}
-	
+
 	private ObjectDataImpl compileObjectDataWithFullAttributes(CallContext callContext, String repositoryId, Content content){
 		ObjectDataImpl result = new ObjectDataImpl();
-		
+
 		//Filter(any property filter MUST be done here
 		PropertiesImpl properties = compileProperties(callContext, repositoryId, content);
 		result.setProperties(properties);
-		
+
 		// Set Allowable actions
 		result.setAllowableActions(compileAllowableActions(callContext, repositoryId, content));
 
@@ -160,64 +160,64 @@ public class CompileServiceImpl implements CompileService {
 		Acl acl = contentService.calculateAcl(repositoryId, content);
 		result.setIsExactAcl(true);
 		result.setAcl(compileAcl(acl, content.isAclInherited(), false));
-		
+
 		//Set Relationship(BOTH)
 		if (!content.isRelationship()) {
 			if(includeRelationshipsEnabled){
 				result.setRelationships(compileRelationships(callContext, repositoryId, content, IncludeRelationships.BOTH));
 			}
 		}
-			
+
 		// Set Renditions
 		if (content.isDocument()){
 			result.setRenditions(compileRenditions(callContext, repositoryId, content));
-		}	
-		
+		}
+
 		nemakiCachePool.get(repositoryId).getObjectDataCache().put(new Element(content.getId(), result));
-		
+
 		return result;
 	}
-	
+
 	private ObjectData filterObjectData(String repositoryId,
 			ObjectData fullObjectData, String filter,
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
 			String renditionFilter, Boolean includeAcl){
-		
+
 		//Deep copy ObjectData
 		//Shallow copy will cause a destructive effect after filtering some attributes
 		Cloner cloner=new Cloner();
 		ObjectDataImpl result = DataUtil.convertObjectDataImpl(cloner.deepClone(fullObjectData));
-		
+
 		Properties filteredProperties = filterProperties(result.getProperties(), splitFilter(filter));
 		result.setProperties(filteredProperties);
-		
+
 		// Filter Allowable actions
 		Boolean iaa = includeAllowableActions == null ? false: includeAllowableActions.booleanValue();
 		if (!iaa) {
 			result.setAllowableActions(null);
 		}
-		
+
 		// Filter Acl
 		Boolean iacl = includeAcl == null ? false : includeAcl.booleanValue();
 		if (!iacl) {
 			result.setAcl(null);
 		}
-		
+
 		// Filter Relationships
 		IncludeRelationships irl = includeRelationships == null ? IncludeRelationships.SOURCE : includeRelationships;
 		if (fullObjectData.getBaseTypeId() == BaseTypeId.CMIS_RELATIONSHIP) {
 			result.setRelationships(filterRelationships(result.getId(), result.getRelationships(), irl));
 		}
-		
+
 		// Filter Renditions
 		if (fullObjectData.getBaseTypeId() == BaseTypeId.CMIS_DOCUMENT
 				&& repositoryInfoMap.get(repositoryId).getCapabilities().getRenditionsCapability() == CapabilityRenditions.NONE) {
 			result.setRenditions(null);
 		}
-		
+
 		return result;
 	}
-	
+
 	private ObjectData filterObjectDataInList(CallContext callContext, String repositoryId,
 			ObjectData fullObjectData, String filter,
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
@@ -229,10 +229,10 @@ public class CompileServiceImpl implements CompileService {
 			return null;
 		}
 	}
-	
+
 	private Properties filterProperties(Properties properties, Set<String> filter){
 		PropertiesImpl result = new PropertiesImpl();
-		
+
 		//null filter as NO FILTER: do nothing
 		if(filter == null){
 			return properties;
@@ -246,7 +246,7 @@ public class CompileServiceImpl implements CompileService {
 		}
 		return result;
 	}
-	
+
 	private List<ObjectData> filterRelationships(String objectId, List<ObjectData> bothRelationships, IncludeRelationships includeRelationships){
 		String propertyId;
 		switch(includeRelationships){
@@ -268,13 +268,13 @@ public class CompileServiceImpl implements CompileService {
 					filtered.add(rel);
 				}
 			}
-			
+
 			return filtered;
 		}else{
 			return null;
 		}
 	}
-	
+
 	@Override
 	public <T> ObjectList compileObjectDataList(CallContext callContext,
 			String repositoryId, List<T> contents, String filter,
@@ -283,7 +283,7 @@ public class CompileServiceImpl implements CompileService {
 			BigInteger skipCount, boolean folderOnly) {
 		ObjectListImpl list = new ObjectListImpl();
 		list.setObjects(new ArrayList<ObjectData>());
-		
+
 		//Return empty result when no children exist
 		if (CollectionUtils.isEmpty(contents)) {
 			list.setNumItems(BigInteger.ZERO);
@@ -312,13 +312,13 @@ public class CompileServiceImpl implements CompileService {
 			if (ods.size() >= max) {
 				break;
 			}
-			
+
 			Content _c = (Content) t;
 			//Filter by folderOnly
 			if(folderOnly && !_c.isFolder()){
 				continue;
 			}
-			
+
 			//Convert content class
 			Content c = null;
 			if(_c.isFolder()){
@@ -332,7 +332,7 @@ public class CompileServiceImpl implements CompileService {
 			}else if(_c.isItem()){
 				c = (Item)t;
 			}
-			
+
 			//Get each ObjectData
 			ObjectData _od;
 			Element v = nemakiCachePool.get(repositoryId).getObjectDataCache().get(c.getId());
@@ -341,14 +341,14 @@ public class CompileServiceImpl implements CompileService {
 			}else{
 				_od = (ObjectDataImpl)v.getObjectValue();
 			}
-			
+
 			ObjectData od = filterObjectDataInList(callContext, repositoryId, _od, filter, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
 			if(od != null){
 				ods.add(od);
 			}
 		}
 		list.setObjects(ods);
-		
+
 		//Set list meta data
 		if(CollectionUtils.isEmpty(list.getObjects())){
 			return list;
@@ -358,7 +358,7 @@ public class CompileServiceImpl implements CompileService {
 				list.setHasMoreItems(true);
 			}
 		}
-		
+
 		return list;
 	}
 
@@ -495,8 +495,8 @@ public class CompileServiceImpl implements CompileService {
 			Document d = (Document)content;
 			versionSeries = contentService.getVersionSeries(repositoryId, d);
  		}
-		
-		
+
+
 		for (Entry<String, PermissionMapping> mappingEntry : permissionMap
 				.entrySet()) {
 			String key = mappingEntry.getValue().getKey();
@@ -544,7 +544,7 @@ public class CompileServiceImpl implements CompileService {
 	private boolean isAllowableActionForVersionableDocument(
 			CallContext callContext, String permissionMappingKey,
 			Document document, VersionSeries versionSeries, DocumentTypeDefinition dtdf) {
-		
+
 		//Versioning action(checkOut / checkIn)
 		if (permissionMappingKey
 				.equals(PermissionMapping.CAN_CHECKOUT_DOCUMENT)) {
@@ -556,8 +556,8 @@ public class CompileServiceImpl implements CompileService {
 				.equals(PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT)) {
 			return dtdf.isVersionable() && versionSeries.isVersionSeriesCheckedOut() && document.isPrivateWorkingCopy();
 		}
-		
-		
+
+
 		//Lock as an effect of checkOut
 		if(dtdf.isVersionable()){
 			if(isLockableAction(permissionMappingKey)){
@@ -725,7 +725,7 @@ public class CompileServiceImpl implements CompileService {
 	public PropertiesImpl compileProperties(CallContext callContext, String repositoryId, Content content) {
 		TypeDefinitionContainer tdfc = typeManager.getTypeById(repositoryId, content.getObjectType());
 		TypeDefinition tdf = tdfc.getTypeDefinition();
-		
+
 		PropertiesImpl properties = new PropertiesImpl();
 		if (content.isFolder()) {
 			Folder folder = (Folder) content;
@@ -754,7 +754,7 @@ public class CompileServiceImpl implements CompileService {
 
 		return properties;
 	}
-	
+
 	private PropertiesImpl compileRootFolderProperties(String repositoryId,
 			Folder folder, PropertiesImpl properties, TypeDefinition tdf) {
 		setCmisBaseProperties(repositoryId, properties, tdf, folder);
@@ -839,7 +839,7 @@ public class CompileServiceImpl implements CompileService {
 		}
 
 		addProperty(properties, tdf, PropertyIds.CHANGE_TOKEN, String.valueOf(content.getChangeToken()));
-		
+
 		// TODO If subType properties is not registered in DB, return void
 		// properties via CMIS
 		// SubType properties
@@ -854,7 +854,7 @@ public class CompileServiceImpl implements CompileService {
 						value);
 			}
 		}
-		
+
 		// Secondary properties
 		setCmisSecondaryTypes(repositoryId, properties, content, tdf);
 	}
@@ -899,7 +899,7 @@ public class CompileServiceImpl implements CompileService {
 				: document.isImmutable();
 		addProperty(properties, tdf, PropertyIds.IS_IMMUTABLE, isImmutable);
 
-		
+
 		DocumentTypeDefinition type = (DocumentTypeDefinition) typeManager
 				.getTypeDefinition(repositoryId, tdf.getId());
 		if (type.isVersionable()) {
@@ -923,7 +923,7 @@ public class CompileServiceImpl implements CompileService {
 			if (vs.isVersionSeriesCheckedOut()) {
 				String userId = callContext.getUsername();
 				String checkedOutBy = vs.getVersionSeriesCheckedOutBy();
-				
+
 				if(userId.equals(checkedOutBy)){
 					addProperty(properties, tdf, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID,
 							vs.getVersionSeriesCheckedOutId());
@@ -935,7 +935,7 @@ public class CompileServiceImpl implements CompileService {
 					addProperty(properties, tdf, PropertyIds.VERSION_SERIES_CHECKED_OUT_BY,
 							checkedOutBy);
 				}
-				
+
 			} else {
 				addProperty(properties, tdf, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID,
 						null);
@@ -974,23 +974,23 @@ public class CompileServiceImpl implements CompileService {
 		String mimeType = null;
 		String fileName = null;
 		String streamId = null;
-		
+
 		//Check if ContentStream is attached
 		DocumentTypeDefinition dtdf = (DocumentTypeDefinition)tdf;
 		ContentStreamAllowed csa = dtdf.getContentStreamAllowed();
 		if(ContentStreamAllowed.REQUIRED == csa ||
 			ContentStreamAllowed.ALLOWED == csa && StringUtils.isNotBlank(document.getAttachmentNodeId())){
-			
+
 			AttachmentNode attachment = contentService.getAttachmentRef(repositoryId, document
 					.getAttachmentNodeId());
-			
+
 			length = attachment.getLength();
 			mimeType = attachment.getMimeType();
 			//fileName = attachment.getName();
 			fileName = document.getName();
 			streamId = attachment.getId();
 		}
-		
+
 		//Add ContentStream properties to Document object
 		addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_LENGTH,
 				length);
@@ -1105,7 +1105,7 @@ public class CompileServiceImpl implements CompileService {
 
 	/**
 	 * Adds specified property in property set.
-	 * 
+	 *
 	 * @param props
 	 *            property set
 	 * @param tdf
@@ -1122,8 +1122,8 @@ public class CompileServiceImpl implements CompileService {
 			PropertyDefinition<?> pdf = tdf.getPropertyDefinitions().get(id);
 			if (!checkAddProperty(props, tdf, id))
 				return;
-			
-			
+
+
 			switch (pdf.getPropertyType()) {
 			case BOOLEAN:
 				PropertyBooleanImpl propBoolean;
@@ -1393,7 +1393,7 @@ public class CompileServiceImpl implements CompileService {
 
 				return cmisAcl;
 	}
-	
+
 	private void buildCmisAce(AccessControlListImpl cmisAcl, boolean direct, List<Ace> aces, boolean onlyBasicPermissions){
 		if(CollectionUtils.isNotEmpty(aces)){
 			for (Ace ace : aces) {
@@ -1425,7 +1425,7 @@ public class CompileServiceImpl implements CompileService {
 			}
 		}
 	}
-	
+
 	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
 		this.repositoryInfoMap = repositoryInfoMap;
 	}

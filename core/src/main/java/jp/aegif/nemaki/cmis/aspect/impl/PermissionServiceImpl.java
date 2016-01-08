@@ -38,6 +38,7 @@ import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Relationship;
+import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.util.constant.CmisPermission;
@@ -52,6 +53,7 @@ import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.log4j.Logger;
 
 /**
  * Permission Service implementation.
@@ -59,8 +61,7 @@ import org.apache.commons.logging.LogFactory;
  */
 public class PermissionServiceImpl implements PermissionService {
 
-	private static final Log log = LogFactory
-			.getLog(PermissionServiceImpl.class);
+	private static final Log log = LogFactory.getLog(PermissionServiceImpl.class);
 
 	private PrincipalService principalService;
 	private ContentService contentService;
@@ -85,7 +86,7 @@ public class PermissionServiceImpl implements PermissionService {
 			}
 		}
 	}
-	
+
 	/**
 	 *
 	 */
@@ -94,15 +95,17 @@ public class PermissionServiceImpl implements PermissionService {
 	@Override
 	public Boolean checkPermission(CallContext callContext, String repositoryId, String key,
 			Acl acl, String baseType, Content content) {
-		
+
 		//All permission checks must go through baseType check
 		if(!isAllowableBaseType(key, baseType, content, repositoryId)) return false;
-		
+
 		// Admin always pass a permission check
-		CallContextImpl cci = (CallContextImpl) callContext;
-		Boolean _isAdmin = (Boolean) cci.get(CallContextKey.IS_ADMIN);
-		boolean isAdmin = (_isAdmin == null) ? false : _isAdmin;
-		if (isAdmin) return true;
+		String userName = callContext.getUsername();
+		User u = principalService.getUserById(repositoryId, userName);
+
+		if (u != null & u.isAdmin()) {
+			return true;
+		}
 
 		//PWC doesn't accept any actions from a non-owner user
 		//TODO admin can manipulate PWC even when it is checked out ?
@@ -120,18 +123,22 @@ public class PermissionServiceImpl implements PermissionService {
 		// Though some actions are defined in the specs,
 		// Some other direct actions is needed to be set here.
 		if(content.isRelationship()){
+
+
 			Relationship relationship = (Relationship)content;
-			return checkRelationshipPermission(callContext, repositoryId, key, relationship);
+			boolean hasRelationshipPermission =  checkRelationshipPermission(callContext, repositoryId, key, relationship);
+			return hasRelationshipPermission;
 		}
 
 		// Void Acl fails(but Admin can do an action)
-		if (acl == null)
+		if (acl == null){
 			return false;
+		}
 
 		// Even if a user has multiple ACEs, the permissions is pushed into
 		// Set<String> and remain unique.
 		// Get ACL for the current user
-		String userName = callContext.getUsername();
+
 		List<Ace> aces = acl.getAllAces();
 		Set<String> userPermissions = new HashSet<String>();
 		Set<String> groups = principalService.getGroupIdsContainingUser(repositoryId, userName);
@@ -151,7 +158,8 @@ public class PermissionServiceImpl implements PermissionService {
 		}
 
 		// Check mapping between the user and the content
-		return checkCalculatedPermissions(repositoryId, key, userPermissions);
+		boolean calcPermission =  checkCalculatedPermissions(repositoryId, key, userPermissions);
+		return calcPermission;
 	}
 
 	/**
@@ -169,6 +177,7 @@ public class PermissionServiceImpl implements PermissionService {
 			if (actionPermissions.contains(up) ||
 				CmisPermission.ALL.equals(up)) {
 				//If any one of user permissions is contained, action is allowed.
+
 				return true;
 			}
 		}
@@ -424,5 +433,5 @@ public class PermissionServiceImpl implements PermissionService {
 	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
 		this.repositoryInfoMap = repositoryInfoMap;
 	}
-	
+
 }

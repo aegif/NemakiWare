@@ -20,6 +20,13 @@
 		<property name="beforeEnabled" value="${log.before}"/>
 		<property name="afterEnabled" value="${log.after}"/>
 		<property name="callContextEnabled" value="${log.callcontext}"/>
+		<property name="CustomToString">
+			<ref bean="customToString" />
+		</property>
+	</bean>
+	
+	<bean id="customToString" class="jp.aegif.nemaki.util.spring.aspect.log.impl.CustomToStringImpl">
+		
 	</bean>
 
 </beans>
