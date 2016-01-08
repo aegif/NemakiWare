@@ -5,39 +5,39 @@ set ORIGINAL_PWD=%CD%
 
 rem Location
 if "%1" == "" (
-	set BAT_DIR=%~dp0
-	cd /d %BAT_DIR%
-	cd /d ../../
-	FOR /F %%i in ('CD') do set SOURCE_HOME=%%i
-	cd /d %ORIGINAL_PWD%
+  set BAT_DIR=%~dp0
+  cd /d %BAT_DIR%
+  cd /d ../../
+  FOR /F %%i in ('CD') do set SOURCE_HOME=%%i
+  cd /d %ORIGINAL_PWD%
 ) ELSE (
-	set SOURCE_HOME=%1
+  SOURCE_HOME=%1
 )
 
 @echo on
-echo NemakiWare server starting...
+echo NemakiCore server starting...
 @echo off
-start mvn -f %SOURCE_HOME%\nemakiware jetty:run
+start mvn -f %SOURCE_HOME%\core jetty:run
 @echo on
-echo NemakiWare server started.
+echo NemakiCore server started.
 @echo off
 
 @echo on
 echo NemakiSolr server starting...
 @echo off
-start mvn -f %SOURCE_HOME%\nemakisolr jetty:run
+start mvn -f %SOURCE_HOME%\solr jetty:run
 @echo on
 echo NemakiSolr server started.
 @echo off
 
 @echo on
-echo NemakiShare client starting...
+echo NemakiUI client starting...
 @echo off
-cd /d %SOURCE_HOME%\nemakishare
-start rails s
+cd /d %SOURCE_HOME%\ui
+start activator -jvm-debug 9999 run
 cd /d %ORIGINAL_PWD%
 @echo on
-echo NemakiShare client started.
+echo NemakiUI client started.
 @echo off
 
 end local

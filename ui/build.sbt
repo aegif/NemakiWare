@@ -2,7 +2,7 @@ import com.github.play2war.plugin._
 
 name := """ui"""
 
-version := "2.3.6"
+version := "2.3.7"
 
 lazy val root = (project in file(".")).enablePlugins(PlayJava)
 
@@ -21,10 +21,10 @@ libraryDependencies ++= Seq(
   "org.webjars" % "bootstrap" % "3.2.0",
   "org.webjars" % "jquery" % "1.11.1",
   "org.webjars" % "jquery-ui" % "1.11.1",
-  "org.apache.chemistry.opencmis" % "chemistry-opencmis-client-impl" % "0.12.0",
-  "org.apache.chemistry.opencmis" % "chemistry-opencmis-client-bindings" % "0.12.0",
-  "org.apache.chemistry.opencmis" % "chemistry-opencmis-client-api" % "0.12.0",
-  "org.apache.chemistry.opencmis" % "chemistry-opencmis-commons-impl" % "0.12.0",
+  "org.apache.chemistry.opencmis" % "chemistry-opencmis-client-impl" % "0.13.0",
+  "org.apache.chemistry.opencmis" % "chemistry-opencmis-client-bindings" % "0.13.0",
+  "org.apache.chemistry.opencmis" % "chemistry-opencmis-client-api" % "0.13.0",
+  "org.apache.chemistry.opencmis" % "chemistry-opencmis-commons-impl" % "0.13.0",
   "org.apache.httpcomponents" % "httpclient" % "4.4-beta1"
 )
 

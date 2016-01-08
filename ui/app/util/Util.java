@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 
@@ -744,15 +745,15 @@ public class Util {
 			!PropertyIds.SECONDARY_OBJECT_TYPE_IDS.equals(pdf.getId());
 	 }
 
-	 public static String displayValue(CmisObject obj, String propertyId){
+	 public static String displayValue(CmisObject obj, String propertyId,  Locale locale){
 		 if(PropertyIds.CREATED_BY.equals(propertyId)){
 			 return obj.getCreatedBy();
 		 }else if(PropertyIds.CREATION_DATE.equals(propertyId)){
-			 return Formatter.calToString(obj.getCreationDate());
+			 return Formatter.calToString(obj.getCreationDate(), locale);
 		 } else if(PropertyIds.LAST_MODIFIED_BY.equals(propertyId)){
 			 return obj.getLastModifiedBy();
 		 }else if(PropertyIds.LAST_MODIFICATION_DATE.equals(propertyId)){
-			 return Formatter.calToString(obj.getLastModificationDate());
+			 return Formatter.calToString(obj.getLastModificationDate(), locale);
 		 }else if(PropertyIds.VERSION_SERIES_CHECKED_OUT_BY.equals(propertyId)){
 			 if(isDocument(obj)){
 				 Document doc = (Document)obj;
