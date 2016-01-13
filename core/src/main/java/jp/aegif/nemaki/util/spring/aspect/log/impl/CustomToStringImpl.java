@@ -15,9 +15,7 @@ import org.apache.chemistry.opencmis.commons.data.ObjectInFolderList;
 import org.apache.chemistry.opencmis.commons.data.ObjectParentData;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectInFolderListImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
-import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -40,9 +38,34 @@ public class CustomToStringImpl {
 		}else if(obj instanceof ObjectParentData){
 			return parseObjectParentData((ObjectParentData)obj);
 		}else if(obj instanceof Properties){
-				return parseProperties((Properties)obj);
+			return parseProperties((Properties)obj);
+		}else if(obj instanceof List){
+			return parseList((List)obj);
 		}else{
 			return obj.toString();
+		}
+	}
+	
+	private String parseList(List list){
+		List<String>result = new ArrayList<String>();
+		for(Object elm : list){
+			result.add(parse(elm));
+		}
+		return result.toString();
+	}
+	
+	private String parseCallContext(CallContext callContext){
+		if(callContext == null){
+			return "";
+		}else{
+			StringBuilder sb = new StringBuilder();
+			sb.append("CallContext[repositoryId=")
+			.append(callContext.getRepositoryId())
+			.append(", userId=")
+			.append(callContext.getUsername())
+			.append("]");
+			
+			return sb.toString();
 		}
 	}
 	
@@ -94,7 +117,7 @@ public class CustomToStringImpl {
 		return _map.toString();
 	}
 	
-	public String parseList(Object[] list){
+	public String parseArguments(Object[] list){
 		List<String>result = new ArrayList<String>();
 		if(list == null){
 			return null;
@@ -103,21 +126,6 @@ public class CustomToStringImpl {
 				result.add(this.parse(list[i]));
 			}
 			return result.toString();
-		}
-	}
-	
-	private String parseCallContext(CallContext callContext){
-		if(callContext == null){
-			return "";
-		}else{
-			StringBuilder sb = new StringBuilder();
-			sb.append("CallContext[repositoryId=")
-			.append(callContext.getRepositoryId())
-			.append(", userId=")
-			.append(callContext.getUsername())
-			.append("]");
-			
-			return sb.toString();
 		}
 	}
 	
