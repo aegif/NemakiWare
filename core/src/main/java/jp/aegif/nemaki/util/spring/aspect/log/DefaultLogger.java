@@ -53,7 +53,7 @@ public class DefaultLogger {
 		}
 		sb.append("#").append(jp.getSignature().getName());
 		if(arguments){
-			sb.append(customToString.parseList(args));
+			sb.append(customToString.parseArguments(args));
 		}
 
 		//Before advice
