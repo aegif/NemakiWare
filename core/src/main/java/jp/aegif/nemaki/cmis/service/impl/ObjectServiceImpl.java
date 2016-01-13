@@ -62,6 +62,7 @@ import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.service.ObjectService;
+import jp.aegif.nemaki.cmis.service.ObjectServiceInternal;
 import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
@@ -72,7 +73,6 @@ import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.DataUtil;
-import jp.aegif.nemaki.util.cache.NemakiCache;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.DomainType;
 
@@ -82,6 +82,7 @@ public class ObjectServiceImpl implements ObjectService {
 			.getLog(ObjectServiceImpl.class);
 
 	private TypeManager typeManager;
+	private ObjectServiceInternal objectServiceInternal;
 	private ContentService contentService;
 	private ExceptionService exceptionService;
 	private CompileService compileService;
@@ -799,44 +800,12 @@ public class ObjectServiceImpl implements ObjectService {
 		nemakiCachePool.get(repositoryId).removeCmisCache(content.getId());
 	}
 
-	private void deleteObjectInternal(CallContext callContext, String repositoryId,
-			String objectId, Boolean allVersions, Boolean deleteWithParent) {
-		// //////////////////
-		// General Exception
-		// //////////////////
-		exceptionService.invalidArgumentRequiredString("objectId", objectId);
-		Content content = contentService.getContent(repositoryId, objectId);
-		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
-		exceptionService.permissionDenied(callContext,
-				repositoryId, PermissionMapping.CAN_DELETE_OBJECT, content);
-		exceptionService.constraintDeleteRootFolder(repositoryId, objectId);
-
-		// //////////////////
-		// Body of the method
-		// //////////////////
-		if (content.isDocument()) {
-			contentService.deleteDocument(callContext, repositoryId,
-					content.getId(), allVersions, deleteWithParent);
-		} else if (content.isFolder()) {
-			List<Content> children = contentService.getChildren(repositoryId, objectId);
-			if (!CollectionUtils.isEmpty(children)) {
-				exceptionService
-						.constraint(objectId,
-								"deleteObject method is invoked on a folder containing objects.");
-			}
-			contentService.delete(callContext, repositoryId, objectId, deleteWithParent);
-
-		} else {
-			contentService.delete(callContext, repositoryId, objectId, deleteWithParent);
-		}
-
-		nemakiCachePool.get(repositoryId).removeCmisCache(content.getId());
-	}
+	
 
 	@Override
 	public void deleteObject(CallContext callContext, String repositoryId,
 			String objectId, Boolean allVersions) {
-		deleteObjectInternal(callContext, repositoryId, objectId, allVersions, false);
+		objectServiceInternal.deleteObjectInternal(callContext, repositoryId, objectId, allVersions, false);
 	}
 
 	@Override
@@ -873,7 +842,7 @@ public class ObjectServiceImpl implements ObjectService {
 						deleteTree(callContext, repositoryId, child.getId(), allVersions,
 								unfileObjects, continueOnFailure, extension);
 					} else {
-						deleteObjectInternal(callContext, repositoryId, child.getId(), allVersions, true);
+						objectServiceInternal.deleteObjectInternal(callContext, repositoryId, child.getId(), allVersions, true);
 					}
 				} catch (Exception e) {
 					StringBuilder sb = new StringBuilder();
@@ -892,7 +861,7 @@ public class ObjectServiceImpl implements ObjectService {
 
 		// Delete the folder itself
 		try {
-			deleteObjectInternal(callContext, repositoryId, folderId, allVersions, false);
+			objectServiceInternal.deleteObjectInternal(callContext, repositoryId, folderId, allVersions, false);
 		} catch (Exception e) {
 			StringBuilder sb = new StringBuilder();
 			sb.append("objectId:").append(folderId).append(" failed to be deleted.");
@@ -919,6 +888,10 @@ public class ObjectServiceImpl implements ObjectService {
 			fdd.setIds(new ArrayList<String>());
 		}
 		return fdd;
+	}
+
+	public void setObjectServiceInternal(ObjectServiceInternal objectServiceInternal) {
+		this.objectServiceInternal = objectServiceInternal;
 	}
 
 	public void setContentService(ContentService contentService) {
