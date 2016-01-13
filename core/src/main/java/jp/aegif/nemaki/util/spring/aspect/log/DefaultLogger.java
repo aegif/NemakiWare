@@ -78,7 +78,7 @@ public class DefaultLogger {
 
 			return result;
 		}catch(Exception e){
-			log.error("Error:", e);
+			log.error("nemaki_log[ERROR];" + e.toString(), e);
 			throw e;
 		}
 	}
