@@ -19,7 +19,7 @@
 	</appender>
 	<logger name="jp.aegif">
 		<appender-ref ref="file" />
-		<level value="debug" />
+		<level value="info" />
 	</logger>
 
 	<root>
