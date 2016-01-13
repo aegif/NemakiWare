@@ -27,6 +27,8 @@ public class CustomToStringImpl {
 	public String parse(Object obj){
 		if(obj == null){
 			return "null";
+		}else if(obj instanceof CallContext){
+			return parseCallContext((CallContext)obj);
 		}else if(obj instanceof ObjectData){
 			return parseObjectData((ObjectData)obj);
 		}else if(obj instanceof ObjectInFolderData){
@@ -98,13 +100,24 @@ public class CustomToStringImpl {
 			return null;
 		}else{
 			for(int i=0; i<list.length; i++){
-				//Omit CallContext argument
-				if(list[i] instanceof CallContext){
-					continue;
-				}
 				result.add(this.parse(list[i]));
 			}
 			return result.toString();
+		}
+	}
+	
+	private String parseCallContext(CallContext callContext){
+		if(callContext == null){
+			return "";
+		}else{
+			StringBuilder sb = new StringBuilder();
+			sb.append("CallContext[repositoryId=")
+			.append(callContext.getRepositoryId())
+			.append(", userId=")
+			.append(callContext.getUsername())
+			.append("]");
+			
+			return sb.toString();
 		}
 	}
 	

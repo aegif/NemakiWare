@@ -18,7 +18,7 @@
 	</bean>
 
     <!-- CMIS Repository Beans -->
-    <bean id="CmisLifecycleBean" class="jp.aegif.nemaki.cmis.factory.CmisLifecycleBean" >
+    <bean id="CmisLifecycleBean" class="jp.aegif.nemaki.cmis.factory.CmisLifecycleBean">
         <property name="cmisServiceFactory" ref="CmisServiceFactory" />
     </bean>
 
@@ -30,12 +30,12 @@
         <property name="authenticationService">
             <ref bean="AuthenticationService" />
         </property>
-        <property name="cmisService">
-        	<ref bean="cmisService" />
+        <property name="repositoryInfoMap">
+        	<ref bean="repositoryInfoMap" />
         </property>
     </bean>
 
-	<bean id="cmisService" class="jp.aegif.nemaki.cmis.factory.CmisService">
+	<bean id="cmisService" class="jp.aegif.nemaki.cmis.factory.CmisService" scope="prototype">
 		<property name="repositoryService">
             <ref bean="RepositoryService" />
         </property>
