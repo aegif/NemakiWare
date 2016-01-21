@@ -22,15 +22,21 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 	private ExceptionService exceptionService;
 	private NemakiCachePool nemakiCachePool;
 	
-	
 	@Override
 	public void deleteObjectInternal(CallContext callContext, String repositoryId,
 			String objectId, Boolean allVersions, Boolean deleteWithParent) {
+		exceptionService.invalidArgumentRequiredString("objectId", objectId);
+		Content content = contentService.getContent(repositoryId, objectId);
+		deleteObjectInternal(callContext, repositoryId, content, allVersions, deleteWithParent);
+	}
+	
+	@Override
+	public void deleteObjectInternal(CallContext callContext, String repositoryId,
+			Content content, Boolean allVersions, Boolean deleteWithParent) {
 		// //////////////////
 		// General Exception
 		// //////////////////
-		exceptionService.invalidArgumentRequiredString("objectId", objectId);
-		Content content = contentService.getContent(repositoryId, objectId);
+		String objectId = content.getId();
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,
 				repositoryId, PermissionMapping.CAN_DELETE_OBJECT, content);
