@@ -215,6 +215,9 @@
         <property name="nemakiCachePool">
 			<ref bean="nemakiCachePool" />
         </property>
+        <property name="threadMax">
+			<value>${thread.max}</value>
+        </property>
     </bean>
     
     <bean id="ObjectServiceInternal" class="org.springframework.aop.framework.ProxyFactoryBean">
