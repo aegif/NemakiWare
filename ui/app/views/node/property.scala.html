@@ -46,7 +46,7 @@
 <script src="@routes.JsTemplate.duplicateNameCheck(repositoryId)" type="text/javascript"></script>
 <script type="text/javascript">
 	//binding:update
-	$(document).on('click', "#property-update", function(){
+	$("#property-update").on('click', function(){
 		//Read proeprty data
 		var data = {};
 		@defining(NemakiConfig.getValues("property-masking")){ masking =>
