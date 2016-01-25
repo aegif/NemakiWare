@@ -64,6 +64,8 @@ import org.apache.chemistry.opencmis.commons.server.RenditionInfo;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.chemistry.opencmis.server.support.wrapper.CallContextAwareCmisService;
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 import jp.aegif.nemaki.cmis.service.AclService;
 import jp.aegif.nemaki.cmis.service.DiscoveryService;
@@ -77,7 +79,7 @@ import jp.aegif.nemaki.cmis.service.VersioningService;
 /**
  * Nemaki CMIS service.
  */
-public class CmisService extends AbstractCmisService implements CallContextAwareCmisService{
+public class CmisService extends AbstractCmisService implements CallContextAwareCmisService {
 
 	/**
 	 * Context data of the current CMIS call.
@@ -96,13 +98,14 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	private VersioningService versioningService;
 	private PolicyService policyService;
 	private RelationshipService relationshipService;
-	
-	
+
+	private static final Log log = LogFactory.getLog(CmisService.class);
+
 	/**
 	 * Create a new NemakiCmisService.
 	 */
-	public CmisService(){
-		
+	public CmisService() {
+
 	}
 
 	// --- Navigation Service Implementation ---
@@ -122,8 +125,7 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		return info;
 	}
 
-	private void setObjectInfoInTree(String repositoryId,
-			List<ObjectInFolderContainer> list) {
+	private void setObjectInfoInTree(String repositoryId, List<ObjectInFolderContainer> list) {
 		// Set ObjecInfo
 		if (CollectionUtils.isNotEmpty(list)) {
 			for (ObjectInFolderContainer o : list) {
@@ -140,11 +142,9 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * This method is customized based on OpenCMIS code
 	 */
 	@Override
-	protected ObjectInfo getObjectInfoIntern(String repositoryId,
-			ObjectData object) {
+	protected ObjectInfo getObjectInfoIntern(String repositoryId, ObjectData object) {
 		// if the object has no properties, stop here
-		if (object.getProperties() == null
-				|| object.getProperties().getProperties() == null) {
+		if (object.getProperties() == null || object.getProperties().getProperties() == null) {
 			throw new CmisRuntimeException("No properties!");
 		}
 
@@ -159,8 +159,7 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		info.setName(getStringProperty(object, PropertyIds.NAME));
 		info.setCreatedBy(getStringProperty(object, PropertyIds.CREATED_BY));
 		info.setCreationDate(getDateTimeProperty(object, PropertyIds.CREATED_BY));
-		info.setLastModificationDate(getDateTimeProperty(object,
-				PropertyIds.LAST_MODIFICATION_DATE));
+		info.setLastModificationDate(getDateTimeProperty(object, PropertyIds.LAST_MODIFICATION_DATE));
 		info.setTypeId(getIdProperty(object, PropertyIds.OBJECT_TYPE_ID));
 		info.setBaseType(object.getBaseTypeId());
 
@@ -169,19 +168,14 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		info.setWorkingCopyId(null);
 		info.setWorkingCopyOriginalId(null);
 
-		info.setVersionSeriesId(getIdProperty(object,
-				PropertyIds.VERSION_SERIES_ID));
+		info.setVersionSeriesId(getIdProperty(object, PropertyIds.VERSION_SERIES_ID));
 		if (info.getVersionSeriesId() != null) {
-			Boolean isLatest = getBooleanProperty(object,
-					PropertyIds.IS_LATEST_VERSION);
-			info.setIsCurrentVersion(isLatest == null ? true : isLatest
-					.booleanValue());
+			Boolean isLatest = getBooleanProperty(object, PropertyIds.IS_LATEST_VERSION);
+			info.setIsCurrentVersion(isLatest == null ? true : isLatest.booleanValue());
 
-			Boolean isCheckedOut = getBooleanProperty(object,
-					PropertyIds.IS_VERSION_SERIES_CHECKED_OUT);
+			Boolean isCheckedOut = getBooleanProperty(object, PropertyIds.IS_VERSION_SERIES_CHECKED_OUT);
 			if (isCheckedOut != null && isCheckedOut.booleanValue()) {
-				info.setWorkingCopyId(getIdProperty(object,
-						PropertyIds.VERSION_SERIES_CHECKED_OUT_ID));
+				info.setWorkingCopyId(getIdProperty(object, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID));
 
 				// get latest version
 				// // Nemaki Cusomization START ////
@@ -197,22 +191,17 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 				// getAllVersions MUST be PWC.
 				// When isCheckedOut = true, PWC MUST exsits, and
 				// cmis:versionSeriesCheckedOutId is PWC id(2.1.13.5.1).
-				info.setWorkingCopyOriginalId(getIdProperty(object,
-						PropertyIds.VERSION_SERIES_CHECKED_OUT_ID));
+				info.setWorkingCopyOriginalId(getIdProperty(object, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID));
 				// // Nemaki Cusomization END ////
 			}
 		}
 
 		// content
-		String fileName = getStringProperty(object,
-				PropertyIds.CONTENT_STREAM_FILE_NAME);
-		String mimeType = getStringProperty(object,
-				PropertyIds.CONTENT_STREAM_MIME_TYPE);
+		String fileName = getStringProperty(object, PropertyIds.CONTENT_STREAM_FILE_NAME);
+		String mimeType = getStringProperty(object, PropertyIds.CONTENT_STREAM_MIME_TYPE);
 		String streamId = getIdProperty(object, PropertyIds.CONTENT_STREAM_ID);
-		BigInteger length = getIntegerProperty(object,
-				PropertyIds.CONTENT_STREAM_LENGTH);
-		boolean hasContent = fileName != null || mimeType != null
-				|| streamId != null || length != null;
+		BigInteger length = getIntegerProperty(object, PropertyIds.CONTENT_STREAM_LENGTH);
+		boolean hasContent = fileName != null || mimeType != null || streamId != null || length != null;
 		if (hasContent) {
 			info.setHasContent(hasContent);
 			info.setContentType(mimeType);
@@ -227,8 +216,7 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		if (object.getBaseTypeId() == BaseTypeId.CMIS_RELATIONSHIP) {
 			info.setHasParent(false);
 		} else if (object.getBaseTypeId() == BaseTypeId.CMIS_FOLDER) {
-			info.setHasParent(!object.getId().equals(
-					repositoryInfo.getRootFolderId()));
+			info.setHasParent(!object.getId().equals(repositoryInfo.getRootFolderId()));
 			// // Nemaki Cusomization START ////
 			/*
 			 * } else { try { List<ObjectParentData> parents =
@@ -239,21 +227,15 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 			 * info.setHasParent(false); } }
 			 */
 		} else {
-			String objecTypeId = getIdProperty(object,
-					PropertyIds.OBJECT_TYPE_ID);
-			TypeDefinition typeDefinition = getTypeDefinition(repositoryId,
-					objecTypeId, null);
+			String objecTypeId = getIdProperty(object, PropertyIds.OBJECT_TYPE_ID);
+			TypeDefinition typeDefinition = getTypeDefinition(repositoryId, objecTypeId, null);
 
 			if (typeDefinition.isFileable()) {
-				boolean unfiling = (repositoryInfo.getCapabilities()
-						.isUnfilingSupported() == null) ? false
-						: repositoryInfo.getCapabilities()
-								.isUnfilingSupported();
+				boolean unfiling = (repositoryInfo.getCapabilities().isUnfilingSupported() == null) ? false
+						: repositoryInfo.getCapabilities().isUnfilingSupported();
 				if (unfiling) {
-					List<ObjectParentData> parents = getObjectParents(
-							repositoryId, object.getId(), null, Boolean.FALSE,
-							IncludeRelationships.NONE, "cmis:none",
-							Boolean.FALSE, null);
+					List<ObjectParentData> parents = getObjectParents(repositoryId, object.getId(), null, Boolean.FALSE,
+							IncludeRelationships.NONE, "cmis:none", Boolean.FALSE, null);
 					info.setHasParent(parents != null && parents.size() >= 0);
 				} else {
 					info.setHasParent(true);
@@ -268,8 +250,8 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		info.setSupportsRelationships(false);
 		info.setSupportsPolicies(false);
 
-		TypeDefinitionList baseTypesList = getTypeChildren(repositoryId, null,
-				Boolean.FALSE, BigInteger.valueOf(4), BigInteger.ZERO, null);
+		TypeDefinitionList baseTypesList = getTypeChildren(repositoryId, null, Boolean.FALSE, BigInteger.valueOf(4),
+				BigInteger.ZERO, null);
 		for (TypeDefinition type : baseTypesList.getList()) {
 			if (BaseTypeId.CMIS_RELATIONSHIP.value().equals(type.getId())) {
 				info.setSupportsRelationships(true);
@@ -303,10 +285,8 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 			List<String> sourceIds = new ArrayList<String>();
 			List<String> targetIds = new ArrayList<String>();
 			for (ObjectData relationship : relationships) {
-				String sourceId = getIdProperty(relationship,
-						PropertyIds.SOURCE_ID);
-				String targetId = getIdProperty(relationship,
-						PropertyIds.TARGET_ID);
+				String sourceId = getIdProperty(relationship, PropertyIds.SOURCE_ID);
+				String targetId = getIdProperty(relationship, PropertyIds.TARGET_ID);
 				if (object.getId().equals(sourceId)) {
 					sourceIds.add(relationship.getId());
 				}
@@ -332,10 +312,8 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 			info.setHasAcl(capabilities.getAclCapability() == CapabilityAcl.DISCOVER
 					|| capabilities.getAclCapability() == CapabilityAcl.MANAGE);
 			if (object.getBaseTypeId() == BaseTypeId.CMIS_FOLDER) {
-				info.setSupportsDescendants(Boolean.TRUE.equals(capabilities
-						.isGetDescendantsSupported()));
-				info.setSupportsFolderTree(Boolean.TRUE.equals(capabilities
-						.isGetFolderTreeSupported()));
+				info.setSupportsDescendants(Boolean.TRUE.equals(capabilities.isGetDescendantsSupported()));
+				info.setSupportsFolderTree(Boolean.TRUE.equals(capabilities.isGetFolderTreeSupported()));
 			}
 		}
 
@@ -348,19 +326,16 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * Gets the list of child objects contained in the specified folder.
 	 */
 	@Override
-	public ObjectInFolderList getChildren(String repositoryId, String folderId,
-			String filter, String orderBy, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
-			Boolean includePathSegment, BigInteger maxItems,
-			BigInteger skipCount, ExtensionsData extension) {
+	public ObjectInFolderList getChildren(String repositoryId, String folderId, String filter, String orderBy,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter,
+			Boolean includePathSegment, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
 		Holder<ObjectData> parentObjectData = new Holder<ObjectData>(null);
-		
-		ObjectInFolderList children = navigationService.getChildren(
-				getCallContext(), repositoryId, folderId, filter,
-				orderBy, includeAllowableActions, null, null,
-				includePathSegment, maxItems, skipCount, extension, parentObjectData);
-		
-		if(parentObjectData != null && parentObjectData.getValue() != null){
+
+		ObjectInFolderList children = navigationService.getChildren(getCallContext(), repositoryId, folderId, filter,
+				orderBy, includeAllowableActions, null, null, includePathSegment, maxItems, skipCount, extension,
+				parentObjectData);
+
+		if (parentObjectData != null && parentObjectData.getValue() != null) {
 			setObjectInfo(repositoryId, parentObjectData.getValue());
 		}
 		if (children != null) {
@@ -377,24 +352,20 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * any of its child folders.
 	 */
 	@Override
-	public List<ObjectInFolderContainer> getDescendants(String repositoryId,
-			String folderId, BigInteger depth, String filter,
-			Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
-			Boolean includePathSegment, ExtensionsData extension) {
+	public List<ObjectInFolderContainer> getDescendants(String repositoryId, String folderId, BigInteger depth,
+			String filter, Boolean includeAllowableActions, IncludeRelationships includeRelationships,
+			String renditionFilter, Boolean includePathSegment, ExtensionsData extension) {
 		Holder<ObjectData> anscestorObjectData = new Holder<ObjectData>(null);
-		
-		List<ObjectInFolderContainer> result = navigationService
-				.getDescendants(getCallContext(), repositoryId, folderId, depth,
-						filter, includeAllowableActions,
-						includeRelationships, renditionFilter, includePathSegment, false, extension, anscestorObjectData);
 
-		
-		if(anscestorObjectData != null && anscestorObjectData.getValue() != null){
+		List<ObjectInFolderContainer> result = navigationService.getDescendants(getCallContext(), repositoryId,
+				folderId, depth, filter, includeAllowableActions, includeRelationships, renditionFilter,
+				includePathSegment, false, extension, anscestorObjectData);
+
+		if (anscestorObjectData != null && anscestorObjectData.getValue() != null) {
 			setObjectInfo(repositoryId, anscestorObjectData.getValue());
 		}
 		setObjectInfoInTree(repositoryId, result);
-		
+
 		return result;
 	}
 
@@ -403,65 +374,55 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * folder.
 	 */
 	@Override
-	public List<ObjectInFolderContainer> getFolderTree(String repositoryId,
-			String folderId, BigInteger depth, String filter,
-			Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
-			Boolean includePathSegment, ExtensionsData extension) {
+	public List<ObjectInFolderContainer> getFolderTree(String repositoryId, String folderId, BigInteger depth,
+			String filter, Boolean includeAllowableActions, IncludeRelationships includeRelationships,
+			String renditionFilter, Boolean includePathSegment, ExtensionsData extension) {
 		Holder<ObjectData> anscestorObjectData = new Holder<ObjectData>(null);
-		
-		List<ObjectInFolderContainer> result = navigationService
-				.getDescendants(getCallContext(), repositoryId, folderId, depth,
-						filter, includeAllowableActions,
-						includeRelationships, renditionFilter, includePathSegment, true, extension, anscestorObjectData);
-		
-		if(anscestorObjectData != null && anscestorObjectData.getValue() != null){
+
+		List<ObjectInFolderContainer> result = navigationService.getDescendants(getCallContext(), repositoryId,
+				folderId, depth, filter, includeAllowableActions, includeRelationships, renditionFilter,
+				includePathSegment, true, extension, anscestorObjectData);
+
+		if (anscestorObjectData != null && anscestorObjectData.getValue() != null) {
 			setObjectInfo(repositoryId, anscestorObjectData.getValue());
 		}
 		setObjectInfoInTree(repositoryId, result);
-		
+
 		return result;
 	}
-	
+
 	/**
 	 * Gets the parent folder object for the specified folder object.
 	 */
 	@Override
-	public ObjectData getFolderParent(String repositoryId, String folderId,
-			String filter, ExtensionsData extension) {
-		return navigationService.getFolderParent(getCallContext(),
-				repositoryId, folderId, filter);
+	public ObjectData getFolderParent(String repositoryId, String folderId, String filter, ExtensionsData extension) {
+		return navigationService.getFolderParent(getCallContext(), repositoryId, folderId, filter);
 	}
-	
+
 	/**
 	 * Gets the parent folder(s) for the specified non-folder, fileable object.
 	 */
 	@Override
-	public List<ObjectParentData> getObjectParents(String repositoryId,
-			String objectId, String filter, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
+	public List<ObjectParentData> getObjectParents(String repositoryId, String objectId, String filter,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includeRelativePathSegment, ExtensionsData extension) {
-		List<ObjectParentData> parents = navigationService
-				.getObjectParents(getCallContext(), repositoryId, objectId,
-						filter, includeAllowableActions,
-						includeRelationships, renditionFilter, includeRelativePathSegment, extension);
+		List<ObjectParentData> parents = navigationService.getObjectParents(getCallContext(), repositoryId, objectId,
+				filter, includeAllowableActions, includeRelationships, renditionFilter, includeRelativePathSegment,
+				extension);
 		return parents;
 	}
-	
+
 	/**
 	 * Gets the list of documents that are checked out that the user has access
 	 * to. No checkout for now, so empty.
 	 */
 	@Override
-	public ObjectList getCheckedOutDocs(String repositoryId, String folderId,
-			String filter, String orderBy, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
+	public ObjectList getCheckedOutDocs(String repositoryId, String folderId, String filter, String orderBy,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter,
 			BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
 
-		return navigationService.getCheckedOutDocs(getCallContext(),
-				repositoryId, folderId, filter, orderBy,
-				includeAllowableActions, includeRelationships, renditionFilter, maxItems,
-				skipCount, extension);
+		return navigationService.getCheckedOutDocs(getCallContext(), repositoryId, folderId, filter, orderBy,
+				includeAllowableActions, includeRelationships, renditionFilter, maxItems, skipCount, extension);
 
 	}
 
@@ -472,13 +433,13 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * "cmis:objectTypeId" defines the type and implicitly the base type.
 	 */
 	@Override
-	public String create(String repositoryId, Properties properties,
-			String folderId, ContentStream contentStream,
-			VersioningState versioningState, List<String> policies,
-			ExtensionsData extension) {
-		ObjectData object = objectService.create(
-				getCallContext(), repositoryId, properties, folderId,
-				contentStream, versioningState, policies, extension);
+	public String create(String repositoryId, Properties properties, String folderId, ContentStream contentStream,
+			VersioningState versioningState, List<String> policies, ExtensionsData extension) {
+		ObjectData object = objectService.create(getCallContext(), repositoryId, properties, folderId, contentStream,
+				versioningState, policies, extension);
+
+		setObjectInfo(repositoryId, object);
+
 		return object.getId();
 	}
 
@@ -487,13 +448,11 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * cmis:objectTypeId property) in the (optionally) specified location.
 	 */
 	@Override
-	public String createDocument(String repositoryId, Properties properties,
-			String folderId, ContentStream contentStream,
-			VersioningState versioningState, List<String> policies,
-			Acl addAces, Acl removeAces, ExtensionsData extension) {
-		return objectService.createDocument(getCallContext(),
-				repositoryId, properties, folderId, contentStream, versioningState,
-				policies, addAces, removeAces);
+	public String createDocument(String repositoryId, Properties properties, String folderId,
+			ContentStream contentStream, VersioningState versioningState, List<String> policies, Acl addAces,
+			Acl removeAces, ExtensionsData extension) {
+		return objectService.createDocument(getCallContext(), repositoryId, properties, folderId, contentStream,
+				versioningState, policies, addAces, removeAces);
 	}
 
 	/**
@@ -501,13 +460,11 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * (optionally) specified location.
 	 */
 	@Override
-	public String createDocumentFromSource(String repositoryId,
-			String sourceId, Properties properties, String folderId,
-			VersioningState versioningState, List<String> policies,
-			Acl addAces, Acl removeAces, ExtensionsData extension) {
-		return objectService.createDocumentFromSource(
-				getCallContext(), repositoryId, sourceId, properties,
-				folderId, versioningState, policies, addAces, removeAces);
+	public String createDocumentFromSource(String repositoryId, String sourceId, Properties properties, String folderId,
+			VersioningState versioningState, List<String> policies, Acl addAces, Acl removeAces,
+			ExtensionsData extension) {
+		return objectService.createDocumentFromSource(getCallContext(), repositoryId, sourceId, properties, folderId,
+				versioningState, policies, addAces, removeAces);
 	}
 
 	/**
@@ -515,38 +472,33 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * cmis:objectTypeId property) in the specified location.
 	 */
 	@Override
-	public String createFolder(String repositoryId, Properties properties,
-			String folderId, List<String> policies, Acl addAces,
-			Acl removeAces, ExtensionsData extension) {
-		return objectService.createFolder(getCallContext(),
-				repositoryId, properties, folderId, policies, addAces, removeAces, extension);
+	public String createFolder(String repositoryId, Properties properties, String folderId, List<String> policies,
+			Acl addAces, Acl removeAces, ExtensionsData extension) {
+		return objectService.createFolder(getCallContext(), repositoryId, properties, folderId, policies, addAces,
+				removeAces, extension);
 	}
 
 	@Override
-	public String createRelationship(String repositoryId,
-			Properties properties, List<String> policies, Acl addAces,
+	public String createRelationship(String repositoryId, Properties properties, List<String> policies, Acl addAces,
 			Acl removeAces, ExtensionsData extension) {
-		return objectService.createRelationship(getCallContext(),
-				repositoryId, properties, policies, addAces, removeAces, extension);
+		return objectService.createRelationship(getCallContext(), repositoryId, properties, policies, addAces,
+				removeAces, extension);
 	}
 
 	@Override
-	public String createPolicy(String repositoryId, Properties properties,
-			String folderId, List<String> policies, Acl addAces,
-			Acl removeAces, ExtensionsData extension) {
-		return objectService.createPolicy(getCallContext(),
-				repositoryId, properties, folderId, policies, addAces, removeAces, extension);
+	public String createPolicy(String repositoryId, Properties properties, String folderId, List<String> policies,
+			Acl addAces, Acl removeAces, ExtensionsData extension) {
+		return objectService.createPolicy(getCallContext(), repositoryId, properties, folderId, policies, addAces,
+				removeAces, extension);
 	}
 
 	/**
 	 * Deletes the content stream for the specified document object.
 	 */
 	@Override
-	public void deleteContentStream(String repositoryId,
-			Holder<String> objectId, Holder<String> changeToken,
+	public void deleteContentStream(String repositoryId, Holder<String> objectId, Holder<String> changeToken,
 			ExtensionsData extension) {
-		objectService.deleteContentStream(getCallContext(),
-				repositoryId, objectId, changeToken, extension);
+		objectService.deleteContentStream(getCallContext(), repositoryId, objectId, changeToken, extension);
 	}
 
 	/**
@@ -557,19 +509,16 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * object must be deleted.
 	 */
 	@Override
-	public void deleteObjectOrCancelCheckOut(String repositoryId,
-			String objectId, Boolean allVersions, ExtensionsData extension) {
+	public void deleteObjectOrCancelCheckOut(String repositoryId, String objectId, Boolean allVersions,
+			ExtensionsData extension) {
 		// TODO When checkOut implemented, implement switching the two methods
-		ObjectData o = getObject(repositoryId, objectId, null, false,
-				IncludeRelationships.NONE, null, null, null, null);
-		PropertyData<?> isPWC = o.getProperties().getProperties()
-				.get(PropertyIds.IS_PRIVATE_WORKING_COPY);
+		ObjectData o = getObject(repositoryId, objectId, null, false, IncludeRelationships.NONE, null, null, null,
+				null);
+		PropertyData<?> isPWC = o.getProperties().getProperties().get(PropertyIds.IS_PRIVATE_WORKING_COPY);
 		if (isPWC != null && isPWC.getFirstValue().equals(true)) {
-			versioningService.cancelCheckOut(getCallContext(),
-					repositoryId, objectId, null);
+			versioningService.cancelCheckOut(getCallContext(), repositoryId, objectId, null);
 		} else {
-			objectService.deleteObject(getCallContext(),
-					repositoryId, objectId, allVersions);
+			objectService.deleteObject(getCallContext(), repositoryId, objectId, allVersions);
 		}
 
 	}
@@ -579,11 +528,9 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * descendant-objects.
 	 */
 	@Override
-	public FailedToDeleteData deleteTree(String repositoryId, String folderId,
-			Boolean allVersions, UnfileObject unfileObjects,
-			Boolean continueOnFailure, ExtensionsData extension) {
-		return objectService.deleteTree(getCallContext(),
-				repositoryId, folderId, allVersions, unfileObjects,
+	public FailedToDeleteData deleteTree(String repositoryId, String folderId, Boolean allVersions,
+			UnfileObject unfileObjects, Boolean continueOnFailure, ExtensionsData extension) {
+		return objectService.deleteTree(getCallContext(), repositoryId, folderId, allVersions, unfileObjects,
 				continueOnFailure, extension);
 	}
 
@@ -591,10 +538,8 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * Gets the list of allowable actions for an object.
 	 */
 	@Override
-	public AllowableActions getAllowableActions(String repositoryId,
-			String objectId, ExtensionsData extension) {
-		return objectService.getAllowableActions(
-				getCallContext(), repositoryId, objectId);
+	public AllowableActions getAllowableActions(String repositoryId, String objectId, ExtensionsData extension) {
+		return objectService.getAllowableActions(getCallContext(), repositoryId, objectId);
 	}
 
 	/**
@@ -603,26 +548,21 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * object.
 	 */
 	@Override
-	public ContentStream getContentStream(String repositoryId, String objectId,
-			String streamId, BigInteger offset, BigInteger length,
-			ExtensionsData extension) {
-		return objectService.getContentStream(getCallContext(),
-				repositoryId, objectId, streamId, offset, length);
+	public ContentStream getContentStream(String repositoryId, String objectId, String streamId, BigInteger offset,
+			BigInteger length, ExtensionsData extension) {
+		return objectService.getContentStream(getCallContext(), repositoryId, objectId, streamId, offset, length);
 	}
 
 	/**
 	 * Gets the specified information for the object specified by id.
 	 */
 	@Override
-	public ObjectData getObject(String repositoryId, String objectId,
-			String filter, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
-			Boolean includePolicyIds, Boolean includeAcl,
-			ExtensionsData extension) {
-		ObjectData objectData = objectService.getObject(
-				getCallContext(), repositoryId, objectId, filter,
-				includeAllowableActions, includeRelationships, renditionFilter,
-				includePolicyIds, includeAcl, extension);
+	public ObjectData getObject(String repositoryId, String objectId, String filter, Boolean includeAllowableActions,
+			IncludeRelationships includeRelationships, String renditionFilter, Boolean includePolicyIds,
+			Boolean includeAcl, ExtensionsData extension) {
+		ObjectData objectData = objectService.getObject(getCallContext(), repositoryId, objectId, filter,
+				includeAllowableActions, includeRelationships, renditionFilter, includePolicyIds, includeAcl,
+				extension);
 		setObjectInfo(repositoryId, objectData);
 		return objectData;
 	}
@@ -631,15 +571,12 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * Gets the specified information for the object specified by path.
 	 */
 	@Override
-	public ObjectData getObjectByPath(String repositoryId, String path,
-			String filter, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
-			Boolean includePolicyIds, Boolean includeAcl,
-			ExtensionsData extension) {
-		ObjectData objectData = objectService.getObjectByPath(
-				getCallContext(), repositoryId, path, filter,
-				includeAllowableActions, includeRelationships, renditionFilter,
-				includePolicyIds, includeAcl, extension);
+	public ObjectData getObjectByPath(String repositoryId, String path, String filter, Boolean includeAllowableActions,
+			IncludeRelationships includeRelationships, String renditionFilter, Boolean includePolicyIds,
+			Boolean includeAcl, ExtensionsData extension) {
+		ObjectData objectData = objectService.getObjectByPath(getCallContext(), repositoryId, path, filter,
+				includeAllowableActions, includeRelationships, renditionFilter, includePolicyIds, includeAcl,
+				extension);
 		setObjectInfo(repositoryId, objectData);
 		return objectData;
 	}
@@ -648,11 +585,9 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * Gets the list of properties for an object.
 	 */
 	@Override
-	public Properties getProperties(String repositoryId, String objectId,
-			String filter, ExtensionsData extension) {
-		ObjectData object = objectService.getObject(
-				getCallContext(), repositoryId, objectId, filter,
-				false, IncludeRelationships.NONE, null, false, false, extension);
+	public Properties getProperties(String repositoryId, String objectId, String filter, ExtensionsData extension) {
+		ObjectData object = objectService.getObject(getCallContext(), repositoryId, objectId, filter, false,
+				IncludeRelationships.NONE, null, false, false, extension);
 		return object.getProperties();
 	}
 
@@ -662,73 +597,62 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * so empty.
 	 */
 	@Override
-	public List<RenditionData> getRenditions(String repositoryId,
-			String objectId, String renditionFilter, BigInteger maxItems,
-			BigInteger skipCount, ExtensionsData extension) {
+	public List<RenditionData> getRenditions(String repositoryId, String objectId, String renditionFilter,
+			BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
 
-		return objectService.getRenditions(getCallContext(),
-				repositoryId, objectId, renditionFilter, maxItems, skipCount, extension);
+		return objectService.getRenditions(getCallContext(), repositoryId, objectId, renditionFilter, maxItems,
+				skipCount, extension);
 	}
 
 	/**
 	 * Moves the specified file-able object from one folder to another.
 	 */
 	@Override
-	public void moveObject(String repositoryId, Holder<String> objectId,
-			String targetFolderId, String sourceFolderId,
+	public void moveObject(String repositoryId, Holder<String> objectId, String targetFolderId, String sourceFolderId,
 			ExtensionsData extension) {
 		// TODO Implement permission check here
 		// PermissionMapping.CAN_GET_PROPERTIES_OBJECT
 
-		objectService.moveObject(getCallContext(), repositoryId,
-				objectId, sourceFolderId, targetFolderId);
+		objectService.moveObject(getCallContext(), repositoryId, objectId, sourceFolderId, targetFolderId);
 	}
 
 	/**
 	 * Sets the content stream for the specified document object.
 	 */
 	@Override
-	public void setContentStream(String repositoryId, Holder<String> objectId,
-			Boolean overwriteFlag, Holder<String> changeToken,
-			ContentStream contentStream, ExtensionsData extension) {
-		objectService.setContentStream(getCallContext(),
-				repositoryId, objectId, overwriteFlag, contentStream, changeToken);
+	public void setContentStream(String repositoryId, Holder<String> objectId, Boolean overwriteFlag,
+			Holder<String> changeToken, ContentStream contentStream, ExtensionsData extension) {
+		objectService.setContentStream(getCallContext(), repositoryId, objectId, overwriteFlag, contentStream,
+				changeToken);
 	}
 
 	/**
 	 * Updates properties of the specified object.
 	 */
 	@Override
-	public void updateProperties(String repositoryId, Holder<String> objectId,
-			Holder<String> changeToken, Properties properties,
-			ExtensionsData extension) {
-		objectService.updateProperties(getCallContext(),
-				repositoryId, objectId, properties, changeToken);
+	public void updateProperties(String repositoryId, Holder<String> objectId, Holder<String> changeToken,
+			Properties properties, ExtensionsData extension) {
+		objectService.updateProperties(getCallContext(), repositoryId, objectId, properties, changeToken);
 	}
 
 	// --- Versioning Service Implementation ---
 	@Override
-	public void checkOut(String repositoryId, Holder<String> objectId,
-			ExtensionsData extension, Holder<Boolean> contentCopied) {
-		versioningService.checkOut(getCallContext(), repositoryId,
-				objectId, extension, contentCopied);
+	public void checkOut(String repositoryId, Holder<String> objectId, ExtensionsData extension,
+			Holder<Boolean> contentCopied) {
+		versioningService.checkOut(getCallContext(), repositoryId, objectId, extension, contentCopied);
 	}
 
 	@Override
-	public void cancelCheckOut(String repositoryId, String objectId,
+	public void cancelCheckOut(String repositoryId, String objectId, ExtensionsData extension) {
+		versioningService.cancelCheckOut(getCallContext(), repositoryId, objectId, extension);
+	}
+
+	@Override
+	public void checkIn(String repositoryId, Holder<String> objectId, Boolean major, Properties properties,
+			ContentStream contentStream, String checkinComment, List<String> policies, Acl addAces, Acl removeAces,
 			ExtensionsData extension) {
-		versioningService.cancelCheckOut(getCallContext(), repositoryId,
-				objectId, extension);
-	}
-
-	@Override
-	public void checkIn(String repositoryId, Holder<String> objectId,
-			Boolean major, Properties properties, ContentStream contentStream,
-			String checkinComment, List<String> policies, Acl addAces,
-			Acl removeAces, ExtensionsData extension) {
-		versioningService.checkIn(getCallContext(), repositoryId, objectId,
-				major, properties, contentStream, checkinComment, policies,
-				addAces, removeAces, extension);
+		versioningService.checkIn(getCallContext(), repositoryId, objectId, major, properties, contentStream,
+				checkinComment, policies, addAces, removeAces, extension);
 	}
 
 	/**
@@ -736,13 +660,11 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * sorted by the property "cmis:creationDate" descending.
 	 */
 	@Override
-	public List<ObjectData> getAllVersions(String repositoryId,
-			String objectId, String versionSeriesId, String filter,
+	public List<ObjectData> getAllVersions(String repositoryId, String objectId, String versionSeriesId, String filter,
 			Boolean includeAllowableActions, ExtensionsData extension) {
 
-		List<ObjectData> result = versioningService.getAllVersions(
-				getCallContext(), repositoryId, objectId, versionSeriesId,
-				filter, includeAllowableActions, extension);
+		List<ObjectData> result = versioningService.getAllVersions(getCallContext(), repositoryId, objectId,
+				versionSeriesId, filter, includeAllowableActions, extension);
 		if (CollectionUtils.isNotEmpty(result)) {
 			for (ObjectData o : result) {
 				setObjectInfo(repositoryId, o);
@@ -755,16 +677,12 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * Get the latest document object in the version series.
 	 */
 	@Override
-	public ObjectData getObjectOfLatestVersion(String repositoryId,
-			String objectId, String versionSeriesId, Boolean major,
-			String filter, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
-			Boolean includePolicyIds, Boolean includeAcl,
-			ExtensionsData extension) {
-		return versioningService.getObjectOfLatestVersion(context,
-				repositoryId, objectId, versionSeriesId, major,
-				filter, includeAllowableActions, includeRelationships,
-				renditionFilter, includePolicyIds, includeAcl, extension);
+	public ObjectData getObjectOfLatestVersion(String repositoryId, String objectId, String versionSeriesId,
+			Boolean major, String filter, Boolean includeAllowableActions, IncludeRelationships includeRelationships,
+			String renditionFilter, Boolean includePolicyIds, Boolean includeAcl, ExtensionsData extension) {
+		return versioningService.getObjectOfLatestVersion(context, repositoryId, objectId, versionSeriesId, major,
+				filter, includeAllowableActions, includeRelationships, renditionFilter, includePolicyIds, includeAcl,
+				extension);
 
 	}
 
@@ -773,11 +691,9 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * version series.
 	 */
 	@Override
-	public Properties getPropertiesOfLatestVersion(String repositoryId,
-			String objectId, String versionSeriesId, Boolean major,
-			String filter, ExtensionsData extension) {
-		ObjectData object = getObjectOfLatestVersion(repositoryId, objectId,
-				versionSeriesId, major, filter, false,
+	public Properties getPropertiesOfLatestVersion(String repositoryId, String objectId, String versionSeriesId,
+			Boolean major, String filter, ExtensionsData extension) {
+		ObjectData object = getObjectOfLatestVersion(repositoryId, objectId, versionSeriesId, major, filter, false,
 				IncludeRelationships.NONE, null, false, false, extension);
 		return object.getProperties();
 	}
@@ -791,10 +707,8 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * supposed to the new complete ACL.
 	 */
 	@Override
-	public Acl applyAcl(String repositoryId, String objectId, Acl aces,
-			AclPropagation aclPropagation) {
-		return aclService.applyAcl(getCallContext(), repositoryId,
-				objectId, aces, aclPropagation);
+	public Acl applyAcl(String repositoryId, String objectId, Acl aces, AclPropagation aclPropagation) {
+		return aclService.applyAcl(getCallContext(), repositoryId, objectId, aces, aclPropagation);
 	}
 
 	/**
@@ -802,10 +716,8 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * object.
 	 */
 	@Override
-	public Acl getAcl(String repositoryId, String objectId,
-			Boolean onlyBasicPermissions, ExtensionsData extension) {
-		return aclService.getAcl(getCallContext(), repositoryId,
-				objectId, onlyBasicPermissions);
+	public Acl getAcl(String repositoryId, String objectId, Boolean onlyBasicPermissions, ExtensionsData extension) {
+		return aclService.getAcl(getCallContext(), repositoryId, objectId, onlyBasicPermissions);
 	}
 
 	// --- Repository Service Implementation ---
@@ -815,14 +727,12 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * it supports and its access control information.
 	 */
 	@Override
-	public RepositoryInfo getRepositoryInfo(String repositoryId,
-			ExtensionsData extension) {
+	public RepositoryInfo getRepositoryInfo(String repositoryId, ExtensionsData extension) {
 
 		RepositoryInfo info = repositoryService.getRepositoryInfo(repositoryId);
-		if(info == null){
-			throw new CmisObjectNotFoundException("Unknown repository '"
-					+ repositoryId + "'!");
-		}else{
+		if (info == null) {
+			throw new CmisObjectNotFoundException("Unknown repository '" + repositoryId + "'!");
+		} else {
 			return info;
 		}
 	}
@@ -842,21 +752,18 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * children of the specified type.
 	 */
 	@Override
-	public TypeDefinitionList getTypeChildren(String repositoryId,
-			String typeId, Boolean includePropertyDefinitions,
+	public TypeDefinitionList getTypeChildren(String repositoryId, String typeId, Boolean includePropertyDefinitions,
 			BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
-		return repositoryService.getTypeChildren(getCallContext(),
-				repositoryId, typeId, includePropertyDefinitions, maxItems, skipCount);
+		return repositoryService.getTypeChildren(getCallContext(), repositoryId, typeId, includePropertyDefinitions,
+				maxItems, skipCount);
 	}
 
 	/**
 	 * Gets the definition of the specified object type.
 	 */
 	@Override
-	public TypeDefinition getTypeDefinition(String repositoryId, String typeId,
-			ExtensionsData extension) {
-		return repositoryService.getTypeDefinition(getCallContext(),
-				repositoryId, typeId);
+	public TypeDefinition getTypeDefinition(String repositoryId, String typeId, ExtensionsData extension) {
+		return repositoryService.getTypeDefinition(getCallContext(), repositoryId, typeId);
 	}
 
 	/**
@@ -864,11 +771,10 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * under the specified type.
 	 */
 	@Override
-	public List<TypeDefinitionContainer> getTypeDescendants(
-			String repositoryId, String typeId, BigInteger depth,
+	public List<TypeDefinitionContainer> getTypeDescendants(String repositoryId, String typeId, BigInteger depth,
 			Boolean includePropertyDefinitions, ExtensionsData extension) {
-		return repositoryService.getTypeDescendants(getCallContext(),
-				repositoryId, typeId, depth, includePropertyDefinitions);
+		return repositoryService.getTypeDescendants(getCallContext(), repositoryId, typeId, depth,
+				includePropertyDefinitions);
 	}
 
 	// --- Discovery Service Implementation ---
@@ -877,127 +783,100 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 * Executes a CMIS query statement against the contents of the repository.
 	 */
 	@Override
-	public ObjectList query(String repositoryId, String statement,
-			Boolean searchAllVersions, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships, String renditionFilter,
+	public ObjectList query(String repositoryId, String statement, Boolean searchAllVersions,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter,
 			BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
-		return discoveryService.query(getCallContext(), repositoryId,
-				statement, searchAllVersions,
-				includeAllowableActions, includeRelationships, renditionFilter, maxItems,
-				skipCount, extension);
+		return discoveryService.query(getCallContext(), repositoryId, statement, searchAllVersions,
+				includeAllowableActions, includeRelationships, renditionFilter, maxItems, skipCount, extension);
 	}
 
 	@Override
-	public ObjectList getContentChanges(String repositoryId,
-			Holder<String> changeLogToken, Boolean includeProperties,
-			String filter, Boolean includePolicyIds, Boolean includeAcl,
-			BigInteger maxItems, ExtensionsData extension) {
+	public ObjectList getContentChanges(String repositoryId, Holder<String> changeLogToken, Boolean includeProperties,
+			String filter, Boolean includePolicyIds, Boolean includeAcl, BigInteger maxItems,
+			ExtensionsData extension) {
 
-		return discoveryService.getContentChanges(getCallContext(),
-				repositoryId, changeLogToken, includeProperties, filter,
-				includePolicyIds, includeAcl, maxItems, extension);
+		return discoveryService.getContentChanges(getCallContext(), repositoryId, changeLogToken, includeProperties,
+				filter, includePolicyIds, includeAcl, maxItems, extension);
 	}
 
 	// --- Relationship Service Implementation ---
 	@Override
-	public ObjectList getObjectRelationships(String repositoryId,
-			String objectId, Boolean includeSubRelationshipTypes,
-			RelationshipDirection relationshipDirection, String typeId,
-			String filter, Boolean includeAllowableActions,
+	public ObjectList getObjectRelationships(String repositoryId, String objectId, Boolean includeSubRelationshipTypes,
+			RelationshipDirection relationshipDirection, String typeId, String filter, Boolean includeAllowableActions,
 			BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
-		return relationshipService.getObjectRelationships(
-				getCallContext(), repositoryId, objectId,
-				includeSubRelationshipTypes, relationshipDirection, typeId, filter,
-				includeAllowableActions, maxItems, skipCount, extension);
+		return relationshipService.getObjectRelationships(getCallContext(), repositoryId, objectId,
+				includeSubRelationshipTypes, relationshipDirection, typeId, filter, includeAllowableActions, maxItems,
+				skipCount, extension);
 	}
 
 	// --- Policy Service Implementation ---
 	@Override
-	public void applyPolicy(String repositoryId, String policyId,
-			String objectId, ExtensionsData extension) {
-		policyService.applyPolicy(getCallContext(), repositoryId,
-				policyId, objectId, extension);
+	public void applyPolicy(String repositoryId, String policyId, String objectId, ExtensionsData extension) {
+		policyService.applyPolicy(getCallContext(), repositoryId, policyId, objectId, extension);
 	}
 
 	@Override
-	public void removePolicy(String repositoryId, String policyId,
-			String objectId, ExtensionsData extension) {
-		policyService.removePolicy(getCallContext(), repositoryId,
-				policyId, objectId, extension);
+	public void removePolicy(String repositoryId, String policyId, String objectId, ExtensionsData extension) {
+		policyService.removePolicy(getCallContext(), repositoryId, policyId, objectId, extension);
 	}
 
 	@Override
-	public List<ObjectData> getAppliedPolicies(String repositoryId,
-			String objectId, String filter, ExtensionsData extension) {
-		return policyService.getAppliedPolicies(getCallContext(),
-				repositoryId, objectId, filter, extension);
+	public List<ObjectData> getAppliedPolicies(String repositoryId, String objectId, String filter,
+			ExtensionsData extension) {
+		return policyService.getAppliedPolicies(getCallContext(), repositoryId, objectId, filter, extension);
 	}
 
 	// --- Multi-filing Service Implementation ---
 	@Override
-	public void addObjectToFolder(String repositoryId, String objectId,
-			String folderId, Boolean allVersions, ExtensionsData extension) {
-		// TODO Auto-generated method stub
-		super.addObjectToFolder(repositoryId, objectId, folderId, allVersions,
-				extension);
-	}
-
-	@Override
-	public void removeObjectFromFolder(String repositoryId, String objectId,
-			String folderId, ExtensionsData extension) {
-		// TODO Auto-generated method stub
-		super.removeObjectFromFolder(repositoryId, objectId, folderId,
-				extension);
-	}
-
-	@Override
-	public void appendContentStream(String repositoryId,
-			Holder<String> objectId, Holder<String> changeToken,
-			ContentStream contentStream, boolean isLastChunk,
+	public void addObjectToFolder(String repositoryId, String objectId, String folderId, Boolean allVersions,
 			ExtensionsData extension) {
-		objectService.appendContentStream(getCallContext(),
-				repositoryId, objectId, changeToken, contentStream, isLastChunk, extension);
+		// TODO Auto-generated method stub
+		super.addObjectToFolder(repositoryId, objectId, folderId, allVersions, extension);
+	}
+
+	@Override
+	public void removeObjectFromFolder(String repositoryId, String objectId, String folderId,
+			ExtensionsData extension) {
+		// TODO Auto-generated method stub
+		super.removeObjectFromFolder(repositoryId, objectId, folderId, extension);
+	}
+
+	@Override
+	public void appendContentStream(String repositoryId, Holder<String> objectId, Holder<String> changeToken,
+			ContentStream contentStream, boolean isLastChunk, ExtensionsData extension) {
+		objectService.appendContentStream(getCallContext(), repositoryId, objectId, changeToken, contentStream,
+				isLastChunk, extension);
 		;
 	}
 
 	@Override
-	public List<BulkUpdateObjectIdAndChangeToken> bulkUpdateProperties(
-			String repositoryId,
-			List<BulkUpdateObjectIdAndChangeToken> objectIdAndChangeToken,
-			Properties properties, List<String> addSecondaryTypeIds,
-			List<String> removeSecondaryTypeIds, ExtensionsData extension) {
-		return objectService.bulkUpdateProperties(
-				getCallContext(), repositoryId, objectIdAndChangeToken,
-				properties, addSecondaryTypeIds, removeSecondaryTypeIds, extension);
+	public List<BulkUpdateObjectIdAndChangeToken> bulkUpdateProperties(String repositoryId,
+			List<BulkUpdateObjectIdAndChangeToken> objectIdAndChangeToken, Properties properties,
+			List<String> addSecondaryTypeIds, List<String> removeSecondaryTypeIds, ExtensionsData extension) {
+		return objectService.bulkUpdateProperties(getCallContext(), repositoryId, objectIdAndChangeToken, properties,
+				addSecondaryTypeIds, removeSecondaryTypeIds, extension);
 	}
 
 	@Override
-	public String createItem(String repositoryId, Properties properties,
-			String folderId, List<String> policies, Acl addAces,
-			Acl removeAces, ExtensionsData extension) {
-		return objectService.createItem(getCallContext(),
-				repositoryId, properties, folderId, policies, addAces, removeAces, extension);
+	public String createItem(String repositoryId, Properties properties, String folderId, List<String> policies,
+			Acl addAces, Acl removeAces, ExtensionsData extension) {
+		return objectService.createItem(getCallContext(), repositoryId, properties, folderId, policies, addAces,
+				removeAces, extension);
 	}
 
 	@Override
-	public TypeDefinition createType(String repositoryId, TypeDefinition type,
-			ExtensionsData extension) {
-		return repositoryService.createType(getCallContext(), repositoryId,
-				type, extension);
+	public TypeDefinition createType(String repositoryId, TypeDefinition type, ExtensionsData extension) {
+		return repositoryService.createType(getCallContext(), repositoryId, type, extension);
 	}
 
 	@Override
-	public void deleteType(String repositoryId, String typeId,
-			ExtensionsData extension) {
-		repositoryService.deleteType(getCallContext(), repositoryId,
-				typeId, extension);
+	public void deleteType(String repositoryId, String typeId, ExtensionsData extension) {
+		repositoryService.deleteType(getCallContext(), repositoryId, typeId, extension);
 	}
 
 	@Override
-	public TypeDefinition updateType(String repositoryId, TypeDefinition type,
-			ExtensionsData extension) {
-		return repositoryService.updateType(getCallContext(), repositoryId,
-				type, extension);
+	public TypeDefinition updateType(String repositoryId, TypeDefinition type, ExtensionsData extension) {
+		return repositoryService.updateType(getCallContext(), repositoryId, type, extension);
 	}
 
 	/*
@@ -1005,49 +884,61 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	 */
 	public void setCallContext(CallContext context) {
 		this.context = context;
+
+		if (log.isTraceEnabled()) {
+			log.trace("nemaki_log[FACTORY]" + "CmisService@" + this.hashCode() + " with CallContext@"
+					+ this.context.hashCode() + "[repositoryId=" + context.getRepositoryId() + ", userId="
+					+ context.getUsername() + "] has benn changed to CallContext@" + context.hashCode()
+					+ "[repositoryId=" + context.getRepositoryId() + ", userId=" + context.getUsername() + "]");
+		}
 	}
 
 	public CallContext getCallContext() {
 		return context;
 	}
 
-
 	public void setAclService(AclService aclService) {
 		this.aclService = aclService;
 	}
-
 
 	public void setDiscoveryService(DiscoveryService discoveryService) {
 		this.discoveryService = discoveryService;
 	}
 
-
 	public void setNavigationService(NavigationService navigationService) {
 		this.navigationService = navigationService;
 	}
-
 
 	public void setObjectService(ObjectService objectService) {
 		this.objectService = objectService;
 	}
 
-
 	public void setRepositoryService(RepositoryService repositoryService) {
 		this.repositoryService = repositoryService;
 	}
-
 
 	public void setVersioningService(VersioningService versioningService) {
 		this.versioningService = versioningService;
 	}
 
-
 	public void setPolicyService(PolicyService policyService) {
 		this.policyService = policyService;
 	}
 
-
 	public void setRelationshipService(RelationshipService relationshipService) {
 		this.relationshipService = relationshipService;
 	}
+
+	@Override
+	public void close() {
+		if (log.isTraceEnabled()) {
+			log.trace("nemaki_log[FACTORY]" + "CmisService@" + this.hashCode() + " with CallContext@"
+					+ context.hashCode() + "[repositoryId=" + context.getRepositoryId() + ", userId="
+					+ context.getUsername() + "] is closed");
+		}
+
+		super.close();
+
+	}
+
 }

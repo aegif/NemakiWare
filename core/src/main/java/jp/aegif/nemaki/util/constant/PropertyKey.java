@@ -260,4 +260,7 @@ public interface PropertyKey {
 
 	//External authentication
 	final String EXTERNAL_AUTHENTICATION_PROXY_HEADER = "external.authenticaion.proxyHeader";
+	
+	//Thread
+	final String THREAD_MAX = "thread.max";
 }

@@ -53,7 +53,7 @@ public class DefaultLogger {
 		}
 		sb.append("#").append(jp.getSignature().getName());
 		if(arguments){
-			sb.append(customToString.parseList(args));
+			sb.append(customToString.parseArguments(args));
 		}
 
 		//Before advice
@@ -78,7 +78,7 @@ public class DefaultLogger {
 
 			return result;
 		}catch(Exception e){
-			log.error("Error:", e);
+			log.error("nemaki_log[ERROR];" + e.toString(), e);
 			throw e;
 		}
 	}
