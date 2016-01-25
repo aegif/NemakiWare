@@ -18,7 +18,7 @@
 	</bean>
 
     <!-- CMIS Repository Beans -->
-    <bean id="CmisLifecycleBean" class="jp.aegif.nemaki.cmis.factory.CmisLifecycleBean" >
+    <bean id="CmisLifecycleBean" class="jp.aegif.nemaki.cmis.factory.CmisLifecycleBean">
         <property name="cmisServiceFactory" ref="CmisServiceFactory" />
     </bean>
 
@@ -30,12 +30,12 @@
         <property name="authenticationService">
             <ref bean="AuthenticationService" />
         </property>
-        <property name="cmisService">
-        	<ref bean="cmisService" />
+        <property name="repositoryInfoMap">
+        	<ref bean="repositoryInfoMap" />
         </property>
     </bean>
 
-	<bean id="cmisService" class="jp.aegif.nemaki.cmis.factory.CmisService">
+	<bean id="cmisService" class="jp.aegif.nemaki.cmis.factory.CmisService" scope="prototype">
 		<property name="repositoryService">
             <ref bean="RepositoryService" />
         </property>
@@ -197,6 +197,9 @@
         <property name="typeManager">
             <ref bean="TypeManager" />
         </property>
+        <property name="objectServiceInternal">
+            <ref bean="ObjectServiceInternal" />
+        </property>
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
@@ -208,6 +211,32 @@
         </property>
         <property name="solrUtil">
             <ref bean="solrUtil" />
+        </property>
+        <property name="nemakiCachePool">
+			<ref bean="nemakiCachePool" />
+        </property>
+        <property name="threadMax">
+			<value>${thread.max}</value>
+        </property>
+    </bean>
+    
+    <bean id="ObjectServiceInternal" class="org.springframework.aop.framework.ProxyFactoryBean">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.cmis.service.ObjectServiceInternal
+                </value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="objectServiceInternal" />
+        </property>
+    </bean>
+    <bean id="objectServiceInternal" class="jp.aegif.nemaki.cmis.service.impl.ObjectServiceInternalImpl">
+        <property name="contentService">
+            <ref bean="ContentService" />
+        </property>
+        <property name="exceptionService">
+            <ref bean="ExceptionService" />
         </property>
         <property name="nemakiCachePool">
 			<ref bean="nemakiCachePool" />

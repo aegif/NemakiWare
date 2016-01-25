@@ -11,17 +11,12 @@ import org.apache.chemistry.opencmis.client.api.CmisObject;
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.http.HttpHeaders;
-
 import play.data.DynamicForm;
 import play.data.Form;
 import play.libs.Json;
 import play.mvc.Controller;
-import play.mvc.Http.Response;
 import play.mvc.Result;
 import play.mvc.Security.Authenticated;
-import scala.Tuple2;
-import scala.collection.JavaConversions;
 import util.ErrorMessage;
 import util.Util;
 import views.html.user.blank;

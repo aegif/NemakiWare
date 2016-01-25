@@ -24,7 +24,16 @@ package jp.aegif.nemaki.cmis.service.impl;
 import java.io.InputStream;
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Acl;
@@ -62,6 +71,7 @@ import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.service.ObjectService;
+import jp.aegif.nemaki.cmis.service.ObjectServiceInternal;
 import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
@@ -72,7 +82,7 @@ import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.DataUtil;
-import jp.aegif.nemaki.util.cache.NemakiCache;
+import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.DomainType;
 
@@ -82,11 +92,13 @@ public class ObjectServiceImpl implements ObjectService {
 			.getLog(ObjectServiceImpl.class);
 
 	private TypeManager typeManager;
+	private ObjectServiceInternal objectServiceInternal;
 	private ContentService contentService;
 	private ExceptionService exceptionService;
 	private CompileService compileService;
 	private SolrUtil solrUtil;
 	private NemakiCachePool nemakiCachePool;
+	private int threadMax;
 
 	@Override
 	public ObjectData getObjectByPath(CallContext callContext, String repositoryId,
@@ -799,50 +811,118 @@ public class ObjectServiceImpl implements ObjectService {
 		nemakiCachePool.get(repositoryId).removeCmisCache(content.getId());
 	}
 
-	private void deleteObjectInternal(CallContext callContext, String repositoryId,
-			String objectId, Boolean allVersions, Boolean deleteWithParent) {
-		// //////////////////
-		// General Exception
-		// //////////////////
-		exceptionService.invalidArgumentRequiredString("objectId", objectId);
-		Content content = contentService.getContent(repositoryId, objectId);
-		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
-		exceptionService.permissionDenied(callContext,
-				repositoryId, PermissionMapping.CAN_DELETE_OBJECT, content);
-		exceptionService.constraintDeleteRootFolder(repositoryId, objectId);
-
-		// //////////////////
-		// Body of the method
-		// //////////////////
-		if (content.isDocument()) {
-			contentService.deleteDocument(callContext, repositoryId,
-					content.getId(), allVersions, deleteWithParent);
-		} else if (content.isFolder()) {
-			List<Content> children = contentService.getChildren(repositoryId, objectId);
-			if (!CollectionUtils.isEmpty(children)) {
-				exceptionService
-						.constraint(objectId,
-								"deleteObject method is invoked on a folder containing objects.");
-			}
-			contentService.delete(callContext, repositoryId, objectId, deleteWithParent);
-
-		} else {
-			contentService.delete(callContext, repositoryId, objectId, deleteWithParent);
-		}
-
-		nemakiCachePool.get(repositoryId).removeCmisCache(content.getId());
-	}
+	
 
 	@Override
 	public void deleteObject(CallContext callContext, String repositoryId,
 			String objectId, Boolean allVersions) {
-		deleteObjectInternal(callContext, repositoryId, objectId, allVersions, false);
+		objectServiceInternal.deleteObjectInternal(callContext, repositoryId, objectId, allVersions, false);
 	}
 
 	@Override
 	public FailedToDeleteData deleteTree(CallContext callContext,
 			String repositoryId, String folderId, Boolean allVersions,
 			UnfileObject unfileObjects, Boolean continueOnFailure, ExtensionsData extension) {
+		// //////////////////
+		// Inner classes
+		// //////////////////
+		class DeleteTask implements Callable<Boolean> {
+			private CallContext callContext;
+			private String repositoryId;
+			private Content content;
+			private Boolean allVersions;
+			
+			public DeleteTask(){}
+			
+			public DeleteTask(CallContext callContext, String repositoryId, Content content, Boolean allVersions){
+				this.callContext = callContext;
+				this.repositoryId = repositoryId;
+				this.content = content;
+				this.allVersions = allVersions;
+			}
+
+		    @Override
+		    public Boolean call() throws Exception {
+		        try{
+		        	objectServiceInternal.deleteObjectInternal(callContext, repositoryId, content, allVersions, true);
+		        	return false;
+		        }catch(Exception e){
+		        	return true;
+		        }
+		    }
+		}
+		
+		class WrappedExecutorService{
+			private ExecutorService service;
+			private Folder folder;
+			
+			private WrappedExecutorService(){};
+			public WrappedExecutorService(ExecutorService service, Folder folder){
+				this.service = service;
+				this.folder = folder;
+			}
+			
+			public ExecutorService getService(){
+				return service;
+			}
+			public Folder getFolder() {
+				return folder;
+			}
+		}
+		
+		class DeleteService{
+			private Map<String, Future<Boolean>> failureIds;
+			private WrappedExecutorService parentService;
+			private CallContext callContext;
+			private String repositoryId;
+			private Content content;
+			private Boolean allVersions;
+			
+			public DeleteService(){}
+
+			public DeleteService(Map<String, Future<Boolean>> failureIds, WrappedExecutorService parentService, CallContext callContext, String repositoryId, Content content,
+					Boolean allVersions) {
+				super();
+				this.failureIds = failureIds;
+				this.parentService = parentService;
+				this.callContext = callContext;
+				this.repositoryId = repositoryId;
+				this.content = content;
+				this.allVersions = allVersions;
+			}
+			
+			public void execute(){
+				if(content.isDocument()){
+					Future<Boolean> result = parentService.getService().submit(new DeleteTask(callContext, repositoryId, content, allVersions));
+					failureIds.put(content.getId(), result);
+				}else if(content.isFolder()){
+					WrappedExecutorService childrenService = new WrappedExecutorService
+							(Executors.newFixedThreadPool(threadMax), (Folder)content);
+					
+					List<Content> children = contentService.getChildren(repositoryId, content.getId());
+					if(CollectionUtils.isNotEmpty(children)){
+						for(Content child : children){
+							DeleteService deleteService = new DeleteService(this.failureIds, childrenService, callContext, repositoryId, child, allVersions);
+							deleteService.execute();
+						}
+					}
+					
+					//wait til newService ends
+					childrenService.getService().shutdown();
+					try {
+						childrenService.getService().awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+					} catch (InterruptedException e) {
+						log.error(e, e);
+					}
+					
+					//Lastly, delete self
+					Future<Boolean> result = parentService.getService().submit(new DeleteTask(callContext, repositoryId, content, allVersions));
+					failureIds.put(content.getId(), result);
+				}
+				
+			}
+		}
+		
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -863,62 +943,39 @@ public class ObjectServiceImpl implements ObjectService {
 		// Body of the method
 		// //////////////////
 		// Delete descendants
-		List<String> failureIds = new ArrayList<String>();
+		Map<String, Future<Boolean>> failureIds = new HashMap<String, Future<Boolean>>();
 
-		List<Content> children = contentService.getChildren(repositoryId, folderId);
-		if (!CollectionUtils.isEmpty(children)) {
-			for (Content child : children) {
-				try {
-					if (child.isFolder()) {
-						deleteTree(callContext, repositoryId, child.getId(), allVersions,
-								unfileObjects, continueOnFailure, extension);
-					} else {
-						deleteObjectInternal(callContext, repositoryId, child.getId(), allVersions, true);
-					}
-				} catch (Exception e) {
-					StringBuilder sb = new StringBuilder();
-					sb.append("objectId:").append(child.getId()).append(" failed to be deleted.");
-
-					if (continueOnFailure) {
-						failureIds.add(child.getId());
-						log.warn(sb.toString(), e);
-						continue;
-					} else {
-						log.error(sb.toString(), e);
-					}
-				}
-			}
-		}
-
-		// Delete the folder itself
-		try {
-			deleteObjectInternal(callContext, repositoryId, folderId, allVersions, false);
-		} catch (Exception e) {
-			StringBuilder sb = new StringBuilder();
-			sb.append("objectId:").append(folderId).append(" failed to be deleted.");
-
-			if (continueOnFailure) {
-				failureIds.add(folderId);
-				log.warn(sb.toString(), e);
-			} else {
-				log.error(sb.toString(), e);
-			}
-		}
-
-		/*failureIds = contentService.deleteTree(callContext, folderId, allVersions,
-				continueOnFailure, false);*/
+		DeleteService deleteService = new DeleteService(failureIds, new WrappedExecutorService
+				(Executors.newFixedThreadPool(threadMax), folder), callContext, repositoryId, folder, allVersions);
+		deleteService.execute();
+		
 		solrUtil.callSolrIndexing(repositoryId);
 
 		// Check FailedToDeleteData
 		// FIXME Consider orphans that was failed to be deleted
 		FailedToDeleteDataImpl fdd = new FailedToDeleteDataImpl();
-
-		if (CollectionUtils.isNotEmpty(failureIds)) {
-			fdd.setIds(failureIds);
-		} else {
-			fdd.setIds(new ArrayList<String>());
+		List<String> ids = new ArrayList<String>();
+		for(Entry<String, Future<Boolean>> entry : failureIds.entrySet()){
+			Boolean failed;
+			try {
+				failed = entry.getValue().get();
+				if(failed){
+					ids.add(entry.getKey());
+				}
+			} catch (InterruptedException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (ExecutionException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
 		}
+		fdd.setIds(ids);
 		return fdd;
+	}
+
+	public void setObjectServiceInternal(ObjectServiceInternal objectServiceInternal) {
+		this.objectServiceInternal = objectServiceInternal;
 	}
 
 	public void setContentService(ContentService contentService) {
@@ -943,5 +1000,9 @@ public class ObjectServiceImpl implements ObjectService {
 
 	public void setNemakiCachePool(NemakiCachePool nemakiCachePool) {
 		this.nemakiCachePool = nemakiCachePool;
+	}
+
+	public void setThreadMax(int threadMax) {
+		this.threadMax = threadMax;
 	}
 }

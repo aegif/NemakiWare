@@ -33,7 +33,7 @@ div.tab-pane{
 	padding-top:20px;
 }
 
-/*讀懃ｴ｢遯�*/
+/*隶�諛�ｽｴ�ｽ｢驕ｯ�ｿｽ*/
 .navbar-search {
     position: relative;
 }
@@ -50,7 +50,7 @@ div.tab-pane{
 
 .navbar-search .search-query:focus, .navbar-search .search-query.focused {
     padding-left: 30px;
-}窶�
+}遯ｶ�ｿｽ
 
 .table {
   width: 100%;
@@ -75,7 +75,7 @@ table.editable-table .required{
 
 table.editable-table .value{
 	width: 310px;
-	padding-top:2px縲�!important;
+	padding-top:2px !important;
 	padding-bottom:0px !important;
 }
 

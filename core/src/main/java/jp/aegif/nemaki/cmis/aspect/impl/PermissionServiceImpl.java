@@ -103,7 +103,7 @@ public class PermissionServiceImpl implements PermissionService {
 		String userName = callContext.getUsername();
 		User u = principalService.getUserById(repositoryId, userName);
 
-		if (u != null & u.isAdmin()) {
+		if (u != null && u.isAdmin()) {
 			return true;
 		}
 
