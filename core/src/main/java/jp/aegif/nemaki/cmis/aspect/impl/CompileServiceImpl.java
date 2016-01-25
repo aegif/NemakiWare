@@ -984,11 +984,16 @@ public class CompileServiceImpl implements CompileService {
 			AttachmentNode attachment = contentService.getAttachmentRef(repositoryId, document
 					.getAttachmentNodeId());
 
-			length = attachment.getLength();
-			mimeType = attachment.getMimeType();
-			//fileName = attachment.getName();
-			fileName = document.getName();
-			streamId = attachment.getId();
+			if(attachment == null){
+				String attachmentId = (document.getAttachmentNodeId() == null) ? "" : document.getAttachmentNodeId();
+				log.warn("[objectId=" + document.getId() + " has no file (" + 
+						attachmentId + ")");
+			}else{
+				length = attachment.getLength();
+				mimeType = attachment.getMimeType();
+				fileName = document.getName();
+				streamId = attachment.getId();
+			}
 		}
 
 		//Add ContentStream properties to Document object

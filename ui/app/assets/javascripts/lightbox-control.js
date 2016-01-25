@@ -3,7 +3,6 @@ function showLightbox(domId, html){
 			centered:true,
 			onClose: function() {
 				content.remove();
-				location.reload();
             }
 		};
 
