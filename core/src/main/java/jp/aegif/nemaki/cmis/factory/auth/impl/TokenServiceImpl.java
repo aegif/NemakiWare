@@ -37,12 +37,12 @@ public class TokenServiceImpl implements TokenService{
 		private Token get(String app, String repositoryId, String userName){
 			Map<String, Map<String, Token>> appMap = map.get(app);
 			if(appMap == null){
-				log.warn("No such app regitered for AuthToken");
+				log.warn(String.format("No such app(%s) regitered for AuthToken", app));
 				return null;
 			}else{
 				 Map<String, Token> repoMap = appMap.get(repositoryId);
 				 if(repoMap == null){
-					 log.warn("No such repositoryId regitered for AuthToken");
+					 log.warn(String.format("No such repositoryId(%s) registered for AuthToken", repositoryId));
 					 return null;
 				 }else{
 					 return repoMap.get(userName);
