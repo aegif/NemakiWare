@@ -134,8 +134,8 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 	}
 
 	@Override
-	public User getAdmin(String repositoryId) {
-		User admin = nonCachedPrincipalDaoService.getAdmin(repositoryId);
+	public List<User> getAdmins(String repositoryId) {
+		List<User> admin = nonCachedPrincipalDaoService.getAdmins(repositoryId);
 		return admin;
 	}
 
