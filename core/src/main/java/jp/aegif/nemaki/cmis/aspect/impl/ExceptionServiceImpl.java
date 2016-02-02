@@ -354,9 +354,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void perimissionAdmin(CallContext context, String repositoryId) {
-		User admin = principalService.getAdmin(repositoryId);
+		List<User> admins = principalService.getAdmins(repositoryId);
 
-		if (!admin.getUserId().equals(context.getUsername())) {
+		if (!admins.contains(context.getUsername())) {
 			String msg = "This operation if permitted only for administrator";
 			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
 		}

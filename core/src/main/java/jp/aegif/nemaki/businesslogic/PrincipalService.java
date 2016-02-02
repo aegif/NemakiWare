@@ -103,7 +103,7 @@ public interface PrincipalService {
 	 * @param repositoryId TODO
 	 * @return
 	 */
-	User getAdmin(String repositoryId);
+	List<User> getAdmins(String repositoryId);
 
 	/**
 	 * Get anonymous Id(non authenticated user)
