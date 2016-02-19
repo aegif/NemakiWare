@@ -68,14 +68,14 @@ public class PermissionServiceImpl implements PermissionService {
 	private TypeManager typeManager;
 	private RepositoryInfoMap repositoryInfoMap;
 	private PropertyManager propertyManager;
-	
+
 	private List<String> topLevelAllowableKeys;
 	private List<String> topLevelNotAllowableKeysWithFolder;
-	
-	
+
+
 	public void init(){
 		topLevelAllowableKeys = new ArrayList<String>();
-		Collections.addAll(topLevelAllowableKeys, 
+		Collections.addAll(topLevelAllowableKeys,
 				PermissionMapping.CAN_GET_ACL_OBJECT,
 				PermissionMapping.CAN_GET_ALL_VERSIONS_VERSION_SERIES,
 				PermissionMapping.CAN_GET_APPLIED_POLICIES_OBJECT,
@@ -86,9 +86,9 @@ public class PermissionServiceImpl implements PermissionService {
 				PermissionMapping.CAN_GET_PARENTS_FOLDER,
 				PermissionMapping.CAN_GET_PROPERTIES_OBJECT,
 				PermissionMapping.CAN_VIEW_CONTENT_OBJECT);
-		
-		topLevelNotAllowableKeysWithFolder = new ArrayList<>();
-		Collections.addAll(topLevelNotAllowableKeysWithFolder, 
+
+		topLevelNotAllowableKeysWithFolder = new ArrayList<String>();
+		Collections.addAll(topLevelNotAllowableKeysWithFolder,
 				PermissionMapping.CAN_ADD_TO_FOLDER_FOLDER,
 				PermissionMapping.CAN_ADD_TO_FOLDER_OBJECT,
 				PermissionMapping.CAN_CREATE_DOCUMENT_FOLDER,
@@ -452,7 +452,7 @@ public class PermissionServiceImpl implements PermissionService {
 					//canDelete.Object type
 					folderChecked = contentService.getFolder(repositoryId, content.getParentId());
 				}
-				
+
 				String rootId = repositoryInfoMap.get(repositoryId).getRootFolderId();
 				//Check top level or not
 				if(folderChecked == null || rootId.equals(folderChecked.getId())){
@@ -463,10 +463,10 @@ public class PermissionServiceImpl implements PermissionService {
 				}
 			}
 		}
-		
+
 		return true;
 	}
-	
+
 	public void setNemakiPermissions(List<Map<String, ?>> nemakiPermissions) {
 	}
 
