@@ -197,8 +197,8 @@ public class PrincipalServiceImpl implements PrincipalService {
 	}
 
 	@Override
-	public User getAdmin(String repositoryId) {
-		return principalDaoService.getAdmin(repositoryId);
+	public List<User> getAdmins(String repositoryId) {
+		return principalDaoService.getAdmins(repositoryId);
 	}
 
 	public void setPrincipalDaoService(PrincipalDaoService principalDaoService) {

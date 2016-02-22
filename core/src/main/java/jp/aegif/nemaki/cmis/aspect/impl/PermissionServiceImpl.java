@@ -22,6 +22,7 @@
 package jp.aegif.nemaki.cmis.aspect.impl;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -31,17 +32,18 @@ import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
-import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.model.Ace;
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
+import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.VersionSeries;
-import jp.aegif.nemaki.util.constant.CallContextKey;
+import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.CmisPermission;
+import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.apache.chemistry.opencmis.commons.data.AllowableActions;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
@@ -49,11 +51,9 @@ import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.enums.Action;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
-import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.log4j.Logger;
 
 /**
  * Permission Service implementation.
@@ -67,6 +67,35 @@ public class PermissionServiceImpl implements PermissionService {
 	private ContentService contentService;
 	private TypeManager typeManager;
 	private RepositoryInfoMap repositoryInfoMap;
+	private PropertyManager propertyManager;
+
+	private List<String> topLevelAllowableKeys;
+	private List<String> topLevelNotAllowableKeysWithFolder;
+
+
+	public void init(){
+		topLevelAllowableKeys = new ArrayList<String>();
+		Collections.addAll(topLevelAllowableKeys,
+				PermissionMapping.CAN_GET_ACL_OBJECT,
+				PermissionMapping.CAN_GET_ALL_VERSIONS_VERSION_SERIES,
+				PermissionMapping.CAN_GET_APPLIED_POLICIES_OBJECT,
+				PermissionMapping.CAN_GET_CHILDREN_FOLDER,
+				PermissionMapping.CAN_GET_DESCENDENTS_FOLDER,
+				PermissionMapping.CAN_GET_FOLDER_PARENT_OBJECT,
+				PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT,
+				PermissionMapping.CAN_GET_PARENTS_FOLDER,
+				PermissionMapping.CAN_GET_PROPERTIES_OBJECT,
+				PermissionMapping.CAN_VIEW_CONTENT_OBJECT);
+
+		topLevelNotAllowableKeysWithFolder = new ArrayList<String>();
+		Collections.addAll(topLevelNotAllowableKeysWithFolder,
+				PermissionMapping.CAN_ADD_TO_FOLDER_FOLDER,
+				PermissionMapping.CAN_ADD_TO_FOLDER_OBJECT,
+				PermissionMapping.CAN_CREATE_DOCUMENT_FOLDER,
+				PermissionMapping.CAN_CREATE_FOLDER_FOLDER,
+				PermissionMapping.CAN_REMOVE_FROM_FOLDER_FOLDER,
+				PermissionMapping.CAN_REMOVE_FROM_FOLDER_OBJECT);
+	}
 
 
 	// //////////////////////////////////////////////////////////////////////////
@@ -410,6 +439,34 @@ public class PermissionServiceImpl implements PermissionService {
 		return result;
 	}
 
+	@Override
+	public boolean checkPermissionAtTopLevel(CallContext context, String repositoryId, String key, Content content){
+		boolean capability = propertyManager.readBoolean(PropertyKey.CAPABILITY_EXTENDED_PERMISSION_TOPLEVEL);
+		if(capability){
+			if(!topLevelAllowableKeys.contains(key)){
+				Folder folderChecked;
+				if(topLevelNotAllowableKeysWithFolder.contains(key)){
+					//canCreateDocument.Folder type
+					folderChecked = (Folder)content;
+				}else{
+					//canDelete.Object type
+					folderChecked = contentService.getFolder(repositoryId, content.getParentId());
+				}
+
+				String rootId = repositoryInfoMap.get(repositoryId).getRootFolderId();
+				//Check top level or not
+				if(folderChecked == null || rootId.equals(folderChecked.getId())){
+					User user = principalService.getUserById(repositoryId, context.getUsername());
+					if(!user.isAdmin()){
+						return false;
+					}
+				}
+			}
+		}
+
+		return true;
+	}
+
 	public void setNemakiPermissions(List<Map<String, ?>> nemakiPermissions) {
 	}
 
@@ -434,4 +491,8 @@ public class PermissionServiceImpl implements PermissionService {
 		this.repositoryInfoMap = repositoryInfoMap;
 	}
 
+
+	public void setPropertyManager(PropertyManager propertyManager) {
+		this.propertyManager = propertyManager;
+	}
 }

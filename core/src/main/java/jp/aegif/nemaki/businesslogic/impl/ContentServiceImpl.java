@@ -62,6 +62,7 @@ import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.constant.CmisPermission;
 import jp.aegif.nemaki.util.constant.NodeType;
 import jp.aegif.nemaki.util.constant.PrincipalId;
 import jp.aegif.nemaki.util.constant.PropertyKey;
@@ -825,8 +826,17 @@ public class ContentServiceImpl implements ContentService {
 			f.setAllowedChildTypeIds(allowedTypes);
 		}
 		setSignature(callContext, f);
-		f.setAclInherited(true);
-		f.setAcl(new Acl());
+
+		Acl acl = new Acl();
+		if (isRoot(repositoryId, parentFolder)){
+			Ace ace = new Ace();
+			ace.setPrincipalId(callContext.getUsername());
+			ace.setPermissions(new ArrayList<String>( Arrays.asList(CmisPermission.ALL)));
+			acl.setLocalAces(new ArrayList<Ace>( Arrays.asList(ace) ));
+		}else{
+			f.setAclInherited(true);
+		}
+		f.setAcl(acl);
 
 		// Create
 		Folder folder = contentDaoService.create(repositoryId, f);
@@ -1728,17 +1738,17 @@ public class ContentServiceImpl implements ContentService {
 		if (!bun) {
 			return proposedName;
 		}
-		
+
 		//Check if update method
 		if(current != null && current.getName().equals(proposedName)){
 			return proposedName;
 		}
-		
+
 		List<String>names = contentDaoService.getChildrenNames(repositoryId, folderId);
 		String[] splitted = splitFileName(proposedName);
 		String originalNameBody = splitted[0];
 		String extension = splitted[1];
-		
+
 		String newNameBody = originalNameBody;
 		for(Integer i = 1; i <= names.size(); i++){
 			if(names.contains(newNameBody + extension)){
@@ -1748,7 +1758,7 @@ public class ContentServiceImpl implements ContentService {
 				break;
 			}
 		}
-		
+
 		return newNameBody + extension;
 	}
 

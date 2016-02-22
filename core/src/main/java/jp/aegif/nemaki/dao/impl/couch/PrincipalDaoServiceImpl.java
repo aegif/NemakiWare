@@ -106,14 +106,22 @@ public class PrincipalDaoServiceImpl implements
 	}
 
 	@Override
-	public User getAdmin(String repositoryId) {
+	public List<User> getAdmins(String repositoryId) {
+		List<User> admins = new ArrayList<User>();
+		
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT)
 				.viewName("admin");
 		List<CouchUser> l = connectorPool.get(repositoryId).queryView(query, CouchUser.class);
 
 		if (CollectionUtils.isEmpty(l))
 			return null;
-		return l.get(0).convert();
+		for (CouchUser c : l) {
+			User u = c.convert();
+			admins.add(u);
+		}
+
+		
+		return admins;
 	}
 
 

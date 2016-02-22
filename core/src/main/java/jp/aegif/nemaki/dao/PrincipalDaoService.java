@@ -52,7 +52,7 @@ public interface PrincipalDaoService {
 	 * @param repositoryId TODO
 	 * @return
 	 */
-	User getAdmin(String repositoryId);
+	List<User> getAdmins(String repositoryId);
 
 	/**
 	 * Get a group
