@@ -23,8 +23,10 @@ package jp.aegif.nemaki.cmis.aspect.impl;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.security.acl.Permission;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -32,6 +34,7 @@ import java.util.Set;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.data.PropertyDecimal;
@@ -88,6 +91,7 @@ import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.constant.DomainType;
+import jp.aegif.nemaki.util.constant.PropertyKey;
 
 public class ExceptionServiceImpl implements ExceptionService,
 		ApplicationContextAware {
@@ -341,22 +345,32 @@ public class ExceptionServiceImpl implements ExceptionService,
 		String baseTypeId = content.getType();
 		Acl acl = contentService.calculateAcl(repositoryId, content);
 		permissionDeniedInternal(context, repositoryId, key, acl, baseTypeId, content);
+
+		permissionTopLevelFolder(context, repositoryId, key, content);
 	}
 
 	private void permissionDeniedInternal(CallContext callContext, String repositoryId,
 			String key, Acl acl, String baseTypeId, Content content) {
 
 		if (!permissionService.checkPermission(callContext, repositoryId, key, acl, baseTypeId, content)) {
-			String msg = String.format( "Permission Denied! repositoryId=%s key=%s acl=%s  contentName=%s ", repositoryId, key, acl, content.getName()) ;
+			String msg = String.format( "Permission Denied! repositoryId=%s key=%s acl=%s  content={id:%s, name:%s} ", repositoryId, key, acl, content.getId(), content.getName()) ;
+			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
+		}
+	}
+	
+	private void permissionTopLevelFolder(CallContext context, String repositoryId, String key, Content content){
+		boolean result = permissionService.checkPermissionAtTopLevel(context, repositoryId, key, content);
+		if(!result){
+			String msg = String.format( "Permission Denied to top level folders for non-admin user! repositoryId=%s key=%s userId=%s content={id:%s, name:%s} ", repositoryId, key, context.getUsername(), content.getId(), content.getName()) ;
 			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
 		}
 	}
 
 	@Override
 	public void perimissionAdmin(CallContext context, String repositoryId) {
-		User admin = principalService.getAdmin(repositoryId);
+		List<User> admins = principalService.getAdmins(repositoryId);
 
-		if (!admin.getUserId().equals(context.getUsername())) {
+		if (!admins.contains(context.getUsername())) {
 			String msg = "This operation if permitted only for administrator";
 			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
 		}
