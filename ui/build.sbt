@@ -2,7 +2,7 @@ import com.github.play2war.plugin._
 
 name := """ui"""
 
-version := "2.3.9"
+version := "2.3.10"
 
 lazy val root = (project in file(".")).enablePlugins(PlayJava)
 
