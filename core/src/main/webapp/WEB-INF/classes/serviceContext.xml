@@ -491,7 +491,7 @@
         </property>
     </bean>
     <bean id="permissionService"
-        class="jp.aegif.nemaki.cmis.aspect.impl.PermissionServiceImpl">
+        class="jp.aegif.nemaki.cmis.aspect.impl.PermissionServiceImpl" init-method="init">
         <property name="principalService">
             <ref bean="PrincipalService" />
         </property>
@@ -503,6 +503,9 @@
         </property>
         <property name="repositoryInfoMap">
             <ref bean="repositoryInfoMap" />
+        </property>
+        <property name="propertyManager">
+            <ref bean="propertyManager" />
         </property>
     </bean>
 

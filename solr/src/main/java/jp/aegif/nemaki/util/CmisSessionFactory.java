@@ -144,7 +144,7 @@ public class CmisSessionFactory {
 			parameter.put(SessionParameter.AUTHENTICATION_PROVIDER_CLASS, "jp.aegif.nemaki.util.NemakiAuthenticationProvider");
 			String authToken = nemakiTokenManager.getOrRegister(repositoryId, user, password);
 			parameter.put(Constant.AUTH_TOKEN, authToken);
-			parameter.put(Constant.AUTH_TOKEN_APP, "ui");
+			parameter.put(Constant.AUTH_TOKEN_APP, "solr");
 		}
 	}
 

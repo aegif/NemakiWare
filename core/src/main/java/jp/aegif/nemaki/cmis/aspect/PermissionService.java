@@ -45,6 +45,8 @@ public interface PermissionService {
 	
 	public boolean checkPermission(CallContext callContext, Action action, ObjectData objectData);
 	
+	public boolean checkPermissionAtTopLevel(CallContext context, String repositoryId, String key, Content content);
+	
 	/**
 	 * 
 	 * @param callContext
@@ -53,5 +55,4 @@ public interface PermissionService {
 	 * @return
 	 */
 	public <T> List<T> getFiltered(CallContext callContext,String repositoryId, List<T>contents);
-	
 }
