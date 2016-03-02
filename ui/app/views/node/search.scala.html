@@ -4,18 +4,18 @@
 <html>
 	@header()
 	<body>
-		@menubar(repositoryId)
+		@menubar(repositoryId, term)
 		<div class="container">
 	  		<div class="row">
 	  			<div class="col-md-11">
 					@Messages("view.node.search.term"): @term
-					
+
 					<br/><br/>
 				</div>
-				
+
 				<div class="col-md-11">
 				 	<div id="list">
-						@list(repositoryId)(objects) 		
+						@list(repositoryId)(objects)
 				 	</div>
 				</div>
 	  		</div>

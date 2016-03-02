@@ -1,4 +1,4 @@
-@(repositoryId:String)
+@(repositoryId:String, term:String = "")
 
 @import constant.Token
 @import util.Util
@@ -51,7 +51,7 @@
 				<li>
 			        <form class="navbar-form" role="search" action="@routes.Node.search(repositoryId)" method="GET">
 				        <div class="input-group">
-				            <input type="text" class="form-control" placeholder="Search" name="term" id="srch-term">
+				            <input type="text" class="form-control" placeholder="Search" name="term" id="srch-term" value="@term">
 				            <div class="input-group-btn">
 				                <button class="btn btn-default" type="submit"><i class="fa fa-search"></i></button>
 				            </div>

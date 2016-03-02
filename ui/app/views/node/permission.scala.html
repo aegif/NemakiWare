@@ -20,19 +20,19 @@
 			}
 		</div>
 	</div>
-	
+
 	<div class="row">
 		<div class="col-sm-6 col-md-6">
 			@searchBox("追加可能なメンバを検索")
 		</div>
 	</div>
-	
+
 	<div class="row">
 		<div class="col-sm-6 col-md-6">
 			@searchTable(Messages("view.node.permission.search.caption"))(members)
 		</div>
 	</div>
-	
+
 	<div class="row">
 		<div class="col-sm-12 col-md-12">
 			@selectedTable(Messages("view.node.permission.table.caption"))(members)(Util.zipWithId(obj.getAcl))(permissionDefinitions)
@@ -42,16 +42,17 @@
 
 <script type="text/javascript">
 	//binding:update
-	$(document).on('click', "#permission-update", function(){
+
+	$('#permission-update').on('click',  function(){
 		//build data
-		
+
 		var acl = [];
 		$('#ps-selected-table tbody tr').each(function(i, row){
 			var json = {};
 			//principalId
 			var id = $(row).children('.ps-id').text();
 			json['principalId'] = id;
-			
+
 			//Permission
 			var permissionDefs =  [];
 			@if(CollectionUtils.isNotEmpty(permissionDefinitions)){
@@ -61,24 +62,24 @@
 			}
 			var permissionValue = [];
 			for(var i=0; i<permissionDefs.length; i++){
-				var checked = $($(row).find('.permission-' + escape(permissionDefs[i]) + ' > input')[0]).prop('checked');	
+				var checked = $($(row).find('.permission-' + escape(permissionDefs[i]) + ' > input')[0]).prop('checked');
 				if(checked){
 					permissionValue.push(permissionDefs[i]);
 				}
 			}
 			json['permission'] = permissionValue;
-			
+
 			//Inheritance
 			var inheritance = $($(row).find('.inheritance > input')).prop('checked');
 			json['inheritance'] = inheritance;
-			
+
 			acl.push(json);
 		});
-		
+
 		var data = {
 			acl :JSON.stringify(acl)
 		};
-		
+
 		$.ajax({
 			url : "@routes.Node.updatePermission(repositoryId, obj.getId)",
 			type : 'POST',
@@ -94,7 +95,7 @@
 	         }
 		});
 	});
-	
+
 	//binding: remove checkbox
 	$('td.ps-remove > :checkbox').off().on('click', function(event){
 		var row = $(this).parent().parent();
@@ -106,7 +107,7 @@
 			return;
 		}
 	});
-	
+
 	//binding: permission checkbox
 	$('td.permission > :checkbox').off().on('click', function(event){
 		var row = $(this).parent().parent();
@@ -118,7 +119,7 @@
 			return;
 		}
 	});
-	
+
 	//binding: ace's ineheritance
 	$('td.inheritance > :checkbox').off().on('click', function(event){
 		var row = $(this).parent().parent();
@@ -128,11 +129,11 @@
 			event.preventDefault();
 			return;
 		}
-		
+
 		//processing
 		var principal = $(row.find('.ps-id')).html();
 		var originalPermissions = [];
-		
+
 		$.ajax(jsRoutes.controllers.Node.jsGetAce("@repositoryId", "@obj.getId", principal)
 		).done(function(data){
 			originalPermissions = data["permissions"];
@@ -149,7 +150,7 @@
 			//TODO
 		});
 	});
-	
+
 	function escape(selector){
 		return selector.replace(':',"\\:");
 	}
