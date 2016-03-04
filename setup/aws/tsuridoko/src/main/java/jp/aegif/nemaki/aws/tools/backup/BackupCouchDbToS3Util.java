@@ -22,15 +22,14 @@ import javax.ws.rs.client.*;
 import javax.ws.rs.core.*;
 
 public class BackupCouchDbToS3Util {
-	String defaultCouchDbUrl =  "http://localhost:5984/";
-	String dafaultProfileName ="NemakIWare";
+	String defaultCouchDbUrl = "http://localhost:5984/";
+	String dafaultProfileName = "NemakiWare";
 
-
-	public void backup() {
-		backup(dafaultProfileName, defaultCouchDbUrl, null);
+	public void backup(String bucketName) {
+		backup(bucketName, dafaultProfileName, defaultCouchDbUrl, null);
 	}
 
-	public void backup(String profileName, String couchUrl, String[] targets) {
+	public void backup(String bucketName, String profileName, String couchUrl, String[] targets) {
 		String[] targetDbs = targets;
 
 		if (targetDbs == null || targetDbs.length == 0) {
@@ -45,6 +44,8 @@ public class BackupCouchDbToS3Util {
 			targetDbs = (String[]) list.toArray(new String[0]);
 		}
 
+		AmazonS3 s3client = new AmazonS3Client(new ProfileCredentialsProvider(profileName));
+
 		for (String repositoryName : targetDbs) {
 			File file;
 			try {
@@ -54,12 +55,9 @@ public class BackupCouchDbToS3Util {
 				action.dump();
 
 				if (file.exists()) {
-					AmazonS3 s3client = new AmazonS3Client(new ProfileCredentialsProvider(profileName));
-					Region region = Region.getRegion(Regions.AP_NORTHEAST_1);
-					s3client.setRegion(region);
 
 					try {
-						s3client.putObject(new PutObjectRequest("nemakidbbackup-test", repositoryName, file));
+						s3client.putObject(new PutObjectRequest(bucketName, repositoryName, file));
 					} catch (AmazonServiceException ase) {
 						System.out.println("Caught an AmazonServiceException, which " + "means your request made it "
 								+ "to Amazon S3, but was rejected with an error response" + " for some reason.");
