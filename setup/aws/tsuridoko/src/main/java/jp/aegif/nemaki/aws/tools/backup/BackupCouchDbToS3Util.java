@@ -76,7 +76,7 @@ public class BackupCouchDbToS3Util {
 		}
 
 		for (String repositoryName : targetDbs) {
-			System.out.println("[" + repositoryName + "] Backup started. - " + repositoryName);
+			System.out.println("[" + repositoryName + "] Backup started. ");
 
 			if (repositoryName == null || repositoryName == "")
 				continue;
@@ -129,7 +129,7 @@ public class BackupCouchDbToS3Util {
 		try {
 			PutObjectRequest request = new PutObjectRequest(bucketName, repositoryName, file);
 			request.setGeneralProgressListener(new BackupFileUploadProgressListener(repositoryName));
-			System.out.println("[" + repositoryName + "] Upload started. - " + repositoryName);
+			System.out.println("[" + repositoryName + "] Upload started. ");
 			Upload uploader = tm.upload(request);
 			try {
 				uploader.waitForCompletion();
