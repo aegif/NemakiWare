@@ -13,11 +13,15 @@ import jp.aegif.nemaki.bjornloka.dump.*;
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.AmazonServiceException;
 import com.amazonaws.auth.profile.ProfileCredentialsProvider;
+import com.amazonaws.event.ProgressEvent;
+import com.amazonaws.event.ProgressListener;
 import com.amazonaws.regions.Region;
 import com.amazonaws.regions.Regions;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.model.PutObjectRequest;
+import com.amazonaws.services.s3.transfer.TransferManager;
+import com.amazonaws.services.s3.transfer.Upload;
 
 import org.json.*;
 import javax.ws.rs.client.*;
@@ -44,12 +48,19 @@ public class BackupCouchDbToS3Util {
 	}
 
 	public void backup(String bucketName, URI url, String profileName, String targets) {
-		backup(bucketName, url, profileName, targets.split(","));
+		if (targets == null | targets == "") {
+			backup(bucketName, url, profileName, new String[0]);
+		} else {
+			backup(bucketName, url, profileName, targets.split(",", -1));
+		}
 	}
 
 	public void backup(String bucketName, URI couchUrl, String profileName, String[] targets) {
 		String[] targetDbs = targets;
 		AmazonS3 s3client = new AmazonS3Client(new ProfileCredentialsProvider(profileName));
+		TransferManager tm = new TransferManager(s3client);
+
+		try{
 		String uriScheme = couchUrl.getScheme();
 
 		if (targetDbs == null || targetDbs.length == 0) {
@@ -65,6 +76,11 @@ public class BackupCouchDbToS3Util {
 		}
 
 		for (String repositoryName : targetDbs) {
+			System.out.println("[" + repositoryName + "] Backup started. - " + repositoryName);
+
+			if (repositoryName == null || repositoryName == "")
+				continue;
+
 			File file;
 			try {
 				if (uriScheme.equals("http") || uriScheme.equals("https")) {
@@ -76,19 +92,24 @@ public class BackupCouchDbToS3Util {
 					couchUrl = couchUrl.resolve(repositoryName + ".couch");
 					file = new File(couchUrl);
 				} else {
-					System.out.println("Error : Invalid scheme.");
+					System.out.printf("Error : Invalid scheme :  %s \n", uriScheme);
 					continue;
 				}
 
 				if (file.exists()) {
-					uploadS3(s3client, file, bucketName, repositoryName);
+					uploadS3(tm, file, bucketName, repositoryName);
 				} else {
-					System.out.println("Error : Backup file not found.");
+					System.out.println("Error : Backup file not found");
+					System.out.println(file.getPath());
+					System.out.println(couchUrl.toString());
 					continue;
 				}
 			} catch (IOException e) {
 				e.printStackTrace();
 			}
+		}
+		}finally{
+			tm.shutdownNow(true);
 		}
 	}
 
@@ -104,9 +125,24 @@ public class BackupCouchDbToS3Util {
 		return list;
 	}
 
-	public void uploadS3(AmazonS3 s3client, File file, String bucketName, String repositoryName) {
+	public void uploadS3(TransferManager tm, File file, String bucketName, String repositoryName) {
 		try {
-			s3client.putObject(new PutObjectRequest(bucketName, repositoryName, file));
+			PutObjectRequest request = new PutObjectRequest(bucketName, repositoryName, file);
+			request.setGeneralProgressListener(new BackupFileUploadProgressListener(repositoryName));
+			System.out.println("[" + repositoryName + "] Upload started. - " + repositoryName);
+			Upload uploader = tm.upload(request);
+			try {
+				uploader.waitForCompletion();
+				System.out.println("[" + repositoryName + "] Upload complete. ");
+			} catch (AmazonClientException amazonClientException) {
+				System.out.println("[" + repositoryName + "] Unable to upload file, upload was aborted. ");
+				amazonClientException.printStackTrace();
+			} catch (InterruptedException e) {
+				System.out.println("[" + repositoryName + "] Unable to upload file, upload was interrupted. ");
+				e.printStackTrace();
+			}
+			uploader = null;
+
 		} catch (AmazonServiceException ase) {
 			System.out.println("Caught an AmazonServiceException, which " + "means your request made it "
 					+ "to Amazon S3, but was rejected with an error response" + " for some reason.");
