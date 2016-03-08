@@ -67,6 +67,24 @@
 		</dependency>
 
 		<dependency>
+			<groupId>org.apache.chemistry.opencmis</groupId>
+			<artifactId>chemistry-opencmis-client-bindings</artifactId>
+			<version>${org.apache.chemistry.opencmis.version}</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.apache.chemistry.opencmis</groupId>
+			<artifactId>chemistry-opencmis-test-util</artifactId>
+			<version>${org.apache.chemistry.opencmis.version}</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.apache.chemistry.opencmis</groupId>
+			<artifactId>chemistry-opencmis-test-tck</artifactId>
+			<version>${org.apache.chemistry.opencmis.version}</version>
+		</dependency>
+
+		<dependency>
 			<groupId>org.ektorp</groupId>
 			<artifactId>org.ektorp</artifactId>
 			<version>1.4.2</version>
@@ -278,6 +296,15 @@
 			</plugin>
 
 			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<version>2.19.1</version>
+				<configuration>
+					<redirectTestOutputToFile>true</redirectTestOutputToFile>
+				</configuration>
+			</plugin>
+
+			<plugin>
 				<groupId>org.mortbay.jetty</groupId>
 				<artifactId>jetty-maven-plugin</artifactId>
 				<version>8.1.12.v20130726</version>
@@ -298,8 +325,6 @@
 					</scanTargets>
 				</configuration>
 			</plugin>
-
-
 		</plugins>
 	</build>
 
@@ -316,19 +341,19 @@
 		<profile>
 			<id>product</id>
 			<properties>
-				<maven.test.skip>true</maven.test.skip>
+				<maven.test.skip>false</maven.test.skip>
 			</properties>
 
 			<build>
 				<plugins>
 					<plugin>
-					  <groupId>org.apache.maven.plugins</groupId>
-					  <artifactId>maven-compiler-plugin</artifactId>
-					  <configuration>
-					    <excludes>
-					      <exclude>jp/aegif/nemaki/development/**/*.*</exclude>
-					    </excludes>
-					  </configuration>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-compiler-plugin</artifactId>
+						<configuration>
+							<excludes>
+								<exclude>jp/aegif/nemaki/development/**/*.*</exclude>
+							</excludes>
+						</configuration>
 					</plugin>
 				</plugins>
 
