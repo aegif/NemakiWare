@@ -12,7 +12,7 @@ public class BackupFileUploadProgressListener implements ProgressListener {
 
 	@Override
 	public void progressChanged(ProgressEvent progressEvent) {
-		System.out.println("[" + _repositoryName + "] Transferred bytes: " + progressEvent.getBytesTransferred());
+		//System.out.println("[" + _repositoryName + "] Transferred bytes: " + progressEvent.getBytesTransferred());
 	}
 
 }
