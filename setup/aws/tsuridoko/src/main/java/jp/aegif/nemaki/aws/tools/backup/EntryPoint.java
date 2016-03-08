@@ -65,13 +65,8 @@ public class EntryPoint {
 	        System.err.println( "Parsing failed.  Reason: " + exp.getMessage() );
 	    }catch( URISyntaxException exp){
 	        System.err.println( "Bad uri syntax.  Reason: " + exp.getMessage() );
-
 	    }
-
-
-
-
-
+	    return;
 	}
 
 }
