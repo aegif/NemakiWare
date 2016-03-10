@@ -301,6 +301,9 @@
 				<version>2.19.1</version>
 				<configuration>
 					<redirectTestOutputToFile>true</redirectTestOutputToFile>
+			        <includes>
+			        	<include>**/*TestGroup.java</include>
+			    	</includes>
 				</configuration>
 			</plugin>
 
@@ -324,6 +327,31 @@
 						<scanTarget>src/main/webapp</scanTarget>
 					</scanTargets>
 				</configuration>
+
+				<executions>
+					<execution>
+						<id>start-jetty</id>
+						<phase>test-compile</phase>
+						<goals>
+							<goal>run</goal>
+						</goals>
+						<configuration>
+							<skip>${maven.test.skip}</skip>
+							<daemon>true</daemon>
+						</configuration>
+					</execution>
+					<execution>
+						<id>stop-jetty</id>
+						<phase>test</phase>
+						<goals>
+							<goal>stop</goal>
+						</goals>
+						<configuration>
+							<skip>${maven.test.skip}</skip>
+						</configuration>
+					</execution>
+				</executions>
+
 			</plugin>
 		</plugins>
 	</build>
