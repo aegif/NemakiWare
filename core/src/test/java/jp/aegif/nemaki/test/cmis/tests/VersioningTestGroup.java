@@ -6,31 +6,30 @@ import org.apache.chemistry.opencmis.tck.tests.versioning.VersioningSmokeTest;
 import org.apache.chemistry.opencmis.tck.tests.versioning.VersioningStateCreateTest;
 import org.junit.Test;
 
-import jp.aegif.nemaki.test.cmis.TestGroupBase;
-import jp.aegif.nemaki.test.cmis.TestHelper;
+import jp.aegif.nemaki.test.cmis.TckSuite;
 
-public class VersioningTestGroup extends TestGroupBase{
+public class VersioningTestGroup extends TckSuite{
 	@Test
 	public void versioningSmokeTest() throws Exception{
 		VersioningSmokeTest test = new VersioningSmokeTest();
-		TestHelper.run(test);
+		run(test);
 	}
 	
 	@Test
 	public void versionDeleteTest() throws Exception{
 		VersionDeleteTest test = new VersionDeleteTest();
-		TestHelper.run(test);
+		run(test);
 	}
 	
 	@Test
 	public void versioningStateCreateTest() throws Exception{
 		VersioningStateCreateTest test = new VersioningStateCreateTest();
-		TestHelper.run(test);
+		run(test);
 	}
 	
 	@Test
 	public void checkedOutTest() throws Exception{
 		CheckedOutTest test = new CheckedOutTest();
-		TestHelper.run(test);
+		run(test);
 	}
 }

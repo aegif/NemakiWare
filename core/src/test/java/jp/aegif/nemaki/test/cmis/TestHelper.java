@@ -1,21 +1,18 @@
 package jp.aegif.nemaki.test.cmis;
 
 import java.io.File;
-import java.io.PrintWriter;
 import java.util.Map;
 
 import org.apache.chemistry.opencmis.tck.CmisTest;
 import org.apache.chemistry.opencmis.tck.CmisTestGroup;
 import org.apache.chemistry.opencmis.tck.CmisTestProgressMonitor;
-import org.apache.chemistry.opencmis.tck.CmisTestReport;
 import org.apache.chemistry.opencmis.tck.CmisTestResult;
 import org.apache.chemistry.opencmis.tck.CmisTestResultStatus;
 import org.apache.chemistry.opencmis.tck.impl.AbstractCmisTestGroup;
-import org.apache.chemistry.opencmis.tck.report.TextReport;
 import org.apache.chemistry.opencmis.tck.runner.AbstractRunner;
 import org.junit.Assert;
 
-import jp.aegif.nemaki.test.cmis.tests.BasicTestGroup;
+import jp.aegif.nemaki.test.cmis.tests.BasicsTestGroup;
 
 public class TestHelper {
 	private static final String PARAMETERS_FILE_NAME = "cmis-tck-parameters.properties";
@@ -30,7 +27,7 @@ public class TestHelper {
     public static void run(CmisTestGroup group) throws Exception {
         JUnitRunner runner = new JUnitRunner();
 
-        File parametersFile = new File(BasicTestGroup.class.getClassLoader().getResource(PARAMETERS_FILE_NAME).getFile());
+        File parametersFile = new File(BasicsTestGroup.class.getClassLoader().getResource(PARAMETERS_FILE_NAME).getFile());
         runner.loadParameters(parametersFile);
         runner.addGroup(group);
         runner.run(new JUnitProgressMonitor());

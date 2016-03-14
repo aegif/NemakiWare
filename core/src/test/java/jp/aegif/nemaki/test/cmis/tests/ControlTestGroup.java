@@ -3,13 +3,12 @@ package jp.aegif.nemaki.test.cmis.tests;
 import org.apache.chemistry.opencmis.tck.tests.control.ACLSmokeTest;
 import org.junit.Test;
 
-import jp.aegif.nemaki.test.cmis.TestGroupBase;
-import jp.aegif.nemaki.test.cmis.TestHelper;
+import jp.aegif.nemaki.test.cmis.TckSuite;
 
-public class ControlTestGroup extends TestGroupBase{
+public class ControlTestGroup extends TckSuite{
 	@Test
 	public void aclSmokeTest() throws Exception{
 		ACLSmokeTest test = new ACLSmokeTest();
-		TestHelper.run(test);
+		run(test);
 	}
 }
