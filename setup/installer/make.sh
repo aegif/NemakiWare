@@ -64,7 +64,7 @@ fi
 
 #Prepare WAR
 mvn -f $SOURCE_HOME/core/pom.xml clean
-mvn -f $SOURCE_HOME/core/pom.xml package $PROFILE_PRODUCT
+mvn -f $SOURCE_HOME/core/pom.xml package $PROFILE_PRODUCT -Dmaven.test.skip=true
 mvn -f $SOURCE_HOME/solr/pom.xml clean
 mvn -f $SOURCE_HOME/solr/pom.xml package $PROFILE_PRODUCT
 cd $SOURCE_HOME/ui/

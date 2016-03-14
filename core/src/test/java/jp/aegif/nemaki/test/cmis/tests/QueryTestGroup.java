@@ -8,43 +8,42 @@ import org.apache.chemistry.opencmis.tck.tests.query.QueryRootFolderTest;
 import org.apache.chemistry.opencmis.tck.tests.query.QuerySmokeTest;
 import org.junit.Test;
 
-import jp.aegif.nemaki.test.cmis.TestGroupBase;
-import jp.aegif.nemaki.test.cmis.TestHelper;
+import jp.aegif.nemaki.test.cmis.TckSuite;
 
-public class QueryTestGroup extends TestGroupBase{
+public class QueryTestGroup extends TckSuite{
 	@Test
 	public void querySmokeTest() throws Exception{
 		QuerySmokeTest test = new QuerySmokeTest();
-		TestHelper.run(test);
+		run(test);
 	}
 	
 	@Test
 	public void queryRootFolderTest() throws Exception{
 		QueryRootFolderTest test = new QueryRootFolderTest();
-		TestHelper.run(test);
+		run(test);
 	}
 	
 	@Test
 	public void queryForObject() throws Exception{
 		QueryForObject test = new QueryForObject();
-		TestHelper.run(test);
+		run(test);
 	}
 	
 	@Test
 	public void queryLikeTest() throws Exception{
 		QueryLikeTest test = new QueryLikeTest();
-		TestHelper.run(test);
+		run(test);
 	}
 	
 	@Test
 	public void queryInFolderTest() throws Exception{
 		QueryInFolderTest test = new QueryInFolderTest();
-		TestHelper.run(test);
+		run(test);
 	}
 	
 	@Test
 	public void contentChangesSmokeTest() throws Exception{
 		ContentChangesSmokeTest test = new ContentChangesSmokeTest();
-		TestHelper.run(test);
+		run(test);
 	}
 }
