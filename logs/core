@@ -1,0 +1,24 @@
+2016-03-09 08:03:16,984 INFO  [main] : Root WebApplicationContext: initialization started
+2016-03-09 08:03:17,105 INFO  [main] : Refreshing Root WebApplicationContext: startup date [Wed Mar 09 08:03:17 JST 2016]; root of context hierarchy
+2016-03-09 08:03:17,151 INFO  [main] : Loading XML bean definitions from class path resource [applicationContext.xml]
+2016-03-09 08:03:17,260 INFO  [main] : Loading XML bean definitions from class path resource [propertyContext.xml]
+2016-03-09 08:03:17,386 INFO  [main] : Loading properties file from class path resource [nemakiware.properties]
+2016-03-09 08:03:17,387 INFO  [main] : Loading properties file from class path resource [nemakiware-capability.properties]
+2016-03-09 08:03:17,388 INFO  [main] : Loading properties file from class path resource [nemakiware-basetype.properties]
+2016-03-09 08:03:17,388 INFO  [main] : Loading properties file from class path resource [nemakiware-property.properties]
+2016-03-09 08:03:17,462 INFO  [main] : Refreshing Root WebApplicationContext: startup date [Wed Mar 09 08:03:17 JST 2016]; root of context hierarchy
+2016-03-09 08:03:17,465 INFO  [main] : Loading XML bean definitions from URL [file:/Users/momotomomo/Documents/workspace/NemakiWare/core/src/main/webapp/WEB-INF/classes/aopContext.xml]
+2016-03-09 08:03:17,520 INFO  [main] : Loading XML bean definitions from class path resource [propertyContext.xml]
+2016-03-09 08:03:17,537 INFO  [main] : Loading XML bean definitions from class path resource [serviceContext.xml]
+2016-03-09 08:03:17,586 INFO  [main] : Loading XML bean definitions from URL [file:/Users/momotomomo/Documents/workspace/NemakiWare/core/src/main/webapp/WEB-INF/classes/businesslogicContext.xml]
+2016-03-09 08:03:17,601 INFO  [main] : Loading XML bean definitions from URL [file:/Users/momotomomo/Documents/workspace/NemakiWare/core/src/main/webapp/WEB-INF/classes/daoContext.xml]
+2016-03-09 08:03:17,613 INFO  [main] : Loading XML bean definitions from URL [file:/Users/momotomomo/Documents/workspace/NemakiWare/core/src/main/webapp/WEB-INF/classes/couchContext.xml]
+2016-03-09 08:03:17,678 INFO  [main] : Loading properties file from class path resource [nemakiware.properties]
+2016-03-09 08:03:17,679 INFO  [main] : Loading properties file from class path resource [nemakiware-capability.properties]
+2016-03-09 08:03:17,679 INFO  [main] : Loading properties file from class path resource [nemakiware-basetype.properties]
+2016-03-09 08:03:17,680 INFO  [main] : Loading properties file from class path resource [nemakiware-property.properties]
+2016-03-09 08:03:17,686 INFO  [main] : Loading properties file from class path resource [nemakiware.properties]
+2016-03-09 08:03:17,687 INFO  [main] : Loading properties file from class path resource [nemakiware-capability.properties]
+2016-03-09 08:03:17,687 INFO  [main] : Loading properties file from class path resource [nemakiware-basetype.properties]
+2016-03-09 08:03:17,688 INFO  [main] : Loading properties file from class path resource [nemakiware-property.properties]
+2016-03-09 08:03:19,734 INFO  [main] : Root WebApplicationContext: initialization completed in 2749 ms
