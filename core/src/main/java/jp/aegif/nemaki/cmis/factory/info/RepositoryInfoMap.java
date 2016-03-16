@@ -1,8 +1,11 @@
 package jp.aegif.nemaki.cmis.factory.info;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.YamlManager;
@@ -44,7 +47,23 @@ public class RepositoryInfoMap {
 		return map.get(this.superUsersId);
 	}
 	
+	private void hoge(){
+		InputStream is = this.getClass().getClassLoader().getResourceAsStream("app.properties");
+		Properties props = new Properties();
+		try {
+			props.load(is);
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		String version = props.getProperty("application.version");
+		System.out.println("hoge");
+	}
+	
 	private void loadRepositoriesSetting(){
+		
+	    hoge();
+		
 		String file = propertyManager.readValue(PropertyKey.REPOSITORY_DEFINITION);
 		YamlManager ymlMgr = new YamlManager(file);
 		Map<String, Object> data = (Map<String, Object>)ymlMgr.loadYml();
