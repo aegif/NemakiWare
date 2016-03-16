@@ -5,10 +5,16 @@
 	<groupId>jp.aegif.nemaki</groupId>
 	<artifactId>core</artifactId>
 	<packaging>war</packaging>
-	<version>2.3.11</version>
+	<version>${nemakiware.version}</version>
 	<name>core</name>
 	<description>NemakiWare server</description>
 	<url>https://github.com/NemakiWare/NemakiWare</url>
+
+	<parent>
+		<groupId>jp.aegif.nemaki</groupId>
+		<artifactId>nemakiware</artifactId>
+		<version>1.0</version>
+	</parent>
 
 	<properties>
 		<org.springframework.version>4.1.1.RELEASE</org.springframework.version>
@@ -301,9 +307,9 @@
 				<version>2.19.1</version>
 				<configuration>
 					<redirectTestOutputToFile>true</redirectTestOutputToFile>
-			        <includes>
-			        	<include>**/*TestGroup.java</include>
-			    	</includes>
+					<includes>
+						<include>**/*TestGroup.java</include>
+					</includes>
 				</configuration>
 			</plugin>
 
