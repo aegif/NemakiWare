@@ -106,6 +106,8 @@ view.type.id=Type ID
 view.type.create.caption=New Type
 view.type.update.caption=Update Type
 
+view.archive.caption=Archive
+
 view.table.key=Key
 view.table.editable=Editable
 view.table.requred=Required
