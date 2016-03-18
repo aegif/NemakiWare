@@ -37,11 +37,16 @@ import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.util.constant.NodeType;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
 @Path("/repo/{repositoryId}/archive")
 public class ArchiveResource extends ResourceBase {
+	
+	private static final Log log = LogFactory
+            .getLog(ArchiveResource.class);
 
 	private ContentService contentService;
 
@@ -100,6 +105,7 @@ public class ArchiveResource extends ResourceBase {
 		try{
 			contentService.restoreArchive(repositoryId, id);
 		}catch(Exception e){
+			log.error(e, e);
 			status = false;
 			addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_RESTORE);
 		}
