@@ -3,7 +3,7 @@
 @import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition
 @import org.apache.commons.collections.CollectionUtils
 
-@(repositoryId:String)(permissionDefinitions:List[PermissionDefinition] = null)(groupId:String = null)
+@(repositoryId:String)(permissionDefinitions:java.util.List[PermissionDefinition] = null)(groupId:String = null)
 
 @defining("ps-"){prefix =>
 	<!-- javascripts -->
