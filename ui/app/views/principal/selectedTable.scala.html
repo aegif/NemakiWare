@@ -4,8 +4,9 @@
 @import org.apache.commons.collections.CollectionUtils
 @import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition
 @import org.apache.chemistry.opencmis.commons.data.Ace
+@import play.mvc.Http.Context.Implicit
 
-@(title:String)(principals:List[model.Principal]=null)(acl:Map[String, Ace] = null)(permissionDefinitions:List[PermissionDefinition] = null)
+@(title:String)(principals:java.util.List[model.Principal]=null)(acl:java.util.Map[String, Ace] = null)(permissionDefinitions:java.util.List[PermissionDefinition] = null)
 
 @*no more need for contentTemplate frame*@
 @contentTemplate()
@@ -27,7 +28,7 @@
 					<!-- permission definitions -->
 					@if(CollectionUtils.isNotEmpty(permissionDefinitions)){
 						@for(pdf <- permissionDefinitions){
-							<th class="column-permission">@NemakiConfig.getLabel(pdf.getId, lang().language)</th>
+							<th class="column-permission">@NemakiConfig.getLabel(pdf.getId, Implicit.lang().language)</th>
 						}
 						
 						<th class="column-inheritance">@Messages("view.principal.inheritance")</th>
@@ -62,7 +63,7 @@
 			</tbody>
 			<tfoot>
 				<tr>
-					@defining(if(permissionDefinitions == null){4}else{4 + permissionDefinitions.length} + 1){ colspan =>
+					@defining(if(permissionDefinitions == null){4}else{4 + permissionDefinitions.size} + 1){ colspan =>
 					<td colspan="@colspan">
 					}
 						<div class="pagination pagination-centered hide-if-no-paging"></div>

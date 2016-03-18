@@ -3,7 +3,7 @@
 @import util.Util
 @import org.apache.commons.collections.CollectionUtils
 
-@(repositoryId:String)(groups:List[model.Group])
+@(repositoryId:String)(groups:java.util.List[model.Group])
 
 <!DOCTYPE html>
 <html>
@@ -61,8 +61,8 @@
 									<tr>
 										<td>@group.id</td>
 										<td>@group.name</td>
-										<td>@group.users.length</td>
-										<td>@group.groups.length</td>
+										<td>@group.users.size</td>
+										<td>@group.groups.size</td>
 										<td>
 											<button type='button' class='btn btn-default group-detail' group-id='@group.id'><i class="fa fa-wrench"></i>@Messages("view.detail")</button>
 											<button type='button' class='btn btn-default group-delete' group-id='@group.id'><i class="fa fa-trash"></i>@Messages("view.delete")</button>

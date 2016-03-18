@@ -6,13 +6,14 @@
 
 @import org.apache.commons.collections.CollectionUtils
 @import org.apache.chemistry.opencmis.client.api.Property
+@import play.mvc.Http.Context.Implicit
 
 @(property:Property[_])(filter:Boolean = true)
 
 @if(filter){
 	<tr id="@property.getDefinition.getId">
 		<td class="key">
-			@NemakiConfig.getLabel(property.getDefinition.getId, lang().language)
+			@NemakiConfig.getLabel(property.getDefinition.getId, Implicit.lang().language)
 		</td>
 		<td class="editable">
 			@if(Util.isReadWrite(property.getDefinition)){
