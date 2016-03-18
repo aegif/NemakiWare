@@ -1,6 +1,7 @@
 @*{<meta charset="UTF-8" />}*@
 
 @import util._
+@import play.mvc.Http.Context.Implicit
 
 @(repositoryId:String)(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(parentId:String)(activatePreviewTab:Boolean)(user:model.User)
 
@@ -9,7 +10,7 @@
 	<div>
 		<h4>
 			<i class="fa @Util.getIconName(obj)"></i>@obj.getName()
-			@if(Util.isFreezeCopy(obj, session)){<i class="fa fa-lock"></i>}
+			@if(Util.isFreezeCopy(obj, Implicit.session)){<i class="fa fa-lock"></i>}
 			<!-- fav star -->
 			<span class="favorite-toggle">
 			@if(user.favorites.contains(obj.getId)){

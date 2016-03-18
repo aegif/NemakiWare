@@ -5,11 +5,12 @@
 @import util._
 @import org.apache.chemistry.opencmis.client.api.Document
 @import org.apache.chemistry.opencmis.commons.PropertyIds
+@import play.mvc.Http.Context.Implicit
 
 <div class="container tap-pane">
 	<div class="row">
 		<div class="col-sm-12 col-md-12">
-			@if(Util.isFreezeCopy(obj, session)){
+			@if(Util.isFreezeCopy(obj, Implicit.session)){
 				@lockedNotice(obj)
 			}else{
 				@if(Util.convertToDocument(obj).isVersionSeriesCheckedOut()){
