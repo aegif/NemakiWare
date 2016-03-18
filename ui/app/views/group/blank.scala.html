@@ -3,6 +3,7 @@
 @import table._
 @import util.Util
 @import util.NemakiConfig
+@import play.mvc.Http.Context.Implicit
 
 @(repositoryId:String)(group:model.Group)
 
@@ -68,11 +69,11 @@
 
 			//Validation
 			if(!data['groupId']){
-				alert("@NemakiConfig.getLabel("group-id", lang().language) @Messages("view.message.is-required")");
+				alert("@NemakiConfig.getLabel("group-id", Implicit.lang().language) @Messages("view.message.is-required")");
 				return;  //End click event
 			}
 			if(!data['groupName']){
-				alert("@NemakiConfig.getLabel("group-name", lang().language) @Messages("view.message.is-required")");
+				alert("@NemakiConfig.getLabel("group-name", Implicit.lang().language) @Messages("view.message.is-required")");
 				return;  //End click event
 			}
 
