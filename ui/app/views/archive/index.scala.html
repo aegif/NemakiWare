@@ -54,7 +54,21 @@
 	  		</div>
 	  	
 	  	</div>
-		
-		
+	  	
+	  	<script type="text/javascript">
+		  	$(function(){
+			  	$("button.archive-restore").on('click', function(e){
+			  		var archiveId = $(this).attr("archive-id");
+		  			$.ajax(jsRoutes.controllers.Archive.restore("@repositoryId", archiveId))
+		  			.done(function(data){
+		  				location.reload(jsRoutes.controllers.Archive.index("@repositoryId"));
+		  			}).fail(function(data){
+		  				alert('復元に失敗しました');
+		  			}).complete(function(data){
+		  				
+		  			});
+		  		});
+		  	});
+	  	</script>
 	</body>
 </html>
