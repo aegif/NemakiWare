@@ -1,11 +1,8 @@
 package controllers;
 
-
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-
-import org.apache.chemistry.opencmis.client.api.CmisObject;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -16,12 +13,16 @@ import play.libs.ws.WS;
 import play.libs.ws.WSResponse;
 import play.mvc.Controller;
 import play.mvc.Result;
+import util.Util;
 
 public class Archive extends Controller{
+	
+	private static String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
+	
 	public static Result index(String repositoryId) {
 		//List<CmisObject> list = new ArrayList<CmisObject>();
 		
-		Promise<WSResponse> result = WS.url("http://localhost:8080/core/rest/repo/bedroom/archive/index").setAuth("admin", "admin").get();
+		Promise<WSResponse> result = WS.url(getEndpoint(repositoryId) + "index").setAuth("admin", "admin").get();
 		WSResponse response = result.get(5000);
 		JsonNode json = response.asJson();
 		ArrayNode archives =  (ArrayNode) json.get("archives");
@@ -35,5 +36,9 @@ public class Archive extends Controller{
 		
 		return ok(views.html.archive.index.render(repositoryId, list));
 		
+	}
+	
+	private static String getEndpoint(String repositoryId){
+		return coreRestUri + "repo/" + repositoryId + "/archive/";
 	}
 }
