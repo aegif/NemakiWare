@@ -48,6 +48,7 @@ import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.http.Header;
 import org.apache.http.HttpRequest;
 import org.apache.http.HttpResponse;
@@ -78,6 +79,7 @@ import play.mvc.Http.MultipartFormData.FilePart;
 import play.mvc.Http.Request;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import constant.PropertyKey;
 import constant.Token;
@@ -804,5 +806,18 @@ public class Util {
 
 	 public static JsonNode emptyJsonObject(){
 		 return Json.toJson(new HashMap<String, String>());
+	 }
+	 
+	 public static boolean isRestSuccess(JsonNode nemakiApiResult){
+		 if(nemakiApiResult == null || !(nemakiApiResult instanceof ObjectNode)){
+			 return false;
+		 }else{
+			 JsonNode status = nemakiApiResult.get(Token.REST_STATUS);
+			 if(status == null){
+				 return false;
+			 }else{
+				 return Token.REST_SUCCESS.equals(status.textValue());
+			 }
+		 }
 	 }
 }
