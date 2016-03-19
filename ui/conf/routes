@@ -48,6 +48,7 @@ POST 	/repo/:repoId/objects/:id/delete					controllers.Node.delete(repoId:String
 
 # Archive API
 GET		/repo/:repoId/archives								controllers.Archive.index(repoId:String)
+POST	/repo/:repoId/archives/:archiveId/restore						controllers.Archive.restore(repoId:String, archiveId:String)
 
 # User API
 GET     /repo/:repoId/users               					controllers.User.index(repoId:String)
