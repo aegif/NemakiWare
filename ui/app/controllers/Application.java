@@ -73,6 +73,10 @@ public class Application extends Controller{
 		return redirect(routes.Application.login(repositoryId));
 	}
 
+	public static Result error(){
+		return ok(views.html.error.render());
+	}
+	
 	public static Result jsRoutes() {
 		response().setContentType("text/javascript");
 		return ok(
