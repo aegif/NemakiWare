@@ -31,7 +31,7 @@ public class Application extends Controller{
 		session(Token.LOGIN_USER_ID, loginModel.id);
 		session(Token.LOGIN_USER_PASSWORD, loginModel.password);
 		session(Token.LOGIN_USER_IS_ADMIN, String.valueOf(isAdmin(repositoryId, loginModel.id)));
-		session("repositoryId", repositoryId);
+		session(Token.LOGIN_REPOSITORY_ID, repositoryId);
 		session(Token.NEMAKIWARE_VERSION,getVersion(repositoryId));
 		return redirect(routes.Node.index(repositoryId));
 	}
