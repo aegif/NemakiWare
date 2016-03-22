@@ -1,9 +1,16 @@
 package controllers;
 
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import org.apache.commons.lang3.StringUtils;
+
 import constant.Token;
 import play.mvc.Action;
 import play.mvc.Http;
 import play.mvc.Http.Context;
+import play.mvc.Http.Request;
 import play.mvc.Result;
 import play.mvc.Security;
 
@@ -11,12 +18,26 @@ public class Secured extends Security.Authenticator{
 
 	@Override
 	public String getUsername(Context ctx) {
-		return ctx.session().get(Token.LOGIN_USER_ID);
+		Request request = ctx.request();
+		String uri = request.uri();
+		
+		Pattern p = Pattern.compile("^/ui/repo/(.*)/");
+        Matcher m = p.matcher(uri);
+        if(m.find()){
+        	final String repositoryId = m.group(1);
+        	final String loginRepositoryId = ctx.session().get(Token.LOGIN_REPOSITORY_ID);
+        	if(StringUtils.isBlank(loginRepositoryId) || loginRepositoryId.equals(repositoryId)){
+        		return ctx.session().get(Token.LOGIN_USER_ID);
+        	}
+        }
+		
+        //Redirect to login page
+    	return null;
 	}
 
 	@Override
 	public Result onUnauthorized(Context ctx) {
-		String repositoryId = ctx.session().get("repositoryId");
+		String repositoryId = ctx.session().get(Token.LOGIN_REPOSITORY_ID);
 		return redirect(routes.Application.login(repositoryId));
 	}
 	
