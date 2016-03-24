@@ -1,14 +1,11 @@
 package controllers;
 
-import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.commons.lang3.StringUtils;
 
 import constant.Token;
-import play.mvc.Action;
-import play.mvc.Http;
 import play.mvc.Http.Context;
 import play.mvc.Http.Request;
 import play.mvc.Result;
@@ -45,7 +42,7 @@ public class Secured extends Security.Authenticator {
 
 	private String extractRepositoryId(Request request) {
 		String uri = request.uri();
-		Pattern p = Pattern.compile("^/ui/repo/(.*)/");
+		Pattern p = Pattern.compile("^/ui/repo/([^/]*).*");
 		Matcher m = p.matcher(uri);
 		if (m.find()) {
 			return m.group(1);
