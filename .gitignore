@@ -8,3 +8,4 @@ jetty.log
 !.gitkeep
 setup/installer/*/log
 target
+/logs
