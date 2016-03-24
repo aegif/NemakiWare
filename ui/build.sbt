@@ -2,7 +2,7 @@ import com.github.play2war.plugin._
 
 name := """ui"""
 
-version := "2.3.10"
+version := "2.3.11"
 
 lazy val root = (project in file(".")).enablePlugins(PlayJava)
 
@@ -15,7 +15,7 @@ libraryDependencies ++= Seq(
   javaEbean,
   cache,
   javaWs,
-	"jp.aegif.nemakiware" % "nemakiware-common" % "2.3.6",
+	"jp.aegif.nemakiware" % "nemakiware-common" % "2.3.10",
   "commons-collections" % "commons-collections" % "3.2.1",
   "org.webjars" %% "webjars-play" % "2.3.0",
   "org.webjars" % "bootstrap" % "3.2.0",

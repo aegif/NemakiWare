@@ -66,7 +66,7 @@ java -cp %SCRIPT_HOME%\install-util\target\install-util.jar jp.aegif.nemaki.inst
 
 rem Prepare WAR
 call mvn -f %SOURCE_HOME%\core clean
-call mvn -f %SOURCE_HOME%\core package %PROFILE_PRODUCT%
+call mvn -f %SOURCE_HOME%\core package %PROFILE_PRODUCT% -Dmaven.test.skip=true
 call mvn -f %SOURCE_HOME%\solr clean
 call mvn -f %SOURCE_HOME%\solr package %PROFILE_PRODUCT%
 cd /d %SOURCE_HOME%\ui

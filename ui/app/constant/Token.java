@@ -4,6 +4,7 @@ public interface Token {
 	final String LOGIN_USER_ID = "loginUserId";
 	final String LOGIN_USER_PASSWORD = "loginUserPassword";
 	final String LOGIN_USER_IS_ADMIN = "loginUserIsAdmin";
+	final String LOGIN_REPOSITORY_ID = "loginRepositoryId";
 
 	final String NEMAKIWARE_VERSION = "NemakiWareProductVersion";
 

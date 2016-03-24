@@ -5,7 +5,7 @@
 	<groupId>jp.aegif.nemaki</groupId>
 	<artifactId>core</artifactId>
 	<packaging>war</packaging>
-	<version>2.3.10</version>
+	<version>2.3.11</version>
 	<name>core</name>
 	<description>NemakiWare server</description>
 	<url>https://github.com/NemakiWare/NemakiWare</url>
@@ -63,6 +63,24 @@
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-server-bindings</artifactId>
+			<version>${org.apache.chemistry.opencmis.version}</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.apache.chemistry.opencmis</groupId>
+			<artifactId>chemistry-opencmis-client-bindings</artifactId>
+			<version>${org.apache.chemistry.opencmis.version}</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.apache.chemistry.opencmis</groupId>
+			<artifactId>chemistry-opencmis-test-util</artifactId>
+			<version>${org.apache.chemistry.opencmis.version}</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.apache.chemistry.opencmis</groupId>
+			<artifactId>chemistry-opencmis-test-tck</artifactId>
 			<version>${org.apache.chemistry.opencmis.version}</version>
 		</dependency>
 
@@ -260,7 +278,7 @@
 		<dependency>
 			<groupId>jp.aegif.nemakiware</groupId>
 			<artifactId>nemakiware-common</artifactId>
-			<version>2.3.6</version>
+			<version>2.3.10</version>
 		</dependency>
 	</dependencies>
 
@@ -274,6 +292,18 @@
 					<encoding>UTF-8</encoding>
 					<source>1.7</source>
 					<target>1.7</target>
+				</configuration>
+			</plugin>
+
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<version>2.19.1</version>
+				<configuration>
+					<redirectTestOutputToFile>true</redirectTestOutputToFile>
+			        <includes>
+			        	<include>**/*TestGroup.java</include>
+			    	</includes>
 				</configuration>
 			</plugin>
 
@@ -297,9 +327,32 @@
 						<scanTarget>src/main/webapp</scanTarget>
 					</scanTargets>
 				</configuration>
+
+				<executions>
+					<execution>
+						<id>start-jetty</id>
+						<phase>test-compile</phase>
+						<goals>
+							<goal>run</goal>
+						</goals>
+						<configuration>
+							<skip>${maven.test.skip}</skip>
+							<daemon>true</daemon>
+						</configuration>
+					</execution>
+					<execution>
+						<id>stop-jetty</id>
+						<phase>test</phase>
+						<goals>
+							<goal>stop</goal>
+						</goals>
+						<configuration>
+							<skip>${maven.test.skip}</skip>
+						</configuration>
+					</execution>
+				</executions>
+
 			</plugin>
-
-
 		</plugins>
 	</build>
 
@@ -316,19 +369,19 @@
 		<profile>
 			<id>product</id>
 			<properties>
-				<maven.test.skip>true</maven.test.skip>
+				<maven.test.skip>false</maven.test.skip>
 			</properties>
 
 			<build>
 				<plugins>
 					<plugin>
-					  <groupId>org.apache.maven.plugins</groupId>
-					  <artifactId>maven-compiler-plugin</artifactId>
-					  <configuration>
-					    <excludes>
-					      <exclude>jp/aegif/nemaki/development/**/*.*</exclude>
-					    </excludes>
-					  </configuration>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-compiler-plugin</artifactId>
+						<configuration>
+							<excludes>
+								<exclude>jp/aegif/nemaki/development/**/*.*</exclude>
+							</excludes>
+						</configuration>
 					</plugin>
 				</plugins>
 
