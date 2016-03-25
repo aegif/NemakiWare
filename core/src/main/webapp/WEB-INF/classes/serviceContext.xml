@@ -648,4 +648,9 @@
        		<ref bean="TokenService" />
         </property>
     </bean>
+    <bean id="folderSizeResource" class="jp.aegif.nemaki.rest.FolderSizeResource">
+    	<property name="solrUtil">
+    		<ref bean="solrUtil" />
+    	</property>
+    </bean>
 </beans>
