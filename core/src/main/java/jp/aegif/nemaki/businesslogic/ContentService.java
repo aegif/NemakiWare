@@ -685,5 +685,4 @@ public interface ContentService {
 	 */
 	String writeChangeEvent(CallContext callContext, String repositoryId, Content content,
 			Acl acl, ChangeType changeType);
-
 }
