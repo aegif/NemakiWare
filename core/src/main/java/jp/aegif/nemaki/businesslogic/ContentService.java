@@ -650,4 +650,11 @@ public interface ContentService {
 	 * @param archiveId
 	 */
 	void restoreArchive(String repositoryId, String archiveId) throws ParentNoLongerExistException;
+	
+	/**
+	 * Destroy an archive from database 
+	 * @param repositoryId
+	 * @param archiveId
+	 */
+	public void destroyArchive(String repositoryId, String archiveId);
 }
