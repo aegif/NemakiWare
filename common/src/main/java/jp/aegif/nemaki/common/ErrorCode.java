@@ -24,5 +24,6 @@ public class ErrorCode {
 	public 	static final String ERR_GET_ARCHIVES = "failToGetArchives";
 	public 	static final String ERR_RESTORE = "failToRestore";
 	public 	static final String ERR_RESTORE_BECAUSE_PARENT_NO_LONGER_EXISTS = "failToRestoreBecauseParentNoLongerExists";
+	public 	static final String ERR_DESTROY = "failToDestroy";
 	public 	static final String ERR_ONLY_ALLOWED_FOR_ADMIN = "onlyAllowedForAdmin";
 }
