@@ -62,8 +62,8 @@
 		  			$.ajax(jsRoutes.controllers.Archive.restore("@repositoryId", archiveId))
 		  			.done(function(data){
 		  				location.reload(jsRoutes.controllers.Archive.index("@repositoryId"));
-		  			}).fail(function(data){
-		  				alert('復元に失敗しました');
+		  			}).fail(function(xhr, stat, err){
+		  				alert(xhr.responseText);
 		  			}).complete(function(data){
 		  				
 		  			});

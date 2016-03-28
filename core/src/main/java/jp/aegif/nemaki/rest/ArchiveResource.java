@@ -35,6 +35,7 @@ import javax.ws.rs.core.MediaType;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.model.Archive;
+import jp.aegif.nemaki.model.exception.ParentNoLongerExistException;
 import jp.aegif.nemaki.util.constant.NodeType;
 
 import org.apache.commons.logging.Log;
@@ -104,10 +105,10 @@ public class ArchiveResource extends ResourceBase {
 
 		try{
 			contentService.restoreArchive(repositoryId, id);
-		}catch(Exception e){
+		}catch(ParentNoLongerExistException e){
 			log.error(e, e);
 			status = false;
-			addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_RESTORE);
+			addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_RESTORE_BECAUSE_PARENT_NO_LONGER_EXISTS);
 		}
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
