@@ -55,6 +55,7 @@ import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
+import jp.aegif.nemaki.model.exception.ParentNoLongerExistException;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.CmisPermission;
@@ -1642,7 +1643,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public void restoreArchive(String repositoryId, String archiveId) {
+	public void restoreArchive(String repositoryId, String archiveId) throws ParentNoLongerExistException{
 		Archive archive = contentDaoService.getArchive(repositoryId, archiveId);
 		if (archive == null) {
 			log.error("Archive does not exist!");
@@ -1652,7 +1653,7 @@ public class ContentServiceImpl implements ContentService {
 		// Check whether the destination does still extist.
 		if (!restorationTargetExists(repositoryId, archive)) {
 			log.error("The destination of the restoration doesn't exist");
-			return;
+			throw new ParentNoLongerExistException();
 		}
 
 		CallContextImpl dummyContext = new CallContextImpl(null, CmisVersion.CMIS_1_1, null, null, null, null, null, null);
@@ -1697,7 +1698,7 @@ public class ContentServiceImpl implements ContentService {
 		return getDocument(repositoryId, archive.getOriginalId());
 	}
 
-	private Folder restoreFolder(String repositoryId, Archive archive) {
+	private Folder restoreFolder(String repositoryId, Archive archive) throws ParentNoLongerExistException{
 		contentDaoService.restoreContent(repositoryId, archive);
 
 		// Restore direct children

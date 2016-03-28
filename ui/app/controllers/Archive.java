@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import play.mvc.Controller;
 import play.mvc.Result;
+import util.ErrorMessage;
 import util.Util;
 
 public class Archive extends Controller{
@@ -36,7 +37,8 @@ public class Archive extends Controller{
 		if(Util.isRestSuccess(json)){
 			return ok();
 		}else{
-			return internalServerError();
+			String errorCode = json.get("error").get(0).get("archive").asText();
+			return internalServerError(ErrorMessage.getMessage(errorCode));
 		}
 	}
 	
