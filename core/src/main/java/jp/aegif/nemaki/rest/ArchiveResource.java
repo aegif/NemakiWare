@@ -26,6 +26,7 @@ import java.text.SimpleDateFormat;
 import java.util.GregorianCalendar;
 import java.util.List;
 
+import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
 import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
@@ -113,7 +114,25 @@ public class ArchiveResource extends ResourceBase {
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
 	}
+	
+	@DELETE
+	@Path("/destroy/{id}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public String destroy(@PathParam("repositoryId") String repositoryId, @PathParam("id") String id){
+		boolean status = true;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
 
+		try{
+			contentService.destroyArchive(repositoryId, id);
+		}catch(Exception e){
+			log.error(e, e);
+			status = false;
+			addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_DESTROY);
+		}
+		result = makeResult(status, result, errMsg);
+		return result.toJSONString();
+	}
 
 	@SuppressWarnings("unchecked")
 	private JSONObject buildArchiveJson(String objectId, String type, String name, String parentId, Boolean deletedWithParent, GregorianCalendar created, String creator){

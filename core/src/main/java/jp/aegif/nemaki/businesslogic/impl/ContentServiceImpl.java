@@ -1826,6 +1826,53 @@ public class ContentServiceImpl implements ContentService {
 			return true;
 		}
 	}
+	
+	public void destroyArchive(String repositoryId, String archiveId){
+		Archive archive = contentDaoService.getArchive(repositoryId, archiveId);
+		if (archive == null) {
+			log.error("Archive does not exist!");
+			return;
+		}
+		
+		if (archive.isFolder()) {
+			destroyFolder(repositoryId, archive);
+		} else if (archive.isDocument()) {
+			destoryDocument(repositoryId, archive);
+		} else if (archive.isAttachment()) {
+			log.error("Attachment can't be restored alone");
+		} else {
+			log.error("Only document or folder is supported for restoration");
+		}
+	}
+	
+	private void destroyFolder(String repositoryId, Archive archive){
+		// Restore direct children
+		List<Archive> children = contentDaoService.getChildArchives(repositoryId, archive);
+		if (CollectionUtils.isNotEmpty(children)) {
+			for (Archive child : children) {
+				destroyArchive(repositoryId, child.getId());
+			}
+		}
+		contentDaoService.deleteArchive(repositoryId, archive.getId());
+	}
+	
+	
+	private void destoryDocument(String repositoryId, Archive archive){
+		try {
+			// Get archives of the same version series
+			List<Archive> versions = contentDaoService
+					.getArchivesOfVersionSeries(repositoryId, archive.getVersionSeriesId());
+			for (Archive version : versions) {
+				// Restore its attachment
+				Archive attachmentArchive = contentDaoService.getAttachmentArchive(repositoryId, version);
+				// delete archives
+				contentDaoService.deleteArchive(repositoryId, version.getId());
+				contentDaoService.deleteArchive(repositoryId, attachmentArchive.getId());
+			}
+		} catch (Exception e) {
+			log.error("fail to restore a document", e);
+		}
+	}
 
 	// ///////////////////////////////////////
 	// Utility
