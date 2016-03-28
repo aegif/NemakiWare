@@ -42,6 +42,16 @@ public class Archive extends Controller{
 		}
 	}
 	
+	public static Result destroy(String repositoryId, String archiveId){
+		JsonNode json = Util.deleteJsonResponse(session(), getEndpoint(repositoryId) + "destroy/" + archiveId);
+		if(Util.isRestSuccess(json)){
+			return ok();
+		}else{
+			String errorCode = json.get("error").get(0).get("archive").asText();
+			return internalServerError(ErrorMessage.getMessage(errorCode));
+		}
+	}
+	
 	private static String getEndpoint(String repositoryId){
 		return coreRestUri + "repo/" + repositoryId + "/archive/";
 	}
