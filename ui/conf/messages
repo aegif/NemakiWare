@@ -138,3 +138,4 @@ view.message.password-change.is-same=New passwords should be same!
 view.message.password-change.wrong-old-password=Current password is wrong!
 view.message.restore.failure=Failed to restore
 view.message.parent-no-longer-exists=Cannot restore the archive because parent folder no longer exists!
+view.message.destroy.failure=Failed to destroy

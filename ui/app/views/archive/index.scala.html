@@ -35,7 +35,7 @@
 										<td>@archive.name</td>
 										<td>
 											<button type='button' class='btn btn-default archive-restore' archive-id='@archive.id'><i class="fa fa-wrench"></i>復元</button>
-											<button type='button' class='btn btn-default archive-delete' user-id='@archive.id'><i class="fa fa-trash"></i>@Messages("view.delete")</button>
+											<button type='button' class='btn btn-default archive-destroy' archive-id='@archive.id'><i class="fa fa-trash"></i>@Messages("view.delete")</button>
 										</td>
 									</tr>
 								}
@@ -60,6 +60,18 @@
 			  	$("button.archive-restore").on('click', function(e){
 			  		var archiveId = $(this).attr("archive-id");
 		  			$.ajax(jsRoutes.controllers.Archive.restore("@repositoryId", archiveId))
+		  			.done(function(data){
+		  				location.reload(jsRoutes.controllers.Archive.index("@repositoryId"));
+		  			}).fail(function(xhr, stat, err){
+		  				alert(xhr.responseText);
+		  			}).complete(function(data){
+		  				
+		  			});
+		  		});
+		  		
+		  		$("button.archive-destroy").on('click', function(e){
+			  		var archiveId = $(this).attr("archive-id");
+		  			$.ajax(jsRoutes.controllers.Archive.destroy("@repositoryId", archiveId))
 		  			.done(function(data){
 		  				location.reload(jsRoutes.controllers.Archive.index("@repositoryId"));
 		  			}).fail(function(xhr, stat, err){
