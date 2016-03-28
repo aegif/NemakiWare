@@ -135,4 +135,5 @@ view.message.is-required=が必要です！
 
 view.message.password-change.is-same=新しいパスワードは一致する必要があります！
 view.message.password-change.wrong-old-password=現在のパスワードが間違っています
-
+view.message.restore.failure=復元に失敗しました
+view.message.parent-no-longer-exists=親フォルダが既に削除されているため復元できません
