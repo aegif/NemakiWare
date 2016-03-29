@@ -78,7 +78,7 @@ public class ArchiveResource extends ResourceBase {
 					if (!ilv) continue;
 				}
 
-				JSONObject o = buildArchiveJson(a.getId(), a.getType(), a.getName(), a.getParentId(), a.isDeletedWithParent(), a.getCreated(), a.getCreator());
+				JSONObject o = buildArchiveJson(a);
 
 				if(a.isDocument()){
 					o.put("mimeType", a.getMimeType());
@@ -134,17 +134,23 @@ public class ArchiveResource extends ResourceBase {
 		return result.toJSONString();
 	}
 
-	@SuppressWarnings("unchecked")
-	private JSONObject buildArchiveJson(String objectId, String type, String name, String parentId, Boolean deletedWithParent, GregorianCalendar created, String creator){
+	@SuppressWarnings({ "unchecked" })
+	private JSONObject buildArchiveJson(Archive archive){
+		
 		JSONObject archiveJson = new JSONObject();
-		archiveJson.put("id", objectId);
-		archiveJson.put("type", type);
-		archiveJson.put("name", name);
-		archiveJson.put("parentId", parentId);
-		archiveJson.put("isDeletedWithParent", deletedWithParent);
-		SimpleDateFormat sdf = new SimpleDateFormat(DATE_FORMAT);
-		archiveJson.put("created", sdf.format(created.getTime()));
-		archiveJson.put("creator", creator);
+		archiveJson.put("id", archive.getId());
+		archiveJson.put("type", archive.getType());
+		archiveJson.put("name", archive.getName());
+		archiveJson.put("originalId", archive.getOriginalId());
+		archiveJson.put("parentId", archive.getParentId());
+		archiveJson.put("isDeletedWithParent", archive.isDeletedWithParent());
+		try{
+			String _created = new SimpleDateFormat(DATE_FORMAT).format(archive.getCreated().getTime());
+			archiveJson.put("created", _created);
+		}catch(Exception e){
+			log.warn(String.format("Archive(%s) 'created' property is broken.", archive.getId()));
+		}
+		archiveJson.put("creator", archive.getCreator());
 		return archiveJson;
 	}
 }
