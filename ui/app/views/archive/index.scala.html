@@ -2,6 +2,7 @@
 
 @import node.list
 @import org.apache.commons.collections.CollectionUtils
+@import util.Util
 
 @(repositoryId:String)(archives:java.util.List[model.Archive])
 
@@ -20,36 +21,47 @@
 	  	
 	  		<div class="row">
 	  			<div class="col-xs-12">
-	  				<table class="footable" id="archive-table" data-sort="true">
-							<thead>
+	  				<table class="footable footable-loaded" id="archive-table" data-sort="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
+						<thead>
+							<tr>
+								<th class="col-xs-2 footable-sortable footable-sorted" data-class="expand" data-sort-initial="true">名前</th>
+								<th class="col-xs-2 footable-sortable" data-class="expand">オリジナルID</th>
+								<th class="col-xs-1 footable-sortable" data-class="expand">削除したユーザ</th>
+								<th class="col-xs-2 footable-sortable" data-class="expand">削除時刻</th>
+								<th class="col-xs-2 footable-sortable" data-sort-ignore="true">@Messages("view.action")</th>
+							</tr>
+						</thead>
+						<tbody>
+							@for(archive <- archives; if(CollectionUtils.isNotEmpty(archives))){
 								<tr>
-									<th data-sort-initial="true">アーカイブID</th>
-									<th>名前</th>
-									<th data-sort-ignore="true" class="col-xs-2">@Messages("view.action")</th>
-								</tr>
-							</thead>
-							<tbody>
-								@for(archive <- archives; if(CollectionUtils.isNotEmpty(archives))){
-									<tr>
-										<td>@archive.id</td>
-										<td>@archive.name</td>
-										<td>
-											<button type='button' class='btn btn-default archive-restore' archive-id='@archive.id'><i class="fa fa-wrench"></i>復元</button>
-											<button type='button' class='btn btn-default archive-destroy' archive-id='@archive.id'><i class="fa fa-trash"></i>@Messages("view.delete")</button>
-										</td>
-									</tr>
-								}
-							</tbody>
-							<tfoot>
-								<tr>
-									@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 2){colSpan =>
-										<td colspan="@colSpan">
-									}
-										<div class="pagination pagination-centered hide-if-no-paging"></div>
+									<td>
+										@archive.baseType match {
+											case "cmis:folder" => {<i class="fa fa-folder-o"></i>}
+											case "cmis:document" => {<i class="fa fa-file-o"></i>}
+											case _ => {}
+										}
+										@archive.name
+									</td>
+									<td>@archive.originalId</td>
+									<td>@archive.creator</td>
+									<td>@archive.created</td>
+									<td>
+										<button type='button' class='btn btn-default archive-restore' archive-id='@archive.id'><i class="fa fa-wrench"></i>復元</button>
+										<button type='button' class='btn btn-default archive-destroy' archive-id='@archive.id'><i class="fa fa-trash"></i>@Messages("view.delete")</button>
 									</td>
 								</tr>
-							</tfoot>
-						</table>
+							}
+						</tbody>
+						<tfoot>
+							<tr>
+								@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 2){colSpan =>
+									<td colspan="@colSpan">
+								}
+									<div class="pagination pagination-centered hide-if-no-paging"></div>
+								</td>
+							</tr>
+						</tfoot>
+					</table>
 	  			</div>
 	  		</div>
 	  	
