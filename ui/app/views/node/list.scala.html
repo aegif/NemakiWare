@@ -45,7 +45,7 @@
 
 					}
 				}
-					<i class="fa @Util.getIconName(obj)"></i><div class="obj-name" objectId="@obj.getId">@obj.getName()</div>
+					<i class="fa @Util.getIconName(obj)"></i><span class="obj-name" objectId="@obj.getId">@obj.getName()</span>
 				</a>
 			</td>
 			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
@@ -53,11 +53,17 @@
 			}
 			<td>
 				<div class="btn-group">
-					<button type="button" class="btn btn-default show-detail" cmis-id="@obj.getId()"><i class="fa fa-wrench"></i>@Messages("view.detail")</button>
+					<button type="button" class="btn btn-default show-detail" cmis-id="@obj.getId()">
+						<i class="fa fa-wrench" ></i><div class="tooltips">@Messages("view.detail")</div>
+					</button>
 					@if(Util.hasContentStream(obj)){
-						<button type="button" class="btn btn-default show-preview" cmis-id="@obj.getId()"><i class="fa fa-file-pdf-o"></i>@Messages("view.node.preview")</button>
+						<button type="button" class="btn btn-default show-preview" cmis-id="@obj.getId()">
+							<i class="fa fa-file-pdf-o"></i><div class="tooltips">@Messages("view.node.preview")</div>
+						</button>
 					}
-					<button type="button" class="btn btn-default delete" cmis-id="@obj.getId()"><i class="fa fa-trash"></i>@Messages("view.delete")</button>
+					<button type="button" class="btn btn-default delete" cmis-id="@obj.getId()">
+						<i class="fa fa-trash"></i><div class="tooltips">@Messages("view.delete")</div>
+					</button>
 				</div>
 			</td>
 		</tr>
