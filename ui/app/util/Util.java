@@ -150,6 +150,10 @@ public class Util {
 		return obj.getBaseTypeId().equals(BaseTypeId.CMIS_DOCUMENT);
 	}
 
+	public static boolean isFolder(CmisObject obj) {
+		return obj.getBaseTypeId().equals(BaseTypeId.CMIS_FOLDER);
+	}
+
 	public static boolean hasContentStream(CmisObject object){
 		if(object instanceof Document){
 			Document doc = (Document)object;

@@ -15,7 +15,7 @@ public class NemakiConfig {
 	public static String getValue(String key){
 		String originalValue = Play.application().configuration().getString(key);
 		List<String> files = Play.application().configuration().getStringList(PropertyKey.PROPERTY_FILES);
-		
+
 		if(CollectionUtils.isEmpty(files)){
 			return originalValue;
 		}else{
@@ -33,7 +33,7 @@ public class NemakiConfig {
 					e.printStackTrace();
 				}
 			}
-			
+
 			//Overwrite value
 			String value = null;
 			for(Properties config : list){
@@ -42,18 +42,18 @@ public class NemakiConfig {
 					break;
 				}
 			}
-			
+
 			if(value == null){
 				value = originalValue;
 			}
-			
+
 			return value;
 		}
 	}
-	
+
 	public static List<String> getValues(String key){
 		List<String> result = new ArrayList<String>();
-		
+
 		String value = getValue(key);
 		if(StringUtils.isNotEmpty(value)){
 			String[] values = value.split(",");
@@ -61,13 +61,13 @@ public class NemakiConfig {
 				result.add(v.trim());
 			}
 		}
-		
+
 		return result;
 	}
-	
+
 	public static String getLabel(String propertyId, String language){
 		String _propertyId = propertyId.replaceAll(":", "-");
-		
+
 		String v = getValue("label-" + _propertyId + "_" + language);
 		if(StringUtils.isEmpty(v)){
 			v = getValue("label-" + _propertyId);
@@ -78,6 +78,6 @@ public class NemakiConfig {
 			return v;
 		}
 	}
-	
-	
+
+
 }
