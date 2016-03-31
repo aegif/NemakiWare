@@ -25,14 +25,14 @@
 					<h4><i class="fa fa-folder"></i>@Messages("view.node.folder.create")</h4>
 				}
 			</div>
-			
+
 			<!-- submit button -->
 			<div class="row" style="margin-bottom:15px">
 				<div class="col-sm-5">
 					@saveButton("object-create")
 				</div>
 			</div>
-			
+
 			<!-- ObjectType -->
 			<div class="row" style="margin-bottom: 15px">
 				<div class="col-sm-5">
@@ -40,14 +40,14 @@
 					@objectType.getId
 				</div>
 			</div>
-			
+
 			<!-- file input -->
 			<div class="row" style="margin-bottom: 15px">
 				<div class="col-sm-8">
 					<div>
 						<h4>@Messages("view.node.file")</h4>
 					</div>
-					
+
 					@objectType match{
 						case docObjectType:DocumentTypeDefinition =>{
 							@if(docObjectType.getContentStreamAllowed == ContentStreamAllowed.NOTALLOWED){
@@ -57,13 +57,13 @@
 									id="file" />
 							}
 						}
-						
+
 						case _ => {
 						}
 					}
 				</div>
 			</div>
-			
+
 			<!-- property table -->
 			<div class="row">
 				<div class="col-sm-8">
@@ -76,8 +76,8 @@
 					<hr/>
 				</div>
 			</div>
-			
-			
+
+
 		}
 	</div>
 
@@ -108,12 +108,12 @@
 						if(!inputVal){
 							alert("@NemakiConfig.getLabel(p.getId, lang().language) @Messages("view.message.is-required")");
 							return;  //End click event
-						}	
+						}
 
 					}
-					
+
 					//Add value
-					formData.append("@p.getId", inputVal);	
+					formData.append("@p.getId", inputVal);
 				}
 			}
 
@@ -124,22 +124,22 @@
 						window.alert("@Messages("view.node.validate.file")");
 						return;
 					}
-					
-					formData.append('file', document.getElementById("file").files[0]);	
+
+					formData.append('file', document.getElementById("file").files[0]);
 				}
 			}
-			
+
 			formData.append("cmis:parentId", '@parentId');
 			formData.append("cmis:objectTypeId", '@objectType.getId');
 
-			
+
 			//Check duplicate
 			var duplicate = checkDuplicateOnUpdate(editedValue("#cmis:name"), "");
 			if(duplicate){
 				window.alert("@Messages("view.node.duplicate.alert.rename")");
 				return;
 			}
-			
+
 			//Ajax call
 			$(function(){
 				$.blockUI({message:"@Messages("view.message.please.wait")"});
@@ -161,7 +161,7 @@
    					}
 				});
 			 });
-			
+
 			//duplicate name check
 			function checkDuplicateOnUpdate(newName, oldName){
 				//Read all names in the folder
@@ -170,11 +170,11 @@
 				list.map(function() {
 					names.push($(this).text());
 				});
-				
+
 				return (newName != oldName && $.inArray(newName, names) >= 0);
 			}
-			
+
 		});
-		
+
 	</script>
 }
