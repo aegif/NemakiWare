@@ -76,7 +76,7 @@ public class Application extends Controller{
 	public static Result error(){
 		return ok(views.html.error.render());
 	}
-	
+
 	public static Result jsRoutes() {
 		response().setContentType("text/javascript");
 		return ok(
@@ -85,6 +85,11 @@ public class Application extends Controller{
 				controllers.routes.javascript.Node.getAce(),
 				controllers.routes.javascript.Node.update(),
 				controllers.routes.javascript.Node.delete(),
+				controllers.routes.javascript.Node.deleteByBatch(),
+				controllers.routes.javascript.Node.checkOut(),
+				controllers.routes.javascript.Node.checkOutByBatch(),
+				controllers.routes.javascript.Node.cancelCheckOut(),
+				controllers.routes.javascript.Node.cancelCheckOutByBatch(),
 
 				controllers.routes.javascript.Type.showBlank(),
 				controllers.routes.javascript.Type.edit(),

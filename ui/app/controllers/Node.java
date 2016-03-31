@@ -1,6 +1,7 @@
 package controllers;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.text.MessageFormat;
@@ -77,11 +78,11 @@ public class Node extends Controller {
 	}
 
 	public static Result index(String repositoryId) {
-		try{
+		try {
 			Session session = getCmisSession(repositoryId);
 			Folder root = session.getRootFolder();
 			return showChildren(repositoryId, root.getId());
-		}catch(Exception ex){
+		} catch (Exception ex) {
 			CmisSessions.disconnect(repositoryId, session());
 			return redirect(routes.Application.login(repositoryId));
 		}
@@ -381,8 +382,8 @@ public class Node extends Controller {
 			}
 		}
 
-		//for IE
-		//ResponseUtil.setNoCache(response());
+		// for IE
+		// ResponseUtil.setNoCache(response());
 		return ok(views.html.node.permission.render(repositoryId, obj, members, permissionDefs));
 	}
 
@@ -709,87 +710,139 @@ public class Node extends Controller {
 		return redirectToParent(repositoryId, input);
 	}
 
+
 	public static Result delete(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
+		CmisObject cmisObject = session.getObject(id);
 
-		CmisObject object = session.getObject(id);
-		if (BaseTypeId.CMIS_FOLDER == object.getBaseTypeId()) {
-			Folder folder = (Folder) object;
+		 delete(cmisObject, session);
+		 return ok();
+	}
+
+
+	public static Result deleteByBatch(String repositoryId,  List<String>ids) {
+		Session session = getCmisSession(repositoryId);
+		for (String id : ids) {
+			CmisObject cmisObject = session.getObject(id);
+			delete(cmisObject, session);
+		}
+		return ok();
+	}
+
+	private static void delete(CmisObject cmisObject, Session session) {
+		if (Util.isFolder(cmisObject)) {
+			Folder folder = (Folder) cmisObject;
 			folder.deleteTree(true, null, true);
 		} else {
-			session.delete(new ObjectIdImpl(id));
+			session.delete(new ObjectIdImpl(cmisObject.getId()));
 		}
-
-		return ok();
 	}
 
 	public static Result checkOut(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
-		CmisObject o = session.getObject(id);
-
-		DynamicForm input = Form.form();
-		input = input.bindFromRequest();
-
-		if (!Util.isDocument(o)) {
-			// TODO error
-		}
-
-		Document doc = (Document) o;
-
-		// Check if checkout is possible
-		if (doc.isVersionSeriesCheckedOut()) {
-			// TODO error
-			System.out.println("already checked out");
-		} else {
-			// Check out
-			doc.checkOut();
-
-		}
-
+		CmisObject cmisObject = session.getObject(id);
+		checkOut(cmisObject);
 		return ok();
+	}
+
+	public static Result checkOutByBatch(String repositoryId, List<String> ids) {
+		Session session = getCmisSession(repositoryId);
+		for (String id : ids) {
+			CmisObject cmisObject = session.getObject(id);
+			checkOut(cmisObject);
+		}
+		return ok();
+	}
+
+	private static void checkOut(CmisObject cmisObject) {
+		if (Util.isDocument(cmisObject)) {
+			Document doc = (Document) cmisObject;
+			// Check if checkout is possible
+			if (doc.isVersionSeriesCheckedOut()) {
+				// Do nothing
+			} else {
+				doc.checkOut();
+			}
+		}else if (Util.isFolder(cmisObject)) {
+				Folder dir = (Folder) cmisObject;
+				for (CmisObject childNode : dir.getChildren()) {
+					checkOut(childNode);
+				}
+		}else{
+			 // no-op
+		}
+
 	}
 
 	public static Result cancelCheckOut(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
-		CmisObject o = session.getObject(id);
+		CmisObject cmisObject = session.getObject(id);
 
-		if (!Util.isDocument(o)) {
-			// TODO error
-		}
-
-		Document doc = (Document) o;
-		doc.cancelCheckOut();
+		cancelCheckOut(cmisObject);
 
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
+
 		return redirectToParent(repositoryId, input);
 	}
 
-	public static Result checkIn(String repositoryId, String id) {
+	public static Result cancelCheckOutByBatch(String repositoryId, List<String> ids) {
 		Session session = getCmisSession(repositoryId);
-		CmisObject obj = session.getObject(id);
+
+		for(String id: ids){
+			CmisObject cmisObject = session.getObject(id);
+
+			cancelCheckOut(cmisObject);
+		}
 
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
-		MultipartFormData body = request().body().asMultipartFormData();
-
-		// Files
-		List<FilePart> files = body.getFiles();
-		if (files.isEmpty()) {
-			// TODO error
-		}
-		FilePart file = files.get(0);
-		Document doc = (Document) obj;
-		ContentStream cs = Util.convertFileToContentStream(session, file);
-
-		// Comment
-		String checkinComment = Util.getFormData(input, PropertyIds.CHECKIN_COMMENT);
-
-		// Execute
-		Map<String, Object> param = new HashMap<String, Object>();
-		doc.checkIn(true, param, cs, checkinComment);
 
 		return redirectToParent(repositoryId, input);
+	}
+
+	public static void cancelCheckOut(CmisObject cmisObject) {
+		if (Util.isDocument(cmisObject)) {
+			Document doc = (Document) cmisObject;
+			doc.cancelCheckOut();
+		} else if (Util.isFolder(cmisObject)) {
+			Folder dir = (Folder) cmisObject;
+			for (CmisObject childNode : dir.getChildren()) {
+				cancelCheckOut(childNode);
+			}
+		} else {
+			 // no-op
+		}
+	}
+
+	public static Result checkIn(String repositoryId, String id) throws FileNotFoundException {
+		Session session = getCmisSession(repositoryId);
+
+		// Comment
+		DynamicForm input = Form.form();
+		input = input.bindFromRequest();
+		String checkinComment = Util.getFormData(input, PropertyIds.CHECKIN_COMMENT);
+
+		// File
+		MultipartFormData body = request().body().asMultipartFormData();
+		List<FilePart> files = body.getFiles();
+		if (files.isEmpty()) {
+			throw new FileNotFoundException();
+		}
+		FilePart file = files.get(0);
+
+		CmisObject cmisObject = session.getObject(id);
+		checkIn(cmisObject, checkinComment, file, session);
+
+		return redirectToParent(repositoryId, input);
+	}
+
+	private static void checkIn(CmisObject obj, String checkinComment, FilePart file, Session session)
+			throws FileNotFoundException {
+		Document doc = (Document) obj;
+		Map<String, Object> param = new HashMap<String, Object>();
+		ContentStream cs = Util.convertFileToContentStream(session, file);
+		doc.checkIn(true, param, cs, checkinComment);
 	}
 
 	private static Principal getPrincipal(String repositoryId, String principalId, String anyone, String anonymous) {
@@ -815,7 +868,7 @@ public class Node extends Controller {
 		}
 
 		// group
-		JsonNode resultGroup = Util.getJsonResponse(session(), coreRestUri +"group/show/" + principalId);
+		JsonNode resultGroup = Util.getJsonResponse(session(), coreRestUri + "group/show/" + principalId);
 		// TODO check status
 		JsonNode group = resultGroup.get("group");
 		if (group != null) {
