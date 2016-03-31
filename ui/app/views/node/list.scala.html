@@ -16,16 +16,18 @@
 <table class="footable" id="objects-table" data-sort="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
 	<thead>
 		<tr>
-			<th data-class="expand" data-sort-initial="true">@NemakiConfig.getLabel("cmis:name", Implicit.lang().language)</th>
+			<th data-sort-ignore="true"   class="content-size"></th>
+			<th data-class="expand" data-sort-initial="true">@NemakiConfig.getLabel("cmis:name", lang().language)</th>
 			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
 				<th class="content-size" data-class="expand">@NemakiConfig.getLabel(column, Implicit.lang().language)</th>
 			}
-			<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action")</th>
+			<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action") </th>
 		</tr>
 	</thead>
 	<tbody>
 	@for(obj <- objects){
 		<tr>
+			<td class="center"><input name="selection"  type="checkbox"  cmis-id="@obj.getId()" /></td>
 			<td>
 				@obj match {
 					case document:Document =>{
@@ -45,7 +47,6 @@
 					}
 
 					case _ =>{
-
 					}
 				}
 					<i class="fa @Util.getIconName(obj)"></i><span class="obj-name" objectId="@obj.getId">@obj.getName()</span>
@@ -74,7 +75,7 @@
 	</tbody>
 	<tfoot>
 		<tr>
-			@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 2){colSpan =>
+			@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 3){colSpan =>
 				<td colspan="@colSpan">
 			}
 				<div class="pagination pagination-centered hide-if-no-paging"></div>
