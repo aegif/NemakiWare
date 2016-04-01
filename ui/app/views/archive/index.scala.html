@@ -21,14 +21,14 @@
 	  	
 	  		<div class="row">
 	  			<div class="col-xs-12">
-	  				<table class="footable footable-loaded" id="archive-table" data-sort="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
+	  				<table class="footable" id="archive-table" data-sort="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
 						<thead>
 							<tr>
-								<th class="col-xs-2 footable-sortable footable-sorted" data-class="expand" data-sort-initial="true">名前</th>
-								<th class="col-xs-2 footable-sortable" data-class="expand">オリジナルID</th>
-								<th class="col-xs-1 footable-sortable" data-class="expand">削除したユーザ</th>
-								<th class="col-xs-2 footable-sortable" data-class="expand">削除時刻</th>
-								<th class="col-xs-2 footable-sortable" data-sort-ignore="true">@Messages("view.action")</th>
+								<th class="col-xs-2" data-class="expand" data-sort-initial="true">名前</th>
+								<th class="col-xs-2" data-class="expand">オリジナルID</th>
+								<th class="col-xs-1" data-class="expand">削除したユーザ</th>
+								<th class="col-xs-2" data-class="expand">削除時刻</th>
+								<th class="col-xs-2" data-sort-ignore="true">@Messages("view.action")</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -69,6 +69,8 @@
 	  	
 	  	<script type="text/javascript">
 		  	$(function(){
+		  		$('#archive-table').footable();
+		  	
 			  	$("button.archive-restore").on('click', function(e){
 			  		var archiveId = $(this).attr("archive-id");
 		  			$.ajax(jsRoutes.controllers.Archive.restore("@repositoryId", archiveId))
