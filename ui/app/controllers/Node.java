@@ -882,7 +882,7 @@ public class Node extends Controller {
 	private static Result redirectToParent(String repositoryId, DynamicForm input) {
 		String parentId = Util.getFormData(input, PropertyIds.PARENT_ID);
 		// TODO fix hard code
-		if ("".equals(parentId) || "/".equals(parentId)) {
+		if (parentId == null || "".equals(parentId) || "/".equals(parentId)) {
 			return redirect(routes.Node.index(repositoryId));
 		} else {
 			return redirect(routes.Node.showChildren(repositoryId, parentId));
