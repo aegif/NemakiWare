@@ -65,7 +65,7 @@
 							<button class="btn btn-default dropdown-toggle" data-toggle="dropdown">複数操作<span class="caret"></span></button>
 							<ul class="dropdown-menu" role="menu">
 									<li id="checkout-selected-objects" ><a href="#"><i class="fa fa-lock"></i>まとめてチェックアウト...</a></li>
-									<li id="cancelCheckout-selected-objects" ><a href="#"><i class="fa fa-unlock"></i>まとめてチェックアウトをキャンセル...</a></li>
+									<li id="cancel-checkout-selected-objects" ><a href="#"><i class="fa fa-unlock"></i>まとめてチェックアウトをキャンセル...</a></li>
 									<li id="delete-selected-objects" ><a href="#"><i class="fa fa-remove"></i>まとめて削除...</a></li>
 									<li id="archive-selected-objects" ><a href="#"><i class="fa fa-file-archive-o"></i>まとめて圧縮してダウンロード...</a></li>
 							</ul>
@@ -102,7 +102,6 @@
 
 		//multiple delete button
 		$(document).on('click', '#delete-selected-objects', function(){
-
 			if(window.confirm("@Messages("view.message.delete.confirm")")){
 				var ids=[];
 				$('[name="selection"]:checked').each(function(){
@@ -123,5 +122,52 @@
 				});
 			}
 		});
+
+		//multiple chechkout button
+		$(document).on('click', '#checkout-selected-objects', function(){
+			if(window.confirm("@Messages("view.message.checkout.confirm")")){
+				var ids=[];
+				$('[name="selection"]:checked').each(function(){
+				  	ids.push($(this).attr('cmis-id'));
+				});
+
+				$.blockUI({message:"@Messages("view.message.please.wait")"});
+
+				//Execute
+				$.ajax(jsRoutes.controllers.Node.checkOutByBatch("@repositoryId", ids)
+			    ).done(function(data){
+					window.alert("@Messages("view.message.checkout.success")");
+					window.location.reload();
+				}).fail(function(XMLHttpRequest, textStatus, errorThrown){
+					window.alert("@Messages("view.message.checkout.failure")");
+				}).always(function(){
+					$.unblockUI();
+				});
+			}
+		});
+
+		//multiple cancel chechkout button
+		$(document).on('click', '#cancel-checkout-selected-objects', function(){
+			if(window.confirm("@Messages("view.message.cancel-checkout.confirm")")){
+				var ids=[];
+				$('[name="selection"]:checked').each(function(){
+				  	ids.push($(this).attr('cmis-id'));
+				});
+
+				$.blockUI({message:"@Messages("view.message.please.wait")"});
+
+				//Execute
+				$.ajax(jsRoutes.controllers.Node.cancelCheckOutByBatch("@repositoryId", ids)
+			    ).done(function(data){
+					window.alert("@Messages("view.message.cancel-checkout.success")");
+					window.location.reload();
+				}).fail(function(XMLHttpRequest, textStatus, errorThrown){
+					window.alert("@Messages("view.message.cancel-checkout.failure")");
+				}).always(function(){
+					$.unblockUI();
+				});
+			}
+		});
+
 	});
 </script>
