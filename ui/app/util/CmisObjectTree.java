@@ -34,6 +34,11 @@ public class CmisObjectTree {
 		}
 	}
 
+	public void buildTree(String id){
+		size = 0;
+		buildTree("/", id);
+	}
+
 	public void buildTree(String[] ids){
 		size = 0;
 		for(String id : ids){

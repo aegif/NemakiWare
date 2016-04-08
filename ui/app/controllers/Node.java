@@ -3,6 +3,8 @@ package controllers;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.net.URLEncoder;
 import java.text.MessageFormat;
 import java.util.ArrayList;
@@ -55,6 +57,7 @@ import play.mvc.Http.MultipartFormData;
 import play.mvc.Http.MultipartFormData.FilePart;
 import play.mvc.Result;
 import play.mvc.Security.Authenticated;
+import util.CmisObjectTree;
 import util.Util;
 import views.html.node.blank;
 import views.html.node.detail;
@@ -255,6 +258,40 @@ public class Node extends Controller {
 
 	}
 
+	public static Result downloadAsCompress(String repositoryId, String id) {
+		Session session = getCmisSession(repositoryId);
+
+		try {
+			CmisObjectTree tree = new CmisObjectTree(session);
+			tree.buildTree(id);
+
+			Path tempdir =  Files.createTempDirectory("temp");
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+
+		return ok();
+	}
+
+	public static Result downloadAsCompressByBatch(String repositoryId, List<String>ids) {
+		Session session = getCmisSession(repositoryId);
+
+		try {
+			CmisObjectTree tree = new CmisObjectTree(session);
+			tree.buildTree(ids.toArray(new String[0]));
+
+			Path tempdir =  Files.createTempDirectory("temp");
+
+//TODO: ファイルにアーカイブを作成
+
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+
+		return ok();
+	}
+
+
 	public static Result download(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 
@@ -275,25 +312,30 @@ public class Node extends Controller {
 			e.printStackTrace();
 		}
 
+		createAttachmentResponse(doc.getName(), cs.getMimeType());
+		return ok(tmpFile);
+	}
+
+	private static void createAttachmentResponse(String name, String mimeType) {
 		try {
 			if (request().getHeader("User-Agent").indexOf("MSIE") == -1) {
 				// Firefox, Opera 11
 				response().setHeader("Content-Disposition", String
 						.format(Locale.JAPAN, "attachment; filename*=utf-8'jp'%s", URLEncoder
-								.encode(doc.getName(), "utf-8")));
+								.encode(name, "utf-8")));
 			} else {
 				// IE7, 8, 9
 				response().setHeader("Content-Disposition", String
-						.format(Locale.JAPAN, "attachment; filename=\"%s\"", new String(doc.getName()
+						.format(Locale.JAPAN, "attachment; filename=\"%s\"", new String(name()
 								.getBytes("MS932"), "ISO8859_1")));
 			}
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
-
-		response().setContentType(cs.getMimeType());
-		return ok(tmpFile);
+		response().setContentType(mimeType);
 	}
+
+
 
 	public static Result downloadPreview(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
