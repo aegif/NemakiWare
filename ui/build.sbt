@@ -25,7 +25,8 @@ libraryDependencies ++= Seq(
   "org.apache.chemistry.opencmis" % "chemistry-opencmis-client-bindings" % "0.13.0",
   "org.apache.chemistry.opencmis" % "chemistry-opencmis-client-api" % "0.13.0",
   "org.apache.chemistry.opencmis" % "chemistry-opencmis-commons-impl" % "0.13.0",
-  "org.apache.httpcomponents" % "httpclient" % "4.4-beta1"
+  "org.apache.httpcomponents" % "httpclient" % "4.4-beta1",
+	"net.lingala.zip4j" % "zip4j" % "1.3.2"
 )
 
 Play2WarPlugin.play2WarSettings
