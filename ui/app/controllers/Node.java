@@ -6,6 +6,8 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FilterOutputStream;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.net.URLEncoder;
 import java.text.MessageFormat;
 import java.util.ArrayList;
@@ -59,6 +61,7 @@ import play.mvc.Http.MultipartFormData;
 import play.mvc.Http.MultipartFormData.FilePart;
 import play.mvc.Result;
 import play.mvc.Security.Authenticated;
+import util.CmisObjectTree;
 import util.Util;
 import views.html.node.blank;
 import views.html.node.detail;
@@ -260,6 +263,40 @@ public class Node extends Controller {
 
 	}
 
+	public static Result downloadAsCompress(String repositoryId, String id) {
+		Session session = getCmisSession(repositoryId);
+
+		try {
+			CmisObjectTree tree = new CmisObjectTree(session);
+			tree.buildTree(id);
+
+			Path tempdir =  Files.createTempDirectory("temp");
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+
+		return ok();
+	}
+
+	public static Result downloadAsCompressByBatch(String repositoryId, List<String>ids) {
+		Session session = getCmisSession(repositoryId);
+
+		try {
+			CmisObjectTree tree = new CmisObjectTree(session);
+			tree.buildTree(ids.toArray(new String[0]));
+
+			Path tempdir =  Files.createTempDirectory("temp");
+
+//TODO: ファイルにアーカイブを作成
+
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+
+		return ok();
+	}
+
+
 	public static Result download(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 
@@ -272,23 +309,21 @@ public class Node extends Controller {
 		Document doc = (Document) obj;
 		ContentStream cs = doc.getContentStream();
 
-		File tmpFile = null;
-		try {
-			tmpFile = Util.convertInputStreamToFile(cs);
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
+		return createAttachmentResponse(doc.getName(), cs);
+	}
 
+	private static Result createAttachmentResponse(String name, ContentStream cs) {
 		try {
 			if (request().getHeader("User-Agent").indexOf("MSIE") == -1) {
 				// Firefox, Opera 11
-				response().setHeader("Content-Disposition", String.format(Locale.JAPAN,
-						"attachment; filename*=utf-8'jp'%s", URLEncoder.encode(doc.getName(), "utf-8")));
+				response().setHeader("Content-Disposition", String
+						.format(Locale.JAPAN, "attachment; filename*=utf-8'jp'%s", URLEncoder
+								.encode(name, "utf-8")));
 			} else {
 				// IE7, 8, 9
-				response().setHeader("Content-Disposition", String.format(Locale.JAPAN, "attachment; filename=\"%s\"",
-						new String(doc.getName().getBytes("MS932"), "ISO8859_1")));
+				response().setHeader("Content-Disposition", String
+						.format(Locale.JAPAN, "attachment; filename=\"%s\"", new String(name
+								.getBytes("MS932"), "ISO8859_1")));
 			}
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -297,11 +332,16 @@ public class Node extends Controller {
 		response().setContentType(cs.getMimeType());
 
 		try {
+			File tmpFile = null;
+			tmpFile = Util.convertInputStreamToFile(cs);
 			TemporaryFileInputStream fin = new TemporaryFileInputStream(tmpFile);
 			return ok(fin);
 		} catch (FileNotFoundException e) {
 			e.printStackTrace();
 			return internalServerError("File not found");
+		} catch (Exception e){
+			e.printStackTrace();
+			return internalServerError("");
 		}
 	}
 
