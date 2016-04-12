@@ -936,6 +936,33 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 		return archives;
 	}
+	
+	@Override
+	public List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc) {
+		String archiveId = repositoryInfoMap.getArchiveId(repositoryId);
+
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("allByCreated");
+		if(skip != null){
+			query.skip(skip);
+		}
+		if(limit != null){
+			query.limit(limit);
+		}
+		if(desc == null){
+			query.descending(true);
+		}else{
+			query.descending(desc);
+		}
+		
+		List<CouchArchive> list = connectorPool.get(archiveId).queryView(query, CouchArchive.class);
+
+		List<Archive> archives = new ArrayList<Archive>();
+		for (CouchArchive ca : list) {
+			archives.add(ca.convert());
+		}
+
+		return archives;
+	}
 
 	@Override
 	public Archive createArchive(String repositoryId, Archive archive, Boolean deletedWithParent) {

@@ -622,6 +622,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc) {
+		return nonCachedContentDaoService.getArchives(repositoryId, skip, limit, desc);
+	}
+
+	@Override
 	public Archive createArchive(String repositoryId, Archive archive, Boolean deletedWithParent) {
 		return nonCachedContentDaoService.createArchive(repositoryId,
 				archive, deletedWithParent);
