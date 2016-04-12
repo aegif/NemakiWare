@@ -605,6 +605,16 @@ public interface ContentService {
 	List<Archive> getAllArchives(String repositoryId);
 
 	/**
+	 * Get a specified number of archives
+	 * @param repositoryId
+	 * @param skip
+	 * @param limit
+	 * @param desc
+	 * @return
+	 */
+	List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc);
+	
+	/**
 	 * Get an archive
 	 * @param repositoryId TODO
 	 * @param archiveId
