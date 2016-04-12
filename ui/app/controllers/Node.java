@@ -6,6 +6,7 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FilterOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.net.URLEncoder;
@@ -20,6 +21,10 @@ import java.util.Map;
 import java.util.Map.Entry;
 
 import model.Principal;
+import net.lingala.zip4j.core.*;
+import net.lingala.zip4j.io.*;
+import net.lingala.zip4j.model.*;
+import net.lingala.zip4j.util.*;
 
 import org.apache.chemistry.opencmis.client.api.CmisObject;
 import org.apache.chemistry.opencmis.client.api.Document;
@@ -270,7 +275,7 @@ public class Node extends Controller {
 			CmisObjectTree tree = new CmisObjectTree(session);
 			tree.buildTree(id);
 
-			Path tempdir =  Files.createTempDirectory("temp");
+			Path tempdir = Files.createTempDirectory("temp");
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
@@ -278,16 +283,39 @@ public class Node extends Controller {
 		return ok();
 	}
 
-	public static Result downloadAsCompressByBatch(String repositoryId, List<String>ids) {
+	public static Result downloadAsCompressByBatch(String repositoryId, List<String> ids) {
 		Session session = getCmisSession(repositoryId);
 
 		try {
 			CmisObjectTree tree = new CmisObjectTree(session);
 			tree.buildTree(ids.toArray(new String[0]));
 
-			Path tempdir =  Files.createTempDirectory("temp");
+			// ファイルにアーカイブ
+			ZipParameters parameters = new ZipParameters();
+			parameters.setCompressionMethod(Zip4jConstants.COMP_DEFLATE);
+			parameters.setCompressionLevel(Zip4jConstants.DEFLATE_LEVEL_NORMAL);
+			parameters.setSourceExternalStream(true);
 
-//TODO: ファイルにアーカイブを作成
+			ZipModel zipModel = new ZipModel();
+			try (ZipOutputStream outputStream = new ZipOutputStream(new FileOutputStream(new File("archive.zip")), zipModel)) {
+				HashMap<String, CmisObject> map = tree.getHashMap();
+				for (String key : map.keySet()) {
+					ZipEntry entry = new ZipEntry(key);
+					outputStream.putNextEntry(entry, (ZipParameters) parameters.clone());
+					CmisObject obj = map.get(key);
+					if (Util.isDocument(obj)) {
+						try (InputStream inputStream = ((Document) obj).getContentStream().getStream();) {
+							byte[] readBuff = new byte[4096];
+							int readLen = -1;
+							while ((readLen = inputStream.read(readBuff)) != -1) {
+								outputStream.write(readBuff, 0, readLen);
+							}
+						}
+					}
+					outputStream.closeEntry();
+				}
+				outputStream.finish();
+			}
 
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -295,7 +323,6 @@ public class Node extends Controller {
 
 		return ok();
 	}
-
 
 	public static Result download(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
@@ -317,8 +344,7 @@ public class Node extends Controller {
 			if (request().getHeader("User-Agent").indexOf("MSIE") == -1) {
 				// Firefox, Opera 11
 				response().setHeader("Content-Disposition", String
-						.format(Locale.JAPAN, "attachment; filename*=utf-8'jp'%s", URLEncoder
-								.encode(name, "utf-8")));
+						.format(Locale.JAPAN, "attachment; filename*=utf-8'jp'%s", URLEncoder.encode(name, "utf-8")));
 			} else {
 				// IE7, 8, 9
 				response().setHeader("Content-Disposition", String
@@ -768,17 +794,15 @@ public class Node extends Controller {
 		return redirectToParent(repositoryId, input);
 	}
 
-
 	public static Result delete(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 		CmisObject cmisObject = session.getObject(id);
 
-		 delete(cmisObject, session);
-		 return ok();
+		delete(cmisObject, session);
+		return ok();
 	}
 
-
-	public static Result deleteByBatch(String repositoryId,  List<String>ids) {
+	public static Result deleteByBatch(String repositoryId, List<String> ids) {
 		Session session = getCmisSession(repositoryId);
 		for (String id : ids) {
 			CmisObject cmisObject = session.getObject(id);
@@ -821,13 +845,13 @@ public class Node extends Controller {
 			} else {
 				doc.checkOut();
 			}
-		}else if (Util.isFolder(cmisObject)) {
-				Folder dir = (Folder) cmisObject;
-				for (CmisObject childNode : dir.getChildren()) {
-					checkOut(childNode);
-				}
-		}else{
-			 // no-op
+		} else if (Util.isFolder(cmisObject)) {
+			Folder dir = (Folder) cmisObject;
+			for (CmisObject childNode : dir.getChildren()) {
+				checkOut(childNode);
+			}
+		} else {
+			// no-op
 		}
 
 	}
@@ -847,7 +871,7 @@ public class Node extends Controller {
 	public static Result cancelCheckOutByBatch(String repositoryId, List<String> ids) {
 		Session session = getCmisSession(repositoryId);
 
-		for(String id: ids){
+		for (String id : ids) {
 			CmisObject cmisObject = session.getObject(id);
 
 			cancelCheckOut(cmisObject);
@@ -869,7 +893,7 @@ public class Node extends Controller {
 				cancelCheckOut(childNode);
 			}
 		} else {
-			 // no-op
+			// no-op
 		}
 	}
 
