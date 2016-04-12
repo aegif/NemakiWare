@@ -1692,6 +1692,11 @@ public class ContentServiceImpl implements ContentService {
 	public List<Archive> getAllArchives(String repositoryId) {
 		return contentDaoService.getAllArchives(repositoryId);
 	}
+	
+	@Override
+	public List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc){
+		return contentDaoService.getArchives(repositoryId, skip, limit, true);
+	}
 
 	@Override
 	public Archive getArchive(String repositoryId, String archiveId) {
