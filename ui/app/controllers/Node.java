@@ -2,7 +2,9 @@ package controllers;
 
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.net.URLEncoder;
@@ -17,8 +19,10 @@ import java.util.Map;
 import java.util.Map.Entry;
 
 import model.Principal;
-import net.lingala.zip4j.core.ZipFile;
-import net.lingala.zip4j.model.ZipParameters;
+import net.lingala.zip4j.core.*;
+import net.lingala.zip4j.io.*;
+import net.lingala.zip4j.model.*;
+import net.lingala.zip4j.util.*;
 
 import org.apache.chemistry.opencmis.client.api.CmisObject;
 import org.apache.chemistry.opencmis.client.api.Document;
@@ -292,8 +296,11 @@ public class Node extends Controller {
 			try (ZipOutputStream outputStream = new ZipOutputStream(new FileOutputStream(new File("archive.zip")), zipModel)) {
 				HashMap<String, CmisObject> map = tree.getHashMap();
 				for (String key : map.keySet()) {
-					ZipEntry entry = new ZipEntry(key);
-					outputStream.putNextEntry(entry, (ZipParameters) parameters.clone());
+					ZipParameters params = (ZipParameters) parameters.clone();
+					params.setFileNameInZip(key);
+
+					outputStream.putNextEntry(null, params);
+
 					CmisObject obj = map.get(key);
 					if (Util.isDocument(obj)) {
 						try (InputStream inputStream = ((Document) obj).getContentStream().getStream();) {
