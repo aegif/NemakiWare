@@ -4,7 +4,6 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
-import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -300,8 +299,11 @@ public class Node extends Controller {
 			try (ZipOutputStream outputStream = new ZipOutputStream(new FileOutputStream(new File("archive.zip")), zipModel)) {
 				HashMap<String, CmisObject> map = tree.getHashMap();
 				for (String key : map.keySet()) {
-					ZipEntry entry = new ZipEntry(key);
-					outputStream.putNextEntry(entry, (ZipParameters) parameters.clone());
+					ZipParameters params = (ZipParameters) parameters.clone();
+					params.setFileNameInZip(key);
+
+					outputStream.putNextEntry(null, params);
+
 					CmisObject obj = map.get(key);
 					if (Util.isDocument(obj)) {
 						try (InputStream inputStream = ((Document) obj).getContentStream().getStream();) {
