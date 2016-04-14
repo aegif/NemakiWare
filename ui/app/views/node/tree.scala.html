@@ -168,7 +168,7 @@
 
 		//multiple archive button
 		$(document).on('click', '#compress-selected-objects', function(){
-			if(window.confirm("@Messages("view.message.cancel-checkout.confirm")")){
+			if(window.confirm("@Messages("view.message.compress.confirm")")){
 				var ids=[];
 				$('[name="selection"]:checked').each(function(){
 				  	ids.push($(this).attr('cmis-id'));
@@ -177,13 +177,8 @@
 				$.blockUI({message:"@Messages("view.message.please.wait")"});
 
 				//Execute
-				$.ajax(jsRoutes.controllers.Node.downloadAsCompressByBatch("@repositoryId", ids)
-			    ).done(function(data){
-					window.alert("@Messages("view.message.cancel-checkout.success")");
-					window.location.reload();
-				}).fail(function(XMLHttpRequest, textStatus, errorThrown){
-					window.alert("@Messages("view.message.cancel-checkout.failure")");
-				}).always(function(){
+				$.ajax(jsRoutes.controllers.Node.downloadAsCompressedFileByBatch("@repositoryId", ids)
+			    ).always(function(){
 					$.unblockUI();
 				});
 			}
