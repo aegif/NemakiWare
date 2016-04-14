@@ -90,6 +90,8 @@ public class Application extends Controller{
 				controllers.routes.javascript.Node.checkOutByBatch(),
 				controllers.routes.javascript.Node.cancelCheckOut(),
 				controllers.routes.javascript.Node.cancelCheckOutByBatch(),
+				controllers.routes.javascript.Node.downloadAsCompressedFile(),
+				controllers.routes.javascript.Node.downloadAsCompressedFileByBatch(),
 
 				controllers.routes.javascript.Type.showBlank(),
 				controllers.routes.javascript.Type.edit(),

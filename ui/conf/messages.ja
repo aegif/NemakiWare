@@ -136,6 +136,7 @@ view.message.checkout.failure=チェックアウトに失敗しました
 view.message.cancel-checkout.confirm=チェックアウトをキャンセルし、チェックアウト前のファイルに戻してももよろしいですか？
 view.message.cancel-checkout.success=チェックアウトのキャンセルは正常に終了しました。ファイルはすべてチェックアウト前の状態に復帰されています
 view.message.cancel-checkout.failure=チェックアウトのキャンセルに失敗しました
+view.message.compress.confirm=圧縮してダウンロードしますか？
 
 
 view.message.password-change.is-same=新しいパスワードは一致する必要があります！
