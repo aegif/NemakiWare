@@ -46,6 +46,8 @@ POST    /repo/:repoId/objects/checkout          		controllers.Node.checkOutByBat
 POST    /repo/:repoId/objects/:id/checkin           		controllers.Node.checkIn(repoId:String, id:String)
 POST    /repo/:repoId/objects/:id/cancel-checkout   		controllers.Node.cancelCheckOut(repoId:String, id:String)
 POST    /repo/:repoId/objects/cancel-checkout   		controllers.Node.cancelCheckOutByBatch(repoId:String, ids:java.util.List[String])
+POST    /repo/:repoId/objects/:id/download-as-compressed-file   		controllers.Node.downloadAsCompressedFile(repoId:String, id:String)
+POST      /repo/:repoId/objects/download-as-compressed-file   		controllers.Node.downloadAsCompressedFileByBatch(repoId:String, ids:java.util.List[String])
 DELETE 	/repo/:repoId/objects/:id					controllers.Node.delete(repoId:String, id:String)
 DELETE 	/repo/:repoId/objects/			controllers.Node.deleteByBatch(repoId:String, ids:java.util.List[String])
 
