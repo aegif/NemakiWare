@@ -51,6 +51,7 @@ import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
+import org.apache.chemistry.opencmis.commons.impl.MimeTypes;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
 import org.apache.commons.collections.CollectionUtils;
@@ -267,7 +268,7 @@ public class Node extends Controller {
 
 	}
 
-	public static Result downloadAsCompress(String repositoryId, String id) {
+	public static Result downloadAsCompressedFile(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 
 		try {
@@ -282,8 +283,9 @@ public class Node extends Controller {
 		return ok();
 	}
 
-	public static Result downloadAsCompressByBatch(String repositoryId, List<String> ids) {
+	public static Result downloadAsCompressedFileByBatch(String repositoryId, List<String> ids) {
 		Session session = getCmisSession(repositoryId);
+		File tempFile = null;
 
 		try {
 			CmisObjectTree tree = new CmisObjectTree(session);
@@ -295,12 +297,16 @@ public class Node extends Controller {
 			parameters.setCompressionLevel(Zip4jConstants.DEFLATE_LEVEL_NORMAL);
 			parameters.setSourceExternalStream(true);
 
+
 			ZipModel zipModel = new ZipModel();
-			try (ZipOutputStream outputStream = new ZipOutputStream(new FileOutputStream(new File("archive.zip")), zipModel)) {
+			Path tempPath = Files.createTempFile("Compress", ".zip");
+			tempFile = tempPath.toFile();
+
+			try (ZipOutputStream outputStream = new ZipOutputStream(new FileOutputStream(tempFile), zipModel)) {
 				HashMap<String, CmisObject> map = tree.getHashMap();
 				for (String key : map.keySet()) {
 					ZipParameters params = (ZipParameters) parameters.clone();
-					params.setFileNameInZip(key);
+					params.setFileNameInZip(StringUtils.stripStart(key,"/"));
 
 					outputStream.putNextEntry(null, params);
 
@@ -323,7 +329,8 @@ public class Node extends Controller {
 			e.printStackTrace();
 		}
 
-		return ok();
+		createAttachmentResponse("compressed-files.zip","application/zip");
+		return ok(tempFile);
 	}
 
 	public static Result download(String repositoryId, String id) {
