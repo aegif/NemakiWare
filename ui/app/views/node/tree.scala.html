@@ -170,17 +170,19 @@
 		$(document).on('click', '#compress-selected-objects', function(){
 			if(window.confirm("@Messages("view.message.compress.confirm")")){
 				var ids=[];
+				var idKeys=[];
+
 				$('[name="selection"]:checked').each(function(){
 				  	ids.push($(this).attr('cmis-id'));
+				  	idKeys.push("ids=" + $(this).attr('cmis-id'));
 				});
+				var query=idKeys.join("&");
 
-				$.blockUI({message:"@Messages("view.message.please.wait")"});
-
-				//Execute
-				$.ajax(jsRoutes.controllers.Node.downloadAsCompressedFileByBatch("@repositoryId", ids)
-			    ).always(function(){
-					$.unblockUI();
-				});
+				console.log(jsRoutes.controllers.Node.downloadAsCompressedFileByBatch("@repositoryId", ids).url)
+			    $.fileDownload(jsRoutes.controllers.Node.downloadAsCompressedFileByBatch("@repositoryId", ids).url)
+		        .done(function () { alert('File download a success!'); })
+		        .fail(function () { alert('File download failed!'); })
+			    .always(function(){	$.unblockUI(); });
 			}
 		});
 
