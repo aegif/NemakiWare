@@ -269,18 +269,7 @@ public class Node extends Controller {
 	}
 
 	public static Result downloadAsCompressedFile(String repositoryId, String id) {
-		Session session = getCmisSession(repositoryId);
-
-		try {
-			CmisObjectTree tree = new CmisObjectTree(session);
-			tree.buildTree(id);
-
-			Path tempdir = Files.createTempDirectory("temp");
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-
-		return ok();
+		return downloadAsCompressedFileByBatch(repositoryId, Arrays.asList(id));
 	}
 
 	public static Result downloadAsCompressedFileByBatch(String repositoryId, List<String> ids) {
@@ -344,11 +333,23 @@ public class Node extends Controller {
 
 		Document doc = (Document) obj;
 		ContentStream cs = doc.getContentStream();
-
-		return createAttachmentResponse(doc.getName(), cs);
+		createAttachmentResponse(doc.getName(), cs.getMimeType());
+		
+		try {
+			File tmpFile = null;
+			tmpFile = Util.convertInputStreamToFile(cs);
+			TemporaryFileInputStream fin = new TemporaryFileInputStream(tmpFile);
+			return ok(fin);
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+			return internalServerError("File not found");
+		} catch (Exception e){
+			e.printStackTrace();
+			return internalServerError("");
+		}
 	}
 
-	private static Result createAttachmentResponse(String name, ContentStream cs) {
+	private static void createAttachmentResponse(String name, String mimetype) {
 		try {
 			if (request().getHeader("User-Agent").indexOf("MSIE") == -1) {
 				// Firefox, Opera 11
@@ -364,20 +365,7 @@ public class Node extends Controller {
 			e.printStackTrace();
 		}
 
-		response().setContentType(cs.getMimeType());
-
-		try {
-			File tmpFile = null;
-			tmpFile = Util.convertInputStreamToFile(cs);
-			TemporaryFileInputStream fin = new TemporaryFileInputStream(tmpFile);
-			return ok(fin);
-		} catch (FileNotFoundException e) {
-			e.printStackTrace();
-			return internalServerError("File not found");
-		} catch (Exception e){
-			e.printStackTrace();
-			return internalServerError("");
-		}
+		response().setContentType(mimetype);
 	}
 
 	public static Result downloadPreview(String repositoryId, String id) {
