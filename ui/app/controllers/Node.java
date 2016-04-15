@@ -266,18 +266,7 @@ public class Node extends Controller {
 	}
 
 	public static Result downloadAsCompressedFile(String repositoryId, String id) {
-		Session session = getCmisSession(repositoryId);
-
-		try {
-			CmisObjectTree tree = new CmisObjectTree(session);
-			tree.buildTree(id);
-
-			Path tempdir = Files.createTempDirectory("temp");
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-
-		return ok();
+		return downloadAsCompressedFileByBatch(repositoryId, Arrays.asList(id));
 	}
 
 	public static Result downloadAsCompressedFileByBatch(String repositoryId, List<String> ids) {
