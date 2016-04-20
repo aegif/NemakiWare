@@ -17,8 +17,21 @@ public class Archive extends Controller{
 	
 	private static String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 	
-	public static Result index(String repositoryId) {
-		JsonNode json = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "index");
+	public static Result index(String repositoryId, Integer page) {
+		
+		String endPoint = getEndpoint(repositoryId) + "index";
+		
+		int pageSize = Util.getNavigationPagingSize();
+		endPoint += ("?limit=" + pageSize);
+		
+		Integer skip = 0;
+		if(page >= 2){
+			skip = (page - 1) * pageSize;
+			endPoint += ("&skip=" + skip);
+		}
+		
+		JsonNode json = Util.getJsonResponse(session(), endPoint);
+
 		ArrayNode archives =  (ArrayNode) json.get("archives");
 		Iterator<JsonNode> itr = archives.iterator();
 		List<model.Archive> list = new ArrayList<model.Archive>();
@@ -28,7 +41,7 @@ public class Archive extends Controller{
 			list.add(archive);
 		}
 		
-		return ok(views.html.archive.index.render(repositoryId, list));
+		return ok(views.html.archive.index.render(repositoryId, list, page));
 		
 	}
 	
