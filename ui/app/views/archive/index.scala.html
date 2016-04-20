@@ -4,7 +4,7 @@
 @import org.apache.commons.collections.CollectionUtils
 @import util.Util
 
-@(repositoryId:String)(archives:java.util.List[model.Archive])
+@(repositoryId:String)(archives:java.util.List[model.Archive])(page: Integer)
 
 <!DOCTYPE html>
 <html>
@@ -21,14 +21,14 @@
 	  	
 	  		<div class="row">
 	  			<div class="col-xs-12">
-	  				<table class="footable" id="archive-table" data-sort="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
+	  				<table class="footable" id="archive-table" data-sort="false" data-page-size="@Util.getNavigationPagingSize">
 						<thead>
 							<tr>
-								<th class="col-xs-2" data-class="expand" data-sort-initial="true">名前</th>
-								<th class="col-xs-2" data-class="expand">オリジナルID</th>
-								<th class="col-xs-1" data-class="expand">削除したユーザ</th>
-								<th class="col-xs-2" data-class="expand">削除時刻</th>
-								<th class="col-xs-2" data-sort-ignore="true">@Messages("view.action")</th>
+								<th class="col-xs-2">名前</th>
+								<th class="col-xs-2">オリジナルID</th>
+								<th class="col-xs-1">削除したユーザ</th>
+								<th class="col-xs-2">削除時刻</th>
+								<th class="col-xs-2">@Messages("view.action")</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -53,13 +53,20 @@
 							}
 						</tbody>
 						<tfoot>
-							<tr>
-								@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 2){colSpan =>
-									<td colspan="@colSpan">
-								}
-									<div class="pagination pagination-centered hide-if-no-paging"></div>
-								</td>
-							</tr>
+						<tr>
+							@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 2){colSpan =>
+								<td colspan="@colSpan">
+							}
+							
+									<ul class="pagination">
+										@if(page >= 2){
+											<li><a href="@routes.Archive.index(repositoryId, page-1)"><i class="fa fa-chevron-left" aria-hidden="true"></i></a></li>
+										}
+										<li><a href="@routes.Archive.index(repositoryId, page+1)"><i class="fa fa-chevron-right" aria-hidden="true"></i>
+										</a></li>
+									</ul>
+							</td>
+						</tr>
 						</tfoot>
 					</table>
 	  			</div>
