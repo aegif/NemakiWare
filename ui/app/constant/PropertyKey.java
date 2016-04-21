@@ -10,4 +10,7 @@ public interface PropertyKey {
 	final String NEMAKI_CORE_URI_REPOSITORY= "nemaki.core.uri.repository";
 	final String NEMAKI_CORE_URI_REST= "nemaki.core.uri.rest";
 	final String NAVIGATION_PAGING_SIZE="navigation.paging.size";
+
+	final String COMPRESSION_TARGET_MAXSIZE="compression.target.maxsize";
+	final String COMPRESSION_FILE_PREFIX="compression.file.prefix";
 }
