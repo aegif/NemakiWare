@@ -137,7 +137,8 @@ view.message.checkout.failure=Failed to checkout
 view.message.cancel-checkout.confirm=Do you really want to cancel checkout?
 view.message.cancel-checkout.success=Successfully checkout canceled
 view.message.cancel-checkout.failure=Failed to cancel checkout
-
+view.message.compress.confirm=圧縮してダウンロードしますか？
+view.message.compress.error.toolarge=対象ファイルの総容量が大きすぎます（ %s 以下にする必要があります）
 
 
 
