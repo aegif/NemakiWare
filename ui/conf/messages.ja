@@ -122,6 +122,8 @@ view.add=追加
 view.remove=除外
 view.action=アクション
 
+view.message.failure=失敗しました
+view.message.success=成功しました
 view.message.please.wait=しばらくお待ちください...
 view.message.create.success=正常に作成されました
 view.message.create.failure=作成に失敗しました
