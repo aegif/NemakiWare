@@ -57,7 +57,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrinc
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
-import play.api.libs.Files.TemporaryFile;
+import play.i18n.Messages;
 import play.data.DynamicForm;
 import play.data.Form;
 import play.libs.Json;
@@ -67,6 +67,7 @@ import play.mvc.Http.MultipartFormData.FilePart;
 import play.mvc.Result;
 import play.mvc.Security.Authenticated;
 import util.CmisObjectTree;
+import util.NemakiConfig;
 import util.Util;
 import views.html.node.blank;
 import views.html.node.detail;
@@ -80,6 +81,7 @@ import views.html.node.version;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import constant.PropertyKey;
 import constant.Token;
 
 @Authenticated(Secured.class)
@@ -280,6 +282,13 @@ public class Node extends Controller {
 			CmisObjectTree tree = new CmisObjectTree(session);
 			tree.buildTree(ids.toArray(new String[0]));
 
+			//ファイルが大きすぎたらエラーにする
+			long maxsize = Util.getCompressionTargetMaxSize();
+			if (tree.getContentsSize() > Util.getCompressionTargetMaxSize()){
+				String errmsg = Messages .get("view.message.compress.error.toolarge.", maxsize);
+				return internalServerError(errmsg);
+			}
+
 			// ファイルにアーカイブ
 			ZipParameters parameters = new ZipParameters();
 			parameters.setCompressionMethod(Zip4jConstants.COMP_DEFLATE);
@@ -288,8 +297,10 @@ public class Node extends Controller {
 
 
 			ZipModel zipModel = new ZipModel();
-			Path tempPath = Files.createTempFile("Compress", ".zip");
+			String prefix = NemakiConfig.getValue(PropertyKey.COMPRESSION_FILE_PREFIX);
+			Path tempPath = Files.createTempFile(prefix, ".zip");
 			tempFile = tempPath.toFile();
+			tempFile.deleteOnExit();
 
 			try (ZipOutputStream outputStream = new ZipOutputStream(new FileOutputStream(tempFile), zipModel)) {
 				HashMap<String, CmisObject> map = tree.getHashMap();

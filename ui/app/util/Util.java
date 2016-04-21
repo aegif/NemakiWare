@@ -826,4 +826,9 @@ public class Util {
 			 }
 		 }
 	 }
+
+	 public static long getCompressionTargetMaxSize(){
+		 String _size = NemakiConfig.getValue(PropertyKey.COMPRESSION_TARGET_MAXSIZE);
+		 return Long.valueOf(_size);
+	 }
 }

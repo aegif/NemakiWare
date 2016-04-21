@@ -139,7 +139,7 @@ view.message.cancel-checkout.confirm=チェックアウトをキャンセルし�
 view.message.cancel-checkout.success=チェックアウトのキャンセルは正常に終了しました。ファイルはすべてチェックアウト前の状態に復帰されています
 view.message.cancel-checkout.failure=チェックアウトのキャンセルに失敗しました
 view.message.compress.confirm=圧縮してダウンロードしますか？
-
+view.message.compress.error.toolarge=対象ファイルの総容量が大きすぎます（ %s 以下にする必要があります）
 
 view.message.password-change.is-same=新しいパスワードは一致する必要があります！
 view.message.password-change.wrong-old-password=現在のパスワードが間違っています
