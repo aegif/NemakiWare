@@ -181,10 +181,11 @@
 				});
 				var query=idKeys.join("&");
 
-				console.log(jsRoutes.controllers.Node.downloadAsCompressedFileByBatch("@repositoryId", ids).url)
 			    $.fileDownload(jsRoutes.controllers.Node.downloadAsCompressedFileByBatch("@repositoryId", ids).url)
-		        .done(function () { alert('File download a success!'); })
-		        .fail(function () { alert('File download failed!'); })
+		        .done(function () { })
+		        .fail(function (responseHtml, url, error) {
+			         window.alert("@Messages("view.message.failure")" + " : " + responseHtml);
+			      })
 			    .always(function(){	$.unblockUI(); });
 			}
 		});
