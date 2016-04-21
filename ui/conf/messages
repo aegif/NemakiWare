@@ -121,6 +121,8 @@ view.add=Add
 view.remove=Remove
 view.action=Action
 
+view.message.failure=Failed
+view.message.success=Successfully done
 view.message.please.wait=Please wait...
 view.message.create.success=Successfully created
 view.message.create.failure=Failed to create

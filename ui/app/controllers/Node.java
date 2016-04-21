@@ -283,7 +283,7 @@ public class Node extends Controller {
 			//ファイルが大きすぎたらエラーにする
 			long maxsize = Util.getCompressionTargetMaxSize();
 			if (tree.getContentsSize() > Util.getCompressionTargetMaxSize()){
-				String errmsg = Messages .get("view.message.compress.error.toolarge.", maxsize);
+				String errmsg = Messages .get("view.message.compress.error.toolarge", maxsize);
 				return internalServerError(errmsg);
 			}
 
@@ -292,7 +292,6 @@ public class Node extends Controller {
 			parameters.setCompressionMethod(Zip4jConstants.COMP_DEFLATE);
 			parameters.setCompressionLevel(Zip4jConstants.DEFLATE_LEVEL_NORMAL);
 			parameters.setSourceExternalStream(true);
-
 
 			ZipModel zipModel = new ZipModel();
 			String prefix = NemakiConfig.getValue(PropertyKey.COMPRESSION_FILE_PREFIX);
