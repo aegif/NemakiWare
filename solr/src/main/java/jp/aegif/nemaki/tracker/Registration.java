@@ -8,9 +8,12 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -52,32 +55,32 @@ public class Registration implements Runnable{
 	SolrCore core;
 	SolrServer repositoryServer;
 	List<ChangeEvent> list;
+	boolean mimeTypeFilterEnabled;
 	List<String> allowedMimeTypeFilter;
+	boolean fulltextEnabled;
+	
 	Logger logger = Logger.getLogger(Registration.class);
 	
-	public Registration(Session cmisSession, SolrCore core, SolrServer repositoryServer, List<ChangeEvent> list, List<String> allowedMimeTypeFilter){
+	public Registration(Session cmisSession, SolrCore core, SolrServer repositoryServer, List<ChangeEvent> list, boolean fulltextEnabled, boolean mimeTypeFilterEnabled, List<String> allowedMimeTypeFilter){
 		this.cmisSession = cmisSession;
 		this.core = core;
 		this.repositoryServer = repositoryServer;
 		this.list = list;
+		this.fulltextEnabled = fulltextEnabled;
+		this.mimeTypeFilterEnabled = mimeTypeFilterEnabled;
 		this.allowedMimeTypeFilter = allowedMimeTypeFilter;
 	}
 	
 	@Override
 	public void run() {
 		//Read MIME-Type filtering
-		PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
-		boolean mimeTypeFilter = false;
-		List<String> allowedMimeTypeFilter = new ArrayList<String>();
-		boolean fulltextEnabled = Boolean.TRUE.toString().equalsIgnoreCase(pm.readValue(PropertyKey.SOLR_TRACKING_FULLTEXT_ENABLED));
-		
 		for (ChangeEvent ce : list) {
 			switch (ce.getChangeType()) {
 			case CREATED:
-				registerSolrDocument(ce, fulltextEnabled, mimeTypeFilter, allowedMimeTypeFilter);
+				registerSolrDocument(ce, fulltextEnabled, mimeTypeFilterEnabled, allowedMimeTypeFilter);
 				break;
 			case UPDATED:
-				registerSolrDocument(ce, fulltextEnabled, mimeTypeFilter, allowedMimeTypeFilter);
+				registerSolrDocument(ce, fulltextEnabled, mimeTypeFilterEnabled, allowedMimeTypeFilter);
 				break;
 			case DELETED:
 				deleteSolrDocument(ce);
@@ -150,9 +153,36 @@ public class Registration implements Runnable{
 			logger.info(logPrefix(ce) + successMsg);
 		} catch (Exception e) {
 			logger.error(logPrefix(ce) + errMsg, e);
+		}finally{
+			// Delete temp files
+			try {
+				deleteTempFile(req);
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (URISyntaxException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
 		}
 	}
 
+	private void deleteTempFile(AbstractUpdateRequest req) throws IOException, URISyntaxException{
+		Collection<org.apache.solr.common.util.ContentStream> streams = req.getContentStreams();
+		Iterator<org.apache.solr.common.util.ContentStream> itr = streams.iterator();
+		if(itr.hasNext()){
+			org.apache.solr.common.util.ContentStream stream = itr.next();
+			String sourceInfo = stream.getSourceInfo();
+			
+			if(sourceInfo.startsWith("file:")){
+				File f = new File(new URI(sourceInfo));
+				if(f != null && f.isFile()){
+					f.delete();						
+				}
+			}
+		}
+	}
+	
 	/**
 	 * Delete Solr document
 	 *
@@ -209,7 +239,7 @@ public class Registration implements Runnable{
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
-
+		
 		// Set field values
 		// NOTION:
 		// Cast to String works on the assumption they are already String
@@ -239,8 +269,8 @@ public class Registration implements Runnable{
 		}
 
 		up.setParams(new ModifiableSolrParams(m));
-
 		up.setAction(AbstractUpdateRequest.ACTION.COMMIT, true, true);
+
 		return up;
 	}
 
@@ -281,6 +311,8 @@ public class Registration implements Runnable{
 
 		File file = File.createTempFile(
 				String.valueOf(System.currentTimeMillis()), null);
+		file.deleteOnExit();
+		
 		try {
 			// write the inputStream to a FileOutputStream
 			OutputStream out = new FileOutputStream(file);
