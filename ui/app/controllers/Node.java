@@ -405,6 +405,13 @@ public class Node extends Controller {
 		return ok(views.html.node.permission.render(repositoryId, obj, members, permissionDefs));
 	}
 
+	/**
+	 * Handle with a file per each request
+	 * Multiple drag & drop should be made by calling this as many times
+	 * @param repositoryId
+	 * @param action
+	 * @return
+	 */
 	public static Result dragAndDrop(String repositoryId, String action) {
 		// Bind input parameters
 		DynamicForm input = Form.form();
@@ -422,7 +429,7 @@ public class Node extends Controller {
 			} else if ("update".equals(action)) {
 				dragAndDropUpdate(repositoryId, files.get(0), input);
 			} else {
-				System.out.println("Specify drag & drop action type");
+				return internalServerError("Specify drag & drop action type");
 			}
 
 			return ok();
@@ -444,6 +451,9 @@ public class Node extends Controller {
 		Session session = getCmisSession(repositoryId);
 		ContentStream cs = Util.convertFileToContentStream(session, file);
 		session.createDocument(param, parentId, cs, VersioningState.MAJOR);
+		
+		//Clean temp file just after CMIS createDocument finished
+		file.getFile().delete();
 	}
 
 	private static void dragAndDropUpdate(String repositoryId, FilePart file, DynamicForm input) {
@@ -458,7 +468,9 @@ public class Node extends Controller {
 		ContentStream cs = Util.convertFileToContentStream(session, file);
 		Document d0 = (Document) session.getObject(objectId);
 		Document d1 = d0.setContentStream(cs, true);
-		// d1.updateProperties(param);
+		
+		//Clean temp file just after CMIS createDocument finished
+		file.getFile().delete();
 	}
 
 	public static Result create(String repositoryId) {
@@ -469,10 +481,6 @@ public class Node extends Controller {
 		String objectTypeId = Util.getFormData(input, PropertyIds.OBJECT_TYPE_ID);
 		String _parentId = Util.getFormData(input, PropertyIds.PARENT_ID);
 		ObjectId parentId = new ObjectIdImpl(_parentId);
-
-		// Check dragAndDrop
-		boolean dragAndDrop = (Util.getFormData(input, "dragAndDrop") == null) ? false
-				: Boolean.valueOf(Util.getFormData(input, "dragAndDrop"));
 
 		Session session = getCmisSession(repositoryId);
 
@@ -490,7 +498,11 @@ public class Node extends Controller {
 		switch (Util.getBaseType(session, objectTypeId)) {
 		case CMIS_DOCUMENT:
 			ContentStreamAllowed csa = ((DocumentTypeDefinition) objectType).getContentStreamAllowed();
-			if (csa == ContentStreamAllowed.REQUIRED) {
+			
+			if (csa == ContentStreamAllowed.NOTALLOWED) {
+				// don't set content stream
+				session.createDocument(param, parentId, null, VersioningState.MAJOR);
+			}else{
 				List<FilePart> files = null;
 				MultipartFormData body = request().body().asMultipartFormData();
 				if (body != null && CollectionUtils.isNotEmpty(body.getFiles())) {
@@ -498,50 +510,38 @@ public class Node extends Controller {
 				}
 
 				if (CollectionUtils.isEmpty(files)) {
-					// TODO error
-					System.err.println(objectTypeId + ":This type requires a file");
-				} else {
-					ContentStream cs = Util.convertFileToContentStream(session, files.get(0));
-					if (param.get(PropertyIds.NAME) == null) {
-						param.put(PropertyIds.NAME, cs.getFileName());
+					//Case: no file
+					if (csa == ContentStreamAllowed.REQUIRED){
+						return internalServerError(objectTypeId + ":This type requires a file");
+					}else if(csa == ContentStreamAllowed.ALLOWED){
+						session.createDocument(param, parentId, null, VersioningState.MAJOR);
 					}
-					session.createDocument(param, parentId, cs, VersioningState.MAJOR);
-				}
-			} else if (csa == ContentStreamAllowed.ALLOWED) {
-				// Retrieve a file
-				List<FilePart> files = null;
-				MultipartFormData body = request().body().asMultipartFormData();
-				if (body != null && CollectionUtils.isNotEmpty(body.getFiles())) {
-					files = body.getFiles();
-				}
-
-				// Set content stream if there is a file
-				if (CollectionUtils.isNotEmpty(files)) {
-					ContentStream cs = Util.convertFileToContentStream(session, files.get(0));
+				}else{
+					//Case: file exists
+					ContentStream contentStream = Util.convertFileToContentStream(session, files.get(0));
 					if (param.get(PropertyIds.NAME) == null) {
-						param.put(PropertyIds.NAME, cs.getFileName());
+						param.put(PropertyIds.NAME, contentStream.getFileName());
 					}
-					session.createDocument(param, parentId, cs, VersioningState.MAJOR);
+					session.createDocument(param, parentId, contentStream, VersioningState.MAJOR);
+					
+					//Clean temp file just after CMIS createDocument finished
+					if(CollectionUtils.isNotEmpty(files)){
+						for(FilePart file : files){
+							file.getFile().delete();
+						}
+					}
 				}
-			} else if (csa == ContentStreamAllowed.NOTALLOWED) {
-				// don't set content stream
-				session.createDocument(param, parentId, null, VersioningState.MAJOR);
 			}
-
+			
 			break;
 		case CMIS_FOLDER:
 			session.createFolder(param, parentId);
 			break;
 		default:
 			break;
-
 		}
-
-		if (dragAndDrop) {
-			return ok();
-		} else {
-			return redirectToParent(repositoryId, input);
-		}
+		
+		return redirectToParent(repositoryId, input);
 	}
 
 	public static Result update(String repositoryId, String id) {
