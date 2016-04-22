@@ -8,9 +8,12 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -150,9 +153,36 @@ public class Registration implements Runnable{
 			logger.info(logPrefix(ce) + successMsg);
 		} catch (Exception e) {
 			logger.error(logPrefix(ce) + errMsg, e);
+		}finally{
+			// Delete temp files
+			try {
+				deleteTempFile(req);
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (URISyntaxException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
 		}
 	}
 
+	private void deleteTempFile(AbstractUpdateRequest req) throws IOException, URISyntaxException{
+		Collection<org.apache.solr.common.util.ContentStream> streams = req.getContentStreams();
+		Iterator<org.apache.solr.common.util.ContentStream> itr = streams.iterator();
+		if(itr.hasNext()){
+			org.apache.solr.common.util.ContentStream stream = itr.next();
+			String sourceInfo = stream.getSourceInfo();
+			
+			if(sourceInfo.startsWith("file:")){
+				File f = new File(new URI(sourceInfo));
+				if(f != null && f.isFile()){
+					f.delete();						
+				}
+			}
+		}
+	}
+	
 	/**
 	 * Delete Solr document
 	 *
@@ -209,14 +239,6 @@ public class Registration implements Runnable{
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
-
-		// Set content stream
-		
-		up.addContentStream(null);
-		
-		
-		
-		
 		
 		// Set field values
 		// NOTION:
@@ -247,8 +269,8 @@ public class Registration implements Runnable{
 		}
 
 		up.setParams(new ModifiableSolrParams(m));
-
 		up.setAction(AbstractUpdateRequest.ACTION.COMMIT, true, true);
+
 		return up;
 	}
 
@@ -289,6 +311,8 @@ public class Registration implements Runnable{
 
 		File file = File.createTempFile(
 				String.valueOf(System.currentTimeMillis()), null);
+		file.deleteOnExit();
+		
 		try {
 			// write the inputStream to a FileOutputStream
 			OutputStream out = new FileOutputStream(file);
