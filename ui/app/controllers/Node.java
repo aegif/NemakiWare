@@ -1,6 +1,10 @@
 package controllers;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.text.MessageFormat;
@@ -46,6 +50,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrinc
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
+import play.api.libs.Files.TemporaryFile;
 import play.data.DynamicForm;
 import play.data.Form;
 import play.libs.Json;
@@ -77,11 +82,11 @@ public class Node extends Controller {
 	}
 
 	public static Result index(String repositoryId) {
-		try{
+		try {
 			Session session = getCmisSession(repositoryId);
 			Folder root = session.getRootFolder();
 			return showChildren(repositoryId, root.getId());
-		}catch(Exception ex){
+		} catch (Exception ex) {
 			CmisSessions.disconnect(repositoryId, session());
 			return redirect(routes.Application.login(repositoryId));
 		}
@@ -144,7 +149,8 @@ public class Node extends Controller {
 
 		List<CmisObject> list = new ArrayList<CmisObject>();
 		// Build WHERE clause(cmis:document)
-		MessageFormat docFormat = new MessageFormat("cmis:name LIKE ''%{0}%'' OR cmis:description LIKE ''%{0}%'' OR CONTAINS(''{0}'')");
+		MessageFormat docFormat = new MessageFormat(
+				"cmis:name LIKE ''%{0}%'' OR cmis:description LIKE ''%{0}%'' OR CONTAINS(''{0}'')");
 		String docStatement = "";
 		if (StringUtils.isNotBlank(term)) {
 			docStatement = docFormat.format(new String[] { term });
@@ -277,21 +283,26 @@ public class Node extends Controller {
 		try {
 			if (request().getHeader("User-Agent").indexOf("MSIE") == -1) {
 				// Firefox, Opera 11
-				response().setHeader("Content-Disposition", String
-						.format(Locale.JAPAN, "attachment; filename*=utf-8'jp'%s", URLEncoder
-								.encode(doc.getName(), "utf-8")));
+				response().setHeader("Content-Disposition", String.format(Locale.JAPAN,
+						"attachment; filename*=utf-8'jp'%s", URLEncoder.encode(doc.getName(), "utf-8")));
 			} else {
 				// IE7, 8, 9
-				response().setHeader("Content-Disposition", String
-						.format(Locale.JAPAN, "attachment; filename=\"%s\"", new String(doc.getName()
-								.getBytes("MS932"), "ISO8859_1")));
+				response().setHeader("Content-Disposition", String.format(Locale.JAPAN, "attachment; filename=\"%s\"",
+						new String(doc.getName().getBytes("MS932"), "ISO8859_1")));
 			}
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
 
 		response().setContentType(cs.getMimeType());
-		return ok(tmpFile);
+
+		try {
+			TemporaryFileInputStream fin = new TemporaryFileInputStream(tmpFile);
+			return ok(fin);
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+			return internalServerError("File not found");
+		}
 	}
 
 	public static Result downloadPreview(String repositoryId, String id) {
@@ -328,7 +339,15 @@ public class Node extends Controller {
 
 		response().setHeader("Content-disposition", "filename=" + obj.getName() + ".pdf");
 		response().setContentType(preview.getContentStream().getMimeType());
-		return ok(tmpFile, true);
+
+		try {
+			TemporaryFileInputStream fin = new TemporaryFileInputStream(tmpFile);
+			return ok(fin);
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+			return internalServerError("File not found");
+		}
+
 	}
 
 	public static Result showVersion(String repositoryId, String id) {
@@ -381,8 +400,8 @@ public class Node extends Controller {
 			}
 		}
 
-		//for IE
-		//ResponseUtil.setNoCache(response());
+		// for IE
+		// ResponseUtil.setNoCache(response());
 		return ok(views.html.node.permission.render(repositoryId, obj, members, permissionDefs));
 	}
 
@@ -815,7 +834,7 @@ public class Node extends Controller {
 		}
 
 		// group
-		JsonNode resultGroup = Util.getJsonResponse(session(), coreRestUri +"group/show/" + principalId);
+		JsonNode resultGroup = Util.getJsonResponse(session(), coreRestUri + "group/show/" + principalId);
 		// TODO check status
 		JsonNode group = resultGroup.get("group");
 		if (group != null) {
@@ -848,6 +867,21 @@ public class Node extends Controller {
 		} else {
 			JsonNode json = Json.toJson(ace);
 			return ok(json);
+		}
+	}
+
+	private static class TemporaryFileInputStream extends FileInputStream {
+		private File file;
+
+		public TemporaryFileInputStream(File file) throws FileNotFoundException {
+			super(file);
+			this.file = file;
+		}
+
+		@Override
+		public void close() throws IOException {
+			super.close();
+			this.file.delete();
 		}
 	}
 
