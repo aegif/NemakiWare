@@ -52,32 +52,32 @@ public class Registration implements Runnable{
 	SolrCore core;
 	SolrServer repositoryServer;
 	List<ChangeEvent> list;
+	boolean mimeTypeFilterEnabled;
 	List<String> allowedMimeTypeFilter;
+	boolean fulltextEnabled;
+	
 	Logger logger = Logger.getLogger(Registration.class);
 	
-	public Registration(Session cmisSession, SolrCore core, SolrServer repositoryServer, List<ChangeEvent> list, List<String> allowedMimeTypeFilter){
+	public Registration(Session cmisSession, SolrCore core, SolrServer repositoryServer, List<ChangeEvent> list, boolean fulltextEnabled, boolean mimeTypeFilterEnabled, List<String> allowedMimeTypeFilter){
 		this.cmisSession = cmisSession;
 		this.core = core;
 		this.repositoryServer = repositoryServer;
 		this.list = list;
+		this.fulltextEnabled = fulltextEnabled;
+		this.mimeTypeFilterEnabled = mimeTypeFilterEnabled;
 		this.allowedMimeTypeFilter = allowedMimeTypeFilter;
 	}
 	
 	@Override
 	public void run() {
 		//Read MIME-Type filtering
-		PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
-		boolean mimeTypeFilter = false;
-		List<String> allowedMimeTypeFilter = new ArrayList<String>();
-		boolean fulltextEnabled = Boolean.TRUE.toString().equalsIgnoreCase(pm.readValue(PropertyKey.SOLR_TRACKING_FULLTEXT_ENABLED));
-		
 		for (ChangeEvent ce : list) {
 			switch (ce.getChangeType()) {
 			case CREATED:
-				registerSolrDocument(ce, fulltextEnabled, mimeTypeFilter, allowedMimeTypeFilter);
+				registerSolrDocument(ce, fulltextEnabled, mimeTypeFilterEnabled, allowedMimeTypeFilter);
 				break;
 			case UPDATED:
-				registerSolrDocument(ce, fulltextEnabled, mimeTypeFilter, allowedMimeTypeFilter);
+				registerSolrDocument(ce, fulltextEnabled, mimeTypeFilterEnabled, allowedMimeTypeFilter);
 				break;
 			case DELETED:
 				deleteSolrDocument(ce);
@@ -210,6 +210,14 @@ public class Registration implements Runnable{
 			e.printStackTrace();
 		}
 
+		// Set content stream
+		
+		up.addContentStream(null);
+		
+		
+		
+		
+		
 		// Set field values
 		// NOTION:
 		// Cast to String works on the assumption they are already String
