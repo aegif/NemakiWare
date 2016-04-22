@@ -128,7 +128,7 @@ public class CoreTracker extends CloseHook {
 	}
 
 	public void initCore(String repositoryId) {
-		synchronized (LOCK){
+		synchronized (LOCK) {
 			try {
 				// Initialize all documents
 				indexServer.deleteByQuery(Constant.FIELD_REPOSITORY_ID + ":" + repositoryId);
@@ -158,9 +158,9 @@ public class CoreTracker extends CloseHook {
 	}
 
 	public void index(String trackingType, String repositoryId) {
-		synchronized (LOCK){
+		synchronized (LOCK) {
 			ChangeEvents changeEvents = getCmisChangeLog(trackingType, repositoryId);
-			if(changeEvents == null){
+			if (changeEvents == null) {
 				return;
 			}
 			List<ChangeEvent> events = changeEvents.getChangeEvents();
@@ -178,18 +178,16 @@ public class CoreTracker extends CloseHook {
 			if (events.isEmpty())
 				return;
 
-			// Read MIME-Type filtering
-			List<String> allowedMimeTypeFilter = new ArrayList<String>();
+			// Parse filtering configuration
 			PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
-			boolean mimeTypeFilter = false;
-			new ArrayList<String>();
 			boolean fulltextEnabled = Boolean.TRUE.toString()
 					.equalsIgnoreCase(pm.readValue(PropertyKey.SOLR_TRACKING_FULLTEXT_ENABLED));
-
+			boolean mimeTypeFilterEnabled = false; // default
+			List<String> allowedMimeTypeFilter = new ArrayList<String>(); // default
 			if (fulltextEnabled) {
 				String _filter = pm.readValue(PropertyKey.SOLR_TRACKING_MIMETYPE_FILTER_ENABLED);
-				mimeTypeFilter = Boolean.TRUE.toString().equalsIgnoreCase(_filter);
-				if (mimeTypeFilter) {
+				mimeTypeFilterEnabled = Boolean.TRUE.toString().equalsIgnoreCase(_filter);
+				if (mimeTypeFilterEnabled) {
 					allowedMimeTypeFilter = pm.readValues(PropertyKey.SOLR_TRACKING_MIMETYPE);
 				}
 			}
@@ -211,7 +209,7 @@ public class CoreTracker extends CloseHook {
 				List<ChangeEvent> listPerThread = list.subList(numberPerThread * i, toIndex);
 				Session cmisSession = CmisSessionFactory.getSession(repositoryId);
 				Registration registration = new Registration(cmisSession, core, indexServer, listPerThread,
-						allowedMimeTypeFilter);
+						fulltextEnabled, mimeTypeFilterEnabled, allowedMimeTypeFilter);
 				Thread t = new Thread(registration);
 				t.start();
 				try {
@@ -305,16 +303,16 @@ public class CoreTracker extends CloseHook {
 		long numItems = (-1 == _numItems) ? Long.MAX_VALUE : Long.valueOf(_numItems);
 
 		Session cmisSession = CmisSessionFactory.getSession(repositoryId);
-		if(cmisSession == null){
+		if (cmisSession == null) {
 			return null;
 		}
 
-		try{
+		try {
 			// No need for Sorting
 			// (Specification requires they are returned by ASCENDING)
-				return cmisSession.getContentChanges(latestToken, false, numItems);
-		}catch(CmisRuntimeException ex){
-			//On error reset session.
+			return cmisSession.getContentChanges(latestToken, false, numItems);
+		} catch (CmisRuntimeException ex) {
+			// On error reset session.
 			CmisSessionFactory.clearSession(repositoryId);
 			throw ex;
 		}
