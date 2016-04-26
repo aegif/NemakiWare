@@ -38,10 +38,9 @@
 						<span class="dropdown">
 							<button class="btn btn-default dropdown-toggle" data-toggle="dropdown">選択...<span class="caret"></span></button>
 							<ul class="dropdown-menu" role="menu">
-									<li><a href="#"><i class="fa fa-folder"></i>フォルダと文書すべて</a></li>
-									<li><a href="#"><i class="fa fa-file"></i>文書すべて</a></li>
-									<li><a href="#"><i class="fa fa-check-square-o"></i>選択の反転</a></li>
-									<li><a href="#"><i class="fa fa-square-o"></i>すべて解除</a></li>
+									<li id="check-all-object"><a href="#"><i class="fa fa-folder"></i>フォルダと文書すべて</a></li>
+									<li id="check-reverse"><a href="#"><i class="fa fa-check-square-o"></i>選択の反転</a></li>
+									<li id="uncheck-all-object""><a href="#"><i class="fa fa-square-o"></i>すべて解除</a></li>
 							</ul>
 						</span>
 
@@ -92,6 +91,21 @@
 <script type="text/javascript">
 
 	$(function(){
+		$(document).on('click', '#check-all-object', function(){
+			$('[name="selection"]').prop('checked', true);
+		});
+
+		$(document).on('click', '#uncheck-all-object', function(){
+			$('[name="selection"]').prop('checked', false);
+		});
+
+		$(document).on('click', '#check-reverse', function(){
+			$('[name="selection"]').prop('checked', function( index, oldValue ){
+				return !oldValue;
+			});
+		});
+
+
 		//create button
 		$(document).on('click', '#create-object-in-tree', function(){
 			var typeId = $(this).attr('typeId');
