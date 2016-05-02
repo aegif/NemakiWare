@@ -31,12 +31,9 @@ import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.cmis.service.AclService;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.util.PropertyManager;
-import jp.aegif.nemaki.util.cache.NemakiCache;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.DomainType;
 import jp.aegif.nemaki.util.constant.PrincipalId;
-import jp.aegif.nemaki.util.constant.PropertyKey;
-
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
@@ -56,7 +53,6 @@ public class AclServiceImpl implements AclService {
 	private CompileService compileService;
 	private ExceptionService exceptionService;
 	private TypeManager typeManager;
-	private PropertyManager propertyManager;
 	private NemakiCachePool nemakiCachePool;
 	private RepositoryInfoMap repositoryInfoMap;
 
@@ -161,10 +157,6 @@ public class AclServiceImpl implements AclService {
 
 	public void setTypeManager(TypeManager typeManager) {
 		this.typeManager = typeManager;
-	}
-
-	public void setPropertyManager(PropertyManager propertyManager) {
-		this.propertyManager = propertyManager;
 	}
 
 	public void setNemakiCachePool(NemakiCachePool nemakiCachePool) {
