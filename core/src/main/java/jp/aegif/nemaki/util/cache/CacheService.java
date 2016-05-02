@@ -2,7 +2,12 @@ package jp.aegif.nemaki.util.cache;
 
 import net.sf.ehcache.Cache;
 import net.sf.ehcache.CacheManager;
+
+import java.util.Map;
+import java.util.Map.Entry;
+
 import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.YamlManager;
 import jp.aegif.nemaki.util.cache.model.NemakiCache;
 import jp.aegif.nemaki.util.cache.model.Tree;
 import jp.aegif.nemaki.util.cache.CacheService;
@@ -35,23 +40,51 @@ public class CacheService {
 
 		cacheManager = CacheManager.newInstance();
 		
-		//Other cache
-		cacheManager.addCache(new Cache(repositoryId + "_" + OBJECT_DATA_CACHE, 10000, false, false, 60 * 60, 60 * 60));
-		cacheManager.addCache(new Cache(repositoryId + "_" + PROPERTIES_CACHE, 10000, false, false, 60 * 60, 60 * 60));
-		cacheManager.addCache(new Cache(repositoryId + "_" + TYPE_CACHE, 1, false, false, 60 * 60, 60 * 60));
-		cacheManager.addCache(new Cache(repositoryId + "_" + CONTENT_CACHE, 10000, false, true, 60 * 60, 60 * 60));
-		cacheManager.addCache(new Cache(repositoryId + "_" + TREE_CACHE, 10000, false, false, 60 * 60, 60 * 60));
-		cacheManager
-				.addCache(new Cache(repositoryId + "_" + VERSION_SERIES_CACHE, 10000, false, false, 60 * 60, 60 * 60));
-		cacheManager.addCache(new Cache(repositoryId + "_" + ATTACHMENTS_CACHE, 10000, false, false, 60 * 60, 60 * 60));
-		cacheManager
-				.addCache(new Cache(repositoryId + "_" + CHANGE_EVENT_CACHE, 10000, false, false, 60 * 60, 60 * 60));
-		cacheManager.addCache(
-				new Cache(repositoryId + "_" + LATEST_CHANGE_TOKEN_CACHE, 10000, false, false, 60 * 60, 60 * 60));
-		cacheManager.addCache(new Cache(repositoryId + "_" + USER_CACHE, 10000, false, false, 60 * 60, 60 * 60));
-		cacheManager.addCache(new Cache(repositoryId + "_" + USERS_CACHE, 10000, false, false, 60 * 60, 60 * 60));
-		cacheManager.addCache(new Cache(repositoryId + "_" + GROUP_CACHE, 10000, false, false, 60 * 60, 60 * 60));
-		cacheManager.addCache(new Cache(repositoryId + "_" + GROUPS_CACHE, 10000, false, false, 60 * 60, 60 * 60));
+		loadConfig(propertyManager);
+	}
+
+	private void loadConfig(PropertyManager propertyManager) {
+		String configFile = propertyManager.readValue(PropertyKey.CACHE_CONFIG);
+		YamlManager manager = new YamlManager(configFile);
+		Map<String, Map<String, Object>> yml = (Map<String, Map<String, Object>>) manager.loadYml();
+
+		// default
+		Map<String, Object> defaultConfigMap = yml.get("default");
+		yml.remove("default");
+
+		for (Entry<String, Map<String, Object>> configMap : yml.entrySet()) {
+			NemakiCacheConfig config = new NemakiCacheConfig();
+			config.override(defaultConfigMap);
+			if(configMap.getValue() != null){
+				config.override(configMap.getValue());
+			}
+
+			Cache cache = new Cache(repositoryId + "_" + configMap.getKey(), config.maxElementsInMemory.intValue(),
+					config.overflowToDisc, config.eternal, config.timeToLiveSeconds, config.timeToIdleSeconds);
+			cacheManager.addCache(cache);
+		}
+
+	}
+
+	private class NemakiCacheConfig {
+		private Long maxElementsInMemory;
+		private Boolean overflowToDisc;
+		private Boolean eternal;
+		private Long timeToLiveSeconds;
+		private Long timeToIdleSeconds;
+
+		private void override(Map<String, Object> map) {
+			if (map.get("maxElementsInMemory") != null)
+				maxElementsInMemory = (Long) map.get("maxElementsInMemory");
+			if (map.get("overflowToDisc") != null)
+				overflowToDisc = (Boolean) map.get("overflowToDisc");
+			if (map.get("eternal") != null)
+				eternal = (Boolean) map.get("eternal");
+			if (map.get("timeToLiveSeconds") != null)
+				timeToLiveSeconds = (Long) map.get("timeToLiveSeconds");
+			if (map.get("timeToIdleSeconds") != null)
+				timeToIdleSeconds = (Long) map.get("timeToIdleSeconds");
+		}
 	}
 
 	public CustomCache getObjectDataCache() {
@@ -71,7 +104,7 @@ public class CacheService {
 	public Cache getContentCache() {
 		return cacheManager.getCache(repositoryId + "_" + CONTENT_CACHE);
 	}
-	
+
 	public NemakiCache<Tree> getTreeCache() {
 		NemakiCache<Tree> cache = new NemakiCache<Tree>(true, cacheManager.getCache(repositoryId + "_" + TREE_CACHE));
 		return cache;
