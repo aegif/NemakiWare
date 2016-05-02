@@ -84,6 +84,7 @@ import com.rits.cloning.Cloner;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
+import jp.aegif.nemaki.cmis.aspect.SortUtil;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.factory.info.AclCapabilities;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
@@ -103,7 +104,6 @@ import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.DataUtil;
-import jp.aegif.nemaki.util.cache.NemakiCache;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.CmisExtensionToken;
 import net.sf.ehcache.Element;
@@ -120,6 +120,7 @@ public class CompileServiceImpl implements CompileService {
 	private TypeManager typeManager;
 	private AclCapabilities aclCapabilities;
 	private NemakiCachePool nemakiCachePool;
+	private SortUtil sortUtil;
 
 	private boolean includeRelationshipsEnabled = true;
 
@@ -276,90 +277,65 @@ public class CompileServiceImpl implements CompileService {
 	}
 
 	@Override
-	public <T> ObjectList compileObjectDataList(CallContext callContext,
+	public <T extends Content> ObjectList compileObjectDataList(CallContext callContext,
 			String repositoryId, List<T> contents, String filter,
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
 			String renditionFilter, Boolean includeAcl, BigInteger maxItems,
-			BigInteger skipCount, boolean folderOnly) {
-		ObjectListImpl list = new ObjectListImpl();
-		list.setObjects(new ArrayList<ObjectData>());
-
-		//Return empty result when no children exist
+			BigInteger skipCount, boolean folderOnly, String orderBy) {
 		if (CollectionUtils.isEmpty(contents)) {
+			//Empty list
+			ObjectListImpl list = new ObjectListImpl();
+			list.setObjects(new ArrayList<ObjectData>());
 			list.setNumItems(BigInteger.ZERO);
 			list.setHasMoreItems(false);
 			return list;
-		}
-
-		// Convert skip and max to integer
-		int skip = (skipCount == null ? 0 : skipCount.intValue());
-		if (skip < 0) {
-			skip = 0;
-		}
-		int max = (maxItems == null ? Integer.MAX_VALUE : maxItems.intValue());
-		if (max < 0) {
-			max = Integer.MAX_VALUE;
-		}
-
-		int count = 0;
-		List<ObjectData>ods = new ArrayList<ObjectData>();
-		for(T t : contents){
-			//Skip items
-			if (count < skip) {
-				count++;
-				continue;
-			}
-			if (ods.size() >= max) {
-				break;
-			}
-
-			Content _c = (Content) t;
-			//Filter by folderOnly
-			if(folderOnly && !_c.isFolder()){
-				continue;
-			}
-
-			//Convert content class
-			Content c = null;
-			if(_c.isFolder()){
-				c = (Folder)t;
-			}else if(_c.isDocument()){
-				c = (Document)t;
-			}else if(_c.isPolicy()){
-				c = (Policy)t;
-			}else if(_c.isRelationship()){
-				c = (Relationship)t;
-			}else if(_c.isItem()){
-				c = (Item)t;
-			}
-
-			//Get each ObjectData
-			ObjectData _od;
-			Element v = nemakiCachePool.get(repositoryId).getObjectDataCache().get(c.getId());
-			if(v == null){
-				_od = compileObjectDataWithFullAttributes(callContext, repositoryId, c);
-			}else{
-				_od = (ObjectDataImpl)v.getObjectValue();
-			}
-
-			ObjectData od = filterObjectDataInList(callContext, repositoryId, _od, filter, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
-			if(od != null){
-				ods.add(od);
-			}
-		}
-		list.setObjects(ods);
-
-		//Set list meta data
-		if(CollectionUtils.isEmpty(list.getObjects())){
-			return list;
 		}else{
-			list.setNumItems(BigInteger.valueOf(contents.size()));
-			if(max + skip < contents.size()){
-				list.setHasMoreItems(true);
-			}
-		}
+			List<ObjectData>ods = new ArrayList<ObjectData>();
+			for(T c : contents){
+				//Filter by folderOnly
+				if(folderOnly && !c.isFolder()){
+					continue;
+				}
 
-		return list;
+				//Get each ObjectData
+				ObjectData _od;
+				Element v = nemakiCachePool.get(repositoryId).getObjectDataCache().get(c.getId());
+				if(v == null){
+					_od = compileObjectDataWithFullAttributes(callContext, repositoryId, c);
+				}else{
+					_od = (ObjectDataImpl)v.getObjectValue();
+				}
+
+				ObjectData od = filterObjectDataInList(callContext, repositoryId, _od, filter, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
+				if(od != null){
+					ods.add(od);
+				}
+			}
+			
+			//Sort
+			sortUtil.sort(repositoryId, ods, orderBy);
+			
+			//Set metadata
+			ObjectListImpl list = new ObjectListImpl();
+			Integer _skipCount = skipCount.intValue();
+			Integer _maxItems = maxItems.intValue();
+
+			if(_skipCount >= ods.size()){
+				list.setHasMoreItems(false);
+				list.setObjects(new ArrayList<ObjectData>());
+			}else{
+				//hasMoreItems
+				Boolean hasMoreItems = _skipCount + _maxItems < ods.size();
+				list.setHasMoreItems(hasMoreItems);
+				//paged list
+				Integer toIndex = Math.min(_skipCount + _maxItems, ods.size()); 
+				list.setObjects(new ArrayList<>(ods.subList(_skipCount, toIndex)));
+			}
+			//totalNumItem
+			list.setNumItems(BigInteger.valueOf(ods.size()));
+
+			return list;
+		}
 	}
 
 	@Override
@@ -1461,5 +1437,9 @@ public class CompileServiceImpl implements CompileService {
 
 	public void setIncludeRelationshipsEnabled(boolean includeRelationshipsEnabled) {
 		this.includeRelationshipsEnabled = includeRelationshipsEnabled;
+	}
+
+	public void setSortUtil(SortUtil sortUtil) {
+		this.sortUtil = sortUtil;
 	}
 }

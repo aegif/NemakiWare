@@ -31,7 +31,6 @@ import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.service.PolicyService;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Policy;
-import jp.aegif.nemaki.util.cache.NemakiCache;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.DomainType;
 
