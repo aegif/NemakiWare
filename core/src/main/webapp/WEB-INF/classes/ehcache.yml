@@ -1,0 +1,37 @@
+default:
+  maxElementsInMemory: 10000
+  overflowToDisc: false
+  eternal: false
+  timeToLiveSeconds: 3600
+  timeToIdleSeconds: 3600  
+
+objectDataCache:
+
+propertisCache:
+    maxElementsInMemory: 100
+
+typeCache:
+  maxElementsInMemory: 1
+
+contentCache:
+  maxElementsInMemory: 1000000
+  overflowToDisc: true
+  eternal: true
+treeCache:
+
+versionSeriesCache:
+
+attachmentCache:
+
+changeEventCache:
+
+latestChangeTokenCache:
+  maxElementsInMemory: 1
+
+userCache:
+
+usersCache:
+
+groupCache:
+
+groupsCache:
