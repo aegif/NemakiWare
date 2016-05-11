@@ -42,9 +42,9 @@ public interface CompileService {
 			String repositoryId, Content content, String filter,
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl);
 	
-	public <T> ObjectList compileObjectDataList(CallContext callContext,
+	public <T extends Content> ObjectList compileObjectDataList(CallContext callContext,
 			String repositoryId, List<T> contents, String filter,
-			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl, BigInteger maxItems, BigInteger skipCount, boolean folderOnly);
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl, BigInteger maxItems, BigInteger skipCount, boolean folderOnly, String orderBy);
 	
 	public ObjectList compileChangeDataList(CallContext context, String repositoryId,
 			List<Change> changes, Holder<String> changeLogToken, Boolean includeProperties,

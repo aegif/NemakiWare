@@ -171,9 +171,6 @@
        <property name="permissionService">
             <ref bean="PermissionService" />
         </property>
-        <property name="sortUtil">
-            <ref bean="sortUtil" />
-        </property>
     </bean>
 
     <bean id="sortUtil" class="jp.aegif.nemaki.cmis.aspect.SortUtil">
@@ -379,9 +376,6 @@
         <property name="repositoryInfoMap">
             <ref bean="repositoryInfoMap" />
         </property>
-        <property name="propertyManager">
-            <ref bean="propertyManager" />
-        </property>
         <property name="nemakiCachePool">
             <ref bean="nemakiCachePool" />
         </property>
@@ -477,6 +471,9 @@
         <property name="includeRelationshipsEnabled">
         	<value>${capability.extended.include.relationships}</value>
         </property>
+        <property name="sortUtil">
+            <ref bean="sortUtil" />
+        </property>
     </bean>
 
     <bean id="PermissionService" class="org.springframework.aop.framework.ProxyFactoryBean">
@@ -570,9 +567,6 @@
         </property>
         <property name="solrUtil">
             <ref bean="solrUtil" />
-        </property>
-         <property name="sortUtil">
-            <ref bean="sortUtil" />
         </property>
     </bean>
 

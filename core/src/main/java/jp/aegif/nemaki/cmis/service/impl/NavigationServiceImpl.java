@@ -30,7 +30,6 @@ import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
-import jp.aegif.nemaki.cmis.aspect.SortUtil;
 import jp.aegif.nemaki.cmis.service.NavigationService;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
@@ -64,7 +63,6 @@ public class NavigationServiceImpl implements NavigationService {
 	private ExceptionService exceptionService;
 	private CompileService compileService;
 	private PermissionService permissionService;
-	private SortUtil sortUtil;
 
 	@Override
 	public ObjectInFolderList getChildren(CallContext callContext,
@@ -79,13 +77,9 @@ public class NavigationServiceImpl implements NavigationService {
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("folderId", folderId);
 		Folder folder = contentService.getFolder(repositoryId, folderId);
+		exceptionService.invalidArgumentFolderId(folder, folderId);
 		exceptionService.permissionDenied(callContext,
 				repositoryId, PermissionMapping.CAN_GET_CHILDREN_FOLDER, folder);
-
-		// //////////////////
-		// Specific Exception
-		// //////////////////
-		exceptionService.invalidArgumentFolderId(folder, folderId);
 
 		// //////////////////
 		// Body of the method
@@ -121,11 +115,9 @@ public class NavigationServiceImpl implements NavigationService {
 		ObjectList ol = compileService.compileObjectDataList(callContext,
 				repositoryId, contents, filter,
 				includeAllowableActions, includeRelationships, renditionFilter, false,
-				maxItems, skipCount, folderOnly);
-
-		// Sort
-		sortUtil.sort(repositoryId, ol.getObjects(), orderBy);
-
+				maxItems, skipCount, folderOnly, orderBy);
+		
+		
 		// Build ObjectInFolderList
 		for (ObjectData od : ol.getObjects()) {
 			ObjectInFolderDataImpl objectInFolder = new ObjectInFolderDataImpl();
@@ -142,6 +134,28 @@ public class NavigationServiceImpl implements NavigationService {
 
 		return result;
 	}
+	
+	/*public ObjectList pageingObjectDataList(ObjectList objectList,BigInteger maxItems,
+			BigInteger skipCount) {
+		// Convert skip and max to integer
+		int skip = (skipCount == null ? 0 : skipCount.intValue());
+		if (skip < 0) {
+			skip = 0;
+		}
+		int max = (maxItems == null ? Integer.MAX_VALUE : maxItems.intValue());
+		if (max < 0) {
+			max = Integer.MAX_VALUE;
+		}
+		int end = (skip + max <= objectList.getObjects().size()) ? skip + max : objectList.getObjects().size();
+		
+		List<ObjectData> list = objectList.getObjects();
+		ObjectListImpl impl = new ObjectListImpl();
+		impl.setObjects(new ArrayList<ObjectData>(list.subList(skip, end)));
+		impl.setNumItems(BigInteger.valueOf(end - skip));
+		impl.setHasMoreItems(skip + max > end);
+		
+		return impl;
+	}*/
 
 	@Override
 	public List<ObjectInFolderContainer> getDescendants(
@@ -326,8 +340,7 @@ public class NavigationServiceImpl implements NavigationService {
 		ObjectList list = compileService.compileObjectDataList(
 				callContext, repositoryId, checkedOuts, filter,
 				includeAllowableActions, includeRelationships, renditionFilter, false,
-				maxItems, skipCount, false);
-		sortUtil.sort(repositoryId, list.getObjects(), orderBy);
+				maxItems, skipCount, false, orderBy);
 
 		return list;
 	}
@@ -347,10 +360,4 @@ public class NavigationServiceImpl implements NavigationService {
 	public void setPermissionService(PermissionService permissionService) {
 		this.permissionService = permissionService;
 	}
-
-
-	public void setSortUtil(SortUtil sortUtil) {
-		this.sortUtil = sortUtil;
-	}
-
 }
