@@ -15,7 +15,6 @@ typeCache:
 
 contentCache:
   maxElementsInMemory: 1000000
-  overflowToDisc: true
   eternal: true
 treeCache:
 
