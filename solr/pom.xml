@@ -5,10 +5,16 @@
 	<groupId>jp.aegif.nemaki</groupId>
 	<artifactId>solr</artifactId>
 	<packaging>war</packaging>
-	<version>2.3.12</version>
+	<version>${nemakiware.version}</version>
 	<name>solr</name>
 	<description>Solr customized for Nemaki</description>
 	<url>https://github.com/NemakiWare/NemakiWare</url>
+
+	<parent>
+		<groupId>jp.aegif.nemaki</groupId>
+		<artifactId>nemakiware</artifactId>
+		<version>1.0</version>
+	</parent>
 
 	<properties>
 		<org.apache.chemistry.opencmis.version>0.13.0</org.apache.chemistry.opencmis.version>

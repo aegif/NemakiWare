@@ -1,3 +1,5 @@
+@*{<meta charset="UTF-8" />}*@
+
 @import component._
 @import principal._
 
@@ -5,15 +7,16 @@
 @import org.apache.commons.collections.CollectionUtils
 @import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition
 @import org.apache.chemistry.opencmis.commons.data.Ace
+@import play.mvc.Http.Context.Implicit
 
-@(repositoryId:String)(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(members:List[model.Principal])(permissionDefinitions:List[PermissionDefinition] = null)
+@(repositoryId:String)(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(members:java.util.List[model.Principal])(permissionDefinitions:java.util.List[PermissionDefinition] = null)
 
 @script(repositoryId)(permissionDefinitions)()
 
 <div class="container tab-pane">
 	<div class="row" style="margin-bottom:15px">
 		<div class="col-sm-6 col-md-6">
-			@if(Util.isFreezeCopy(obj, session)){
+			@if(Util.isFreezeCopy(obj, Implicit.session)){
 				@lockedNotice(obj)
 			}else{
 				@saveButton("permission-update")

@@ -52,6 +52,11 @@ GET    /repo/:repoId/compressed-file/:id/   		controllers.Node.downloadAsCompres
 GET      /repo/:repoId/compressed-file  		controllers.Node.downloadAsCompressedFileByBatch(repoId:String, ids:java.util.List[String])
 
 
+# Archive API
+GET		/repo/:repoId/archives									controllers.Archive.index(repoId:String, page:Integer ?= 1)
+PUT		/repo/:repoId/archives/:archiveId/restore				controllers.Archive.restore(repoId:String, archiveId:String)
+DELETE	/repo/:repoId/archives/:archiveId						controllers.Archive.destroy(repoId:String, archiveId:String)
+
 # User API
 GET     /repo/:repoId/users               					controllers.User.index(repoId:String)
 GET		/repo/:repoId/users/search							controllers.User.search(repoId:String, term: String ?= "")
