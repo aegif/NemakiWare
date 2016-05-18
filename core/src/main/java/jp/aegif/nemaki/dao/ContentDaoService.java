@@ -271,7 +271,7 @@ public interface ContentDaoService {
 	 *
 	 * @return
 	 */
-	List<Content> getLatestChildrenIndex(String repositoryId, String parentId);
+	List<Content> getChildren(String repositoryId, String parentId);
 
 	/**
 	 * Get a child content by name
@@ -407,6 +407,8 @@ public interface ContentDaoService {
 	 * @return the newly updated document
 	 */
 	Document update(String repositoryId, Document document);
+	
+	Document move(String repositoryId, Document document, String sourceId);
 
 	/**
 	 * Update a version series
@@ -425,6 +427,8 @@ public interface ContentDaoService {
 	 * @return the newly updated folder
 	 */
 	Folder update(String repositoryId, Folder folder);
+	
+	Folder move(String repositoryId, Folder folder, String sourceId);
 
 	/**
 	 * Update a relationship

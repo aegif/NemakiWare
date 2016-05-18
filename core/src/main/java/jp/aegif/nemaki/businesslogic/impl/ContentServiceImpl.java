@@ -27,15 +27,11 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map.Entry;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.rendition.RenditionManager;
 import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
@@ -43,7 +39,6 @@ import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.dao.ContentDaoService;
-import jp.aegif.nemaki.dao.impl.cached.ContentDaoServiceImpl;
 import jp.aegif.nemaki.model.Ace;
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Archive;
@@ -212,10 +207,11 @@ public class ContentServiceImpl implements ContentService {
 	public List<Content> getChildren(String repositoryId, String folderId) {
 		List<Content> children = new ArrayList<Content>();
 
-		List<Content> indices = contentDaoService.getLatestChildrenIndex(repositoryId, folderId);
+		List<Content> indices = contentDaoService.getChildren(repositoryId, folderId);
 		if (CollectionUtils.isEmpty(indices))
 			return null;
-
+		
+		//TODO getを重複して行う必要なし
 		for (Content c : indices) {
 			if (c.isDocument()) {
 				Document d = contentDaoService.getDocument(repositoryId, c.getId());
@@ -1130,7 +1126,7 @@ public class ContentServiceImpl implements ContentService {
 
 		return result;
 	}
-
+	
 	@Override
 	public synchronized Content update(String repositoryId, Content content) {
 		Content result = null;
@@ -1175,13 +1171,26 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public synchronized void move(String repositoryId, Content content, Folder target) {
+		String sourceId = content.getParentId();
+		
 		content.setParentId(target.getId());
 		String uniqueName = buildUniqueName(repositoryId, content.getName(), target.getId(), null);
 		content.setName(uniqueName);
-		update(repositoryId, content);
+		
+		move(repositoryId, content, sourceId);
 
 		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing(repositoryId);
+	}
+	
+	private synchronized Content move(String repositoryId, Content content, String sourceId){
+		Content result = null;
+		if(content instanceof Document){
+			result = contentDaoService.move(repositoryId, (Document)content, sourceId);
+		}else if(content instanceof Folder){
+			result = contentDaoService.move(repositoryId, (Folder)content, sourceId);
+		}
+		return result;
 	}
 
 	@Override
@@ -1218,6 +1227,12 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public void delete(CallContext callContext, String repositoryId, String objectId, Boolean deletedWithParent) {
 		Content content = getContent(repositoryId, objectId);
+		
+		//TODO workaround
+		if(content == null){
+			//If content is already deleted, do nothing;
+			return; 
+		}
 
 		// Record the change event(Before the content is deleted!)
 		writeChangeEvent(callContext, repositoryId, content, ChangeType.DELETED);

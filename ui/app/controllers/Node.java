@@ -1,8 +1,10 @@
 package controllers;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -56,6 +58,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrinc
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
+import play.api.libs.Files.TemporaryFile;
 import play.i18n.Messages;
 import play.data.DynamicForm;
 import play.data.Form;
@@ -158,7 +161,8 @@ public class Node extends Controller {
 
 		List<CmisObject> list = new ArrayList<CmisObject>();
 		// Build WHERE clause(cmis:document)
-		MessageFormat docFormat = new MessageFormat("cmis:name LIKE ''%{0}%'' OR cmis:description LIKE ''%{0}%'' OR CONTAINS(''{0}'')");
+		MessageFormat docFormat = new MessageFormat(
+				"cmis:name LIKE ''%{0}%'' OR cmis:description LIKE ''%{0}%'' OR CONTAINS(''{0}'')");
 		String docStatement = "";
 		if (StringUtils.isNotBlank(term)) {
 			docStatement = docFormat.format(new String[] { term });
@@ -358,18 +362,26 @@ public class Node extends Controller {
 		try {
 			if (request().getHeader("User-Agent").indexOf("MSIE") == -1) {
 				// Firefox, Opera 11
-				response().setHeader("Content-Disposition", String
-						.format(Locale.JAPAN, "attachment; filename*=utf-8'jp'%s", URLEncoder.encode(name, "utf-8")));
+				response().setHeader("Content-Disposition", String.format(Locale.JAPAN,
+						"attachment; filename*=utf-8'jp'%s", URLEncoder.encode(doc.getName(), "utf-8")));
 			} else {
 				// IE7, 8, 9
-				response().setHeader("Content-Disposition", String
-						.format(Locale.JAPAN, "attachment; filename=\"%s\"", new String(name
-								.getBytes("MS932"), "ISO8859_1")));
+				response().setHeader("Content-Disposition", String.format(Locale.JAPAN, "attachment; filename=\"%s\"",
+						new String(doc.getName().getBytes("MS932"), "ISO8859_1")));
 			}
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
-		response().setContentType(mimeType);
+
+		response().setContentType(cs.getMimeType());
+
+		try {
+			TemporaryFileInputStream fin = new TemporaryFileInputStream(tmpFile);
+			return ok(fin);
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+			return internalServerError("File not found");
+		}
 	}
 
 	public static Result downloadPreview(String repositoryId, String id) {
@@ -406,7 +418,15 @@ public class Node extends Controller {
 
 		response().setHeader("Content-disposition", "filename=" + obj.getName() + ".pdf");
 		response().setContentType(preview.getContentStream().getMimeType());
-		return ok(tmpFile, true);
+
+		try {
+			TemporaryFileInputStream fin = new TemporaryFileInputStream(tmpFile);
+			return ok(fin);
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+			return internalServerError("File not found");
+		}
+
 	}
 
 	public static Result showVersion(String repositoryId, String id) {
@@ -464,6 +484,13 @@ public class Node extends Controller {
 		return ok(views.html.node.permission.render(repositoryId, obj, members, permissionDefs));
 	}
 
+	/**
+	 * Handle with a file per each request
+	 * Multiple drag & drop should be made by calling this as many times
+	 * @param repositoryId
+	 * @param action
+	 * @return
+	 */
 	public static Result dragAndDrop(String repositoryId, String action) {
 		// Bind input parameters
 		DynamicForm input = Form.form();
@@ -481,7 +508,7 @@ public class Node extends Controller {
 			} else if ("update".equals(action)) {
 				dragAndDropUpdate(repositoryId, files.get(0), input);
 			} else {
-				System.out.println("Specify drag & drop action type");
+				return internalServerError("Specify drag & drop action type");
 			}
 
 			return ok();
@@ -503,6 +530,9 @@ public class Node extends Controller {
 		Session session = getCmisSession(repositoryId);
 		ContentStream cs = Util.convertFileToContentStream(session, file);
 		session.createDocument(param, parentId, cs, VersioningState.MAJOR);
+		
+		//Clean temp file just after CMIS createDocument finished
+		file.getFile().delete();
 	}
 
 	private static void dragAndDropUpdate(String repositoryId, FilePart file, DynamicForm input) {
@@ -517,7 +547,9 @@ public class Node extends Controller {
 		ContentStream cs = Util.convertFileToContentStream(session, file);
 		Document d0 = (Document) session.getObject(objectId);
 		Document d1 = d0.setContentStream(cs, true);
-		// d1.updateProperties(param);
+		
+		//Clean temp file just after CMIS createDocument finished
+		file.getFile().delete();
 	}
 
 	public static Result create(String repositoryId) {
@@ -528,10 +560,6 @@ public class Node extends Controller {
 		String objectTypeId = Util.getFormData(input, PropertyIds.OBJECT_TYPE_ID);
 		String _parentId = Util.getFormData(input, PropertyIds.PARENT_ID);
 		ObjectId parentId = new ObjectIdImpl(_parentId);
-
-		// Check dragAndDrop
-		boolean dragAndDrop = (Util.getFormData(input, "dragAndDrop") == null) ? false
-				: Boolean.valueOf(Util.getFormData(input, "dragAndDrop"));
 
 		Session session = getCmisSession(repositoryId);
 
@@ -549,7 +577,11 @@ public class Node extends Controller {
 		switch (Util.getBaseType(session, objectTypeId)) {
 		case CMIS_DOCUMENT:
 			ContentStreamAllowed csa = ((DocumentTypeDefinition) objectType).getContentStreamAllowed();
-			if (csa == ContentStreamAllowed.REQUIRED) {
+			
+			if (csa == ContentStreamAllowed.NOTALLOWED) {
+				// don't set content stream
+				session.createDocument(param, parentId, null, VersioningState.MAJOR);
+			}else{
 				List<FilePart> files = null;
 				MultipartFormData body = request().body().asMultipartFormData();
 				if (body != null && CollectionUtils.isNotEmpty(body.getFiles())) {
@@ -557,34 +589,27 @@ public class Node extends Controller {
 				}
 
 				if (CollectionUtils.isEmpty(files)) {
-					// TODO error
-					System.err.println(objectTypeId + ":This type requires a file");
+					//Case: no file
+					if (csa == ContentStreamAllowed.REQUIRED){
+						return internalServerError(objectTypeId + ":This type requires a file");
+					}else if(csa == ContentStreamAllowed.ALLOWED){
+						session.createDocument(param, parentId, null, VersioningState.MAJOR);
+					}
 				} else {
-					ContentStream cs = Util.convertFileToContentStream(session, files.get(0));
+					//Case: file exists
+					ContentStream contentStream = Util.convertFileToContentStream(session, files.get(0));
 					if (param.get(PropertyIds.NAME) == null) {
-						param.put(PropertyIds.NAME, cs.getFileName());
-					}
-					session.createDocument(param, parentId, cs, VersioningState.MAJOR);
+						param.put(PropertyIds.NAME, contentStream.getFileName());
 				}
-			} else if (csa == ContentStreamAllowed.ALLOWED) {
-				// Retrieve a file
-				List<FilePart> files = null;
-				MultipartFormData body = request().body().asMultipartFormData();
-				if (body != null && CollectionUtils.isNotEmpty(body.getFiles())) {
-					files = body.getFiles();
-				}
+					session.createDocument(param, parentId, contentStream, VersioningState.MAJOR);
 
-				// Set content stream if there is a file
+					//Clean temp file just after CMIS createDocument finished
 				if (CollectionUtils.isNotEmpty(files)) {
-					ContentStream cs = Util.convertFileToContentStream(session, files.get(0));
-					if (param.get(PropertyIds.NAME) == null) {
-						param.put(PropertyIds.NAME, cs.getFileName());
+						for(FilePart file : files){
+							file.getFile().delete();
+						}
 					}
-					session.createDocument(param, parentId, cs, VersioningState.MAJOR);
 				}
-			} else if (csa == ContentStreamAllowed.NOTALLOWED) {
-				// don't set content stream
-				session.createDocument(param, parentId, null, VersioningState.MAJOR);
 			}
 
 			break;
@@ -593,15 +618,10 @@ public class Node extends Controller {
 			break;
 		default:
 			break;
-
 		}
 
-		if (dragAndDrop) {
-			return ok();
-		} else {
 			return redirectToParent(repositoryId, input);
 		}
-	}
 
 	public static Result update(String repositoryId, String id) {
 		// Get an object in the repository
@@ -976,6 +996,21 @@ public class Node extends Controller {
 		} else {
 			JsonNode json = Json.toJson(ace);
 			return ok(json);
+		}
+	}
+
+	private static class TemporaryFileInputStream extends FileInputStream {
+		private File file;
+
+		public TemporaryFileInputStream(File file) throws FileNotFoundException {
+			super(file);
+			this.file = file;
+		}
+
+		@Override
+		public void close() throws IOException {
+			super.close();
+			this.file.delete();
 		}
 	}
 

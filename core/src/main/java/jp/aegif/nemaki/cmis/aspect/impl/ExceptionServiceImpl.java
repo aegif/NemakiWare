@@ -23,10 +23,8 @@ package jp.aegif.nemaki.cmis.aspect.impl;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.security.acl.Permission;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -34,7 +32,6 @@ import java.util.Set;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
-import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.data.PropertyDecimal;
@@ -91,7 +88,6 @@ import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.constant.DomainType;
-import jp.aegif.nemaki.util.constant.PropertyKey;
 
 public class ExceptionServiceImpl implements ExceptionService,
 		ApplicationContextAware {
@@ -342,6 +338,11 @@ public class ExceptionServiceImpl implements ExceptionService,
 	@Override
 	public void permissionDenied(CallContext context, String repositoryId,
 			String key, Content content) {
+		if(content == null){
+			System.out.println();
+		}
+		
+		
 		String baseTypeId = content.getType();
 		Acl acl = contentService.calculateAcl(repositoryId, content);
 		permissionDeniedInternal(context, repositoryId, key, acl, baseTypeId, content);
