@@ -618,6 +618,8 @@ public interface ContentDaoService {
 	 */
 	List<Archive> getAllArchives(String repositoryId);
 
+	List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc);
+	
 	/**
 	 * Create an archive of a content
 	 * @param repositoryId TODO

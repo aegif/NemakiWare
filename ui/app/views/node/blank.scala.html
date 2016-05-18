@@ -1,3 +1,5 @@
+@*{<meta charset="UTF-8" />}*@
+
 @import table._
 @import component._
 @import util.Util
@@ -10,6 +12,7 @@
 @import org.apache.chemistry.opencmis.commons.PropertyIds
 @import org.apache.chemistry.opencmis.commons.enums.BaseTypeId
 @import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed
+@import play.mvc.Http.Context.Implicit
 
 @(repositoryId:String)(parentId:String)(objectType:ObjectType)
 
@@ -106,7 +109,7 @@
 					//Validation
 					@if(p.isRequired){
 						if(!inputVal){
-							alert("@NemakiConfig.getLabel(p.getId, lang().language) @Messages("view.message.is-required")");
+							alert("@NemakiConfig.getLabel(p.getId, Implicit.lang().language) @Messages("view.message.is-required")");
 							return;  //End click event
 						}
 

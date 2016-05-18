@@ -1,10 +1,12 @@
+@*{<meta charset="UTF-8" />}*@
+
 @import helper.twitterBootstrap._
 @import util.Util
 @import util.NemakiConfig
 @import util.Formatter
 @import org.apache.chemistry.opencmis.commons.PropertyIds
 
-@(repositoryId:String)(objectTypes: List[org.apache.chemistry.opencmis.client.api.ObjectType])
+@(repositoryId:String)(objectTypes: java.util.List[org.apache.chemistry.opencmis.client.api.ObjectType])
 <!DOCTYPE html>
 <html>
 	@header()
