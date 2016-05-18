@@ -192,6 +192,8 @@ public class Util {
 
 		File file = File.createTempFile(
 				String.valueOf(System.currentTimeMillis()), null);
+		file.deleteOnExit();
+		
 		try {
 			// write the inputStream to a FileOutputStream
 			OutputStream out = new FileOutputStream(file);

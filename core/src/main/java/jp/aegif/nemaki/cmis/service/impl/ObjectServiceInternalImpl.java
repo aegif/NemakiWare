@@ -37,11 +37,12 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 		// General Exception
 		// //////////////////
 		String objectId = content.getId();
-		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 		exceptionService.permissionDenied(callContext,
 				repositoryId, PermissionMapping.CAN_DELETE_OBJECT, content);
 		exceptionService.constraintDeleteRootFolder(repositoryId, objectId);
 
+		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
+		
 		// //////////////////
 		// Body of the method
 		// //////////////////

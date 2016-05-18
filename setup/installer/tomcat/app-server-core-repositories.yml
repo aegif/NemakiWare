@@ -6,7 +6,7 @@ default:
   thinClientUri: http://localhost:8080/ui/
   vendor: aegif
   product.name: NemakiWare
-  product.version: 2.3.11
+  product.version: 2.3.12
   namespace: http://www.aegif.jp/NemakiWare/
 super.users: canopy
 repositories:
