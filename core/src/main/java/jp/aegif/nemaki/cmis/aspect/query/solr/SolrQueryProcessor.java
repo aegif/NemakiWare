@@ -27,6 +27,7 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.locks.Lock;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
@@ -35,6 +36,7 @@ import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.cmis.aspect.query.QueryProcessor;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.util.lock.ThreadLockService;
 
 import org.antlr.runtime.tree.Tree;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
@@ -68,6 +70,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 	private PermissionService permissionService;
 	private CompileService compileService;
 	private ExceptionService exceptionService;
+	private ThreadLockService threadLockService;
 	private SolrUtil solrUtil;
 	private static final Log logger = LogFactory
 			.getLog(SolrQueryProcessor.class);
@@ -226,28 +229,37 @@ public class SolrQueryProcessor implements QueryProcessor {
 				}
 
 			}
+			
+			
+			List<Lock> locks = threadLockService.readLocks(repositoryId, contents);
+			try{
+				threadLockService.bulkLock(locks);
+				
+				// Filter out by permissions
+				List<Content> permitted = permissionService.getFiltered(
+						callContext, repositoryId, contents);
 
-			// Filter out by permissions
-			List<Content> permitted = permissionService.getFiltered(
-					callContext, repositoryId, contents);
+				// Filter return value with SELECT clause
+				Map<String, String> requestedWithAliasKey = queryObject
+						.getRequestedPropertiesByAlias();
+				String filter = null;
+				if (!requestedWithAliasKey.keySet().contains("*")) {
+					// Create filter(queryNames) from query aliases
+					filter = StringUtils.join(requestedWithAliasKey.values(), ",");
+				}
 
-			// Filter return value with SELECT clause
-			Map<String, String> requestedWithAliasKey = queryObject
-					.getRequestedPropertiesByAlias();
-			String filter = null;
-			if (!requestedWithAliasKey.keySet().contains("*")) {
-				// Create filter(queryNames) from query aliases
-				filter = StringUtils.join(requestedWithAliasKey.values(), ",");
+				// Build ObjectList
+				String orderBy = orderBy(queryObject);
+				ObjectList result = compileService.compileObjectDataList(
+						callContext, repositoryId, permitted, filter,
+						includeAllowableActions, includeRelationships, renditionFilter, false,
+						maxItems, skipCount, false, orderBy);
+
+				return result;
+				
+			}finally{
+				threadLockService.bulkUnlock(locks);
 			}
-
-			// Build ObjectList
-			String orderBy = orderBy(queryObject);
-			ObjectList result = compileService.compileObjectDataList(
-					callContext, repositoryId, permitted, filter,
-					includeAllowableActions, includeRelationships, renditionFilter, false,
-					maxItems, skipCount, false, orderBy);
-
-			return result;
 		} else {
 			ObjectListImpl nullList = new ObjectListImpl();
 			nullList.setHasMoreItems(false);
@@ -311,5 +323,9 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 	public void setSolrUtil(SolrUtil solrUtil) {
 		this.solrUtil = solrUtil;
+	}
+
+	public void setThreadLockService(ThreadLockService threadLockService) {
+		this.threadLockService = threadLockService;
 	}
 }

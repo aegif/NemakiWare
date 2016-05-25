@@ -21,6 +21,7 @@
 package jp.aegif.nemaki.cmis.service.impl;
 
 import java.util.List;
+import java.util.concurrent.locks.Lock;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
@@ -30,10 +31,11 @@ import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.cmis.service.AclService;
 import jp.aegif.nemaki.model.Content;
-import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.DomainType;
 import jp.aegif.nemaki.util.constant.PrincipalId;
+import jp.aegif.nemaki.util.lock.ThreadLockService;
+
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
@@ -53,78 +55,102 @@ public class AclServiceImpl implements AclService {
 	private CompileService compileService;
 	private ExceptionService exceptionService;
 	private TypeManager typeManager;
+	private ThreadLockService threadLockService;
 	private NemakiCachePool nemakiCachePool;
 	private RepositoryInfoMap repositoryInfoMap;
 
 	@Override
 	public Acl getAcl(CallContext callContext, String repositoryId,
 			String objectId, Boolean onlyBasicPermissions) {
-		// //////////////////
-		// General Exception
-		// //////////////////
+		
 		exceptionService.invalidArgumentRequired("objectId", objectId);
-		Content content = contentService.getContent(repositoryId, objectId);
-		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
-		exceptionService.permissionDenied(callContext,repositoryId, PermissionMapping.CAN_GET_ACL_OBJECT, content);
+		
+		Lock lock = threadLockService.getReadLock(repositoryId, objectId);
+		
+		try{
+			lock.lock();
+			
+			// //////////////////
+			// General Exception
+			// //////////////////
+			
+			Content content = contentService.getContent(repositoryId, objectId);
+			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
+			exceptionService.permissionDenied(callContext,repositoryId, PermissionMapping.CAN_GET_ACL_OBJECT, content);
 
-		// //////////////////
-		// Body of the method
-		// //////////////////
-		jp.aegif.nemaki.model.Acl acl = contentService.calculateAcl(repositoryId, content);
-		return compileService.compileAcl(acl, content.isAclInherited(), onlyBasicPermissions);
+			// //////////////////
+			// Body of the method
+			// //////////////////
+			jp.aegif.nemaki.model.Acl acl = contentService.calculateAcl(repositoryId, content);
+			return compileService.compileAcl(acl, content.isAclInherited(), onlyBasicPermissions);
+		}finally{
+			lock.unlock();
+		}
 	}
 
 	@Override
 	public Acl applyAcl(CallContext callContext, String repositoryId, String objectId,
 			Acl acl, AclPropagation aclPropagation) {
-		// //////////////////
-		// General Exception
-		// //////////////////
 		exceptionService.invalidArgumentRequired("objectId", objectId);
-		Content content = contentService.getContent(repositoryId, objectId);
-		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
-		exceptionService.permissionDenied(callContext,repositoryId, PermissionMapping.CAN_APPLY_ACL_OBJECT, content);
+		
+		Lock lock = threadLockService.getReadLock(repositoryId, objectId);
+		
+		try{
+			lock.lock();
+			
+			// //////////////////
+			// General Exception
+			// //////////////////
+			
+			Content content = contentService.getContent(repositoryId, objectId);
+			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
+			exceptionService.permissionDenied(callContext,repositoryId, PermissionMapping.CAN_APPLY_ACL_OBJECT, content);
 
-		// //////////////////
-		// Specific Exception
-		// //////////////////
-		TypeDefinition td = typeManager.getTypeDefinition(repositoryId, content);
-		if(!td.isControllableAcl()) exceptionService.constraint(objectId, "applyAcl cannot be performed on the object whose controllableAcl = false");
-		exceptionService.constraintAclPropagationDoesNotMatch(aclPropagation);
-		exceptionService.constraintPermissionDefined(repositoryId, acl, objectId);
+			// //////////////////
+			// Specific Exception
+			// //////////////////
+			TypeDefinition td = typeManager.getTypeDefinition(repositoryId, content);
+			if(!td.isControllableAcl()) exceptionService.constraint(objectId, "applyAcl cannot be performed on the object whose controllableAcl = false");
+			exceptionService.constraintAclPropagationDoesNotMatch(aclPropagation);
+			exceptionService.constraintPermissionDefined(repositoryId, acl, objectId);
 
-		// //////////////////
-		// Body of the method
-		// //////////////////
-		//Check ACL inheritance
-		boolean inherited = true;	//Inheritance defaults to true if nothing input
-		List<CmisExtensionElement> exts = acl.getExtensions();
-		if(!CollectionUtils.isEmpty(exts)){
-			for(CmisExtensionElement ext : exts){
-				if(ext.getName().equals("inherited")){
-					inherited = Boolean.valueOf(ext.getValue());
+			// //////////////////
+			// Body of the method
+			// //////////////////
+			//Check ACL inheritance
+			boolean inherited = true;	//Inheritance defaults to true if nothing input
+			List<CmisExtensionElement> exts = acl.getExtensions();
+			if(!CollectionUtils.isEmpty(exts)){
+				for(CmisExtensionElement ext : exts){
+					if(ext.getName().equals("inherited")){
+						inherited = Boolean.valueOf(ext.getValue());
+					}
+				}
+				if(!content.isAclInherited().equals(inherited)) content.setAclInherited(inherited);
+			}
+
+			jp.aegif.nemaki.model.Acl nemakiAcl = new jp.aegif.nemaki.model.Acl();
+			//REPOSUTORYDETERMINED or PROPAGATE is considered as PROPAGATE
+			boolean objectOnly = (aclPropagation == AclPropagation.OBJECTONLY)? true : false;
+			for(Ace ace : acl.getAces()){
+				if(ace.isDirect()){
+					jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(ace.getPrincipalId(), ace.getPermissions(), objectOnly);
+					nemakiAcl.getLocalAces().add(nemakiAce);
 				}
 			}
-			if(!content.isAclInherited().equals(inherited)) content.setAclInherited(inherited);
-		}
 
-		jp.aegif.nemaki.model.Acl nemakiAcl = new jp.aegif.nemaki.model.Acl();
-		//REPOSUTORYDETERMINED or PROPAGATE is considered as PROPAGATE
-		boolean objectOnly = (aclPropagation == AclPropagation.OBJECTONLY)? true : false;
-		for(Ace ace : acl.getAces()){
-			if(ace.isDirect()){
-				jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(ace.getPrincipalId(), ace.getPermissions(), objectOnly);
-				nemakiAcl.getLocalAces().add(nemakiAce);
-			}
+			convertSystemPrinciaplId(repositoryId, nemakiAcl);
+			content.setAcl(nemakiAcl);
+			contentService.update(repositoryId, content);
+			
+			nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
+			
+			return getAcl(callContext, repositoryId, objectId, false);
+			
+		}finally{
+			lock.unlock();
 		}
-
-		convertSystemPrinciaplId(repositoryId, nemakiAcl);
-		content.setAcl(nemakiAcl);
-		contentService.update(repositoryId, content);
 		
-		nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
-		
-		return getAcl(callContext, repositoryId, objectId, false);
 	}
 
 	private void convertSystemPrinciaplId(String repositoryId, jp.aegif.nemaki.model.Acl acl){
@@ -157,6 +183,10 @@ public class AclServiceImpl implements AclService {
 
 	public void setTypeManager(TypeManager typeManager) {
 		this.typeManager = typeManager;
+	}
+
+	public void setThreadLockService(ThreadLockService threadLockService) {
+		this.threadLockService = threadLockService;
 	}
 
 	public void setNemakiCachePool(NemakiCachePool nemakiCachePool) {

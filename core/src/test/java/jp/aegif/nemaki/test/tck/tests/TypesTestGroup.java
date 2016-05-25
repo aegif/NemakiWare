@@ -1,11 +1,11 @@
-package jp.aegif.nemaki.test.cmis.tests;
+package jp.aegif.nemaki.test.tck.tests;
 
 import org.apache.chemistry.opencmis.tck.tests.types.BaseTypesTest;
 import org.apache.chemistry.opencmis.tck.tests.types.CreateAndDeleteTypeTest;
 import org.apache.chemistry.opencmis.tck.tests.types.SecondaryTypesTest;
 import org.junit.Test;
 
-import jp.aegif.nemaki.test.cmis.TckSuite;
+import jp.aegif.nemaki.test.tck.TckSuite;
 
 public class TypesTestGroup extends TckSuite{
 	@Test
