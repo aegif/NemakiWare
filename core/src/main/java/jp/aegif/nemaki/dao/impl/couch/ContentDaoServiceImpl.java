@@ -1036,4 +1036,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		this.repositoryInfoMap = repositoryInfoMap;
 	}
 
+	@Override
+	public void refreshCmisObjectData(String repositoryId, String objectId) {
+		// this method is for cached service
+	}
 }

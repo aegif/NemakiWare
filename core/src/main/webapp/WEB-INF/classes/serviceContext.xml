@@ -168,8 +168,11 @@
         <property name="compileService">
             <ref bean="CompileService" />
         </property>
-       <property name="permissionService">
+        <property name="permissionService">
             <ref bean="PermissionService" />
+        </property>
+        <property name="threadLockService">
+            <ref bean="ThreadLockService" />
         </property>
     </bean>
 
@@ -215,6 +218,9 @@
         <property name="threadMax">
 			<value>${thread.max}</value>
         </property>
+        <property name="threadLockService">
+            <ref bean="ThreadLockService" />
+        </property>
     </bean>
     
     <bean id="ObjectServiceInternal" class="org.springframework.aop.framework.ProxyFactoryBean">
@@ -234,6 +240,9 @@
         </property>
         <property name="exceptionService">
             <ref bean="ExceptionService" />
+        </property>
+        <property name="threadLockService">
+            <ref bean="ThreadLockService" />
         </property>
         <property name="nemakiCachePool">
 			<ref bean="nemakiCachePool" />
@@ -289,6 +298,9 @@
         <property name="exceptionService">
             <ref bean="ExceptionService" />
         </property>
+        <property name="threadLockService">
+            <ref bean="ThreadLockService" />
+        </property>
         <property name="nemakiCachePool">
             <ref bean="nemakiCachePool" />
         </property>
@@ -321,6 +333,9 @@
         <property name="exceptionService">
             <ref bean="ExceptionService" />
         </property>
+        <property name="threadLockService">
+            <ref bean="ThreadLockService" />
+        </property>
     </bean>
 
     <bean id="PolicyService" class="org.springframework.aop.framework.ProxyFactoryBean">
@@ -343,6 +358,9 @@
         </property>
         <property name="exceptionService">
             <ref bean="ExceptionService" />
+        </property>
+        <property name="threadLockService">
+            <ref bean="ThreadLockService" />
         </property>
         <property name="nemakiCachePool">
             <ref bean="nemakiCachePool" />
@@ -372,6 +390,9 @@
         </property>
         <property name="typeManager">
             <ref bean="TypeManager" />
+        </property>
+        <property name="threadLockService">
+            <ref bean="ThreadLockService" />
         </property>
         <property name="repositoryInfoMap">
             <ref bean="repositoryInfoMap" />
@@ -565,6 +586,9 @@
         <property name="exceptionService">
             <ref bean="ExceptionService" />
         </property>
+        <property name="threadLockService">
+            <ref bean="ThreadLockService" />
+        </property>
         <property name="solrUtil">
             <ref bean="solrUtil" />
         </property>
@@ -641,5 +665,20 @@
     	<property name="tokenService">
        		<ref bean="TokenService" />
         </property>
+    </bean>
+    
+    <!-- Thread Lock -->
+    <bean id="ThreadLockService" class="org.springframework.aop.framework.ProxyFactoryBean">
+        <property name="proxyInterfaces">
+            <list>
+                <value>jp.aegif.nemaki.util.lock.ThreadLockService
+                </value>
+            </list>
+        </property>
+        <property name="target">
+            <ref bean="threadLockService" />
+        </property>
+    </bean>
+    <bean id="threadLockService" class="jp.aegif.nemaki.util.lock.impl.ThreadLockServiceImpl">
     </bean>
 </beans>

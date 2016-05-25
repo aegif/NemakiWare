@@ -1,4 +1,4 @@
-package jp.aegif.nemaki.test.cmis.tests;
+package jp.aegif.nemaki.test.tck.tests;
 
 import org.apache.chemistry.opencmis.tck.tests.versioning.CheckedOutTest;
 import org.apache.chemistry.opencmis.tck.tests.versioning.VersionDeleteTest;
@@ -6,7 +6,7 @@ import org.apache.chemistry.opencmis.tck.tests.versioning.VersioningSmokeTest;
 import org.apache.chemistry.opencmis.tck.tests.versioning.VersioningStateCreateTest;
 import org.junit.Test;
 
-import jp.aegif.nemaki.test.cmis.TckSuite;
+import jp.aegif.nemaki.test.tck.TckSuite;
 
 public class VersioningTestGroup extends TckSuite{
 	@Test
