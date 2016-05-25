@@ -26,6 +26,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.GregorianCalendar;
 import java.util.List;
+import java.util.concurrent.locks.Lock;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
@@ -36,6 +37,7 @@ import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.DomainType;
+import jp.aegif.nemaki.util.lock.ThreadLockService;
 
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
@@ -53,6 +55,7 @@ public class VersioningServiceImpl implements VersioningService {
 	private CompileService compileService;
 	private ExceptionService exceptionService;
 	private NemakiCachePool nemakiCachePool;
+	private ThreadLockService threadLockService;
 
 	@Override
 	/**
@@ -60,65 +63,86 @@ public class VersioningServiceImpl implements VersioningService {
 	 */
 	public void checkOut(CallContext callContext, String repositoryId,
 			Holder<String> objectId, ExtensionsData extension, Holder<Boolean> contentCopied) {
-		// //////////////////
-		// General Exception
-		// //////////////////
-		String id = objectId.getValue();
-		exceptionService.invalidArgumentRequiredString("objectId", id);
-		Document document = contentService.getDocument(repositoryId, id);
-		exceptionService.objectNotFound(DomainType.OBJECT, document, id);
-		exceptionService.permissionDenied(callContext,
-				repositoryId, PermissionMapping.CAN_CHECKOUT_DOCUMENT, document);
 
-		// //////////////////
-		// Specific Exception
-		// //////////////////
-		// CMIS doesn't define the error type when checkOut is performed
-		// repeatedly
-		exceptionService.constraintAlreadyCheckedOut(repositoryId, document);
-		exceptionService.constraintVersionable(repositoryId, document.getObjectType());
-		exceptionService.versioning(document);
-
-		// //////////////////
-		// Body of the method
-		// //////////////////
-		Document pwc = contentService.checkOut(callContext, repositoryId, id, extension);
-		objectId.setValue(pwc.getId());
-		Holder<Boolean> copied = new Holder<Boolean>(true);
-		contentCopied = copied;
+		exceptionService.invalidArgumentRequiredHolderString("objectId", objectId);
+		String originalId = objectId.getValue();
 		
-		nemakiCachePool.get(repositoryId).removeCmisCache(id);
+		Lock lock = threadLockService.getWriteLock(repositoryId, objectId.getValue());
+		
+		try{
+			lock.lock();
+			// //////////////////
+			// General Exception
+			// //////////////////
+			Document document = contentService.getDocument(repositoryId, objectId.getValue());
+			exceptionService.objectNotFound(DomainType.OBJECT, document, objectId.getValue());
+			exceptionService.permissionDenied(callContext,
+					repositoryId, PermissionMapping.CAN_CHECKOUT_DOCUMENT, document);
+
+			// //////////////////
+			// Specific Exception
+			// //////////////////
+			// CMIS doesn't define the error type when checkOut is performed
+			// repeatedly
+			exceptionService.constraintAlreadyCheckedOut(repositoryId, document);
+			exceptionService.constraintVersionable(repositoryId, document.getObjectType());
+			exceptionService.versioning(document);
+
+			// //////////////////
+			// Body of the method
+			// //////////////////
+			Document pwc = contentService.checkOut(callContext, repositoryId, objectId.getValue(), extension);
+			objectId.setValue(pwc.getId());
+			Holder<Boolean> copied = new Holder<Boolean>(true);
+			contentCopied = copied;
+			
+			nemakiCachePool.get(repositoryId).removeCmisCache(originalId);
+		}finally{
+			lock.unlock();
+		}
 	}
 
 	@Override
 	public void cancelCheckOut(CallContext callContext, String repositoryId,
 			String objectId, ExtensionsData extension) {
-		// //////////////////
-		// General Exception
-		// //////////////////
+		
 		exceptionService.invalidArgumentRequiredString("objectId", objectId);
-		Document document = contentService.getDocument(repositoryId, objectId);
-		exceptionService.objectNotFound(DomainType.OBJECT, document, objectId);
-		exceptionService.permissionDenied(callContext,
-				repositoryId, PermissionMapping.CAN_CHECKIN_DOCUMENT, document);
+		
+		Lock lock = threadLockService.getWriteLock(repositoryId, objectId);
+		
+		try{
+			lock.lock();
+			
+			// //////////////////
+			// General Exception
+			// //////////////////
+			Document document = contentService.getDocument(repositoryId, objectId);
+			exceptionService.objectNotFound(DomainType.OBJECT, document, objectId);
+			exceptionService.permissionDenied(callContext,
+					repositoryId, PermissionMapping.CAN_CHECKIN_DOCUMENT, document);
 
-		// //////////////////
-		// Specific Exception
-		// //////////////////
-		exceptionService.constraintVersionable(repositoryId, document.getObjectType());
+			// //////////////////
+			// Specific Exception
+			// //////////////////
+			exceptionService.constraintVersionable(repositoryId, document.getObjectType());
 
-		// //////////////////
-		// Body of the method
-		// //////////////////
-		contentService.cancelCheckOut(callContext, repositoryId, objectId, extension);
+			// //////////////////
+			// Body of the method
+			// //////////////////
+			contentService.cancelCheckOut(callContext, repositoryId, objectId, extension);
 
-		//remove cache
-		nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
-		Document latest = contentService.getDocumentOfLatestVersion(repositoryId, document.getVersionSeriesId());
-		//Latest document does not exit when pwc is created as the first version
-		if(latest != null){
-			nemakiCachePool.get(repositoryId).removeCmisCache(latest.getId());
+			//remove cache
+			nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
+			Document latest = contentService.getDocumentOfLatestVersion(repositoryId, document.getVersionSeriesId());
+			//Latest document does not exit when pwc is created as the first version
+			if(latest != null){
+				nemakiCachePool.get(repositoryId).removeCmisCache(latest.getId());
+			}
+		}finally{
+			lock.unlock();
 		}
+		
+
 	}
 
 	@Override
@@ -126,33 +150,50 @@ public class VersioningServiceImpl implements VersioningService {
 			Holder<String> objectId, Boolean major, Properties properties,
 			ContentStream contentStream, String checkinComment, List<String> policies,
 			Acl addAces, Acl removeAces, ExtensionsData extension) {
-		// //////////////////
-		// General Exception
-		// //////////////////
-		String id = objectId.getValue();
-		exceptionService.invalidArgumentRequiredString("objectId", id);
-		Document document = contentService.getDocument(repositoryId, id);
-		exceptionService.objectNotFound(DomainType.OBJECT, document, id);
-		exceptionService.permissionDenied(callContext,
-				repositoryId, PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT, document);
 
-		// //////////////////
-		// Specific Exception
-		// //////////////////
-		exceptionService.constraintVersionable(repositoryId, document.getObjectType());
-		// TODO implement
-		// exceptionService.streamNotSupported(documentTypeDefinition,
-		// contentStream);
-
-		// //////////////////
-		// Body of the method
-		// //////////////////
-		Document checkedIn = contentService.checkIn(callContext, repositoryId,
-				objectId, major, properties, contentStream, checkinComment,
-				policies, addAces, removeAces, extension);
-		objectId.setValue(checkedIn.getId());
+		exceptionService.invalidArgumentRequiredHolderString("objectId", objectId);
+		final String pwcId = objectId.getValue();
 		
-		nemakiCachePool.get(repositoryId).removeCmisCache(id);
+		Lock lock = threadLockService.getWriteLock(repositoryId, objectId.getValue());
+		
+		try{
+			lock.lock();
+			
+			// //////////////////
+			// General Exception
+			// //////////////////
+
+			Document pwc = contentService.getDocument(repositoryId, objectId.getValue());
+			exceptionService.objectNotFound(DomainType.OBJECT, pwc, objectId.getValue());
+			exceptionService.permissionDenied(callContext,
+					repositoryId, PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT, pwc);
+
+			// //////////////////
+			// Specific Exception
+			// //////////////////
+			exceptionService.constraintVersionable(repositoryId, pwc.getObjectType());
+			// TODO implement
+			// exceptionService.streamNotSupported(documentTypeDefinition,
+			// contentStream);
+
+			// //////////////////
+			// Body of the method
+			// //////////////////
+			Document latest = contentService
+					.getDocumentOfLatestVersion(repositoryId, pwc.getVersionSeriesId());
+			
+			Document checkedIn = contentService.checkIn(callContext, repositoryId,
+					objectId, major, properties, contentStream, checkinComment,
+					policies, addAces, removeAces, extension);
+			objectId.setValue(checkedIn.getId());
+			
+			nemakiCachePool.get(repositoryId).removeCmisCache(pwc.getId());
+			if(latest != null){
+				nemakiCachePool.get(repositoryId).removeCmisCache(latest.getId());
+			}
+		}finally{
+			lock.unlock();
+		}
 	}
 
 	@Override
@@ -183,18 +224,28 @@ public class VersioningServiceImpl implements VersioningService {
 			document = contentService
 					.getDocumentOfLatestVersion(repositoryId, versionSeriesId);
 		}
-		exceptionService.objectNotFound(DomainType.OBJECT, document,
-				versionSeriesId);
-		exceptionService.permissionDenied(context,
-				repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT, document);
+		
+		Lock lock = threadLockService.getReadLock(repositoryId, document.getId());
+		
+		try{
+			lock.lock();
+			
+			exceptionService.objectNotFound(DomainType.OBJECT, document,
+					versionSeriesId);
+			exceptionService.permissionDenied(context,
+					repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT, document);
 
-		// //////////////////
-		// Body of the method
-		// //////////////////
-		ObjectData objectData = compileService.compileObjectData(context,
-				repositoryId, document, filter,
-				includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
-		return objectData;
+			// //////////////////
+			// Body of the method
+			// //////////////////
+			ObjectData objectData = compileService.compileObjectData(context,
+					repositoryId, document, filter,
+					includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
+			return objectData;
+			
+		}finally{
+			lock.unlock();
+		}
 	}
 
 	@Override
@@ -217,34 +268,38 @@ public class VersioningServiceImpl implements VersioningService {
 				.getAllVersions(context, repositoryId, versionSeriesId);
 		exceptionService.objectNotFoundVersionSeries(versionSeriesId,
 				allVersions);
-		// Sort by the descending order
-		Collections.sort(allVersions, new VersionComparator());
-	
-		//Permissions filter
-		/*exceptionService.permissionDenied(context,
-				PermissionMapping.CAN_GET_ALL_VERSIONS_VERSION_SERIES,
-				allVersions.get(0));
-		 */
-		Document latest = allVersions.get(0);
-		if(latest.isPrivateWorkingCopy()){
-			VersionSeries vs = contentService.getVersionSeries(repositoryId, latest);
-			if(!context.getUsername().equals(vs.getVersionSeriesCheckedOutBy())){
-				allVersions.remove(latest);
-			}
-		}
 		
-		// //////////////////
-		// Body of the method
-		// //////////////////
-		List<ObjectData> result = new ArrayList<ObjectData>();
-		for (Content content : allVersions) {
-			ObjectData objectData = compileService.compileObjectData(
-					context, repositoryId, content, filter,
-					includeAllowableActions, IncludeRelationships.NONE, null, true);
-			result.add(objectData);
-		}
+		List<Lock> locks = threadLockService.readLocks(repositoryId, allVersions);
+		try{
+			threadLockService.bulkLock(locks);
+			
+			// Sort by the descending order
+			Collections.sort(allVersions, new VersionComparator());
+		
+			Document latest = allVersions.get(0);
+			if(latest.isPrivateWorkingCopy()){
+				VersionSeries vs = contentService.getVersionSeries(repositoryId, latest);
+				if(!context.getUsername().equals(vs.getVersionSeriesCheckedOutBy())){
+					allVersions.remove(latest);
+				}
+			}
+			
+			// //////////////////
+			// Body of the method
+			// //////////////////
+			List<ObjectData> result = new ArrayList<ObjectData>();
+			for (Content content : allVersions) {
+				ObjectData objectData = compileService.compileObjectData(
+						context, repositoryId, content, filter,
+						includeAllowableActions, IncludeRelationships.NONE, null, true);
+				result.add(objectData);
+			}
 
-		return result;
+			return result;
+			
+		}finally{
+			threadLockService.bulkUnlock(locks);
+		}
 	}
 
 	/**
@@ -283,5 +338,9 @@ public class VersioningServiceImpl implements VersioningService {
 
 	public void setNemakiCachePool(NemakiCachePool nemakiCachePool) {
 		this.nemakiCachePool = nemakiCachePool;
+	}
+
+	public void setThreadLockService(ThreadLockService threadLockService) {
+		this.threadLockService = threadLockService;
 	}
 }

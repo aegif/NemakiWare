@@ -644,6 +644,8 @@ public interface ContentDaoService {
 	 */
 	void deleteArchive(String repositoryId, String archiveId);
 
+	void refreshCmisObjectData(String repositoryId, String objectId);
+	
 	/**
 	 * Restore a content from its archive
 	 * @param repositoryId TODO

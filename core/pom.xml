@@ -34,11 +34,8 @@
 	<dependencies>
 		<dependency>
 			<groupId>junit</groupId>
-			<artifactId>junit</artifactId>
-			<version>4.10</version>
-			<type>jar</type>
-			<scope>test</scope>
-			<optional>false</optional>
+		    <artifactId>junit</artifactId>
+		    <version>4.12</version>
 		</dependency>
 
 		<dependency>
@@ -274,6 +271,18 @@
 			<artifactId>cloning</artifactId>
 			<version>1.9.1</version>
 		</dependency>
+		
+		<dependency>
+			<groupId>com.google.guava</groupId>
+			<artifactId>guava</artifactId>
+			<version>19.0</version>
+		</dependency>
+
+		<dependency>
+		    <groupId>joda-time</groupId>
+		    <artifactId>joda-time</artifactId>
+		    <version>2.9.3</version>
+		</dependency>
 
 		<dependency>
 			<groupId>jp.aegif.nemakiware</groupId>
@@ -301,9 +310,9 @@
 				<version>2.19.1</version>
 				<configuration>
 					<redirectTestOutputToFile>true</redirectTestOutputToFile>
-			        <includes>
-			        	<include>**/*TestGroup.java</include>
-			    	</includes>
+					<includes>
+						<include>**/*TestGroup.java</include>
+					</includes>
 				</configuration>
 			</plugin>
 
