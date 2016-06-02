@@ -390,7 +390,7 @@ public interface ContentService {
 	 * @return
 	 */
 	Content update(String repositoryId, Content content);
-
+	
 	/**
 	 * Update properties of a content
 	 *
