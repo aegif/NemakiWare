@@ -432,7 +432,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
-	public List<Content> getLatestChildrenIndex(String repositoryId, String parentId) {
+	public List<Content> getChildren(String repositoryId, String parentId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("children").key(parentId);
 		List<CouchContent> list = connectorPool.get(repositoryId).queryView(query, CouchContent.class);
 
@@ -618,6 +618,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		connectorPool.get(repositoryId).update(update);
 		return update.convert();
 	}
+	
+	@Override
+	public Document move(String repositoryId, Document document, String sourceId){
+		return update(repositoryId, document);
+	}
 
 	@Override
 	public VersionSeries update(String repositoryId, VersionSeries versionSeries) {
@@ -641,6 +646,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		connectorPool.get(repositoryId).update(update);
 
 		return update.convert();
+	}
+	
+	@Override
+	public Folder move(String repositoryId, Folder folder, String sourceId){
+		return update(repositoryId, folder);
 	}
 
 	@Override
@@ -1026,4 +1036,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		this.repositoryInfoMap = repositoryInfoMap;
 	}
 
+	@Override
+	public void refreshCmisObjectData(String repositoryId, String objectId) {
+		// this method is for cached service
+	}
 }

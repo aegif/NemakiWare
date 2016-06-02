@@ -39,7 +39,7 @@ public class YamlManager {
 		this.baseModelFile = baseModelFile;
 	}
 
-	public synchronized Object loadYml(){
+	public Object loadYml(){
 		InputStream is = getClass().getClassLoader().getResourceAsStream(baseModelFile);
 		if (is == null) {
 			log.error("yaml file not found");

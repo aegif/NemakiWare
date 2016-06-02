@@ -27,15 +27,16 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.locks.Lock;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
-import jp.aegif.nemaki.cmis.aspect.SortUtil;
 import jp.aegif.nemaki.cmis.aspect.query.QueryProcessor;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.util.lock.ThreadLockService;
 
 import org.antlr.runtime.tree.Tree;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
@@ -69,8 +70,8 @@ public class SolrQueryProcessor implements QueryProcessor {
 	private PermissionService permissionService;
 	private CompileService compileService;
 	private ExceptionService exceptionService;
+	private ThreadLockService threadLockService;
 	private SolrUtil solrUtil;
-	private SortUtil sortUtil;
 	private static final Log logger = LogFactory
 			.getLog(SolrQueryProcessor.class);
 
@@ -228,48 +229,59 @@ public class SolrQueryProcessor implements QueryProcessor {
 				}
 
 			}
+			
+			
+			List<Lock> locks = threadLockService.readLocks(repositoryId, contents);
+			try{
+				threadLockService.bulkLock(locks);
+				
+				// Filter out by permissions
+				List<Content> permitted = permissionService.getFiltered(
+						callContext, repositoryId, contents);
 
-			// Filter out by permissions
-			List<Content> permitted = permissionService.getFiltered(
-					callContext, repositoryId, contents);
-
-			// Filter return value with SELECT clause
-			Map<String, String> requestedWithAliasKey = queryObject
-					.getRequestedPropertiesByAlias();
-			String filter = null;
-			if (!requestedWithAliasKey.keySet().contains("*")) {
-				// Create filter(queryNames) from query aliases
-				filter = StringUtils.join(requestedWithAliasKey.values(), ",");
-			}
-
-			// Build ObjectList
-			ObjectList result = compileService.compileObjectDataList(
-					callContext, repositoryId, permitted, filter,
-					includeAllowableActions, includeRelationships, renditionFilter, false,
-					maxItems, skipCount, false);
-
-			// Sort
-			List<SortSpec> sortSpecs = queryObject.getOrderBys();
-			List<String> _orderBy = new ArrayList<String>();
-			for (SortSpec sortSpec : sortSpecs) {
-				List<String> _sortSpec = new ArrayList<String>();
-				_sortSpec.add(sortSpec.getSelector().getName());
-				if (!sortSpec.isAscending()) {
-					_sortSpec.add("DESC");
+				// Filter return value with SELECT clause
+				Map<String, String> requestedWithAliasKey = queryObject
+						.getRequestedPropertiesByAlias();
+				String filter = null;
+				if (!requestedWithAliasKey.keySet().contains("*")) {
+					// Create filter(queryNames) from query aliases
+					filter = StringUtils.join(requestedWithAliasKey.values(), ",");
 				}
 
-				_orderBy.add(StringUtils.join(_sortSpec, " "));
-			}
-			String orderBy = StringUtils.join(_orderBy, ",");
-			sortUtil.sort(repositoryId, result.getObjects(), orderBy);
+				// Build ObjectList
+				String orderBy = orderBy(queryObject);
+				ObjectList result = compileService.compileObjectDataList(
+						callContext, repositoryId, permitted, filter,
+						includeAllowableActions, includeRelationships, renditionFilter, false,
+						maxItems, skipCount, false, orderBy);
 
-			return result;
+				return result;
+				
+			}finally{
+				threadLockService.bulkUnlock(locks);
+			}
 		} else {
 			ObjectListImpl nullList = new ObjectListImpl();
 			nullList.setHasMoreItems(false);
 			nullList.setNumItems(BigInteger.ZERO);
 			return nullList;
 		}
+	}
+	
+	private String orderBy(QueryObject queryObject){
+		List<SortSpec> sortSpecs = queryObject.getOrderBys();
+		List<String> _orderBy = new ArrayList<String>();
+		for (SortSpec sortSpec : sortSpecs) {
+			List<String> _sortSpec = new ArrayList<String>();
+			_sortSpec.add(sortSpec.getSelector().getName());
+			if (!sortSpec.isAscending()) {
+				_sortSpec.add("DESC");
+			}
+
+			_orderBy.add(StringUtils.join(_sortSpec, " "));
+		}
+		String orderBy = StringUtils.join(_orderBy, ",");
+		return orderBy;
 	}
 
 	private Tree extractWhereTree(Tree tree){
@@ -313,7 +325,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 		this.solrUtil = solrUtil;
 	}
 
-	public void setSortUtil(SortUtil sortUtil) {
-		this.sortUtil = sortUtil;
+	public void setThreadLockService(ThreadLockService threadLockService) {
+		this.threadLockService = threadLockService;
 	}
 }

@@ -5,13 +5,13 @@ import java.util.Map;
 
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.util.PropertyManager;
-import jp.aegif.nemaki.util.cache.NemakiCache;
+import jp.aegif.nemaki.util.cache.CacheService;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 
 public class NemakiCachePoolImpl implements NemakiCachePool{
 
-	private Map<String, NemakiCache> pool = new HashMap<String, NemakiCache>();
-	private NemakiCache nullCache;
+	private Map<String, CacheService> pool = new HashMap<String, CacheService>();
+	private CacheService nullCache;
 	
 	private RepositoryInfoMap repositoryInfoMap;
 	private PropertyManager propertyManager;
@@ -25,12 +25,12 @@ public class NemakiCachePoolImpl implements NemakiCachePool{
 			add(key);
 		}
 		
-		nullCache = new NemakiCacheImpl(null, propertyManager);
+		nullCache = new CacheService(null, propertyManager);
 	}
 	
 	@Override
-	public NemakiCache get(String repositoryId) {
-		NemakiCache cache = pool.get(repositoryId);
+	public CacheService get(String repositoryId) {
+		CacheService cache = pool.get(repositoryId);
 		
 		if (cache == null){
 			return nullCache;
@@ -41,7 +41,7 @@ public class NemakiCachePoolImpl implements NemakiCachePool{
 
 	@Override
 	public void add(String repositoryId) {
-		pool.put(repositoryId, new NemakiCacheImpl(repositoryId, propertyManager));
+		pool.put(repositoryId, new CacheService(repositoryId, propertyManager));
 	}
 
 	@Override
@@ -56,13 +56,13 @@ public class NemakiCachePoolImpl implements NemakiCachePool{
 
 	@Override
 	public void clear(String repositoryId) {
-		pool.put(repositoryId, new NemakiCacheImpl(repositoryId, propertyManager));
+		pool.put(repositoryId, new CacheService(repositoryId, propertyManager));
 	}
 
 	@Override
 	public void clearAll() {
 		for(String key : pool.keySet()){
-			pool.put(key, new NemakiCacheImpl(key, propertyManager));
+			pool.put(key, new CacheService(key, propertyManager));
 		}
 	}
 
