@@ -135,11 +135,11 @@ public class CompileServiceImpl implements CompileService {
 
 		ObjectDataImpl _result = new ObjectDataImpl();
 
-		Element v = nemakiCachePool.get(repositoryId).getObjectDataCache().get(content.getId());
+		ObjectData v = nemakiCachePool.get(repositoryId).getObjectDataCache().get(content.getId());
 		if(v == null){
 			_result = compileObjectDataWithFullAttributes(callContext, repositoryId, content);
 		}else{
-			_result = (ObjectDataImpl)v.getObjectValue();
+			_result = (ObjectDataImpl)v;
 		}
 
 		ObjectData result = filterObjectData(repositoryId, _result, filter, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
@@ -299,11 +299,11 @@ public class CompileServiceImpl implements CompileService {
 
 				//Get each ObjectData
 				ObjectData _od;
-				Element v = nemakiCachePool.get(repositoryId).getObjectDataCache().get(c.getId());
+				ObjectData v = nemakiCachePool.get(repositoryId).getObjectDataCache().get(c.getId());
 				if(v == null){
 					_od = compileObjectDataWithFullAttributes(callContext, repositoryId, c);
 				}else{
-					_od = (ObjectDataImpl)v.getObjectValue();
+					_od = (ObjectDataImpl)v;
 				}
 
 				ObjectData od = filterObjectDataInList(callContext, repositoryId, _od, filter, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);

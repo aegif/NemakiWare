@@ -641,8 +641,7 @@ public class ObjectServiceImpl implements ObjectService {
 		String sourceId = DataUtil.getIdProperty(properties,
 				PropertyIds.SOURCE_ID);
 		if (sourceId != null) {
-			Content source = contentService.getContent(repositoryId, DataUtil
-					.getStringProperty(properties, PropertyIds.SOURCE_ID));
+			Content source = contentService.getContent(repositoryId, sourceId);
 			if (source == null)
 				exceptionService.constraintAllowedSourceTypes(td, source);
 			exceptionService.permissionDenied(callContext,
@@ -651,8 +650,7 @@ public class ObjectServiceImpl implements ObjectService {
 		String targetId = DataUtil.getIdProperty(properties,
 				PropertyIds.TARGET_ID);
 		if (targetId != null) {
-			Content target = contentService.getContent(repositoryId, DataUtil
-					.getStringProperty(properties, PropertyIds.TARGET_ID));
+			Content target = contentService.getContent(repositoryId, targetId);
 			if (target == null)
 				exceptionService.constraintAllowedTargetTypes(td, target);
 			exceptionService.permissionDenied(callContext,

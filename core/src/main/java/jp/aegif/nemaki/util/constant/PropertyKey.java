@@ -255,7 +255,6 @@ public interface PropertyKey {
 
 	//Cache
 	final String CACHE_CONFIG = "cache.config";
-	final String CACHE_CMIS_ENABLED = "cache.cmis.enabled";
 
 	//Auth token
 	final String AUTH_TOKEN_EXPIRATION = "auth.token.expiration";

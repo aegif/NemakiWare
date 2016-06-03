@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -21,7 +22,10 @@ import java.util.concurrent.Future;
 
 import javax.activation.FileTypeMap;
 
+import org.apache.chemistry.opencmis.client.api.CmisObject;
+import org.apache.chemistry.opencmis.client.api.Document;
 import org.apache.chemistry.opencmis.client.api.Folder;
+import org.apache.chemistry.opencmis.client.api.ItemIterable;
 import org.apache.chemistry.opencmis.client.api.ObjectId;
 import org.apache.chemistry.opencmis.client.api.OperationContext;
 import org.apache.chemistry.opencmis.client.api.Session;
@@ -155,6 +159,26 @@ public class TestBase {
 		ObjectId objectId = session.createDocument(map, new ObjectIdImpl(parentId), contentStream, VersioningState.MAJOR);
 	
 		return objectId.getId();
+	}
+	
+	public List<Document> getDocs(String testFolderId){
+		//document ids
+		Folder folder = (Folder) session.getObject(testFolderId);
+		OperationContext oc = simpleOperationContext();
+		oc.setMaxItemsPerPage(Integer.MAX_VALUE);
+		
+		ItemIterable<CmisObject> children = folder.getChildren(oc);
+		
+		Iterator<CmisObject> itr = children.iterator();
+		List<Document> docs = new ArrayList<>();
+		while(itr.hasNext()){
+			CmisObject child = itr.next();
+			if(child.getBaseTypeId() == BaseTypeId.CMIS_DOCUMENT){
+				docs.add((Document)child);
+			}
+		}
+		
+		return docs;
 	}
 	
 	public static File convertInputStreamToFile(InputStream inputStream)

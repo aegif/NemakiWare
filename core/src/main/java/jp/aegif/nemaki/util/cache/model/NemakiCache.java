@@ -61,4 +61,8 @@ public class NemakiCache<T> {
 	public void setCache(Cache cache){
 		this.cache = cache;
 	}
+	
+	public boolean isCacheEnabled(){
+		return cacheEnabled;
+	}
 }
