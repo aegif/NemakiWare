@@ -1,4 +1,5 @@
 default:
+  cacheEnabled: true
   maxElementsInMemory: 10000
   overflowToDisc: false
   eternal: false
@@ -14,9 +15,12 @@ typeCache:
   maxElementsInMemory: 1
 
 contentCache:
+  cacheEnabled: false
   maxElementsInMemory: 1000000
   eternal: true
+
 treeCache:
+  cacheEnabled: false
 
 versionSeriesCache:
 

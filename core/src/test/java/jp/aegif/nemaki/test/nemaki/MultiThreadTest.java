@@ -10,6 +10,7 @@ import org.apache.chemistry.opencmis.client.api.Folder;
 import org.apache.chemistry.opencmis.client.api.ItemIterable;
 import org.apache.chemistry.opencmis.client.api.ObjectId;
 import org.apache.chemistry.opencmis.client.api.OperationContext;
+import org.apache.chemistry.opencmis.client.runtime.ObjectIdImpl;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.UnfileObject;
 import org.joda.time.DateTime;
@@ -17,7 +18,6 @@ import org.joda.time.Duration;
 import org.junit.Test;
 
 public class MultiThreadTest extends TestBase{
-	
 	@Test
 	public void checkOutTest_single(){
 		String folderId = createTestFolder();
@@ -36,21 +36,8 @@ public class MultiThreadTest extends TestBase{
 	
 	@Test
 	public void checkOutTest_All() throws InterruptedException, ExecutionException{
-		//document ids
-		Folder folder = (Folder) session.getObject(testFolderId);
-		OperationContext oc = simpleOperationContext();
-		oc.setMaxItemsPerPage(Integer.MAX_VALUE);
-		
-		ItemIterable<CmisObject> children = folder.getChildren(oc);
-		
-		Iterator<CmisObject> itr = children.iterator();
-		List<Document> docs = new ArrayList<>();
-		while(itr.hasNext()){
-			CmisObject child = itr.next();
-			if(child.getBaseTypeId() == BaseTypeId.CMIS_DOCUMENT){
-				docs.add((Document)child);
-			}
-		}
+		//document ids();
+		List<Document> docs = getDocs(testFolderId);
 		
 		//checkout
 		List<Thread> threads = new ArrayList<>();
@@ -92,6 +79,22 @@ public class MultiThreadTest extends TestBase{
 			
 			System.out.println(taskId + ", " + duration.getMillis()  + ", " + doc.getId() + ", " + start + ", " + end);
 		}
+	}
+	
+	
+	public void checkInTest_All() throws InterruptedException, ExecutionException{
+		checkOutTest_All();
+		
+		System.out.println("---checkout test finished---");
+		System.out.println("---checkin test started---");
+		
+		//document ids
+		List<Document> docs = getDocs(testFolderId);
+		
+		for(Document doc : docs){
+			
+		}
+		
 	}
 	
 	@Test
@@ -159,5 +162,55 @@ public class MultiThreadTest extends TestBase{
 			
 			System.out.println(taskId + ", " + duration.getMillis()  + ", " + doc.getId() + ", " + start + ", " + end);
 		}
+	}
+	
+	@Test
+	public void copyTest_All() throws InterruptedException{
+		//document ids
+		List<Document> docs = getDocs(testFolderId);
+		String targetFolderId = createTestFolder();
+		System.out.println("taget folder: " + targetFolderId);
+		
+		List<Thread> threads = new ArrayList<>();
+		Integer taskNum = 1;
+		for(Document doc : docs){
+			threads.add(new Thread(new CopyTask(taskNum, doc, new ObjectIdImpl(targetFolderId))));
+			taskNum++;
+		}
+		
+		for(Thread thread : threads){
+			thread.start();
+		}
+		
+		for(Thread thread : threads){
+			thread.join();
+		}
+		
+		Folder targetFolder = (Folder) session.getObject(targetFolderId);
+		targetFolder.deleteTree(true, UnfileObject.DELETE, true);
+		
+		
+		System.out.println("copy test finished. target folder contains " + targetFolder.getChildren().getPageNumItems());
+		
+	}
+	
+	private static class CopyTask implements Runnable{
+		private int taskId;
+		private Document doc;
+		private ObjectId targetFolderId;
+		
+		public CopyTask(int taskId, Document doc, ObjectId targetFolderId){
+			this.taskId = taskId;
+			this.doc = doc;
+			this.targetFolderId = targetFolderId;
+		}
+
+		@Override
+		public void run() {
+			System.out.println(taskId + ":start " + doc.getName());
+			Document copy = doc.copy(targetFolderId);
+			System.out.println(taskId + ":copied " + copy.getName());
+		}
+		
 	}
 }
