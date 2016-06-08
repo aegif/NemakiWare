@@ -1190,6 +1190,7 @@ public class ContentServiceImpl implements ContentService {
 
 		Folder source = getFolder(repositoryId, sourceId);
 		writeChangeEvent(callContext, repositoryId, source, ChangeType.UPDATED);
+		writeChangeEvent(callContext, repositoryId, target, ChangeType.UPDATED);
 		
 		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing(repositoryId);
