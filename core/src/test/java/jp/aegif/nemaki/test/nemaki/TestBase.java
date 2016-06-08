@@ -16,6 +16,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletionService;
+import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -48,10 +50,10 @@ public class TestBase {
 	@BeforeClass
 	public static void before() throws Exception {
 		session = SessionUtil.createCmisSession("bedroom", "admin", "admin");
-		testFolderId = prepareData();
+		//testFolderId = prepareData();
 	}
 
-	@AfterClass
+	
 	public static void after() throws Exception {
 		Folder folder = (Folder) session.getObject(testFolderId);
 		folder.deleteTree(true, UnfileObject.DELETE, true);
@@ -69,16 +71,19 @@ public class TestBase {
 			tasks.add(new CreateDocumentTask("task_" + i , testFolderId, "task_" + i + ".txt", "これはテストです"));
 		}
 		
-		List<Future<String>> _results = new ArrayList<>();
-		ExecutorService executor = Executors.newCachedThreadPool();
-		_results = executor.invokeAll(tasks);
+		ExecutorService executionService = Executors.newFixedThreadPool(10);
+		CompletionService<String> completionService = new ExecutorCompletionService<>(executionService);
 		
-		List<String> results = new ArrayList<>();
-		for(Future<String> _result : _results){
-			results.add(_result.get());
+		for(int i=1; i<=itemNumber; i++){
+			completionService.submit(new CreateDocumentTask("task_" + i , testFolderId, "task_" + i + ".txt", "これはテストです"));
 		}
 		
-		System.out.println("data initilization completed: " + results.size() + " items");
+		for(int i=1; i<=itemNumber; i++){
+			Future<String> result = completionService.take();
+			result.get();
+		}
+		
+		System.out.println("data initilization completed: " + itemNumber + " items");
 		return testFolderId;
 	}
 	
