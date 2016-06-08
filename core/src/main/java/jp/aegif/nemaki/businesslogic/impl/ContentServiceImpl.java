@@ -1179,7 +1179,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public void move(String repositoryId, Content content, Folder target) {
+	public void move(CallContext callContext, String repositoryId, Content content, Folder target) {
 		String sourceId = content.getParentId();
 		
 		content.setParentId(target.getId());
@@ -1188,6 +1188,9 @@ public class ContentServiceImpl implements ContentService {
 		
 		move(repositoryId, content, sourceId);
 
+		Folder source = getFolder(repositoryId, sourceId);
+		writeChangeEvent(callContext, repositoryId, source, ChangeType.UPDATED);
+		
 		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing(repositoryId);
 	}

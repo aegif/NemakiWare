@@ -947,7 +947,7 @@ public class ObjectServiceImpl implements ObjectService {
 			// //////////////////
 			// Body of the method
 			// //////////////////
-			contentService.move(repositoryId, content, target);
+			contentService.move(callContext, repositoryId, content, target);
 
 			nemakiCachePool.get(repositoryId).removeCmisCache(content.getId());
 		}finally{

@@ -405,11 +405,12 @@ public interface ContentService {
 
 	/**
 	 * Move a content
+	 * @param callContext TODO
 	 * @param repositoryId TODO
 	 * @param content
 	 * @param target
 	 */
-	void move(String repositoryId, Content content, Folder target);
+	void move(CallContext callContext, String repositoryId, Content content, Folder target);
 
 	/**
 	 * Apply a policy from a content
