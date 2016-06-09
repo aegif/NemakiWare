@@ -39,6 +39,7 @@ import jp.aegif.nemaki.model.VersionSeries;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.Properties;
+import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
@@ -271,7 +272,7 @@ public interface ContentService {
 			String repositoryId, Document original, ContentStream contentStream);
 
 	Document replacePwc(CallContext callContext, String repositoryId, Document original, ContentStream contentStream);
-	
+
 	/**
 	 * Check out and create PWC
 	 *
@@ -390,7 +391,7 @@ public interface ContentService {
 	 * @return
 	 */
 	Content update(String repositoryId, Content content);
-	
+
 	/**
 	 * Update properties of a content
 	 *
@@ -650,4 +651,16 @@ public interface ContentService {
 	 * @param archiveId
 	 */
 	void restoreArchive(String repositoryId, String archiveId);
+
+	/**
+	 * Write change event
+	 * @param callContext
+	 * @param repositoryId TODO
+	 * @param content
+	 * @param acl
+	 * @param changeType
+	 */
+	String writeChangeEvent(CallContext callContext, String repositoryId, Content content,
+			Acl acl, ChangeType changeType);
+
 }

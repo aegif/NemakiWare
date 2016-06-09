@@ -42,6 +42,7 @@ import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
+import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.collections.CollectionUtils;
 
@@ -62,18 +63,18 @@ public class AclServiceImpl implements AclService {
 	@Override
 	public Acl getAcl(CallContext callContext, String repositoryId,
 			String objectId, Boolean onlyBasicPermissions) {
-		
+
 		exceptionService.invalidArgumentRequired("objectId", objectId);
-		
+
 		Lock lock = threadLockService.getReadLock(repositoryId, objectId);
-		
+
 		try{
 			lock.lock();
-			
+
 			// //////////////////
 			// General Exception
 			// //////////////////
-			
+
 			Content content = contentService.getContent(repositoryId, objectId);
 			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 			exceptionService.permissionDenied(callContext,repositoryId, PermissionMapping.CAN_GET_ACL_OBJECT, content);
@@ -92,16 +93,16 @@ public class AclServiceImpl implements AclService {
 	public Acl applyAcl(CallContext callContext, String repositoryId, String objectId,
 			Acl acl, AclPropagation aclPropagation) {
 		exceptionService.invalidArgumentRequired("objectId", objectId);
-		
+
 		Lock lock = threadLockService.getReadLock(repositoryId, objectId);
-		
+
 		try{
 			lock.lock();
-			
+
 			// //////////////////
 			// General Exception
 			// //////////////////
-			
+
 			Content content = contentService.getContent(repositoryId, objectId);
 			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 			exceptionService.permissionDenied(callContext,repositoryId, PermissionMapping.CAN_APPLY_ACL_OBJECT, content);
@@ -142,22 +143,23 @@ public class AclServiceImpl implements AclService {
 			convertSystemPrinciaplId(repositoryId, nemakiAcl);
 			content.setAcl(nemakiAcl);
 			contentService.update(repositoryId, content);
-			
+			contentService.writeChangeEvent(callContext, repositoryId, content, nemakiAcl, ChangeType.SECURITY );
+
 			nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
-			
+
 			return getAcl(callContext, repositoryId, objectId, false);
-			
+
 		}finally{
 			lock.unlock();
 		}
-		
+
 	}
 
 	private void convertSystemPrinciaplId(String repositoryId, jp.aegif.nemaki.model.Acl acl){
 		List<jp.aegif.nemaki.model.Ace> aces = acl.getAllAces();
 		for (jp.aegif.nemaki.model.Ace ace : aces) {
 			RepositoryInfo info = repositoryInfoMap.get(repositoryId);
-			
+
 			//Convert anonymous to the form of database
 			String anonymous = info.getPrincipalIdAnonymous();
 			if (anonymous.equals(ace.getPrincipalId())) {
@@ -168,7 +170,7 @@ public class AclServiceImpl implements AclService {
 			String anyone = info.getPrincipalIdAnyone();
 			if (anyone.equals(ace.getPrincipalId())) {
 				ace.setPrincipalId(PrincipalId.ANYONE_IN_DB);
-				
+
 			}
 		}
 	}
