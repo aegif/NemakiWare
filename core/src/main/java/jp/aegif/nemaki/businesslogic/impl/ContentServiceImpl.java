@@ -210,7 +210,7 @@ public class ContentServiceImpl implements ContentService {
 		List<Content> indices = contentDaoService.getChildren(repositoryId, folderId);
 		if (CollectionUtils.isEmpty(indices))
 			return null;
-		
+
 		//TODO getを重複して行う必要なし
 		for (Content c : indices) {
 			if (c.isDocument()) {
@@ -346,7 +346,14 @@ public class ContentServiceImpl implements ContentService {
 
 	private String writeChangeEvent(CallContext callContext, String repositoryId, Content content,
 			ChangeType changeType) {
+
+		return writeChangeEvent(callContext,repositoryId,content, null, changeType );
+	}
+
+	public String writeChangeEvent(CallContext callContext, String repositoryId, Content content,
+			Acl acl, ChangeType changeType) {
 		Change change = new Change();
+		change.setAcl(acl);
 		change.setObjectId(content.getId());
 		change.setChangeType(changeType);
 		switch (changeType) {
@@ -358,6 +365,9 @@ public class ContentServiceImpl implements ContentService {
 			break;
 		case DELETED:
 			change.setTime(content.getCreated());
+			break;
+		case SECURITY:
+			change.setTime(content.getModified());
 			break;
 		default:
 			break;
@@ -395,7 +405,10 @@ public class ContentServiceImpl implements ContentService {
 		update(repositoryId, content);
 
 		return change.getToken();
+
 	}
+
+
 
 	private String generateChangeToken(NodeBase node) {
 		return String.valueOf(node.getCreated().getTimeInMillis());
@@ -609,7 +622,7 @@ public class ContentServiceImpl implements ContentService {
 	public void cancelCheckOut(CallContext callContext, String repositoryId, String objectId,
 			ExtensionsData extension) {
 		Document pwc = getDocument(repositoryId, objectId);
-		
+
 		writeChangeEvent(callContext, repositoryId, pwc, ChangeType.DELETED);
 
 		// Delete attachment & document itself(without archiving)
@@ -641,7 +654,7 @@ public class ContentServiceImpl implements ContentService {
 			Properties properties, ContentStream contentStream, String checkinComment, List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension) {
-		
+
 		String id = objectId.getValue();
 
 		Document pwc = getDocument(repositoryId, id);
@@ -664,7 +677,7 @@ public class ContentServiceImpl implements ContentService {
 
 		// Reverse the effect of checkedout
 		cancelCheckOut(callContext, repositoryId, id, extension);
-		
+
 		// update version information
 		VersioningState versioningState = (major) ? VersioningState.MAJOR : VersioningState.MINOR;
 		updateVersionProperties(callContext, repositoryId, versioningState, checkedIn, latest);
@@ -1135,7 +1148,7 @@ public class ContentServiceImpl implements ContentService {
 
 		return result;
 	}
-	
+
 	@Override
 	public Content update(String repositoryId, Content content) {
 		Content result = null;
@@ -1181,21 +1194,21 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public void move(CallContext callContext, String repositoryId, Content content, Folder target) {
 		String sourceId = content.getParentId();
-		
+
 		content.setParentId(target.getId());
 		String uniqueName = buildUniqueName(repositoryId, content.getName(), target.getId(), null);
 		content.setName(uniqueName);
-		
+
 		move(repositoryId, content, sourceId);
 
 		Folder source = getFolder(repositoryId, sourceId);
 		writeChangeEvent(callContext, repositoryId, source, ChangeType.UPDATED);
 		writeChangeEvent(callContext, repositoryId, target, ChangeType.UPDATED);
-		
+
 		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing(repositoryId);
 	}
-	
+
 	private Content move(String repositoryId, Content content, String sourceId){
 		Content result = null;
 		if(content instanceof Document){
@@ -1240,11 +1253,11 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public void delete(CallContext callContext, String repositoryId, String objectId, Boolean deletedWithParent) {
 		Content content = getContent(repositoryId, objectId);
-		
+
 		//TODO workaround
 		if(content == null){
 			//If content is already deleted, do nothing;
-			return; 
+			return;
 		}
 
 		// Record the change event(Before the content is deleted!)
