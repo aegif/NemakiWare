@@ -83,7 +83,8 @@ public class AclServiceImpl implements AclService {
 			// Body of the method
 			// //////////////////
 			jp.aegif.nemaki.model.Acl acl = contentService.calculateAcl(repositoryId, content);
-			return compileService.compileAcl(acl, content.isAclInherited(), onlyBasicPermissions);
+			//return compileService.compileAcl(acl, content.isAclInherited(), onlyBasicPermissions);
+			return compileService.compileAcl(acl, contentService.getAclInheritedWithDefault(repositoryId, content), onlyBasicPermissions);
 		}finally{
 			lock.unlock();
 		}
@@ -127,7 +128,7 @@ public class AclServiceImpl implements AclService {
 						inherited = Boolean.valueOf(ext.getValue());
 					}
 				}
-				if(!content.isAclInherited().equals(inherited)) content.setAclInherited(inherited);
+				if(!contentService.getAclInheritedWithDefault(repositoryId, content).equals(inherited)) content.setAclInherited(inherited);
 			}
 
 			jp.aegif.nemaki.model.Acl nemakiAcl = new jp.aegif.nemaki.model.Acl();

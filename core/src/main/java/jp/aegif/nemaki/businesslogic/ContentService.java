@@ -57,6 +57,8 @@ public interface ContentService {
 	 */
 	public boolean isRoot(String repositoryId, Content content);
 
+	public boolean isTopLevel(String repositoryId, Content content);
+	
 	/**
 	 * Check if any object of a type exists
 	 * @param repositoryId TODO
@@ -555,6 +557,8 @@ public interface ContentService {
 	// ///////////////////////////////////////
 	public Acl calculateAcl(String repositoryId, Content content);
 
+	public Boolean getAclInheritedWithDefault(String repositoryId, Content content);
+	
 	// ///////////////////////////////////////
 	// Change event
 	// ///////////////////////////////////////

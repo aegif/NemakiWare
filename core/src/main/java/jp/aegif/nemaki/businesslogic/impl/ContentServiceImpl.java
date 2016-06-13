@@ -118,6 +118,13 @@ public class ContentServiceImpl implements ContentService {
 			return false;
 		}
 	}
+	
+	@Override
+	public boolean isTopLevel(String repositoryId, Content content){
+		String rootId = repositoryInfoMap.get(repositoryId).getRootFolderId();
+		String parentId = content.getParentId();
+		return rootId.equals(parentId);
+	}
 
 	@Override
 	public boolean existContent(String repositoryId, String objectTypeId) {
@@ -703,11 +710,29 @@ public class ContentServiceImpl implements ContentService {
 		d.setParentId(parentFolder.getId());
 		d.setImmutable(DataUtil.getBooleanProperty(properties, PropertyIds.IS_IMMUTABLE));
 		setSignature(callContext, d);
+		
+		
 		// Acl
-		d.setAclInherited(true);
-		d.setAcl(new Acl());
+		/*d.setAclInherited(true);
+		d.setAcl(new Acl());*/
+		setAclOnCreated(callContext, repositoryId, d);
 
 		return d;
+	}
+	
+	private void setAclOnCreated(CallContext callContext, String repositoryId, Content content){
+		Acl acl = new Acl();
+		if(isTopLevel(repositoryId, content)){
+			
+			Ace ace = new Ace();
+			ace.setPrincipalId(callContext.getUsername());
+			ace.setPermissions(new ArrayList<String>( Arrays.asList(CmisPermission.ALL)));
+			acl.setLocalAces(new ArrayList<Ace>( Arrays.asList(ace) ));
+		}
+		content.setAcl(acl);
+		
+		content.setAclInherited(getAclInheritedWithDefault(repositoryId, content));
+
 	}
 
 	private Document buildCopyDocumentWithBasicProperties(CallContext callContext, Document original) {
@@ -845,17 +870,22 @@ public class ContentServiceImpl implements ContentService {
 		}
 		setSignature(callContext, f);
 
-		Acl acl = new Acl();
+		//Acl
+		/*Acl acl = new Acl();
 		if (isRoot(repositoryId, parentFolder)){
 			Ace ace = new Ace();
 			ace.setPrincipalId(callContext.getUsername());
 			ace.setPermissions(new ArrayList<String>( Arrays.asList(CmisPermission.ALL)));
 			acl.setLocalAces(new ArrayList<Ace>( Arrays.asList(ace) ));
+			//f.setAclInherited(false);
 		}else{
 			f.setAclInherited(true);
 		}
-		f.setAcl(acl);
-
+		f.setAcl(acl);*/
+		
+		setAclOnCreated(callContext, repositoryId, f);
+		
+		
 		// Create
 		Folder folder = contentDaoService.create(repositoryId, f);
 
@@ -1483,7 +1513,8 @@ public class ContentServiceImpl implements ContentService {
 	public Acl calculateAcl(String repositoryId, Content content) {
 		Acl acl = content.getAcl();
 
-		boolean iht = (content.isAclInherited() == null) ? false : content.isAclInherited();
+		//boolean iht = (content.isAclInherited() == null) ? false : content.isAclInherited();
+		boolean iht = getAclInheritedWithDefault(repositoryId, content);
 
 		if (!isRoot(repositoryId, content) && iht) {
 			// Caching the results of calculation
@@ -1509,7 +1540,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	private List<Ace> calculateAclInternal(String repositoryId, List<Ace> result, Content content) {
-		if (isRoot(repositoryId, content)) {
+		if (isRoot(repositoryId, content) || !getAclInheritedWithDefault(repositoryId, content)) {
 			List<Ace> rootAces = new ArrayList<Ace>();
 			List<Ace> aces = content.getAcl().getLocalAces();
 			for (Ace ace : aces) {
@@ -1598,6 +1629,21 @@ public class ContentServiceImpl implements ContentService {
 			if (PrincipalId.ANYONE_IN_DB.equals(ace.getPrincipalId())) {
 				String anyone = info.getPrincipalIdAnyone();
 				ace.setPrincipalId(anyone);
+			}
+		}
+	}
+	
+	@Override
+	public Boolean getAclInheritedWithDefault(String repositoryId, Content content){
+		if(isRoot(repositoryId, content)){
+			return false; 
+		}else{
+			if(isTopLevel(repositoryId, content)){
+				//default to FALSE
+				return (content.isAclInherited() == null) ? false: content.isAclInherited();
+			}else{
+				//default to TRUE
+				return (content.isAclInherited() == null) ? true: content.isAclInherited();
 			}
 		}
 	}
