@@ -15,12 +15,8 @@ typeCache:
   maxElementsInMemory: 1
 
 contentCache:
-  cacheEnabled: false
-  maxElementsInMemory: 1000000
-  eternal: true
 
 treeCache:
-  cacheEnabled: false
 
 versionSeriesCache:
 
