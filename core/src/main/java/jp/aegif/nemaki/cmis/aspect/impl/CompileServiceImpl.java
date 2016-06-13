@@ -160,7 +160,7 @@ public class CompileServiceImpl implements CompileService {
 		// Set Acl
 		Acl acl = contentService.calculateAcl(repositoryId, content);
 		result.setIsExactAcl(true);
-		result.setAcl(compileAcl(acl, content.isAclInherited(), false));
+		result.setAcl(compileAcl(acl, contentService.getAclInheritedWithDefault(repositoryId, content), false));
 
 		//Set Relationship(BOTH)
 		if (!content.isRelationship()) {
@@ -433,7 +433,8 @@ public class CompileServiceImpl implements CompileService {
 		if (iacl) {
 			if (content != null) {
 				Acl acl = contentService.calculateAcl(repositoryId, content);
-				object.setAcl(compileAcl(acl, content.isAclInherited(), false));
+				//object.setAcl(compileAcl(acl, content.isAclInherited(), false));
+				object.setAcl(compileAcl(acl, contentService.getAclInheritedWithDefault(repositoryId, content), false));
 			}
 		}
 	}
@@ -1365,9 +1366,9 @@ public class CompileServiceImpl implements CompileService {
 
 				// Set "inherited" property, which is out of bounds to CMIS
 				String namespace = CmisExtensionToken.ACL_INHERITANCE_NAMESPACE;
-				boolean iht = (isInherited == null)? false : isInherited;
+				//boolean iht = (isInherited == null)? false : isInherited;
 				CmisExtensionElementImpl inherited = new CmisExtensionElementImpl(
-						namespace, CmisExtensionToken.ACL_INHERITANCE_INHERITED, null, String.valueOf(iht));
+						namespace, CmisExtensionToken.ACL_INHERITANCE_INHERITED, null, String.valueOf(isInherited));
 				List<CmisExtensionElement> exts = new ArrayList<CmisExtensionElement>();
 				exts.add(inherited);
 				cmisAcl.setExtensions(exts);
