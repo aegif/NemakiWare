@@ -1635,14 +1635,17 @@ public class ContentServiceImpl implements ContentService {
 	
 	@Override
 	public Boolean getAclInheritedWithDefault(String repositoryId, Content content){
+		boolean inheritedAtTopLevel = 
+				propertyManager.readBoolean(PropertyKey.CAPABILITY_EXTENDED_PERMISSION_INHERITANCE_TOPLEVEL);
+
 		if(isRoot(repositoryId, content)){
 			return false; 
 		}else{
-			if(isTopLevel(repositoryId, content)){
-				//default to FALSE
+			if(isTopLevel(repositoryId, content) && !inheritedAtTopLevel){
+				//default to TRUE
 				return (content.isAclInherited() == null) ? false: content.isAclInherited();
 			}else{
-				//default to TRUE
+				//default to FALSE
 				return (content.isAclInherited() == null) ? true: content.isAclInherited();
 			}
 		}
