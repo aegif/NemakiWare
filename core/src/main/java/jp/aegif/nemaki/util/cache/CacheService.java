@@ -167,4 +167,9 @@ public class CacheService {
 		getPropertiesCache().remove(objectId);
 		getObjectDataCache().remove(objectId);
 	}
+	
+	public void removeCmisAndContentCache(String objectId) {
+		getContentCache().remove(objectId);
+		removeCmisCache(objectId);
+	}
 }

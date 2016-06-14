@@ -268,7 +268,7 @@ public class MultiThreadTest extends TestBase{
 	
 	@Test
 	public void tooManyThreadTest() throws InterruptedException{
-		int threadNum = 100;
+		int threadNum = 500;
 		
 		//couch connector
 		Builder builder = new StdHttpClient.Builder()
@@ -329,7 +329,6 @@ public class MultiThreadTest extends TestBase{
 			Duration duration = new Duration(start, end);
 			
 			System.out.println(taskId + ", " + duration.getMillis()  + ", " + start + ", " + end);
-			
 			
 		}
 		
