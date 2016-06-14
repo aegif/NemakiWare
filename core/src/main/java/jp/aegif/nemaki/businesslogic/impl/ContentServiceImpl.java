@@ -169,22 +169,27 @@ public class ContentServiceImpl implements ContentService {
 				return null;
 			// root
 			return contentDaoService.getFolder(repositoryId, rootId);
-		} else if (splittedPath.size() >= 1) {
+		} else {
 			Content content = contentDaoService.getFolder(repositoryId, rootId);
 			// Get the the leaf node
 			for (int i = 1; i < splittedPath.size(); i++) {
-				String leafName = splittedPath.get(i);
+				String nodeName = splittedPath.get(i);
 				if (content == null) {
-					log.warn("Leaf node '" + leafName + "' in  path '" + path + "' is not found.");
+					log.warn("node '" + nodeName + "' in  path '" + path + "' is not found.");
 					return null;
 				} else {
-					Content child = contentDaoService.getChildByName(repositoryId, content.getId(), leafName);
+					Content child = contentDaoService.getChildByName(repositoryId, content.getId(), nodeName);
 					content = child;
 				}
 			}
-			return getContent(repositoryId, content.getId());
+			
+			//return
+			if(content == null){
+				return null;
+			}else{
+				return getContent(repositoryId, content.getId());
+			}
 		}
-		return null;
 	}
 
 	private List<String> splitLeafPathSegment(String path) {

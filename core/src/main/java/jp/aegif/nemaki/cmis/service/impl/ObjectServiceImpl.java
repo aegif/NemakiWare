@@ -115,12 +115,13 @@ public class ObjectServiceImpl implements ObjectService {
 		// FIXME path is not preserved in db.
 		Content content = contentService.getContentByPath(repositoryId, path);
 
+		// TODO create objectNotFoundByPath method
+		exceptionService.objectNotFoundByPath(DomainType.OBJECT, content, path);
+		
 		Lock lock = threadLockService.getReadLock(repositoryId, content.getId());
 		try{
 			lock.lock();
 			
-			// TODO create objectNotFoundByPath method
-			exceptionService.objectNotFound(DomainType.OBJECT, content, path);
 			exceptionService.permissionDenied(callContext,
 					repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT, content);
 
