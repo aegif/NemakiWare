@@ -115,7 +115,7 @@ public class Util {
     	SessionFactory f = SessionFactoryImpl.newInstance();
     	Session session = f.createSession(parameter);
     	OperationContext operationContext = session.createOperationContext(null,
-				true, true, false, IncludeRelationships.BOTH, null, false, null, true, 100);
+				true, true, false, IncludeRelationships.BOTH, null, false, null, false, 100);
 		session.setDefaultContext(operationContext);
 
 		return session;
