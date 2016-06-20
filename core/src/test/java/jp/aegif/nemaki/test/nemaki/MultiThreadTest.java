@@ -12,6 +12,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
+import org.apache.chemistry.opencmis.client.api.ChangeEvents;
 import org.apache.chemistry.opencmis.client.api.CmisObject;
 import org.apache.chemistry.opencmis.client.api.Document;
 import org.apache.chemistry.opencmis.client.api.Folder;
@@ -19,6 +20,7 @@ import org.apache.chemistry.opencmis.client.api.ItemIterable;
 import org.apache.chemistry.opencmis.client.api.ObjectId;
 import org.apache.chemistry.opencmis.client.api.OperationContext;
 import org.apache.chemistry.opencmis.client.runtime.ObjectIdImpl;
+import org.apache.chemistry.opencmis.commons.SessionParameter;
 import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.UnfileObject;
@@ -332,5 +334,12 @@ public class MultiThreadTest extends TestBase{
 			
 		}
 		
+	}
+	
+	@Test
+	public void getContentChangesTest(){
+		ChangeEvents events = session.getContentChanges("b11bf1bf25317a8fa2941b8f14014d7e", false, 100);
+		
+		System.out.println("hoge");
 	}
 }
