@@ -164,7 +164,6 @@ public class CacheService {
 	}
 
 	public void removeCmisCache(String objectId) {
-		getPropertiesCache().remove(objectId);
 		getObjectDataCache().remove(objectId);
 	}
 	
