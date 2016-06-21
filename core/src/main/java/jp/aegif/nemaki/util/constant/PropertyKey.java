@@ -35,6 +35,7 @@ public interface PropertyKey {
 	final String CAPABILITY_EXTENDED_BUILD_UNIQUE_NAME = "capability.extended.build.unique.name";
 	final String CAPABILITY_EXTENDED_AUTH_TOKEN = "capability.extended.auth.token";
 	final String CAPABILITY_EXTENDED_PERMISSION_TOPLEVEL = "capability.extended.permission.toplevel";
+	final String CAPABILITY_EXTENDED_PERMISSION_INHERITANCE_TOPLEVEL = "capability.extended.permission.inheritance.toplevel";
 
 	//Rest
 	final String REST_USER_ENABLED = "rest.user.enabled";
@@ -255,7 +256,6 @@ public interface PropertyKey {
 
 	//Cache
 	final String CACHE_CONFIG = "cache.config";
-	final String CACHE_CMIS_ENABLED = "cache.cmis.enabled";
 
 	//Auth token
 	final String AUTH_TOKEN_EXPIRATION = "auth.token.expiration";

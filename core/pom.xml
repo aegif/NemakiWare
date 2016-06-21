@@ -5,14 +5,14 @@
 	<groupId>jp.aegif.nemaki</groupId>
 	<artifactId>core</artifactId>
 	<packaging>war</packaging>
-	<version>2.3.13</version>
+	<version>2.3.15</version>
 	<name>core</name>
 	<description>NemakiWare server</description>
 	<url>https://github.com/NemakiWare/NemakiWare</url>
 
 	<properties>
 		<org.springframework.version>4.1.1.RELEASE</org.springframework.version>
-		<jersey.version>1.17.1</jersey.version>
+		<jersey.version>1.19.1</jersey.version>
 		<org.apache.chemistry.opencmis.version>0.13.0</org.apache.chemistry.opencmis.version>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 	</properties>
