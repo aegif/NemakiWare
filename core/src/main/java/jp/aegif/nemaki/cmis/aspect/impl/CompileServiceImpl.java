@@ -135,11 +135,11 @@ public class CompileServiceImpl implements CompileService {
 
 		ObjectDataImpl _result = new ObjectDataImpl();
 
-		Element v = nemakiCachePool.get(repositoryId).getObjectDataCache().get(content.getId());
+		ObjectData v = nemakiCachePool.get(repositoryId).getObjectDataCache().get(content.getId());
 		if(v == null){
 			_result = compileObjectDataWithFullAttributes(callContext, repositoryId, content);
 		}else{
-			_result = (ObjectDataImpl)v.getObjectValue();
+			_result = (ObjectDataImpl)v;
 		}
 
 		ObjectData result = filterObjectData(repositoryId, _result, filter, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
@@ -160,7 +160,7 @@ public class CompileServiceImpl implements CompileService {
 		// Set Acl
 		Acl acl = contentService.calculateAcl(repositoryId, content);
 		result.setIsExactAcl(true);
-		result.setAcl(compileAcl(acl, content.isAclInherited(), false));
+		result.setAcl(compileAcl(acl, contentService.getAclInheritedWithDefault(repositoryId, content), false));
 
 		//Set Relationship(BOTH)
 		if (!content.isRelationship()) {
@@ -299,11 +299,11 @@ public class CompileServiceImpl implements CompileService {
 
 				//Get each ObjectData
 				ObjectData _od;
-				Element v = nemakiCachePool.get(repositoryId).getObjectDataCache().get(c.getId());
+				ObjectData v = nemakiCachePool.get(repositoryId).getObjectDataCache().get(c.getId());
 				if(v == null){
 					_od = compileObjectDataWithFullAttributes(callContext, repositoryId, c);
 				}else{
-					_od = (ObjectDataImpl)v.getObjectValue();
+					_od = (ObjectDataImpl)v;
 				}
 
 				ObjectData od = filterObjectDataInList(callContext, repositoryId, _od, filter, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
@@ -433,7 +433,8 @@ public class CompileServiceImpl implements CompileService {
 		if (iacl) {
 			if (content != null) {
 				Acl acl = contentService.calculateAcl(repositoryId, content);
-				object.setAcl(compileAcl(acl, content.isAclInherited(), false));
+				//object.setAcl(compileAcl(acl, content.isAclInherited(), false));
+				object.setAcl(compileAcl(acl, contentService.getAclInheritedWithDefault(repositoryId, content), false));
 			}
 		}
 	}
@@ -1365,9 +1366,9 @@ public class CompileServiceImpl implements CompileService {
 
 				// Set "inherited" property, which is out of bounds to CMIS
 				String namespace = CmisExtensionToken.ACL_INHERITANCE_NAMESPACE;
-				boolean iht = (isInherited == null)? false : isInherited;
+				//boolean iht = (isInherited == null)? false : isInherited;
 				CmisExtensionElementImpl inherited = new CmisExtensionElementImpl(
-						namespace, CmisExtensionToken.ACL_INHERITANCE_INHERITED, null, String.valueOf(iht));
+						namespace, CmisExtensionToken.ACL_INHERITANCE_INHERITED, null, String.valueOf(isInherited));
 				List<CmisExtensionElement> exts = new ArrayList<CmisExtensionElement>();
 				exts.add(inherited);
 				cmisAcl.setExtensions(exts);

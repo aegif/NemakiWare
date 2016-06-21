@@ -118,6 +118,13 @@ public class ContentServiceImpl implements ContentService {
 			return false;
 		}
 	}
+	
+	@Override
+	public boolean isTopLevel(String repositoryId, Content content){
+		String rootId = repositoryInfoMap.get(repositoryId).getRootFolderId();
+		String parentId = content.getParentId();
+		return rootId.equals(parentId);
+	}
 
 	@Override
 	public boolean existContent(String repositoryId, String objectTypeId) {
@@ -162,22 +169,27 @@ public class ContentServiceImpl implements ContentService {
 				return null;
 			// root
 			return contentDaoService.getFolder(repositoryId, rootId);
-		} else if (splittedPath.size() >= 1) {
+		} else {
 			Content content = contentDaoService.getFolder(repositoryId, rootId);
 			// Get the the leaf node
 			for (int i = 1; i < splittedPath.size(); i++) {
-				String leafName = splittedPath.get(i);
+				String nodeName = splittedPath.get(i);
 				if (content == null) {
-					log.warn("Leaf node '" + leafName + "' in  path '" + path + "' is not found.");
+					log.warn("node '" + nodeName + "' in  path '" + path + "' is not found.");
 					return null;
 				} else {
-					Content child = contentDaoService.getChildByName(repositoryId, content.getId(), leafName);
+					Content child = contentDaoService.getChildByName(repositoryId, content.getId(), nodeName);
 					content = child;
 				}
 			}
-			return getContent(repositoryId, content.getId());
+			
+			//return
+			if(content == null){
+				return null;
+			}else{
+				return getContent(repositoryId, content.getId());
+			}
 		}
-		return null;
 	}
 
 	private List<String> splitLeafPathSegment(String path) {
@@ -210,7 +222,7 @@ public class ContentServiceImpl implements ContentService {
 		List<Content> indices = contentDaoService.getChildren(repositoryId, folderId);
 		if (CollectionUtils.isEmpty(indices))
 			return null;
-		
+
 		//TODO getを重複して行う必要なし
 		for (Content c : indices) {
 			if (c.isDocument()) {
@@ -346,7 +358,14 @@ public class ContentServiceImpl implements ContentService {
 
 	private String writeChangeEvent(CallContext callContext, String repositoryId, Content content,
 			ChangeType changeType) {
+
+		return writeChangeEvent(callContext,repositoryId,content, null, changeType );
+	}
+
+	public String writeChangeEvent(CallContext callContext, String repositoryId, Content content,
+			Acl acl, ChangeType changeType) {
 		Change change = new Change();
+		change.setAcl(acl);
 		change.setObjectId(content.getId());
 		change.setChangeType(changeType);
 		switch (changeType) {
@@ -358,6 +377,9 @@ public class ContentServiceImpl implements ContentService {
 			break;
 		case DELETED:
 			change.setTime(content.getCreated());
+			break;
+		case SECURITY:
+			change.setTime(content.getModified());
 			break;
 		default:
 			break;
@@ -395,7 +417,10 @@ public class ContentServiceImpl implements ContentService {
 		update(repositoryId, content);
 
 		return change.getToken();
+
 	}
+
+
 
 	private String generateChangeToken(NodeBase node) {
 		return String.valueOf(node.getCreated().getTimeInMillis());
@@ -609,7 +634,7 @@ public class ContentServiceImpl implements ContentService {
 	public void cancelCheckOut(CallContext callContext, String repositoryId, String objectId,
 			ExtensionsData extension) {
 		Document pwc = getDocument(repositoryId, objectId);
-		
+
 		writeChangeEvent(callContext, repositoryId, pwc, ChangeType.DELETED);
 
 		// Delete attachment & document itself(without archiving)
@@ -641,7 +666,7 @@ public class ContentServiceImpl implements ContentService {
 			Properties properties, ContentStream contentStream, String checkinComment, List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension) {
-		
+
 		String id = objectId.getValue();
 
 		Document pwc = getDocument(repositoryId, id);
@@ -664,7 +689,7 @@ public class ContentServiceImpl implements ContentService {
 
 		// Reverse the effect of checkedout
 		cancelCheckOut(callContext, repositoryId, id, extension);
-		
+
 		// update version information
 		VersioningState versioningState = (major) ? VersioningState.MAJOR : VersioningState.MINOR;
 		updateVersionProperties(callContext, repositoryId, versioningState, checkedIn, latest);
@@ -690,11 +715,29 @@ public class ContentServiceImpl implements ContentService {
 		d.setParentId(parentFolder.getId());
 		d.setImmutable(DataUtil.getBooleanProperty(properties, PropertyIds.IS_IMMUTABLE));
 		setSignature(callContext, d);
+		
+		
 		// Acl
-		d.setAclInherited(true);
-		d.setAcl(new Acl());
+		/*d.setAclInherited(true);
+		d.setAcl(new Acl());*/
+		setAclOnCreated(callContext, repositoryId, d);
 
 		return d;
+	}
+	
+	private void setAclOnCreated(CallContext callContext, String repositoryId, Content content){
+		Acl acl = new Acl();
+		if(isTopLevel(repositoryId, content)){
+			
+			Ace ace = new Ace();
+			ace.setPrincipalId(callContext.getUsername());
+			ace.setPermissions(new ArrayList<String>( Arrays.asList(CmisPermission.ALL)));
+			acl.setLocalAces(new ArrayList<Ace>( Arrays.asList(ace) ));
+		}
+		content.setAcl(acl);
+		
+		content.setAclInherited(getAclInheritedWithDefault(repositoryId, content));
+
 	}
 
 	private Document buildCopyDocumentWithBasicProperties(CallContext callContext, Document original) {
@@ -832,17 +875,22 @@ public class ContentServiceImpl implements ContentService {
 		}
 		setSignature(callContext, f);
 
-		Acl acl = new Acl();
+		//Acl
+		/*Acl acl = new Acl();
 		if (isRoot(repositoryId, parentFolder)){
 			Ace ace = new Ace();
 			ace.setPrincipalId(callContext.getUsername());
 			ace.setPermissions(new ArrayList<String>( Arrays.asList(CmisPermission.ALL)));
 			acl.setLocalAces(new ArrayList<Ace>( Arrays.asList(ace) ));
+			//f.setAclInherited(false);
 		}else{
 			f.setAclInherited(true);
 		}
-		f.setAcl(acl);
-
+		f.setAcl(acl);*/
+		
+		setAclOnCreated(callContext, repositoryId, f);
+		
+		
 		// Create
 		Folder folder = contentDaoService.create(repositoryId, f);
 
@@ -1135,7 +1183,7 @@ public class ContentServiceImpl implements ContentService {
 
 		return result;
 	}
-	
+
 	@Override
 	public Content update(String repositoryId, Content content) {
 		Content result = null;
@@ -1179,19 +1227,23 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public void move(String repositoryId, Content content, Folder target) {
+	public void move(CallContext callContext, String repositoryId, Content content, Folder target) {
 		String sourceId = content.getParentId();
-		
+
 		content.setParentId(target.getId());
 		String uniqueName = buildUniqueName(repositoryId, content.getName(), target.getId(), null);
 		content.setName(uniqueName);
-		
+
 		move(repositoryId, content, sourceId);
+
+		Folder source = getFolder(repositoryId, sourceId);
+		writeChangeEvent(callContext, repositoryId, source, ChangeType.UPDATED);
+		writeChangeEvent(callContext, repositoryId, target, ChangeType.UPDATED);
 
 		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing(repositoryId);
 	}
-	
+
 	private Content move(String repositoryId, Content content, String sourceId){
 		Content result = null;
 		if(content instanceof Document){
@@ -1236,11 +1288,11 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public void delete(CallContext callContext, String repositoryId, String objectId, Boolean deletedWithParent) {
 		Content content = getContent(repositoryId, objectId);
-		
+
 		//TODO workaround
 		if(content == null){
 			//If content is already deleted, do nothing;
-			return; 
+			return;
 		}
 
 		// Record the change event(Before the content is deleted!)
@@ -1466,7 +1518,8 @@ public class ContentServiceImpl implements ContentService {
 	public Acl calculateAcl(String repositoryId, Content content) {
 		Acl acl = content.getAcl();
 
-		boolean iht = (content.isAclInherited() == null) ? false : content.isAclInherited();
+		//boolean iht = (content.isAclInherited() == null) ? false : content.isAclInherited();
+		boolean iht = getAclInheritedWithDefault(repositoryId, content);
 
 		if (!isRoot(repositoryId, content) && iht) {
 			// Caching the results of calculation
@@ -1492,7 +1545,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	private List<Ace> calculateAclInternal(String repositoryId, List<Ace> result, Content content) {
-		if (isRoot(repositoryId, content)) {
+		if (isRoot(repositoryId, content) || !getAclInheritedWithDefault(repositoryId, content)) {
 			List<Ace> rootAces = new ArrayList<Ace>();
 			List<Ace> aces = content.getAcl().getLocalAces();
 			for (Ace ace : aces) {
@@ -1581,6 +1634,24 @@ public class ContentServiceImpl implements ContentService {
 			if (PrincipalId.ANYONE_IN_DB.equals(ace.getPrincipalId())) {
 				String anyone = info.getPrincipalIdAnyone();
 				ace.setPrincipalId(anyone);
+			}
+		}
+	}
+	
+	@Override
+	public Boolean getAclInheritedWithDefault(String repositoryId, Content content){
+		boolean inheritedAtTopLevel = 
+				propertyManager.readBoolean(PropertyKey.CAPABILITY_EXTENDED_PERMISSION_INHERITANCE_TOPLEVEL);
+
+		if(isRoot(repositoryId, content)){
+			return false; 
+		}else{
+			if(isTopLevel(repositoryId, content) && !inheritedAtTopLevel){
+				//default to TRUE
+				return (content.isAclInherited() == null) ? false: content.isAclInherited();
+			}else{
+				//default to FALSE
+				return (content.isAclInherited() == null) ? true: content.isAclInherited();
 			}
 		}
 	}

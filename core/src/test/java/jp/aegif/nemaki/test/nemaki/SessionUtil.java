@@ -14,6 +14,9 @@ import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 public class SessionUtil {
 	
 	public static Session createCmisSession(String repositoryId, String userId, String password){
+		//System.setProperty("http.maxConnections", "500"); 
+		
+		
 		Map<String, String> parameter = new HashMap<String, String>();
 
 		// user credentials
@@ -35,9 +38,11 @@ public class SessionUtil {
 		parameter.put(SessionParameter.ATOMPUB_URL, coreAtomUri);
 		
 		//timeout
-		parameter.put(SessionParameter.CONNECT_TIMEOUT, "30000");
-		parameter.put(SessionParameter.READ_TIMEOUT, "30000");
+		//parameter.put(SessionParameter.CONNECT_TIMEOUT, "30000");
+		//parameter.put(SessionParameter.READ_TIMEOUT, "30000");
 		
+		
+		//parameter.put(SessionParameter.HTTP_INVOKER_CLASS, "org.apache.chemistry.opencmis.client.bindings.spi.http.ApacheClientHttpInvoker");
 		
 
     	SessionFactory f = SessionFactoryImpl.newInstance();
@@ -46,6 +51,7 @@ public class SessionUtil {
 				true, true, false, IncludeRelationships.BOTH, null, false, null, true, 100);
 		session.setDefaultContext(operationContext);
 
+		
 		return session;
 	}
 }
