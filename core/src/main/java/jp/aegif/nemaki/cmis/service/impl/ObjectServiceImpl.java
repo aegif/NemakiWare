@@ -35,7 +35,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReadWriteLock;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Acl;
@@ -116,12 +115,13 @@ public class ObjectServiceImpl implements ObjectService {
 		// FIXME path is not preserved in db.
 		Content content = contentService.getContentByPath(repositoryId, path);
 
+		// TODO create objectNotFoundByPath method
+		exceptionService.objectNotFoundByPath(DomainType.OBJECT, content, path);
+		
 		Lock lock = threadLockService.getReadLock(repositoryId, content.getId());
 		try{
 			lock.lock();
 			
-			// TODO create objectNotFoundByPath method
-			exceptionService.objectNotFound(DomainType.OBJECT, content, path);
 			exceptionService.permissionDenied(callContext,
 					repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT, content);
 
@@ -641,8 +641,7 @@ public class ObjectServiceImpl implements ObjectService {
 		String sourceId = DataUtil.getIdProperty(properties,
 				PropertyIds.SOURCE_ID);
 		if (sourceId != null) {
-			Content source = contentService.getContent(repositoryId, DataUtil
-					.getStringProperty(properties, PropertyIds.SOURCE_ID));
+			Content source = contentService.getContent(repositoryId, sourceId);
 			if (source == null)
 				exceptionService.constraintAllowedSourceTypes(td, source);
 			exceptionService.permissionDenied(callContext,
@@ -651,8 +650,7 @@ public class ObjectServiceImpl implements ObjectService {
 		String targetId = DataUtil.getIdProperty(properties,
 				PropertyIds.TARGET_ID);
 		if (targetId != null) {
-			Content target = contentService.getContent(repositoryId, DataUtil
-					.getStringProperty(properties, PropertyIds.TARGET_ID));
+			Content target = contentService.getContent(repositoryId, targetId);
 			if (target == null)
 				exceptionService.constraintAllowedTargetTypes(td, target);
 			exceptionService.permissionDenied(callContext,
@@ -949,7 +947,7 @@ public class ObjectServiceImpl implements ObjectService {
 			// //////////////////
 			// Body of the method
 			// //////////////////
-			contentService.move(repositoryId, content, target);
+			contentService.move(callContext, repositoryId, content, target);
 
 			nemakiCachePool.get(repositoryId).removeCmisCache(content.getId());
 		}finally{
