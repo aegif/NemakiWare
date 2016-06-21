@@ -21,6 +21,10 @@
 package jp.aegif.nemaki.cmis.service.impl;
 
 import java.util.List;
+import java.util.concurrent.CompletionService;
+import java.util.concurrent.ExecutorCompletionService;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.locks.Lock;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
@@ -42,6 +46,7 @@ import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
+import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.collections.CollectionUtils;
 
@@ -62,18 +67,18 @@ public class AclServiceImpl implements AclService {
 	@Override
 	public Acl getAcl(CallContext callContext, String repositoryId,
 			String objectId, Boolean onlyBasicPermissions) {
-		
+
 		exceptionService.invalidArgumentRequired("objectId", objectId);
-		
+
 		Lock lock = threadLockService.getReadLock(repositoryId, objectId);
-		
+
 		try{
 			lock.lock();
-			
+
 			// //////////////////
 			// General Exception
 			// //////////////////
-			
+
 			Content content = contentService.getContent(repositoryId, objectId);
 			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 			exceptionService.permissionDenied(callContext,repositoryId, PermissionMapping.CAN_GET_ACL_OBJECT, content);
@@ -82,7 +87,8 @@ public class AclServiceImpl implements AclService {
 			// Body of the method
 			// //////////////////
 			jp.aegif.nemaki.model.Acl acl = contentService.calculateAcl(repositoryId, content);
-			return compileService.compileAcl(acl, content.isAclInherited(), onlyBasicPermissions);
+			//return compileService.compileAcl(acl, content.isAclInherited(), onlyBasicPermissions);
+			return compileService.compileAcl(acl, contentService.getAclInheritedWithDefault(repositoryId, content), onlyBasicPermissions);
 		}finally{
 			lock.unlock();
 		}
@@ -92,16 +98,16 @@ public class AclServiceImpl implements AclService {
 	public Acl applyAcl(CallContext callContext, String repositoryId, String objectId,
 			Acl acl, AclPropagation aclPropagation) {
 		exceptionService.invalidArgumentRequired("objectId", objectId);
-		
+
 		Lock lock = threadLockService.getReadLock(repositoryId, objectId);
-		
+
 		try{
 			lock.lock();
-			
+
 			// //////////////////
 			// General Exception
 			// //////////////////
-			
+
 			Content content = contentService.getContent(repositoryId, objectId);
 			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 			exceptionService.permissionDenied(callContext,repositoryId, PermissionMapping.CAN_APPLY_ACL_OBJECT, content);
@@ -126,11 +132,11 @@ public class AclServiceImpl implements AclService {
 						inherited = Boolean.valueOf(ext.getValue());
 					}
 				}
-				if(!content.isAclInherited().equals(inherited)) content.setAclInherited(inherited);
+				if(!contentService.getAclInheritedWithDefault(repositoryId, content).equals(inherited)) content.setAclInherited(inherited);
 			}
 
 			jp.aegif.nemaki.model.Acl nemakiAcl = new jp.aegif.nemaki.model.Acl();
-			//REPOSUTORYDETERMINED or PROPAGATE is considered as PROPAGATE
+			//REPOSITORYDETERMINED or PROPAGATE is considered as PROPAGATE
 			boolean objectOnly = (aclPropagation == AclPropagation.OBJECTONLY)? true : false;
 			for(Ace ace : acl.getAces()){
 				if(ace.isDirect()){
@@ -142,22 +148,145 @@ public class AclServiceImpl implements AclService {
 			convertSystemPrinciaplId(repositoryId, nemakiAcl);
 			content.setAcl(nemakiAcl);
 			contentService.update(repositoryId, content);
+			contentService.writeChangeEvent(callContext, repositoryId, content, nemakiAcl, ChangeType.SECURITY );
 			
 			nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
+
+			clearCachesRecursively(Executors.newCachedThreadPool(), callContext, repositoryId, content, false);
+			writeChangeEventsRecursively(Executors.newCachedThreadPool(), callContext, repositoryId, content, false);
 			
 			return getAcl(callContext, repositoryId, objectId, false);
-			
 		}finally{
 			lock.unlock();
 		}
-		
+
 	}
 
+	private void clearCachesRecursively(ExecutorService executorService, CallContext callContext, final String repositoryId, Content content, boolean executeOnParent){
+		
+		//Call threads for recursive applyAcl
+		if(content.isFolder()){
+			List<Content> children = contentService.getChildren(repositoryId, content.getId());
+			if(CollectionUtils.isEmpty(children)){
+				return;
+			}
+			
+			if(executeOnParent){
+				executorService.submit(new ClearCacheTask(repositoryId, content.getId()));
+			}
+			for(Content child : children){
+				if(contentService.getAclInheritedWithDefault(repositoryId, child)){
+					executorService.submit(new ClearCachesRecursivelyTask(executorService, callContext, repositoryId, child));
+				}
+			}
+		}else{
+			executorService.submit(new ClearCacheTask(repositoryId, content.getId()));
+		}
+	}
+	
+	private class ClearCacheTask implements Runnable{
+		private String repositoryId;
+		private String objectId;
+		
+		public ClearCacheTask(String repositoryId, String objectId) {
+			super();
+			this.repositoryId = repositoryId;
+			this.objectId = objectId;
+		}
+
+		@Override
+		public void run() {
+			// TODO Auto-generated method stub
+			nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId);
+		}
+	}
+	
+	private class ClearCachesRecursivelyTask implements Runnable{
+		private ExecutorService executorService;
+		private CallContext callContext;
+		private String repositoryId;
+		private Content content;
+		
+		public ClearCachesRecursivelyTask(ExecutorService executorService, CallContext callContext, String repositoryId, Content content) {
+			super();
+			this.executorService = executorService;
+			this.callContext = callContext;
+			this.repositoryId = repositoryId;
+			this.content = content;
+		}
+
+		@Override
+		public void run() {
+			clearCachesRecursively(executorService, callContext, repositoryId, content, true);
+		}
+	}
+	
+private void writeChangeEventsRecursively(ExecutorService executorService, CallContext callContext, final String repositoryId, Content content, boolean executeOnParent){
+		
+		//Call threads for recursive applyAcl
+		if(content.isFolder()){
+			List<Content> children = contentService.getChildren(repositoryId, content.getId());
+			if(CollectionUtils.isEmpty(children)){
+				return;
+			}
+			
+			if(executeOnParent){
+				executorService.submit(new ClearCacheTask(repositoryId, content.getId()));
+			}
+			for(Content child : children){
+				if(contentService.getAclInheritedWithDefault(repositoryId, child)){
+					executorService.submit(new WriteChangeEventsRecursivelyTask(executorService, callContext, repositoryId, child));	
+				}
+			}
+		}else{
+			executorService.submit(new WriteChangeEventTask(callContext, repositoryId, content));
+		}
+	}
+	
+	private class WriteChangeEventTask implements Runnable{
+		private CallContext callContext;
+		private String repositoryId;
+		private Content content;
+		
+		public WriteChangeEventTask(CallContext callContext, String repositoryId, Content content) {
+			super();
+			this.callContext = callContext;
+			this.repositoryId = repositoryId;
+			this.content = content;
+		}
+
+		@Override
+		public void run() {
+			// TODO content.getAcl()? content.calculateAcl()?
+			contentService.writeChangeEvent(callContext, repositoryId, content, content.getAcl(), ChangeType.SECURITY);
+		}
+	}
+	
+	private class WriteChangeEventsRecursivelyTask implements Runnable{
+		private ExecutorService executorService;
+		private CallContext callContext;
+		private String repositoryId;
+		private Content content;
+		
+		public WriteChangeEventsRecursivelyTask(ExecutorService executorService, CallContext callContext, String repositoryId, Content content) {
+			super();
+			this.executorService = executorService;
+			this.callContext = callContext;
+			this.repositoryId = repositoryId;
+			this.content = content;
+		}
+
+		@Override
+		public void run() {
+			writeChangeEventsRecursively(executorService, callContext, repositoryId, content, true);
+		}
+	}
+	
 	private void convertSystemPrinciaplId(String repositoryId, jp.aegif.nemaki.model.Acl acl){
 		List<jp.aegif.nemaki.model.Ace> aces = acl.getAllAces();
 		for (jp.aegif.nemaki.model.Ace ace : aces) {
 			RepositoryInfo info = repositoryInfoMap.get(repositoryId);
-			
+
 			//Convert anonymous to the form of database
 			String anonymous = info.getPrincipalIdAnonymous();
 			if (anonymous.equals(ace.getPrincipalId())) {
@@ -168,7 +297,7 @@ public class AclServiceImpl implements AclService {
 			String anyone = info.getPrincipalIdAnyone();
 			if (anyone.equals(ace.getPrincipalId())) {
 				ace.setPrincipalId(PrincipalId.ANYONE_IN_DB);
-				
+
 			}
 		}
 	}

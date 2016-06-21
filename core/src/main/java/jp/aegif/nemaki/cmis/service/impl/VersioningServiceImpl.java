@@ -71,6 +71,7 @@ public class VersioningServiceImpl implements VersioningService {
 		
 		try{
 			lock.lock();
+			nemakiCachePool.get(repositoryId).removeCmisCache(originalId);
 			// //////////////////
 			// General Exception
 			// //////////////////
@@ -96,7 +97,6 @@ public class VersioningServiceImpl implements VersioningService {
 			Holder<Boolean> copied = new Holder<Boolean>(true);
 			contentCopied = copied;
 			
-			nemakiCachePool.get(repositoryId).removeCmisCache(originalId);
 		}finally{
 			lock.unlock();
 		}
@@ -112,7 +112,7 @@ public class VersioningServiceImpl implements VersioningService {
 		
 		try{
 			lock.lock();
-			
+			nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
 			// //////////////////
 			// General Exception
 			// //////////////////
@@ -132,17 +132,21 @@ public class VersioningServiceImpl implements VersioningService {
 			contentService.cancelCheckOut(callContext, repositoryId, objectId, extension);
 
 			//remove cache
-			nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
+			
 			Document latest = contentService.getDocumentOfLatestVersion(repositoryId, document.getVersionSeriesId());
 			//Latest document does not exit when pwc is created as the first version
 			if(latest != null){
-				nemakiCachePool.get(repositoryId).removeCmisCache(latest.getId());
+				Lock latestLock = threadLockService.getWriteLock(repositoryId, latest.getId());
+				try{
+					latestLock.lock();
+					nemakiCachePool.get(repositoryId).removeCmisCache(latest.getId());
+				}finally{
+					latestLock.unlock();
+				}
 			}
 		}finally{
 			lock.unlock();
 		}
-		
-
 	}
 
 	@Override
@@ -152,7 +156,6 @@ public class VersioningServiceImpl implements VersioningService {
 			Acl addAces, Acl removeAces, ExtensionsData extension) {
 
 		exceptionService.invalidArgumentRequiredHolderString("objectId", objectId);
-		final String pwcId = objectId.getValue();
 		
 		Lock lock = threadLockService.getWriteLock(repositoryId, objectId.getValue());
 		
@@ -164,6 +167,8 @@ public class VersioningServiceImpl implements VersioningService {
 			// //////////////////
 
 			Document pwc = contentService.getDocument(repositoryId, objectId.getValue());
+			nemakiCachePool.get(repositoryId).removeCmisCache(pwc.getId());
+			
 			exceptionService.objectNotFound(DomainType.OBJECT, pwc, objectId.getValue());
 			exceptionService.permissionDenied(callContext,
 					repositoryId, PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT, pwc);
@@ -179,17 +184,23 @@ public class VersioningServiceImpl implements VersioningService {
 			// //////////////////
 			// Body of the method
 			// //////////////////
-			Document latest = contentService
-					.getDocumentOfLatestVersion(repositoryId, pwc.getVersionSeriesId());
-			
 			Document checkedIn = contentService.checkIn(callContext, repositoryId,
 					objectId, major, properties, contentStream, checkinComment,
 					policies, addAces, removeAces, extension);
 			objectId.setValue(checkedIn.getId());
-			
-			nemakiCachePool.get(repositoryId).removeCmisCache(pwc.getId());
+
+
+			//refresh latest version
+			Document latest = contentService
+					.getDocumentOfLatestVersion(repositoryId, pwc.getVersionSeriesId());
 			if(latest != null){
-				nemakiCachePool.get(repositoryId).removeCmisCache(latest.getId());
+				Lock latestLock = threadLockService.getWriteLock(repositoryId, latest.getId());
+				try{
+					latestLock.lock();
+					nemakiCachePool.get(repositoryId).removeCmisCache(latest.getId());
+				}finally{
+					latestLock.unlock();
+				}
 			}
 		}finally{
 			lock.unlock();
