@@ -363,13 +363,12 @@ public class Node extends Controller {
 		try {
 			if (request().getHeader("User-Agent").indexOf("MSIE") == -1) {
 				// Firefox, Opera 11
-				response().setHeader("Content-Disposition", String
-						.format(Locale.JAPAN, "attachment; filename*=utf-8'jp'%s", URLEncoder.encode(name, "utf-8")));
+				response().setHeader("Content-Disposition", String.format(Locale.JAPAN,
+						"attachment; filename*=utf-8'jp'%s", URLEncoder.encode(name, "utf-8")));
 			} else {
 				// IE7, 8, 9
-				response().setHeader("Content-Disposition", String
-						.format(Locale.JAPAN, "attachment; filename=\"%s\"", new String(name
-								.getBytes("MS932"), "ISO8859_1")));
+				response().setHeader("Content-Disposition", String.format(Locale.JAPAN, "attachment; filename=\"%s\"",
+						new String(name.getBytes("MS932"), "ISO8859_1")));
 			}
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -524,7 +523,7 @@ public class Node extends Controller {
 		Session session = getCmisSession(repositoryId);
 		ContentStream cs = Util.convertFileToContentStream(session, file);
 		session.createDocument(param, parentId, cs, VersioningState.MAJOR);
-		
+
 		//Clean temp file just after CMIS createDocument finished
 		file.getFile().delete();
 	}
@@ -541,7 +540,7 @@ public class Node extends Controller {
 		ContentStream cs = Util.convertFileToContentStream(session, file);
 		Document d0 = (Document) session.getObject(objectId);
 		Document d1 = d0.setContentStream(cs, true);
-		
+
 		//Clean temp file just after CMIS createDocument finished
 		file.getFile().delete();
 	}
@@ -571,7 +570,7 @@ public class Node extends Controller {
 		switch (Util.getBaseType(session, objectTypeId)) {
 		case CMIS_DOCUMENT:
 			ContentStreamAllowed csa = ((DocumentTypeDefinition) objectType).getContentStreamAllowed();
-			
+
 			if (csa == ContentStreamAllowed.NOTALLOWED) {
 				// don't set content stream
 				session.createDocument(param, parentId, null, VersioningState.MAJOR);
