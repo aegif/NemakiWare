@@ -27,9 +27,19 @@ import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 
+import jp.aegif.nemaki.util.spring.aspect.log.LogParam;
+
 public interface PolicyService {
-	public void applyPolicy(CallContext callContext, String repositoryId, String policyId, String objectId, ExtensionsData extension);
-	public void removePolicy(CallContext callContext, String repositoryId, String policyId, String objectId, ExtensionsData extension);
-	public List<ObjectData> getAppliedPolicies(CallContext callContext, String repositoryId, String objectId, String  filter, ExtensionsData extension);
+	public void applyPolicy(@LogParam("callContext") CallContext callContext,
+			@LogParam("repositoryId") String repositoryId, @LogParam("policyId") String policyId,
+			@LogParam("objectId") String objectId, @LogParam("extension") ExtensionsData extension);
+
+	public void removePolicy(@LogParam("callContext") CallContext callContext,
+			@LogParam("repositoryId") String repositoryId, @LogParam("policyId") String policyId,
+			@LogParam("objectId") String objectId, @LogParam("extension") ExtensionsData extension);
+
+	public List<ObjectData> getAppliedPolicies(@LogParam("callContext") CallContext callContext,
+			@LogParam("repositoryId") String repositoryId, @LogParam("objectId") String objectId,
+			@LogParam("filter") String filter, @LogParam("extension") ExtensionsData extension);
 
 }

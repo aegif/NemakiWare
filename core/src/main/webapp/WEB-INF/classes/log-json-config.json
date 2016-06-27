@@ -1,0 +1,29 @@
+{
+
+	"global":{
+		"setting":{
+			"uuid": true,
+			"name": "simple",
+			"time": true,
+			"logTime": false
+		},
+		"input":{
+			"objectId":{"type":"simple"}
+		},
+		"output":{
+			"type":"simple",
+			"list":{
+				"num":true,
+				"item":false
+			}
+		}
+	},
+
+	"method":{
+		"jp.aegif.nemaki.cmis.service.impl.AclServiceImpl.applyAcl":{
+			"input":{
+				"acl":{"type":"full"}
+			}
+		}
+	}
+}

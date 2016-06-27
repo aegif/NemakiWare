@@ -269,7 +269,7 @@ public class Repository {
 		return navigationService.getChildren(callContext, repositoryId, folderId,
 				filter, orderBy, includeAllowableActions,
 				includeRelationships, renditionFilter, includePathSegments, maxItems,
-				skipCount, extension, parentObjectData);
+				skipCount, parentObjectData, extension);
 	}
 
 	public List<ObjectInFolderContainer> getDescendants(
@@ -282,7 +282,7 @@ public class Repository {
 		return navigationService.getDescendants(callContext, repositoryId, folderId,
 				depth, filter, includeAllowableActions,
 				includeRelationships, renditionFilter, includePathSegment, foldersOnly,
-				extension, anscestorObjectData);
+				anscestorObjectData, extension);
 	}
 
 	public ObjectData getFolderParent(CallContext callContext, String repositoryId,
@@ -405,7 +405,7 @@ public class Repository {
 	public void checkOut(CallContext callContext, String repositoryId,
 			Holder<String> objectId, ExtensionsData extension, Holder<Boolean> contentCopied) {
 		versioningService.checkOut(callContext, repositoryId, objectId,
-				extension, contentCopied);
+				contentCopied, extension);
 	}
 
 	public List<ObjectData> getAllVersions(CallContext context,

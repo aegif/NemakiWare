@@ -332,8 +332,8 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		Holder<ObjectData> parentObjectData = new Holder<ObjectData>(null);
 
 		ObjectInFolderList children = navigationService.getChildren(getCallContext(), repositoryId, folderId, filter,
-				orderBy, includeAllowableActions, null, null, includePathSegment, maxItems, skipCount, extension,
-				parentObjectData);
+				orderBy, includeAllowableActions, null, null, includePathSegment, maxItems, skipCount, parentObjectData,
+				extension);
 
 		if (parentObjectData != null && parentObjectData.getValue() != null) {
 			setObjectInfo(repositoryId, parentObjectData.getValue());
@@ -359,7 +359,7 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 
 		List<ObjectInFolderContainer> result = navigationService.getDescendants(getCallContext(), repositoryId,
 				folderId, depth, filter, includeAllowableActions, includeRelationships, renditionFilter,
-				includePathSegment, false, extension, anscestorObjectData);
+				includePathSegment, false, anscestorObjectData, extension);
 
 		if (anscestorObjectData != null && anscestorObjectData.getValue() != null) {
 			setObjectInfo(repositoryId, anscestorObjectData.getValue());
@@ -381,7 +381,7 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 
 		List<ObjectInFolderContainer> result = navigationService.getDescendants(getCallContext(), repositoryId,
 				folderId, depth, filter, includeAllowableActions, includeRelationships, renditionFilter,
-				includePathSegment, true, extension, anscestorObjectData);
+				includePathSegment, true, anscestorObjectData, extension);
 
 		if (anscestorObjectData != null && anscestorObjectData.getValue() != null) {
 			setObjectInfo(repositoryId, anscestorObjectData.getValue());
@@ -639,7 +639,7 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	@Override
 	public void checkOut(String repositoryId, Holder<String> objectId, ExtensionsData extension,
 			Holder<Boolean> contentCopied) {
-		versioningService.checkOut(getCallContext(), repositoryId, objectId, extension, contentCopied);
+		versioningService.checkOut(getCallContext(), repositoryId, objectId, contentCopied, extension);
 	}
 
 	@Override
