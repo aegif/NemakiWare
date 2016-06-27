@@ -25,6 +25,7 @@ import java.math.BigInteger;
 import java.util.List;
 
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
+import jp.aegif.nemaki.util.spring.aspect.log.LogParam;
 
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
@@ -37,69 +38,87 @@ public interface RepositoryService {
 	/**
 	 * Checks whether this repository has the given identifier or not.
 	 */
-	public abstract boolean hasThisRepositoryId(String repositoryId);
+	public abstract boolean hasThisRepositoryId(@LogParam("repositoryId") String repositoryId);
 
 	/**
 	 * Returns information about the CMIS repository, the optional capabilities
 	 * it supports and its access control information if applicable.
-	 * @param repositoryId TODO
+	 * 
+	 * @param repositoryId
+	 *            TODO
 	 */
-	public abstract RepositoryInfo getRepositoryInfo(String repositoryId);
+	public abstract RepositoryInfo getRepositoryInfo(@LogParam("repositoryId") String repositoryId);
 
 	public abstract List<org.apache.chemistry.opencmis.commons.data.RepositoryInfo> getRepositoryInfos();
-	
+
 	/**
 	 * Gets the CMIS types.
-	 * @param repositoryId TODO
+	 * 
+	 * @param repositoryId
+	 *            TODO
 	 */
-	public abstract TypeDefinitionList getTypeChildren(CallContext callContext,
-			String repositoryId, String typeId,
-			Boolean includePropertyDefinitions, BigInteger maxItems, BigInteger skipCount);
+	public abstract TypeDefinitionList getTypeChildren(@LogParam("callContext") CallContext callContext,
+			@LogParam("repositoryId") String repositoryId, @LogParam("typeId") String typeId,
+			@LogParam("includePropertyDefinitions") Boolean includePropertyDefinitions, @LogParam("maxItems") BigInteger maxItems,
+			@LogParam("skipCount") BigInteger skipCount);
 
 	/**
 	 * Returns the set of descendant object type defined for the repository
 	 * under the specified type.
-	 * @param repositoryId TODO
+	 * 
+	 * @param repositoryId
+	 *            TODO
 	 */
-	public abstract List<TypeDefinitionContainer> getTypeDescendants(
-			CallContext callContext, String repositoryId, String typeId,
-			BigInteger depth, Boolean includePropertyDefinitions);
+	public abstract List<TypeDefinitionContainer> getTypeDescendants(@LogParam("callContext") CallContext callContext,
+			@LogParam("repositoryId") String repositoryId, @LogParam("typeId") String typeId, @LogParam("depth") BigInteger depth,
+			@LogParam("includePropertyDefinitions") Boolean includePropertyDefinitions);
 
 	/**
 	 * Gets the definition of the specified object type.
-	 * @param repositoryId TODO
+	 * 
+	 * @param repositoryId
+	 *            TODO
 	 */
-	public abstract TypeDefinition getTypeDefinition(CallContext callContext,
-			String repositoryId, String typeId);
+	public abstract TypeDefinition getTypeDefinition(@LogParam("callContext")CallContext callContext, @LogParam("repositoryId")String repositoryId, @LogParam("typeId")String typeId);
 
 	/**
 	 * Create a type
-	 * @param callContext TODO
-	 * @param repositoryId TODO
+	 * 
+	 * @param callContext
+	 *            TODO
+	 * @param repositoryId
+	 *            TODO
 	 * @param type
 	 * @param extension
 	 * @return
 	 */
-	public TypeDefinition createType(CallContext callContext,
-			String repositoryId, TypeDefinition type, ExtensionsData extension);
+	public TypeDefinition createType(@LogParam("callContext") CallContext callContext, @LogParam("repositoryId") String repositoryId,
+			@LogParam("typeDefinition") TypeDefinition type, @LogParam("extension") ExtensionsData extension);
 
 	/**
 	 * Delete a type
-	 * @param callContext TODO
-	 * @param repositoryId TODO
+	 * 
+	 * @param callContext
+	 *            TODO
+	 * @param repositoryId
+	 *            TODO
 	 * @param typeId
 	 * @param extension
 	 */
-	public void deleteType(CallContext callContext, String repositoryId, String typeId, ExtensionsData extension);
+	public void deleteType(@LogParam("callContext") CallContext callContext, @LogParam("repositoryId") String repositoryId,
+			@LogParam("typeId") String typeId, @LogParam("extension") ExtensionsData extension);
 
 	/**
 	 * Update a type
-	 * @param callContext TODO
-	 * @param repositoryId TODO
+	 * 
+	 * @param callContext
+	 *            TODO
+	 * @param repositoryId
+	 *            TODO
 	 * @param type
 	 * @param extension
 	 * @return
 	 */
-	public TypeDefinition updateType(CallContext callContext,
-			String repositoryId, TypeDefinition type, ExtensionsData extension);
+	public TypeDefinition updateType(@LogParam("callContext") CallContext callContext, @LogParam("repositoryId") String repositoryId,
+			@LogParam("typeDefinition") TypeDefinition type, @LogParam("extension") ExtensionsData extension);
 }
