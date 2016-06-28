@@ -1,5 +1,4 @@
 {
-
 	"global":{
 		"setting":{
 			"uuid": true,
@@ -20,12 +19,12 @@
 	},
 
 	"method":{
-		"jp.aegif.nemaki.cmis.service.impl.NavigationServiceImpl.getChildren":{
+		"jp.aegif.nemaki.cmis.service.NavigationService.getChildren":{
 			"input":{
 				"folderId":{"type":"simple"}
 			}
 		},
-		"jp.aegif.nemaki.cmis.service.impl.AclServiceImpl.applyAcl":{
+		"jp.aegif.nemaki.cmis.service.AclService.applyAcl":{
 			"input":{
 				"acl":{"type":"full"}
 			}

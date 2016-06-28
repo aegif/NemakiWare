@@ -43,6 +43,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+
 import jp.aegif.nemaki.util.spring.aspect.log.JsonLogger.JsonLogConfig.GlobalConfig;
 import jp.aegif.nemaki.util.spring.aspect.log.JsonLogger.JsonLogConfig.MethodConfig;
 import jp.aegif.nemaki.util.spring.aspect.log.JsonLogger.JsonLogConfig.ValueConfig;
@@ -80,16 +81,13 @@ public class JsonLogger {
 		
 		// AOP parameters
 		MethodSignature signature = (MethodSignature) jp.getSignature();
-		// final String methodName = jp.getTarget().getClass() + "." +
-		// signature.getName();
-		final String methodName = jp.getTarget().getClass().getName() + "." + signature.getName();
+		final String methodName = signature.getMethod().getDeclaringClass().getName() + "." + signature.getName();
 		Annotation[][] annotations = signature.getMethod().getParameterAnnotations();
 		Object[] inputs = jp.getArgs();
 
 		// read config
 		MethodConfig methodConfig = config.getMethod().get(methodName);
 		if (methodConfig == null) {
-			//return jp.proceed();
 			methodConfig = new MethodConfig();
 			methodConfig.merge(config.getGlobal());
 		}
