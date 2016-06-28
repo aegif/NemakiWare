@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.UUID;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import javax.annotation.PostConstruct;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
@@ -27,7 +29,6 @@ import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.data.RenditionData;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
-import org.apache.chemistry.opencmis.server.support.query.CmisQlStrictParser.root_return;
 import org.apache.commons.collections.CollectionUtils;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.reflect.MethodSignature;
@@ -36,8 +37,6 @@ import org.joda.time.Duration;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.Mergeable;
-
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
@@ -57,16 +56,21 @@ import net.logstash.logback.marker.Markers;
 public class JsonLogger {
 	private static Logger logger = LoggerFactory.getLogger(JsonLogger.class);
 	
-	private final ObjectMapper mapper = new ObjectMapper();
+	private final ObjectMapper mapper = new ObjectMapper().setSerializationInclusion(Include.NON_NULL);;
 	private JsonLogConfig config;
 	private String jsonConfigurationFile;
+	
+	private final MethodConfig defaultMethodConfig = new MethodConfig();;
+	
+	private final ReadWriteLock lock = new ReentrantReadWriteLock(true);
 	
 	@PostConstruct
 	public void init() throws JsonParseException, JsonMappingException, IOException {
 		load(jsonConfigurationFile);
+		defaultMethodConfig.merge(config.getGlobal());
 	}
 
-	public void load(String fileName) throws JsonParseException, JsonMappingException, IOException {
+	private void load(String fileName) throws JsonParseException, JsonMappingException, IOException {
 		InputStream is = this.getClass().getClassLoader().getResourceAsStream(fileName);
 		config = mapper.readValue(is, JsonLogConfig.class);
 		
@@ -78,6 +82,15 @@ public class JsonLogger {
 	}
 
 	public Object aroundMethod(ProceedingJoinPoint jp) throws Throwable {
+		lock.readLock().lock();
+		try{
+			return aroundMethodBody(jp);
+		}finally{
+			lock.readLock().unlock();
+		}
+	}
+	
+	private Object aroundMethodBody(ProceedingJoinPoint jp) throws Throwable {
 		if(!logger.isInfoEnabled()){
 			return jp.proceed();
 		}
@@ -93,8 +106,7 @@ public class JsonLogger {
 		// read config
 		MethodConfig methodConfig = config.getMethod().get(methodName);
 		if (methodConfig == null) {
-			methodConfig = new MethodConfig();
-			methodConfig.merge(config.getGlobal());
+			methodConfig = defaultMethodConfig;
 		}
 
 		// create log instance
@@ -158,7 +170,7 @@ public class JsonLogger {
 			//execute
 			Object result = jp.proceed();
 			DateTime timeEnd = new DateTime();
-			if(methodConfig.getSetting().hasTime()){
+			if(methodConfig.getSetting().getTime()){
 				log.setTime(new Duration(timeStart.getMillis(), timeEnd.getMillis()).getMillis());
 			}
 			
@@ -182,7 +194,7 @@ public class JsonLogger {
 
 			// logging
 			DateTime logTimeEnd = new DateTime();
-			if(methodConfig.getSetting().hasLogTime()){
+			if(methodConfig.getSetting().getLogTime()){
 				log.setLogTime(new Duration(logTimeStart.getMillis(), logTimeEnd.getMillis()).getMillis());
 			}
 			
@@ -231,7 +243,7 @@ public class JsonLogger {
 	private static class JsonLog {
 
 		public JsonLog(MethodConfig methodConfig){
-			if(methodConfig.getSetting().hasUuid()){
+			if(methodConfig.getSetting().getUuid()){
 				this.uuid = UUID.randomUUID().toString();
 			}
 		}
@@ -389,7 +401,7 @@ public class JsonLogger {
 				simple, full,
 			}
 			
-			public Boolean hasUuid() {
+			public Boolean getUuid() {
 				return uuid;
 			}
 
@@ -405,7 +417,7 @@ public class JsonLogger {
 				this.name = name;
 			}
 
-			public Boolean hasTime() {
+			public Boolean getTime() {
 				return time;
 			}
 
@@ -413,7 +425,7 @@ public class JsonLogger {
 				this.time = time;
 			}
 
-			public Boolean hasLogTime() {
+			public Boolean getLogTime() {
 				return logTime;
 			}
 
@@ -464,10 +476,10 @@ public class JsonLogger {
 				//merge setting
 				Setting globalSetting = globalConfig.getSetting();
 				if(globalSetting != null){
-					if(setting.hasUuid() == null) setting.setUuid(globalSetting.hasUuid());
+					if(setting.getUuid() == null) setting.setUuid(globalSetting.getUuid());
 					if(setting.getName() == null) setting.setName(globalSetting.getName());
-					if(setting.hasTime() == null) setting.setTime(globalSetting.hasTime());
-					if(setting.hasLogTime() == null) setting.setLogTime(globalSetting.hasLogTime());
+					if(setting.getTime() == null) setting.setTime(globalSetting.getTime());
+					if(setting.getLogTime() == null) setting.setLogTime(globalSetting.getLogTime());
 				}
 				
 				//merge input
@@ -529,8 +541,8 @@ public class JsonLogger {
 					if(this.getType() == null) this.setType(other.getType());
 					if(other.getList() != null){
 						ListConfig globalListConfig = other.getList();
-						if(this.getList().hasNum() == null) this.getList().setNum(globalListConfig.hasNum());
-						if(this.getList().hasItem() == null) this.getList().setItem(globalListConfig.hasItem());
+						if(this.getList().getNum() == null) this.getList().setNum(globalListConfig.getNum());
+						if(this.getList().getItem() == null) this.getList().setItem(globalListConfig.getItem());
 					}
 					if(other.getProperties() != null){
 						Map<String, Boolean> globalProperties = other.getProperties();
@@ -548,13 +560,13 @@ public class JsonLogger {
 		public static class ListConfig{
 			private Boolean num;
 			private Boolean item;
-			public Boolean hasNum() {
+			public Boolean getNum() {
 				return num;
 			}
 			public void setNum(Boolean num) {
 				this.num = num;
 			}
-			public Boolean hasItem() {
+			public Boolean getItem() {
 				return item;
 			}
 			public void setItem(Boolean item) {
@@ -563,7 +575,7 @@ public class JsonLogger {
 		}
 	}
 
-	// ////////////////////////////////////////////////
+	// //////////////////////////////////////////////
 	// conversion method
 	// //////////////////////////////////////////////
 	private JsonNode simple(Object value, ValueConfig valueConfig){
@@ -700,11 +712,11 @@ public class JsonLogger {
 	private ObjectNode simple(Collection collection, ValueConfig valueConfig){
 		ObjectNode json = mapper.createObjectNode();
 		
-		if(valueConfig.getList().hasNum()){
+		if(valueConfig.getList().getNum()){
 			json.put("num", collection.size());
 		}
 
-		if(valueConfig.getList().hasItem()){
+		if(valueConfig.getList().getItem()){
 			ArrayNode listNode = json.putArray("list");
 			for(Object item : collection){
 				listNode.add(simple(item, valueConfig));
@@ -713,6 +725,31 @@ public class JsonLogger {
 		return json;
 	}
 
+	// ////////////////////////////////////////////////
+	// config api
+	// //////////////////////////////////////////////	
+	public JsonNode getJsonConfiguration() {
+		return mapper.valueToTree(config);
+	}
+	
+	public void updateJsonConfiguration(String json) throws JsonParseException, JsonMappingException, IOException{
+		lock.writeLock().lock();
+		try{
+			config = mapper.readValue(json, JsonLogConfig.class);
+		}finally{
+			lock.writeLock().unlock();
+		}
+	}
+
+	public void reloadJsonConfiguration() throws JsonParseException, JsonMappingException, IOException {
+		lock.writeLock().lock();
+		try{
+			load(jsonConfigurationFile);
+		}finally{
+			lock.writeLock().unlock();
+		}
+	}
+	
 	public void setJsonConfigurationFile(String jsonConfigurationFile) {
 		this.jsonConfigurationFile = jsonConfigurationFile;
 	}
