@@ -4,13 +4,14 @@ import java.net.MalformedURLException;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.apache.log4j.Logger;
 import org.ektorp.CouchDbConnector;
 import org.ektorp.CouchDbInstance;
 import org.ektorp.http.HttpClient;
 import org.ektorp.http.StdHttpClient;
 import org.ektorp.http.StdHttpClient.Builder;
 import org.ektorp.impl.StdCouchDbInstance;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 
@@ -28,7 +29,7 @@ public class ConnectorPool {
 	private Builder builder;
 	private Map<String, CouchDbConnector> pool = new HashMap<String, CouchDbConnector>();
 	
-	private Logger logger = Logger.getLogger(ConnectorPool.class);
+	private Logger logger = LoggerFactory.getLogger(ConnectorPool.class);
 	
 	public void init() {
 		//Builder

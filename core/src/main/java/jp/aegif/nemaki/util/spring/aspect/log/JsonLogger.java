@@ -49,13 +49,14 @@ import jp.aegif.nemaki.util.spring.aspect.log.JsonLogger.JsonLogConfig.ValueConf
 
 public class JsonLogger {
 	private static Logger logger = LoggerFactory.getLogger(JsonLogger.class);
+	
 	private final ObjectMapper mapper = new ObjectMapper();
 	private JsonLogConfig config;
-	private String configFileName = "log-json-config.json"; // TODO
-
+	private String jsonConfigurationFile;
+	
 	@PostConstruct
 	public void init() throws JsonParseException, JsonMappingException, IOException {
-		load(configFileName);
+		load(jsonConfigurationFile);
 	}
 
 	public void load(String fileName) throws JsonParseException, JsonMappingException, IOException {
@@ -640,5 +641,9 @@ public class JsonLogger {
 			}
 		}
 		return json;
+	}
+
+	public void setJsonConfigurationFile(String jsonConfigurationFile) {
+		this.jsonConfigurationFile = jsonConfigurationFile;
 	}
 }

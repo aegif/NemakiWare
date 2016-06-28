@@ -245,7 +245,8 @@ public interface PropertyKey {
 	//Log
 	final String LOG_ASPECT_DEFAULT = "log.aspect.default";
 	final String LOG_ASPECT_EXPRESSION = "log.aspect.expression";
-	final String LOG_CONFIG_PATH = "log.config.path";
+	final String LOG_CONFIG_FILE = "log.config.file";
+	final String LOG_CONFIG_JSON_FILE = "log.config.json.file";
 	final String LOG_LEVEL = "log.level";
 	final String LOG_RETURN_VALUE = "log.return.value";
 	final String LOG_FQN = "log.fqn";
