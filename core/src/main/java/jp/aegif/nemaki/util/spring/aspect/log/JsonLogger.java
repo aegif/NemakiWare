@@ -185,6 +185,7 @@ public class JsonLogger {
 			
 			log.setWhen("completed");			
 			String json = mapper.writeValueAsString(log);
+			
 			logger.info(Markers.appendRaw("message", json), null);
 
 			return result;
