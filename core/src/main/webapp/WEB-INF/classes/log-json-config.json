@@ -19,6 +19,20 @@
 	},
 
 	"method":{
+		"jp.aegif.nemaki.cmis.service.ObjectService.create":{
+			"input":{
+				"folderId":{"type":"simple"},
+				"contentStream":{"type":"simple"},
+				"properties": {
+					"type":"simple",
+					"properties": {
+						"cmis:name":true,
+						"cmis:objectTypeId":true
+					}
+				}
+			}
+		},
+
 		"jp.aegif.nemaki.cmis.service.NavigationService.getChildren":{
 			"input":{
 				"folderId":{"type":"simple"}
