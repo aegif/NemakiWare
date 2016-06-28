@@ -32,8 +32,178 @@
 				}
 			}
 		},
-
+		"jp.aegif.nemaki.cmis.service.ObjectService.setContentStream":{
+			"input":{
+				"contentStream":{"type":"simple"}
+			}
+		},
+		"jp.aegif.nemaki.cmis.service.ObjectService.appendContentStream":{
+			"input":{
+				"contentStream":{"type":"simple"}
+			}
+		},
+		"jp.aegif.nemaki.cmis.service.ObjectService.deleteTree":{
+			"input":{
+				"folderId":{"type":"simple"}
+			}
+		},
+		"jp.aegif.nemaki.cmis.service.ObjectService.moveObject":{
+			"input":{
+				"sourceFolderId":{"type":"simple"},
+				"targetFolderId":{"type":"simple"}
+			}
+		},
+		"jp.aegif.nemaki.cmis.service.ObjectService.updateProperties":{	
+			"input":{
+				"properties": {
+					"type":"simple",
+					"properties": {
+						"cmis:name":true,
+						"cmis:objectTypeId":true
+					}
+				},
+				"changeToken": {"type":"simple"}
+			}		
+		},
+		"jp.aegif.nemaki.cmis.service.ObjectService.bulkUpdateProperties":{	
+			"input":{
+				"objectIdAndChangeToken": {
+					"type":"simple",
+					"list":{
+						"num":true,
+						"item":true
+					}
+				},
+				"properties": {
+					"type":"simple",
+					"properties": {
+						"cmis:name":true,
+						"cmis:objectTypeId":true
+					}
+				}
+			}
+		},
+		"jp.aegif.nemaki.cmis.service.ObjectService.getObjectByPath":{
+			"input":{
+				"path":{"type":"simple"}
+			}
+		},
+		"jp.aegif.nemaki.cmis.service.ObjectService.createFolder":{
+			"input":{
+				"folderId":{"type":"simple"},
+				"properties": {
+					"type":"simple",
+					"properties": {
+						"cmis:name":true
+					}
+				}
+			}
+		},
+		"jp.aegif.nemaki.cmis.service.ObjectService.createDocumentFromSource":{
+			"input":{
+				"folderId":{"type":"simple"},
+				"sourceId":{"type":"simple"},
+				"properties": {
+					"type":"simple",
+					"properties": {
+						"cmis:name":true
+					}
+				},
+				"contentStream":{"type":"simple"}
+			}
+		},
+		"jp.aegif.nemaki.cmis.service.ObjectService.createDocument":{
+			"input":{
+				"folderId":{"type":"simple"},
+				"properties": {
+					"type":"simple",
+					"properties": {
+						"cmis:name":true
+					}
+				},
+				"contentStream":{"type":"simple"}
+			}
+		},
+		"jp.aegif.nemaki.cmis.service.ObjectService.createRelationship":{
+			"input":{
+				"folderId":{"type":"simple"},
+				"properties": {
+					"type":"simple",
+					"properties": {
+						"cmis:name":true
+					}
+				}
+			}
+		},
+		"jp.aegif.nemaki.cmis.service.ObjectService.createPolicy":{
+			"input":{
+				"folderId":{"type":"simple"},
+				"properties": {
+					"type":"simple",
+					"properties": {
+						"cmis:name":true
+					}
+				}
+			}
+		},
+		"jp.aegif.nemaki.cmis.service.ObjectService.createItem":{
+			"input":{
+				"folderId":{"type":"simple"},
+				"properties": {
+					"type":"simple",
+					"properties": {
+						"cmis:name":true
+					}
+				}
+			}
+		},
+		"jp.aegif.nemaki.cmis.service.VersioningService.checkOut":{
+			"input":{
+				"properties": {
+					"type":"simple",
+					"properties": {
+						"cmis:name":true
+					}
+				}
+			}
+		},
+		"jp.aegif.nemaki.cmis.service.VersioningService.checkIn":{
+			"input":{
+				"properties": {
+					"type":"simple",
+					"properties": {
+						"cmis:name":true
+					}
+				},
+				"contentStream":{"type":"simple"}
+			}
+		},
+		"jp.aegif.nemaki.cmis.service.DiscoveryService.query":{
+			"input":{
+				"statement":{"type":"simple"}
+			}
+		},
+		"jp.aegif.nemaki.cmis.service.DiscoveryService.getContentChanges":{
+			"input":{
+				"changeLogToken":{"type":"simple"}
+			}
+		},
 		"jp.aegif.nemaki.cmis.service.NavigationService.getChildren":{
+			"input":{
+				"folderId":{"type":"simple"}
+			}
+		},
+		"jp.aegif.nemaki.cmis.service.NavigationService.getDescendants":{
+			"input":{
+				"folderId":{"type":"simple"}
+			}
+		},
+		"jp.aegif.nemaki.cmis.service.NavigationService.getFolderParent":{
+			"input":{
+				"folderId":{"type":"simple"}
+			}
+		},
+		"jp.aegif.nemaki.cmis.service.NavigationService.getCheckedOutDocs":{
 			"input":{
 				"folderId":{"type":"simple"}
 			}
