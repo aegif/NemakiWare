@@ -26,6 +26,7 @@ import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.data.RenditionData;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.chemistry.opencmis.server.support.query.CmisQlStrictParser.root_return;
 import org.apache.commons.collections.CollectionUtils;
 import org.aspectj.lang.ProceedingJoinPoint;
@@ -46,6 +47,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.TextNode;
 
 import jp.aegif.nemaki.util.spring.aspect.log.JsonLogger.JsonLogConfig.GlobalConfig;
 import jp.aegif.nemaki.util.spring.aspect.log.JsonLogger.JsonLogConfig.MethodConfig;
@@ -591,6 +593,8 @@ public class JsonLogger {
 			return simple((ObjectInFolderContainer)value, valueConfig);
 		}else if(value instanceof ObjectParentData){
 			return simple((ObjectParentData)value, valueConfig);
+		}else if(value instanceof Holder){
+			return simple((Holder)value, valueConfig);
 		}else if(value instanceof Collection){
 			return simple( (Collection)value, valueConfig);
 		}
@@ -683,6 +687,14 @@ public class JsonLogger {
 		}
 		
 		return json;
+	}
+	
+	private JsonNode simple(Holder holder,  ValueConfig valueConfig){
+		Object value = holder.getValue();
+		if(value != null){
+			return new TextNode(value.toString());
+		}
+		return null;
 	}
 	
 	private ObjectNode simple(Collection collection, ValueConfig valueConfig){
