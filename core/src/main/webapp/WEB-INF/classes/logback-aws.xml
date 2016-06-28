@@ -9,14 +9,10 @@
 		</encoder>
 	</appender>
 
-	<property name="LOG_FILE" value="logs/core.log" />
+	<property name="LOG_FILE" value="${catalina.home}/logs/nemakicore.log" />
 	<appender name="FILE"
-		class="ch.qos.logback.core.rolling.RollingFileAppender">
+		class="ch.qos.logback.core.FileAppender">
 		<file>${LOG_FILE}</file>
-		<rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-			<fileNamePattern>${LOG_FILE}.%d.gz</fileNamePattern>
-			<maxHistory>14</maxHistory>
-		</rollingPolicy>
 		<encoder class="net.logstash.logback.encoder.LogstashEncoder">
 			<fieldNames>
     			<logger>[ignore]</logger>
@@ -27,11 +23,9 @@
 	</appender>
 
 	<root level="WARN">
-		<appender-ref ref="STDOUT" />
 		<appender-ref ref="FILE" />
 	</root>
 	<logger name="jp.aegif.nemaki" level="INFO" additivity="false">
-		<appender-ref ref="STDOUT" />
 		<appender-ref ref="FILE" />
 	</logger>
 </configuration>
