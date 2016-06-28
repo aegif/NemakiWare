@@ -124,5 +124,4 @@ public interface NavigationService {
 			@LogParam("includeRelationships") IncludeRelationships includeRelationships,
 			@LogParam("renditionFilter") String renditionFilter, @LogParam("maxItems") BigInteger maxItems,
 			@LogParam("skipCount") BigInteger skipCount, @LogParam("extension") ExtensionsData extension);
-
 }
