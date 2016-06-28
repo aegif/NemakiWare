@@ -2,6 +2,7 @@
 	<appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
 		<encoder class="net.logstash.logback.encoder.LogstashEncoder">
 			<fieldNames>
+				<version>[ignore]</version>
     			<logger>[ignore]</logger>
     			<levelValue>[ignore]</levelValue>
 		   </fieldNames>
