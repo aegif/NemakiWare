@@ -22,9 +22,11 @@ import org.apache.chemistry.opencmis.commons.data.ObjectInFolderContainer;
 import org.apache.chemistry.opencmis.commons.data.ObjectInFolderData;
 import org.apache.chemistry.opencmis.commons.data.ObjectInFolderList;
 import org.apache.chemistry.opencmis.commons.data.ObjectParentData;
+import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.data.RenditionData;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.chemistry.opencmis.server.support.query.CmisQlStrictParser.root_return;
 import org.apache.commons.collections.CollectionUtils;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.reflect.MethodSignature;
@@ -33,6 +35,7 @@ import org.joda.time.Duration;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.Mergeable;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -81,7 +84,7 @@ public class JsonLogger {
 		
 		// AOP parameters
 		MethodSignature signature = (MethodSignature) jp.getSignature();
-		final String methodName = signature.getMethod().getDeclaringClass().getName() + "." + signature.getName();
+		final String methodName =  signature.getMethod().getDeclaringClass().getCanonicalName() + "." + signature.getName();
 		Annotation[][] annotations = signature.getMethod().getParameterAnnotations();
 		Object[] inputs = jp.getArgs();
 
@@ -126,7 +129,7 @@ public class JsonLogger {
 			}
 
 			// log
-			ValueConfig inputConfig = methodConfig.getInput().get(paramName);
+			final ValueConfig inputConfig = methodConfig.getInput().get(paramName);
 			if (inputConfig == null) {
 				continue;
 			}
@@ -134,7 +137,7 @@ public class JsonLogger {
 			case none:
 				break;
 			case simple:
-				log.getInput().put(paramName, simple(value, methodConfig.getInput().get(paramName)));
+				log.getInput().put(paramName, simple(value, inputConfig));
 				break;
 			case full:
 				log.getInput().put(paramName, value);
@@ -159,13 +162,13 @@ public class JsonLogger {
 			
 			// output
 			// TODO
-			ValueConfig outputConfig = methodConfig.getOutput();
+			final ValueConfig outputConfig = methodConfig.getOutput();
 			if (outputConfig != null) {
 				switch (outputConfig.getType()) {
 				case none:
 					break;
 				case simple:
-					log.setOutput(simple(result, methodConfig.getOutput()));
+					log.setOutput(simple(result, outputConfig));
 					break;
 				case full:
 					log.setOutput(result);
@@ -468,20 +471,21 @@ public class JsonLogger {
 				//merge input
 				Map<String, ValueConfig> globalInput  = globalConfig.getInput();
 				if(globalInput != null){
-					input.putAll(globalInput);
+					for(String key : globalInput.keySet()){
+						ValueConfig globalEachInput = globalInput.get(key);
+						ValueConfig thisEachInput = input.get(key);
+						if(thisEachInput == null){
+							input.put(key, globalEachInput);
+						}else{
+							thisEachInput.merge(globalEachInput);
+							input.put(key, thisEachInput);
+						}
+						
+					}
 				}
 						
 				//merge output
-				ValueConfig globalOutput = globalConfig.getOutput();
-				if(globalOutput != null){
-					if(output.getType() == null) output.setType(globalOutput.getType());
-					if(globalOutput.getList() != null){
-						ListConfig globalListConfig = globalOutput.getList();
-						if(output.getList().hasNum() == null) output.getList().setNum(globalListConfig.hasNum());
-						if(output.getList().hasItem() == null) output.getList().setItem(globalListConfig.hasItem());
-					}
-				}
-				
+				output.merge(globalConfig.getOutput());
 			}
 		}
 
@@ -492,6 +496,7 @@ public class JsonLogger {
 		public static class ValueConfig {
 			private ValueType type;
 			private ListConfig list = new ListConfig();
+			private Map<String, Boolean> properties = new HashMap<>();
 			
 			public ValueType getType() {
 				return type;
@@ -507,6 +512,34 @@ public class JsonLogger {
 
 			public void setList(ListConfig list) {
 				this.list = list;
+			}
+
+			public Map<String, Boolean> getProperties() {
+				return properties;
+			}
+
+			public void setProperties(Map<String, Boolean> properties) {
+				this.properties = properties;
+			}
+			
+			public void merge(ValueConfig other){
+				if(other != null){
+					if(this.getType() == null) this.setType(other.getType());
+					if(other.getList() != null){
+						ListConfig globalListConfig = other.getList();
+						if(this.getList().hasNum() == null) this.getList().setNum(globalListConfig.hasNum());
+						if(this.getList().hasItem() == null) this.getList().setItem(globalListConfig.hasItem());
+					}
+					if(other.getProperties() != null){
+						Map<String, Boolean> globalProperties = other.getProperties();
+						for(String key : globalProperties.keySet()){
+							if(this.getProperties().get(key) == null){
+								this.getProperties().put(key, globalProperties.get(key));
+							}
+							
+						}
+					}
+				}
 			}
 		}
 		
@@ -538,6 +571,8 @@ public class JsonLogger {
 		
 		if(value instanceof ObjectData){
 			return simple((ObjectData)value, valueConfig);
+		}else if(value instanceof Properties){
+			return simple((Properties)value, valueConfig);
 		}else if(value instanceof FailedToDeleteData){
 			return simple((FailedToDeleteData)value, valueConfig);
 		}else if(value instanceof RenditionData){
@@ -632,6 +667,22 @@ public class JsonLogger {
 	
 	private ObjectNode simple(ObjectParentData objectParentData, ValueConfig valueConfig){
 		return simple(objectParentData.getObject(), valueConfig);
+	}
+	
+	private ObjectNode simple(Properties properties, ValueConfig valueConfig){
+		ObjectNode json = mapper.createObjectNode();
+		
+		for(String key : valueConfig.getProperties().keySet()){
+			Boolean enabled = valueConfig.getProperties().get(key);
+			if(enabled != null & enabled){
+				PropertyData<?> value = properties.getProperties().get(key);
+				if(value != null && value.getFirstValue() != null){
+					json.put(key, value.getFirstValue().toString());
+				}
+			}
+		}
+		
+		return json;
 	}
 	
 	private ObjectNode simple(Collection collection, ValueConfig valueConfig){
