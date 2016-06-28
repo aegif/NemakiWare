@@ -46,6 +46,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import jp.aegif.nemaki.util.spring.aspect.log.JsonLogger.JsonLogConfig.GlobalConfig;
 import jp.aegif.nemaki.util.spring.aspect.log.JsonLogger.JsonLogConfig.MethodConfig;
 import jp.aegif.nemaki.util.spring.aspect.log.JsonLogger.JsonLogConfig.ValueConfig;
+import net.logstash.logback.marker.Markers;
 
 public class JsonLogger {
 	private static Logger logger = LoggerFactory.getLogger(JsonLogger.class);
@@ -184,13 +185,13 @@ public class JsonLogger {
 			
 			log.setWhen("completed");			
 			String json = mapper.writeValueAsString(log);
-			logger.info(net.logstash.logback.marker.Markers.appendRaw("message", json), null);
+			logger.info(Markers.appendRaw("message", json), null);
 
 			return result;
 		} catch (Exception e) {
 			log.setWhen("error");
 			String json = mapper.writeValueAsString(log);
-			logger.error(json, e);
+			logger.error(Markers.appendRaw("message", json), null, e);
 			throw e;
 		}
 	}
@@ -219,7 +220,9 @@ public class JsonLogger {
 		return null;
 	}
 
-	// ********
+	// ////////////////////////////////////////////////
+	// Log record
+	// //////////////////////////////////////////////
 	@JsonInclude(Include.NON_NULL)
 	private static class JsonLog {
 
@@ -314,6 +317,9 @@ public class JsonLogger {
 		}
 	}
 
+	// ////////////////////////////////////////////////
+	// Log config
+	// //////////////////////////////////////////////
 	public static class JsonLogConfig {
 		private GlobalConfig global;
 		private Map<String, MethodConfig> method;
@@ -523,7 +529,9 @@ public class JsonLogger {
 		}
 	}
 
-	// ******
+	// ////////////////////////////////////////////////
+	// conversion method
+	// //////////////////////////////////////////////
 	private JsonNode simple(Object value, ValueConfig valueConfig){
 		if(value == null){
 			return null;
