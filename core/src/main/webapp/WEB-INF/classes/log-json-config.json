@@ -20,6 +20,11 @@
 	},
 
 	"method":{
+		"jp.aegif.nemaki.cmis.service.impl.NavigationServiceImpl.getChildren":{
+			"input":{
+				"folderId":{"type":"simple"}
+			}
+		},
 		"jp.aegif.nemaki.cmis.service.impl.AclServiceImpl.applyAcl":{
 			"input":{
 				"acl":{"type":"full"}

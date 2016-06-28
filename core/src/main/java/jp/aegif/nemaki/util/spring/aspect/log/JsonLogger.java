@@ -26,14 +26,14 @@ import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.data.RenditionData;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.collections.CollectionUtils;
-import org.apache.log4j.Level;
-import org.apache.log4j.Logger;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.joda.time.DateTime;
 import org.joda.time.Duration;
 
-import com.fasterxml.jackson.annotation.JsonFormat.Value;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
@@ -48,17 +48,13 @@ import jp.aegif.nemaki.util.spring.aspect.log.JsonLogger.JsonLogConfig.MethodCon
 import jp.aegif.nemaki.util.spring.aspect.log.JsonLogger.JsonLogConfig.ValueConfig;
 
 public class JsonLogger {
-	private static Logger logger = Logger.getLogger(JsonLogger.class);
+	private static Logger logger = LoggerFactory.getLogger(JsonLogger.class);
 	private final ObjectMapper mapper = new ObjectMapper();
 	private JsonLogConfig config;
 	private String configFileName = "log-json-config.json"; // TODO
 
 	@PostConstruct
 	public void init() throws JsonParseException, JsonMappingException, IOException {
-		if (logger != null) {
-			// logger.setLevel(Level.toLevel(logLevel));
-			logger.setLevel(Level.INFO);
-		}
 		load(configFileName);
 	}
 
@@ -74,6 +70,10 @@ public class JsonLogger {
 	}
 
 	public Object aroundMethod(ProceedingJoinPoint jp) throws Throwable {
+		if(!logger.isInfoEnabled()){
+			return jp.proceed();
+		}
+		
 		DateTime logTimeStart = new DateTime();
 		
 		// AOP parameters
@@ -183,7 +183,7 @@ public class JsonLogger {
 			
 			log.setWhen("completed");			
 			String json = mapper.writeValueAsString(log);
-			logger.info(json);
+			logger.info(net.logstash.logback.marker.Markers.appendRaw("message", json), null);
 
 			return result;
 		} catch (Exception e) {
