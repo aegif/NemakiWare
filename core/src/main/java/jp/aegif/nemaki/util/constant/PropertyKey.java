@@ -13,6 +13,7 @@ public interface PropertyKey {
 	final String CMIS_SERVER_DEFAULT_MAX_ITEMS_OBJECTS = "cmis.server.default.max.items.objects";
 	final String CMIS_SERVER_DEFAULT_MAX_DEPTH_OBJECTS = "cmis.server.default.depth.objects";
 	final String REPOSITORY_DEFINITION = "repository.definition";
+	final String REPOSITORY_DEFINITION_DEFAULT = "repository.definition.default";
 
 	//Solr
 	final String SOLR_PROTOCOL = "solr.protocol";

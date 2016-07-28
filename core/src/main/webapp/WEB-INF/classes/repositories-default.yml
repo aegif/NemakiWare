@@ -1,0 +1,11 @@
+default:
+  description: NemakiWare, Lightweight CMIS Server
+  root: e02f784f8360a02cc14d1314c10038ff
+  principal.anonymous: anonymous
+  principal.anyone: GROUP_EVERYONE
+  thinClientUri: http://localhost:8080/ui/
+  vendor: aegif
+  product.name: NemakiWare
+  product.version: 2.4.0.beta1
+  namespace: http://www.aegif.jp/NemakiWare/
+super.users: canopy

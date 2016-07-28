@@ -49,6 +49,7 @@ import jp.aegif.nemaki.util.cache.model.Tree;
 import net.sf.ehcache.Cache;
 import net.sf.ehcache.Element;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.solr.client.solrj.response.DocumentAnalysisResponse.FieldAnalysis;
 import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
 
@@ -792,6 +793,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc) {
+		return nonCachedContentDaoService.getArchives(repositoryId, skip, limit, desc);
+	}
+
+	@Override
 	public Archive createArchive(String repositoryId, Archive archive, Boolean deletedWithParent) {
 		return nonCachedContentDaoService.createArchive(repositoryId, archive, deletedWithParent);
 	}
@@ -807,6 +813,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public void deleteDocumentArchive(String repositoryId, String archiveId) {
+		nonCachedContentDaoService.deleteDocumentArchive(repositoryId, archiveId);
+	}
+
+	@Override
 	public void restoreContent(String repositoryId, Archive archive) {
 		nonCachedContentDaoService.restoreContent(repositoryId, archive);
 	}
@@ -814,6 +825,20 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public void restoreAttachment(String repositoryId, Archive archive) {
 		nonCachedContentDaoService.restoreAttachment(repositoryId, archive);
+	}
+	
+	@Override
+	public void restoreDocumentWithArchive(String repositoryId, Archive archive) {
+		final String originalId = archive.getOriginalId();
+		nonCachedContentDaoService.restoreDocumentWithArchive(repositoryId, archive);
+
+		Content restored = getContent(repositoryId, originalId);
+		if(restored == null){
+			//TODO log
+		}else{
+			//TODO rebuild cache into getChildren()
+			addToTreeCache(repositoryId, restored);
+		}
 	}
 
 	// //////////////////////////////////////////////////////////////////////////////

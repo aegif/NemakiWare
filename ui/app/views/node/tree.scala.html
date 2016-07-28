@@ -1,3 +1,5 @@
+@*{<meta charset="UTF-8" />}*@
+
 @import util.Util
 @import util.NemakiConfig
 @import org.apache.commons.collections.CollectionUtils
@@ -5,8 +7,9 @@
 @import org.apache.chemistry.opencmis.client.api.ObjectType
 @import org.apache.chemistry.opencmis.commons.enums.BaseTypeId
 @import node.js._
+@import play.mvc.Http.Context.Implicit
 
-@(repositoryId:String)(parent: org.apache.chemistry.opencmis.client.api.Folder, objects: List[org.apache.chemistry.opencmis.client.api.CmisObject], types: List[Tree[ObjectType]])
+@(repositoryId:String)(parent: org.apache.chemistry.opencmis.client.api.Folder, objects: java.util.List[org.apache.chemistry.opencmis.client.api.CmisObject], types: java.util.List[Tree[ObjectType]])
 
 <!DOCTYPE html>
 <html>
@@ -20,9 +23,9 @@
 	  				<ul class="breadcrumb">
 	  					<li><a href="@routes.Node.index(repositoryId)" title="root"><i class="fa fa-home fa-lg"></i></a></li>
 	  					@defining(Util.dividePath(parent.getPath)){ segments =>
-	  						@for(i <- 0 to segments.length - 1; if(CollectionUtils.isNotEmpty(segments))){
+	  						@for(i <- 0 to segments.size - 1; if(CollectionUtils.isNotEmpty(segments))){
 	  							@defining(segments.take(i+1).mkString("/")){url=>
-	  								<li><a href="@routes.Node.showChildrenByPath(repositoryId, '/' + url)"><i class="fa fa-folder-open"></i> @segments(i)</a></li>
+	  								<li><a href="@routes.Node.showChildrenByPath(repositoryId, '/' + url)"><i class="fa fa-folder-open"></i> @segments.get(i)</a></li>
 	  							}
 	  						}
 	  					}
@@ -41,7 +44,7 @@
 											case BaseTypeId.CMIS_DOCUMENT => {<i class="fa fa-file-o"></i>}
 											case _ => {}
 										}
-										@NemakiConfig.getLabel(ot.getItem.getId, lang().language)
+										@NemakiConfig.getLabel(ot.getItem.getId, Implicit.lang().language)
 									</a></li>
 								}
 							</ul>

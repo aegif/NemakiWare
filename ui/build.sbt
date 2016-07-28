@@ -33,3 +33,8 @@ Play2WarPlugin.play2WarSettings
 Play2WarKeys.servletVersion := "3.1"
 
 Play2WarKeys.targetName := Option("ui")
+
+EclipseKeys.createSrc := EclipseCreateSrc.Default + EclipseCreateSrc.Resource
+
+// Compile the project before generating Eclipse files, so that generated .scala or .class files for views and routes are present
+EclipseKeys.preTasks := Seq(compile in Compile)

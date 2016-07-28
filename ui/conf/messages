@@ -106,6 +106,8 @@ view.type.id=Type ID
 view.type.create.caption=New Type
 view.type.update.caption=Update Type
 
+view.archive.caption=Archive
+
 view.table.key=Key
 view.table.editable=Editable
 view.table.requred=Required
@@ -134,3 +136,6 @@ view.message.is-required=is required!
 
 view.message.password-change.is-same=New passwords should be same!
 view.message.password-change.wrong-old-password=Current password is wrong!
+view.message.restore.failure=Failed to restore
+view.message.parent-no-longer-exists=Cannot restore the archive because parent folder no longer exists!
+view.message.destroy.failure=Failed to destroy

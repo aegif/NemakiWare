@@ -946,6 +946,33 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 		return archives;
 	}
+	
+	@Override
+	public List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc) {
+		String archiveId = repositoryInfoMap.getArchiveId(repositoryId);
+
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("allByCreated");
+		if(skip != null){
+			query.skip(skip);
+		}
+		if(limit != null){
+			query.limit(limit);
+		}
+		if(desc == null){
+			query.descending(true);
+		}else{
+			query.descending(desc);
+		}
+		
+		List<CouchArchive> list = connectorPool.get(archiveId).queryView(query, CouchArchive.class);
+
+		List<Archive> archives = new ArrayList<Archive>();
+		for (CouchArchive ca : list) {
+			archives.add(ca.convert());
+		}
+
+		return archives;
+	}
 
 	@Override
 	public Archive createArchive(String repositoryId, Archive archive, Boolean deletedWithParent) {
@@ -986,6 +1013,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		}
 	}
 
+	@Override
+	public void deleteDocumentArchive(String repositoryId, String archiveId) {
+		Archive docArchive = getArchive(repositoryId, archiveId);
+		Archive attachmentArchive = getArchiveByOriginalId(repositoryId, docArchive.getAttachmentNodeId());
+		
+		deleteArchive(repositoryId, docArchive.getId());
+		deleteArchive(repositoryId, attachmentArchive.getId());
+	}
+
 	@SuppressWarnings("deprecation")
 	@Override
 	public void restoreContent(String repositoryId, Archive archive) {
@@ -1019,6 +1055,14 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		CouchAttachmentNode restored = connector.get(CouchAttachmentNode.class, can.getId());
 		restored.setType(NodeType.ATTACHMENT.value());
 		connector.update(restored);
+	}
+
+	@Override
+	public void restoreDocumentWithArchive(String repositoryId, Archive contentArchive) {
+		restoreContent(repositoryId, contentArchive);
+		// Restore its attachment
+		Archive attachmentArchive = getAttachmentArchive(repositoryId, contentArchive);
+		restoreAttachment(repositoryId, attachmentArchive);
 	}
 
 	// ///////////////////////////////////////

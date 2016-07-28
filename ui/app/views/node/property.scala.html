@@ -1,3 +1,5 @@
+@*{<meta charset="UTF-8" />}*@
+
 @import table._
 @import component._
 
@@ -11,13 +13,14 @@
 @import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition
 @import org.apache.chemistry.opencmis.client.api.Property
 @import org.apache.chemistry.opencmis.client.api.SecondaryType
+@import play.mvc.Http.Context.Implicit
 
-@(repositoryId:String)(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(primaries: List[Property[_]])(secondary: Map[SecondaryType, List[Property[_]]])
+@(repositoryId:String)(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(primaries: java.util.List[Property[_]])(secondary: java.util.Map[SecondaryType, List[Property[_]]])
 <!-- html -->
 <div class="container tap-pane">
 	<div class="row" style="margin-bottom:15px">
 		<div class="col-sm-6 col-md-6">
-			@if(Util.isFreezeCopy(obj, session)){
+			@if(Util.isFreezeCopy(obj, Implicit.session)){
 				@lockedNotice(obj)
 			}else{
 				@saveButton("property-update")
@@ -58,7 +61,7 @@
 					//Validation
 					@if(p.getDefinition.isRequired){
 						if(!data["@p.getId"]){
-							alert("@NemakiConfig.getLabel(p.getId, lang().language) @Messages("view.message.is-required")");
+							alert("@NemakiConfig.getLabel(p.getId, Implicit.lang().language) @Messages("view.message.is-required")");
 							return; //End click event
 						}
 					}
