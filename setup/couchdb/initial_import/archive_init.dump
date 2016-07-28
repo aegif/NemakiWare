@@ -1,1 +1,34 @@
-[{"document":{"_id":"_design/_repo","_rev":"1-f9e49bf2c5ac9b1636a7ca61fa3ec4b6","language":"javascript","views":{"folders":{"map":"function(doc) { if (doc.type == 'cmis:folder')  emit(doc.originalId, doc) }"},"all":{"map":"function(doc) { if(true) emit(doc.originalId, doc) }"},"documents":{"map":"function(doc) { if (doc.type == 'cmis:document')  emit(doc.originalId, doc) }"},"attachments":{"map":"function(doc) { if (doc.type == 'attachment')  emit(doc.originalId, doc) }"},"path":{"map":"function(doc) { if (doc.type == 'cmis:folder' || doc.type == 'cmis:document')  emit(doc.path, doc) }"},"children":{"map":"function(doc) { if (doc.type == 'cmis:folder' || doc.type == 'cmis:document')  emit(doc.parentId, doc) }"},"versionSeries":{"map":"function(doc) { if (doc.type == 'cmis:document')  emit(doc.versionSeriesId, doc) }"}}},"attachments":{}}]
+[ {
+  "document" : {
+    "_id" : "_design/_repo",
+    "_rev" : "2-9779df249ddac42d83c4357223d1b5c0",
+    "language" : "javascript",
+    "views" : {
+      "folders" : {
+        "map" : "function(doc) { if (doc.type == 'cmis:folder')  emit(doc.originalId, doc) }"
+      },
+      "all" : {
+        "map" : "function(doc) { if(true) emit(doc.originalId, doc) }"
+      },
+      "allByCreated" : {
+        "map" : "function(doc) { if(true) emit(doc.created, doc) }"
+      },
+      "documents" : {
+        "map" : "function(doc) { if (doc.type == 'cmis:document')  emit(doc.originalId, doc) }"
+      },
+      "attachments" : {
+        "map" : "function(doc) { if (doc.type == 'attachment')  emit(doc.originalId, doc) }"
+      },
+      "path" : {
+        "map" : "function(doc) { if (doc.type == 'cmis:folder' || doc.type == 'cmis:document')  emit(doc.path, doc) }"
+      },
+      "children" : {
+        "map" : "function(doc) { if (doc.type == 'cmis:folder' || doc.type == 'cmis:document')  emit(doc.parentId, doc) }"
+      },
+      "versionSeries" : {
+        "map" : "function(doc) { if (doc.type == 'cmis:document')  emit(doc.versionSeriesId, doc) }"
+      }
+    }
+  },
+  "attachments" : { }
+} ]
