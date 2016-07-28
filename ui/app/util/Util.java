@@ -150,6 +150,10 @@ public class Util {
 		return obj.getBaseTypeId().equals(BaseTypeId.CMIS_DOCUMENT);
 	}
 
+	public static boolean isFolder(CmisObject obj) {
+		return obj.getBaseTypeId().equals(BaseTypeId.CMIS_FOLDER);
+	}
+
 	public static boolean hasContentStream(CmisObject object){
 		if(object instanceof Document){
 			Document doc = (Document)object;
@@ -821,5 +825,10 @@ public class Util {
 				 return Token.REST_SUCCESS.equals(status.textValue());
 			 }
 		 }
+	 }
+
+	 public static long getCompressionTargetMaxSize(){
+		 String _size = NemakiConfig.getValue(PropertyKey.COMPRESSION_TARGET_MAXSIZE);
+		 return Long.valueOf(_size);
 	 }
 }

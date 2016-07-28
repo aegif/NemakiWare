@@ -123,6 +123,8 @@ view.add=Add
 view.remove=Remove
 view.action=Action
 
+view.message.failure=Failed
+view.message.success=Successfully done
 view.message.please.wait=Please wait...
 view.message.create.success=Successfully created
 view.message.create.failure=Failed to create
@@ -133,9 +135,16 @@ view.message.delete.success=Successfully deleted
 view.message.delete.failure=Failed to delete
 view.message.already.selected=Already selected!
 view.message.is-required=is required!
+view.message.checkout.confirm=Do you really want to checkout?
+view.message.checkout.success=Successfully checkouted
+view.message.checkout.failure=Failed to checkout
+view.message.cancel-checkout.confirm=Do you really want to cancel checkout?
+view.message.cancel-checkout.success=Successfully checkout canceled
+view.message.cancel-checkout.failure=Failed to cancel checkout
+view.message.compress.confirm=圧縮してダウンロードしますか？
+view.message.compress.error.toolarge=対象ファイルの総容量が大きすぎます（ {0} 以下にする必要があります）
 
 view.message.password-change.is-same=New passwords should be same!
-view.message.password-change.wrong-old-password=Current password is wrong!
-view.message.restore.failure=Failed to restore
+view.message.password-change.wrong-old-password=Current password is wrong!view.message.restore.failure=Failed to restore
 view.message.parent-no-longer-exists=Cannot restore the archive because parent folder no longer exists!
 view.message.destroy.failure=Failed to destroy
