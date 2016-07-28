@@ -4,6 +4,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
+import org.apache.commons.collections.MapUtils;
+
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.YamlManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
@@ -45,19 +48,66 @@ public class RepositoryInfoMap {
 	}
 	
 	private void loadRepositoriesSetting(){
-		String file = propertyManager.readValue(PropertyKey.REPOSITORY_DEFINITION);
+		Map<String, String> defaultSetting = loadDefaultRepositorySetting();
+		loadOverrideRepositorySetting(defaultSetting);
+		loadSuperUsersId();
+	}
+	
+	private Map<String, String> loadDefaultRepositorySetting(){
+		String file = propertyManager.readValue(PropertyKey.REPOSITORY_DEFINITION_DEFAULT);
 		YamlManager ymlMgr = new YamlManager(file);
 		Map<String, Object> data = (Map<String, Object>)ymlMgr.loadYml();
 		Map<String, String> defaultSetting = (Map<String, String>)data.get("default");
-		List<Map<String, String>> repositoriesSetting = (List<Map<String, String>>)data.get("repositories");
 		
+		return defaultSetting;
+	}
+	
+	private Map<String, String> overrideMap(Map<String, String> newMap, Map<String, String> oldMap){
+		if(MapUtils.isNotEmpty(newMap)){
+			Map<String, String> map = new HashMap<>(oldMap);
+			map.putAll(newMap);
+			return map;
+		}
+		
+		return oldMap;
+	}
+	
+	private void loadOverrideRepositorySetting(Map<String, String> defaultSetting){
+		String file = propertyManager.readValue(PropertyKey.REPOSITORY_DEFINITION);
+		YamlManager ymlMgr = new YamlManager(file);
+		Map<String, Object> data = (Map<String, Object>)ymlMgr.loadYml();
+		
+		//Override default info if it exists
+		Map<String, String> overrideDefault = (Map<String, String>)data.get("default");
+		defaultSetting = overrideMap(overrideDefault, defaultSetting);
+		
+		//Each repository's setting
+		List<Map<String, String>> repositoriesSetting = (List<Map<String, String>>)data.get("repositories");
 		for(Map<String, String> repStg : repositoriesSetting){
 			RepositoryInfo info = buildDefaultInfo(defaultSetting);
 			modifyInfo(repStg, info);
 			map.put(info.getId(), info);
 		}
+	}
+	
+	private void loadSuperUsersId(){
+		String f1 = propertyManager.readValue(PropertyKey.REPOSITORY_DEFINITION_DEFAULT);
+		YamlManager mgr1 = new YamlManager(f1);
+		Map<String, Object> data1 = (Map<String, Object>)mgr1.loadYml();
+		Object su1 = data1.get("super.users");
 		
-		this.superUsersId = data.get("super.users").toString();
+		if(su1 != null){
+			String f2 = propertyManager.readValue(PropertyKey.REPOSITORY_DEFINITION_DEFAULT);
+			YamlManager mgr2 = new YamlManager(f1);
+			Map<String, Object> data2 = (Map<String, Object>)mgr2.loadYml();
+			Object su2 = data2.get("super.users");
+			
+			if(su2 == null){
+				this.superUsersId = su1.toString();
+			}else{
+				this.superUsersId = su2.toString();
+			}
+		}
 	}
 	
 	private void modifyInfo(Map<String, String> setting, RepositoryInfo info){

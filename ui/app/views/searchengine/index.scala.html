@@ -1,5 +1,8 @@
+@*{<meta charset="UTF-8" />}*@
+
 @import util.Util
 @import org.apache.commons.lang3.StringUtils
+@import play.mvc.Http.Context.Implicit
 
 @(repositoryId:String)
 
@@ -10,7 +13,7 @@
 		</div>
 
 		<div class="row" style="padding-bottom:30px;">
-			@defining(Util.getSeachEngineUrl(session)){ url =>
+			@defining(Util.getSeachEngineUrl(Implicit.session)){ url =>
 				@if(StringUtils.isNotBlank(url)){
 					<i class="fa fa-link"></i>
 					<a href="@url" target="_blank">@Messages("view.search-engine.open")</a>

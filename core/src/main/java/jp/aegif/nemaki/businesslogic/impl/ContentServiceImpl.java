@@ -55,6 +55,7 @@ import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
+import jp.aegif.nemaki.model.exception.ParentNoLongerExistException;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.CmisPermission;
@@ -73,6 +74,7 @@ import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.ChangeType;
+import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
 import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
@@ -1690,6 +1692,11 @@ public class ContentServiceImpl implements ContentService {
 	public List<Archive> getAllArchives(String repositoryId) {
 		return contentDaoService.getAllArchives(repositoryId);
 	}
+	
+	@Override
+	public List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc){
+		return contentDaoService.getArchives(repositoryId, skip, limit, true);
+	}
 
 	@Override
 	public Archive getArchive(String repositoryId, String archiveId) {
@@ -1741,7 +1748,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
-	public void restoreArchive(String repositoryId, String archiveId) {
+	public void restoreArchive(String repositoryId, String archiveId) throws ParentNoLongerExistException{
 		Archive archive = contentDaoService.getArchive(repositoryId, archiveId);
 		if (archive == null) {
 			log.error("Archive does not exist!");
@@ -1751,10 +1758,10 @@ public class ContentServiceImpl implements ContentService {
 		// Check whether the destination does still extist.
 		if (!restorationTargetExists(repositoryId, archive)) {
 			log.error("The destination of the restoration doesn't exist");
-			return;
+			throw new ParentNoLongerExistException();
 		}
 
-		CallContextImpl dummyContext = new CallContextImpl(null, null, null, null, null, null, null, null);
+		CallContextImpl dummyContext = new CallContextImpl(null, CmisVersion.CMIS_1_1, null, null, null, null, null, null);
 		dummyContext.put(dummyContext.USERNAME, PrincipalId.SYSTEM_IN_DB);
 
 		// Switch over the operation depending on the type of archive
@@ -1780,14 +1787,9 @@ public class ContentServiceImpl implements ContentService {
 			List<Archive> versions = contentDaoService
 					.getArchivesOfVersionSeries(repositoryId, archive.getVersionSeriesId());
 			for (Archive version : versions) {
-				// Restore a document
-				contentDaoService.restoreContent(repositoryId, version);
-				// Restore its attachment
-				Archive attachmentArchive = contentDaoService.getAttachmentArchive(repositoryId, version);
-				contentDaoService.restoreAttachment(repositoryId, attachmentArchive);
+				contentDaoService.restoreDocumentWithArchive(repositoryId, version);
 				// delete archives
-				contentDaoService.deleteArchive(repositoryId, version.getId());
-				contentDaoService.deleteArchive(repositoryId, attachmentArchive.getId());
+				contentDaoService.deleteDocumentArchive(repositoryId, version.getId());
 			}
 		} catch (Exception e) {
 			log.error("fail to restore a document", e);
@@ -1796,7 +1798,7 @@ public class ContentServiceImpl implements ContentService {
 		return getDocument(repositoryId, archive.getOriginalId());
 	}
 
-	private Folder restoreFolder(String repositoryId, Archive archive) {
+	private Folder restoreFolder(String repositoryId, Archive archive) throws ParentNoLongerExistException{
 		contentDaoService.restoreContent(repositoryId, archive);
 
 		// Restore direct children
@@ -1822,6 +1824,53 @@ public class ContentServiceImpl implements ContentService {
 			return false;
 		} else {
 			return true;
+		}
+	}
+	
+	public void destroyArchive(String repositoryId, String archiveId){
+		Archive archive = contentDaoService.getArchive(repositoryId, archiveId);
+		if (archive == null) {
+			log.error("Archive does not exist!");
+			return;
+		}
+		
+		if (archive.isFolder()) {
+			destroyFolder(repositoryId, archive);
+		} else if (archive.isDocument()) {
+			destoryDocument(repositoryId, archive);
+		} else if (archive.isAttachment()) {
+			log.error("Attachment can't be restored alone");
+		} else {
+			log.error("Only document or folder is supported for restoration");
+		}
+	}
+	
+	private void destroyFolder(String repositoryId, Archive archive){
+		// Restore direct children
+		List<Archive> children = contentDaoService.getChildArchives(repositoryId, archive);
+		if (CollectionUtils.isNotEmpty(children)) {
+			for (Archive child : children) {
+				destroyArchive(repositoryId, child.getId());
+			}
+		}
+		contentDaoService.deleteArchive(repositoryId, archive.getId());
+	}
+	
+	
+	private void destoryDocument(String repositoryId, Archive archive){
+		try {
+			// Get archives of the same version series
+			List<Archive> versions = contentDaoService
+					.getArchivesOfVersionSeries(repositoryId, archive.getVersionSeriesId());
+			for (Archive version : versions) {
+				// Restore its attachment
+				Archive attachmentArchive = contentDaoService.getAttachmentArchive(repositoryId, version);
+				// delete archives
+				contentDaoService.deleteArchive(repositoryId, version.getId());
+				contentDaoService.deleteArchive(repositoryId, attachmentArchive.getId());
+			}
+		} catch (Exception e) {
+			log.error("fail to restore a document", e);
 		}
 	}
 

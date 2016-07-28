@@ -105,6 +105,8 @@ view.type.id=タイプID
 view.type.create.caption=タイプの新規作成
 view.type.update.caption=タイプの更新
 
+view.archive.caption=ゴミ箱
+
 view.table.key=キー
 view.table.editable=編集可能
 view.table.requred=必須
@@ -133,4 +135,6 @@ view.message.is-required=が必要です！
 
 view.message.password-change.is-same=新しいパスワードは一致する必要があります！
 view.message.password-change.wrong-old-password=現在のパスワードが間違っています
-
+view.message.restore.failure=復元に失敗しました
+view.message.parent-no-longer-exists=親フォルダが既に削除されているため復元できません
+view.message.destroy.failure=アーカイブの削除に失敗しました

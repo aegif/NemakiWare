@@ -10,6 +10,7 @@ import java.math.BigInteger;
 import java.util.List;
 import java.util.Map;
 
+import javax.activation.MimeType;
 import javax.annotation.PostConstruct;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
@@ -67,6 +68,11 @@ public class JodRenditionManagerImpl implements RenditionManager {
 
 	public ContentStream convertToPdf(ContentStream contentStream,
 			String documentName) {
+		//Skip pdf file (Avoid converting pdf to pdf)
+		if(contentStream.getMimeType().equals("application/pdf")){
+			return contentStream;
+		}
+		
 		OutputStream outputStream = null;
 		try {
 			String prefix = getPrefix(documentName);

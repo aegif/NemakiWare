@@ -35,6 +35,7 @@ import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
+import jp.aegif.nemaki.model.exception.ParentNoLongerExistException;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
@@ -610,6 +611,17 @@ public interface ContentService {
 	List<Archive> getAllArchives(String repositoryId);
 
 	/**
+	 * Get a specified number of archives
+	 * @param repositoryId
+	 * @param skip
+	 * @param limit
+	 * @param desc
+	 * @return
+	 */
+	List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc);
+	
+	
+	/**
 	 * Get an archive
 	 * @param repositoryId TODO
 	 * @param archiveId
@@ -648,14 +660,21 @@ public interface ContentService {
 	 * @return
 	 */
 	Archive createAttachmentArchive(CallContext callContext, String repositoryId, String attachmentId);
-
+	
 	/**
 	 * Restore a content from an archive
 	 * @param repositoryId TODO
 	 * @param archiveId
 	 */
-	void restoreArchive(String repositoryId, String archiveId);
+	void restoreArchive(String repositoryId, String archiveId) throws ParentNoLongerExistException;
 
+	/**
+	 * Destroy an archive from database 
+	 * @param repositoryId
+	 * @param archiveId
+	 */
+	public void destroyArchive(String repositoryId, String archiveId);
+	
 	/**
 	 * Write change event
 	 * @param callContext
