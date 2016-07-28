@@ -5,6 +5,7 @@ import java.util.Map;
 
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.SpringPropertyManager;
 import jp.aegif.nemaki.util.cache.CacheService;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 
@@ -14,7 +15,7 @@ public class NemakiCachePoolImpl implements NemakiCachePool{
 	private CacheService nullCache;
 	
 	private RepositoryInfoMap repositoryInfoMap;
-	private PropertyManager propertyManager;
+	private SpringPropertyManager propertyManager;
 	
 	public NemakiCachePoolImpl() {
 		
@@ -66,7 +67,7 @@ public class NemakiCachePoolImpl implements NemakiCachePool{
 		}
 	}
 
-	public void setPropertyManager(PropertyManager propertyManager) {
+	public void setPropertyManager(SpringPropertyManager propertyManager) {
 		this.propertyManager = propertyManager;
 	}
 

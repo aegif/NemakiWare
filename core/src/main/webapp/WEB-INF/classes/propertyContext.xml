@@ -20,7 +20,7 @@
 	</bean>
 	
 	<!-- Property Manager -->
-    <bean id="propertyManager" class="jp.aegif.nemaki.util.PropertyManager">
+    <bean id="springPropertyManager" class="jp.aegif.nemaki.util.SpringPropertyManager">
         <property name="propertyConfigurer" ref="propertyConfigurer" />
     </bean>
 </beans>

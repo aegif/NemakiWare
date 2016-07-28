@@ -40,6 +40,7 @@ import jp.aegif.nemaki.util.lock.ThreadLockService;
 
 import org.antlr.runtime.tree.Tree;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
+import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
@@ -128,7 +129,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 	public ObjectList query(CallContext callContext, String repositoryId,
 			String statement, Boolean searchAllVersions,
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
-			String renditionFilter, BigInteger maxItems, BigInteger skipCount) {
+			String renditionFilter, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
 
 		SolrServer solrServer = solrUtil.getSolrServer();
 

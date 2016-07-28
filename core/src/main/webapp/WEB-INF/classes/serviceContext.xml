@@ -10,7 +10,7 @@
 	<bean id="nemakiCachePool" class="jp.aegif.nemaki.util.cache.impl.NemakiCachePoolImpl"
 	init-method="init">
 		<property name="propertyManager">
-            <ref bean="propertyManager" />
+            <ref bean="springPropertyManager" />
         </property>
         <property name="repositoryInfoMap">
             <ref bean="repositoryInfoMap" />
@@ -71,14 +71,14 @@
     		<ref bean="aclCapabilities"/>
     	</property>
     	<property name="propertyManager">
-            <ref bean="propertyManager" />
+            <ref bean="springPropertyManager" />
         </property>
     </bean>
 
     <bean id="capabilities"
         class="jp.aegif.nemaki.cmis.factory.info.Capabilities" init-method="init">
         <property name="propertyManager">
-            <ref bean="propertyManager" />
+            <ref bean="springPropertyManager" />
         </property>
     </bean>
 
@@ -86,7 +86,7 @@
         class="jp.aegif.nemaki.cmis.factory.info.AclCapabilities"
         init-method="init">
         <property name="propertyManager">
-            <ref bean="propertyManager" />
+            <ref bean="springPropertyManager" />
         </property>
     </bean>
 
@@ -417,6 +417,9 @@
     </bean>
     <bean id="authenticationService"
         class="jp.aegif.nemaki.cmis.factory.auth.impl.AuthenticationServiceImpl">
+        <property name="contentService">
+            <ref bean="ContentService" />
+        </property>
         <property name="principalService">
             <ref bean="PrincipalService" />
         </property>
@@ -446,6 +449,9 @@
         class="jp.aegif.nemaki.cmis.factory.auth.impl.TokenServiceImpl" init-method="init" depends-on="PrincipalService">
         <property name="propertyManager">
             <ref bean="propertyManager" />
+        </property>
+         <property name="contentService">
+            <ref bean="ContentService" />
         </property>
         <property name="principalService">
             <ref bean="PrincipalService" />
@@ -626,11 +632,15 @@
         </property>
     </bean>
 
-
-
     <bean id="groupResource" class="jp.aegif.nemaki.rest.GroupResource">
         <property name="principalService">
             <ref bean="PrincipalService" />
+        </property>
+    </bean>
+
+	<bean id="groupItemResource" class="jp.aegif.nemaki.rest.GroupItemResource">
+        <property name="contentService">
+            <ref bean="ContentService" />
         </property>
     </bean>
 
@@ -655,6 +665,15 @@
         </property>
         <property name="solrResource">
             <ref bean="solrResource" />
+        </property>
+         <property name="propertyManager">
+            <ref bean="propertyManager" />
+        </property>
+    </bean>
+    
+    <bean id="userItemResource" class="jp.aegif.nemaki.rest.UserItemResource">
+        <property name="contentService">
+            <ref bean="ContentService" />
         </property>
          <property name="propertyManager">
             <ref bean="propertyManager" />

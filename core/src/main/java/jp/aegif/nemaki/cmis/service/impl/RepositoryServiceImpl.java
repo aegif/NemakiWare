@@ -90,7 +90,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 	@Override
 	public TypeDefinitionList getTypeChildren(CallContext callContext,
 			String repositoryId, String typeId,
-			Boolean includePropertyDefinitions, BigInteger maxItems, BigInteger skipCount) {
+			Boolean includePropertyDefinitions, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
 
 		return typeManager.getTypesChildren(callContext, repositoryId,
 				typeId, includePropertyDefinitions, maxItems, skipCount);
@@ -99,14 +99,14 @@ public class RepositoryServiceImpl implements RepositoryService,
 	@Override
 	public List<TypeDefinitionContainer> getTypeDescendants(
 			CallContext callContext, String repositoryId, String typeId,
-			BigInteger depth, Boolean includePropertyDefinitions) {
+			BigInteger depth, Boolean includePropertyDefinitions, ExtensionsData extension) {
 		return typeManager.getTypesDescendants(repositoryId, typeId,
 				depth, includePropertyDefinitions);
 	}
 
 	@Override
 	public TypeDefinition getTypeDefinition(CallContext callContext,
-			String repositoryId, String typeId) {
+			String repositoryId, String typeId, ExtensionsData extension) {
 		TypeDefinition typeDefinition = typeManager.getTypeDefinition(repositoryId, typeId);
 		exceptionService.objectNotFound(DomainType.OBJECT_TYPE, typeDefinition,
 				typeId);
