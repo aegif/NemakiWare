@@ -4,7 +4,8 @@ body {
 }
 
 i.fa {
-	padding-right:2px;
+	padding-right:0.2em;
+	padding-left:0.2em;
 }
 
 .error{
@@ -33,7 +34,7 @@ div.tab-pane{
 	padding-top:20px;
 }
 
-/*隶�諛�ｽｴ�ｽ｢驕ｯ�ｿｽ*/
+
 .navbar-search {
     position: relative;
 }
@@ -50,12 +51,56 @@ div.tab-pane{
 
 .navbar-search .search-query:focus, .navbar-search .search-query.focused {
     padding-left: 30px;
-}遯ｶ�ｿｽ
+}
+
+.btn-group button {
+  position:relative;
+}
+.btn-group button:hover {
+  background: #deb3ba;
+}
+.tooltips {
+  display: none;
+  position: absolute;
+  bottom: -2.8em;
+  left: 0.3em;
+  z-index: 9999;
+  padding: 0.3em 0.5em;
+  color: #FFFFFF;
+  background: #c72439;
+  border-radius: 0.5em;
+}
+.tooltips:after {
+  width: 100%;
+  content: "";
+  display: block;
+  position: absolute;
+  left: 0.5em;
+  top: -8px;
+  border-top:8px solid transparent;
+  border-left:8px solid #e6ffff;
+}
+.btn-group button:hover .tooltips {
+  display: block;
+}
+
+div.list-operation {
+   margin-bottom: 1em !important;
+}
 
 .table {
   width: 100%;
   table-layout: fixed;
   word-wrap: break-word;
+}
+
+.footable>tbody>tr>td {
+    padding: 0.5em !important;
+}
+
+td.center {
+    vertical-align: middle;
+    text-align:center;
 }
 
 table.editable-table .key{

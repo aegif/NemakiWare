@@ -4,8 +4,10 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
-import java.io.FilterOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.net.URLEncoder;
 import java.text.MessageFormat;
 import java.util.ArrayList;
@@ -18,6 +20,10 @@ import java.util.Map;
 import java.util.Map.Entry;
 
 import model.Principal;
+import net.lingala.zip4j.core.*;
+import net.lingala.zip4j.io.*;
+import net.lingala.zip4j.model.*;
+import net.lingala.zip4j.util.*;
 
 import org.apache.chemistry.opencmis.client.api.CmisObject;
 import org.apache.chemistry.opencmis.client.api.Document;
@@ -45,12 +51,13 @@ import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
+import org.apache.chemistry.opencmis.commons.impl.MimeTypes;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
-import play.api.libs.Files.TemporaryFile;
+import play.i18n.Messages;
 import play.data.DynamicForm;
 import play.data.Form;
 import play.libs.Json;
@@ -59,6 +66,8 @@ import play.mvc.Http.MultipartFormData;
 import play.mvc.Http.MultipartFormData.FilePart;
 import play.mvc.Result;
 import play.mvc.Security.Authenticated;
+import util.CmisObjectTree;
+import util.NemakiConfig;
 import util.Util;
 import views.html.node.blank;
 import views.html.node.detail;
@@ -72,6 +81,7 @@ import views.html.node.version;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import constant.PropertyKey;
 import constant.Token;
 
 @Authenticated(Secured.class)
@@ -260,6 +270,68 @@ public class Node extends Controller {
 
 	}
 
+	public static Result downloadAsCompressedFile(String repositoryId, String id) {
+		return downloadAsCompressedFileByBatch(repositoryId, Arrays.asList(id));
+	}
+
+	public static Result downloadAsCompressedFileByBatch(String repositoryId, List<String> ids) {
+		Session session = getCmisSession(repositoryId);
+		File tempFile = null;
+
+		try {
+			CmisObjectTree tree = new CmisObjectTree(session);
+			tree.buildTree(ids.toArray(new String[0]));
+
+			//ファイルが大きすぎたらエラーにする
+			long maxsize = Util.getCompressionTargetMaxSize();
+			if (tree.getContentsSize() > Util.getCompressionTargetMaxSize()){
+				String errmsg = Messages .get("view.message.compress.error.toolarge", maxsize);
+				return internalServerError(errmsg);
+			}
+
+			// ファイルにアーカイブ
+			ZipParameters parameters = new ZipParameters();
+			parameters.setCompressionMethod(Zip4jConstants.COMP_DEFLATE);
+			parameters.setCompressionLevel(Zip4jConstants.DEFLATE_LEVEL_NORMAL);
+			parameters.setSourceExternalStream(true);
+
+			ZipModel zipModel = new ZipModel();
+			String prefix = NemakiConfig.getValue(PropertyKey.COMPRESSION_FILE_PREFIX);
+			Path tempPath = Files.createTempFile(prefix, ".zip");
+			tempFile = tempPath.toFile();
+			tempFile.deleteOnExit();
+
+			try (ZipOutputStream outputStream = new ZipOutputStream(new FileOutputStream(tempFile), zipModel)) {
+				HashMap<String, CmisObject> map = tree.getHashMap();
+				for (String key : map.keySet()) {
+					ZipParameters params = (ZipParameters) parameters.clone();
+					params.setFileNameInZip(StringUtils.stripStart(key,"/"));
+
+					outputStream.putNextEntry(null, params);
+
+					CmisObject obj = map.get(key);
+					if (Util.isDocument(obj)) {
+						try (InputStream inputStream = ((Document) obj).getContentStream().getStream();) {
+							byte[] readBuff = new byte[4096];
+							int readLen = -1;
+							while ((readLen = inputStream.read(readBuff)) != -1) {
+								outputStream.write(readBuff, 0, readLen);
+							}
+						}
+					}
+					outputStream.closeEntry();
+				}
+				outputStream.finish();
+			}
+
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+
+		createAttachmentResponse("compressed-files.zip","application/zip");
+		return ok(tempFile);
+	}
+
 	public static Result download(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 
@@ -271,38 +343,38 @@ public class Node extends Controller {
 
 		Document doc = (Document) obj;
 		ContentStream cs = doc.getContentStream();
-
-		File tmpFile = null;
+		createAttachmentResponse(doc.getName(), cs.getMimeType());
+		
 		try {
+			File tmpFile = null;
 			tmpFile = Util.convertInputStreamToFile(cs);
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-
-		try {
-			if (request().getHeader("User-Agent").indexOf("MSIE") == -1) {
-				// Firefox, Opera 11
-				response().setHeader("Content-Disposition", String.format(Locale.JAPAN,
-						"attachment; filename*=utf-8'jp'%s", URLEncoder.encode(doc.getName(), "utf-8")));
-			} else {
-				// IE7, 8, 9
-				response().setHeader("Content-Disposition", String.format(Locale.JAPAN, "attachment; filename=\"%s\"",
-						new String(doc.getName().getBytes("MS932"), "ISO8859_1")));
-			}
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-
-		response().setContentType(cs.getMimeType());
-
-		try {
 			TemporaryFileInputStream fin = new TemporaryFileInputStream(tmpFile);
 			return ok(fin);
 		} catch (FileNotFoundException e) {
 			e.printStackTrace();
 			return internalServerError("File not found");
+		} catch (Exception e){
+			e.printStackTrace();
+			return internalServerError("");
 		}
+	}
+
+	private static void createAttachmentResponse(String name, String mimetype) {
+		try {
+			if (request().getHeader("User-Agent").indexOf("MSIE") == -1) {
+				// Firefox, Opera 11
+				response().setHeader("Content-Disposition", String.format(Locale.JAPAN,
+						"attachment; filename*=utf-8'jp'%s", URLEncoder.encode(name, "utf-8")));
+			} else {
+				// IE7, 8, 9
+				response().setHeader("Content-Disposition", String.format(Locale.JAPAN, "attachment; filename=\"%s\"",
+						new String(name.getBytes("MS932"), "ISO8859_1")));
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+
+		response().setContentType(mimetype);
 	}
 
 	public static Result downloadPreview(String repositoryId, String id) {
@@ -451,7 +523,7 @@ public class Node extends Controller {
 		Session session = getCmisSession(repositoryId);
 		ContentStream cs = Util.convertFileToContentStream(session, file);
 		session.createDocument(param, parentId, cs, VersioningState.MAJOR);
-		
+
 		//Clean temp file just after CMIS createDocument finished
 		file.getFile().delete();
 	}
@@ -468,7 +540,7 @@ public class Node extends Controller {
 		ContentStream cs = Util.convertFileToContentStream(session, file);
 		Document d0 = (Document) session.getObject(objectId);
 		Document d1 = d0.setContentStream(cs, true);
-		
+
 		//Clean temp file just after CMIS createDocument finished
 		file.getFile().delete();
 	}
@@ -498,7 +570,7 @@ public class Node extends Controller {
 		switch (Util.getBaseType(session, objectTypeId)) {
 		case CMIS_DOCUMENT:
 			ContentStreamAllowed csa = ((DocumentTypeDefinition) objectType).getContentStreamAllowed();
-			
+
 			if (csa == ContentStreamAllowed.NOTALLOWED) {
 				// don't set content stream
 				session.createDocument(param, parentId, null, VersioningState.MAJOR);
@@ -730,85 +802,135 @@ public class Node extends Controller {
 
 	public static Result delete(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
+		CmisObject cmisObject = session.getObject(id);
 
-		CmisObject object = session.getObject(id);
-		if (BaseTypeId.CMIS_FOLDER == object.getBaseTypeId()) {
-			Folder folder = (Folder) object;
+		delete(cmisObject, session);
+		return ok();
+	}
+
+	public static Result deleteByBatch(String repositoryId, List<String> ids) {
+		Session session = getCmisSession(repositoryId);
+		for (String id : ids) {
+			CmisObject cmisObject = session.getObject(id);
+			delete(cmisObject, session);
+		}
+		return ok();
+	}
+
+	private static void delete(CmisObject cmisObject, Session session) {
+		if (Util.isFolder(cmisObject)) {
+			Folder folder = (Folder) cmisObject;
 			folder.deleteTree(true, null, true);
 		} else {
-			session.delete(new ObjectIdImpl(id));
+			session.delete(new ObjectIdImpl(cmisObject.getId()));
 		}
-
-		return ok();
 	}
 
 	public static Result checkOut(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
-		CmisObject o = session.getObject(id);
-
-		DynamicForm input = Form.form();
-		input = input.bindFromRequest();
-
-		if (!Util.isDocument(o)) {
-			// TODO error
-		}
-
-		Document doc = (Document) o;
-
-		// Check if checkout is possible
-		if (doc.isVersionSeriesCheckedOut()) {
-			// TODO error
-			System.out.println("already checked out");
-		} else {
-			// Check out
-			doc.checkOut();
-
-		}
-
+		CmisObject cmisObject = session.getObject(id);
+		checkOut(cmisObject);
 		return ok();
+	}
+
+	public static Result checkOutByBatch(String repositoryId, List<String> ids) {
+		Session session = getCmisSession(repositoryId);
+		for (String id : ids) {
+			CmisObject cmisObject = session.getObject(id);
+			checkOut(cmisObject);
+		}
+		return ok();
+	}
+
+	private static void checkOut(CmisObject cmisObject) {
+		if (Util.isDocument(cmisObject)) {
+			Document doc = (Document) cmisObject;
+			// Check if checkout is possible
+			if (doc.isVersionSeriesCheckedOut()) {
+				// Do nothing
+			} else {
+				doc.checkOut();
+			}
+		} else if (Util.isFolder(cmisObject)) {
+			Folder dir = (Folder) cmisObject;
+			for (CmisObject childNode : dir.getChildren()) {
+				checkOut(childNode);
+			}
+		} else {
+			// no-op
+		}
+
 	}
 
 	public static Result cancelCheckOut(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
-		CmisObject o = session.getObject(id);
+		CmisObject cmisObject = session.getObject(id);
 
-		if (!Util.isDocument(o)) {
-			// TODO error
-		}
-
-		Document doc = (Document) o;
-		doc.cancelCheckOut();
+		cancelCheckOut(cmisObject);
 
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
+
 		return redirectToParent(repositoryId, input);
 	}
 
-	public static Result checkIn(String repositoryId, String id) {
+	public static Result cancelCheckOutByBatch(String repositoryId, List<String> ids) {
 		Session session = getCmisSession(repositoryId);
-		CmisObject obj = session.getObject(id);
+
+		for (String id : ids) {
+			CmisObject cmisObject = session.getObject(id);
+
+			cancelCheckOut(cmisObject);
+		}
 
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
-		MultipartFormData body = request().body().asMultipartFormData();
-
-		// Files
-		List<FilePart> files = body.getFiles();
-		if (files.isEmpty()) {
-			// TODO error
-		}
-		FilePart file = files.get(0);
-		Document doc = (Document) obj;
-		ContentStream cs = Util.convertFileToContentStream(session, file);
-
-		// Comment
-		String checkinComment = Util.getFormData(input, PropertyIds.CHECKIN_COMMENT);
-
-		// Execute
-		Map<String, Object> param = new HashMap<String, Object>();
-		doc.checkIn(true, param, cs, checkinComment);
 
 		return redirectToParent(repositoryId, input);
+	}
+
+	public static void cancelCheckOut(CmisObject cmisObject) {
+		if (Util.isDocument(cmisObject)) {
+			Document doc = (Document) cmisObject;
+			doc.cancelCheckOut();
+		} else if (Util.isFolder(cmisObject)) {
+			Folder dir = (Folder) cmisObject;
+			for (CmisObject childNode : dir.getChildren()) {
+				cancelCheckOut(childNode);
+			}
+		} else {
+			// no-op
+		}
+	}
+
+	public static Result checkIn(String repositoryId, String id) throws FileNotFoundException {
+		Session session = getCmisSession(repositoryId);
+
+		// Comment
+		DynamicForm input = Form.form();
+		input = input.bindFromRequest();
+		String checkinComment = Util.getFormData(input, PropertyIds.CHECKIN_COMMENT);
+
+		// File
+		MultipartFormData body = request().body().asMultipartFormData();
+		List<FilePart> files = body.getFiles();
+		if (files.isEmpty()) {
+			throw new FileNotFoundException();
+		}
+		FilePart file = files.get(0);
+
+		CmisObject cmisObject = session.getObject(id);
+		checkIn(cmisObject, checkinComment, file, session);
+
+		return redirectToParent(repositoryId, input);
+	}
+
+	private static void checkIn(CmisObject obj, String checkinComment, FilePart file, Session session)
+			throws FileNotFoundException {
+		Document doc = (Document) obj;
+		Map<String, Object> param = new HashMap<String, Object>();
+		ContentStream cs = Util.convertFileToContentStream(session, file);
+		doc.checkIn(true, param, cs, checkinComment);
 	}
 
 	private static Principal getPrincipal(String repositoryId, String principalId, String anyone, String anonymous) {
@@ -848,7 +970,7 @@ public class Node extends Controller {
 	private static Result redirectToParent(String repositoryId, DynamicForm input) {
 		String parentId = Util.getFormData(input, PropertyIds.PARENT_ID);
 		// TODO fix hard code
-		if ("".equals(parentId) || "/".equals(parentId)) {
+		if (parentId == null || "".equals(parentId) || "/".equals(parentId)) {
 			return redirect(routes.Node.index(repositoryId));
 		} else {
 			return redirect(routes.Node.showChildren(repositoryId, parentId));

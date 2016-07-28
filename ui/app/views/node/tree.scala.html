@@ -19,7 +19,7 @@
 		<div class="container">
 	  		<div class="row">
 	  			<!-- breadcrumb -->
-	  			<div class="col-md-11">
+	  			<div class="col-md-12">
 	  				<ul class="breadcrumb">
 	  					<li><a href="@routes.Node.index(repositoryId)" title="root"><i class="fa fa-home fa-lg"></i></a></li>
 	  					@defining(Util.dividePath(parent.getPath)){ segments =>
@@ -31,10 +31,20 @@
 	  					}
 	  				</ul>
 	  			</div>
-	  			
-	  			<div class="col-md-11">
+
+	  			<div class="col-md-12" >
+	  				<div class="list-operation">
 					<!-- create button -->
-						<div class="dropdown">
+						<span class="dropdown">
+							<button class="btn btn-default dropdown-toggle" data-toggle="dropdown">選択...<span class="caret"></span></button>
+							<ul class="dropdown-menu" role="menu">
+									<li id="check-all-object"><a href="#"><i class="fa fa-folder"></i>フォルダと文書すべて</a></li>
+									<li id="check-reverse"><a href="#"><i class="fa fa-check-square-o"></i>選択の反転</a></li>
+									<li id="uncheck-all-object""><a href="#"><i class="fa fa-square-o"></i>すべて解除</a></li>
+							</ul>
+						</span>
+
+						<span class="dropdown">
 							<button class="btn btn-default dropdown-toggle" data-toggle="dropdown"><i class="fa fa-plus"></i>@Messages("view.node.create.caption")<span class="caret"></span></button>
 							<ul class="dropdown-menu" role="menu">
 								@for(ot <- types){
@@ -48,20 +58,29 @@
 									</a></li>
 								}
 							</ul>
-						</div>
-					
-					<br/><br/>
+						</span>
+
+						<span class="dropdown">
+							<button class="btn btn-default dropdown-toggle" data-toggle="dropdown">複数操作<span class="caret"></span></button>
+							<ul class="dropdown-menu" role="menu">
+									<li id="checkout-selected-objects" ><a href="#"><i class="fa fa-lock"></i>まとめてチェックアウト...</a></li>
+									<li id="cancel-checkout-selected-objects" ><a href="#"><i class="fa fa-unlock"></i>まとめてチェックアウトをキャンセル...</a></li>
+									<li id="delete-selected-objects" ><a href="#"><i class="fa fa-remove"></i>まとめて削除...</a></li>
+									<li id="compress-selected-objects" ><a href="#"><i class="fa fa-file-archive-o"></i>まとめて圧縮してダウンロード...</a></li>
+							</ul>
+						</span>
+					</div>
 				</div>
-				
-				<div class="col-md-11">
+
+				<div class="col-md-12">
 				 	<div id="list" parentId="@parent.getId()" class="dropzone" ondragover="nmk.dragAndDrop.handleDragStart(event);" ondragleave="nmk.dragAndDrop.hadleDragLeave(event);" ondrop="nmk.dragAndDrop.handleDrop(event);">
-						@list(repositoryId)(objects) 		
+						@list(repositoryId)(objects)
 				 	</div>
 				</div>
-				
+
 				<!-- Modal html code-->
 				@duplicateNameCheckPopup()
-				
+
 	  		</div>
 		</div>
 	</body>
@@ -70,14 +89,120 @@
 <script src="@routes.JsTemplate.duplicateNameCheck(repositoryId)" type="text/javascript"></script>
 
 <script type="text/javascript">
-	//create button
+
 	$(function(){
+		$(document).on('click', '#check-all-object', function(){
+			$('[name="selection"]').prop('checked', true);
+		});
+
+		$(document).on('click', '#uncheck-all-object', function(){
+			$('[name="selection"]').prop('checked', false);
+		});
+
+		$(document).on('click', '#check-reverse', function(){
+			$('[name="selection"]').prop('checked', function( index, oldValue ){
+				return !oldValue;
+			});
+		});
+
+
+		//create button
 		$(document).on('click', '#create-object-in-tree', function(){
 			var typeId = $(this).attr('typeId');
 			$.get("@routes.Node.showBlank(repositoryId)" + "?objectType=" + typeId + "&parentId=@parent.getId()"  , function(html){
 				showLightbox('node-blank', html);
-			});	
+			});
 		});
-		
+
+		//multiple delete button
+		$(document).on('click', '#delete-selected-objects', function(){
+			if(window.confirm("@Messages("view.message.delete.confirm")")){
+				var ids=[];
+				$('[name="selection"]:checked').each(function(){
+				  	ids.push($(this).attr('cmis-id'));
+				});
+
+				$.blockUI({message:"@Messages("view.message.please.wait")"});
+
+				//Execute
+				$.ajax(jsRoutes.controllers.Node.deleteByBatch("@repositoryId", ids)
+			    ).done(function(data){
+					window.alert("@Messages("view.message.delete.success")");
+					window.location.reload();
+				}).fail(function(XMLHttpRequest, textStatus, errorThrown){
+					window.alert("@Messages("view.message.delete.failure")");
+				}).always(function(){
+					$.unblockUI();
+				});
+			}
+		});
+
+		//multiple chechkout button
+		$(document).on('click', '#checkout-selected-objects', function(){
+			if(window.confirm("@Messages("view.message.checkout.confirm")")){
+				var ids=[];
+				$('[name="selection"]:checked').each(function(){
+				  	ids.push($(this).attr('cmis-id'));
+				});
+
+				$.blockUI({message:"@Messages("view.message.please.wait")"});
+
+				//Execute
+				$.ajax(jsRoutes.controllers.Node.checkOutByBatch("@repositoryId", ids)
+			    ).done(function(data){
+					window.alert("@Messages("view.message.checkout.success")");
+					window.location.reload();
+				}).fail(function(XMLHttpRequest, textStatus, errorThrown){
+					window.alert("@Messages("view.message.checkout.failure")");
+				}).always(function(){
+					$.unblockUI();
+				});
+			}
+		});
+
+		//multiple cancel chechkout button
+		$(document).on('click', '#cancel-checkout-selected-objects', function(){
+			if(window.confirm("@Messages("view.message.cancel-checkout.confirm")")){
+				var ids=[];
+				$('[name="selection"]:checked').each(function(){
+				  	ids.push($(this).attr('cmis-id'));
+				});
+
+				$.blockUI({message:"@Messages("view.message.please.wait")"});
+
+				//Execute
+				$.ajax(jsRoutes.controllers.Node.cancelCheckOutByBatch("@repositoryId", ids)
+			    ).done(function(data){
+					window.alert("@Messages("view.message.cancel-checkout.success")");
+					window.location.reload();
+				}).fail(function(XMLHttpRequest, textStatus, errorThrown){
+					window.alert("@Messages("view.message.cancel-checkout.failure")");
+				}).always(function(){
+					$.unblockUI();
+				});
+			}
+		});
+
+		//multiple archive button
+		$(document).on('click', '#compress-selected-objects', function(){
+			if(window.confirm("@Messages("view.message.compress.confirm")")){
+				var ids=[];
+				var idKeys=[];
+
+				$('[name="selection"]:checked').each(function(){
+				  	ids.push($(this).attr('cmis-id'));
+				  	idKeys.push("ids=" + $(this).attr('cmis-id'));
+				});
+				var query=idKeys.join("&");
+
+			    $.fileDownload(jsRoutes.controllers.Node.downloadAsCompressedFileByBatch("@repositoryId", ids).url)
+		        .done(function () { })
+		        .fail(function (responseHtml, url, error) {
+			         window.alert("@Messages("view.message.failure")" + " : " + responseHtml);
+			      })
+			    .always(function(){	$.unblockUI(); });
+			}
+		});
+
 	});
 </script>

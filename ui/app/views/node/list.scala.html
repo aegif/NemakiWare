@@ -16,16 +16,18 @@
 <table class="footable" id="objects-table" data-sort="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
 	<thead>
 		<tr>
-			<th data-class="expand" data-sort-initial="true">@NemakiConfig.getLabel("cmis:name", Implicit.lang().language)</th>
+			<th data-sort-ignore="true"   class="content-size"></th>
+			<th data-class="expand" data-sort-initial="true">@NemakiConfig.getLabel("cmis:name", lang().language)</th>
 			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
 				<th class="content-size" data-class="expand">@NemakiConfig.getLabel(column, Implicit.lang().language)</th>
 			}
-			<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action")</th>
+			<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action") </th>
 		</tr>
 	</thead>
 	<tbody>
 	@for(obj <- objects){
 		<tr>
+			<td class="center"><input name="selection"  type="checkbox"  cmis-id="@obj.getId()" /></td>
 			<td>
 				@obj match {
 					case document:Document =>{
@@ -45,10 +47,9 @@
 					}
 
 					case _ =>{
-
 					}
 				}
-					<i class="fa @Util.getIconName(obj)"></i><div class="obj-name" objectId="@obj.getId">@obj.getName()</div>
+					<i class="fa @Util.getIconName(obj)"></i><span class="obj-name" objectId="@obj.getId">@obj.getName()</span>
 				</a>
 			</td>
 			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
@@ -56,11 +57,17 @@
 			}
 			<td>
 				<div class="btn-group">
-					<button type="button" class="btn btn-default show-detail" cmis-id="@obj.getId()"><i class="fa fa-wrench"></i>@Messages("view.detail")</button>
+					<button type="button" class="btn btn-default show-detail" cmis-id="@obj.getId()">
+						<i class="fa fa-wrench" ></i><div class="tooltips">@Messages("view.detail")</div>
+					</button>
 					@if(Util.hasContentStream(obj)){
-						<button type="button" class="btn btn-default show-preview" cmis-id="@obj.getId()"><i class="fa fa-file-pdf-o"></i>@Messages("view.node.preview")</button>
+						<button type="button" class="btn btn-default show-preview" cmis-id="@obj.getId()">
+							<i class="fa fa-file-pdf-o"></i><div class="tooltips">@Messages("view.node.preview")</div>
+						</button>
 					}
-					<button type="button" class="btn btn-default delete" cmis-id="@obj.getId()"><i class="fa fa-trash"></i>@Messages("view.delete")</button>
+					<button type="button" class="btn btn-default delete" cmis-id="@obj.getId()">
+						<i class="fa fa-trash"></i><div class="tooltips">@Messages("view.delete")</div>
+					</button>
 				</div>
 			</td>
 		</tr>
@@ -68,7 +75,7 @@
 	</tbody>
 	<tfoot>
 		<tr>
-			@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 2){colSpan =>
+			@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 3){colSpan =>
 				<td colspan="@colSpan">
 			}
 				<div class="pagination pagination-centered hide-if-no-paging"></div>
