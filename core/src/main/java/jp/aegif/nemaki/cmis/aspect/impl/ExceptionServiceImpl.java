@@ -78,6 +78,7 @@ import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
+import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.model.Acl;
@@ -86,6 +87,7 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
@@ -388,11 +390,21 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void perimissionAdmin(CallContext context, String repositoryId) {
-		User user = principalService.getUserById(repositoryId, context.getUsername());
-		if(!user.isAdmin()){
+		if(context instanceof SystemCallContext){
+			return;
+		}
+		
+		UserItem userItem = contentService.getUserItemById(repositoryId, context.getUsername());
+		if(!userItem.isAdmin()){
 			String msg = "This operation is permitted only for administrator";
 			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
 		}
+		
+		/*User user = principalService.getUserById(repositoryId, context.getUsername());
+		if(!user.isAdmin()){
+			String msg = "This operation is permitted only for administrator";
+			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
+		}*/
 	}
 
 	/**
@@ -1113,7 +1125,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 		if (propertyDefinition.isOrderable()
 				&& propertyDefinition.getCardinality() == Cardinality.MULTI) {
 			String msg = DataUtil.buildPrefixTypeProperty(typeId, propertyId)
-					+ "PropertyDefinition violates the specification";
+					+ "PropertyDefinition violates the specification: cardinality=multi should not be orderable";
 			constraint(msg);
 		}
 	}

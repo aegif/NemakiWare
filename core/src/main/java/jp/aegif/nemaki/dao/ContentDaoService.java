@@ -26,17 +26,21 @@ import java.util.List;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Change;
+import jp.aegif.nemaki.model.Configuration;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.GroupItem;
 import jp.aegif.nemaki.model.Item;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.model.NodeBase;
+import jp.aegif.nemaki.model.PatchHistory;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
+import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.model.VersionSeries;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
@@ -345,6 +349,17 @@ public interface ContentDaoService {
 	 */
 	Item getItem(String repositoryId, String objectId);
 
+	UserItem getUserItem(String repositoryId, String objectId);
+	UserItem getUserItemById(String repositoryId, String userId);
+	List<UserItem> getUserItems(String repositoryId);
+	
+	GroupItem getGroupItem(String repositoryId, String objectId);
+	GroupItem getGroupItemById(String repositoryId, String userId);
+	List<GroupItem> getGroupItems(String repositoryId);
+	
+	PatchHistory getPatchHistoryByName(String repositoryId, String name);
+	Configuration getConfiguration(String repositoryId);
+	
 	/**
 	 * Create a document
 	 * @param repositoryId TODO
@@ -398,7 +413,15 @@ public interface ContentDaoService {
 	 * @return the newly created item
 	 */
 	Item create(String repositoryId, Item item);
+	
+	UserItem create(String repositoryId, UserItem userItem);
+	GroupItem create(String repositoryId, GroupItem groupItem);
 
+	PatchHistory create(String repositoryId, PatchHistory patchHistory); 
+	Configuration create(String repositoryId, Configuration configuration);
+	
+	NodeBase create(String repositoryId, NodeBase nodeBase);
+	
 	/**
 	 * Update a document
 	 * @param repositoryId TODO
@@ -456,7 +479,16 @@ public interface ContentDaoService {
 	 * @return the newly updated item
 	 */
 	Item update(String repositoryId, Item item);
+	
+	UserItem update(String repositoryId, UserItem userItem);
+	GroupItem update(String repositoryId, GroupItem groupItem);
 
+	PatchHistory update(String repositoryId, PatchHistory patchHistory);
+	
+	Configuration update(String repositoryId, Configuration configuration);
+	
+	NodeBase update(String repositoryId, NodeBase nodeBase);
+	
 	/**
 	 * Delete a content
 	 * @param repositoryId TODO

@@ -21,8 +21,6 @@
 package jp.aegif.nemaki.cmis.service.impl;
 
 import java.util.List;
-import java.util.concurrent.CompletionService;
-import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.locks.Lock;
@@ -43,6 +41,7 @@ import jp.aegif.nemaki.util.lock.ThreadLockService;
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
+import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
@@ -66,7 +65,7 @@ public class AclServiceImpl implements AclService {
 
 	@Override
 	public Acl getAcl(CallContext callContext, String repositoryId,
-			String objectId, Boolean onlyBasicPermissions) {
+			String objectId, Boolean onlyBasicPermissions, ExtensionsData extension) {
 
 		exceptionService.invalidArgumentRequired("objectId", objectId);
 
@@ -147,7 +146,7 @@ public class AclServiceImpl implements AclService {
 
 			convertSystemPrinciaplId(repositoryId, nemakiAcl);
 			content.setAcl(nemakiAcl);
-			contentService.update(repositoryId, content);
+			contentService.updateInternal(repositoryId, content);
 			contentService.writeChangeEvent(callContext, repositoryId, content, nemakiAcl, ChangeType.SECURITY );
 			
 			nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
@@ -155,7 +154,7 @@ public class AclServiceImpl implements AclService {
 			clearCachesRecursively(Executors.newCachedThreadPool(), callContext, repositoryId, content, false);
 			writeChangeEventsRecursively(Executors.newCachedThreadPool(), callContext, repositoryId, content, false);
 			
-			return getAcl(callContext, repositoryId, objectId, false);
+			return getAcl(callContext, repositoryId, objectId, false, null);
 		}finally{
 			lock.unlock();
 		}

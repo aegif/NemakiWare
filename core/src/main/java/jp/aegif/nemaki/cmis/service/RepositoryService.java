@@ -53,33 +53,33 @@ public interface RepositoryService {
 
 	/**
 	 * Gets the CMIS types.
-	 * 
 	 * @param repositoryId
 	 *            TODO
+	 * @param extension TODO
 	 */
 	public abstract TypeDefinitionList getTypeChildren(@LogParam("callContext") CallContext callContext,
 			@LogParam("repositoryId") String repositoryId, @LogParam("typeId") String typeId,
 			@LogParam("includePropertyDefinitions") Boolean includePropertyDefinitions, @LogParam("maxItems") BigInteger maxItems,
-			@LogParam("skipCount") BigInteger skipCount);
+			@LogParam("skipCount") BigInteger skipCount, ExtensionsData extension);
 
 	/**
 	 * Returns the set of descendant object type defined for the repository
 	 * under the specified type.
-	 * 
 	 * @param repositoryId
 	 *            TODO
+	 * @param extension TODO
 	 */
 	public abstract List<TypeDefinitionContainer> getTypeDescendants(@LogParam("callContext") CallContext callContext,
 			@LogParam("repositoryId") String repositoryId, @LogParam("typeId") String typeId, @LogParam("depth") BigInteger depth,
-			@LogParam("includePropertyDefinitions") Boolean includePropertyDefinitions);
+			@LogParam("includePropertyDefinitions") Boolean includePropertyDefinitions, ExtensionsData extension);
 
 	/**
 	 * Gets the definition of the specified object type.
-	 * 
 	 * @param repositoryId
 	 *            TODO
+	 * @param extension TODO
 	 */
-	public abstract TypeDefinition getTypeDefinition(@LogParam("callContext")CallContext callContext, @LogParam("repositoryId")String repositoryId, @LogParam("typeId")String typeId);
+	public abstract TypeDefinition getTypeDefinition(@LogParam("callContext")CallContext callContext, @LogParam("repositoryId")String repositoryId, @LogParam("typeId")String typeId, ExtensionsData extension);
 
 	/**
 	 * Create a type

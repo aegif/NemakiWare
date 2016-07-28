@@ -40,6 +40,7 @@ import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.CmisPermission;
@@ -130,7 +131,7 @@ public class PermissionServiceImpl implements PermissionService {
 
 		// Admin always pass a permission check
 		String userName = callContext.getUsername();
-		User u = principalService.getUserById(repositoryId, userName);
+		UserItem u = contentService.getUserItemById(repositoryId, userName);
 
 		if (u != null && u.isAdmin()) {
 			return true;
@@ -152,8 +153,6 @@ public class PermissionServiceImpl implements PermissionService {
 		// Though some actions are defined in the specs,
 		// Some other direct actions is needed to be set here.
 		if(content.isRelationship()){
-
-
 			Relationship relationship = (Relationship)content;
 			boolean hasRelationshipPermission =  checkRelationshipPermission(callContext, repositoryId, key, relationship);
 			return hasRelationshipPermission;
@@ -170,7 +169,8 @@ public class PermissionServiceImpl implements PermissionService {
 
 		List<Ace> aces = acl.getAllAces();
 		Set<String> userPermissions = new HashSet<String>();
-		Set<String> groups = principalService.getGroupIdsContainingUser(repositoryId, userName);
+		//Set<String> groups = principalService.getGroupIdsContainingUser(repositoryId, userName);
+		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
 		for (Ace ace : aces) {
 			// Filter ace which has not permissions
 			if (ace.getPermissions() == null)
@@ -456,7 +456,7 @@ public class PermissionServiceImpl implements PermissionService {
 				String rootId = repositoryInfoMap.get(repositoryId).getRootFolderId();
 				//Check top level or not
 				if(folderChecked == null || rootId.equals(folderChecked.getId())){
-					User user = principalService.getUserById(repositoryId, context.getUsername());
+					UserItem user = contentService.getUserItemById(repositoryId, context.getUsername());
 					if(!user.isAdmin()){
 						return false;
 					}

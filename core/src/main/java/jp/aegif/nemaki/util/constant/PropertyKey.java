@@ -38,7 +38,9 @@ public interface PropertyKey {
 	final String CAPABILITY_EXTENDED_AUTH_TOKEN = "capability.extended.auth.token";
 	final String CAPABILITY_EXTENDED_PERMISSION_TOPLEVEL = "capability.extended.permission.toplevel";
 	final String CAPABILITY_EXTENDED_PERMISSION_INHERITANCE_TOPLEVEL = "capability.extended.permission.inheritance.toplevel";
-
+	final String CAPABILITY_EXTENDED_USER_ITEM_FOLDER = "capability.extended.user.item.folder";
+	final String SYSTEM_FOLDER = "system.folder";
+	
 	//Rest
 	final String REST_USER_ENABLED = "rest.user.enabled";
 	final String REST_GROUP_ENABLED = "rest.group.enabled";
