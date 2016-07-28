@@ -1787,14 +1787,9 @@ public class ContentServiceImpl implements ContentService {
 			List<Archive> versions = contentDaoService
 					.getArchivesOfVersionSeries(repositoryId, archive.getVersionSeriesId());
 			for (Archive version : versions) {
-				// Restore a document
-				contentDaoService.restoreContent(repositoryId, version);
-				// Restore its attachment
-				Archive attachmentArchive = contentDaoService.getAttachmentArchive(repositoryId, version);
-				contentDaoService.restoreAttachment(repositoryId, attachmentArchive);
+				contentDaoService.restoreDocumentWithArchive(repositoryId, version);
 				// delete archives
-				contentDaoService.deleteArchive(repositoryId, version.getId());
-				contentDaoService.deleteArchive(repositoryId, attachmentArchive.getId());
+				contentDaoService.deleteDocumentArchive(repositoryId, version.getId());
 			}
 		} catch (Exception e) {
 			log.error("fail to restore a document", e);
