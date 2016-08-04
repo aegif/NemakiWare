@@ -34,6 +34,7 @@ public interface PropertyKey {
 	final String CAPABILITY_EXTENDED_PREVIEW = "capability.extended.preview";
 	final String CAPABILITY_EXTENDED_INCLUDE_RELATIONSHIPS = "capability.extended.include.relationships";
 	final String CAPABILITY_EXTENDED_BUILD_UNIQUE_NAME = "capability.extended.build.unique.name";
+	final String CAPABILITY_EXTENDED_UNIQUE_NAME_CHECK = "capability.extended.unique.name.check";
 	final String CAPABILITY_EXTENDED_AUTH_TOKEN = "capability.extended.auth.token";
 	final String CAPABILITY_EXTENDED_PERMISSION_TOPLEVEL = "capability.extended.permission.toplevel";
 	final String CAPABILITY_EXTENDED_PERMISSION_INHERITANCE_TOPLEVEL = "capability.extended.permission.inheritance.toplevel";
