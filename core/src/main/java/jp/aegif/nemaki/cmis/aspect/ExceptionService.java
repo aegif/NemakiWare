@@ -101,7 +101,8 @@ public interface ExceptionService {
 	void constraintDeleteRootFolder(String repositoryId, String objectId);
 	void contentAlreadyExists(Content content, Boolean overwriteFlag);
 	void streamNotSupported(DocumentTypeDefinition documentTypeDefinition, ContentStream contentStream);
-	void nameConstraintViolation(Properties properties, Folder parentFolder);
+	void nameConstraintViolation(String repositoryId, Folder parentFolder, Properties properties);
+	void nameConstraintViolation(String repositoryId, Folder parentFolder, String proposedName);
 	void versioning(Document document);
 	void updateConflict(Content content, Holder<String>  changeToken);
 

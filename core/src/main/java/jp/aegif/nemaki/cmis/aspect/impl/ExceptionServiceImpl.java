@@ -79,6 +79,7 @@ import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
+import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
@@ -87,7 +88,9 @@ import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.DataUtil;
+import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.DomainType;
+import jp.aegif.nemaki.util.constant.PropertyKey;
 
 public class ExceptionServiceImpl implements ExceptionService,
 		ApplicationContextAware {
@@ -96,6 +99,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 	private PermissionService permissionService;
 	private RepositoryInfoMap repositoryInfoMap;
 	private PrincipalService principalService;
+	private ContentDaoService contentDaoService;
+	private PropertyManager propertyManager;
 
 	private static final Log log = LogFactory
 			.getLog(ExceptionServiceImpl.class);
@@ -1158,16 +1163,33 @@ public class ExceptionServiceImpl implements ExceptionService,
 		}
 	}
 
-	// TODO implement!
 	@Override
-	public void nameConstraintViolation(Properties properties,
-			Folder parentFolder) {
-		// If name conflicts, modify names by the repository without outputting
-		// error
+	public void nameConstraintViolation(String repositoryId, Folder parentFolder,
+			Properties properties) { 
+		String proposedName = DataUtil.getStringProperty(properties, PropertyIds.NAME);
+		nameConstraintViolation(repositoryId, parentFolder, proposedName);
+	}
+
+	@Override
+	public void nameConstraintViolation(String repositoryId, Folder parentFolder,
+			String proposedName) { 
+		boolean mustUnique = propertyManager.readBoolean(PropertyKey.CAPABILITY_EXTENDED_UNIQUE_NAME_CHECK);
+		if (!mustUnique) {
+			return;
+		}
+
 		if (parentFolder == null) {
 
 		} else {
-
+			List<String> names = contentDaoService.getChildrenNames(repositoryId, parentFolder.getId());
+			String lowerCaseProposedName = proposedName.toLowerCase();
+			for(String name: names) {
+				if (lowerCaseProposedName.equals(name.toLowerCase())) {
+					throw new CmisContentAlreadyExistsException(
+							"A content with the specified name already exists",
+							HTTP_STATUS_CODE_409);
+				}
+			}
 		}
 	}
 
@@ -1219,5 +1241,13 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	public void setPrincipalService(PrincipalService principalService) {
 		this.principalService = principalService;
+	}
+
+	public void setContentDaoService(ContentDaoService contentDaoService) {
+		this.contentDaoService = contentDaoService;
+	}
+
+	public void setPropertyManager(PropertyManager propertyManager) {
+		this.propertyManager = propertyManager;
 	}
 }
