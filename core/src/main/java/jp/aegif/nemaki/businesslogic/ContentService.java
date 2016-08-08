@@ -275,7 +275,7 @@ public interface ContentService {
 			String repositoryId, Document original, ContentStream contentStream);
 
 	Document replacePwc(CallContext callContext, String repositoryId, Document original, ContentStream contentStream);
-
+	
 	/**
 	 * Check out and create PWC
 	 *
@@ -394,7 +394,7 @@ public interface ContentService {
 	 * @return
 	 */
 	Content update(String repositoryId, Content content);
-
+	
 	/**
 	 * Update properties of a content
 	 *
@@ -660,7 +660,7 @@ public interface ContentService {
 	 * @return
 	 */
 	Archive createAttachmentArchive(CallContext callContext, String repositoryId, String attachmentId);
-	
+
 	/**
 	 * Restore a content from an archive
 	 * @param repositoryId TODO

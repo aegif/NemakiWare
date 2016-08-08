@@ -57,6 +57,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrinc
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
+import play.api.libs.Files.TemporaryFile;
 import play.i18n.Messages;
 import play.data.DynamicForm;
 import play.data.Form;
@@ -344,9 +345,9 @@ public class Node extends Controller {
 		Document doc = (Document) obj;
 		ContentStream cs = doc.getContentStream();
 		createAttachmentResponse(doc.getName(), cs.getMimeType());
-		
+
 		try {
-			File tmpFile = null;
+		File tmpFile = null;
 			tmpFile = Util.convertInputStreamToFile(cs);
 			TemporaryFileInputStream fin = new TemporaryFileInputStream(tmpFile);
 			return ok(fin);
@@ -355,11 +356,13 @@ public class Node extends Controller {
 			return internalServerError("File not found");
 		} catch (Exception e){
 			e.printStackTrace();
-			return internalServerError("");
 		}
+
+		createAttachmentResponse(doc.getName(), cs.getMimeType());
+		return ok(tmpFile);
 	}
 
-	private static void createAttachmentResponse(String name, String mimetype) {
+	private static void createAttachmentResponse(String name, String mimeType) {
 		try {
 			if (request().getHeader("User-Agent").indexOf("MSIE") == -1) {
 				// Firefox, Opera 11
@@ -523,7 +526,7 @@ public class Node extends Controller {
 		Session session = getCmisSession(repositoryId);
 		ContentStream cs = Util.convertFileToContentStream(session, file);
 		session.createDocument(param, parentId, cs, VersioningState.MAJOR);
-
+		
 		//Clean temp file just after CMIS createDocument finished
 		file.getFile().delete();
 	}
@@ -540,7 +543,7 @@ public class Node extends Controller {
 		ContentStream cs = Util.convertFileToContentStream(session, file);
 		Document d0 = (Document) session.getObject(objectId);
 		Document d1 = d0.setContentStream(cs, true);
-
+		
 		//Clean temp file just after CMIS createDocument finished
 		file.getFile().delete();
 	}
@@ -570,7 +573,7 @@ public class Node extends Controller {
 		switch (Util.getBaseType(session, objectTypeId)) {
 		case CMIS_DOCUMENT:
 			ContentStreamAllowed csa = ((DocumentTypeDefinition) objectType).getContentStreamAllowed();
-
+			
 			if (csa == ContentStreamAllowed.NOTALLOWED) {
 				// don't set content stream
 				session.createDocument(param, parentId, null, VersioningState.MAJOR);
@@ -588,23 +591,23 @@ public class Node extends Controller {
 					}else if(csa == ContentStreamAllowed.ALLOWED){
 						session.createDocument(param, parentId, null, VersioningState.MAJOR);
 					}
-				}else{
+				} else {
 					//Case: file exists
 					ContentStream contentStream = Util.convertFileToContentStream(session, files.get(0));
 					if (param.get(PropertyIds.NAME) == null) {
 						param.put(PropertyIds.NAME, contentStream.getFileName());
-					}
+				}
 					session.createDocument(param, parentId, contentStream, VersioningState.MAJOR);
-					
+
 					//Clean temp file just after CMIS createDocument finished
-					if(CollectionUtils.isNotEmpty(files)){
+				if (CollectionUtils.isNotEmpty(files)) {
 						for(FilePart file : files){
 							file.getFile().delete();
 						}
 					}
 				}
 			}
-			
+
 			break;
 		case CMIS_FOLDER:
 			session.createFolder(param, parentId);
@@ -612,9 +615,9 @@ public class Node extends Controller {
 		default:
 			break;
 		}
-		
-		return redirectToParent(repositoryId, input);
-	}
+
+			return redirectToParent(repositoryId, input);
+		}
 
 	public static Result update(String repositoryId, String id) {
 		// Get an object in the repository
