@@ -314,6 +314,20 @@ public class ExceptionServiceImpl implements ExceptionService,
 				+ "The specified object is not found";
 		objectNotFound(type, object, id, msg);
 	}
+	
+	@Override
+	public void objectNotFoundByPath(DomainType type, Object object, String path,
+			String msg) {
+		if (object == null)
+			throw new CmisObjectNotFoundException(msg, HTTP_STATUS_CODE_404);
+	}
+	
+	@Override
+	public void objectNotFoundByPath(DomainType type, Object object, String path) {
+		String msg = "[" + type.value() + " path:" + path + "]"
+				+ "The specified object is not found";
+		objectNotFound(type, object, path, msg);
+	}
 
 	@Override
 	public void objectNotFoundVersionSeries(String id, Collection collection) {

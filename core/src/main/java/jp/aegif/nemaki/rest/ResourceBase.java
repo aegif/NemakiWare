@@ -33,11 +33,18 @@ import jp.aegif.nemaki.model.NodeBase;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.tools.ant.types.Mapper.MapperType;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+
 public class ResourceBase {
 
+	private static final ObjectMapper mapper = new ObjectMapper(); 
+	
 	static final String DATE_FORMAT = "yyyy:MM:dd HH:mm:ss z";
 	static final String TYPE_GROUP = "group";
 	static final String PARENTID = "/";
@@ -129,6 +136,33 @@ public class ResourceBase {
 	}
 
 	protected boolean checkAdmin(JSONArray errMsg, HttpServletRequest request){
+		CallContext callContext = (CallContext) request.getAttribute("CallContext");
+		Boolean _isAdmin = (Boolean) callContext.get(CallContextKey.IS_ADMIN);
+		boolean isAdmin = (_isAdmin == null) ? false : _isAdmin;
+		if(!isAdmin){
+			addErrMsg(errMsg, ErrorCode.ERR_ONLY_ALLOWED_FOR_ADMIN, callContext.getRepositoryId());
+		}
+		return isAdmin;
+	}
+	
+	protected ArrayNode addErrMsg(ArrayNode errMsg, String item, String msg){
+		ObjectNode obj = mapper.createObjectNode();
+		obj.put(item, msg);
+		errMsg.add(obj);
+		return errMsg;
+	}
+
+	protected ObjectNode makeResult(boolean status, ObjectNode result, ArrayNode errMsg){
+		if(status && errMsg.size() == 0){
+			result.put(ITEM_STATUS, SUCCESS);
+		}else{
+			result.put(ITEM_STATUS, FAILURE);
+			result.set(ITEM_ERROR, errMsg);
+		}
+		return result;
+	}
+	
+	protected boolean checkAdmin(ArrayNode errMsg, HttpServletRequest request){
 		CallContext callContext = (CallContext) request.getAttribute("CallContext");
 		Boolean _isAdmin = (Boolean) callContext.get(CallContextKey.IS_ADMIN);
 		boolean isAdmin = (_isAdmin == null) ? false : _isAdmin;

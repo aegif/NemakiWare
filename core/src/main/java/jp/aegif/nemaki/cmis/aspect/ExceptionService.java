@@ -67,6 +67,8 @@ public interface ExceptionService {
 	void invalidArgumentSecondaryTypeIds(String repositoryId, Properties properties);
 	void objectNotFound(DomainType type, Object object, String id, String msg);
 	void objectNotFound(DomainType type, Object object, String id);
+	void objectNotFoundByPath(DomainType type, Object object, String id, String msg);
+	void objectNotFoundByPath(DomainType type, Object object, String id);
 	void objectNotFoundVersionSeries(String id, Collection collection);
 	void objectNotFoundParentFolder(String repositoryId, String id, Content content);
 	void permissionDenied(CallContext context, String repositoryId, String key, Content content);

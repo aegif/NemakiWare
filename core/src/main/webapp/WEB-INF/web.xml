@@ -19,10 +19,6 @@
 		<welcome-file>index.html</welcome-file>
 	</welcome-file-list>
 	
-	<listener>
- 		<listener-class>org.springframework.web.util.Log4jConfigListener</listener-class>
-	</listener>
-	
 	<context-param>
 		<param-name>contextConfigLocation</param-name>
 		<param-value>classpath:applicationContext.xml</param-value>

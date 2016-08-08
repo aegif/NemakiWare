@@ -1,4 +1,4 @@
-package jp.aegif.nemaki.test.cmis;
+package jp.aegif.nemaki.test.tck;
 
 import java.io.File;
 import java.io.FileInputStream;

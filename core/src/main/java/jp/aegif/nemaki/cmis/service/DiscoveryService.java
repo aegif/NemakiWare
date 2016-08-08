@@ -29,6 +29,8 @@ import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 
+import jp.aegif.nemaki.util.spring.aspect.log.LogParam;
+
 /**
  * Discovery Service interface.
  */
@@ -38,11 +40,11 @@ public interface DiscoveryService {
 	 * Executes a CMIS query statement against the contents of the repository.
 	 * @param repositoryId TODO
 	 */
-	ObjectList query(CallContext Context, String repositoryId,
-			String statement, Boolean searchAllVersions, Boolean includeAllowableActions,
-			IncludeRelationships includeRelationships,
-			String renditionFilter, BigInteger maxItems,
-			BigInteger skipCount, ExtensionsData extension);
+	ObjectList query(@LogParam("callContext")CallContext callContext, @LogParam("repositoryId")String repositoryId,
+			@LogParam("statement")String statement, @LogParam("searchAllVersions")Boolean searchAllVersions, @LogParam("includeAllowableActions")Boolean includeAllowableActions,
+			@LogParam("includeRelationships")IncludeRelationships includeRelationships,
+			@LogParam("renditionFilter")String renditionFilter, @LogParam("maxItems")BigInteger maxItems,
+			@LogParam("skipCount")BigInteger skipCount, @LogParam("extension")ExtensionsData extension);
 
 	/**
 	 * Get the list of object that have changed since a given point in the past.
@@ -50,9 +52,8 @@ public interface DiscoveryService {
 	 * TODO Not Yet Implemented
 	 * @param repositoryId TODO
 	 */
-	ObjectList getContentChanges(CallContext context,
-			String repositoryId, Holder<String> changeLogToken,
-			Boolean includeProperties, String filter, Boolean includePolicyIds,
-			Boolean includeAcl, BigInteger maxItems, ExtensionsData extension);
-
+	ObjectList getContentChanges(@LogParam("callContext")CallContext callContext,
+			@LogParam("repositoryId")String repositoryId, @LogParam("changeLogToken") Holder<String> changeLogToken,
+			@LogParam("includeProperties")Boolean includeProperties, @LogParam("filter")String filter, @LogParam("includePolicyIds")Boolean includePolicyIds,
+			@LogParam("includeAcl")Boolean includeAcl, @LogParam("maxItems")BigInteger maxItems, @LogParam("extension")ExtensionsData extension);
 }

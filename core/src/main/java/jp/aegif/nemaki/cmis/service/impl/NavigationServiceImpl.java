@@ -25,6 +25,7 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.locks.Lock;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
@@ -36,6 +37,7 @@ import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.constant.DomainType;
+import jp.aegif.nemaki.util.lock.ThreadLockService;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
@@ -63,6 +65,7 @@ public class NavigationServiceImpl implements NavigationService {
 	private ExceptionService exceptionService;
 	private CompileService compileService;
 	private PermissionService permissionService;
+	private ThreadLockService threadLockService;
 
 	@Override
 	public ObjectInFolderList getChildren(CallContext callContext,
@@ -71,28 +74,38 @@ public class NavigationServiceImpl implements NavigationService {
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
 			String renditionFilter, Boolean includePathSegments,
 			BigInteger maxItems, BigInteger skipCount,
-			ExtensionsData extension, Holder<ObjectData> parentObjectData) {
-		// //////////////////
-		// General Exception
-		// //////////////////
+			Holder<ObjectData> parentObjectData, ExtensionsData extension) {
+
 		exceptionService.invalidArgumentRequiredString("folderId", folderId);
-		Folder folder = contentService.getFolder(repositoryId, folderId);
-		exceptionService.invalidArgumentFolderId(folder, folderId);
-		exceptionService.permissionDenied(callContext,
-				repositoryId, PermissionMapping.CAN_GET_CHILDREN_FOLDER, folder);
+		
+		Lock parentLock = threadLockService.getReadLock(repositoryId, folderId);
+		
+		try{
+			parentLock.lock();
+			
+			// //////////////////
+			// General Exception
+			// //////////////////
+			Folder folder = contentService.getFolder(repositoryId, folderId);
+			exceptionService.invalidArgumentFolderId(folder, folderId);
+			exceptionService.permissionDenied(callContext,
+					repositoryId, PermissionMapping.CAN_GET_CHILDREN_FOLDER, folder);
 
-		// //////////////////
-		// Body of the method
-		// //////////////////
-		// Set ObjectData of parent folder for ObjectInfo
-		ObjectData _parent = compileService.compileObjectData(
-				callContext, repositoryId, folder, filter,
-				includeAllowableActions, includeRelationships, renditionFilter, false);
-		parentObjectData.setValue(_parent);
+			// //////////////////
+			// Body of the method
+			// //////////////////
+			// Set ObjectData of parent folder for ObjectInfo
+			ObjectData _parent = compileService.compileObjectData(
+					callContext, repositoryId, folder, filter,
+					includeAllowableActions, includeRelationships, renditionFilter, false);
+			parentObjectData.setValue(_parent);
 
-		return getChildrenInternal(callContext, repositoryId, folderId, filter,
-				orderBy, includeAllowableActions, includeRelationships,
-				renditionFilter, includePathSegments, maxItems, skipCount, false);
+			return getChildrenInternal(callContext, repositoryId, folderId, filter,
+					orderBy, includeAllowableActions, includeRelationships,
+					renditionFilter, includePathSegments, maxItems, skipCount, false);
+		}finally{
+			parentLock.unlock();
+		}
 	}
 
 	private ObjectInFolderList getChildrenInternal(CallContext callContext,
@@ -109,97 +122,94 @@ public class NavigationServiceImpl implements NavigationService {
 
 		// Build ObjectList
 		List<Content> contents = contentService.getChildren(repositoryId, folderId);
-
-		contents = permissionService.getFiltered(callContext, repositoryId, contents);
-
-		ObjectList ol = compileService.compileObjectDataList(callContext,
-				repositoryId, contents, filter,
-				includeAllowableActions, includeRelationships, renditionFilter, false,
-				maxItems, skipCount, folderOnly, orderBy);
 		
 		
-		// Build ObjectInFolderList
-		for (ObjectData od : ol.getObjects()) {
-			ObjectInFolderDataImpl objectInFolder = new ObjectInFolderDataImpl();
-			objectInFolder.setObject(od);
-			if (includePathSegments) {
-				String name = DataUtil.getStringProperty(od.getProperties(),
-						PropertyIds.NAME);
-				objectInFolder.setPathSegment(name);
+		List<Lock> locks = threadLockService.readLocks(repositoryId, contents);
+		
+		try{
+			threadLockService.bulkLock(locks);
+			
+			contents = permissionService.getFiltered(callContext, repositoryId, contents);
+
+			ObjectList ol = compileService.compileObjectDataList(callContext,
+					repositoryId, contents, filter,
+					includeAllowableActions, includeRelationships, renditionFilter, false,
+					maxItems, skipCount, folderOnly, orderBy);
+			
+			
+			// Build ObjectInFolderList
+			for (ObjectData od : ol.getObjects()) {
+				ObjectInFolderDataImpl objectInFolder = new ObjectInFolderDataImpl();
+				objectInFolder.setObject(od);
+				if (includePathSegments) {
+					String name = DataUtil.getStringProperty(od.getProperties(),
+							PropertyIds.NAME);
+					objectInFolder.setPathSegment(name);
+				}
+				result.getObjects().add(objectInFolder);
 			}
-			result.getObjects().add(objectInFolder);
-		}
-		result.setNumItems(ol.getNumItems());
-		result.setHasMoreItems(ol.hasMoreItems());
+			result.setNumItems(ol.getNumItems());
+			result.setHasMoreItems(ol.hasMoreItems());
 
-		return result;
+			return result;
+		}finally{
+			threadLockService.bulkUnlock(locks);
+		}
 	}
 	
-	/*public ObjectList pageingObjectDataList(ObjectList objectList,BigInteger maxItems,
-			BigInteger skipCount) {
-		// Convert skip and max to integer
-		int skip = (skipCount == null ? 0 : skipCount.intValue());
-		if (skip < 0) {
-			skip = 0;
-		}
-		int max = (maxItems == null ? Integer.MAX_VALUE : maxItems.intValue());
-		if (max < 0) {
-			max = Integer.MAX_VALUE;
-		}
-		int end = (skip + max <= objectList.getObjects().size()) ? skip + max : objectList.getObjects().size();
-		
-		List<ObjectData> list = objectList.getObjects();
-		ObjectListImpl impl = new ObjectListImpl();
-		impl.setObjects(new ArrayList<ObjectData>(list.subList(skip, end)));
-		impl.setNumItems(BigInteger.valueOf(end - skip));
-		impl.setHasMoreItems(skip + max > end);
-		
-		return impl;
-	}*/
-
 	@Override
 	public List<ObjectInFolderContainer> getDescendants(
 			CallContext callContext, String repositoryId, String folderId,
 			BigInteger depth, String filter,
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
 			String renditionFilter, Boolean includePathSegment,
-			boolean foldersOnly, ExtensionsData extension, Holder<ObjectData> anscestorObjectData) {
+			boolean foldersOnly, Holder<ObjectData> anscestorObjectData, ExtensionsData extension) {
 
-		// //////////////////
-		// General Exception
-		// //////////////////
 		exceptionService.invalidArgumentRequiredString("folderId", folderId);
-		Folder folder = contentService.getFolder(repositoryId, folderId);
-		exceptionService.permissionDenied(callContext,
-				repositoryId, PermissionMapping.CAN_GET_DESCENDENTS_FOLDER, folder);
+		
+		Lock parentLock = threadLockService.getReadLock(repositoryId, folderId);
+		
+		try{
+			parentLock.lock();
+			
+			// //////////////////
+			// General Exception
+			// //////////////////
+			Folder folder = contentService.getFolder(repositoryId, folderId);
+			exceptionService.permissionDenied(callContext,
+					repositoryId, PermissionMapping.CAN_GET_DESCENDENTS_FOLDER, folder);
 
-		// //////////////////
-		// Specific Exception
-		// //////////////////
-		exceptionService.invalidArgumentFolderId(folder, folderId);
-		exceptionService.invalidArgumentDepth(depth);
+			// //////////////////
+			// Specific Exception
+			// //////////////////
+			exceptionService.invalidArgumentFolderId(folder, folderId);
+			exceptionService.invalidArgumentDepth(depth);
 
-		// //////////////////
-		// Body of the method
-		// //////////////////
-		// check depth
-		int d = (depth == null ? 2 : depth.intValue());
+			// //////////////////
+			// Body of the method
+			// //////////////////
+			// check depth
+			int d = (depth == null ? 2 : depth.intValue());
 
-		// set defaults if values not set
-		boolean iaa = (includeAllowableActions == null ? false
-				: includeAllowableActions.booleanValue());
-		boolean ips = (includePathSegment == null ? false : includePathSegment
-				.booleanValue());
+			// set defaults if values not set
+			boolean iaa = (includeAllowableActions == null ? false
+					: includeAllowableActions.booleanValue());
+			boolean ips = (includePathSegment == null ? false : includePathSegment
+					.booleanValue());
 
-		// Set ObjectData of the starting folder for ObjectInfo
-		ObjectData _folder = compileService.compileObjectData(
-				callContext, repositoryId, folder, filter,
-				includeAllowableActions, includeRelationships, renditionFilter, false);
-		anscestorObjectData.setValue(_folder);
+			// Set ObjectData of the starting folder for ObjectInfo
+			ObjectData _folder = compileService.compileObjectData(
+					callContext, repositoryId, folder, filter,
+					includeAllowableActions, includeRelationships, renditionFilter, false);
+			anscestorObjectData.setValue(_folder);
 
-		// get the tree.
-		return getDescendantsInternal(callContext, repositoryId, _folder, filter, iaa,
-				false, includeRelationships, null, ips, 0, d, foldersOnly);
+			// get the tree.
+			return getDescendantsInternal(callContext, repositoryId, _folder, filter, iaa,
+					false, includeRelationships, null, ips, 0, d, foldersOnly);
+			
+		}finally{
+			parentLock.unlock();
+		}
 	}
 
 	private List<ObjectInFolderContainer> getDescendantsInternal(
@@ -248,27 +258,46 @@ public class NavigationServiceImpl implements NavigationService {
 	@Override
 	public ObjectData getFolderParent(CallContext callContext, String repositoryId,
 			String folderId, String filter) {
-		// //////////////////
-		// General Exception
-		// //////////////////
+		
 		exceptionService.invalidArgumentRequiredString("folderId", folderId);
-		Folder folder = (Folder) contentService.getContent(repositoryId, folderId);
-		exceptionService.objectNotFound(DomainType.OBJECT, folder, folderId);
-		exceptionService.permissionDenied(callContext,
-				repositoryId, PermissionMapping.CAN_GET_FOLDER_PARENT_OBJECT, folder);
+		
+		Lock childLock = threadLockService.getReadLock(repositoryId, folderId);
+		
+		try{
+			childLock.lock();
 
-		// //////////////////
-		// Specific Exception
-		// //////////////////
-		Folder parent = contentService.getParent(repositoryId, folderId);
-		exceptionService.objectNotFoundParentFolder(repositoryId, folderId, parent);
-		exceptionService.invalidArgumentRootFolder(repositoryId, folder);
+			// //////////////////
+			// General Exception
+			// //////////////////
+			Folder folder = (Folder) contentService.getContent(repositoryId, folderId);
+			exceptionService.objectNotFound(DomainType.OBJECT, folder, folderId);
+			exceptionService.permissionDenied(callContext,
+					repositoryId, PermissionMapping.CAN_GET_FOLDER_PARENT_OBJECT, folder);
 
-		// //////////////////
-		// Body of the method
-		// //////////////////
-		return compileService.compileObjectData(callContext, repositoryId,
-				parent, filter, true, IncludeRelationships.NONE, null, true);
+			// //////////////////
+			// Specific Exception
+			// //////////////////
+			Folder parent = contentService.getParent(repositoryId, folderId);
+			
+			Lock parentLock = threadLockService.getReadLock(repositoryId, parent.getId());
+			try{
+				parentLock.lock();
+				
+				exceptionService.objectNotFoundParentFolder(repositoryId, folderId, parent);
+				exceptionService.invalidArgumentRootFolder(repositoryId, folder);
+
+				// //////////////////
+				// Body of the method
+				// //////////////////
+				return compileService.compileObjectData(callContext, repositoryId,
+						parent, filter, true, IncludeRelationships.NONE, null, true);
+				
+			}finally{
+				parentLock.unlock();
+			}
+		}finally{
+			childLock.unlock();
+		}
 	}
 
 	@Override
@@ -276,37 +305,59 @@ public class NavigationServiceImpl implements NavigationService {
 			String repositoryId, String objectId, String filter,
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
 			String renditionFilter, Boolean includeRelativePathSegment, ExtensionsData extension) {
-		// //////////////////
-		// General Exception
-		// //////////////////
+
 		exceptionService.invalidArgumentRequired("objectId", objectId);
-		Content content = contentService.getContent(repositoryId, objectId);
-		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
-		exceptionService.permissionDenied(callContext,
-				repositoryId, PermissionMapping.CAN_GET_PARENTS_FOLDER, content);
+		
+		Lock childLock = threadLockService.getReadLock(repositoryId, objectId);
+		
+		try{
+			childLock.lock();
+			
+			// //////////////////
+			// General Exception
+			// //////////////////
+			Content content = contentService.getContent(repositoryId, objectId);
+			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
+			exceptionService.permissionDenied(callContext,
+					repositoryId, PermissionMapping.CAN_GET_PARENTS_FOLDER, content);
 
-		// //////////////////
-		// Specific Exception
-		// //////////////////
-		Folder parent = contentService.getParent(repositoryId, objectId);
-		exceptionService.objectNotFoundParentFolder(repositoryId, objectId, parent);
-		exceptionService.invalidArgumentRootFolder(repositoryId, content);
 
-		// //////////////////
-		// Body of the method
-		// //////////////////
-		ObjectParentDataImpl result = new ObjectParentDataImpl();
-		ObjectData o = compileService.compileObjectData(callContext,
-				repositoryId, parent, filter, includeAllowableActions,
-				includeRelationships, null, true);
-		result.setObject(o);
-		boolean irps = (includeRelativePathSegment == null ? false
-				: includeRelativePathSegment.booleanValue());
-		if (irps) {
-			result.setRelativePathSegment(content.getName());
+			//Get parent
+			Folder parent = contentService.getParent(repositoryId, objectId);
+			Lock parentLock = threadLockService.getReadLock(repositoryId, parent.getId());
+
+			try{
+				parentLock.lock();
+				
+				// //////////////////
+				// Specific Exception
+				// //////////////////
+				exceptionService.objectNotFoundParentFolder(repositoryId, objectId, parent);
+				exceptionService.invalidArgumentRootFolder(repositoryId, content);
+
+				// //////////////////
+				// Body of the method
+				// //////////////////
+				ObjectParentDataImpl result = new ObjectParentDataImpl();
+				ObjectData o = compileService.compileObjectData(callContext,
+						repositoryId, parent, filter, includeAllowableActions,
+						includeRelationships, null, true);
+				result.setObject(o);
+				boolean irps = (includeRelativePathSegment == null ? false
+						: includeRelativePathSegment.booleanValue());
+				if (irps) {
+					result.setRelativePathSegment(content.getName());
+				}
+
+				return Collections.singletonList((ObjectParentData) result);
+				
+			}finally{
+				parentLock.unlock();
+			}
+			
+		}finally{
+			childLock.unlock();
 		}
-
-		return Collections.singletonList((ObjectParentData) result);
 	}
 
 	@Override
@@ -336,13 +387,22 @@ public class NavigationServiceImpl implements NavigationService {
 		//Folder ID can be null, which means all PWCs are returned.
 		List<Document> checkedOuts = contentService.getCheckedOutDocs(repositoryId,
 				folderId, orderBy, extension);
+		
+		List<Lock> locks = threadLockService.readLocks(repositoryId, checkedOuts);
+		
+		try{
+			threadLockService.bulkLock(locks);
+			
+			ObjectList list = compileService.compileObjectDataList(
+					callContext, repositoryId, checkedOuts, filter,
+					includeAllowableActions, includeRelationships, renditionFilter, false,
+					maxItems, skipCount, false, orderBy);
 
-		ObjectList list = compileService.compileObjectDataList(
-				callContext, repositoryId, checkedOuts, filter,
-				includeAllowableActions, includeRelationships, renditionFilter, false,
-				maxItems, skipCount, false, orderBy);
-
-		return list;
+			return list;
+			
+		}finally{
+			threadLockService.bulkUnlock(locks);
+		}
 	}
 
 	public void setContentService(ContentService contentService) {
@@ -359,5 +419,9 @@ public class NavigationServiceImpl implements NavigationService {
 
 	public void setPermissionService(PermissionService permissionService) {
 		this.permissionService = permissionService;
+	}
+
+	public void setThreadLockService(ThreadLockService threadLockService) {
+		this.threadLockService = threadLockService;
 	}
 }

@@ -4,8 +4,6 @@ default:
   principal.anonymous: anonymous
   principal.anyone: GROUP_EVERYONE
   thinClientUri: http://localhost:8080/ui/
-  vendor: aegif
-  product.name: NemakiWare
-  product.version: 2.3.10
+  product.version: 2.4.0.beta1
   namespace: http://www.aegif.jp/NemakiWare/
 super.users: canopy

@@ -1,0 +1,38 @@
+<configuration>
+	<appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+		<encoder class="net.logstash.logback.encoder.LogstashEncoder">
+			<fieldNames>
+				<version>[ignore]</version>
+    			<logger>[ignore]</logger>
+    			<levelValue>[ignore]</levelValue>
+		   </fieldNames>
+		   <includeContext>false</includeContext>
+		</encoder>
+	</appender>
+
+	<property name="LOG_FILE" value="logs/core.log" />
+	<appender name="FILE"
+		class="ch.qos.logback.core.rolling.RollingFileAppender">
+		<file>${LOG_FILE}</file>
+		<rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+			<fileNamePattern>${LOG_FILE}.%d.gz</fileNamePattern>
+			<maxHistory>14</maxHistory>
+		</rollingPolicy>
+		<encoder class="net.logstash.logback.encoder.LogstashEncoder">
+			<fieldNames>
+    			<logger>[ignore]</logger>
+    			<levelValue>[ignore]</levelValue>
+		   </fieldNames>
+		   <includeContext>false</includeContext>
+		</encoder>
+	</appender>
+
+	<root level="WARN">
+		<appender-ref ref="STDOUT" />
+		<appender-ref ref="FILE" />
+	</root>
+	<logger name="jp.aegif.nemaki" level="INFO" additivity="false">
+		<appender-ref ref="STDOUT" />
+		<appender-ref ref="FILE" />
+	</logger>
+</configuration>

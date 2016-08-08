@@ -32,26 +32,31 @@ import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 
+import jp.aegif.nemaki.util.spring.aspect.log.LogParam;
+
 public interface VersioningService {
 
-	public void checkOut(CallContext callContext, String repositoryId,
-			Holder<String> objectId, ExtensionsData extension, Holder<Boolean> contentCopied);
+	public void checkOut(@LogParam("callContext") CallContext callContext, @LogParam("repositoryId") String repositoryId,
+			@LogParam("objectId") Holder<String> objectId, @LogParam("contentCopied") Holder<Boolean> contentCopied,
+			@LogParam("extension") ExtensionsData extension);
 
-	public void cancelCheckOut(CallContext callContext, String repositoryId,String objectId, ExtensionsData extension);
-	
-	public void checkIn(CallContext callContext, String repositoryId,
-			Holder<String> objectId, Boolean major, Properties properties,
-			ContentStream contentStream, String checkinComment, List<String> policies,
-			Acl addAces, Acl removeAces, ExtensionsData extension);
-	
-	public List<ObjectData> getAllVersions(CallContext context,
-			String repositoryId, String objectId, String versionSeriesId,
-			String filter, Boolean includeAllowableActions, ExtensionsData extension);
-	
-	public ObjectData getObjectOfLatestVersion(CallContext context,
-			String repositoryId, String objectId, String versionSeriesId,
-			Boolean major, String filter,
-			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
-			String renditionFilter, Boolean includePolicyIds,
-			Boolean includeAcl, ExtensionsData extension);
+	public void cancelCheckOut(@LogParam("callContext") CallContext callContext, @LogParam("repositoryId") String repositoryId,
+			@LogParam("objectId") String objectId, @LogParam("extension") ExtensionsData extension);
+
+	public void checkIn(@LogParam("callContext") CallContext callContext, @LogParam("repositoryId") String repositoryId,
+			@LogParam("objectId") Holder<String> objectId, @LogParam("major") Boolean major, @LogParam("properties") Properties properties,
+			@LogParam("contentStream") ContentStream contentStream, @LogParam("checkinComment") String checkinComment,
+			@LogParam("policies") List<String> policies, @LogParam("addAces") Acl addAces, @LogParam("removeAces") Acl removeAces,
+			@LogParam("extension") ExtensionsData extension);
+
+	public List<ObjectData> getAllVersions(@LogParam("callContext") CallContext callContext, @LogParam("repositoryId") String repositoryId,
+			@LogParam("objectId") String objectId, @LogParam("versionSeriesId") String versionSeriesId, @LogParam("filter") String filter,
+			@LogParam("includeAllowableActions") Boolean includeAllowableActions, @LogParam("extension") ExtensionsData extension);
+
+	public ObjectData getObjectOfLatestVersion(@LogParam("callContext") CallContext callContext, @LogParam("repositoryId") String repositoryId,
+			@LogParam("objectId") String objectId, @LogParam("versionSeriesId") String versionSeriesId, @LogParam("major") Boolean major,
+			@LogParam("filter") String filter, @LogParam("includeAllowableActions") Boolean includeAllowableActions,
+			@LogParam("includeRelationships") IncludeRelationships includeRelationships, @LogParam("renditionFilter") String renditionFilter,
+			@LogParam("includePolicyIds") Boolean includePolicyIds, @LogParam("includeAcl") Boolean includeAcl,
+			@LogParam("extension") ExtensionsData extension);
 }

@@ -117,7 +117,7 @@ public class Util {
     	SessionFactory f = SessionFactoryImpl.newInstance();
     	Session session = f.createSession(parameter);
     	OperationContext operationContext = session.createOperationContext(null,
-				true, true, false, IncludeRelationships.BOTH, null, false, null, true, 100);
+				true, true, false, IncludeRelationships.BOTH, null, false, null, false, 100);
 		session.setDefaultContext(operationContext);
 
 		return session;
@@ -814,12 +814,6 @@ public class Util {
 		 return Json.toJson(new HashMap<String, String>());
 	 }
 
-	 public static long getCompressionTargetMaxSize(){
-		 String _size = NemakiConfig.getValue(PropertyKey.COMPRESSION_TARGET_MAXSIZE);
-		 return Long.valueOf(_size);
-	 }
-	 
-	 
 	 public static boolean isRestSuccess(JsonNode nemakiApiResult){
 		 if(nemakiApiResult == null || !(nemakiApiResult instanceof ObjectNode)){
 			 return false;
@@ -833,5 +827,8 @@ public class Util {
 		 }
 	 }
 	 
-
+	 public static long getCompressionTargetMaxSize(){
+		 String _size = NemakiConfig.getValue(PropertyKey.COMPRESSION_TARGET_MAXSIZE);
+		 return Long.valueOf(_size);
+	 }
 }
