@@ -147,4 +147,8 @@ view.message.password-change.is-same=新しいパスワードは一致する必�
 view.message.password-change.wrong-old-password=現在のパスワードが間違っています
 view.message.restore.failure=復元に失敗しました
 view.message.parent-no-longer-exists=親フォルダが既に削除されているため復元できません
+<<<<<<< HEAD
 view.message.destroy.failure=アーカイブの削除に失敗しました
+=======
+view.message.destroy.failure=アーカイブの削除に失敗しました
+>>>>>>> integration

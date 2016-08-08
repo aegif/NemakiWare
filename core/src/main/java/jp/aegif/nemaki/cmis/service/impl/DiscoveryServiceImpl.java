@@ -76,7 +76,7 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 	 * Return ChangeLog just for Documents & Folder type, and Not for their
 	 * attachments TODO includeAcl,includePolicyIds is not valid
 	 */
-	public ObjectList getContentChanges(CallContext context,
+	public ObjectList getContentChanges(CallContext callContext,
 			String repositoryId, Holder<String> changeLogToken,
 			Boolean includeProperties, String filter, Boolean includePolicyIds,
 			Boolean includeAcl, BigInteger maxItems, ExtensionsData extension) {
@@ -100,14 +100,14 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 		// Body of the method
 		// //////////////////
 		List<Change> changes = contentService.getLatestChanges(repositoryId,
-				context, changeLogToken, includeProperties, filter,
+				callContext, changeLogToken, includeProperties, filter,
 				includePolicyIds, includeAcl, maxItems, extension);
 		if (!CollectionUtils.isEmpty(changes)) {
 			Change latestInResults = changes.get(changes.size() - 1);
 			changeLogToken.setValue(latestInResults.getId());
 		}
 
-		return compileService.compileChangeDataList(context, repositoryId,
+		return compileService.compileChangeDataList(callContext, repositoryId,
 				changes, changeLogToken, includeProperties, filter,
 				includePolicyIds, includeAcl);
 	}

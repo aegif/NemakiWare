@@ -40,6 +40,7 @@ import jp.aegif.nemaki.model.exception.ParentNoLongerExistException;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.Properties;
+import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
@@ -57,6 +58,8 @@ public interface ContentService {
 	 */
 	public boolean isRoot(String repositoryId, Content content);
 
+	public boolean isTopLevel(String repositoryId, Content content);
+	
 	/**
 	 * Check if any object of a type exists
 	 * @param repositoryId TODO
@@ -406,11 +409,12 @@ public interface ContentService {
 
 	/**
 	 * Move a content
+	 * @param callContext TODO
 	 * @param repositoryId TODO
 	 * @param content
 	 * @param target
 	 */
-	void move(String repositoryId, Content content, Folder target);
+	void move(CallContext callContext, String repositoryId, Content content, Folder target);
 
 	/**
 	 * Apply a policy from a content
@@ -554,6 +558,8 @@ public interface ContentService {
 	// ///////////////////////////////////////
 	public Acl calculateAcl(String repositoryId, Content content);
 
+	public Boolean getAclInheritedWithDefault(String repositoryId, Content content);
+	
 	// ///////////////////////////////////////
 	// Change event
 	// ///////////////////////////////////////
@@ -614,6 +620,7 @@ public interface ContentService {
 	 */
 	List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc);
 	
+	
 	/**
 	 * Get an archive
 	 * @param repositoryId TODO
@@ -660,11 +667,22 @@ public interface ContentService {
 	 * @param archiveId
 	 */
 	void restoreArchive(String repositoryId, String archiveId) throws ParentNoLongerExistException;
-	
+
 	/**
 	 * Destroy an archive from database 
 	 * @param repositoryId
 	 * @param archiveId
 	 */
 	public void destroyArchive(String repositoryId, String archiveId);
+	
+	/**
+	 * Write change event
+	 * @param callContext
+	 * @param repositoryId TODO
+	 * @param content
+	 * @param acl
+	 * @param changeType
+	 */
+	String writeChangeEvent(CallContext callContext, String repositoryId, Content content,
+			Acl acl, ChangeType changeType);
 }

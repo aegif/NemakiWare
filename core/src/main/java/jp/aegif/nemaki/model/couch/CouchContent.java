@@ -40,7 +40,7 @@ public class CouchContent extends CouchNodeBase{
 	private String description;
 	private String parentId;
 	private CouchAcl acl;
-	private Boolean aclInherited = true;	//TODO Deault to false. Is this place adequate?
+	private Boolean aclInherited;
 	private List<Property> subTypeProperties = new ArrayList<Property>();
 	private List<Aspect> aspects = new ArrayList<Aspect>();
 	private List<String> secondaryIds = new ArrayList<String>();

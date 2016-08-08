@@ -1013,6 +1013,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		}
 	}
 
+	@Override
+	public void deleteDocumentArchive(String repositoryId, String archiveId) {
+		Archive docArchive = getArchive(repositoryId, archiveId);
+		Archive attachmentArchive = getArchiveByOriginalId(repositoryId, docArchive.getAttachmentNodeId());
+		
+		deleteArchive(repositoryId, docArchive.getId());
+		deleteArchive(repositoryId, attachmentArchive.getId());
+	}
+
 	@SuppressWarnings("deprecation")
 	@Override
 	public void restoreContent(String repositoryId, Archive archive) {
@@ -1048,6 +1057,14 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		connector.update(restored);
 	}
 
+	@Override
+	public void restoreDocumentWithArchive(String repositoryId, Archive contentArchive) {
+		restoreContent(repositoryId, contentArchive);
+		// Restore its attachment
+		Archive attachmentArchive = getAttachmentArchive(repositoryId, contentArchive);
+		restoreAttachment(repositoryId, attachmentArchive);
+	}
+
 	// ///////////////////////////////////////
 	// Other
 	// ///////////////////////////////////////
@@ -1063,4 +1080,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		this.repositoryInfoMap = repositoryInfoMap;
 	}
 
+	@Override
+	public void refreshCmisObjectData(String repositoryId, String objectId) {
+		// this method is for cached service
+	}
 }

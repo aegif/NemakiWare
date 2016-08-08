@@ -4,7 +4,6 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
-import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -345,12 +344,17 @@ public class Node extends Controller {
 
 		Document doc = (Document) obj;
 		ContentStream cs = doc.getContentStream();
+		createAttachmentResponse(doc.getName(), cs.getMimeType());
 
-		File tmpFile = null;
 		try {
+		File tmpFile = null;
 			tmpFile = Util.convertInputStreamToFile(cs);
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
+			TemporaryFileInputStream fin = new TemporaryFileInputStream(tmpFile);
+			return ok(fin);
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+			return internalServerError("File not found");
+		} catch (Exception e){
 			e.printStackTrace();
 		}
 
@@ -363,25 +367,17 @@ public class Node extends Controller {
 			if (request().getHeader("User-Agent").indexOf("MSIE") == -1) {
 				// Firefox, Opera 11
 				response().setHeader("Content-Disposition", String.format(Locale.JAPAN,
-						"attachment; filename*=utf-8'jp'%s", URLEncoder.encode(doc.getName(), "utf-8")));
+						"attachment; filename*=utf-8'jp'%s", URLEncoder.encode(name, "utf-8")));
 			} else {
 				// IE7, 8, 9
 				response().setHeader("Content-Disposition", String.format(Locale.JAPAN, "attachment; filename=\"%s\"",
-						new String(doc.getName().getBytes("MS932"), "ISO8859_1")));
+						new String(name.getBytes("MS932"), "ISO8859_1")));
 			}
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
 
-		response().setContentType(cs.getMimeType());
-
-		try {
-			TemporaryFileInputStream fin = new TemporaryFileInputStream(tmpFile);
-			return ok(fin);
-		} catch (FileNotFoundException e) {
-			e.printStackTrace();
-			return internalServerError("File not found");
-		}
+		response().setContentType(mimetype);
 	}
 
 	public static Result downloadPreview(String repositoryId, String id) {

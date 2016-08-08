@@ -41,12 +41,15 @@ import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 
+import jp.aegif.nemaki.util.spring.aspect.log.LogParam;
+
 /**
  * Discovery Service interface.
  */
 public interface AclService {
 
-	Acl getAcl(CallContext context, String repositoryId, String objectId, Boolean onlyBasicPermissions);
+	Acl getAcl(@LogParam("context") CallContext context, @LogParam("repositoryId") String repositoryId,
+			@LogParam("objectId") String objectId, @LogParam("onlyBasicPermissions") Boolean onlyBasicPermissions);
 
 	/**
 	 * Applies a new ACL to an object. Since it is not possible to transmit an
@@ -55,9 +58,12 @@ public interface AclService {
 	 * ACL.<br/>
 	 * 
 	 * TODO re-design ACL system in Nemaki
-	 * @param repositoryId TODO
+	 * 
+	 * @param repositoryId
+	 *            TODO
 	 */
-	Acl applyAcl(CallContext callContext, String repositoryId, String objectId,
-			Acl aces, AclPropagation aclPropagation);
+	Acl applyAcl(@LogParam("callContext") CallContext callContext, @LogParam("repositoryId") String repositoryId,
+			@LogParam("objectId") String objectId, @LogParam("aces") Acl aces,
+			@LogParam("aclPropagation") AclPropagation aclPropagation);
 
 }
