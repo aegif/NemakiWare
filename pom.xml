@@ -8,11 +8,7 @@
     <name>nemakiware</name>
     <url>http://maven.apache.org</url>
     <properties>
-<<<<<<< HEAD
-        <nemakiware.version>2.3.11</nemakiware.version>
-=======
         <nemakiware.version>2.4.0.beta1</nemakiware.version>
->>>>>>> integration
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
     <modules>
@@ -21,6 +17,4 @@
   </modules>
 <<<<<<< HEAD
 </project>
-=======
-</project>
->>>>>>> integration
+
