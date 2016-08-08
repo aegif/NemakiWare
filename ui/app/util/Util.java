@@ -813,7 +813,7 @@ public class Util {
 	 public static JsonNode emptyJsonObject(){
 		 return Json.toJson(new HashMap<String, String>());
 	 }
-	 
+
 	 public static boolean isRestSuccess(JsonNode nemakiApiResult){
 		 if(nemakiApiResult == null || !(nemakiApiResult instanceof ObjectNode)){
 			 return false;
@@ -826,7 +826,7 @@ public class Util {
 			 }
 		 }
 	 }
-
+	 
 	 public static long getCompressionTargetMaxSize(){
 		 String _size = NemakiConfig.getValue(PropertyKey.COMPRESSION_TARGET_MAXSIZE);
 		 return Long.valueOf(_size);
