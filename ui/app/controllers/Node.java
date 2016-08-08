@@ -346,8 +346,8 @@ public class Node extends Controller {
 		ContentStream cs = doc.getContentStream();
 		createAttachmentResponse(doc.getName(), cs.getMimeType());
 
-		try {
 		File tmpFile = null;
+		try {
 			tmpFile = Util.convertInputStreamToFile(cs);
 			TemporaryFileInputStream fin = new TemporaryFileInputStream(tmpFile);
 			return ok(fin);
@@ -377,7 +377,7 @@ public class Node extends Controller {
 			e.printStackTrace();
 		}
 
-		response().setContentType(mimetype);
+		response().setContentType(mimeType);
 	}
 
 	public static Result downloadPreview(String repositoryId, String id) {
