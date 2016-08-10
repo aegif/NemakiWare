@@ -1892,53 +1892,6 @@ public class ContentServiceImpl implements ContentService {
 	// ///////////////////////////////////////
 	// Utility
 	// ///////////////////////////////////////
-	private String buildUniqueName(String repositoryId, String proposedName, String folderId, Content current) {
-		boolean bun = propertyManager.readBoolean(PropertyKey.CAPABILITY_EXTENDED_BUILD_UNIQUE_NAME);
-		if (!bun) {
-			return proposedName;
-		}
-
-		//Check if update method
-		if(current != null && current.getName().equals(proposedName)){
-			return proposedName;
-		}
-
-		List<String>names = contentDaoService.getChildrenNames(repositoryId, folderId);
-		String[] splitted = splitFileName(proposedName);
-		String originalNameBody = splitted[0];
-		String extension = splitted[1];
-
-		String newNameBody = originalNameBody;
-		for(Integer i = 1; i <= names.size(); i++){
-			if(names.contains(newNameBody + extension)){
-				newNameBody = originalNameBody + " ~" + i;
-				continue;
-			}else{
-				break;
-			}
-		}
-
-		return newNameBody + extension;
-	}
-
-	private String[] splitFileName(String name) {
-		if (name == null)
-			return null;
-
-		String body = "";
-		String suffix = "";
-		int point = name.lastIndexOf(".");
-		if (point != -1) {
-			body = name.substring(0, point);
-			suffix = "." + name.substring(point + 1);
-		} else {
-			body = name;
-		}
-
-		String[] ary = { body, suffix };
-		return ary;
-	}
-
 	private String increasedVersionLabel(Document document, VersioningState versioningState) {
 		// e.g. #{major}(.{#minor})
 		String label = document.getVersionLabel();
