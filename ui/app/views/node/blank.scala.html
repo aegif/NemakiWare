@@ -171,10 +171,10 @@
 				var names = [];
 				var list = $('#objects-table').find('.obj-name');
 				list.map(function() {
-					names.push($(this).text());
+					names.push($(this).text().toLowerCase());
 				});
 
-				return (newName != oldName && $.inArray(newName, names) >= 0);
+				return (newName.toLowerCase() != oldName.toLowerCase() && $.inArray(newName.toLowerCase(), names) >= 0);
 			}
 
 		});
