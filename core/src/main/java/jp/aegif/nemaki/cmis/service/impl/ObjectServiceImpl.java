@@ -384,7 +384,7 @@ public class ObjectServiceImpl implements ObjectService {
 				properties);
 		exceptionService.constraintPermissionDefined(repositoryId, addAces, null);
 		exceptionService.constraintPermissionDefined(repositoryId, removeAces, null);
-		exceptionService.nameConstraintViolation(properties, parentFolder);
+		exceptionService.nameConstraintViolation(repositoryId, parentFolder, properties);
 
 		// //////////////////
 		// Body of the method
@@ -434,7 +434,7 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.constraintPermissionDefined(repositoryId, addAces, null);
 		exceptionService.constraintPermissionDefined(repositoryId, removeAces, null);
 		exceptionService.streamNotSupported(td, contentStream);
-		exceptionService.nameConstraintViolation(properties, parentFolder);
+		exceptionService.nameConstraintViolation(repositoryId, parentFolder, properties);
 
 		// //////////////////
 		// Body of the method
@@ -481,7 +481,7 @@ public class ObjectServiceImpl implements ObjectService {
 				properties);
 		exceptionService.constraintPermissionDefined(repositoryId, addAces, null);
 		exceptionService.constraintPermissionDefined(repositoryId, removeAces, null);
-		exceptionService.nameConstraintViolation(properties, parentFolder);
+		exceptionService.nameConstraintViolation(repositoryId, parentFolder, properties);
 
 		// //////////////////
 		// Body of the method
@@ -667,7 +667,7 @@ public class ObjectServiceImpl implements ObjectService {
 				properties);
 		exceptionService.constraintPermissionDefined(repositoryId, addAces, null);
 		exceptionService.constraintPermissionDefined(repositoryId, removeAces, null);
-		exceptionService.nameConstraintViolation(properties, null);
+		exceptionService.nameConstraintViolation(repositoryId, null, properties);
 
 		// //////////////////
 		// Body of the method
@@ -943,7 +943,8 @@ public class ObjectServiceImpl implements ObjectService {
 					repositoryId, PermissionMapping.CAN_MOVE_SOURCE, source);
 			exceptionService.permissionDenied(callContext,
 					repositoryId, PermissionMapping.CAN_MOVE_TARGET, target);
-
+			exceptionService.nameConstraintViolation(repositoryId, target, content.getName());
+			
 			// //////////////////
 			// Body of the method
 			// //////////////////

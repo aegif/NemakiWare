@@ -79,6 +79,7 @@ import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
 import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisContentAlreadyExistsException;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.chemistry.opencmis.commons.impl.jaxb.CmisException;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
@@ -983,10 +984,9 @@ public class ContentServiceImpl implements ContentService {
 		BaseTypeId baseTypeId = typeDefinition.getBaseTypeId();
 		content.setType(baseTypeId.value());
 
-		// Name(Unique in a folder)
-		String uniqueName = buildUniqueName(repositoryId, DataUtil
-				.getStringProperty(properties, PropertyIds.NAME), parentFolderId, null);
-		content.setName(uniqueName);
+		// Name
+		String name = DataUtil.getStringProperty(properties, PropertyIds.NAME);
+		content.setName(name);
 
 		// Description
 		content.setDescription(DataUtil.getStringProperty(properties, PropertyIds.DESCRIPTION));
@@ -1213,9 +1213,26 @@ public class ContentServiceImpl implements ContentService {
 			Properties properties) {
 		if (propertyData.getId().equals(PropertyIds.NAME)) {
 			if (DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID) != content.getId()) {
-				String uniqueName = buildUniqueName(repositoryId, DataUtil
-						.getStringProperty(properties, PropertyIds.NAME), content.getParentId(), content);
-				content.setName(uniqueName);
+				String proposedName = DataUtil.getStringProperty(properties, PropertyIds.NAME);
+				
+				// Check duplicate name
+				Folder parentFolder = this.getFolder(repositoryId, content.getParentId());
+				if (parentFolder != null) {
+					boolean mustUnique = propertyManager.readBoolean(PropertyKey.CAPABILITY_EXTENDED_UNIQUE_NAME_CHECK);
+					if (mustUnique) {
+						List<String> names = contentDaoService.getChildrenNames(repositoryId, parentFolder.getId());
+						String originalName = content.getName();
+						String lowerCaseProposedName = proposedName.toLowerCase();
+						for(String name: names) {
+							if (lowerCaseProposedName.equals(name.toLowerCase()) && !originalName.equals(name)) {
+								throw new CmisContentAlreadyExistsException(
+										"A content with the specified name already exists",
+										BigInteger.valueOf(409));
+							}
+						}
+					}
+				}
+				content.setName(proposedName);
 			}
 		}
 
@@ -1233,8 +1250,6 @@ public class ContentServiceImpl implements ContentService {
 		String sourceId = content.getParentId();
 
 		content.setParentId(target.getId());
-		String uniqueName = buildUniqueName(repositoryId, content.getName(), target.getId(), null);
-		content.setName(uniqueName);
 
 		move(repositoryId, content, sourceId);
 
@@ -1877,53 +1892,6 @@ public class ContentServiceImpl implements ContentService {
 	// ///////////////////////////////////////
 	// Utility
 	// ///////////////////////////////////////
-	private String buildUniqueName(String repositoryId, String proposedName, String folderId, Content current) {
-		boolean bun = propertyManager.readBoolean(PropertyKey.CAPABILITY_EXTENDED_BUILD_UNIQUE_NAME);
-		if (!bun) {
-			return proposedName;
-		}
-
-		//Check if update method
-		if(current != null && current.getName().equals(proposedName)){
-			return proposedName;
-		}
-
-		List<String>names = contentDaoService.getChildrenNames(repositoryId, folderId);
-		String[] splitted = splitFileName(proposedName);
-		String originalNameBody = splitted[0];
-		String extension = splitted[1];
-
-		String newNameBody = originalNameBody;
-		for(Integer i = 1; i <= names.size(); i++){
-			if(names.contains(newNameBody + extension)){
-				newNameBody = originalNameBody + " ~" + i;
-				continue;
-			}else{
-				break;
-			}
-		}
-
-		return newNameBody + extension;
-	}
-
-	private String[] splitFileName(String name) {
-		if (name == null)
-			return null;
-
-		String body = "";
-		String suffix = "";
-		int point = name.lastIndexOf(".");
-		if (point != -1) {
-			body = name.substring(0, point);
-			suffix = "." + name.substring(point + 1);
-		} else {
-			body = name;
-		}
-
-		String[] ary = { body, suffix };
-		return ary;
-	}
-
 	private String increasedVersionLabel(Document document, VersioningState versioningState) {
 		// e.g. #{major}(.{#minor})
 		String label = document.getVersionLabel();

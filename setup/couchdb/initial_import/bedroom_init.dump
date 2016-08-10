@@ -208,7 +208,7 @@
         "map" : "function(doc) { if (doc.type == 'change')  emit(doc._id, doc) }"
       },
       "childrenNames" : {
-        "map" : "function(doc) {var result={}; result[doc.name]=doc._id; if (doc.type == 'cmis:document' || doc.type == 'cmis:folder')   emit(doc.parentId, doc.name);}"
+        "map" : "function(doc) {var result={}; result[doc.name]=doc._id; if (doc.type == 'cmis:document' && doc.latestVersion || doc.type == 'cmis:folder')   emit(doc.parentId, doc.name);}"
       }
     }
   },
