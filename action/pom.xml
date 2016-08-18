@@ -62,10 +62,15 @@
 			<artifactId>chemistry-opencmis-test-tck</artifactId>
 			<version>${org.apache.chemistry.opencmis.version}</version>
 		</dependency>
+		<dependency>
+			<groupId>org.springframework.plugin</groupId>
+			<artifactId>spring-plugin-core</artifactId>
+			<version>1.2.0.RELEASE</version>
+		</dependency>
 	</dependencies>
 
 	<build>
-		<sourceDirectory>src</sourceDirectory>
+		<finalName>action</finalName>
 		<plugins>
 			<plugin>
 				<artifactId>maven-compiler-plugin</artifactId>
@@ -77,4 +82,5 @@
 			</plugin>
 		</plugins>
 	</build>
+	<name>action</name>
 </project>
