@@ -1,6 +1,7 @@
 package jp.aegif.nemaki.action;
 
-import org.apache.chemistry.opencmis.client.api.CmisObject;
+
+import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.springframework.plugin.core.Plugin;
 
 
@@ -10,9 +11,9 @@ public interface JavaBackedAction extends Plugin<String>{
 
 	public ActionTriggerBase getActionTrigger();
 
-	public boolean canExecute(CmisObject obj);
+	public boolean canExecute(ObjectData obj);
 
-	public void executeAction(CmisObject obj);
+	public void executeAction(ObjectData obj);
 
 
 
