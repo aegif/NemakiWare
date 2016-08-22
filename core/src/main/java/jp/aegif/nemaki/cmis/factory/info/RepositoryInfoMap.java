@@ -8,13 +8,14 @@ import java.util.Set;
 import org.apache.commons.collections.MapUtils;
 
 import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.SpringPropertyManager;
 import jp.aegif.nemaki.util.YamlManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
 public class RepositoryInfoMap {
 	private Capabilities capabilities;
 	private AclCapabilities aclCapabilities;
-	private PropertyManager propertyManager;
+	private SpringPropertyManager propertyManager;
 	
 	private Map<String, RepositoryInfo> map = new HashMap<String, RepositoryInfo>();
 	private String superUsersId;
@@ -161,7 +162,7 @@ public class RepositoryInfoMap {
 		this.aclCapabilities = aclCapabilities;
 	}
 
-	public void setPropertyManager(PropertyManager propertyManager) {
+	public void setPropertyManager(SpringPropertyManager propertyManager) {
 		this.propertyManager = propertyManager;
 	}
 }

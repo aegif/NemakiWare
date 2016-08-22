@@ -22,6 +22,7 @@ import java.util.Map.Entry;
 import org.apache.chemistry.opencmis.client.api.CmisObject;
 import org.apache.chemistry.opencmis.client.api.Document;
 import org.apache.chemistry.opencmis.client.api.Folder;
+import org.apache.chemistry.opencmis.client.api.Item;
 import org.apache.chemistry.opencmis.client.api.ObjectType;
 import org.apache.chemistry.opencmis.client.api.OperationContext;
 import org.apache.chemistry.opencmis.client.api.Property;
@@ -48,7 +49,6 @@ import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.http.Header;
 import org.apache.http.HttpRequest;
 import org.apache.http.HttpResponse;
@@ -267,67 +267,68 @@ public class Util {
 		return cs;
 	}
 
-	public static String getIconName(CmisObject obj){
-		String fileName = "";
+	public static String getIconClassName(CmisObject obj){
+		String className = "";
 
 		// Document
-		if (isDocument(obj)) {
+		if (obj instanceof Document) {
 			Document doc = (Document) obj;
 			String mimeType = doc.getContentStreamMimeType();
 
 			if ("application/x-javascript".equals(mimeType)) {
-				fileName = "fa-file-image-o";
+				className = "fa-file-image-o";
 			} else if ("text/plain".equals(mimeType)) {
-				fileName = "fa-file-text-o ";
+				className = "fa-file-text-o ";
 			} else if ("application/msword".equals(mimeType)) {
-				fileName = "fa-file-word-o ";
+				className = "fa-file-word-o ";
 			} else if ("text/xml".equals(mimeType)) {
-				fileName = "fa-file-code-o";
+				className = "fa-file-code-o";
 			} else if ("image/gif".equals(mimeType)) {
-				fileName = "fa-file-image-o";
+				className = "fa-file-image-o";
 			} else if ("image/jpeg".equals(mimeType)) {
-				fileName = "fa-file-image-o";
+				className = "fa-file-image-o";
 			} else if ("image/jpeg2000".equals(mimeType)) {
-				fileName = "fa-file-image-o";
+				className = "fa-file-image-o";
 			} else if ("video/mpeg".equals(mimeType)) {
-				fileName = "fa-file-video-o ";
+				className = "fa-file-video-o ";
 			} else if ("audio/x-mpeg".equals(mimeType)) {
-				fileName = "fa-file-audio-o";
+				className = "fa-file-audio-o";
 			} else if ("video/mp4".equals(mimeType)) {
-				fileName = "fa-file-video-o";
+				className = "fa-file-video-o";
 			} else if ("video/mpeg2".equals(mimeType)) {
-				fileName = "fa-file-video-o";
+				className = "fa-file-video-o";
 			} else if ("application/pdf".equals(mimeType)) {
-				fileName = "fa-file-pdf-o";
+				className = "fa-file-pdf-o";
 			} else if ("image/png".equals(mimeType)) {
-				fileName = "fa-file-image-o ";
+				className = "fa-file-image-o ";
 			} else if ("application/vnd.powerpoint".equals(mimeType)) {
-				fileName = "fa-file-powerpoint-o";
+				className = "fa-file-powerpoint-o";
 			} else if ("audio/x-wav".equals(mimeType)) {
-				fileName = "fa-file-audio-o ";
+				className = "fa-file-audio-o ";
 			} else if ("application/vnd.excel".equals(mimeType)) {
-				fileName = "fa-file-excel-o";
+				className = "fa-file-excel-o";
 			} else if ("application/zip".equals(mimeType)) {
-				fileName = "fa-file-archive-o";
+				className = "fa-file-archive-o";
 			} else if ("application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 					.equals(mimeType)) {
-				fileName = "fa-file-word-o";
+				className = "fa-file-word-o";
 			} else if ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 					.equals(mimeType)) {
-				fileName = "fa-file-excel-o";
+				className = "fa-file-excel-o";
 			} else if ("application/vnd.openxmlformats-officedocument.presentationml.presentation"
 					.equals(mimeType)) {
-				fileName = "fa-file-powerpoint-o";
+				className = "fa-file-powerpoint-o";
 			} else {
-				fileName = "fa-file-o ";
+				className = "fa-file-o ";
 			}
 			// Folder
-			// TODO check cmis:folder
-		} else {
-			fileName = "fa-folder-o";
+		} else if(obj instanceof Folder) {
+			className = "fa-folder-o";
+		} else if(obj instanceof Item) {
+			className = "fa fa-circle-thin";
 		}
 
-		return fileName;
+		return className;
 	}
 
 	private static HttpClient buildClient(play.mvc.Http.Session session){

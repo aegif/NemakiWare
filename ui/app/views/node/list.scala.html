@@ -7,6 +7,7 @@
 @import org.apache.chemistry.opencmis.commons.PropertyIds
 @import org.apache.chemistry.opencmis.client.api.Document
 @import org.apache.chemistry.opencmis.client.api.Folder
+@import org.apache.chemistry.opencmis.client.api.Item
 @import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition
 @import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed
 @import play.mvc.Http.Context.Implicit
@@ -45,11 +46,15 @@
 					case folder:Folder =>{
 						<a href="@routes.Node.showChildren(repositoryId, folder.getId)">
 					}
+					
+					case item:Item =>{
+						<a href="#">
+					}
 
 					case _ =>{
 					}
 				}
-					<i class="fa @Util.getIconName(obj)"></i><span class="obj-name" objectId="@obj.getId">@obj.getName()</span>
+					<i class="fa @Util.getIconClassName(obj)"></i><span class="obj-name" objectId="@obj.getId">@obj.getName()</span>
 				</a>
 			</td>
 			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){

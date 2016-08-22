@@ -140,4 +140,12 @@ public class NodeBase{
 	public Boolean isPropertyDefinitionDetail(){
 		return (NodeType.PROPERTY_DEFINITION_DETAIL.value().equals(type)) ? true : false;
 	}
+	
+	public Boolean isUser(){
+		return (NodeType.USER.value().equals(type)) ? true : false;
+	}
+	
+	public Boolean isGroup(){
+		return (NodeType.GROUP.value().equals(type)) ? true : false;
+	}
 }

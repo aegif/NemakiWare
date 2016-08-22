@@ -34,10 +34,11 @@
 			<list>
 				<value>classpath*:${context.log}</value>
 				<value>classpath:propertyContext.xml</value>
-				<value>classpath:serviceContext.xml</value>
-				<value>classpath*:${context.businesslogic}</value>
-				<value>classpath*:${context.dao}</value>
 				<value>classpath*:${context.dao.implementation}</value>
+				<value>classpath*:${context.dao}</value>
+				<value>classpath*:${context.businesslogic}</value>
+				<value>classpath:serviceContext.xml</value>
+				<value>classpath*:patchContext.xml</value>
 			</list>
 		</property>
 	</bean>

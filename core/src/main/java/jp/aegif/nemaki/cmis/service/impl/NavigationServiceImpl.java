@@ -257,7 +257,7 @@ public class NavigationServiceImpl implements NavigationService {
 
 	@Override
 	public ObjectData getFolderParent(CallContext callContext, String repositoryId,
-			String folderId, String filter) {
+			String folderId, String filter, ExtensionsData extension) {
 		
 		exceptionService.invalidArgumentRequiredString("folderId", folderId);
 		
