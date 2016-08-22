@@ -1,4 +1,4 @@
-package jp.aegif.nemaki.action;
+package jp.aegif.nemaki.plugin.action;
 
 public class UserButtonActionTrigger extends ActionTriggerBase {
 
