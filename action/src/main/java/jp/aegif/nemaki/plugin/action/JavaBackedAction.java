@@ -1,4 +1,4 @@
-package jp.aegif.nemaki.action;
+package jp.aegif.nemaki.plugin.action;
 
 
 import org.apache.chemistry.opencmis.commons.data.ObjectData;

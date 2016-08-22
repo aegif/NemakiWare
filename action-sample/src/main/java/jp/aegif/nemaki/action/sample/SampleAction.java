@@ -6,9 +6,9 @@ import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.slf4j.LoggerFactory;
 
-import jp.aegif.nemaki.action.ActionTriggerBase;
-import jp.aegif.nemaki.action.JavaBackedAction;
-import jp.aegif.nemaki.action.UserButtonActionTrigger;
+import jp.aegif.nemaki.plugin.action.ActionTriggerBase;
+import jp.aegif.nemaki.plugin.action.JavaBackedAction;
+import jp.aegif.nemaki.plugin.action.UserButtonActionTrigger;
 
 
 public class SampleAction implements JavaBackedAction {
