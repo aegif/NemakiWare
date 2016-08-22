@@ -69,7 +69,7 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 		// Body of the method
 		return queryProcessor.query(context, repositoryId, statement,
 				searchAllVersions, includeAllowableActions, includeRelationships,
-				renditionFilter, maxItems, skipCount);
+				renditionFilter, maxItems, skipCount, extension);
 	}
 
 	/**
