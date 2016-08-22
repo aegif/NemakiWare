@@ -63,6 +63,7 @@ import jp.aegif.nemaki.model.exception.ParentNoLongerExistException;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.CmisPermission;
+import jp.aegif.nemaki.util.constant.NemakiObjectType;
 import jp.aegif.nemaki.util.constant.NodeType;
 import jp.aegif.nemaki.util.constant.PrincipalId;
 import jp.aegif.nemaki.util.constant.PropertyKey;
@@ -155,11 +156,9 @@ public class ContentServiceImpl implements ContentService {
 		} else if (content.isPolicy()) {
 			return contentDaoService.getPolicy(repositoryId, content.getId());
 		} else if (content.isItem()) {
-			//TODO parent Typeがnemaki:userの場合すべて
-			//typeManagerを見てnemaki:userを継承するタイプすべてを走査してもよい
-			if (ObjectUtils.equals("nemaki:user", content.getObjectType())){
+			if (ObjectUtils.equals(NemakiObjectType.nemakiUser, content.getObjectType())){
 				return contentDaoService.getUserItem(repositoryId, objectId);
-			}else if(ObjectUtils.equals("nemaki:group", content.getObjectType())){
+			}else if(ObjectUtils.equals(NemakiObjectType.nemakiGroup, content.getObjectType())){
 				return contentDaoService.getGroupItem(repositoryId, objectId);
 			}else{
 				return contentDaoService.getItem(repositoryId, content.getId());
@@ -441,6 +440,10 @@ public class ContentServiceImpl implements ContentService {
 		for(String groupId: group.getGroups() ) {
 			log.debug("$$ subgroup: " + groupId);
 			GroupItem g = getGroupItemById(repositoryId, groupId);
+			if(g == null) {
+				log.debug("$$ group:" + groupId + "does not exist!");
+				return false;
+			}
 			boolean result = containsUserInGroup(repositoryId, userId, g);
 			if ( result ) return true;
 		}
@@ -1041,10 +1044,10 @@ public class ContentServiceImpl implements ContentService {
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension) {
 		// Check nemaki:user type
 		String objectTypeId = DataUtil.getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID);
-		if("nemaki:user".equals(objectTypeId)){
+		if(NemakiObjectType.nemakiUser.equals(objectTypeId)){
 			return createUserItem(callContext, repositoryId, properties, folderId, policies, addAces, removeAces, extension);
 		}
-		if("nemaki:group".equals(objectTypeId)){
+		if(NemakiObjectType.nemakiGroup.equals(objectTypeId)){
 			return createGroupItem(callContext, repositoryId, properties, folderId, policies, addAces, removeAces, extension);
 		}
 		
