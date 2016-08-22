@@ -1,5 +1,6 @@
 package jp.aegif.nemaki.patch;
 
+import java.util.List;
 import java.util.Map;
 
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
@@ -10,6 +11,8 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
+import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.lang.ObjectUtils;
 import org.ektorp.CouchDbConnector;
 import org.ektorp.support.DesignDocument;
 import org.ektorp.support.DesignDocument.View;
@@ -81,24 +84,26 @@ public class Patch {
 		props.put(id, pdf);
 	}
 	
-	protected Folder getOrCreateSystemSuFolder(String repositoryId, String name){
+	protected Folder getOrCreateSystemSubFolder(String repositoryId, String name){
 		Folder systemFolder = contentService.getSystemFolder(repositoryId);
-		final String path = systemFolder.getName() + "/" + name;
-		Content target = contentService.getContentByPath(repositoryId, path);
-		if(target == null){
-			PropertiesImpl properties = new PropertiesImpl();
-			properties.addProperty(new PropertyStringImpl("cmis:name", name));
-			properties.addProperty(new PropertyIdImpl("cmis:objectTypeId", "cmis:folder"));
-			properties.addProperty(new PropertyIdImpl("cmis:baseTypeId", "cmis:folder"));
-			
-			// create
-			Folder _target = contentService.createFolder(new SystemCallContext(repositoryId), repositoryId, properties, systemFolder, null, null, null, null);
-			return _target;
-		}else if(target instanceof Folder){
-			return (Folder)target;
-		}else{
-			return null;
+		
+		// check existing folder
+		List<Content> children = contentService.getChildren(repositoryId, systemFolder.getId());
+		if(CollectionUtils.isNotEmpty(children)){
+			for(Content child : children){
+				if(ObjectUtils.equals(name, child.getName())){
+					return (Folder)child;
+				}
+			}
 		}
+
+		// create
+		PropertiesImpl properties = new PropertiesImpl();
+		properties.addProperty(new PropertyStringImpl("cmis:name", name));
+		properties.addProperty(new PropertyIdImpl("cmis:objectTypeId", "cmis:folder"));
+		properties.addProperty(new PropertyIdImpl("cmis:baseTypeId", "cmis:folder"));
+		Folder _target = contentService.createFolder(new SystemCallContext(repositoryId), repositoryId, properties, systemFolder, null, null, null, null);
+		return _target;
 	}
 
 	public PropertyManager getPropertyManager() {

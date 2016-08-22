@@ -35,6 +35,7 @@ import jp.aegif.nemaki.model.GroupItem;
 import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.UserItem;
+import jp.aegif.nemaki.util.constant.NemakiObjectType;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
 public class Patch_20160815{
@@ -134,13 +135,13 @@ public class Patch_20160815{
 			TypeDefinition _type = patch.getRepositoryService().getTypeDefinition(context, repositoryId, "nemaki:user", null);
 		}catch(CmisObjectNotFoundException e){
 				ItemTypeDefinitionImpl tdf = new ItemTypeDefinitionImpl();
-				tdf.setId("nemaki:user");
-				tdf.setLocalName("nemaki:user");
-				tdf.setQueryName("nemaki:user");
-				tdf.setDisplayName("nemaki:user");
+				tdf.setId(NemakiObjectType.nemakiUser);
+				tdf.setLocalName(NemakiObjectType.nemakiUser);
+				tdf.setQueryName(NemakiObjectType.nemakiUser);
+				tdf.setDisplayName(NemakiObjectType.nemakiUser);
 				tdf.setBaseTypeId(BaseTypeId.CMIS_ITEM);
 				tdf.setParentTypeId("cmis:item");
-				tdf.setDescription("nemaki:user");
+				tdf.setDescription(NemakiObjectType.nemakiUser);
 				tdf.setIsCreatable(true);
 				tdf.setIsFileable(true);
 				tdf.setIsQueryable(true);
@@ -173,13 +174,13 @@ public class Patch_20160815{
 			TypeDefinition _type = patch.getRepositoryService().getTypeDefinition(context, repositoryId, "nemaki:group", null);
 		}catch(CmisObjectNotFoundException e){
 				ItemTypeDefinitionImpl tdf = new ItemTypeDefinitionImpl();
-				tdf.setId("nemaki:group");
-				tdf.setLocalName("nemaki:group");
-				tdf.setQueryName("nemaki:group");
-				tdf.setDisplayName("nemaki:group");
+				tdf.setId(NemakiObjectType.nemakiGroup);
+				tdf.setLocalName(NemakiObjectType.nemakiGroup);
+				tdf.setQueryName(NemakiObjectType.nemakiGroup);
+				tdf.setDisplayName(NemakiObjectType.nemakiGroup);
 				tdf.setBaseTypeId(BaseTypeId.CMIS_ITEM);
 				tdf.setParentTypeId("cmis:item");
-				tdf.setDescription("nemaki:group");
+				tdf.setDescription(NemakiObjectType.nemakiGroup);
 				tdf.setIsCreatable(true);
 				tdf.setIsFileable(true);
 				tdf.setIsQueryable(true);
@@ -206,7 +207,7 @@ public class Patch_20160815{
 	}
 	
 	private void migrateUsers(String repositoryId){
-		Folder usersFolder = patch.getOrCreateSystemSuFolder(repositoryId, "users");
+		Folder usersFolder = patch.getOrCreateSystemSubFolder(repositoryId, "users");
 		
 		List<User> users = principalService.getUsers(repositoryId);
 		for(User user : users){
@@ -216,7 +217,7 @@ public class Patch_20160815{
 	}
 	
 	private void migrateGroups(String repositoryId){
-		Folder groupsFolder = patch.getOrCreateSystemSuFolder(repositoryId, "groups");
+		Folder groupsFolder = patch.getOrCreateSystemSubFolder(repositoryId, "groups");
 		
 		List<Group> groups = principalService.getGroups(repositoryId);
 		for(Group group : groups){

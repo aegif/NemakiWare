@@ -17,14 +17,15 @@ public class GroupItem extends Item{
 		setAcl(new Acl());
 	}
 
-	public GroupItem(String name, String groupId, List<String>users, List<String>groups){
+	public GroupItem(String name, String objectType, String groupId, List<String>users, List<String>groups){
 		this();
 		setName(name);
+		setObjectType(objectType);
 		setGroupId(groupId);
 		
 		List<Property> subTypeProperties = new ArrayList<>();
-		subTypeProperties.add(new Property("nemaki:user", users));
-		subTypeProperties.add(new Property("nemaki:user", groups));
+		subTypeProperties.add(new Property("nemaki:users", users));
+		subTypeProperties.add(new Property("nemaki:groups", groups));
 		setSubTypeProperties(subTypeProperties);
 	}
 

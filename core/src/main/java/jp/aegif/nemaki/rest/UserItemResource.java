@@ -46,14 +46,23 @@ import javax.ws.rs.core.MediaType;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.common.ErrorCode;
+import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.AuthenticationUtil;
 import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.constant.NemakiObjectType;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.chemistry.opencmis.server.support.query.CmisQlExtParser_CmisBaseGrammar.null_predicate_return;
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections.MapUtils;
+import org.apache.commons.lang.ObjectUtils;
 import org.apache.commons.lang.StringUtils;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
@@ -62,8 +71,11 @@ import org.json.simple.parser.ParseException;
 import org.mindrot.jbcrypt.BCrypt;
 import org.springframework.stereotype.Component;
 
+import com.fasterxml.jackson.core.JsonParser;
+import com.sun.swing.internal.plaf.metal.resources.metal_zh_TW;
+
 @Component
-@Path("/repo/{repositoryId}/user_item/")
+@Path("/repo/{repositoryId}/user/")
 public class UserItemResource extends ResourceBase {
 
 	private ContentService contentService;
@@ -187,10 +199,10 @@ public class UserItemResource extends ResourceBase {
 			// Generate a password hash
 			String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
 
-			//User user = new User(userId, name, firstName, lastName, email, passwordHash);
-			final String parentFolderId = propertyManager.readValue(PropertyKey.CAPABILITY_EXTENDED_USER_ITEM_FOLDER);
-			
-			UserItem user = new UserItem(null, "nemaki:user", userId, name, passwordHash, false, parentFolderId);
+			// parent
+			final Folder usersFolder = getOrCreateSystemSubFolder(repositoryId, "users"); 
+
+			UserItem user = new UserItem(null, NemakiObjectType.nemakiUser, userId, name, passwordHash, false, usersFolder.getId());
 			setFirstSignature(httpRequest, user);
 
 			contentService.createUserItem(new SystemCallContext(repositoryId), repositoryId, user);
@@ -198,6 +210,29 @@ public class UserItemResource extends ResourceBase {
 		}
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
+	}
+	
+	//TODO this is a copy & paste method.
+	private Folder getOrCreateSystemSubFolder(String repositoryId, String name){
+		Folder systemFolder = contentService.getSystemFolder(repositoryId);
+		
+		// check existing folder
+		List<Content> children = contentService.getChildren(repositoryId, systemFolder.getId());
+		if(CollectionUtils.isNotEmpty(children)){
+			for(Content child : children){
+				if(ObjectUtils.equals(name, child.getName())){
+					return (Folder)child;
+				}
+			}
+		}
+
+		// create
+		PropertiesImpl properties = new PropertiesImpl();
+		properties.addProperty(new PropertyStringImpl("cmis:name", name));
+		properties.addProperty(new PropertyIdImpl("cmis:objectTypeId", "cmis:folder"));
+		properties.addProperty(new PropertyIdImpl("cmis:baseTypeId", "cmis:folder"));
+		Folder _target = contentService.createFolder(new SystemCallContext(repositoryId), repositoryId, properties, systemFolder, null, null, null, null);
+		return _target;
 	}
 
 	@PUT
@@ -315,40 +350,39 @@ public class UserItemResource extends ResourceBase {
 			if (name != null)
 				user.setName(name);
 			
-			Map<String, Property> map = new HashMap<>();
-			for(Property prop : user.getSubTypeProperties()) map.put(prop.getKey(), prop); 
-			
+			Map<String, Object> map = new HashMap<>();
+			for(Property prop : user.getSubTypeProperties()) map.put(prop.getKey(), prop.getValue()); 
+			JSONParser parser = new JSONParser();
 			if (firstName != null)
-				map.put("nemaki:firstName", new Property("nemaki:firstName", firstName));
+				map.put("nemaki:firstName", firstName);
 			if (lastName != null)
-				map.put("nemaki:lastName", new Property("nemaki:lastName", lastName));
+				map.put("nemaki:lastName", lastName);
 			if (email != null)
-				map.put("nemaki:email", new Property("nemaki:email", email));
+				map.put("nemaki:email", email);
 			if (addFavorites != null) {
 				try {
-					JSONArray l = (JSONArray) (new JSONParser().parse(addFavorites));
-					Property favorites = map.get("nemaki:favorites");
-					List<String> fs = (List<String>) favorites.getValue();
-					if (CollectionUtils.isEmpty(fs)) {
-						fs = new ArrayList<>();
-					}
-					fs.addAll(l);
+					JSONArray adds = (JSONArray) (parser.parse(addFavorites));
+					Object favs = map.get("nemaki:favorites");
+					if(favs == null) favs = new ArrayList<String>();
+					((List)favs).addAll(adds);
+					map.put("nemaki:favorites", favs);
 				} catch (ParseException e) {
 					e.printStackTrace();
 				}
 			}
 			if (removeFavorites != null) {
 				try {
-					JSONArray l = (JSONArray) (new JSONParser().parse(removeFavorites));
-					Property favorites = map.get("nemaki:favorites");
-					List<String> fs = (List<String>) favorites.getValue();					
-					fs.removeAll(l);
+					JSONArray removes = (JSONArray) (parser.parse(removeFavorites));
+					Object favs = map.get("nemaki:favorites");
+					if(favs == null) favs = new ArrayList<String>();
+					((List)favs).removeAll(removes);
+					map.put("nemaki:favorites", favs);
 				} catch (ParseException e) {
 					e.printStackTrace();
 				}
 			}
 			List<Property> properties = new ArrayList<>();
-			for(String key : map.keySet()) properties.add(map.get(key));
+			for(String key : map.keySet()) properties.add(new Property(key, map.get(key)));
 			user.setSubTypeProperties(properties);
 			
 			
@@ -486,38 +520,20 @@ public class UserItemResource extends ResourceBase {
 		userJSON.put(ITEM_MODIFIER, user.getModifier());
 		userJSON.put(ITEM_MODIFIED, modified);
 
-		for(Property property : user.getSubTypeProperties()){
-			if("nemaki:firstName".equals(property.getKey())){
-				userJSON.put(ITEM_FIRSTNAME, property.getValue());
-				continue;
-			}
-			if("nemaki:lastName".equals(property.getKey())){
-				userJSON.put(ITEM_LASTNAME, property.getValue());
-				continue;
-			}
-			if("nemaki:email".equals(property.getKey())){
-				userJSON.put(ITEM_EMAIL, property.getValue());
-				continue;
-			}
-			if("nemaki:favorites".equals(property.getKey())){
-				JSONArray jfs = new JSONArray();
-				Set<String> ufs = (Set<String>) property.getValue();
-				if (CollectionUtils.isNotEmpty(ufs)) {
-					Iterator<String> ufsItr = ufs.iterator();
-					while (ufsItr.hasNext()) {
-						jfs.add(ufsItr.next());
-					}
-				}
-				userJSON.put("favorites", jfs);
-			}
-		}
+		Map<String, Object> kvMap = new HashMap<>();
+		for(Property p : user.getSubTypeProperties()) kvMap.put(p.getKey(), p.getValue());
+		
+		userJSON.put(ITEM_FIRSTNAME, MapUtils.getObject(kvMap, "nemaki:firstName", ""));
+		userJSON.put(ITEM_LASTNAME, MapUtils.getObject(kvMap, "nemaki:lastName", ""));
+		userJSON.put(ITEM_EMAIL, MapUtils.getObject(kvMap, "nemaki:email", ""));
+		userJSON.put("favorites", MapUtils.getObject(kvMap, "nemaki:favorites", new JSONArray()));
 		
 		boolean isAdmin = (user.isAdmin() == null) ? false : user.isAdmin();
 		userJSON.put(ITEM_IS_ADMIN, isAdmin);
 
 		return userJSON;
 	}
-
+	
 	private boolean checkAuthorityForUser(boolean status, JSONArray errMsg, HttpServletRequest httpRequest,
 			String resoureId, String repositoryId) {
 		CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");

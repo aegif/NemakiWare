@@ -59,7 +59,7 @@ import org.mindrot.jbcrypt.BCrypt;
 import org.springframework.stereotype.Component;
 
 @Component
-@Path("/repo/{repositoryId}/user/")
+@Path("/repo/{repositoryId}/user-deprecated/")
 public class UserResource extends ResourceBase {
 
 	PrincipalService principalService;
