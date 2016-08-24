@@ -30,6 +30,7 @@ import org.apache.chemistry.opencmis.commons.data.RenditionData;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.lang.ObjectUtils;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.joda.time.DateTime;
@@ -619,7 +620,7 @@ public class JsonLogger {
 		
 		PropertyData name = objectData.getProperties().getProperties().get(PropertyIds.NAME);
 		if(name != null){
-			json.put("name", name.getFirstValue().toString());
+			json.put("name", ObjectUtils.toString(name.getFirstValue()));
 		}
 		
 		return json;

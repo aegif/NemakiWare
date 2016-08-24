@@ -59,15 +59,15 @@ public interface ObjectService {
 
 	/**
 	 * Sets the content stream for the specified document object.
-	 * 
 	 * @param repositoryId
 	 *            TODO
 	 * @param changeToken
 	 *            TODO
+	 * @param extension TODO
 	 */
 	public abstract void setContentStream(@LogParam("callContext") CallContext callContext, @LogParam("repositoryId") String repositoryId,
 			@LogParam("objectId") Holder<String> objectId, @LogParam("overwriteFlag") boolean overwriteFlag,
-			@LogParam("contentStream") ContentStream contentStream, @LogParam("changeToken") Holder<String> changeToken);
+			@LogParam("contentStream") ContentStream contentStream, @LogParam("changeToken") Holder<String> changeToken, ExtensionsData extension);
 
 	public void deleteContentStream(@LogParam("callContext") CallContext callContext, @LogParam("repositoryId") String repositoryId,
 			@LogParam("objectId") Holder<String> objectId, @LogParam("changeToken") Holder<String> changeToken,
@@ -94,28 +94,28 @@ public interface ObjectService {
 
 	/**
 	 * Deletes object. Attachments of the object get deleted too.
-	 * 
 	 * @param repositoryId
 	 *            TODO
 	 * @param objectId
 	 *            id of the object to be deleted.
+	 * @param extension TODO
 	 */
 	public abstract void deleteObject(@LogParam("callContext") CallContext callContext, @LogParam("repositoryId") String repositoryId,
-			@LogParam("objectId") String objectId, @LogParam("allVersions") Boolean allVersions);
+			@LogParam("objectId") String objectId, @LogParam("allVersions") Boolean allVersions, ExtensionsData extension);
 
 	/**
 	 * Moves the specified file-able object from one folder to another.
 	 * 
 	 * TODO Not Yet Implemented
-	 * 
 	 * @param repositoryId
 	 *            TODO
 	 * @param sourceFolderId
 	 *            TODO
+	 * @param extension TODO
 	 */
 	public abstract void moveObject(@LogParam("callContext") CallContext callContext, @LogParam("repositoryId") String repositoryId,
 			@LogParam("objectId") Holder<String> objectId, @LogParam("sourceFolderId") String sourceFolderId,
-			@LogParam("targetFolderId") String targetFolderId);
+			@LogParam("targetFolderId") String targetFolderId, ExtensionsData extension);
 
 	/**
 	 * Gets the list of associated renditions for the specified object. Only
@@ -136,16 +136,17 @@ public interface ObjectService {
 	 * Updates properties of the object. Doing so also updates the
 	 * "last modified" date. Custom properties(Aspect) is passed as
 	 * CmisExtensionElement
-	 * 
 	 * @param repositoryId
 	 *            TODO
 	 * @param changeToken
 	 *            TODO
+	 * @param extension TODO
+	 * 
 	 * @return TODO
 	 */
 	public abstract void updateProperties(@LogParam("callContext") CallContext callContext, @LogParam("repositoryId") String repositoryId,
 			@LogParam("objectId") Holder<String> objectId, @LogParam("properties") Properties properties,
-			@LogParam("changeToken") Holder<String> changeToken);
+			@LogParam("changeToken") Holder<String> changeToken, ExtensionsData extension);
 
 	public abstract List<BulkUpdateObjectIdAndChangeToken> bulkUpdateProperties(@LogParam("callContext") CallContext callContext,
 			@LogParam("repositoryId") String repositoryId,
@@ -240,7 +241,6 @@ public interface ObjectService {
 	/**
 	 * Creates a document object as a copy of the given source document in the
 	 * (optionally) specified location.
-	 * 
 	 * @param repositoryId
 	 *            TODO
 	 * @param policies
@@ -249,15 +249,15 @@ public interface ObjectService {
 	 *            TODO
 	 * @param removeAces
 	 *            TODO
+	 * @param extension TODO
 	 */
 	public abstract String createDocumentFromSource(@LogParam("callContext")CallContext callContext, @LogParam("repositoryId")String repositoryId, @LogParam("sourceId")String sourceId,
 			@LogParam("properties")Properties properties, @LogParam("folderId")String folderId, @LogParam("versioningState")VersioningState versioningState, @LogParam("policies")List<String> policies, @LogParam("addAces")Acl addAces,
-			@LogParam("removeAces")Acl removeAces);
+			@LogParam("removeAces")Acl removeAces, ExtensionsData extension);
 
 	/**
 	 * Creates a document object of the specified type (given by the
 	 * cmis:objectTypeId property) in the (optionally) specified location.
-	 * 
 	 * @param repositoryId
 	 *            TODO
 	 * @param policies
@@ -266,11 +266,13 @@ public interface ObjectService {
 	 *            TODO
 	 * @param removeAces
 	 *            TODO
+	 * @param extension TODO
+	 * 
 	 * @return id of created document.
 	 */
 	public abstract String createDocument(@LogParam("callContext")CallContext callContext, @LogParam("repositoryId")String repositoryId, @LogParam("properties")Properties properties,
 			@LogParam("folderId")String folderId, @LogParam("contentStream")ContentStream contentStream, @LogParam("versioningState")VersioningState versioningState, @LogParam("policies")List<String> policies,
-			@LogParam("addAces")Acl addAces, @LogParam("removeAces")Acl removeAces);
+			@LogParam("addAces")Acl addAces, @LogParam("removeAces")Acl removeAces, ExtensionsData extension);
 
 	public abstract String createRelationship(@LogParam("callContext")CallContext callContext, @LogParam("repositoryId")String repositoryId, @LogParam("properties")Properties properties,
 			@LogParam("policies")List<String> policies, @LogParam("addAces")Acl addAces, @LogParam("removeAces")Acl removeAces, @LogParam("extension")ExtensionsData extension);

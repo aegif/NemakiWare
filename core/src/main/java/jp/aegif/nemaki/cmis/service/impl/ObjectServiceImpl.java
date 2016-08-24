@@ -329,7 +329,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// TODO ACE can be set !
 		if (type.getBaseTypeId() == BaseTypeId.CMIS_DOCUMENT) {
 			objectId = createDocument(callContext, repositoryId, properties,
-					folderId, contentStream, versioningState, null, null, null);
+					folderId, contentStream, versioningState, null, null, null, null);
 		} else if (type.getBaseTypeId() == BaseTypeId.CMIS_FOLDER) {
 			objectId = createFolder(callContext, repositoryId, properties,
 					folderId, policies, null, null, extension);
@@ -390,7 +390,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// Body of the method
 		// //////////////////
 		Folder folder = contentService.createFolder(callContext, repositoryId,
-				properties, parentFolder);
+				properties, parentFolder, policies, addAces, removeAces, null);
 		return folder.getId();
 	}
 
@@ -398,7 +398,7 @@ public class ObjectServiceImpl implements ObjectService {
 	public String createDocument(CallContext callContext,
 			String repositoryId, Properties properties,
 			String folderId, ContentStream contentStream,
-			VersioningState versioningState, List<String> policies, Acl addAces, Acl removeAces) {
+			VersioningState versioningState, List<String> policies, Acl addAces, Acl removeAces, ExtensionsData extension) {
 		String objectTypeId = DataUtil.getIdProperty(properties,
 				PropertyIds.OBJECT_TYPE_ID);
 		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
@@ -440,7 +440,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// Body of the method
 		// //////////////////
 		Document document = contentService.createDocument(callContext,
-				repositoryId, properties, parentFolder, contentStream, versioningState, null);
+				repositoryId, properties, parentFolder, contentStream, versioningState, policies, addAces, removeAces);
 		return document.getId();
 	}
 
@@ -448,7 +448,7 @@ public class ObjectServiceImpl implements ObjectService {
 	public String createDocumentFromSource(CallContext callContext,
 			String repositoryId, String sourceId, Properties properties,
 			String folderId, VersioningState versioningState,
-			List<String> policies, Acl addAces, Acl removeAces) {
+			List<String> policies, Acl addAces, Acl removeAces, ExtensionsData extension) {
 		Document original = contentService.getDocument(repositoryId, sourceId);
 		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
 				.getTypeDefinition(repositoryId, original.getObjectType());
@@ -495,7 +495,7 @@ public class ObjectServiceImpl implements ObjectService {
 	@Override
 	public void setContentStream(CallContext callContext,
 			String repositoryId, Holder<String> objectId,
-			boolean overwriteFlag, ContentStream contentStream, Holder<String> changeToken) {
+			boolean overwriteFlag, ContentStream contentStream, Holder<String> changeToken, ExtensionsData extension) {
 		
 		exceptionService.invalidArgumentRequiredHolderString("objectId", objectId);
 		
@@ -753,7 +753,7 @@ public class ObjectServiceImpl implements ObjectService {
 	@Override
 	public void updateProperties(CallContext callContext,
 			String repositoryId, Holder<String> objectId,
-			Properties properties, Holder<String> changeToken) {
+			Properties properties, Holder<String> changeToken, ExtensionsData extension) {
 		
 		exceptionService.invalidArgumentRequiredHolderString("objectId",
 				objectId);
@@ -913,7 +913,7 @@ public class ObjectServiceImpl implements ObjectService {
 	
 	@Override
 	public void moveObject(CallContext callContext, String repositoryId,
-			Holder<String> objectId, String sourceFolderId, String targetFolderId) {
+			Holder<String> objectId, String sourceFolderId, String targetFolderId, ExtensionsData extension) {
 		
 		exceptionService.invalidArgumentRequiredHolderString("objectId",
 				objectId);
@@ -958,7 +958,7 @@ public class ObjectServiceImpl implements ObjectService {
 	
 	@Override
 	public void deleteObject(CallContext callContext, String repositoryId,
-			String objectId, Boolean allVersions) {
+			String objectId, Boolean allVersions, ExtensionsData extension) {
 		objectServiceInternal.deleteObjectInternal(callContext, repositoryId, objectId, allVersions, false);
 	}
 
