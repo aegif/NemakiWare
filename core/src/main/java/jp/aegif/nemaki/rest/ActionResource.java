@@ -62,9 +62,6 @@ public class ActionResource extends ResourceBase {
 		//読みこまれたプラグインからActionIdが等しいものをさがす
         try (GenericApplicationContext context = new AnnotationConfigApplicationContext(AppConfig.class)) {
         	JavaBackedAction product = context.getBean(JavaBackedAction.class);
-            product.executeAction(obj);
-        }
-
 
 
 		//無ければスキップ
@@ -74,6 +71,11 @@ public class ActionResource extends ResourceBase {
 				false, IncludeRelationships.NONE, null, false);
 
 		//実行して結果を返す
+
+
+        product.executeAction(object);
+    }
+
 
 		return "hoge";
 	}
