@@ -115,15 +115,14 @@
 				<version>3.3</version>
 				<configuration>
 					<encoding>UTF-8</encoding>
-					<source>1.7</source>
-					<target>1.7</target>
+					<source>1.8</source>
+					<target>1.8</target>
 				</configuration>
 			</plugin>
 
 			<plugin>
 				<groupId>org.mortbay.jetty</groupId>
 				<artifactId>jetty-maven-plugin</artifactId>
-				<version>7.0.1.v20091125</version>
 				<configuration>
 					<scanIntervalSeconds>1</scanIntervalSeconds>
 					<stopPort>9968</stopPort>
