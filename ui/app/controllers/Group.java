@@ -8,7 +8,6 @@ import java.util.Map;
 
 import model.Principal;
 
-import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.commons.collections.CollectionUtils;
 
 import play.data.DynamicForm;

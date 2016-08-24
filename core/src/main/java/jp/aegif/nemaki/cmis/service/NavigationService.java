@@ -89,13 +89,13 @@ public interface NavigationService {
 
 	/**
 	 * Gets the parent folder object for the specified folder object.
-	 * 
 	 * @param repositoryId
 	 *            TODO
+	 * @param extension TODO
 	 */
 	public abstract ObjectData getFolderParent(@LogParam("callContext") CallContext callContext,
 			@LogParam("repositoryId") String repositoryId, @LogParam("folderId") String folderId,
-			@LogParam("filter") String filter);
+			@LogParam("filter") String filter, ExtensionsData extension);
 
 	/**
 	 * Gets the parent folder(s) for the specified non-folder, fileable object.

@@ -40,10 +40,20 @@ import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 
-import jp.aegif.nemaki.businesslogic.PrincipalService;
-import jp.aegif.nemaki.model.Group;
-import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.cmis.factory.SystemCallContext;
+import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.GroupItem;
+import jp.aegif.nemaki.model.UserItem;
+import jp.aegif.nemaki.util.constant.NemakiObjectType;
+import jp.aegif.nemaki.util.constant.PropertyKey;
 
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
+import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.lang.ObjectUtils;
 import org.apache.commons.lang.StringUtils;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
@@ -51,10 +61,10 @@ import org.json.simple.JSONValue;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
-@Path("/repo/{repositoryId}/group-deprecated")
-public class GroupResource extends ResourceBase{
+@Path("/repo/{repositoryId}/group")
+public class GroupItemResource extends ResourceBase{
 
-	PrincipalService principalService;
+	private ContentService contentService;
 
 	@SuppressWarnings("unchecked")
 	@GET
@@ -65,10 +75,11 @@ public class GroupResource extends ResourceBase{
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		List<Group> groups = this.principalService.getGroups(repositoryId);
+		List<GroupItem> groups = contentService.getGroupItems(repositoryId);
+		if(groups == null) groups = new ArrayList<>();
 		JSONArray queriedGroups = new JSONArray();
 
-		for(Group g : groups) {
+		for(GroupItem g : groups) {
 			if ( g.getGroupId().startsWith(query)|| g.getName().startsWith(query)) {
 				queriedGroups.add(this.convertGroupToJson(g));
 			}
@@ -96,10 +107,10 @@ public class GroupResource extends ResourceBase{
 		JSONArray listJSON = new JSONArray();
 		JSONArray errMsg = new JSONArray();
 
-		List<Group> groupList;
+		List<GroupItem> groupList;
 		try{
-			groupList = principalService.getGroups(repositoryId);
-			for(Group group : groupList){
+			groupList = contentService.getGroupItems(repositoryId);
+			for(GroupItem group : groupList){
 				JSONObject groupJSON = convertGroupToJson(group);
 				listJSON.add(groupJSON);
 			}
@@ -121,7 +132,7 @@ public class GroupResource extends ResourceBase{
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		Group group = principalService.getGroupById(repositoryId, groupId);
+		GroupItem group = contentService.getGroupItemById(repositoryId, groupId);
 		if(group == null){
 			status = false;
 			addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_NOTFOUND);
@@ -155,13 +166,15 @@ public class GroupResource extends ResourceBase{
 		//Edit group info
 		JSONArray _users = parseJsonArray(users);
 		JSONArray _groups = parseJsonArray(groups);
-		Group group = new Group(groupId, name, _users, _groups);
+		GroupItem group = new GroupItem(groupId, NemakiObjectType.nemakiGroup, name, _users, _groups);
+		final Folder groupsFolder = getOrCreateSystemSubFolder(repositoryId, "groups");
+		group.setParentId(groupsFolder.getId());
 		setFirstSignature(httpRequest, group);
 
 		//Create a group
 		if(status){
 			try{
-				principalService.createGroup(repositoryId, group);
+				contentService.createGroupItem(new SystemCallContext(repositoryId), repositoryId, group);
 			}catch(Exception ex){
 				ex.printStackTrace();
 				status = false;
@@ -172,6 +185,29 @@ public class GroupResource extends ResourceBase{
 		return result.toString();
 	}
 
+	//TODO this is a copy & paste method.
+	private Folder getOrCreateSystemSubFolder(String repositoryId, String name){
+		Folder systemFolder = contentService.getSystemFolder(repositoryId);
+		
+		// check existing folder
+		List<Content> children = contentService.getChildren(repositoryId, systemFolder.getId());
+		if(CollectionUtils.isNotEmpty(children)){
+			for(Content child : children){
+				if(ObjectUtils.equals(name, child.getName())){
+					return (Folder)child;
+				}
+			}
+		}
+
+		// create
+		PropertiesImpl properties = new PropertiesImpl();
+		properties.addProperty(new PropertyStringImpl("cmis:name", name));
+		properties.addProperty(new PropertyIdImpl("cmis:objectTypeId", "cmis:folder"));
+		properties.addProperty(new PropertyIdImpl("cmis:baseTypeId", "cmis:folder"));
+		Folder _target = contentService.createFolder(new SystemCallContext(repositoryId), repositoryId, properties, systemFolder, null, null, null, null);
+		return _target;
+	}
+	
 	@PUT
 	@Path("/update/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
@@ -188,7 +224,7 @@ public class GroupResource extends ResourceBase{
 		JSONArray errMsg = new JSONArray();
 
 		//Existing group
-		Group group = principalService.getGroupById(repositoryId, groupId);
+		GroupItem group = contentService.getGroupItemById(repositoryId, groupId);
 
 		//Validation
 		status = validateGroup(status, errMsg, groupId, name);
@@ -203,7 +239,7 @@ public class GroupResource extends ResourceBase{
 			setModifiedSignature(httpRequest, group);
 
 			try{
-				principalService.updateGroup(repositoryId, group);
+				contentService.update(new SystemCallContext(repositoryId), repositoryId, group);
 			}catch(Exception ex){
 				ex.printStackTrace();
 				status = false;
@@ -226,7 +262,7 @@ public class GroupResource extends ResourceBase{
 		JSONArray errMsg = new JSONArray();
 
 		//Existing group
-		Group group = principalService.getGroupById(repositoryId, groupId);
+		GroupItem group = contentService.getGroupItemById(repositoryId, groupId);
 		if(group == null){
 			status = false;
 			addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_NOTFOUND);
@@ -235,7 +271,7 @@ public class GroupResource extends ResourceBase{
 		//Delete the group
 		if(status){
 			try{
-				principalService.deleteGroup(repositoryId, group.getId());
+				contentService.delete(new SystemCallContext(repositoryId), repositoryId, group.getId(), false);
 			}catch(Exception ex){
 				addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_DELETE);
 			}
@@ -259,7 +295,7 @@ public class GroupResource extends ResourceBase{
 		JSONArray errMsg = new JSONArray();
 
 		//Existing Group
-		Group group = principalService.getGroupById(repositoryId, groupId);
+		GroupItem group = contentService.getGroupItemById(repositoryId, groupId);
 		if(group == null){
 			status = false;
 			addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_NOTFOUND);
@@ -304,7 +340,7 @@ public class GroupResource extends ResourceBase{
 			//Update
 			if(apiType.equals(API_ADD)){
 				try{
-					principalService.updateGroup(repositoryId, group);
+					contentService.update(new SystemCallContext(repositoryId), repositoryId, group);
 				}catch(Exception ex){
 					ex.printStackTrace();
 					status = false;
@@ -312,7 +348,7 @@ public class GroupResource extends ResourceBase{
 				}
 			}else if(apiType.equals(API_REMOVE)){
 				try{
-					principalService.updateGroup(repositoryId, group);
+					contentService.update(new SystemCallContext(repositoryId), repositoryId, group);
 				}catch(Exception ex){
 					ex.printStackTrace();
 					status = false;
@@ -354,7 +390,7 @@ public class GroupResource extends ResourceBase{
 	 * @param group
 	 * @return
 	 */
-	private List<String> editUserMembers(String repositoryId, JSONArray usersAry, JSONArray errMsg, String apiType, Group group){
+	private List<String> editUserMembers(String repositoryId, JSONArray usersAry, JSONArray errMsg, String apiType, GroupItem group){
 		List<String> usersList = new ArrayList<String>();
 
 		List<String> ul = group.getUsers();
@@ -367,7 +403,7 @@ public class GroupResource extends ResourceBase{
 
 			//check only when "add" API
 			if(apiType.equals(API_ADD)){
-				User existingUser = principalService.getUserById(repositoryId, userId);
+				UserItem existingUser = contentService.getUserItemById(repositoryId, userId);
 				if(existingUser == null){
 					notSkip = false;
 					addErrMsg(errMsg, ITEM_USER + ":" + userId, ErrorCode.ERR_NOTFOUND);
@@ -405,15 +441,16 @@ public class GroupResource extends ResourceBase{
 	 * @param group
 	 * @return
 	 */
-	private List<String>editGroupMembers(String repositoryId, JSONArray groupsAry, JSONArray errMsg, String apiType, Group group){	//check only when "add" API
+	private List<String>editGroupMembers(String repositoryId, JSONArray groupsAry, JSONArray errMsg, String apiType, GroupItem group){
+		//check only when "add" API
 		List<String>groupsList = new ArrayList<String>();
 
 		List<String> gl = group.getGroups();
 		if(gl != null) groupsList = gl;
 
-		List<Group> allGroupsList = principalService.getGroups(repositoryId);
+		List<GroupItem> allGroupsList = contentService.getGroupItems(repositoryId);
 		List<String> allGroupsStringList = new ArrayList<String>();
-		for(final Group g : allGroupsList){
+		for(final GroupItem g : allGroupsList){
 			allGroupsStringList.add(g.getId());
 		}
 
@@ -423,7 +460,7 @@ public class GroupResource extends ResourceBase{
 			boolean notSkip = true;
 
 			//Existance check
-			Group g = principalService.getGroupById(repositoryId, groupId);
+			GroupItem g = contentService.getGroupItemById(repositoryId, groupId);
 			if(g == null && apiType.equals(API_ADD)){
 				notSkip = false;
 				addErrMsg(errMsg, ITEM_GROUP + ":" + groupId, ErrorCode.ERR_NOTFOUND);
@@ -463,7 +500,7 @@ public class GroupResource extends ResourceBase{
 			addErrMsg(errMsg, ITEM_GROUPID, ErrorCode.ERR_MANDATORY);
 		}
 		//groupID uniqueness
-		Group group = principalService.getGroupById(repositoryId, groupId);
+		GroupItem group = contentService.getGroupItemById(repositoryId, groupId);
 		if(group != null){
 			status = false;
 			addErrMsg(errMsg, ITEM_GROUPID, ErrorCode.ERR_ALREADYEXISTS);
@@ -487,7 +524,7 @@ public class GroupResource extends ResourceBase{
 	}
 
 
-	private JSONObject convertGroupToJson(Group group) {
+	private JSONObject convertGroupToJson(GroupItem group) {
 		SimpleDateFormat sdf = new SimpleDateFormat(DATE_FORMAT);
 		String created = new String();
 		try{
@@ -532,7 +569,7 @@ public class GroupResource extends ResourceBase{
 		return new JSONArray();
 	}
 
-	public void setPrincipalService(PrincipalService principalService) {
-		this.principalService = principalService;
+	public void setContentService(ContentService contentService) {
+		this.contentService = contentService;
 	}
 }

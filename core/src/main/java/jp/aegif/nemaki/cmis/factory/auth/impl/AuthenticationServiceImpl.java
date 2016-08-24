@@ -20,12 +20,14 @@
  ******************************************************************************/
 package jp.aegif.nemaki.cmis.factory.auth.impl;
 
+import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
 import jp.aegif.nemaki.cmis.factory.auth.Token;
 import jp.aegif.nemaki.cmis.factory.auth.TokenService;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
-import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.dao.ContentDaoService;
+import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.AuthenticationUtil;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.CallContextKey;
@@ -45,6 +47,8 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 	private static final Log log = LogFactory.getLog(AuthenticationServiceImpl.class);
 
+	private ContentService contentService;
+	private ContentDaoService contentDaoService;
 	private PrincipalService principalService;
 	private TokenService tokenService;
 	private PropertyManager propertyManager;
@@ -82,7 +86,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 			log.warn("Not authenticated user");
 			return false;
 		} else {
-			User user = principalService.getUserById(repositoryId, proxyUserId);
+			/*User user = principalService.getUserById(repositoryId, proxyUserId);
 			if (user == null) {
 				User newUser = new User(proxyUserId, proxyUserId, "", "", "",
 						BCrypt.hashpw(proxyUserId, BCrypt.gensalt()));
@@ -93,6 +97,21 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 				//Admin check
 				boolean isAdmin = user.isAdmin() == null ? false : true;
+				setAdminFlagInContext(callContext, isAdmin);
+			}*/
+			UserItem userItem = contentService.getUserItemById(repositoryId, proxyUserId);
+			if (userItem == null) {
+				String parentFolderId = propertyManager.readValue(PropertyKey.CAPABILITY_EXTENDED_USER_ITEM_FOLDER);
+				UserItem newUser = new UserItem(null, "nemaki:user", proxyUserId, proxyUserId, null, false, parentFolderId);
+				contentDaoService.create(repositoryId, newUser);
+				log.debug("Authenticated userId=" + newUser.getUserId());
+			} else {
+				//log.debug("Authenticated userId=" + user.getUserId());
+				log.debug("Authenticated userId=" + userItem.getUserId());
+
+				//Admin check
+				//boolean isAdmin = user.isAdmin() == null ? false : true;
+				boolean isAdmin = userItem.isAdmin() == null ? false : true;
 				setAdminFlagInContext(callContext, isAdmin);
 			}
 			return true;
@@ -133,7 +152,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		}
 
 		// Basic auth with id/password
-		User user = getAuthenticatedUser(callContext.getRepositoryId(), callContext.getUsername(), callContext.getPassword());
+		UserItem user = getAuthenticatedUserItem(callContext.getRepositoryId(), callContext.getUsername(), callContext.getPassword());
 		if (user == null)
 			return false;
 
@@ -142,14 +161,15 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 		//if not exist create solr user
 		String solrUserId = propertyManager.readValue(PropertyKey.SOLR_NEMAKI_USERID);
-		User solrUser = principalService.getUserById(repositoryId, solrUserId);
+		//User solrUser = principalService.getUserById(repositoryId, solrUserId);
+		UserItem solrUser = contentService.getUserItemById(repositoryId, solrUserId);
 		if (solrUser == null) {
-			User newSolrUser = new User(solrUserId, solrUserId, "", "", "", BCrypt.hashpw(solrUserId, BCrypt.gensalt()));
-			newSolrUser.setAdmin(true);
-			principalService.createUser(repositoryId, newSolrUser);
+			//TODO
+			// solr password?
+			String userFolderId = propertyManager.readValue(PropertyKey.CAPABILITY_EXTENDED_USER_ITEM_FOLDER);
+			UserItem newSolrUser = new UserItem(solrUserId, "nemaki:user", solrUserId, solrUserId, BCrypt.hashpw(solrUserId, BCrypt.gensalt()), true, userFolderId);
+			contentDaoService.create(repositoryId, newSolrUser);
 		}
-
-
 
 		return true;
 	}
@@ -176,21 +196,21 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	private boolean authenticateAdminByToken(String repositoryId, String userName) {
 		return tokenService.isAdmin(repositoryId, userName);
 	}
-
-	private User getAuthenticatedUser(String repositoryId, String userName, String password) {
-		User u = principalService.getUserById(repositoryId, userName);
+	
+	private UserItem getAuthenticatedUserItem(String repositoryId, String userId, String password) {
+		UserItem u = contentService.getUserItemById(repositoryId, userId);
 
 		// succeeded
-		if (u != null) {
-			if (AuthenticationUtil.passwordMatches(password, u.getPasswordHash())) {
-				log.debug(String.format( "[%s][%s]Get authenticated user successfully ! , Is admin?  : %s", repositoryId, userName , u.isAdmin()));
+		if (u != null && StringUtils.isNotBlank(u.getPassowrd())) {
+			if (AuthenticationUtil.passwordMatches(password, u.getPassowrd())) {
+				log.debug(String.format( "[%s][%s]Get authenticated user successfully ! , Is admin?  : %s", repositoryId, userId , u.isAdmin()));
 				return u;
 			}
 		}
 
 		// Check anonymous
 		String anonymousId = principalService.getAnonymous(repositoryId);
-		if (StringUtils.isNotBlank(anonymousId) && anonymousId.equals(userName)) {
+		if (StringUtils.isNotBlank(anonymousId) && anonymousId.equals(userId)) {
 			if (u != null) {
 				log.warn(anonymousId + " should have not been registered in the database.");
 			}
@@ -200,9 +220,16 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		return null;
 	}
 
+	public void setContentService(ContentService contentService) {
+		this.contentService = contentService;
+	}
 
 	public void setPrincipalService(PrincipalService principalService) {
 		this.principalService = principalService;
+	}
+
+	public void setContentDaoService(ContentDaoService contentDaoService) {
+		this.contentDaoService = contentDaoService;
 	}
 
 	public void setTokenService(TokenService tokenService) {

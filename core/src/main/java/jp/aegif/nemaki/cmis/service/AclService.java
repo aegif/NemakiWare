@@ -38,6 +38,7 @@
 package jp.aegif.nemaki.cmis.service;
 
 import org.apache.chemistry.opencmis.commons.data.Acl;
+import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 
@@ -49,7 +50,7 @@ import jp.aegif.nemaki.util.spring.aspect.log.LogParam;
 public interface AclService {
 
 	Acl getAcl(@LogParam("context") CallContext context, @LogParam("repositoryId") String repositoryId,
-			@LogParam("objectId") String objectId, @LogParam("onlyBasicPermissions") Boolean onlyBasicPermissions);
+			@LogParam("objectId") String objectId, @LogParam("onlyBasicPermissions") Boolean onlyBasicPermissions, ExtensionsData extension);
 
 	/**
 	 * Applies a new ACL to an object. Since it is not possible to transmit an

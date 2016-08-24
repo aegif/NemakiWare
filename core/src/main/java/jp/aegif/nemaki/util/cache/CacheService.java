@@ -18,6 +18,7 @@ import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.SpringPropertyManager;
 import jp.aegif.nemaki.util.YamlManager;
 import jp.aegif.nemaki.util.cache.model.NemakiCache;
 import jp.aegif.nemaki.util.cache.model.Tree;
@@ -43,7 +44,7 @@ public class CacheService {
 
 	private final String repositoryId;
 
-	public CacheService(String repositoryId, PropertyManager propertyManager) {
+	public CacheService(String repositoryId, SpringPropertyManager propertyManager) {
 		this.repositoryId = repositoryId;
 
 		cacheManager = CacheManager.newInstance();
@@ -51,7 +52,7 @@ public class CacheService {
 		loadConfig(propertyManager);
 	}
 
-	private void loadConfig(PropertyManager propertyManager) {
+	private void loadConfig(SpringPropertyManager propertyManager) {
 		String configFile = propertyManager.readValue(PropertyKey.CACHE_CONFIG);
 		YamlManager manager = new YamlManager(configFile);
 		Map<String, Map<String, Object>> yml = (Map<String, Map<String, Object>>) manager.loadYml();

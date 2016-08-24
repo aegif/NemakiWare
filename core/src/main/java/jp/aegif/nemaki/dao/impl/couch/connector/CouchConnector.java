@@ -87,7 +87,7 @@ public class CouchConnector {
 		
 		HttpClient httpClient = builder.build();
 		CouchDbInstance dbInstance = new StdCouchDbInstance(httpClient);
-
+		
 		String repo = "";
 		try {
 			repo = repositoryId;

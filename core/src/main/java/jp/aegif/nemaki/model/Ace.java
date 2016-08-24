@@ -23,6 +23,8 @@ package jp.aegif.nemaki.model;
 
 import java.util.List;
 
+import org.apache.commons.lang.ObjectUtils;
+
 public class Ace {
 	private String principalId;
 	private List<String> permissions;
@@ -59,4 +61,11 @@ public class Ace {
 	public void setDirect(boolean direct) {
 		this.direct = direct;
 	}
+
+	@Override
+	public boolean equals(Object obj) {
+		return (obj instanceof Ace) 
+				&& ObjectUtils.equals(this.principalId, ((Ace)obj).getPrincipalId());
+	}
+	
 }

@@ -22,9 +22,11 @@
 package jp.aegif.nemaki.rest;
 
 import java.text.SimpleDateFormat;
-import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import javax.servlet.http.HttpServletRequest;
@@ -41,15 +43,26 @@ import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 
-import jp.aegif.nemaki.businesslogic.PrincipalService;
+import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.common.ErrorCode;
-import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.Property;
+import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.AuthenticationUtil;
 import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.constant.NemakiObjectType;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.chemistry.opencmis.server.support.query.CmisQlExtParser_CmisBaseGrammar.null_predicate_return;
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections.MapUtils;
+import org.apache.commons.lang.ObjectUtils;
 import org.apache.commons.lang.StringUtils;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
@@ -58,25 +71,16 @@ import org.json.simple.parser.ParseException;
 import org.mindrot.jbcrypt.BCrypt;
 import org.springframework.stereotype.Component;
 
+import com.fasterxml.jackson.core.JsonParser;
+import com.sun.swing.internal.plaf.metal.resources.metal_zh_TW;
+
 @Component
-@Path("/repo/{repositoryId}/user-deprecated/")
-public class UserResource extends ResourceBase {
+@Path("/repo/{repositoryId}/user/")
+public class UserItemResource extends ResourceBase {
 
-	PrincipalService principalService;
-	public void setPrincipalService(PrincipalService principalService) {
-		this.principalService = principalService;
-	}
-
-	SolrResource solrResource;
-	public void setSolrResource(SolrResource value){
-		this.solrResource = value;
-	}
-
+	private ContentService contentService;
 	private PropertyManager propertyManager;
-	public void setPropertyManager(PropertyManager propertyManager) {
-		this.propertyManager = propertyManager;
-	}
-
+	
 	@SuppressWarnings("unchecked")
 	@GET
 	@Path("/list")
@@ -88,10 +92,10 @@ public class UserResource extends ResourceBase {
 		JSONArray errMsg = new JSONArray();
 
 		// Get all users list
-		List<User> userList;
+		List<UserItem> userList;
 		try {
-			userList = principalService.getUsers(repositoryId);
-			for (User user : userList) {
+			userList = contentService.getUserItems(repositoryId);
+			for (UserItem user : userList) {
 				JSONObject userJSON = convertUserToJson(user);
 				listJSON.add(userJSON);
 			}
@@ -120,7 +124,7 @@ public class UserResource extends ResourceBase {
 			addErrMsg(errMsg, ITEM_USERID, ErrorCode.ERR_MANDATORY);
 		}
 
-		User user = principalService.getUserById(repositoryId, userId);
+		UserItem user = contentService.getUserItemById(repositoryId, userId);
 
 		if (user == null) {
 			status = false;
@@ -147,10 +151,10 @@ public class UserResource extends ResourceBase {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		List<User> users;
+		List<UserItem> users;
 		JSONArray queriedUsers = new JSONArray();
-		users = principalService.getUsers(repositoryId);
-		for (User user : users) {
+		users = contentService.getUserItems(repositoryId);
+		for (UserItem user : users) {
 			if (user.getUserId().startsWith(query) || user.getName().startsWith(query)) {
 				JSONObject userJSON = convertUserToJson(user);
 				queriedUsers.add(userJSON);
@@ -195,15 +199,40 @@ public class UserResource extends ResourceBase {
 			// Generate a password hash
 			String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
 
-			User user = new User(userId, name, firstName, lastName, email, passwordHash);
+			// parent
+			final Folder usersFolder = getOrCreateSystemSubFolder(repositoryId, "users"); 
+
+			UserItem user = new UserItem(null, NemakiObjectType.nemakiUser, userId, name, passwordHash, false, usersFolder.getId());
 			setFirstSignature(httpRequest, user);
 
-			// TODO Error handling
-			principalService.createUser(repositoryId, user);
+			contentService.createUserItem(new SystemCallContext(repositoryId), repositoryId, user);
 
 		}
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
+	}
+	
+	//TODO this is a copy & paste method.
+	private Folder getOrCreateSystemSubFolder(String repositoryId, String name){
+		Folder systemFolder = contentService.getSystemFolder(repositoryId);
+		
+		// check existing folder
+		List<Content> children = contentService.getChildren(repositoryId, systemFolder.getId());
+		if(CollectionUtils.isNotEmpty(children)){
+			for(Content child : children){
+				if(ObjectUtils.equals(name, child.getName())){
+					return (Folder)child;
+				}
+			}
+		}
+
+		// create
+		PropertiesImpl properties = new PropertiesImpl();
+		properties.addProperty(new PropertyStringImpl("cmis:name", name));
+		properties.addProperty(new PropertyIdImpl("cmis:objectTypeId", "cmis:folder"));
+		properties.addProperty(new PropertyIdImpl("cmis:baseTypeId", "cmis:folder"));
+		Folder _target = contentService.createFolder(new SystemCallContext(repositoryId), repositoryId, properties, systemFolder, null, null, null, null);
+		return _target;
 	}
 
 	@PUT
@@ -217,7 +246,29 @@ public class UserResource extends ResourceBase {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		User user = principalService.getUserById(repositoryId, userId);
+		UserItem userItem = contentService.getUserItemById(repositoryId, userId);
+		
+		//TODO checkAuthorityForUser
+		
+		//password match
+		if(AuthenticationUtil.passwordMatches(oldPassword, userItem.getPassowrd())){
+			String hash = BCrypt.hashpw(newPassword, BCrypt.gensalt());
+			userItem.setPassowrd(hash);
+			try{
+				contentService.update(new SystemCallContext(repositoryId), repositoryId, userItem);
+			}catch(Exception e){
+				addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATE);
+			}
+		}else{
+			// wrong previous password!
+			status = false;
+			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_WRONGPASSWORD);
+		}
+		
+		makeResult(status, result, errMsg);
+		return result.toJSONString();
+		
+		/*User user = principalService.getUserById(repositoryId, userId);
 
 		// Validation
 		status = checkAuthorityForUser(status, errMsg, httpRequest, userId, repositoryId);
@@ -266,7 +317,7 @@ public class UserResource extends ResourceBase {
 			}
 		}
 		makeResult(status, result, errMsg);
-		return result.toJSONString();
+		return result.toJSONString();*/
 
 	}
 
@@ -284,7 +335,7 @@ public class UserResource extends ResourceBase {
 		JSONArray errMsg = new JSONArray();
 
 		// Existing user
-		User user = principalService.getUserById(repositoryId, userId);
+		UserItem user = contentService.getUserItemById(repositoryId, userId);
 
 		// Validation
 		status = checkAuthorityForUser(status, errMsg, httpRequest, userId, repositoryId);
@@ -293,56 +344,62 @@ public class UserResource extends ResourceBase {
 
 		// Edit & Update
 		if (status) {
-			// Edit the user info
-			// if a parameter is not input, it won't be modified.
+			// edit
 			if (userId != null)
 				user.setUserId(userId);
 			if (name != null)
 				user.setName(name);
+			
+			Map<String, Object> map = new HashMap<>();
+			for(Property prop : user.getSubTypeProperties()) map.put(prop.getKey(), prop.getValue()); 
+			JSONParser parser = new JSONParser();
 			if (firstName != null)
-				user.setFirstName(firstName);
+				map.put("nemaki:firstName", firstName);
 			if (lastName != null)
-				user.setLastName(lastName);
+				map.put("nemaki:lastName", lastName);
 			if (email != null)
-				user.setEmail(email);
+				map.put("nemaki:email", email);
 			if (addFavorites != null) {
 				try {
-					JSONArray l = (JSONArray) (new JSONParser().parse(addFavorites));
-					Set<String> fs = user.getFavorites();
-					if (CollectionUtils.isEmpty(fs)) {
-						fs = new HashSet<String>();
-					}
-					fs.addAll(l);
-					user.setFavorites(fs);
-					System.out.println();
-					// fs.addAll(l);
+					JSONArray adds = (JSONArray) (parser.parse(addFavorites));
+					Object favs = map.get("nemaki:favorites");
+					if(favs == null) favs = new ArrayList<String>();
+					((List)favs).addAll(adds);
+					map.put("nemaki:favorites", favs);
 				} catch (ParseException e) {
-					// TODO Auto-generated catch block
 					e.printStackTrace();
 				}
 			}
 			if (removeFavorites != null) {
 				try {
-					JSONArray l = (JSONArray) (new JSONParser().parse(removeFavorites));
-					user.getFavorites().removeAll(l);
+					JSONArray removes = (JSONArray) (parser.parse(removeFavorites));
+					Object favs = map.get("nemaki:favorites");
+					if(favs == null) favs = new ArrayList<String>();
+					((List)favs).removeAll(removes);
+					map.put("nemaki:favorites", favs);
 				} catch (ParseException e) {
-					// TODO Auto-generated catch block
 					e.printStackTrace();
 				}
 			}
+			List<Property> properties = new ArrayList<>();
+			for(String key : map.keySet()) properties.add(new Property(key, map.get(key)));
+			user.setSubTypeProperties(properties);
+			
+			
+			// update
 			if (StringUtils.isNotBlank(password)) {
 				// TODO Error handling
-				user = principalService.getUserById(repositoryId, userId);
+				user = contentService.getUserItemById(repositoryId, userId);
 
 				// Edit & Update
 				if (status) {
 					// Edit the user info
 					String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
-					user.setPasswordHash(passwordHash);
+					user.setPassowrd(passwordHash);
 					setModifiedSignature(httpRequest, user);
 
 					try {
-						principalService.updateUser(repositoryId, user);
+						contentService.update(new SystemCallContext(repositoryId), repositoryId, user);
 					} catch (Exception e) {
 						e.printStackTrace();
 						status = false;
@@ -353,7 +410,7 @@ public class UserResource extends ResourceBase {
 			setModifiedSignature(httpRequest, user);
 
 			try {
-				principalService.updateUser(repositoryId, user);
+				contentService.update(new SystemCallContext(repositoryId), repositoryId, user);
 			} catch (Exception e) {
 				e.printStackTrace();
 				status = false;
@@ -375,7 +432,7 @@ public class UserResource extends ResourceBase {
 		JSONArray errMsg = new JSONArray();
 
 		// Existing user
-		User user = principalService.getUserById(repositoryId, userId);
+		UserItem user = contentService.getUserItemById(repositoryId, userId);
 		if (user == null) {
 			status = false;
 			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTFOUND);
@@ -387,7 +444,7 @@ public class UserResource extends ResourceBase {
 		// Delete a user
 		if (status) {
 			try {
-				principalService.deleteUser(repositoryId, user.getId());
+				contentService.delete(new SystemCallContext(repositoryId), repositoryId, user.getId(), false);
 			} catch (Exception ex) {
 				ex.printStackTrace();
 				status = false;
@@ -421,7 +478,7 @@ public class UserResource extends ResourceBase {
 		status = validateUser(status, errMsg, userId, userName, firstName, lastName);
 
 		// userID uniqueness
-		User user = principalService.getUserById(repositoryId, userId);
+		UserItem user = contentService.getUserItemById(repositoryId, userId);
 		if (user != null) {
 			status = false;
 			addErrMsg(errMsg, ITEM_USERID, ErrorCode.ERR_ALREADYEXISTS);
@@ -435,7 +492,7 @@ public class UserResource extends ResourceBase {
 	}
 
 	@SuppressWarnings("unchecked")
-	private JSONObject convertUserToJson(User user) {
+	private JSONObject convertUserToJson(UserItem user) {
 		SimpleDateFormat sdf = new SimpleDateFormat(DATE_FORMAT);
 		String created = new String();
 		try {
@@ -457,31 +514,26 @@ public class UserResource extends ResourceBase {
 		userJSON.clear();
 		userJSON.put(ITEM_USERID, user.getUserId());
 		userJSON.put(ITEM_USERNAME, user.getName());
-		userJSON.put(ITEM_FIRSTNAME, user.getFirstName());
-		userJSON.put(ITEM_LASTNAME, user.getLastName());
-		userJSON.put(ITEM_EMAIL, user.getEmail());
 		userJSON.put(ITEM_TYPE, user.getType());
 		userJSON.put(ITEM_CREATOR, user.getCreator());
 		userJSON.put(ITEM_CREATED, created);
 		userJSON.put(ITEM_MODIFIER, user.getModifier());
 		userJSON.put(ITEM_MODIFIED, modified);
 
+		Map<String, Object> kvMap = new HashMap<>();
+		for(Property p : user.getSubTypeProperties()) kvMap.put(p.getKey(), p.getValue());
+		
+		userJSON.put(ITEM_FIRSTNAME, MapUtils.getObject(kvMap, "nemaki:firstName", ""));
+		userJSON.put(ITEM_LASTNAME, MapUtils.getObject(kvMap, "nemaki:lastName", ""));
+		userJSON.put(ITEM_EMAIL, MapUtils.getObject(kvMap, "nemaki:email", ""));
+		userJSON.put("favorites", MapUtils.getObject(kvMap, "nemaki:favorites", new JSONArray()));
+		
 		boolean isAdmin = (user.isAdmin() == null) ? false : user.isAdmin();
 		userJSON.put(ITEM_IS_ADMIN, isAdmin);
 
-		JSONArray jfs = new JSONArray();
-		Set<String> ufs = user.getFavorites();
-		if (CollectionUtils.isNotEmpty(ufs)) {
-			Iterator<String> ufsItr = ufs.iterator();
-			while (ufsItr.hasNext()) {
-				jfs.add(ufsItr.next());
-			}
-		}
-		userJSON.put("favorites", jfs);
-
 		return userJSON;
 	}
-
+	
 	private boolean checkAuthorityForUser(boolean status, JSONArray errMsg, HttpServletRequest httpRequest,
 			String resoureId, String repositoryId) {
 		CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
@@ -497,7 +549,7 @@ public class UserResource extends ResourceBase {
 
 	private boolean isSystemUser(String repositoryId, String userId){
 		boolean result = false;
-		User user = principalService.getUserById(repositoryId, userId);
+		UserItem user = contentService.getUserItemById(repositoryId, userId);
 
 		result = user.isAdmin();
 		if(result) return true;
@@ -514,16 +566,22 @@ public class UserResource extends ResourceBase {
 			return false;
 		}
 
-		User user = principalService.getUserById(repositoryId, userId);
+		UserItem user = contentService.getUserItemById(repositoryId, userId);
 		boolean isAdmin = (user.isAdmin() == null) ? false : user.isAdmin();
 		if (isAdmin) {
 			// password check
-			boolean match = BCrypt.checkpw(password, user.getPasswordHash());
+			boolean match = BCrypt.checkpw(password, user.getPassowrd());
 			if (match)
 				return true;
 		}
 		return false;
 	}
 
+	public void setPropertyManager(PropertyManager propertyManager) {
+		this.propertyManager = propertyManager;
+	}
 
+	public void setContentService(ContentService contentService) {
+		this.contentService = contentService;
+	}
 }
