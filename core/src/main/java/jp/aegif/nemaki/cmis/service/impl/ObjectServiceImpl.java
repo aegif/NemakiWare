@@ -60,6 +60,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.BulkUpdateObjectId
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.FailedToDeleteDataImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.RenditionDataImpl;
+import org.apache.chemistry.opencmis.commons.impl.jaxb.GetDescendants;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.commons.collections.CollectionUtils;
@@ -966,106 +967,6 @@ public class ObjectServiceImpl implements ObjectService {
 			String repositoryId, String folderId, Boolean allVersions,
 			UnfileObject unfileObjects, Boolean continueOnFailure, ExtensionsData extension) {
 		// //////////////////
-		// Inner classes
-		// //////////////////
-		class DeleteTask implements Callable<Boolean> {
-			private CallContext callContext;
-			private String repositoryId;
-			private Content content;
-			private Boolean allVersions;
-			
-			public DeleteTask(){}
-			
-			public DeleteTask(CallContext callContext, String repositoryId, Content content, Boolean allVersions){
-				this.callContext = callContext;
-				this.repositoryId = repositoryId;
-				this.content = content;
-				this.allVersions = allVersions;
-			}
-
-		    @Override
-		    public Boolean call() throws Exception {
-		        try{
-		        	objectServiceInternal.deleteObjectInternal(callContext, repositoryId, content, allVersions, true);
-		        	return false;
-		        }catch(Exception e){
-		        	return true;
-		        }
-		    }
-		}
-		
-		class WrappedExecutorService{
-			private ExecutorService service;
-			private Folder folder;
-			
-			private WrappedExecutorService(){};
-			public WrappedExecutorService(ExecutorService service, Folder folder){
-				this.service = service;
-				this.folder = folder;
-			}
-			
-			public ExecutorService getService(){
-				return service;
-			}
-			public Folder getFolder() {
-				return folder;
-			}
-		}
-		
-		class DeleteService{
-			private Map<String, Future<Boolean>> failureIds;
-			private WrappedExecutorService parentService;
-			private CallContext callContext;
-			private String repositoryId;
-			private Content content;
-			private Boolean allVersions;
-			
-			public DeleteService(){}
-
-			public DeleteService(Map<String, Future<Boolean>> failureIds, WrappedExecutorService parentService, CallContext callContext, String repositoryId, Content content,
-					Boolean allVersions) {
-				super();
-				this.failureIds = failureIds;
-				this.parentService = parentService;
-				this.callContext = callContext;
-				this.repositoryId = repositoryId;
-				this.content = content;
-				this.allVersions = allVersions;
-			}
-			
-			public void execute(){
-				if(content.isDocument()){
-					Future<Boolean> result = parentService.getService().submit(new DeleteTask(callContext, repositoryId, content, allVersions));
-					failureIds.put(content.getId(), result);
-				}else if(content.isFolder()){
-					WrappedExecutorService childrenService = new WrappedExecutorService
-							(Executors.newFixedThreadPool(threadMax), (Folder)content);
-					
-					List<Content> children = contentService.getChildren(repositoryId, content.getId());
-					if(CollectionUtils.isNotEmpty(children)){
-						for(Content child : children){
-							DeleteService deleteService = new DeleteService(this.failureIds, childrenService, callContext, repositoryId, child, allVersions);
-							deleteService.execute();
-						}
-					}
-					
-					//wait til newService ends
-					childrenService.getService().shutdown();
-					try {
-						childrenService.getService().awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
-					} catch (InterruptedException e) {
-						log.error(e, e);
-					}
-					
-					//Lastly, delete self
-					Future<Boolean> result = parentService.getService().submit(new DeleteTask(callContext, repositoryId, content, allVersions));
-					failureIds.put(content.getId(), result);
-				}
-				
-			}
-		}
-		
-		// //////////////////
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("objectId", folderId);
@@ -1085,35 +986,150 @@ public class ObjectServiceImpl implements ObjectService {
 		// Body of the method
 		// //////////////////
 		// Delete descendants
-		Map<String, Future<Boolean>> failureIds = new HashMap<String, Future<Boolean>>();
+		List<Content> descendants = getLeafDescendants(repositoryId, folder);
+		List<DeleteTask> leafTasks = new ArrayList<>();
+		for(Content c : descendants){
+			leafTasks.add(new DeleteTask(this, callContext, repositoryId, c.getId(), allVersions));
+		}
+		ExecutorService executorService = Executors.newFixedThreadPool(threadMax);
+		
+		FailedToDeleteDataImpl fdd = new FailedToDeleteDataImpl();
+		try {
+			// delete
+			List<Future<DeleteResult>> leafResult = executorService.invokeAll(leafTasks);
+			executorService.shutdown(); 
+			List<DeleteResult> folderResult = deleteFolderTree(callContext, repositoryId, folder, allVersions);
 
-		DeleteService deleteService = new DeleteService(failureIds, new WrappedExecutorService
-				(Executors.newFixedThreadPool(threadMax), folder), callContext, repositoryId, folder, allVersions);
-		deleteService.execute();
+			// parse results
+			List<String> ids = new ArrayList<String>();
+			for(Future<DeleteResult> dr : leafResult){
+				try {
+					Boolean success = dr.get().getSuccess();
+					if(!success){
+						ids.add(dr.get().getFolderId());
+					}
+				} catch (InterruptedException | ExecutionException e) {
+					e.printStackTrace();
+				}
+			}
+
+			for(DeleteResult dr : folderResult){
+				if(!dr.getSuccess()){
+					ids.add(dr.getFolderId());
+				}
+			}
+			
+			fdd.setIds(ids);
+			
+		} catch (InterruptedException e1) {
+			e1.printStackTrace();
+		}finally{
+			executorService.shutdown();
+		}
 		
 		solrUtil.callSolrIndexing(repositoryId);
-
-		// Check FailedToDeleteData
-		// FIXME Consider orphans that was failed to be deleted
-		FailedToDeleteDataImpl fdd = new FailedToDeleteDataImpl();
-		List<String> ids = new ArrayList<String>();
-		for(Entry<String, Future<Boolean>> entry : failureIds.entrySet()){
-			Boolean failed;
-			try {
-				failed = entry.getValue().get();
-				if(failed){
-					ids.add(entry.getKey());
-				}
-			} catch (InterruptedException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			} catch (ExecutionException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
+		
+		return fdd;
+	}
+	
+	private static class DeleteResult{
+		private String folderId;
+		private Boolean success;
+		
+		public DeleteResult(String folderId, Boolean success) {
+			super();
+			this.folderId = folderId;
+			this.success = success;
+		}
+		public String getFolderId() {
+			return folderId;
+		}
+		public void setFolderId(String folderId) {
+			this.folderId = folderId;
+		}
+		public Boolean getSuccess() {
+			return success;
+		}
+		public void setSuccess(Boolean success) {
+			this.success = success;
+		}
+	}
+	
+	private static class DeleteTask implements Callable<DeleteResult>{
+		private ObjectService objectService;
+		private CallContext callContext;
+		private String repositoryId;
+		private String objectId;
+		private Boolean allVersions;
+		
+		public DeleteTask(ObjectService objectService, CallContext callContext, String repositoryId, String objectId,
+				Boolean allVersions) {
+			super();
+			this.objectService = objectService;
+			this.callContext = callContext;
+			this.repositoryId = repositoryId;
+			this.objectId = objectId;
+			this.allVersions = allVersions;
+		}
+		
+		@Override
+		public DeleteResult call() throws Exception {
+			try{
+				objectService.deleteObject(callContext, repositoryId, objectId, allVersions);
+				return new DeleteResult(objectId, true);
+			}catch(Exception e){
+				log.warn(e, e);
+				return new DeleteResult(objectId, false);
 			}
 		}
-		fdd.setIds(ids);
-		return fdd;
+	}
+	
+	private List<Content> getLeafDescendants(String repositoryId, Content content){
+		List<Content> list = new ArrayList<>();
+		_getLeafDescendants(repositoryId, content, list);
+		return list;
+	}
+	
+	private void _getLeafDescendants(String repositoryId, Content content, List<Content> list){
+		if(content instanceof Folder){
+			List<Content>children = contentService.getChildren(repositoryId, content.getId());
+			if(CollectionUtils.isNotEmpty(children)){
+				for(Content child : children){
+					_getLeafDescendants(repositoryId, child, list);
+				}
+			}
+		}else{
+			list.add(content);
+		}
+	}
+	
+	
+	private List<DeleteResult> deleteFolderTree(CallContext callContext, String repositoryId, Folder folder, Boolean allVersions){
+		List<DeleteResult> result = new ArrayList<>();
+		_deleteFolderTree(callContext, repositoryId, folder, allVersions, result);
+		return result;
+	}
+	
+	private void _deleteFolderTree(CallContext callContext, String repositoryId, Folder folder, Boolean allVersions, List<DeleteResult> result){
+		List<Content> children = contentService.getChildren(repositoryId, folder.getId());
+		
+		// previously, delete children
+		if(CollectionUtils.isNotEmpty(children)){
+			for(Content child : children){
+				if(child instanceof Folder)
+				_deleteFolderTree(callContext, repositoryId, (Folder)child, allVersions, result);
+			}
+		}
+
+		// then delete target folder
+		// if there remain undeleted children, deleteObject fails as expected.
+		try{
+			deleteObject(callContext, repositoryId, folder.getId(), allVersions);
+			result.add(new DeleteResult(folder.getId(), true));
+		}catch(Exception e){
+			log.warn(e, e);
+			result.add(new DeleteResult(folder.getId(), false));
+		}
 	}
 
 	public void setObjectServiceInternal(ObjectServiceInternal objectServiceInternal) {
