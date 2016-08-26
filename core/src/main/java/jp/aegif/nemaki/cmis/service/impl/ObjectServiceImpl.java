@@ -1103,7 +1103,6 @@ public class ObjectServiceImpl implements ObjectService {
 		}
 	}
 	
-	
 	private List<DeleteResult> deleteFolderTree(CallContext callContext, String repositoryId, Folder folder, Boolean allVersions){
 		List<DeleteResult> result = new ArrayList<>();
 		_deleteFolderTree(callContext, repositoryId, folder, allVersions, result);
