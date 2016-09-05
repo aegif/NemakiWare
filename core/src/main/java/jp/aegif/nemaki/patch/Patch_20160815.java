@@ -37,6 +37,7 @@ import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.constant.NemakiObjectType;
 import jp.aegif.nemaki.util.constant.PropertyKey;
+import jp.aegif.nemaki.util.constant.SystemConst;
 
 public class Patch_20160815{
 	private static Logger logger = LoggerFactory.getLogger(Patch_20160815.class);
@@ -45,6 +46,8 @@ public class Patch_20160815{
 	private PrincipalService principalService;
 	
 	public void apply(){
+
+		addNemakiConfDb();
 		
 		for(String repositoryId : patch.getRepositoryInfoMap().keys()){
 			boolean isApplied = patch.isApplied(repositoryId, this.name);
@@ -72,6 +75,12 @@ public class Patch_20160815{
 		}
 	}
 
+	private void addNemakiConfDb(){
+		final String dbName = SystemConst.NEMAKI_CONF_DB;
+		patch.addDb(dbName);
+		addConfigurationView(dbName);
+	}
+	
 	private void addConfigurationView(String repositoryId){
 		patch.addView(repositoryId, "configuration", "function(doc) { if (doc.type == 'configuration')  emit(doc._id, doc) }");
 	}
