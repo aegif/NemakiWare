@@ -1,4 +1,4 @@
-package jp.aegif.nemaki.test.tck.tests;
+package jp.aegif.nemaki.cmis.tck.tests;
 
 import org.apache.chemistry.opencmis.tck.tests.crud.BulkUpdatePropertiesTest;
 import org.apache.chemistry.opencmis.tck.tests.crud.ChangeTokenTest;
@@ -21,7 +21,7 @@ import org.apache.chemistry.opencmis.tck.tests.crud.UpdateSmokeTest;
 import org.apache.chemistry.opencmis.tck.tests.crud.WhitespaceInNameTest;
 import org.junit.Test;
 
-import jp.aegif.nemaki.test.tck.TckSuite;
+import jp.aegif.nemaki.cmis.tck.TckSuite;
 
 public class CrudTestGroup extends TckSuite{
 	

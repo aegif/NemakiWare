@@ -1,4 +1,4 @@
-package jp.aegif.nemaki.test.nemaki;
+package jp.aegif.nemaki.cmis.original;
 
 import java.util.HashMap;
 import java.util.Map;

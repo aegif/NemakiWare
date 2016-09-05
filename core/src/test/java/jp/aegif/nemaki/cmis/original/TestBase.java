@@ -1,4 +1,4 @@
-package jp.aegif.nemaki.test.nemaki;
+package jp.aegif.nemaki.cmis.original;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -14,6 +14,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletionService;
@@ -46,44 +47,47 @@ import org.junit.BeforeClass;
 public class TestBase {
 	protected static Session session;
 	protected static String testFolderId;
+	protected static String logFormat = "{thread:%s, time:%s, id:%s, start:%s, end:%s"; 
+	protected static final String PARAM_FILE_NAME = "cmis-original-thread.properties";
 	
 	@BeforeClass
 	public static void before() throws Exception {
 		session = SessionUtil.createCmisSession("bedroom", "admin", "admin");
-		//testFolderId = prepareData();
+		testFolderId = prepareData();
 	}
 
-	
+	@AfterClass
 	public static void after() throws Exception {
 		Folder folder = (Folder) session.getObject(testFolderId);
 		folder.deleteTree(true, UnfileObject.DELETE, true);
 	}
 	
 	public static String prepareData() throws Exception{
-		int itemNumber = 100;
+		Properties properties = loadParams(PARAM_FILE_NAME);
+		final int num = Integer.valueOf(properties.getProperty("num"));
 		
 		String rootFolderId = session.getRepositoryInfo().getRootFolderId();
 		
 		String testFolderId = createFolder(rootFolderId, "test_general_" + System.currentTimeMillis());
 		
 		List<CreateDocumentTask> tasks = new ArrayList<>();
-		for(int i=1; i<=itemNumber; i++){
+		for(int i=1; i<=num; i++){
 			tasks.add(new CreateDocumentTask("task_" + i , testFolderId, "task_" + i + ".txt", "これはテストです"));
 		}
 		
 		ExecutorService executionService = Executors.newFixedThreadPool(10);
 		CompletionService<String> completionService = new ExecutorCompletionService<>(executionService);
 		
-		for(int i=1; i<=itemNumber; i++){
+		for(int i=1; i<=num; i++){
 			completionService.submit(new CreateDocumentTask("task_" + i , testFolderId, "task_" + i + ".txt", "これはテストです"));
 		}
 		
-		for(int i=1; i<=itemNumber; i++){
+		for(int i=1; i<=num; i++){
 			Future<String> result = completionService.take();
 			result.get();
 		}
 		
-		System.out.println("data initilization completed: " + itemNumber + " items");
+		System.out.println("data initilization completed: " + num + " items");
 		return testFolderId;
 	}
 	
@@ -227,5 +231,13 @@ public class TestBase {
 		ContentStream cs = session.getObjectFactory().createContentStream(
 				file.getName(), file.length(), mimetype, fis);
 		return cs;
+	}
+	
+	public static Properties loadParams(String fileName) throws FileNotFoundException, IOException{
+		File parametersFile = new File(TestBase.class.getClassLoader().getResource(fileName).getFile());
+		Properties properties = new Properties();
+		properties.load(new FileInputStream(parametersFile));
+		
+		return properties;
 	}
 }
