@@ -32,9 +32,11 @@ import jp.aegif.nemaki.util.AuthenticationUtil;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.util.constant.PropertyKey;
+import jp.aegif.nemaki.util.constant.SystemConst;
 
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
+import org.apache.commons.lang.ObjectUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -69,7 +71,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		if (loginWithToken(callContext)) {
 			return true;
 		}
-
+		
 		// Basic auth
 		return loginWithBasicAuth(callContext);
 	}
@@ -146,6 +148,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 	private boolean loginWithBasicAuth(CallContext callContext) {
 		String repositoryId = callContext.getRepositoryId();
+		
 		//Check repositoryId exists
 		if(!repositoryInfoMap.contains(repositoryId)){
 			return false;
@@ -173,7 +176,25 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 		return true;
 	}
+	
+	@Override
+	public boolean loginForNemakiConfDb(CallContext callContext){
+		final String suId = repositoryInfoMap.getSuperUsers().getId();
+		final String repositoryId = callContext.getRepositoryId();
+		
+		// check system config db
+		if(ObjectUtils.equals(repositoryId, SystemConst.NEMAKI_CONF_DB)){
+			UserItem user = getAuthenticatedUserItem(suId, callContext.getUsername(), callContext.getPassword());
+			if (user == null)
+				return false;
 
+			boolean isAdmin = user.isAdmin() == null ? false : true;
+			return isAdmin;
+		}
+		
+		return false;
+	}
+	
 	private void setAdminFlagInContext(CallContext callContext, Boolean isAdmin) {
 		((CallContextImpl) callContext).put(CallContextKey.IS_ADMIN, isAdmin);
 	}

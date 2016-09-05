@@ -3,15 +3,12 @@ package jp.aegif.nemaki.util;
 import java.util.List;
 
 import jp.aegif.nemaki.dao.ContentDaoService;
-import jp.aegif.nemaki.dao.impl.couch.connector.ConnectorPool;
 import jp.aegif.nemaki.model.Configuration;
-import jp.aegif.nemaki.model.couch.CouchConfiguration;
+import jp.aegif.nemaki.util.constant.SystemConst;
 import jp.aegif.nemaki.util.spring.SpringPropertiesUtil;
 
-import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.ektorp.ViewQuery;
 
 public class PropertyManager{
 	private static final Log log = LogFactory
@@ -31,15 +28,30 @@ public class PropertyManager{
 	 * @throws Exception
 	 */
 	public String readValue(String key){
-		return propertyConfigurer.getValue(key);
+		Object configVal = getDynamicValue(key);
+		if(configVal == null){
+			return propertyConfigurer.getValue(key);
+		}else{
+			return configVal.toString();
+		}
 	}
 
 	public String readHeadValue(String key) throws Exception{
-		return propertyConfigurer.getHeadValue(key);
+		Object configVal = getDynamicValue(key);
+		if(configVal == null){
+			return propertyConfigurer.getHeadValue(key);
+		}else{
+			return configVal.toString();
+		}
 	}
 
 	public List<String> readValues(String key) {
-		return propertyConfigurer.getValues(key);
+		Object configVal = getDynamicValue(key);
+		if(configVal == null){
+			return propertyConfigurer.getValues(key);
+		}else{
+			return (List<String>)configVal;
+		}
 	}
 	
 	public boolean readBoolean(String key){
@@ -48,7 +60,7 @@ public class PropertyManager{
 	}
 	
 	public String readValue(String repositoryId, String key){
-		Object configVal = getConfigurationValue(repositoryId, key);
+		Object configVal = getDynamicValue(repositoryId, key);
 		if(configVal == null){
 			return propertyConfigurer.getValue(key);
 		}else{
@@ -57,7 +69,7 @@ public class PropertyManager{
 	}
 
 	public String readHeadValue(String repositoryId, String key) throws Exception{
-		Object configVal = getConfigurationValue(repositoryId, key);
+		Object configVal = getDynamicValue(repositoryId, key);
 		if(configVal == null){
 			return propertyConfigurer.getHeadValue(key);
 		}else{
@@ -66,7 +78,7 @@ public class PropertyManager{
 	}
 
 	public List<String> readValues(String repositoryId, String key) {
-		Object configVal = getConfigurationValue(repositoryId, key);
+		Object configVal = getDynamicValue(repositoryId, key);
 		if(configVal == null){
 			return propertyConfigurer.getValues(key);
 		}else{
@@ -75,30 +87,42 @@ public class PropertyManager{
 	}
 	
 	public boolean readBoolean(String repositoryId, String key){
-		Object configVal = getConfigurationValue(repositoryId, key);
-		if(configVal == null){
-			String val = readValue(key);
-			return Boolean.valueOf(val);
-		}else{
-			String val = readValue(repositoryId, key);
-			return Boolean.valueOf(val);
-		}
+		String val = readValue(repositoryId, key);
+		return Boolean.valueOf(val);
 	}
 
 	private Configuration getConfiguration(String repositoryId) {
 		return contentDaoService.getConfiguration(repositoryId);
 	}
 	
-	private Object getConfigurationValue(String repositoryId, String key){
-		Configuration configuration = getConfiguration(repositoryId);
-		if(configuration != null){
-			Object value = configuration.getConfiguration().get(key);
-			if(value != null){
-				return value;
+	private Object getDynamicValue(String key){
+		Object result = null;
+		
+		Configuration sysConf = getConfiguration(SystemConst.NEMAKI_CONF_DB);
+		Object sysVal = sysConf.getConfiguration().get(key);
+		if(sysVal != null){
+			result = sysVal;
+		}
+		
+		return result;
+	}
+	
+	private Object getDynamicValue(String repositoryId, String key){
+		Object result = null;
+		
+		Configuration repoConf = getConfiguration(repositoryId);
+		if(repoConf != null){
+			Object repoVal = repoConf.getConfiguration().get(key);
+			if(repoVal != null){
+				result = repoVal;
 			}
 		}
 		
-		return null;
+		if(result == null){
+			result = getDynamicValue(key);
+		}
+		
+		return result;
 	}
 	
 	public void setPropertyConfigurer(SpringPropertiesUtil propertyConfigurer) {
