@@ -16,7 +16,7 @@ public class SampleAction implements JavaBackedAction {
 
 	@Override
 	public ActionTriggerBase getActionTrigger() {
-		return new UserButtonActionTrigger("サンプル");
+		return new UserButtonActionTrigger("サンプルアクションの実行");
 	}
 
 	@Override
@@ -26,8 +26,7 @@ public class SampleAction implements JavaBackedAction {
 
 	@Override
 	public void executeAction(ObjectData obj) {
-		logger.debug("ボタンが押されました ID="+obj.getId());
-
+		logger.debug("アクションが実行されました ID="+obj.getId());
 	}
 
 	@Override
