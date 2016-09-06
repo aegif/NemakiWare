@@ -1,4 +1,4 @@
-package jp.aegif.nemaki.test.tck.tests;
+package jp.aegif.nemaki.cmis.tck.tests;
 
 import org.apache.chemistry.opencmis.tck.tests.query.ContentChangesSmokeTest;
 import org.apache.chemistry.opencmis.tck.tests.query.QueryForObject;
@@ -8,7 +8,7 @@ import org.apache.chemistry.opencmis.tck.tests.query.QueryRootFolderTest;
 import org.apache.chemistry.opencmis.tck.tests.query.QuerySmokeTest;
 import org.junit.Test;
 
-import jp.aegif.nemaki.test.tck.TckSuite;
+import jp.aegif.nemaki.cmis.tck.TckSuite;
 
 public class QueryTestGroup extends TckSuite{
 	@Test

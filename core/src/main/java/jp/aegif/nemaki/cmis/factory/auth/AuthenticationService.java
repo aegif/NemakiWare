@@ -46,4 +46,5 @@ import org.apache.chemistry.opencmis.commons.server.CallContext;
 public interface AuthenticationService {
 	
 	public boolean login(CallContext callContext);
+	public boolean loginForNemakiConfDb(CallContext callContext);
 }

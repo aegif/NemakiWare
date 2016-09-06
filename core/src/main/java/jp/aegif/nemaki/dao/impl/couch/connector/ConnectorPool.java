@@ -14,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
+import jp.aegif.nemaki.util.constant.SystemConst;
 
 public class ConnectorPool {
 
@@ -47,6 +48,9 @@ public class ConnectorPool {
 		if(authEnabled){
 			builder.username(authUserName).password(authPassword);
 		}
+		
+		//Create connector(all-repository config)
+		add(SystemConst.NEMAKI_CONF_DB);
 		
 		//Create connectors
 		for(String key : repositoryInfoMap.keys()){
