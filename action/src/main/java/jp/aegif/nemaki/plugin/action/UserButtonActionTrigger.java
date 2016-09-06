@@ -13,4 +13,10 @@ public class UserButtonActionTrigger extends ActionTriggerBase {
 		return _displayName;
 	}
 
+	private String _fontAwesomeName = "fa fa-fire";
+	public String getFontAwesomeName(){
+		return _fontAwesomeName;
+	}
+
+
 }
