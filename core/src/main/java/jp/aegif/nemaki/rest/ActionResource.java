@@ -25,6 +25,7 @@ import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.plugin.action.JavaBackedAction;
+import jp.aegif.nemaki.util.action.NemakiActionPlugin;
 
 
 @Path("/repo/{repositoryId}/action/{actionId}")
@@ -61,20 +62,20 @@ public class ActionResource extends ResourceBase {
 
 		//読みこまれたプラグインからActionIdが等しいものをさがす
         try (GenericApplicationContext context = new AnnotationConfigApplicationContext(AppConfig.class)) {
-        	JavaBackedAction product = context.getBean(JavaBackedAction.class);
+        	NemakiActionPlugin acionPlugin = context.getBean(NemakiActionPlugin.class);
+        	JavaBackedAction plugin =  acionPlugin.getPlugin(actionId);
 
+        	if(plugin != null){
+				//無ければスキップ
+				CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+				ObjectData object = compileService.compileObjectData(callContext,
+						repositoryId, contentService.getContent(repositoryId, objectId), null,
+						false, IncludeRelationships.NONE, null, false);
 
-		//無ければスキップ
-		CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
-		ObjectData object = compileService.compileObjectData(callContext,
-				repositoryId, contentService.getContent(repositoryId, objectId), null,
-				false, IncludeRelationships.NONE, null, false);
-
-		//実行して結果を返す
-
-
-        product.executeAction(object);
-    }
+				//実行して結果を返す
+				plugin.executeAction(object);
+        	}
+        }
 
 
 		return "hoge";

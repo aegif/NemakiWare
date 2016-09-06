@@ -46,7 +46,7 @@
 					case folder:Folder =>{
 						<a href="@routes.Node.showChildren(repositoryId, folder.getId)">
 					}
-					
+
 					case item:Item =>{
 						<a href="#">
 					}
@@ -73,6 +73,13 @@
 					<button type="button" class="btn btn-default delete" cmis-id="@obj.getId()">
 						<i class="fa fa-trash"></i><div class="tooltips">@Messages("view.delete")</div>
 					</button>
+
+					@for(addtionalButton <- Util.getAddtionalActionButtonElement(obj)){
+						<button type="button" class="btn btn-default delete" cmis-id="@obj.getId()">
+							<i class="fa fa-trash"></i><div class="tooltips">@addtionalButton</div>
+						</button>
+					}
+
 				</div>
 			</td>
 		</tr>
