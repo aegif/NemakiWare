@@ -47,6 +47,21 @@ public class Patch {
 		contentDaoService.create(repositoryId, patchHistory);
 	}
 	
+	protected void addDb(String dbName){
+		// add connector (or create if not exist)
+		CouchDbConnector connector = connectorPool.add(dbName);
+		
+		// add design doc
+		StdDesignDocumentFactory factory = new StdDesignDocumentFactory();
+		
+		DesignDocument designDoc = factory.getFromDatabase(connector, "_design/_repo");
+		if(designDoc == null){
+			designDoc = factory.newDesignDocumentInstance();
+			designDoc.setId("_design/_repo");
+			connector.create(designDoc);
+		}
+	}
+	
 	protected void addView(String repositoryId, String viewName, String map){
 		addView(repositoryId, viewName, map, false);
 	}
