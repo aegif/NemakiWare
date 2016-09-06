@@ -5,13 +5,23 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import jp.aegif.nemaki.plugin.action.JavaBackedAction;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 public class NemakiActionPlugin {
 
-    @Autowired
-    Map<String, JavaBackedAction> pluginMap;
+	@Autowired(required=false)
+	Map<String, JavaBackedAction> pluginMap = new HashMap<String, JavaBackedAction>();
+
+	public Collection<JavaBackedAction> getPlugins() {
+
+		return pluginMap.values();
+	}
+
+	public JavaBackedAction getPlugin(String actionId) {
+		return pluginMap.get(actionId);
+	}
 }
-
-

@@ -35,6 +35,7 @@ import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.SessionParameter;
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
+import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.definitions.Choice;
 import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
@@ -44,6 +45,7 @@ import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.BindingType;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
+import org.apache.chemistry.opencmis.commons.enums.ExtensionLevel;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
@@ -175,6 +177,22 @@ public class Util {
 		}
 	}
 
+	public static List<String> getAddtionalActionButtonElement(CmisObject object){
+		List<CmisExtensionElement> exList = object.getExtensions(ExtensionLevel.OBJECT);
+		List<String> result = new ArrayList<String>();
+
+		if (exList != null){
+			for(CmisExtensionElement elm : exList){
+				if(elm.getNamespace() == "http://aegif.jp/nemakiware/action"){
+					for(CmisExtensionElement actionElm : elm.getChildren()){
+						result.add(actionElm.getValue());
+					}
+				}
+			}
+		}
+		return result;
+	}
+
 	public static Document convertToDocument(CmisObject obj) {
 		Document doc = (Document) obj;
 		return doc;
@@ -195,7 +213,7 @@ public class Util {
 		File file = File.createTempFile(
 				String.valueOf(System.currentTimeMillis()), null);
 		file.deleteOnExit();
-		
+
 		try {
 			// write the inputStream to a FileOutputStream
 			OutputStream out = new FileOutputStream(file);
@@ -827,7 +845,7 @@ public class Util {
 			 }
 		 }
 	 }
-	 
+
 	 public static long getCompressionTargetMaxSize(){
 		 String _size = NemakiConfig.getValue(PropertyKey.COMPRESSION_TARGET_MAXSIZE);
 		 return Long.valueOf(_size);
