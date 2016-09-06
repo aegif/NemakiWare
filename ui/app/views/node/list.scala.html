@@ -74,9 +74,10 @@
 						<i class="fa fa-trash"></i><div class="tooltips">@Messages("view.delete")</div>
 					</button>
 
-					@for(extentionButton <- Util.getAddtionalActionButtonElement(obj)){
-						<button type="button" class="btn btn-default action" cmis-id="@obj.getId()">
-							<i class="@extentionButton.getFontAwesomeName()"></i><div class="tooltips">@extentionButton.getDisplayName()</div>
+					@for(actionButton <- Util.getActionPluginUIElementList(obj)){
+						<button type="button" class="btn btn-default action-@actionButton.getActionId()" cmis-id="@obj.getId()">
+							<i class="@actionButton.getFontAwesomeName()"></i>
+							<div class="tooltips">@actionButton.getDisplayName()</div>
 						</button>
 					}
 
@@ -159,6 +160,29 @@
 		});
 	});
 </script>
+
+	@for(obj <- objects){
+		@for(actionPluginUI <- Util.getActionPluginUIElementList(obj)){
+			<!-- action -->
+			<script type="text/javascript">
+				$(function(){
+			        $(".action-@actionPluginUI.getActionId()").bind('click', function(){
+			       		var id = $(this).attr('cmis-id');
+
+			       		//Execute
+						$.ajax(jsRoutes.controllers.Node.showDetail("@repositoryId", id, true)
+						).done(function(data){
+							showLightbox('action-@actionPluginUI.getActionId()' + id, data);
+						}).fail(function(XMLHttpRequest, textStatus, errorThrown){
+							//TODO
+						}).always(function(){
+							//TODO
+						});
+			        });
+			    });
+			</script>
+		}
+	}
 
 <!-- no content stream link -->
 <script type="text/javascript">

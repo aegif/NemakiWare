@@ -86,7 +86,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import constant.PropertyKey;
 import constant.Token;
 import constant.UpdateContext;
-import model.ActionExtensionButton;
+import model.ActionPluginUIElement;
 
 public class Util {
 	public static Session createCmisSession(String repositoryId, play.mvc.Http.Session session){
@@ -178,14 +178,14 @@ public class Util {
 		}
 	}
 
-	public static List<ActionExtensionButton> getAddtionalActionButtonElement(CmisObject object){
+	public static List<ActionPluginUIElement> getActionPluginUIElementList(CmisObject object){
 		List<CmisExtensionElement> exList = object.getExtensions(ExtensionLevel.OBJECT);
-		List<ActionExtensionButton> result = new ArrayList<ActionExtensionButton>();
+		List<ActionPluginUIElement> result = new ArrayList<ActionPluginUIElement>();
 
 		if (exList != null){
 			for(CmisExtensionElement elm : exList){
 				if(elm.getNamespace() == "http://aegif.jp/nemakiware/action"){
-					ActionExtensionButton button = new ActionExtensionButton();
+					ActionPluginUIElement button = new ActionPluginUIElement(elm.getValue());
 					for(CmisExtensionElement actionElm : elm.getChildren()){
 						if( actionElm.getName() == "actionButtonLabel"){
 							button.setDisplayName(actionElm.getValue());
@@ -199,6 +199,16 @@ public class Util {
 		}
 		return result;
 	}
+
+	public static ActionPluginUIElement getActionPluginUIElement(CmisObject object, String actionId){
+		for(ActionPluginUIElement elm : Util.getActionPluginUIElementList(object)){
+			if(elm.getActionId() == actionId) return elm;
+		}
+		return null;
+	}
+
+
+
 
 	public static Document convertToDocument(CmisObject obj) {
 		Document doc = (Document) obj;
