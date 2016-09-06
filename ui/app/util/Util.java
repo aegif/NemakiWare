@@ -86,6 +86,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import constant.PropertyKey;
 import constant.Token;
 import constant.UpdateContext;
+import model.ActionExtensionButton;
 
 public class Util {
 	public static Session createCmisSession(String repositoryId, play.mvc.Http.Session session){
@@ -177,16 +178,22 @@ public class Util {
 		}
 	}
 
-	public static List<String> getAddtionalActionButtonElement(CmisObject object){
+	public static List<ActionExtensionButton> getAddtionalActionButtonElement(CmisObject object){
 		List<CmisExtensionElement> exList = object.getExtensions(ExtensionLevel.OBJECT);
-		List<String> result = new ArrayList<String>();
+		List<ActionExtensionButton> result = new ArrayList<ActionExtensionButton>();
 
 		if (exList != null){
 			for(CmisExtensionElement elm : exList){
 				if(elm.getNamespace() == "http://aegif.jp/nemakiware/action"){
+					ActionExtensionButton button = new ActionExtensionButton();
 					for(CmisExtensionElement actionElm : elm.getChildren()){
-						result.add(actionElm.getValue());
+						if( actionElm.getName() == "actionButtonLabel"){
+							button.setDisplayName(actionElm.getValue());
+						}else if(actionElm.getName() == "actionButtonIcon"){
+							button.setFontAwesomeName(actionElm.getValue());
+						}
 					}
+					result.add( button );
 				}
 			}
 		}

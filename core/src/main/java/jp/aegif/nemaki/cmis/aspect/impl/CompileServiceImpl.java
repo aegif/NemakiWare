@@ -107,7 +107,9 @@ import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
+import jp.aegif.nemaki.plugin.action.ActionTriggerBase;
 import jp.aegif.nemaki.plugin.action.JavaBackedAction;
+import jp.aegif.nemaki.plugin.action.UserButtonActionTrigger;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.action.NemakiActionPlugin;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
@@ -1473,6 +1475,11 @@ public class CompileServiceImpl implements CompileService {
 					String action_id = plugin.getUniqueId();
 					List<CmisExtensionElement> extElements = new ArrayList<CmisExtensionElement>();
 					extElements.add(new CmisExtensionElementImpl(ns, "actionId", null, action_id));
+					ActionTriggerBase trigger = plugin.getActionTrigger();
+					if(trigger instanceof  UserButtonActionTrigger){
+						extElements.add(new CmisExtensionElementImpl(ns, "actionButtonLabel", null, ((UserButtonActionTrigger) trigger).getDisplayName()));
+						extElements.add(new CmisExtensionElementImpl(ns, "actionButtonIcon", null, ((UserButtonActionTrigger) trigger).getFontAwesomeName()));
+					}
 					extensions.add(new CmisExtensionElementImpl(ns, "actionPluginExtension", null, extElements));
 				}
 			}

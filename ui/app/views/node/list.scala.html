@@ -74,9 +74,9 @@
 						<i class="fa fa-trash"></i><div class="tooltips">@Messages("view.delete")</div>
 					</button>
 
-					@for(addtionalButton <- Util.getAddtionalActionButtonElement(obj)){
-						<button type="button" class="btn btn-default delete" cmis-id="@obj.getId()">
-							<i class="fa fa-trash"></i><div class="tooltips">@addtionalButton</div>
+					@for(extentionButton <- Util.getAddtionalActionButtonElement(obj)){
+						<button type="button" class="btn btn-default action" cmis-id="@obj.getId()">
+							<i class="@extentionButton.getFontAwesomeName()"></i><div class="tooltips">@extentionButton.getDisplayName()</div>
 						</button>
 					}
 
