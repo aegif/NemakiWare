@@ -75,7 +75,7 @@
 					</button>
 
 					@for(actionButton <- Util.getActionPluginUIElementList(obj)){
-						<button type="button" class="btn btn-default action-@actionButton.getActionId()" cmis-id="@obj.getId()">
+						<button type="button" class="btn btn-default action- @actionButton.getActionId()" cmis-id="@obj.getId()">
 							<i class="@actionButton.getFontAwesomeName()"></i>
 							<div class="tooltips">@actionButton.getDisplayName()</div>
 						</button>
@@ -166,13 +166,13 @@
 			<!-- action -->
 			<script type="text/javascript">
 				$(function(){
-			        $(".action-@actionPluginUI.getActionId()").bind('click', function(){
+			        $(".action-@actionPluginUI.getActionId").bind('click', function(){
 			       		var id = $(this).attr('cmis-id');
 
 			       		//Execute
 						$.ajax(jsRoutes.controllers.Node.showDetail("@repositoryId", id, true)
 						).done(function(data){
-							showLightbox('action-@actionPluginUI.getActionId()' + id, data);
+							showLightbox('action-@actionPluginUI.getActionId' + id, data);
 						}).fail(function(XMLHttpRequest, textStatus, errorThrown){
 							//TODO
 						}).always(function(){
