@@ -185,9 +185,11 @@ public class Util {
 		if (exList != null){
 			for(CmisExtensionElement elm : exList){
 				if(elm.getNamespace() == "http://aegif.jp/nemakiware/action"){
-					ActionPluginUIElement button = new ActionPluginUIElement(elm.getValue());
+					ActionPluginUIElement button = new ActionPluginUIElement();
 					for(CmisExtensionElement actionElm : elm.getChildren()){
-						if( actionElm.getName() == "actionButtonLabel"){
+						if(actionElm.getName() == "actionId"){
+							button.setActionId(actionElm.getValue());
+						}else if(actionElm.getName() == "actionButtonLabel"){
 							button.setDisplayName(actionElm.getValue());
 						}else if(actionElm.getName() == "actionButtonIcon"){
 							button.setFontAwesomeName(actionElm.getValue());

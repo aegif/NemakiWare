@@ -2,8 +2,8 @@ package model;
 
 public class ActionPluginUIElement {
 
-	public ActionPluginUIElement(String actionId){
-		this._actionId = actionId;
+	public ActionPluginUIElement(){
+
 	}
 
 
