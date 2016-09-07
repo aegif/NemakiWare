@@ -187,11 +187,11 @@ public class Util {
 				if(elm.getNamespace() == "http://aegif.jp/nemakiware/action"){
 					ActionPluginUIElement button = new ActionPluginUIElement();
 					for(CmisExtensionElement actionElm : elm.getChildren()){
-						if(actionElm.getName() == "actionId"){
+						if(actionElm.getName().equals("actionId")){
 							button.setActionId(actionElm.getValue());
-						}else if(actionElm.getName() == "actionButtonLabel"){
+						}else if(actionElm.getName().equals("actionButtonLabel")){
 							button.setDisplayName(actionElm.getValue());
-						}else if(actionElm.getName() == "actionButtonIcon"){
+						}else if(actionElm.getName().equals("actionButtonIcon")){
 							button.setFontAwesomeName(actionElm.getValue());
 						}
 					}
@@ -204,7 +204,7 @@ public class Util {
 
 	public static ActionPluginUIElement getActionPluginUIElement(CmisObject object, String actionId){
 		for(ActionPluginUIElement elm : Util.getActionPluginUIElementList(object)){
-			if(elm.getActionId() == actionId) return elm;
+			if(elm.getActionId().equals(actionId)) return elm;
 		}
 		return null;
 	}

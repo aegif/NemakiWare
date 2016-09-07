@@ -492,6 +492,19 @@ public class Node extends Controller {
 	}
 
 
+	public static Result doAction(String repositoryId, String id, String actionId){
+		Session session = getCmisSession(repositoryId);
+
+		CmisObject obj = session.getObject(id);
+
+		ActionPluginUIElement elm = Util.getActionPluginUIElement(obj, actionId);
+
+		DynamicForm input = Form.form();
+		input = input.bindFromRequest();
+
+		return ok();
+	}
+
 	/**
 	 * Handle with a file per each request
 	 * Multiple drag & drop should be made by calling this as many times

@@ -3,13 +3,47 @@
 @import util.Util
 @import org.apache.chemistry.opencmis.client.api.CmisObject
 @import model.ActionPluginUIElement
+@import component._
+@import util._
+@import org.apache.chemistry.opencmis.client.api.Document
+@import org.apache.chemistry.opencmis.commons.PropertyIds
+@import play.mvc.Http.Context.Implicit
+
+
 
 @(repositoryId:String)(obj:CmisObject)(elm:ActionPluginUIElement)
 
 <div class="container tab-pane">
 	<div class="row">
 		<div class="col-sm-5">
-
+			<!-- Action form -->
+			<fieldset>
+				<div>hogehoge</div>
+		   		@executeButton("do-action")
+		   	</fieldset>
 		</div>
 	</div>
 </div>
+
+<script type="text/javascript">
+$(function(){
+	$('#do-action').click(function(){
+		$.blockUI({message:"@Messages("view.message.please.wait")"});
+		$.ajax({
+			type: "POST",
+			  url: "@routes.Node.doAction(repositoryId, obj.getId, elm.getActionId)",
+			  data: "",
+			  success: function(msg){
+			        alert( "実行されました ");
+			        window.location.reload();
+			  },
+			  error: function(XMLHttpRequest, textStatus, errorThrown) {
+			     alert("some error:" + textStatus);
+			  },
+			  complete: function(){
+				  $.unblockUI();
+			  }
+		});
+	});
+});
+</script>
