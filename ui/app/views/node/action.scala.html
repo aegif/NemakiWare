@@ -19,6 +19,13 @@
 			<!-- Action form -->
 			<fieldset>
 				<div>hogehoge</div>
+				<select name="sampleFormData">
+					<option value="1">テスト1</option>
+					<option value="2">テスト2</option>
+					<option value="3">テスト3</option>
+					<option value="4">テスト4</option>
+					<option value="5">テスト5</option>
+				</select>
 		   		@executeButton("do-action")
 		   	</fieldset>
 		</div>
@@ -38,7 +45,7 @@ $(function(){
 			        window.location.reload();
 			  },
 			  error: function(XMLHttpRequest, textStatus, errorThrown) {
-			     alert("some error:" + textStatus);
+			     alert("エラーが発生しました:" + textStatus);
 			  },
 			  complete: function(){
 				  $.unblockUI();

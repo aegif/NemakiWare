@@ -1,6 +1,8 @@
 package jp.aegif.nemaki.rest;
 
 import javax.servlet.http.HttpServletRequest;
+import javax.ws.rs.Consumes;
+import javax.ws.rs.FormParam;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
@@ -9,6 +11,8 @@ import javax.ws.rs.Produces;
 import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.MultivaluedMap;
+import javax.ws.rs.core.UriInfo;
 
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
@@ -47,37 +51,36 @@ public class ActionResource extends ResourceBase {
 
 	@SuppressWarnings("unchecked")
 	@POST
-	@Path("/do")
+	@Path("/do/{objectId}")
 	@Produces(MediaType.APPLICATION_JSON)
+	@Consumes(MediaType.APPLICATION_FORM_URLENCODED)
 	public String execute(
 			@PathParam("repositoryId") String repositoryId,
 			@PathParam("actionId") String actionId,
-			@QueryParam("objectId") String objectId,
-			@QueryParam("param") String param,
+			@PathParam("objectId") String objectId,
+			@Context UriInfo uriInfo,
 			@Context HttpServletRequest httpRequest){
+
+		 MultivaluedMap<String, String> queryParams = uriInfo.getQueryParameters();
+
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray list = new JSONArray();
 		JSONArray errMsg = new JSONArray();
 
-		//読みこまれたプラグインからActionIdが等しいものをさがす
         try (GenericApplicationContext context = new AnnotationConfigApplicationContext(AppConfig.class)) {
         	NemakiActionPlugin acionPlugin = context.getBean(NemakiActionPlugin.class);
         	JavaBackedAction plugin =  acionPlugin.getPlugin(actionId);
 
         	if(plugin != null){
-				//無ければスキップ
 				CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
 				ObjectData object = compileService.compileObjectData(callContext,
 						repositoryId, contentService.getContent(repositoryId, objectId), null,
 						false, IncludeRelationships.NONE, null, false);
 
-				//実行して結果を返す
-				plugin.executeAction(object);
+				plugin.executeAction(object, queryParams);
         	}
         }
-
-
-		return "hoge";
+		return "true";
 	}
 }

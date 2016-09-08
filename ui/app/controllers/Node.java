@@ -494,15 +494,18 @@ public class Node extends Controller {
 
 	public static Result doAction(String repositoryId, String id, String actionId){
 		Session session = getCmisSession(repositoryId);
-
 		CmisObject obj = session.getObject(id);
 
 		ActionPluginUIElement elm = Util.getActionPluginUIElement(obj, actionId);
 
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
+    	Map<String, String>params = input.data();
 
-		return ok();
+    	String restUri = Util.buildNemakiCoreUri() + "rest/repo/" + repositoryId + "/action/" + actionId + "/do/" + id;
+    	JsonNode result = Util.postJsonResponse(session(), restUri , params);
+
+		return ok(result);
 	}
 
 	/**

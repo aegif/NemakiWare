@@ -222,7 +222,7 @@
             <ref bean="ThreadLockService" />
         </property>
     </bean>
-    
+
     <bean id="ObjectServiceInternal" class="org.springframework.aop.framework.ProxyFactoryBean">
         <property name="proxyInterfaces">
             <list>
@@ -626,6 +626,15 @@
         </property>
     </bean>
 
+    <bean id="actionResource" class="jp.aegif.nemaki.rest.ActionResource">
+        <property name="ContentService">
+            <ref bean="ContentService" />
+        </property>
+        <property name="CompileService">
+            <ref bean="CompileService" />
+        </property>
+    </bean>
+
     <bean id="archiveResource" class="jp.aegif.nemaki.rest.ArchiveResource">
         <property name="ContentService">
             <ref bean="ContentService" />
@@ -670,7 +679,7 @@
             <ref bean="propertyManager" />
         </property>
     </bean>
-    
+
     <bean id="userItemResource" class="jp.aegif.nemaki.rest.UserItemResource">
         <property name="contentService">
             <ref bean="ContentService" />
@@ -691,7 +700,7 @@
        		<ref bean="TokenService" />
         </property>
     </bean>
-    
+
     <bean id="cacheResource" class="jp.aegif.nemaki.rest.CacheResource">
     	<property name="nemakiCachePool">
 			<ref bean="nemakiCachePool" />
@@ -700,7 +709,7 @@
        		<ref bean="ThreadLockService" />
         </property>
     </bean>
-    
+
     <bean id="configResource" class="jp.aegif.nemaki.rest.ConfigResource">
     	<property name="contentDaoService">
 			<ref bean="ContentDaoService" />
@@ -709,7 +718,7 @@
        		<ref bean="ThreadLockService" />
         </property>
     </bean>
-    
+
     <!-- Thread Lock -->
     <bean id="ThreadLockService" class="org.springframework.aop.framework.ProxyFactoryBean">
         <property name="proxyInterfaces">
