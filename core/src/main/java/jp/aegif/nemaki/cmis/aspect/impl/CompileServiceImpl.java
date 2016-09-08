@@ -1462,7 +1462,7 @@ public class CompileServiceImpl implements CompileService {
 		// Add extension deta from plugin
 		try (GenericApplicationContext context = new AnnotationConfigApplicationContext(AppConfig.class)) {
 			NemakiActionPlugin acionPlugin = context.getBean(NemakiActionPlugin.class);
-			Collection<JavaBackedAction> plugins = acionPlugin.getPlugins();
+			Map<String, JavaBackedAction> pluginMap = acionPlugin.getPluginsMap();
 
 			String ns = "http://aegif.jp/nemakiware/action";
 			// set the extension list
@@ -1470,9 +1470,10 @@ public class CompileServiceImpl implements CompileService {
 			if (extensions == null){
 				extensions = new ArrayList<CmisExtensionElement>();
 			}
-			for (JavaBackedAction plugin : plugins) {
+			for (String beanId : pluginMap.keySet()) {
+				JavaBackedAction plugin = acionPlugin.getPlugin(beanId);
 				if(plugin.canExecute(result)){
-					String action_id = plugin.getUniqueId();
+					String action_id = beanId;
 					List<CmisExtensionElement> extElements = new ArrayList<CmisExtensionElement>();
 					extElements.add(new CmisExtensionElementImpl(ns, "actionId", null, action_id));
 					ActionTriggerBase trigger = plugin.getActionTrigger();

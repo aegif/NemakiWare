@@ -1,5 +1,7 @@
 package jp.aegif.nemaki.action.sample;
 
+import java.util.List;
+import java.util.Map;
 import java.util.logging.Logger;
 
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
@@ -25,8 +27,11 @@ public class SampleAction implements JavaBackedAction {
 	}
 
 	@Override
-	public void executeAction(ObjectData obj) {
-		logger.debug("アクションが実行されました ID="+obj.getId());
+	public void executeAction(ObjectData obj, Map<String, List<String>> params) {
+		logger.debug("アクションが実行されました オブジェクトID="+obj.getId());
+		for(String key : params.keySet()){
+			logger.debug(key + "=" + params.get(key));
+		}
 	}
 
 	@Override
@@ -35,8 +40,14 @@ public class SampleAction implements JavaBackedAction {
 	}
 
 	@Override
-	public String getUniqueId() {
-		return "sample";
+	public String getActionTile() {
+		return "サンプルのアクション";
 	}
+
+	@Override
+	public String getActionDiscription() {
+		return "アクション機能のためのサンプルです";
+	}
+
 
 }

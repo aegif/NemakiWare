@@ -16,9 +16,8 @@ public class NemakiActionPlugin {
 	@Autowired(required=false)
 	Map<String, JavaBackedAction> pluginMap = new HashMap<String, JavaBackedAction>();
 
-	public Collection<JavaBackedAction> getPlugins() {
-
-		return pluginMap.values();
+	public Map<String, JavaBackedAction> getPluginsMap() {
+		return pluginMap;
 	}
 
 	public JavaBackedAction getPlugin(String actionId) {
