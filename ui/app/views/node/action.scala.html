@@ -17,17 +17,12 @@
 	<div class="row">
 		<div class="col-sm-5">
 			<!-- Action form -->
+			@helper.form(action=routes.Node.doAction(repositoryId, obj.getId(), elm.getActionId()), 'method -> "POST") {
 			<fieldset>
-				<div>hogehoge</div>
-				<select name="sampleFormData">
-					<option value="1">テスト1</option>
-					<option value="2">テスト2</option>
-					<option value="3">テスト3</option>
-					<option value="4">テスト4</option>
-					<option value="5">テスト5</option>
-				</select>
-		   		@executeButton("do-action")
+				@Html(elm.getFormHtml())
+		   		@executeButton()
 		   	</fieldset>
+		   	}
 		</div>
 	</div>
 </div>

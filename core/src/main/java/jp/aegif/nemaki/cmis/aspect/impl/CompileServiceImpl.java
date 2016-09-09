@@ -1480,6 +1480,8 @@ public class CompileServiceImpl implements CompileService {
 					if(trigger instanceof  UserButtonActionTrigger){
 						extElements.add(new CmisExtensionElementImpl(ns, "actionButtonLabel", null, ((UserButtonActionTrigger) trigger).getDisplayName()));
 						extElements.add(new CmisExtensionElementImpl(ns, "actionButtonIcon", null, ((UserButtonActionTrigger) trigger).getFontAwesomeName()));
+						extElements.add(new CmisExtensionElementImpl(ns, "actionFormHtml", null, ((UserButtonActionTrigger) trigger).getFormHtml()));
+
 					}
 					extensions.add(new CmisExtensionElementImpl(ns, "actionPluginExtension", null, extElements));
 				}

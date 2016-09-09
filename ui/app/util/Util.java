@@ -193,6 +193,8 @@ public class Util {
 							button.setDisplayName(actionElm.getValue());
 						}else if(actionElm.getName().equals("actionButtonIcon")){
 							button.setFontAwesomeName(actionElm.getValue());
+						}else if(actionElm.getName().equals("actionFormHtml")){
+							button.setFormHtml(actionElm.getValue());
 						}
 					}
 					result.add( button );
