@@ -19,4 +19,13 @@ public class UserButtonActionTrigger extends ActionTriggerBase {
 	}
 
 
+	private String _formHtml;
+	public String getFormHtml(){
+		return _formHtml;
+	}
+	public void setFormHtml(String value){
+		 _formHtml = value;
+	}
+
+
 }

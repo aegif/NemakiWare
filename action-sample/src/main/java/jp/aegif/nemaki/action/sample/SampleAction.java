@@ -16,9 +16,22 @@ import jp.aegif.nemaki.plugin.action.UserButtonActionTrigger;
 public class SampleAction implements JavaBackedAction {
 	private static final org.slf4j.Logger logger = LoggerFactory.getLogger(JavaBackedAction.class);
 
+	private static UserButtonActionTrigger _trigger;
 	@Override
 	public ActionTriggerBase getActionTrigger() {
-		return new UserButtonActionTrigger("サンプルアクションの実行");
+		if (_trigger == null){
+			_trigger = new UserButtonActionTrigger("サンプルアクションの実行");
+			_trigger.setFormHtml(""
+				+ "<div>サンプルのフォーム</div>\n"
+				+ "<select name='sampleFormData'>\n"
+				+ "   <option value='1'>テスト1</option>\n"
+				+ "   <option value='2'>テスト2</option>\n"
+				+ "   <option value='3'>テスト3</option>\n"
+				+ "</select><br />\n"
+				+ "<input type='textbox' name='sampleTextboxData'></input>\n"
+			);
+		}
+		return _trigger;
 	}
 
 	@Override
