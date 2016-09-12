@@ -2,18 +2,28 @@ package jp.aegif.nemaki.dao.impl.couch.connector;
 
 import java.net.MalformedURLException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
+import org.apache.commons.collections.CollectionUtils;
 import org.ektorp.CouchDbConnector;
 import org.ektorp.CouchDbInstance;
+import org.ektorp.DocumentNotFoundException;
+import org.ektorp.ViewQuery;
 import org.ektorp.http.HttpClient;
 import org.ektorp.http.StdHttpClient;
 import org.ektorp.http.StdHttpClient.Builder;
 import org.ektorp.impl.StdCouchDbInstance;
+import org.ektorp.support.DesignDocument;
+import org.ektorp.support.DesignDocument.View;
+import org.ektorp.support.StdDesignDocumentFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
+import jp.aegif.nemaki.model.Configuration;
+import jp.aegif.nemaki.model.couch.CouchConfiguration;
+import jp.aegif.nemaki.util.constant.SystemConst;
 
 public class ConnectorPool {
 
@@ -48,10 +58,25 @@ public class ConnectorPool {
 			builder.username(authUserName).password(authPassword);
 		}
 		
+		//Create connector(all-repository config)
+		initNemakiConfDb();
+		
+		
 		//Create connectors
 		for(String key : repositoryInfoMap.keys()){
 			add(key);
 			add(repositoryInfoMap.getArchiveId(key));
+		}
+	}
+	
+	private void initNemakiConfDb(){
+		CouchDbInstance dbInstance = new StdCouchDbInstance(builder.build());
+		if(dbInstance.checkIfDbExists(SystemConst.NEMAKI_CONF_DB)){
+			add(SystemConst.NEMAKI_CONF_DB);
+		}else{
+			addNemakiConfDb();
+			add(SystemConst.NEMAKI_CONF_DB);
+			createConfiguration(get(SystemConst.NEMAKI_CONF_DB));
 		}
 	}
 	
@@ -116,5 +141,53 @@ public class ConnectorPool {
 		this.pool = pool;
 	}
 	
+	private void addNemakiConfDb(){
+		final String dbName = SystemConst.NEMAKI_CONF_DB;
+		addDb(dbName);
+		addConfigurationView(dbName);
+	}
 	
+	protected void addDb(String dbName){
+		// add connector (or create if not exist)
+		CouchDbConnector connector = add(dbName);
+		
+		// add design doc
+		StdDesignDocumentFactory factory = new StdDesignDocumentFactory();
+		
+		DesignDocument designDoc;
+		try{
+			designDoc = factory.getFromDatabase(connector, "_design/_repo");
+		}catch(DocumentNotFoundException e){
+			designDoc = factory.newDesignDocumentInstance();
+			designDoc.setId("_design/_repo");
+			connector.create(designDoc);
+		}
+	}
+
+	private void addConfigurationView(String repositoryId){
+		addView(repositoryId, "configuration", "function(doc) { if (doc.type == 'configuration')  emit(doc._id, doc) }");
+	}
+	
+	private void addView(String repositoryId, String viewName, String map){
+		addView(repositoryId, viewName, map, false);
+	}
+	
+	private void addView(String repositoryId, String viewName, String map, boolean force){
+		CouchDbConnector connector = get(repositoryId);
+		StdDesignDocumentFactory factory = new StdDesignDocumentFactory();
+		DesignDocument designDoc = factory.getFromDatabase(connector, "_design/_repo");
+		
+		if(force || !designDoc.containsView(viewName)){
+			designDoc.addView(viewName, new View(map));
+			connector.update(designDoc);
+		}
+	}
+	
+	private void createConfiguration(CouchDbConnector connector){
+		List<CouchConfiguration> list = connector.queryView(new ViewQuery().designDocId("_design/_repo").viewName("configuration"), CouchConfiguration.class);
+		if(CollectionUtils.isEmpty(list)){
+			Configuration configuration = new Configuration();
+			connector.create(new CouchConfiguration(configuration));
+		}
+	}
 }

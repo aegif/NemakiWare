@@ -1,4 +1,4 @@
-package jp.aegif.nemaki.test.tck;
+package jp.aegif.nemaki.cmis.tck;
 
 import java.io.PrintWriter;
 import java.util.ArrayList;
@@ -15,13 +15,13 @@ import org.apache.chemistry.opencmis.tck.report.XmlReport;
 import org.junit.ClassRule;
 import org.junit.rules.ExternalResource;
 
-import jp.aegif.nemaki.test.tck.tests.BasicsTestGroup;
-import jp.aegif.nemaki.test.tck.tests.ControlTestGroup;
-import jp.aegif.nemaki.test.tck.tests.CrudTestGroup;
-import jp.aegif.nemaki.test.tck.tests.FilingTestGroup;
-import jp.aegif.nemaki.test.tck.tests.QueryTestGroup;
-import jp.aegif.nemaki.test.tck.tests.TypesTestGroup;
-import jp.aegif.nemaki.test.tck.tests.VersioningTestGroup;
+import jp.aegif.nemaki.cmis.tck.tests.BasicsTestGroup;
+import jp.aegif.nemaki.cmis.tck.tests.ControlTestGroup;
+import jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup;
+import jp.aegif.nemaki.cmis.tck.tests.FilingTestGroup;
+import jp.aegif.nemaki.cmis.tck.tests.QueryTestGroup;
+import jp.aegif.nemaki.cmis.tck.tests.TypesTestGroup;
+import jp.aegif.nemaki.cmis.tck.tests.VersioningTestGroup;
 
 public class TckSuite extends TestGroupBase{
 	
