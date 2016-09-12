@@ -1,4 +1,4 @@
-package jp.aegif.nemaki.test.tck;
+package jp.aegif.nemaki.cmis.tck;
 
 import java.io.File;
 import java.util.Map;
@@ -12,7 +12,7 @@ import org.apache.chemistry.opencmis.tck.impl.AbstractCmisTestGroup;
 import org.apache.chemistry.opencmis.tck.runner.AbstractRunner;
 import org.junit.Assert;
 
-import jp.aegif.nemaki.test.tck.tests.BasicsTestGroup;
+import jp.aegif.nemaki.cmis.tck.tests.BasicsTestGroup;
 
 public class TestHelper {
 	private static final String PARAMETERS_FILE_NAME = "cmis-tck-parameters.properties";

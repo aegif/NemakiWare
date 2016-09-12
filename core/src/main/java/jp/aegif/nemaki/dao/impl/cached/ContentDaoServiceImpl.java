@@ -422,7 +422,25 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Configuration getConfiguration(String repositoryId) {
-		return nonCachedContentDaoService.getConfiguration(repositoryId);
+		NemakiCache<Configuration> configCache = nemakiCachePool.get(repositoryId).getConfigCache();
+		Configuration v = configCache.get("configuration");
+
+		if (v != null) {
+			try {
+				return (Configuration) v;
+			} catch (ClassCastException e) {
+				throw e;
+			}
+		}
+
+		Configuration configuration = nonCachedContentDaoService.getConfiguration(repositoryId);
+
+		if (configuration == null) {
+			return null;
+		} else {
+			configCache.put(new Element("configuration", configuration));
+			return configuration;
+		}
 	}
 
 	@Override
@@ -595,6 +613,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Configuration create(String repositoryId, Configuration configuration) {
 		Configuration created = nonCachedContentDaoService.create(repositoryId, configuration);
+		nemakiCachePool.get(repositoryId).getConfigCache().put(new Element(created.getId(), created));
 		return created;
 	}
 
@@ -710,6 +729,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Configuration update(String repositoryId, Configuration configuration) {
 		Configuration updated = nonCachedContentDaoService.update(repositoryId, configuration);
+		nemakiCachePool.get(repositoryId).getConfigCache().put(new Element(updated.getId(), updated));
 		return updated;
 	}
 

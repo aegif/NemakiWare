@@ -1,11 +1,11 @@
-package jp.aegif.nemaki.test.tck.tests;
+package jp.aegif.nemaki.cmis.tck.tests;
 
 import org.apache.chemistry.opencmis.tck.tests.basics.RepositoryInfoTest;
 import org.apache.chemistry.opencmis.tck.tests.basics.RootFolderTest;
 import org.apache.chemistry.opencmis.tck.tests.basics.SecurityTest;
 import org.junit.Test;
 
-import jp.aegif.nemaki.test.tck.TckSuite;
+import jp.aegif.nemaki.cmis.tck.TckSuite;
 
 public class BasicsTestGroup extends TckSuite{
 	
