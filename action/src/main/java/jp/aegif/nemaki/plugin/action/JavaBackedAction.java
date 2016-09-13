@@ -18,7 +18,7 @@ public interface JavaBackedAction extends Plugin<String>{
 
 	public boolean canExecute(ObjectData obj);
 
-	public void executeAction(ObjectData obj, Map<String, List<String>> params);
+	public void executeAction(ObjectData obj, String json);
 
 
 

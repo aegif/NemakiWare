@@ -1,10 +1,13 @@
 package jp.aegif.nemaki.rest;
 
+import java.io.IOException;
+
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.FormParam;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
+import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
@@ -17,6 +20,7 @@ import javax.ws.rs.core.UriInfo;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.json.simple.JSONArray;
@@ -53,22 +57,16 @@ public class ActionResource extends ResourceBase {
 	@POST
 	@Path("/do/{objectId}")
 	@Produces(MediaType.APPLICATION_JSON)
-	@Consumes(MediaType.APPLICATION_FORM_URLENCODED)
+	@Consumes(MediaType.APPLICATION_JSON)
 	public String execute(
+			String json,
 			@PathParam("repositoryId") String repositoryId,
 			@PathParam("actionId") String actionId,
 			@PathParam("objectId") String objectId,
-			@Context UriInfo uriInfo,
 			@Context HttpServletRequest httpRequest){
 
-		 MultivaluedMap<String, String> queryParams = uriInfo.getQueryParameters();
-
-		boolean status = true;
-		JSONObject result = new JSONObject();
-		JSONArray list = new JSONArray();
-		JSONArray errMsg = new JSONArray();
-
         try (GenericApplicationContext context = new AnnotationConfigApplicationContext(AppConfig.class)) {
+
         	NemakiActionPlugin acionPlugin = context.getBean(NemakiActionPlugin.class);
         	JavaBackedAction plugin =  acionPlugin.getPlugin(actionId);
 
@@ -78,9 +76,9 @@ public class ActionResource extends ResourceBase {
 						repositoryId, contentService.getContent(repositoryId, objectId), null,
 						false, IncludeRelationships.NONE, null, false);
 
-				plugin.executeAction(object, queryParams);
+				plugin.executeAction(object, json);
         	}
         }
-		return "true";
+		return null;
 	}
 }

@@ -68,6 +68,7 @@ import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpPut;
 import org.apache.http.client.methods.HttpUriRequest;
+import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.auth.BasicScheme;
 import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.client.HttpClientBuilder;
@@ -407,7 +408,7 @@ public class Util {
 			HttpResponse response = client.execute((HttpUriRequest) request);
 			int responseStatus = response.getStatusLine().getStatusCode();
 			if (HttpStatus.SC_OK != responseStatus) {
-				throw new Exception("Solr server connection failed");
+				throw new Exception("Server connection failed");
 			}
 
 			InputStream is = response.getEntity().getContent();
@@ -445,6 +446,24 @@ public class Util {
 		return executeRequest(client, request);
 	}
 
+	public static JsonNode postJsonResponse(play.mvc.Http.Session session, String url, JsonNode json) {
+		// create client
+		HttpClient client = buildClient(session);
+		HttpPost request = new HttpPost(url);
+
+		try {
+			StringEntity body = new StringEntity(json.toString());
+			request.addHeader("Accept", "application/json");
+	        request.addHeader("Content-Type", "application/json");
+	        request.setEntity(body);
+		} catch (UnsupportedEncodingException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+
+		return executeRequest(client, request);
+	}
+
 	public static JsonNode postJsonResponse(play.mvc.Http.Session session, String url, Map<String, String>params) {
 		// create client
 		HttpClient client = buildClient(session);
@@ -466,6 +485,7 @@ public class Util {
 
 		return executeRequest(client, request);
 	}
+
 
 	public static JsonNode putJsonResponse(play.mvc.Http.Session session, String url, Map<String, String>params) {
 		// create client

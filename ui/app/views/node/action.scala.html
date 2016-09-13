@@ -10,31 +10,38 @@
 @import play.mvc.Http.Context.Implicit
 
 
-
 @(repositoryId:String)(obj:CmisObject)(elm:ActionPluginUIElement)
 
 <div class="container tab-pane">
 	<div class="row">
 		<div class="col-sm-5">
 			<!-- Action form -->
-			@helper.form(action=routes.Node.doAction(repositoryId, obj.getId(), elm.getActionId()), 'method -> "POST") {
-			<fieldset>
+			<form id='action_form'>
 				@Html(elm.getFormHtml())
-		   		@executeButton()
-		   	</fieldset>
-		   	}
+		   		<button class="btn btn-default btn-primary btn-sm" id="do-action" type="button"><i class=" fa fa-play"></i>アクションを実行</button>
+		   	</form>
 		</div>
 	</div>
 </div>
 
 <script type="text/javascript">
 $(function(){
-	$('#do-action').click(function(){
-		$.blockUI({message:"@Messages("view.message.please.wait")"});
+	$(document).on('click','#do-action', function(){
+
+		var form = $('#action_form');
+		var param = {};
+		$(form.serializeArray()).each(function(i, v) {
+			param[v.name] = v.value;
+		});
+		var json = $.toJSON(param);
+
 		$.ajax({
-			type: "POST",
+			  type: "POST",
 			  url: "@routes.Node.doAction(repositoryId, obj.getId, elm.getActionId)",
-			  data: "",
+			  data: json,
+              contentType: 'application/JSON',
+              dataType : 'JSON',
+              scriptCharset: 'utf-8',
 			  success: function(msg){
 			        alert( "実行されました ");
 			        window.location.reload();
