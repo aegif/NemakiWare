@@ -40,11 +40,9 @@ public class SampleAction implements JavaBackedAction {
 	}
 
 	@Override
-	public void executeAction(ObjectData obj, Map<String, List<String>> params) {
-		logger.debug("アクションが実行されました オブジェクトID="+obj.getId());
-		for(String key : params.keySet()){
-			logger.debug(key + "=" + params.get(key));
-		}
+	public void executeAction(ObjectData obj, String json) {
+		logger.info("アクションが実行されました オブジェクトID="+obj.getId());
+
 	}
 
 	@Override
