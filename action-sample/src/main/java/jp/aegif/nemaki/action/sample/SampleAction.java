@@ -22,13 +22,13 @@ public class SampleAction implements JavaBackedAction {
 		if (_trigger == null){
 			_trigger = new UserButtonActionTrigger("サンプルアクションの実行");
 			_trigger.setFormHtml(""
-				+ "<div>サンプルのフォーム</div>\n"
-				+ "<select name='sampleFormData'>\n"
+				+ "<div class='fav caption'>サンプルのフォーム</div>\n"
+				+ "<select class='dropdown' name='sampleFormData'>\n"
 				+ "   <option value='1'>テスト1</option>\n"
 				+ "   <option value='2'>テスト2</option>\n"
 				+ "   <option value='3'>テスト3</option>\n"
 				+ "</select><br />\n"
-				+ "<input type='textbox' name='sampleTextboxData'></input>\n"
+				+ "<input class='form-control' type='textbox' name='sampleTextboxData'></input>\n"
 			);
 		}
 		return _trigger;
