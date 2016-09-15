@@ -75,7 +75,7 @@
 					</button>
 
 					@for(actionButton <- Util.getActionPluginUIElementList(obj)){
-						<button type="button" class="btn btn-default action- @actionButton.getActionId()" cmis-id="@obj.getId()">
+						<button type="button" class="btn btn-default action-@actionButton.getActionId()" cmis-id="@obj.getId()">
 							<i class="@actionButton.getFontAwesomeName()"></i>
 							<div class="tooltips">@actionButton.getDisplayName()</div>
 						</button>
@@ -106,7 +106,7 @@
         $(".show-detail").bind('click', function(){
        		var id = $(this).attr('cmis-id');
        		//Execute
-			$.ajax(jsRoutes.controllers.Node.showDetail("@repositoryId", id, false)
+			$.ajax(jsRoutes.controllers.Node.showDetail("@repositoryId", id, "property")
 			).done(function(data){
 				showLightbox('node-preview' + id, data);
 			}).fail(function(XMLHttpRequest, textStatus, errorThrown){
@@ -125,7 +125,7 @@
        		var id = $(this).attr('cmis-id');
 
        		//Execute
-			$.ajax(jsRoutes.controllers.Node.showDetail("@repositoryId", id, true)
+			$.ajax(jsRoutes.controllers.Node.showDetail("@repositoryId", id, "preview")
 			).done(function(data){
 				showLightbox('node-preview' + id, data);
 			}).fail(function(XMLHttpRequest, textStatus, errorThrown){
@@ -170,9 +170,9 @@
 			       		var id = $(this).attr('cmis-id');
 
 			       		//Execute
-						$.ajax(jsRoutes.controllers.Node.showDetail("@repositoryId", id, true)
+						$.ajax(jsRoutes.controllers.Node.showDetail("@repositoryId", id, "action-@actionPluginUI.getActionId")
 						).done(function(data){
-							showLightbox('action-@actionPluginUI.getActionId' + id, data);
+							showLightbox("action-@actionPluginUI.getActionId" + id, data);
 						}).fail(function(XMLHttpRequest, textStatus, errorThrown){
 							//TODO
 						}).always(function(){
