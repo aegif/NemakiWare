@@ -194,7 +194,7 @@ public class Node extends Controller {
 		return ok(blank.render(repositoryId, parentId, objectType));
 	}
 
-	public static Result showDetail(String repositoryId, String id, Boolean activatePreviewTab) {
+	public static Result showDetail(String repositoryId, String id, String activateTabName) {
 		Session session = getCmisSession(repositoryId);
 
 		FileableCmisObject o = (FileableCmisObject) session.getObject(id);
@@ -214,7 +214,7 @@ public class Node extends Controller {
 			internalServerError("User retrieveing failure");
 		}
 
-		return ok(detail.render(repositoryId, o, parentId, activatePreviewTab, user));
+		return ok(detail.render(repositoryId, o, parentId, activateTabName, user));
 	}
 
 	public static Result showProperty(String repositoryId, String id) {

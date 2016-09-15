@@ -82,10 +82,17 @@ public class Application extends Controller{
 		return ok(
 			Routes.javascriptRouter("jsRoutes",
 				controllers.routes.javascript.Node.showDetail(),
+				controllers.routes.javascript.Node.showProperty(),
+				controllers.routes.javascript.Node.showFile(),
+				controllers.routes.javascript.Node.showPreview(),
+				controllers.routes.javascript.Node.showVersion(),
+				controllers.routes.javascript.Node.showPermission(),
+				controllers.routes.javascript.Node.showAction(),
+
 				controllers.routes.javascript.Node.getAce(),
 				controllers.routes.javascript.Node.update(),
 				controllers.routes.javascript.Node.delete(),
-				
+
 				controllers.routes.javascript.Archive.index(),
 				controllers.routes.javascript.Archive.restore(),
 				controllers.routes.javascript.Archive.destroy(),
