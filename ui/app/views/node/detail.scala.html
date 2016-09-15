@@ -45,7 +45,7 @@
   		</li>
 	  	@for(actionPluginUI <- Util.getActionPluginUIElementList(obj)){
 	  		<li>
-	  			<a href="@routes.Node.showAction(repositoryId, obj.getId, actionPluginUI.getActionId)" data-toggle="tab" data-target="#action-@actionPluginUI.getActionId">@actionPluginUI.getActionId</a>
+	  			<a href="@routes.Node.showAction(repositoryId, obj.getId, actionPluginUI.getActionId)" data-toggle="tab" data-target="#action-@actionPluginUI.getActionId">@actionPluginUI.getDisplayName</a>
 	  		</li>
 	  	}
 	</ul>
