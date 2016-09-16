@@ -1,9 +1,15 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	
 	<modelVersion>4.0.0</modelVersion>
-	<groupId>jp.aegif.nemaki</groupId>
+	<groupId>jp.aegif.nemakiware</groupId>
 	<artifactId>nemakiware-action-sample</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
+	<version>0.0.1</version>
+	<packaging>jar</packaging>
+	<name>nemakiware-action-sample</name>
+	<description>Nemaki action sample</description>
+	<url>https://github.com/NemakiWare/NemakiWare</url>
+
 
 	<properties>
 		<org.springframework.version>4.1.1.RELEASE</org.springframework.version>
@@ -33,6 +39,11 @@
 	</repositories>
 
 	<dependencies>
+		<dependency>
+			<groupId>jp.aegif.nemakiware</groupId>
+			<artifactId>nemakiware-action</artifactId>
+			<version>0.0.1</version>
+		</dependency>
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-server-support</artifactId>
@@ -70,7 +81,6 @@
 	</dependencies>
 
 	<build>
-		<finalName>action</finalName>
 		<plugins>
 			<plugin>
 				<artifactId>maven-compiler-plugin</artifactId>
@@ -82,5 +92,5 @@
 			</plugin>
 		</plugins>
 	</build>
-	<name>namakiware-action-sample</name>
+
 </project>
