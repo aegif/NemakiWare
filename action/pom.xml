@@ -1,9 +1,14 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
 	<modelVersion>4.0.0</modelVersion>
-	<groupId>jp.aegif.nemaki</groupId>
+	<groupId>jp.aegif.nemakiware</groupId>
 	<artifactId>nemakiware-action</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
+	<packaging>jar</packaging>
+	<version>0.0.1</version>
+	<name>action</name>
+	<description>NemakiWare action interface</description>
+	<url>https://github.com/NemakiWare/NemakiWare</url>
 
 	<properties>
 		<org.springframework.version>4.1.1.RELEASE</org.springframework.version>
@@ -70,7 +75,6 @@
 	</dependencies>
 
 	<build>
-		<finalName>action</finalName>
 		<plugins>
 			<plugin>
 				<artifactId>maven-compiler-plugin</artifactId>
@@ -82,5 +86,5 @@
 			</plugin>
 		</plugins>
 	</build>
-	<name>nemakiware-action</name>
+
 </project>
