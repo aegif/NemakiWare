@@ -21,10 +21,10 @@ libraryDependencies ++= Seq(
   "org.webjars" % "bootstrap" % "3.2.0",
   "org.webjars" % "jquery" % "1.11.1",
   "org.webjars" % "jquery-ui" % "1.11.1",
-  "org.apache.chemistry.opencmis" % "chemistry-opencmis-client-impl" % "0.13.0",
-  "org.apache.chemistry.opencmis" % "chemistry-opencmis-client-bindings" % "0.13.0",
-  "org.apache.chemistry.opencmis" % "chemistry-opencmis-client-api" % "0.13.0",
-  "org.apache.chemistry.opencmis" % "chemistry-opencmis-commons-impl" % "0.13.0",
+  "org.apache.chemistry.opencmis" % "chemistry-opencmis-client-impl" % "1.0.0",
+  "org.apache.chemistry.opencmis" % "chemistry-opencmis-client-bindings" % "1.0.0",
+  "org.apache.chemistry.opencmis" % "chemistry-opencmis-client-api" % "1.0.0",
+  "org.apache.chemistry.opencmis" % "chemistry-opencmis-commons-impl" % "1.0.0",
   "org.apache.httpcomponents" % "httpclient" % "4.4-beta1",
 	"net.lingala.zip4j" % "zip4j" % "1.3.2"
 )
