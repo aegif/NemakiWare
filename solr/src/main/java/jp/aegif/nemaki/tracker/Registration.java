@@ -126,6 +126,7 @@ public class Registration implements Runnable{
 			
 			break;
 		case CMIS_FOLDER:
+		case CMIS_ITEM:
 			req = buildUpdateRequest(map);
 			break;
 		default:
