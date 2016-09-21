@@ -31,15 +31,14 @@ import org.springframework.context.support.GenericApplicationContext;
 import jp.aegif.nemaki.AppConfig;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
+import jp.aegif.nemaki.common.ErrorCode;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.plugin.action.JavaBackedAction;
 import jp.aegif.nemaki.util.action.NemakiActionPlugin;
 
-
 @Path("/repo/{repositoryId}/action/{actionId}")
 public class ActionResource extends ResourceBase {
-	private static final Log log = LogFactory
-            .getLog(ActionResource.class);
+	private static final Log log = LogFactory.getLog(ActionResource.class);
 
 	private ContentService contentService;
 
@@ -58,27 +57,34 @@ public class ActionResource extends ResourceBase {
 	@Path("/do/{objectId}")
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.APPLICATION_JSON)
-	public String execute(
-			String json,
-			@PathParam("repositoryId") String repositoryId,
-			@PathParam("actionId") String actionId,
-			@PathParam("objectId") String objectId,
-			@Context HttpServletRequest httpRequest){
+	public String execute(String json, @PathParam("repositoryId") String repositoryId,
+			@PathParam("actionId") String actionId, @PathParam("objectId") String objectId,
+			@Context HttpServletRequest httpRequest) {
+		boolean status = true;
+		JSONObject result = new JSONObject();
+		JSONArray list = new JSONArray();
+		JSONArray errMsg = new JSONArray();
 
-        try (GenericApplicationContext context = new AnnotationConfigApplicationContext(AppConfig.class)) {
+		String resultText = "";
+		try (GenericApplicationContext context = new AnnotationConfigApplicationContext(AppConfig.class)) {
 
-        	NemakiActionPlugin acionPlugin = context.getBean(NemakiActionPlugin.class);
-        	JavaBackedAction plugin =  acionPlugin.getPlugin(actionId);
+			NemakiActionPlugin acionPlugin = context.getBean(NemakiActionPlugin.class);
+			JavaBackedAction plugin = acionPlugin.getPlugin(actionId);
 
-        	if(plugin != null){
+			if (plugin != null) {
 				CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
-				ObjectData object = compileService.compileObjectData(callContext,
-						repositoryId, contentService.getContent(repositoryId, objectId), null,
-						false, IncludeRelationships.NONE, null, false);
+				ObjectData object = compileService.compileObjectData(callContext, repositoryId,
+						contentService.getContent(repositoryId, objectId), null, false, IncludeRelationships.NONE, null,
+						false);
 
-				plugin.executeAction(object, json);
-        	}
-        }
-		return null;
+				resultText = plugin.executeAction(object, json);
+				result.put("action_res", resultText);
+			}
+		} catch (Exception e) {
+			status = false;
+			e.printStackTrace();
+			addErrMsg(errMsg, "" , ErrorCode.ERR_READ);
+		}
+		return result.toJSONString();
 	}
 }

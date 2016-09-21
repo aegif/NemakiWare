@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.logging.Logger;
 
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
+import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.slf4j.LoggerFactory;
 
@@ -22,7 +23,7 @@ public class SampleAction implements JavaBackedAction {
 		if (_trigger == null){
 			_trigger = new UserButtonActionTrigger("サンプルアクションの実行");
 			_trigger.setFormHtml(""
-				+ "<div class='fav caption'>サンプルのフォーム</div>\n"
+				+ "<div>サンプルのフォーム</div>\n"
 				+ "<select class='dropdown' name='sampleFormData'>\n"
 				+ "   <option value='1'>テスト1</option>\n"
 				+ "   <option value='2'>テスト2</option>\n"
@@ -40,8 +41,10 @@ public class SampleAction implements JavaBackedAction {
 	}
 
 	@Override
-	public void executeAction(ObjectData obj, String json) {
-		logger.info("アクションが実行されました オブジェクトID="+obj.getId());
+	public String executeAction(ObjectData obj, String json) {
+		String name = (String) obj.getProperties().getPropertyList().stream().map(p -> p.getFirstValue()).findFirst().get();
+
+		return "{\"message\" : \"アクションが実行されました ファイル名：" + name + "\"}";
 
 	}
 
