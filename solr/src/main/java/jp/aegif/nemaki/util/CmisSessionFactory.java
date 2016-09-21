@@ -6,22 +6,16 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.Writer;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.Properties;
-
 import org.apache.chemistry.opencmis.client.api.OperationContext;
-import org.apache.chemistry.opencmis.client.api.Repository;
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.client.api.SessionFactory;
 import org.apache.chemistry.opencmis.client.runtime.SessionFactoryImpl;
 import org.apache.chemistry.opencmis.commons.SessionParameter;
 import org.apache.chemistry.opencmis.commons.enums.BindingType;
-import org.apache.commons.collections.CollectionUtils;
 import org.apache.log4j.Logger;
 
 import com.esotericsoftware.yamlbeans.YamlReader;
@@ -61,7 +55,7 @@ public class CmisSessionFactory {
 
 	private static Session setupCmisSession(String repositoryId){
 		// Parameter
-		Map<String, String> parameter = buildCommonParam();
+		Map<String, String> parameter = buildCommonParam(repositoryId);
 		buildRepositoryParam(parameter, repositoryId);
 
 		// Create session
@@ -83,52 +77,46 @@ public class CmisSessionFactory {
 		return null;
 	}
 
-	private static Map<String,String> buildCommonParam(){
+	private static Map<String, String> buildCommonParam(String repositoryId){
 		Map<String, String> parameter = new HashMap<>();
+		
+		// session locale
+		parameter.put(SessionParameter.LOCALE_ISO3166_COUNTRY, "");
+		parameter.put(SessionParameter.LOCALE_ISO639_LANGUAGE, "");
+
+		// repository
+		//String repositoryId = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_REPOSITORY);
+		parameter.put(SessionParameter.REPOSITORY_ID, repositoryId);
+		//parameter.put(org.apache.chemistry.opencmis.commons.impl.Constants.PARAM_REPOSITORY_ID, NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_REPOSITORY));
+
+		parameter. put(SessionParameter.BINDING_TYPE, BindingType.ATOMPUB.value());
 
 		String protocol = pm.readValue(PropertyKey.CMIS_SERVER_PROTOCOL);
 		String host = pm.readValue(PropertyKey.CMIS_SERVER_HOST);
 		String port = pm.readValue(PropertyKey.CMIS_SERVER_PORT);
 		String context = pm.readValue(PropertyKey.CMIS_SERVER_CONTEXT);
-		String wsEndpoint = pm.readValue(PropertyKey.CMIS_SERVER_WS_ENDPOINT);
-		String url = getCmisUrl(protocol, host, port, context, wsEndpoint);
-		String country = pm.readValue(PropertyKey.CMIS_LOCALE_COUNTRY);
-		String language = pm.readValue(PropertyKey.CMIS_LOCALE_LANGUAGE);
-
-		// session locale
-		parameter.put(SessionParameter.LOCALE_ISO3166_COUNTRY, country);
-		parameter.put(SessionParameter.LOCALE_ISO639_LANGUAGE, language);
-
-		// WebServices ports
-		parameter.put(SessionParameter.BINDING_TYPE,
-				BindingType.WEBSERVICES.value());
-
-		parameter.put(SessionParameter.WEBSERVICES_ACL_SERVICE, url
-				+ "ACLService?wsdl");
-		parameter.put(SessionParameter.WEBSERVICES_DISCOVERY_SERVICE, url
-				+ "DiscoveryService?wsdl");
-		parameter.put(SessionParameter.WEBSERVICES_MULTIFILING_SERVICE, url
-				+ "MultiFilingService?wsdl");
-		parameter.put(SessionParameter.WEBSERVICES_NAVIGATION_SERVICE, url
-				+ "NavigationService?wsdl");
-		parameter.put(SessionParameter.WEBSERVICES_OBJECT_SERVICE, url
-				+ "ObjectService?wsdl");
-		parameter.put(SessionParameter.WEBSERVICES_POLICY_SERVICE, url
-				+ "PolicyService?wsdl");
-		parameter.put(SessionParameter.WEBSERVICES_RELATIONSHIP_SERVICE, url
-				+ "RelationshipService?wsdl");
-		parameter.put(SessionParameter.WEBSERVICES_REPOSITORY_SERVICE, url
-				+ "RepositoryService?wsdl");
-		parameter.put(SessionParameter.WEBSERVICES_VERSIONING_SERVICE, url
-				+ "VersioningService?wsdl");
-
+		String endpoint = getAtomEndpoint(protocol, host, port, context, repositoryId);
+		parameter.put(SessionParameter.ATOMPUB_URL, endpoint);
+		
 		return parameter;
+	}
+	
+	private static String getAtomEndpoint(String protocol, String host, String port,
+			String context, String repositoryId) {
+		try {
+			URL url = new URL(protocol, host, Integer.parseInt(port), "");
+			return String.format("%s/%s/atom/%s", url.toString(), context, repositoryId);
+		} catch (NumberFormatException e) {
+			logger.error("", e);
+			e.printStackTrace();
+		} catch (MalformedURLException e) {
+			logger.error("", e);
+		}
+		return null;
 	}
 
 	private static void buildRepositoryParam(Map<String, String> parameter, String repositoryId){
 		// repository
-		parameter.put(SessionParameter.REPOSITORY_ID, repositoryId);
-
 		RepositorySetting setting = getRepositorySettings().get(repositoryId);
 
 		// user credentials
@@ -213,35 +201,8 @@ public class CmisSessionFactory {
 		}
 	}
 
-
-	private static String getCmisUrl(String protocol, String host, String port,
-			String context, String wsEndpoint) {
-		try {
-			URL url = new URL(protocol, host, Integer.parseInt(port), "");
-			return url.toString() + "/" + context + "/" + wsEndpoint + "/";
-		} catch (NumberFormatException e) {
-			logger.error("", e);
-			e.printStackTrace();
-		} catch (MalformedURLException e) {
-			logger.error("", e);
-		}
-		return null;
-	}
-
 	public static boolean isConnectionSetup(String repositoryId) {
 		return (sessions.get(repositoryId) != null);
 	}
 
-	public static List<Repository> getRepositories(){
-		Map<String,String> parameter = buildCommonParam();
-		SessionFactory f = SessionFactoryImpl.newInstance();
-		List<Repository> repositories = f.getRepositories(parameter);
-
-		if(CollectionUtils.isEmpty(repositories)){
-			logger.error("No CMIS repository!");
-		}
-
-		return repositories;
-
-	}
 }
