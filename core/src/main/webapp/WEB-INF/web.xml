@@ -9,9 +9,10 @@
 	License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS 
 	OF ANY KIND, either express or implied. See the License for the specific 
 	language governing permissions and limitations under the License. -->
-<web-app version="2.4" xmlns="http://java.sun.com/xml/ns/j2ee"
+<web-app version="3.0" xmlns="http://java.sun.com/xml/ns/javaee"
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="http://java.sun.com/xml/ns/j2ee http://java.sun.com/xml/ns/j2ee/web-app_2_4.xsd">
+	xsi:schemaLocation="http://java.sun.com/xml/ns/javaee http://java.sun.com/xml/ns/javaee/web-app_3_0.xsd" 
+    xmlns:web="http://java.sun.com/xml/ns/javaee/web-app_3_0.xsd">
 
 	<display-name>NemakiWare</display-name>
 
@@ -67,7 +68,19 @@
 		<url-pattern>/rest/*</url-pattern>
 	</filter-mapping>	
 	
-	<servlet>
+	
+	<!-- <servlet>
+    	<servlet-name>Jersey Web Application</servlet-name>
+    	<servlet-class>org.glassfish.jersey.servlet.ServletContainer</servlet-class>    
+	    <init-param>
+	      <param-name>jersey.config.server.provider.packages</param-name>
+	      <param-value>jp.aegif.nemaki.api.resources</param-value>
+	    </init-param>
+   
+   		 <load-on-startup>1</load-on-startup>
+  	</servlet> -->
+	
+	<!-- <servlet>
         <servlet-name>Jersey Web Application</servlet-name>
 		<servlet-class>com.sun.jersey.spi.spring.container.servlet.SpringServlet</servlet-class>
         <init-param>
@@ -75,7 +88,7 @@
             <param-value>jp.aegif.nemaki.api.resources</param-value>
         </init-param>
         <load-on-startup>1</load-on-startup>
-    </servlet>
+    </servlet> -->
 
 	<servlet-mapping>
 		<servlet-name>cmisws</servlet-name>
@@ -89,11 +102,38 @@
 		<servlet-name>cmisbrowser</servlet-name>
 		<url-pattern>/browser/*</url-pattern>
 	</servlet-mapping>
-	 <servlet-mapping>
+	
+	
+	<servlet>
+  <servlet-name>jersey-app</servlet-name>
+  <servlet-class>org.glassfish.jersey.servlet.ServletContainer</servlet-class>
+  <init-param>
+    <param-name>jersey.config.server.provider.packages</param-name>
+    <param-value>jp.aegif.nemaki.rest</param-value>
+  </init-param>
+  <init-param>
+    <param-name>jersey.config.server.provider.scanning.recursive</param-name>
+    <param-value>true</param-value>
+  </init-param>
+  <init-param>
+        <param-name>jersey.config.server.provider.classnames</param-name>
+        <param-value>org.glassfish.jersey.media.multipart.MultiPartFeature</param-value>
+    </init-param>
+ </servlet>
+
+ <servlet-mapping>
+  <servlet-name>jersey-app</servlet-name>
+  <url-pattern>/rest/*</url-pattern>
+ </servlet-mapping>
+   
+	
+	
+	
+	<!-- <servlet-mapping>
         <servlet-name>Jersey Web Application</servlet-name>
         <url-pattern>/rest/*</url-pattern>
     </servlet-mapping>
 	<session-config>
 		<session-timeout>60</session-timeout>
-	</session-config>
+	</session-config> -->
 </web-app>
