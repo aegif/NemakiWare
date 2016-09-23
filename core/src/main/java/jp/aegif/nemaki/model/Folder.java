@@ -25,9 +25,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import jp.aegif.nemaki.util.constant.NodeType;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
-import org.codehaus.jackson.annotate.JsonIgnoreProperties;
+import jp.aegif.nemaki.util.constant.NodeType;
 
 /**
  * CMIS folder object

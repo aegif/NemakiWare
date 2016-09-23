@@ -27,7 +27,13 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
-import jp.aegif.nemaki.cmis.aspect.SortUtil;
+import javax.ws.rs.client.Client;
+import javax.ws.rs.client.ClientBuilder;
+import javax.ws.rs.client.Invocation;
+import javax.ws.rs.client.WebTarget;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
+
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
@@ -39,9 +45,6 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.client.solrj.impl.HttpSolrServer;
 
-import com.sun.jersey.api.client.Client;
-import com.sun.jersey.api.client.WebResource;
-
 /**
  * Common utility class for Solr query
  *
@@ -49,7 +52,7 @@ import com.sun.jersey.api.client.WebResource;
  *
  */
 public class SolrUtil {
-	private static final Log log = LogFactory.getLog(SortUtil.class);
+	private static final Log log = LogFactory.getLog(SolrUtil.class);
 
 	private final HashMap<String, String> map;
 
@@ -130,11 +133,21 @@ public class SolrUtil {
 
 		String url = getSolrUrl();
 
-		Client client = Client.create();
-		// TODO Regardless a slash on the last, build the correct URL
-		WebResource webResource = client.resource(url
+		Client client = ClientBuilder.newClient();
+		WebTarget webTarget = client.target(url
 				+ "admin/cores?core=nemaki&action=index&tracking=AUTO&repositoryId=" + repositoryId);
-		 String xml = webResource.accept("application/xml").get(String.class);
+		Invocation.Builder invocationBuilder =  webTarget.request();
+		Response response = invocationBuilder.accept(MediaType.APPLICATION_XML_TYPE).get();
+
+		
+		
+//		Client client = Client.create();
+//		// TODO Regardless a slash on the last, build the correct URL
+//		WebResource webResource = client.resource(url
+//				+ "admin/cores?core=nemaki&action=index&tracking=AUTO&repositoryId=" + repositoryId);
+
+		String xml = response.readEntity(String.class);
+				//String xml = webResource.accept("application/xml").get(String.class);
 		// TODO log according to the response status
 	}
 
