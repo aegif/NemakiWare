@@ -396,8 +396,9 @@
 			</plugin>
 
 			<plugin>
-				<groupId>org.mortbay.jetty</groupId>
-				<artifactId>jetty-maven-plugin</artifactId>
+				  <groupId>org.eclipse.jetty</groupId>
+				  <artifactId>jetty-maven-plugin</artifactId>
+				  <version>9.3.12.v20160915</version>
 				<configuration>
 					<scanIntervalSeconds>1</scanIntervalSeconds>
 					<stopPort>9966</stopPort>
