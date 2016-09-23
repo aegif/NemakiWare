@@ -612,7 +612,6 @@
         </property>
     </bean>
 
-
     <!-- Extra Rest API implemented by Jersey -->
     <bean id="restAuthenticationFilter" class="jp.aegif.nemaki.rest.AuthenticationFilter">
     	<property name="propertyManager">
