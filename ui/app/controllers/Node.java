@@ -498,7 +498,7 @@ public class Node extends Controller {
     	String restUri = Util.buildNemakiCoreUri() + "rest/repo/" + repositoryId + "/action/" + actionId + "/do/" + id;
     	JsonNode result = Util.postJsonResponse(session(), restUri , json);
 
-		return ok();
+		return ok(result);
 	}
 
 	/**
