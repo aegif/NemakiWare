@@ -74,13 +74,17 @@ import org.springframework.stereotype.Component;
 import com.fasterxml.jackson.core.JsonParser;
 import com.sun.swing.internal.plaf.metal.resources.metal_zh_TW;
 
-@Component
 @Path("/repo/{repositoryId}/user/")
 public class UserItemResource extends ResourceBase {
 
 	private ContentService contentService;
 	private PropertyManager propertyManager;
 	
+	public UserItemResource() {
+		super();
+		// TODO Auto-generated constructor stub
+	}
+
 	@SuppressWarnings("unchecked")
 	@GET
 	@Path("/list")

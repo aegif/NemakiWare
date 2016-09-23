@@ -36,10 +36,9 @@ import org.dom4j.Document;
 import org.dom4j.DocumentException;
 import org.dom4j.Element;
 import org.dom4j.io.SAXReader;
+import org.glassfish.jersey.media.multipart.FormDataParam;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
-
-import com.sun.jersey.multipart.FormDataParam;
 
 @Path("/repo/{repositoryId}/type")
 public class TypeResource extends ResourceBase{
