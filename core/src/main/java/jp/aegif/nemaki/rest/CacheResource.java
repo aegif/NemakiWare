@@ -17,7 +17,6 @@ import org.springframework.stereotype.Component;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.lock.ThreadLockService;
 
-@Component
 @Path("/repo/{repositoryId}/cache/")
 public class CacheResource extends ResourceBase{
 	private NemakiCachePool nemakiCachePool;

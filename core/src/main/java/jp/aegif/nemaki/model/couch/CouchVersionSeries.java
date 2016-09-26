@@ -21,9 +21,9 @@
  ******************************************************************************/
 package jp.aegif.nemaki.model.couch;
 
-import jp.aegif.nemaki.model.VersionSeries;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
-import org.codehaus.jackson.annotate.JsonProperty;
+import jp.aegif.nemaki.model.VersionSeries;
 
 public class CouchVersionSeries extends CouchNodeBase{
 	private static final long serialVersionUID = 3137549058772266715L;

@@ -23,9 +23,9 @@ package jp.aegif.nemaki.model;
 
 import java.util.GregorianCalendar;
 
-import jp.aegif.nemaki.util.constant.NodeType;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
-import org.codehaus.jackson.annotate.JsonIgnoreProperties;
+import jp.aegif.nemaki.util.constant.NodeType;
 
 @JsonIgnoreProperties(ignoreUnknown=true)
 public class NodeBase{
