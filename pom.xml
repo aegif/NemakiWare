@@ -6,7 +6,7 @@
     <version>1.0</version>
     <packaging>pom</packaging>
     <name>nemakiware</name>
-    <url>https://github.com/NemakiWare/NemakiWare</url>
+    <url>https://github.com/aegif/NemakiWare</url>
     <properties>
         <nemakiware.version>2.4.0.beta1</nemakiware.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
