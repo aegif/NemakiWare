@@ -7,8 +7,8 @@
 	<packaging>war</packaging>
 	<version>${nemakiware.version}</version>
 	<name>core</name>
-	<description>NemakiWare server</description>
-	<url>https://github.com/NemakiWare/NemakiWare</url>
+	<description>NemakiWare Core Server</description>
+	<url>https://github.com/aegif/NemakiWare</url>
 
 	<parent>
 		<groupId>jp.aegif.nemakiware</groupId>
@@ -18,8 +18,8 @@
 
 	<properties>
 		<org.springframework.version>4.1.1.RELEASE</org.springframework.version>
-		<jersey.version>1.19.1</jersey.version>
 		<org.apache.chemistry.opencmis.version>1.0.0</org.apache.chemistry.opencmis.version>
+		<jersey.version>2.23.2</jersey.version>
 		<org.apache.chemistry.opencmis.version.14>0.14.0</org.apache.chemistry.opencmis.version.14>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 	</properties>
@@ -365,11 +365,6 @@
 			<artifactId>joda-time</artifactId>
 			<version>2.9.3</version>
 		</dependency>
-
-
-
-
-
 	</dependencies>
 
 	<build>
@@ -398,9 +393,9 @@
 			</plugin>
 
 			<plugin>
-				  <groupId>org.eclipse.jetty</groupId>
-				  <artifactId>jetty-maven-plugin</artifactId>
-				  <version>9.3.12.v20160915</version>
+				<groupId>org.eclipse.jetty</groupId>
+				<artifactId>jetty-maven-plugin</artifactId>
+				<version>9.3.12.v20160915</version>
 				<configuration>
 					<scanIntervalSeconds>1</scanIntervalSeconds>
 					<stopPort>9966</stopPort>
