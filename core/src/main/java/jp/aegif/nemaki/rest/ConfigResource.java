@@ -20,7 +20,6 @@ import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.model.Configuration;
 import jp.aegif.nemaki.util.lock.ThreadLockService;
 
-@Component
 @Path("/repo/{repositoryId}/config/")
 public class ConfigResource extends ResourceBase{
 	private ContentDaoService contentDaoService;

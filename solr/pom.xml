@@ -17,7 +17,7 @@
 	</parent>
 
 	<properties>
-		<org.apache.chemistry.opencmis.version>0.13.0</org.apache.chemistry.opencmis.version>
+		<org.apache.chemistry.opencmis.version>1.0.0</org.apache.chemistry.opencmis.version>
 		<org.apache.solr.version>4.7.2</org.apache.solr.version>
 	</properties>
 

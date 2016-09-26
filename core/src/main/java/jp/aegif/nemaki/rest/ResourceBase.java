@@ -27,6 +27,7 @@ import java.util.TimeZone;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpSession;
+import javax.ws.rs.ApplicationPath;
 import javax.ws.rs.core.Context;
 
 import jp.aegif.nemaki.model.NodeBase;
@@ -36,11 +37,13 @@ import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.tools.ant.types.Mapper.MapperType;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
+import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+@Component
 public class ResourceBase {
 
 	private static final ObjectMapper mapper = new ObjectMapper(); 
