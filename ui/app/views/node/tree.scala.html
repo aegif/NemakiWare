@@ -73,6 +73,13 @@
 				</div>
 
 				<div class="col-md-12">
+				 	<span>タイプフィルタ</span>
+				 	<span>
+						@Util.getTypeFilterList(objects)
+				 	</span>
+				</div>
+
+				<div class="col-md-12">
 				 	<div id="list" parentId="@parent.getId()" class="dropzone" ondragover="nmk.dragAndDrop.handleDragStart(event);" ondragleave="nmk.dragAndDrop.hadleDragLeave(event);" ondrop="nmk.dragAndDrop.handleDrop(event);">
 						@list(repositoryId)(objects)
 				 	</div>

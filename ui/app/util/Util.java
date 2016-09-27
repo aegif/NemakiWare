@@ -11,6 +11,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -18,6 +19,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.apache.chemistry.opencmis.client.api.CmisObject;
@@ -213,13 +215,14 @@ public class Util {
 		return null;
 	}
 
-	public static String[] getTypeFilterList(List<CmisObject> list){
-		String[] result = (String[])list
+	public static List<String> getTypeFilterList(List<CmisObject> list){
+		List<String> result = list
 				.stream()
 				.filter(p -> isDocument(p) || isFolder(p))
-				.map(p -> p.getType().getDisplayName())
+				.map(CmisObject::getType)
 				.distinct()
-				.toArray();
+				.map(ObjectType::getDisplayName)
+				.collect(Collectors.toList());;
 		return result;
 	}
 
@@ -837,10 +840,10 @@ public class Util {
 			 }else{
 				 return null;
 			 }
+		 }else{
+			 Property<Object> prop =obj.getProperty(propertyId);
+			 return prop == null ? "" : prop.getValueAsString();
 		 }
-
-
-		 return "#Error!";
 	 }
 
 	 public static boolean isFreezeCopy(CmisObject obj, play.mvc.Http.Session session){
