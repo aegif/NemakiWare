@@ -19,6 +19,7 @@
 		<tr>
 			<th data-sort-ignore="true"   class="content-size"></th>
 			<th data-class="expand" data-sort-initial="true">@NemakiConfig.getLabel("cmis:name", lang().language)</th>
+			 <th class="content-size" data-class="expand" data-filter="#filter" >@NemakiConfig.getLabel("cmis:objectTypeId", Implicit.lang().language)</th>
 			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
 				<th class="content-size" data-class="expand">@NemakiConfig.getLabel(column, Implicit.lang().language)</th>
 			}
@@ -57,6 +58,9 @@
 					<i class="fa @Util.getIconClassName(obj)"></i><span class="obj-name" objectId="@obj.getId">@obj.getName()</span>
 				</a>
 			</td>
+			<td>
+				@Util.displayValue(obj, "cmis:objectTypeId", Implicit.lang.toLocale)
+			</td>
 			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
 				<td>@Util.displayValue(obj, column, Implicit.lang.toLocale)</td>
 			}
@@ -88,7 +92,7 @@
 	</tbody>
 	<tfoot>
 		<tr>
-			@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 3){colSpan =>
+			@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 4){colSpan =>
 				<td colspan="@colSpan">
 			}
 				<div class="pagination pagination-centered hide-if-no-paging"></div>
