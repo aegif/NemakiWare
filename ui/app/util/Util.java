@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.stream.Stream;
 
 import org.apache.chemistry.opencmis.client.api.CmisObject;
 import org.apache.chemistry.opencmis.client.api.Document;
@@ -212,8 +213,15 @@ public class Util {
 		return null;
 	}
 
-
-
+	public static String[] getTypeFilterList(List<CmisObject> list){
+		String[] result = (String[])list
+				.stream()
+				.filter(p -> isDocument(p) || isFolder(p))
+				.map(p -> p.getType().getDisplayName())
+				.distinct()
+				.toArray();
+		return result;
+	}
 
 	public static Document convertToDocument(CmisObject obj) {
 		Document doc = (Document) obj;
