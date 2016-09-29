@@ -73,10 +73,16 @@
 				</div>
 
 				<div class="col-md-12">
-				 	<span>タイプフィルタ</span>
-				 	<span>
-						@Util.getTypeFilterList(objects)
-				 	</span>
+	  				<div class="list-operation">
+				 	<span>タイプフィルタ：</span>
+				 	<div id="type_filter" class="btn-group" data-toggle="buttons">
+				    @for(typeName <- Util.getTypeFilterList(objects)){
+						<label class="btn btn-default btn-sm">
+				            <input type="checkbox" name="type_filter_item"  autocomplete="off"  value="@typeName" /> @typeName
+					   	</label>
+					}
+					</div>
+					</div>
 				</div>
 
 				<div class="col-md-12">
@@ -98,8 +104,9 @@
 <script type="text/javascript">
 
 	$(function(){
+		// multi selection toggle
 		$(document).on('click', '#check-all-object', function(){
-			$('[name="selection"]').prop('checked', true);
+			$('[name="selection"]:visible').prop('checked', true);
 		});
 
 		$(document).on('click', '#uncheck-all-object', function(){
@@ -107,9 +114,21 @@
 		});
 
 		$(document).on('click', '#check-reverse', function(){
-			$('[name="selection"]').prop('checked', function( index, oldValue ){
+			$('[name="selection"]:visible').prop('checked', function( index, oldValue ){
 				return !oldValue;
 			});
+		});
+
+		// type filter
+		$(document).on('change','input[name="type_filter_item"]', function(){
+			var type_name = $(this).attr('value');
+			var $row = $('td[name="object_type"]:contains("'+type_name+'")').parent('tr')
+			if ($(this).is(':checked')){
+				$row.show();
+			}else{
+				$row.find($('[name="selection"]')).prop('checked', false);
+				$row.hide();
+			}
 		});
 
 

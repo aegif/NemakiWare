@@ -58,9 +58,7 @@
 					<i class="fa @Util.getIconClassName(obj)"></i><span class="obj-name" objectId="@obj.getId">@obj.getName()</span>
 				</a>
 			</td>
-			<td>
-				@Util.displayValue(obj, "cmis:objectTypeId", Implicit.lang.toLocale)
-			</td>
+			<td name="object_type">@Util.displayValue(obj, "cmis:objectTypeId", Implicit.lang.toLocale)</td>
 			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
 				<td>@Util.displayValue(obj, column, Implicit.lang.toLocale)</td>
 			}
