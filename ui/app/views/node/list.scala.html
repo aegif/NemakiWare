@@ -14,7 +14,9 @@
 
 @(repositoryId:String)(objects: java.util.List[org.apache.chemistry.opencmis.client.api.CmisObject])
 
-<table class="footable" id="objects-table" data-sort="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
+<table class="footable" id="objects-table" data-sort="true"
+	   data-filter="#filter"
+	   data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
 	<thead>
 		<tr>
 			<th data-sort-ignore="true"   class="content-size"></th>

@@ -76,9 +76,12 @@
 	  				<div class="list-operation">
 				 	<span>タイプフィルタ：</span>
 				 	<div id="type_filter" class="btn-group" data-toggle="buttons">
+
 				    @for(typeName <- Util.getTypeFilterList(objects)){
 						<label class="btn btn-default btn-sm">
-				            <input type="checkbox" name="type_filter_item"  autocomplete="off"  value="@typeName" /> @typeName
+				            <input class="visibility" type="checkbox"
+				               name="type_filter_item"  autocomplete="off"
+				               value="@typeName" /> @typeName
 					   	</label>
 					}
 					</div>
@@ -102,6 +105,33 @@
 <script src="@routes.JsTemplate.duplicateNameCheck(repositoryId)" type="text/javascript"></script>
 
 <script type="text/javascript">
+		window.footable.options.filter.filterFunction = function(index) {
+        var $t = $(this),
+          $table = $t.parents('table:first'),
+          filter = $table.data('current-filter').toUpperCase(),
+          columns = $t.find('td');
+
+        var regEx = new RegExp("\\b" + filter + "\\b");
+        var result = false;
+        for (i = 0; i < columns.length; i++) {
+          var text = $(columns[i]).text();
+          result = regEx.test(text.toUpperCase());
+          if (result === true)
+            break;
+
+          if (!$table.data('filter-text-only')) {
+             text = $(columns[i]).data("value");
+             if (text)
+               result = regEx.test(text.toString().toUpperCase());
+          }
+
+          if (result === true)
+            break;
+        }
+
+        return result;
+      };
+
 
 	$(function(){
 		// multi selection toggle
@@ -120,15 +150,28 @@
 		});
 
 		// type filter
-		$(document).on('change','input[name="type_filter_item"]', function(){
-			var type_name = $(this).attr('value');
-			var $row = $('td[name="object_type"]:contains("'+type_name+'")').parent('tr')
-			if ($(this).is(':checked')){
-				$row.show();
-			}else{
-				$row.find($('[name="selection"]')).prop('checked', false);
-				$row.hide();
-			}
+ 		//http://stackoverflow.com/questions/22739211/footable-fine-filtering
+		$('table').footable().bind('footable_filtering', function (e) {
+			var selected = $('input[name="type_filter_item"]:not(:checked)').map(function(){
+			    return $(this).val();
+			}).get().join('|');
+
+	      if (selected && selected.length > 0) {
+	        e.filter = selected;
+	      }else{
+	      	e.filter = "hoge";
+	      }
+	      e.clear = !e.filter;
+	    });
+
+		$(document).on('change','input[name="type_filter_item"]', function(e){
+		  e.preventDefault();
+	      $('table.footable').trigger('footable_filter', {filter: $('#filter').val()});
+		});
+
+		$(document).on('change','input[name="type_filter_item"]', function(e){
+		  e.preventDefault();
+	      $('table.footable').data('footable-filter').filter($('#filter').val());
 		});
 
 
