@@ -19,6 +19,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 
+import model.ActionPluginUIElement;
 import model.Principal;
 import net.lingala.zip4j.core.*;
 import net.lingala.zip4j.io.*;
@@ -193,7 +194,7 @@ public class Node extends Controller {
 		return ok(blank.render(repositoryId, parentId, objectType));
 	}
 
-	public static Result showDetail(String repositoryId, String id, Boolean activatePreviewTab) {
+	public static Result showDetail(String repositoryId, String id, String activateTabName) {
 		Session session = getCmisSession(repositoryId);
 
 		FileableCmisObject o = (FileableCmisObject) session.getObject(id);
@@ -213,7 +214,7 @@ public class Node extends Controller {
 			internalServerError("User retrieveing failure");
 		}
 
-		return ok(detail.render(repositoryId, o, parentId, activatePreviewTab, user));
+		return ok(detail.render(repositoryId, o, parentId, activateTabName, user));
 	}
 
 	public static Result showProperty(String repositoryId, String id) {
@@ -480,6 +481,26 @@ public class Node extends Controller {
 		return ok(views.html.node.permission.render(repositoryId, obj, members, permissionDefs));
 	}
 
+	public static Result showAction(String repositoryId, String id, String actionId) {
+		Session session = getCmisSession(repositoryId);
+
+		CmisObject obj = session.getObject(id);
+
+		ActionPluginUIElement elm = Util.getActionPluginUIElement(obj, actionId);
+
+		return ok(views.html.node.action.render(repositoryId, obj, elm));
+	}
+
+
+	public static Result doAction(String repositoryId, String id, String actionId){
+    	JsonNode json = request().body().asJson();
+
+    	String restUri = Util.buildNemakiCoreUri() + "rest/repo/" + repositoryId + "/action/" + actionId + "/do/" + id;
+    	JsonNode result = Util.postJsonResponse(session(), restUri , json);
+
+		return ok(result);
+	}
+
 	/**
 	 * Handle with a file per each request
 	 * Multiple drag & drop should be made by calling this as many times
@@ -526,7 +547,7 @@ public class Node extends Controller {
 		Session session = getCmisSession(repositoryId);
 		ContentStream cs = Util.convertFileToContentStream(session, file);
 		session.createDocument(param, parentId, cs, VersioningState.MAJOR);
-		
+
 		//Clean temp file just after CMIS createDocument finished
 		file.getFile().delete();
 	}
@@ -543,7 +564,7 @@ public class Node extends Controller {
 		ContentStream cs = Util.convertFileToContentStream(session, file);
 		Document d0 = (Document) session.getObject(objectId);
 		Document d1 = d0.setContentStream(cs, true);
-		
+
 		//Clean temp file just after CMIS createDocument finished
 		file.getFile().delete();
 	}
@@ -573,7 +594,7 @@ public class Node extends Controller {
 		switch (Util.getBaseType(session, objectTypeId)) {
 		case CMIS_DOCUMENT:
 			ContentStreamAllowed csa = ((DocumentTypeDefinition) objectType).getContentStreamAllowed();
-			
+
 			if (csa == ContentStreamAllowed.NOTALLOWED) {
 				// don't set content stream
 				session.createDocument(param, parentId, null, VersioningState.MAJOR);
