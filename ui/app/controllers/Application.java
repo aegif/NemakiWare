@@ -87,6 +87,7 @@ public class Application extends Controller{
 				controllers.routes.javascript.Node.showPreview(),
 				controllers.routes.javascript.Node.showVersion(),
 				controllers.routes.javascript.Node.showPermission(),
+				controllers.routes.javascript.Node.showRelationship(),
 				controllers.routes.javascript.Node.showAction(),
 
 				controllers.routes.javascript.Node.getAce(),

@@ -1,0 +1,41 @@
+@*{<meta charset="UTF-8" />}*@
+
+@import util.Formatter
+@import util.NemakiConfig
+@import play.mvc.Http.Context.Implicit
+@(repositoryId:String)(relationships: List[org.apache.chemistry.opencmis.client.api.Relationship])
+
+<div class="container tab-pane">
+	<div class="row">
+		<div class="col-sm-8">
+			<table class="footable" id="relationship-table">
+				<thead>
+					<tr>
+						<th>@NemakiConfig.getLabel("cmis:versionLabel", Implicit.lang().language)</th>
+						<th>@NemakiConfig.getLabel("cmis:name", Implicit.lang().language)</th>
+						<th>@NemakiConfig.getLabel("cmis:createdBy", Implicit.lang().language)</th>
+						<th>@NemakiConfig.getLabel("cmis:creationDate", Implicit.lang().language)</th>
+					</tr>
+				</thead>
+				<tbody>
+					@for(relationship <- relationships){
+						<tr>
+							<td>@relationship.getTarget().getName()</td>
+							<td>@relationship.getName()</td>
+							<td>@relationship.getCreatedBy()</td>
+							<td>@Formatter.calToString(relationship.getCreationDate(), Implicit.lang.toLocale)</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+
+	</div>
+</div>
+
+<!-- footable -->
+<script type="text/javascript">
+	$(function () {
+	    $('#relationship-table').footable();
+	});
+</script>

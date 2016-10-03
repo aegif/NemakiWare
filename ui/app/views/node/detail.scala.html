@@ -43,6 +43,9 @@
   		<li @if(TabUtil.isPermissionTab(activateTabName)){class="active"}>
   			<a href="@routes.Node.showPermission(repositoryId, obj.getId)" data-toggle="tab" data-target="#permission">@Messages("view.node.permission")</a>
   		</li>
+  		<li @if(TabUtil.isRelationshipTab(activateTabName)){class="active"}>
+  			<a href="@routes.Node.showRelationship(repositoryId, obj.getId)" data-toggle="tab" data-target="#relationship">@Messages("view.node.relationship")</a>
+  		</li>
 	  	@for(actionPluginUI <- Util.getActionPluginUIElementList(obj)){
 	  		<li>
 	  			<a href="@routes.Node.showAction(repositoryId, obj.getId, actionPluginUI.getActionId)" data-toggle="tab" data-target="#action-@actionPluginUI.getActionId">@actionPluginUI.getDisplayName</a>
