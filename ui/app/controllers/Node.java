@@ -26,19 +26,7 @@ import net.lingala.zip4j.io.*;
 import net.lingala.zip4j.model.*;
 import net.lingala.zip4j.util.*;
 
-import org.apache.chemistry.opencmis.client.api.CmisObject;
-import org.apache.chemistry.opencmis.client.api.Document;
-import org.apache.chemistry.opencmis.client.api.FileableCmisObject;
-import org.apache.chemistry.opencmis.client.api.Folder;
-import org.apache.chemistry.opencmis.client.api.ItemIterable;
-import org.apache.chemistry.opencmis.client.api.ObjectId;
-import org.apache.chemistry.opencmis.client.api.ObjectType;
-import org.apache.chemistry.opencmis.client.api.OperationContext;
-import org.apache.chemistry.opencmis.client.api.Property;
-import org.apache.chemistry.opencmis.client.api.Rendition;
-import org.apache.chemistry.opencmis.client.api.SecondaryType;
-import org.apache.chemistry.opencmis.client.api.Session;
-import org.apache.chemistry.opencmis.client.api.Tree;
+import org.apache.chemistry.opencmis.client.api.*;
 import org.apache.chemistry.opencmis.client.runtime.ObjectIdImpl;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Ace;
@@ -441,6 +429,19 @@ public class Node extends Controller {
 		return ok(version.render(repositoryId, result));
 
 	}
+
+	public static Result showRelationship(String repositoryId, String id) {
+		Session session = getCmisSession(repositoryId);
+
+		CmisObject o = session.getObject(id);
+
+		List<Relationship> result = o.getRelationships();
+
+		return ok(relationship.render(repositoryId, result));
+
+	}
+
+
 
 	public static Result showPreview(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);

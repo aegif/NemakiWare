@@ -27,6 +27,10 @@ public class TabUtil {
 		return "permission".equals(activateTabName);
 	}
 
+	public static boolean isRelationshipTab(String activateTabName){
+		return "relationship".equals(activateTabName);
+	}
+
 	public static String ACTION_PREFIX = "action-";
 	public static boolean isActionTab(String activateTabName, String actionId){
 		return (ACTION_PREFIX + actionId).equals(activateTabName);

@@ -37,6 +37,7 @@ GET     /repo/:repoId/objects/:id/download-preview   		controllers.Node.download
 GET     /repo/:repoId/objects/:id/version            		controllers.Node.showVersion(repoId:String, id:String)
 GET		/repo/:repoId/objects/:id/permission				controllers.Node.showPermission(repoId:String, id:String)
 GET		/repo/:repoId/objects/:id/permission/:principalId	controllers.Node.getAce(repoId:String, id:String, principalId:String)
+GET		/repo/:repoId/objects/:id/relationship				controllers.Node.showRelationship(repoId:String, id:String)
 GET		/repo/:repoId/objects/:id/action/:actionId			controllers.Node.showAction(repoId:String, id:String, actionId:String)
 POST	/repo/:repoId/objects/:id/action/execute			controllers.Node.doAction(repoId:String, id:String, actionId:String)
 GET     /repo/:repoId/objects/:id/children           		controllers.Node.showChildren(repoId:String, id:String)
