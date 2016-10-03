@@ -23,12 +23,14 @@ package jp.aegif.nemaki.cmis.factory;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.AllowableActions;
 import org.apache.chemistry.opencmis.commons.data.BulkUpdateObjectIdAndChangeToken;
+import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.FailedToDeleteData;
@@ -55,6 +57,7 @@ import org.apache.chemistry.opencmis.commons.enums.UnfileObject;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.CmisExtensionElementImpl;
 import org.apache.chemistry.opencmis.commons.impl.server.AbstractCmisService;
 import org.apache.chemistry.opencmis.commons.impl.server.ObjectInfoImpl;
 import org.apache.chemistry.opencmis.commons.impl.server.RenditionInfoImpl;
@@ -66,7 +69,10 @@ import org.apache.chemistry.opencmis.server.support.wrapper.CallContextAwareCmis
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.context.support.GenericApplicationContext;
 
+import jp.aegif.nemaki.AppConfig;
 import jp.aegif.nemaki.cmis.service.AclService;
 import jp.aegif.nemaki.cmis.service.DiscoveryService;
 import jp.aegif.nemaki.cmis.service.NavigationService;
@@ -75,6 +81,8 @@ import jp.aegif.nemaki.cmis.service.PolicyService;
 import jp.aegif.nemaki.cmis.service.RelationshipService;
 import jp.aegif.nemaki.cmis.service.RepositoryService;
 import jp.aegif.nemaki.cmis.service.VersioningService;
+import jp.aegif.nemaki.plugin.action.JavaBackedAction;
+import jp.aegif.nemaki.util.action.NemakiActionPlugin;
 
 /**
  * Nemaki CMIS service.
@@ -117,6 +125,9 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 			info = getObjectInfoIntern(repositoryId, object);
 			// add object info
 			addObjectInfo(info);
+
+
+
 		} catch (Exception e) {
 			e.printStackTrace();
 		} finally {

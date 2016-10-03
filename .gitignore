@@ -9,3 +9,4 @@ jetty.log
 setup/installer/*/log
 target
 /logs
+action-sample/dependency-reduced-pom.xml

@@ -14,11 +14,14 @@
 
 @(repositoryId:String)(objects: java.util.List[org.apache.chemistry.opencmis.client.api.CmisObject])
 
-<table class="footable" id="objects-table" data-sort="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
+<table class="footable" id="objects-table" data-sort="true"
+	   data-filter="#filter"
+	   data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
 	<thead>
 		<tr>
 			<th data-sort-ignore="true"   class="content-size"></th>
 			<th data-class="expand" data-sort-initial="true">@NemakiConfig.getLabel("cmis:name", lang().language)</th>
+			 <th class="content-size" data-class="expand" data-filter="#filter" >@NemakiConfig.getLabel("cmis:objectTypeId", Implicit.lang().language)</th>
 			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
 				<th class="content-size" data-class="expand">@NemakiConfig.getLabel(column, Implicit.lang().language)</th>
 			}
@@ -46,7 +49,7 @@
 					case folder:Folder =>{
 						<a href="@routes.Node.showChildren(repositoryId, folder.getId)">
 					}
-					
+
 					case item:Item =>{
 						<a href="#">
 					}
@@ -57,6 +60,7 @@
 					<i class="fa @Util.getIconClassName(obj)"></i><span class="obj-name" objectId="@obj.getId">@obj.getName()</span>
 				</a>
 			</td>
+			<td name="object_type">@Util.displayValue(obj, "cmis:objectTypeId", Implicit.lang.toLocale)</td>
 			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
 				<td>@Util.displayValue(obj, column, Implicit.lang.toLocale)</td>
 			}
@@ -73,6 +77,14 @@
 					<button type="button" class="btn btn-default delete" cmis-id="@obj.getId()">
 						<i class="fa fa-trash"></i><div class="tooltips">@Messages("view.delete")</div>
 					</button>
+
+					@for(actionButton <- Util.getActionPluginUIElementList(obj)){
+						<button type="button" class="btn btn-default action-@actionButton.getActionId()" cmis-id="@obj.getId()">
+							<i class="@actionButton.getFontAwesomeName()"></i>
+							<div class="tooltips">@actionButton.getDisplayName()</div>
+						</button>
+					}
+
 				</div>
 			</td>
 		</tr>
@@ -80,7 +92,7 @@
 	</tbody>
 	<tfoot>
 		<tr>
-			@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 3){colSpan =>
+			@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 4){colSpan =>
 				<td colspan="@colSpan">
 			}
 				<div class="pagination pagination-centered hide-if-no-paging"></div>
@@ -98,7 +110,7 @@
         $(".show-detail").bind('click', function(){
        		var id = $(this).attr('cmis-id');
        		//Execute
-			$.ajax(jsRoutes.controllers.Node.showDetail("@repositoryId", id, false)
+			$.ajax(jsRoutes.controllers.Node.showDetail("@repositoryId", id, "property")
 			).done(function(data){
 				showLightbox('node-preview' + id, data);
 			}).fail(function(XMLHttpRequest, textStatus, errorThrown){
@@ -117,7 +129,7 @@
        		var id = $(this).attr('cmis-id');
 
        		//Execute
-			$.ajax(jsRoutes.controllers.Node.showDetail("@repositoryId", id, true)
+			$.ajax(jsRoutes.controllers.Node.showDetail("@repositoryId", id, "preview")
 			).done(function(data){
 				showLightbox('node-preview' + id, data);
 			}).fail(function(XMLHttpRequest, textStatus, errorThrown){
@@ -152,6 +164,29 @@
 		});
 	});
 </script>
+
+	@for(obj <- objects){
+		@for(actionPluginUI <- Util.getActionPluginUIElementList(obj)){
+			<!-- action -->
+			<script type="text/javascript">
+				$(function(){
+			        $(".action-@actionPluginUI.getActionId").bind('click', function(){
+			       		var id = $(this).attr('cmis-id');
+
+			       		//Execute
+						$.ajax(jsRoutes.controllers.Node.showDetail("@repositoryId", id, "action-@actionPluginUI.getActionId")
+						).done(function(data){
+							showLightbox("action-@actionPluginUI.getActionId" + id, data);
+						}).fail(function(XMLHttpRequest, textStatus, errorThrown){
+							//TODO
+						}).always(function(){
+							//TODO
+						});
+			        });
+			    });
+			</script>
+		}
+	}
 
 <!-- no content stream link -->
 <script type="text/javascript">

@@ -24,9 +24,9 @@
 				   		@executeButton()
 				   	</fieldset>
 					}
-					
+
 					<br/><br/>
-					
+
 					<!-- checkin form -->
 					@helper.form(action=routes.Node.checkIn(repositoryId, obj.getId()), 'enctype -> "multipart/form-data") {
 					<fieldset>
@@ -38,9 +38,9 @@
 				   		@executeButton()
 				   	</fieldset>
 					}
-					
+
 					<br/><br/>
-					
+
 					<!-- cancel checkout form -->
 					@helper.form(action = routes.Node.cancelCheckOut(repositoryId, obj.getId())) {
 					<fieldset>
@@ -58,7 +58,7 @@
 						<input type="hidden" name="cmis:parentId" value="@parentId"/>
 				   		@executeButton("checkout")
 					<br/><br/>
-			
+
 					<!-- direct upload -->
 					@helper.form(action = routes.Node.upload(repositoryId, obj.getId()), 'enctype -> "multipart/form-data") {
 						<fieldset>
@@ -73,7 +73,7 @@
 			}
 		</div>
 	</div>
-	
+
 </div>
 
 <!-- scripts -->

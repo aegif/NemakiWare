@@ -11,6 +11,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -18,6 +19,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.apache.chemistry.opencmis.client.api.CmisObject;
 import org.apache.chemistry.opencmis.client.api.Document;
@@ -35,6 +38,7 @@ import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.SessionParameter;
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
+import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.definitions.Choice;
 import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
@@ -44,6 +48,7 @@ import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.BindingType;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
+import org.apache.chemistry.opencmis.commons.enums.ExtensionLevel;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
@@ -66,6 +71,7 @@ import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpPut;
 import org.apache.http.client.methods.HttpUriRequest;
+import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.auth.BasicScheme;
 import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.client.HttpClientBuilder;
@@ -84,6 +90,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import constant.PropertyKey;
 import constant.Token;
 import constant.UpdateContext;
+import model.ActionPluginUIElement;
 
 public class Util {
 	public static Session createCmisSession(String repositoryId, play.mvc.Http.Session session){
@@ -175,6 +182,50 @@ public class Util {
 		}
 	}
 
+	public static List<ActionPluginUIElement> getActionPluginUIElementList(CmisObject object){
+		List<CmisExtensionElement> exList = object.getExtensions(ExtensionLevel.OBJECT);
+		List<ActionPluginUIElement> result = new ArrayList<ActionPluginUIElement>();
+
+		if (exList != null){
+			for(CmisExtensionElement elm : exList){
+				if(elm.getNamespace() == "http://aegif.jp/nemakiware/action"){
+					ActionPluginUIElement button = new ActionPluginUIElement();
+					for(CmisExtensionElement actionElm : elm.getChildren()){
+						if(actionElm.getName().equals("actionId")){
+							button.setActionId(actionElm.getValue());
+						}else if(actionElm.getName().equals("actionButtonLabel")){
+							button.setDisplayName(actionElm.getValue());
+						}else if(actionElm.getName().equals("actionButtonIcon")){
+							button.setFontAwesomeName(actionElm.getValue());
+						}else if(actionElm.getName().equals("actionFormHtml")){
+							button.setFormHtml(actionElm.getValue());
+						}
+					}
+					result.add( button );
+				}
+			}
+		}
+		return result;
+	}
+
+	public static ActionPluginUIElement getActionPluginUIElement(CmisObject object, String actionId){
+		for(ActionPluginUIElement elm : Util.getActionPluginUIElementList(object)){
+			if(elm.getActionId().equals(actionId)) return elm;
+		}
+		return null;
+	}
+
+	public static List<String> getTypeFilterList(List<CmisObject> list){
+		List<String> result = list
+				.stream()
+				.filter(p -> isDocument(p) || isFolder(p))
+				.map(CmisObject::getType)
+				.distinct()
+				.map(ObjectType::getDisplayName)
+				.collect(Collectors.toList());;
+		return result;
+	}
+
 	public static Document convertToDocument(CmisObject obj) {
 		Document doc = (Document) obj;
 		return doc;
@@ -195,7 +246,7 @@ public class Util {
 		File file = File.createTempFile(
 				String.valueOf(System.currentTimeMillis()), null);
 		file.deleteOnExit();
-		
+
 		try {
 			// write the inputStream to a FileOutputStream
 			OutputStream out = new FileOutputStream(file);
@@ -368,7 +419,7 @@ public class Util {
 			HttpResponse response = client.execute((HttpUriRequest) request);
 			int responseStatus = response.getStatusLine().getStatusCode();
 			if (HttpStatus.SC_OK != responseStatus) {
-				throw new Exception("Solr server connection failed");
+				throw new Exception("Server connection failed");
 			}
 
 			InputStream is = response.getEntity().getContent();
@@ -406,6 +457,24 @@ public class Util {
 		return executeRequest(client, request);
 	}
 
+	public static JsonNode postJsonResponse(play.mvc.Http.Session session, String url, JsonNode json) {
+		// create client
+		HttpClient client = buildClient(session);
+		HttpPost request = new HttpPost(url);
+
+		try {
+			StringEntity body = new StringEntity(json.toString());
+			request.addHeader("Accept", "application/json");
+	        request.addHeader("Content-Type", "application/json");
+	        request.setEntity(body);
+		} catch (UnsupportedEncodingException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+
+		return executeRequest(client, request);
+	}
+
 	public static JsonNode postJsonResponse(play.mvc.Http.Session session, String url, Map<String, String>params) {
 		// create client
 		HttpClient client = buildClient(session);
@@ -427,6 +496,7 @@ public class Util {
 
 		return executeRequest(client, request);
 	}
+
 
 	public static JsonNode putJsonResponse(play.mvc.Http.Session session, String url, Map<String, String>params) {
 		// create client
@@ -770,10 +840,10 @@ public class Util {
 			 }else{
 				 return null;
 			 }
+		 }else{
+			 Property<Object> prop =obj.getProperty(propertyId);
+			 return prop == null ? "" : prop.getValueAsString();
 		 }
-
-
-		 return "#Error!";
 	 }
 
 	 public static boolean isFreezeCopy(CmisObject obj, play.mvc.Http.Session session){
@@ -827,7 +897,7 @@ public class Util {
 			 }
 		 }
 	 }
-	 
+
 	 public static long getCompressionTargetMaxSize(){
 		 String _size = NemakiConfig.getValue(PropertyKey.COMPRESSION_TARGET_MAXSIZE);
 		 return Long.valueOf(_size);

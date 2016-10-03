@@ -23,6 +23,7 @@ package jp.aegif.nemaki.cmis.aspect.impl;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -78,9 +79,12 @@ import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.context.support.GenericApplicationContext;
 
 import com.rits.cloning.Cloner;
 
+import jp.aegif.nemaki.AppConfig;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
@@ -103,7 +107,11 @@ import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
+import jp.aegif.nemaki.plugin.action.ActionTriggerBase;
+import jp.aegif.nemaki.plugin.action.JavaBackedAction;
+import jp.aegif.nemaki.plugin.action.UserButtonActionTrigger;
 import jp.aegif.nemaki.util.DataUtil;
+import jp.aegif.nemaki.util.action.NemakiActionPlugin;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.CmisExtensionToken;
 import net.sf.ehcache.Element;
@@ -143,6 +151,10 @@ public class CompileServiceImpl implements CompileService {
 		}
 
 		ObjectData result = filterObjectData(repositoryId, _result, filter, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
+
+
+
+		setPluginExtentionData(result);
 
 		return result;
 	}
@@ -307,14 +319,16 @@ public class CompileServiceImpl implements CompileService {
 				}
 
 				ObjectData od = filterObjectDataInList(callContext, repositoryId, _od, filter, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
+
+				setPluginExtentionData(od);
 				if(od != null){
 					ods.add(od);
 				}
 			}
-			
+
 			//Sort
 			sortUtil.sort(repositoryId, ods, orderBy);
-			
+
 			//Set metadata
 			ObjectListImpl list = new ObjectListImpl();
 			Integer _skipCount = skipCount.intValue();
@@ -328,7 +342,7 @@ public class CompileServiceImpl implements CompileService {
 				Boolean hasMoreItems = _skipCount + _maxItems < ods.size();
 				list.setHasMoreItems(hasMoreItems);
 				//paged list
-				Integer toIndex = Math.min(_skipCount + _maxItems, ods.size()); 
+				Integer toIndex = Math.min(_skipCount + _maxItems, ods.size());
 				list.setObjects(new ArrayList<>(ods.subList(_skipCount, toIndex)));
 			}
 			//totalNumItem
@@ -963,7 +977,7 @@ public class CompileServiceImpl implements CompileService {
 
 			if(attachment == null){
 				String attachmentId = (document.getAttachmentNodeId() == null) ? "" : document.getAttachmentNodeId();
-				log.warn("[objectId=" + document.getId() + " has no file (" + 
+				log.warn("[objectId=" + document.getId() + " has no file (" +
 						attachmentId + ")");
 			}else{
 				length = attachment.getLength();
@@ -1443,4 +1457,37 @@ public class CompileServiceImpl implements CompileService {
 	public void setSortUtil(SortUtil sortUtil) {
 		this.sortUtil = sortUtil;
 	}
+
+	private void setPluginExtentionData(ObjectData result){
+		// Add extension deta from plugin
+		try (GenericApplicationContext context = new AnnotationConfigApplicationContext(AppConfig.class)) {
+			NemakiActionPlugin acionPlugin = context.getBean(NemakiActionPlugin.class);
+			Map<String, JavaBackedAction> pluginMap = acionPlugin.getPluginsMap();
+
+			String ns = "http://aegif.jp/nemakiware/action";
+			// set the extension list
+			List<CmisExtensionElement> extensions = result.getExtensions();
+			if (extensions == null){
+				extensions = new ArrayList<CmisExtensionElement>();
+			}
+			for (String beanId : pluginMap.keySet()) {
+				JavaBackedAction plugin = acionPlugin.getPlugin(beanId);
+				if(plugin.canExecute(result)){
+					String action_id = beanId;
+					List<CmisExtensionElement> extElements = new ArrayList<CmisExtensionElement>();
+					extElements.add(new CmisExtensionElementImpl(ns, "actionId", null, action_id));
+					ActionTriggerBase trigger = plugin.getActionTrigger();
+					if(trigger instanceof  UserButtonActionTrigger){
+						extElements.add(new CmisExtensionElementImpl(ns, "actionButtonLabel", null, ((UserButtonActionTrigger) trigger).getDisplayName()));
+						extElements.add(new CmisExtensionElementImpl(ns, "actionButtonIcon", null, ((UserButtonActionTrigger) trigger).getFontAwesomeName()));
+						extElements.add(new CmisExtensionElementImpl(ns, "actionFormHtml", null, ((UserButtonActionTrigger) trigger).getFormHtml()));
+
+					}
+					extensions.add(new CmisExtensionElementImpl(ns, "actionPluginExtension", null, extElements));
+				}
+			}
+			result.setExtensions(extensions);
+		}
+	}
+
 }
