@@ -59,14 +59,7 @@ import play.mvc.Security.Authenticated;
 import util.CmisObjectTree;
 import util.NemakiConfig;
 import util.Util;
-import views.html.node.blank;
-import views.html.node.detail;
-import views.html.node.file;
-import views.html.node.preview;
-import views.html.node.property;
-import views.html.node.search;
-import views.html.node.tree;
-import views.html.node.version;
+import views.html.node.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -433,12 +426,11 @@ public class Node extends Controller {
 	public static Result showRelationship(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 
-		CmisObject o = session.getObject(id);
+		CmisObject obj = session.getObject(id);
 
-		List<Relationship> result = o.getRelationships();
-
-		return ok(relationship.render(repositoryId, result));
-
+		List<Relationship> result = obj.getRelationships();
+		if(result == null)result = new ArrayList<Relationship>();
+		return ok(relationship.render(repositoryId, obj, result));
 	}
 
 

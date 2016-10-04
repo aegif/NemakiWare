@@ -12,6 +12,7 @@ view.node.file=ファイル
 view.node.version=バージョン
 view.node.preview=プレビュー
 view.node.permission=権限
+view.node.relationship=リレーション
 view.node.type=タイプ
 view.node.create.caption=新規作成
 view.node.document=ドキュメント
@@ -41,6 +42,13 @@ view.node.preview.open=プレビューを開く
 view.node.preview.none=プレビューがありません
 view.node.permission.search.caption=ユーザ/グループ検索
 view.node.permission.table.caption=権限テーブル
+
+view.node.relationship.name=リレーション名
+view.node.relationship.target.name=ターゲット名
+view.node.relationship.source.name=ソース名
+view.node.relationship.table.to.caption=参照している
+view.node.relationship.table.from.caption=参照されている
+
 view.node.version.label=バージョン
 view.node.search.term=検索ワード
 view.node.drag-and-drop.out-of-support=このブラウザはファイルのドラッグ&ドロップに対応していません
