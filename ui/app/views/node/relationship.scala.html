@@ -3,33 +3,62 @@
 @import util.Formatter
 @import util.NemakiConfig
 @import play.mvc.Http.Context.Implicit
-@(repositoryId:String)(relationships: List[org.apache.chemistry.opencmis.client.api.Relationship])
+@import org.apache.chemistry.opencmis.client.api.CmisObject
+@(repositoryId:String)(obj:CmisObject)(relationships: List[org.apache.chemistry.opencmis.client.api.Relationship])
 
 <div class="container tab-pane">
 	<div class="row">
-		<div class="col-sm-8">
+		<div class="col-sm-12 col-md-12">
+			<legend><i class="fa fa-arrow-circle-o-up"></i>@Messages("view.node.relationship.table.to.caption")</legend>
 			<table class="footable" id="relationship-table">
 				<thead>
 					<tr>
-						<th>@NemakiConfig.getLabel("cmis:versionLabel", Implicit.lang().language)</th>
-						<th>@NemakiConfig.getLabel("cmis:name", Implicit.lang().language)</th>
+						<th>@Messages("view.node.relationship.name")</th>
+						<th>@Messages("view.node.relationship.target.name")</th>
 						<th>@NemakiConfig.getLabel("cmis:createdBy", Implicit.lang().language)</th>
 						<th>@NemakiConfig.getLabel("cmis:creationDate", Implicit.lang().language)</th>
 					</tr>
 				</thead>
 				<tbody>
 					@for(relationship <- relationships){
+						@if(obj.getId() == relationship.getSource().getId()){
 						<tr>
-							<td>@relationship.getTarget().getName()</td>
 							<td>@relationship.getName()</td>
+							<td>@relationship.getTarget().getName()</td>
 							<td>@relationship.getCreatedBy()</td>
 							<td>@Formatter.calToString(relationship.getCreationDate(), Implicit.lang.toLocale)</td>
 						</tr>
+						}
+					}
+				</tbody>
+			</table>
+
+			<br/><br/>
+
+			<legend><i class="fa fa-arrow-circle-o-down"></i>@Messages("view.node.relationship.table.from.caption")</legend>
+			<table class="footable" id="relationship-table">
+				<thead>
+					<tr>
+						<th>@Messages("view.node.relationship.name")</th>
+						<th>@Messages("view.node.relationship.source.name")</th>
+						<th>@NemakiConfig.getLabel("cmis:createdBy", Implicit.lang().language)</th>
+						<th>@NemakiConfig.getLabel("cmis:creationDate", Implicit.lang().language)</th>
+					</tr>
+				</thead>
+				<tbody>
+					@for(relationship <- relationships){
+						@if(obj.getId() == relationship.getTarget().getId()){
+						<tr>
+							<td>@relationship.getName()</td>
+							<td>@relationship.getSource().getName()</td>
+							<td>@relationship.getCreatedBy()</td>
+							<td>@Formatter.calToString(relationship.getCreationDate(), Implicit.lang.toLocale)</td>
+						</tr>
+						}
 					}
 				</tbody>
 			</table>
 		</div>
-
 	</div>
 </div>
 

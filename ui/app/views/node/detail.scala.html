@@ -59,6 +59,7 @@
 	  	<div class="tab-pane fade @if(TabUtil.isVersionTab(activateTabName)){active in}" id="version"></div>
 	  	<div class="tab-pane fade @if(TabUtil.isPreviewTab(activateTabName)){active in}" id="preview"></div>
 	  	<div class="tab-pane fade @if(TabUtil.isPermissionTab(activateTabName)){active in}" id="permission"></div>
+	  	<div class="tab-pane fade @if(TabUtil.isRelationshipTab(activateTabName)){active in}" id="relationship"></div>
 	  	@for(actionPluginUI <- Util.getActionPluginUIElementList(obj)){
 	  		  	<div class="tab-pane fade @if(TabUtil.isActionTab(activateTabName, actionPluginUI.getActionId)){active in}" id="action-@actionPluginUI.getActionId"></div>
 	  	}

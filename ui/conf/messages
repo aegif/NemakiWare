@@ -12,6 +12,7 @@ view.node.file=File
 view.node.version=Version
 view.node.preview=Preview
 view.node.permission=Permission
+view.node.relationship=Relationship
 view.node.type=Type
 view.node.create.caption=New
 view.node.document=Document
@@ -42,6 +43,13 @@ view.node.preview.none=No Preview
 view.node.version.label=Version
 view.node.permission.search.caption=User/Group Search
 view.node.permission.table.caption=Permission Table
+
+view.node.relationship.name=Relation Name
+view.node.relationship.target.name=Target Object Name
+view.node.relationship.source.name=Source Object Name
+view.node.relationship.table.to.caption=Relate To
+view.node.relationship.table.form.caption=Relate From
+
 view.node.search.term=Search Term
 view.node.drag-and-drop.out-of-support=Your browser does not support file drag & drop.
 view.node.drag-and-drop.success=File(s) are uploaded.
