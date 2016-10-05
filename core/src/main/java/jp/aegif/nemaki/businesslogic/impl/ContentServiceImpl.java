@@ -1257,7 +1257,11 @@ public class ContentServiceImpl implements ContentService {
 		// Subtype specific
 		List<Property> subTypeProperties = buildSubTypeProperties(repositoryId, properties, content);
 		if (!CollectionUtils.isEmpty(subTypeProperties)) {
-			content.setSubTypeProperties(subTypeProperties);
+			// Combine incoming properties to existing ones, overwriting those that exist.
+			List<Property> allSubTypeProperties = content.getSubTypeProperties();
+			allSubTypeProperties.addAll(subTypeProperties);
+			// Save this properties.
+			content.setSubTypeProperties(allSubTypeProperties);
 		}
 
 		// Secondary
