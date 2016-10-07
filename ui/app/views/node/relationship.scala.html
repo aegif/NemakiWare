@@ -21,13 +21,13 @@
 				</thead>
 				<tbody>
 					@for(relationship <- relationships){
-						@if(obj.getId() == relationship.getSource().getId()){
-						<tr>
-							<td>@relationship.getName()</td>
-							<td>@relationship.getTarget().getName()</td>
-							<td>@relationship.getCreatedBy()</td>
-							<td>@Formatter.calToString(relationship.getCreationDate(), Implicit.lang.toLocale)</td>
-						</tr>
+							@if(obj.getId() == relationship.getSource().getId()){
+							<tr>
+								<td>@relationship.getName()</td>
+								<td>@relationship.getTarget().getName()</td>
+								<td>@relationship.getCreatedBy()</td>
+								<td>@Formatter.calToString(relationship.getCreationDate(), Implicit.lang.toLocale)</td>
+							</tr>
 						}
 					}
 				</tbody>
@@ -47,13 +47,13 @@
 				</thead>
 				<tbody>
 					@for(relationship <- relationships){
-						@if(obj.getId() == relationship.getTarget().getId()){
-						<tr>
-							<td>@relationship.getName()</td>
-							<td>@relationship.getSource().getName()</td>
-							<td>@relationship.getCreatedBy()</td>
-							<td>@Formatter.calToString(relationship.getCreationDate(), Implicit.lang.toLocale)</td>
-						</tr>
+							@if(obj.getId() == relationship.getTarget().getId()){
+							<tr>
+								<td>@relationship.getName()</td>
+								<td>@relationship.getSource().getName()</td>
+								<td>@relationship.getCreatedBy()</td>
+								<td>@Formatter.calToString(relationship.getCreationDate(), Implicit.lang.toLocale)</td>
+							</tr>
 						}
 					}
 				</tbody>

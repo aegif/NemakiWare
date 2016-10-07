@@ -1,0 +1,77 @@
+@*{<meta charset="UTF-8" />}*@
+
+@(repositoryId:String)(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(parentId:String)
+@import component._
+@import util._
+@import org.apache.chemistry.opencmis.client.api.Document
+@import org.apache.chemistry.opencmis.commons.PropertyIds
+@import play.mvc.Http.Context.Implicit
+
+<div class="container tap-pane">
+	<div class="row">
+		<div class="col-sm-12 col-md-12">
+
+			<form id="link-new-file-form">
+				<legend><i class="fa fa-arrow-circle-o-down"></i>ファイルを新規に追加してリレーションを貼る</legend>
+				<fieldset>
+					<input type="file" name="file"/>
+					<input type="hidden" name="cmis:parentId" value="@parentId"/>
+			   		@executeButton("link-new-file")
+			   	</fieldset>
+			</form>
+
+			<form id="link-existing-object-form">
+				<legend><i class="fa fa-arrow-circle-o-down"></i>既存オブジェクトのIDを指定してリレーションをはる</legend>
+				<fieldset>
+					<input type="textbox" name="nemaki:targetId"/>
+			   		@executeButton("link-existing-object")
+			   	</fieldset>
+		   	</form>
+		</div>
+	</div>
+
+</div>
+
+<!-- scripts -->
+<script type="text/javascript">
+	$(function(){
+		$('#link-new-file').on("click", function(){
+			var formdata = new FormData($('#link-new-file-form').get(0));
+
+			$.blockUI({message:"@Messages("view.message.please.wait")"});
+			$.ajax({
+				  type: "POST",
+				  url: "@routes.Node.createRelationToNew(repositoryId, obj.getId)",
+				  data: formdata,
+				  processData: false,
+      			　contentType: false
+			}).done(function( msg ) {
+			 	alert( "作成しています、しばらくお待ちください ");
+				window.location.reload();
+			}).fail(function( jqXHR, textStatus, errorThrown ) {
+				 alert("some error:" + textStatus);
+			}).done(function( msg ) {
+				 $.unblockUI();
+			});
+		});
+
+		$('#link-existing-object').on("click", function(){
+			var formdata = new FormData($('#link-existing-object-form').get(0));
+
+			$.blockUI({message:"@Messages("view.message.please.wait")"});
+			$.ajax({
+				  type: "POST",
+				  url: "@routes.Node.createRelationToExisting(repositoryId, obj.getId)",
+				  data: formdata
+			}).done(function( msg ) {
+			 	alert( "作成しています、しばらくお待ちください ");
+				window.location.reload();
+			}).fail(function( jqXHR, textStatus, errorThrown ) {
+				 alert("some error:" + textStatus);
+			}).done(function( msg ) {
+				 $.unblockUI();
+			});
+		});
+
+	});
+</script>
