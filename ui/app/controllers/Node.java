@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.stream.Collectors;
 
 import model.ActionPluginUIElement;
 import model.Principal;
@@ -40,9 +41,11 @@ import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
 import org.apache.chemistry.opencmis.commons.impl.MimeTypes;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
@@ -265,10 +268,10 @@ public class Node extends Controller {
 			CmisObjectTree tree = new CmisObjectTree(session);
 			tree.buildTree(ids.toArray(new String[0]));
 
-			//ファイルが大きすぎたらエラーにする
+			// ファイルが大きすぎたらエラーにする
 			long maxsize = Util.getCompressionTargetMaxSize();
-			if (tree.getContentsSize() > Util.getCompressionTargetMaxSize()){
-				String errmsg = Messages .get("view.message.compress.error.toolarge", maxsize);
+			if (tree.getContentsSize() > Util.getCompressionTargetMaxSize()) {
+				String errmsg = Messages.get("view.message.compress.error.toolarge", maxsize);
 				return internalServerError(errmsg);
 			}
 
@@ -288,7 +291,7 @@ public class Node extends Controller {
 				HashMap<String, CmisObject> map = tree.getHashMap();
 				for (String key : map.keySet()) {
 					ZipParameters params = (ZipParameters) parameters.clone();
-					params.setFileNameInZip(StringUtils.stripStart(key,"/"));
+					params.setFileNameInZip(StringUtils.stripStart(key, "/"));
 
 					outputStream.putNextEntry(null, params);
 
@@ -311,7 +314,7 @@ public class Node extends Controller {
 			e.printStackTrace();
 		}
 
-		createAttachmentResponse("compressed-files.zip","application/zip");
+		createAttachmentResponse("compressed-files.zip", "application/zip");
 		return ok(tempFile);
 	}
 
@@ -336,7 +339,7 @@ public class Node extends Controller {
 		} catch (FileNotFoundException e) {
 			e.printStackTrace();
 			return internalServerError("File not found");
-		} catch (Exception e){
+		} catch (Exception e) {
 			e.printStackTrace();
 		}
 
@@ -428,12 +431,26 @@ public class Node extends Controller {
 
 		CmisObject obj = session.getObject(id);
 
-		List<Relationship> result = obj.getRelationships();
-		if(result == null)result = new ArrayList<Relationship>();
+		List<Relationship> relationships = obj.getRelationships();
+		List<Relationship> result = new ArrayList<Relationship>();
+		if (relationships != null){
+			result = relationships.stream().filter(r -> {
+				try{
+					CmisObject t = r.getTarget();
+				}catch(CmisObjectNotFoundException e){
+					return false;
+				}
+				try{
+					CmisObject s = r.getSource();
+				}catch(CmisObjectNotFoundException e){
+					return false;
+				}
+				return true;
+			}).collect(Collectors.toList());
+		}
+
 		return ok(relationship.render(repositoryId, obj, result));
 	}
-
-
 
 	public static Result showPreview(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
@@ -484,19 +501,19 @@ public class Node extends Controller {
 		return ok(views.html.node.action.render(repositoryId, obj, elm));
 	}
 
+	public static Result doAction(String repositoryId, String id, String actionId) {
+		JsonNode json = request().body().asJson();
 
-	public static Result doAction(String repositoryId, String id, String actionId){
-    	JsonNode json = request().body().asJson();
-
-    	String restUri = Util.buildNemakiCoreUri() + "rest/repo/" + repositoryId + "/action/" + actionId + "/do/" + id;
-    	JsonNode result = Util.postJsonResponse(session(), restUri , json);
+		String restUri = Util.buildNemakiCoreUri() + "rest/repo/" + repositoryId + "/action/" + actionId + "/do/" + id;
+		JsonNode result = Util.postJsonResponse(session(), restUri, json);
 
 		return ok(result);
 	}
 
 	/**
-	 * Handle with a file per each request
-	 * Multiple drag & drop should be made by calling this as many times
+	 * Handle with a file per each request Multiple drag & drop should be made
+	 * by calling this as many times
+	 *
 	 * @param repositoryId
 	 * @param action
 	 * @return
@@ -541,7 +558,7 @@ public class Node extends Controller {
 		ContentStream cs = Util.convertFileToContentStream(session, file);
 		session.createDocument(param, parentId, cs, VersioningState.MAJOR);
 
-		//Clean temp file just after CMIS createDocument finished
+		// Clean temp file just after CMIS createDocument finished
 		file.getFile().delete();
 	}
 
@@ -558,7 +575,7 @@ public class Node extends Controller {
 		Document d0 = (Document) session.getObject(objectId);
 		Document d1 = d0.setContentStream(cs, true);
 
-		//Clean temp file just after CMIS createDocument finished
+		// Clean temp file just after CMIS createDocument finished
 		file.getFile().delete();
 	}
 
@@ -571,12 +588,15 @@ public class Node extends Controller {
 		String _parentId = Util.getFormData(input, PropertyIds.PARENT_ID);
 		ObjectId parentId = new ObjectIdImpl(_parentId);
 
+
 		Session session = getCmisSession(repositoryId);
 
 		ObjectType objectType = session.getTypeDefinition(objectTypeId);
 
 		// Set CMIS parameter
 		Map<String, PropertyDefinition<?>> pdfs = session.getTypeDefinition(objectTypeId).getPropertyDefinitions();
+		Map<String,String> stringMap = Util.createPropFormDataMap(pdfs, input);
+
 		List<Updatability> upds = new ArrayList<Updatability>();
 		upds.add(Updatability.ONCREATE);
 		upds.add(Updatability.READWRITE);
@@ -591,7 +611,7 @@ public class Node extends Controller {
 			if (csa == ContentStreamAllowed.NOTALLOWED) {
 				// don't set content stream
 				session.createDocument(param, parentId, null, VersioningState.MAJOR);
-			}else{
+			} else {
 				List<FilePart> files = null;
 				MultipartFormData body = request().body().asMultipartFormData();
 				if (body != null && CollectionUtils.isNotEmpty(body.getFiles())) {
@@ -599,23 +619,23 @@ public class Node extends Controller {
 				}
 
 				if (CollectionUtils.isEmpty(files)) {
-					//Case: no file
-					if (csa == ContentStreamAllowed.REQUIRED){
+					// Case: no file
+					if (csa == ContentStreamAllowed.REQUIRED) {
 						return internalServerError(objectTypeId + ":This type requires a file");
-					}else if(csa == ContentStreamAllowed.ALLOWED){
+					} else if (csa == ContentStreamAllowed.ALLOWED) {
 						session.createDocument(param, parentId, null, VersioningState.MAJOR);
 					}
 				} else {
-					//Case: file exists
+					// Case: file exists
 					ContentStream contentStream = Util.convertFileToContentStream(session, files.get(0));
 					if (param.get(PropertyIds.NAME) == null) {
 						param.put(PropertyIds.NAME, contentStream.getFileName());
-				}
+					}
 					session.createDocument(param, parentId, contentStream, VersioningState.MAJOR);
 
-					//Clean temp file just after CMIS createDocument finished
-				if (CollectionUtils.isNotEmpty(files)) {
-						for(FilePart file : files){
+					// Clean temp file just after CMIS createDocument finished
+					if (CollectionUtils.isNotEmpty(files)) {
+						for (FilePart file : files) {
 							file.getFile().delete();
 						}
 					}
@@ -630,8 +650,8 @@ public class Node extends Controller {
 			break;
 		}
 
-			return redirectToParent(repositoryId, input);
-		}
+		return redirectToParent(repositoryId, input);
+	}
 
 	public static Result update(String repositoryId, String id) {
 		// Get an object in the repository
@@ -789,12 +809,12 @@ public class Node extends Controller {
 	}
 
 	public static Result upload(String repositoryId, String id) {
-
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
 
 		Session session = getCmisSession(repositoryId);
 		CmisObject o = session.getObject(id);
+
 		if (o.getType() instanceof DocumentTypeDefinition) {
 			ContentStreamAllowed csa = ((DocumentTypeDefinition) (o.getType())).getContentStreamAllowed();
 			if (csa == ContentStreamAllowed.NOTALLOWED) {
@@ -802,20 +822,19 @@ public class Node extends Controller {
 			}
 		}
 
+		Document doc = (Document) o;
 		MultipartFormData body = request().body().asMultipartFormData();
 		List<FilePart> files = body.getFiles();
-		if (files.isEmpty()) {
-			// TODO error
-			System.err.println("There is no file when uploading");
-		}
+		if (files.isEmpty()) System.err.println("There is no file when uploading");
 		FilePart file = files.get(0);
 
-		Document doc = (Document) o;
 		ContentStream cs = Util.convertFileToContentStream(session, file);
 		doc.setContentStream(cs, true);
 
 		return redirectToParent(repositoryId, input);
 	}
+
+
 
 	public static Result delete(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
@@ -983,6 +1002,64 @@ public class Node extends Controller {
 
 		return null;
 	}
+
+	public static Result createRelationToNew(String repositoryId, String sourceId ) {
+		// Get input form data
+		DynamicForm input = Form.form();
+		input = input.bindFromRequest();
+		String parentId = Util.getFormData(input, PropertyIds.PARENT_ID);
+
+		// Get an object in the repository
+		Session session = getCmisSession(repositoryId);
+		Folder folder = (Folder)session.getObject(parentId);
+
+		MultipartFormData body = request().body().asMultipartFormData();
+		List<FilePart> files = body.getFiles();
+		if (files.isEmpty()) System.err.println("There is no file when uploading");
+		FilePart file = files.get(0);
+		ContentStream cs = Util.convertFileToContentStream(session, file);
+
+		   Map<String,String> newDocProps = new HashMap<String, String>();
+		    newDocProps.put(PropertyIds.OBJECT_TYPE_ID, "cmis:document");
+		    newDocProps.put(PropertyIds.NAME, "Test Doc 1");
+		     Document doc = folder.createDocument(newDocProps, cs, VersioningState.MAJOR, null, null, null, session.getDefaultContext());
+
+			createRelation(repositoryId,  sourceId,  doc.getId() );
+
+		return ok();
+	}
+
+
+	public static Result createRelationToExisting(String repositoryId, String sourceId) {
+		// Get input form data
+		DynamicForm input = Form.form();
+		input = input.bindFromRequest();
+		String targetId = Util.getFormData(input, "nemaki:targetId");
+
+
+		// Get an object in the repository
+		Session session = getCmisSession(repositoryId);
+
+
+
+		createRelation(repositoryId,  sourceId,  targetId );
+
+		return ok();
+	}
+
+	private static ObjectId createRelation(String repositoryId, String sourceId, String targetId ) {
+		// Get an object in the repository
+		Session session = getCmisSession(repositoryId);
+
+	    Map<String, String> relProps = new HashMap<String, String>();
+	    relProps.put("cmis:sourceId", sourceId);
+	    relProps.put("cmis:targetId", targetId);
+	    relProps.put("cmis:objectTypeId", "cmis:relationship");
+	    return session.createRelationship(relProps, null, null, null);
+	}
+
+
+
 
 	private static Result redirectToParent(String repositoryId, DynamicForm input) {
 		String parentId = Util.getFormData(input, PropertyIds.PARENT_ID);

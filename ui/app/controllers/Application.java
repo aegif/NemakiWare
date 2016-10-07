@@ -105,6 +105,9 @@ public class Application extends Controller{
 				controllers.routes.javascript.Node.downloadAsCompressedFile(),
 				controllers.routes.javascript.Node.downloadAsCompressedFileByBatch(),
 
+				controllers.routes.javascript.Node.createRelationToNew(),
+				controllers.routes.javascript.Node.createRelationToExisting(),
+
 				controllers.routes.javascript.Type.showBlank(),
 				controllers.routes.javascript.Type.edit(),
 				controllers.routes.javascript.Type.delete(),
