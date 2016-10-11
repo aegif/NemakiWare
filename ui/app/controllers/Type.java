@@ -16,32 +16,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-import org.apache.chemistry.opencmis.client.api.ObjectType;
-import org.apache.chemistry.opencmis.client.api.Session;
-import org.apache.chemistry.opencmis.client.api.Tree;
-import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
-import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
-import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
-import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
-import org.apache.chemistry.opencmis.commons.enums.Cardinality;
-import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
-import org.apache.chemistry.opencmis.commons.enums.DateTimeResolution;
-import org.apache.chemistry.opencmis.commons.enums.PropertyType;
-import org.apache.chemistry.opencmis.commons.enums.Updatability;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyDefinition;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.DocumentTypeDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.FolderTypeDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.ItemTypeDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyBooleanDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDecimalDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyHtmlDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyUriDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.TypeMutabilityImpl;
+import org.apache.chemistry.opencmis.client.api.*;
+import org.apache.chemistry.opencmis.commons.definitions.*;
+import org.apache.chemistry.opencmis.commons.enums.*;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.*;
 import org.apache.commons.lang3.StringEscapeUtils;
 import org.apache.commons.lang3.StringUtils;
 
@@ -64,18 +42,18 @@ public class Type extends Controller {
 	private static Session getCmisSession(String repositoryId){
 		return CmisSessions.getCmisSession(repositoryId, session());
 	}
-	
+
 	public static Result index(String repositoryId) {
 		Session session = Util.createCmisSession(repositoryId, session());
-		
+
 		List<ObjectType> list = new ArrayList<ObjectType>();
-		
+
 		List<Tree<ObjectType>> descendants = session.getTypeDescendants(null, -1, true);
 		for(Tree<ObjectType> _type : descendants){
 			ObjectType type = _type.getItem();
 			list.add(type);
 		}
-		
+
 		return ok(views.html.objecttype.list.render(repositoryId, list));
 	}
 
@@ -112,7 +90,7 @@ public class Type extends Controller {
 			json.put("versionable", documentType.isVersionable());
 			json.put("contentStreamAllowed", documentType.getContentStreamAllowed().value());
 		}
-		
+
 		//Property definitions
 		Map<String, PropertyDefinition<?>> map = objectType.getPropertyDefinitions();
 		ObjectNode propertyDefinitions = mapper.createObjectNode();
@@ -136,10 +114,10 @@ public class Type extends Controller {
 			propertyDefinition.put("openChoice", pdf.isOpenChoice());
 
 			//TODO implement "choice"
-			
+
 			propertyDefinitions.put(pdf.getId(), propertyDefinition);
 		}
-		
+
 		json.put("propertyDefinitions", propertyDefinitions);
 
 		File file;
@@ -147,7 +125,7 @@ public class Type extends Controller {
 			file = File.createTempFile(
 					String.valueOf(System.currentTimeMillis()), null);
 			mapper.writeValue(file, json);
-			
+
 			try {
 				if (request().getHeader("User-Agent").indexOf("MSIE") == -1) {
 					// Firefox, Opera 11
@@ -169,30 +147,30 @@ public class Type extends Controller {
 			}
 
 			response().setContentType("application/json");
-			
+
 			return ok(file);
-		
+
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-		
+
 		return noContent();
 	}
-	
+
 	private static String escape(String str){
 		//TODO is this way to escape a string really desirable?
 		return StringEscapeUtils.escapeEcmaScript(str);
 	}
-	
+
 	public static Result showBlank(String repositoryId){
 		return ok(views.html.objecttype.blank.render(repositoryId));
 	}
-	
+
 	public static Result create(String repositoryId){
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
-		
+
 		MultipartFormData body = request().body().asMultipartFormData();
 		List<FilePart> files = body.getFiles();
 		for (FilePart file : files) {
@@ -200,15 +178,15 @@ public class Type extends Controller {
 			ObjectMapper mapper = new ObjectMapper();
 			try {
 				JsonNode json = mapper.readTree(file.getFile());
-				
+
 				//Call CMIS API
 				TypeDefinition tdf = parseType(json);
 				Session session = getCmisSession(repositoryId);
 				ObjectType newType = session.createType(tdf);
-				
+
 				System.out.println();
-				
-				
+
+
 			} catch (JsonProcessingException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
@@ -216,22 +194,22 @@ public class Type extends Controller {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
-			
-			
-		
+
+
+
 		}
-		
+
 		return redirect(routes.Type.index(repositoryId));
 	}
-	
+
 	public static Result edit(String repositoryId){
 		return ok(views.html.objecttype.edit.render(repositoryId));
 	}
-	
+
 	public static Result update(String repositoryId){
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
-		
+
 		MultipartFormData body = request().body().asMultipartFormData();
 		List<FilePart> files = body.getFiles();
 		for (FilePart file : files) {
@@ -239,7 +217,7 @@ public class Type extends Controller {
 			ObjectMapper mapper = new ObjectMapper();
 			try {
 				JsonNode json = mapper.readTree(file.getFile());
-				
+
 				//Call CMIS API
 				TypeDefinition tdf = parseType(json);
 				Session session = getCmisSession(repositoryId);
@@ -251,34 +229,36 @@ public class Type extends Controller {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
-		
+
 		}
-		
+
 		return redirect(routes.Type.index(repositoryId));
-		
+
 	}
-	
+
 	public static Result delete(String repositoryId, String id){
 		Session session = getCmisSession(repositoryId);
 		session.deleteType(id);
-		
+
 		return redirect(routes.Type.index(repositoryId));
 	}
-	
+
 	private static TypeDefinition parseType(JsonNode json){
 		String baseId = json.get("baseId").textValue();
-		
+
 		if(BaseTypeId.CMIS_DOCUMENT.value().equals(baseId)){
 			return parseDocumentType(json);
 		}else if(BaseTypeId.CMIS_FOLDER.value().equals(baseId)){
 			return parseFolder(json);
 		}else if(BaseTypeId.CMIS_ITEM.value().equals(baseId)){
 			return parseItem(json);
+		}else if(BaseTypeId.CMIS_RELATIONSHIP.value().equals(baseId)){
+			return parseRelationship(json);
 		}
-		
+
 		return null;
 	}
-	
+
 	private static void parseCommonType(AbstractTypeDefinition tdf, JsonNode json){
 		tdf.setId(getString(json, "id"));
 		tdf.setLocalName(getString(json, "localName"));
@@ -298,14 +278,14 @@ public class Type extends Controller {
 		tdf.setIsIncludedInSupertypeQuery(getBoolean(json, "includedInSupertypeQuery"));
 		tdf.setIsControllablePolicy(getBoolean(json, "controllablePolicy"));
 		tdf.setIsControllableAcl(getBoolean(json, "controllableACL"));
-		
+
 		TypeMutabilityImpl typeMutability = new TypeMutabilityImpl();
 		JsonNode tmJson = json.get("typeMutability");
 		typeMutability.setCanCreate(getBoolean(tmJson, "create"));
 		typeMutability.setCanUpdate(getBoolean(tmJson, "update"));
 		typeMutability.setCanDelete(getBoolean(tmJson, "delete"));
 		tdf.setTypeMutability(typeMutability);
-		
+
 		//TODO property definitions
 		Map<String, PropertyDefinition<?>> newPropertyDefinitions = new HashMap<String, PropertyDefinition<?>>();
 		JsonNode propertyDefinitions = json.get("propertyDefinitions");
@@ -316,37 +296,43 @@ public class Type extends Controller {
 				PropertyDefinition<?> newPropertyDefinition = parseProperty(propertyDefinition);
 				newPropertyDefinitions.put(newPropertyDefinition.getId(), newPropertyDefinition);
 			}
-		
+
 			tdf.setPropertyDefinitions(newPropertyDefinitions);
 		}
-		
+
 	}
-	
+
 	private static TypeDefinition parseDocumentType(JsonNode json){
 		DocumentTypeDefinitionImpl pdf = new DocumentTypeDefinitionImpl();
 		parseCommonType(pdf, json);
-		
+
 		pdf.setIsVersionable(getBoolean(json, "versionable"));
 		String contentStreamAllowed = getString(json, "contentStreamAllowed");
 		if(contentStreamAllowed != null){
 			pdf.setContentStreamAllowed(ContentStreamAllowed.fromValue(contentStreamAllowed));
 		}
-		
+
 		return pdf;
 	}
-	
+
 	private static TypeDefinition parseFolder(JsonNode json){
 		FolderTypeDefinitionImpl pdf = new FolderTypeDefinitionImpl();
 		parseCommonType(pdf, json);
 		return pdf;
 	}
-	
+
 	private static TypeDefinition parseItem(JsonNode json){
 		ItemTypeDefinitionImpl pdf = new ItemTypeDefinitionImpl();
 		parseCommonType(pdf, json);
 		return pdf;
 	}
-	
+
+	private static TypeDefinition parseRelationship(JsonNode json){
+		RelationshipTypeDefinitionImpl pdf = new RelationshipTypeDefinitionImpl();
+		parseCommonType(pdf, json);
+		return pdf;
+	}
+
 	private static PropertyDefinition<?> parseProperty(JsonNode json){
 		PropertyType propertyType =PropertyType.fromValue(json.get("propertyType").textValue());
 		switch(propertyType){
@@ -367,16 +353,16 @@ public class Type extends Controller {
 		 case URI:
 			 return parseUriProperty(json);
 		}
-		
+
 		return null;
 	}
-	
+
 	private static void parseCommon(AbstractPropertyDefinition<?> pdf, JsonNode json){
 		pdf.setId(getString(json, "id"));
 		pdf.setLocalName(getString(json, "localName"));
-		
-		
-		
+
+
+
 		//TODO
 		pdf.setLocalNamespace(getString(json, "localNamespace"));
 		pdf.setDisplayName(getString(json, "displayName"));
@@ -395,52 +381,50 @@ public class Type extends Controller {
 		pdf.setIsQueryable(getBoolean(json, "queryable"));
 		pdf.setIsOrderable(getBoolean(json, "orderable"));
 		pdf.setIsOpenChoice(getBoolean(json, "openChoice"));
-		
-		
-		
+
 		//TODO defaultValues, choices
 	}
-	
+
 	private static PropertyDefinition<?> parseBooleanProperty(JsonNode json){
 		PropertyBooleanDefinitionImpl pdf = new PropertyBooleanDefinitionImpl();
 		pdf.setPropertyType(PropertyType.BOOLEAN);
 		setDefaultValue(pdf, json);
-		
+
 		parseCommon(pdf, json);
 		return pdf;
 	}
-	
+
 	private static PropertyDefinition<?> parseDateTimeProperty(JsonNode json){
 		PropertyDateTimeDefinitionImpl pdf = new PropertyDateTimeDefinitionImpl();
 		pdf.setPropertyType(PropertyType.DATETIME);
 		setDefaultValue(pdf, json);
-		
+
 		if(json.get("dateTimeResolution") != null){
 			String resolution = json.get("dateTimeResolution").textValue();
 			pdf.setDateTimeResolution(DateTimeResolution.fromValue(resolution));
 		}
-		
+
 		parseCommon(pdf, json);
 		return pdf;
 	}
-	
+
 	private static PropertyDefinition<?> parseDecimalProperty(JsonNode json){
 		PropertyDecimalDefinitionImpl pdf = new PropertyDecimalDefinitionImpl();
 		pdf.setPropertyType(PropertyType.DECIMAL);
 		setDefaultValue(pdf, json);
-		
+
 		pdf.setMaxValue(parseBigDecimal(json, "maxValue"));
 		pdf.setMinValue(parseBigDecimal(json, "minValue"));
-		
+
 		parseCommon(pdf, json);
 		return pdf;
 	}
-	
+
 	private static PropertyDefinition<?> parseHtmlProperty(JsonNode json){
 		PropertyHtmlDefinitionImpl pdf = new PropertyHtmlDefinitionImpl();
 		pdf.setPropertyType(PropertyType.HTML);
 		setDefaultValue(pdf, json);
-		
+
 		parseCommon(pdf, json);
 		return pdf;
 	}
@@ -449,43 +433,43 @@ public class Type extends Controller {
 		PropertyIdDefinitionImpl pdf = new PropertyIdDefinitionImpl();
 		pdf.setPropertyType(PropertyType.ID);
 		setDefaultValue(pdf, json);
-		
+
 		parseCommon(pdf, json);
 		return pdf;
 	}
-	
+
 	private static PropertyDefinition<?> parseIntegerProperty(JsonNode json){
 		PropertyIntegerDefinitionImpl pdf = new PropertyIntegerDefinitionImpl();
 		pdf.setPropertyType(PropertyType.INTEGER);
 		setDefaultValue(pdf, json);
-		
+
 		pdf.setMaxValue(parseBigInteger(json, "maxValue"));
 		pdf.setMinValue(parseBigInteger(json, "minValue"));
-		
+
 		parseCommon(pdf, json);
 		return pdf;
 	}
-	
+
 	private static PropertyDefinition<?> parseStringProperty(JsonNode json){
 		PropertyStringDefinitionImpl pdf = new PropertyStringDefinitionImpl();
 		pdf.setPropertyType(PropertyType.STRING);
 		setDefaultValue(pdf, json);
-		
+
 		pdf.setMaxLength(parseBigInteger(json, "maxLength"));
-		
+
 		parseCommon(pdf, json);
 		return pdf;
 	}
-	
+
 	private static PropertyDefinition<?> parseUriProperty(JsonNode json){
 		PropertyUriDefinitionImpl pdf = new PropertyUriDefinitionImpl();
 		pdf.setPropertyType(PropertyType.URI);
 		setDefaultValue(pdf, json);
-		
+
 		parseCommon(pdf, json);
 		return pdf;
 	}
-	
+
 	private static BigInteger parseBigInteger(JsonNode json, String key){
 		JsonNode node = json.get(key);
 		if(node == null){
@@ -502,7 +486,7 @@ public class Type extends Controller {
 			}
 		}
 	}
-	
+
 	private static BigDecimal parseBigDecimal(JsonNode json, String key){
 		JsonNode node = json.get(key);
 		if(node == null){
@@ -519,7 +503,7 @@ public class Type extends Controller {
 			}
 		}
 	}
-	
+
 	private static String getString(JsonNode json, String key){
 		JsonNode node = json.get(key);
 		if(node == null){
@@ -528,7 +512,7 @@ public class Type extends Controller {
 			return node.textValue();
 		}
 	}
-	
+
 	private static Boolean getBoolean(JsonNode json, String key){
 		JsonNode node = json.get(key);
 		if(node == null){
@@ -537,12 +521,12 @@ public class Type extends Controller {
 			return node.asBoolean();
 		}
 	}
-	
+
 	private static void setDefaultValue(AbstractPropertyDefinition<?> pdf, JsonNode json){
 		JsonNode defaultValue = json.get("defaultValue");
 		if(defaultValue != null && defaultValue.isArray()){
 			Iterator<JsonNode> itr = defaultValue.iterator();
-			
+
 			if(pdf instanceof PropertyIdDefinitionImpl){
 				if(((PropertyIdDefinitionImpl)pdf).getDefaultValue() == null){
 					((PropertyIdDefinitionImpl)pdf).setDefaultValue(new ArrayList<String>());
@@ -590,7 +574,7 @@ public class Type extends Controller {
 					try {
 						d = sdf.parse(str);
 						GregorianCalendar cal = new GregorianCalendar();
-						cal.setTime(d); 
+						cal.setTime(d);
 						((PropertyDateTimeDefinitionImpl)pdf).getDefaultValue().add(cal);
 					} catch (ParseException e) {
 						// TODO Auto-generated catch block
