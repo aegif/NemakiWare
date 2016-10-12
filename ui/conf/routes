@@ -38,6 +38,7 @@ GET     /repo/:repoId/objects/:id/version            		controllers.Node.showVers
 GET		/repo/:repoId/objects/:id/permission				controllers.Node.showPermission(repoId:String, id:String)
 GET		/repo/:repoId/objects/:id/permission/:principalId	controllers.Node.getAce(repoId:String, id:String, principalId:String)
 GET		/repo/:repoId/objects/:id/relationship				controllers.Node.showRelationship(repoId:String, id:String)
+GET		/repo/:repoId/objects/:id/relationship/create				controllers.Node.showRelationshipCreate(repoId:String, id:String)
 POST	/repo/:repoId/objects/:sourceId/relationship/create-to-new     controllers.Node.createRelationToNew(repoId:String, sourceId:String)
 POST	/repo/:repoId/objects/:sourceId/relationship/create-to-exist       controllers.Node.createRelationToExisting(repoId:String, sourceId:String)
 
