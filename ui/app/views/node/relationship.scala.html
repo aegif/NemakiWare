@@ -1,12 +1,19 @@
 @*{<meta charset="UTF-8" />}*@
 
 @import util.Formatter
+@import util.Util
 @import util.NemakiConfig
+@import component._
 @import play.mvc.Http.Context.Implicit
 @import org.apache.chemistry.opencmis.client.api.CmisObject
 @(repositoryId:String)(obj:CmisObject)(relationships: List[org.apache.chemistry.opencmis.client.api.Relationship])
 
 <div class="container tab-pane">
+	<div class="row" style="margin-bottom:15px">
+		<div class="col-sm-6 col-md-6">
+				@executeButton("property-update")
+		</div>
+	</div>
 	<div class="row">
 		<div class="col-sm-12 col-md-12">
 			<legend><i class="fa fa-arrow-circle-o-up"></i>@Messages("view.node.relationship.table.to.caption")</legend>
@@ -66,5 +73,11 @@
 <script type="text/javascript">
 	$(function () {
 	    $('#relationship-table').footable();
+
+		$('#property-update').on('click', function(){
+			$.get("@routes.Node.showRelationshipCreate(repositoryId, obj.getId())", function(html){
+				showLightbox('relationship-create', html);
+			});
+		});
 	});
 </script>

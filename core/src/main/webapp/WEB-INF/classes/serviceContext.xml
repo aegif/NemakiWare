@@ -495,8 +495,8 @@
         <property name="nemakiCachePool">
             <ref bean="nemakiCachePool" />
         </property>
-        <property name="includeRelationshipsEnabled">
-        	<value>${capability.extended.include.relationships}</value>
+        <property name="propertyManager">
+            <ref bean="propertyManager" />
         </property>
         <property name="sortUtil">
             <ref bean="sortUtil" />

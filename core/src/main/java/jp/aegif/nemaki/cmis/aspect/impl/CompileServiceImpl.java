@@ -111,9 +111,11 @@ import jp.aegif.nemaki.plugin.action.ActionTriggerBase;
 import jp.aegif.nemaki.plugin.action.JavaBackedAction;
 import jp.aegif.nemaki.plugin.action.UserButtonActionTrigger;
 import jp.aegif.nemaki.util.DataUtil;
+import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.action.NemakiActionPlugin;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.CmisExtensionToken;
+import jp.aegif.nemaki.util.constant.PropertyKey;
 import net.sf.ehcache.Element;
 
 public class CompileServiceImpl implements CompileService {
@@ -129,8 +131,11 @@ public class CompileServiceImpl implements CompileService {
 	private AclCapabilities aclCapabilities;
 	private NemakiCachePool nemakiCachePool;
 	private SortUtil sortUtil;
+	private PropertyManager propertyManager;
 
-	private boolean includeRelationshipsEnabled = true;
+	private boolean includeRelationshipsEnabled(){
+		return propertyManager.readBoolean(PropertyKey.CAPABILITY_EXTENDED_INCLUDE_RELATIONSHIPS);
+	}
 
 	/**
 	 * Builds a CMIS ObjectData from the given CouchDB content.
@@ -175,10 +180,8 @@ public class CompileServiceImpl implements CompileService {
 		result.setAcl(compileAcl(acl, contentService.getAclInheritedWithDefault(repositoryId, content), false));
 
 		//Set Relationship(BOTH)
-		if (!content.isRelationship()) {
-			if(includeRelationshipsEnabled){
-				result.setRelationships(compileRelationships(callContext, repositoryId, content, IncludeRelationships.BOTH));
-			}
+		if (!content.isRelationship() && includeRelationshipsEnabled()){
+			result.setRelationships(compileRelationships(callContext, repositoryId, content, IncludeRelationships.BOTH));
 		}
 
 		// Set Renditions
@@ -1450,8 +1453,8 @@ public class CompileServiceImpl implements CompileService {
 		this.nemakiCachePool = nemakiCachePool;
 	}
 
-	public void setIncludeRelationshipsEnabled(boolean includeRelationshipsEnabled) {
-		this.includeRelationshipsEnabled = includeRelationshipsEnabled;
+	public void setPropertyManager(PropertyManager propertyManager) {
+		this.propertyManager = propertyManager;
 	}
 
 	public void setSortUtil(SortUtil sortUtil) {

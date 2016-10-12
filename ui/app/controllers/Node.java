@@ -426,6 +426,22 @@ public class Node extends Controller {
 
 	}
 
+	public static Result showRelationshipCreate(String repositoryId, String id) {
+		Session session = getCmisSession(repositoryId);
+		CmisObject obj = session.getObject(id);
+
+		String parentId = null;
+		if( Util.isDocument(obj)){
+			Document doc = (Document) obj;
+			parentId = doc.getParents().get(0).getId();
+		}else if(Util.isDocument(obj)){
+			Folder folder = (Folder)obj;
+			parentId = folder.getFolderParent().getId();
+		}
+
+
+		return ok(relationship_create.render(repositoryId, obj, parentId));
+	}
 	public static Result showRelationship(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 

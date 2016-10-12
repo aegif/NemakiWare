@@ -38,10 +38,10 @@
 		$('#link-new-file').on("click", function(){
 			var formdata = new FormData($('#link-new-file-form').get(0));
 
-			$.blockUI({message:"@Messages("view.message.please.wait")"});
+			$.blockUI({message:'@Messages("view.message.please.wait")'});
 			$.ajax({
 				  type: "POST",
-				  url: "@routes.Node.createRelationToNew(repositoryId, obj.getId)",
+				  url: "@routes.Node.createRelationToNew(repositoryId, obj.getId())",
 				  data: formdata,
 				  processData: false,
       			　contentType: false
@@ -58,10 +58,10 @@
 		$('#link-existing-object').on("click", function(){
 			var formdata = new FormData($('#link-existing-object-form').get(0));
 
-			$.blockUI({message:"@Messages("view.message.please.wait")"});
+			$.blockUI({message:'@Messages("view.message.please.wait")'});
 			$.ajax({
 				  type: "POST",
-				  url: "@routes.Node.createRelationToExisting(repositoryId, obj.getId)",
+				  url: "@routes.Node.createRelationToExisting(repositoryId, obj.getId())",
 				  data: formdata
 			}).done(function( msg ) {
 			 	alert( "作成しています、しばらくお待ちください ");
