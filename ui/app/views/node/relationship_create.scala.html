@@ -35,7 +35,7 @@
 	   	</div>
 	</div>
 </div>
-}
+
 
 <!-- scripts -->
 <script type="text/javascript">
@@ -50,12 +50,12 @@
 				  data: formdata,
 				  processData: false,
       			　contentType: false
-			}).done(function( msg ) {
-			 	alert( "作成しています、しばらくお待ちください ");
+			}).done(function( data ) {
+			 	alert( "作成しました。");
 				window.location.reload();
 			}).fail(function( jqXHR, textStatus, errorThrown ) {
 				 alert("some error:" + textStatus);
-			}).done(function( msg ) {
+			}).always(function() {
 				 $.unblockUI();
 			});
 		});
@@ -68,15 +68,16 @@
 				  type: "POST",
 				  url: "@routes.Node.createRelationToExisting(repositoryId, obj.getId())",
 				  data: formdata
-			}).done(function( msg ) {
-			 	alert( "作成しています、しばらくお待ちください ");
+			}).done(function( data ) {
+			 	alert( "作成しました。");
 				window.location.reload();
 			}).fail(function( jqXHR, textStatus, errorThrown ) {
 				 alert("some error:" + textStatus);
-			}).done(function( msg ) {
+			}).always(function() {
 				 $.unblockUI();
 			});
 		});
 
 	});
 </script>
+}
