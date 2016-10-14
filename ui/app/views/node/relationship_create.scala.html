@@ -7,30 +7,35 @@
 @import org.apache.chemistry.opencmis.commons.PropertyIds
 @import play.mvc.Http.Context.Implicit
 
-<div class="container tap-pane">
-	<div class="row">
-		<div class="col-sm-12 col-md-12">
-
+@lightbox{
+<div class="container">
+	<div class="row" style="padding-bottom:30px;">
+		<h4><i class="fa fa-search"></i>@Messages("view.node.relationship.create.caption")</h4>
+	</div>
+	<div class="col-sm-12 col-md-12">
+		<div class="row" style="padding-bottom:30px;">
 			<form id="link-new-file-form">
-				<legend><i class="fa fa-arrow-circle-o-down"></i>ファイルを新規に追加してリレーションを貼る</legend>
+				<legend><i class="fa fa-arrow-circle-o-down"></i>@Messages("view.node.relationship.create.new-file.caption")</legend>
 				<fieldset>
 					<input type="file" name="file"/>
 					<input type="hidden" name="cmis:parentId" value="@parentId"/>
 			   		@executeButton("link-new-file")
 			   	</fieldset>
 			</form>
-
+		</div>
+		<div class="row" style="padding-bottom:30px;">
 			<form id="link-existing-object-form">
-				<legend><i class="fa fa-arrow-circle-o-down"></i>既存オブジェクトのIDを指定してリレーションをはる</legend>
+				<legend><i class="fa fa-arrow-circle-o-down"></i>@Messages("view.node.relationship.create.existing-id.caption")</legend>
 				<fieldset>
+					<label>@Messages("view.node.relationship.create.existing-id.object-id.label") : </label>
 					<input type="textbox" name="nemaki:targetId"/>
 			   		@executeButton("link-existing-object")
 			   	</fieldset>
 		   	</form>
-		</div>
+	   	</div>
 	</div>
-
 </div>
+}
 
 <!-- scripts -->
 <script type="text/javascript">

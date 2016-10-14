@@ -45,7 +45,7 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.lucene.document.DateTools.Resolution;
 
 public class DataUtil {
-	private static final String NAMESPACE = "http://www.aegif.jp/Nemaki";
+	public static final String NAMESPACE = "http://www.aegif.jp/Nemaki";
 	private static final Log log = LogFactory.getLog(DataUtil.class);
 
 	public static String getObjectTypeId(Properties properties) {
@@ -124,7 +124,7 @@ public class DataUtil {
 			return null;
 		}
 	}
-	
+
 	public static PropertyDefinition<?> createPropDef(String id,
 			String localName, String localNameSpace, String queryName,
 			String displayName, String description, PropertyType datatype,
@@ -456,7 +456,7 @@ public class DataUtil {
 				null, null);
 		return core;
 	}
-	
+
 	public static ObjectData copyObjectData(ObjectData objectData) {
 		try {
 			return WSConverter.convert(WSConverter.convert(objectData, CmisVersion.CMIS_1_1));
@@ -464,7 +464,7 @@ public class DataUtil {
 			return null;
 		}
 	}
-	
+
 	public static ObjectDataImpl convertObjectDataImpl(ObjectData objectData){
 		ObjectDataImpl result = new ObjectDataImpl();
 		result.setAcl(objectData.getAcl());
@@ -476,10 +476,10 @@ public class DataUtil {
 		result.setProperties(objectData.getProperties());
 		result.setRelationships(objectData.getRelationships());
 		result.setRenditions(objectData.getRenditions());
-		
+
 		return result;
 	}
-	
+
 	public static String buildPrefixTypeProperty(String typeId, String propertyId){
 		List<String> list = new ArrayList<String>();
 		if(StringUtils.isNotBlank(typeId)){
@@ -488,10 +488,10 @@ public class DataUtil {
 		if(StringUtils.isNotBlank(propertyId)){
 			list.add("propertyId=" + propertyId);
 		}
-		
+
 		return "[" + StringUtils.join(list, ",") + "]";
 	}
-	
+
 	public static boolean valueExist(List<?> values){
 		if(CollectionUtils.isEmpty(values)){
 			return false;
@@ -507,7 +507,7 @@ public class DataUtil {
 			return true;
 		}
 	}
-	
+
 	public static BigInteger convertToBigInteger(String string){
 		if(StringUtils.isBlank(string)){
 			return null;
