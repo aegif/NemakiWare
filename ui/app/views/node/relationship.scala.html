@@ -11,7 +11,7 @@
 <div class="container tab-pane">
 	<div class="row" style="margin-bottom:15px">
 		<div class="col-sm-6 col-md-6">
-				@executeButton("property-update")
+				@executeButton("create-new-relationship")
 		</div>
 	</div>
 	<div class="row">
@@ -74,7 +74,7 @@
 	$(function () {
 	    $('#relationship-table').footable();
 
-		$('#property-update').on('click', function(){
+		$('#create-new-relationship').on('click', function(){
 			$.get("@routes.Node.showRelationshipCreate(repositoryId, obj.getId())", function(html){
 				showLightbox('relationship-create', html);
 			});

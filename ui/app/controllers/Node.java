@@ -1056,11 +1056,14 @@ public class Node extends Controller {
 		// Get an object in the repository
 		Session session = getCmisSession(repositoryId);
 
-
-
-		createRelation(repositoryId,  sourceId,  targetId );
-
-		return ok();
+		try{
+			session.getObject(targetId);
+			createRelation(repositoryId,  sourceId,  targetId );
+			return ok();
+		}catch(CmisObjectNotFoundException e){
+			e.printStackTrace();
+			return internalServerError("CmisObject not found");
+		}
 	}
 
 	private static ObjectId createRelation(String repositoryId, String sourceId, String targetId ) {

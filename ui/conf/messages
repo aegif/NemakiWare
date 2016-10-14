@@ -49,6 +49,10 @@ view.node.relationship.target.name=Target Object Name
 view.node.relationship.source.name=Source Object Name
 view.node.relationship.table.to.caption=Relate To
 view.node.relationship.table.form.caption=Relate From
+view.node.relationship.create.caption=Create relation
+view.node.relationship.create.new-file.caption=Add new file to create relationship
+view.node.relationship.create.existing-id.caption=Create relationship to exisiting object by id
+view.node.relationship.create.existing-id.object-id.label=Object ID
 
 view.node.search.term=Search Term
 view.node.drag-and-drop.out-of-support=Your browser does not support file drag & drop.

@@ -27,6 +27,7 @@ import jp.aegif.nemaki.dao.impl.couch.connector.ConnectorPool;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.PatchHistory;
+import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
 
 public class Patch {
@@ -36,7 +37,7 @@ public class Patch {
 	protected ContentDaoService contentDaoService;
 	protected RepositoryInfoMap repositoryInfoMap;
 	protected RepositoryService repositoryService;
-	
+
 	protected boolean isApplied(String repositoryId, String name){
 		PatchHistory patchHistory = contentDaoService.getPatchHistoryByName(repositoryId, name);
 		return patchHistory != null && patchHistory.isApplied();
@@ -46,14 +47,14 @@ public class Patch {
 		PatchHistory patchHistory = new PatchHistory(name, true);
 		contentDaoService.create(repositoryId, patchHistory);
 	}
-	
+
 	protected void addDb(String dbName){
 		// add connector (or create if not exist)
 		CouchDbConnector connector = connectorPool.add(dbName);
-		
+
 		// add design doc
 		StdDesignDocumentFactory factory = new StdDesignDocumentFactory();
-		
+
 		DesignDocument designDoc = factory.getFromDatabase(connector, "_design/_repo");
 		if(designDoc == null){
 			designDoc = factory.newDesignDocumentInstance();
@@ -61,22 +62,22 @@ public class Patch {
 			connector.create(designDoc);
 		}
 	}
-	
+
 	protected void addView(String repositoryId, String viewName, String map){
 		addView(repositoryId, viewName, map, false);
 	}
-	
+
 	protected void addView(String repositoryId, String viewName, String map, boolean force){
 		CouchDbConnector connector = connectorPool.get(repositoryId);
 		StdDesignDocumentFactory factory = new StdDesignDocumentFactory();
 		DesignDocument designDoc = factory.getFromDatabase(connector, "_design/_repo");
-		
+
 		if(force || !designDoc.containsView(viewName)){
 			designDoc.addView(viewName, new View(map));
 			connector.update(designDoc);
 		}
 	}
-	
+
 	protected void addSimpleProperty(Map<String, PropertyDefinition<?>> props, String id, Cardinality cardinality, Updatability updatability, boolean required, boolean orderable){
 		PropertyStringDefinitionImpl pdf = new PropertyStringDefinitionImpl();
 		pdf.setId(id);
@@ -91,17 +92,17 @@ public class Patch {
 		pdf.setIsOrderable(orderable);
 		pdf.setIsQueryable(true);
 		pdf.setLocalName(id);
-		pdf.setLocalNamespace("http://nemakiware.aegif.jp");
-		
+		pdf.setLocalNamespace(DataUtil.NAMESPACE);
+
 		pdf.setIsOpenChoice(false);
 		pdf.setChoices(null);
 		pdf.setDefaultValue(null);
 		props.put(id, pdf);
 	}
-	
+
 	protected Folder getOrCreateSystemSubFolder(String repositoryId, String name){
 		Folder systemFolder = contentService.getSystemFolder(repositoryId);
-		
+
 		// check existing folder
 		List<Content> children = contentService.getChildren(repositoryId, systemFolder.getId());
 		if(CollectionUtils.isNotEmpty(children)){

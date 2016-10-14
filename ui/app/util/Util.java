@@ -189,7 +189,7 @@ public class Util {
 
 		if (exList != null){
 			for(CmisExtensionElement elm : exList){
-				if(elm.getNamespace() == "http://aegif.jp/nemakiware/action"){
+				if(elm.getNamespace() == "http://www.aegif.jp/Nemaki/action"){
 					ActionPluginUIElement button = new ActionPluginUIElement();
 					for(CmisExtensionElement actionElm : elm.getChildren()){
 						if(actionElm.getName().equals("actionId")){

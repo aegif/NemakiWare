@@ -1467,7 +1467,7 @@ public class CompileServiceImpl implements CompileService {
 			NemakiActionPlugin acionPlugin = context.getBean(NemakiActionPlugin.class);
 			Map<String, JavaBackedAction> pluginMap = acionPlugin.getPluginsMap();
 
-			String ns = "http://aegif.jp/nemakiware/action";
+			String ns = DataUtil.NAMESPACE + "/action";
 			// set the extension list
 			List<CmisExtensionElement> extensions = result.getExtensions();
 			if (extensions == null){
