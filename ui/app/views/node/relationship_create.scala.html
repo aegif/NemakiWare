@@ -41,15 +41,17 @@
 <script type="text/javascript">
 	$(function(){
 		$('#link-new-file').on("click", function(){
-			var formdata = new FormData($('#link-new-file-form').get(0));
+			var formData = new FormData($('#link-new-file-form').get(0));
 
+			console.error('新規');
 			$.blockUI({message:'@Messages("view.message.please.wait")'});
 			$.ajax({
-				  type: "POST",
-				  url: "@routes.Node.createRelationToNew(repositoryId, obj.getId())",
-				  data: formdata,
-				  processData: false,
-      			　contentType: false
+				type: "POST",
+				url: "@routes.Node.createRelationToNew(repositoryId, obj.getId())",
+				contentType: false,
+				processData: false,
+				data: formData,
+				dataType: 'json'
 			}).done(function( data ) {
 			 	alert( "作成しました。");
 				window.location.reload();
@@ -61,13 +63,17 @@
 		});
 
 		$('#link-existing-object').on("click", function(){
-			var formdata = new FormData($('#link-existing-object-form').get(0));
+			var formData = new FormData($('#link-existing-object-form').get(0));
+			console.error('既存');
 
 			$.blockUI({message:'@Messages("view.message.please.wait")'});
 			$.ajax({
-				  type: "POST",
-				  url: "@routes.Node.createRelationToExisting(repositoryId, obj.getId())",
-				  data: formdata
+				type: "POST",
+				url: "@routes.Node.createRelationToExisting(repositoryId, obj.getId())",
+				contentType: false,
+				processData: false,
+				data: formData,
+				dataType: 'json'
 			}).done(function( data ) {
 			 	alert( "作成しました。");
 				window.location.reload();

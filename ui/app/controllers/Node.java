@@ -1051,7 +1051,9 @@ public class Node extends Controller {
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
 		String targetId = Util.getFormData(input, "nemaki:targetId");
-
+		if(StringUtils.isEmpty(targetId)){
+			return internalServerError("ObjectId is empty.");
+		}
 
 		// Get an object in the repository
 		Session session = getCmisSession(repositoryId);
@@ -1062,7 +1064,7 @@ public class Node extends Controller {
 			return ok();
 		}catch(CmisObjectNotFoundException e){
 			e.printStackTrace();
-			return internalServerError("CmisObject not found");
+			return internalServerError("CmisObject is not found.");
 		}
 	}
 
