@@ -431,17 +431,17 @@ public class Node extends Controller {
 		CmisObject obj = session.getObject(id);
 
 		String parentId = null;
-		if( Util.isDocument(obj)){
+		if (Util.isDocument(obj)) {
 			Document doc = (Document) obj;
 			parentId = doc.getParents().get(0).getId();
-		}else if(Util.isDocument(obj)){
-			Folder folder = (Folder)obj;
+		} else if (Util.isDocument(obj)) {
+			Folder folder = (Folder) obj;
 			parentId = folder.getFolderParent().getId();
 		}
 
-
 		return ok(relationship_create.render(repositoryId, obj, parentId));
 	}
+
 	public static Result showRelationship(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 
@@ -449,16 +449,16 @@ public class Node extends Controller {
 
 		List<Relationship> relationships = obj.getRelationships();
 		List<Relationship> result = new ArrayList<Relationship>();
-		if (relationships != null){
+		if (relationships != null) {
 			result = relationships.stream().filter(r -> {
-				try{
+				try {
 					CmisObject t = r.getTarget();
-				}catch(CmisObjectNotFoundException e){
+				} catch (CmisObjectNotFoundException e) {
 					return false;
 				}
-				try{
+				try {
 					CmisObject s = r.getSource();
-				}catch(CmisObjectNotFoundException e){
+				} catch (CmisObjectNotFoundException e) {
 					return false;
 				}
 				return true;
@@ -604,14 +604,13 @@ public class Node extends Controller {
 		String _parentId = Util.getFormData(input, PropertyIds.PARENT_ID);
 		ObjectId parentId = new ObjectIdImpl(_parentId);
 
-
 		Session session = getCmisSession(repositoryId);
 
 		ObjectType objectType = session.getTypeDefinition(objectTypeId);
 
 		// Set CMIS parameter
 		Map<String, PropertyDefinition<?>> pdfs = session.getTypeDefinition(objectTypeId).getPropertyDefinitions();
-		Map<String,String> stringMap = Util.createPropFormDataMap(pdfs, input);
+		Map<String, String> stringMap = Util.createPropFormDataMap(pdfs, input);
 
 		List<Updatability> upds = new ArrayList<Updatability>();
 		upds.add(Updatability.ONCREATE);
@@ -841,7 +840,8 @@ public class Node extends Controller {
 		Document doc = (Document) o;
 		MultipartFormData body = request().body().asMultipartFormData();
 		List<FilePart> files = body.getFiles();
-		if (files.isEmpty()) System.err.println("There is no file when uploading");
+		if (files.isEmpty())
+			System.err.println("There is no file when uploading");
 		FilePart file = files.get(0);
 
 		ContentStream cs = Util.convertFileToContentStream(session, file);
@@ -849,8 +849,6 @@ public class Node extends Controller {
 
 		return redirectToParent(repositoryId, input);
 	}
-
-
 
 	public static Result delete(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
@@ -1019,7 +1017,7 @@ public class Node extends Controller {
 		return null;
 	}
 
-	public static Result createRelationToNew(String repositoryId, String sourceId ) {
+	public static Result createRelationToNew(String repositoryId, String sourceId) {
 		// Get input form data
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
@@ -1027,60 +1025,58 @@ public class Node extends Controller {
 
 		// Get an object in the repository
 		Session session = getCmisSession(repositoryId);
-		Folder folder = (Folder)session.getObject(parentId);
+		Folder folder = (Folder) session.getObject(parentId);
 
 		MultipartFormData body = request().body().asMultipartFormData();
 		List<FilePart> files = body.getFiles();
-		if (files.isEmpty()) System.err.println("There is no file when uploading");
+		if (files.isEmpty())
+			System.err.println("There is no file when uploading");
 		FilePart file = files.get(0);
 		ContentStream cs = Util.convertFileToContentStream(session, file);
 
-		   Map<String,String> newDocProps = new HashMap<String, String>();
-		    newDocProps.put(PropertyIds.OBJECT_TYPE_ID, "cmis:document");
-		    newDocProps.put(PropertyIds.NAME, "Test Doc 1");
-		     Document doc = folder.createDocument(newDocProps, cs, VersioningState.MAJOR, null, null, null, session.getDefaultContext());
+		Map<String, String> newDocProps = new HashMap<String, String>();
+		newDocProps.put(PropertyIds.OBJECT_TYPE_ID, "cmis:document");
+		newDocProps.put(PropertyIds.NAME, file.getFilename());
+		Document doc = folder.createDocument(newDocProps, cs, VersioningState.MAJOR, null, null, null,
+				session.getDefaultContext());
 
-			createRelation(repositoryId,  sourceId,  doc.getId() );
+		createRelation(repositoryId, sourceId, doc.getId());
 
 		return ok();
 	}
-
 
 	public static Result createRelationToExisting(String repositoryId, String sourceId) {
 		// Get input form data
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
 		String targetId = Util.getFormData(input, "nemaki:targetId");
-		if(StringUtils.isEmpty(targetId)){
+		if (StringUtils.isEmpty(targetId)) {
 			return internalServerError("ObjectId is empty.");
 		}
 
 		// Get an object in the repository
 		Session session = getCmisSession(repositoryId);
 
-		try{
+		try {
 			session.getObject(targetId);
-			createRelation(repositoryId,  sourceId,  targetId );
+			createRelation(repositoryId, sourceId, targetId);
 			return ok();
-		}catch(CmisObjectNotFoundException e){
+		} catch (CmisObjectNotFoundException e) {
 			e.printStackTrace();
 			return internalServerError("CmisObject is not found.");
 		}
 	}
 
-	private static ObjectId createRelation(String repositoryId, String sourceId, String targetId ) {
+	private static ObjectId createRelation(String repositoryId, String sourceId, String targetId) {
 		// Get an object in the repository
 		Session session = getCmisSession(repositoryId);
 
-	    Map<String, String> relProps = new HashMap<String, String>();
-	    relProps.put("cmis:sourceId", sourceId);
-	    relProps.put("cmis:targetId", targetId);
-	    relProps.put("cmis:objectTypeId", "cmis:relationship");
-	    return session.createRelationship(relProps, null, null, null);
+		Map<String, String> relProps = new HashMap<String, String>();
+		relProps.put("cmis:sourceId", sourceId);
+		relProps.put("cmis:targetId", targetId);
+		relProps.put("cmis:objectTypeId", "cmis:relationship");
+		return session.createRelationship(relProps, null, null, null);
 	}
-
-
-
 
 	private static Result redirectToParent(String repositoryId, DynamicForm input) {
 		String parentId = Util.getFormData(input, PropertyIds.PARENT_ID);
