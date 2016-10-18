@@ -223,7 +223,7 @@ public class Util {
 				.map(CmisObject::getType)
 				.distinct()
 				.map(ObjectType::getDisplayName)
-				.collect(Collectors.toList());;
+				.collect(Collectors.toList());
 		return result;
 	}
 

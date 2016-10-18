@@ -84,8 +84,12 @@
 					@if(TabUtil.isPermissionTab(activateTabName)) {
 						$.ajax(jsRoutes.controllers.Node.showPermission("@repositoryId", "@obj.getId" )).done(function(data){$("#permission").html(data);});
 					} else {
-						var actionId = "@TabUtil.getActionIdFrom(activateTabName)";
-						$.ajax(jsRoutes.controllers.Node.showAction("@repositoryId", "@obj.getId", actionId )).done(function(data){$("#action-" + actionId).html(data);});
+						@if(TabUtil.isRelationshipTab(activateTabName)) {
+						$.ajax(jsRoutes.controllers.Node.showRelationship("@repositoryId", "@obj.getId" )).done(function(data){$("#relationship").html(data);});
+						}else{
+							var actionId = "@TabUtil.getActionIdFrom(activateTabName)";
+							$.ajax(jsRoutes.controllers.Node.showAction("@repositoryId", "@obj.getId", actionId )).done(function(data){$("#action-" + actionId).html(data);});
+						}
 					}
 				}
 			}
