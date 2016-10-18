@@ -52,6 +52,8 @@ view.node.relationship.table.form.caption=Relate From
 view.node.relationship.create.caption=Create relation
 view.node.relationship.create.new-file.caption=Add new file to create relationship
 view.node.relationship.create.existing-id.caption=Create relationship to exisiting object by id
+view.node.relationship.create.type.label=Relationship Type
+view.node.relationship.create.name.label=Relationship Name
 view.node.relationship.create.existing-id.object-id.label=Object ID
 
 view.node.search.term=Search Term
@@ -125,6 +127,7 @@ view.table.editable=Editable
 view.table.requred=Required
 view.table.value=Value
 
+view.select=Select
 view.execute=Execute
 view.create=Create
 view.save=Save

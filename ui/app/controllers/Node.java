@@ -48,6 +48,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrinc
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.objectweb.asm.Type;
 
 import play.api.libs.Files.TemporaryFile;
 import play.i18n.Messages;
@@ -439,7 +440,15 @@ public class Node extends Controller {
 			parentId = folder.getFolderParent().getId();
 		}
 
-		return ok(relationship_create.render(repositoryId, obj, parentId));
+		List<ObjectType> relationshipTypes = session
+				.getTypeDescendants(null, -1, true)
+				.stream()
+				.map(Tree::getItem)
+				.filter(p -> p.getBaseTypeId() == BaseTypeId.CMIS_RELATIONSHIP)
+				.collect(Collectors.toList());
+				;
+
+		return ok(relationship_create.render(repositoryId, obj, parentId, relationshipTypes));
 	}
 
 	public static Result showRelationship(String repositoryId, String id) {
@@ -1022,6 +1031,8 @@ public class Node extends Controller {
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
 		String parentId = Util.getFormData(input, PropertyIds.PARENT_ID);
+		String relType = Util.getFormData(input, "nemaki:relationshipType");
+		String relName = Util.getFormData(input, "nemaki:relationshipName");
 
 		// Get an object in the repository
 		Session session = getCmisSession(repositoryId);
@@ -1040,7 +1051,7 @@ public class Node extends Controller {
 		Document doc = folder.createDocument(newDocProps, cs, VersioningState.MAJOR, null, null, null,
 				session.getDefaultContext());
 
-		createRelation(repositoryId, sourceId, doc.getId());
+		createRelation(relType, relName, repositoryId, sourceId, doc.getId());
 
 		return ok();
 	}
@@ -1050,6 +1061,8 @@ public class Node extends Controller {
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
 		String targetId = Util.getFormData(input, "nemaki:targetId");
+		String relType = Util.getFormData(input, "nemaki:relationshipType");
+		String relName = Util.getFormData(input, "nemaki:relationshipName");
 		if (StringUtils.isEmpty(targetId)) {
 			return internalServerError("ObjectId is empty.");
 		}
@@ -1059,7 +1072,7 @@ public class Node extends Controller {
 
 		try {
 			session.getObject(targetId);
-			createRelation(repositoryId, sourceId, targetId);
+			createRelation(relType, relName, repositoryId, sourceId, targetId);
 			return ok();
 		} catch (CmisObjectNotFoundException e) {
 			e.printStackTrace();
@@ -1067,14 +1080,15 @@ public class Node extends Controller {
 		}
 	}
 
-	private static ObjectId createRelation(String repositoryId, String sourceId, String targetId) {
+	private static ObjectId createRelation(String relType, String relName, String repositoryId, String sourceId, String targetId) {
 		// Get an object in the repository
 		Session session = getCmisSession(repositoryId);
 
 		Map<String, String> relProps = new HashMap<String, String>();
+		relProps.put(PropertyIds.OBJECT_TYPE_ID, relType);
+		relProps.put(PropertyIds.NAME, relName);
 		relProps.put("cmis:sourceId", sourceId);
 		relProps.put("cmis:targetId", targetId);
-		relProps.put("cmis:objectTypeId", "cmis:relationship");
 		return session.createRelationship(relProps, null, null, null);
 	}
 
