@@ -103,5 +103,8 @@ GET		/repo/:repoId/types/edit							controllers.Type.edit(repoId:String)
 POST	/repo/:repoId/types/update							controllers.Type.update(repoId:String)
 POST	/repo/:repoId/types/:id/delete						controllers.Type.delete(repoId:String, id:String)
 
+# Config API
+GET		/repo/:repoId/configs								controllers.Config.index(repoId:String)
+
 # Javascript scala template API
 GET		/jstemplate/duplicateNameCheck.js					controllers.JsTemplate.duplicateNameCheck(repoId:String)

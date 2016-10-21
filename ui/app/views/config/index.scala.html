@@ -1,0 +1,43 @@
+@*{<meta charset="UTF-8" />}*@
+
+@import org.apache.commons.collections.CollectionUtils
+@import util.Util
+
+@(repositoryId:String)(configures:java.util.List[model.Config])
+<!DOCTYPE html>
+<html>
+	@header()
+	<body>
+		@menubar(repositoryId)
+
+		<div class="container">
+			<div class="col-md-11">
+				<div id="config-result">
+					<table class="footable" id="config-table" data-sort="true">
+						<thead>
+							<tr>
+								<th data-sort-initial="true">@Messages("view.config.key")</th>
+								<th>@Messages("view.config.value")</th>
+								<th>@Messages("view.config.isDefault")</th>
+								<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action")</th>
+							</tr>
+						</thead>
+						<tbody>
+							@for(config <- configures; if(CollectionUtils.isNotEmpty(configures))){
+								<tr>
+									<td>@config.key</td>
+									<td>@config.value</td>
+									<td>@config.isDefault</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			</div>
+	  	</div>
+
+	  	<script type="text/javascript">
+
+	  	</script>
+	</body>
+</html>
