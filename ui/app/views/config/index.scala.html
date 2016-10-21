@@ -13,13 +13,14 @@
 		<div class="container">
 			<div class="col-md-11">
 				<div id="config-result">
-					<table class="footable" id="config-table" data-sort="true">
+					<table class="footable" id="config-table" data-sort="true"  data-filtering="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
 						<thead>
 							<tr>
 								<th data-sort-initial="true">@Messages("view.config.key")</th>
 								<th>@Messages("view.config.value")</th>
-								<th>@Messages("view.config.isDefault")</th>
+								<!--
 								<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action")</th>
+								 -->
 							</tr>
 						</thead>
 						<tbody>
@@ -27,17 +28,30 @@
 								<tr>
 									<td>@config.key</td>
 									<td>@config.value</td>
-									<td>@config.isDefault</td>
+									<!--
+									<td></td>
+									 -->
 								</tr>
 							}
 						</tbody>
+												<tfoot>
+							<tr>
+								@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 2){colSpan =>
+									<td colspan="@colSpan">
+								}
+									<div class="pagination pagination-centered hide-if-no-paging"></div>
+								</td>
+							</tr>
+						</tfoot>
 					</table>
 				</div>
 			</div>
 	  	</div>
 
 	  	<script type="text/javascript">
-
+        $(function () {
+            $('#config-table').footable();
+        });
 	  	</script>
 	</body>
 </html>

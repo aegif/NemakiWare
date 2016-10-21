@@ -120,6 +120,10 @@ view.type.id=タイプID
 view.type.create.caption=タイプの新規作成
 view.type.update.caption=タイプの更新
 
+view.config.key=キー
+view.config.value=値
+view.config.isDefault=デフォルト
+
 view.archive.caption=ゴミ箱
 
 view.table.key=キー

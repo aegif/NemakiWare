@@ -34,18 +34,19 @@ public class Config extends Controller {
     	JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "/list" );
 
     	//TODO check status
-    	JsonNode configurations = result.get("result");
+    	JsonNode configurations = result.get("configurations");
 
     	List<model.Config> list = new ArrayList<model.Config>();
 
     	if(configurations == null){
     		configurations = Json.parse("[]");
     	}else{
-    		Iterator<JsonNode>itr = configurations.elements();
+    		Iterator<JsonNode> itr = configurations.elements();
         	while(itr.hasNext()){
         		JsonNode node = itr.next();
 
         		model.Config config = new model.Config();
+
         		config.key = node.get("key").asText();
         		config.value = node.get("value").asText();
         		config.isDefault = node.get("isDefault").asBoolean();

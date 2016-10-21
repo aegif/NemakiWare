@@ -43,16 +43,20 @@ public class ConfigResource extends ResourceBase{
 
 		boolean status = true;
 		JSONObject result = new JSONObject();
-		JSONObject config = new JSONObject();
+		JSONArray configs = new JSONArray();
 		JSONArray errMsg = new JSONArray();
 
 		try {
 			Set<String> keys = propertyManager.getKeys();
 			for(String configKey : keys){
-			Object value = propertyManager.readValue(repositoryId, configKey);
-			config.put(configKey, value);
+				JSONObject config = new JSONObject();
+				Object configValue = propertyManager.readValue(repositoryId, configKey);
+				config.put("key", configKey);
+				config.put("value", configValue);
+				config.put("isDefault", false);
+				configs.add(config);
 			}
-			result.put("configurations", config);
+			result.put("configurations", configs);
 		} catch (Exception e) {
 			status = false;
 			e.printStackTrace();

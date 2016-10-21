@@ -120,6 +120,10 @@ view.type.id=Type ID
 view.type.create.caption=New Type
 view.type.update.caption=Update Type
 
+view.config.key=Key
+view.config.value=Value
+view.config.isDefault=Default value
+
 view.archive.caption=Archive
 
 view.table.key=Key
