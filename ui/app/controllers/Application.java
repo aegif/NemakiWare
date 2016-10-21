@@ -122,7 +122,10 @@ public class Application extends Controller{
 
 				controllers.routes.javascript.SearchEngine.index(),
 				controllers.routes.javascript.SearchEngine.init(),
-				controllers.routes.javascript.SearchEngine.reindex()
+				controllers.routes.javascript.SearchEngine.reindex(),
+
+				controllers.routes.javascript.Config.index()
+
 			)
 		);
 	}

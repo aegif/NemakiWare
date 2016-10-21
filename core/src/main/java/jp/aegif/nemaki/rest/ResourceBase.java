@@ -46,8 +46,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 @Component
 public class ResourceBase {
 
-	private static final ObjectMapper mapper = new ObjectMapper(); 
-	
+	private static final ObjectMapper mapper = new ObjectMapper();
+
 	static final String DATE_FORMAT = "yyyy:MM:dd HH:mm:ss z";
 	static final String TYPE_GROUP = "group";
 	static final String PARENTID = "/";
@@ -147,7 +147,7 @@ public class ResourceBase {
 		}
 		return isAdmin;
 	}
-	
+
 	protected ArrayNode addErrMsg(ArrayNode errMsg, String item, String msg){
 		ObjectNode obj = mapper.createObjectNode();
 		obj.put(item, msg);
@@ -164,7 +164,7 @@ public class ResourceBase {
 		}
 		return result;
 	}
-	
+
 	protected boolean checkAdmin(ArrayNode errMsg, HttpServletRequest request){
 		CallContext callContext = (CallContext) request.getAttribute("CallContext");
 		Boolean _isAdmin = (Boolean) callContext.get(CallContextKey.IS_ADMIN);

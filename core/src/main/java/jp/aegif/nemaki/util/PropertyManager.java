@@ -1,6 +1,7 @@
 package jp.aegif.nemaki.util;
 
 import java.util.List;
+import java.util.Set;
 
 import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.model.Configuration;
@@ -19,6 +20,9 @@ public class PropertyManager{
 
 	public PropertyManager(){
 
+	}
+	public Set<String> getKeys(){
+		return propertyConfigurer.getKeys();
 	}
 
 	/**
@@ -53,12 +57,12 @@ public class PropertyManager{
 			return (List<String>)configVal;
 		}
 	}
-	
+
 	public boolean readBoolean(String key){
 		String val = readValue(key);
 		return Boolean.valueOf(val);
 	}
-	
+
 	public String readValue(String repositoryId, String key){
 		Object configVal = getDynamicValue(repositoryId, key);
 		if(configVal == null){
@@ -85,31 +89,31 @@ public class PropertyManager{
 			return (List<String>)configVal;
 		}
 	}
-	
+
 	public boolean readBoolean(String repositoryId, String key){
 		String val = readValue(repositoryId, key);
 		return Boolean.valueOf(val);
 	}
 
-	private Configuration getConfiguration(String repositoryId) {
+	public Configuration getConfiguration(String repositoryId) {
 		return contentDaoService.getConfiguration(repositoryId);
 	}
-	
+
 	private Object getDynamicValue(String key){
 		Object result = null;
-		
+
 		Configuration sysConf = getConfiguration(SystemConst.NEMAKI_CONF_DB);
 		Object sysVal = sysConf.getConfiguration().get(key);
 		if(sysVal != null){
 			result = sysVal;
 		}
-		
+
 		return result;
 	}
-	
+
 	private Object getDynamicValue(String repositoryId, String key){
 		Object result = null;
-		
+
 		Configuration repoConf = getConfiguration(repositoryId);
 		if(repoConf != null){
 			Object repoVal = repoConf.getConfiguration().get(key);
@@ -117,14 +121,14 @@ public class PropertyManager{
 				result = repoVal;
 			}
 		}
-		
+
 		if(result == null){
 			result = getDynamicValue(key);
 		}
-		
+
 		return result;
 	}
-	
+
 	public void setPropertyConfigurer(SpringPropertiesUtil propertyConfigurer) {
 		this.propertyConfigurer = propertyConfigurer;
 	}
