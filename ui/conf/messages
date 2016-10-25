@@ -124,7 +124,8 @@ view.config.key=Key
 view.config.value=Value
 view.config.isDefault=Default value
 view.config.edit.caption=Nemakiware Configuration
-view.config.edit.value.label=Config value
+view.config.edit.value.label=Config Value
+view.config.edit.key.label=Config Key
 
 view.archive.caption=Archive
 
@@ -143,6 +144,12 @@ view.delete=Delete
 view.add=Add
 view.remove=Remove
 view.action=Action
+
+view.info=Infomation
+view.warning=Warning
+view.error=Error
+view.danger=Danger
+
 
 view.message.failure=Failed
 view.message.success=Successfully done
@@ -170,3 +177,5 @@ view.message.password-change.wrong-old-password=Current password is wrong!
 view.message.restore.failure=Failed to restore
 view.message.parent-no-longer-exists=Cannot restore the archive because parent folder no longer exists!
 view.message.destroy.failure=Failed to destroy
+
+view.message.config.danger=設定値によってはアプリケーションが正しく動作しなくなります。内容を理解した上で、書き換えは十分に注意して行ってください。

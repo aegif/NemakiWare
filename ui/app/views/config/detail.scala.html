@@ -17,14 +17,16 @@
 		@helper.form(action=routes.Config.update(repositoryId, config.key), 'id -> "config-detail-form"){
 			<!-- caption -->
 			<div class="row">
-				<h4><i class="fa fa-pencil"></i>@Messages("view.config.edit.caption")</h4>
+				<h4><i class="fa fa-gear"></i>@Messages("view.config.edit.caption")</h4>
 			</div>
 
 			<div class="row" style="margin-bottom:15px">
 				<div class="col-sm-5">
 					<fieldset>
-						<legend><i class="fa fa-pencil"></i>@{config.key}</legend>
-
+						<div class="row" style="padding-bottom:6px;">
+							<label class="col-sm-3 control-label">@Messages("view.config.edit.key.label")</label>
+							<div class="col-sm-6">@{config.key}</div>
+						</div>
 						<div class="row" style="padding-bottom:6px;">
 							<label class="col-sm-3 control-label">@Messages("view.config.edit.value.label")</label>
 							<div class="col-sm-6">
