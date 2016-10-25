@@ -12,6 +12,7 @@
 
 		<div class="container">
 			<div class="col-md-11">
+				<div class="alert alert-danger" role="alert"><strong>@Messages("view.danger")</strong> : @Messages("view.message.config.danger")</div>
 				<div id="config-result">
 					<table class="footable" id="config-table" data-sort="true"  data-filtering="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
 						<thead>
@@ -27,9 +28,9 @@
 									<td>@config.key</td>
 									<td>@config.value</td>
 									<td>
-											<button type='button' class='btn btn-default config-value-edit' config-key='@config.key' >
-											<i class="fa fa-wrench"></i>@Messages("view.edit")
-											</button>
+										<button type='button' class='btn btn-default config-value-edit' config-key='@config.key' >
+										<i class="fa fa-wrench"></i>@Messages("view.detail")
+										</button>
 									</td>
 								</tr>
 							}
