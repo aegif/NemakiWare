@@ -1,0 +1,41 @@
+@*{<meta charset="UTF-8" />}*@
+
+@import table._
+@import component._
+@import util.Util
+@import constant.UpdateContext
+@import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition
+@import org.apache.chemistry.opencmis.client.api.Tree
+@import org.apache.chemistry.opencmis.client.api.ObjectType
+@import org.apache.chemistry.opencmis.commons.PropertyIds
+
+@(repositoryId:String)(config:model.Config)
+
+@lightbox{
+	<!-- html -->
+	<div class="container">
+		@helper.form(action=routes.Config.update(repositoryId, config.key), 'id -> "config-detail-form"){
+			<!-- caption -->
+			<div class="row">
+				<h4><i class="fa fa-pencil"></i>@Messages("view.config.edit.caption")</h4>
+			</div>
+
+			<div class="row" style="margin-bottom:15px">
+				<div class="col-sm-5">
+					<fieldset>
+						<legend><i class="fa fa-pencil"></i>@{config.key}</legend>
+
+						<div class="row" style="padding-bottom:6px;">
+							<label class="col-sm-3 control-label">@Messages("view.config.edit.value.label")</label>
+							<div class="col-sm-6">
+								<input type="textbox" id="config-value" class="form-control" value="@{config.value}" />
+							</div>
+						</div>
+
+				   		@saveButton("config-update")
+				   	</fieldset>
+				</div>
+			</div>
+		}
+	</div>
+}
