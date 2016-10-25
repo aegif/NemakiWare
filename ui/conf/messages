@@ -123,6 +123,8 @@ view.type.update.caption=Update Type
 view.config.key=Key
 view.config.value=Value
 view.config.isDefault=Default value
+view.config.edit.caption=Nemakiware Configuration
+view.config.edit.value.label=Config value
 
 view.archive.caption=Archive
 

@@ -75,10 +75,14 @@ public class ConfigResource extends ResourceBase{
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		JSONObject config = new JSONObject();
 
-		Object value = propertyManager.readValue(repositoryId, configKey);
+		Object configValue = propertyManager.readValue(repositoryId, configKey);
+		config.put("key", configKey);
+		config.put("value", configValue);
+		config.put("isDefault", false);
 
-		result.put("configuration", value);
+		result.put("configuration", config);
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
 	}

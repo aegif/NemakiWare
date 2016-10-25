@@ -123,6 +123,8 @@ view.type.update.caption=タイプの更新
 view.config.key=キー
 view.config.value=値
 view.config.isDefault=デフォルト
+view.config.edit.caption=Nemakiware Configuration
+view.config.edit.value.label=値
 
 view.archive.caption=ゴミ箱
 
