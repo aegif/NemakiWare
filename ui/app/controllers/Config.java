@@ -3,14 +3,18 @@ package controllers;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.chemistry.opencmis.client.api.Session;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.sun.media.jfxmedia.track.Track.Encoding;
 
+import play.data.DynamicForm;
+import play.data.Form;
 import play.libs.Json;
 import play.mvc.Controller;
 import play.mvc.Result;
@@ -47,11 +51,7 @@ public class Config extends Controller {
 			Iterator<JsonNode> itr = configurations.elements();
 			while (itr.hasNext()) {
 				JsonNode node = itr.next();
-
-				model.Config config = new model.Config();
-				config.key = node.get("key").asText();
-				config.value = node.get("value").asText();
-				config.isDefault = node.get("isDefault").asBoolean();
+				model.Config config = createConfig(node);
 				list.add(config);
 			}
 		}
@@ -68,21 +68,49 @@ public class Config extends Controller {
 		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "/show/" + configKey);
 
 		JsonNode configNode = result.get("configuration");
-		model.Config config = new model.Config();
-		config.key = configNode.get("key").asText();
-		config.value = configNode.get("value").asText();
-		config.isDefault = configNode.get("isDefault").asBoolean();
+		model.Config config = createConfig(configNode);
 
 		// render
 		return ok(detail.render(repositoryId, config));
 	}
 
+	private static model.Config createConfig(JsonNode configNode) {
+		model.Config config = new model.Config();
+		config.key = configNode.get("key").asText();
+		config.value = configNode.get("value").asText();
+		config.isDefault = configNode.get("isDefault").asBoolean();
+		return config;
+	}
+
 	public static Result update(String repositoryId, String key) {
-		return ok();
+		// Get input form data
+		DynamicForm input = Form.form();
+		input = input.bindFromRequest();
+		String value = Util.getFormData(input, "config-value");
+
+		Map<String, String> params = new HashMap<String, String>();
+		params.put("key", key);
+		params.put("value", value);
+		JsonNode result = Util.putJsonResponse(session(), getEndpoint(repositoryId), params);
+
+    	if(isSuccess(result)){
+    		JsonNode configNode = result.get("configuration");
+    		model.Config config = createConfig(configNode);
+
+    		// render
+    		return ok(detail.render(repositoryId, config));
+    	}else{
+    		String error = result.get("error").get(0).get("user").asText();
+    		return internalServerError(error);
+    	}
 	}
 
 	private static String getEndpoint(String repositoryId) {
 		return coreRestUri + "repo/" + repositoryId + "/config";
+	}
+
+	private static boolean isSuccess(JsonNode result){
+		return "success".equals(result.get("status").asText());
 	}
 
 }

@@ -5,6 +5,7 @@ import java.util.Set;
 import java.util.concurrent.locks.Lock;
 
 import javax.servlet.http.HttpServletRequest;
+import javax.ws.rs.FormParam;
 import javax.ws.rs.GET;
 import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
@@ -49,11 +50,7 @@ public class ConfigResource extends ResourceBase{
 		try {
 			Set<String> keys = propertyManager.getKeys();
 			for(String configKey : keys){
-				JSONObject config = new JSONObject();
-				Object configValue = propertyManager.readValue(repositoryId, configKey);
-				config.put("key", configKey);
-				config.put("value", configValue);
-				config.put("isDefault", false);
+				JSONObject config = createConfig(repositoryId, configKey);
 				configs.add(config);
 			}
 			result.put("configurations", configs);
@@ -75,23 +72,27 @@ public class ConfigResource extends ResourceBase{
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
+		JSONObject config = createConfig(repositoryId, configKey);
+		result.put("configuration", config);
+		result = makeResult(status, result, errMsg);
+		return result.toJSONString();
+	}
+
+	private JSONObject createConfig(String repositoryId, String configKey) {
 		JSONObject config = new JSONObject();
 
 		Object configValue = propertyManager.readValue(repositoryId, configKey);
 		config.put("key", configKey);
 		config.put("value", configValue);
 		config.put("isDefault", false);
-
-		result.put("configuration", config);
-		result = makeResult(status, result, errMsg);
-		return result.toJSONString();
+		return config;
 	}
 
 
 	@PUT
 	@Produces(MediaType.APPLICATION_JSON)
 	public String update(@PathParam("repositoryId") String repositoryId,
-			@QueryParam("key") String key, @QueryParam("value") String value,
+			@FormParam("key") String key, @FormParam("value") String value,
 			@Context HttpServletRequest httpRequest) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
@@ -105,10 +106,16 @@ public class ConfigResource extends ResourceBase{
 			map.put(key, value);
 			conf.setConfiguration(map);
 			contentDaoService.update(repositoryId, conf);
+		}catch(Exception e){
+			status = false;
+			e.printStackTrace();
+			addErrMsg(errMsg, ITEM_ERROR, ErrorCode.ERR_LIST);
 		}finally{
 			lock.unlock();
 		}
 
+		JSONObject config = createConfig(repositoryId, key);
+		result.put("configuration", config);
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
 	}

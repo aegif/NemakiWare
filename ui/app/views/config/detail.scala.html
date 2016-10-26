@@ -14,7 +14,6 @@
 @lightbox{
 	<!-- html -->
 	<div class="container">
-		@helper.form(action=routes.Config.update(repositoryId, config.key), 'id -> "config-detail-form"){
 			<!-- caption -->
 			<div class="row">
 				<h4><i class="fa fa-gear"></i>@Messages("view.config.edit.caption")</h4>
@@ -22,7 +21,7 @@
 
 			<div class="row" style="margin-bottom:15px">
 				<div class="col-sm-5">
-					<fieldset>
+					<form id="config-detail-form">
 						<div class="row" style="padding-bottom:6px;">
 							<label class="col-sm-3 control-label">@Messages("view.config.edit.key.label")</label>
 							<div class="col-sm-6">@{config.key}</div>
@@ -35,9 +34,35 @@
 						</div>
 
 				   		@saveButton("config-update")
-				   	</fieldset>
+				   	</form>
 				</div>
 			</div>
-		}
 	</div>
+
+	<script type="text/javascript">
+	$(function(){
+		$('#config-update').on('click', function(){
+			var formData = new FormData($('#config-detail-form').get(0));
+			var v = $('#config-value').val();
+			formData.append('config-value', v);
+
+			$.blockUI({message:'@Messages("view.message.please.wait")'});
+			$.ajax({
+				type: "PUT",
+				url: "@routes.Config.update(repositoryId, config.key)",
+				contentType: false,
+				processData: false,
+				data: formData,
+				dataType: 'json'
+			}).done(function(data){
+			 	alert( "作成しました。");
+				window.location.reload();
+			}).fail(function( jqXHR, textStatus, errorThrown ) {
+				 alert("some error:" + textStatus);
+			}).always(function() {
+				 $.unblockUI();
+			});
+		});
+	});
+	</script>
 }
