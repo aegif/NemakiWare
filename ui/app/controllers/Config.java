@@ -98,7 +98,7 @@ public class Config extends Controller {
     		model.Config config = createConfig(configNode);
 
     		// render
-    		return ok(detail.render(repositoryId, config));
+    		return ok(configNode);
     	}else{
     		String error = result.get("error").get(0).get("user").asText();
     		return internalServerError(error);
