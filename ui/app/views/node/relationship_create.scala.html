@@ -95,7 +95,6 @@
 			$.ajax({
 				type: "POST",
 				url: "@routes.Node.createRelationToNew(repositoryId, obj.getId())",
-				contentType: false,
 				processData: false,
 				data: formData,
 				dataType: 'json'
@@ -124,7 +123,6 @@
 			$.ajax({
 				type: "POST",
 				url: "@routes.Node.createRelationToExisting(repositoryId, obj.getId())",
-				contentType: false,
 				processData: false,
 				data: formData,
 				dataType: 'json'
