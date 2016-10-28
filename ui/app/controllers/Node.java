@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import model.ActionPluginUIElement;
@@ -31,11 +32,13 @@ import org.apache.chemistry.opencmis.client.api.*;
 import org.apache.chemistry.opencmis.client.runtime.ObjectIdImpl;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Ace;
+import org.apache.chemistry.opencmis.commons.data.AllowableActions;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
+import org.apache.chemistry.opencmis.commons.enums.Action;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
@@ -82,6 +85,7 @@ public class Node extends Controller {
 		try {
 			Session session = getCmisSession(repositoryId);
 			Folder root = session.getRootFolder();
+
 			return showChildren(repositoryId, root.getId());
 		} catch (Exception ex) {
 			CmisSessions.disconnect(repositoryId, session());
@@ -95,7 +99,6 @@ public class Node extends Controller {
 		CmisObject parent = session.getObject(id);
 		// TODO type check
 		Folder _parent = (Folder) parent;
-
 		ItemIterable<CmisObject> children = _parent.getChildren();
 
 		List<CmisObject> results = new ArrayList<CmisObject>();
