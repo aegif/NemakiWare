@@ -37,8 +37,15 @@ GET     /repo/:repoId/objects/:id/download-preview   		controllers.Node.download
 GET     /repo/:repoId/objects/:id/version            		controllers.Node.showVersion(repoId:String, id:String)
 GET		/repo/:repoId/objects/:id/permission				controllers.Node.showPermission(repoId:String, id:String)
 GET		/repo/:repoId/objects/:id/permission/:principalId	controllers.Node.getAce(repoId:String, id:String, principalId:String)
+
+GET		/repo/:repoId/objects/:id/relationship				controllers.Node.showRelationship(repoId:String, id:String)
+GET		/repo/:repoId/objects/:id/relationship/create				controllers.Node.showRelationshipCreate(repoId:String, id:String)
+POST	/repo/:repoId/objects/:sourceId/relationship/create-to-new     controllers.Node.createRelationToNew(repoId:String, sourceId:String)
+POST	/repo/:repoId/objects/:sourceId/relationship/create-to-exist       controllers.Node.createRelationToExisting(repoId:String, sourceId:String)
+
 GET		/repo/:repoId/objects/:id/action/:actionId			controllers.Node.showAction(repoId:String, id:String, actionId:String)
 POST	/repo/:repoId/objects/:id/action/execute			controllers.Node.doAction(repoId:String, id:String, actionId:String)
+
 GET     /repo/:repoId/objects/:id/children           		controllers.Node.showChildren(repoId:String, id:String)
 POST    /repo/:repoId/objects/:id/update            		controllers.Node.update(repoId:String, id:String)
 POST    /repo/:repoId/objects/:id/update-permission  		controllers.Node.updatePermission(repoId:String, id:String)
@@ -97,6 +104,12 @@ POST	/repo/:repoId/types/create							controllers.Type.create(repoId:String)
 GET		/repo/:repoId/types/edit							controllers.Type.edit(repoId:String)
 POST	/repo/:repoId/types/update							controllers.Type.update(repoId:String)
 POST	/repo/:repoId/types/:id/delete						controllers.Type.delete(repoId:String, id:String)
+
+# Config API
+GET		/repo/:repoId/configs								controllers.Config.index(repoId:String)
+GET		/repo/:repoId/configs/:key							controllers.Config.showDetail(repoId:String, key:String)
+PUT		/repo/:repoId/configs/:key				    		controllers.Config.update(repoId:String, key:String)
+
 
 # Javascript scala template API
 GET		/jstemplate/duplicateNameCheck.js					controllers.JsTemplate.duplicateNameCheck(repoId:String)

@@ -12,6 +12,7 @@ view.node.file=ファイル
 view.node.version=バージョン
 view.node.preview=プレビュー
 view.node.permission=権限
+view.node.relationship=リレーション
 view.node.type=タイプ
 view.node.create.caption=新規作成
 view.node.document=ドキュメント
@@ -23,6 +24,7 @@ view.user.favorite.toggled.desc1=お気に入りに追加済みです
 view.user.favorite.toggled.desc2=クリックするとお気に入りから除外
 view.user.favorite.untoggled.desc1=お気に入りに追加されていません
 view.user.favorite.untoggled.desc2=クリックするとお気に入りに追加
+
 view.node.file.select=ファイルを選択してください
 view.node.file.this.type.has.no.file=このタイプのドキュメントにはファイルがありません。
 view.node.file.checkout.caption=オフライン編集のためファイルをロックする
@@ -41,17 +43,30 @@ view.node.preview.open=プレビューを開く
 view.node.preview.none=プレビューがありません
 view.node.permission.search.caption=ユーザ/グループ検索
 view.node.permission.table.caption=権限テーブル
+
+view.node.relationship.name=リレーション名
+view.node.relationship.target.name=ターゲット名
+view.node.relationship.source.name=ソース名
+view.node.relationship.table.to.caption=参照している
+view.node.relationship.table.from.caption=参照されている
+view.node.relationship.create.caption=リレーションの新規作成
+view.node.relationship.create.new-file.caption=ファイルを新規に追加し、リレーションを作成する
+view.node.relationship.create.existing-id.caption=既存オブジェクトのIDを指定し、リレーションを作成する
+view.node.relationship.create.type.label=リレーションタイプ
+view.node.relationship.create.name.label=リレーションの名前
+view.node.relationship.create.existing-id.object-id.label=オブジェクトID
+
 view.node.version.label=バージョン
 view.node.search.term=検索ワード
 view.node.drag-and-drop.out-of-support=このブラウザはファイルのドラッグ&ドロップに対応していません
-view.node.freeze-copy.cannot-update=このドキュメントは"{0}"にロックされています。更新できません。
+view.node.freeze-copy.cannot-update=このドキュメントはユーザ "{0}" によりロックされているため、更新できません。
 view.node.duplicate.alert.rename=その名前はすでに存在しています。変更してください。
 view.node.duplicate.template.title=ファイル名の重複
 view.node.duplicate.template.file-to-be-created=作成しようとしているファイル
 view.node.duplicate.template.already-exist=この場所には同じ名前のファイルが既にあります。
 view.node.duplicate.template.select-action=アクションを選択してください。
 view.node.duplicate.template.action.replace.caption=サーバ上のファイルを置き換える
-view.node.duplicate.template.action.replace.desc=このフォルダにあるファイルを以下の新しいファイルで置き換えます。(バージョンも上がります)
+view.node.duplicate.template.action.replace.desc=このフォルダにあるファイルを以下の新しいファイルで置き換えます（バージョンが上がります）。
 view.node.duplicate.template.action.do-nothing.caption=ファイルをアップロードしない
 view.node.duplicate.template.action.do-nothing.desc=このフォルダにある以下のファイルは変更されません。
 view.node.duplicate.template.action.rename.caption=サーバ上のファイルとは別のファイルとしてアップロードする
@@ -105,6 +120,13 @@ view.type.id=タイプID
 view.type.create.caption=タイプの新規作成
 view.type.update.caption=タイプの更新
 
+view.config.key=キー
+view.config.value=値
+view.config.isDefault=デフォルト
+view.config.edit.caption=Nemakiware コンフィグ
+view.config.edit.value.label=値
+view.config.edit.key.label=キー
+
 view.archive.caption=ゴミ箱
 
 view.table.key=キー
@@ -112,6 +134,7 @@ view.table.editable=編集可能
 view.table.requred=必須
 view.table.value=値
 
+view.select=選択
 view.execute=実行
 view.create=作成
 view.save=保存
@@ -121,6 +144,11 @@ view.delete=削除
 view.add=追加
 view.remove=除外
 view.action=アクション
+
+view.info=情報
+view.warning=警告
+view.error=エラー
+view.danger=重要
 
 view.message.failure=失敗しました
 view.message.success=成功しました
@@ -148,3 +176,5 @@ view.message.password-change.wrong-old-password=現在のパスワードが間�
 view.message.restore.failure=復元に失敗しました
 view.message.parent-no-longer-exists=親フォルダが既に削除されているため復元できません
 view.message.destroy.failure=アーカイブの削除に失敗しました
+
+view.message.config.danger=設定値によってはアプリケーションが正しく動作しなくなります。内容を理解した上で、書き換えは十分に注意して行ってください。

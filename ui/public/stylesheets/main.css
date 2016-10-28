@@ -27,6 +27,14 @@ div.lightbox-me-container {
 	padding-left: 20px;
 }
 
+#close_x {
+    width: 24px; height: 23px;
+    overflow: hidden;
+    display: block;
+    position: absolute; top: 5px; right: 5px;
+}
+
+
 div.lightbox-me-container div.container, div.lightbox-me-container div.row
 	{
 	width: 760px !important;

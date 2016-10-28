@@ -87,6 +87,8 @@ public class Application extends Controller{
 				controllers.routes.javascript.Node.showPreview(),
 				controllers.routes.javascript.Node.showVersion(),
 				controllers.routes.javascript.Node.showPermission(),
+				controllers.routes.javascript.Node.showRelationship(),
+				controllers.routes.javascript.Node.showRelationshipCreate(),
 				controllers.routes.javascript.Node.showAction(),
 
 				controllers.routes.javascript.Node.getAce(),
@@ -104,6 +106,9 @@ public class Application extends Controller{
 				controllers.routes.javascript.Node.downloadAsCompressedFile(),
 				controllers.routes.javascript.Node.downloadAsCompressedFileByBatch(),
 
+				controllers.routes.javascript.Node.createRelationToNew(),
+				controllers.routes.javascript.Node.createRelationToExisting(),
+
 				controllers.routes.javascript.Type.showBlank(),
 				controllers.routes.javascript.Type.edit(),
 				controllers.routes.javascript.Type.delete(),
@@ -117,7 +122,11 @@ public class Application extends Controller{
 
 				controllers.routes.javascript.SearchEngine.index(),
 				controllers.routes.javascript.SearchEngine.init(),
-				controllers.routes.javascript.SearchEngine.reindex()
+				controllers.routes.javascript.SearchEngine.reindex(),
+
+				controllers.routes.javascript.Config.index(),
+				controllers.routes.javascript.Config.showDetail()
+
 			)
 		);
 	}

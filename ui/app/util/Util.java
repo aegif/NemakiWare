@@ -81,6 +81,7 @@ import org.apache.http.message.BasicNameValuePair;
 import play.api.http.MediaRange;
 import play.data.DynamicForm;
 import play.libs.Json;
+import play.mvc.Http.MultipartFormData;
 import play.mvc.Http.MultipartFormData.FilePart;
 import play.mvc.Http.Request;
 
@@ -188,7 +189,7 @@ public class Util {
 
 		if (exList != null){
 			for(CmisExtensionElement elm : exList){
-				if(elm.getNamespace() == "http://aegif.jp/nemakiware/action"){
+				if(elm.getNamespace() == "http://www.aegif.jp/Nemaki/action"){
 					ActionPluginUIElement button = new ActionPluginUIElement();
 					for(CmisExtensionElement actionElm : elm.getChildren()){
 						if(actionElm.getName().equals("actionId")){
@@ -222,7 +223,7 @@ public class Util {
 				.map(CmisObject::getType)
 				.distinct()
 				.map(ObjectType::getDisplayName)
-				.collect(Collectors.toList());;
+				.collect(Collectors.toList());
 		return result;
 	}
 
@@ -302,8 +303,7 @@ public class Util {
 		return file;
 	}
 
-	public static ContentStream convertFileToContentStream(Session session,
-			FilePart file) {
+	public static ContentStream convertFileToContentStream(Session session, FilePart file) {
 		FileInputStream fis = null;
 		try {
 			fis = new FileInputStream(file.getFile());
@@ -687,30 +687,71 @@ public class Util {
 		 HashMap<String,Object>data = new HashMap<String, Object>();
 
 		 for(Entry<String, PropertyDefinition<?>> entry : propertyDefinitions.entrySet()){
-			 PropertyDefinition<?>pdf = entry.getValue();
+			 PropertyDefinition<?>propDef = entry.getValue();
 
 			//TODO work around
-			 if(pdf.getId().equals(PropertyIds.SECONDARY_OBJECT_TYPE_IDS) ||
-				pdf.getId().equals(PropertyIds.OBJECT_TYPE_ID)){
+			 if(propDef.getId().equals(PropertyIds.SECONDARY_OBJECT_TYPE_IDS) ||
+				propDef.getId().equals(PropertyIds.OBJECT_TYPE_ID)){
 				 continue;
 			 }
 
 			 //TODO work around: skip multiple value
-			 if(pdf.getCardinality() == Cardinality.MULTI){
+			 if(propDef.getCardinality() == Cardinality.MULTI){
 				 continue;
 			 }
 
 			 //TODO work around: skip obligatory choice value
-			 if(CollectionUtils.isNotEmpty(pdf.getChoices()) && !pdf.isOpenChoice()){
+			 if(CollectionUtils.isNotEmpty(propDef.getChoices()) && !propDef.isOpenChoice()){
 				 continue;
 			 }
 
-			 if(updatabilities.contains(pdf.getUpdatability())){
-				 data.put(pdf.getId(), getFormData(input, pdf.getId()));
+			 if(updatabilities.contains(propDef.getUpdatability())){
+				 data.put(propDef.getId(), getFormData(input, propDef.getId()));
 			 }
 		 }
 
 		 return data;
+	 }
+
+	 public static HashMap<String,Object> buildProperties(Map<String, PropertyDefinition<?>>propertyDefinitions, Map<String,String> stringMap, List<Updatability>updatabilities){
+		 HashMap<String,Object>data = new HashMap<String, Object>();
+
+		 for(Entry<String, PropertyDefinition<?>> entry : propertyDefinitions.entrySet()){
+			 PropertyDefinition<?>propDef = entry.getValue();
+
+			//TODO work around
+			 if(propDef.getId().equals(PropertyIds.SECONDARY_OBJECT_TYPE_IDS) ||
+				propDef.getId().equals(PropertyIds.OBJECT_TYPE_ID)){
+				 continue;
+			 }
+
+			 //TODO work around: skip multiple value
+			 if(propDef.getCardinality() == Cardinality.MULTI){
+				 continue;
+			 }
+
+			 //TODO work around: skip obligatory choice value
+			 if(CollectionUtils.isNotEmpty(propDef.getChoices()) && !propDef.isOpenChoice()){
+				 continue;
+			 }
+
+			 if(updatabilities.contains(propDef.getUpdatability())){
+				 data.put(propDef.getId(), stringMap.get(propDef.getId()));
+			 }
+		 }
+
+		 return data;
+	 }
+
+	 public static Map<String,String> createPropFormDataMap(Map<String, PropertyDefinition<?>>propertyDefinitions, DynamicForm input){
+		 Map<String,String> result = new HashMap<String,String>();
+		 for(Entry<String, PropertyDefinition<?>> def : propertyDefinitions.entrySet()){
+			 String key = def.getValue().getId();
+			 String value = getFormData(input, key);
+			 if(value == null)continue;
+			 result.put(key, value);
+		 }
+		 return result;
 	 }
 
 	 public static String tail(String str){

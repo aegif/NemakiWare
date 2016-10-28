@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
@@ -42,11 +43,11 @@ public class SpringPropertiesUtil extends PropertyPlaceholderConfigurer {
 
     public String getValue(String key) {
     	String value = propertiesMap.get(key);
-    	
+
     	if(log.isTraceEnabled()){
     		log.trace("key=" + key + " has no value");
     	}
-    	
+
         return value;
     }
 
@@ -57,6 +58,10 @@ public class SpringPropertiesUtil extends PropertyPlaceholderConfigurer {
     	if(_val.length == 0) return null;
 
     	return _val[0].trim();
+    }
+
+    public Set<String> getKeys(){
+    	return propertiesMap.keySet();
     }
 
     public List<String> getValues(String key){
