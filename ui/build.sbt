@@ -2,11 +2,11 @@ import com.github.play2war.plugin._
 
 name := """ui"""
 
-version := "2.3.11"
+version := "2.4.0"
 
 lazy val root = (project in file(".")).enablePlugins(PlayJava)
 
-scalaVersion := "2.11.6"
+scalaVersion := "2.11.8"
 
 javacOptions ++= Seq("-source", "1.8", "-target", "1.8", "-Xlint")
 
@@ -24,7 +24,7 @@ libraryDependencies ++= Seq(
   javaEbean,
   cache,
   javaWs,
-	"jp.aegif.nemakiware" % "nemakiware-common" % "2.3.10",
+  "jp.aegif.nemakiware" % "nemakiware-common" % "2.3.10",
   "commons-collections" % "commons-collections" % "3.2.1",
   "org.webjars" %% "webjars-play" % "2.3.0",
   "org.webjars" % "bootstrap" % "3.2.0",
@@ -35,7 +35,7 @@ libraryDependencies ++= Seq(
   "org.apache.chemistry.opencmis" % "chemistry-opencmis-client-api" % "1.0.0",
   "org.apache.chemistry.opencmis" % "chemistry-opencmis-commons-impl" % "1.0.0",
   "org.apache.httpcomponents" % "httpclient" % "4.4-beta1",
-	"net.lingala.zip4j" % "zip4j" % "1.3.2"
+  "net.lingala.zip4j" % "zip4j" % "1.3.2"
 )
 
 Play2WarPlugin.play2WarSettings

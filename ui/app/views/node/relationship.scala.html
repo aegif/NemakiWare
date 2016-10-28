@@ -1,0 +1,83 @@
+@*{<meta charset="UTF-8" />}*@
+
+@import util.Formatter
+@import util.Util
+@import util.NemakiConfig
+@import component._
+@import play.mvc.Http.Context.Implicit
+@import org.apache.chemistry.opencmis.client.api.CmisObject
+@(repositoryId:String)(obj:CmisObject)(relationships: List[org.apache.chemistry.opencmis.client.api.Relationship])
+
+<div class="container tab-pane">
+	<div class="row" style="margin-bottom:15px">
+		<div class="col-sm-6 col-md-6">
+				@createButton("create-new-relationship")
+		</div>
+	</div>
+	<div class="row">
+		<div class="col-sm-12 col-md-12">
+			<legend><i class="fa fa-arrow-circle-o-up"></i>@Messages("view.node.relationship.table.to.caption")</legend>
+			<table class="footable" id="relationship-table">
+				<thead>
+					<tr>
+						<th>@Messages("view.node.relationship.name")</th>
+						<th>@Messages("view.node.relationship.target.name")</th>
+						<th>@NemakiConfig.getLabel("cmis:createdBy", Implicit.lang().language)</th>
+						<th>@NemakiConfig.getLabel("cmis:creationDate", Implicit.lang().language)</th>
+					</tr>
+				</thead>
+				<tbody>
+					@for(relationship <- relationships){
+							@if(obj.getId() == relationship.getSource().getId()){
+							<tr>
+								<td>@relationship.getName()</td>
+								<td>@relationship.getTarget().getName()</td>
+								<td>@relationship.getCreatedBy()</td>
+								<td>@Formatter.calToString(relationship.getCreationDate(), Implicit.lang.toLocale)</td>
+							</tr>
+						}
+					}
+				</tbody>
+			</table>
+
+			<br/><br/>
+
+			<legend><i class="fa fa-arrow-circle-o-down"></i>@Messages("view.node.relationship.table.from.caption")</legend>
+			<table class="footable" id="relationship-table">
+				<thead>
+					<tr>
+						<th>@Messages("view.node.relationship.name")</th>
+						<th>@Messages("view.node.relationship.source.name")</th>
+						<th>@NemakiConfig.getLabel("cmis:createdBy", Implicit.lang().language)</th>
+						<th>@NemakiConfig.getLabel("cmis:creationDate", Implicit.lang().language)</th>
+					</tr>
+				</thead>
+				<tbody>
+					@for(relationship <- relationships){
+							@if(obj.getId() == relationship.getTarget().getId()){
+							<tr>
+								<td>@relationship.getName()</td>
+								<td>@relationship.getSource().getName()</td>
+								<td>@relationship.getCreatedBy()</td>
+								<td>@Formatter.calToString(relationship.getCreationDate(), Implicit.lang.toLocale)</td>
+							</tr>
+						}
+					}
+				</tbody>
+			</table>
+		</div>
+	</div>
+</div>
+
+<!-- footable -->
+<script type="text/javascript">
+	$(function () {
+	    $('#relationship-table').footable();
+
+		$('#create-new-relationship').on('click', function(){
+			$.get("@routes.Node.showRelationshipCreate(repositoryId, obj.getId())", function(html){
+				showLightbox('relationship-create', html);
+			});
+		});
+	});
+</script>

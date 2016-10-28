@@ -495,8 +495,8 @@
         <property name="nemakiCachePool">
             <ref bean="nemakiCachePool" />
         </property>
-        <property name="includeRelationshipsEnabled">
-        	<value>${capability.extended.include.relationships}</value>
+        <property name="propertyManager">
+            <ref bean="propertyManager" />
         </property>
         <property name="sortUtil">
             <ref bean="sortUtil" />
@@ -688,6 +688,18 @@
         </property>
     </bean>
 
+    <bean id="configResource" class="jp.aegif.nemaki.rest.ConfigResource">
+        <property name="contentDaoService">
+            <ref bean="ContentDaoService" />
+        </property>
+        <property name="threadLockService">
+            <ref bean="ThreadLockService" />
+        </property>
+         <property name="propertyManager">
+            <ref bean="propertyManager" />
+        </property>
+    </bean>
+
     <bean id="solrAllResource" class="jp.aegif.nemaki.rest.SolrAllResource">
     	<property name="solrUtil">
        		<ref bean="solrUtil" />
@@ -703,15 +715,6 @@
     <bean id="cacheResource" class="jp.aegif.nemaki.rest.CacheResource">
     	<property name="nemakiCachePool">
 			<ref bean="nemakiCachePool" />
-        </property>
-    	<property name="threadLockService">
-       		<ref bean="ThreadLockService" />
-        </property>
-    </bean>
-
-    <bean id="configResource" class="jp.aegif.nemaki.rest.ConfigResource">
-    	<property name="contentDaoService">
-			<ref bean="ContentDaoService" />
         </property>
     	<property name="threadLockService">
        		<ref bean="ThreadLockService" />

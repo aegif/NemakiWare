@@ -1,0 +1,142 @@
+@*{<meta charset="UTF-8" />}*@
+
+@import component._
+@import util._
+@import org.apache.chemistry.opencmis.client.api.Document
+@import org.apache.chemistry.opencmis.commons.PropertyIds
+@import play.mvc.Http.Context.Implicit
+@import org.apache.chemistry.opencmis.client.api.ObjectType
+
+@(repositoryId:String)(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(parentId:String)(relationshipTypes: java.util.List[ObjectType])
+
+@lightbox{
+<div class="container">
+	<div class="row" style="padding-bottom:30px;">
+		<div class="col-sm-12 col-md-12">
+			<h4><i class="fa fa-search"></i>@Messages("view.node.relationship.create.caption")</h4>
+		</div>
+	</div>
+	<div class="row" style="padding-bottom:30px;">
+		<div class="col-sm-12 col-md-12">
+			<div class="row" style="padding-bottom:6px;">
+				<label class="col-sm-3 control-label">@Messages("view.node.relationship.create.type.label")</label>
+			    <div class="col-sm-4">
+			    	<select class="form-control" id="relationship-type" name="relationship-type">
+			      		@for(tp <- relationshipTypes){
+							<option value="@tp.getId">
+								@NemakiConfig.getLabel(tp.getId, Implicit.lang().language)
+							</option>
+						}
+			      	</select>
+			    </div>
+			</div>
+			<div class="row" style="padding-bottom:6px;">
+				<label class="col-sm-3 control-label">@Messages("view.node.relationship.create.name.label")</label>
+				<div class="col-sm-6">
+					<input type="textbox" id="relationship-name" class="form-control" />
+				</div>
+			</div>
+		</div>
+	</div>
+	<div class="row" style="padding-bottom:30px;">
+		<div class="col-sm-12 col-md-12">
+			<form id="link-new-file-form">
+				<legend><i class="fa fa-arrow-circle-o-down"></i>@Messages("view.node.relationship.create.new-file.caption")</legend>
+				<div class="row" style="padding-bottom:6px;">
+					<div class="col-sm-6">
+						<input type="file" name="file" />
+						<input type="hidden" name="cmis:parentId" value="@parentId"/>
+					</div>
+				</div>
+				<div class="row" style="padding-bottom:6px;">
+			   		<div class="col-sm-12">
+			   		@executeButton("link-new-file")
+			   		</div>
+			   	</div>
+			</form>
+		</div>
+	</div>
+	<div class="row" style="padding-bottom:30px;">
+		<div class="col-sm-12 col-md-12">
+			<form id="link-existing-object-form">
+				<legend><i class="fa fa-arrow-circle-o-down"></i>@Messages("view.node.relationship.create.existing-id.caption")</legend>
+				<div class="row" style="padding-bottom:6px;">
+					<label class="col-sm-2 control-label">@Messages("view.node.relationship.create.existing-id.object-id.label") </label>
+					<div class="col-sm-6">
+						<input type="textbox" name="nemaki:targetId" class="form-control" />
+			   		</div>
+			   	</div>
+			   	<div class="row" style="padding-bottom:6px;">
+			   		<div class="col-sm-12">
+			   			@executeButton("link-existing-object")
+			   		</div>
+			   	</div>
+		   	</form>
+	   	</div>
+	</div>
+</div>
+
+<!-- scripts -->
+<script type="text/javascript">
+	$(function(){
+
+
+
+		$('#link-new-file').on("click", function(){
+			var formData = new FormData($('#link-new-file-form').get(0));
+
+			var t = $('#relationship-type option:selected').val();
+			var n = $('#relationship-name').val();
+
+			formData.append('nemaki:relationshipType', t);
+			formData.append('nemaki:relationshipName', n);
+
+			$.blockUI({message:'@Messages("view.message.please.wait")'});
+			$.ajax({
+				type: "POST",
+				url: "@routes.Node.createRelationToNew(repositoryId, obj.getId())",
+				processData: false,
+				data: formData,
+				dataType: 'json'
+			}).done(function( data ) {
+			 	alert( "作成しました。");
+				window.location.reload();
+			}).fail(function( jqXHR, textStatus, errorThrown ) {
+				 alert("some error:" + textStatus);
+			}).always(function() {
+				 $.unblockUI();
+			});
+		});
+
+		$('#link-existing-object').on("click", function(){
+			var formData = new FormData($('#link-existing-object-form').get(0));
+
+			var t = $('#relationship-type option:selected').val();
+			var n = $('#relationship-name').val();
+
+			console.error(t);
+			console.error(n);
+			formData.append('nemaki:relationshipType', t);
+			formData.append('nemaki:relationshipName', n);
+
+			$.blockUI({message:'@Messages("view.message.please.wait")'});
+			$.ajax({
+				type: "POST",
+				url: "@routes.Node.createRelationToExisting(repositoryId, obj.getId())",
+				contentType: false,
+				processData: false,
+				data: formData,
+				dataType: 'json'
+			}).done(function( data ) {
+			 	alert( "作成しました。");
+				window.location.reload();
+			}).fail(function( jqXHR, textStatus, errorThrown ) {
+				 alert("some error:" + textStatus);
+			}).always(function() {
+				 $.unblockUI();
+			});
+		});
+
+	});
+</script>
+}

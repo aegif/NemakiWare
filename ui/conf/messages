@@ -12,6 +12,7 @@ view.node.file=File
 view.node.version=Version
 view.node.preview=Preview
 view.node.permission=Permission
+view.node.relationship=Relationship
 view.node.type=Type
 view.node.create.caption=New
 view.node.document=Document
@@ -42,6 +43,19 @@ view.node.preview.none=No Preview
 view.node.version.label=Version
 view.node.permission.search.caption=User/Group Search
 view.node.permission.table.caption=Permission Table
+
+view.node.relationship.name=Relation Name
+view.node.relationship.target.name=Target Object Name
+view.node.relationship.source.name=Source Object Name
+view.node.relationship.table.to.caption=Relate To
+view.node.relationship.table.form.caption=Relate From
+view.node.relationship.create.caption=Create relation
+view.node.relationship.create.new-file.caption=Add new file to create relationship
+view.node.relationship.create.existing-id.caption=Create relationship to exisiting object by id
+view.node.relationship.create.type.label=Relationship Type
+view.node.relationship.create.name.label=Relationship Name
+view.node.relationship.create.existing-id.object-id.label=Object ID
+
 view.node.search.term=Search Term
 view.node.drag-and-drop.out-of-support=Your browser does not support file drag & drop.
 view.node.drag-and-drop.success=File(s) are uploaded.
@@ -106,6 +120,13 @@ view.type.id=Type ID
 view.type.create.caption=New Type
 view.type.update.caption=Update Type
 
+view.config.key=Key
+view.config.value=Value
+view.config.isDefault=Default value
+view.config.edit.caption=Nemakiware Configuration
+view.config.edit.value.label=Config Value
+view.config.edit.key.label=Config Key
+
 view.archive.caption=Archive
 
 view.table.key=Key
@@ -113,6 +134,7 @@ view.table.editable=Editable
 view.table.requred=Required
 view.table.value=Value
 
+view.select=Select
 view.execute=Execute
 view.create=Create
 view.save=Save
@@ -122,6 +144,12 @@ view.delete=Delete
 view.add=Add
 view.remove=Remove
 view.action=Action
+
+view.info=Infomation
+view.warning=Warning
+view.error=Error
+view.danger=Danger
+
 
 view.message.failure=Failed
 view.message.success=Successfully done
@@ -149,3 +177,5 @@ view.message.password-change.wrong-old-password=Current password is wrong!
 view.message.restore.failure=Failed to restore
 view.message.parent-no-longer-exists=Cannot restore the archive because parent folder no longer exists!
 view.message.destroy.failure=Failed to destroy
+
+view.message.config.danger=設定値によってはアプリケーションが正しく動作しなくなります。内容を理解した上で、書き換えは十分に注意して行ってください。

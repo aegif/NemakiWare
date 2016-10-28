@@ -222,8 +222,8 @@ public class PermissionServiceImpl implements PermissionService {
 	 * @return
 	 */
 	private Boolean checkRelationshipPermission(CallContext callContext, String repositoryId, String key, Relationship relationship){
-		Content source = contentService.getRelationship(repositoryId, relationship.getSourceId());
-		Content target = contentService.getRelationship(repositoryId, relationship.getTargetId());
+		Content source = contentService.getContent(repositoryId, relationship.getSourceId());
+		Content target = contentService.getContent(repositoryId, relationship.getTargetId());
 
 		if(source == null || target == null){
 			log.warn("[objectId=" + relationship.getId() + "]Source or target of this relationship is missing");

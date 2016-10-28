@@ -18,7 +18,7 @@
 	  				<h3><i class="fa fa-cog"></i>@Messages("view.type.caption")</h3>
 	  			</div>
 	  		</div>
-		
+
 	  		<div class="row">
 				<div class="col-md-11">
 					<!-- create button -->
@@ -26,8 +26,8 @@
 					<button type="button" class="btn btn-default update"><i class="fa fa-edit"></i>@Messages("view.update")</button>
 					<br/><br/>
 				</div>
-				
-				
+
+
 				<div class="col-md-11">
 					<table class="footable" id="objects-table" data-sort="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
 						<thead>
@@ -42,12 +42,12 @@
 								<td>
 									<a href="@routes.Type.download(repositoryId, objectType.getId)">@objectType.getId</a>
 								</td>
-								
+
 								<td>
 									<div class="btn-group">
-										<button type="button" class="btn btn-default delete" cmis-id="@objectType.getId"><i class="fa fa-trash"></i>@Messages("view.delete")</button>
-									</div> 
-								</td>							
+										<button type="button" class="btn btn-default delete" @if(!objectType.getTypeMutability().canDelete()){disabled="disabled"} cmis-id="@objectType.getId"><i class="fa fa-trash"></i>@Messages("view.delete")</button>
+									</div>
+								</td>
 							</tr>
 						}
 						</tbody>
@@ -68,7 +68,7 @@
 </html>
 
 
-<!-- ------------------------------------------------ -->	
+<!-- ------------------------------------------------ -->
 
 <script type="text/javascript">
 $(function(){
@@ -82,7 +82,7 @@ $(function(){
 			//TODO
 		});
     })
-	
+
 	$('.update').bind('click', function(){
 		$.ajax(jsRoutes.controllers.Type.edit("@repositoryId")
 		).done(function(data){
@@ -93,13 +93,13 @@ $(function(){
 			//TODO
 		});
     })
-    
+
     $('.delete').click(function(){
 		if(window.confirm("@Messages("view.message.delete.confirm")")){
 			var id = $(this).attr('cmis-id');
-		
+
 			$.blockUI({message:"@Messages("view.message.please.wait")"});
-			
+
 			$.ajax(jsRoutes.controllers.Type.delete("@repositoryId", id)
 			).done(function(data){
 				window.alert("@Messages("view.message.delete.success")");
@@ -119,4 +119,4 @@ $(function(){
         $(function () {
             $('#objects-table').footable();
         });
-</script> 
+</script>
