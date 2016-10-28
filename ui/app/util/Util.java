@@ -744,12 +744,13 @@ public class Util {
 	 }
 
 	 public static Map<String,String> createPropFormDataMap(Map<String, PropertyDefinition<?>>propertyDefinitions, DynamicForm input){
-		 Map<String,String> result =
-		 propertyDefinitions.entrySet().stream()
-		 .collect(Collectors.toMap(
-				 p -> p.getValue().getId(),
-				 p -> getFormData(input, p.getValue().getId())
-		));
+		 Map<String,String> result = new HashMap<String,String>();
+		 for(Entry<String, PropertyDefinition<?>> def : propertyDefinitions.entrySet()){
+			 String key = def.getValue().getId();
+			 String value = getFormData(input, key);
+			 if(value == null)continue;
+			 result.put(key, value);
+		 }
 		 return result;
 	 }
 
