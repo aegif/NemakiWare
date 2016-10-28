@@ -72,7 +72,6 @@ import org.mindrot.jbcrypt.BCrypt;
 import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.core.JsonParser;
-import com.sun.swing.internal.plaf.metal.resources.metal_zh_TW;
 
 @Path("/repo/{repositoryId}/user/")
 public class UserItemResource extends ResourceBase {
