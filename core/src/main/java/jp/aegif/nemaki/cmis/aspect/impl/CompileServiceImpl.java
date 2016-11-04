@@ -107,9 +107,9 @@ import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
-import jp.aegif.nemaki.plugin.action.ActionTriggerBase;
 import jp.aegif.nemaki.plugin.action.JavaBackedAction;
-import jp.aegif.nemaki.plugin.action.UserButtonActionTrigger;
+import jp.aegif.nemaki.plugin.action.trigger.ActionTriggerBase;
+import jp.aegif.nemaki.plugin.action.trigger.UserButtonPerCmisObjcetActionTrigger;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.action.NemakiActionPlugin;
@@ -1480,10 +1480,10 @@ public class CompileServiceImpl implements CompileService {
 					List<CmisExtensionElement> extElements = new ArrayList<CmisExtensionElement>();
 					extElements.add(new CmisExtensionElementImpl(ns, "actionId", null, action_id));
 					ActionTriggerBase trigger = plugin.getActionTrigger();
-					if(trigger instanceof  UserButtonActionTrigger){
-						extElements.add(new CmisExtensionElementImpl(ns, "actionButtonLabel", null, ((UserButtonActionTrigger) trigger).getDisplayName()));
-						extElements.add(new CmisExtensionElementImpl(ns, "actionButtonIcon", null, ((UserButtonActionTrigger) trigger).getFontAwesomeName()));
-						extElements.add(new CmisExtensionElementImpl(ns, "actionFormHtml", null, ((UserButtonActionTrigger) trigger).getFormHtml()));
+					if(trigger instanceof  UserButtonPerCmisObjcetActionTrigger){
+						extElements.add(new CmisExtensionElementImpl(ns, "actionButtonLabel", null, ((UserButtonPerCmisObjcetActionTrigger) trigger).getDisplayName()));
+						extElements.add(new CmisExtensionElementImpl(ns, "actionButtonIcon", null, ((UserButtonPerCmisObjcetActionTrigger) trigger).getFontAwesomeName()));
+						extElements.add(new CmisExtensionElementImpl(ns, "actionFormHtml", null, ((UserButtonPerCmisObjcetActionTrigger) trigger).getFormHtml()));
 
 					}
 					extensions.add(new CmisExtensionElementImpl(ns, "actionPluginExtension", null, extElements));
