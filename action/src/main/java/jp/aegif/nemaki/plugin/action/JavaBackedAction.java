@@ -7,10 +7,12 @@ import java.util.Map;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.springframework.plugin.core.Plugin;
 
+import jp.aegif.nemaki.plugin.action.trigger.ActionTriggerBase;
+
 
 public interface JavaBackedAction extends Plugin<String>{
 
-	public String getActionTile();
+	public String getActionTiTle();
 
 	public String getActionDiscription();
 

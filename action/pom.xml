@@ -2,10 +2,10 @@
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 
 	<modelVersion>4.0.0</modelVersion>
-	<groupId>jp.aegif.nemakiware</groupId>
+	<groupId>jp.aegif.nemaki.plugin</groupId>
 	<artifactId>nemakiware-action</artifactId>
 	<packaging>jar</packaging>
-	<version>0.0.1</version>
+	<version>0.0.2</version>
 	<name>action</name>
 	<description>NemakiWare Action Interface</description>
 	<url>https://github.com/aegif/NemakiWare</url>
@@ -93,5 +93,6 @@
 			</plugin>
 		</plugins>
 	</build>
+
 
 </project>
