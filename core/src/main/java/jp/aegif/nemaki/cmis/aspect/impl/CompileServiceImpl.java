@@ -1481,10 +1481,10 @@ public class CompileServiceImpl implements CompileService {
 					extElements.add(new CmisExtensionElementImpl(ns, "actionId", null, action_id));
 					ActionTriggerBase trigger = plugin.getActionTrigger();
 					if(trigger instanceof  UserButtonPerCmisObjcetActionTrigger){
-						extElements.add(new CmisExtensionElementImpl(ns, "actionButtonLabel", null, ((UserButtonPerCmisObjcetActionTrigger) trigger).getDisplayName()));
-						extElements.add(new CmisExtensionElementImpl(ns, "actionButtonIcon", null, ((UserButtonPerCmisObjcetActionTrigger) trigger).getFontAwesomeName()));
-						extElements.add(new CmisExtensionElementImpl(ns, "actionFormHtml", null, ((UserButtonPerCmisObjcetActionTrigger) trigger).getFormHtml()));
-
+						UserButtonPerCmisObjcetActionTrigger objectActionTrigger = (UserButtonPerCmisObjcetActionTrigger) trigger;
+						extElements.add(new CmisExtensionElementImpl(ns, "actionButtonLabel", null, (objectActionTrigger.getDisplayName())));
+						extElements.add(new CmisExtensionElementImpl(ns, "actionButtonIcon", null, (objectActionTrigger.getFontAwesomeName())));
+						extElements.add(new CmisExtensionElementImpl(ns, "actionFormHtml", null, (objectActionTrigger.getFormHtml())));
 					}
 					extensions.add(new CmisExtensionElementImpl(ns, "actionPluginExtension", null, extElements));
 				}
