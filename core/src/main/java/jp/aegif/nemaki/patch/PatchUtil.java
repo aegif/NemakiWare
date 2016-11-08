@@ -30,7 +30,7 @@ import jp.aegif.nemaki.model.PatchHistory;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
 
-public class Patch {
+public class PatchUtil {
 	protected PropertyManager propertyManager;
 	protected ConnectorPool connectorPool;
 	protected ContentService contentService;

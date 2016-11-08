@@ -12,6 +12,7 @@ import org.apache.commons.logging.LogFactory;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.DomainType;
 import jp.aegif.nemaki.util.lock.ThreadLockService;
@@ -19,12 +20,12 @@ import jp.aegif.nemaki.util.lock.ThreadLockService;
 public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.ObjectServiceInternal{
 	private static final Log log = LogFactory
 			.getLog(ObjectServiceInternalImpl.class);
-	
+
 	private ContentService contentService;
 	private ExceptionService exceptionService;
 	private ThreadLockService threadLockService;
 	private NemakiCachePool nemakiCachePool;
-	
+
 	@Override
 	public void deleteObjectInternal(CallContext callContext, String repositoryId,
 			String objectId, Boolean allVersions, Boolean deleteWithParent) {
@@ -32,16 +33,16 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 		Content content = contentService.getContent(repositoryId, objectId);
 		deleteObjectInternal(callContext, repositoryId, content, allVersions, deleteWithParent);
 	}
-	
+
 	@Override
 	public void deleteObjectInternal(CallContext callContext, String repositoryId,
 			Content content, Boolean allVersions, Boolean deleteWithParent) {
-		
+
 		Lock lock = threadLockService.getWriteLock(repositoryId, content.getId());
-		
+
 		try{
 			lock.lock();
-			
+
 			// //////////////////
 			// General Exception
 			// //////////////////
@@ -51,7 +52,7 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 			exceptionService.constraintDeleteRootFolder(repositoryId, objectId);
 
 			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
-			
+
 			// //////////////////
 			// Body of the method
 			// //////////////////
@@ -67,11 +68,21 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 				}
 				contentService.delete(callContext, repositoryId, objectId, deleteWithParent);
 
-			} else {
+			} else if(content.isRelationship()){
+				//TODO: move to relationship service?
+				Relationship rel = contentService.getRelationship(repositoryId, objectId);
+				String targetObjectId = rel.getTargetId();
+				String sourceObjectId = rel.getSourceId();
+				contentService.delete(callContext, repositoryId, objectId, deleteWithParent);
+
+				nemakiCachePool.get(repositoryId).removeCmisCache(targetObjectId);
+				nemakiCachePool.get(repositoryId).removeCmisCache(sourceObjectId);
+			} else{
 				contentService.delete(callContext, repositoryId, objectId, deleteWithParent);
 			}
 
 			nemakiCachePool.get(repositoryId).removeCmisCache(content.getId());
+
 		}finally{
 			lock.unlock();
 		}
@@ -84,7 +95,7 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 	public void setExceptionService(ExceptionService exceptionService) {
 		this.exceptionService = exceptionService;
 	}
-	
+
 	public void setThreadLockService(ThreadLockService threadLockService) {
 		this.threadLockService = threadLockService;
 	}

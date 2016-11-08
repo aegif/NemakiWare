@@ -13,7 +13,7 @@ import jp.aegif.nemaki.plugin.action.*;
 import jp.aegif.nemaki.plugin.action.trigger.*;
 
 
-public class SampleAction implements JavaBackedAction {
+public class SampleCmisObjectAction implements JavaBackedAction {
 	private static final org.slf4j.Logger logger = LoggerFactory.getLogger(JavaBackedAction.class);
 
 	private static UserButtonPerCmisObjcetActionTrigger _trigger;
@@ -22,7 +22,7 @@ public class SampleAction implements JavaBackedAction {
 		if (_trigger == null){
 			_trigger = new UserButtonPerCmisObjcetActionTrigger("サンプルアクションの実行");
 			_trigger.setFormHtml(""
-				+ "<div>サンプルのフォーム</div>\n"
+				+ "<div>CMISオブジェクトサンプルのフォーム</div>\n"
 				+ "<select class='dropdown' name='sampleFormData'>\n"
 				+ "   <option value='1'>テスト1</option>\n"
 				+ "   <option value='2'>テスト2</option>\n"
@@ -43,7 +43,7 @@ public class SampleAction implements JavaBackedAction {
 	public String executeAction(ObjectData obj, String json) {
 		String name = (String) obj.getProperties().getPropertyList().stream().map(p -> p.getFirstValue()).findFirst().get();
 
-		return "{\"message\" : \"アクションが実行されました ファイル名：" + name + "\"}";
+		return "{\"message\" : \"CMISオブジェクトアクションが実行されました ファイル名：" + name + "\"}";
 
 	}
 
