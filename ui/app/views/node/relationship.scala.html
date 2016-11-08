@@ -24,6 +24,7 @@
 						<th>@Messages("view.node.relationship.target.name")</th>
 						<th>@NemakiConfig.getLabel("cmis:createdBy", Implicit.lang().language)</th>
 						<th>@NemakiConfig.getLabel("cmis:creationDate", Implicit.lang().language)</th>
+						<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action") </th>
 					</tr>
 				</thead>
 				<tbody>
@@ -34,6 +35,13 @@
 								<td>@relationship.getTarget().getName()</td>
 								<td>@relationship.getCreatedBy()</td>
 								<td>@Formatter.calToString(relationship.getCreationDate(), Implicit.lang.toLocale)</td>
+								<td>
+									<div class="btn-group">
+										<button type="button" class="btn btn-default delete" cmis-id="@relationship.getId()">
+											<i class="fa fa-unlink"></i><div class="tooltips">@Messages("view.unlink")</div>
+										</button>
+									</div>
+								</td>
 							</tr>
 						}
 					}
@@ -50,6 +58,7 @@
 						<th>@Messages("view.node.relationship.source.name")</th>
 						<th>@NemakiConfig.getLabel("cmis:createdBy", Implicit.lang().language)</th>
 						<th>@NemakiConfig.getLabel("cmis:creationDate", Implicit.lang().language)</th>
+						<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action") </th>
 					</tr>
 				</thead>
 				<tbody>
@@ -60,6 +69,13 @@
 								<td>@relationship.getSource().getName()</td>
 								<td>@relationship.getCreatedBy()</td>
 								<td>@Formatter.calToString(relationship.getCreationDate(), Implicit.lang.toLocale)</td>
+								<td>
+									<div class="btn-group">
+										<button type="button" class="btn btn-default delete" cmis-id="@relationship.getId()">
+											<i class="fa fa-unlink"></i><div class="tooltips">@Messages("view.unlink")</div>
+										</button>
+									</div>
+								</td>
 							</tr>
 						}
 					}
@@ -79,5 +95,25 @@
 				showLightbox('relationship-create', html);
 			});
 		});
+
+		$('.delete').on('click', function(){
+			if(window.confirm("@Messages("view.message.delete.confirm")")){
+				var id = $(this).attr('cmis-id');
+
+				$.blockUI({message:"@Messages("view.message.please.wait")"});
+
+				//Execute
+				$.ajax(jsRoutes.controllers.Node.delete("@repositoryId", id)
+				).done(function(data){
+					window.alert("@Messages("view.message.delete.success")");
+					window.location.reload();
+				}).fail(function(XMLHttpRequest, textStatus, errorThrown){
+					window.alert("@Messages("view.message.delete.failure")");
+				}).always(function(){
+					$.unblockUI();
+				});
+			}
+		});
+
 	});
 </script>
