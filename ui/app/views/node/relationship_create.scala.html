@@ -79,9 +79,6 @@
 <!-- scripts -->
 <script type="text/javascript">
 	$(function(){
-
-
-
 		$('#link-new-file').on("click", function(){
 			var formData = new FormData($('#link-new-file-form').get(0));
 
@@ -95,14 +92,15 @@
 			$.ajax({
 				type: "POST",
 				url: "@routes.Node.createRelationToNew(repositoryId, obj.getId())",
+				contentType: false,
 				processData: false,
-				data: formData,
-				dataType: 'json'
+				cache: false,
+				data: formData
 			}).done(function( data ) {
-			 	alert( "作成しました。");
+			 	window.alert( '@Messages("view.message.create.success")');
 				window.location.reload();
 			}).fail(function( jqXHR, textStatus, errorThrown ) {
-				 alert("some error:" + textStatus);
+				window.alert('@Messages("view.message.create.failure")' + " message : " + textStatus + " status : " + jqXHR.status);
 			}).always(function() {
 				 $.unblockUI();
 			});
@@ -118,18 +116,17 @@
 			formData.append('nemaki:relationshipName', rName);
 
 			$.blockUI({message:'@Messages("view.message.please.wait")'});
-			$.ajax({
+			jsRoutes.controllers.Node.createRelationToExisting("@repositoryId", "@obj.getId()").ajax({
 				type: "POST",
-				url: "@routes.Node.createRelationToExisting(repositoryId, obj.getId())",
 				contentType: false,
 				processData: false,
-				data: formData,
-				dataType: 'json'
+				cache: false,
+				data: formData
 			}).done(function( data ) {
-			 	alert( "作成しました。");
+			 	window.alert( '@Messages("view.message.create.success")');
 				window.location.reload();
 			}).fail(function( jqXHR, textStatus, errorThrown ) {
-				 alert("some error:" + textStatus);
+				window.alert('@Messages("view.message.create.failure")' + " status : " + textStatus + " HTTPStatus : " + jqXHR.status + " message : " + errorThrown.message );
 			}).always(function() {
 				 $.unblockUI();
 			});
