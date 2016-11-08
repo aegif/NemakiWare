@@ -20,6 +20,7 @@
 			<table class="footable" id="relationship-table">
 				<thead>
 					<tr>
+						<th>@Messages("view.node.relationship.create.type.label")</th>
 						<th>@Messages("view.node.relationship.name")</th>
 						<th>@Messages("view.node.relationship.target.name")</th>
 						<th>@NemakiConfig.getLabel("cmis:createdBy", Implicit.lang().language)</th>
@@ -31,6 +32,7 @@
 					@for(relationship <- relationships){
 							@if(obj.getId() == relationship.getSource().getId()){
 							<tr>
+								<td>@NemakiConfig.getLabel(relationship.getType().getId(), Implicit.lang().language)</td>
 								<td>@relationship.getName()</td>
 								<td>@relationship.getTarget().getName()</td>
 								<td>@relationship.getCreatedBy()</td>
