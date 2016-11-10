@@ -32,6 +32,7 @@ import org.apache.chemistry.opencmis.client.api.*;
 import org.apache.chemistry.opencmis.client.runtime.ObjectIdImpl;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Ace;
+import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.AllowableActions;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
@@ -1087,12 +1088,17 @@ public class Node extends Controller {
 		// Get an object in the repository
 		Session session = getCmisSession(repositoryId);
 
+		// Source acl copy to relation acl
+		CmisObject srcObj = session.getObject(sourceId);
+		Acl srcAcl = srcObj.getAcl();
+		List<Ace> srcAceList = srcAcl.getAces();
+
 		Map<String, String> relProps = new HashMap<String, String>();
 		relProps.put(PropertyIds.OBJECT_TYPE_ID, relType);
 		relProps.put(PropertyIds.NAME, relName);
 		relProps.put("cmis:sourceId", sourceId);
 		relProps.put("cmis:targetId", targetId);
-		return session.createRelationship(relProps, null, null, null);
+		return session.createRelationship(relProps, null, srcAceList, srcAceList);
 	}
 
 	private static Result redirectToParent(String repositoryId, DynamicForm input) {

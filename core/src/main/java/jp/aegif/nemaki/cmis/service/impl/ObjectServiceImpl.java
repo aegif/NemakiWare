@@ -878,9 +878,6 @@ public class ObjectServiceImpl implements ObjectService {
 	public void deleteObject(CallContext callContext, String repositoryId, String objectId, Boolean allVersions,
 			ExtensionsData extension) {
 
-		//cascade delete
-		ObjectList relList = relationshipService.getObjectRelationships(callContext, repositoryId, objectId, true, RelationshipDirection.EITHER, NemakiObjectType.nemakiParentChildRelationship, null, false, null, null, extension);
-
 		objectServiceInternal.deleteObjectInternal(callContext, repositoryId, objectId, allVersions, false);
 	}
 
