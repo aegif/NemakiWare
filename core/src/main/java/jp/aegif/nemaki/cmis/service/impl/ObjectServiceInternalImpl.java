@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.concurrent.locks.Lock;
 
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
+import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.server.impl.atompub.RelationshipService;
 import org.apache.commons.collections.CollectionUtils;
@@ -12,10 +13,12 @@ import org.apache.commons.logging.LogFactory;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
+import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.DomainType;
+import jp.aegif.nemaki.util.constant.NemakiObjectType;
 import jp.aegif.nemaki.util.lock.ThreadLockService;
 
 public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.ObjectServiceInternal{
@@ -32,6 +35,7 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 			String objectId, Boolean allVersions, Boolean deleteWithParent) {
 		exceptionService.invalidArgumentRequiredString("objectId", objectId);
 		Content content = contentService.getContent(repositoryId, objectId);
+
 		deleteObjectInternal(callContext, repositoryId, content, allVersions, deleteWithParent);
 	}
 
