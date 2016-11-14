@@ -96,7 +96,7 @@ import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.action.NemakiActionPlugin;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.DomainType;
-import jp.aegif.nemaki.util.constant.NemakiObjectType;
+import jp.aegif.nemaki.common.NemakiObjectType;
 import jp.aegif.nemaki.util.lock.ThreadLockService;
 
 public class ObjectServiceImpl implements ObjectService {

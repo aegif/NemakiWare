@@ -17,7 +17,7 @@ import org.slf4j.LoggerFactory;
 
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
-import jp.aegif.nemaki.util.constant.NemakiObjectType;
+import jp.aegif.nemaki.common.NemakiObjectType;
 
 public class Patch_20161120 extends AbstractNemakiPatch{
 	private static Logger logger = LoggerFactory.getLogger(Patch_20161120.class);
