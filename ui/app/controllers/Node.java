@@ -64,6 +64,7 @@ import play.mvc.Http.MultipartFormData;
 import play.mvc.Http.MultipartFormData.FilePart;
 import play.mvc.Result;
 import play.mvc.Security.Authenticated;
+import scala.tools.jline_embedded.internal.Log;
 import util.CmisObjectTree;
 import util.NemakiConfig;
 import util.Util;
@@ -863,30 +864,55 @@ public class Node extends Controller {
 		return redirectToParent(repositoryId, input);
 	}
 
-	public static Result delete(String repositoryId, String id) {
-		Session session = getCmisSession(repositoryId);
-		CmisObject cmisObject = session.getObject(id);
 
-		delete(cmisObject, session);
-		return ok();
+	public static Result delete(String repositoryId, String id) {
+		List<String> deletedList = new ArrayList<String>();
+		Session session = getCmisSession(repositoryId);
+		deletedList.addAll(delete(id, session));
+		JsonNode json = Json.toJson(deletedList);
+		return ok(json);
 	}
 
 	public static Result deleteByBatch(String repositoryId, List<String> ids) {
+		List<String> deletedList = new ArrayList<String>();
 		Session session = getCmisSession(repositoryId);
-		for (String id : ids) {
-			CmisObject cmisObject = session.getObject(id);
-			delete(cmisObject, session);
-		}
-		return ok();
+		ids.forEach(id -> deletedList.addAll(delete(id, session)));
+		JsonNode json = Json.toJson(deletedList);
+		return ok(json);
 	}
 
-	private static void delete(CmisObject cmisObject, Session session) {
+	private static List<String> delete(String id, Session session){
+		List<String> deletedList = new ArrayList<String>();
+		CmisObject cmisObject = session.getObject(id);
+
+		//Relation cascade delete
+		cmisObject.getRelationships()
+			.stream().filter(p -> p.getSourceId() == new ObjectIdImpl(id) && p.getType().getPropertyDefinitions().get(PropertyIds.NAME).equals("nemaki:parentchildRelationShip"))
+			.map(Relationship::getTargetId)
+			.distinct()
+			.forEach(tId -> {
+				try{
+					deletedList.addAll(delete(tId.getId(), session));
+				}catch(Exception ex){
+
+				}
+			});
+		deletedList.addAll(delete(cmisObject, session));
+
+		return deletedList;
+	}
+
+	private static List<String> delete(CmisObject cmisObject, Session session) {
+		List<String> deletedList = new ArrayList<String>();
 		if (Util.isFolder(cmisObject)) {
 			Folder folder = (Folder) cmisObject;
-			folder.deleteTree(true, null, true);
+			deletedList.addAll(folder.deleteTree(true, null, true));
 		} else {
-			session.delete(new ObjectIdImpl(cmisObject.getId()));
+			String id = cmisObject.getId();
+			session.delete(new ObjectIdImpl(id));
+			deletedList.add(id);
 		}
+		return deletedList;
 	}
 
 	public static Result checkOut(String repositoryId, String id) {

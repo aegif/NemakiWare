@@ -18,7 +18,7 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.DomainType;
-import jp.aegif.nemaki.util.constant.NemakiObjectType;
+import jp.aegif.nemaki.common.NemakiObjectType;
 import jp.aegif.nemaki.util.lock.ThreadLockService;
 
 public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.ObjectServiceInternal{

@@ -35,7 +35,7 @@ import jp.aegif.nemaki.model.GroupItem;
 import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.UserItem;
-import jp.aegif.nemaki.util.constant.NemakiObjectType;
+import jp.aegif.nemaki.common.NemakiObjectType;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 import jp.aegif.nemaki.util.constant.SystemConst;
 
