@@ -21,6 +21,8 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.TypeMutabilityImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,7 +42,7 @@ import jp.aegif.nemaki.util.constant.PropertyKey;
 import jp.aegif.nemaki.util.constant.SystemConst;
 
 public class Patch_20160815 extends AbstractNemakiPatch{
-	private static Logger logger = LoggerFactory.getLogger(Patch_20160815.class);
+	private static final Log log = LogFactory.getLog(Patch_20160815.class);
 
 	public String getName() {
     	return "patch_20160815";

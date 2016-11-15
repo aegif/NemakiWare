@@ -2,11 +2,11 @@ package jp.aegif.nemaki.action.sample;
 
 import java.util.List;
 import java.util.Map;
-import java.util.logging.Logger;
 
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
+import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import jp.aegif.nemaki.plugin.action.*;
@@ -14,7 +14,7 @@ import jp.aegif.nemaki.plugin.action.trigger.*;
 
 
 public class SampleCmisObjectAction implements JavaBackedAction {
-	private static final org.slf4j.Logger logger = LoggerFactory.getLogger(JavaBackedAction.class);
+	private static final Logger log = LoggerFactory.getLogger(JavaBackedAction.class);
 
 	private static UserButtonPerCmisObjcetActionTrigger _trigger;
 	@Override

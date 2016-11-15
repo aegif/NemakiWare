@@ -1,12 +1,13 @@
 package jp.aegif.nemaki.patch;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 
 public abstract class AbstractNemakiPatch {
-	private static Logger logger = LoggerFactory.getLogger(AbstractNemakiPatch.class);
+	private static final Log log = LogFactory.getLog(AbstractNemakiPatch.class);
+
 	protected PatchUtil patchUtil;
 	protected PrincipalService principalService;
 
@@ -17,16 +18,16 @@ public abstract class AbstractNemakiPatch {
 		for(String repositoryId : patchUtil.getRepositoryInfoMap().keys()){
 			boolean isApplied = patchUtil.isApplied(repositoryId, getName());
 			if(isApplied){
-				logger.info("[patch=" + getName() + ", repositoryId=" + repositoryId + "]" +  "already applied, skipped");
+				log.info("[patch=" + getName() + ", repositoryId=" + repositoryId + "]" +  "already applied, skipped");
 				continue;
 			}else{
 				try{
 					applyPerRepositoryPatch(repositoryId);
 
 					patchUtil.createPathHistory(repositoryId, getName());
-					logger.info("[patch=" + getName() + ", repositoryId=" + repositoryId + "]" +  "applied");
+					log.info("[patch=" + getName() + ", repositoryId=" + repositoryId + "]" +  "applied");
 				}catch(Exception e){
-					logger.error("[patch=" + getName() + ", repositoryId=" + repositoryId + "]" +  "failed", e);
+					log.error("[patch=" + getName() + ", repositoryId=" + repositoryId + "]" +  "failed", e);
 				}
 			}
 		}
