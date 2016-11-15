@@ -53,6 +53,8 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.objectweb.asm.Type;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import play.api.libs.Files.TemporaryFile;
 import play.i18n.Messages;
@@ -64,9 +66,9 @@ import play.mvc.Http.MultipartFormData;
 import play.mvc.Http.MultipartFormData.FilePart;
 import play.mvc.Result;
 import play.mvc.Security.Authenticated;
-import scala.tools.jline_embedded.internal.Log;
 import util.CmisObjectTree;
 import util.NemakiConfig;
+import util.RelationshipUtil;
 import util.Util;
 import views.html.node.*;
 
@@ -75,9 +77,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import constant.PropertyKey;
 import constant.Token;
+import jp.aegif.nemaki.common.NemakiObjectType;
 
 @Authenticated(Secured.class)
 public class Node extends Controller {
+	private static Logger log = LoggerFactory.getLogger(Node.class);
 
 	private static Session getCmisSession(String repositoryId) {
 		return CmisSessions.getCmisSession(repositoryId, session());
@@ -317,7 +321,7 @@ public class Node extends Controller {
 			}
 
 		} catch (Exception e) {
-			e.printStackTrace();
+			log.error("Zip packing error", e);
 		}
 
 		createAttachmentResponse("compressed-files.zip", "application/zip");
@@ -885,9 +889,10 @@ public class Node extends Controller {
 		List<String> deletedList = new ArrayList<String>();
 		CmisObject cmisObject = session.getObject(id);
 
+		try{
 		//Relation cascade delete
 		cmisObject.getRelationships()
-			.stream().filter(p -> p.getSourceId() == new ObjectIdImpl(id) && p.getType().getPropertyDefinitions().get(PropertyIds.NAME).equals("nemaki:parentchildRelationShip"))
+			.stream().filter(p -> id.equals(p.getSourceId().getId()) && RelationshipUtil.isCascadeRelation(p.getType()))
 			.map(Relationship::getTargetId)
 			.distinct()
 			.forEach(tId -> {
@@ -897,6 +902,9 @@ public class Node extends Controller {
 
 				}
 			});
+		}catch(CmisObjectNotFoundException ex){
+			log.error("Source or target cmis object not found.", ex);
+		}
 		deletedList.addAll(delete(cmisObject, session));
 
 		return deletedList;

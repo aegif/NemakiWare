@@ -12,6 +12,8 @@ import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundExcept
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.RelationshipTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.TypeMutabilityImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,7 +22,7 @@ import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.common.NemakiObjectType;
 
 public class Patch_20161120 extends AbstractNemakiPatch{
-	private static Logger logger = LoggerFactory.getLogger(Patch_20161120.class);
+	private static final Log log = LogFactory.getLog(Patch_20161120.class);
 
 	public String getName() {
     	return "patch_20161120";
