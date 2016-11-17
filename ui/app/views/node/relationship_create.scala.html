@@ -63,7 +63,7 @@
 				<div class="row" style="padding-bottom:6px;">
 					<label class="col-sm-2 control-label">@Messages("view.node.relationship.create.existing-id.object-id.label") </label>
 					<div class="col-sm-6">
-						<input type="textbox" name="nemaki:targetId" class="form-control" />
+						<input type="textbox" id="relationship-targe-id" name="nemaki:targetId" class="form-control" />
 			   		</div>
 			   	</div>
 			   	<div class="row" style="padding-bottom:6px;">
@@ -79,30 +79,28 @@
 <!-- scripts -->
 <script type="text/javascript">
 	$(function(){
-
-
-
 		$('#link-new-file').on("click", function(){
 			var formData = new FormData($('#link-new-file-form').get(0));
 
-			var t = $('#relationship-type option:selected').val();
-			var n = $('#relationship-name').val();
+			var rType = $('#relationship-type option:selected').val();
+			var rName = $('#relationship-name').val();
 
-			formData.append('nemaki:relationshipType', t);
-			formData.append('nemaki:relationshipName', n);
+			formData.append('nemaki:relationshipType', rType);
+			formData.append('nemaki:relationshipName', rName);
 
 			$.blockUI({message:'@Messages("view.message.please.wait")'});
 			$.ajax({
 				type: "POST",
 				url: "@routes.Node.createRelationToNew(repositoryId, obj.getId())",
+				contentType: false,
 				processData: false,
-				data: formData,
-				dataType: 'json'
+				cache: false,
+				data: formData
 			}).done(function( data ) {
-			 	alert( "作成しました。");
+			 	window.alert( '@Messages("view.message.create.success")');
 				window.location.reload();
 			}).fail(function( jqXHR, textStatus, errorThrown ) {
-				 alert("some error:" + textStatus);
+				window.alert('@Messages("view.message.create.failure")' + " message : " + textStatus + " status : " + jqXHR.status);
 			}).always(function() {
 				 $.unblockUI();
 			});
@@ -111,27 +109,24 @@
 		$('#link-existing-object').on("click", function(){
 			var formData = new FormData($('#link-existing-object-form').get(0));
 
-			var t = $('#relationship-type option:selected').val();
-			var n = $('#relationship-name').val();
+			var rType = $('#relationship-type option:selected').val();
+			var rName = $('#relationship-name').val();
 
-			console.error(t);
-			console.error(n);
-			formData.append('nemaki:relationshipType', t);
-			formData.append('nemaki:relationshipName', n);
+			formData.append('nemaki:relationshipType', rType);
+			formData.append('nemaki:relationshipName', rName);
 
 			$.blockUI({message:'@Messages("view.message.please.wait")'});
-			$.ajax({
+			jsRoutes.controllers.Node.createRelationToExisting("@repositoryId", "@obj.getId()").ajax({
 				type: "POST",
-				url: "@routes.Node.createRelationToExisting(repositoryId, obj.getId())",
 				contentType: false,
 				processData: false,
-				data: formData,
-				dataType: 'json'
+				cache: false,
+				data: formData
 			}).done(function( data ) {
-			 	alert( "作成しました。");
+			 	window.alert( '@Messages("view.message.create.success")');
 				window.location.reload();
 			}).fail(function( jqXHR, textStatus, errorThrown ) {
-				 alert("some error:" + textStatus);
+				window.alert('@Messages("view.message.create.failure")' + " status : " + textStatus + " HTTPStatus : " + jqXHR.status + " message : " + errorThrown.message );
 			}).always(function() {
 				 $.unblockUI();
 			});
