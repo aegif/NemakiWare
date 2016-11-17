@@ -52,7 +52,7 @@ import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.AuthenticationUtil;
 import jp.aegif.nemaki.util.PropertyManager;
-import jp.aegif.nemaki.util.constant.NemakiObjectType;
+import jp.aegif.nemaki.common.NemakiObjectType;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
@@ -78,7 +78,7 @@ public class UserItemResource extends ResourceBase {
 
 	private ContentService contentService;
 	private PropertyManager propertyManager;
-	
+
 	public UserItemResource() {
 		super();
 		// TODO Auto-generated constructor stub
@@ -203,7 +203,7 @@ public class UserItemResource extends ResourceBase {
 			String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
 
 			// parent
-			final Folder usersFolder = getOrCreateSystemSubFolder(repositoryId, "users"); 
+			final Folder usersFolder = getOrCreateSystemSubFolder(repositoryId, "users");
 
 			UserItem user = new UserItem(null, NemakiObjectType.nemakiUser, userId, name, passwordHash, false, usersFolder.getId());
 			setFirstSignature(httpRequest, user);
@@ -214,11 +214,11 @@ public class UserItemResource extends ResourceBase {
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
 	}
-	
+
 	//TODO this is a copy & paste method.
 	private Folder getOrCreateSystemSubFolder(String repositoryId, String name){
 		Folder systemFolder = contentService.getSystemFolder(repositoryId);
-		
+
 		// check existing folder
 		List<Content> children = contentService.getChildren(repositoryId, systemFolder.getId());
 		if(CollectionUtils.isNotEmpty(children)){
@@ -250,9 +250,9 @@ public class UserItemResource extends ResourceBase {
 		JSONArray errMsg = new JSONArray();
 
 		UserItem userItem = contentService.getUserItemById(repositoryId, userId);
-		
+
 		//TODO checkAuthorityForUser
-		
+
 		//password match
 		if(AuthenticationUtil.passwordMatches(oldPassword, userItem.getPassowrd())){
 			String hash = BCrypt.hashpw(newPassword, BCrypt.gensalt());
@@ -267,10 +267,10 @@ public class UserItemResource extends ResourceBase {
 			status = false;
 			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_WRONGPASSWORD);
 		}
-		
+
 		makeResult(status, result, errMsg);
 		return result.toJSONString();
-		
+
 		/*User user = principalService.getUserById(repositoryId, userId);
 
 		// Validation
@@ -352,9 +352,9 @@ public class UserItemResource extends ResourceBase {
 				user.setUserId(userId);
 			if (name != null)
 				user.setName(name);
-			
+
 			Map<String, Object> map = new HashMap<>();
-			for(Property prop : user.getSubTypeProperties()) map.put(prop.getKey(), prop.getValue()); 
+			for(Property prop : user.getSubTypeProperties()) map.put(prop.getKey(), prop.getValue());
 			JSONParser parser = new JSONParser();
 			if (firstName != null)
 				map.put("nemaki:firstName", firstName);
@@ -387,8 +387,8 @@ public class UserItemResource extends ResourceBase {
 			List<Property> properties = new ArrayList<>();
 			for(String key : map.keySet()) properties.add(new Property(key, map.get(key)));
 			user.setSubTypeProperties(properties);
-			
-			
+
+
 			// update
 			if (StringUtils.isNotBlank(password)) {
 				// TODO Error handling
@@ -460,7 +460,7 @@ public class UserItemResource extends ResourceBase {
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
 	}
-	
+
 	private boolean validateUser(boolean status, JSONArray errMsg, String userId, String userName, String firstName,
 			String lastName) {
 		if (StringUtils.isBlank(userId)) {
@@ -525,18 +525,18 @@ public class UserItemResource extends ResourceBase {
 
 		Map<String, Object> kvMap = new HashMap<>();
 		for(Property p : user.getSubTypeProperties()) kvMap.put(p.getKey(), p.getValue());
-		
+
 		userJSON.put(ITEM_FIRSTNAME, MapUtils.getObject(kvMap, "nemaki:firstName", ""));
 		userJSON.put(ITEM_LASTNAME, MapUtils.getObject(kvMap, "nemaki:lastName", ""));
 		userJSON.put(ITEM_EMAIL, MapUtils.getObject(kvMap, "nemaki:email", ""));
 		userJSON.put("favorites", MapUtils.getObject(kvMap, "nemaki:favorites", new JSONArray()));
-		
+
 		boolean isAdmin = (user.isAdmin() == null) ? false : user.isAdmin();
 		userJSON.put(ITEM_IS_ADMIN, isAdmin);
 
 		return userJSON;
 	}
-	
+
 	private boolean checkAuthorityForUser(boolean status, JSONArray errMsg, HttpServletRequest httpRequest,
 			String resoureId, String repositoryId) {
 		CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");

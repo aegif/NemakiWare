@@ -98,6 +98,7 @@ public class Application extends Controller{
 				controllers.routes.javascript.Archive.index(),
 				controllers.routes.javascript.Archive.restore(),
 				controllers.routes.javascript.Archive.destroy(),
+
 				controllers.routes.javascript.Node.deleteByBatch(),
 				controllers.routes.javascript.Node.checkOut(),
 				controllers.routes.javascript.Node.checkOutByBatch(),

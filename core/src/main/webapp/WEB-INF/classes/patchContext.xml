@@ -6,7 +6,7 @@
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:aop="http://www.springframework.org/schema/aop"
     xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
 
-	
+
     <bean id="PatchService"
         class="jp.aegif.nemaki.patch.PatchService"
         init-method="apply">
@@ -21,7 +21,7 @@
         </property>
     </bean>
 
-	<bean id="patch" class="jp.aegif.nemaki.patch.Patch">
+	<bean id="patchUtil" class="jp.aegif.nemaki.patch.PatchUtil">
       	<property name="propertyManager">
         	<ref bean="propertyManager" />
       	</property>
@@ -41,13 +41,10 @@
         	<ref bean="RepositoryService" />
       	</property>
 	</bean>
-    
+
 	<bean id="patch_20160815" class="jp.aegif.nemaki.patch.Patch_20160815">
-    	<property name="name">
-        	<value>patch_20160815</value>
-      	</property>
-      	<property name="patch">
-        	<ref bean="patch" />
+      	<property name="patchUtil">
+        	<ref bean="patchUtil" />
       	</property>
       	<property name="principalService">
         	<ref bean="PrincipalService" />

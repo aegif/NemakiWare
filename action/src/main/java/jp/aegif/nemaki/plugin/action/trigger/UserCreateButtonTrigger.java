@@ -1,9 +1,7 @@
-package jp.aegif.nemaki.plugin.action;
+package jp.aegif.nemaki.plugin.action.trigger;
 
-public class UserButtonActionTrigger extends ActionTriggerBase {
-
-
-	public UserButtonActionTrigger(String displayName){
+public class UserCreateButtonTrigger extends ActionTriggerBase {
+	public UserCreateButtonTrigger(String displayName){
 		this._displayName = displayName;
 
 	}
@@ -26,6 +24,5 @@ public class UserButtonActionTrigger extends ActionTriggerBase {
 	public void setFormHtml(String value){
 		 _formHtml = value;
 	}
-
 
 }

@@ -63,7 +63,7 @@ import jp.aegif.nemaki.model.exception.ParentNoLongerExistException;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.CmisPermission;
-import jp.aegif.nemaki.util.constant.NemakiObjectType;
+import jp.aegif.nemaki.common.NemakiObjectType;
 import jp.aegif.nemaki.util.constant.NodeType;
 import jp.aegif.nemaki.util.constant.PrincipalId;
 import jp.aegif.nemaki.util.constant.PropertyKey;
@@ -112,7 +112,7 @@ public class ContentServiceImpl implements ContentService {
 	private RenditionManager renditionManager;
 	private PropertyManager propertyManager;
 	private SolrUtil solrUtil;
-	
+
 	private static final Log log = LogFactory.getLog(ContentServiceImpl.class);
 	private final static String PATH_SEPARATOR = "/";
 
@@ -128,7 +128,7 @@ public class ContentServiceImpl implements ContentService {
 			return false;
 		}
 	}
-	
+
 	@Override
 	public boolean isTopLevel(String repositoryId, Content content){
 		String rootId = repositoryInfoMap.get(repositoryId).getRootFolderId();
@@ -198,7 +198,7 @@ public class ContentServiceImpl implements ContentService {
 					content = child;
 				}
 			}
-			
+
 			//return
 			if(content == null){
 				return null;
@@ -255,7 +255,7 @@ public class ContentServiceImpl implements ContentService {
 				children.add(i);
 			}
 		}
-		
+
 		return children;
 	}
 
@@ -313,7 +313,7 @@ public class ContentServiceImpl implements ContentService {
 	public Folder getFolder(String repositoryId, String objectId) {
 		return contentDaoService.getFolder(repositoryId, objectId);
 	}
-	
+
 	@Override
 	public Folder getSystemFolder(String repositoryId) {
 		final String systemFolder = propertyManager.readValue(repositoryId, PropertyKey.SYSTEM_FOLDER);
@@ -378,7 +378,7 @@ public class ContentServiceImpl implements ContentService {
 	public Item getItem(String repositoryId, String objectId) {
 		return contentDaoService.getItem(repositoryId, objectId);
 	}
-	
+
 	@Override
 	public UserItem getUserItem(String repositoryId, String objectId) {
 		return contentDaoService.getUserItem(repositoryId, objectId);
@@ -408,12 +408,12 @@ public class ContentServiceImpl implements ContentService {
 	public List<GroupItem> getGroupItems(String repositoryId) {
 		return contentDaoService.getGroupItems(repositoryId);
 	}
-	
+
 	@Override
 	public Set<String> getGroupIdsContainingUser(String repositoryId, String userId) {
 		String anonymous = getAnonymous(repositoryId);
 		String anyone = getAnyone(repositoryId);
-		
+
 		Set<String> groupIds = new HashSet<String>();
 
 		//Anonymous user doesn't belong to any group, even to Anyone.
@@ -449,7 +449,7 @@ public class ContentServiceImpl implements ContentService {
 		}
 		return false;
 	}
-	
+
 	@Override
 	public String getAnonymous(String repositoryId) {
 		RepositoryInfo info = repositoryInfoMap.get(repositoryId);
@@ -529,7 +529,7 @@ public class ContentServiceImpl implements ContentService {
 	private String generateChangeToken(NodeBase node) {
 		return String.valueOf(node.getCreated().getTimeInMillis());
 	}
-	
+
 	@Override
 	public Document createDocument(CallContext callContext, String repositoryId, Properties properties,
 			Folder parentFolder, ContentStream contentStream, VersioningState versioningState, List<String> policies, org.apache.chemistry.opencmis.commons.data.Acl addAces, org.apache.chemistry.opencmis.commons.data.Acl removeAces) {
@@ -597,7 +597,7 @@ public class ContentServiceImpl implements ContentService {
 		// Set updated properties
 		updateProperties(callContext, repositoryId, properties, copy);
 		setSignature(callContext, copy);
-		
+
 		// Create
 		Document result = contentDaoService.create(repositoryId, copy);
 
@@ -812,40 +812,40 @@ public class ContentServiceImpl implements ContentService {
 		d.setParentId(parentFolder.getId());
 		d.setImmutable(DataUtil.getBooleanProperty(properties, PropertyIds.IS_IMMUTABLE));
 		setSignature(callContext, d);
-		
-		
+
+
 		// Acl
 		setAclOnCreated(callContext, repositoryId, d, addAces, removeAces);
 
 		return d;
 	}
-	
+
 	private void setAclOnCreated(CallContext callContext, String repositoryId, Content content, org.apache.chemistry.opencmis.commons.data.Acl
 			 addAces, org.apache.chemistry.opencmis.commons.data.Acl removeAces){
 		Acl acl = new Acl();
 		if(isTopLevel(repositoryId, content)){
-			
+
 			Ace ace = new Ace();
 			ace.setPrincipalId(callContext.getUsername());
 			ace.setPermissions(new ArrayList<String>( Arrays.asList(CmisPermission.ALL)));
 			acl.setLocalAces(new ArrayList<Ace>( Arrays.asList(ace) ));
 		}
-		
+
 		if(addAces != null){
 			for(org.apache.chemistry.opencmis.commons.data.Ace cmisAce : addAces.getAces()){
 				acl.getLocalAces().add(new Ace(cmisAce.getPrincipalId(), cmisAce.getPermissions(), true));
 			}
 		}
-		
+
 		// removeAces
 		// 'remove' means remove from parent folder's ACL.
 		// On the base of NemakiWare ACL inheritance, it does not make sense.
-		
+
 		content.setAcl(acl);
-		
+
 		content.setAclInherited(getAclInheritedWithDefault(repositoryId, content));
 	}
-	
+
 	private Document buildCopyDocumentWithBasicProperties(CallContext callContext, String repositoryId, Document original, org.apache.chemistry.opencmis.commons.data.Acl
 			 addAces, org.apache.chemistry.opencmis.commons.data.Acl removeAces) {
 		Document copy = new Document();
@@ -982,9 +982,9 @@ public class ContentServiceImpl implements ContentService {
 			f.setAllowedChildTypeIds(allowedTypes);
 		}
 		setSignature(callContext, f);
-		
+
 		setAclOnCreated(callContext, repositoryId, f, addAces, removeAces);
-		
+
 		// Create
 		Folder folder = contentDaoService.create(repositoryId, f);
 
@@ -1050,13 +1050,13 @@ public class ContentServiceImpl implements ContentService {
 		if(NemakiObjectType.nemakiGroup.equals(objectTypeId)){
 			return createGroupItem(callContext, repositoryId, properties, folderId, policies, addAces, removeAces, extension);
 		}
-		
+
 		Item i = buildItem(callContext, repositoryId, properties, folderId, policies, addAces, removeAces, extension);
 		Item item = contentDaoService.create(repositoryId, i);
 		writeChangeEvent(callContext, repositoryId, item, ChangeType.CREATED);
 		return item;
 	}
-	
+
 	@Override
 	public UserItem createUserItem(CallContext callContext, String repositoryId, Properties properties, String folderId,
 			List<String> policies, org.apache.chemistry.opencmis.commons.data.Acl addAces,
@@ -1064,16 +1064,16 @@ public class ContentServiceImpl implements ContentService {
 		UserItem userItem = buildUserItem(callContext, repositoryId, properties, folderId, policies, addAces, removeAces, extension);
 		return createUserItem(callContext, repositoryId, userItem);
 	}
-	
+
 	@Override
 	public UserItem createUserItem(CallContext callContext, String repositoryId, UserItem userItem){
 		validateUserItem(repositoryId, userItem);
-		
+
 		UserItem created = contentDaoService.create(repositoryId, userItem);
 		writeChangeEvent(callContext, repositoryId, created, ChangeType.CREATED);
 		return created;
 	}
-	
+
 	@Override
 	public GroupItem createGroupItem(CallContext callContext, String repositoryId, Properties properties, String folderId,
 			List<String> policies, org.apache.chemistry.opencmis.commons.data.Acl addAces,
@@ -1084,16 +1084,16 @@ public class ContentServiceImpl implements ContentService {
 		groupItem.setGroupId(groupId);
 
 		validateGroupItem(repositoryId, groupItem);
-		
+
 		GroupItem created = contentDaoService.create(repositoryId, groupItem);
 		writeChangeEvent(callContext, repositoryId, created, ChangeType.CREATED);
 		return created;
 	}
-	
+
 	@Override
 	public GroupItem createGroupItem(CallContext callContext, String repositoryId, GroupItem groupItem){
 		validateGroupItem(repositoryId, groupItem);
-		
+
 		GroupItem created = contentDaoService.create(repositoryId, groupItem);
 		writeChangeEvent(callContext, repositoryId, created, ChangeType.CREATED);
 		return created;
@@ -1102,7 +1102,7 @@ public class ContentServiceImpl implements ContentService {
 	private Item buildItem(CallContext callContext, String repositoryId, Properties properties, String folderId,
 			List<String> policies, org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension) {
-		
+
 		Item i = new Item();
 		setBaseProperties(callContext, repositoryId, properties, i, null);
 		String objectTypeId = DataUtil.getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID);
@@ -1113,21 +1113,21 @@ public class ContentServiceImpl implements ContentService {
 
 		// Set ACL
 		setAclOnCreated(callContext, repositoryId, i, addAces, removeAces);
-		
+
 		return i;
 	}
-	
+
 	private UserItem buildUserItem(CallContext callContext, String repositoryId, Properties properties, String folderId,
 			List<String> policies, org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension) {
-		
+
 		Item i = buildItem(callContext, repositoryId, properties, folderId, policies, addAces, removeAces, extension);
-		
+
 		// User ID
 		UserItem userItem = new UserItem(i);
 		final String userId = properties.getProperties().get("nemaki:userId").getFirstValue().toString();
 		userItem.setUserId(userId);
-		
+
 		// ACL
 		final String ANYONE = repositoryInfoMap.get(repositoryId).getPrincipalIdAnyone();
 		Acl acl = new Acl();
@@ -1141,12 +1141,12 @@ public class ContentServiceImpl implements ContentService {
 			// except oneself.
 			new Ace(
 				userId,
-				Arrays.asList("cmis:read", "cmis:write"), 
+				Arrays.asList("cmis:read", "cmis:write"),
 				true)
 			)
 		);
 		userItem.setAcl(acl);
-		
+
 		return userItem;
 	}
 
@@ -1182,11 +1182,11 @@ public class ContentServiceImpl implements ContentService {
 		if (!CollectionUtils.isEmpty(secondary)) {
 			content.setAspects(secondary);
 		}
-		
+
 		// Signature
 		setSignature(callContext, content);
 	}
-	
+
 	private String copyAttachment(CallContext callContext, String repositoryId, String attachmentId) {
 		AttachmentNode original = getAttachment(repositoryId, attachmentId);
 		ContentStream cs = new ContentStreamImpl(original.getName(), BigInteger.valueOf(original.getLength()), original
@@ -1378,14 +1378,14 @@ public class ContentServiceImpl implements ContentService {
 
 		return result;
 	}
-	
+
 	@Override
 	public Content update(CallContext callContext, String repositoryId, Content content) {
 		Content result = updateInternal(repositoryId, content);
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.UPDATED);
 		return result;
 	}
-	
+
 	@Override
 	public Content updateInternal(String repositoryId, Content content) {
 		Content result = null;
@@ -1412,14 +1412,14 @@ public class ContentServiceImpl implements ContentService {
 
 		return result;
 	}
-	
+
 	private void validateUserItem(String repositoryId, UserItem userItem){
 		UserItem existingUser = contentDaoService.getUserItemById(repositoryId, userItem.getUserId());
 		if(existingUser != null && userItem.getId() == null){
 			throw new CmisRuntimeException("userId=" + userItem.getUserId() + " already exists. Skip creating a new user.");
 		}
 	}
-	
+
 	private void validateGroupItem(String repositoryId, GroupItem groupItem){
 		UserItem existingUser = contentDaoService.getUserItemById(repositoryId, groupItem.getGroupId());
 		if(existingUser != null && groupItem.getId() == null){
@@ -1433,7 +1433,7 @@ public class ContentServiceImpl implements ContentService {
 		if (propertyData.getId().equals(PropertyIds.NAME)) {
 			if (DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID) != content.getId()) {
 				String proposedName = DataUtil.getStringProperty(properties, PropertyIds.NAME);
-				
+
 				// Check duplicate name
 				Folder parentFolder = this.getFolder(repositoryId, content.getParentId());
 				if (parentFolder != null) {
@@ -1873,14 +1873,14 @@ public class ContentServiceImpl implements ContentService {
 			}
 		}
 	}
-	
+
 	@Override
 	public Boolean getAclInheritedWithDefault(String repositoryId, Content content){
-		boolean inheritedAtTopLevel = 
+		boolean inheritedAtTopLevel =
 				propertyManager.readBoolean(PropertyKey.CAPABILITY_EXTENDED_PERMISSION_INHERITANCE_TOPLEVEL);
 
 		if(isRoot(repositoryId, content)){
-			return false; 
+			return false;
 		}else{
 			if(isTopLevel(repositoryId, content) && !inheritedAtTopLevel){
 				//default to TRUE
@@ -1926,7 +1926,7 @@ public class ContentServiceImpl implements ContentService {
 	public List<Archive> getAllArchives(String repositoryId) {
 		return contentDaoService.getAllArchives(repositoryId);
 	}
-	
+
 	@Override
 	public List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc){
 		return contentDaoService.getArchives(repositoryId, skip, limit, true);
@@ -2060,14 +2060,14 @@ public class ContentServiceImpl implements ContentService {
 			return true;
 		}
 	}
-	
+
 	public void destroyArchive(String repositoryId, String archiveId){
 		Archive archive = contentDaoService.getArchive(repositoryId, archiveId);
 		if (archive == null) {
 			log.error("Archive does not exist!");
 			return;
 		}
-		
+
 		if (archive.isFolder()) {
 			destroyFolder(repositoryId, archive);
 		} else if (archive.isDocument()) {
@@ -2078,7 +2078,7 @@ public class ContentServiceImpl implements ContentService {
 			log.error("Only document or folder is supported for restoration");
 		}
 	}
-	
+
 	private void destroyFolder(String repositoryId, Archive archive){
 		// Restore direct children
 		List<Archive> children = contentDaoService.getChildArchives(repositoryId, archive);
@@ -2089,8 +2089,8 @@ public class ContentServiceImpl implements ContentService {
 		}
 		contentDaoService.deleteArchive(repositoryId, archive.getId());
 	}
-	
-	
+
+
 	private void destoryDocument(String repositoryId, Archive archive){
 		try {
 			// Get archives of the same version series
@@ -2173,6 +2173,6 @@ public class ContentServiceImpl implements ContentService {
 	public void setSolrUtil(SolrUtil solrUtil) {
 		this.solrUtil = solrUtil;
 	}
-	
+
 	////////////////////////////////////////////
 }

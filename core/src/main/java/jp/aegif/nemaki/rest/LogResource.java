@@ -14,11 +14,11 @@ import javax.ws.rs.core.MediaType;
 
 import org.apache.commons.codec.Charsets;
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.JSONValue;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.core.JsonParseException;
@@ -34,11 +34,11 @@ import net.logstash.logback.marker.Markers;
 
 @Path("/all/log")
 public class LogResource extends ResourceBase{
-	
+
 	private JsonLogger jsonLogger;
 	private ObjectMapper mapper = new ObjectMapper().setSerializationInclusion(Include.NON_NULL);;;
-	final private Logger logger = LoggerFactory.getLogger(LogResource.class);
-	
+	private static final Log log = LogFactory.getLog(LogResource.class);
+
 	@GET
 	@Path("/config")
 	@Produces(MediaType.APPLICATION_JSON)
@@ -46,27 +46,27 @@ public class LogResource extends ResourceBase{
 		boolean status = true;
 		ObjectNode result = mapper.createObjectNode();
 		ArrayNode errMsg = mapper.createArrayNode();
-		
+
 		//check admin
 		if(!checkAdmin(errMsg, request)){
-			mapper.writeValueAsString(makeResult(status, result, errMsg)); 
+			mapper.writeValueAsString(makeResult(status, result, errMsg));
 		}
-		
+
 		//get config
 		try{
 			JsonNode config = jsonLogger.getJsonConfiguration();
 			result.set("config", config);
-			
+
 		}catch(Exception e){
 			addErrMsg(errMsg, "error", e.getMessage());
-			logger.error(e.getMessage(), e);
+			log.error(e.getMessage(), e);
 		}
-		
+
 		result = makeResult(status, result, errMsg);
 		return mapper.writeValueAsString(makeResult(status, result, errMsg));
-		
+
 	}
-	
+
 	@PUT
 	@Path("/config/_update")
 	@Produces(MediaType.APPLICATION_JSON)
@@ -74,24 +74,24 @@ public class LogResource extends ResourceBase{
 		boolean status = true;
 		ObjectNode result = mapper.createObjectNode();
 		ArrayNode errMsg = mapper.createArrayNode();
-		
+
 		//check admin
 		if(!checkAdmin(errMsg, request)){
 			return makeResult(status, result, errMsg).toString();
 		}
-		
+
 		//udpate config
 		try{
 			jsonLogger.updateJsonConfiguration(parseBody(request));
 		}catch(Exception e){
 			addErrMsg(errMsg, "error", e.getMessage());
-			logger.error(e.getMessage(), e);
+			log.error(e.getMessage(), e);
 		}
-		
+
 		result = makeResult(status, result, errMsg);
 		return mapper.writeValueAsString(makeResult(status, result, errMsg));
 	}
-	
+
 	@PUT
 	@Path("/config/_reload")
 	@Produces(MediaType.APPLICATION_JSON)
@@ -99,20 +99,20 @@ public class LogResource extends ResourceBase{
 		boolean status = true;
 		ObjectNode result = mapper.createObjectNode();
 		ArrayNode errMsg = mapper.createArrayNode();
-		
+
 		//check admin
 		if(!checkAdmin(errMsg, request)){
 			return makeResult(status, result, errMsg).toString();
 		}
-		
+
 		//reload config
 		try{
 			jsonLogger.reloadJsonConfiguration();
 		}catch(Exception e){
 			addErrMsg(errMsg, "error", e.getMessage());
-			logger.error(e.getMessage(), e);
+			log.error(e.getMessage(), e);
 		}
-		
+
 		result = makeResult(status, result, errMsg);
 		return mapper.writeValueAsString(makeResult(status, result, errMsg));
 	}
@@ -125,7 +125,7 @@ public class LogResource extends ResourceBase{
 
                 // replace input stream for Jersey as we've already read it
                 InputStream in = IOUtils.toInputStream(json);
-                String theString = IOUtils.toString(in, "UTF-8"); 
+                String theString = IOUtils.toString(in, "UTF-8");
                 return theString;
             } catch (IOException ex) {
                 throw new RuntimeException(ex);
@@ -133,13 +133,13 @@ public class LogResource extends ResourceBase{
         }
 		return null;
 	}
-	
+
 	boolean isJson(HttpServletRequest request) {
-        return request.getContentType().contains("application/json"); 
+        return request.getContentType().contains("application/json");
     }
-	
+
 	public void setJsonLogger(JsonLogger jsonLogger) {
 		this.jsonLogger = jsonLogger;
 	}
-	
+
 }

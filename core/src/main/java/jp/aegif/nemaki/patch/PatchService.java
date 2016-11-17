@@ -1,5 +1,7 @@
 package jp.aegif.nemaki.patch;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.ektorp.CouchDbConnector;
 import org.ektorp.support.DesignDocument;
 import org.ektorp.support.DesignDocument.View;
@@ -13,17 +15,17 @@ import jp.aegif.nemaki.dao.impl.couch.connector.ConnectorPool;
 import jp.aegif.nemaki.model.PatchHistory;
 
 public class PatchService {
-	private static Logger logger = LoggerFactory.getLogger(PatchService.class);
+	private static final Log log = LogFactory.getLog(PatchService.class);
 	private RepositoryInfoMap repositoryInfoMap;
 	private ConnectorPool connectorPool;
-	
+
 	private Patch_20160815 patch_20160815;
 
 	public void apply(){
 		createPathView();
 		patch_20160815.apply();
 	}
-	
+
 	private void createPathView(){
 		for(String repositoryId : repositoryInfoMap.keys()){
 			// create view
@@ -36,7 +38,7 @@ public class PatchService {
 			}
 		}
 	}
-	
+
 	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
 		this.repositoryInfoMap = repositoryInfoMap;
 	}

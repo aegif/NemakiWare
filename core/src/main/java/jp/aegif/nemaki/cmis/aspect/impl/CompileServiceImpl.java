@@ -23,7 +23,6 @@ package jp.aegif.nemaki.cmis.aspect.impl;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -109,9 +108,9 @@ import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.plugin.action.ActionContext;
-import jp.aegif.nemaki.plugin.action.ActionTriggerBase;
 import jp.aegif.nemaki.plugin.action.JavaBackedAction;
-import jp.aegif.nemaki.plugin.action.UserButtonActionTrigger;
+import jp.aegif.nemaki.plugin.action.trigger.ActionTriggerBase;
+import jp.aegif.nemaki.plugin.action.trigger.UserButtonPerCmisObjcetActionTrigger;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.action.NemakiActionPlugin;
@@ -1483,11 +1482,11 @@ public class CompileServiceImpl implements CompileService {
 					List<CmisExtensionElement> extElements = new ArrayList<CmisExtensionElement>();
 					extElements.add(new CmisExtensionElementImpl(ns, "actionId", null, action_id));
 					ActionTriggerBase trigger = plugin.getActionTrigger(actionContext);
-					if(trigger instanceof  UserButtonActionTrigger){
-						extElements.add(new CmisExtensionElementImpl(ns, "actionButtonLabel", null, ((UserButtonActionTrigger) trigger).getDisplayName()));
-						extElements.add(new CmisExtensionElementImpl(ns, "actionButtonIcon", null, ((UserButtonActionTrigger) trigger).getFontAwesomeName()));
-						extElements.add(new CmisExtensionElementImpl(ns, "actionFormHtml", null, ((UserButtonActionTrigger) trigger).getFormHtml()));
-
+					if(trigger instanceof  UserButtonPerCmisObjcetActionTrigger){
+						UserButtonPerCmisObjcetActionTrigger objectActionTrigger = (UserButtonPerCmisObjcetActionTrigger) trigger;
+						extElements.add(new CmisExtensionElementImpl(ns, "actionButtonLabel", null, (objectActionTrigger.getDisplayName())));
+						extElements.add(new CmisExtensionElementImpl(ns, "actionButtonIcon", null, (objectActionTrigger.getFontAwesomeName())));
+						extElements.add(new CmisExtensionElementImpl(ns, "actionFormHtml", null, (objectActionTrigger.getFormHtml())));
 					}
 					extensions.add(new CmisExtensionElementImpl(ns, "actionPluginExtension", null, extElements));
 				}
