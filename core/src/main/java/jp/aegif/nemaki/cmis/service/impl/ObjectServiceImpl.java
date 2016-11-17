@@ -46,6 +46,7 @@ import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.FailedToDeleteData;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
+import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.RenditionData;
@@ -55,6 +56,7 @@ import org.apache.chemistry.opencmis.commons.definitions.RelationshipTypeDefinit
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
+import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
 import org.apache.chemistry.opencmis.commons.enums.UnfileObject;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
@@ -79,6 +81,7 @@ import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.service.ObjectService;
 import jp.aegif.nemaki.cmis.service.ObjectServiceInternal;
+import jp.aegif.nemaki.cmis.service.RelationshipService;
 import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
@@ -93,6 +96,7 @@ import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.action.NemakiActionPlugin;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.DomainType;
+import jp.aegif.nemaki.common.NemakiObjectType;
 import jp.aegif.nemaki.util.lock.ThreadLockService;
 
 public class ObjectServiceImpl implements ObjectService {
@@ -104,6 +108,7 @@ public class ObjectServiceImpl implements ObjectService {
 	private ContentService contentService;
 	private ExceptionService exceptionService;
 	private CompileService compileService;
+	private RelationshipService relationshipService;
 	private SolrUtil solrUtil;
 	private NemakiCachePool nemakiCachePool;
 	private ThreadLockService threadLockService;
@@ -872,6 +877,7 @@ public class ObjectServiceImpl implements ObjectService {
 	@Override
 	public void deleteObject(CallContext callContext, String repositoryId, String objectId, Boolean allVersions,
 			ExtensionsData extension) {
+
 		objectServiceInternal.deleteObjectInternal(callContext, repositoryId, objectId, allVersions, false);
 	}
 
@@ -1050,6 +1056,10 @@ public class ObjectServiceImpl implements ObjectService {
 
 	public void setCompileService(CompileService compileService) {
 		this.compileService = compileService;
+	}
+
+	public void setRelationshipService(RelationshipService relationshipService) {
+		this.relationshipService = relationshipService;
 	}
 
 	public void setTypeManager(TypeManager typeManager) {

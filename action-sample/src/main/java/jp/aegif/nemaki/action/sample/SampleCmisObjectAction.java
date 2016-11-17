@@ -2,28 +2,27 @@ package jp.aegif.nemaki.action.sample;
 
 import java.util.List;
 import java.util.Map;
-import java.util.logging.Logger;
 
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
+import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import jp.aegif.nemaki.plugin.action.ActionTriggerBase;
-import jp.aegif.nemaki.plugin.action.JavaBackedAction;
-import jp.aegif.nemaki.plugin.action.UserButtonActionTrigger;
+import jp.aegif.nemaki.plugin.action.*;
+import jp.aegif.nemaki.plugin.action.trigger.*;
 
 
-public class SampleAction implements JavaBackedAction {
-	private static final org.slf4j.Logger logger = LoggerFactory.getLogger(JavaBackedAction.class);
+public class SampleCmisObjectAction implements JavaBackedAction {
+	private static final Logger log = LoggerFactory.getLogger(JavaBackedAction.class);
 
-	private static UserButtonActionTrigger _trigger;
+	private static UserButtonPerCmisObjcetActionTrigger _trigger;
 	@Override
 	public ActionTriggerBase getActionTrigger() {
 		if (_trigger == null){
-			_trigger = new UserButtonActionTrigger("サンプルアクションの実行");
+			_trigger = new UserButtonPerCmisObjcetActionTrigger("サンプルアクションの実行");
 			_trigger.setFormHtml(""
-				+ "<div>サンプルのフォーム</div>\n"
+				+ "<div>CMISオブジェクトサンプルのフォーム</div>\n"
 				+ "<select class='dropdown' name='sampleFormData'>\n"
 				+ "   <option value='1'>テスト1</option>\n"
 				+ "   <option value='2'>テスト2</option>\n"
@@ -44,7 +43,7 @@ public class SampleAction implements JavaBackedAction {
 	public String executeAction(ObjectData obj, String json) {
 		String name = (String) obj.getProperties().getPropertyList().stream().map(p -> p.getFirstValue()).findFirst().get();
 
-		return "{\"message\" : \"アクションが実行されました ファイル名：" + name + "\"}";
+		return "{\"message\" : \"CMISオブジェクトアクションが実行されました ファイル名：" + name + "\"}";
 
 	}
 
@@ -54,7 +53,7 @@ public class SampleAction implements JavaBackedAction {
 	}
 
 	@Override
-	public String getActionTile() {
+	public String getActionTiTle() {
 		return "サンプルのアクション";
 	}
 

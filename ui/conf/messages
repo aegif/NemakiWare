@@ -141,6 +141,7 @@ view.save=Save
 view.detail=Detail
 view.update=Update
 view.delete=Delete
+view.unlink=Unlink
 view.add=Add
 view.remove=Remove
 view.action=Action

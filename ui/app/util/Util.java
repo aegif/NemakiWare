@@ -881,6 +881,8 @@ public class Util {
 			 }else{
 				 return null;
 			 }
+		 }else if(PropertyIds.OBJECT_TYPE_ID.equals(propertyId)){
+			 return NemakiConfig.getLabel(obj.getType().getId(), locale.toLanguageTag());
 		 }else{
 			 Property<Object> prop =obj.getProperty(propertyId);
 			 return prop == null ? "" : prop.getValueAsString();

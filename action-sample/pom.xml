@@ -2,9 +2,8 @@
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 
 	<modelVersion>4.0.0</modelVersion>
-	<groupId>jp.aegif.nemakiware</groupId>
 	<artifactId>nemakiware-action-sample</artifactId>
-	<version>0.0.1</version>
+	<version>0.0.2</version>
 	<packaging>jar</packaging>
 	<name>nemakiware-action-sample</name>
 	<description>Nemaki Action Sample</description>
@@ -40,9 +39,9 @@
 
 	<dependencies>
 		<dependency>
-			<groupId>jp.aegif.nemakiware</groupId>
+			<groupId>jp.aegif.nemaki.plugin</groupId>
 			<artifactId>nemakiware-action</artifactId>
-			<version>0.0.1</version>
+			<version>0.0.2</version>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
@@ -106,4 +105,5 @@
 		</plugins>
 	</build>
 
+	<groupId>jp.aegif.nemaki.plugin.sample</groupId>
 </project>

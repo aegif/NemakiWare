@@ -141,6 +141,7 @@ view.save=保存
 view.detail=詳細
 view.update=更新
 view.delete=削除
+view.unlink=切断
 view.add=追加
 view.remove=除外
 view.action=アクション

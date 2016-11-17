@@ -209,6 +209,9 @@
         <property name="compileService">
             <ref bean="CompileService" />
         </property>
+        <property name="relationshipService">
+            <ref bean="RelationshipService" />
+        </property>
         <property name="solrUtil">
             <ref bean="solrUtil" />
         </property>
