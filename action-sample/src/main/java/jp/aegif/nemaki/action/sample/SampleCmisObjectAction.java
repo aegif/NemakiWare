@@ -18,7 +18,7 @@ public class SampleCmisObjectAction implements JavaBackedAction {
 
 	private static UserButtonPerCmisObjcetActionTrigger _trigger;
 	@Override
-	public ActionTriggerBase getActionTrigger() {
+	public ActionTriggerBase getActionTrigger(ActionContext context) {
 		if (_trigger == null){
 			_trigger = new UserButtonPerCmisObjcetActionTrigger("サンプルアクションの実行");
 			_trigger.setFormHtml(""
@@ -35,12 +35,12 @@ public class SampleCmisObjectAction implements JavaBackedAction {
 	}
 
 	@Override
-	public boolean canExecute(ObjectData obj) {
+	public boolean canExecute(ActionContext context, ObjectData obj) {
 		 return ( BaseTypeId.CMIS_DOCUMENT ==  obj.getBaseTypeId());
 	}
 
 	@Override
-	public String executeAction(ObjectData obj, String json) {
+	public String executeAction(ActionContext context, ObjectData obj, String json) {
 		String name = (String) obj.getProperties().getPropertyList().stream().map(p -> p.getFirstValue()).findFirst().get();
 
 		return "{\"message\" : \"CMISオブジェクトアクションが実行されました ファイル名：" + name + "\"}";
@@ -53,7 +53,7 @@ public class SampleCmisObjectAction implements JavaBackedAction {
 	}
 
 	@Override
-	public String getActionTiTle() {
+	public String getActionTitle() {
 		return "サンプルのアクション";
 	}
 
