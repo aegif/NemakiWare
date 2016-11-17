@@ -46,7 +46,7 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.GroupItem;
 import jp.aegif.nemaki.model.UserItem;
-import jp.aegif.nemaki.util.constant.NemakiObjectType;
+import jp.aegif.nemaki.common.NemakiObjectType;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
@@ -188,7 +188,7 @@ public class GroupItemResource extends ResourceBase{
 	//TODO this is a copy & paste method.
 	private Folder getOrCreateSystemSubFolder(String repositoryId, String name){
 		Folder systemFolder = contentService.getSystemFolder(repositoryId);
-		
+
 		// check existing folder
 		List<Content> children = contentService.getChildren(repositoryId, systemFolder.getId());
 		if(CollectionUtils.isNotEmpty(children)){
@@ -207,7 +207,7 @@ public class GroupItemResource extends ResourceBase{
 		Folder _target = contentService.createFolder(new SystemCallContext(repositoryId), repositoryId, properties, systemFolder, null, null, null, null);
 		return _target;
 	}
-	
+
 	@PUT
 	@Path("/update/{id}")
 	@Produces(MediaType.APPLICATION_JSON)

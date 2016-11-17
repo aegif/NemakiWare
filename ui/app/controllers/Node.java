@@ -32,6 +32,7 @@ import org.apache.chemistry.opencmis.client.api.*;
 import org.apache.chemistry.opencmis.client.runtime.ObjectIdImpl;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Ace;
+import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.AllowableActions;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
@@ -52,6 +53,8 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.objectweb.asm.Type;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import play.api.libs.Files.TemporaryFile;
 import play.i18n.Messages;
@@ -65,6 +68,7 @@ import play.mvc.Result;
 import play.mvc.Security.Authenticated;
 import util.CmisObjectTree;
 import util.NemakiConfig;
+import util.RelationshipUtil;
 import util.Util;
 import views.html.node.*;
 
@@ -73,9 +77,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import constant.PropertyKey;
 import constant.Token;
+import jp.aegif.nemaki.common.NemakiObjectType;
 
 @Authenticated(Secured.class)
 public class Node extends Controller {
+	private static Logger log = LoggerFactory.getLogger(Node.class);
 
 	private static Session getCmisSession(String repositoryId) {
 		return CmisSessions.getCmisSession(repositoryId, session());
@@ -315,7 +321,7 @@ public class Node extends Controller {
 			}
 
 		} catch (Exception e) {
-			e.printStackTrace();
+			log.error("Zip packing error", e);
 		}
 
 		createAttachmentResponse("compressed-files.zip", "application/zip");
@@ -862,30 +868,59 @@ public class Node extends Controller {
 		return redirectToParent(repositoryId, input);
 	}
 
-	public static Result delete(String repositoryId, String id) {
-		Session session = getCmisSession(repositoryId);
-		CmisObject cmisObject = session.getObject(id);
 
-		delete(cmisObject, session);
-		return ok();
+	public static Result delete(String repositoryId, String id) {
+		List<String> deletedList = new ArrayList<String>();
+		Session session = getCmisSession(repositoryId);
+		deletedList.addAll(delete(id, session));
+		JsonNode json = Json.toJson(deletedList);
+		return ok(json);
 	}
 
 	public static Result deleteByBatch(String repositoryId, List<String> ids) {
+		List<String> deletedList = new ArrayList<String>();
 		Session session = getCmisSession(repositoryId);
-		for (String id : ids) {
-			CmisObject cmisObject = session.getObject(id);
-			delete(cmisObject, session);
-		}
-		return ok();
+		ids.forEach(id -> deletedList.addAll(delete(id, session)));
+		JsonNode json = Json.toJson(deletedList);
+		return ok(json);
 	}
 
-	private static void delete(CmisObject cmisObject, Session session) {
+	private static List<String> delete(String id, Session session){
+		List<String> deletedList = new ArrayList<String>();
+		CmisObject cmisObject = session.getObject(id);
+
+		try{
+		//Relation cascade delete
+		cmisObject.getRelationships()
+			.stream().filter(p -> id.equals(p.getSourceId().getId()) && RelationshipUtil.isCascadeRelation(p.getType()))
+			.map(Relationship::getTargetId)
+			.distinct()
+			.forEach(tId -> {
+				try{
+					deletedList.addAll(delete(tId.getId(), session));
+				}catch(Exception ex){
+
+				}
+			});
+		}catch(CmisObjectNotFoundException ex){
+			log.error("Source or target cmis object not found.", ex);
+		}
+		deletedList.addAll(delete(cmisObject, session));
+
+		return deletedList;
+	}
+
+	private static List<String> delete(CmisObject cmisObject, Session session) {
+		List<String> deletedList = new ArrayList<String>();
 		if (Util.isFolder(cmisObject)) {
 			Folder folder = (Folder) cmisObject;
-			folder.deleteTree(true, null, true);
+			deletedList.addAll(folder.deleteTree(true, null, true));
 		} else {
-			session.delete(new ObjectIdImpl(cmisObject.getId()));
+			String id = cmisObject.getId();
+			session.delete(new ObjectIdImpl(id));
+			deletedList.add(id);
 		}
+		return deletedList;
 	}
 
 	public static Result checkOut(String repositoryId, String id) {
@@ -1087,12 +1122,17 @@ public class Node extends Controller {
 		// Get an object in the repository
 		Session session = getCmisSession(repositoryId);
 
+		// Source acl copy to relation acl
+		CmisObject srcObj = session.getObject(sourceId);
+		Acl srcAcl = srcObj.getAcl();
+		List<Ace> srcAceList = srcAcl.getAces();
+
 		Map<String, String> relProps = new HashMap<String, String>();
 		relProps.put(PropertyIds.OBJECT_TYPE_ID, relType);
 		relProps.put(PropertyIds.NAME, relName);
 		relProps.put("cmis:sourceId", sourceId);
 		relProps.put("cmis:targetId", targetId);
-		return session.createRelationship(relProps, null, null, null);
+		return session.createRelationship(relProps, null, srcAceList, srcAceList);
 	}
 
 	private static Result redirectToParent(String repositoryId, DynamicForm input) {
