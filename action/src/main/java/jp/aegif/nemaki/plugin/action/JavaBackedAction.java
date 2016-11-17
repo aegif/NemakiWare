@@ -14,11 +14,11 @@ public interface JavaBackedAction extends Plugin<String>{
 
 	public String getActionDiscription();
 
-	public ActionTriggerBase getActionTrigger();
+	public ActionTriggerBase getActionTrigger(ActionContext actionContext);
 
-	public boolean canExecute(ObjectData obj);
+	public boolean canExecute(ActionContext actionContext, ObjectData obj);
 
-	public String executeAction(ObjectData obj, String json);
+	public String executeAction(ActionContext actionContext, ObjectData obj, String json);
 
 
 
