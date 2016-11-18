@@ -1002,6 +1002,22 @@ public class Node extends Controller {
 			// no-op
 		}
 	}
+	public static Result checkInPWC(String repositoryId, String id) throws FileNotFoundException {
+		Session session = getCmisSession(repositoryId);
+
+		// Comment
+		DynamicForm input = Form.form();
+		input = input.bindFromRequest();
+		String checkinComment = Util.getFormData(input, PropertyIds.CHECKIN_COMMENT);
+
+		CmisObject cmisObject = session.getObject(id);
+		Document doc = (Document) cmisObject;
+		;
+		Map<String, Object> param = new HashMap<String, Object>();
+		doc.checkIn(true, param, doc.getContentStream(), checkinComment);
+
+		return redirectToParent(repositoryId, input);
+	}
 
 	public static Result checkIn(String repositoryId, String id) throws FileNotFoundException {
 		Session session = getCmisSession(repositoryId);
