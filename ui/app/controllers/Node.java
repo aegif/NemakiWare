@@ -889,21 +889,24 @@ public class Node extends Controller {
 		List<String> deletedList = new ArrayList<String>();
 		CmisObject cmisObject = session.getObject(id);
 
-		try{
 		//Relation cascade delete
-		cmisObject.getRelationships()
-			.stream().filter(p -> id.equals(p.getSourceId().getId()) && RelationshipUtil.isCascadeRelation(p.getType()))
-			.map(Relationship::getTargetId)
-			.distinct()
-			.forEach(tId -> {
-				try{
-					deletedList.addAll(delete(tId.getId(), session));
-				}catch(Exception ex){
-
-				}
-			});
-		}catch(CmisObjectNotFoundException ex){
-			log.error("Source or target cmis object not found.", ex);
+		List<Relationship> rels = cmisObject.getRelationships();
+		if (rels != null){
+			try{
+				rels.stream()
+					.filter(p -> id.equals(p.getSourceId().getId()) && RelationshipUtil.isCascadeRelation(p.getType()))
+					.map(Relationship::getTargetId)
+					.distinct()
+					.forEach(tId -> {
+						try{
+							deletedList.addAll(delete(tId.getId(), session));
+						}catch(Exception ex){
+							log.error("Target cmis object id not found", ex);
+						}
+					});
+			}catch(CmisObjectNotFoundException ex){
+				log.error("Source or target cmis object not found.", ex);
+			}
 		}
 		deletedList.addAll(delete(cmisObject, session));
 

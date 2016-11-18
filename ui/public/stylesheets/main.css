@@ -3,6 +3,11 @@ body {
 	padding-top: 70px;
 }
 
+legend {
+    margin-bottom: 10px !important;
+    border-bottom: 1px solid #cccccc !important;
+}
+
 i.fa {
 	padding-right: 0.2em;
 	padding-left: 0.2em;
@@ -33,7 +38,6 @@ div.lightbox-me-container {
     display: block;
     position: absolute; top: 5px; right: 5px;
 }
-
 
 div.lightbox-me-container div.container, div.lightbox-me-container div.row
 	{
