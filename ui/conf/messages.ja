@@ -32,9 +32,14 @@ view.node.file.checkout.description-1=ドキュメントはロックされ、編
 view.node.file.checkout.description-2=編集用のコピーをダウンロードして編集してください。
 view.node.file.update.pwc.caption=オフライン編集の結果を一旦反映する
 view.node.file.update.pwc.description=編集したファイルをアップロードします。ドキュメントのロックは解除されません。
-view.node.file.checkin.caption=オフライン編集を完了する
+view.node.file.checkin.caption=ファイルをアップロードしてオフライン編集を完了する
 view.node.file.checkin.description=編集したファイルをアップロードし、ドキュメントのロックを解除します。
+view.node.file.checkin.pwc.caption=現在の状態でオフライン編集を完了する
+view.node.file.checkin.pwc.description=サーバの現在の状態で、ドキュメントのロックを解除します。
+
 view.node.file.checkin.comment=コメント
+
+
 view.node.file.cancel.checkout.caption=オフライン編集をキャンセルする
 view.node.file.cancel.checkout.description=オフライン編集前の状態に戻し、ロックを解除します。
 view.node.file.direct.caption=直接ファイル更新する
