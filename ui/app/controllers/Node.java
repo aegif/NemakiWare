@@ -722,13 +722,20 @@ public class Node extends Controller {
 				} else {
 					// TODO find better way
 					List<String> list = new ArrayList<String>();
-					for (int i = 0; i < input.data().keySet().size(); i++) {
-						String keyWithIndex = pdf.getId() + "[" + i + "]";
-						String value = input.data().get(keyWithIndex);
-						if (value == null) {
-							break;
+					if (input.data().containsKey(pdf.getId())) {
+						// one item
+						list.add(input.data().get(pdf.getId()));
+					} else {
+						// multiple items
+						for (int i = 0; i < input.data().keySet().size(); i++) {
+							String keyWithIndex = pdf.getId() + "[" + i + "]";
+							String value = input.data().get(keyWithIndex);
+							Map<String, String> data = input.data();
+							if (value == null) {
+								break;
+							}
+							list.add(value);
 						}
-						list.add(value);
 					}
 					properties.put(pdf.getId(), list);
 				}
