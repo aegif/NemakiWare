@@ -12,6 +12,7 @@ import java.net.URLEncoder;
 import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -43,6 +44,7 @@ import org.apache.chemistry.opencmis.commons.enums.Action;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
+import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
@@ -706,8 +708,16 @@ public class Node extends Controller {
 				}
 
 				if (Cardinality.SINGLE == pdf.getCardinality()) {
-					String value = input.data().get(pdf.getId());
+					String strValue = input.data().get(pdf.getId());
+					Object value = strValue;
 					// TODO type conversion
+					if (pdf.getPropertyType() == PropertyType.DATETIME) {
+						value = Util.convertStringToCalendar(strValue);
+						if (value == null) {
+							throw new RuntimeException("Invalid DateTime format.");
+						}
+					}
+					
 					properties.put(pdf.getId(), value);
 				} else {
 					// TODO find better way
