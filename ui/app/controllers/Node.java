@@ -51,6 +51,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntry
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.objectweb.asm.Type;
 import org.slf4j.Logger;
@@ -266,6 +267,82 @@ public class Node extends Controller {
 
 	}
 
+	public static Result downloadWithRelationTargetAsCompressedFile(String repositoryId, String id) {
+		Session session = getCmisSession(repositoryId);
+		CmisObject cmisObject = session.getObject(id);
+
+		//Relation target
+		List<Relationship> rels = cmisObject.getRelationships();
+		List<Document> list = null;
+		if (rels != null){
+			try{
+				list = rels.stream()
+					.filter(p -> id.equals(p.getSourceId().getId()))
+					.map(Relationship::getTargetId)
+					.distinct()
+					.map(p ->  session.getObject(p))
+					.filter(p -> Util.isDocument(p))
+					.map(p ->  (Document)p)
+					.collect(Collectors.toList())
+					;
+			}catch(CmisObjectNotFoundException ex){
+				log.error("Source or target cmis object not found.", ex);
+			}
+		}
+
+		if(Util.isDocument(cmisObject)){
+			list.add((Document)cmisObject);
+		}
+
+		File tempFile = null;
+		try {
+			// Error too large file
+			long maxsize = Util.getCompressionTargetMaxSize();
+			Long allDocSum = list.stream().mapToLong(p -> p.getContentStreamLength()).sum();
+			if (allDocSum > Util.getCompressionTargetMaxSize()) {
+				String errmsg = Messages.get("view.message.compress.error.toolarge", maxsize);
+				return internalServerError(errmsg);
+			}
+
+			// Archive
+			ZipParameters parameters = new ZipParameters();
+			parameters.setCompressionMethod(Zip4jConstants.COMP_DEFLATE);
+			parameters.setCompressionLevel(Zip4jConstants.DEFLATE_LEVEL_NORMAL);
+			parameters.setSourceExternalStream(true);
+
+			ZipModel zipModel = new ZipModel();
+			String prefix = NemakiConfig.getValue(PropertyKey.COMPRESSION_FILE_PREFIX);
+			Path tempPath = Files.createTempFile(prefix, ".zip");
+			tempFile = tempPath.toFile();
+			tempFile.deleteOnExit();
+
+			try (ZipOutputStream outputStream = new ZipOutputStream(new FileOutputStream(tempFile), zipModel)) {
+
+				for (Document doc : list) {
+					ZipParameters params = (ZipParameters) parameters.clone();
+					params.setFileNameInZip(doc.getName());
+					outputStream.putNextEntry(null, params);
+
+					try (InputStream inputStream = doc.getContentStream().getStream();) {
+							byte[] readBuff = new byte[4096];
+							int readLen = -1;
+							while ((readLen = inputStream.read(readBuff)) != -1) {
+								outputStream.write(readBuff, 0, readLen);
+							}
+					}
+					outputStream.closeEntry();
+				}
+				outputStream.finish();
+			}
+
+		} catch (Exception e) {
+			log.error("Zip packing error", e);
+		}
+		String fileName = FilenameUtils.getBaseName(cmisObject.getName());
+		createAttachmentResponse(fileName + ".zip", "application/zip");
+		return ok(tempFile);
+	}
+
 	public static Result downloadAsCompressedFile(String repositoryId, String id) {
 		return downloadAsCompressedFileByBatch(repositoryId, Arrays.asList(id));
 	}
@@ -278,14 +355,14 @@ public class Node extends Controller {
 			CmisObjectTree tree = new CmisObjectTree(session);
 			tree.buildTree(ids.toArray(new String[0]));
 
-			// ファイルが大きすぎたらエラーにする
+			// Erro too large file
 			long maxsize = Util.getCompressionTargetMaxSize();
 			if (tree.getContentsSize() > Util.getCompressionTargetMaxSize()) {
 				String errmsg = Messages.get("view.message.compress.error.toolarge", maxsize);
 				return internalServerError(errmsg);
 			}
 
-			// ファイルにアーカイブ
+			// Archive
 			ZipParameters parameters = new ZipParameters();
 			parameters.setCompressionMethod(Zip4jConstants.COMP_DEFLATE);
 			parameters.setCompressionLevel(Zip4jConstants.DEFLATE_LEVEL_NORMAL);
@@ -1011,10 +1088,37 @@ public class Node extends Controller {
 		String checkinComment = Util.getFormData(input, PropertyIds.CHECKIN_COMMENT);
 
 		CmisObject cmisObject = session.getObject(id);
-		Document doc = (Document) cmisObject;
-		;
-		Map<String, Object> param = new HashMap<String, Object>();
-		doc.checkIn(true, param, doc.getContentStream(), checkinComment);
+		checkInPWC(cmisObject, checkinComment);
+		return redirectToParent(repositoryId, input);
+	}
+
+	private static void checkInPWC(CmisObject cmisObject, String checkinComment) {
+		if (Util.isDocument(cmisObject)) {
+			Document doc = (Document) cmisObject;
+			if ( doc.isPrivateWorkingCopy() ){
+				Map<String, Object> param = new HashMap<String, Object>();
+				doc.checkIn(true, param, doc.getContentStream(), checkinComment);
+			}
+		} else if (Util.isFolder(cmisObject)) {
+			Folder dir = (Folder) cmisObject;
+			for (CmisObject childNode : dir.getChildren()) {
+				checkInPWC(childNode, checkinComment);
+			}
+		} else {
+			// no-op
+		}
+	}
+
+	public static Result checkInPWCByBatch(String repositoryId, List<String> ids) {
+		Session session = getCmisSession(repositoryId);
+
+		for (String id : ids) {
+			CmisObject cmisObject = session.getObject(id);
+			checkInPWC(cmisObject, "");
+		}
+
+		DynamicForm input = Form.form();
+		input = input.bindFromRequest();
 
 		return redirectToParent(repositoryId, input);
 	}

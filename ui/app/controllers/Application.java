@@ -106,6 +106,8 @@ public class Application extends Controller{
 				controllers.routes.javascript.Node.cancelCheckOutByBatch(),
 				controllers.routes.javascript.Node.checkIn(),
 				controllers.routes.javascript.Node.checkInPWC(),
+				controllers.routes.javascript.Node.checkInPWCByBatch(),
+				controllers.routes.javascript.Node.downloadWithRelationTargetAsCompressedFile(),
 				controllers.routes.javascript.Node.downloadAsCompressedFile(),
 				controllers.routes.javascript.Node.downloadAsCompressedFileByBatch(),
 
