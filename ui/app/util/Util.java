@@ -12,7 +12,11 @@ import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
+import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -50,7 +54,9 @@ import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
 import org.apache.chemistry.opencmis.commons.enums.ExtensionLevel;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
+import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
@@ -706,7 +712,19 @@ public class Util {
 			 }
 
 			 if(updatabilities.contains(propDef.getUpdatability())){
-				 data.put(propDef.getId(), getFormData(input, propDef.getId()));
+				 if (propDef.getPropertyType() == PropertyType.STRING) {
+					 data.put(propDef.getId(), getFormData(input, propDef.getId()));
+				 } else if (propDef.getPropertyType() == PropertyType.DATETIME) {
+					 String dateStr = getFormData(input, propDef.getId());
+					 if (dateStr == null || dateStr.isEmpty()) {
+						 continue;
+					 }
+					 GregorianCalendar cal = convertStringToCalendar(dateStr);
+					 if (cal == null) {
+						 throw new RuntimeException("Invalid DateTime format.");
+					 }
+					 data.put(propDef.getId(), cal);
+				 }
 			 }
 		 }
 
@@ -945,4 +963,25 @@ public class Util {
 		 String _size = NemakiConfig.getValue(PropertyKey.COMPRESSION_TARGET_MAXSIZE);
 		 return Long.valueOf(_size);
 	 }
+	 
+	 public static GregorianCalendar convertStringToCalendar(String date, Locale locale) {
+		SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", locale);
+		Date d;
+		try {
+			d = sdf.parse(date);
+			GregorianCalendar cal = new GregorianCalendar();
+			cal.setTime(d);
+			String str = cal.toString();
+			return cal;
+		} catch (ParseException e) {
+			e.printStackTrace();
+		}
+		return null;
+	 }
+	 
+	 public static GregorianCalendar convertStringToCalendar(String date) {
+		 return convertStringToCalendar(date, Locale.JAPAN);
+	 }
+	 
+	 
 }
