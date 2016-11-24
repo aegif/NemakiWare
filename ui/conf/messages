@@ -57,6 +57,7 @@ view.node.relationship.create.existing-id.caption=Create relationship to exisiti
 view.node.relationship.create.type.label=Relationship Type
 view.node.relationship.create.name.label=Relationship Name
 view.node.relationship.create.existing-id.object-id.label=Object ID
+view.node.relationship.download.targets.label=Download all targets
 
 view.node.search.term=Search Term
 view.node.drag-and-drop.out-of-support=Your browser does not support file drag & drop.

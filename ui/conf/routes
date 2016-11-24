@@ -53,12 +53,14 @@ POST    /repo/:repoId/objects/:id/upload            		controllers.Node.upload(re
 POST    /repo/:repoId/objects/:id/checkout          		controllers.Node.checkOut(repoId:String, id:String)
 POST    /repo/:repoId/objects/checkout          			controllers.Node.checkOutByBatch(repoId:String, ids:java.util.List[String])
 POST    /repo/:repoId/objects/:id/checkin-pwc           	controllers.Node.checkInPWC(repoId:String, id:String)
+POST    /repo/:repoId/objects/checkin-pwc           		controllers.Node.checkInPWCByBatch(repoId:String,  ids:java.util.List[String])
 POST    /repo/:repoId/objects/:id/checkin           		controllers.Node.checkIn(repoId:String, id:String)
 POST    /repo/:repoId/objects/:id/cancel-checkout   		controllers.Node.cancelCheckOut(repoId:String, id:String)
 POST    /repo/:repoId/objects/cancel-checkout   			controllers.Node.cancelCheckOutByBatch(repoId:String, ids:java.util.List[String])
 
 DELETE 	/repo/:repoId/objects/:id							controllers.Node.delete(repoId:String, id:String)
 DELETE 	/repo/:repoId/objects/								controllers.Node.deleteByBatch(repoId:String, ids:java.util.List[String])
+GET		/repo/:repoId/compressed-relation-file/:id/   		controllers.Node.downloadWithRelationTargetAsCompressedFile(repoId:String, id:String)
 GET		/repo/:repoId/compressed-file/:id/   				controllers.Node.downloadAsCompressedFile(repoId:String, id:String)
 GET     /repo/:repoId/compressed-file  						controllers.Node.downloadAsCompressedFileByBatch(repoId:String, ids:java.util.List[String])
 

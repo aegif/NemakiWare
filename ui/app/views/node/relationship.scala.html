@@ -17,6 +17,11 @@
 	<div class="row">
 		<div class="col-sm-12 col-md-12">
 			<legend><i class="fa fa-arrow-circle-o-up"></i>@Messages("view.node.relationship.table.to.caption")</legend>
+			<div class="row" style="margin-bottom:15px">
+				<div class="col-sm-12 col-md-12">
+					@Messages("view.node.relationship.download.targets.label") @executeButton("download-with-target")
+				</div>
+			</div>
 			<table class="footable" id="relationship-table-source">
 				<thead>
 					<tr>
@@ -99,6 +104,18 @@
 			$.get("@routes.Node.showRelationshipCreate(repositoryId, obj.getId())", function(html){
 				showLightbox('relationship-create', html);
 			});
+		});
+
+		//multiple archive button
+		$("#download-with-target").on('click', function(){
+			if(window.confirm("@Messages("view.message.compress.confirm")")){
+			    $.fileDownload(jsRoutes.controllers.Node.downloadWithRelationTargetAsCompressedFile("@repositoryId", "@obj.getId()").url)
+		        .done(function () { })
+		        .fail(function (responseHtml, url, error) {
+			         window.alert("@Messages("view.message.failure")" + " : " + responseHtml);
+			      })
+			    .always(function(){	$.unblockUI(); });
+			}
 		});
 
 		$('.delete').on('click', function(){

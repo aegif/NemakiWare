@@ -63,10 +63,11 @@
 						<span class="dropdown">
 							<button class="btn btn-default dropdown-toggle" data-toggle="dropdown">複数操作<span class="caret"></span></button>
 							<ul class="dropdown-menu" role="menu">
-									<li id="checkout-selected-objects" ><a href="#"><i class="fa fa-lock"></i>まとめてチェックアウト...</a></li>
-									<li id="cancel-checkout-selected-objects" ><a href="#"><i class="fa fa-unlock"></i>まとめてチェックアウトをキャンセル...</a></li>
-									<li id="delete-selected-objects" ><a href="#"><i class="fa fa-remove"></i>まとめて削除...</a></li>
-									<li id="compress-selected-objects" ><a href="#"><i class="fa fa-file-archive-o"></i>まとめて圧縮してダウンロード...</a></li>
+									<li id="checkout-selected-objects" ><a href="#"><i class="fa fa-lock"></i>チェックアウト...</a></li>
+									<li id="checkin-selected-objects" ><a href="#"><i class="fa fa-unlock"></i>チェックイン...</a></li>
+									<li id="cancel-checkout-selected-objects" ><a href="#"><i class="fa fa-undo"></i>チェックアウトをキャンセル...</a></li>
+									<li id="delete-selected-objects" ><a href="#"><i class="fa fa-remove"></i>削除...</a></li>
+									<li id="compress-selected-objects" ><a href="#"><i class="fa fa-file-archive-o"></i>圧縮してダウンロード...</a></li>
 							</ul>
 						</span>
 					</div>
@@ -218,6 +219,29 @@
 
 				//Execute
 				$.ajax(jsRoutes.controllers.Node.checkOutByBatch("@repositoryId", ids)
+			    ).done(function(data){
+					window.alert("@Messages("view.message.checkout.success")");
+					window.location.reload();
+				}).fail(function(XMLHttpRequest, textStatus, errorThrown){
+					window.alert("@Messages("view.message.checkout.failure")");
+				}).always(function(){
+					$.unblockUI();
+				});
+			}
+		});
+
+		//multiple chechin button
+		$(document).on('click', '#checkin-selected-objects', function(){
+			if(window.confirm("@Messages("view.message.checkout.confirm")")){
+				var ids=[];
+				$('[name="selection"]:checked').each(function(){
+				  	ids.push($(this).attr('cmis-id'));
+				});
+
+				$.blockUI({message:"@Messages("view.message.please.wait")"});
+
+				//Execute
+				$.ajax(jsRoutes.controllers.Node.checkInPWCByBatch("@repositoryId", ids)
 			    ).done(function(data){
 					window.alert("@Messages("view.message.checkout.success")");
 					window.location.reload();

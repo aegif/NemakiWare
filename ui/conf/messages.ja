@@ -60,6 +60,7 @@ view.node.relationship.create.existing-id.caption=既存オブジェクトのID�
 view.node.relationship.create.type.label=リレーションタイプ
 view.node.relationship.create.name.label=リレーションの名前
 view.node.relationship.create.existing-id.object-id.label=オブジェクトID
+view.node.relationship.download.targets.label=参照先をすべて含んだ圧縮ファイルとしてダウンロードする
 
 view.node.version.label=バージョン
 view.node.search.term=検索ワード
