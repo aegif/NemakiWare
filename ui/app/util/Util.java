@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
@@ -703,6 +704,11 @@ public class Util {
 
 			 //TODO work around: skip multiple value
 			 if(propDef.getCardinality() == Cardinality.MULTI){
+				 if (propDef.getPropertyType() == PropertyType.STRING) {
+					 String items = getFormData(input, propDef.getId());
+					 List<String> itemList = Arrays.asList(items.split(","));
+					 data.put(propDef.getId(), itemList);
+				 }
 				 continue;
 			 }
 
