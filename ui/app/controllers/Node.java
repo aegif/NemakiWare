@@ -57,6 +57,7 @@ import org.objectweb.asm.Type;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import play.Play;
 import play.api.libs.Files.TemporaryFile;
 import play.i18n.Messages;
 import play.data.DynamicForm;
@@ -139,7 +140,11 @@ public class Node extends Controller {
 		types.addAll(typeFolders);
 		types.addAll(typeDocs);
 
-		return ok(tree.render(repositoryId, _parent, results, types));
+		List<String> enableTypes =  NemakiConfig.getValues(PropertyKey.UI_VISIBILITY_CREATE_OBJECT);
+
+		List<Tree<ObjectType>> viewTypes = types.stream().filter(p -> enableTypes.contains(p.getItem().getLocalName())).collect(Collectors.toList());
+
+		return ok(tree.render(repositoryId, _parent, results, viewTypes));
 	}
 
 	public static Result showChildrenByPath(String repositoryId, String path) {
@@ -534,7 +539,12 @@ public class Node extends Controller {
 				.collect(Collectors.toList());
 				;
 
-		return ok(relationship_create.render(repositoryId, obj, parentId, relationshipTypes));
+		List<String> enableTypes =  NemakiConfig.getValues(PropertyKey.UI_VISIBILITY_CREATE_RELATIONSHIP);
+
+		List<ObjectType> viewTypes = relationshipTypes.stream().filter(p -> enableTypes.contains(p.getLocalName())).collect(Collectors.toList());
+
+
+		return ok(relationship_create.render(repositoryId, obj, parentId, viewTypes));
 	}
 
 	public static Result showRelationship(String repositoryId, String id) {
