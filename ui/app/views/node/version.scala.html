@@ -7,7 +7,7 @@
 
 <div class="container tab-pane">
 	<div class="row">
-		<div class="col-sm-8">
+		<div class="col-sm-12">
 			<table class="footable" id="version-table">
 				<thead>
 					<tr>
@@ -15,6 +15,7 @@
 						<th>@NemakiConfig.getLabel("cmis:name", Implicit.lang().language)</th>
 						<th>@NemakiConfig.getLabel("cmis:createdBy", Implicit.lang().language)</th>
 						<th>@NemakiConfig.getLabel("cmis:creationDate", Implicit.lang().language)</th>
+						<th>@NemakiConfig.getLabel("cmis:checkinComment", Implicit.lang().language)</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -29,6 +30,7 @@
 							<td>@version.getName()</td>
 							<td>@version.getCreatedBy()</td>
 							<td>@Formatter.calToString(version.getCreationDate(), Implicit.lang.toLocale)</td>
+							<td>@version.getCheckinComment()</td>
 						</tr>
 					}
 				</tbody>
