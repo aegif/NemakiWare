@@ -712,9 +712,13 @@ public class Node extends Controller {
 					Object value = strValue;
 					// TODO type conversion
 					if (pdf.getPropertyType() == PropertyType.DATETIME) {
-						value = Util.convertStringToCalendar(strValue);
-						if (value == null) {
-							throw new RuntimeException("Invalid DateTime format.");
+						if (strValue != null && !strValue.isEmpty()) {
+							value = Util.convertStringToCalendar(strValue);
+							if (value == null) {
+								throw new RuntimeException("Invalid DateTime format.");
+							}
+						} else {
+							value = null;
 						}
 					}
 					
