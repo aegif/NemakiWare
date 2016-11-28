@@ -5,7 +5,8 @@ function bindEditable(valueFieldSelector){
 		if($(this).attr('on') != 'on'){
 			$(this).attr('on', 'on');
 			txt = $(this).text();
-			$(this).html('<input class="editable-value-input" type="text" value="'+txt+'" />');
+			$(this).html('<input class="editable-value-input" type="text" value="" />');
+			$(this).find("input").val(txt);
 			$(this).children('.editable-value-input:first').focus();
 		}
 

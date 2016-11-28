@@ -11,6 +11,8 @@ function editableValueFieldAdd(){
 		myContainer.clone().insertAfter(myContainer);
 		//empty value after clone
 		myContainer.next().find("div.editable-value-field:first").text("");
+		//bind editable
+		bindEditable('#' + $(this).closest("table").get(0).id + ' > tbody > tr > td.editable-value div.editable-value-field');
 	});
 }
 

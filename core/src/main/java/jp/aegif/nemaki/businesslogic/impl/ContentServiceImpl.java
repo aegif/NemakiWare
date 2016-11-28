@@ -30,8 +30,10 @@ import java.util.Collection;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.Map.Entry;
 import jp.aegif.nemaki.businesslogic.ContentService;
@@ -1275,9 +1277,12 @@ public class ContentServiceImpl implements ContentService {
 			
 			// Combine incoming properties to existing ones.
 			allSubTypeProperties.addAll(subTypeProperties);
-			
-			// Save these properties.
-			content.setSubTypeProperties(allSubTypeProperties);
+			Map<String, Property> subTypePropertiesMap = new LinkedHashMap<>();
+			allSubTypeProperties.forEach(p -> subTypePropertiesMap.put(p.getKey(), p));
+			List<Property> combinedAllSubTypeProperties = new ArrayList<>();
+			subTypePropertiesMap.forEach((key, value) -> combinedAllSubTypeProperties.add(value));
+			// Save this properties.
+			content.setSubTypeProperties(combinedAllSubTypeProperties);
 		}
 
 		// Secondary
