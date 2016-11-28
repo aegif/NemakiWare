@@ -23,7 +23,6 @@ package jp.aegif.nemaki.cmis.aspect.impl;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -106,7 +105,9 @@ import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
+import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.model.VersionSeries;
+import jp.aegif.nemaki.plugin.action.ActionContext;
 import jp.aegif.nemaki.plugin.action.JavaBackedAction;
 import jp.aegif.nemaki.plugin.action.trigger.ActionTriggerBase;
 import jp.aegif.nemaki.plugin.action.trigger.UserButtonPerCmisObjcetActionTrigger;
@@ -157,9 +158,7 @@ public class CompileServiceImpl implements CompileService {
 
 		ObjectData result = filterObjectData(repositoryId, _result, filter, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
 
-
-
-		setPluginExtentionData(result);
+		setPluginExtentionData(callContext, result);
 
 		return result;
 	}
@@ -323,7 +322,7 @@ public class CompileServiceImpl implements CompileService {
 
 				ObjectData od = filterObjectDataInList(callContext, repositoryId, _od, filter, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
 
-				setPluginExtentionData(od);
+				setPluginExtentionData(callContext, od);
 				if(od != null){
 					ods.add(od);
 				}
@@ -1461,7 +1460,7 @@ public class CompileServiceImpl implements CompileService {
 		this.sortUtil = sortUtil;
 	}
 
-	private void setPluginExtentionData(ObjectData result){
+	private void setPluginExtentionData(CallContext callContext, ObjectData result){
 		// Add extension deta from plugin
 		try (GenericApplicationContext context = new AnnotationConfigApplicationContext(AppConfig.class)) {
 			NemakiActionPlugin acionPlugin = context.getBean(NemakiActionPlugin.class);
@@ -1475,11 +1474,14 @@ public class CompileServiceImpl implements CompileService {
 			}
 			for (String beanId : pluginMap.keySet()) {
 				JavaBackedAction plugin = acionPlugin.getPlugin(beanId);
-				if(plugin.canExecute(result)){
+				UserItem userItem = contentService.getUserItemById(callContext.getRepositoryId(), callContext.getUsername());
+				Properties props = this.compileProperties(callContext, callContext.getRepositoryId(), userItem);
+				ActionContext actionContext = new ActionContext(callContext, props, result);
+				if(plugin.canExecute(actionContext)){
 					String action_id = beanId;
 					List<CmisExtensionElement> extElements = new ArrayList<CmisExtensionElement>();
 					extElements.add(new CmisExtensionElementImpl(ns, "actionId", null, action_id));
-					ActionTriggerBase trigger = plugin.getActionTrigger();
+					ActionTriggerBase trigger = plugin.getActionTrigger(actionContext);
 					if(trigger instanceof  UserButtonPerCmisObjcetActionTrigger){
 						UserButtonPerCmisObjcetActionTrigger objectActionTrigger = (UserButtonPerCmisObjcetActionTrigger) trigger;
 						extElements.add(new CmisExtensionElementImpl(ns, "actionButtonLabel", null, (objectActionTrigger.getDisplayName())));
