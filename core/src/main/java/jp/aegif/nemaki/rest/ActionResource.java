@@ -18,6 +18,7 @@ import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.UriInfo;
 
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
+import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.io.IOUtils;
@@ -33,6 +34,8 @@ import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.common.ErrorCode;
 import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.model.UserItem;
+import jp.aegif.nemaki.plugin.action.ActionContext;
 import jp.aegif.nemaki.plugin.action.JavaBackedAction;
 import jp.aegif.nemaki.util.action.NemakiActionPlugin;
 
@@ -76,8 +79,10 @@ public class ActionResource extends ResourceBase {
 				ObjectData object = compileService.compileObjectData(callContext, repositoryId,
 						contentService.getContent(repositoryId, objectId), null, false, IncludeRelationships.NONE, null,
 						false);
-
-				resultText = plugin.executeAction(object, json);
+				UserItem userItem = contentService.getUserItemById(callContext.getRepositoryId(), callContext.getUsername());
+				Properties props = compileService.compileProperties(callContext, callContext.getRepositoryId(), userItem);
+				ActionContext actionContext = new ActionContext(callContext, props, object);
+				resultText = plugin.executeAction(actionContext, json);
 				result.put("action_res", resultText);
 			}
 		} catch (Exception e) {

@@ -30,8 +30,10 @@ import java.util.Collection;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.Map.Entry;
 import jp.aegif.nemaki.businesslogic.ContentService;
@@ -1257,11 +1259,30 @@ public class ContentServiceImpl implements ContentService {
 		// Subtype specific
 		List<Property> subTypeProperties = buildSubTypeProperties(repositoryId, properties, content);
 		if (!CollectionUtils.isEmpty(subTypeProperties)) {
-			// Combine incoming properties to existing ones, overwriting those that exist.
 			List<Property> allSubTypeProperties = content.getSubTypeProperties();
+			
+			// For each pre-existing property, remove it if exist in the added/modified properties.
+			// Iterate on a copy to avoid concurrent modifications
+			for (Property priorProperty :
+					new ArrayList<Property>(allSubTypeProperties)) {
+				if(properties.getProperties().containsKey(priorProperty.getKey())) {
+					// Overwrite by removing the prior property.
+					allSubTypeProperties.remove(priorProperty);
+					log.error("Remove " + priorProperty.getKey());
+				}
+				else {
+					log.error("Leave " + priorProperty.getKey());
+				}
+			}
+			
+			// Combine incoming properties to existing ones.
 			allSubTypeProperties.addAll(subTypeProperties);
+			Map<String, Property> subTypePropertiesMap = new LinkedHashMap<>();
+			allSubTypeProperties.forEach(p -> subTypePropertiesMap.put(p.getKey(), p));
+			List<Property> combinedAllSubTypeProperties = new ArrayList<>();
+			subTypePropertiesMap.forEach((key, value) -> combinedAllSubTypeProperties.add(value));
 			// Save this properties.
-			content.setSubTypeProperties(allSubTypeProperties);
+			content.setSubTypeProperties(combinedAllSubTypeProperties);
 		}
 
 		// Secondary
