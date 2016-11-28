@@ -81,8 +81,8 @@ public class ActionResource extends ResourceBase {
 						false);
 				UserItem userItem = contentService.getUserItemById(callContext.getRepositoryId(), callContext.getUsername());
 				Properties props = compileService.compileProperties(callContext, callContext.getRepositoryId(), userItem);
-				ActionContext actionContext = new ActionContext(callContext, props);
-				resultText = plugin.executeAction(actionContext, object, json);
+				ActionContext actionContext = new ActionContext(callContext, props, object);
+				resultText = plugin.executeAction(actionContext, json);
 				result.put("action_res", resultText);
 			}
 		} catch (Exception e) {

@@ -12,6 +12,7 @@ import java.net.URLEncoder;
 import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -43,6 +44,7 @@ import org.apache.chemistry.opencmis.commons.enums.Action;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
+import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
@@ -793,19 +795,38 @@ public class Node extends Controller {
 				}
 
 				if (Cardinality.SINGLE == pdf.getCardinality()) {
-					String value = input.data().get(pdf.getId());
+					String strValue = input.data().get(pdf.getId());
+					Object value = strValue;
 					// TODO type conversion
+					if (pdf.getPropertyType() == PropertyType.DATETIME) {
+						if (strValue != null && !strValue.isEmpty()) {
+							value = Util.convertStringToCalendar(strValue);
+							if (value == null) {
+								throw new RuntimeException("Invalid DateTime format.");
+							}
+						} else {
+							value = null;
+						}
+					}
+					
 					properties.put(pdf.getId(), value);
 				} else {
 					// TODO find better way
 					List<String> list = new ArrayList<String>();
-					for (int i = 0; i < input.data().keySet().size(); i++) {
-						String keyWithIndex = pdf.getId() + "[" + i + "]";
-						String value = input.data().get(keyWithIndex);
-						if (value == null) {
-							break;
+					if (input.data().containsKey(pdf.getId())) {
+						// one item
+						list.add(input.data().get(pdf.getId()));
+					} else {
+						// multiple items
+						for (int i = 0; i < input.data().keySet().size(); i++) {
+							String keyWithIndex = pdf.getId() + "[" + i + "]";
+							String value = input.data().get(keyWithIndex);
+							Map<String, String> data = input.data();
+							if (value == null) {
+								break;
+							}
+							list.add(value);
 						}
-						list.add(value);
 					}
 					properties.put(pdf.getId(), list);
 				}
