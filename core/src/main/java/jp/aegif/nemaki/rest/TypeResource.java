@@ -151,8 +151,9 @@ public class TypeResource extends ResourceBase{
 				} else if ("cm:folder".equals(parent)) {
 					tdf.setBaseId(BaseTypeId.CMIS_FOLDER);
 					tdf.setParentId(BaseTypeId.CMIS_FOLDER.value());
-				} else {
-					// TODO association(relationship)
+				} else if ("cm:relationship".equals(parent)) {
+					tdf.setBaseId(BaseTypeId.CMIS_RELATIONSHIP);
+					tdf.setParentId(BaseTypeId.CMIS_RELATIONSHIP.value());
 				}
 			}else if("aspect".equals(type.getName())){
 				tdf.setBaseId(BaseTypeId.CMIS_SECONDARY);

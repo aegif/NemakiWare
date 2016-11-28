@@ -53,6 +53,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntry
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.objectweb.asm.Type;
@@ -808,7 +809,7 @@ public class Node extends Controller {
 							value = null;
 						}
 					}
-					
+
 					properties.put(pdf.getId(), value);
 				} else {
 					// TODO find better way
@@ -1272,7 +1273,7 @@ public class Node extends Controller {
 		}
 	}
 
-	private static ObjectId createRelation(String relType, String relName, String repositoryId, String sourceId, String targetId) {
+	private static ObjectId createRelation(String relType, String name, String repositoryId, String sourceId, String targetId) {
 		// Get an object in the repository
 		Session session = getCmisSession(repositoryId);
 
@@ -1280,6 +1281,7 @@ public class Node extends Controller {
 		CmisObject srcObj = session.getObject(sourceId);
 		Acl srcAcl = srcObj.getAcl();
 		List<Ace> srcAceList = srcAcl.getAces();
+		String relName = StringUtils.isEmpty(name) ? FilenameUtils.removeExtension(srcObj.getName()) : name;
 
 		Map<String, String> relProps = new HashMap<String, String>();
 		relProps.put(PropertyIds.OBJECT_TYPE_ID, relType);
