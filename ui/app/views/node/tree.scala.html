@@ -232,7 +232,7 @@
 
 		//multiple chechin button
 		$(document).on('click', '#checkin-selected-objects', function(){
-			if(window.confirm("@Messages("view.message.checkout.confirm")")){
+			if(window.confirm("@Messages("view.message.checkin.confirm")")){
 				var ids=[];
 				$('[name="selection"]:checked').each(function(){
 				  	ids.push($(this).attr('cmis-id'));
@@ -243,10 +243,10 @@
 				//Execute
 				$.ajax(jsRoutes.controllers.Node.checkInPWCByBatch("@repositoryId", ids)
 			    ).done(function(data){
-					window.alert("@Messages("view.message.checkout.success")");
+					window.alert("@Messages("view.message.checkin.success")");
 					window.location.reload();
 				}).fail(function(XMLHttpRequest, textStatus, errorThrown){
-					window.alert("@Messages("view.message.checkout.failure")");
+					window.alert("@Messages("view.message.checkin.failure")");
 				}).always(function(){
 					$.unblockUI();
 				});
