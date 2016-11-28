@@ -1476,8 +1476,8 @@ public class CompileServiceImpl implements CompileService {
 				JavaBackedAction plugin = acionPlugin.getPlugin(beanId);
 				UserItem userItem = contentService.getUserItemById(callContext.getRepositoryId(), callContext.getUsername());
 				Properties props = this.compileProperties(callContext, callContext.getRepositoryId(), userItem);
-				ActionContext actionContext = new ActionContext(callContext, props);
-				if(plugin.canExecute(actionContext, result)){
+				ActionContext actionContext = new ActionContext(callContext, props, result);
+				if(plugin.canExecute(actionContext)){
 					String action_id = beanId;
 					List<CmisExtensionElement> extElements = new ArrayList<CmisExtensionElement>();
 					extElements.add(new CmisExtensionElementImpl(ns, "actionId", null, action_id));

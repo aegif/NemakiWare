@@ -970,8 +970,8 @@ public class Util {
 		 return Long.valueOf(_size);
 	 }
 	 
-	 public static GregorianCalendar convertStringToCalendar(String date, Locale locale) {
-		SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", locale);
+	 public static GregorianCalendar convertStringToCalendar(String date, String format, Locale locale) {
+		SimpleDateFormat sdf = new SimpleDateFormat(format, locale);
 		Date d;
 		try {
 			d = sdf.parse(date);
@@ -986,7 +986,11 @@ public class Util {
 	 }
 	 
 	 public static GregorianCalendar convertStringToCalendar(String date) {
-		 return convertStringToCalendar(date, Locale.JAPAN);
+		 GregorianCalendar result = convertStringToCalendar(date, "EEE MMM dd HH:mm:ss Z yyyy", Locale.ENGLISH);
+		 if (result == null) {
+			 result = convertStringToCalendar(date, "yyyy-MM-dd HH:mm:ss", Locale.JAPAN);
+		 }
+		 return result;
 	 }
 	 
 	 

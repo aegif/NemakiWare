@@ -273,7 +273,11 @@ public class NemakiPropertyDefinition extends NodeBase {
 	public void setOpenChoice(boolean openChoice) {
 		this.openChoice = openChoice;
 	}
-
+	/*
+	public void setOpenChoice(Boolean openChoice) {
+		this.openChoice = (openChoice == null) ? true: false;
+	}
+*/
 	public List<Object> getDefaultValue() {
 		return defaultValue;
 	}
