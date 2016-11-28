@@ -807,6 +807,8 @@ public class Node extends Controller {
 						} else {
 							value = null;
 						}
+					} else if (pdf.getPropertyType() == PropertyType.BOOLEAN) {
+						value = strValue.isEmpty() ? null: Boolean.valueOf(strValue);
 					}
 					
 					properties.put(pdf.getId(), value);
