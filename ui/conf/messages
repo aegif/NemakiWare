@@ -120,6 +120,9 @@ view.search-engine.reindex.success=Reindexed search engine.
 
 view.type.caption=Types
 view.type.id=Type ID
+view.type.base-type-id=Base Type ID
+view.type.parent-type-id=Parent Type ID
+view.type.local-namespace=Namespace
 view.type.create.caption=New Type
 view.type.update.caption=Update Type
 

@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
@@ -534,20 +535,28 @@ public class Node extends Controller {
 			parentId = folder.getFolderParent().getId();
 		}
 
-		List<ObjectType> relationshipTypes = session
+		List<String> enableTypes =  NemakiConfig.getValues(PropertyKey.UI_VISIBILITY_CREATE_RELATIONSHIP);
+
+		List<RelationshipType> viewTypesTemp = session
 				.getTypeDescendants(null, -1, true)
 				.stream()
 				.map(Tree::getItem)
 				.filter(p -> p.getBaseTypeId() == BaseTypeId.CMIS_RELATIONSHIP)
+				.map( p -> (RelationshipType)p)
+				.filter(p -> enableTypes.contains(p.getLocalName()))
 				.collect(Collectors.toList());
-				;
 
-		List<String> enableTypes =  NemakiConfig.getValues(PropertyKey.UI_VISIBILITY_CREATE_RELATIONSHIP);
+		List<RelationshipType> viewTypes =
+				viewTypesTemp.stream()
+				.filter(p -> p.getAllowedSourceTypes().contains(obj.getType().getLocalName()))
+				.collect(Collectors.toList());
 
-		List<ObjectType> viewTypes = relationshipTypes.stream().filter(p -> enableTypes.contains(p.getLocalName())).collect(Collectors.toList());
+		Set<ObjectType> targetTypes = viewTypes.stream()
+				.flatMap(p -> p.getAllowedTargetTypes().stream())
+				.distinct()
+				.collect(Collectors.toSet());
 
-
-		return ok(relationship_create.render(repositoryId, obj, parentId, viewTypes));
+		return ok(relationship_create.render(repositoryId, obj, parentId, viewTypes, targetTypes));
 	}
 
 	public static Result showRelationship(String repositoryId, String id) {

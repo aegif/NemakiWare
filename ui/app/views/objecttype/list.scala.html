@@ -32,17 +32,22 @@
 					<table class="footable" id="objects-table" data-sort="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
 						<thead>
 							<tr>
+								<th data-class="expand" data-sort-initial="true">@Messages("view.type.base-type-id")</th>
 								<th data-class="expand" data-sort-initial="true">@Messages("view.type.id")</th>
+								<th data-class="expand" data-sort-initial="true">@Messages("view.type.parent-type-id")</th>
+								<th data-class="expand" data-sort-initial="true">@Messages("view.type.local-namespace")</th>
 								<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action")</th>
 							</tr>
 						</thead>
 						<tbody>
 						@for(objectType <- objectTypes){
 							<tr>
+								<td>@objectType.getBaseTypeId</td>
 								<td>
 									<a href="@routes.Type.download(repositoryId, objectType.getId)">@objectType.getId</a>
 								</td>
-
+								<td>@objectType.getParentTypeId</td>
+								<td>@objectType.getLocalNamespace</td>
 								<td>
 									<div class="btn-group">
 										<button type="button" class="btn btn-default delete" @if(!objectType.getTypeMutability().canDelete()){disabled="disabled"} cmis-id="@objectType.getId"><i class="fa fa-trash"></i>@Messages("view.delete")</button>
