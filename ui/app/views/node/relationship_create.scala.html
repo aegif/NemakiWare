@@ -5,9 +5,11 @@
 @import org.apache.chemistry.opencmis.client.api.Document
 @import org.apache.chemistry.opencmis.commons.PropertyIds
 @import play.mvc.Http.Context.Implicit
+@import org.apache.chemistry.opencmis.client.api.RelationshipType
 @import org.apache.chemistry.opencmis.client.api.ObjectType
+@import org.apache.chemistry.opencmis.commons.enums.BaseTypeId
 
-@(repositoryId:String)(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(parentId:String)(relationshipTypes: java.util.List[ObjectType])
+@(repositoryId:String)(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(parentId:String)(relationshipTypes: java.util.List[RelationshipType])(targetTypes: java.util.Set[ObjectType])
 
 @lightbox{
 <div class="container">
@@ -46,8 +48,22 @@
 					<div class="col-sm-6">
 						<input type="file" name="file" />
 						<input type="hidden" name="cmis:parentId" value="@parentId"/>
+
+						<span class="dropdown">
+							<button class="btn btn-default dropdown-toggle" data-toggle="dropdown"><i class="fa fa-plus"></i>@Messages("view.node.relationship.create.new-file-type.caption")<span class="caret"></span></button>
+							<ul class="dropdown-menu" role="menu">
+								@for(ot <- targetTypes){
+									<li id="create-object-with-relation" typeId="@ot.getId"><a href="#">
+										@NemakiConfig.getLabel(ot.getId, Implicit.lang().language)
+									</a></li>
+								}
+							</ul>
+						</span>
+
 					</div>
 				</div>
+
+
 				<div class="row" style="padding-bottom:6px;">
 			   		<div class="col-sm-12">
 			   		@executeButton("link-new-file")
