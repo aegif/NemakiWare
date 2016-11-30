@@ -309,6 +309,7 @@ public class CouchPropertyDefinitionDetail extends CouchNodeBase {
 		p.setDecimalMinValue(getDecimalMinValue());
 		p.setDecimalMaxValue(getDecimalMaxValue());
 		p.setMaxLength(getMaxLength());
+		
 
 		return p;
 	}

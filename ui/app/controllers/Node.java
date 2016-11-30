@@ -548,7 +548,7 @@ public class Node extends Controller {
 
 		List<RelationshipType> viewTypes =
 				viewTypesTemp.stream()
-				.filter(p -> p.getAllowedSourceTypes().contains(obj.getType().getLocalName()))
+				.filter(p -> p.getAllowedSourceTypes().contains(obj.getType()))
 				.collect(Collectors.toList());
 
 		Set<ObjectType> targetTypes = viewTypes.stream()
@@ -1290,9 +1290,10 @@ public class Node extends Controller {
 
 		// Source acl copy to relation acl
 		CmisObject srcObj = session.getObject(sourceId);
+		CmisObject targetObj = session.getObject(targetId);
 		Acl srcAcl = srcObj.getAcl();
 		List<Ace> srcAceList = srcAcl.getAces();
-		String relName = StringUtils.isEmpty(name) ? FilenameUtils.removeExtension(srcObj.getName()) : name;
+		String relName = StringUtils.isEmpty(name) ? FilenameUtils.removeExtension(targetObj.getName()) : name;
 
 		Map<String, String> relProps = new HashMap<String, String>();
 		relProps.put(PropertyIds.OBJECT_TYPE_ID, relType);
