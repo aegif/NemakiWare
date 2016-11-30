@@ -344,6 +344,8 @@ public class Type extends Controller {
 	private static TypeDefinition parseRelationship(JsonNode json){
 		RelationshipTypeDefinitionImpl pdf = new RelationshipTypeDefinitionImpl();
 		parseCommonType(pdf, json);
+		pdf.setAllowedSourceTypes(getStringList(json, "allowedSourceTypes"));
+		pdf.setAllowedTargetTypes(getStringList(json, "allowedTargetTypes"));
 		return pdf;
 	}
 
@@ -524,6 +526,20 @@ public class Type extends Controller {
 			return null;
 		}else{
 			return node.textValue();
+		}
+	}
+
+	private static List<String> getStringList(JsonNode json, String key){
+		JsonNode node = json.get(key);
+		if(node == null){
+			return null;
+		}else{
+			ArrayNode arrayNode = (ArrayNode)node;
+			List<String> result = new ArrayList<String>();
+			for(JsonNode leaf : arrayNode){
+				result.add(leaf.textValue());
+			}
+			return result;
 		}
 	}
 

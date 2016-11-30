@@ -55,12 +55,14 @@ view.node.relationship.source.name=ソース名
 view.node.relationship.table.to.caption=参照している
 view.node.relationship.table.from.caption=参照されている
 view.node.relationship.create.caption=リレーションの新規作成
+view.node.relationship.create.new-file-type.caption=アップロードする文書の型
 view.node.relationship.create.new-file.caption=ファイルを新規に追加し、リレーションを作成する
 view.node.relationship.create.existing-id.caption=既存オブジェクトのIDを指定し、リレーションを作成する
 view.node.relationship.create.type.label=リレーションタイプ
 view.node.relationship.create.name.label=リレーションの名前
 view.node.relationship.create.existing-id.object-id.label=オブジェクトID
 view.node.relationship.download.targets.label=参照先をすべて含んだ圧縮ファイルとしてダウンロードする
+
 
 view.node.version.label=バージョン
 view.node.search.term=検索ワード
