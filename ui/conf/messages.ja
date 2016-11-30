@@ -55,12 +55,14 @@ view.node.relationship.source.name=ソース名
 view.node.relationship.table.to.caption=参照している
 view.node.relationship.table.from.caption=参照されている
 view.node.relationship.create.caption=リレーションの新規作成
+view.node.relationship.create.new-file-type.caption=アップロードする文書の型
 view.node.relationship.create.new-file.caption=ファイルを新規に追加し、リレーションを作成する
 view.node.relationship.create.existing-id.caption=既存オブジェクトのIDを指定し、リレーションを作成する
 view.node.relationship.create.type.label=リレーションタイプ
 view.node.relationship.create.name.label=リレーションの名前
 view.node.relationship.create.existing-id.object-id.label=オブジェクトID
 view.node.relationship.download.targets.label=参照先をすべて含んだ圧縮ファイルとしてダウンロードする
+
 
 view.node.version.label=バージョン
 view.node.search.term=検索ワード
@@ -123,8 +125,13 @@ view.search-engine.reindex.success=検索エンジンのインデクスを再作
 
 view.type.caption=タイプ管理
 view.type.id=タイプID
+view.type.base-type-id=ベースタイプID
+view.type.parent-type-id=親タイプID
+view.type.local-namespace=名前空間
 view.type.create.caption=タイプの新規作成
 view.type.update.caption=タイプの更新
+
+
 
 view.config.key=キー
 view.config.value=値
@@ -172,6 +179,9 @@ view.message.is-required=が必要です！
 view.message.checkout.confirm=チェックアウトしてもよろしいですか？
 view.message.checkout.success=正常にチェックアウトされました
 view.message.checkout.failure=チェックアウトに失敗しました
+view.message.checkin.confirm=チェックインしてもよろしいですか？
+view.message.checkin.success=正常にチェックインされました
+view.message.checkin.failure=チェックインに失敗しました
 view.message.cancel-checkout.confirm=チェックアウトをキャンセルし、チェックアウト前のファイルに戻してももよろしいですか？
 view.message.cancel-checkout.success=チェックアウトのキャンセルは正常に終了しました。ファイルはすべてチェックアウト前の状態に復帰されています
 view.message.cancel-checkout.failure=チェックアウトのキャンセルに失敗しました
