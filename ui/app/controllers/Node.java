@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
@@ -53,6 +54,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntry
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.objectweb.asm.Type;
@@ -533,20 +535,28 @@ public class Node extends Controller {
 			parentId = folder.getFolderParent().getId();
 		}
 
-		List<ObjectType> relationshipTypes = session
+		List<String> enableTypes =  NemakiConfig.getValues(PropertyKey.UI_VISIBILITY_CREATE_RELATIONSHIP);
+
+		List<RelationshipType> viewTypesTemp = session
 				.getTypeDescendants(null, -1, true)
 				.stream()
 				.map(Tree::getItem)
 				.filter(p -> p.getBaseTypeId() == BaseTypeId.CMIS_RELATIONSHIP)
+				.map( p -> (RelationshipType)p)
+				.filter(p -> enableTypes.contains(p.getLocalName()))
 				.collect(Collectors.toList());
-				;
 
-		List<String> enableTypes =  NemakiConfig.getValues(PropertyKey.UI_VISIBILITY_CREATE_RELATIONSHIP);
+		List<RelationshipType> viewTypes =
+				viewTypesTemp.stream()
+				.filter(p -> p.getAllowedSourceTypes().contains(obj.getType()))
+				.collect(Collectors.toList());
 
-		List<ObjectType> viewTypes = relationshipTypes.stream().filter(p -> enableTypes.contains(p.getLocalName())).collect(Collectors.toList());
+		Set<ObjectType> targetTypes = viewTypes.stream()
+				.flatMap(p -> p.getAllowedTargetTypes().stream())
+				.distinct()
+				.collect(Collectors.toSet());
 
-
-		return ok(relationship_create.render(repositoryId, obj, parentId, viewTypes));
+		return ok(relationship_create.render(repositoryId, obj, parentId, viewTypes, targetTypes));
 	}
 
 	public static Result showRelationship(String repositoryId, String id) {
@@ -810,7 +820,7 @@ public class Node extends Controller {
 					} else if (pdf.getPropertyType() == PropertyType.BOOLEAN) {
 						value = strValue.isEmpty() ? null: Boolean.valueOf(strValue);
 					}
-					
+
 					properties.put(pdf.getId(), value);
 				} else {
 					// TODO find better way
@@ -1274,14 +1284,16 @@ public class Node extends Controller {
 		}
 	}
 
-	private static ObjectId createRelation(String relType, String relName, String repositoryId, String sourceId, String targetId) {
+	private static ObjectId createRelation(String relType, String name, String repositoryId, String sourceId, String targetId) {
 		// Get an object in the repository
 		Session session = getCmisSession(repositoryId);
 
 		// Source acl copy to relation acl
 		CmisObject srcObj = session.getObject(sourceId);
+		CmisObject targetObj = session.getObject(targetId);
 		Acl srcAcl = srcObj.getAcl();
 		List<Ace> srcAceList = srcAcl.getAces();
+		String relName = StringUtils.isEmpty(name) ? FilenameUtils.removeExtension(targetObj.getName()) : name;
 
 		Map<String, String> relProps = new HashMap<String, String>();
 		relProps.put(PropertyIds.OBJECT_TYPE_ID, relType);

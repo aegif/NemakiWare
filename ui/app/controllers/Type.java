@@ -26,6 +26,8 @@ import org.apache.commons.lang3.StringUtils;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import play.data.DynamicForm;
@@ -60,18 +62,18 @@ public class Type extends Controller {
 	public static Result download(String repositoryId, String id){
 		Session session = getCmisSession(repositoryId);
 		ObjectType objectType = session.getTypeDefinition(id);
-		ObjectMapper mapper = new ObjectMapper();
+		ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
 
 		ObjectNode json = mapper.createObjectNode();
-		json.put("id", escape(objectType.getId()));
-		json.put("localName", escape(objectType.getLocalName()));
-		json.put("localNamespace", escape(objectType.getLocalNamespace()));
-		json.put("displayName", escape(objectType.getDisplayName()));
-		json.put("queryName", escape(objectType.getQueryName()));
-		json.put("description", escape(objectType.getDescription()));
-		json.put("baseId", escape(objectType.getBaseTypeId().value()));
+		json.put("id", (objectType.getId()));
+		json.put("localName", (objectType.getLocalName()));
+		json.put("localNamespace", (objectType.getLocalNamespace()));
+		json.put("displayName", (objectType.getDisplayName()));
+		json.put("queryName", (objectType.getQueryName()));
+		json.put("description", (objectType.getDescription()));
+		json.put("baseId", (objectType.getBaseTypeId().value()));
 		if(StringUtils.isNotBlank(objectType.getParentTypeId())){
-			json.put("parentId", escape(objectType.getParentTypeId()));
+			json.put("parentId", (objectType.getParentTypeId()));
 		}
 		json.put("creatable", objectType.isCreatable());
 		json.put("fileable", objectType.isFileable());
@@ -91,18 +93,30 @@ public class Type extends Controller {
 			json.put("contentStreamAllowed", documentType.getContentStreamAllowed().value());
 		}
 
+		if(objectType instanceof RelationshipTypeDefinition){
+			RelationshipTypeDefinition relType = (RelationshipTypeDefinition)objectType;
+			ArrayNode nodeAllowedSourceTypeArray = json.putArray("allowedSourceTypes");
+			for(String typeId : relType.getAllowedSourceTypeIds()){
+				nodeAllowedSourceTypeArray.add(typeId);
+			}
+			ArrayNode nodeAllowedTargetTypesArray = json.putArray("allowedTargetTypes");
+			for(String typeId : relType.getAllowedTargetTypeIds()){
+				nodeAllowedTargetTypesArray.add(typeId);
+			}
+		}
+
 		//Property definitions
 		Map<String, PropertyDefinition<?>> map = objectType.getPropertyDefinitions();
 		ObjectNode propertyDefinitions = mapper.createObjectNode();
 		for(String key : map.keySet()){
 			PropertyDefinition<?> pdf = map.get(key);
 			ObjectNode propertyDefinition = mapper.createObjectNode();
-			propertyDefinition.put("id", escape(pdf.getId()));
-			propertyDefinition.put("localName", escape(pdf.getLocalName()));
-			propertyDefinition.put("localNamespace", escape(pdf.getLocalNamespace()));
-			propertyDefinition.put("displayName", escape(pdf.getDisplayName()));
-			propertyDefinition.put("queryName", escape(pdf.getQueryName()));
-			propertyDefinition.put("description", escape(pdf.getDescription()));
+			propertyDefinition.put("id", (pdf.getId()));
+			propertyDefinition.put("localName", (pdf.getLocalName()));
+			propertyDefinition.put("localNamespace", (pdf.getLocalNamespace()));
+			propertyDefinition.put("displayName", (pdf.getDisplayName()));
+			propertyDefinition.put("queryName", (pdf.getQueryName()));
+			propertyDefinition.put("description", (pdf.getDescription()));
 			propertyDefinition.put("propertyType", pdf.getPropertyType().value());
 			propertyDefinition.put("cardinality", pdf.getCardinality().value());
 
@@ -330,6 +344,8 @@ public class Type extends Controller {
 	private static TypeDefinition parseRelationship(JsonNode json){
 		RelationshipTypeDefinitionImpl pdf = new RelationshipTypeDefinitionImpl();
 		parseCommonType(pdf, json);
+		pdf.setAllowedSourceTypes(getStringList(json, "allowedSourceTypes"));
+		pdf.setAllowedTargetTypes(getStringList(json, "allowedTargetTypes"));
 		return pdf;
 	}
 
@@ -510,6 +526,20 @@ public class Type extends Controller {
 			return null;
 		}else{
 			return node.textValue();
+		}
+	}
+
+	private static List<String> getStringList(JsonNode json, String key){
+		JsonNode node = json.get(key);
+		if(node == null){
+			return null;
+		}else{
+			ArrayNode arrayNode = (ArrayNode)node;
+			List<String> result = new ArrayList<String>();
+			for(JsonNode leaf : arrayNode){
+				result.add(leaf.textValue());
+			}
+			return result;
 		}
 	}
 
