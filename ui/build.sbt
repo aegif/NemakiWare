@@ -4,7 +4,7 @@ name := """ui"""
 
 version := "2.4.0"
 
-lazy val root = (project in file(".")).enablePlugins(PlayJava)
+lazy val root = (project in file(".")).enablePlugins(PlayJava,PlayEbean)
 
 scalaVersion := "2.11.8"
 
@@ -20,8 +20,8 @@ initialize := {
 resolvers += Resolver.mavenLocal
 
 libraryDependencies ++= Seq(
+  evolutions,
   javaJdbc,
-  javaEbean,
   cache,
   javaWs,
   "jp.aegif.nemaki.common" % "nemakiware-common" % "2.4.0" changing(),
