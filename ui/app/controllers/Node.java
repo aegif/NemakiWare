@@ -1237,6 +1237,7 @@ public class Node extends Controller {
 		String parentId = Util.getFormData(input, PropertyIds.PARENT_ID);
 		String relType = Util.getFormData(input, "nemaki:relationshipType");
 		String relName = Util.getFormData(input, "nemaki:relationshipName");
+		String docType = Util.getFormData(input, "nemaki:documentType");
 
 		// Get an object in the repository
 		Session session = getCmisSession(repositoryId);
@@ -1250,7 +1251,7 @@ public class Node extends Controller {
 		ContentStream cs = Util.convertFileToContentStream(session, file);
 
 		Map<String, String> newDocProps = new HashMap<String, String>();
-		newDocProps.put(PropertyIds.OBJECT_TYPE_ID, "cmis:document");
+		newDocProps.put(PropertyIds.OBJECT_TYPE_ID, StringUtils.isBlank(docType) ? "cmis:document" : docType);
 		newDocProps.put(PropertyIds.NAME, file.getFilename());
 		Document doc = folder.createDocument(newDocProps, cs, VersioningState.MAJOR, null, null, null,
 				session.getDefaultContext());
