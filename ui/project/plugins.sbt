@@ -19,8 +19,10 @@ addSbtPlugin("com.typesafe.sbt" % "sbt-mocha" % "1.0.0")
 
 addSbtPlugin("com.typesafe.sbt" % "sbt-play-enhancer" % "1.1.0")
 
-addSbtPlugin("com.typesafe.sbt" % "sbt-play-ebean" % "1.0.0")
+// addSbtPlugin("com.typesafe.sbt" % "sbt-play-ebean" % "1.0.0")
 
 addSbtPlugin("com.github.play2war" % "play2-war-plugin" % "1.4-beta1")
 
-addSbtPlugin("com.typesafe.sbteclipse" % "sbteclipse-plugin" % "2.5.0")
+//addSbtPlugin("com.typesafe.sbteclipse" % "sbteclipse-plugin" % "2.5.0")
+
+addSbtPlugin("com.typesafe.sbteclipse" % "sbteclipse-plugin" % "4.0.0")
