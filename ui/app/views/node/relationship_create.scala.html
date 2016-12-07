@@ -48,17 +48,13 @@
 					<div class="col-sm-6">
 						<input type="file" style="padding-bottom:6px;" name="file" />
 						<input type="hidden" name="cmis:parentId" value="@parentId"/>
-
-						<span class="dropdown">
-							<button class="btn btn-default dropdown-toggle" data-toggle="dropdown"><i class="fa fa-plus"></i>@Messages("view.node.relationship.create.new-file-type.caption")<span class="caret"></span></button>
-							<ul class="dropdown-menu" role="menu">
-								@for(ot <- targetTypes){
-									<li id="create-object-with-relation" typeId="@ot.getId"><a href="#">
-										@NemakiConfig.getLabel(ot.getId, Implicit.lang().language)
-									</a></li>
-								}
-							</ul>
-						</span>
+						<select class="form-control" id="document-type" name="document-type">
+							@for(ot <- targetTypes){
+								<option value="@ot.getId">
+									@NemakiConfig.getLabel(ot.getId, Implicit.lang().language)
+								</option>
+							}
+						</select>
 					</div>
 				</div>
 
@@ -99,9 +95,11 @@
 
 			var rType = $('#relationship-type option:selected').val();
 			var rName = $('#relationship-name').val();
+			var dType = $('#document-type option:selected').val();
 
 			formData.append('nemaki:relationshipType', rType);
 			formData.append('nemaki:relationshipName', rName);
+			formData.append('nemaki:documentType', dType);
 
 			$.blockUI({message:'@Messages("view.message.please.wait")'});
 			$.ajax({
