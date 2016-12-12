@@ -46,7 +46,9 @@ set DEFAULT_PROP_PATH=%SOURCE_HOME%\core\src\main\webapp\WEB-INF\classes
 set CUSTOM_PROP_PATH=%SOURCE_HOME%\core\src\main\resources
 
 rem Build install utilities
+call mvn -f %SCRIPT_HOME%\install-util clean
 call mvn -f %SCRIPT_HOME%\install-util package
+call mvn -f %SOURCE_HOME%\setup\couchdb\bjornloka clean
 call mvn -f %SOURCE_HOME%\setup\couchdb\bjornloka package
 
 rem Setting installer default values from source code
@@ -69,6 +71,7 @@ call mvn -f %SOURCE_HOME%\ clean
 call mvn -f %SOURCE_HOME%\ install
 call mvn -f %SOURCE_HOME%\ package %PROFILE_PRODUCT% -Dmaven.test.skip=true
 cd /d %SOURCE_HOME%\ui
+call activator.bat clean
 call activator.bat war
 cd /d %ORIGINAL_PWD%
 
