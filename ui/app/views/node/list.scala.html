@@ -77,7 +77,7 @@
 						<i class="fa fa-trash"></i><div class="tooltips">@Messages("view.delete")</div>
 					</button>
 
-					@for(actionButton <- Util.getActionPluginUIElementList(obj)){
+					@for(actionButton <- Util.getUIActionPluginUIElementList(obj, null)){
 						<button type="button" class="btn btn-default action-@actionButton.getActionId()-@obj.getId()" cmis-id="@obj.getId()">
 							<i class="@actionButton.getFontAwesomeName()"></i>
 							<div class="tooltips">@actionButton.getDisplayName()</div>
@@ -166,7 +166,7 @@
 
 	@for(obj <- objects){
 		<!--  @obj.getId() -->
-		@for(actionPluginUI <- Util.getActionPluginUIElementList(obj)){
+		@for(actionPluginUI <- Util.getUIActionPluginUIElementList(obj, null)){
 			<!-- action -->
 			<script type="text/javascript">
 				$(function(){

@@ -23,7 +23,9 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.ServiceLoader;
 import java.util.Map.Entry;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -94,10 +96,18 @@ import play.mvc.Http.Request;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.google.inject.Guice;
+import com.google.inject.Injector;
 
 import constant.PropertyKey;
 import constant.Token;
 import constant.UpdateContext;
+import jp.aegif.nemaki.plugin.action.JavaBackedAction;
+import jp.aegif.nemaki.plugin.action.JavaBackedActionModule;
+import jp.aegif.nemaki.plugin.action.JavaBackedUIAction;
+import jp.aegif.nemaki.plugin.action.UIActionContext;
+import jp.aegif.nemaki.plugin.action.trigger.ActionTriggerBase;
+import jp.aegif.nemaki.plugin.action.trigger.UserButtonPerCmisObjcetActionTrigger;
 import model.ActionPluginUIElement;
 
 public class Util {
@@ -190,10 +200,53 @@ public class Util {
 		}
 	}
 
+	
+	public static Set<JavaBackedUIAction> getUIActions() {
+		ServiceLoader<JavaBackedActionModule> loader = ServiceLoader.load(JavaBackedActionModule.class);
+		Injector injector = Guice.createInjector(loader);
+		injector.injectMembers(ActionPlugin.class);
+		ActionPlugin instance = injector.getInstance(ActionPlugin.class);
+		return instance.getActions();
+	}
+	
+	public static List<ActionPluginUIElement> getUIActionPluginUIElementList(CmisObject object, Session session) {
+		List<ActionPluginUIElement> result = new ArrayList<ActionPluginUIElement>();
+		Set<JavaBackedUIAction> actions = getUIActions();
+		for (JavaBackedUIAction action : actions) {
+			UIActionContext context = new UIActionContext(object, session);
+			if (action.canExecute(context)) {
+				ActionTriggerBase trigger = action.getActionTrigger(context);
+				if (trigger instanceof UserButtonPerCmisObjcetActionTrigger) {
+					ActionPluginUIElement button = new ActionPluginUIElement();
+					UserButtonPerCmisObjcetActionTrigger objectActionTrigger = (UserButtonPerCmisObjcetActionTrigger) trigger;
+					button.setActionId(action.getClass().getSimpleName());
+					button.setDisplayName(objectActionTrigger.getDisplayName());
+					button.setFontAwesomeName(objectActionTrigger.getFontAwesomeName());
+					button.setFormHtml(objectActionTrigger.getFormHtml());
+					result.add(button);
+				}
+			}
+		}
+		return result;
+	}
+	
+	public static JavaBackedUIAction getActionPlugin(CmisObject object, String actionId, Session session){
+		Set<JavaBackedUIAction> actions = getUIActions();
+		for (JavaBackedUIAction action : actions) {
+			UIActionContext context = new UIActionContext(object, session);
+			ActionTriggerBase trigger = action.getActionTrigger(context);
+			if (action.getClass().getSimpleName().equals(actionId)) {
+				return action;
+			}
+		}
+		return null;
+	}
+	
 	public static List<ActionPluginUIElement> getActionPluginUIElementList(CmisObject object){
 		List<CmisExtensionElement> exList = object.getExtensions(ExtensionLevel.OBJECT);
 		List<ActionPluginUIElement> result = new ArrayList<ActionPluginUIElement>();
 
+		
 		if (exList != null){
 			for(CmisExtensionElement elm : exList){
 				if(elm.getNamespace() == "http://www.aegif.jp/Nemaki/action"){
@@ -216,8 +269,8 @@ public class Util {
 		return result;
 	}
 
-	public static ActionPluginUIElement getActionPluginUIElement(CmisObject object, String actionId){
-		for(ActionPluginUIElement elm : Util.getActionPluginUIElementList(object)){
+	public static ActionPluginUIElement getActionPluginUIElement(CmisObject object, String actionId, Session session){
+		for(ActionPluginUIElement elm : Util.getUIActionPluginUIElementList(object, session)){
 			if(elm.getActionId().equals(actionId)) return elm;
 		}
 		return null;
