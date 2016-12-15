@@ -27,6 +27,7 @@ import java.util.Map.Entry;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.apache.chemistry.opencmis.client.SessionParameterMap;
 import org.apache.chemistry.opencmis.client.api.CmisObject;
 import org.apache.chemistry.opencmis.client.api.Document;
 import org.apache.chemistry.opencmis.client.api.Folder;
@@ -104,33 +105,23 @@ public class Util {
 	public static Session createCmisSession(String repositoryId, play.mvc.Http.Session session){
 		String userId = session.get(Token.LOGIN_USER_ID);
 		String password = session.get(Token.LOGIN_USER_PASSWORD);
+
 		return createCmisSession(repositoryId, userId, password);
 	}
 
 	public static Session createCmisSession(String repositoryId, String userId, String password){
-		Map<String, String> parameter = new HashMap<String, String>();
+		SessionParameterMap parameter = new SessionParameterMap();
 
-		// user credentials
 		//TODO enable change a user
-		parameter.put(SessionParameter.USER, userId);
-		parameter.put(SessionParameter.PASSWORD, password);
-
-		// session locale
-		parameter.put(SessionParameter.LOCALE_ISO3166_COUNTRY, "");
-		parameter.put(SessionParameter.LOCALE_ISO639_LANGUAGE, "");
-
-		// repository
-		//String repositoryId = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_REPOSITORY);
-		parameter.put(SessionParameter.REPOSITORY_ID, repositoryId);
-		//parameter.put(org.apache.chemistry.opencmis.commons.impl.Constants.PARAM_REPOSITORY_ID, NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_REPOSITORY));
-
-		parameter. put(SessionParameter.BINDING_TYPE, BindingType.ATOMPUB.value());
-
+		parameter.setBasicAuthentication(userId, password);
+		parameter.setLocale("", "");
+		parameter.setRepositoryId(repositoryId);
 		String coreAtomUri = buildNemakiCoreUri() + "atom/"+ repositoryId;
-		parameter.put(SessionParameter.ATOMPUB_URL, coreAtomUri);
+		parameter.setAtomPubBindingUrl(coreAtomUri);
 
     	SessionFactory f = SessionFactoryImpl.newInstance();
     	Session session = f.createSession(parameter);
+
     	OperationContext operationContext = session.createOperationContext(null,
 				true, true, false, IncludeRelationships.BOTH, null, false, null, false, 100);
 		session.setDefaultContext(operationContext);
@@ -969,7 +960,7 @@ public class Util {
 		 String _size = NemakiConfig.getValue(PropertyKey.COMPRESSION_TARGET_MAXSIZE);
 		 return Long.valueOf(_size);
 	 }
-	 
+
 	 public static GregorianCalendar convertStringToCalendar(String date, String format, Locale locale) {
 		SimpleDateFormat sdf = new SimpleDateFormat(format, locale);
 		Date d;
@@ -984,7 +975,7 @@ public class Util {
 		}
 		return null;
 	 }
-	 
+
 	 public static GregorianCalendar convertStringToCalendar(String date) {
 		 GregorianCalendar result = convertStringToCalendar(date, "EEE MMM dd HH:mm:ss Z yyyy", Locale.ENGLISH);
 		 if (result == null) {
@@ -992,6 +983,6 @@ public class Util {
 		 }
 		 return result;
 	 }
-	 
-	 
+
+
 }

@@ -57,10 +57,12 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	private RepositoryInfoMap repositoryInfoMap;
 
 	public boolean login(CallContext callContext) {
+		String repositoryId = callContext.getRepositoryId();
+
 		// Set flag of SuperUsers
 		String suId = repositoryInfoMap.getSuperUsers().getId();
 		((CallContextImpl)callContext).put(CallContextKey.IS_SU,
-				suId.equals(callContext.getRepositoryId()));
+				suId.equals(repositoryId));
 
 		// SSO
 		if (loginWithExternalAuth(callContext)) {
@@ -71,51 +73,37 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		if (loginWithToken(callContext)) {
 			return true;
 		}
-		
+
 		// Basic auth
 		return loginWithBasicAuth(callContext);
 	}
 
 	private boolean loginWithExternalAuth(CallContext callContext) {
-		final String repositoryId = "bedroom"; // TODO hard coding
+		String repositoryId = callContext.getRepositoryId();
 
 		String proxyHeaderKey = propertyManager.readValue(PropertyKey.EXTERNAL_AUTHENTICATION_PROXY_HEADER);
-		if(StringUtils.isBlank(proxyHeaderKey)){
-			return false;
-		}
+		if(StringUtils.isBlank(proxyHeaderKey)) return false;
+		
 		String proxyUserId = (String) callContext.get(proxyHeaderKey);
 		if (StringUtils.isBlank(proxyUserId)) {
 			log.warn("Not authenticated user");
 			return false;
 		} else {
-			/*User user = principalService.getUserById(repositoryId, proxyUserId);
-			if (user == null) {
-				User newUser = new User(proxyUserId, proxyUserId, "", "", "",
-						BCrypt.hashpw(proxyUserId, BCrypt.gensalt()));
-				principalService.createUser(repositoryId, newUser);
-				log.debug("Authenticated userId=" + newUser.getUserId());
-			} else {
-				log.debug("Authenticated userId=" + user.getUserId());
-
-				//Admin check
-				boolean isAdmin = user.isAdmin() == null ? false : true;
-				setAdminFlagInContext(callContext, isAdmin);
-			}*/
 			UserItem userItem = contentService.getUserItemById(repositoryId, proxyUserId);
 			if (userItem == null) {
-				String parentFolderId = propertyManager.readValue(PropertyKey.CAPABILITY_EXTENDED_USER_ITEM_FOLDER);
-				UserItem newUser = new UserItem(null, "nemaki:user", proxyUserId, proxyUserId, null, false, parentFolderId);
-				contentDaoService.create(repositoryId, newUser);
-				log.debug("Authenticated userId=" + newUser.getUserId());
+				Boolean isAutoCreate = propertyManager.readBoolean(PropertyKey.EXTERNAL_AUTHENTICATION_AUTO_CREATE_USER);				
+				if(isAutoCreate){
+					String parentFolderId = propertyManager.readValue(PropertyKey.CAPABILITY_EXTENDED_USER_ITEM_FOLDER);
+					userItem = new UserItem(null, "nemaki:user", proxyUserId, proxyUserId, null, false, parentFolderId);
+					contentDaoService.create(repositoryId, userItem);
+				}else{
+					return false;
+				}
 			} else {
-				//log.debug("Authenticated userId=" + user.getUserId());
-				log.debug("Authenticated userId=" + userItem.getUserId());
-
-				//Admin check
-				//boolean isAdmin = user.isAdmin() == null ? false : true;
 				boolean isAdmin = userItem.isAdmin() == null ? false : true;
 				setAdminFlagInContext(callContext, isAdmin);
 			}
+			log.debug("Header Authenticated. UserId=" + userItem.getUserId());
 			return true;
 		}
 	}
@@ -148,7 +136,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 	private boolean loginWithBasicAuth(CallContext callContext) {
 		String repositoryId = callContext.getRepositoryId();
-		
+
 		//Check repositoryId exists
 		if(!repositoryInfoMap.contains(repositoryId)){
 			return false;
@@ -176,12 +164,12 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 		return true;
 	}
-	
+
 	@Override
 	public boolean loginForNemakiConfDb(CallContext callContext){
 		final String suId = repositoryInfoMap.getSuperUsers().getId();
 		final String repositoryId = callContext.getRepositoryId();
-		
+
 		// check system config db
 		if(ObjectUtils.equals(repositoryId, SystemConst.NEMAKI_CONF_DB)){
 			UserItem user = getAuthenticatedUserItem(suId, callContext.getUsername(), callContext.getPassword());
@@ -191,10 +179,10 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 			boolean isAdmin = user.isAdmin() == null ? false : true;
 			return isAdmin;
 		}
-		
+
 		return false;
 	}
-	
+
 	private void setAdminFlagInContext(CallContext callContext, Boolean isAdmin) {
 		((CallContextImpl) callContext).put(CallContextKey.IS_ADMIN, isAdmin);
 	}
@@ -217,7 +205,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	private boolean authenticateAdminByToken(String repositoryId, String userName) {
 		return tokenService.isAdmin(repositoryId, userName);
 	}
-	
+
 	private UserItem getAuthenticatedUserItem(String repositoryId, String userId, String password) {
 		UserItem u = contentService.getUserItemById(repositoryId, userId);
 
