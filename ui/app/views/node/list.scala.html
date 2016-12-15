@@ -11,7 +11,7 @@
 @import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed
 @import play.mvc.Http.Context.Implicit
 
-@(repositoryId:String)(objects: java.util.List[org.apache.chemistry.opencmis.client.api.CmisObject])
+@(repositoryId:String)(objects: java.util.List[org.apache.chemistry.opencmis.client.api.CmisObject])(session:org.apache.chemistry.opencmis.client.api.Session)
 
 <table class="footable" id="objects-table" data-sort="true"
 	   data-filter="#filter"
@@ -77,7 +77,7 @@
 						<i class="fa fa-trash"></i><div class="tooltips">@Messages("view.delete")</div>
 					</button>
 
-					@for(actionButton <- Util.getUIActionPluginUIElementList(obj, null)){
+					@for(actionButton <- Util.getUIActionPluginUIElementList(obj, session)){
 						<button type="button" class="btn btn-default action-@actionButton.getActionId()-@obj.getId()" cmis-id="@obj.getId()">
 							<i class="@actionButton.getFontAwesomeName()"></i>
 							<div class="tooltips">@actionButton.getDisplayName()</div>
@@ -166,7 +166,7 @@
 
 	@for(obj <- objects){
 		<!--  @obj.getId() -->
-		@for(actionPluginUI <- Util.getUIActionPluginUIElementList(obj, null)){
+		@for(actionPluginUI <- Util.getUIActionPluginUIElementList(obj, session)){
 			<!-- action -->
 			<script type="text/javascript">
 				$(function(){
