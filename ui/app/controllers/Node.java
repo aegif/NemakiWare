@@ -150,7 +150,7 @@ public class Node extends Controller {
 
 		List<Tree<ObjectType>> viewTypes = types.stream().filter(p -> enableTypes.contains(p.getItem().getLocalName())).collect(Collectors.toList());
 
-		return ok(tree.render(repositoryId, _parent, results, viewTypes));
+		return ok(tree.render(repositoryId, _parent, results, viewTypes, session));
 	}
 
 	public static Result showChildrenByPath(String repositoryId, String path) {
@@ -183,7 +183,7 @@ public class Node extends Controller {
 			list.add(doc);
 		}
 
-		return ok(search.render(repositoryId, term, list));
+		return ok(search.render(repositoryId, term, list, session));
 	}
 
 	public static Result showBlank(String repositoryId) {
@@ -643,7 +643,7 @@ public class Node extends Controller {
 		CmisObject obj = session.getObject(id);
 		JavaBackedUIAction action = Util.getActionPlugin(obj, actionId, session);
 		UIActionContext context = new UIActionContext(obj, session);
-		String result = action.executeAction(context, json.asText());
+		String result = action.executeAction(context, json.toString());
 		return ok(result);
 	}
 
