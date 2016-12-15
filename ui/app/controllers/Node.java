@@ -94,6 +94,7 @@ public class Node extends Controller {
 	}
 
 	public static Result index(String repositoryId) {
+		log.debug("Request index");
 		try {
 			Session session = getCmisSession(repositoryId);
 			Folder root = session.getRootFolder();
