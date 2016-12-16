@@ -40,7 +40,7 @@ public interface PropertyKey {
 	final String CAPABILITY_EXTENDED_PERMISSION_INHERITANCE_TOPLEVEL = "capability.extended.permission.inheritance.toplevel";
 	final String CAPABILITY_EXTENDED_USER_ITEM_FOLDER = "capability.extended.user.item.folder";
 	final String SYSTEM_FOLDER = "system.folder";
-	
+
 	//Rest
 	final String REST_USER_ENABLED = "rest.user.enabled";
 	final String REST_GROUP_ENABLED = "rest.group.enabled";
@@ -267,7 +267,8 @@ public interface PropertyKey {
 
 	//External authentication
 	final String EXTERNAL_AUTHENTICATION_PROXY_HEADER = "external.authenticaion.proxyHeader";
-	
+	final String EXTERNAL_AUTHENTICATION_AUTO_CREATE_USER = "external.authenticaion.isAutoCreateUser";
+
 	//Thread
 	final String THREAD_MAX = "thread.max";
 }
