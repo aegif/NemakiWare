@@ -46,6 +46,7 @@ import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
 import org.apache.chemistry.opencmis.commons.definitions.Choice;
 import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
@@ -62,6 +63,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeDe
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.http.Header;
 import org.apache.http.HttpRequest;
 import org.apache.http.HttpResponse;
@@ -99,33 +101,86 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import constant.PropertyKey;
 import constant.Token;
 import constant.UpdateContext;
+import controllers.CmisSessions;
 import model.ActionPluginUIElement;
 
 public class Util {
-	public static Session createCmisSession(String repositoryId, play.mvc.Http.Session session){
-		String userId = session.get(Token.LOGIN_USER_ID);
-		String password = session.get(Token.LOGIN_USER_PASSWORD);
 
-		return createCmisSession(repositoryId, userId, password);
+	public static String getVersion(String repositoryId, play.mvc.Http.Session session){
+		Session cmisSession = CmisSessions.getCmisSession(repositoryId, session);
+		RepositoryInfo repo = cmisSession.getRepositoryInfo();
+		return repo.getProductVersion();
 	}
 
-	public static Session createCmisSession(String repositoryId, String userId, String password){
+	public static boolean isAdmin(String repositoryId, String userId, play.mvc.Http.Session session){
+		boolean isAdmin = false;
+
+		String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
+		String endPoint = coreRestUri + "repo/" + repositoryId + "/user/";
+
+		try{
+			JsonNode result = Util.getJsonResponse(session, endPoint + "show/" + userId);
+			if("success".equals(result.get("status").asText())){
+				JsonNode _user = result.get("user");
+				model.User user = new model.User(_user);
+
+				isAdmin = user.isAdmin;
+			}
+		}catch(Exception e){
+			//TODO logging
+			System.out.println("This user is not returned in REST API:" + userId);
+		}
+
+		return isAdmin;
+	}
+
+	public static Session createCmisSession(String repositoryId, play.mvc.Http.Session session){
+
+		if(StringUtils.isNotBlank(session.get(Token.HEADER_AUTH))){
+			String userId = session.get(Token.LOGIN_USER_ID);
+			return createCmisSessionByAuthHeader(repositoryId, userId);
+		}else{
+			String userId = session.get(Token.LOGIN_USER_ID);
+			String password = session.get(Token.LOGIN_USER_PASSWORD);
+			return createCmisSessionByBasicAuth(repositoryId, userId, password);
+		}
+	}
+	public static Session createCmisSessionByAuthHeader(String repositoryId, String remoteUserId){
+		SessionParameterMap parameter = new SessionParameterMap();
+
+		//TODO enable change a user
+		parameter.addHeader("X-NemakiWare-Remote-User", remoteUserId);
+
+		Session session = createCmisSessionWithParam(repositoryId, parameter);
+
+		return session;
+	}
+
+
+	public static Session createCmisSessionByBasicAuth(String repositoryId, String userId, String password){
 		SessionParameterMap parameter = new SessionParameterMap();
 
 		//TODO enable change a user
 		parameter.setBasicAuthentication(userId, password);
+
+		Session session = createCmisSessionWithParam(repositoryId, parameter);
+
+		return session;
+	}
+
+	private static Session createCmisSessionWithParam(String repositoryId, SessionParameterMap parameter) {
 		parameter.setLocale("", "");
 		parameter.setRepositoryId(repositoryId);
 		String coreAtomUri = buildNemakiCoreUri() + "atom/"+ repositoryId;
 		parameter.setAtomPubBindingUrl(coreAtomUri);
 
     	SessionFactory f = SessionFactoryImpl.newInstance();
+
     	Session session = f.createSession(parameter);
 
     	OperationContext operationContext = session.createOperationContext(null,
 				true, true, false, IncludeRelationships.BOTH, null, false, null, false, 100);
 		session.setDefaultContext(operationContext);
-
 		return session;
 	}
 

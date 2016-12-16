@@ -17,8 +17,10 @@ public class Secured extends Security.Authenticator {
 	public String getUsername(Context ctx) {
 		final String requestRepoId = extractRepositoryId(ctx.request());
 		final String sessionRepoId = ctx.session().get(Token.LOGIN_REPOSITORY_ID);
+
 		if (StringUtils.isBlank(sessionRepoId) || sessionRepoId.equals(requestRepoId)) {
-			return ctx.session().get(Token.LOGIN_USER_ID);
+			String userId =  ctx.session().get(Token.LOGIN_USER_ID);
+			return userId;
 		}
 
 		// Redirect to login page
@@ -27,17 +29,18 @@ public class Secured extends Security.Authenticator {
 
 	@Override
 	public Result onUnauthorized(Context ctx) {
-		String sessionRepoId = ctx.session().get(Token.LOGIN_REPOSITORY_ID);
-		if(StringUtils.isBlank(sessionRepoId)){
-			final String requestRepoId = extractRepositoryId(ctx.request());
-			if(StringUtils.isBlank(requestRepoId)){
-				return redirect(routes.Application.error()); 
-			}else{
-				return redirect(routes.Application.login(requestRepoId));
+		String repoId = ctx.session().get(Token.LOGIN_REPOSITORY_ID);
+
+		if(StringUtils.isBlank(repoId)){
+			repoId = extractRepositoryId(ctx.request());
+			if(StringUtils.isBlank(repoId)){
+				return redirect(routes.Application.error());
 			}
-		}else{
-			return redirect(routes.Application.login(sessionRepoId));
 		}
+
+
+
+		return redirect(routes.Application.login(repoId));
 	}
 
 	private String extractRepositoryId(Request request) {
@@ -47,7 +50,7 @@ public class Secured extends Security.Authenticator {
 		if (m.find()) {
 			return m.group(1);
 		}
-		
+
 		return null;
 	}
 }
