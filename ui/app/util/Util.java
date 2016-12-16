@@ -23,10 +23,13 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.ServiceLoader;
 import java.util.Map.Entry;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.apache.chemistry.opencmis.client.SessionParameterMap;
 import org.apache.chemistry.opencmis.client.api.CmisObject;
 import org.apache.chemistry.opencmis.client.api.Document;
 import org.apache.chemistry.opencmis.client.api.Folder;
@@ -94,43 +97,41 @@ import play.mvc.Http.Request;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.google.inject.Guice;
+import com.google.inject.Injector;
 
 import constant.PropertyKey;
 import constant.Token;
 import constant.UpdateContext;
+import jp.aegif.nemaki.plugin.action.JavaBackedAction;
+import jp.aegif.nemaki.plugin.action.JavaBackedActionModule;
+import jp.aegif.nemaki.plugin.action.JavaBackedUIAction;
+import jp.aegif.nemaki.plugin.action.UIActionContext;
+import jp.aegif.nemaki.plugin.action.trigger.ActionTriggerBase;
+import jp.aegif.nemaki.plugin.action.trigger.UserButtonPerCmisObjcetActionTrigger;
 import model.ActionPluginUIElement;
 
 public class Util {
 	public static Session createCmisSession(String repositoryId, play.mvc.Http.Session session){
 		String userId = session.get(Token.LOGIN_USER_ID);
 		String password = session.get(Token.LOGIN_USER_PASSWORD);
+
 		return createCmisSession(repositoryId, userId, password);
 	}
 
 	public static Session createCmisSession(String repositoryId, String userId, String password){
-		Map<String, String> parameter = new HashMap<String, String>();
+		SessionParameterMap parameter = new SessionParameterMap();
 
-		// user credentials
 		//TODO enable change a user
-		parameter.put(SessionParameter.USER, userId);
-		parameter.put(SessionParameter.PASSWORD, password);
-
-		// session locale
-		parameter.put(SessionParameter.LOCALE_ISO3166_COUNTRY, "");
-		parameter.put(SessionParameter.LOCALE_ISO639_LANGUAGE, "");
-
-		// repository
-		//String repositoryId = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_REPOSITORY);
-		parameter.put(SessionParameter.REPOSITORY_ID, repositoryId);
-		//parameter.put(org.apache.chemistry.opencmis.commons.impl.Constants.PARAM_REPOSITORY_ID, NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_REPOSITORY));
-
-		parameter. put(SessionParameter.BINDING_TYPE, BindingType.ATOMPUB.value());
-
+		parameter.setBasicAuthentication(userId, password);
+		parameter.setLocale("", "");
+		parameter.setRepositoryId(repositoryId);
 		String coreAtomUri = buildNemakiCoreUri() + "atom/"+ repositoryId;
-		parameter.put(SessionParameter.ATOMPUB_URL, coreAtomUri);
+		parameter.setAtomPubBindingUrl(coreAtomUri);
 
     	SessionFactory f = SessionFactoryImpl.newInstance();
     	Session session = f.createSession(parameter);
+
     	OperationContext operationContext = session.createOperationContext(null,
 				true, true, false, IncludeRelationships.BOTH, null, false, null, false, 100);
 		session.setDefaultContext(operationContext);
@@ -190,10 +191,53 @@ public class Util {
 		}
 	}
 
+	
+	public static Set<JavaBackedUIAction> getUIActions() {
+		ServiceLoader<JavaBackedActionModule> loader = ServiceLoader.load(JavaBackedActionModule.class);
+		Injector injector = Guice.createInjector(loader);
+		injector.injectMembers(ActionPlugin.class);
+		ActionPlugin instance = injector.getInstance(ActionPlugin.class);
+		return instance.getActions();
+	}
+	
+	public static List<ActionPluginUIElement> getUIActionPluginUIElementList(CmisObject object, Session session) {
+		List<ActionPluginUIElement> result = new ArrayList<ActionPluginUIElement>();
+		Set<JavaBackedUIAction> actions = getUIActions();
+		for (JavaBackedUIAction action : actions) {
+			UIActionContext context = new UIActionContext(object, session);
+			if (action.canExecute(context)) {
+				ActionTriggerBase trigger = action.getActionTrigger(context);
+				if (trigger instanceof UserButtonPerCmisObjcetActionTrigger) {
+					ActionPluginUIElement button = new ActionPluginUIElement();
+					UserButtonPerCmisObjcetActionTrigger objectActionTrigger = (UserButtonPerCmisObjcetActionTrigger) trigger;
+					button.setActionId(action.getClass().getSimpleName());
+					button.setDisplayName(objectActionTrigger.getDisplayName());
+					button.setFontAwesomeName(objectActionTrigger.getFontAwesomeName());
+					button.setFormHtml(objectActionTrigger.getFormHtml());
+					result.add(button);
+				}
+			}
+		}
+		return result;
+	}
+	
+	public static JavaBackedUIAction getActionPlugin(CmisObject object, String actionId, Session session){
+		Set<JavaBackedUIAction> actions = getUIActions();
+		for (JavaBackedUIAction action : actions) {
+			UIActionContext context = new UIActionContext(object, session);
+			ActionTriggerBase trigger = action.getActionTrigger(context);
+			if (action.getClass().getSimpleName().equals(actionId)) {
+				return action;
+			}
+		}
+		return null;
+	}
+	
 	public static List<ActionPluginUIElement> getActionPluginUIElementList(CmisObject object){
 		List<CmisExtensionElement> exList = object.getExtensions(ExtensionLevel.OBJECT);
 		List<ActionPluginUIElement> result = new ArrayList<ActionPluginUIElement>();
 
+		
 		if (exList != null){
 			for(CmisExtensionElement elm : exList){
 				if(elm.getNamespace() == "http://www.aegif.jp/Nemaki/action"){
@@ -216,8 +260,8 @@ public class Util {
 		return result;
 	}
 
-	public static ActionPluginUIElement getActionPluginUIElement(CmisObject object, String actionId){
-		for(ActionPluginUIElement elm : Util.getActionPluginUIElementList(object)){
+	public static ActionPluginUIElement getActionPluginUIElement(CmisObject object, String actionId, Session session){
+		for(ActionPluginUIElement elm : Util.getUIActionPluginUIElementList(object, session)){
 			if(elm.getActionId().equals(actionId)) return elm;
 		}
 		return null;
@@ -969,7 +1013,7 @@ public class Util {
 		 String _size = NemakiConfig.getValue(PropertyKey.COMPRESSION_TARGET_MAXSIZE);
 		 return Long.valueOf(_size);
 	 }
-	 
+
 	 public static GregorianCalendar convertStringToCalendar(String date, String format, Locale locale) {
 		SimpleDateFormat sdf = new SimpleDateFormat(format, locale);
 		Date d;
@@ -984,7 +1028,7 @@ public class Util {
 		}
 		return null;
 	 }
-	 
+
 	 public static GregorianCalendar convertStringToCalendar(String date) {
 		 GregorianCalendar result = convertStringToCalendar(date, "EEE MMM dd HH:mm:ss Z yyyy", Locale.ENGLISH);
 		 if (result == null) {
@@ -992,6 +1036,6 @@ public class Util {
 		 }
 		 return result;
 	 }
-	 
-	 
+
+
 }
