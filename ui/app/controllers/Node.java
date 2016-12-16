@@ -103,6 +103,7 @@ public class Node extends Controller {
 			return showChildren(repositoryId, root.getId());
 		} catch (Exception ex) {
 			CmisSessions.disconnect(repositoryId, session());
+			log.equals(ex);
 			return redirect(routes.Application.login(repositoryId));
 		}
 	}
@@ -638,7 +639,7 @@ public class Node extends Controller {
 
 	public static Result doAction(String repositoryId, String id, String actionId) {
 		JsonNode json = request().body().asJson();
-		
+
 		Session session = getCmisSession(repositoryId);
 		CmisObject obj = session.getObject(id);
 		JavaBackedUIAction action = Util.getActionPlugin(obj, actionId, session);

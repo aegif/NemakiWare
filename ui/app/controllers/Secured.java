@@ -37,9 +37,6 @@ public class Secured extends Security.Authenticator {
 				return redirect(routes.Application.error());
 			}
 		}
-
-
-
 		return redirect(routes.Application.login(repoId));
 	}
 
