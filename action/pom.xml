@@ -5,7 +5,7 @@
 	<groupId>jp.aegif.nemaki.plugin</groupId>
 	<artifactId>nemakiware-action</artifactId>
 	<packaging>jar</packaging>
-	<version>0.0.2</version>
+	<version>0.0.5</version>
 	<name>action</name>
 	<description>NemakiWare Action Interface</description>
 	<url>https://github.com/aegif/NemakiWare</url>
@@ -73,7 +73,28 @@
 			<artifactId>spring-plugin-core</artifactId>
 			<version>1.2.0.RELEASE</version>
 		</dependency>
+		
+		<!-- Play! Framework -->
+		
+        <dependency>
+            <groupId>com.typesafe.play</groupId>
+            <artifactId>play_2.11</artifactId>
+            <version>2.4.0</version>
+        </dependency>
+
+		<!-- Google Guice -->
+		<dependency>
+		    <groupId>com.google.inject</groupId>
+		    <artifactId>guice</artifactId>
+		    <version>3.0</version>
+		</dependency>
+		<dependency>
+		    <groupId>com.google.inject.extensions</groupId>
+		    <artifactId>guice-multibindings</artifactId>
+		    <version>4.0</version>
+		</dependency>
 	</dependencies>
+
 
 	<build>
 		<plugins>

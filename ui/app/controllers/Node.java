@@ -84,6 +84,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import constant.PropertyKey;
 import constant.Token;
 import jp.aegif.nemaki.common.NemakiObjectType;
+import jp.aegif.nemaki.plugin.action.JavaBackedUIAction;
+import jp.aegif.nemaki.plugin.action.UIActionContext;
 
 @Authenticated(Secured.class)
 public class Node extends Controller {
@@ -148,7 +150,7 @@ public class Node extends Controller {
 
 		List<Tree<ObjectType>> viewTypes = types.stream().filter(p -> enableTypes.contains(p.getItem().getLocalName())).collect(Collectors.toList());
 
-		return ok(tree.render(repositoryId, _parent, results, viewTypes));
+		return ok(tree.render(repositoryId, _parent, results, viewTypes, session));
 	}
 
 	public static Result showChildrenByPath(String repositoryId, String path) {
@@ -181,7 +183,7 @@ public class Node extends Controller {
 			list.add(doc);
 		}
 
-		return ok(search.render(repositoryId, term, list));
+		return ok(search.render(repositoryId, term, list, session));
 	}
 
 	public static Result showBlank(String repositoryId) {
@@ -218,7 +220,7 @@ public class Node extends Controller {
 			internalServerError("User retrieveing failure");
 		}
 
-		return ok(detail.render(repositoryId, o, parentId, activateTabName, user));
+		return ok(detail.render(repositoryId, o, parentId, activateTabName, user, session));
 	}
 
 	public static Result showProperty(String repositoryId, String id) {
@@ -629,17 +631,19 @@ public class Node extends Controller {
 
 		CmisObject obj = session.getObject(id);
 
-		ActionPluginUIElement elm = Util.getActionPluginUIElement(obj, actionId);
+		ActionPluginUIElement elm = Util.getActionPluginUIElement(obj, actionId, session);
 
 		return ok(views.html.node.action.render(repositoryId, obj, elm));
 	}
 
 	public static Result doAction(String repositoryId, String id, String actionId) {
 		JsonNode json = request().body().asJson();
-
-		String restUri = Util.buildNemakiCoreUri() + "rest/repo/" + repositoryId + "/action/" + actionId + "/do/" + id;
-		JsonNode result = Util.postJsonResponse(session(), restUri, json);
-
+		
+		Session session = getCmisSession(repositoryId);
+		CmisObject obj = session.getObject(id);
+		JavaBackedUIAction action = Util.getActionPlugin(obj, actionId, session);
+		UIActionContext context = new UIActionContext(obj, session);
+		String result = action.executeAction(context, json.toString());
 		return ok(result);
 	}
 
