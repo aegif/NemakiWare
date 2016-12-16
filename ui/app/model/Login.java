@@ -38,7 +38,7 @@ public  class Login {
         this.repositoryId = repositoryId;
     }
 
-    /*
+
 	public  String validate(){
 		try{
 			Util.createCmisSessionByBasicAuth(repositoryId, id, password);
@@ -48,5 +48,4 @@ public  class Login {
 
 		return null;
 	}
-	*/
 }

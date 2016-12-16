@@ -19,6 +19,7 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
@@ -89,6 +90,8 @@ import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.message.BasicHeader;
 import org.apache.http.message.BasicNameValuePair;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import play.api.http.MediaRange;
 import play.data.DynamicForm;
@@ -106,6 +109,7 @@ import constant.PropertyKey;
 import constant.Token;
 import constant.UpdateContext;
 import controllers.CmisSessions;
+import controllers.Node;
 import jp.aegif.nemaki.plugin.action.JavaBackedAction;
 import jp.aegif.nemaki.plugin.action.JavaBackedActionModule;
 import jp.aegif.nemaki.plugin.action.JavaBackedUIAction;
@@ -115,6 +119,7 @@ import jp.aegif.nemaki.plugin.action.trigger.UserButtonPerCmisObjcetActionTrigge
 import model.ActionPluginUIElement;
 
 public class Util {
+	private static Logger log = LoggerFactory.getLogger(Util.class);
 
 	public static String getVersion(String repositoryId, play.mvc.Http.Session session){
 		Session cmisSession = CmisSessions.getCmisSession(repositoryId, session);
@@ -246,15 +251,21 @@ public class Util {
 		}
 	}
 
-	
+
 	public static Set<JavaBackedUIAction> getUIActions() {
-		ServiceLoader<JavaBackedActionModule> loader = ServiceLoader.load(JavaBackedActionModule.class);
-		Injector injector = Guice.createInjector(loader);
-		injector.injectMembers(ActionPlugin.class);
-		ActionPlugin instance = injector.getInstance(ActionPlugin.class);
-		return instance.getActions();
+		Set<JavaBackedUIAction> actions =  new HashSet<JavaBackedUIAction>();
+		try{
+			ServiceLoader<JavaBackedActionModule> loader = ServiceLoader.load(JavaBackedActionModule.class);
+			Injector injector = Guice.createInjector(loader);
+			injector.injectMembers(ActionPlugin.class);
+			ActionPlugin instance = injector.getInstance(ActionPlugin.class);
+			actions =  instance.getActions();
+		}catch(com.google.inject.ConfigurationException ex){
+			log.info(ex.getMessage());
+		}
+		return actions;
 	}
-	
+
 	public static List<ActionPluginUIElement> getUIActionPluginUIElementList(CmisObject object, Session session) {
 		List<ActionPluginUIElement> result = new ArrayList<ActionPluginUIElement>();
 		Set<JavaBackedUIAction> actions = getUIActions();
@@ -275,7 +286,7 @@ public class Util {
 		}
 		return result;
 	}
-	
+
 	public static JavaBackedUIAction getActionPlugin(CmisObject object, String actionId, Session session){
 		Set<JavaBackedUIAction> actions = getUIActions();
 		for (JavaBackedUIAction action : actions) {
@@ -287,12 +298,12 @@ public class Util {
 		}
 		return null;
 	}
-	
+
 	public static List<ActionPluginUIElement> getActionPluginUIElementList(CmisObject object){
 		List<CmisExtensionElement> exList = object.getExtensions(ExtensionLevel.OBJECT);
 		List<ActionPluginUIElement> result = new ArrayList<ActionPluginUIElement>();
 
-		
+
 		if (exList != null){
 			for(CmisExtensionElement elm : exList){
 				if(elm.getNamespace() == "http://www.aegif.jp/Nemaki/action"){
