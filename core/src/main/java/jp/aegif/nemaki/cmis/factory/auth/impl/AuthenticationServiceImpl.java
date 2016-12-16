@@ -83,7 +83,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 		String proxyHeaderKey = propertyManager.readValue(PropertyKey.EXTERNAL_AUTHENTICATION_PROXY_HEADER);
 		if(StringUtils.isBlank(proxyHeaderKey)) return false;
-		
+
 		String proxyUserId = (String) callContext.get(proxyHeaderKey);
 		if (StringUtils.isBlank(proxyUserId)) {
 			log.warn("Not authenticated user");
@@ -91,7 +91,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		} else {
 			UserItem userItem = contentService.getUserItemById(repositoryId, proxyUserId);
 			if (userItem == null) {
-				Boolean isAutoCreate = propertyManager.readBoolean(PropertyKey.EXTERNAL_AUTHENTICATION_AUTO_CREATE_USER);				
+				Boolean isAutoCreate = propertyManager.readBoolean(PropertyKey.EXTERNAL_AUTHENTICATION_AUTO_CREATE_USER);
 				if(isAutoCreate){
 					String parentFolderId = propertyManager.readValue(PropertyKey.CAPABILITY_EXTENDED_USER_ITEM_FOLDER);
 					userItem = new UserItem(null, "nemaki:user", proxyUserId, proxyUserId, null, false, parentFolderId);

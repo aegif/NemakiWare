@@ -38,13 +38,15 @@ public  class Login {
         this.repositoryId = repositoryId;
     }
 
+    /*
 	public  String validate(){
 		try{
-			Util.createCmisSession(repositoryId, id, password);
+			Util.createCmisSessionByBasicAuth(repositoryId, id, password);
 		}catch(Exception e){
 			return Messages.get("view.auth.login.error");
 		}
 
 		return null;
 	}
+	*/
 }
