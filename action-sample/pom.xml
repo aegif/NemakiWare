@@ -3,7 +3,7 @@
 
 	<modelVersion>4.0.0</modelVersion>
 	<artifactId>nemakiware-action-sample</artifactId>
-	<version>0.0.2</version>
+	<version>0.0.5</version>
 	<packaging>jar</packaging>
 	<name>nemakiware-action-sample</name>
 	<description>Nemaki Action Sample</description>
@@ -41,7 +41,7 @@
 		<dependency>
 			<groupId>jp.aegif.nemaki.plugin</groupId>
 			<artifactId>nemakiware-action</artifactId>
-			<version>0.0.2</version>
+			<version>0.0.5</version>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
@@ -76,6 +76,18 @@
 			<groupId>org.springframework.plugin</groupId>
 			<artifactId>spring-plugin-core</artifactId>
 			<version>1.2.0.RELEASE</version>
+		</dependency>
+		
+		<!-- Google Guice -->
+		<dependency>
+		    <groupId>com.google.inject</groupId>
+		    <artifactId>guice</artifactId>
+		    <version>3.0</version>
+		</dependency>
+		<dependency>
+		    <groupId>com.google.inject.extensions</groupId>
+		    <artifactId>guice-multibindings</artifactId>
+		    <version>4.0</version>
 		</dependency>
 	</dependencies>
 

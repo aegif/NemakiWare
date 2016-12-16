@@ -3,6 +3,7 @@ package jp.aegif.nemaki.action.sample;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.chemistry.opencmis.client.api.CmisObject;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
@@ -13,12 +14,12 @@ import jp.aegif.nemaki.plugin.action.*;
 import jp.aegif.nemaki.plugin.action.trigger.*;
 
 
-public class SampleCmisObjectAction implements JavaBackedAction {
+public class SampleCmisObjectAction implements JavaBackedUIAction {
 	private static final Logger log = LoggerFactory.getLogger(JavaBackedAction.class);
 
 	private static UserButtonPerCmisObjcetActionTrigger _trigger;
 	@Override
-	public ActionTriggerBase getActionTrigger(ActionContext context) {
+	public ActionTriggerBase getActionTrigger(UIActionContext context) {
 		if (_trigger == null){
 			_trigger = new UserButtonPerCmisObjcetActionTrigger("サンプルアクションの実行");
 			_trigger.setFormHtml(""
@@ -35,13 +36,14 @@ public class SampleCmisObjectAction implements JavaBackedAction {
 	}
 
 	@Override
-	public boolean canExecute(ActionContext context, ObjectData obj) {
-		 return ( BaseTypeId.CMIS_DOCUMENT ==  obj.getBaseTypeId());
+	public boolean canExecute(UIActionContext context) {
+		 return ( BaseTypeId.CMIS_DOCUMENT ==  context.getCmisObject().getBaseTypeId());
 	}
 
 	@Override
-	public String executeAction(ActionContext context, ObjectData obj, String json) {
-		String name = (String) obj.getProperties().getPropertyList().stream().map(p -> p.getFirstValue()).findFirst().get();
+	public String executeAction(UIActionContext context, String json) {
+		CmisObject obj = context.getCmisObject();
+		String name = (String) obj.getProperty("cmis:name").getFirstValue();
 
 		return "{\"message\" : \"CMISオブジェクトアクションが実行されました ファイル名：" + name + "\"}";
 
@@ -61,6 +63,5 @@ public class SampleCmisObjectAction implements JavaBackedAction {
 	public String getActionDiscription() {
 		return "アクション機能のためのサンプルです";
 	}
-
 
 }
