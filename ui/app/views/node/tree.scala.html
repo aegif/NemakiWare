@@ -9,7 +9,7 @@
 @import node.js._
 @import play.mvc.Http.Context.Implicit
 
-@(repositoryId:String)(parent: org.apache.chemistry.opencmis.client.api.Folder, objects: java.util.List[org.apache.chemistry.opencmis.client.api.CmisObject], types: java.util.List[Tree[ObjectType]])
+@(repositoryId:String)(parent: org.apache.chemistry.opencmis.client.api.Folder, objects: java.util.List[org.apache.chemistry.opencmis.client.api.CmisObject], types: java.util.List[Tree[ObjectType]])(session:org.apache.chemistry.opencmis.client.api.Session)
 
 <!DOCTYPE html>
 <html>
@@ -91,7 +91,7 @@
 
 				<div class="col-md-12">
 				 	<div id="list" parentId="@parent.getId()" class="dropzone" ondragover="nmk.dragAndDrop.handleDragStart(event);" ondragleave="nmk.dragAndDrop.hadleDragLeave(event);" ondrop="nmk.dragAndDrop.handleDrop(event);">
-						@list(repositoryId)(objects)
+						@list(repositoryId)(objects)(session)
 				 	</div>
 				</div>
 

@@ -126,9 +126,10 @@ public class User extends Controller {
 
 			List<CmisObject> list = new ArrayList<CmisObject>();
 			Set<String>fs = user.favorites;
+			Session session = null;
 			if(CollectionUtils.isNotEmpty(fs)){
 				//CMIS session
-				Session session =  getCmisSession(repositoryId);
+				session =  getCmisSession(repositoryId);
 
 				Iterator<String>fsItr = fs.iterator();
 				while(fsItr.hasNext()){
@@ -136,7 +137,7 @@ public class User extends Controller {
 					list.add(session.getObject(favId));
 				}
 			}
-			return ok(favorites.render(repositoryId, user, list));
+			return ok(favorites.render(repositoryId, user, list, session));
 		}else{
 			//TODO
 			return internalServerError();

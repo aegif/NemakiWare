@@ -2,6 +2,7 @@
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 
 	<modelVersion>4.0.0</modelVersion>
+	<groupId>jp.aegif.nemaki.common</groupId>
 	<artifactId>nemakiware-common</artifactId>
 	<version>2.4.0</version>
 	<packaging>jar</packaging>
@@ -25,9 +26,11 @@
 	<build>
 		<plugins>
 			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
-				<version>3.3</version>
+				<version>3.6.0</version>
 				<configuration>
+					<encoding>UTF-8</encoding>
 					<source>1.8</source>
 					<target>1.8</target>
 				</configuration>
@@ -35,5 +38,5 @@
 		</plugins>
 	</build>
 
-	<groupId>jp.aegif.nemaki.common</groupId>
+
 </project>
