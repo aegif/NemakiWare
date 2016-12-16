@@ -103,11 +103,14 @@ public class PropertyManager{
 		Object result = null;
 
 		Configuration sysConf = getConfiguration(SystemConst.NEMAKI_CONF_DB);
-		Object sysVal = sysConf.getConfiguration().get(key);
-		if(sysVal != null){
-			result = sysVal;
+		if(sysConf.getConfiguration().containsKey(key)){
+			Object sysVal = sysConf.getConfiguration().get(key);
+			if(sysVal != null){
+				result = sysVal;
+			}
+		}else{
+			log.warn("Key=" + key + " is not found in configuration.");
 		}
-
 		return result;
 	}
 

@@ -42,6 +42,8 @@ public class ConnectorPool {
 	private static final Log log = LogFactory.getLog(ConnectorPool.class);
 
 	public void init() {
+		log.info("CouchDB URL:" + url);
+
 		//Builder
 		try {
 			this.builder = new StdHttpClient.Builder()
