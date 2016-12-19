@@ -2,15 +2,18 @@ package controllers;
 
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
+import org.apache.commons.lang3.StringUtils;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
+import constant.PropertyKey;
 import constant.Token;
 import model.Login;
 import play.Routes;
 import play.data.*;
 import play.mvc.Controller;
 import play.mvc.Result;
+import util.NemakiConfig;
 import util.Util;
 import views.html.login;
 
@@ -43,7 +46,12 @@ public class Application extends Controller {
 		// Play session
 		session().remove("loginUserId");
 
-		return redirect(routes.Application.login(repositoryId));
+		String logoutUri = NemakiConfig.getValue(PropertyKey.SSO_LOGOUT_REDIRECT_URI);
+		if(StringUtils.isBlank(logoutUri)){
+			return redirect(routes.Application.login(repositoryId));
+		}else{
+			return redirect(logoutUri);
+		}
 	}
 
 	public static Result error() {

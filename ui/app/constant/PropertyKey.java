@@ -19,4 +19,7 @@ public interface PropertyKey {
 
 	final String UI_VISIBILITY_CREATE_OBJECT="ui.visibility.create-cmis-object";
 	final String UI_VISIBILITY_CREATE_RELATIONSHIP="ui.visibility.create-relationship";
+
+	final String SSO_LOGOUT_REDIRECT_URI="sso.logout.redirect.uri";
+
 }
