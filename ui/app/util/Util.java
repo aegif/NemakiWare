@@ -121,20 +121,41 @@ import model.ActionPluginUIElement;
 public class Util {
 	private static Logger log = LoggerFactory.getLogger(Util.class);
 
-	public static String getVersion(String repositoryId, play.mvc.Http.Session session){
-		Session cmisSession = CmisSessions.getCmisSession(repositoryId, session);
+	public static void setupSessionHeaderAuth(play.mvc.Http.Session playSession,String repositoryId,String userId){
+		playSession.clear();
+		playSession.put(Token.HEADER_AUTH, "true");
+		playSession.put(Token.LOGIN_USER_ID, userId);
+		setupSessionCommon(playSession, repositoryId, userId);
+	}
+	public static void setupSessionBasicAuth(play.mvc.Http.Session playSession,String repositoryId,String userId, String password){
+		playSession.clear();
+		playSession.put(Token.LOGIN_USER_ID, userId);
+		playSession.put(Token.LOGIN_USER_PASSWORD, password);
+		playSession.put(Token.LOGIN_REPOSITORY_ID, repositoryId);
+		setupSessionCommon(playSession, repositoryId, userId);
+	}
+
+	private static void setupSessionCommon(play.mvc.Http.Session playSession,String repositoryId, String userId){
+		Session cmisSession = createCmisSession(repositoryId, playSession);
+		RepositoryInfo repo = cmisSession.getRepositoryInfo();
+		playSession.put(Token.LOGIN_USER_IS_ADMIN, String.valueOf(Util.isAdmin(repositoryId, userId, playSession)));
+		playSession.put(Token.NEMAKIWARE_VERSION, repo.getProductVersion());
+	}
+
+	public static String getVersion(String repositoryId, play.mvc.Http.Session playSession){
+		Session cmisSession = CmisSessions.getCmisSession(repositoryId, playSession);
 		RepositoryInfo repo = cmisSession.getRepositoryInfo();
 		return repo.getProductVersion();
 	}
 
-	public static boolean isAdmin(String repositoryId, String userId, play.mvc.Http.Session session){
+	public static boolean isAdmin(String repositoryId, String userId, play.mvc.Http.Session playSession){
 		boolean isAdmin = false;
 
 		String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 		String endPoint = coreRestUri + "repo/" + repositoryId + "/user/";
 
 		try{
-			JsonNode result = Util.getJsonResponse(session, endPoint + "show/" + userId);
+			JsonNode result = Util.getJsonResponse(playSession, endPoint + "show/" + userId);
 			if("success".equals(result.get("status").asText())){
 				JsonNode _user = result.get("user");
 				model.User user = new model.User(_user);
@@ -500,35 +521,40 @@ public class Util {
 	}
 
 	private static HttpClient buildClient(play.mvc.Http.Session session){
+		HttpClientBuilder builder = HttpClientBuilder.create();
+
 		// configurations
-				String userAgent = "NemakiWare UI";
+		String userAgent = "NemakiWare UI";
 
-				// headers
-				List<Header> headers = new ArrayList<Header>();
-				headers.add(new BasicHeader("Accept-Charset", "utf-8"));
-				headers.add(new BasicHeader("Accept-Language", "ja, en;q=0.8"));
-				headers.add(new BasicHeader("User-Agent", userAgent));
+		// headers
+		List<Header> headers = new ArrayList<Header>();
+		headers.add(new BasicHeader("Accept-Charset", "utf-8"));
+		headers.add(new BasicHeader("Accept-Language", "ja, en;q=0.8"));
+		headers.add(new BasicHeader("User-Agent", userAgent));
 
-				// set credential
-				String user = session.get(Token.LOGIN_USER_ID);
-				String password = session.get(Token.LOGIN_USER_PASSWORD);
-				Credentials credentials = new UsernamePasswordCredentials(user, password);
-				String host = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_HOST);
-				String port = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_PORT);
-				AuthScope scope = new AuthScope(host, Integer.valueOf(port));
-				CredentialsProvider credsProvider = new BasicCredentialsProvider();
-				credsProvider.setCredentials(scope, credentials);
+		// set credential
+		String user = session.get(Token.LOGIN_USER_ID);
+		String headerAuth = session.get(Token.HEADER_AUTH);
+		if(StringUtils.isNotBlank(headerAuth)){
+			headers.add(new BasicHeader(NemakiConfig.getRemoteAuthHeader(),user));
+		}else{
+			String password = session.get(Token.LOGIN_USER_PASSWORD);
+			Credentials credentials = new UsernamePasswordCredentials(user, password);
+			String host = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_HOST);
+			String port = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_PORT);
+			AuthScope scope = new AuthScope(host, Integer.valueOf(port));
+			//CredentialsProvider doesn't add BASIC auth header
+			headers.add(BasicScheme.authenticate(credentials, "US-ASCII", false));
 
-				//CredentialsProvider doesn't add BASIC auth header
-				headers.add(BasicScheme.authenticate(credentials, "US-ASCII", false));
+			CredentialsProvider credsProvider = new BasicCredentialsProvider();
+			credsProvider.setCredentials(scope, credentials);
+			builder.setDefaultCredentialsProvider(credsProvider);
+		}
 
-				// create client
-				HttpClient httpClient = HttpClientBuilder.create()
-						.setDefaultHeaders(headers)
-						.setDefaultCredentialsProvider(credsProvider)
-						.build();
-
-				return httpClient;
+		// create client
+		builder.setDefaultHeaders(headers);
+		HttpClient httpClient = builder.build();
+		return httpClient;
 	}
 
 	private static JsonNode executeRequest(HttpClient client, HttpRequest request){

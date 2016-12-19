@@ -79,5 +79,8 @@ public class NemakiConfig {
 		}
 	}
 
+	public static String getRemoteAuthHeader(){
+	 return NemakiConfig.getValue(PropertyKey.SSO_HEADER_REMOTE_AUTHENTICATED_USER);
+	}
 
 }

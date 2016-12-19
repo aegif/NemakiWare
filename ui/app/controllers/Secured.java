@@ -5,26 +5,40 @@ import java.util.regex.Pattern;
 
 import org.apache.commons.lang3.StringUtils;
 
+import antlr.Utils;
+import constant.PropertyKey;
 import constant.Token;
 import play.mvc.Http.Context;
 import play.mvc.Http.Request;
+import play.mvc.Http.Session;
 import play.mvc.Result;
 import play.mvc.Security;
+import util.NemakiConfig;
+import util.Util;
 
 public class Secured extends Security.Authenticator {
 
 	@Override
 	public String getUsername(Context ctx) {
+		Session session = ctx.session();
 		final String requestRepoId = extractRepositoryId(ctx.request());
-		final String sessionRepoId = ctx.session().get(Token.LOGIN_REPOSITORY_ID);
+		final String sessionRepoId = session.get(Token.LOGIN_REPOSITORY_ID);
+		String userId = null;
 
 		if (StringUtils.isBlank(sessionRepoId) || sessionRepoId.equals(requestRepoId)) {
-			String userId =  ctx.session().get(Token.LOGIN_USER_ID);
-			return userId;
+			userId =  session.get(Token.LOGIN_USER_ID);
+			if (userId == null){
+				final String remoteUserHeader = NemakiConfig.getRemoteAuthHeader();
+				userId = ctx.request().getHeader(remoteUserHeader);
+				if (userId != null){
+					//無ければここで入れてしまう
+					Util.setupSessionHeaderAuth(session, sessionRepoId, userId);
+				}
+			}
 		}
 
 		// Redirect to login page
-		return null;
+		return userId;
 	}
 
 	@Override
