@@ -30,12 +30,7 @@ public class Application extends Controller {
 			return badRequest(login.render(repositoryId, formData));
 
 		Login loginModel = formData.get();
-		session().clear();
-		session(Token.LOGIN_USER_ID, loginModel.id);
-		session(Token.LOGIN_USER_PASSWORD, loginModel.password);
-		session(Token.LOGIN_USER_IS_ADMIN, String.valueOf(Util.isAdmin(repositoryId, loginModel.id, session())));
-		session(Token.LOGIN_REPOSITORY_ID, repositoryId);
-		session(Token.NEMAKIWARE_VERSION, Util.getVersion(repositoryId, session()));
+		Util.setupSessionBasicAuth(session(), repositoryId, loginModel.id, loginModel.password);
 		return redirect(routes.Node.index(repositoryId));
 	}
 
@@ -44,7 +39,7 @@ public class Application extends Controller {
 		CmisSessions.disconnect(repositoryId, session());
 
 		// Play session
-		session().remove("loginUserId");
+		session().clear();
 
 		String logoutUri = NemakiConfig.getValue(PropertyKey.SSO_LOGOUT_REDIRECT_URI);
 		if(StringUtils.isBlank(logoutUri)){

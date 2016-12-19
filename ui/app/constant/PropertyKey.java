@@ -21,5 +21,6 @@ public interface PropertyKey {
 	final String UI_VISIBILITY_CREATE_RELATIONSHIP="ui.visibility.create-relationship";
 
 	final String SSO_LOGOUT_REDIRECT_URI="sso.logout.redirect.uri";
+	final String SSO_HEADER_REMOTE_AUTHENTICATED_USER="sso.header.remote.authenticated.user";
 
 }
