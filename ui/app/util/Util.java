@@ -90,9 +90,9 @@ import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.message.BasicHeader;
 import org.apache.http.message.BasicNameValuePair;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
+import play.Logger;
+import play.Logger.ALogger;
 import play.api.http.MediaRange;
 import play.data.DynamicForm;
 import play.libs.Json;
@@ -119,7 +119,7 @@ import jp.aegif.nemaki.plugin.action.trigger.UserButtonPerCmisObjcetActionTrigge
 import model.ActionPluginUIElement;
 
 public class Util {
-	private static Logger log = LoggerFactory.getLogger(Util.class);
+	private static final ALogger logger = Logger.of(Util.class);
 
 	public static void setupSessionHeaderAuth(play.mvc.Http.Session playSession,String repositoryId,String userId){
 		playSession.clear();
@@ -163,8 +163,7 @@ public class Util {
 				isAdmin = user.isAdmin;
 			}
 		}catch(Exception e){
-			//TODO logging
-			System.out.println("This user is not returned in REST API:" + userId);
+			logger.error("This user is not returned in REST API:" + userId);
 		}
 
 		return isAdmin;
@@ -184,11 +183,9 @@ public class Util {
 	public static Session createCmisSessionByAuthHeader(String repositoryId, String remoteUserId){
 		SessionParameterMap parameter = new SessionParameterMap();
 
-		//TODO enable change a user
-		parameter.addHeader("X-NemakiWare-Remote-User", remoteUserId);
+		parameter.addHeader(NemakiConfig.getRemoteAuthHeader(), remoteUserId);
 
 		Session session = createCmisSessionWithParam(repositoryId, parameter);
-
 		return session;
 	}
 
@@ -282,7 +279,7 @@ public class Util {
 			ActionPlugin instance = injector.getInstance(ActionPlugin.class);
 			actions =  instance.getActions();
 		}catch(com.google.inject.ConfigurationException ex){
-			log.info(ex.getMessage());
+			logger.info(ex.getMessage());
 		}
 		return actions;
 	}

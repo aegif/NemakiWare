@@ -5,6 +5,8 @@ view.auth.login=Sign in
 view.auth.logout=Sign out
 view.auth.login.caption=Please sign in
 view.auth.login.error=Your sign in attempt has failed.
+view.auth.login.error.connection=Connection failed.
+view.auth.login.error.unknown=Unknown error.
 view.auth.account=Account
 
 view.node.property=Property

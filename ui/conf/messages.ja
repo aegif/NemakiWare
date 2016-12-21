@@ -5,6 +5,8 @@ view.auth.login=ログイン
 view.auth.logout=ログアウト
 view.auth.login.caption=ログインしてください
 view.auth.login.error=ログインに失敗しました
+view.auth.login.error.connection=リポジトリサービスとの通信に失敗しました
+view.auth.login.error.unknown=不明なエラーが発生しました
 view.auth.account=アカウント
 
 view.node.property=プロパティ

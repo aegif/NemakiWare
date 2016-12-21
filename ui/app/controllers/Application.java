@@ -3,6 +3,8 @@ package controllers;
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
 import org.apache.commons.lang3.StringUtils;
+import play.Logger;
+import play.Logger.ALogger;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
@@ -18,6 +20,7 @@ import util.Util;
 import views.html.login;
 
 public class Application extends Controller {
+	private static final ALogger logger = Logger.of(Application.class);
 
 	public static Result login(String repositoryId) {
 		return ok(login.render(repositoryId, Form.form(Login.class)));
@@ -31,6 +34,7 @@ public class Application extends Controller {
 
 		Login loginModel = formData.get();
 		Util.setupSessionBasicAuth(session(), repositoryId, loginModel.id, loginModel.password);
+		logger.info("User [" + loginModel.id + "] login success.");
 		return redirect(routes.Node.index(repositoryId));
 	}
 
@@ -41,7 +45,7 @@ public class Application extends Controller {
 		// Play session
 		session().clear();
 
-		String logoutUri = NemakiConfig.getValue(PropertyKey.SSO_LOGOUT_REDIRECT_URI);
+		String logoutUri = NemakiConfig.getSSOLogoutURI();
 		if(StringUtils.isBlank(logoutUri)){
 			return redirect(routes.Application.login(repositoryId));
 		}else{

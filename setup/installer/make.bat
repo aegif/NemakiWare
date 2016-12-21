@@ -24,7 +24,7 @@ for %%i in (%*) do (
 		set FLG_E=TRUE
 		shift
 	) ELSE IF %%i == -p (
-		set PROFILE_PRODUCT
+		set PROFILE_PRODUCT="-P product"
 		set FLG_P=TRUE
 	) ELSE (
 		set FLG_E=FALSE
@@ -63,8 +63,6 @@ if FLG_P == TRUE (
 ) ELSE (
 	java -cp %SCRIPT_HOME%\install-util\target\install-util.jar jp.aegif.nemaki.installer.ProcessTemplate %USER_INPUT_SPEC% %PROPERTIES% %PROPERTIES_CUSTOM%
 )
-
-java -cp %SCRIPT_HOME%\install-util\target\install-util.jar jp.aegif.nemaki.installer.ProcessTemplate %USER_INPUT_SPEC% %PROPERTIES% %PROPERTIES_CUSTOM%
 
 rem Prepare WAR
 call mvn -f %SOURCE_HOME%\ clean
