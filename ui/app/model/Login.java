@@ -1,10 +1,17 @@
 package model;
 
 import util.Util;
+
+import org.apache.chemistry.opencmis.commons.exceptions.CmisConnectionException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisUnauthorizedException;
+
+import play.Logger;
+import play.Logger.ALogger;
 import play.data.validation.*;
 import play.i18n.Messages;
 
 public  class Login {
+	private static final ALogger logger = Logger.of(Login.class);
 
 	 @Constraints.Required
 	public String id;
@@ -42,8 +49,14 @@ public  class Login {
 	public  String validate(){
 		try{
 			Util.createCmisSessionByBasicAuth(repositoryId, id, password);
-		}catch(Exception e){
+		}catch(CmisUnauthorizedException e){
 			return Messages.get("view.auth.login.error");
+		}catch(CmisConnectionException e){
+			logger.warn("Login failure. : ", e);
+			return Messages.get("view.auth.login.error.connection");
+		}catch(Exception e){
+			logger.error("Login failure. : ", e);
+			return Messages.get("view.auth.login.error.unknown");
 		}
 
 		return null;

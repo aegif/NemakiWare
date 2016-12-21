@@ -78,9 +78,12 @@ public class NemakiConfig {
 			return v;
 		}
 	}
+	public static String getSSOLogoutURI(){
+		return NemakiConfig.getValue(PropertyKey.SSO_LOGOUT_REDIRECT_URI);
+	}
 
 	public static String getRemoteAuthHeader(){
-	 return NemakiConfig.getValue(PropertyKey.SSO_HEADER_REMOTE_AUTHENTICATED_USER);
+		return NemakiConfig.getValue(PropertyKey.SSO_HEADER_REMOTE_AUTHENTICATED_USER);
 	}
 
 }

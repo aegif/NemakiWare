@@ -32,6 +32,7 @@ public class Secured extends Security.Authenticator {
 				userId = ctx.request().getHeader(remoteUserHeader);
 				if (userId != null){
 					//無ければここで入れてしまう
+					//TODO 本当は初アクセス時にいれるべき
 					Util.setupSessionHeaderAuth(session, sessionRepoId, userId);
 				}
 			}

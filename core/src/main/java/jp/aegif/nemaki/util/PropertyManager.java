@@ -108,8 +108,6 @@ public class PropertyManager{
 			if(sysVal != null){
 				result = sysVal;
 			}
-		}else{
-			log.warn("Key=" + key + " is not found in configuration.");
 		}
 		return result;
 	}
