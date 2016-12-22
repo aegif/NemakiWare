@@ -22,7 +22,7 @@ import play.mvc.Security.Authenticated;
 import util.Util;
 
 import views.html.config.*;
-
+import org.pac4j.play.java.Secure;
 @Authenticated(Secured.class)
 public class Config extends Controller {
 
@@ -32,13 +32,13 @@ public class Config extends Controller {
 		return CmisSessions.getCmisSession(repositoryId, session());
 	}
 
-	public static Result index(String repositoryId) {
+	@Secure
+	public Result index(String repositoryId) {
 		return list(repositoryId);
 	}
 
-
-
-	public static Result list(String repositoryId) {
+	@Secure
+	public Result list(String repositoryId) {
 		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "/list");
 
 		// TODO check status
@@ -64,7 +64,8 @@ public class Config extends Controller {
 		}
 	}
 
-	public static Result showDetail(String repositoryId, String configKey) {
+	@Secure
+	public Result showDetail(String repositoryId, String configKey) {
 		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "/show/" + configKey);
 
 		JsonNode configNode = result.get("configuration");
@@ -82,7 +83,8 @@ public class Config extends Controller {
 		return config;
 	}
 
-	public static Result update(String repositoryId, String key) {
+	@Secure
+	public Result update(String repositoryId, String key) {
 		// Get input form data
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();

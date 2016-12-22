@@ -12,12 +12,13 @@ import play.mvc.Controller;
 import play.mvc.Result;
 import util.ErrorMessage;
 import util.Util;
-
+import org.pac4j.play.java.Secure;
 public class Archive extends Controller{
 
 	private static String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 
-	public static Result index(String repositoryId, Integer page) {
+	@Secure
+	public Result index(String repositoryId, Integer page) {
 
 		String endPoint = getEndpoint(repositoryId) + "index";
 
@@ -45,7 +46,8 @@ public class Archive extends Controller{
 
 	}
 
-	public static Result restore(String repositoryId, String archiveId){
+	@Secure
+	public Result restore(String repositoryId, String archiveId){
 		JsonNode json = Util.putJsonResponse(session(), getEndpoint(repositoryId) + "restore/" + archiveId, null);
 		if(Util.isRestSuccess(json)){
 			return ok();
@@ -55,7 +57,8 @@ public class Archive extends Controller{
 		}
 	}
 
-	public static Result destroy(String repositoryId, String archiveId){
+	@Secure
+	public Result destroy(String repositoryId, String archiveId){
 		JsonNode json = Util.deleteJsonResponse(session(), getEndpoint(repositoryId) + "destroy/" + archiveId);
 		if(Util.isRestSuccess(json)){
 			return ok();

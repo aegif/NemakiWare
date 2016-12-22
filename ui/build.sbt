@@ -39,8 +39,13 @@ libraryDependencies ++= Seq(
   "org.apache.chemistry.opencmis" % "chemistry-opencmis-commons-impl" % "1.0.0",
   "org.apache.httpcomponents" % "httpclient" % "4.4-beta1",
   "net.lingala.zip4j" % "zip4j" % "1.3.2",
-  "com.google.inject.extensions" % "guice-multibindings" % "4.0"
+  "com.google.inject.extensions" % "guice-multibindings" % "4.0",
+  "org.pac4j" % "play-pac4j" % "2.3.2",
+  "org.pac4j" % "pac4j-saml" % "1.9.4",
+  "org.pac4j" % "pac4j-http" % "1.9.4"
 )
+
+routesGenerator := InjectedRoutesGenerator
 
 Play2WarPlugin.play2WarSettings
 

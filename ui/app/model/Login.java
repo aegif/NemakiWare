@@ -14,19 +14,19 @@ public  class Login {
 	private static final ALogger logger = Logger.of(Login.class);
 
 	 @Constraints.Required
-	public String id;
+	public String userId;
 
 	public	String password;
 
 	public String repositoryId;
 
 
-    public String getId() {
-        return id;
+    public String getUserId() {
+        return userId;
     }
 
-    public void setId(String id) {
-        this.id = id;
+    public void setId(String userId) {
+        this.userId = userId;
     }
 
     public String getPassword() {
@@ -48,7 +48,7 @@ public  class Login {
 
 	public  String validate(){
 		try{
-			Util.createCmisSessionByBasicAuth(repositoryId, id, password);
+			Util.createCmisSessionByBasicAuth(repositoryId, userId, password);
 		}catch(CmisUnauthorizedException e){
 			return Messages.get("view.auth.login.error");
 		}catch(CmisConnectionException e){
