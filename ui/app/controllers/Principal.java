@@ -2,13 +2,12 @@ package controllers;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
 import org.apache.chemistry.opencmis.client.api.Session;
-import org.apache.commons.codec.Charsets;
-
 import play.libs.Json;
 import play.mvc.Controller;
 import play.mvc.Result;
@@ -19,7 +18,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import constant.Token;
-
+import org.pac4j.play.java.Secure;
 
 @Authenticated(Secured.class)
 public class Principal extends Controller{
@@ -30,7 +29,8 @@ public class Principal extends Controller{
 		return CmisSessions.getCmisSession(repositoryId, session());
 	}
 
-	public static Result search(String repositoryId, String term, String groupId){
+	@Secure
+	public Result search(String repositoryId, String term, String groupId){
 		List<model.Principal>principals = new ArrayList<model.Principal>();
 
 		//user search
@@ -76,7 +76,7 @@ public class Principal extends Controller{
 		try {
 			mapper.writeValue(out, principals);
 			final byte[] data = out.toByteArray();
-			JsonNode converted = Json.parse(new String(data, Charsets.UTF_8));
+			JsonNode converted = Json.parse(new String(data, StandardCharsets.UTF_8));
 
 			return ok(converted);
 

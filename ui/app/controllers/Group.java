@@ -22,17 +22,19 @@ import views.html.group.index;
 import views.html.group.property;
 
 import com.fasterxml.jackson.databind.JsonNode;
-
+import org.pac4j.play.java.Secure;
 @Authenticated(Secured.class)
 public class Group extends Controller {
 
 	private static String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 
-	public static Result index(String repositoryId){
+	@Secure
+	public Result index(String repositoryId){
 	    return  search( repositoryId, "");
 	}
 
-	public static Result search(String repositoryId, String term){
+	@Secure
+	public Result search(String repositoryId, String term){
     	JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "search?query=" + term);
 
     	List<model.Group> list = new ArrayList<model.Group>();
@@ -82,12 +84,14 @@ public class Group extends Controller {
 
     }
 
-	public static Result showBlank(String repositoryId){
+	@Secure
+	public Result showBlank(String repositoryId){
 		model.Group emptyGroup = new model.Group("", "", 0, 0, new ArrayList<String>(), new ArrayList<String>());
 		return ok(blank.render(repositoryId, emptyGroup));
 	}
 
-	public static Result create(String repositoryId){
+	@Secure
+	public Result create(String repositoryId){
     	Map<String, String>params = buildParams();
     	JsonNode result = Util.postJsonResponse(session(), getEndpoint(repositoryId) + "create/" + params.get("id"), params);
 
@@ -98,14 +102,16 @@ public class Group extends Controller {
     	}
 	}
 
-	public static Result delete(String repositoryId, String id){
+	@Secure
+	public Result delete(String repositoryId, String id){
 		JsonNode result = Util.deleteJsonResponse(session(), getEndpoint(repositoryId) + "delete/" + id);
 
 		//TODO error
 		return ok();
 	}
 
-	public static Result showDetail(String repositoryId, String id){
+	@Secure
+	public Result showDetail(String repositoryId, String id){
 		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "show/" + id);
 
 		if(isSuccess(result)){
@@ -150,7 +156,8 @@ public class Group extends Controller {
 		}
 	}
 
-	public static Result update(String repositoryId, String id){
+	@Secure
+	public Result update(String repositoryId, String id){
 
     	Map<String, String>params = buildParams();
 

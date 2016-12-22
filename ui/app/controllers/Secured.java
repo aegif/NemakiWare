@@ -15,7 +15,7 @@ import play.mvc.Result;
 import play.mvc.Security;
 import util.NemakiConfig;
 import util.Util;
-
+import org.pac4j.play.java.Secure;
 public class Secured extends Security.Authenticator {
 
 	@Override

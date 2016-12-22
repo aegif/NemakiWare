@@ -28,7 +28,7 @@ import views.html.user.password;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-
+import org.pac4j.play.java.Secure;
 
 @Authenticated(Secured.class)
 public class User extends Controller {
@@ -39,11 +39,13 @@ public class User extends Controller {
 		return CmisSessions.getCmisSession(repositoryId, session());
 	}
 
-	public static Result index(String repositoryId){
+	@Secure
+	public Result index(String repositoryId){
 	    	return search(repositoryId, "");
 	  }
 
-	public static Result search(String repositoryId, String term){
+	@Secure
+	public Result search(String repositoryId, String term){
     	JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "search?query=" + term);
 
     	//TODO check status
@@ -81,13 +83,15 @@ public class User extends Controller {
 
     }
 
-	public static Result showBlank(String repositoryId){
+	@Secure
+	public Result showBlank(String repositoryId){
 		model.User emptyUser = new model.User("", "", "", "", "", "", false, null);
 
 		return ok(blank.render(repositoryId, emptyUser));
 	}
 
-	public static Result showDetail(String repositoryId, String id){
+	@Secure
+	public Result showDetail(String repositoryId, String id){
 		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "show/" + id);
 
 		if("success".equals(result.get("status").asText())){
@@ -103,7 +107,8 @@ public class User extends Controller {
 
 
 
-	public static Result showPasswordChanger(String repositoryId, String id){
+	@Secure
+	public Result showPasswordChanger(String repositoryId, String id){
 		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "show/" + id);
 
 		if("success".equals(result.get("status").asText())){
@@ -117,7 +122,8 @@ public class User extends Controller {
 		}
 	}
 
-	public static Result showFavorites(String repositoryId, String id){
+	@Secure
+	public Result showFavorites(String repositoryId, String id){
 		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "show/" + id);
 
 		if("success".equals(result.get("status").asText())){
@@ -144,7 +150,8 @@ public class User extends Controller {
 		}
 	}
 
-	public static Result toggleFavorite(String repositoryId, String userId, String objectId){
+	@Secure
+	public Result toggleFavorite(String repositoryId, String userId, String objectId){
 		Map<String, String>params = new HashMap<String, String>();
 		params.put("id", userId);
 
@@ -176,7 +183,8 @@ public class User extends Controller {
 		}
 	}
 
-	public static Result create(String repositoryId){
+	@Secure
+	public Result create(String repositoryId){
     	Map<String, String>params = buildParams();
     	JsonNode result = Util.postJsonResponse(session(), getEndpoint(repositoryId) + "create/" + params.get("id"), params);
 
@@ -189,7 +197,8 @@ public class User extends Controller {
     	}
 	}
 
-	public static Result update(String repositoryId, String id){
+	@Secure
+	public Result update(String repositoryId, String id){
 
     	Map<String, String>params = buildParams();
 
@@ -202,7 +211,8 @@ public class User extends Controller {
     	}
 	}
 
-	public static Result changePassword(String repositoryId, String id){
+	@Secure
+	public Result changePassword(String repositoryId, String id){
 		DynamicForm input = Form.form();
     	input = input.bindFromRequest();
     	Map<String, String>changeParams = new HashMap<String, String>();
@@ -219,7 +229,8 @@ public class User extends Controller {
     	}
 	}
 
-	public static Result delete(String repositoryId, String id){
+	@Secure
+	public Result delete(String repositoryId, String id){
 		JsonNode deleteResult = Util.deleteJsonResponse(session(), getEndpoint(repositoryId) + "delete/" + id);
 
     	if(isSuccess(deleteResult)){

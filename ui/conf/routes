@@ -10,12 +10,17 @@ GET		/assets/javascripts/routes							controllers.Application.jsRoutes()
 GET     /assets/*file               						controllers.Assets.at(path="/public", file)
 GET     /webjars/*file                  					controllers.WebJarAssets.at(file)
 
+# Authentication Callback
+GET		/callback											@org.pac4j.play.CallbackController.callback()
+POST	/callback											@org.pac4j.play.CallbackController.callback()
+
 # Global error(for user)
 GET		/error												controllers.Application.error()
 
 # Login
+GET		/login												controllers.Application.login(repoId ?= "bedroom")
 GET		/repo/:repoId/login									controllers.Application.login(repoId)
-POST	/repo/:repoId/authenticate							controllers.Application.authenticate(repoId)
+#POST	/repo/:repoId/authenticate							controllers.Application.authenticate(repoId)
 GET		/repo/:repoId/logout								controllers.Application.logout(repoId)
 
 # Home page

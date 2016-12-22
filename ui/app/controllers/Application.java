@@ -1,8 +1,11 @@
 package controllers;
 
+import com.google.inject.Inject;
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
 import org.apache.commons.lang3.StringUtils;
+import org.pac4j.http.client.indirect.FormClient;
+
 import play.Logger;
 import play.Logger.ALogger;
 
@@ -18,27 +21,38 @@ import play.mvc.Result;
 import util.NemakiConfig;
 import util.Util;
 import views.html.login;
-
+import org.pac4j.core.config.Config;
+import org.pac4j.play.java.Secure;
 public class Application extends Controller {
 	private static final ALogger logger = Logger.of(Application.class);
 
-	public static Result login(String repositoryId) {
-		return ok(login.render(repositoryId, Form.form(Login.class)));
+    @Inject
+    public  Config config;
+
+	public Result login(String repositoryId) {
+		final FormClient formClient = (FormClient) config.getClients().findClient("FormClient");
+
+		return ok(login.render(repositoryId, formClient.getCallbackUrl()));
 	}
 
-	public static Result authenticate(String repositoryId) {
+	/*
+	public Result authenticate(String repositoryId) {
+		final FormClient formClient = (FormClient) config.getClients().findClient("FormClient");
+
 		Form<Login> formData = Form.form(Login.class);
 		formData = formData.bindFromRequest();
 		if (formData.hasErrors())
-			return badRequest(login.render(repositoryId, formData));
+			return badRequest(login.render(repositoryId, formData, formClient.getCallbackUrl()));
 
 		Login loginModel = formData.get();
-		Util.setupSessionBasicAuth(session(), repositoryId, loginModel.id, loginModel.password);
-		logger.info("User [" + loginModel.id + "] login success.");
+		Util.setupSessionBasicAuth(session(), repositoryId, loginModel.userId, loginModel.password);
+		logger.info("User [" + loginModel.userId + "] login success.");
+
 		return redirect(routes.Node.index(repositoryId));
 	}
+	*/
 
-	public static Result logout(String repositoryId) {
+	public Result logout(String repositoryId) {
 		// CMIS session
 		CmisSessions.disconnect(repositoryId, session());
 
@@ -53,11 +67,11 @@ public class Application extends Controller {
 		}
 	}
 
-	public static Result error() {
+	public Result error() {
 		return ok(views.html.error.render());
 	}
 
-	public static Result jsRoutes() {
+	public Result jsRoutes() {
 		response().setContentType("text/javascript");
 		return ok(Routes.javascriptRouter("jsRoutes", controllers.routes.javascript.Node.showDetail(),
 				controllers.routes.javascript.Node.showProperty(), controllers.routes.javascript.Node.showFile(),
