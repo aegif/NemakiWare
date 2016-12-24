@@ -1,6 +1,10 @@
 package controllers;
 
 import com.google.inject.Inject;
+
+import java.util.List;
+import java.util.Optional;
+
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
 import org.apache.commons.lang3.StringUtils;
@@ -22,7 +26,11 @@ import util.NemakiConfig;
 import util.Util;
 import views.html.login;
 import org.pac4j.core.config.Config;
+import org.pac4j.core.profile.CommonProfile;
+import org.pac4j.core.profile.ProfileManager;
+import org.pac4j.play.PlayWebContext;
 import org.pac4j.play.java.Secure;
+import play.mvc.Http.Context;
 public class Application extends Controller {
 	private static final ALogger logger = Logger.of(Application.class);
 
@@ -54,7 +62,7 @@ public class Application extends Controller {
 
 	public Result logout(String repositoryId) {
 		// CMIS session
-		CmisSessions.disconnect(repositoryId, session());
+		CmisSessions.disconnect(repositoryId, ctx());
 
 		// Play session
 		session().clear();

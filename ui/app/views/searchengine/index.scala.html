@@ -13,7 +13,7 @@
 		</div>
 
 		<div class="row" style="padding-bottom:30px;">
-			@defining(Util.getSeachEngineUrl(Implicit.session)){ url =>
+			@defining(Util.getSeachEngineUrl(Implicit.ctx)){ url =>
 				@if(StringUtils.isNotBlank(url)){
 					<i class="fa fa-link"></i>
 					<a href="@url" target="_blank">@Messages("view.search-engine.open")</a>

@@ -30,13 +30,12 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import org.pac4j.play.java.Secure;
 
-@Authenticated(Secured.class)
 public class User extends Controller {
 
 	private static String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 
 	private static Session getCmisSession(String repositoryId){
-		return CmisSessions.getCmisSession(repositoryId, session());
+		return CmisSessions.getCmisSession(repositoryId, ctx());
 	}
 
 	@Secure
@@ -46,7 +45,7 @@ public class User extends Controller {
 
 	@Secure
 	public Result search(String repositoryId, String term){
-    	JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "search?query=" + term);
+    	JsonNode result = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "search?query=" + term);
 
     	//TODO check status
     	JsonNode users = result.get("result");
@@ -92,7 +91,7 @@ public class User extends Controller {
 
 	@Secure
 	public Result showDetail(String repositoryId, String id){
-		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "show/" + id);
+		JsonNode result = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "show/" + id);
 
 		if("success".equals(result.get("status").asText())){
 			JsonNode _user = result.get("user");
@@ -109,7 +108,7 @@ public class User extends Controller {
 
 	@Secure
 	public Result showPasswordChanger(String repositoryId, String id){
-		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "show/" + id);
+		JsonNode result = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "show/" + id);
 
 		if("success".equals(result.get("status").asText())){
 			JsonNode _user = result.get("user");
@@ -124,7 +123,7 @@ public class User extends Controller {
 
 	@Secure
 	public Result showFavorites(String repositoryId, String id){
-		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "show/" + id);
+		JsonNode result = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "show/" + id);
 
 		if("success".equals(result.get("status").asText())){
 			JsonNode _user = result.get("user");
@@ -155,7 +154,7 @@ public class User extends Controller {
 		Map<String, String>params = new HashMap<String, String>();
 		params.put("id", userId);
 
-		JsonNode getResult = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "show/" + userId);
+		JsonNode getResult = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "show/" + userId);
 
 		if("success".equals(getResult.get("status").asText())){
 			JsonNode _user = getResult.get("user");
@@ -170,7 +169,7 @@ public class User extends Controller {
 			}
 
 			//Update
-			JsonNode putResult = Util.putJsonResponse(session(), getEndpoint(repositoryId) + "update/" + userId , params);
+			JsonNode putResult = Util.putJsonResponse(ctx(), getEndpoint(repositoryId) + "update/" + userId , params);
 			if("success".equals(putResult.get("status").asText())){
 				return ok();
 			}else{
@@ -186,7 +185,7 @@ public class User extends Controller {
 	@Secure
 	public Result create(String repositoryId){
     	Map<String, String>params = buildParams();
-    	JsonNode result = Util.postJsonResponse(session(), getEndpoint(repositoryId) + "create/" + params.get("id"), params);
+    	JsonNode result = Util.postJsonResponse(ctx(), getEndpoint(repositoryId) + "create/" + params.get("id"), params);
 
     	if(isSuccess(result)){
     		flash("flash message");
@@ -202,7 +201,7 @@ public class User extends Controller {
 
     	Map<String, String>params = buildParams();
 
-    	JsonNode result = Util.putJsonResponse(session(), getEndpoint(repositoryId) + "update/" + id , params);
+    	JsonNode result = Util.putJsonResponse(ctx(), getEndpoint(repositoryId) + "update/" + id , params);
 
     	if(isSuccess(result)){
     		return ok();
@@ -219,7 +218,7 @@ public class User extends Controller {
     	changeParams.put("id", input.get("userId"));
     	changeParams.put("oldPassword",  input.get("oldPassword"));
     	changeParams.put("newPassword",  input.get("newPassword1"));
-    	JsonNode changeResult = Util.putJsonResponse(session(), getEndpoint(repositoryId) + "changePassword/" + id , changeParams);
+    	JsonNode changeResult = Util.putJsonResponse(ctx(), getEndpoint(repositoryId) + "changePassword/" + id , changeParams);
 
     	if(isSuccess(changeResult)){
     		return redirect(routes.Application.logout(repositoryId));
@@ -231,7 +230,7 @@ public class User extends Controller {
 
 	@Secure
 	public Result delete(String repositoryId, String id){
-		JsonNode deleteResult = Util.deleteJsonResponse(session(), getEndpoint(repositoryId) + "delete/" + id);
+		JsonNode deleteResult = Util.deleteJsonResponse(ctx(), getEndpoint(repositoryId) + "delete/" + id);
 
     	if(isSuccess(deleteResult)){
     		return ok();

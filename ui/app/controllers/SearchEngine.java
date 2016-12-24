@@ -19,7 +19,7 @@ public class SearchEngine extends Controller{
 
 	@Secure
 	public Result init(String repositoryId){
-		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "init");
+		JsonNode result = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "init");
 
 		String status = result.get(Token.REST_STATUS).textValue();
 		if(Token.REST_SUCCESS.equals(status)){
@@ -31,7 +31,7 @@ public class SearchEngine extends Controller{
 
 	@Secure
 	public Result reindex(String repositoryId){
-		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "reindex");
+		JsonNode result = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "reindex");
 
 		String status = result.get(Token.REST_STATUS).textValue();
 		if(Token.REST_SUCCESS.equals(status)){
