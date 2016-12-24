@@ -58,6 +58,7 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.objectweb.asm.Type;
+import org.pac4j.core.profile.CommonProfile;
 import org.pac4j.play.java.Secure;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -93,7 +94,7 @@ public class Node extends Controller {
 	private static Logger log = LoggerFactory.getLogger(Node.class);
 
 	private static Session getCmisSession(String repositoryId) {
-		return CmisSessions.getCmisSession(repositoryId, session());
+		return CmisSessions.getCmisSession(repositoryId, ctx());
 	}
 
 	@Secure
@@ -104,7 +105,7 @@ public class Node extends Controller {
 
 			return showChildren(repositoryId, root.getId());
 		} catch (Exception ex) {
-			CmisSessions.disconnect(repositoryId, session());
+			CmisSessions.disconnect(repositoryId, ctx());
 			log.equals(ex);
 			return redirect(routes.Application.login(repositoryId));
 		}
@@ -129,9 +130,10 @@ public class Node extends Controller {
 				Document doc = (Document) obj;
 				if (doc.isVersionSeriesCheckedOut()) {
 					// check owner
-					String loginUser = session().get(Token.LOGIN_USER_ID);
+					CommonProfile profile = Util.getProfile(ctx()).get();
+					String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
 					String owner = doc.getVersionSeriesCheckedOutBy();
-					if (loginUser.equals(owner)) {
+					if (userId.equals(owner)) {
 						String pwcId = doc.getVersionSeriesCheckedOutId();
 						CmisObject pwc = session.getObject(pwcId);
 						results.add(pwc);
@@ -217,10 +219,13 @@ public class Node extends Controller {
 		String parentId = o.getParents().get(0).getId();
 
 		// Get user
+		CommonProfile profile = Util.getProfile(ctx()).get();
+		String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
 		final String endPoint = Util.buildNemakiCoreRestRepositoryUri(repositoryId);
-		String url = endPoint + "user/show/" + session().get(Token.LOGIN_USER_ID);
-		JsonNode result = Util.getJsonResponse(session(), url);
+		String url = endPoint + "user/show/" + userId;
+		JsonNode result = Util.getJsonResponse(ctx(), url);
 		model.User user = new model.User();
+
 		if ("success".equals(result.get("status").asText())) {
 			JsonNode _user = result.get("user");
 			user = new model.User(_user);
@@ -1250,7 +1255,7 @@ public class Node extends Controller {
 		String coreRestUri = Util.buildNemakiCoreRestRepositoryUri(repositoryId);
 
 		// user
-		JsonNode resultUser = Util.getJsonResponse(session(), coreRestUri + "user/show/" + principalId);
+		JsonNode resultUser = Util.getJsonResponse(ctx(), coreRestUri + "user/show/" + principalId);
 		// TODO check status
 		JsonNode user = resultUser.get("user");
 		if (user != null) {
@@ -1259,7 +1264,7 @@ public class Node extends Controller {
 		}
 
 		// group
-		JsonNode resultGroup = Util.getJsonResponse(session(), coreRestUri + "group/show/" + principalId);
+		JsonNode resultGroup = Util.getJsonResponse(ctx(), coreRestUri + "group/show/" + principalId);
 		// TODO check status
 		JsonNode group = resultGroup.get("group");
 		if (group != null) {

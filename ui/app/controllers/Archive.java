@@ -31,7 +31,7 @@ public class Archive extends Controller{
 			endPoint += ("&skip=" + skip);
 		}
 
-		JsonNode json = Util.getJsonResponse(session(), endPoint);
+		JsonNode json = Util.getJsonResponse(ctx(), endPoint);
 
 		ArrayNode archives =  (ArrayNode) json.get("archives");
 		Iterator<JsonNode> itr = archives.iterator();
@@ -48,7 +48,7 @@ public class Archive extends Controller{
 
 	@Secure
 	public Result restore(String repositoryId, String archiveId){
-		JsonNode json = Util.putJsonResponse(session(), getEndpoint(repositoryId) + "restore/" + archiveId, null);
+		JsonNode json = Util.putJsonResponse(ctx(), getEndpoint(repositoryId) + "restore/" + archiveId, null);
 		if(Util.isRestSuccess(json)){
 			return ok();
 		}else{
@@ -59,7 +59,7 @@ public class Archive extends Controller{
 
 	@Secure
 	public Result destroy(String repositoryId, String archiveId){
-		JsonNode json = Util.deleteJsonResponse(session(), getEndpoint(repositoryId) + "destroy/" + archiveId);
+		JsonNode json = Util.deleteJsonResponse(ctx(), getEndpoint(repositoryId) + "destroy/" + archiveId);
 		if(Util.isRestSuccess(json)){
 			return ok();
 		}else{

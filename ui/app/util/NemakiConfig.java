@@ -78,6 +78,12 @@ public class NemakiConfig {
 			return v;
 		}
 	}
+
+	public static String getPlayHttpContext(){
+		return NemakiConfig.getValue(PropertyKey.PLAY_HTTP_CONTEXT);
+	}
+
+
 	public static String getSSOLogoutURI(){
 		return NemakiConfig.getValue(PropertyKey.SSO_LOGOUT_REDIRECT_URI);
 	}

@@ -23,13 +23,13 @@ import util.Util;
 
 import views.html.config.*;
 import org.pac4j.play.java.Secure;
-@Authenticated(Secured.class)
+
 public class Config extends Controller {
 
 	private static String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 
 	private static Session getCmisSession(String repositoryId) {
-		return CmisSessions.getCmisSession(repositoryId, session());
+		return CmisSessions.getCmisSession(repositoryId, ctx());
 	}
 
 	@Secure
@@ -39,7 +39,7 @@ public class Config extends Controller {
 
 	@Secure
 	public Result list(String repositoryId) {
-		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "/list");
+		JsonNode result = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "/list");
 
 		// TODO check status
 		JsonNode configurations = result.get("configurations");
@@ -66,7 +66,7 @@ public class Config extends Controller {
 
 	@Secure
 	public Result showDetail(String repositoryId, String configKey) {
-		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "/show/" + configKey);
+		JsonNode result = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "/show/" + configKey);
 
 		JsonNode configNode = result.get("configuration");
 		model.Config config = createConfig(configNode);
@@ -93,7 +93,7 @@ public class Config extends Controller {
 		Map<String, String> params = new HashMap<String, String>();
 		params.put("key", key);
 		params.put("value", value);
-		JsonNode result = Util.putJsonResponse(session(), getEndpoint(repositoryId), params);
+		JsonNode result = Util.putJsonResponse(ctx(), getEndpoint(repositoryId), params);
 
     	if(isSuccess(result)){
     		JsonNode configNode = result.get("configuration");

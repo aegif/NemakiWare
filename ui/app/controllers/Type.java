@@ -42,12 +42,12 @@ import util.Util;
 import org.pac4j.play.java.Secure;
 public class Type extends Controller {
 	private static Session getCmisSession(String repositoryId){
-		return CmisSessions.getCmisSession(repositoryId, session());
+		return CmisSessions.getCmisSession(repositoryId, ctx());
 	}
 
 	@Secure
 	public Result index(String repositoryId) {
-		Session session = Util.createCmisSession(repositoryId, session());
+		Session session = Util.createCmisSession(repositoryId, ctx());
 
 		List<ObjectType> list = new ArrayList<ObjectType>();
 

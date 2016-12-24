@@ -20,13 +20,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import constant.Token;
 import org.pac4j.play.java.Secure;
 
-@Authenticated(Secured.class)
 public class Principal extends Controller{
 
 	private static String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 
 	private static Session getCmisSession(String repositoryId){
-		return CmisSessions.getCmisSession(repositoryId, session());
+		return CmisSessions.getCmisSession(repositoryId, ctx());
 	}
 
 	@Secure
@@ -34,7 +33,7 @@ public class Principal extends Controller{
 		List<model.Principal>principals = new ArrayList<model.Principal>();
 
 		//user search
-		JsonNode resultUsers = Util.getJsonResponse(session(), coreRestUri + "repo/" + repositoryId + "/user/search?query=" + term); //TODO
+		JsonNode resultUsers = Util.getJsonResponse(ctx(), coreRestUri + "repo/" + repositoryId + "/user/search?query=" + term); //TODO
     	//TODO check status
     	JsonNode users = resultUsers.get("result");
 		if(users != null){
@@ -48,7 +47,7 @@ public class Principal extends Controller{
 		}
 
 		//group search
-		JsonNode resultGroups = Util.getJsonResponse(session(), coreRestUri + "repo/" + repositoryId + "/group/search?query=" + term);
+		JsonNode resultGroups = Util.getJsonResponse(ctx(), coreRestUri + "repo/" + repositoryId + "/group/search?query=" + term);
     	//TODO check status
     	JsonNode groups = resultGroups.get("result");
 		if(groups != null){

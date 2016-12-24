@@ -3,6 +3,8 @@ package constant;
 public interface PropertyKey {
 	final String PROPERTY_FILES = "property.files";
 
+	final String PLAY_HTTP_CONTEXT = "play.http.context";
+
 	final String NEMAKI_CORE_URI= "nemaki.core.uri";
 	final String NEMAKI_CORE_URI_PROTOCOL= "nemaki.core.uri.protocol";
 	final String NEMAKI_CORE_URI_HOST= "nemaki.core.uri.host";

@@ -2,8 +2,12 @@ package controllers;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 import org.apache.chemistry.opencmis.client.api.Session;
+import org.pac4j.core.profile.CommonProfile;
+import org.pac4j.core.profile.ProfileManager;
+import org.pac4j.play.PlayWebContext;
 
 import constant.Token;
 import util.Util;
@@ -40,9 +44,9 @@ public class CmisSessions {
 		}
 	}
 
-	public static Session getCmisSession(String repositoryId, play.mvc.Http.Session session){
+	public static Session getCmisSession(String repositoryId, play.mvc.Http.Context ctx){
 		RepoSession repoSession = getRepoSession(repositoryId);
-		Session cmisSession = getUserSession(repoSession, session);
+		Session cmisSession = getUserSession(repoSession, ctx);
 		return cmisSession;
 	}
 
@@ -55,22 +59,26 @@ public class CmisSessions {
 		return repoSession;
 	}
 
-	private static Session getUserSession(RepoSession repoSession, play.mvc.Http.Session session){
-		String userId = session.get(Token.LOGIN_USER_ID);
+	private static Session getUserSession(RepoSession repoSession, play.mvc.Http.Context ctx){
+		CommonProfile profile =  Util.getProfile(ctx).get();
+		String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
+
 		Session cmisSession = repoSession.get(userId);
 		if(cmisSession == null){
-			cmisSession = Util.createCmisSession(repoSession.getRepositoryId(), session);
+			cmisSession = Util.createCmisSession(repoSession.getRepositoryId(), ctx);
 			repoSession.put(userId, cmisSession);
 		}
 		return cmisSession;
 	}
 
-	public static void disconnect(String repositoryId, play.mvc.Http.Session session){
+	public static void disconnect(String repositoryId, play.mvc.Http.Context ctx){
 		RepoSession repoSession = getRepoSession(repositoryId);
-		Session cmisSession = getUserSession(repoSession, session);
+		Session cmisSession = getUserSession(repoSession, ctx);
 
 		cmisSession.clear();
-		String userId = session.get(Token.LOGIN_USER_ID);
+		CommonProfile profile =  Util.getProfile(ctx).get();
+		String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
+
 		repoSession.remove(userId);
 	}
 }

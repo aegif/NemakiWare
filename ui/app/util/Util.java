@@ -24,8 +24,11 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.Map.Entry;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -90,6 +93,9 @@ import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.message.BasicHeader;
 import org.apache.http.message.BasicNameValuePair;
+import org.pac4j.core.profile.CommonProfile;
+import org.pac4j.core.profile.ProfileManager;
+import org.pac4j.play.PlayWebContext;
 
 import play.Logger;
 import play.Logger.ALogger;
@@ -121,41 +127,41 @@ import model.ActionPluginUIElement;
 public class Util {
 	private static final ALogger logger = Logger.of(Util.class);
 
-	public static void setupSessionHeaderAuth(play.mvc.Http.Session playSession,String repositoryId,String userId){
-		playSession.clear();
-		playSession.put(Token.HEADER_AUTH, "true");
-		playSession.put(Token.LOGIN_USER_ID, userId);
-		setupSessionCommon(playSession, repositoryId, userId);
-	}
-	public static void setupSessionBasicAuth(play.mvc.Http.Session playSession,String repositoryId,String userId, String password){
-		playSession.clear();
-		playSession.put(Token.LOGIN_USER_ID, userId);
-		playSession.put(Token.LOGIN_USER_PASSWORD, password);
-		playSession.put(Token.LOGIN_REPOSITORY_ID, repositoryId);
-		setupSessionCommon(playSession, repositoryId, userId);
+    public static Optional<CommonProfile> getProfile(play.mvc.Http.Context ctx) {
+        final PlayWebContext context = new PlayWebContext(ctx);
+        final ProfileManager<CommonProfile> profileManager = new ProfileManager(context);
+        return profileManager.get(true);
+    }
+
+
+	public static String extractRepositoryId(String uri) {
+		String basePath = NemakiConfig.getPlayHttpContext();
+		Pattern p = Pattern.compile("^.*" + basePath + "repo/([^/]*).*");
+		Matcher m = p.matcher(uri);
+
+		if (m.find()) {
+			return m.group(1);
+		}
+
+		return null;
 	}
 
-	private static void setupSessionCommon(play.mvc.Http.Session playSession,String repositoryId, String userId){
-		Session cmisSession = createCmisSession(repositoryId, playSession);
-		RepositoryInfo repo = cmisSession.getRepositoryInfo();
-		playSession.put(Token.LOGIN_USER_IS_ADMIN, String.valueOf(Util.isAdmin(repositoryId, userId, playSession)));
-		playSession.put(Token.NEMAKIWARE_VERSION, repo.getProductVersion());
-	}
 
-	public static String getVersion(String repositoryId, play.mvc.Http.Session playSession){
-		Session cmisSession = CmisSessions.getCmisSession(repositoryId, playSession);
+
+	public static String getVersion(String repositoryId, play.mvc.Http.Context ctx){
+		Session cmisSession = CmisSessions.getCmisSession(repositoryId, ctx);
 		RepositoryInfo repo = cmisSession.getRepositoryInfo();
 		return repo.getProductVersion();
 	}
 
-	public static boolean isAdmin(String repositoryId, String userId, play.mvc.Http.Session playSession){
+	public static boolean isAdmin(String repositoryId, String userId, play.mvc.Http.Context ctx){
 		boolean isAdmin = false;
 
 		String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 		String endPoint = coreRestUri + "repo/" + repositoryId + "/user/";
 
 		try{
-			JsonNode result = Util.getJsonResponse(playSession, endPoint + "show/" + userId);
+			JsonNode result = Util.getJsonResponse(ctx, endPoint + "show/" + userId);
 			if("success".equals(result.get("status").asText())){
 				JsonNode _user = result.get("user");
 				model.User user = new model.User(_user);
@@ -169,16 +175,11 @@ public class Util {
 		return isAdmin;
 	}
 
-	public static Session createCmisSession(String repositoryId, play.mvc.Http.Session session){
-
-		if(StringUtils.isNotBlank(session.get(Token.HEADER_AUTH))){
-			String userId = session.get(Token.LOGIN_USER_ID);
-			return createCmisSessionByAuthHeader(repositoryId, userId);
-		}else{
-			String userId = session.get(Token.LOGIN_USER_ID);
-			String password = session.get(Token.LOGIN_USER_PASSWORD);
-			return createCmisSessionByBasicAuth(repositoryId, userId, password);
-		}
+	public static Session createCmisSession(String repositoryId, play.mvc.Http.Context ctx){
+		CommonProfile profile =  Util.getProfile(ctx).get();
+		String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
+		String password = profile.getAttribute(Token.LOGIN_USER_PASSWORD, String.class);
+		return createCmisSessionByBasicAuth(repositoryId, userId, password);
 	}
 	public static Session createCmisSessionByAuthHeader(String repositoryId, String remoteUserId){
 		SessionParameterMap parameter = new SessionParameterMap();
@@ -517,7 +518,7 @@ public class Util {
 		return className;
 	}
 
-	private static HttpClient buildClient(play.mvc.Http.Session session){
+	private static HttpClient buildClient(play.mvc.Http.Context ctx){
 		HttpClientBuilder builder = HttpClientBuilder.create();
 
 		// configurations
@@ -530,23 +531,21 @@ public class Util {
 		headers.add(new BasicHeader("User-Agent", userAgent));
 
 		// set credential
-		String user = session.get(Token.LOGIN_USER_ID);
-		String headerAuth = session.get(Token.HEADER_AUTH);
-		if(StringUtils.isNotBlank(headerAuth)){
-			headers.add(new BasicHeader(NemakiConfig.getRemoteAuthHeader(),user));
-		}else{
-			String password = session.get(Token.LOGIN_USER_PASSWORD);
-			Credentials credentials = new UsernamePasswordCredentials(user, password);
-			String host = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_HOST);
-			String port = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_PORT);
-			AuthScope scope = new AuthScope(host, Integer.valueOf(port));
-			//CredentialsProvider doesn't add BASIC auth header
-			headers.add(BasicScheme.authenticate(credentials, "US-ASCII", false));
+		CommonProfile profile =  Util.getProfile(ctx).get();
+		String user = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
+		String password = profile.getAttribute(Token.LOGIN_USER_PASSWORD, String.class);
+		Credentials credentials = new UsernamePasswordCredentials(user, password);
+		String host = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_HOST);
+		String port = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_PORT);
+		AuthScope scope = new AuthScope(host, Integer.valueOf(port));
+		//CredentialsProvider doesn't add BASIC auth header
+		headers.add(BasicScheme.authenticate(credentials, "US-ASCII", false));
 
-			CredentialsProvider credsProvider = new BasicCredentialsProvider();
-			credsProvider.setCredentials(scope, credentials);
-			builder.setDefaultCredentialsProvider(credsProvider);
-		}
+		CredentialsProvider credsProvider = new BasicCredentialsProvider();
+		credsProvider.setCredentials(scope, credentials);
+		builder.setDefaultCredentialsProvider(credsProvider);
+
+
 
 		// create client
 		builder.setDefaultHeaders(headers);
@@ -590,16 +589,16 @@ public class Util {
 		return null;
 	}
 
-	public static JsonNode getJsonResponse(play.mvc.Http.Session session, String url) {
+	public static JsonNode getJsonResponse(play.mvc.Http.Context ctx, String url) {
 		// create client
-		HttpClient client = buildClient(session);
+		HttpClient client = buildClient(ctx);
 		HttpGet request = new HttpGet(url);
 		return executeRequest(client, request);
 	}
 
-	public static JsonNode postJsonResponse(play.mvc.Http.Session session, String url, JsonNode json) {
+	public static JsonNode postJsonResponse(play.mvc.Http.Context ctx, String url, JsonNode json) {
 		// create client
-		HttpClient client = buildClient(session);
+		HttpClient client = buildClient(ctx);
 		HttpPost request = new HttpPost(url);
 
 		try {
@@ -615,9 +614,9 @@ public class Util {
 		return executeRequest(client, request);
 	}
 
-	public static JsonNode postJsonResponse(play.mvc.Http.Session session, String url, Map<String, String>params) {
+	public static JsonNode postJsonResponse(play.mvc.Http.Context ctx, String url, Map<String, String>params) {
 		// create client
-		HttpClient client = buildClient(session);
+		HttpClient client = buildClient(ctx);
 
 		HttpPost request = new HttpPost(url);
 		List<NameValuePair> list = new ArrayList<NameValuePair>();
@@ -638,9 +637,9 @@ public class Util {
 	}
 
 
-	public static JsonNode putJsonResponse(play.mvc.Http.Session session, String url, Map<String, String>params) {
+	public static JsonNode putJsonResponse(play.mvc.Http.Context ctx, String url, Map<String, String>params) {
 		// create client
-		HttpClient client = buildClient(session);
+		HttpClient client = buildClient(ctx);
 
 		HttpPut request = new HttpPut(url);
 		List<NameValuePair> list = new ArrayList<NameValuePair>();
@@ -660,8 +659,8 @@ public class Util {
 		return executeRequest(client, request);
 	}
 
-	public static JsonNode deleteJsonResponse(play.mvc.Http.Session session, String url){
-		HttpClient client = buildClient(session);
+	public static JsonNode deleteJsonResponse(play.mvc.Http.Context ctx, String url){
+		HttpClient client = buildClient(ctx);
 		HttpDelete request = new HttpDelete(url);
 		return executeRequest(client, request);
 	}
@@ -933,11 +932,11 @@ public class Util {
 		 return Integer.valueOf(_size);
 	 }
 
-	 public static String getSeachEngineUrl(play.mvc.Http.Session session){
+	 public static String getSeachEngineUrl(play.mvc.Http.Context ctx){
 		String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 		String endPoint = coreRestUri + "all/" + "search-engine/";
 
-		JsonNode result = Util.getJsonResponse(session, endPoint + "url");
+		JsonNode result = Util.getJsonResponse(ctx, endPoint + "url");
 
 		String status = result.get(Token.REST_STATUS).textValue();
 		try {

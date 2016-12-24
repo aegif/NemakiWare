@@ -23,7 +23,7 @@ import views.html.group.property;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.pac4j.play.java.Secure;
-@Authenticated(Secured.class)
+
 public class Group extends Controller {
 
 	private static String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
@@ -35,7 +35,7 @@ public class Group extends Controller {
 
 	@Secure
 	public Result search(String repositoryId, String term){
-    	JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "search?query=" + term);
+    	JsonNode result = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "search?query=" + term);
 
     	List<model.Group> list = new ArrayList<model.Group>();
 
@@ -93,7 +93,7 @@ public class Group extends Controller {
 	@Secure
 	public Result create(String repositoryId){
     	Map<String, String>params = buildParams();
-    	JsonNode result = Util.postJsonResponse(session(), getEndpoint(repositoryId) + "create/" + params.get("id"), params);
+    	JsonNode result = Util.postJsonResponse(ctx(), getEndpoint(repositoryId) + "create/" + params.get("id"), params);
 
     	if(isSuccess(result)){
     		return ok();
@@ -104,7 +104,7 @@ public class Group extends Controller {
 
 	@Secure
 	public Result delete(String repositoryId, String id){
-		JsonNode result = Util.deleteJsonResponse(session(), getEndpoint(repositoryId) + "delete/" + id);
+		JsonNode result = Util.deleteJsonResponse(ctx(), getEndpoint(repositoryId) + "delete/" + id);
 
 		//TODO error
 		return ok();
@@ -112,7 +112,7 @@ public class Group extends Controller {
 
 	@Secure
 	public Result showDetail(String repositoryId, String id){
-		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "show/" + id);
+		JsonNode result = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "show/" + id);
 
 		if(isSuccess(result)){
 			JsonNode _group = result.get("group");
@@ -124,7 +124,7 @@ public class Group extends Controller {
 			List<String> userIds = group.users;
 			if(CollectionUtils.isNotEmpty(userIds)){
 				for(String userId : userIds){
-					JsonNode _memberUser = Util.getJsonResponse(session(), getEndpointForUser(repositoryId) + "show/" + userId);
+					JsonNode _memberUser = Util.getJsonResponse(ctx(), getEndpointForUser(repositoryId) + "show/" + userId);
 					if(isSuccess(_memberUser)){
 						String userName = _memberUser.get("user").get("userName").asText();
 						users.add(new Principal("user", userId, userName));
@@ -137,7 +137,7 @@ public class Group extends Controller {
 			List<String> groupIds = group.groups;
 			if(CollectionUtils.isNotEmpty(groupIds)){
 				for(String groupId : groupIds){
-					JsonNode _memberGroup = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "show/" + groupId);
+					JsonNode _memberGroup = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "show/" + groupId);
 					if(isSuccess(_memberGroup)){
 						String groupName = _memberGroup.get("group").get("groupName").asText();
 						groups.add(new Principal("group", groupId, groupName));
@@ -162,7 +162,7 @@ public class Group extends Controller {
     	Map<String, String>params = buildParams();
 
 
-    	JsonNode result = Util.putJsonResponse(session(), getEndpoint(repositoryId) + "update/" + id , params);
+    	JsonNode result = Util.putJsonResponse(ctx(), getEndpoint(repositoryId) + "update/" + id , params);
 
     	if(isSuccess(result)){
     		return ok();
