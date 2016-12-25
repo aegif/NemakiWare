@@ -17,7 +17,14 @@
 					  	<div class="panel-body">
 					    	<form action="@callbackUri" method="POST">
 					    		<fieldset>
-					    			<input type="hidden" name="repositoryId" value="@repositoryId" />
+					    			<div class="form-group">
+					    				<!--  <input type="hidden" name="repositoryId" value="@repositoryId" /> -->
+						    			@if(repositoryId == null){
+							    		    <input class="form-control" placeholder="@Messages("view.auth.repostitory_id")" name="repositoryId" type="text">
+							    		}else{
+							    		    <input class="form-control" placeholder="@Messages("view.auth.repostitory_id")" name="repositoryId" type="text" value="@repositoryId" readonly>
+							    		}
+					    			</div>
 						    	  	<div class="form-group">
 						    		    <input class="form-control" placeholder="@Messages("view.user.id")" name="userId" type="text">
 						    		</div>

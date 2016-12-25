@@ -12,6 +12,8 @@ import play.mvc.Controller;
 import play.mvc.Result;
 import util.ErrorMessage;
 import util.Util;
+import util.authentication.NemakiProfile;
+
 import org.pac4j.play.java.Secure;
 public class Archive extends Controller{
 
@@ -19,7 +21,7 @@ public class Archive extends Controller{
 
 	@Secure
 	public Result index(String repositoryId, Integer page) {
-
+		NemakiProfile profile = Util.getProfile(ctx());
 		String endPoint = getEndpoint(repositoryId) + "index";
 
 		int pageSize = Util.getNavigationPagingSize();
@@ -42,7 +44,7 @@ public class Archive extends Controller{
 			list.add(archive);
 		}
 
-		return ok(views.html.archive.index.render(repositoryId, list, page));
+		return ok(views.html.archive.index.render(repositoryId, list, page, profile));
 
 	}
 

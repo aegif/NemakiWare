@@ -1,9 +1,6 @@
 package util.authentication;
 
 import com.google.inject.AbstractModule;
-
-import controllers.Secured;
-
 import java.io.File;
 
 import org.pac4j.core.client.Clients;

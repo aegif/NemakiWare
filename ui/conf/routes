@@ -85,7 +85,7 @@ GET		/repo/:repoId/users/:id/password					controllers.User.showPasswordChanger(r
 POST	/repo/:repoId/users/:id/update						controllers.User.update(repoId:String, id:String)
 POST	/repo/:repoId/users/:id/changePassword				controllers.User.changePassword(repoId:String, id:String)
 POST	/repo/:repoId/users/:id/delete						controllers.User.delete(repoId:String, id:String)
-GET     /repo/:repoId/:repoId/users/:id/favorites           controllers.User.showFavorites(repoId:String, id:String)
+GET     /repo/:repoId/users/:id/favorites           		controllers.User.showFavorites(repoId:String, id:String)
 PUT		/repo/:repoId/users/:userId/favorites/:objectId		controllers.User.toggleFavorite(repoId:String, userId:String, objectId:String)
 
 # Group API

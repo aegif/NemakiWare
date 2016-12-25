@@ -39,6 +39,8 @@ import play.mvc.Http.MultipartFormData.FilePart;
 import play.mvc.Security.Authenticated;
 import scala.xml.Elem;
 import util.Util;
+import util.authentication.NemakiProfile;
+
 import org.pac4j.play.java.Secure;
 public class Type extends Controller {
 	private static Session getCmisSession(String repositoryId){
@@ -47,6 +49,7 @@ public class Type extends Controller {
 
 	@Secure
 	public Result index(String repositoryId) {
+		NemakiProfile profile = Util.getProfile(ctx());
 		Session session = Util.createCmisSession(repositoryId, ctx());
 
 		List<ObjectType> list = new ArrayList<ObjectType>();
@@ -57,7 +60,7 @@ public class Type extends Controller {
 			list.add(type);
 		}
 
-		return ok(views.html.objecttype.list.render(repositoryId, list));
+		return ok(views.html.objecttype.list.render(repositoryId, list, profile));
 	}
 
 	@Secure
