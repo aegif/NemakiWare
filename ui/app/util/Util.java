@@ -65,6 +65,7 @@ import org.apache.chemistry.opencmis.commons.enums.ExtensionLevel;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisUnauthorizedException;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
 import org.apache.commons.collections.CollectionUtils;
@@ -133,20 +134,15 @@ public class Util {
         return profileManager.get(true);
     }
 
-
 	public static String extractRepositoryId(String uri) {
 		String basePath = NemakiConfig.getPlayHttpContext();
 		Pattern p = Pattern.compile("^.*" + basePath + "repo/([^/]*).*");
 		Matcher m = p.matcher(uri);
-
 		if (m.find()) {
 			return m.group(1);
 		}
-
 		return null;
 	}
-
-
 
 	public static String getVersion(String repositoryId, play.mvc.Http.Context ctx){
 		Session cmisSession = CmisSessions.getCmisSession(repositoryId, ctx);
@@ -156,31 +152,36 @@ public class Util {
 
 	public static boolean isAdmin(String repositoryId, String userId, play.mvc.Http.Context ctx){
 		boolean isAdmin = false;
-
 		String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 		String endPoint = coreRestUri + "repo/" + repositoryId + "/user/";
-
 		try{
 			JsonNode result = Util.getJsonResponse(ctx, endPoint + "show/" + userId);
 			if("success".equals(result.get("status").asText())){
 				JsonNode _user = result.get("user");
 				model.User user = new model.User(_user);
-
 				isAdmin = user.isAdmin;
 			}
 		}catch(Exception e){
 			logger.error("This user is not returned in REST API:" + userId);
 		}
-
 		return isAdmin;
 	}
+
 
 	public static Session createCmisSession(String repositoryId, play.mvc.Http.Context ctx){
 		CommonProfile profile =  Util.getProfile(ctx).get();
 		String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
 		String password = profile.getAttribute(Token.LOGIN_USER_PASSWORD, String.class);
+		String profileRepositoryId =  profile.getAttribute(Token.LOGIN_REPOSITORY_ID, String.class);
+
+		//作成時にはそのプロファイルである必要がある。いちど作ればキャッシュされるはず
+		if( !repositoryId.equals(profileRepositoryId)){
+			throw new CmisUnauthorizedException();
+		}
+
 		return createCmisSessionByBasicAuth(repositoryId, userId, password);
 	}
+
 	public static Session createCmisSessionByAuthHeader(String repositoryId, String remoteUserId){
 		SessionParameterMap parameter = new SessionParameterMap();
 
@@ -190,7 +191,6 @@ public class Util {
 		return session;
 	}
 
-
 	public static Session createCmisSessionByBasicAuth(String repositoryId, String userId, String password){
 		SessionParameterMap parameter = new SessionParameterMap();
 
@@ -198,7 +198,6 @@ public class Util {
 		parameter.setBasicAuthentication(userId, password);
 
 		Session session = createCmisSessionWithParam(repositoryId, parameter);
-
 		return session;
 	}
 
