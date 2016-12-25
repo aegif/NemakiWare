@@ -19,6 +19,7 @@ import play.mvc.Result;
 import play.mvc.Security.Authenticated;
 import util.ErrorMessage;
 import util.Util;
+import util.authentication.NemakiProfile;
 import views.html.user.blank;
 import views.html.user.index;
 import views.html.user.property;
@@ -45,6 +46,7 @@ public class User extends Controller {
 
 	@Secure
 	public Result search(String repositoryId, String term){
+		NemakiProfile profile = Util.getProfile(ctx());
     	JsonNode result = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "search?query=" + term);
 
     	//TODO check status
@@ -74,7 +76,7 @@ public class User extends Controller {
 
     	//render
     	if(Util.dataTypeIsHtml(request().acceptedTypes())){
-    		return ok(index.render(repositoryId, list));
+    		return ok(index.render(repositoryId, list, profile));
     	}else{
     		return ok(users);
 
@@ -123,6 +125,7 @@ public class User extends Controller {
 
 	@Secure
 	public Result showFavorites(String repositoryId, String id){
+		NemakiProfile profile = Util.getProfile(ctx());
 		JsonNode result = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "show/" + id);
 
 		if("success".equals(result.get("status").asText())){
@@ -142,7 +145,7 @@ public class User extends Controller {
 					list.add(session.getObject(favId));
 				}
 			}
-			return ok(favorites.render(repositoryId, user, list, session));
+			return ok(favorites.render(repositoryId, user, list, session, profile));
 		}else{
 			//TODO
 			return internalServerError();

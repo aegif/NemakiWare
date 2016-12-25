@@ -20,7 +20,7 @@ import play.mvc.Controller;
 import play.mvc.Result;
 import play.mvc.Security.Authenticated;
 import util.Util;
-
+import util.authentication.NemakiProfile;
 import views.html.config.*;
 import org.pac4j.play.java.Secure;
 
@@ -39,6 +39,7 @@ public class Config extends Controller {
 
 	@Secure
 	public Result list(String repositoryId) {
+		NemakiProfile profile = Util.getProfile(ctx());
 		JsonNode result = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "/list");
 
 		// TODO check status
@@ -58,7 +59,7 @@ public class Config extends Controller {
 
 		// render
 		if (Util.dataTypeIsHtml(request().acceptedTypes())) {
-			return ok(index.render(repositoryId, list));
+			return ok(index.render(repositoryId, list, profile));
 		} else {
 			return ok(configurations);
 		}

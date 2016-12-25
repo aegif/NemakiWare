@@ -26,7 +26,6 @@ import util.NemakiConfig;
 import util.Util;
 import views.html.login;
 import org.pac4j.core.config.Config;
-import org.pac4j.core.profile.CommonProfile;
 import org.pac4j.core.profile.ProfileManager;
 import org.pac4j.play.PlayWebContext;
 import org.pac4j.play.java.Secure;
@@ -43,22 +42,6 @@ public class Application extends Controller {
 		return ok(login.render(repositoryId, formClient.getCallbackUrl()));
 	}
 
-	/*
-	public Result authenticate(String repositoryId) {
-		final FormClient formClient = (FormClient) config.getClients().findClient("FormClient");
-
-		Form<Login> formData = Form.form(Login.class);
-		formData = formData.bindFromRequest();
-		if (formData.hasErrors())
-			return badRequest(login.render(repositoryId, formData, formClient.getCallbackUrl()));
-
-		Login loginModel = formData.get();
-		Util.setupSessionBasicAuth(session(), repositoryId, loginModel.userId, loginModel.password);
-		logger.info("User [" + loginModel.userId + "] login success.");
-
-		return redirect(routes.Node.index(repositoryId));
-	}
-	*/
 
 	public Result logout(String repositoryId) {
 		// CMIS session
@@ -67,12 +50,7 @@ public class Application extends Controller {
 		// Play session
 		session().clear();
 
-		String logoutUri = NemakiConfig.getSSOLogoutURI();
-		if(StringUtils.isBlank(logoutUri)){
-			return redirect(routes.Application.login(repositoryId));
-		}else{
-			return redirect(logoutUri);
-		}
+		return redirect(routes.Application.login(repositoryId));
 	}
 
 	public Result error() {

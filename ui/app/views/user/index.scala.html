@@ -3,13 +3,13 @@
 @import util.Util
 @import org.apache.commons.collections.CollectionUtils
 
-@(repositoryId:String)(users:java.util.List[model.User])
+@(repositoryId:String)(users:java.util.List[model.User])(profile: util.authentication.NemakiProfile)
 
 <!DOCTYPE html>
 <html>
 	@header()
 	<body>
-		@menubar(repositoryId)
+		@menubar(repositoryId, profile)
 		<div class="container">
 			<div class="row">
 	  			<div class="col-md-11">

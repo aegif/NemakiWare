@@ -17,6 +17,7 @@ import play.mvc.Controller;
 import play.mvc.Result;
 import play.mvc.Security.Authenticated;
 import util.Util;
+import util.authentication.NemakiProfile;
 import views.html.group.blank;
 import views.html.group.index;
 import views.html.group.property;
@@ -35,6 +36,7 @@ public class Group extends Controller {
 
 	@Secure
 	public Result search(String repositoryId, String term){
+		NemakiProfile profile = Util.getProfile(ctx());
     	JsonNode result = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "search?query=" + term);
 
     	List<model.Group> list = new ArrayList<model.Group>();
@@ -77,7 +79,7 @@ public class Group extends Controller {
 
     	//render
     	if(Util.dataTypeIsHtml(request().acceptedTypes())){
-    		return ok(index.render(repositoryId, list));
+    		return ok(index.render(repositoryId, list, profile));
     	}else{
     		return ok(groups);
     	}

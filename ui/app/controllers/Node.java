@@ -58,7 +58,6 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.objectweb.asm.Type;
-import org.pac4j.core.profile.CommonProfile;
 import org.pac4j.play.java.Secure;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -78,6 +77,7 @@ import util.CmisObjectTree;
 import util.NemakiConfig;
 import util.RelationshipUtil;
 import util.Util;
+import util.authentication.NemakiProfile;
 import views.html.node.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -106,13 +106,14 @@ public class Node extends Controller {
 			return showChildren(repositoryId, root.getId());
 		} catch (Exception ex) {
 			CmisSessions.disconnect(repositoryId, ctx());
-			log.equals(ex);
+			log.error("エラー", ex);
 			return redirect(routes.Application.login(repositoryId));
 		}
 	}
 
 	@Secure
 	public Result showChildren(String repositoryId, String id) {
+		NemakiProfile profile = Util.getProfile(ctx());
 		Session session = getCmisSession(repositoryId);
 
 		CmisObject parent = session.getObject(id);
@@ -130,7 +131,6 @@ public class Node extends Controller {
 				Document doc = (Document) obj;
 				if (doc.isVersionSeriesCheckedOut()) {
 					// check owner
-					CommonProfile profile = Util.getProfile(ctx()).get();
 					String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
 					String owner = doc.getVersionSeriesCheckedOutBy();
 					if (userId.equals(owner)) {
@@ -156,7 +156,7 @@ public class Node extends Controller {
 
 		List<Tree<ObjectType>> viewTypes = types.stream().filter(p -> enableTypes.contains(p.getItem().getLocalName())).collect(Collectors.toList());
 
-		return ok(tree.render(repositoryId, _parent, results, viewTypes, session));
+		return ok(tree.render(repositoryId, _parent, results, viewTypes, session, profile));
 	}
 
 	@Secure
@@ -169,6 +169,7 @@ public class Node extends Controller {
 
 	@Secure
 	public Result search(String repositoryId, String term) {
+		NemakiProfile profile = Util.getProfile(ctx());
 		Session session = getCmisSession(repositoryId);
 
 		OperationContext ctxt = session.getDefaultContext();
@@ -186,12 +187,11 @@ public class Node extends Controller {
 		while (docItr.hasNext()) {
 			CmisObject doc = docItr.next();
 			boolean val = doc.getPropertyValue("cmis:isLatestVersion");
-			if (!val)
-				continue;
+			if (!val) continue;
 			list.add(doc);
 		}
 
-		return ok(search.render(repositoryId, term, list, session));
+		return ok(search.render(repositoryId, term, list, session, profile));
 	}
 
 	@Secure
@@ -219,7 +219,7 @@ public class Node extends Controller {
 		String parentId = o.getParents().get(0).getId();
 
 		// Get user
-		CommonProfile profile = Util.getProfile(ctx()).get();
+		NemakiProfile profile = Util.getProfile(ctx());
 		String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
 		final String endPoint = Util.buildNemakiCoreRestRepositoryUri(repositoryId);
 		String url = endPoint + "user/show/" + userId;

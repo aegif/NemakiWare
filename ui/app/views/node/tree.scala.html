@@ -9,13 +9,13 @@
 @import node.js._
 @import play.mvc.Http.Context.Implicit
 
-@(repositoryId:String)(parent: org.apache.chemistry.opencmis.client.api.Folder, objects: java.util.List[org.apache.chemistry.opencmis.client.api.CmisObject], types: java.util.List[Tree[ObjectType]])(session:org.apache.chemistry.opencmis.client.api.Session)
+@(repositoryId:String)(parent: org.apache.chemistry.opencmis.client.api.Folder, objects: java.util.List[org.apache.chemistry.opencmis.client.api.CmisObject], types: java.util.List[Tree[ObjectType]])(session:org.apache.chemistry.opencmis.client.api.Session)(profile: util.authentication.NemakiProfile)
 
 <!DOCTYPE html>
 <html>
 	@header()
 	<body>
-		@menubar(repositoryId)
+		@menubar(repositoryId, profile)
 		<div class="container">
 	  		<div class="row">
 	  			<!-- breadcrumb -->

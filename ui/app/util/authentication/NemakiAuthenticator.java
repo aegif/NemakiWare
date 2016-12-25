@@ -9,7 +9,6 @@ import org.pac4j.core.credentials.UsernamePasswordCredentials;
 import org.pac4j.core.credentials.authenticator.Authenticator;
 import org.pac4j.core.exception.CredentialsException;
 import org.pac4j.core.exception.HttpAction;
-import org.pac4j.core.profile.CommonProfile;
 import org.pac4j.play.PlayWebContext;
 
 import constant.Token;
@@ -30,18 +29,11 @@ public class NemakiAuthenticator implements Authenticator<UsernamePasswordCreden
 		try{
 			Session cmisSession = Util.createCmisSessionByBasicAuth(repositoryId, userId, password);
 
-			PlayWebContext playCtx  = (PlayWebContext)context;
 			String version = cmisSession.getRepositoryInfo().getProductVersion();
-			Boolean	isAdmin = Util.isAdmin(repositoryId, userId, playCtx.getJavaContext());
-
-	        final CommonProfile profile = new CommonProfile();
-	        profile.setId(userId);
-	        profile.addAttribute(Token.LOGIN_USER_ID, userId);
-	        profile.addAttribute(Token.LOGIN_USER_PASSWORD, password);
-	        profile.addAttribute(Token.LOGIN_REPOSITORY_ID, repositoryId);
-
-	        profile.addAttribute(Token.LOGIN_USER_IS_ADMIN, isAdmin);
-	        profile.addAttribute(Token.NEMAKIWARE_VERSION, version);
+			boolean	isAdmin = Util.isAdmin(repositoryId, userId, password);
+	        final NemakiProfile profile = new NemakiProfile(repositoryId, userId, password);
+	        profile.setIsAdmin(isAdmin);
+	        profile.setVersion(version);
 	        credentials.setUserProfile(profile);
 		}catch(CmisUnauthorizedException e){
 			throwsException(Messages.get("view.auth.login.error"));
