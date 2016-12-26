@@ -321,14 +321,14 @@ public class ExceptionServiceImpl implements ExceptionService,
 				+ "The specified object is not found";
 		objectNotFound(type, object, id, msg);
 	}
-	
+
 	@Override
 	public void objectNotFoundByPath(DomainType type, Object object, String path,
 			String msg) {
 		if (object == null)
 			throw new CmisObjectNotFoundException(msg, HTTP_STATUS_CODE_404);
 	}
-	
+
 	@Override
 	public void objectNotFoundByPath(DomainType type, Object object, String path) {
 		String msg = "[" + type.value() + " path:" + path + "]"
@@ -362,8 +362,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 		if(content == null){
 			System.out.println();
 		}
-		
-		
+
+
 		String baseTypeId = content.getType();
 		Acl acl = contentService.calculateAcl(repositoryId, content);
 		permissionDeniedInternal(context, repositoryId, key, acl, baseTypeId, content);
@@ -379,7 +379,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
 		}
 	}
-	
+
 	private void permissionTopLevelFolder(CallContext context, String repositoryId, String key, Content content){
 		boolean result = permissionService.checkPermissionAtTopLevel(context, repositoryId, key, content);
 		if(!result){
@@ -393,13 +393,13 @@ public class ExceptionServiceImpl implements ExceptionService,
 		if(context instanceof SystemCallContext){
 			return;
 		}
-		
+
 		UserItem userItem = contentService.getUserItemById(repositoryId, context.getUsername());
 		if(!userItem.isAdmin()){
 			String msg = "This operation is permitted only for administrator";
 			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
 		}
-		
+
 		/*User user = principalService.getUserById(repositoryId, context.getUsername());
 		if(!user.isAdmin()){
 			String msg = "This operation is permitted only for administrator";
@@ -434,17 +434,14 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void constraintAllowedChildObjectTypeId(Folder folder,
-			Properties childProperties) {
+	public void constraintAllowedChildObjectTypeId(Folder folder,Properties childProperties) {
 		List<String> allowedTypes = folder.getAllowedChildTypeIds();
 
 		// If cmis:allowedCHildTypeIds is not set, all types are allowed.
 		if (!CollectionUtils.isEmpty(allowedTypes)) {
-			String childType = DataUtil.getIdProperty(childProperties,
-					PropertyIds.OBJECT_TYPE_ID);
+			String childType = DataUtil.getIdProperty(childProperties,PropertyIds.OBJECT_TYPE_ID);
 			if (!allowedTypes.contains(childType)) {
-				String objectId = DataUtil.getIdProperty(childProperties,
-						PropertyIds.OBJECT_ID);
+				String objectId = DataUtil.getIdProperty(childProperties,PropertyIds.OBJECT_ID);
 				constraint(
 						objectId,
 						"cmis:objectTypeId="
@@ -1177,14 +1174,14 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void nameConstraintViolation(String repositoryId, Folder parentFolder,
-			Properties properties) { 
+			Properties properties) {
 		String proposedName = DataUtil.getStringProperty(properties, PropertyIds.NAME);
 		nameConstraintViolation(repositoryId, parentFolder, proposedName);
 	}
 
 	@Override
 	public void nameConstraintViolation(String repositoryId, Folder parentFolder,
-			String proposedName) { 
+			String proposedName) {
 		boolean mustUnique = propertyManager.readBoolean(PropertyKey.CAPABILITY_EXTENDED_UNIQUE_NAME_CHECK);
 		if (!mustUnique) {
 			return;

@@ -3,6 +3,8 @@ package constant;
 public interface PropertyKey {
 	final String PROPERTY_FILES = "property.files";
 
+	final String PLAY_HTTP_CONTEXT = "play.http.context";
+
 	final String NEMAKI_CORE_URI= "nemaki.core.uri";
 	final String NEMAKI_CORE_URI_PROTOCOL= "nemaki.core.uri.protocol";
 	final String NEMAKI_CORE_URI_HOST= "nemaki.core.uri.host";
@@ -19,4 +21,9 @@ public interface PropertyKey {
 
 	final String UI_VISIBILITY_CREATE_OBJECT="ui.visibility.create-cmis-object";
 	final String UI_VISIBILITY_CREATE_RELATIONSHIP="ui.visibility.create-relationship";
+
+	final String SSO_LOGOUT_REDIRECT_URI="sso.logout.redirect.uri";
+	final String SSO_LOGIN_REDIRECT_URI="sso.login.redirect.uri";
+	final String SSO_HEADER_REMOTE_AUTHENTICATED_USER="sso.header.remote.authenticated.user";
+
 }

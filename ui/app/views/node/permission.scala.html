@@ -7,7 +7,7 @@
 @import org.apache.commons.collections.CollectionUtils
 @import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition
 @import org.apache.chemistry.opencmis.commons.data.Ace
-@import play.mvc.Http.Context.Implicit
+@import play.mvc.Http.Context
 
 @(repositoryId:String)(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(members:java.util.List[model.Principal])(permissionDefinitions:java.util.List[PermissionDefinition] = null)
 
@@ -16,7 +16,7 @@
 <div class="container tab-pane">
 	<div class="row" style="margin-bottom:15px">
 		<div class="col-sm-6 col-md-6">
-			@if(Util.isFreezeCopy(obj, Implicit.session)){
+			@if(Util.isFreezeCopy(obj, Http.Context.current)){
 				@lockedNotice(obj)
 			}else{
 				@saveButton("permission-update")

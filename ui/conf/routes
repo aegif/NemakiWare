@@ -10,12 +10,17 @@ GET		/assets/javascripts/routes							controllers.Application.jsRoutes()
 GET     /assets/*file               						controllers.Assets.at(path="/public", file)
 GET     /webjars/*file                  					controllers.WebJarAssets.at(file)
 
+# Authentication Callback
+GET		/callback											@org.pac4j.play.CallbackController.callback()
+POST	/callback											@org.pac4j.play.CallbackController.callback()
+
 # Global error(for user)
 GET		/error												controllers.Application.error()
 
 # Login
+GET		/login												controllers.Application.login(repoId ?= "bedroom")
 GET		/repo/:repoId/login									controllers.Application.login(repoId)
-POST	/repo/:repoId/authenticate							controllers.Application.authenticate(repoId)
+#POST	/repo/:repoId/authenticate							controllers.Application.authenticate(repoId)
 GET		/repo/:repoId/logout								controllers.Application.logout(repoId)
 
 # Home page
@@ -80,7 +85,7 @@ GET		/repo/:repoId/users/:id/password					controllers.User.showPasswordChanger(r
 POST	/repo/:repoId/users/:id/update						controllers.User.update(repoId:String, id:String)
 POST	/repo/:repoId/users/:id/changePassword				controllers.User.changePassword(repoId:String, id:String)
 POST	/repo/:repoId/users/:id/delete						controllers.User.delete(repoId:String, id:String)
-GET     /repo/:repoId/:repoId/users/:id/favorites           controllers.User.showFavorites(repoId:String, id:String)
+GET     /repo/:repoId/users/:id/favorites           		controllers.User.showFavorites(repoId:String, id:String)
 PUT		/repo/:repoId/users/:userId/favorites/:objectId		controllers.User.toggleFavorite(repoId:String, userId:String, objectId:String)
 
 # Group API

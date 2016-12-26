@@ -79,5 +79,17 @@ public class NemakiConfig {
 		}
 	}
 
+	public static String getPlayHttpContext(){
+		return NemakiConfig.getValue(PropertyKey.PLAY_HTTP_CONTEXT);
+	}
+
+
+	public static String getSSOLogoutURI(){
+		return NemakiConfig.getValue(PropertyKey.SSO_LOGOUT_REDIRECT_URI);
+	}
+
+	public static String getRemoteAuthHeader(){
+		return NemakiConfig.getValue(PropertyKey.SSO_HEADER_REMOTE_AUTHENTICATED_USER);
+	}
 
 }

@@ -2,13 +2,12 @@ package controllers;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
 import org.apache.chemistry.opencmis.client.api.Session;
-import org.apache.commons.codec.Charsets;
-
 import play.libs.Json;
 import play.mvc.Controller;
 import play.mvc.Result;
@@ -19,22 +18,22 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import constant.Token;
+import org.pac4j.play.java.Secure;
 
-
-@Authenticated(Secured.class)
 public class Principal extends Controller{
 
 	private static String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 
 	private static Session getCmisSession(String repositoryId){
-		return CmisSessions.getCmisSession(repositoryId, session());
+		return CmisSessions.getCmisSession(repositoryId, ctx());
 	}
 
-	public static Result search(String repositoryId, String term, String groupId){
+	@Secure
+	public Result search(String repositoryId, String term, String groupId){
 		List<model.Principal>principals = new ArrayList<model.Principal>();
 
 		//user search
-		JsonNode resultUsers = Util.getJsonResponse(session(), coreRestUri + "repo/" + repositoryId + "/user/search?query=" + term); //TODO
+		JsonNode resultUsers = Util.getJsonResponse(ctx(), coreRestUri + "repo/" + repositoryId + "/user/search?query=" + term); //TODO
     	//TODO check status
     	JsonNode users = resultUsers.get("result");
 		if(users != null){
@@ -48,7 +47,7 @@ public class Principal extends Controller{
 		}
 
 		//group search
-		JsonNode resultGroups = Util.getJsonResponse(session(), coreRestUri + "repo/" + repositoryId + "/group/search?query=" + term);
+		JsonNode resultGroups = Util.getJsonResponse(ctx(), coreRestUri + "repo/" + repositoryId + "/group/search?query=" + term);
     	//TODO check status
     	JsonNode groups = resultGroups.get("result");
 		if(groups != null){
@@ -76,7 +75,7 @@ public class Principal extends Controller{
 		try {
 			mapper.writeValue(out, principals);
 			final byte[] data = out.toByteArray();
-			JsonNode converted = Json.parse(new String(data, Charsets.UTF_8));
+			JsonNode converted = Json.parse(new String(data, StandardCharsets.UTF_8));
 
 			return ok(converted);
 
