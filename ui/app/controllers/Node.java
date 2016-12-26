@@ -58,6 +58,7 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.objectweb.asm.Type;
+import org.pac4j.play.java.Secure;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -76,6 +77,7 @@ import util.CmisObjectTree;
 import util.NemakiConfig;
 import util.RelationshipUtil;
 import util.Util;
+import util.authentication.NemakiProfile;
 import views.html.node.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -87,28 +89,31 @@ import jp.aegif.nemaki.common.NemakiObjectType;
 import jp.aegif.nemaki.plugin.action.JavaBackedUIAction;
 import jp.aegif.nemaki.plugin.action.UIActionContext;
 
-@Authenticated(Secured.class)
+
 public class Node extends Controller {
 	private static Logger log = LoggerFactory.getLogger(Node.class);
 
 	private static Session getCmisSession(String repositoryId) {
-		return CmisSessions.getCmisSession(repositoryId, session());
+		return CmisSessions.getCmisSession(repositoryId, ctx());
 	}
 
-	public static Result index(String repositoryId) {
-		log.debug("Request index");
+	@Secure
+	public Result index(String repositoryId) {
 		try {
 			Session session = getCmisSession(repositoryId);
 			Folder root = session.getRootFolder();
 
 			return showChildren(repositoryId, root.getId());
 		} catch (Exception ex) {
-			CmisSessions.disconnect(repositoryId, session());
+			CmisSessions.disconnect(repositoryId, ctx());
+			log.error("エラー", ex);
 			return redirect(routes.Application.login(repositoryId));
 		}
 	}
 
-	public static Result showChildren(String repositoryId, String id) {
+	@Secure
+	public Result showChildren(String repositoryId, String id) {
+		NemakiProfile profile = Util.getProfile(ctx());
 		Session session = getCmisSession(repositoryId);
 
 		CmisObject parent = session.getObject(id);
@@ -126,9 +131,9 @@ public class Node extends Controller {
 				Document doc = (Document) obj;
 				if (doc.isVersionSeriesCheckedOut()) {
 					// check owner
-					String loginUser = session().get(Token.LOGIN_USER_ID);
+					String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
 					String owner = doc.getVersionSeriesCheckedOutBy();
-					if (loginUser.equals(owner)) {
+					if (userId.equals(owner)) {
 						String pwcId = doc.getVersionSeriesCheckedOutId();
 						CmisObject pwc = session.getObject(pwcId);
 						results.add(pwc);
@@ -151,17 +156,20 @@ public class Node extends Controller {
 
 		List<Tree<ObjectType>> viewTypes = types.stream().filter(p -> enableTypes.contains(p.getItem().getLocalName())).collect(Collectors.toList());
 
-		return ok(tree.render(repositoryId, _parent, results, viewTypes, session));
+		return ok(tree.render(repositoryId, _parent, results, viewTypes, session, profile));
 	}
 
-	public static Result showChildrenByPath(String repositoryId, String path) {
+	@Secure
+	public Result showChildrenByPath(String repositoryId, String path) {
 		Session session = getCmisSession(repositoryId);
 		CmisObject o = session.getObjectByPath(path);
 
 		return showChildren(repositoryId, o.getId());
 	}
 
-	public static Result search(String repositoryId, String term) {
+	@Secure
+	public Result search(String repositoryId, String term) {
+		NemakiProfile profile = Util.getProfile(ctx());
 		Session session = getCmisSession(repositoryId);
 
 		OperationContext ctxt = session.getDefaultContext();
@@ -179,15 +187,15 @@ public class Node extends Controller {
 		while (docItr.hasNext()) {
 			CmisObject doc = docItr.next();
 			boolean val = doc.getPropertyValue("cmis:isLatestVersion");
-			if (!val)
-				continue;
+			if (!val) continue;
 			list.add(doc);
 		}
 
-		return ok(search.render(repositoryId, term, list, session));
+		return ok(search.render(repositoryId, term, list, session, profile));
 	}
 
-	public static Result showBlank(String repositoryId) {
+	@Secure
+	public Result showBlank(String repositoryId) {
 		String parentId = request().getQueryString("parentId");
 		String objectTypeId = request().getQueryString("objectType");
 
@@ -201,7 +209,8 @@ public class Node extends Controller {
 		return ok(blank.render(repositoryId, parentId, objectType));
 	}
 
-	public static Result showDetail(String repositoryId, String id, String activateTabName) {
+	@Secure
+	public Result showDetail(String repositoryId, String id, String activateTabName) {
 		Session session = getCmisSession(repositoryId);
 
 		FileableCmisObject o = (FileableCmisObject) session.getObject(id);
@@ -210,10 +219,13 @@ public class Node extends Controller {
 		String parentId = o.getParents().get(0).getId();
 
 		// Get user
+		NemakiProfile profile = Util.getProfile(ctx());
+		String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
 		final String endPoint = Util.buildNemakiCoreRestRepositoryUri(repositoryId);
-		String url = endPoint + "user/show/" + session().get(Token.LOGIN_USER_ID);
-		JsonNode result = Util.getJsonResponse(session(), url);
+		String url = endPoint + "user/show/" + userId;
+		JsonNode result = Util.getJsonResponse(ctx(), url);
 		model.User user = new model.User();
+
 		if ("success".equals(result.get("status").asText())) {
 			JsonNode _user = result.get("user");
 			user = new model.User(_user);
@@ -224,7 +236,8 @@ public class Node extends Controller {
 		return ok(detail.render(repositoryId, o, parentId, activateTabName, user, session));
 	}
 
-	public static Result showProperty(String repositoryId, String id) {
+	@Secure
+	public Result showProperty(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 
 		FileableCmisObject o = (FileableCmisObject) session.getObject(id);
@@ -267,7 +280,8 @@ public class Node extends Controller {
 		return ok(property.render(repositoryId, o, primaries, secondaries));
 	}
 
-	public static Result showFile(String repositoryId, String id) {
+	@Secure
+	public Result showFile(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 
 		FileableCmisObject o = (FileableCmisObject) session.getObject(id);
@@ -279,7 +293,8 @@ public class Node extends Controller {
 
 	}
 
-	public static Result downloadWithRelationTargetAsCompressedFile(String repositoryId, String id) {
+	@Secure
+	public Result downloadWithRelationTargetAsCompressedFile(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 		CmisObject cmisObject = session.getObject(id);
 
@@ -355,11 +370,13 @@ public class Node extends Controller {
 		return ok(tempFile);
 	}
 
-	public static Result downloadAsCompressedFile(String repositoryId, String id) {
+	@Secure
+	public Result downloadAsCompressedFile(String repositoryId, String id) {
 		return downloadAsCompressedFileByBatch(repositoryId, Arrays.asList(id));
 	}
 
-	public static Result downloadAsCompressedFileByBatch(String repositoryId, List<String> ids) {
+	@Secure
+	public Result downloadAsCompressedFileByBatch(String repositoryId, List<String> ids) {
 		Session session = getCmisSession(repositoryId);
 		File tempFile = null;
 
@@ -417,7 +434,8 @@ public class Node extends Controller {
 		return ok(tempFile);
 	}
 
-	public static Result download(String repositoryId, String id) {
+	@Secure
+	public Result download(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 
 		CmisObject obj = session.getObject(id);
@@ -464,7 +482,8 @@ public class Node extends Controller {
 		response().setContentType(mimeType);
 	}
 
-	public static Result downloadPreview(String repositoryId, String id) {
+	@Secure
+	public Result downloadPreview(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 
 		CmisObject obj = session.getObject(id);
@@ -509,7 +528,8 @@ public class Node extends Controller {
 
 	}
 
-	public static Result showVersion(String repositoryId, String id) {
+	@Secure
+	public Result showVersion(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 
 		CmisObject o = session.getObject(id);
@@ -525,7 +545,8 @@ public class Node extends Controller {
 
 	}
 
-	public static Result showRelationshipCreate(String repositoryId, String id) {
+	@Secure
+	public Result showRelationshipCreate(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 		CmisObject obj = session.getObject(id);
 
@@ -562,7 +583,8 @@ public class Node extends Controller {
 		return ok(relationship_create.render(repositoryId, obj, parentId, viewTypes, targetTypes));
 	}
 
-	public static Result showRelationship(String repositoryId, String id) {
+	@Secure
+	public Result showRelationship(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 
 		CmisObject obj = session.getObject(id);
@@ -588,14 +610,16 @@ public class Node extends Controller {
 		return ok(relationship.render(repositoryId, obj, result));
 	}
 
-	public static Result showPreview(String repositoryId, String id) {
+	@Secure
+	public Result showPreview(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 		CmisObject obj = session.getObject(id);
 
 		return ok(preview.render(repositoryId, obj));
 	}
 
-	public static Result showPermission(String repositoryId, String id) {
+	@Secure
+	public Result showPermission(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 
 		CmisObject obj = session.getObject(id);
@@ -627,7 +651,8 @@ public class Node extends Controller {
 		return ok(views.html.node.permission.render(repositoryId, obj, members, permissionDefs));
 	}
 
-	public static Result showAction(String repositoryId, String id, String actionId) {
+	@Secure
+	public Result showAction(String repositoryId, String id, String actionId) {
 		Session session = getCmisSession(repositoryId);
 
 		CmisObject obj = session.getObject(id);
@@ -637,9 +662,10 @@ public class Node extends Controller {
 		return ok(views.html.node.action.render(repositoryId, obj, elm));
 	}
 
-	public static Result doAction(String repositoryId, String id, String actionId) {
+	@Secure
+	public Result doAction(String repositoryId, String id, String actionId) {
 		JsonNode json = request().body().asJson();
-		
+
 		Session session = getCmisSession(repositoryId);
 		CmisObject obj = session.getObject(id);
 		JavaBackedUIAction action = Util.getActionPlugin(obj, actionId, session);
@@ -656,7 +682,8 @@ public class Node extends Controller {
 	 * @param action
 	 * @return
 	 */
-	public static Result dragAndDrop(String repositoryId, String action) {
+	@Secure
+	public Result dragAndDrop(String repositoryId, String action) {
 		// Bind input parameters
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
@@ -717,7 +744,8 @@ public class Node extends Controller {
 		file.getFile().delete();
 	}
 
-	public static Result create(String repositoryId) {
+	@Secure
+	public Result create(String repositoryId) {
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
 
@@ -790,7 +818,8 @@ public class Node extends Controller {
 		return redirectToParent(repositoryId, input);
 	}
 
-	public static Result update(String repositoryId, String id) {
+	@Secure
+	public Result update(String repositoryId, String id) {
 		// Get an object in the repository
 		Session session = getCmisSession(repositoryId);
 		CmisObject o = session.getObject(id);
@@ -860,7 +889,8 @@ public class Node extends Controller {
 		return ok();
 	}
 
-	public static Result updatePermission(String repositoryId, String id) {
+	@Secure
+	public Result updatePermission(String repositoryId, String id) {
 		// Get an object in the repository
 		Session session = getCmisSession(repositoryId);
 		CmisObject obj = session.getObject(id);
@@ -966,7 +996,8 @@ public class Node extends Controller {
 		return ace;
 	}
 
-	public static Result upload(String repositoryId, String id) {
+	@Secure
+	public Result upload(String repositoryId, String id) {
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
 
@@ -994,7 +1025,8 @@ public class Node extends Controller {
 	}
 
 
-	public static Result delete(String repositoryId, String id) {
+	@Secure
+	public Result delete(String repositoryId, String id) {
 		List<String> deletedList = new ArrayList<String>();
 		Session session = getCmisSession(repositoryId);
 		deletedList.addAll(delete(id, session));
@@ -1002,7 +1034,8 @@ public class Node extends Controller {
 		return ok(json);
 	}
 
-	public static Result deleteByBatch(String repositoryId, List<String> ids) {
+	@Secure
+	public Result deleteByBatch(String repositoryId, List<String> ids) {
 		List<String> deletedList = new ArrayList<String>();
 		Session session = getCmisSession(repositoryId);
 		ids.forEach(id -> deletedList.addAll(delete(id, session)));
@@ -1051,14 +1084,16 @@ public class Node extends Controller {
 		return deletedList;
 	}
 
-	public static Result checkOut(String repositoryId, String id) {
+	@Secure
+	public Result checkOut(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 		CmisObject cmisObject = session.getObject(id);
 		checkOut(cmisObject);
 		return ok();
 	}
 
-	public static Result checkOutByBatch(String repositoryId, List<String> ids) {
+	@Secure
+	public Result checkOutByBatch(String repositoryId, List<String> ids) {
 		Session session = getCmisSession(repositoryId);
 		for (String id : ids) {
 			CmisObject cmisObject = session.getObject(id);
@@ -1087,7 +1122,8 @@ public class Node extends Controller {
 
 	}
 
-	public static Result cancelCheckOut(String repositoryId, String id) {
+	@Secure
+	public Result cancelCheckOut(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 		CmisObject cmisObject = session.getObject(id);
 
@@ -1099,7 +1135,8 @@ public class Node extends Controller {
 		return redirectToParent(repositoryId, input);
 	}
 
-	public static Result cancelCheckOutByBatch(String repositoryId, List<String> ids) {
+	@Secure
+	public Result cancelCheckOutByBatch(String repositoryId, List<String> ids) {
 		Session session = getCmisSession(repositoryId);
 
 		for (String id : ids) {
@@ -1127,7 +1164,8 @@ public class Node extends Controller {
 			// no-op
 		}
 	}
-	public static Result checkInPWC(String repositoryId, String id) throws FileNotFoundException {
+	@Secure
+	public Result checkInPWC(String repositoryId, String id) throws FileNotFoundException {
 		Session session = getCmisSession(repositoryId);
 
 		// Comment
@@ -1157,7 +1195,8 @@ public class Node extends Controller {
 		}
 	}
 
-	public static Result checkInPWCByBatch(String repositoryId, List<String> ids) {
+	@Secure
+	public Result checkInPWCByBatch(String repositoryId, List<String> ids) {
 		Session session = getCmisSession(repositoryId);
 
 		for (String id : ids) {
@@ -1171,7 +1210,8 @@ public class Node extends Controller {
 		return redirectToParent(repositoryId, input);
 	}
 
-	public static Result checkIn(String repositoryId, String id) throws FileNotFoundException {
+	@Secure
+	public Result checkIn(String repositoryId, String id) throws FileNotFoundException {
 		Session session = getCmisSession(repositoryId);
 
 		// Comment
@@ -1215,7 +1255,7 @@ public class Node extends Controller {
 		String coreRestUri = Util.buildNemakiCoreRestRepositoryUri(repositoryId);
 
 		// user
-		JsonNode resultUser = Util.getJsonResponse(session(), coreRestUri + "user/show/" + principalId);
+		JsonNode resultUser = Util.getJsonResponse(ctx(), coreRestUri + "user/show/" + principalId);
 		// TODO check status
 		JsonNode user = resultUser.get("user");
 		if (user != null) {
@@ -1224,7 +1264,7 @@ public class Node extends Controller {
 		}
 
 		// group
-		JsonNode resultGroup = Util.getJsonResponse(session(), coreRestUri + "group/show/" + principalId);
+		JsonNode resultGroup = Util.getJsonResponse(ctx(), coreRestUri + "group/show/" + principalId);
 		// TODO check status
 		JsonNode group = resultGroup.get("group");
 		if (group != null) {
@@ -1235,7 +1275,8 @@ public class Node extends Controller {
 		return null;
 	}
 
-	public static Result createRelationToNew(String repositoryId, String sourceId) {
+	@Secure
+	public Result createRelationToNew(String repositoryId, String sourceId) {
 		// Get input form data
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
@@ -1266,7 +1307,8 @@ public class Node extends Controller {
 		return ok();
 	}
 
-	public static Result createRelationToExisting(String repositoryId, String sourceId) {
+	@Secure
+	public Result createRelationToExisting(String repositoryId, String sourceId) {
 		// Get input form data
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
@@ -1319,7 +1361,8 @@ public class Node extends Controller {
 		}
 	}
 
-	public static Result getAce(String repositoryId, String objectId, String principalId) {
+	@Secure
+	public Result getAce(String repositoryId, String objectId, String principalId) {
 		Session session = getCmisSession(repositoryId);
 		CmisObject obj = session.getObject(objectId);
 

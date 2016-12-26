@@ -20,26 +20,27 @@ import play.mvc.Controller;
 import play.mvc.Result;
 import play.mvc.Security.Authenticated;
 import util.Util;
-
+import util.authentication.NemakiProfile;
 import views.html.config.*;
+import org.pac4j.play.java.Secure;
 
-@Authenticated(Secured.class)
 public class Config extends Controller {
 
 	private static String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 
 	private static Session getCmisSession(String repositoryId) {
-		return CmisSessions.getCmisSession(repositoryId, session());
+		return CmisSessions.getCmisSession(repositoryId, ctx());
 	}
 
-	public static Result index(String repositoryId) {
+	@Secure
+	public Result index(String repositoryId) {
 		return list(repositoryId);
 	}
 
-
-
-	public static Result list(String repositoryId) {
-		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "/list");
+	@Secure
+	public Result list(String repositoryId) {
+		NemakiProfile profile = Util.getProfile(ctx());
+		JsonNode result = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "/list");
 
 		// TODO check status
 		JsonNode configurations = result.get("configurations");
@@ -58,14 +59,15 @@ public class Config extends Controller {
 
 		// render
 		if (Util.dataTypeIsHtml(request().acceptedTypes())) {
-			return ok(index.render(repositoryId, list));
+			return ok(index.render(repositoryId, list, profile));
 		} else {
 			return ok(configurations);
 		}
 	}
 
-	public static Result showDetail(String repositoryId, String configKey) {
-		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "/show/" + configKey);
+	@Secure
+	public Result showDetail(String repositoryId, String configKey) {
+		JsonNode result = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "/show/" + configKey);
 
 		JsonNode configNode = result.get("configuration");
 		model.Config config = createConfig(configNode);
@@ -82,7 +84,8 @@ public class Config extends Controller {
 		return config;
 	}
 
-	public static Result update(String repositoryId, String key) {
+	@Secure
+	public Result update(String repositoryId, String key) {
 		// Get input form data
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
@@ -91,7 +94,7 @@ public class Config extends Controller {
 		Map<String, String> params = new HashMap<String, String>();
 		params.put("key", key);
 		params.put("value", value);
-		JsonNode result = Util.putJsonResponse(session(), getEndpoint(repositoryId), params);
+		JsonNode result = Util.putJsonResponse(ctx(), getEndpoint(repositoryId), params);
 
     	if(isSuccess(result)){
     		JsonNode configNode = result.get("configuration");

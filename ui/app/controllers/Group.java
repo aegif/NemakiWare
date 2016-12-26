@@ -17,23 +17,27 @@ import play.mvc.Controller;
 import play.mvc.Result;
 import play.mvc.Security.Authenticated;
 import util.Util;
+import util.authentication.NemakiProfile;
 import views.html.group.blank;
 import views.html.group.index;
 import views.html.group.property;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.pac4j.play.java.Secure;
 
-@Authenticated(Secured.class)
 public class Group extends Controller {
 
 	private static String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 
-	public static Result index(String repositoryId){
+	@Secure
+	public Result index(String repositoryId){
 	    return  search( repositoryId, "");
 	}
 
-	public static Result search(String repositoryId, String term){
-    	JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "search?query=" + term);
+	@Secure
+	public Result search(String repositoryId, String term){
+		NemakiProfile profile = Util.getProfile(ctx());
+    	JsonNode result = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "search?query=" + term);
 
     	List<model.Group> list = new ArrayList<model.Group>();
 
@@ -75,21 +79,23 @@ public class Group extends Controller {
 
     	//render
     	if(Util.dataTypeIsHtml(request().acceptedTypes())){
-    		return ok(index.render(repositoryId, list));
+    		return ok(index.render(repositoryId, list, profile));
     	}else{
     		return ok(groups);
     	}
 
     }
 
-	public static Result showBlank(String repositoryId){
+	@Secure
+	public Result showBlank(String repositoryId){
 		model.Group emptyGroup = new model.Group("", "", 0, 0, new ArrayList<String>(), new ArrayList<String>());
 		return ok(blank.render(repositoryId, emptyGroup));
 	}
 
-	public static Result create(String repositoryId){
+	@Secure
+	public Result create(String repositoryId){
     	Map<String, String>params = buildParams();
-    	JsonNode result = Util.postJsonResponse(session(), getEndpoint(repositoryId) + "create/" + params.get("id"), params);
+    	JsonNode result = Util.postJsonResponse(ctx(), getEndpoint(repositoryId) + "create/" + params.get("id"), params);
 
     	if(isSuccess(result)){
     		return ok();
@@ -98,15 +104,17 @@ public class Group extends Controller {
     	}
 	}
 
-	public static Result delete(String repositoryId, String id){
-		JsonNode result = Util.deleteJsonResponse(session(), getEndpoint(repositoryId) + "delete/" + id);
+	@Secure
+	public Result delete(String repositoryId, String id){
+		JsonNode result = Util.deleteJsonResponse(ctx(), getEndpoint(repositoryId) + "delete/" + id);
 
 		//TODO error
 		return ok();
 	}
 
-	public static Result showDetail(String repositoryId, String id){
-		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "show/" + id);
+	@Secure
+	public Result showDetail(String repositoryId, String id){
+		JsonNode result = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "show/" + id);
 
 		if(isSuccess(result)){
 			JsonNode _group = result.get("group");
@@ -118,7 +126,7 @@ public class Group extends Controller {
 			List<String> userIds = group.users;
 			if(CollectionUtils.isNotEmpty(userIds)){
 				for(String userId : userIds){
-					JsonNode _memberUser = Util.getJsonResponse(session(), getEndpointForUser(repositoryId) + "show/" + userId);
+					JsonNode _memberUser = Util.getJsonResponse(ctx(), getEndpointForUser(repositoryId) + "show/" + userId);
 					if(isSuccess(_memberUser)){
 						String userName = _memberUser.get("user").get("userName").asText();
 						users.add(new Principal("user", userId, userName));
@@ -131,7 +139,7 @@ public class Group extends Controller {
 			List<String> groupIds = group.groups;
 			if(CollectionUtils.isNotEmpty(groupIds)){
 				for(String groupId : groupIds){
-					JsonNode _memberGroup = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "show/" + groupId);
+					JsonNode _memberGroup = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "show/" + groupId);
 					if(isSuccess(_memberGroup)){
 						String groupName = _memberGroup.get("group").get("groupName").asText();
 						groups.add(new Principal("group", groupId, groupName));
@@ -150,12 +158,13 @@ public class Group extends Controller {
 		}
 	}
 
-	public static Result update(String repositoryId, String id){
+	@Secure
+	public Result update(String repositoryId, String id){
 
     	Map<String, String>params = buildParams();
 
 
-    	JsonNode result = Util.putJsonResponse(session(), getEndpoint(repositoryId) + "update/" + id , params);
+    	JsonNode result = Util.putJsonResponse(ctx(), getEndpoint(repositoryId) + "update/" + id , params);
 
     	if(isSuccess(result)){
     		return ok();

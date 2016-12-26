@@ -12,13 +12,16 @@ import play.mvc.Controller;
 import play.mvc.Result;
 import util.ErrorMessage;
 import util.Util;
+import util.authentication.NemakiProfile;
 
+import org.pac4j.play.java.Secure;
 public class Archive extends Controller{
 
 	private static String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 
-	public static Result index(String repositoryId, Integer page) {
-
+	@Secure
+	public Result index(String repositoryId, Integer page) {
+		NemakiProfile profile = Util.getProfile(ctx());
 		String endPoint = getEndpoint(repositoryId) + "index";
 
 		int pageSize = Util.getNavigationPagingSize();
@@ -30,7 +33,7 @@ public class Archive extends Controller{
 			endPoint += ("&skip=" + skip);
 		}
 
-		JsonNode json = Util.getJsonResponse(session(), endPoint);
+		JsonNode json = Util.getJsonResponse(ctx(), endPoint);
 
 		ArrayNode archives =  (ArrayNode) json.get("archives");
 		Iterator<JsonNode> itr = archives.iterator();
@@ -41,12 +44,13 @@ public class Archive extends Controller{
 			list.add(archive);
 		}
 
-		return ok(views.html.archive.index.render(repositoryId, list, page));
+		return ok(views.html.archive.index.render(repositoryId, list, page, profile));
 
 	}
 
-	public static Result restore(String repositoryId, String archiveId){
-		JsonNode json = Util.putJsonResponse(session(), getEndpoint(repositoryId) + "restore/" + archiveId, null);
+	@Secure
+	public Result restore(String repositoryId, String archiveId){
+		JsonNode json = Util.putJsonResponse(ctx(), getEndpoint(repositoryId) + "restore/" + archiveId, null);
 		if(Util.isRestSuccess(json)){
 			return ok();
 		}else{
@@ -55,8 +59,9 @@ public class Archive extends Controller{
 		}
 	}
 
-	public static Result destroy(String repositoryId, String archiveId){
-		JsonNode json = Util.deleteJsonResponse(session(), getEndpoint(repositoryId) + "destroy/" + archiveId);
+	@Secure
+	public Result destroy(String repositoryId, String archiveId){
+		JsonNode json = Util.deleteJsonResponse(ctx(), getEndpoint(repositoryId) + "destroy/" + archiveId);
 		if(Util.isRestSuccess(json)){
 			return ok();
 		}else{

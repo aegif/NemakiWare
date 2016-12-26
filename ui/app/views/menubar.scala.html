@@ -1,10 +1,10 @@
 @*{<meta charset="UTF-8" />}*@
 
-@(repositoryId:String, term:String = "")
-
 @import play.mvc.Http.Context.Implicit
 @import constant.Token
 @import util.Util
+
+@(repositoryId:String, profile: util.authentication.NemakiProfile, term:String = "")
 
 <div class="navbar navbar-inverse navbar-fixed-top" role="navigation">
 	<div class="container-fluid">
@@ -23,24 +23,24 @@
 				<li class="dropdown">
 					<a href="#" class="dropdown-toggle" data-toggle="dropdown">
 						<i class="fa fa-user"></i>
-						@Implicit.session.get(Token.LOGIN_USER_ID)<span class="caret" />
+						@profile.getUserId()<span class="caret" />
 					</a>
 					<ul class="dropdown-menu" role="menu">
-						<li><a href="#" id="account" user-id='@Implicit.session.get(Token.LOGIN_USER_ID)'><i class="fa fa-user"></i>@Messages("view.auth.account")</a></li>
-						<li><a href="#" id="password-changer" user-id='@Implicit.session.get(Token.LOGIN_USER_ID)'><i class="fa fa-user"></i>@Messages("view.user.change-password.caption")</a></li>
-						<li><a href="@routes.User.showFavorites(repositoryId, Implicit.session.get(Token.LOGIN_USER_ID))" id="favorites"><i class="fa fa-star"></i>お気に入り</a></li>
+						<li><a href="#" id="account" user-id='@profile.getUserId()'><i class="fa fa-user"></i>@Messages("view.auth.account")</a></li>
+						<li><a href="#" id="password-changer" user-id='@profile.getUserId()'><i class="fa fa-user"></i>@Messages("view.user.change-password.caption")</a></li>
+						<li><a href="@routes.User.showFavorites(repositoryId, profile.getUserId())" id="favorites"><i class="fa fa-star"></i>お気に入り</a></li>
 						<li><a href="@routes.Application.logout(repositoryId)" id="logout"><i class="fa fa-sign-out"></i>@Messages("view.auth.logout")</a></li>
 					</ul>
 				</li>
 
 				<!-- console -->
-				@if(Implicit.session.get(Token.LOGIN_USER_IS_ADMIN) == "true"){
+				@if(profile.getIsAdmin()){
 				<li class="dropdown"><a href="#" class="dropdown-toggle"
 					data-toggle="dropdown"><i class="fa fa-cog"></i>@Messages("view.header.control-panel")<span class="caret"></span></a>
 					<ul class="dropdown-menu" role="menu">
 						<li><a href="@routes.User.index(repositoryId)" id="user-console"><i class="fa fa-user"></i>@Messages("view.user.caption")</a></li>
 						<li><a href="@routes.Group.index(repositoryId)" id="group-console"><i class="fa fa-users"></i>@Messages("view.group.caption")</a></li>
-						@if(Implicit.session.get(Token.LOGIN_USER_IS_ADMIN) == "true"){
+						@if(profile.getIsAdmin()){
 							<li class="divider"></li>
 							<li><a href="#" id="search-engine-console"><i class="fa fa-search"></i>@Messages("view.search-engine.caption")</a></li>
 							<li><a href="@routes.Type.index(repositoryId)"><i class="fa fa-cog"></i>@Messages("view.type.caption")</a></li>
@@ -64,7 +64,7 @@
 				        </div>
 			        </form>
 				</li>
-				<li><div class="navbar-brand" >Ver. @Implicit.session.get(Token.NEMAKIWARE_VERSION)</div></li>
+				<li><div class="navbar-brand" >Ver. @profile.getVersion() </div></li>
 			</ul>
 		</div>
 		<!--/.nav-collapse -->
@@ -76,17 +76,17 @@
 	$(function(){
 		//binding: account
 		$('#account').click(function(){
-			$.ajax(jsRoutes.controllers.User.showDetail("@repositoryId", "@Implicit.session.get(Token.LOGIN_USER_ID)")
+			$.ajax(jsRoutes.controllers.User.showDetail("@repositoryId", "@profile.getUserId()")
 			).done(function(data){
-				showLightbox('user-detail-' + "@Implicit.session.get(Token.LOGIN_USER_ID)", data);
+				showLightbox('user-detail-' + "@profile.getUserId()", data);
 			});
 		});
 
 		//binding: changePassword
 		$('#password-changer').click(function(){
-			$.ajax(jsRoutes.controllers.User.showPasswordChanger("@repositoryId", "@Implicit.session.get(Token.LOGIN_USER_ID)")
+			$.ajax(jsRoutes.controllers.User.showPasswordChanger("@repositoryId", "@profile.getUserId()")
 			).done(function(data){
-				showLightbox('user-password-' + "@Implicit.session.get(Token.LOGIN_USER_ID)", data);
+				showLightbox('user-password-' + "@profile.getUserId()", data);
 			});
 		});
 

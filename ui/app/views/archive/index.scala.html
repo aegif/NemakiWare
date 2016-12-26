@@ -3,22 +3,23 @@
 @import node.list
 @import org.apache.commons.collections.CollectionUtils
 @import util.Util
+@import util.authentication.NemakiProfile;
 
-@(repositoryId:String)(archives:java.util.List[model.Archive])(page: Integer)
+@(repositoryId:String)(archives:java.util.List[model.Archive])(page: Integer)(profile: NemakiProfile)
 
 <!DOCTYPE html>
 <html>
 	@header()
 	<body>
-		@menubar(repositoryId)
-		
+		@menubar(repositoryId, profile)
+
 		<div class="container">
 			<div class="row">
 	  			<div class="col-xs-12">
 	  				<h3><i class="fa fa-trash"></i>@Messages("view.archive.caption")</h3>
 	  			</div>
 	  		</div>
-	  	
+
 	  		<div class="row">
 	  			<div class="col-xs-12">
 	  				<table class="footable" id="archive-table" data-sort="false" data-page-size="@Util.getNavigationPagingSize">
@@ -57,7 +58,7 @@
 							@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 2){colSpan =>
 								<td colspan="@colSpan">
 							}
-							
+
 									<ul class="pagination">
 										@if(page >= 2){
 											<li><a href="@routes.Archive.index(repositoryId, page-1)"><i class="fa fa-chevron-left" aria-hidden="true"></i></a></li>
@@ -71,13 +72,13 @@
 					</table>
 	  			</div>
 	  		</div>
-	  	
+
 	  	</div>
-	  	
+
 	  	<script type="text/javascript">
 		  	$(function(){
 		  		$('#archive-table').footable();
-		  	
+
 			  	$("button.archive-restore").on('click', function(e){
 			  		var archiveId = $(this).attr("archive-id");
 		  			$.ajax(jsRoutes.controllers.Archive.restore("@repositoryId", archiveId))
@@ -86,10 +87,10 @@
 		  			}).fail(function(xhr, stat, err){
 		  				alert(xhr.responseText);
 		  			}).complete(function(data){
-		  				
+
 		  			});
 		  		});
-		  		
+
 		  		$("button.archive-destroy").on('click', function(e){
 			  		var archiveId = $(this).attr("archive-id");
 		  			$.ajax(jsRoutes.controllers.Archive.destroy("@repositoryId", archiveId))
@@ -98,7 +99,7 @@
 		  			}).fail(function(xhr, stat, err){
 		  				alert(xhr.responseText);
 		  			}).complete(function(data){
-		  				
+
 		  			});
 		  		});
 		  	});

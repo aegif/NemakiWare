@@ -39,14 +39,18 @@ import play.mvc.Http.MultipartFormData.FilePart;
 import play.mvc.Security.Authenticated;
 import scala.xml.Elem;
 import util.Util;
+import util.authentication.NemakiProfile;
 
+import org.pac4j.play.java.Secure;
 public class Type extends Controller {
 	private static Session getCmisSession(String repositoryId){
-		return CmisSessions.getCmisSession(repositoryId, session());
+		return CmisSessions.getCmisSession(repositoryId, ctx());
 	}
 
-	public static Result index(String repositoryId) {
-		Session session = Util.createCmisSession(repositoryId, session());
+	@Secure
+	public Result index(String repositoryId) {
+		NemakiProfile profile = Util.getProfile(ctx());
+		Session session = Util.createCmisSession(repositoryId, ctx());
 
 		List<ObjectType> list = new ArrayList<ObjectType>();
 
@@ -56,10 +60,11 @@ public class Type extends Controller {
 			list.add(type);
 		}
 
-		return ok(views.html.objecttype.list.render(repositoryId, list));
+		return ok(views.html.objecttype.list.render(repositoryId, list, profile));
 	}
 
-	public static Result download(String repositoryId, String id){
+	@Secure
+	public Result download(String repositoryId, String id){
 		Session session = getCmisSession(repositoryId);
 		ObjectType objectType = session.getTypeDefinition(id);
 		ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
@@ -86,7 +91,7 @@ public class Type extends Controller {
 		typeMutability.put("create", objectType.getTypeMutability().canCreate());
 		typeMutability.put("update", objectType.getTypeMutability().canUpdate());
 		typeMutability.put("delete", objectType.getTypeMutability().canDelete());
-		json.put("typeMutability", typeMutability);
+		json.set("typeMutability", typeMutability);
 		if(objectType instanceof DocumentTypeDefinition){
 			DocumentTypeDefinition documentType = (DocumentTypeDefinition)objectType;
 			json.put("versionable", documentType.isVersionable());
@@ -129,10 +134,10 @@ public class Type extends Controller {
 
 			//TODO implement "choice"
 
-			propertyDefinitions.put(pdf.getId(), propertyDefinition);
+			propertyDefinitions.set(pdf.getId(), propertyDefinition);
 		}
 
-		json.put("propertyDefinitions", propertyDefinitions);
+		json.set("propertyDefinitions", propertyDefinitions);
 
 		File file;
 		try {
@@ -177,11 +182,13 @@ public class Type extends Controller {
 		return StringEscapeUtils.escapeEcmaScript(str);
 	}
 
-	public static Result showBlank(String repositoryId){
+	@Secure
+	public Result showBlank(String repositoryId){
 		return ok(views.html.objecttype.blank.render(repositoryId));
 	}
 
-	public static Result create(String repositoryId){
+	@Secure
+	public Result create(String repositoryId){
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
 
@@ -216,11 +223,13 @@ public class Type extends Controller {
 		return redirect(routes.Type.index(repositoryId));
 	}
 
-	public static Result edit(String repositoryId){
+	@Secure
+	public Result edit(String repositoryId){
 		return ok(views.html.objecttype.edit.render(repositoryId));
 	}
 
-	public static Result update(String repositoryId){
+	@Secure
+	public Result update(String repositoryId){
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
 
@@ -250,7 +259,8 @@ public class Type extends Controller {
 
 	}
 
-	public static Result delete(String repositoryId, String id){
+	@Secure
+	public Result delete(String repositoryId, String id){
 		Session session = getCmisSession(repositoryId);
 		session.deleteType(id);
 

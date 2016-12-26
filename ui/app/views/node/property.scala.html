@@ -14,12 +14,13 @@
 @import org.apache.chemistry.opencmis.client.api.Property
 @import org.apache.chemistry.opencmis.client.api.SecondaryType
 @import play.mvc.Http.Context.Implicit
+@import play.mvc.Http.Context
 @(repositoryId:String)(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(primaries: java.util.List[Property[_]])(secondary: java.util.Map[SecondaryType, List[Property[_]]])
 
 <div class="container tab-pane">
 	<div class="row" style="margin-bottom:15px">
 		<div class="col-sm-6 col-md-6">
-			@if(Util.isFreezeCopy(obj, Implicit.session)){
+			@if(Util.isFreezeCopy(obj, Http.Context.current)){
 				@lockedNotice(obj)
 			}else{
 				@saveButton("property-update")
