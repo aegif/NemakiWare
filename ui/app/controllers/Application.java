@@ -39,7 +39,9 @@ public class Application extends Controller {
 	public Result login(String repositoryId) {
 		final FormClient formClient = (FormClient) config.getClients().findClient("FormClient");
 
-		return ok(login.render(repositoryId, formClient.getCallbackUrl()));
+		String message = ctx().request().getQueryString("error");
+
+		return ok(login.render(repositoryId, formClient.getCallbackUrl(), message));
 	}
 
 
