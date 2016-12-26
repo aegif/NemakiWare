@@ -29,6 +29,8 @@ import org.pac4j.core.config.Config;
 import org.pac4j.core.profile.ProfileManager;
 import org.pac4j.play.PlayWebContext;
 import org.pac4j.play.java.Secure;
+import org.pac4j.saml.client.SAML2Client;
+
 import play.mvc.Http.Context;
 public class Application extends Controller {
 	private static final ALogger logger = Logger.of(Application.class);
@@ -39,8 +41,8 @@ public class Application extends Controller {
 	public Result login(String repositoryId) {
 		final FormClient formClient = (FormClient) config.getClients().findClient("FormClient");
 
-		String message = ctx().request().getQueryString("error");
 
+		String message = ctx().request().getQueryString("error");
 		return ok(login.render(repositoryId, formClient.getCallbackUrl(), message));
 	}
 
