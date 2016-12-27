@@ -5,9 +5,12 @@ import com.google.inject.AbstractModule;
 import controllers.routes;
 
 import java.io.File;
+import java.net.URI;
+import java.util.Map;
 
 import org.pac4j.core.client.Clients;
 import org.pac4j.core.config.Config;
+import org.opensaml.saml.common.xml.SAMLConstants;
 import org.pac4j.core.authorization.authorizer.RequireAnyRoleAuthorizer;
 import org.pac4j.play.ApplicationLogoutController;
 import org.pac4j.play.CallbackController;
@@ -16,6 +19,7 @@ import org.pac4j.saml.client.SAML2Client;
 import org.pac4j.saml.client.SAML2ClientConfiguration;
 import play.Configuration;
 import play.Environment;
+import play.Play;
 import play.cache.CacheApi;
 import util.NemakiConfig;
 
@@ -30,20 +34,18 @@ public class SecurityModule extends AbstractModule{
 
 	@Override
 	protected void configure() {
-
-		String baseUri = "/";
+		String baseUri = NemakiConfig.getApplicationBaseUri(configuration);
 
 		FormClient formClient = new FormClient(baseUri + "login", new NemakiAuthenticator());
 	    formClient.setUsernameParameter("userId");
-/*
-	    SAML2ClientConfiguration cfg = new SAML2ClientConfiguration("resource:samlKeystore.jks",
-	                    "pac4j-demo-passwd", "pac4j-demo-passwd", "resource:openidp-feide.xml");
+
+	    SAML2ClientConfiguration cfg = new SAML2ClientConfiguration("resource:samlKeystore.jks", "pac4j-demo-passwd", "pac4j-demo-passwd", "resource:idp-metadata.xml");
 	    cfg.setMaximumAuthenticationLifetime(3600);
-	    cfg.setServiceProviderEntityId("urn:mace:saml:pac4j.org");
-	    cfg.setServiceProviderMetadataPath(new File("target", "sp-metadata.xml").getAbsolutePath());
+	    cfg.setDestinationBindingType(SAMLConstants.SAML2_POST_BINDING_URI);
+	    cfg.setServiceProviderEntityId(baseUri);
 	    SAML2Client saml2Client = new SAML2Client(cfg);
-*/
-	    Clients clients = new Clients("callback", /* saml2Client, */ formClient);
+
+	    Clients clients = new Clients(baseUri + "callback",  saml2Client,  formClient);
 
         final Config config = new Config(clients);
         config.addAuthorizer("admin", new RequireAnyRoleAuthorizer<>("ROLE_ADMIN"));
@@ -52,13 +54,13 @@ public class SecurityModule extends AbstractModule{
 
         // callback
         final CallbackController callbackController = new CallbackController();
-        callbackController.setDefaultUrl("/ui/");
+        callbackController.setDefaultUrl(baseUri);
         callbackController.setMultiProfile(true);
         bind(CallbackController.class).toInstance(callbackController);
 
         // logout
         final ApplicationLogoutController logoutController = new ApplicationLogoutController();
-        logoutController.setDefaultUrl("/ui/?defaulturlafterlogout");
+        logoutController.setDefaultUrl(baseUri + "?defaulturlafterlogout");
         bind(ApplicationLogoutController.class).toInstance(logoutController);
 
 	}

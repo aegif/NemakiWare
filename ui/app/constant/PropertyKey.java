@@ -4,8 +4,8 @@ public interface PropertyKey {
 	final String PROPERTY_FILES = "property.files";
 
 	final String PLAY_HTTP_CONTEXT = "play.http.context";
-
-
+	final String PLAY_SERVER_HTTP_ADDRESS = "play.server.http.address";
+	final String PLAY_SERVER_HTTP_PORT = "play.server.http.port";
 
 	final String NEMAKI_CORE_URI= "nemaki.core.uri";
 	final String NEMAKI_CORE_URI_PROTOCOL= "nemaki.core.uri.protocol";
@@ -14,6 +14,11 @@ public interface PropertyKey {
 	final String NEMAKI_CORE_URI_CONTEXT= "nemaki.core.uri.context";
 	final String NEMAKI_CORE_URI_REPOSITORY= "nemaki.core.uri.repository";
 	final String NEMAKI_CORE_URI_REST= "nemaki.core.uri.rest";
+
+	final String NEMAKI_UI_URI_PROTOCOL= "nemaki.ui.uri.protocol";
+	final String NEMAKI_UI_URI_HOST= "nemaki.ui.uri.host";
+	final String NEMAKI_UI_URI_PORT= "nemaki.ui.uri.port";
+
 
 	final String NAVIGATION_PAGING_SIZE="navigation.paging.size";
 

@@ -97,6 +97,7 @@ import org.apache.http.message.BasicNameValuePair;
 import org.pac4j.core.profile.CommonProfile;
 import org.pac4j.core.profile.ProfileManager;
 import org.pac4j.play.PlayWebContext;
+import org.pac4j.saml.profile.SAML2Profile;
 
 import play.Logger;
 import play.Logger.ALogger;
@@ -133,9 +134,11 @@ public class Util {
 
 	public static NemakiProfile getProfile(play.mvc.Http.Context ctx) {
 		final PlayWebContext context = new PlayWebContext(ctx);
-		final ProfileManager<NemakiProfile> profileManager = new ProfileManager<>(context);
-		final Optional<NemakiProfile> profile = profileManager.get(true);
-		return profile.get();
+		final ProfileManager<CommonProfile> profileManager = new ProfileManager<>(context);
+		final Optional<CommonProfile> profile = profileManager.get(true);
+		CommonProfile p = profile.get();
+
+		return (NemakiProfile)p ;
 	}
 
 	public static String extractRepositoryId(String uri) {
