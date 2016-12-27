@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import org.apache.chemistry.opencmis.client.api.Session;
+import org.pac4j.core.profile.CommonProfile;
 import org.pac4j.core.profile.ProfileManager;
 import org.pac4j.play.PlayWebContext;
 
@@ -60,7 +61,7 @@ public class CmisSessions {
 	}
 
 	private static Session getUserSession(RepoSession repoSession, play.mvc.Http.Context ctx){
-		NemakiProfile profile =  Util.getProfile(ctx);
+		CommonProfile profile =  Util.getProfile(ctx);
 		String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
 
 		Session cmisSession = repoSession.get(userId);
@@ -76,7 +77,7 @@ public class CmisSessions {
 		Session cmisSession = getUserSession(repoSession, ctx);
 
 		cmisSession.clear();
-		NemakiProfile profile =  Util.getProfile(ctx);
+		CommonProfile profile =  Util.getProfile(ctx);
 		String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
 
 		repoSession.remove(userId);

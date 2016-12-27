@@ -58,7 +58,10 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.objectweb.asm.Type;
+import org.pac4j.play.PlayWebContext;
 import org.pac4j.play.java.Secure;
+import org.pac4j.saml.client.SAML2Client;
+import org.pac4j.saml.credentials.SAML2Credentials;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -88,9 +91,12 @@ import constant.Token;
 import jp.aegif.nemaki.common.NemakiObjectType;
 import jp.aegif.nemaki.plugin.action.JavaBackedUIAction;
 import jp.aegif.nemaki.plugin.action.UIActionContext;
-
+import com.google.inject.Inject;
 
 public class Node extends Controller {
+	@Inject
+	public org.pac4j.core.config.Config config;
+
 	private static Logger log = LoggerFactory.getLogger(Node.class);
 
 	private static Session getCmisSession(String repositoryId) {
@@ -100,14 +106,20 @@ public class Node extends Controller {
 	@Secure
 	public Result index(String repositoryId) {
 		try {
+			/*
+			final SAML2Client saml2Client = (SAML2Client) config.getClients().findClient("SAML2Client");
+
+			final PlayWebContext context = new PlayWebContext(ctx());
+			SAML2Credentials cred =  saml2Client.getCredentials(context);
+			*/
+
 			Session session = getCmisSession(repositoryId);
 			Folder root = session.getRootFolder();
 
 			return showChildren(repositoryId, root.getId());
 		} catch (Exception ex) {
-			CmisSessions.disconnect(repositoryId, ctx());
 			log.error("エラー", ex);
-			return redirect(routes.Application.login(repositoryId));
+			return redirect(routes.Application.logout(repositoryId));
 		}
 	}
 

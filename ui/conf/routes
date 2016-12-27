@@ -13,6 +13,7 @@ GET     /webjars/*file                  					controllers.WebJarAssets.at(file)
 # Authentication Callback
 GET		/callback											@org.pac4j.play.CallbackController.callback()
 POST	/callback											@org.pac4j.play.CallbackController.callback()
+GET     /saml-sp-metadata									controllers.Application.getSaml2ServiceProviderMetadata()
 
 # Global error(for user)
 GET		/error												controllers.Application.error()

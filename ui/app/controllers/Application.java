@@ -2,12 +2,15 @@ package controllers;
 
 import com.google.inject.Inject;
 
+import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.http.entity.ContentType;
 import org.pac4j.http.client.indirect.FormClient;
 
 import play.Logger;
@@ -25,27 +28,56 @@ import play.mvc.Result;
 import util.NemakiConfig;
 import util.Util;
 import views.html.login;
+
+import org.pac4j.core.client.Client;
+import org.pac4j.core.client.Clients;
+import org.pac4j.core.client.RedirectAction;
 import org.pac4j.core.config.Config;
-import org.pac4j.core.profile.ProfileManager;
+import org.pac4j.core.exception.HttpAction;
 import org.pac4j.play.PlayWebContext;
-import org.pac4j.play.java.Secure;
 import org.pac4j.saml.client.SAML2Client;
+import org.pac4j.saml.metadata.SAML2MetadataResolver;
 
 import play.mvc.Http.Context;
+
 public class Application extends Controller {
 	private static final ALogger logger = Logger.of(Application.class);
 
-    @Inject
-    public  Config config;
+	@Inject
+	public Config config;
 
 	public Result login(String repositoryId) {
-		final FormClient formClient = (FormClient) config.getClients().findClient("FormClient");
+		final PlayWebContext context = new PlayWebContext(ctx());
+
+		Clients clients = config.getClients();
+		List<Client> clientList = clients.findAllClients();
+		if( clientList.stream().anyMatch(p -> p.getName().equals("SAML2Client"))){
+			return redirect(routes.Node.index(repositoryId));
+		}
+		final FormClient formClient = (FormClient) clients.findClient("FormClient");
+		final SAML2Client saml2Client = (SAML2Client) clients.findClient("SAML2Client");
 
 
 		String message = ctx().request().getQueryString("error");
 		return ok(login.render(repositoryId, formClient.getCallbackUrl(), message));
 	}
 
+	public Result getSaml2ServiceProviderMetadata() {
+		final PlayWebContext context = new PlayWebContext(ctx());
+		final SAML2Client saml2Client = (SAML2Client) config.getClients().findClient("SAML2Client");
+		saml2Client.init(context);
+
+		SAML2MetadataResolver resolver = saml2Client.getServiceProviderMetadataResolver();
+		if (resolver != null) {
+			resolver.resolve();
+			String metadata = resolver.getMetadata();
+
+			response().setContentType(ContentType.APPLICATION_XML.getMimeType());
+			return ok(metadata);
+		} else {
+			return notFound();
+		}
+	}
 
 	public Result logout(String repositoryId) {
 		// CMIS session

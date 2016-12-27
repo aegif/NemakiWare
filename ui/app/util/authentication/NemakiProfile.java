@@ -7,12 +7,14 @@ import constant.Token;
 public class NemakiProfile extends CommonProfile {
 	private static final long serialVersionUID = 1L;
 
+	public static final String userRepoSeparator = "@@@";
+
 	public NemakiProfile(String repositoryId, String userId, String password){
 		super();
         this.setUserId(userId);
         this.setPassword(password);
         this.setRepositoryId(repositoryId);
-		this.setId(userId + "@@@" + repositoryId);
+		this.setId(userId + userRepoSeparator + repositoryId);
 	}
 
 	public void setUserId(String userId){
