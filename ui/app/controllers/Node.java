@@ -110,6 +110,32 @@ public class Node extends Controller {
 			return redirect(routes.Application.login(repositoryId));
 		}
 	}
+	
+	@Secure
+	public Result direct(String repositoryId, String objectId, String activateTabName){
+		NemakiProfile profile = Util.getProfile(ctx());
+		Session session = getCmisSession(repositoryId);
+
+		FileableCmisObject target = (FileableCmisObject) session.getObject(objectId);		
+		Folder parent = (Folder)target.getParents().get(0);
+		
+		// Get user
+		String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
+		final String endPoint = Util.buildNemakiCoreRestRepositoryUri(repositoryId);
+		String url = endPoint + "user/show/" + userId;
+		JsonNode result = Util.getJsonResponse(ctx(), url);
+		model.User user = new model.User();
+
+		if ("success".equals(result.get("status").asText())) {
+			JsonNode _user = result.get("user");
+			user = new model.User(_user);
+		} else {
+			internalServerError("User retrieveing failure");
+		}
+
+		return ok(detailFull.render(repositoryId, target, parent.getId(), activateTabName, user, session, profile));
+		
+	}
 
 	@Secure
 	public Result showChildren(String repositoryId, String id) {
