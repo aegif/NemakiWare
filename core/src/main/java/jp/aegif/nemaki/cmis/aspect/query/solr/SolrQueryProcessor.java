@@ -189,10 +189,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 			tables.add(table.replaceAll(":", "\\\\:"));
 		}
 		
-		Term t = new Term(
-				solrUtil.getPropertyNameInSolr(PropertyIds.OBJECT_TYPE_ID),
-				StringUtils.join(tables, " "));
-		fromQueryString += new TermQuery(t).toString();
+//		Term t = new Term(
+//				solrUtil.getPropertyNameInSolr(PropertyIds.OBJECT_TYPE_ID),
+//				StringUtils.join(tables, " "));
+//		fromQueryString += new TermQuery(t).toString();
+		fromQueryString += "("+ solrUtil.getPropertyNameInSolr(PropertyIds.OBJECT_TYPE_ID) +":"+ StringUtils.join(tables," " + solrUtil.getPropertyNameInSolr(PropertyIds.OBJECT_TYPE_ID) + ":") + ")";
 
 		// Execute query
 		SolrQuery solrQuery = new SolrQuery();

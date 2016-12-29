@@ -1,0 +1,151 @@
+@*{<meta charset="UTF-8" />}*@
+
+@import util._
+@import play.mvc.Http.Context
+
+
+@(repositoryId:String)(obj:org.apache.chemistry.opencmis.client.api.Document)(parentId:String)(latestId:String)(activateTabName:String)(user:model.User)(session:org.apache.chemistry.opencmis.client.api.Session)(profile: util.authentication.NemakiProfile)
+<!DOCTYPE html>
+<html>
+@{val isLatest = (obj.getId() == latestId);}
+
+	@header()
+	<body>
+
+	<!-- html -->
+	
+	@menubar(repositoryId, profile)
+	<div class="lightbox-me-container" style="left: 50%; margin-left: -400px; z-index: 1002; position: fixed; top: 50%; margin-top: -300px @if(obj.getId() != latestId){;border-style:dashed}">
+	<a id="close_x" class="close sprited" href="@routes.Node.showChildren(repositoryId, parentId)" style="top:-15px;position:relative"><i class="fa fa-times-circle-o" aria-hidden="true"></i></a>
+
+	<div>
+		<h4>
+			<i class="fa @Util.getIconClassName(obj)"></i>@obj.getName()
+			[ @obj.getVersionLabel() ]
+			@if(Util.isFreezeCopy(obj, Http.Context.current)){<i class="fa fa-lock"></i>}
+			<!-- fav star -->
+			<span class="favorite-toggle">
+			@if(user.favorites.contains(obj.getId)){
+				<i id="favorite-star" class="fa fa-star" title="@{Messages("view.user.favorite.toggled.desc1")}&#10;@{Messages("view.user.favorite.toggled.desc2")}"></i>
+			}else{
+				<i id="favorite-star" class="fa fa-star-o" title="@{Messages("view.user.favorite.untoggled.desc1")}&#10;@{Messages("view.user.favorite.untoggled.desc2")}"></i>
+			}
+			</span>
+		</h4>
+	</div>
+
+	<ul class="nav nav-tabs">
+  		<li @if(TabUtil.isPropertyTab(activateTabName)){class="active"}>
+  			<a href="@routes.Node.showProperty(repositoryId, obj.getId)" data-toggle="tab" data-target="#property">@Messages("view.node.property")</a></li>
+  		@if(Util.isDocument(obj)){
+  			<!-- TODO: Implement 'allowed' case correctly -->
+ 			@if(Util.hasContentStream(obj)){
+	  			@if(obj.getId() == latestId){
+ 					<li @if(TabUtil.isFileTab(activateTabName)){class="active"}>
+ 						<a href="@routes.Node.showFile(repositoryId, obj.getId)" data-toggle="tab" data-target="#file">@Messages("view.node.file")</a>
+ 					</li>
+ 				}
+ 				<li @if(TabUtil.isPreviewTab(activateTabName)){class="active"}>
+ 					<a href="@routes.Node.showPreview(repositoryId, obj.getId)" data-toggle="tab" data-target="#preview">@Messages("view.node.preview")</a>
+ 				</li>
+ 			}
+	  		<li @if(TabUtil.isVersionTab(activateTabName)){class="active"}>
+	  			<a href="@routes.Node.showVersion(repositoryId, obj.getId)" data-toggle="tab" data-target="#version">@Messages("view.node.version")</a>
+	  		</li>
+  		}
+  			@if(obj.getId() == latestId){
+		  		<li @if(TabUtil.isPermissionTab(activateTabName)){class="active"}>
+  					<a href="@routes.Node.showPermission(repositoryId, obj.getId)" data-toggle="tab" data-target="#permission">@Messages("view.node.permission")</a>
+  				</li>
+  			}
+  		<li @if(TabUtil.isRelationshipTab(activateTabName)){class="active"}>
+  			<a href="@routes.Node.showRelationship(repositoryId, obj.getId)" data-toggle="tab" data-target="#relationship">@Messages("view.node.relationship")</a>
+  		</li>
+	  	@for(actionPluginUI <- Util.getUIActionPluginUIElementList(obj, session)){
+	  		<li>
+	  			<a href="@routes.Node.showAction(repositoryId, obj.getId, actionPluginUI.getActionId)" data-toggle="tab" data-target="#action-@actionPluginUI.getActionId">@actionPluginUI.getDisplayName</a>
+	  		</li>
+	  	}
+	</ul>
+
+	<div class="tab-content">
+	  	<div class="tab-pane fade @if(TabUtil.isDefaultTab(activateTabName)){active in}" id="property"></div>
+	  	<div class="tab-pane fade @if(TabUtil.isFileTab(activateTabName)){active in}" id="file"></div>
+	  	<div class="tab-pane fade @if(TabUtil.isVersionTab(activateTabName)){active in}" id="version"></div>
+	  	<div class="tab-pane fade @if(TabUtil.isPreviewTab(activateTabName)){active in}" id="preview"></div>
+	  	<div class="tab-pane fade @if(TabUtil.isPermissionTab(activateTabName)){active in}" id="permission"></div>
+	  	<div class="tab-pane fade @if(TabUtil.isRelationshipTab(activateTabName)){active in}" id="relationship"></div>
+	  	@for(actionPluginUI <- Util.getUIActionPluginUIElementList(obj, session)){
+	  		  	<div class="tab-pane fade @if(TabUtil.isActionTab(activateTabName, actionPluginUI.getActionId)){active in}" id="action-@actionPluginUI.getActionId"></div>
+	  	}
+	</div>
+
+
+	<!-- scripts -->
+	<script src="@routes.Assets.at("javascripts/jquery.tabs.js")"></script>
+	<script type="text/javascript">
+	@if(TabUtil.isDefaultTab(activateTabName)){
+		$.ajax(jsRoutes.controllers.Node.showProperty("@repositoryId", "@obj.getId" )).done(function(data){$("#property").html(data);});
+	} else {
+		@if(TabUtil.isFileTab(activateTabName)){
+			$.ajax(jsRoutes.controllers.Node.showFile("@repositoryId", "@obj.getId" )).done(function(data){$("#file").html(data);});
+		} else {
+			@if(TabUtil.isVersionTab(activateTabName)){
+				$.ajax(jsRoutes.controllers.Node.showVersion("@repositoryId", "@obj.getId" )).done(function(data){$("#version").html(data);});
+			} else {
+				@if(TabUtil.isPreviewTab(activateTabName)) {
+					$.ajax(jsRoutes.controllers.Node.showPreview("@repositoryId", "@obj.getId" )).done(function(data){$("#preview").html(data);});
+				} else {
+					@if(TabUtil.isPermissionTab(activateTabName)) {
+						$.ajax(jsRoutes.controllers.Node.showPermission("@repositoryId", "@obj.getId" )).done(function(data){$("#permission").html(data);});
+					} else {
+						@if(TabUtil.isRelationshipTab(activateTabName)) {
+						$.ajax(jsRoutes.controllers.Node.showRelationship("@repositoryId", "@obj.getId" )).done(function(data){$("#relationship").html(data);});
+						}else{
+							var actionId = "@TabUtil.getActionIdFrom(activateTabName)";
+							$.ajax(jsRoutes.controllers.Node.showAction("@repositoryId", "@obj.getId", actionId )).done(function(data){$("#action-" + actionId).html(data);});
+						}
+					}
+				}
+			}
+		}
+	}
+
+
+	 $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+		  var target = $(e.target).attr("href"); // activated tab
+		    $.ajax({
+		      type: "GET",
+		      url: target,
+		      error: function(data){
+		        alert("There was a problem");
+		      },
+		      success: function(data){
+		    	var t = $(e.target).attr("data-target");
+		        $(t).html(data);
+		      }
+		  });
+		})
+
+		$('.favorite-toggle').on('click', function(){
+			$.ajax({
+				type: "PUT",
+			    url: "@routes.User.toggleFavorite(repositoryId, user.id, obj.getId)",
+			}).done(function(){
+				if($('#favorite-star').hasClass('fa-star')){
+					$('#favorite-star').removeClass('fa-star');
+					$('#favorite-star').addClass('fa-star-o');
+					$('#favorite-star').attr('title', "@Messages("view.user.favorite.untoggled.desc1")" + "\n" + "@Messages("view.user.favorite.untoggled.desc2")");
+				}else{
+					$('#favorite-star').addClass('fa-star');
+					$('#favorite-star').removeClass('fa-star-o');
+					$('#favorite-star').attr('title', "@Messages("view.user.favorite.toggled.desc1")" + "\n" + "@Messages("view.user.favorite.toggled.desc2")");
+				}
+			}).fail(function(xhr, status, error){
+				alert(xhr.status + " " + xhr.statusText + ": Failed to swith favorite star");
+			});
+		});
+	</script>
+	</div>
+</body>
+</html>
