@@ -25,6 +25,7 @@ GET		/repo/:repoId/logout								controllers.Application.logout(repoId)
 
 # Home page
 GET     /repo/:repoId/                           			controllers.Node.index(repoId:String)
+GET     /repo/:repoId/direct/:id                           	controllers.Node.direct(repoId:String, id:String, activateTabName:String ?= "property")
 
 # CMIS Rest API
 GET     /repo/:repoId/objects               				controllers.Node.showChildren(repoId:String, id="/")
@@ -122,3 +123,4 @@ PUT		/repo/:repoId/configs/:key				    		controllers.Config.update(repoId:String
 
 # Javascript scala template API
 GET		/jstemplate/duplicateNameCheck.js					controllers.JsTemplate.duplicateNameCheck(repoId:String)
+

@@ -3,7 +3,7 @@
 @import util.Formatter
 @import util.NemakiConfig
 @import play.mvc.Http.Context.Implicit
-@(repositoryId:String)(versions: List[org.apache.chemistry.opencmis.client.api.Document])
+@(repositoryId:String)(versions: List[org.apache.chemistry.opencmis.client.api.Document])(targetVersionObjectId:String)
 
 <div class="container tab-pane">
 	<div class="row">
@@ -16,6 +16,7 @@
 						<th>@NemakiConfig.getLabel("cmis:createdBy", Implicit.lang().language)</th>
 						<th>@NemakiConfig.getLabel("cmis:creationDate", Implicit.lang().language)</th>
 						<th>@NemakiConfig.getLabel("cmis:checkinComment", Implicit.lang().language)</th>
+						<th>@Messages("view.action") </th>
 					</tr>
 				</thead>
 				<tbody>
@@ -31,6 +32,15 @@
 							<td>@version.getCreatedBy()</td>
 							<td>@Formatter.calToString(version.getCreationDate(), Implicit.lang.toLocale)</td>
 							<td>@version.getCheckinComment()</td>
+							<td>
+							@if(version.getId() != targetVersionObjectId){
+								<a href="@routes.Node.direct(repositoryId, version.getId(),"version")">
+									<i class="fa fa-step-backward" ></i>switch
+								</a>
+							}else{
+							
+							}
+							</td>
 						</tr>
 					}
 				</tbody>
