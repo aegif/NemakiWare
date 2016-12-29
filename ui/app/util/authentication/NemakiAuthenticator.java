@@ -22,7 +22,7 @@ public class NemakiAuthenticator implements Authenticator<UsernamePasswordCreden
 
 	@Override
 	public void validate(UsernamePasswordCredentials credentials, WebContext context) throws HttpAction {
-		final String repositoryId = context.getRequestParameter("repositoryId");
+		final String repositoryId = Util.getRepositoryId(context);
 		final String userId = credentials.getUsername();
 		final String password = credentials.getPassword();
 
