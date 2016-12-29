@@ -116,6 +116,10 @@ public class NemakiConfig {
 		return baseUri.toString();
 	}
 
+	public static String getDefualtRepositoryId(){
+		return NemakiConfig.getValue(PropertyKey.NEMAKI_DEFAULT_REPOSITRY_ID);
+	}
+
 	public static String getPlayHttpContext(Configuration configuration){
 		return NemakiConfig.getValue(configuration, PropertyKey.PLAY_HTTP_CONTEXT);
 	}
@@ -132,4 +136,7 @@ public class NemakiConfig {
 		return NemakiConfig.getValue(PropertyKey.SSO_HEADER_REMOTE_AUTHENTICATED_USER);
 	}
 
+	public static String getRemoteUserIdKey(){
+		return NemakiConfig.getValue(PropertyKey.SSO_MAPPER_KEY_USERID);
+	}
 }

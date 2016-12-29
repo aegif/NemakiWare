@@ -19,9 +19,10 @@ GET     /saml-sp-metadata									controllers.Application.getSaml2ServiceProvide
 GET		/error												controllers.Application.error()
 
 # Login
+GET		/samlLogin											controllers.Application.samlLogin()
 GET		/login												controllers.Application.login(repoId ?= "bedroom")
 GET		/repo/:repoId/login									controllers.Application.login(repoId)
-#POST	/repo/:repoId/authenticate							controllers.Application.authenticate(repoId)
+GET		/logout												@org.pac4j.play.ApplicationLogoutController.logout()
 GET		/repo/:repoId/logout								controllers.Application.logout(repoId)
 
 # Home page

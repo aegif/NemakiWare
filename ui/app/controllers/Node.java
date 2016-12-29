@@ -105,22 +105,11 @@ public class Node extends Controller {
 
 	@Secure
 	public Result index(String repositoryId) {
-		try {
-			/*
-			final SAML2Client saml2Client = (SAML2Client) config.getClients().findClient("SAML2Client");
+		final SAML2Client saml2Client = (SAML2Client) config.getClients().findClient("SAML2Client");
+		Session session = getCmisSession(repositoryId);
+		Folder root = session.getRootFolder();
 
-			final PlayWebContext context = new PlayWebContext(ctx());
-			SAML2Credentials cred =  saml2Client.getCredentials(context);
-			*/
-
-			Session session = getCmisSession(repositoryId);
-			Folder root = session.getRootFolder();
-
-			return showChildren(repositoryId, root.getId());
-		} catch (Exception ex) {
-			log.error("エラー", ex);
-			return redirect(routes.Application.logout(repositoryId));
-		}
+		return showChildren(repositoryId, root.getId());
 	}
 
 	@Secure

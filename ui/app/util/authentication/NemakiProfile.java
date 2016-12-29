@@ -1,20 +1,54 @@
 package util.authentication;
 
+import java.util.ArrayList;
+
+import org.apache.commons.lang3.StringUtils;
 import org.pac4j.core.profile.CommonProfile;
+import org.pac4j.saml.profile.SAML2Profile;
 
 import constant.Token;
+import util.NemakiConfig;
 
 public class NemakiProfile extends CommonProfile {
+	public enum CmisAuthType{
+		BASIC,
+		HEADER
+	}
+
 	private static final long serialVersionUID = 1L;
 
 	public static final String userRepoSeparator = "@@@";
 
+	public NemakiProfile(SAML2Profile saml2Profile){
+		if (saml2Profile != null){
+			if(StringUtils.isBlank(this.getUserId())){
+				String userKey = NemakiConfig.getRemoteUserIdKey();
+				if(saml2Profile.containsAttribute(userKey)){
+					ArrayList list = (ArrayList)saml2Profile.getAttribute(userKey);
+					String remoteUserId = (String)list.get(0);
+					this.setUserId(remoteUserId);
+				}
+			}
+		}
+		this.setCmisAuthType(CmisAuthType.HEADER);
+	}
+
 	public NemakiProfile(String repositoryId, String userId, String password){
 		super();
+		this.setCmisAuthType(CmisAuthType.BASIC);
         this.setUserId(userId);
         this.setPassword(password);
         this.setRepositoryId(repositoryId);
 		this.setId(userId + userRepoSeparator + repositoryId);
+	}
+
+
+	public void setCmisAuthType(CmisAuthType type){
+		this.addAttribute(Token.LOGIN_AUTH_TYPE, type);
+	}
+
+	public CmisAuthType getCmisAuthType(){
+		return this.getAttribute(Token.LOGIN_AUTH_TYPE, CmisAuthType.class);
 	}
 
 	public void setUserId(String userId){
