@@ -4,19 +4,24 @@
 @import play.mvc.Http.Context
 
 
-@(repositoryId:String)(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(parentId:String)(activateTabName:String)(user:model.User)(session:org.apache.chemistry.opencmis.client.api.Session)(profile: util.authentication.NemakiProfile)
+@(repositoryId:String)(obj:org.apache.chemistry.opencmis.client.api.Document)(parentId:String)(latestId:String)(activateTabName:String)(user:model.User)(session:org.apache.chemistry.opencmis.client.api.Session)(profile: util.authentication.NemakiProfile)
 <!DOCTYPE html>
 <html>
+@{val isLatest = (obj.getId() == latestId);}
+
 	@header()
 	<body>
 
 	<!-- html -->
 	
 	@menubar(repositoryId, profile)
-	<div class="lightbox-me-container">
+	<div class="lightbox-me-container" style="left: 50%; margin-left: -400px; z-index: 1002; position: fixed; top: 50%; margin-top: -300px @if(obj.getId() != latestId){;border-style:dashed}">
+	<a id="close_x" class="close sprited" href="@routes.Node.showChildren(repositoryId, parentId)" style="top:-15px;position:relative"><i class="fa fa-times-circle-o" aria-hidden="true"></i></a>
+
 	<div>
 		<h4>
 			<i class="fa @Util.getIconClassName(obj)"></i>@obj.getName()
+			[ @obj.getVersionLabel() ]
 			@if(Util.isFreezeCopy(obj, Http.Context.current)){<i class="fa fa-lock"></i>}
 			<!-- fav star -->
 			<span class="favorite-toggle">
@@ -35,9 +40,11 @@
   		@if(Util.isDocument(obj)){
   			<!-- TODO: Implement 'allowed' case correctly -->
  			@if(Util.hasContentStream(obj)){
- 				<li @if(TabUtil.isFileTab(activateTabName)){class="active"}>
- 					<a href="@routes.Node.showFile(repositoryId, obj.getId)" data-toggle="tab" data-target="#file">@Messages("view.node.file")</a>
- 				</li>
+	  			@if(obj.getId() == latestId){
+ 					<li @if(TabUtil.isFileTab(activateTabName)){class="active"}>
+ 						<a href="@routes.Node.showFile(repositoryId, obj.getId)" data-toggle="tab" data-target="#file">@Messages("view.node.file")</a>
+ 					</li>
+ 				}
  				<li @if(TabUtil.isPreviewTab(activateTabName)){class="active"}>
  					<a href="@routes.Node.showPreview(repositoryId, obj.getId)" data-toggle="tab" data-target="#preview">@Messages("view.node.preview")</a>
  				</li>
@@ -46,9 +53,11 @@
 	  			<a href="@routes.Node.showVersion(repositoryId, obj.getId)" data-toggle="tab" data-target="#version">@Messages("view.node.version")</a>
 	  		</li>
   		}
-  		<li @if(TabUtil.isPermissionTab(activateTabName)){class="active"}>
-  			<a href="@routes.Node.showPermission(repositoryId, obj.getId)" data-toggle="tab" data-target="#permission">@Messages("view.node.permission")</a>
-  		</li>
+  			@if(obj.getId() == latestId){
+		  		<li @if(TabUtil.isPermissionTab(activateTabName)){class="active"}>
+  					<a href="@routes.Node.showPermission(repositoryId, obj.getId)" data-toggle="tab" data-target="#permission">@Messages("view.node.permission")</a>
+  				</li>
+  			}
   		<li @if(TabUtil.isRelationshipTab(activateTabName)){class="active"}>
   			<a href="@routes.Node.showRelationship(repositoryId, obj.getId)" data-toggle="tab" data-target="#relationship">@Messages("view.node.relationship")</a>
   		</li>
@@ -137,7 +146,6 @@
 			});
 		});
 	</script>
-	<a id="close_x" class="close sprited" href="@routes.Node.showChildren(repositoryId, parentId)" style="top:50px"><i class="fa fa-times-circle-o" aria-hidden="true"></i></a>
 	</div>
 </body>
 </html>

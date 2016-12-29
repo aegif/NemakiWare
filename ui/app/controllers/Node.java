@@ -116,9 +116,10 @@ public class Node extends Controller {
 		NemakiProfile profile = Util.getProfile(ctx());
 		Session session = getCmisSession(repositoryId);
 
-		FileableCmisObject target = (FileableCmisObject) session.getObject(objectId);		
+		Document target = (Document) session.getObject(objectId);		
 		Folder parent = (Folder)target.getParents().get(0);
-		
+		Document latest = target.getObjectOfLatestVersion(false);
+
 		// Get user
 		String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
 		final String endPoint = Util.buildNemakiCoreRestRepositoryUri(repositoryId);
@@ -133,7 +134,7 @@ public class Node extends Controller {
 			internalServerError("User retrieveing failure");
 		}
 
-		return ok(detailFull.render(repositoryId, target, parent.getId(), activateTabName, user, session, profile));
+		return ok(detailFull.render(repositoryId, target, parent.getId(), latest.getId(), activateTabName, user, session, profile));
 		
 	}
 
@@ -557,7 +558,7 @@ public class Node extends Controller {
 	@Secure
 	public Result showVersion(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
-
+		
 		CmisObject o = session.getObject(id);
 
 		List<Document> result = new ArrayList<Document>();
@@ -567,7 +568,7 @@ public class Node extends Controller {
 			result = doc.getAllVersions();
 		}
 
-		return ok(version.render(repositoryId, result));
+		return ok(version.render(repositoryId, result, id));
 
 	}
 
