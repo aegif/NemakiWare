@@ -28,7 +28,8 @@
 					<ul class="dropdown-menu" role="menu">
 						<li><a href="#" id="account" user-id='@profile.getUserId()'><i class="fa fa-user"></i>@Messages("view.auth.account")</a></li>
 						<li><a href="#" id="password-changer" user-id='@profile.getUserId()'><i class="fa fa-user"></i>@Messages("view.user.change-password.caption")</a></li>
-						<li><a href="@routes.User.showFavorites(repositoryId, profile.getUserId())" id="favorites"><i class="fa fa-star"></i>お気に入り</a></li>
+						<li><a href="@routes.User.showFavorites(repositoryId, profile.getUserId())" id="favorites"><i class="fa fa-star"></i>@Messages("view.favorite.caption")</a></li>
+						<li><a href="@routes.Application.logout(repositoryId)" id="logout"><i class="fa fa-star"></i>@Messages("view.auth.logout")</a></li>
 					</ul>
 				</li>
 
@@ -39,14 +40,11 @@
 					<ul class="dropdown-menu" role="menu">
 						<li><a href="@routes.User.index(repositoryId)" id="user-console"><i class="fa fa-user"></i>@Messages("view.user.caption")</a></li>
 						<li><a href="@routes.Group.index(repositoryId)" id="group-console"><i class="fa fa-users"></i>@Messages("view.group.caption")</a></li>
-						@if(profile.getIsAdmin()){
-							<li class="divider"></li>
-							<li><a href="#" id="search-engine-console"><i class="fa fa-search"></i>@Messages("view.search-engine.caption")</a></li>
-							<li><a href="@routes.Type.index(repositoryId)"><i class="fa fa-cog"></i>@Messages("view.type.caption")</a></li>
-							<li><a href="@routes.Archive.index(repositoryId)" id="archive-console"><i class="fa fa-trash"></i>@Messages("view.archive.caption")</a></li>
-							<li><a href="@routes.Config.index(repositoryId)" id="config-console"><i class="fa fa-gear"></i>Nemakiware Config</a></li>
-
-						}
+						<li class="divider"></li>
+						<li><a href="#" id="search-engine-console"><i class="fa fa-search"></i>@Messages("view.search-engine.caption")</a></li>
+						<li><a href="@routes.Type.index(repositoryId)"><i class="fa fa-cog"></i>@Messages("view.type.caption")</a></li>
+						<li><a href="@routes.Archive.index(repositoryId)" id="archive-console"><i class="fa fa-trash"></i>@Messages("view.archive.caption")</a></li>
+						<li><a href="@routes.Config.index(repositoryId)" id="config-console"><i class="fa fa-gear"></i>Nemakiware Config</a></li>
 					</ul>
 				</li>
 

@@ -9,7 +9,9 @@ view.auth.login.error.connection=リポジトリサービスとの通信に失�
 view.auth.login.error.unknown=不明なエラーが発生しました
 view.auth.account=アカウント
 view.auth.repostitory_id=リポジトリ
-
+view.auth.logout.caption=ログアウトしました
+view.auth.logout.link-to-sso-logout=統合認証のログアウト画面へ
+view.auth.logout.link-to-login=ログイン画面へ
 
 view.node.property=プロパティ
 view.node.file=ファイル
@@ -107,6 +109,9 @@ view.user.last.name=姓
 view.user.email=メール
 
 view.user.change-password.caption=パスワード変更
+
+view.favorite.caption=お気に入り
+
 
 view.group.caption=グループ管理
 view.group.property=プロパティ

@@ -28,12 +28,12 @@ import play.mvc.Result;
 import util.NemakiConfig;
 import util.Util;
 import util.authentication.NemakiProfile;
-import views.html.login;
 
 import org.pac4j.core.client.Client;
 import org.pac4j.core.client.Clients;
 import org.pac4j.core.client.RedirectAction;
 import org.pac4j.core.config.Config;
+import org.pac4j.core.context.Pac4jConstants;
 import org.pac4j.core.exception.HttpAction;
 import org.pac4j.play.PlayWebContext;
 import org.pac4j.play.java.Secure;
@@ -52,18 +52,18 @@ public class Application extends Controller {
 	public Result samlLogin() {
 		final PlayWebContext context = new PlayWebContext(ctx());
 		String repositoryId = util.Util.getRepositoryId(context);
-
-		Clients clients = config.getClients();
-		final SAML2Client saml2Client = (SAML2Client) clients.findClient("SAML2Client");
-
-		NemakiProfile p = Util.getProfile(ctx());
-
 		return redirect(routes.Node.index(repositoryId));
 	}
 
-
 	public Result login(String repositoryId) {
 		final PlayWebContext context = new PlayWebContext(ctx());
+
+		//ログイン画面に直接来た場合など、ログイン後のリダイレクト先の設定をしておかないとエラーになる
+		final Object uri = context.getSessionAttribute(Pac4jConstants.REQUESTED_URL);
+		if (uri == null){
+			String redircetURL = routes.Node.index(repositoryId).absoluteURL(request());
+			context.setSessionAttribute(Pac4jConstants.REQUESTED_URL, redircetURL);
+		}
 
 		Clients clients = config.getClients();
 
@@ -72,11 +72,10 @@ public class Application extends Controller {
 		if( samlClient != null){
 			return redirect(routes.Application.samlLogin());
 		}
-
 		final FormClient formClient = (FormClient) clients.findClient("FormClient");
-
 		String message = ctx().request().getQueryString("error");
-		return ok(login.render(repositoryId, formClient.getCallbackUrl(), message));
+
+		return ok(views.html.login.render(repositoryId, formClient.getCallbackUrl() , message));
 	}
 
 	public Result getSaml2ServiceProviderMetadata() {
@@ -96,10 +95,9 @@ public class Application extends Controller {
 		}
 	}
 	public Result logout(String repositoryId) {
-
 		ctx().session().clear();
 
-		return ok("ログアウトしました");
+		return ok(views.html.logout.render(repositoryId));
 	}
 
 	public Result error() {
