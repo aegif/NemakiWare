@@ -19,6 +19,7 @@ public interface PropertyKey {
 	final String NEMAKI_UI_URI_HOST= "nemaki.ui.uri.host";
 	final String NEMAKI_UI_URI_PORT= "nemaki.ui.uri.port";
 
+	final String NEMAKI_DEFAULT_REPOSITRY_ID="nemaki.default.repository.id";
 
 	final String NAVIGATION_PAGING_SIZE="navigation.paging.size";
 
@@ -32,7 +33,6 @@ public interface PropertyKey {
 	final String SSO_LOGOUT_REDIRECT_URI="sso.logout.redirect.uri";
 	final String SSO_LOGIN_REDIRECT_URI="sso.login.redirect.uri";
 	final String SSO_HEADER_REMOTE_AUTHENTICATED_USER="sso.header.remote.authenticated.user";
-
-
+	final String SSO_MAPPER_KEY_USERID="sso.mapper.key.userid";
 
 }

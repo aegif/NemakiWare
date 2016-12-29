@@ -94,6 +94,8 @@ import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.message.BasicHeader;
 import org.apache.http.message.BasicNameValuePair;
+import org.pac4j.core.context.WebContext;
+import org.pac4j.core.exception.HttpAction;
 import org.pac4j.core.profile.CommonProfile;
 import org.pac4j.core.profile.ProfileManager;
 import org.pac4j.play.PlayWebContext;
@@ -132,13 +134,23 @@ import util.authentication.NemakiProfile;
 public class Util {
 	private static final ALogger logger = Logger.of(Util.class);
 
-	public static NemakiProfile getProfile(play.mvc.Http.Context ctx) {
+	public static NemakiProfile getProfile(play.mvc.Http.Context ctx){
 		final PlayWebContext context = new PlayWebContext(ctx);
 		final ProfileManager<CommonProfile> profileManager = new ProfileManager<>(context);
 		final Optional<CommonProfile> profile = profileManager.get(true);
-		CommonProfile p = profile.get();
+		CommonProfile p = profile.orElse(null);
+		if (p instanceof NemakiProfile){
+			return (NemakiProfile)p;
+		}else if(p instanceof SAML2Profile){
+			return new NemakiProfile((SAML2Profile)p);
+		}
+		return null;
+	}
 
-		return (NemakiProfile)p ;
+	public static String getRepositoryId(WebContext context) {
+		Object o =  context.getSessionAttribute(Token.LOGIN_REPOSITORY_ID);
+		if (o == null) return NemakiConfig.getDefualtRepositoryId();
+		return (String)o;
 	}
 
 	public static String extractRepositoryId(String uri) {
@@ -148,7 +160,7 @@ public class Util {
 		if (m.find()) {
 			return m.group(1);
 		}
-		return null;
+		return NemakiConfig.getDefualtRepositoryId();
 	}
 
 	public static String getVersion(String repositoryId, play.mvc.Http.Context ctx) {
@@ -177,16 +189,20 @@ public class Util {
 
 	public static Session createCmisSession(String repositoryId, play.mvc.Http.Context ctx) {
 		NemakiProfile profile = Util.getProfile(ctx);
-		String userId = profile.getUserId();
-		String password = profile.getPassword();
 		String profileRepositoryId = profile.getRepositoryId();
-
 		// 作成時にはそのプロファイルである必要がある。いちど作ればキャッシュされるはず
 		if (!repositoryId.equals(profileRepositoryId)) {
 			throw new CmisUnauthorizedException();
 		}
 
-		return createCmisSessionByBasicAuth(repositoryId, userId, password);
+		String userId = profile.getUserId();
+		if (profile.getCmisAuthType() == NemakiProfile.CmisAuthType.BASIC){
+			String password = profile.getPassword();
+			return createCmisSessionByBasicAuth(repositoryId, userId, password);
+		}else{
+			return createCmisSessionByAuthHeader(repositoryId, userId);
+		}
+
 	}
 
 	public static Session createCmisSessionByAuthHeader(String repositoryId, String remoteUserId) {
@@ -205,6 +221,7 @@ public class Util {
 		parameter.setBasicAuthentication(userId, password);
 
 		Session session = createCmisSessionWithParam(repositoryId, parameter);
+
 		return session;
 	}
 

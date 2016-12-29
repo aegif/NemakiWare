@@ -64,6 +64,7 @@ public class CmisSessions {
 		CommonProfile profile =  Util.getProfile(ctx);
 		String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
 
+		if (userId == null) return null;
 		Session cmisSession = repoSession.get(userId);
 		if(cmisSession == null){
 			cmisSession = Util.createCmisSession(repoSession.getRepositoryId(), ctx);
@@ -73,13 +74,16 @@ public class CmisSessions {
 	}
 
 	public static void disconnect(String repositoryId, play.mvc.Http.Context ctx){
-		RepoSession repoSession = getRepoSession(repositoryId);
-		Session cmisSession = getUserSession(repoSession, ctx);
-
-		cmisSession.clear();
 		CommonProfile profile =  Util.getProfile(ctx);
 		String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
 
-		repoSession.remove(userId);
+		RepoSession repoSession = getRepoSession(repositoryId);
+		if (userId != null) {
+			Session cmisSession = repoSession.get(userId);
+			if (cmisSession != null){
+				cmisSession.clear();
+				repoSession.remove(userId);
+			}
+		}
 	}
 }

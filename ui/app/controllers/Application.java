@@ -27,6 +27,7 @@ import play.mvc.Controller;
 import play.mvc.Result;
 import util.NemakiConfig;
 import util.Util;
+import util.authentication.NemakiProfile;
 import views.html.login;
 
 import org.pac4j.core.client.Client;
@@ -35,6 +36,7 @@ import org.pac4j.core.client.RedirectAction;
 import org.pac4j.core.config.Config;
 import org.pac4j.core.exception.HttpAction;
 import org.pac4j.play.PlayWebContext;
+import org.pac4j.play.java.Secure;
 import org.pac4j.saml.client.SAML2Client;
 import org.pac4j.saml.metadata.SAML2MetadataResolver;
 
@@ -46,17 +48,32 @@ public class Application extends Controller {
 	@Inject
 	public Config config;
 
+	@Secure(clients = "SAML2Client")
+	public Result samlLogin() {
+		final PlayWebContext context = new PlayWebContext(ctx());
+		String repositoryId = util.Util.getRepositoryId(context);
+
+		Clients clients = config.getClients();
+		final SAML2Client saml2Client = (SAML2Client) clients.findClient("SAML2Client");
+
+		NemakiProfile p = Util.getProfile(ctx());
+
+		return redirect(routes.Node.index(repositoryId));
+	}
+
+
 	public Result login(String repositoryId) {
 		final PlayWebContext context = new PlayWebContext(ctx());
 
 		Clients clients = config.getClients();
-		List<Client> clientList = clients.findAllClients();
-		if( clientList.stream().anyMatch(p -> p.getName().equals("SAML2Client"))){
-			return redirect(routes.Node.index(repositoryId));
-		}
-		final FormClient formClient = (FormClient) clients.findClient("FormClient");
-		final SAML2Client saml2Client = (SAML2Client) clients.findClient("SAML2Client");
 
+		List<Client> clientList = clients.findAllClients();
+		final SAML2Client samlClient = clientList.stream().filter(p -> p.getName().equals("SAML2Client")).map(p -> (SAML2Client)p).findFirst().orElse(null);
+		if( samlClient != null){
+			return redirect(routes.Application.samlLogin());
+		}
+
+		final FormClient formClient = (FormClient) clients.findClient("FormClient");
 
 		String message = ctx().request().getQueryString("error");
 		return ok(login.render(repositoryId, formClient.getCallbackUrl(), message));
@@ -78,15 +95,11 @@ public class Application extends Controller {
 			return notFound();
 		}
 	}
-
 	public Result logout(String repositoryId) {
-		// CMIS session
-		CmisSessions.disconnect(repositoryId, ctx());
 
-		// Play session
-		session().clear();
+		ctx().session().clear();
 
-		return redirect(routes.Application.login(repositoryId));
+		return ok("ログアウトしました");
 	}
 
 	public Result error() {

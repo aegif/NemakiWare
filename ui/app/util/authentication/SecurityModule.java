@@ -45,12 +45,14 @@ public class SecurityModule extends AbstractModule{
 	    cfg.setServiceProviderEntityId(baseUri);
 	    SAML2Client saml2Client = new SAML2Client(cfg);
 
-	    Clients clients = new Clients(baseUri + "callback",  saml2Client,  formClient);
+	    Clients clients = new Clients(baseUri + "callback",  saml2Client ,  formClient );
+	    clients.setDefaultClient(saml2Client);
 
         final Config config = new Config(clients);
         config.addAuthorizer("admin", new RequireAnyRoleAuthorizer<>("ROLE_ADMIN"));
         config.setHttpActionAdapter(new NemakiHttpActionAdapter());
         bind(Config.class).toInstance(config);
+
 
         // callback
         final CallbackController callbackController = new CallbackController();
