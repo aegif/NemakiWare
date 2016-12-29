@@ -136,15 +136,9 @@ public class Util {
 
 	public static NemakiProfile getProfile(play.mvc.Http.Context ctx){
 		final PlayWebContext context = new PlayWebContext(ctx);
-		final ProfileManager<CommonProfile> profileManager = new ProfileManager<>(context);
-		final Optional<CommonProfile> profile = profileManager.get(true);
-		CommonProfile p = profile.orElse(null);
-		if (p instanceof NemakiProfile){
-			return (NemakiProfile)p;
-		}else if(p instanceof SAML2Profile){
-			return new NemakiProfile((SAML2Profile)p);
-		}
-		return null;
+		final ProfileManager<NemakiProfile> profileManager = new ProfileManager<>(context);
+		final Optional<NemakiProfile> profile = profileManager.get(true);
+		return profile.orElse(null);
 	}
 
 	public static String getRepositoryId(WebContext context) {
@@ -191,7 +185,8 @@ public class Util {
 		NemakiProfile profile = Util.getProfile(ctx);
 		String profileRepositoryId = profile.getRepositoryId();
 		// 作成時にはそのプロファイルである必要がある。いちど作ればキャッシュされるはず
-		if (!repositoryId.equals(profileRepositoryId)) {
+
+		if (profileRepositoryId != null && !repositoryId.equals(profileRepositoryId)) {
 			throw new CmisUnauthorizedException();
 		}
 

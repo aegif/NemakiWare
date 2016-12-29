@@ -88,7 +88,10 @@ public class NemakiConfig {
 			return v;
 		}
 	}
-
+	public static boolean isEnableSamlSSO(Configuration configuration){
+		String enableSamlSSO = NemakiConfig.getValue(configuration, PropertyKey.SSO_SAML_ATUTHENTICATION_ENABLE);
+	    return Boolean.parseBoolean(enableSamlSSO);
+	}
 
 	public static String getApplicationBaseUri(Configuration configuration){
 		String protocol = NemakiConfig.getValue(configuration, PropertyKey.NEMAKI_UI_URI_PROTOCOL);

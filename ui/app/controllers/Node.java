@@ -105,7 +105,6 @@ public class Node extends Controller {
 
 	@Secure
 	public Result index(String repositoryId) {
-		final SAML2Client saml2Client = (SAML2Client) config.getClients().findClient("SAML2Client");
 		Session session = getCmisSession(repositoryId);
 		Folder root = session.getRootFolder();
 
