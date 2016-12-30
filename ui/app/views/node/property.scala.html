@@ -23,7 +23,9 @@
 			@if(Util.isFreezeCopy(obj, Http.Context.current)){
 				@lockedNotice(obj)
 			}else{
-				@saveButton("property-update")
+				@if(Util.isPropertyEditable(obj, Http.Context.current)){
+					@saveButton("property-update")
+				}
 			}
 		</div>
 	</div>
