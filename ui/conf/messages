@@ -9,6 +9,10 @@ view.auth.login.error.connection=Connection failed.
 view.auth.login.error.unknown=Unknown error.
 view.auth.account=Account
 view.auth.repostitory_id=Repository
+view.auth.logout.caption=Logout
+view.auth.logout.link-to-sso-logout=Jump to SSO Logout page
+view.auth.logout.link-to-login=Jump to login page
+
 
 view.node.property=Property
 view.node.file=File
@@ -22,11 +26,13 @@ view.node.document=Document
 view.node.folder=Folder
 view.node.document.create=Create a new document
 view.node.folder.create=Create a new folder
+
 view.user.favorite.caption=Favorite contents
 view.user.favorite.toggled.desc1=This content is added to your Favorites.
 view.user.favorite.toggled.desc2=To remove it, click this star.
 view.user.favorite.untoggled.desc1=This content is not added to your Favorites.
 view.user.favorite.untoggled.desc2=To add it, click this star.
+
 view.node.file.select=Select a file
 view.node.file.this.type.has.no.file=This type has no file.
 view.node.file.checkout.caption=Lock for offline editing
@@ -102,6 +108,8 @@ view.user.last.name=Last Name
 view.user.email=E-Mail
 
 view.user.change-password.caption=Change Password
+
+view.favorite.caption=Favorite
 
 view.group.caption=Groups
 view.group.property=Property
