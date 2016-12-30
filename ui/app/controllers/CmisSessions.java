@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import org.apache.chemistry.opencmis.client.api.Session;
+import org.pac4j.core.profile.CommonProfile;
 import org.pac4j.core.profile.ProfileManager;
 import org.pac4j.play.PlayWebContext;
 
@@ -60,9 +61,10 @@ public class CmisSessions {
 	}
 
 	private static Session getUserSession(RepoSession repoSession, play.mvc.Http.Context ctx){
-		NemakiProfile profile =  Util.getProfile(ctx);
+		CommonProfile profile =  Util.getProfile(ctx);
 		String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
 
+		if (userId == null) return null;
 		Session cmisSession = repoSession.get(userId);
 		if(cmisSession == null){
 			cmisSession = Util.createCmisSession(repoSession.getRepositoryId(), ctx);
@@ -72,13 +74,16 @@ public class CmisSessions {
 	}
 
 	public static void disconnect(String repositoryId, play.mvc.Http.Context ctx){
-		RepoSession repoSession = getRepoSession(repositoryId);
-		Session cmisSession = getUserSession(repoSession, ctx);
-
-		cmisSession.clear();
-		NemakiProfile profile =  Util.getProfile(ctx);
+		CommonProfile profile =  Util.getProfile(ctx);
 		String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
 
-		repoSession.remove(userId);
+		RepoSession repoSession = getRepoSession(repositoryId);
+		if (userId != null) {
+			Session cmisSession = repoSession.get(userId);
+			if (cmisSession != null){
+				cmisSession.clear();
+				repoSession.remove(userId);
+			}
+		}
 	}
 }

@@ -13,14 +13,16 @@ GET     /webjars/*file                  					controllers.WebJarAssets.at(file)
 # Authentication Callback
 GET		/callback											@org.pac4j.play.CallbackController.callback()
 POST	/callback											@org.pac4j.play.CallbackController.callback()
+GET     /saml-sp-metadata									controllers.Application.getSaml2ServiceProviderMetadata()
 
 # Global error(for user)
 GET		/error												controllers.Application.error()
 
 # Login
+GET		/samlLogin											controllers.Application.samlLogin()
 GET		/login												controllers.Application.login(repoId ?= "bedroom")
 GET		/repo/:repoId/login									controllers.Application.login(repoId)
-#POST	/repo/:repoId/authenticate							controllers.Application.authenticate(repoId)
+GET		/logout												@org.pac4j.play.ApplicationLogoutController.logout()
 GET		/repo/:repoId/logout								controllers.Application.logout(repoId)
 
 # Home page

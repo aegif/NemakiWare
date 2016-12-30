@@ -2,12 +2,15 @@ package controllers;
 
 import com.google.inject.Inject;
 
+import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.http.entity.ContentType;
 import org.pac4j.http.client.indirect.FormClient;
 
 import play.Logger;
@@ -24,35 +27,77 @@ import play.mvc.Controller;
 import play.mvc.Result;
 import util.NemakiConfig;
 import util.Util;
-import views.html.login;
+import util.authentication.NemakiProfile;
+
+import org.pac4j.core.client.Client;
+import org.pac4j.core.client.Clients;
+import org.pac4j.core.client.RedirectAction;
 import org.pac4j.core.config.Config;
-import org.pac4j.core.profile.ProfileManager;
+import org.pac4j.core.context.Pac4jConstants;
+import org.pac4j.core.exception.HttpAction;
 import org.pac4j.play.PlayWebContext;
 import org.pac4j.play.java.Secure;
+import org.pac4j.saml.client.SAML2Client;
+import org.pac4j.saml.metadata.SAML2MetadataResolver;
+
 import play.mvc.Http.Context;
+
 public class Application extends Controller {
 	private static final ALogger logger = Logger.of(Application.class);
 
-    @Inject
-    public  Config config;
+	@Inject
+	public Config config;
 
-	public Result login(String repositoryId) {
-		final FormClient formClient = (FormClient) config.getClients().findClient("FormClient");
-
-		String message = ctx().request().getQueryString("error");
-
-		return ok(login.render(repositoryId, formClient.getCallbackUrl(), message));
+	@Secure(clients = "SAML2Client")
+	public Result samlLogin() {
+		final PlayWebContext context = new PlayWebContext(ctx());
+		String repositoryId = util.Util.getRepositoryId(context);
+		return redirect(routes.Node.index(repositoryId));
 	}
 
+	public Result login(String repositoryId) {
+		final PlayWebContext context = new PlayWebContext(ctx());
 
+		//ログイン画面に直接来た場合など、ログイン後のリダイレクト先の設定をしておかないとエラーになる
+		final Object uri = context.getSessionAttribute(Pac4jConstants.REQUESTED_URL);
+		if (uri == null){
+			String redircetURL = routes.Node.index(repositoryId).absoluteURL(request());
+			context.setSessionAttribute(Pac4jConstants.REQUESTED_URL, redircetURL);
+		}
+
+		Clients clients = config.getClients();
+
+		List<Client> clientList = clients.findAllClients();
+		final SAML2Client samlClient = clientList.stream().filter(p -> p.getName().equals("SAML2Client")).map(p -> (SAML2Client)p).findFirst().orElse(null);
+		if( samlClient != null){
+			return redirect(routes.Application.samlLogin());
+		}
+		final FormClient formClient = (FormClient) clients.findClient("FormClient");
+		String message = ctx().request().getQueryString("error");
+
+		return ok(views.html.login.render(repositoryId, formClient.getCallbackUrl() , message));
+	}
+
+	public Result getSaml2ServiceProviderMetadata() {
+		final PlayWebContext context = new PlayWebContext(ctx());
+		final SAML2Client saml2Client = (SAML2Client) config.getClients().findClient("SAML2Client");
+		saml2Client.init(context);
+
+		SAML2MetadataResolver resolver = saml2Client.getServiceProviderMetadataResolver();
+		if (resolver != null) {
+			resolver.resolve();
+			String metadata = resolver.getMetadata();
+
+			response().setContentType(ContentType.APPLICATION_XML.getMimeType());
+			return ok(metadata);
+		} else {
+			return notFound();
+		}
+	}
 	public Result logout(String repositoryId) {
-		// CMIS session
-		CmisSessions.disconnect(repositoryId, ctx());
+		ctx().session().clear();
 
-		// Play session
-		session().clear();
-
-		return redirect(routes.Application.login(repositoryId));
+		return ok(views.html.logout.render(repositoryId));
 	}
 
 	public Result error() {
