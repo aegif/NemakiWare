@@ -41,6 +41,7 @@ import org.apache.chemistry.opencmis.client.api.Item;
 import org.apache.chemistry.opencmis.client.api.ObjectType;
 import org.apache.chemistry.opencmis.client.api.OperationContext;
 import org.apache.chemistry.opencmis.client.api.Property;
+import org.apache.chemistry.opencmis.client.api.QueryResult;
 import org.apache.chemistry.opencmis.client.api.Rendition;
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.client.api.SessionFactory;
@@ -52,6 +53,7 @@ import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
 import org.apache.chemistry.opencmis.commons.definitions.Choice;
 import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
@@ -1063,6 +1065,32 @@ public class Util {
 			Property<Object> prop = obj.getProperty(propertyId);
 			return prop == null ? "" : prop.getValueAsString();
 		}
+	}
+
+	public static String displayQueryResultValue(QueryResult queryResult, String propertyId, Locale locale) {
+
+		if (PropertyIds.CREATION_DATE.equals(propertyId) || PropertyIds.LAST_MODIFICATION_DATE.equals(propertyId)) {
+			PropertyData<Object> vals = queryResult.getPropertyById(propertyId);
+			if ( vals.getFirstValue() != null) {
+				return Formatter.calToString((GregorianCalendar)vals.getFirstValue(), locale);
+			}
+		}
+//		else if (PropertyIds.OBJECT_TYPE_ID.equals(propertyId)) {
+//			PropertyData<Object> vals = queryResult.getPropertyById(propertyId);
+//			if ( vals.getFirstValue() != null) {
+//				return NemakiConfig.getLabel((String)vals.getFirstValue(), locale.toLanguageTag());
+//			}
+//		} 
+		else {
+			PropertyData<Object> vals = queryResult.getPropertyById(propertyId);
+			if ( vals != null) {
+			return (vals.getFirstValue() == null ? "" : vals.getFirstValue().toString()); 
+			}
+			else {
+				return "";
+			}
+		}		
+		return "";
 	}
 
 	public static boolean isFreezeCopy(CmisObject obj, play.mvc.Http.Context ctx) {
