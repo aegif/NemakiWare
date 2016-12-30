@@ -21,7 +21,13 @@
 	<div>
 		<h4>
 			<i class="fa @Util.getIconClassName(obj)"></i>@obj.getName()
-			[ @obj.getVersionLabel() ]
+			[ 
+			@if(obj.isPrivateWorkingCopy()){
+				Working Copy
+			}else{
+				@obj.getVersionLabel()
+			}
+			 ]
 			@if(Util.isFreezeCopy(obj, Http.Context.current)){<i class="fa fa-lock"></i>}
 			<!-- fav star -->
 			<span class="favorite-toggle">
@@ -40,10 +46,18 @@
   		@if(Util.isDocument(obj)){
   			<!-- TODO: Implement 'allowed' case correctly -->
  			@if(Util.hasContentStream(obj)){
-	  			@if(obj.getId() == latestId){
- 					<li @if(TabUtil.isFileTab(activateTabName)){class="active"}>
- 						<a href="@routes.Node.showFile(repositoryId, obj.getId)" data-toggle="tab" data-target="#file">@Messages("view.node.file")</a>
- 					</li>
+ 				@if(obj.isVersionSeriesCheckedOut()){
+		  			@if(obj.isPrivateWorkingCopy()){
+ 						<li @if(TabUtil.isFileTab(activateTabName)){class="active"}>
+ 							<a href="@routes.Node.showFile(repositoryId, obj.getId)" data-toggle="tab" data-target="#file">@Messages("view.node.file")</a>
+ 						</li>
+ 					}
+ 				}else{
+		  			@if(obj.getId() == latestId){
+ 						<li @if(TabUtil.isFileTab(activateTabName)){class="active"}>
+ 							<a href="@routes.Node.showFile(repositoryId, obj.getId)" data-toggle="tab" data-target="#file">@Messages("view.node.file")</a>
+ 						</li>
+ 					} 				
  				}
  				<li @if(TabUtil.isPreviewTab(activateTabName)){class="active"}>
  					<a href="@routes.Node.showPreview(repositoryId, obj.getId)" data-toggle="tab" data-target="#preview">@Messages("view.node.preview")</a>
