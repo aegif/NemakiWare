@@ -37,6 +37,7 @@ import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.AllowableActions;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
@@ -110,7 +111,7 @@ public class Node extends Controller {
 
 		return showChildren(repositoryId, root.getId());
 	}
-	
+
 	@Secure
 	public Result direct(String repositoryId, String objectId, String activateTabName){
 		NemakiProfile profile = Util.getProfile(ctx());
@@ -135,7 +136,7 @@ public class Node extends Controller {
 		}
 
 		return ok(detailFull.render(repositoryId, target, parent.getId(), latest.getId(), activateTabName, user, session, profile));
-		
+
 	}
 
 	@Secure
@@ -196,6 +197,11 @@ public class Node extends Controller {
 
 	@Secure
 	public Result search(String repositoryId, String term) {
+		
+		if ( term.startsWith("[cmis]")) {
+			return this.searchFreeQuery(repositoryId, term);
+		}
+		
 		NemakiProfile profile = Util.getProfile(ctx());
 		Session session = getCmisSession(repositoryId);
 
@@ -211,6 +217,7 @@ public class Node extends Controller {
 		}
 		ItemIterable<CmisObject> docResults = session.queryObjects("cmis:document", docStatement, false, ctxt);
 		Iterator<CmisObject> docItr = docResults.iterator();
+
 		while (docItr.hasNext()) {
 			CmisObject doc = docItr.next();
 			boolean val = doc.getPropertyValue("cmis:isLatestVersion");
@@ -219,6 +226,24 @@ public class Node extends Controller {
 		}
 
 		return ok(search.render(repositoryId, term, list, session, profile));
+	}
+	
+	private Result searchFreeQuery(String repositoryId, String term) {
+		
+		NemakiProfile profile = Util.getProfile(ctx());
+		Session session = getCmisSession(repositoryId);
+		OperationContext ctxt = session.getDefaultContext();
+		
+		String pureQuery = term.replace("[cmis]", "");
+		
+		ItemIterable<QueryResult> results = session.query(pureQuery, false, ctxt);
+		Iterator<QueryResult> resultItr = results.iterator();
+		List<QueryResult> qrList = new ArrayList<QueryResult>();
+		
+		while ( resultItr.hasNext() ) {
+			qrList.add(resultItr.next());
+		}
+		return ok(searchFreeQuery.render(repositoryId, term, qrList, profile));
 	}
 
 	@Secure
@@ -331,14 +356,14 @@ public class Node extends Controller {
 		if (rels != null){
 			try{
 				list = rels.stream()
-					.filter(p -> id.equals(p.getSourceId().getId()))
-					.map(Relationship::getTargetId)
-					.distinct()
-					.map(p ->  session.getObject(p))
-					.filter(p -> Util.isDocument(p))
-					.map(p ->  (Document)p)
-					.collect(Collectors.toList())
-					;
+						.filter(p -> id.equals(p.getSourceId().getId()))
+						.map(Relationship::getTargetId)
+						.distinct()
+						.map(p ->  session.getObject(p))
+						.filter(p -> Util.isDocument(p))
+						.map(p ->  (Document)p)
+						.collect(Collectors.toList())
+						;
 			}catch(CmisObjectNotFoundException ex){
 				log.error("Source or target cmis object not found.", ex);
 			}
@@ -378,11 +403,11 @@ public class Node extends Controller {
 					outputStream.putNextEntry(null, params);
 
 					try (InputStream inputStream = doc.getContentStream().getStream();) {
-							byte[] readBuff = new byte[4096];
-							int readLen = -1;
-							while ((readLen = inputStream.read(readBuff)) != -1) {
-								outputStream.write(readBuff, 0, readLen);
-							}
+						byte[] readBuff = new byte[4096];
+						int readLen = -1;
+						while ((readLen = inputStream.read(readBuff)) != -1) {
+							outputStream.write(readBuff, 0, readLen);
+						}
 					}
 					outputStream.closeEntry();
 				}
@@ -558,7 +583,7 @@ public class Node extends Controller {
 	@Secure
 	public Result showVersion(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
-		
+
 		CmisObject o = session.getObject(id);
 
 		List<Document> result = new ArrayList<Document>();
@@ -1079,16 +1104,16 @@ public class Node extends Controller {
 		if (rels != null){
 			try{
 				rels.stream()
-					.filter(p -> id.equals(p.getSourceId().getId()) && RelationshipUtil.isCascadeRelation(p.getType()))
-					.map(Relationship::getTargetId)
-					.distinct()
-					.forEach(tId -> {
-						try{
-							deletedList.addAll(delete(tId.getId(), session));
-						}catch(Exception ex){
-							log.error("Target cmis object id not found", ex);
-						}
-					});
+				.filter(p -> id.equals(p.getSourceId().getId()) && RelationshipUtil.isCascadeRelation(p.getType()))
+				.map(Relationship::getTargetId)
+				.distinct()
+				.forEach(tId -> {
+					try{
+						deletedList.addAll(delete(tId.getId(), session));
+					}catch(Exception ex){
+						log.error("Target cmis object id not found", ex);
+					}
+				});
 			}catch(CmisObjectNotFoundException ex){
 				log.error("Source or target cmis object not found.", ex);
 			}
