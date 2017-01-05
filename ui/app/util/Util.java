@@ -1106,6 +1106,24 @@ public class Util {
 		}
 		return false;
 	}
+	public static boolean isPropertyEditable(CmisObject obj, play.mvc.Http.Context ctx) {
+		NemakiProfile profile = Util.getProfile(ctx);
+		String loginUserId = profile.getUserId();
+
+		if (isDocument(obj)) {
+			Document doc = (Document) obj;
+			// if the user have access to a private copy. they must be able to edit
+			if(doc.isPrivateWorkingCopy()){
+				return true;
+			}
+			if(doc.isLatestVersion() && !(doc.isVersionSeriesCheckedOut())){
+				return true;
+			}else{
+				return false;
+			}
+		}
+		return true;
+	}
 
 	public static List<PermissionDefinition> trimForDisplay(List<PermissionDefinition> list) {
 		List<PermissionDefinition> result = new ArrayList<PermissionDefinition>();

@@ -11,7 +11,13 @@
 <div class="container tab-pane">
 	<div class="row" style="margin-bottom:15px">
 		<div class="col-sm-6 col-md-6">
-				@createButton("create-new-relationship")
+			@if(Util.isFreezeCopy(obj, Http.Context.current)){
+				@lockedNotice(obj)
+			}else{
+				@if(Util.isPropertyEditable(obj, Http.Context.current)){
+					@createButton("create-new-relationship")
+				}
+			}
 		</div>
 	</div>
 	<div class="row">
