@@ -259,6 +259,7 @@ public class SolrPredicateWalker{
 		String field = solrUtil.getPropertyNameInSolr(solrUtil.convertToString(colNode));
 		String pattern = translatePattern((String) rVal); // Solr wildcard
 															// expression
+		
 		Term t = new Term(field, pattern);
 		TermQuery q = new TermQuery(t);
 		return q;
@@ -510,15 +511,21 @@ public class SolrPredicateWalker{
 	}
 
 	private Query walkTextWord(Tree node) {
-		Term term = new Term("text", node.toString());
+		Term term = new Term("text", escapeString(node.toString()));
 		TermQuery q = new TermQuery(term);
 		return q;
 	}
 
 	private Query walkTextPhrase(Tree node) {
-		Term term = new Term("text", node.toString());
+		Term term = new Term("text", escapeString(node.toString()));
 		TermQuery q = new TermQuery(term);
 		return q;
+	}
+	
+	private String escapeString(String val) {
+				
+		return val.replaceAll(":", "\\\\:");
+		
 	}
 
 	// //////////////////////////////////////////////////////////////////////////////

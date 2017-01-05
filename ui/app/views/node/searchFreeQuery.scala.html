@@ -1,0 +1,26 @@
+@*{<meta charset="UTF-8" />}*@
+
+@(repositoryId:String)(term: String, objects: java.util.List[org.apache.chemistry.opencmis.client.api.QueryResult])(profile: util.authentication.NemakiProfile)
+
+<!DOCTYPE html>
+<html>
+	@header()
+	<body>
+		@menubar(repositoryId, profile, term)
+		<div class="container">
+	  		<div class="row">
+	  			<div class="col-md-11">
+					@Messages("view.node.search.term"): @term
+
+					<br/><br/>
+				</div>
+
+				<div class="col-md-11">
+				 	<div id="list">
+						@listFreeQuery(repositoryId)(objects)
+				 	</div>
+				</div>
+	  		</div>
+		</div>
+	</body>
+</html>
