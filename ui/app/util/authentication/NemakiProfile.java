@@ -40,7 +40,7 @@ public class NemakiProfile extends CommonProfile {
 		boolean isAdmin = false; // TODO:
 		profile.setIsAdmin(isAdmin);
 		profile.setVersion(version);
-
+		profile.setId(remoteUserId + userRepoSeparator + repositoryId);
 		profile.setCmisAuthType(CmisAuthType.HEADER);
 		return profile;
 	}
