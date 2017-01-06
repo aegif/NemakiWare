@@ -738,4 +738,16 @@
     </bean>
     <bean id="threadLockService" class="jp.aegif.nemaki.util.lock.impl.ThreadLockServiceImpl">
     </bean>
+    <bean id="bulkCheckInResource" class="jp.aegif.nemaki.rest.BulkCheckInResource">
+    	<property name="contentService">
+       		<ref bean="ContentService" />
+        </property>
+        <property name="versioningService">
+            <ref bean="VersioningService" />
+        </property>
+        <property name="RelationshipService">
+            <ref bean="RelationshipService" />
+        </property>
+    </bean>
+    
 </beans>
