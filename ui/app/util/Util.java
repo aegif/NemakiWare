@@ -41,6 +41,7 @@ import org.apache.chemistry.opencmis.client.api.Item;
 import org.apache.chemistry.opencmis.client.api.ObjectType;
 import org.apache.chemistry.opencmis.client.api.OperationContext;
 import org.apache.chemistry.opencmis.client.api.Property;
+import org.apache.chemistry.opencmis.client.api.QueryResult;
 import org.apache.chemistry.opencmis.client.api.Rendition;
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.client.api.SessionFactory;
@@ -52,6 +53,7 @@ import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
 import org.apache.chemistry.opencmis.commons.definitions.Choice;
 import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
@@ -110,6 +112,7 @@ import play.mvc.Http.MultipartFormData;
 import play.mvc.Http.MultipartFormData.FilePart;
 import play.mvc.Http.Request;
 import util.authentication.NemakiProfile;
+import util.authentication.NemakiProfile.CmisAuthType;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -134,7 +137,7 @@ import util.authentication.NemakiProfile;
 public class Util {
 	private static final ALogger logger = Logger.of(Util.class);
 
-	public static NemakiProfile getProfile(play.mvc.Http.Context ctx){
+	public static NemakiProfile getProfile(play.mvc.Http.Context ctx) {
 		final PlayWebContext context = new PlayWebContext(ctx);
 		final ProfileManager<NemakiProfile> profileManager = new ProfileManager<>(context);
 		final Optional<NemakiProfile> profile = profileManager.get(true);
@@ -142,9 +145,10 @@ public class Util {
 	}
 
 	public static String getRepositoryId(WebContext context) {
-		Object o =  context.getSessionAttribute(Token.LOGIN_REPOSITORY_ID);
-		if (o == null) return NemakiConfig.getDefualtRepositoryId();
-		return (String)o;
+		Object o = context.getSessionAttribute(Token.LOGIN_REPOSITORY_ID);
+		if (o == null)
+			return NemakiConfig.getDefualtRepositoryId();
+		return (String) o;
 	}
 
 	public static String extractRepositoryId(String uri) {
@@ -191,10 +195,10 @@ public class Util {
 		}
 
 		String userId = profile.getUserId();
-		if (profile.getCmisAuthType() == NemakiProfile.CmisAuthType.BASIC){
+		if (profile.getCmisAuthType() == NemakiProfile.CmisAuthType.BASIC) {
 			String password = profile.getPassword();
 			return createCmisSessionByBasicAuth(repositoryId, userId, password);
-		}else{
+		} else {
 			return createCmisSessionByAuthHeader(repositoryId, userId);
 		}
 
@@ -524,25 +528,46 @@ public class Util {
 		return className;
 	}
 
-	private static HttpClient buildClient(play.mvc.Http.Context ctx) {
-		NemakiProfile profile = Util.getProfile(ctx);
-		String user = profile.getUserId();
-		String password = profile.getPassword();
-		return buildClient(user, password);
-	}
-
-	private static HttpClient buildClient(String user, String password) {
+	private static HttpClient buildClient(HttpRequest request, play.mvc.Http.Context ctx) {
 		HttpClientBuilder builder = HttpClientBuilder.create();
 
-		// configurations
-		String userAgent = "NemakiWare UI";
-
-		// headers
 		List<Header> headers = new ArrayList<Header>();
 		headers.add(new BasicHeader("Accept-Charset", "utf-8"));
 		headers.add(new BasicHeader("Accept-Language", "ja, en;q=0.8"));
-		headers.add(new BasicHeader("User-Agent", userAgent));
+		headers.add(new BasicHeader("User-Agent", "NemakiWare UI"));
 
+		NemakiProfile profile = Util.getProfile(ctx);
+		String userId = profile.getUserId();
+		if (profile.getCmisAuthType().equals(CmisAuthType.BASIC)) {
+			String password = profile.getPassword();
+			setCreadentialToHeader(builder, headers, userId, password);
+		} else if (profile.getCmisAuthType().equals(CmisAuthType.HEADER)) {
+			headers.add(new BasicHeader(NemakiConfig.getRemoteAuthHeader(), userId));
+		}
+
+		builder.setDefaultHeaders(headers);
+		HttpClient httpClient = builder.build();
+		return httpClient;
+	}
+
+	private static HttpClient buildClient(String userId, String password) {
+		HttpClientBuilder builder = HttpClientBuilder.create();
+		List<Header> headers = new ArrayList<Header>();
+		headers.add(new BasicHeader("Accept-Charset", "utf-8"));
+		headers.add(new BasicHeader("Accept-Language", "ja, en;q=0.8"));
+		headers.add(new BasicHeader("User-Agent", "NemakiWare UI"));
+
+		setCreadentialToHeader(builder, headers, userId, password);
+
+		// create client
+		builder.setDefaultHeaders(headers);
+		HttpClient httpClient = builder.build();
+		return httpClient;
+	}
+
+
+	private static void setCreadentialToHeader(HttpClientBuilder builder, List<Header> headers, String user,
+			String password) {
 		// set credential
 		Credentials credentials = new UsernamePasswordCredentials(user, password);
 		String host = NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_HOST);
@@ -554,11 +579,6 @@ public class Util {
 		CredentialsProvider credsProvider = new BasicCredentialsProvider();
 		credsProvider.setCredentials(scope, credentials);
 		builder.setDefaultCredentialsProvider(credsProvider);
-
-		// create client
-		builder.setDefaultHeaders(headers);
-		HttpClient httpClient = builder.build();
-		return httpClient;
 	}
 
 	private static JsonNode executeRequest(HttpClient client, HttpRequest request) {
@@ -598,23 +618,21 @@ public class Util {
 	}
 
 	public static JsonNode getJsonResponse(String userId, String password, String url) {
-		// create client
 		HttpClient client = buildClient(userId, password);
 		HttpGet request = new HttpGet(url);
 		return executeRequest(client, request);
 	}
 
 	public static JsonNode getJsonResponse(play.mvc.Http.Context ctx, String url) {
-		// create client
-		HttpClient client = buildClient(ctx);
 		HttpGet request = new HttpGet(url);
+		HttpClient client = buildClient(request, ctx);
 		return executeRequest(client, request);
 	}
 
 	public static JsonNode postJsonResponse(play.mvc.Http.Context ctx, String url, JsonNode json) {
 		// create client
-		HttpClient client = buildClient(ctx);
 		HttpPost request = new HttpPost(url);
+		HttpClient client = buildClient(request, ctx);
 
 		try {
 			StringEntity body = new StringEntity(json.toString());
@@ -631,9 +649,10 @@ public class Util {
 
 	public static JsonNode postJsonResponse(play.mvc.Http.Context ctx, String url, Map<String, String> params) {
 		// create client
-		HttpClient client = buildClient(ctx);
-
 		HttpPost request = new HttpPost(url);
+		HttpClient client = buildClient(request, ctx);
+
+
 		List<NameValuePair> list = new ArrayList<NameValuePair>();
 		if (MapUtils.isNotEmpty(params)) {
 			for (Entry<String, String> entry : params.entrySet()) {
@@ -653,9 +672,10 @@ public class Util {
 
 	public static JsonNode putJsonResponse(play.mvc.Http.Context ctx, String url, Map<String, String> params) {
 		// create client
-		HttpClient client = buildClient(ctx);
-
 		HttpPut request = new HttpPut(url);
+		HttpClient client = buildClient(request, ctx);
+
+
 		List<NameValuePair> list = new ArrayList<NameValuePair>();
 		if (MapUtils.isNotEmpty(params)) {
 			for (Entry<String, String> entry : params.entrySet()) {
@@ -674,8 +694,9 @@ public class Util {
 	}
 
 	public static JsonNode deleteJsonResponse(play.mvc.Http.Context ctx, String url) {
-		HttpClient client = buildClient(ctx);
 		HttpDelete request = new HttpDelete(url);
+		HttpClient client = buildClient(request, ctx);
+
 		return executeRequest(client, request);
 	}
 
@@ -1065,6 +1086,32 @@ public class Util {
 		}
 	}
 
+	public static String displayQueryResultValue(QueryResult queryResult, String propertyId, Locale locale) {
+
+		if (PropertyIds.CREATION_DATE.equals(propertyId) || PropertyIds.LAST_MODIFICATION_DATE.equals(propertyId)) {
+			PropertyData<Object> vals = queryResult.getPropertyById(propertyId);
+			if (vals.getFirstValue() != null) {
+				return Formatter.calToString((GregorianCalendar) vals.getFirstValue(), locale);
+			}
+		}
+		// else if (PropertyIds.OBJECT_TYPE_ID.equals(propertyId)) {
+		// PropertyData<Object> vals = queryResult.getPropertyById(propertyId);
+		// if ( vals.getFirstValue() != null) {
+		// return NemakiConfig.getLabel((String)vals.getFirstValue(),
+		// locale.toLanguageTag());
+		// }
+		// }
+		else {
+			PropertyData<Object> vals = queryResult.getPropertyById(propertyId);
+			if (vals != null) {
+				return (vals.getFirstValue() == null ? "" : vals.getFirstValue().toString());
+			} else {
+				return "";
+			}
+		}
+		return "";
+	}
+
 	public static boolean isFreezeCopy(CmisObject obj, play.mvc.Http.Context ctx) {
 		NemakiProfile profile = Util.getProfile(ctx);
 		String loginUserId = profile.getUserId();
@@ -1077,6 +1124,26 @@ public class Util {
 			}
 		}
 		return false;
+	}
+
+	public static boolean isPropertyEditable(CmisObject obj, play.mvc.Http.Context ctx) {
+		NemakiProfile profile = Util.getProfile(ctx);
+		String loginUserId = profile.getUserId();
+
+		if (isDocument(obj)) {
+			Document doc = (Document) obj;
+			// if the user have access to a private copy. they must be able to
+			// edit
+			if (doc.isPrivateWorkingCopy()) {
+				return true;
+			}
+			if (doc.isLatestVersion() && !(doc.isVersionSeriesCheckedOut())) {
+				return true;
+			} else {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	public static List<PermissionDefinition> trimForDisplay(List<PermissionDefinition> list) {
