@@ -745,8 +745,17 @@
         <property name="versioningService">
             <ref bean="VersioningService" />
         </property>
-        <property name="RelationshipService">
+        <property name="relationshipService">
             <ref bean="RelationshipService" />
+        </property>
+    	<property name="compileService">
+       		<ref bean="CompileService" />
+        </property>
+        <property name="typeService">
+            <ref bean="TypeService" />
+        </property>
+        <property name="typeManager">
+            <ref bean="TypeManager" />
         </property>
     </bean>
     
