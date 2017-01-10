@@ -11,3 +11,4 @@ target
 /logs
 action-sample/dependency-reduced-pom.xml
 setup/installer/NemakiInstaller*
+core/catalina.home_IS_UNDEFINED/
