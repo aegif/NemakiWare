@@ -55,6 +55,24 @@ public class Application extends Controller {
 		return redirect(routes.Node.index(repositoryId));
 	}
 
+	public Result adminlogin(String repositoryId) {
+		final PlayWebContext context = new PlayWebContext(ctx());
+
+		//ログイン画面に直接来た場合など、ログイン後のリダイレクト先の設定をしておかないとエラーになる
+		final Object uri = context.getSessionAttribute(Pac4jConstants.REQUESTED_URL);
+		if (uri == null){
+			String redircetURL = routes.Node.index(repositoryId).absoluteURL(request());
+			context.setSessionAttribute(Pac4jConstants.REQUESTED_URL, redircetURL);
+		}
+
+		Clients clients = config.getClients();
+
+		final FormClient formClient = (FormClient) clients.findClient("FormClient");
+		String message = ctx().request().getQueryString("error");
+
+		return ok(views.html.login.render(repositoryId, formClient.getCallbackUrl() , message));
+	}
+
 	public Result login(String repositoryId) {
 		final PlayWebContext context = new PlayWebContext(ctx());
 
