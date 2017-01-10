@@ -434,20 +434,34 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void constraintAllowedChildObjectTypeId(Folder folder,Properties childProperties) {
-		List<String> allowedTypes = folder.getAllowedChildTypeIds();
+	public void constraintAllowedChildObjectTypeId(String repositoryId, Folder folder,Properties childProperties) {
+		List<String> allowedTypeIds = folder.getAllowedChildTypeIds();
+		String childTypeId = DataUtil.getIdProperty(childProperties, PropertyIds.OBJECT_TYPE_ID);
 
-		// If cmis:allowedCHildTypeIds is not set, all types are allowed.
-		if (!CollectionUtils.isEmpty(allowedTypes)) {
-			String childType = DataUtil.getIdProperty(childProperties,PropertyIds.OBJECT_TYPE_ID);
-			if (!allowedTypes.contains(childType)) {
-				String objectId = DataUtil.getIdProperty(childProperties,PropertyIds.OBJECT_ID);
-				constraint(
-						objectId,
-						"cmis:objectTypeId="
-								+ childType
-								+ " is not in the list of AllowedChildObjectTypeIds of the parent folder");
-			}
+		boolean result = false;
+		if (CollectionUtils.isEmpty(allowedTypeIds)) {
+			// If cmis:allowedChildTypeIds is not set, all types are allowed.
+			result = true;
+		}else{
+			String targetTypeId = childTypeId;
+			do{
+				if (allowedTypeIds.contains(targetTypeId)) {
+					result = true;
+					break;
+				}
+				TypeDefinition targetType = typeManager.getTypeById(repositoryId, targetTypeId).getTypeDefinition();
+				if (targetType.getId().equals(targetType.getBaseTypeId())) break;
+				targetTypeId =  targetType.getParentTypeId();
+			}while(true);
+		}
+
+		if (!result) {
+			String objectId = DataUtil.getIdProperty(childProperties,PropertyIds.OBJECT_ID);
+			constraint(
+					objectId,
+					"cmis:objectTypeId="
+							+ childTypeId
+							+ " is not in the list of AllowedChildObjectTypeIds of the parent folder");
 		}
 	}
 
