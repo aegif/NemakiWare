@@ -8,7 +8,7 @@
 	<packaging>jar</packaging>
 
 	<name>bjornloka</name>
-	<url>http://maven.apache.org</url>
+	<url>https://github.com/aegif/NemakiWare</url>
 
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -47,7 +47,7 @@
 	<artifactId>httpclient</artifactId>
 	<version>4.5</version>
 </dependency>
-		
+
 	</dependencies>
 
 	<build>
