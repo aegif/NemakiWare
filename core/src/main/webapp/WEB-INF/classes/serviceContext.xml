@@ -643,12 +643,6 @@
         </property>
     </bean>
 
-    <bean id="groupResource" class="jp.aegif.nemaki.rest.GroupResource">
-        <property name="principalService">
-            <ref bean="PrincipalService" />
-        </property>
-    </bean>
-
 	<bean id="groupItemResource" class="jp.aegif.nemaki.rest.GroupItemResource">
         <property name="contentService">
             <ref bean="ContentService" />
@@ -667,18 +661,6 @@
     <bean id="solrResource" class="jp.aegif.nemaki.rest.SolrResource">
     	<property name="solrUtil">
        		<ref bean="solrUtil" />
-        </property>
-    </bean>
-
-    <bean id="userResource" class="jp.aegif.nemaki.rest.UserResource">
-        <property name="principalService">
-            <ref bean="PrincipalService" />
-        </property>
-        <property name="solrResource">
-            <ref bean="solrResource" />
-        </property>
-         <property name="propertyManager">
-            <ref bean="propertyManager" />
         </property>
     </bean>
 
@@ -758,5 +740,5 @@
             <ref bean="TypeManager" />
         </property>
     </bean>
-    
+
 </beans>
