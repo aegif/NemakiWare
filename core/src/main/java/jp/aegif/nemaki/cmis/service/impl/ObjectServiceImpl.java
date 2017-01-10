@@ -361,7 +361,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// Specific Exception
 		// //////////////////
 		exceptionService.constraintBaseTypeId(repositoryId, properties, BaseTypeId.CMIS_FOLDER);
-		exceptionService.constraintAllowedChildObjectTypeId(parentFolder, properties);
+		exceptionService.constraintAllowedChildObjectTypeId(repositoryId, parentFolder, properties);
 		exceptionService.constraintPropertyValue(repositoryId, td, properties,
 				DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
 		exceptionService.constraintCotrollablePolicies(td, policies, properties);
@@ -399,7 +399,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// Specific Exception
 		// //////////////////
 		exceptionService.constraintBaseTypeId(repositoryId, properties, BaseTypeId.CMIS_DOCUMENT);
-		exceptionService.constraintAllowedChildObjectTypeId(parentFolder, properties);
+		exceptionService.constraintAllowedChildObjectTypeId(repositoryId, parentFolder, properties);
 		exceptionService.constraintPropertyValue(repositoryId, td, properties,
 				DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
 		exceptionService.constraintContentStreamRequired(td, contentStream);
@@ -442,7 +442,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// Specific Exception
 		// //////////////////
 		exceptionService.constraintBaseTypeId(repositoryId, properties, BaseTypeId.CMIS_DOCUMENT);
-		exceptionService.constraintAllowedChildObjectTypeId(parentFolder, properties);
+		exceptionService.constraintAllowedChildObjectTypeId(repositoryId, parentFolder, properties);
 		exceptionService.constraintPropertyValue(repositoryId, td, properties,
 				DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
 		exceptionService.constraintControllableVersionable(td, versioningState, null);
