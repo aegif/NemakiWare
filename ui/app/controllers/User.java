@@ -147,7 +147,6 @@ public class User extends Controller {
 			}
 			return ok(favorites.render(repositoryId, user, list, session, profile));
 		}else{
-			//TODO
 			return internalServerError();
 		}
 	}

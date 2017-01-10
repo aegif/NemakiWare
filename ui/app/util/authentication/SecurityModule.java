@@ -62,13 +62,13 @@ public class SecurityModule extends AbstractModule{
 
         // callback
         final CallbackController callbackController = new CallbackController();
-        callbackController.setDefaultUrl(baseUri);
+        callbackController.setDefaultUrl(baseUri+ "repo/");
         callbackController.setMultiProfile(false);
         bind(CallbackController.class).toInstance(callbackController);
 
         // logout
         final ApplicationLogoutController logoutController = new ApplicationLogoutController();
-        logoutController.setDefaultUrl(baseUri + "?defaulturlafterlogout");
+        logoutController.setDefaultUrl(baseUri + "login");
         bind(ApplicationLogoutController.class).toInstance(logoutController);
 
 	}
