@@ -29,7 +29,7 @@ libraryDependencies ++= Seq(
   "jp.aegif.nemaki.plugin" % "nemakiware-action" % "0.0.5" changing(),
   "commons-collections" % "commons-collections" % "3.2.1",
   "commons-io" % "commons-io" % "2.5",
-  "org.webjars" %% "webjars-play" % "2.4.0",
+  "org.webjars" %% "webjars-play" % "2.4.0-2",
   "org.webjars" % "bootstrap" % "3.2.0",
   "org.webjars" % "jquery" % "1.11.1",
   "org.webjars" % "jquery-ui" % "1.11.1",
