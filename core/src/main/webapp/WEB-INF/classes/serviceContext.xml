@@ -642,13 +642,13 @@
             <ref bean="ContentService" />
         </property>
     </bean>
-
+<!-- 
     <bean id="groupResource" class="jp.aegif.nemaki.rest.GroupResource">
         <property name="principalService">
             <ref bean="PrincipalService" />
         </property>
     </bean>
-
+ -->
 	<bean id="groupItemResource" class="jp.aegif.nemaki.rest.GroupItemResource">
         <property name="contentService">
             <ref bean="ContentService" />
@@ -669,7 +669,7 @@
        		<ref bean="solrUtil" />
         </property>
     </bean>
-
+<!-- 
     <bean id="userResource" class="jp.aegif.nemaki.rest.UserResource">
         <property name="principalService">
             <ref bean="PrincipalService" />
@@ -681,6 +681,7 @@
             <ref bean="propertyManager" />
         </property>
     </bean>
+-->
 
     <bean id="userItemResource" class="jp.aegif.nemaki.rest.UserItemResource">
         <property name="contentService">
