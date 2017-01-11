@@ -45,7 +45,10 @@ public class SecurityModule extends AbstractModule{
 	    clientList.add(formClient);
 
 	    if (NemakiConfig.isEnableSamlSSO(configuration)){
-		    SAML2ClientConfiguration cfg = new SAML2ClientConfiguration("resource:samlKeystore.jks", "pac4j-demo-passwd", "pac4j-demo-passwd", "resource:idp-metadata.xml");
+
+	    	String metadataPath = NemakiConfig.getSamlIdPMetadataPath(configuration);
+
+		    SAML2ClientConfiguration cfg = new SAML2ClientConfiguration("resource:samlKeystore.jks", "pac4j-demo-passwd", "pac4j-demo-passwd", metadataPath);
 		    cfg.setMaximumAuthenticationLifetime(3600);
 		    cfg.setDestinationBindingType(SAMLConstants.SAML2_POST_BINDING_URI);
 		    cfg.setServiceProviderEntityId(baseUri);
