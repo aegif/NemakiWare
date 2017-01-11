@@ -29,7 +29,7 @@ libraryDependencies ++= Seq(
   "jp.aegif.nemaki.plugin" % "nemakiware-action" % "0.0.5" changing(),
   "commons-collections" % "commons-collections" % "3.2.1",
   "commons-io" % "commons-io" % "2.5",
-  "org.webjars" %% "webjars-play" % "2.4.0",
+  "org.webjars" %% "webjars-play" % "2.4.0-2",
   "org.webjars" % "bootstrap" % "3.2.0",
   "org.webjars" % "jquery" % "1.11.1",
   "org.webjars" % "jquery-ui" % "1.11.1",
@@ -53,11 +53,15 @@ Play2WarKeys.servletVersion := "3.1"
 
 Play2WarKeys.targetName := Option("ui")
 
+Play2WarKeys.explodedJar := true
+
 EclipseKeys.createSrc := EclipseCreateSrc.Default + EclipseCreateSrc.Resource
 
 // Compile the project before generating Eclipse files, so that generated .scala or .class files for views and routes are present
 EclipseKeys.preTasks := Seq(compile in Compile)
+
 // Java project. Don't expect Scala IDE
 EclipseKeys.projectFlavor := EclipseProjectFlavor.Java
+
   // Use .class files instead of generated .scala files for views and routes
 EclipseKeys.createSrc := EclipseCreateSrc.ValueSet(EclipseCreateSrc.ManagedClasses, EclipseCreateSrc.ManagedResources)
