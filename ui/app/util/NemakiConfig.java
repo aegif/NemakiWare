@@ -142,4 +142,8 @@ public class NemakiConfig {
 	public static String getRemoteUserIdKey(){
 		return NemakiConfig.getValue(PropertyKey.SSO_MAPPER_KEY_USERID);
 	}
+
+	public static String getSamlIdPMetadataPath(Configuration configuration) {
+		return NemakiConfig.getValue(configuration, PropertyKey.SSO_SAML_IDP_METADATA_PATH);
+	}
 }
