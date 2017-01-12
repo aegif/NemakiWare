@@ -191,6 +191,7 @@ public class Util {
 		// 作成時にはそのプロファイルである必要がある。いちど作ればキャッシュされるはず
 
 		if (profileRepositoryId != null && !repositoryId.equals(profileRepositoryId)) {
+			logger.error("Access repository mismatch [Profile]" + profileRepositoryId + " [AccessRepository]" + repositoryId);
 			throw new CmisUnauthorizedException();
 		}
 

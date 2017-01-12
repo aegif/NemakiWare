@@ -72,6 +72,13 @@ public class Application extends Controller {
 
 		return ok(views.html.login.render(repositoryId, formClient.getCallbackUrl() , message));
 	}
+	public Result login() {
+		return login(NemakiConfig.getDefualtRepositoryId());
+	}
+
+	public Result adminlogin() {
+		return adminlogin(NemakiConfig.getDefualtRepositoryId());
+	}
 
 	public Result login(String repositoryId) {
 		final PlayWebContext context = new PlayWebContext(ctx());
