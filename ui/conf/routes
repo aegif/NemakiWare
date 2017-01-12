@@ -20,9 +20,10 @@ GET		/error												controllers.Application.error()
 
 # Login
 GET		/samlLogin											controllers.Application.samlLogin()
-GET		/login												controllers.Application.login(repoId ?= "bedroom")
-GET		/repo/:repoId/adminlogin							controllers.Application.adminlogin(repoId)
+GET		/login												controllers.Application.login()
+GET		/adminlogin											controllers.Application.adminlogin()
 GET		/repo/:repoId/login									controllers.Application.login(repoId)
+GET		/repo/:repoId/adminlogin							controllers.Application.adminlogin(repoId)
 GET		/logout												@org.pac4j.play.ApplicationLogoutController.logout()
 GET		/repo/:repoId/logout								controllers.Application.logout(repoId)
 
