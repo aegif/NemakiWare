@@ -146,13 +146,8 @@ public class BulkCheckInResource extends ResourceBase {
 		for(int i = 0; i < propertyIds.size(); ++i){
 			String propertyName = propertyIds.get(i);
 			String propertyValue = propertyValues.get(i);
-			String propertyId = typeManager.getPropertyIdForQueryName(repositoryId, typeDef, propertyName);
+			PropertyType propertyType = typeDef.getPropertyDefinitions().get(propertyName).getPropertyType();
 			
-			NemakiPropertyDefinitionCore core = typeService.getPropertyDefinitionCoreByPropertyId(repositoryId, propertyId);
-			if(core == null){
-				continue;
-			}
-			PropertyType propertyType = core.getPropertyType();
 			if(propertyType.equals(PropertyType.STRING) || propertyType.equals(PropertyType.ID) ||propertyType.equals(PropertyType.URI) ||propertyType.equals(PropertyType.HTML)){
 				properties.addProperty(new PropertyStringImpl (propertyName,propertyValue));
 			}

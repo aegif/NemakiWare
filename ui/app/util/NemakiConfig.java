@@ -72,6 +72,7 @@ public class NemakiConfig {
 			}
 		}
 
+
 		return result;
 	}
 

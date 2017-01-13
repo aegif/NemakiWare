@@ -56,6 +56,7 @@ public class Application extends Controller {
 	}
 
 	public Result adminlogin(String repositoryId) {
+		if(StringUtils.isBlank(repositoryId)) repositoryId = NemakiConfig.getDefualtRepositoryId();
 		final PlayWebContext context = new PlayWebContext(ctx());
 
 		//ログイン画面に直接来た場合など、ログイン後のリダイレクト先の設定をしておかないとエラーになる
@@ -74,6 +75,7 @@ public class Application extends Controller {
 	}
 
 	public Result login(String repositoryId) {
+		if(StringUtils.isBlank(repositoryId)) repositoryId = NemakiConfig.getDefualtRepositoryId();
 		final PlayWebContext context = new PlayWebContext(ctx());
 
 		//ログイン画面に直接来た場合など、ログイン後のリダイレクト先の設定をしておかないとエラーになる
