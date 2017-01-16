@@ -56,15 +56,15 @@ public class Application extends Controller {
 	}
 
 	public Result adminlogin(String repositoryId) {
-		if(StringUtils.isBlank(repositoryId)) repositoryId = NemakiConfig.getDefualtRepositoryId();
 		final PlayWebContext context = new PlayWebContext(ctx());
+		// remove session
+		ctx().session().remove(Pac4jConstants.SESSION_ID);
 
-		//ログイン画面に直接来た場合など、ログイン後のリダイレクト先の設定をしておかないとエラーになる
-		final Object uri = context.getSessionAttribute(Pac4jConstants.REQUESTED_URL);
-		if (uri == null){
-			String redircetURL = routes.Node.index(repositoryId).absoluteURL(request());
-			context.setSessionAttribute(Pac4jConstants.REQUESTED_URL, redircetURL);
-		}
+		if(StringUtils.isBlank(repositoryId)) repositoryId = NemakiConfig.getDefualtRepositoryId();
+
+		// set or override redirect url
+		String redircetURL = routes.Node.index(repositoryId).absoluteURL(request());
+		context.setSessionAttribute(Pac4jConstants.REQUESTED_URL, redircetURL);
 
 		Clients clients = config.getClients();
 
@@ -115,7 +115,9 @@ public class Application extends Controller {
 		}
 	}
 	public Result logout(String repositoryId) {
-		ctx().session().clear();
+
+
+		ctx().session().remove(Pac4jConstants.SESSION_ID);
 
 		return ok(views.html.logout.render(repositoryId));
 	}
