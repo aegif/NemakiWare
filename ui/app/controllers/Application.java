@@ -114,12 +114,10 @@ public class Application extends Controller {
 			return notFound();
 		}
 	}
-	public Result logout(String repositoryId) {
-
-
+	public Result logout(String repositoryId, String message) {
 		ctx().session().remove(Pac4jConstants.SESSION_ID);
 
-		return ok(views.html.logout.render(repositoryId));
+		return ok(views.html.logout.render(repositoryId, message));
 	}
 
 	public Result error() {

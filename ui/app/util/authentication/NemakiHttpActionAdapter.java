@@ -18,6 +18,8 @@ import com.google.inject.Inject;
 
 import constant.Token;
 import controllers.routes;
+import play.Logger;
+import play.Logger.ALogger;
 import play.mvc.Result;
 import util.Util;
 
@@ -26,6 +28,8 @@ import static play.mvc.Results.*;
 import java.util.Optional;
 
 public class NemakiHttpActionAdapter extends DefaultHttpActionAdapter {
+	private static final ALogger logger = Logger.of(NemakiHttpActionAdapter.class);
+
 	@Inject
 	public Config config;
 
@@ -44,12 +48,18 @@ public class NemakiHttpActionAdapter extends DefaultHttpActionAdapter {
         } else if (code == HttpConstants.FORBIDDEN) {
             return forbidden("403 FORBIDDEN");
         } else {
+
         	//formClientの場合、NemakiAuthenticatorで認証した瞬間にProfileを作ることが出来るがSMALの場合はそういうタイミングがないため、ここで無理矢理コンバートしている。
     		final ProfileManager<CommonProfile> profileManager = new ProfileManager<>(context);
     		final Optional<CommonProfile> profile = profileManager.get(true);
     		CommonProfile commonProfile = profile.orElse(null);
     		if(commonProfile instanceof SAML2Profile){
-    			profileManager.save(true, NemakiProfile.ConvertSAML2ToNemakiProfile((SAML2Profile)commonProfile, repositoryId), false);
+    			try{
+    				profileManager.save(true, NemakiProfile.ConvertSAML2ToNemakiProfile((SAML2Profile)commonProfile, repositoryId), false);
+            	}catch(Exception ex){
+            		logger.error("SAML Profile convert error.", ex);
+                    return redirect(routes.Application.logout(repositoryId, "Invalid Login Status"));
+            	}
     		}
 
             return super.adapt(code, context);
