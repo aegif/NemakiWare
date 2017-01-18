@@ -31,7 +31,7 @@ public class NemakiProfile extends CommonProfile {
 			ArrayList list = (ArrayList) saml2Profile.getAttribute(userKey);
 			remoteUserId = (String) list.get(0);
 			profile.setUserId(remoteUserId);
-		}else{
+		} else {
 			throw new SAMLException("キー" + userKey + "の値を取得できません。IdPから正しくデータが渡ってきているかを確認して下さい。");
 		}
 

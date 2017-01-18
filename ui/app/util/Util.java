@@ -107,6 +107,7 @@ import play.Logger;
 import play.Logger.ALogger;
 import play.api.http.MediaRange;
 import play.data.DynamicForm;
+import play.data.Form;
 import play.libs.Json;
 import play.mvc.Http.MultipartFormData;
 import play.mvc.Http.MultipartFormData.FilePart;
@@ -139,16 +140,30 @@ public class Util {
 
 	public static NemakiProfile getProfile(play.mvc.Http.Context ctx) {
 		final PlayWebContext context = new PlayWebContext(ctx);
-		final ProfileManager<NemakiProfile> profileManager = new ProfileManager<>(context);
-		final Optional<NemakiProfile> profile = profileManager.get(true);
-		return profile.orElse(null);
+		final ProfileManager<CommonProfile> profileManager = new ProfileManager<>(context);
+		final Optional<CommonProfile> profile = profileManager.get(true);
+		final CommonProfile commonProfile = profile.orElse(null);
+		NemakiProfile nemakiProfile = null;
+		if (commonProfile instanceof SAML2Profile) {
+			nemakiProfile = NemakiProfile.ConvertSAML2ToNemakiProfile((SAML2Profile) commonProfile,
+					getRepositoryId(context));
+		} else if (commonProfile instanceof NemakiProfile) {
+			nemakiProfile = (NemakiProfile) commonProfile;
+		}
+		return nemakiProfile;
 	}
 
 	public static String getRepositoryId(WebContext context) {
-		Object o = context.getSessionAttribute(Token.LOGIN_REPOSITORY_ID);
-		if (o == null)
-			return NemakiConfig.getDefualtRepositoryId();
-		return (String) o;
+		String repoId = (String) context.getSessionAttribute(Token.LOGIN_REPOSITORY_ID);
+		if (StringUtils.isBlank(repoId)) {
+			String uri = context.getFullRequestURL();
+			repoId = extractRepositoryId(uri);
+			if (StringUtils.isBlank(repoId)) {
+				repoId = Form.form().bindFromRequest().get("repositoryId");
+			}
+			repoId = NemakiConfig.getDefualtRepositoryId();
+		}
+		return repoId;
 	}
 
 	public static String extractRepositoryId(String uri) {
@@ -158,7 +173,7 @@ public class Util {
 		if (m.find()) {
 			return m.group(1);
 		}
-		return NemakiConfig.getDefualtRepositoryId();
+		return null;
 	}
 
 	public static String getVersion(String repositoryId, play.mvc.Http.Context ctx) {
@@ -191,7 +206,8 @@ public class Util {
 		// 作成時にはそのプロファイルである必要がある。いちど作ればキャッシュされるはず
 
 		if (profileRepositoryId != null && !repositoryId.equals(profileRepositoryId)) {
-			logger.error("Access repository mismatch [Profile]" + profileRepositoryId + " [AccessRepository]" + repositoryId);
+			logger.error("Access repository mismatch [Profile]" + profileRepositoryId + " [AccessRepository]"
+					+ repositoryId);
 			throw new CmisUnauthorizedException();
 		}
 
@@ -566,7 +582,6 @@ public class Util {
 		return httpClient;
 	}
 
-
 	private static void setCreadentialToHeader(HttpClientBuilder builder, List<Header> headers, String user,
 			String password) {
 		// set credential
@@ -653,7 +668,6 @@ public class Util {
 		HttpPost request = new HttpPost(url);
 		HttpClient client = buildClient(request, ctx);
 
-
 		List<NameValuePair> list = new ArrayList<NameValuePair>();
 		if (MapUtils.isNotEmpty(params)) {
 			for (Entry<String, String> entry : params.entrySet()) {
@@ -675,7 +689,6 @@ public class Util {
 		// create client
 		HttpPut request = new HttpPut(url);
 		HttpClient client = buildClient(request, ctx);
-
 
 		List<NameValuePair> list = new ArrayList<NameValuePair>();
 		if (MapUtils.isNotEmpty(params)) {

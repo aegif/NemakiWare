@@ -35,6 +35,8 @@ import org.pac4j.core.client.RedirectAction;
 import org.pac4j.core.config.Config;
 import org.pac4j.core.context.Pac4jConstants;
 import org.pac4j.core.exception.HttpAction;
+import org.pac4j.core.profile.CommonProfile;
+import org.pac4j.core.profile.ProfileManager;
 import org.pac4j.play.PlayWebContext;
 import org.pac4j.play.java.Secure;
 import org.pac4j.saml.client.SAML2Client;
@@ -58,9 +60,10 @@ public class Application extends Controller {
 	public Result adminlogin(String repositoryId) {
 		final PlayWebContext context = new PlayWebContext(ctx());
 		// remove session
-		ctx().session().remove(Pac4jConstants.SESSION_ID);
+		ClearUserSession();
 
 		if(StringUtils.isBlank(repositoryId)) repositoryId = NemakiConfig.getDefualtRepositoryId();
+		context.setSessionAttribute(Token.LOGIN_REPOSITORY_ID, repositoryId);
 
 		// set or override redirect url
 		String redircetURL = routes.Node.index(repositoryId).absoluteURL(request());
@@ -86,7 +89,6 @@ public class Application extends Controller {
 		}
 
 		Clients clients = config.getClients();
-
 		List<Client> clientList = clients.findAllClients();
 		final SAML2Client samlClient = clientList.stream().filter(p -> p.getName().equals("SAML2Client")).map(p -> (SAML2Client)p).findFirst().orElse(null);
 		if( samlClient != null){
@@ -115,10 +117,18 @@ public class Application extends Controller {
 		}
 	}
 	public Result logout(String repositoryId, String message) {
-		ctx().session().remove(Pac4jConstants.SESSION_ID);
+		ClearUserSession();
 
 		return ok(views.html.logout.render(repositoryId, message));
 	}
+
+	private void ClearUserSession(){
+		final PlayWebContext context = new PlayWebContext(ctx());
+		final ProfileManager<CommonProfile> profileManager = new ProfileManager<>(context);
+		profileManager.logout();
+		ctx().session().clear();
+	}
+
 
 	public Result error() {
 		return ok(views.html.error.render());

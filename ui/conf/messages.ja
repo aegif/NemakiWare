@@ -7,6 +7,7 @@ view.auth.login.caption=ログインしてください
 view.auth.login.error=ログインに失敗しました
 view.auth.login.error.connection=リポジトリサービスとの通信に失敗しました
 view.auth.login.error.unknown=不明なエラーが発生しました
+view.auth.login.error.saml.mismatch=ログインステータスが不整合を起こしているため、再ログインが必要です。
 view.auth.account=アカウント
 view.auth.repostitory_id=リポジトリ
 view.auth.logout.caption=ログアウトしました
