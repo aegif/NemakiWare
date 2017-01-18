@@ -45,9 +45,7 @@ public class SecurityModule extends AbstractModule{
 	    clientList.add(formClient);
 
 	    if (NemakiConfig.isEnableSamlSSO(configuration)){
-
 	    	String metadataPath = NemakiConfig.getSamlIdPMetadataPath(configuration);
-
 		    SAML2ClientConfiguration cfg = new SAML2ClientConfiguration("resource:samlKeystore.jks", "pac4j-demo-passwd", "pac4j-demo-passwd", metadataPath);
 		    cfg.setMaximumAuthenticationLifetime(3600);
 		    cfg.setDestinationBindingType(SAMLConstants.SAML2_POST_BINDING_URI);
@@ -65,13 +63,13 @@ public class SecurityModule extends AbstractModule{
 
         // callback
         final CallbackController callbackController = new CallbackController();
-        callbackController.setDefaultUrl(baseUri+ "repo/");
+        callbackController.setDefaultUrl(baseUri + "login");
         callbackController.setMultiProfile(false);
         bind(CallbackController.class).toInstance(callbackController);
 
         // logout
         final ApplicationLogoutController logoutController = new ApplicationLogoutController();
-        logoutController.setDefaultUrl(baseUri + "login");
+        logoutController.setDefaultUrl(baseUri + "logout");
         bind(ApplicationLogoutController.class).toInstance(logoutController);
 
 	}

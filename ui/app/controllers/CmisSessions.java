@@ -3,6 +3,7 @@ package controllers;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.pac4j.core.profile.CommonProfile;
@@ -51,6 +52,8 @@ public class CmisSessions {
 		return cmisSession;
 	}
 
+
+
 	private static RepoSession getRepoSession(String repositoryId){
 		RepoSession repoSession = cmisSessions.get(repositoryId);
 		if(repoSession == null){
@@ -71,6 +74,14 @@ public class CmisSessions {
 			repoSession.put(userId, cmisSession);
 		}
 		return cmisSession;
+	}
+
+	public static void clear(play.mvc.Http.Context ctx){
+		Set<String> keySet = cmisSessions.keySet();
+		for(String key : keySet){
+			disconnect(key, ctx);
+		}
+		cmisSessions.clear();
 	}
 
 	public static void disconnect(String repositoryId, play.mvc.Http.Context ctx){
