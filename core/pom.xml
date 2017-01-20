@@ -17,11 +17,12 @@
 	</parent>
 
 	<properties>
+		<java-version>1.8</java-version>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<org.springframework.version>4.1.1.RELEASE</org.springframework.version>
 		<org.apache.chemistry.opencmis.version>1.0.0</org.apache.chemistry.opencmis.version>
 		<jersey.version>2.23.2</jersey.version>
 		<org.apache.chemistry.opencmis.version.14>0.14.0</org.apache.chemistry.opencmis.version.14>
-		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 	</properties>
 
 	<repositories>
@@ -399,14 +400,22 @@
 		<plugins>
 			<plugin>
 				<artifactId>maven-compiler-plugin</artifactId>
-				<version>3.3</version>
+				<version>3.6.0</version>
 				<configuration>
 					<encoding>UTF-8</encoding>
 					<source>1.8</source>
 					<target>1.8</target>
 				</configuration>
 			</plugin>
-
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-war-plugin</artifactId>
+				<version>3.0.0</version>
+				<configuration>
+					 <packagingExcludes>**/custom-nemakiware.properties</packagingExcludes>
+					 <packagingExcludes>**/custom-repository.yml</packagingExcludes>
+				</configuration>
+			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-surefire-plugin</artifactId>
