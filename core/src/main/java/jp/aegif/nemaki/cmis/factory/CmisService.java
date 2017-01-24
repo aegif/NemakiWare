@@ -72,7 +72,6 @@ import org.apache.commons.logging.LogFactory;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.support.GenericApplicationContext;
 
-import jp.aegif.nemaki.AppConfig;
 import jp.aegif.nemaki.cmis.service.AclService;
 import jp.aegif.nemaki.cmis.service.DiscoveryService;
 import jp.aegif.nemaki.cmis.service.NavigationService;
@@ -82,7 +81,6 @@ import jp.aegif.nemaki.cmis.service.RelationshipService;
 import jp.aegif.nemaki.cmis.service.RepositoryService;
 import jp.aegif.nemaki.cmis.service.VersioningService;
 import jp.aegif.nemaki.plugin.action.JavaBackedAction;
-import jp.aegif.nemaki.util.action.NemakiActionPlugin;
 
 /**
  * Nemaki CMIS service.
