@@ -628,15 +628,6 @@
         </property>
     </bean>
 
-    <bean id="actionResource" class="jp.aegif.nemaki.rest.ActionResource">
-        <property name="ContentService">
-            <ref bean="ContentService" />
-        </property>
-        <property name="CompileService">
-            <ref bean="CompileService" />
-        </property>
-    </bean>
-
     <bean id="archiveResource" class="jp.aegif.nemaki.rest.ArchiveResource">
         <property name="ContentService">
             <ref bean="ContentService" />

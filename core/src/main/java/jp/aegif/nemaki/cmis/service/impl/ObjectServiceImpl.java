@@ -73,7 +73,6 @@ import org.apache.commons.logging.LogFactory;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.support.GenericApplicationContext;
 
-import jp.aegif.nemaki.AppConfig;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
@@ -93,7 +92,6 @@ import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.plugin.action.JavaBackedAction;
 import jp.aegif.nemaki.util.DataUtil;
-import jp.aegif.nemaki.util.action.NemakiActionPlugin;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.DomainType;
 import jp.aegif.nemaki.common.NemakiObjectType;
