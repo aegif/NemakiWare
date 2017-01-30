@@ -193,12 +193,6 @@ public class UserItemResource extends ResourceBase {
 
 		// Create a user
 		if (status) {
-			// initialize mandatory but space-allowed parameters
-			if (StringUtils.isBlank(lastName))
-				lastName = "";
-			if (StringUtils.isBlank(email))
-				email = "";
-
 			// Generate a password hash
 			String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
 
@@ -206,6 +200,15 @@ public class UserItemResource extends ResourceBase {
 			final Folder usersFolder = getOrCreateSystemSubFolder(repositoryId, "users");
 
 			UserItem user = new UserItem(null, NemakiObjectType.nemakiUser, userId, name, passwordHash, false, usersFolder.getId());
+
+			Map<String, Object> map = new HashMap<>();
+			if (firstName != null) map.put("nemaki:firstName", firstName);
+			if (lastName != null) map.put("nemaki:lastName", lastName);
+			if (email != null) map.put("nemaki:email", email);
+			List<Property> properties = new ArrayList<>();
+			for(String key : map.keySet()) properties.add(new Property(key, map.get(key)));
+			user.setSubTypeProperties(properties);
+
 			setFirstSignature(httpRequest, user);
 
 			contentService.createUserItem(new SystemCallContext(repositoryId), repositoryId, user);

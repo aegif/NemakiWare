@@ -25,7 +25,7 @@ GET		/adminlogin											controllers.Application.adminlogin(repoId:String = nu
 GET		/repo/:repoId/login									controllers.Application.login(repoId:String)
 GET		/repo/:repoId/adminlogin							controllers.Application.adminlogin(repoId:String)
 GET		/logout												@org.pac4j.play.ApplicationLogoutController.logout()
-GET		/repo/:repoId/logout								controllers.Application.logout(repoId:String)
+GET		/repo/:repoId/logout								controllers.Application.logout(repoId:String, message:String ?= null)
 
 # Home page
 GET     /repo/:repoId/                           			controllers.Node.index(repoId:String)

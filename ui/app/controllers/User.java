@@ -223,7 +223,7 @@ public class User extends Controller {
     	JsonNode changeResult = Util.putJsonResponse(ctx(), getEndpoint(repositoryId) + "changePassword/" + id , changeParams);
 
     	if(isSuccess(changeResult)){
-    		return redirect(routes.Application.logout(repositoryId));
+    		return redirect(routes.Application.logout(repositoryId, "Password Changed."));
     	}else{
     		String errorCode = changeResult.get("error").get(0).get("user").asText();
     		return internalServerError(ErrorMessage.getMessage(errorCode));

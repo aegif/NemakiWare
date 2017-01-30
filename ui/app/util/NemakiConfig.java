@@ -120,6 +120,10 @@ public class NemakiConfig {
 		return baseUri.toString();
 	}
 
+	public static String getDefualtRepositoryId(Configuration configuration){
+		return NemakiConfig.getValue(configuration, PropertyKey.NEMAKI_DEFAULT_REPOSITRY_ID);
+	}
+
 	public static String getDefualtRepositoryId(){
 		return NemakiConfig.getValue(PropertyKey.NEMAKI_DEFAULT_REPOSITRY_ID);
 	}

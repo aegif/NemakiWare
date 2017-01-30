@@ -1,6 +1,6 @@
 @*{<meta charset="UTF-8" />}*@
 
-@(repositoryId:String)
+@(repositoryId:String)(message:String=null)
 @import helper._
 
 <html>
@@ -12,6 +12,9 @@
 		    		<div class="panel panel-default">
 						<div class="panel-heading">
 							<h3 class="panel-title">@Messages("view.auth.logout.caption")</h3>
+							@if(message != null){
+								<div class="error">@message</div>
+							}
 							<div><a href="@routes.Application.login(repositoryId)" />@Messages("view.auth.logout.link-to-login")</a></div>
 					 	</div>
 					</div>

@@ -117,7 +117,7 @@ public class Node extends Controller {
 		NemakiProfile profile = Util.getProfile(ctx());
 		Session session = getCmisSession(repositoryId);
 
-		Document target = (Document) session.getObject(objectId);		
+		Document target = (Document) session.getObject(objectId);
 		Folder parent = (Folder)target.getParents().get(0);
 		Document latest = target.getObjectOfLatestVersion(false);
 
@@ -197,11 +197,11 @@ public class Node extends Controller {
 
 	@Secure
 	public Result search(String repositoryId, String term) {
-		
+
 		if ( term.startsWith("[cmis]")) {
 			return this.searchFreeQuery(repositoryId, term);
 		}
-		
+
 		NemakiProfile profile = Util.getProfile(ctx());
 		Session session = getCmisSession(repositoryId);
 
@@ -227,19 +227,19 @@ public class Node extends Controller {
 
 		return ok(search.render(repositoryId, term, list, session, profile));
 	}
-	
+
 	private Result searchFreeQuery(String repositoryId, String term) {
-		
+
 		NemakiProfile profile = Util.getProfile(ctx());
 		Session session = getCmisSession(repositoryId);
 		OperationContext ctxt = session.getDefaultContext();
-		
+
 		String pureQuery = term.replace("[cmis]", "");
-		
+
 		ItemIterable<QueryResult> results = session.query(pureQuery, false, ctxt);
 		Iterator<QueryResult> resultItr = results.iterator();
 		List<QueryResult> qrList = new ArrayList<QueryResult>();
-		
+
 		while ( resultItr.hasNext() ) {
 			qrList.add(resultItr.next());
 		}

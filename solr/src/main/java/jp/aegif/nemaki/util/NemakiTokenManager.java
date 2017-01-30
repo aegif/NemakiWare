@@ -26,12 +26,13 @@ public class NemakiTokenManager {
 
 	public NemakiTokenManager() {
 		tokenMap = new HashMap<String, Token>();
-		
+
 		restEndpoint = getRestEndpoint();
 	}
 
 	public String register(String repositoryId, String userName, String password) {
 		String apiResult = null;
+		String restUri = getRestUri(repositoryId);
 		try {
 			Client c = Client.create();
 			c.setConnectTimeout(3 * 1000);
@@ -39,11 +40,11 @@ public class NemakiTokenManager {
 			c.setFollowRedirects(Boolean.TRUE);
 			c.addFilter(new HTTPBasicAuthFilter(userName, password));
 
-			apiResult = c.resource(getRestUri(repositoryId)).path(userName + "/register")
+			apiResult = c.resource(restUri).path(userName + "/register")
 					.queryParam("app", "solr")
 					.accept(MediaType.APPLICATION_JSON_TYPE).get(String.class);
 		} catch (Exception e) {
-			logger.error("Cannot connect to Core REST API", e);
+			logger.error("Cannot connect to Core REST API -> " + restUri, e);
 		}
 
 		try {
@@ -60,7 +61,7 @@ public class NemakiTokenManager {
 			}
 
 		} catch (Exception e) {
-			logger.error("Cannot connect to Core REST API", e);
+			logger.error("Cannot export token from REST API response", e);
 		}
 
 		return null;
@@ -94,7 +95,7 @@ public class NemakiTokenManager {
 	private String getRestUri(String repositoryId){
 		return restEndpoint + "/repo/" + repositoryId + "/authtoken/";
 	}
-	
+
 	private String getRestEndpoint() {
 		PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
 		String protocol = pm.readValue(PropertyKey.CMIS_SERVER_PROTOCOL);

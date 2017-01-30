@@ -12,3 +12,5 @@ target
 action-sample/dependency-reduced-pom.xml
 setup/installer/NemakiInstaller*
 core/catalina.home_IS_UNDEFINED/
+core/src/main/webapp/WEB-INF/classes/custom-nemakiware.properties
+core/src/main/webapp/WEB-INF/classes/custom-repositories.yml
