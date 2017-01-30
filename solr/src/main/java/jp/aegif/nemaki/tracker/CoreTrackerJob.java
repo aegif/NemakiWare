@@ -30,9 +30,11 @@ import org.quartz.Job;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
 
+import com.ibm.icu.text.MessageFormat;
+
 /**
  * Job class of index tracking
- * 
+ *
  * @author linzhixing
  *
  */
@@ -48,10 +50,14 @@ public class CoreTrackerJob implements Job {
 	public void execute(JobExecutionContext jec) throws JobExecutionException {
 		CoreTracker coreTracker = (CoreTracker) jec.getJobDetail()
 				.getJobDataMap().get("TRACKER");
-		
+
 		RepositorySettings settings = CmisSessionFactory.getRepositorySettings();
 		for(String repositoryId : settings.getIds()){
-			coreTracker.index(Constant.MODE_DELTA, repositoryId);
+			try{
+				coreTracker.index(Constant.MODE_DELTA, repositoryId);
+			}catch(Exception ex){
+				logger.error(MessageFormat.format("Indexing error repository={0}",repositoryId), ex);
+			}
 		}
 	}
 }
