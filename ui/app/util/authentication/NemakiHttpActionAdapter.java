@@ -12,48 +12,62 @@ import org.pac4j.core.profile.ProfileManager;
 import org.pac4j.http.client.indirect.FormClient;
 import org.pac4j.play.PlayWebContext;
 import org.pac4j.play.http.DefaultHttpActionAdapter;
+import org.pac4j.saml.client.SAML2Client;
 import org.pac4j.saml.profile.SAML2Profile;
 
 import com.google.inject.Inject;
 
 import constant.Token;
 import controllers.routes;
+import play.Logger;
+import play.Logger.ALogger;
+import play.i18n.Messages;
 import play.mvc.Result;
 import util.Util;
 
 import static play.mvc.Results.*;
 
+import java.util.List;
 import java.util.Optional;
 
 public class NemakiHttpActionAdapter extends DefaultHttpActionAdapter {
+	private static final ALogger logger = Logger.of(NemakiHttpActionAdapter.class);
+
 	@Inject
 	public Config config;
 
-    @Override
-    public Result adapt(int code, PlayWebContext context) {
-    	String uri = context.getFullRequestURL();
-    	String repositoryId = (String)context.getSessionAttribute(Token.LOGIN_REPOSITORY_ID);
-    	if (StringUtils.isBlank(repositoryId)){
-    		repositoryId = Util.extractRepositoryId(uri);
-    		context.setSessionAttribute(Token.LOGIN_REPOSITORY_ID, repositoryId);
-    	}
+	@Override
+	public Result adapt(int code, PlayWebContext context) {
+		String uri = context.getFullRequestURL();
+		String repositoryId = (String) context.getSessionAttribute(Token.LOGIN_REPOSITORY_ID);
+		if (StringUtils.isBlank(repositoryId)) {
+			repositoryId = Util.getRepositoryId(context);
+			context.setSessionAttribute(Token.LOGIN_REPOSITORY_ID, repositoryId);
+		}
 
-        if (code == HttpConstants.UNAUTHORIZED) {
-            context.setSessionAttribute(Pac4jConstants.REQUESTED_URL, uri);
-            return  redirect(routes.Application.login(repositoryId));
-        } else if (code == HttpConstants.FORBIDDEN) {
-            return forbidden("403 FORBIDDEN");
-        } else {
-        	//formClientの場合、NemakiAuthenticatorで認証した瞬間にProfileを作ることが出来るがSMALの場合はそういうタイミングがないため、ここで無理矢理コンバートしている。
-    		final ProfileManager<CommonProfile> profileManager = new ProfileManager<>(context);
-    		final Optional<CommonProfile> profile = profileManager.get(true);
-    		CommonProfile commonProfile = profile.orElse(null);
-    		if(commonProfile instanceof SAML2Profile){
-    			profileManager.save(true, NemakiProfile.ConvertSAML2ToNemakiProfile((SAML2Profile)commonProfile, repositoryId), false);
-    		}
+		if (code == HttpConstants.UNAUTHORIZED) {
+			context.setSessionAttribute(Pac4jConstants.REQUESTED_URL, uri);
+			return redirect(routes.Application.login(repositoryId));
+		} else if (code == HttpConstants.FORBIDDEN) {
+			return forbidden("403 FORBIDDEN");
+		} else {
+			// formClientの場合、NemakiAuthenticatorで認証した瞬間にProfileを作ることが出来るがSMALの場合はそういうタイミングがないため、ここで無理矢理コンバートしている。
+			final ProfileManager<CommonProfile> profileManager = new ProfileManager<>(context);
+			final Optional<CommonProfile> profile = profileManager.get(true);
+			CommonProfile commonProfile = profile.orElse(null);
+			if (commonProfile instanceof SAML2Profile) {
+				try {
+					NemakiProfile nemakiProfile = NemakiProfile.ConvertSAML2ToNemakiProfile((SAML2Profile) commonProfile, repositoryId);
+					profileManager.save(true, nemakiProfile ,false);
+				} catch (Exception ex) {
+					String message = Messages.get("view.auth.login.error.saml.mismatch");
+					logger.error(message, ex);
+					return redirect(routes.Application.logout(repositoryId, message));
+				}
+			}
+		}
+		return super.adapt(code, context);
 
-            return super.adapt(code, context);
-        }
-    }
+	}
 
 }

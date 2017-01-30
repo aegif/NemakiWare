@@ -163,17 +163,18 @@ public class GroupItemResource extends ResourceBase{
 		//Validation
 		status = validateNewGroup(repositoryId, status, errMsg, groupId, name);
 
-		//Edit group info
-		JSONArray _users = parseJsonArray(users);
-		JSONArray _groups = parseJsonArray(groups);
-		GroupItem group = new GroupItem(groupId, NemakiObjectType.nemakiGroup, name, _users, _groups);
-		final Folder groupsFolder = getOrCreateSystemSubFolder(repositoryId, "groups");
-		group.setParentId(groupsFolder.getId());
-		setFirstSignature(httpRequest, group);
-
 		//Create a group
 		if(status){
 			try{
+				//Edit group info
+				JSONArray _users = parseJsonArray(users);
+				JSONArray _groups = parseJsonArray(groups);
+
+				GroupItem group = new GroupItem(groupId, NemakiObjectType.nemakiGroup, name, _users, _groups);
+				final Folder groupsFolder = getOrCreateSystemSubFolder(repositoryId, "groups");
+				group.setParentId(groupsFolder.getId());
+				setFirstSignature(httpRequest, group);
+
 				contentService.createGroupItem(new SystemCallContext(repositoryId), repositoryId, group);
 			}catch(Exception ex){
 				ex.printStackTrace();
@@ -499,6 +500,7 @@ public class GroupItemResource extends ResourceBase{
 			status = false;
 			addErrMsg(errMsg, ITEM_GROUPID, ErrorCode.ERR_MANDATORY);
 		}
+
 		//groupID uniqueness
 		GroupItem group = contentService.getGroupItemById(repositoryId, groupId);
 		if(group != null){
@@ -518,6 +520,11 @@ public class GroupItemResource extends ResourceBase{
 		if(StringUtils.isBlank(name)){
 			status = false;
 			addErrMsg(errMsg, ITEM_GROUPNAME, ErrorCode.ERR_MANDATORY);
+		}
+
+		if(StringUtils.isBlank(groupId)){
+			status = false;
+			addErrMsg(errMsg, ITEM_GROUPID, ErrorCode.ERR_MANDATORY);
 		}
 
 		return status;
