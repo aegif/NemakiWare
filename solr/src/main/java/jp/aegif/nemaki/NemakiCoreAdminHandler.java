@@ -129,7 +129,7 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 				scheduler.start();
 				scheduler.scheduleJob(job, trigger);
 			} catch (SchedulerException e) {
-				e.printStackTrace();
+				logger.error("Start quartz scheduler error:", e);
 			}
 		}
 	}
@@ -159,27 +159,26 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 		try {
 			if(scheduler != null) scheduler.standby();
 		} catch (SchedulerException e) {
-			e.printStackTrace();
+			logger.error("Stop cron when executing action error:", e);
 		}
-		
+
 		// Action
 		doAction(rsp, tracker, params);
-		
+
 		// Restart cron
 		try {
 			if(scheduler != null) scheduler.start();
 		} catch (SchedulerException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+			logger.error("Restart cron error:", e);
 		}
-		
-		
+
+
 	}
 
 	private void doAction(SolrQueryResponse rsp, CoreTracker tracker, SolrParams params){
 		String action = params.get(CoreAdminParams.ACTION);
 		String repositoryId = params.get("repositoryId");
-		
+
 		if (action.equalsIgnoreCase("INDEX")) {
 			index(rsp, tracker, params, repositoryId);
 		} else if (action.equalsIgnoreCase("INIT")) {
@@ -188,14 +187,14 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 			changePassword(rsp, tracker, repositoryId, params);
 		}
 	}
-	
+
 	private void index(SolrQueryResponse rsp, CoreTracker tracker, SolrParams params, String repositoryId){
 		// Get tracking mode: FULL or DELTA
 		String tracking = params.get("tracking"); // tracking mode
 		if (tracking == null || !tracking.equals(Constant.MODE_FULL)) {
 			tracking = Constant.MODE_DELTA; // default to DELTA
 		}
-		
+
 		// Action=INDEX: track documents(by FULL or DELTA)
 		if(tracking.equals(Constant.MODE_FULL)){
 			// Init
@@ -205,49 +204,49 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 				tracker.initCore(repositoryId);
 			}
 		}
-		
+
 		// Index
 		if(StringUtils.isBlank(repositoryId)){
 			tracker.index(tracking);
 		}else{
 			tracker.index(tracking, repositoryId);
 		}
-		
+
 		// TODO More info
 		rsp.add("Result", "Successfully tracked!");
 	}
-	
+
 	private void init(SolrQueryResponse rsp, CoreTracker tracker, String repositoryId){
 		// Action=INIT: initialize core
-		
+
 		if(StringUtils.isBlank(repositoryId)){
 			tracker.initCore();
 		}else{
 			tracker.initCore(repositoryId);
 		}
-		
+
 		rsp.add("Result", "Successfully initialized!");
 	}
-	
+
 	private void changePassword(SolrQueryResponse rsp, CoreTracker tracker, String repositoryId, SolrParams params){
 		//Validation
 		if(StringUtils.isEmpty(repositoryId)){
 			rsp.setException(new Exception("repositoryId is not set."));
 			return;
 		}
-		
+
 		String password = params.get("password");
 		if(StringUtils.isEmpty(password)){
 			rsp.setException(new Exception("New password is not set."));
 			return;
 		}
-		
+
 		String currentPassword = params.get("currentPassword");
 		if(StringUtils.isEmpty(password)){
 			rsp.setException(new Exception("Current password is not set."));
 			return;
 		}
-		
+
 		//Execute
 		RepositorySettings settings = CmisSessionFactory.getRepositorySettings();
 		RepositorySetting setting = settings.get(repositoryId);
@@ -261,11 +260,11 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 		}
 		setting.setPassword(password);
 		CmisSessionFactory.modifyRepositorySettings(settings);
-		
+
 		rsp.add("Result", "Successfully password changed!");
-		
+
 	}
-	
+
 	/**
 	 * @return the trackers
 	 */
