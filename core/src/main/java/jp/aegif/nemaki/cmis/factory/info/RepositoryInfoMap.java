@@ -113,7 +113,7 @@ public class RepositoryInfoMap {
 
 	private void modifyInfo(Map<String, String> setting, RepositoryInfo info){
 		for(String keyR : setting.keySet()){
-			String valR = String.valueOf(setting.get(key));
+			String valR = String.valueOf(setting.get(keyR));
 
 			//trim spaces
 			String key = keyR.trim();
