@@ -104,7 +104,7 @@ public class NemakiConfig {
 		if(host == null){
 			host = NemakiConfig.getValue(configuration, PropertyKey.PLAY_SERVER_HTTP_ADDRESS);
 			if(host == null){
-				host = "localhost";
+				host = "127.0.0.1";
 			}
 		}
 
@@ -112,6 +112,7 @@ public class NemakiConfig {
 		if(port == null){
 			port  = NemakiConfig.getValue(configuration, PropertyKey.PLAY_SERVER_HTTP_PORT);
 		}
+
 		String ctxPath = NemakiConfig.getValue(configuration, PropertyKey.PLAY_HTTP_CONTEXT);
 		if(ctxPath == null){
 			ctxPath = "";

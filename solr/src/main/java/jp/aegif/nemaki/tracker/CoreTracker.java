@@ -62,6 +62,8 @@ import org.apache.solr.common.SolrInputDocument;
 import org.apache.solr.core.CloseHook;
 import org.apache.solr.core.SolrCore;
 
+import com.ibm.icu.text.MessageFormat;
+
 /**
  * Index tracking class
  *
@@ -153,7 +155,11 @@ public class CoreTracker extends CloseHook {
 	public void index(String trackingType) {
 		RepositorySettings settings = CmisSessionFactory.getRepositorySettings();
 		for (String repositoryId : settings.getIds()) {
-			index(trackingType, repositoryId); // TODO multi-threding
+			try{
+				index(trackingType, repositoryId); // TODO multi-threding
+			}catch(Exception ex){
+				logger.error(MessageFormat.format("Indexing error repository={0}",repositoryId), ex);
+			}
 		}
 	}
 
@@ -242,20 +248,18 @@ public class CoreTracker extends CloseHook {
 		try {
 			resp = tokenServer.query(solrQuery);
 		} catch (SolrServerException e) {
-			e.printStackTrace();
+			logger.error(MessageFormat.format("Read latest ChangeToken query failed : {0} ",solrQuery), e);
 		}
 
 		String latestChangeToken = "";
 		if (resp != null && resp.getResults() != null && resp.getResults().getNumFound() != 0) {
 			SolrDocument doc = resp.getResults().get(0);
 			latestChangeToken = (String) doc.get(Constant.FIELD_TOKEN);
-
 		} else {
 			logger.info("No latest change token found for repository: " + repositoryId);
 			logger.info("Set blank latest change token for repository: " + repositoryId);
 			storeLatestChangeToken("", repositoryId);
 		}
-
 		return latestChangeToken;
 	}
 

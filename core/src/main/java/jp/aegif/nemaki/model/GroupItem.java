@@ -17,12 +17,12 @@ public class GroupItem extends Item{
 		setAcl(new Acl());
 	}
 
-	public GroupItem(String name, String objectType, String groupId, List<String>users, List<String>groups){
+	public GroupItem(String groupId, String objectType, String name, List<String>users, List<String>groups){
 		this();
 		setName(name);
 		setObjectType(objectType);
 		setGroupId(groupId);
-		
+
 		List<Property> subTypeProperties = new ArrayList<>();
 		subTypeProperties.add(new Property("nemaki:users", users));
 		subTypeProperties.add(new Property("nemaki:groups", groups));
@@ -41,7 +41,7 @@ public class GroupItem extends Item{
 			e.printStackTrace();
 		}
 	}
-	
+
 	public String getGroupId() {
 		return groupId;
 	}
@@ -65,7 +65,7 @@ public class GroupItem extends Item{
 		}
 		return new ArrayList<>();
 	}
-	
+
 	public void setUsers(List<String> userIds) {
 		Property users = getSubTypeProperty("nemaki:users");
 		if(users != null && users.getValue() != null && users.getValue() instanceof List){
@@ -79,7 +79,7 @@ public class GroupItem extends Item{
 			groups.setValue(groupIds);
 		}
 	}
-	
+
 	private Property getSubTypeProperty(String key){
 		List<Property> properties = getSubTypeProperties();
 		Map<String, Property> map = new HashMap<>();
