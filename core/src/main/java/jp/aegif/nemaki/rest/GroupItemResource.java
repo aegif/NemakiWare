@@ -25,6 +25,8 @@ import jp.aegif.nemaki.common.ErrorCode;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.Consumes;
@@ -151,8 +153,8 @@ public class GroupItemResource extends ResourceBase{
 	public String create(@PathParam("repositoryId") String repositoryId,
 						 @PathParam("id") String groupId,
 						 @FormParam(FORM_GROUPNAME) String name,
-						 @FormParam("users") String users,
-						 @FormParam("groups") String groups,
+						 @FormParam(FORM_MEMBER_USERS) String users,
+						 @FormParam(FORM_MEMBER_GROUPS) String groups,
 						 @Context HttpServletRequest httpRequest
 						 ){
 
@@ -167,10 +169,10 @@ public class GroupItemResource extends ResourceBase{
 		if(status){
 			try{
 				//Edit group info
-				JSONArray _users = parseJsonArray(users);
-				JSONArray _groups = parseJsonArray(groups);
+				JSONArray _users = users == null ? new JSONArray() : parseJsonArray(users);
+				JSONArray _groups = groups == null ? new JSONArray() :  parseJsonArray(groups);
 
-				GroupItem group = new GroupItem(groupId, NemakiObjectType.nemakiGroup, name, _users, _groups);
+				GroupItem group = new GroupItem(null, NemakiObjectType.nemakiGroup, groupId,  name, _users, _groups);
 				final Folder groupsFolder = getOrCreateSystemSubFolder(repositoryId, "groups");
 				group.setParentId(groupsFolder.getId());
 				setFirstSignature(httpRequest, group);
@@ -216,8 +218,8 @@ public class GroupItemResource extends ResourceBase{
 	public String update(@PathParam("repositoryId") String repositoryId,
 						 @PathParam("id") String groupId,
 						 @FormParam(FORM_GROUPNAME) String name,
-						 @FormParam("users") String users,
-						 @FormParam("groups") String groups,
+						 @FormParam(FORM_MEMBER_USERS) String users,
+						 @FormParam(FORM_MEMBER_GROUPS) String groups,
 						 @Context HttpServletRequest httpRequest){
 
 		boolean status = true;
@@ -226,6 +228,7 @@ public class GroupItemResource extends ResourceBase{
 
 		//Existing group
 		GroupItem group = contentService.getGroupItemById(repositoryId, groupId);
+		if (group == null) status = false;
 
 		//Validation
 		status = validateGroup(status, errMsg, groupId, name);
@@ -234,9 +237,10 @@ public class GroupItemResource extends ResourceBase{
 		if(status){
 			//Edit group info
 			//if a parameter is not input, it won't be modified.
+			group.setGroupId(groupId);
 			group.setName(name);
-			group.setUsers(parseJsonArray(users));
-			group.setGroups(parseJsonArray(groups));
+			group.setUsers(users == null ? new JSONArray() :  parseJsonArray(users));
+			group.setGroups(groups  == null ? new JSONArray() : parseJsonArray(groups));
 			setModifiedSignature(httpRequest, group);
 
 			try{
@@ -302,31 +306,11 @@ public class GroupItemResource extends ResourceBase{
 			addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_NOTFOUND);
 		}
 
-		//Parse JSON string from input parameter
-		JSONArray usersAry = new JSONArray();
-		if(users != null){
-			try{
-				usersAry = (JSONArray)JSONValue.parseWithException(users);	//JSON parse validation
-			}catch(Exception ex){
-				ex.printStackTrace();
-				status = false;
-				addErrMsg(errMsg, ITEM_MEMBER_USERS, ErrorCode.ERR_PARSEJSON);
-			}
-		}
-
-		JSONArray groupsAry = new JSONArray();
-		if(groups != null){
-			try{
-				groupsAry = (JSONArray)JSONValue.parseWithException(groups); //JSON parse validation
-			}catch(Exception ex){
-				ex.printStackTrace();
-				status = false;
-				addErrMsg(errMsg, ITEM_MEMBER_GROUPS, ErrorCode.ERR_PARSEJSON);
-			}
-		}
-
 		//Edit members info of the group
 		if(status){
+			JSONArray usersAry = users == null ? new JSONArray() :  parseJsonArray(users);
+			JSONArray groupsAry = groups == null ? new JSONArray() :  parseJsonArray(groups);
+
 			//Group info
 			setModifiedSignature(httpRequest, group);
 
@@ -385,22 +369,20 @@ public class GroupItemResource extends ResourceBase{
 	/**
 	 * edit group's members(users)
 	 * @param repositoryId TODO
-	 * @param usersAry
+	 * @param targetUserIds
 	 * @param errMsg
 	 * @param apiType
 	 * @param group
 	 * @return
 	 */
-	private List<String> editUserMembers(String repositoryId, JSONArray usersAry, JSONArray errMsg, String apiType, GroupItem group){
+	private List<String> editUserMembers(String repositoryId, JSONArray targetUserIds, JSONArray errMsg, String apiType, GroupItem group){
 		List<String> usersList = new ArrayList<String>();
-
 		List<String> ul = group.getUsers();
 		if(ul != null) usersList = ul;
 
-		for(final Object obj : usersAry){
+		for (int i = 0; i < targetUserIds.size(); i++) {
+			String userId = targetUserIds.get(i).toString();
 			boolean notSkip = true;
-			JSONObject objJSON = (JSONObject)obj;
-			String userId = (String)objJSON.get(FORM_ID);
 
 			//check only when "add" API
 			if(apiType.equals(API_ADD)){
@@ -436,13 +418,13 @@ public class GroupItemResource extends ResourceBase{
 	/**
 	 * edit group's members(groups)
 	 * @param repositoryId TODO
-	 * @param groupsAry
+	 * @param targetGroupIds
 	 * @param errMsg
 	 * @param apiType
 	 * @param group
 	 * @return
 	 */
-	private List<String>editGroupMembers(String repositoryId, JSONArray groupsAry, JSONArray errMsg, String apiType, GroupItem group){
+	private List<String>editGroupMembers(String repositoryId, JSONArray targetGroupIds, JSONArray errMsg, String apiType, GroupItem group){
 		//check only when "add" API
 		List<String>groupsList = new ArrayList<String>();
 
@@ -455,9 +437,8 @@ public class GroupItemResource extends ResourceBase{
 			allGroupsStringList.add(g.getId());
 		}
 
-		for(final Object obj : groupsAry){
-			JSONObject objJSON = (JSONObject)obj;
-			String groupId = (String)objJSON.get(FORM_ID);
+		for (int i = 0; i < targetGroupIds.size(); i++) {
+			String groupId = targetGroupIds.get(i).toString();
 			boolean notSkip = true;
 
 			//Existance check

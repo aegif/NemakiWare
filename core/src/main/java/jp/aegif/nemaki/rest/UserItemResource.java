@@ -342,11 +342,14 @@ public class UserItemResource extends ResourceBase {
 
 		// Existing user
 		UserItem user = contentService.getUserItemById(repositoryId, userId);
+		if(user == null){
+			status = false;
+			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTFOUND);
+		}
+
 
 		// Validation
 		status = checkAuthorityForUser(status, errMsg, httpRequest, userId, repositoryId);
-		// status = validateUser(status, errMsg, userId, name, firstName,
-		// lastName);
 
 		// Edit & Update
 		if (status) {
