@@ -600,16 +600,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public List<UserItem> getUserItems(String repositoryId){
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("userItemsById");
 		List<CouchUserItem> couchUserItems = connectorPool.get(repositoryId).queryView(query, CouchUserItem.class);
+		List<UserItem> list = new ArrayList<>();
 		if (!CollectionUtils.isEmpty(couchUserItems)) {
-			List<UserItem> list = new ArrayList<>();
 			for(CouchUserItem couchUserItem : couchUserItems){
 				list.add(couchUserItem.convert());
 			}
-
-			return list;
-		} else {
-			return null;
 		}
+		return list;
 	}
 
 	@Override
@@ -638,16 +635,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public List<GroupItem> getGroupItems(String repositoryId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("groupItemsById");
 		List<CouchGroupItem> couchGroupItems = connectorPool.get(repositoryId).queryView(query, CouchGroupItem.class);
+		List<GroupItem> list = new ArrayList<>();
 		if (!CollectionUtils.isEmpty(couchGroupItems)) {
-			List<GroupItem> list = new ArrayList<>();
 			for(CouchGroupItem couchGroupItem : couchGroupItems){
 				list.add(couchGroupItem.convert());
 			}
-
-			return list;
-		} else {
-			return null;
 		}
+		return list;
 	}
 
 	@Override
