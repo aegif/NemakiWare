@@ -60,19 +60,10 @@ public class User extends Controller {
     		Iterator<JsonNode>itr = users.elements();
         	while(itr.hasNext()){
         		JsonNode node = itr.next();
-
-        		model.User user = new model.User();
-        		user.id = node.get("userId").asText();
-        		user.name = node.get("userName").asText();
-        		user.firstName = node.get("firstName").asText();
-        		user.lastName = node.get("lastName").asText();
-        		user.email = node.get("email").asText();
-        		user.isAdmin = node.get("isAdmin").asBoolean();
-
+        		model.User user = new model.User(node);
         		list.add(user);
         	}
     	}
-
 
     	//render
     	if(Util.dataTypeIsHtml(request().acceptedTypes())){

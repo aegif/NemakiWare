@@ -36,6 +36,12 @@ public class Patch_20161120 extends AbstractNemakiPatch{
 	protected void applyPerRepositoryPatch(String repositoryId) {
 		addRelationship(repositoryId, NemakiObjectType.nemakiParentChildRelationship);
 		addRelationship(repositoryId, NemakiObjectType.nemakiBidirectionalRelationship);
+
+		// New view is userItemsById and groupItemById, old view delete.
+		patchUtil.deleteView(repositoryId, "users");
+		patchUtil.deleteView(repositoryId, "usersById");
+		patchUtil.deleteView(repositoryId, "groups");
+		patchUtil.deleteView(repositoryId, "groupsById");
 	}
 
 	private void addRelationship(String repositoryId, String relationshipName){

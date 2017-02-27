@@ -78,6 +78,18 @@ public class PatchUtil {
 		}
 	}
 
+	protected void deleteView(String repositoryId, String viewName){
+		CouchDbConnector connector = connectorPool.get(repositoryId);
+		StdDesignDocumentFactory factory = new StdDesignDocumentFactory();
+		DesignDocument designDoc = factory.getFromDatabase(connector, "_design/_repo");
+
+		if(designDoc.containsView(viewName)){
+			designDoc.removeView(viewName);
+			connector.update(designDoc);
+		}
+	}
+
+
 	protected void addSimpleProperty(Map<String, PropertyDefinition<?>> props, String id, Cardinality cardinality, Updatability updatability, boolean required, boolean orderable){
 		PropertyStringDefinitionImpl pdf = new PropertyStringDefinitionImpl();
 		pdf.setId(id);
