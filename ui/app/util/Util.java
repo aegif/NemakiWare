@@ -12,6 +12,7 @@ import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.text.MessageFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -1215,7 +1216,7 @@ public class Util {
 			String str = cal.toString();
 			return cal;
 		} catch (ParseException e) {
-			e.printStackTrace();
+			logger.info(MessageFormat.format("DateFormatError Pattern:{0} Text:{1}", format, date));
 		}
 		return null;
 	}
@@ -1224,6 +1225,12 @@ public class Util {
 		GregorianCalendar result = convertStringToCalendar(date, "EEE MMM dd HH:mm:ss Z yyyy", Locale.ENGLISH);
 		if (result == null) {
 			result = convertStringToCalendar(date, "yyyy-MM-dd HH:mm:ss", Locale.JAPAN);
+		}
+		if (result == null) {
+			result = convertStringToCalendar(date, "yyyy:MM:dd HH:mm:ss z", Locale.JAPAN);
+		}
+		if (result == null) {
+			result = convertStringToCalendar(date, "yyyy-MM-dd HH:mm:ss z", Locale.JAPAN);
 		}
 		return result;
 	}

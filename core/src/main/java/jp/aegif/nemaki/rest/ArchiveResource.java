@@ -37,6 +37,7 @@ import javax.ws.rs.core.MediaType;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.exception.ParentNoLongerExistException;
+import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.constant.NodeType;
 
 import org.apache.commons.logging.Log;
@@ -46,7 +47,7 @@ import org.json.simple.JSONObject;
 
 @Path("/repo/{repositoryId}/archive")
 public class ArchiveResource extends ResourceBase {
-	
+
 	private static final Log log = LogFactory
             .getLog(ArchiveResource.class);
 
@@ -62,15 +63,15 @@ public class ArchiveResource extends ResourceBase {
 	@Path("/index")
 	@Produces(MediaType.APPLICATION_JSON)
 	public String index(
-			@PathParam("repositoryId") String repositoryId, 
-			@QueryParam("skip") Integer skip, 
-			@QueryParam("limit") Integer limit, 
+			@PathParam("repositoryId") String repositoryId,
+			@QueryParam("skip") Integer skip,
+			@QueryParam("limit") Integer limit,
 			@QueryParam("desc") Boolean desc){
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray list = new JSONArray();
 		JSONArray errMsg = new JSONArray();
-		
+
 		try{
 			List<Archive> archives = contentService.getArchives(repositoryId, skip, limit, desc);
 			for(Archive a : archives){
@@ -118,7 +119,7 @@ public class ArchiveResource extends ResourceBase {
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
 	}
-	
+
 	@DELETE
 	@Path("/destroy/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
@@ -140,7 +141,7 @@ public class ArchiveResource extends ResourceBase {
 
 	@SuppressWarnings({ "unchecked" })
 	private JSONObject buildArchiveJson(Archive archive){
-		
+
 		JSONObject archiveJson = new JSONObject();
 		archiveJson.put("id", archive.getId());
 		archiveJson.put("type", archive.getType());
@@ -149,7 +150,7 @@ public class ArchiveResource extends ResourceBase {
 		archiveJson.put("parentId", archive.getParentId());
 		archiveJson.put("isDeletedWithParent", archive.isDeletedWithParent());
 		try{
-			String _created = new SimpleDateFormat(DATE_FORMAT).format(archive.getCreated().getTime());
+			String _created = new SimpleDateFormat(DataUtil.DATE_FORMAT).format(archive.getCreated().getTime());
 			archiveJson.put("created", _created);
 		}catch(Exception e){
 			log.warn(String.format("Archive(%s) 'created' property is broken.", archive.getId()));

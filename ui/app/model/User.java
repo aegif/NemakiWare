@@ -1,11 +1,15 @@
 package model;
 
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
+
+import util.Util;
 
 public class User {
 	public String id;
@@ -15,10 +19,10 @@ public class User {
 	public String lastName;
 	public String email;
 	public boolean isAdmin;
-	protected GregorianCalendar created;
-	protected String creator;
-	protected GregorianCalendar modified;
-	protected String modifier;
+	public GregorianCalendar created;
+	public String creator;
+	public GregorianCalendar modified;
+	public String modifier;
 
 	public Set<String> favorites;
 
@@ -27,12 +31,18 @@ public class User {
 	}
 
 	public User(JsonNode json){
+		SimpleDateFormat dateFormat = new SimpleDateFormat();
+
 		this.id = json.get("userId").asText();
 		this.name = json.get("userName").asText();
 		this.firstName = json.get("firstName").asText();
 		this.lastName = json.get("lastName").asText();
 		this.email = json.get("email").asText();
 		this.isAdmin = json.get("isAdmin").asBoolean();
+		this.created = Util.convertStringToCalendar(json.get("created").asText());
+		this.modified = Util.convertStringToCalendar(json.get("modified").asText());
+
+
 
 		JsonNode jfs = json.get("favorites");
 		Set<String> ufs = new HashSet<String>();
