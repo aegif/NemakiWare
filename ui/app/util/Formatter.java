@@ -12,6 +12,7 @@ import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 public class Formatter {
 
 	public static String calToString(GregorianCalendar gc, Locale locale){
+		if(gc == null) return "";
 		Date date = gc.getTime();
 		DateFormat df = DateFormat.getDateTimeInstance(DateFormat.LONG, DateFormat.MEDIUM,  locale);
 		String result = df.format(date);

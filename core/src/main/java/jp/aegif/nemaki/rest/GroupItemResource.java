@@ -49,6 +49,7 @@ import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.GroupItem;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.common.NemakiObjectType;
+import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
@@ -513,7 +514,7 @@ public class GroupItemResource extends ResourceBase{
 
 
 	private JSONObject convertGroupToJson(GroupItem group) {
-		SimpleDateFormat sdf = new SimpleDateFormat(DATE_FORMAT);
+		SimpleDateFormat sdf = new SimpleDateFormat(DataUtil.DATE_FORMAT);
 		String created = new String();
 		try{
 			created = sdf.format(group.getCreated().getTime());

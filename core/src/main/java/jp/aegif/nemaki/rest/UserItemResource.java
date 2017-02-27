@@ -51,6 +51,7 @@ import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.AuthenticationUtil;
+import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.common.NemakiObjectType;
 import jp.aegif.nemaki.util.constant.PropertyKey;
@@ -502,7 +503,7 @@ public class UserItemResource extends ResourceBase {
 
 	@SuppressWarnings("unchecked")
 	private JSONObject convertUserToJson(UserItem user) {
-		SimpleDateFormat sdf = new SimpleDateFormat(DATE_FORMAT);
+		SimpleDateFormat sdf = new SimpleDateFormat(DataUtil.DATE_FORMAT);
 		String created = new String();
 		try {
 			if (user.getCreated() != null) {

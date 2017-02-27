@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -31,6 +31,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.util.DataUtil;
 
 public class CouchArchive extends CouchNodeBase{
 
@@ -47,11 +48,11 @@ public class CouchArchive extends CouchNodeBase{
 	private String versionSeriesId;
 	private Boolean latestVersion;
 	private String mimeType;
-	
+
 	public CouchArchive(){
 		super();
 	}
-	
+
 	public CouchArchive(Archive a){
 		super(a);
 		setOriginalId(a.getOriginalId());
@@ -65,7 +66,7 @@ public class CouchArchive extends CouchNodeBase{
 		setLatestVersion(a.isLatestVersion());
 		setMimeType(a.getMimeType());
 	}
-	
+
 	/**
 	 * Getter & Setter
 	 */
@@ -181,7 +182,7 @@ public class CouchArchive extends CouchNodeBase{
 	}
 
 	public String convertToDateFormat(GregorianCalendar cal) {
-		SimpleDateFormat sdf = new SimpleDateFormat("yyyy:MM:dd HH:mm:ss z");
+		SimpleDateFormat sdf = new SimpleDateFormat(DataUtil.DATE_FORMAT);
 		return sdf.format(cal.getTime());
 	}
 
@@ -195,7 +196,7 @@ public class CouchArchive extends CouchNodeBase{
 	public int hashCode() {
 		return this.getId().hashCode();
 	}
-	
+
 	public Boolean isFolder(){
 		if("folder".equals(type)){
 			return true;
@@ -219,7 +220,7 @@ public class CouchArchive extends CouchNodeBase{
 			return false;
 		}
 	}
-	
+
 	public Archive convert(){
 		Archive a = new Archive(super.convert());
 		a.setOriginalId(getOriginalId());
@@ -232,7 +233,7 @@ public class CouchArchive extends CouchNodeBase{
 		a.setVersionSeriesId(getVersionSeriesId());
 		a.setIsLatestVersion(isLatestVersion());
 		a.setMimeType(getMimeType());
-		
+
 		return a;
 	}
 }
