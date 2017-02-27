@@ -46,6 +46,9 @@ import org.apache.lucene.document.DateTools.Resolution;
 
 public class DataUtil {
 	public static final String NAMESPACE = "http://www.aegif.jp/Nemaki";
+
+	public static final String DATE_FORMAT = "yyyy:MM:dd HH:mm:ss z";
+
 	private static final Log log = LogFactory.getLog(DataUtil.class);
 
 	public static String getObjectTypeId(Properties properties) {

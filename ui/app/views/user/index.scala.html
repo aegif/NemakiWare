@@ -1,6 +1,9 @@
 @*{<meta charset="UTF-8" />}*@
 
 @import util.Util
+@import util.Formatter;
+@import util.NemakiConfig
+@import play.mvc.Http.Context.Implicit
 @import org.apache.commons.collections.CollectionUtils
 
 @(repositoryId:String)(users:java.util.List[model.User])(profile: util.authentication.NemakiProfile)
@@ -46,15 +49,17 @@
 				<div class="col-md-11">
 					<!-- search result -->
 					<div id="user-result">
-						<table class="footable" id="user-table" data-sort="true">
+						<table class="footable" id="user-table" data-sort="true"  data-sort="true"  data-filtering="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
 							<thead>
 								<tr>
-									<th data-sort-initial="true">@Messages("view.user.id")</th>
-									<th>@Messages("view.user.name")</th>
+									<th data-sort-initial="true">@NemakiConfig.getLabel("user-id", Implicit.lang().language)</th>
+									<th>@NemakiConfig.getLabel("user-name", Implicit.lang().language)</th>
 									<th>@Messages("view.user.is-admin")</th>
-									<th>@Messages("view.user.last.name")</th>
-									<th>@Messages("view.user.first.name")</th>
-									<th>@Messages("view.user.email")</th>
+									<th>@NemakiConfig.getLabel("user-last-name", Implicit.lang().language)</th>
+									<th>@NemakiConfig.getLabel("user-first-name", Implicit.lang().language)</th>
+									<th>@NemakiConfig.getLabel("user-email", Implicit.lang().language)</th>
+									<th>@NemakiConfig.getLabel("cmis-creationDate", Implicit.lang().language)</th>
+									<th>@NemakiConfig.getLabel("cmis-lastModificationDate", Implicit.lang().language)</th>
 									<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action")</th>
 								</tr>
 							</thead>
@@ -67,6 +72,8 @@
 										<td>@user.lastName</td>
 										<td>@user.firstName</td>
 										<td>@user.email</td>
+										<td>@Formatter.calToString(user.created, Implicit.lang.toLocale)</td>
+										<td>@Formatter.calToString(user.modified,  Implicit.lang.toLocale)</td>
 										<td>
 											<button type='button' class='btn btn-default user-detail' user-id='@user.id'><i class="fa fa-wrench"></i>@Messages("view.detail")</button>
 											@if(!user.isAdmin){
@@ -78,7 +85,7 @@
 							</tbody>
 							<tfoot>
 								<tr>
-									@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 2){colSpan =>
+									@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 4){colSpan =>
 										<td colspan="@colSpan">
 									}
 										<div class="pagination pagination-centered hide-if-no-paging"></div>

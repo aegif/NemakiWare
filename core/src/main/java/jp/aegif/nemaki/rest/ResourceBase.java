@@ -48,7 +48,6 @@ public class ResourceBase {
 
 	private static final ObjectMapper mapper = new ObjectMapper();
 
-	static final String DATE_FORMAT = "yyyy:MM:dd HH:mm:ss z";
 	static final String TYPE_GROUP = "group";
 	static final String PARENTID = "/";
 	static final String SUCCESS = "success";
