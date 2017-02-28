@@ -62,7 +62,9 @@ public class Application extends Controller {
 		// remove session
 		ClearUserSession();
 
-		if(StringUtils.isBlank(repositoryId)) repositoryId = NemakiConfig.getDefualtRepositoryId();
+		if(StringUtils.isBlank(repositoryId)){
+			repositoryId = Util.getRepositoryId(context);
+		}
 		context.setSessionAttribute(Token.LOGIN_REPOSITORY_ID, repositoryId);
 
 		// set or override redirect url
@@ -78,8 +80,10 @@ public class Application extends Controller {
 	}
 
 	public Result login(String repositoryId) {
-		if(StringUtils.isBlank(repositoryId)) repositoryId = NemakiConfig.getDefualtRepositoryId();
 		final PlayWebContext context = new PlayWebContext(ctx());
+		if(StringUtils.isBlank(repositoryId)){
+			repositoryId = Util.getRepositoryId(context);
+		}
 
 		//ログイン画面に直接来た場合など、ログイン後のリダイレクト先の設定をしておかないとエラーになる
 		final Object uri = context.getSessionAttribute(Pac4jConstants.REQUESTED_URL);
