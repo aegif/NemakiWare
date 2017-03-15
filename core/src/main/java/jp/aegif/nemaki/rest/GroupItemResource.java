@@ -64,6 +64,7 @@ import org.json.simple.JSONValue;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
+
 @Path("/repo/{repositoryId}/group")
 public class GroupItemResource extends ResourceBase{
 
@@ -170,8 +171,8 @@ public class GroupItemResource extends ResourceBase{
 		if(status){
 			try{
 				//Edit group info
-				JSONArray _users = users == null ? new JSONArray() : parseJsonArray(users);
-				JSONArray _groups = groups == null ? new JSONArray() :  parseJsonArray(groups);
+				JSONArray _users = StringUtils.isBlank(users) ? new JSONArray() : parseJsonArray(users);
+				JSONArray _groups = StringUtils.isBlank(groups) ? new JSONArray() :  parseJsonArray(groups);
 
 				GroupItem group = new GroupItem(null, NemakiObjectType.nemakiGroup, groupId,  name, _users, _groups);
 				final Folder groupsFolder = getOrCreateSystemSubFolder(repositoryId, "groups");
