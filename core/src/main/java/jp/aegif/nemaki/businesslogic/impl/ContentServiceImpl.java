@@ -720,7 +720,7 @@ public class ContentServiceImpl implements ContentService {
 		updateVersionSeriesWithPwc(callContext, repositoryId, getVersionSeries(repositoryId, result), result);
 
 		// Write change event
-		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
+		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);		
 
 		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing(repositoryId);
@@ -806,9 +806,52 @@ public class ContentServiceImpl implements ContentService {
 		return result;
 	}
 
+	public Document updateWithoutCheckInOut(CallContext callContext, String repositoryId,
+			Boolean major, Properties properties,
+			ContentStream contentStream, String checkinComment, Document previousDoc, VersionSeries vs) {
+
+		Document checkedIn = buildCopyDocumentWithBasicProperties(callContext, repositoryId, previousDoc, null, null);
+
+		checkedIn.setAttachmentNodeId(createAttachment(callContext, repositoryId, contentStream));
+
+
+		// Set updated properties
+		// updateProperties(callContext, properties, checkedIn);
+		modifyProperties(callContext, repositoryId, properties, checkedIn);
+		setSignature(callContext, checkedIn);
+		checkedIn.setCheckinComment(checkinComment);
+
+		//this operation for cache, we don't have to do it.
+		//		List<Document> versions = getAllVersions(callContext, repositoryId, vs.getId());
+		//		if(CollectionUtils.isNotEmpty(versions)){
+		//			//Collections.sort(versions, new VersionComparator());
+		//			for(Document version : versions){
+		//				contentDaoService.refreshCmisObjectData(repositoryId, version.getId());
+		//			}
+		//		}
+		//
+
+		// update version information
+		VersioningState versioningState = (major) ? VersioningState.MAJOR : VersioningState.MINOR;
+		updateVersionProperties(callContext, repositoryId, versioningState, checkedIn, previousDoc);
+
+		// TODO set policies & ACEs
+
+		// Create
+		Document result = contentDaoService.create(repositoryId, checkedIn);
+
+		// Record the change event
+		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
+
+		// Call Solr indexing(optional)
+		solrUtil.callSolrIndexing(repositoryId);
+
+		return result;		
+	}
+
 	private Document buildNewBasicDocument(CallContext callContext, String repositoryId, Properties properties,
 			Folder parentFolder, org.apache.chemistry.opencmis.commons.data.Acl
-			 addAces, org.apache.chemistry.opencmis.commons.data.Acl removeAces) {
+			addAces, org.apache.chemistry.opencmis.commons.data.Acl removeAces) {
 		Document d = new Document();
 		setBaseProperties(callContext, repositoryId, properties, d, parentFolder.getId());
 		d.setParentId(parentFolder.getId());
@@ -823,7 +866,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	private void setAclOnCreated(CallContext callContext, String repositoryId, Content content, org.apache.chemistry.opencmis.commons.data.Acl
-			 addAces, org.apache.chemistry.opencmis.commons.data.Acl removeAces){
+			addAces, org.apache.chemistry.opencmis.commons.data.Acl removeAces){
 		Acl acl = new Acl();
 		if(isTopLevel(repositoryId, content)){
 
@@ -849,7 +892,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	private Document buildCopyDocumentWithBasicProperties(CallContext callContext, String repositoryId, Document original, org.apache.chemistry.opencmis.commons.data.Acl
-			 addAces, org.apache.chemistry.opencmis.commons.data.Acl removeAces) {
+			addAces, org.apache.chemistry.opencmis.commons.data.Acl removeAces) {
 		Document copy = new Document();
 		copy.setType(original.getType());
 		copy.setObjectType(original.getObjectType());
@@ -968,7 +1011,7 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public Folder createFolder(CallContext callContext, String repositoryId, Properties properties,
 			Folder parentFolder, List<String> policies, org.apache.chemistry.opencmis.commons.data.Acl
- addAces, org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension) {
+			addAces, org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension) {
 		Folder f = new Folder();
 		setBaseProperties(callContext, repositoryId, properties, f, parentFolder.getId());
 		f.setParentId(parentFolder.getId());
@@ -1134,19 +1177,19 @@ public class ContentServiceImpl implements ContentService {
 		final String ANYONE = repositoryInfoMap.get(repositoryId).getPrincipalIdAnyone();
 		Acl acl = new Acl();
 		acl.setLocalAces(Arrays.asList(
-			// anyone else cannot see the user,
-			new Ace(
-				ANYONE,
-				Arrays.asList("cmis:none"),
-				true
-			),
-			// except oneself.
-			new Ace(
-				userId,
-				Arrays.asList("cmis:read", "cmis:write"),
-				true)
-			)
-		);
+				// anyone else cannot see the user,
+				new Ace(
+						ANYONE,
+						Arrays.asList("cmis:none"),
+						true
+						),
+				// except oneself.
+				new Ace(
+						userId,
+						Arrays.asList("cmis:read", "cmis:write"),
+						true)
+				)
+				);
 		userItem.setAcl(acl);
 
 		return userItem;
@@ -1260,11 +1303,11 @@ public class ContentServiceImpl implements ContentService {
 		List<Property> subTypeProperties = buildSubTypeProperties(repositoryId, properties, content);
 		if (!CollectionUtils.isEmpty(subTypeProperties)) {
 			List<Property> allSubTypeProperties = content.getSubTypeProperties();
-			
+
 			// For each pre-existing property, remove it if exist in the added/modified properties.
 			// Iterate on a copy to avoid concurrent modifications
 			for (Property priorProperty :
-					new ArrayList<Property>(allSubTypeProperties)) {
+				new ArrayList<Property>(allSubTypeProperties)) {
 				if(properties.getProperties().containsKey(priorProperty.getKey())) {
 					// Overwrite by removing the prior property.
 					allSubTypeProperties.remove(priorProperty);
@@ -1274,7 +1317,7 @@ public class ContentServiceImpl implements ContentService {
 					log.error("Leave " + priorProperty.getKey());
 				}
 			}
-			
+
 			// Combine incoming properties to existing ones.
 			allSubTypeProperties.addAll(subTypeProperties);
 			Map<String, Property> subTypePropertiesMap = new LinkedHashMap<>();
