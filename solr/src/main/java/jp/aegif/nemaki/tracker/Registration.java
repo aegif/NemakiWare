@@ -50,7 +50,7 @@ import org.apache.solr.common.params.ModifiableSolrParams;
 import org.apache.solr.core.SolrCore;
 
 public class Registration implements Runnable{
-	
+
 	Session cmisSession;
 	SolrCore core;
 	SolrServer repositoryServer;
@@ -58,9 +58,9 @@ public class Registration implements Runnable{
 	boolean mimeTypeFilterEnabled;
 	List<String> allowedMimeTypeFilter;
 	boolean fulltextEnabled;
-	
+
 	Logger logger = Logger.getLogger(Registration.class);
-	
+
 	public Registration(Session cmisSession, SolrCore core, SolrServer repositoryServer, List<ChangeEvent> list, boolean fulltextEnabled, boolean mimeTypeFilterEnabled, List<String> allowedMimeTypeFilter){
 		this.cmisSession = cmisSession;
 		this.core = core;
@@ -70,7 +70,7 @@ public class Registration implements Runnable{
 		this.mimeTypeFilterEnabled = mimeTypeFilterEnabled;
 		this.allowedMimeTypeFilter = allowedMimeTypeFilter;
 	}
-	
+
 	@Override
 	public void run() {
 		//Read MIME-Type filtering
@@ -123,7 +123,7 @@ public class Registration implements Runnable{
 			}else{
 				req = buildUpdateRequest(map);
 			}
-			
+
 			break;
 		case CMIS_FOLDER:
 		case CMIS_ITEM:
@@ -174,16 +174,16 @@ public class Registration implements Runnable{
 		if(itr.hasNext()){
 			org.apache.solr.common.util.ContentStream stream = itr.next();
 			String sourceInfo = stream.getSourceInfo();
-			
+
 			if(sourceInfo.startsWith("file:")){
 				File f = new File(new URI(sourceInfo));
 				if(f != null && f.isFile()){
-					f.delete();						
+					f.delete();
 				}
 			}
 		}
 	}
-	
+
 	/**
 	 * Delete Solr document
 	 *
@@ -240,7 +240,7 @@ public class Registration implements Runnable{
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
-		
+
 		// Set field values
 		// NOTION:
 		// Cast to String works on the assumption they are already String
@@ -313,7 +313,7 @@ public class Registration implements Runnable{
 		File file = File.createTempFile(
 				String.valueOf(System.currentTimeMillis()), null);
 		file.deleteOnExit();
-		
+
 		try {
 			// write the inputStream to a FileOutputStream
 			OutputStream out = new FileOutputStream(file);
@@ -362,6 +362,11 @@ public class Registration implements Runnable{
 					: object.getPropertyValue(PropertyIds.IS_MAJOR_VERSION)
 							.toString();
 			map.put(Constant.FIELD_IS_MAJOR_VEERSION, isMajorVersion);
+			String isLatestVersion = (object
+					.getPropertyValue(PropertyIds.IS_LATEST_VERSION) == null) ? null
+					: object.getPropertyValue(PropertyIds.IS_LATEST_VERSION)
+							.toString();
+			map.put(Constant.FIELD_IS_LATEST_VERSION, isLatestVersion);
 			map.put(Constant.FIELD_VERSION_SERIES_ID,
 					object.getPropertyValue(PropertyIds.VERSION_SERIES_ID));
 			String isCheckedOut = (object
@@ -416,7 +421,7 @@ public class Registration implements Runnable{
 		map.put(Constant.FIELD_MODIFIED, getUTC(object.getLastModificationDate()));
 		map.put(Constant.FIELD_MODIFIER, object.getLastModifiedBy());
 	}
-	
+
 	private String buildUniqueId(String repositoryId, String objectId){
 		return repositoryId + "_" + objectId;
 	}
