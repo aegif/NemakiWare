@@ -14,6 +14,7 @@ import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.ParsePosition;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
@@ -232,12 +233,15 @@ public class BulkCheckInResource extends ResourceBase {
 	@Path("/saveallversions")
 	@POST
 	@Consumes(MediaType.MULTIPART_FORM_DATA)
-	public Response saveAllVersions(
+	@Produces("application/json")
+	public String saveAllVersions(
 			@PathParam("repositoryId") String repositoryId,
 			FormDataMultiPart multiPart,
 			@FormDataParam("props") String props,
 			@FormDataParam("parentFolderId") String parentFolderId
 			) throws Exception {
+
+		JSONArray resultArray = new JSONArray();		
 
 		try {
 			JSONParser parser = new JSONParser();
@@ -248,7 +252,7 @@ public class BulkCheckInResource extends ResourceBase {
 			Folder parentFolder = contentService.getFolder(repositoryId, parentFolderId);
 			if ( parentFolder == null) {
 				System.out.println("## folder not found:" + parentFolderId);
-				return Response.serverError().build();
+				return "";
 			}
 
 			//Fix user name as admin
@@ -260,22 +264,22 @@ public class BulkCheckInResource extends ResourceBase {
 			for(int i = 0 ; i < items.size() ; i++ ) {
 				JSONObject propJson = (JSONObject)items.get(i);
 				BodyPartEntity body = (BodyPartEntity)multiPart.getField("files[" + i + "]").getEntity();
-				
+
 				Map<String, List<FormDataBodyPart>> fields = multiPart.getFields();
 				System.out.println("## multipart key begin");
 				for(String key : fields.keySet()) {
 					System.out.println("## multipart key:" + key);
 				}
 				System.out.println("## multipart key end");
-				
+
 				InputStream inputStream = body.getInputStream();
-				
+
 				if ( inputStream == null ) {
 					System.out.println("## file inputStream is null for files[" + i + "]");
 				}
-				
+
 				File tempFile = this.saveToTempFile(inputStream);
-				
+
 				System.out.println("## tempfile size:" + tempFile.length());
 
 				String fileName = multiPart.getField("files[" + i + "]").getContentDisposition().getFileName();
@@ -303,7 +307,7 @@ public class BulkCheckInResource extends ResourceBase {
 					}
 					else if (keyStr.equals("isMajor")) {
 						isMajor = (Boolean)propJson.get(key);
-//						System.out.println("## isMajor --> " + isMajor);
+						//						System.out.println("## isMajor --> " + isMajor);
 					}
 					else {
 						String v = (String)propJson.get(key);
@@ -317,7 +321,7 @@ public class BulkCheckInResource extends ResourceBase {
 					//first create document
 					firstDoc = contentService.createDocument(context, repositoryId, 
 							properties, parentFolder, contentStream, VersioningState.MAJOR, null, null, null);
-					
+
 					if ( firstDoc == null) {
 						System.out.println("## firstDoc is null");
 					}
@@ -325,6 +329,12 @@ public class BulkCheckInResource extends ResourceBase {
 						System.out.println("## firstDoc Name:" + firstDoc.getName());
 						System.out.println("## firstDoc Id:" + firstDoc.getId());
 					}
+
+					JSONObject elm = new JSONObject();
+					elm.put("version", (String)propJson.get("cmis:versionLabel"));
+					elm.put("id", firstDoc.getId());
+					resultArray.add(elm);
+
 
 					if ( items.size() > 1) {
 						//create versionSeries
@@ -340,27 +350,35 @@ public class BulkCheckInResource extends ResourceBase {
 						System.out.println("## prevDoc Name:" + prevDoc.getName());
 						System.out.println("## prevDoc Id:" + prevDoc.getId());
 					}
+
+					JSONObject elm = new JSONObject();
+					elm.put("version", (String)propJson.get("cmis:versionLabel"));
+					elm.put("id", prevDoc.getId());
+					resultArray.add(elm);
+
 				}
-				
+
 				//delete temp file
 				tempFile.delete();
 			}
 
-			return Response.ok().build();
+			JSONObject resultJson = new JSONObject();
+			resultJson.put("item", resultArray);
+			return resultJson.toString();
 		}
 		catch(Throwable t) {
 			System.out.println("## catch some exception");
 			t.printStackTrace();
-			return Response.serverError().build();
+			return "";
 		}
 		finally {
-			
+
 		}
 	}
 
 	private File saveToTempFile(InputStream inputStream) throws IOException {
 		File tempFile = File.createTempFile("nemaki", "");
-//		FileUtils.copyInputStreamToFile(inputStream, tempFile);
+		//		FileUtils.copyInputStreamToFile(inputStream, tempFile);
 		Files.copy(inputStream, tempFile.toPath() , StandardCopyOption.REPLACE_EXISTING);
 		return tempFile;
 	}
