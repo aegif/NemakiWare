@@ -266,21 +266,10 @@ public class BulkCheckInResource extends ResourceBase {
 				BodyPartEntity body = (BodyPartEntity)multiPart.getField("files[" + i + "]").getEntity();
 
 				Map<String, List<FormDataBodyPart>> fields = multiPart.getFields();
-				System.out.println("## multipart key begin");
-				for(String key : fields.keySet()) {
-					System.out.println("## multipart key:" + key);
-				}
-				System.out.println("## multipart key end");
 
 				InputStream inputStream = body.getInputStream();
 
-				if ( inputStream == null ) {
-					System.out.println("## file inputStream is null for files[" + i + "]");
-				}
-
 				File tempFile = this.saveToTempFile(inputStream);
-
-				System.out.println("## tempfile size:" + tempFile.length());
 
 				String fileName = multiPart.getField("files[" + i + "]").getContentDisposition().getFileName();
 				String checkInComment = null;
@@ -288,8 +277,8 @@ public class BulkCheckInResource extends ResourceBase {
 				//prepare properties
 				PropertiesImpl properties = new PropertiesImpl();
 
+				String docName = null;
 				for(Object key : propJson.keySet() ) {
-					System.out.println("## json key :" + key + " val = " + propJson.get(key));
 					//TODO cmis:createDate
 					String keyStr = (String)key;
 					if (keyStr.startsWith("jal") && keyStr.endsWith("Date")) {
@@ -313,22 +302,32 @@ public class BulkCheckInResource extends ResourceBase {
 						String v = (String)propJson.get(key);
 						properties.addProperty(new PropertyStringImpl(keyStr, v));
 					}	
+
+					if ( keyStr.equals("cmis:name")) {
+						docName = (String)propJson.get(key);
+					}
 				}
 
 				ContentStream contentStream = new ContentStreamImpl(fileName, BigInteger.valueOf(tempFile.length()), "binary/octet-stream", new FileInputStream(tempFile));
 
-				if ( i == 0) {
+				if ( docName != null) {
+					List<Content> children = contentService.getChildren(repositoryId, parentFolder.getId());
+					if ( children != null ){
+						for(Content content : children) {
+							if ( content instanceof Document){
+								Document doc = (Document)content;
+								if ( doc.getName().equals(docName) ) {
+									prevDoc = doc;
+									break;
+								}
+							}
+						}
+					}
+				}
+				if ( prevDoc == null) {
 					//first create document
 					firstDoc = contentService.createDocument(context, repositoryId, 
 							properties, parentFolder, contentStream, VersioningState.MAJOR, null, null, null);
-
-					if ( firstDoc == null) {
-						System.out.println("## firstDoc is null");
-					}
-					else {
-						System.out.println("## firstDoc Name:" + firstDoc.getName());
-						System.out.println("## firstDoc Id:" + firstDoc.getId());
-					}
 
 					JSONObject elm = new JSONObject();
 					elm.put("version", (String)propJson.get("cmis:versionLabel"));
@@ -343,13 +342,6 @@ public class BulkCheckInResource extends ResourceBase {
 					}
 				} else { //i > 0
 					prevDoc = contentService.updateWithoutCheckInOut(context, repositoryId, isMajor, properties, contentStream, checkInComment, prevDoc, versionSeries);
-					if ( prevDoc == null) {
-						System.out.println("## prevDoc is null");
-					}
-					else {
-						System.out.println("## prevDoc Name:" + prevDoc.getName());
-						System.out.println("## prevDoc Id:" + prevDoc.getId());
-					}
 
 					JSONObject elm = new JSONObject();
 					elm.put("version", (String)propJson.get("cmis:versionLabel"));
