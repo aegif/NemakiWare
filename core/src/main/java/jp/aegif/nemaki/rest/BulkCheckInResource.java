@@ -128,7 +128,7 @@ public class BulkCheckInResource extends ResourceBase {
 	public void setTypeManager(TypeManager typeManager) {
 		this.typeManager = typeManager;
 	}
-	
+
 	@SuppressWarnings("unchecked")
 	@POST
 	@Path("/execute")
@@ -238,98 +238,128 @@ public class BulkCheckInResource extends ResourceBase {
 			@FormDataParam("parentFolderId") String parentFolderId
 			) throws Exception {
 
-		JSONParser parser = new JSONParser();
-		JSONObject propsJson = (JSONObject) parser.parse(props);
+		try {
+			JSONParser parser = new JSONParser();
+			JSONObject propsJson = (JSONObject) parser.parse(props);
 
-		JSONArray items = (JSONArray)propsJson.get("items");
-		
-		Folder parentFolder = contentService.getFolder(repositoryId, parentFolderId);
-		if ( parentFolder == null) {
-			System.out.println("## folder not found");
+			JSONArray items = (JSONArray)propsJson.get("items");
+
+			Folder parentFolder = contentService.getFolder(repositoryId, parentFolderId);
+			if ( parentFolder == null) {
+				System.out.println("## folder not found:" + parentFolderId);
+				return Response.serverError().build();
+			}
+
+			//Fix user name as admin
+			CallContext context = new FakeCallContext(repositoryId, "admin");
+
+			Document firstDoc = null;
+			Document prevDoc = null;
+			VersionSeries versionSeries = null;
+			for(int i = 0 ; i < items.size() ; i++ ) {
+				JSONObject propJson = (JSONObject)items.get(i);
+				BodyPartEntity body = (BodyPartEntity)multiPart.getField("files[" + i + "]").getEntity();			
+				InputStream inputStream = body.getInputStream();
+				
+				if ( inputStream == null ) {
+					System.out.println("## file inputStream is null for files[" + i + "]");
+				}
+				
+				File tempFile = this.saveToTempFile(inputStream);
+				
+				System.out.println("## tempfile size:" + tempFile.length());
+
+				String fileName = multiPart.getField("files[" + i + "]").getContentDisposition().getFileName();
+				String checkInComment = null;
+				boolean isMajor = true;
+				//prepare properties
+				PropertiesImpl properties = new PropertiesImpl();
+
+				for(Object key : propJson.keySet() ) {
+					System.out.println("## json key :" + key + " val = " + propJson.get(key));
+					//TODO cmis:createDate
+					String keyStr = (String)key;
+					if (keyStr.startsWith("jal") && keyStr.endsWith("Date")) {
+						long v = (Long)propJson.get(key);
+						GregorianCalendar cal = new GregorianCalendar();
+						cal.setTime(new Date(v));
+						properties.addProperty(new PropertyDateTimeImpl(keyStr, cal));
+					}
+					else if ( keyStr.equals("cmis:objectTypeId")) {
+						String v = (String)propJson.get(key);
+						properties.addProperty(new PropertyIdImpl(keyStr, v));
+					}
+					else if (keyStr.equals("checkInComment")) {
+						checkInComment = (String)propJson.get(key);
+					}
+					else if (keyStr.equals("isMajor")) {
+						isMajor = (Boolean)propJson.get(key);
+//						System.out.println("## isMajor --> " + isMajor);
+					}
+					else {
+						String v = (String)propJson.get(key);
+						properties.addProperty(new PropertyStringImpl(keyStr, v));
+					}	
+				}
+
+				ContentStream contentStream = new ContentStreamImpl(fileName, BigInteger.valueOf(tempFile.length()), "binary/octet-stream", new FileInputStream(tempFile));
+
+				if ( i == 0) {
+					//first create document
+					firstDoc = contentService.createDocument(context, repositoryId, 
+							properties, parentFolder, contentStream, VersioningState.MAJOR, null, null, null);
+					
+					if ( firstDoc == null) {
+						System.out.println("## firstDoc is null");
+					}
+					else {
+						System.out.println("## firstDoc Name:" + firstDoc.getName());
+						System.out.println("## firstDoc Id:" + firstDoc.getId());
+					}
+
+					if ( items.size() > 1) {
+						//create versionSeries
+						versionSeries = contentService.getVersionSeries(repositoryId, firstDoc);
+						prevDoc = firstDoc;
+					}
+				} else { //i > 0
+					prevDoc = contentService.updateWithoutCheckInOut(context, repositoryId, isMajor, properties, contentStream, checkInComment, prevDoc, versionSeries);
+					if ( prevDoc == null) {
+						System.out.println("## prevDoc is null");
+					}
+					else {
+						System.out.println("## prevDoc Name:" + prevDoc.getName());
+						System.out.println("## prevDoc Id:" + prevDoc.getId());
+					}
+				}
+				
+				//delete temp file
+				tempFile.delete();
+			}
+
+			return Response.ok().build();
+		}
+		catch(Throwable t) {
+			System.out.println("## catch some exception");
+			t.printStackTrace();
 			return Response.serverError().build();
 		}
-		
-		//Fix user name as admin
-		CallContext context = new FakeCallContext(repositoryId, "admin");
-
-//		for(String key:  multiPart.getFields().keySet() ) {
-//			System.out.println("## key:" + key);
-//		}
-
-		Document firstDoc = null;
-		Document prevDoc = null;
-		VersionSeries versionSeries = null;
-		for(int i = 0 ; i < items.size() ; i++ ) {
-			JSONObject propJson = (JSONObject)items.get(i);
-			BodyPartEntity body = (BodyPartEntity)multiPart.getField("files[" + i + "]").getEntity();			
-			InputStream inputStream = body.getInputStream();
-			File tempFile = this.saveToTempFile(inputStream);
-
-			String fileName = multiPart.getField("files[" + i + "]").getContentDisposition().getFileName();
-			String checkInComment = null;
-			boolean isMajor = true;
-			//prepare properties
-			PropertiesImpl properties = new PropertiesImpl();
+		finally {
 			
-			for(Object key : propJson.keySet() ) {
-				System.out.println("## json key :" + key + " val = " + propJson.get(key));
-				//TODO cmis:createDate
-				String keyStr = (String)key;
-				if (keyStr.startsWith("jal") && keyStr.endsWith("Date")) {
-					long v = (Long)propJson.get(key);
-					GregorianCalendar cal = new GregorianCalendar();
-					cal.setTime(new Date(v));
-					properties.addProperty(new PropertyDateTimeImpl(keyStr, cal));
-				}
-				else if ( keyStr.equals("cmis:objectTypeId")) {
-					String v = (String)propJson.get(key);
-					properties.addProperty(new PropertyIdImpl(keyStr, v));
-				}
-				else if (keyStr.equals("checkInComment")) {
-					checkInComment = (String)propJson.get(key);
-				}
-				else if (keyStr.equals("isMajor")) {
-					isMajor = (Boolean)propJson.get(key);
-					System.out.println("## isMajor --> " + isMajor);
-				}
-				else {
-					String v = (String)propJson.get(key);
-					properties.addProperty(new PropertyStringImpl(keyStr, v));
-				}	
-			}
-			
-			ContentStream contentStream = new ContentStreamImpl(fileName, BigInteger.valueOf(tempFile.length()), "binary/octet-stream", new FileInputStream(tempFile));
-
-			if ( i == 0) {
-				//first create document
-				firstDoc = contentService.createDocument(context, repositoryId, 
-						properties, parentFolder, contentStream, VersioningState.MAJOR, null, null, null);
-				
-				if ( items.size() > 1) {
-					//create versionSeries
-					versionSeries = contentService.getVersionSeries(repositoryId, firstDoc);
-					prevDoc = firstDoc;
-				}
-			} else { //i > 0
-				prevDoc = contentService.updateWithoutCheckInOut(context, repositoryId, isMajor, properties, contentStream, checkInComment, prevDoc, versionSeries);
-			}
 		}
-
-		return Response.ok().build();
-
 	}
-	
+
 	private File saveToTempFile(InputStream inputStream) throws IOException {
 		File tempFile = File.createTempFile("nemaki", "");
 		FileUtils.copyInputStreamToFile(inputStream, tempFile);
 		return tempFile;
 	}
-	
+
 	public static class FakeCallContext implements CallContext {
-		
+
 		private String repositoryId;
 		private String userName;
-		
+
 		public FakeCallContext(String repositoryId, String userName) {
 			this.repositoryId = repositoryId;
 			this.userName = userName;
@@ -387,7 +417,7 @@ public class BulkCheckInResource extends ResourceBase {
 
 		@Override
 		public String getRepositoryId() {
-			
+
 			return repositoryId;
 		}
 
@@ -405,6 +435,6 @@ public class BulkCheckInResource extends ResourceBase {
 		public boolean isObjectInfoRequired() {
 			return false;
 		}
-		
+
 	}
 }
