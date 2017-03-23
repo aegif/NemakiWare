@@ -258,7 +258,15 @@ public class BulkCheckInResource extends ResourceBase {
 			VersionSeries versionSeries = null;
 			for(int i = 0 ; i < items.size() ; i++ ) {
 				JSONObject propJson = (JSONObject)items.get(i);
-				BodyPartEntity body = (BodyPartEntity)multiPart.getField("files[" + i + "]").getEntity();			
+				BodyPartEntity body = (BodyPartEntity)multiPart.getField("files[" + i + "]").getEntity();
+				
+				Map<String, List<FormDataBodyPart>> fields = multiPart.getFields();
+				System.out.println("## multipart key begin");
+				for(String key : fields.keySet()) {
+					System.out.println("## multipart key:" + key);
+				}
+				System.out.println("## multipart key end");
+				
 				InputStream inputStream = body.getInputStream();
 				
 				if ( inputStream == null ) {
