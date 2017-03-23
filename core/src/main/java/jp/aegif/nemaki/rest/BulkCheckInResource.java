@@ -8,6 +8,7 @@ import java.io.OutputStream;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.text.DateFormat;
 import java.text.ParseException;
@@ -359,7 +360,8 @@ public class BulkCheckInResource extends ResourceBase {
 
 	private File saveToTempFile(InputStream inputStream) throws IOException {
 		File tempFile = File.createTempFile("nemaki", "");
-		FileUtils.copyInputStreamToFile(inputStream, tempFile);
+//		FileUtils.copyInputStreamToFile(inputStream, tempFile);
+		Files.copy(inputStream, tempFile.toPath() , StandardCopyOption.REPLACE_EXISTING);
 		return tempFile;
 	}
 
