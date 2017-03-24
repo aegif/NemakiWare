@@ -714,4 +714,20 @@ public interface ContentService {
 	 */
 	String writeChangeEvent(CallContext callContext, String repositoryId, Content content,
 			Acl acl, ChangeType changeType);
+	
+	/**
+	 * Update version without checkIn/Out
+	 * @param callContext
+	 * @param repositoryId
+	 * @param objectId
+	 * @param major
+	 * @param properties
+	 * @param contentStream
+	 * @param checkinComment
+	 * @param originalDoc
+	 * @return
+	 */
+	public Document updateWithoutCheckInOut(CallContext callContext, String repositoryId,
+			Boolean major, Properties properties,
+			ContentStream contentStream, String checkinComment, Document previousDoc, VersionSeries versionSeries);
 }
