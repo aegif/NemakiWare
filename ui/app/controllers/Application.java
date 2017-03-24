@@ -52,6 +52,7 @@ public class Application extends Controller {
 
 	@Secure(clients = "SAML2Client")
 	public Result samlLogin() {
+		logger.info("SAMLLogin");
 		final PlayWebContext context = new PlayWebContext(ctx());
 		String repositoryId = util.Util.getRepositoryId(context);
 		return redirect(routes.Node.index(repositoryId));
