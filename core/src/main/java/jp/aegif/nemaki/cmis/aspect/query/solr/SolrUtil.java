@@ -72,6 +72,7 @@ public class SolrUtil {
 		map.put(PropertyIds.SECONDARY_OBJECT_TYPE_IDS,
 				"secondary_object_type_ids");
 
+		map.put(PropertyIds.IS_LATEST_VERSION, "is_latest_version");
 		map.put(PropertyIds.IS_MAJOR_VERSION, "is_major_version");
 		map.put(PropertyIds.IS_PRIVATE_WORKING_COPY, "is_pwc");
 		map.put(PropertyIds.IS_VERSION_SERIES_CHECKED_OUT, "is_checkedout");
@@ -139,8 +140,8 @@ public class SolrUtil {
 		Invocation.Builder invocationBuilder =  webTarget.request();
 		Response response = invocationBuilder.accept(MediaType.APPLICATION_XML_TYPE).get();
 
-		
-		
+
+
 //		Client client = Client.create();
 //		// TODO Regardless a slash on the last, build the correct URL
 //		WebResource webResource = client.resource(url

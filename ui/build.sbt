@@ -26,7 +26,7 @@ libraryDependencies ++= Seq(
   cache,
   javaWs,
   "jp.aegif.nemaki.common" % "nemakiware-common" % "2.4.0" changing(),
-  "jp.aegif.nemaki.plugin" % "nemakiware-action" % "0.0.5" changing(),
+  "jp.aegif.nemaki.plugin" % "nemakiware-action" % "0.0.6" changing(),
   "commons-collections" % "commons-collections" % "3.2.1",
   "commons-io" % "commons-io" % "2.5",
   "org.webjars" %% "webjars-play" % "2.4.0-2",

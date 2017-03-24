@@ -86,7 +86,6 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 		String proxyUserId = (String) callContext.get(proxyHeaderKey);
 		if (StringUtils.isBlank(proxyUserId)) {
-			log.warn("Not authenticated user");
 			return false;
 		} else {
 			UserItem userItem = contentService.getUserItemById(repositoryId, proxyUserId);
@@ -111,15 +110,15 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	private boolean loginWithToken(CallContext callContext) {
 		String userName = callContext.getUsername();
 		String token;
-		if (callContext.get("nemaki_auth_token") == null) {
+		if (callContext.get(CallContextKey.AUTH_TOKEN) == null) {
 			return false;
 		} else {
-			token = (String) callContext.get("nemaki_auth_token");
+			token = (String) callContext.get(CallContextKey.AUTH_TOKEN);
 			if (StringUtils.isBlank(token)) {
 				return false;
 			}
 		}
-		Object _app = callContext.get("nemaki_auth_token_app");
+		Object _app = callContext.get(CallContextKey.AUTH_TOKEN_APP);
 		String app = (_app == null) ? "" : (String) _app;
 
 		if (authenticateUserByToken(app, callContext.getRepositoryId(), userName, token)) {
@@ -152,11 +151,9 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 		//if not exist create solr user
 		String solrUserId = propertyManager.readValue(PropertyKey.SOLR_NEMAKI_USERID);
-		//User solrUser = principalService.getUserById(repositoryId, solrUserId);
 		UserItem solrUser = contentService.getUserItemById(repositoryId, solrUserId);
 		if (solrUser == null) {
-			//TODO
-			// solr password?
+			// solr password same
 			String userFolderId = propertyManager.readValue(PropertyKey.CAPABILITY_EXTENDED_USER_ITEM_FOLDER);
 			UserItem newSolrUser = new UserItem(solrUserId, "nemaki:user", solrUserId, solrUserId, BCrypt.hashpw(solrUserId, BCrypt.gensalt()), true, userFolderId);
 			contentDaoService.create(repositoryId, newSolrUser);

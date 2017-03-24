@@ -68,7 +68,7 @@
 					<button type="button" class="btn btn-default show-detail" cmis-id="@obj.getId()">
 						<i class="fa fa-wrench" ></i><div class="tooltips">@Messages("view.detail")</div>
 					</button>
-					@if(Util.hasContentStream(obj)){
+					@if(Util.hasContentStream(obj) && Util.existPreview(obj)){
 						<button type="button" class="btn btn-default show-preview" cmis-id="@obj.getId()">
 							<i class="fa fa-file-pdf-o"></i><div class="tooltips">@Messages("view.node.preview")</div>
 						</button>
