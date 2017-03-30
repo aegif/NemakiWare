@@ -423,15 +423,10 @@ public class ContentServiceImpl implements ContentService {
 			return groupIds;
 		}
 
-		List<GroupItem> groups = getGroupItems(repositoryId);
-		if(CollectionUtils.isNotEmpty(groups)){
-			for (GroupItem g : groups) {
-				if ( containsUserInGroup(repositoryId, userId, g) ) {
-					groupIds.add(g.getGroupId());
-				}
-			}
-		}
+		List<String> resultGroups = contentDaoService.getJoinedGroupByUserId(repositoryId, userId);
+		groupIds.addAll(resultGroups);
 		groupIds.add(anyone);
+		
 		return groupIds;
 	}
 
