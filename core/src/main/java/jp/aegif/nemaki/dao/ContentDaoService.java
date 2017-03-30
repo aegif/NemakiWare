@@ -356,6 +356,7 @@ public interface ContentDaoService {
 	GroupItem getGroupItem(String repositoryId, String objectId);
 	GroupItem getGroupItemById(String repositoryId, String userId);
 	List<GroupItem> getGroupItems(String repositoryId);
+	List<String> getJoinedGroupByUserId(String repositoryId, String userId);
 	
 	PatchHistory getPatchHistoryByName(String repositoryId, String name);
 	Configuration getConfiguration(String repositoryId);
