@@ -37,6 +37,7 @@ public class SecurityModule extends AbstractModule{
 
 	@Override
 	protected void configure() {
+		@SuppressWarnings("rawtypes")
 		List<Client> clientList = new ArrayList<Client>();
 		String baseUri = NemakiConfig.getApplicationBaseUri(configuration);
 
