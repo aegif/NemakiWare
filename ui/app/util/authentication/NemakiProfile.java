@@ -28,6 +28,7 @@ public class NemakiProfile extends CommonProfile {
 		String remoteUserId = null;
 		String userKey = NemakiConfig.getRemoteUserIdKey();
 		if (saml2Profile.containsAttribute(userKey)) {
+			@SuppressWarnings("rawtypes")
 			ArrayList list = (ArrayList) saml2Profile.getAttribute(userKey);
 			remoteUserId = (String) list.get(0);
 			profile.setUserId(remoteUserId);

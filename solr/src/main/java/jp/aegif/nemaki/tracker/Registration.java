@@ -130,7 +130,8 @@ public class Registration implements Runnable{
 			req = buildUpdateRequest(map);
 			break;
 		default:
-			break;
+			// All other document types are not indexed.
+			return;
 		}
 
 		String successMsg = "";
