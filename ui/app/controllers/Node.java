@@ -63,10 +63,10 @@ import org.pac4j.play.PlayWebContext;
 import org.pac4j.play.java.Secure;
 import org.pac4j.saml.client.SAML2Client;
 import org.pac4j.saml.credentials.SAML2Credentials;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
+import play.Logger;
 import play.Play;
+import play.Logger.ALogger;
 import play.api.libs.Files.TemporaryFile;
 import play.i18n.Messages;
 import play.data.DynamicForm;
@@ -95,10 +95,10 @@ import jp.aegif.nemaki.plugin.action.UIActionContext;
 import com.google.inject.Inject;
 
 public class Node extends Controller {
+	private static final ALogger logger = Logger.of(Node.class);
+
 	@Inject
 	public org.pac4j.core.config.Config config;
-
-	private static Logger log = LoggerFactory.getLogger(Node.class);
 
 	private static Session getCmisSession(String repositoryId) {
 		return CmisSessions.getCmisSession(repositoryId, ctx());
@@ -118,7 +118,7 @@ public class Node extends Controller {
 		Session session = getCmisSession(repositoryId);
 
 		Document target = (Document) session.getObject(objectId);
-		Folder parent = (Folder)target.getParents().get(0);
+		Folder parent = target.getParents().get(0);
 		Document latest = target.getObjectOfLatestVersion(false);
 
 		// Get user
@@ -365,7 +365,7 @@ public class Node extends Controller {
 						.collect(Collectors.toList())
 						;
 			}catch(CmisObjectNotFoundException ex){
-				log.error("Source or target cmis object not found.", ex);
+				logger.error("Source or target cmis object not found.", ex);
 			}
 		}
 
@@ -415,7 +415,7 @@ public class Node extends Controller {
 			}
 
 		} catch (Exception e) {
-			log.error("Zip packing error", e);
+			logger.error("Zip packing error", e);
 		}
 		String fileName = FilenameUtils.getBaseName(cmisObject.getName());
 		createAttachmentResponse(fileName + ".zip", "application/zip");
@@ -479,7 +479,7 @@ public class Node extends Controller {
 			}
 
 		} catch (Exception e) {
-			log.error("Zip packing error", e);
+			logger.error("Zip packing error", e);
 		}
 
 		createAttachmentResponse("compressed-files.zip", "application/zip");
@@ -646,12 +646,12 @@ public class Node extends Controller {
 		if (relationships != null) {
 			result = relationships.stream().filter(r -> {
 				try {
-					CmisObject t = r.getTarget();
+					r.getTarget();
 				} catch (CmisObjectNotFoundException e) {
 					return false;
 				}
 				try {
-					CmisObject s = r.getSource();
+					r.getSource();
 				} catch (CmisObjectNotFoundException e) {
 					return false;
 				}
@@ -789,8 +789,8 @@ public class Node extends Controller {
 		// Execute
 		Session session = getCmisSession(repositoryId);
 		ContentStream cs = Util.convertFileToContentStream(session, file);
-		Document d0 = (Document) session.getObject(objectId);
-		Document d1 = d0.setContentStream(cs, true);
+		Document doc = (Document) session.getObject(objectId);
+		doc.setContentStream(cs, true);
 
 		// Clean temp file just after CMIS createDocument finished
 		file.getFile().delete();
@@ -1111,11 +1111,11 @@ public class Node extends Controller {
 					try{
 						deletedList.addAll(delete(tId.getId(), session));
 					}catch(Exception ex){
-						log.error("Target cmis object id not found", ex);
+						logger.error("Target cmis object id not found", ex);
 					}
 				});
 			}catch(CmisObjectNotFoundException ex){
-				log.error("Source or target cmis object not found.", ex);
+				logger.error("Source or target cmis object not found.", ex);
 			}
 		}
 		deletedList.addAll(delete(cmisObject, session));
