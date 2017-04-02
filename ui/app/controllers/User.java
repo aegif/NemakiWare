@@ -6,6 +6,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
 
 import org.apache.chemistry.opencmis.client.api.CmisObject;
 import org.apache.chemistry.opencmis.client.api.Session;
@@ -46,6 +48,14 @@ public class User extends Controller {
 
 	@Secure
 	public Result search(String repositoryId, String term){
+		
+		try {
+			term = URLEncoder.encode(term,"UTF-8");
+		} catch (UnsupportedEncodingException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
 		NemakiProfile profile = Util.getProfile(ctx());
     	JsonNode result = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "search?query=" + term);
 

@@ -5,11 +5,12 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
 
 import model.Principal;
 
 import org.apache.commons.collections.CollectionUtils;
-
 import play.data.DynamicForm;
 import play.data.Form;
 import play.libs.Json;
@@ -36,7 +37,14 @@ public class Group extends Controller {
 
 	@Secure
 	public Result search(String repositoryId, String term){
+		
 		NemakiProfile profile = Util.getProfile(ctx());
+		try {
+			term = URLEncoder.encode(term,"UTF-8");
+		} catch (UnsupportedEncodingException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
     	JsonNode result = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "search?query=" + term);
 
     	List<model.Group> list = new ArrayList<model.Group>();
