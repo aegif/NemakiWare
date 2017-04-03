@@ -1,7 +1,6 @@
 package util;
 
-import java.util.List;
-import java.util.Set;
+import java.util.HashSet;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
@@ -12,9 +11,9 @@ import jp.aegif.nemaki.plugin.action.JavaBackedUIAction;
 public class ActionPlugin {
 
 	@Inject
-	private Set<JavaBackedUIAction> actions;
-	
-	public Set<JavaBackedUIAction> getActions() {
+	private HashSet<JavaBackedUIAction> actions;
+
+	public HashSet<JavaBackedUIAction> getActions() {
 		return actions;
 	}
 }

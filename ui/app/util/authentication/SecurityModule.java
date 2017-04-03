@@ -1,29 +1,24 @@
 package util.authentication;
 
-import com.google.inject.AbstractModule;
-
-import controllers.routes;
-
-import java.io.File;
-import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
+import org.opensaml.saml.common.xml.SAMLConstants;
+import org.pac4j.core.authorization.authorizer.RequireAnyRoleAuthorizer;
 import org.pac4j.core.client.Client;
 import org.pac4j.core.client.Clients;
 import org.pac4j.core.config.Config;
-import org.opensaml.saml.common.xml.SAMLConstants;
-import org.pac4j.core.authorization.authorizer.RequireAnyRoleAuthorizer;
+import org.pac4j.http.client.indirect.FormClient;
 import org.pac4j.play.ApplicationLogoutController;
 import org.pac4j.play.CallbackController;
-import org.pac4j.http.client.indirect.FormClient;
 import org.pac4j.saml.client.SAML2Client;
 import org.pac4j.saml.client.SAML2ClientConfiguration;
-import play.Configuration;
+
+import com.google.inject.AbstractModule;
+
+import 
+.Configuration;
 import play.Environment;
-import play.Play;
-import play.cache.CacheApi;
 import util.NemakiConfig;
 
 public class SecurityModule extends AbstractModule{

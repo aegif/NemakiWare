@@ -3,18 +3,14 @@ package util.authentication;
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisConnectionException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisUnauthorizedException;
-import org.pac4j.core.context.Pac4jConstants;
 import org.pac4j.core.context.WebContext;
 import org.pac4j.core.credentials.UsernamePasswordCredentials;
 import org.pac4j.core.credentials.authenticator.Authenticator;
 import org.pac4j.core.exception.CredentialsException;
 import org.pac4j.core.exception.HttpAction;
-import org.pac4j.play.PlayWebContext;
 
-import constant.Token;
 import play.Logger;
 import play.Logger.ALogger;
-import play.data.Form;
 import play.i18n.Messages;
 import util.Util;
 
@@ -29,7 +25,6 @@ public class NemakiAuthenticator implements Authenticator<UsernamePasswordCreden
 
 		try{
 			Session cmisSession = Util.createCmisSessionByBasicAuth(repositoryId, userId, password);
-
 			String version = cmisSession.getRepositoryInfo().getProductVersion();
 			boolean	isAdmin = Util.isAdmin(repositoryId, userId, password);
 	        final NemakiProfile profile = new NemakiProfile(repositoryId, userId, password);
