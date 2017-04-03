@@ -3,16 +3,19 @@ package util.authentication;
 import java.util.ArrayList;
 
 import org.apache.chemistry.opencmis.client.api.Session;
-import org.apache.commons.lang3.StringUtils;
 import org.pac4j.core.profile.CommonProfile;
 import org.pac4j.saml.exceptions.SAMLException;
 import org.pac4j.saml.profile.SAML2Profile;
 
 import constant.Token;
+import play.Logger;
+import play.Logger.ALogger;
 import util.NemakiConfig;
 import util.Util;
 
 public class NemakiProfile extends CommonProfile {
+	private static final ALogger logger = Logger.of(NemakiProfile.class);
+
 	public enum CmisAuthType {
 		BASIC, HEADER
 	}

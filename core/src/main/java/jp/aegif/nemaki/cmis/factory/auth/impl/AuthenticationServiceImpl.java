@@ -20,6 +20,13 @@
  ******************************************************************************/
 package jp.aegif.nemaki.cmis.factory.auth.impl;
 
+import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
+import org.apache.commons.lang.ObjectUtils;
+import org.apache.commons.lang.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
@@ -33,14 +40,6 @@ import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 import jp.aegif.nemaki.util.constant.SystemConst;
-
-import org.apache.chemistry.opencmis.commons.server.CallContext;
-import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
-import org.apache.commons.lang.ObjectUtils;
-import org.apache.commons.lang.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
-import org.mindrot.jbcrypt.BCrypt;
 
 /**
  * Authentication Service implementation.
@@ -137,28 +136,14 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		String repositoryId = callContext.getRepositoryId();
 
 		//Check repositoryId exists
-		if(!repositoryInfoMap.contains(repositoryId)){
-			return false;
-		}
+		if(!repositoryInfoMap.contains(repositoryId)) return false;
 
 		// Basic auth with id/password
 		UserItem user = getAuthenticatedUserItem(callContext.getRepositoryId(), callContext.getUsername(), callContext.getPassword());
-		if (user == null)
-			return false;
+		if (user == null) return false;
 
 		boolean isAdmin = user.isAdmin() == null ? false : true;
 		setAdminFlagInContext(callContext, isAdmin);
-
-		//if not exist create solr user
-		String solrUserId = propertyManager.readValue(PropertyKey.SOLR_NEMAKI_USERID);
-		UserItem solrUser = contentService.getUserItemById(repositoryId, solrUserId);
-		if (solrUser == null) {
-			// solr password same
-			String userFolderId = propertyManager.readValue(PropertyKey.CAPABILITY_EXTENDED_USER_ITEM_FOLDER);
-			UserItem newSolrUser = new UserItem(solrUserId, "nemaki:user", solrUserId, solrUserId, BCrypt.hashpw(solrUserId, BCrypt.gensalt()), true, userFolderId);
-			contentDaoService.create(repositoryId, newSolrUser);
-		}
-
 		return true;
 	}
 

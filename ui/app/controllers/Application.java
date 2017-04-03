@@ -1,49 +1,30 @@
 package controllers;
 
-import com.google.inject.Inject;
-
-import java.io.File;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
-import org.apache.chemistry.opencmis.client.api.Session;
-import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.http.entity.ContentType;
-import org.pac4j.http.client.indirect.FormClient;
-
-import play.Logger;
-import play.Logger.ALogger;
-
-import com.fasterxml.jackson.databind.JsonNode;
-
-import constant.PropertyKey;
-import constant.Token;
-import model.Login;
-import play.Routes;
-import play.data.*;
-import play.mvc.Controller;
-import play.mvc.Result;
-import util.NemakiConfig;
-import util.Util;
-import util.authentication.NemakiProfile;
-
 import org.pac4j.core.client.Client;
 import org.pac4j.core.client.Clients;
-import org.pac4j.core.client.RedirectAction;
 import org.pac4j.core.config.Config;
 import org.pac4j.core.context.Pac4jConstants;
-import org.pac4j.core.credentials.Credentials;
-import org.pac4j.core.exception.HttpAction;
 import org.pac4j.core.profile.CommonProfile;
 import org.pac4j.core.profile.ProfileManager;
+import org.pac4j.http.client.indirect.FormClient;
 import org.pac4j.play.PlayWebContext;
 import org.pac4j.play.java.Secure;
 import org.pac4j.saml.client.SAML2Client;
 import org.pac4j.saml.metadata.SAML2MetadataResolver;
 
-import play.mvc.Http.Context;
+import com.google.inject.Inject;
+
+import constant.Token;
+import play.Logger;
+import play.Logger.ALogger;
+import play.Routes;
+import play.mvc.Controller;
+import play.mvc.Result;
+import util.Util;
 
 public class Application extends Controller {
 	private static final ALogger logger = Logger.of(Application.class);
@@ -78,6 +59,7 @@ public class Application extends Controller {
 		final FormClient formClient = (FormClient) clients.findClient("FormClient");
 		String message = ctx().request().getQueryString("error");
 
+		logger.info("RedirectURL =" + redircetURL);
 		return ok(views.html.login.render(repositoryId, formClient.getCallbackUrl() , message));
 	}
 
@@ -104,6 +86,7 @@ public class Application extends Controller {
 		final FormClient formClient = (FormClient) clients.findClient("FormClient");
 		String message = ctx().request().getQueryString("error");
 
+		logger.info("Application#login STEP 4");
 		return ok(views.html.login.render(repositoryId, formClient.getCallbackUrl() , message));
 	}
 

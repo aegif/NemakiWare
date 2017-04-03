@@ -34,42 +34,8 @@ import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.Map.Entry;
-import jp.aegif.nemaki.businesslogic.ContentService;
-import jp.aegif.nemaki.businesslogic.rendition.RenditionManager;
-import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
-import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
-import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
-import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
-import jp.aegif.nemaki.dao.ContentDaoService;
-import jp.aegif.nemaki.model.Ace;
-import jp.aegif.nemaki.model.Acl;
-import jp.aegif.nemaki.model.Archive;
-import jp.aegif.nemaki.model.Aspect;
-import jp.aegif.nemaki.model.AttachmentNode;
-import jp.aegif.nemaki.model.Change;
-import jp.aegif.nemaki.model.Content;
-import jp.aegif.nemaki.model.Document;
-import jp.aegif.nemaki.model.Folder;
-import jp.aegif.nemaki.model.GroupItem;
-import jp.aegif.nemaki.model.Item;
-import jp.aegif.nemaki.model.NodeBase;
-import jp.aegif.nemaki.model.Policy;
-import jp.aegif.nemaki.model.Property;
-import jp.aegif.nemaki.model.Relationship;
-import jp.aegif.nemaki.model.Rendition;
-import jp.aegif.nemaki.model.UserItem;
-import jp.aegif.nemaki.model.VersionSeries;
-import jp.aegif.nemaki.model.exception.ParentNoLongerExistException;
-import jp.aegif.nemaki.util.DataUtil;
-import jp.aegif.nemaki.util.PropertyManager;
-import jp.aegif.nemaki.util.constant.CmisPermission;
-import jp.aegif.nemaki.common.NemakiObjectType;
-import jp.aegif.nemaki.util.constant.NodeType;
-import jp.aegif.nemaki.util.constant.PrincipalId;
-import jp.aegif.nemaki.util.constant.PropertyKey;
-import jp.aegif.nemaki.util.constant.RenditionKind;
+import java.util.Set;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
@@ -99,6 +65,41 @@ import org.apache.commons.lang.ObjectUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+
+import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.businesslogic.rendition.RenditionManager;
+import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
+import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
+import jp.aegif.nemaki.common.NemakiObjectType;
+import jp.aegif.nemaki.dao.ContentDaoService;
+import jp.aegif.nemaki.model.Ace;
+import jp.aegif.nemaki.model.Acl;
+import jp.aegif.nemaki.model.Archive;
+import jp.aegif.nemaki.model.Aspect;
+import jp.aegif.nemaki.model.AttachmentNode;
+import jp.aegif.nemaki.model.Change;
+import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.model.Document;
+import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.GroupItem;
+import jp.aegif.nemaki.model.Item;
+import jp.aegif.nemaki.model.NodeBase;
+import jp.aegif.nemaki.model.Policy;
+import jp.aegif.nemaki.model.Property;
+import jp.aegif.nemaki.model.Relationship;
+import jp.aegif.nemaki.model.Rendition;
+import jp.aegif.nemaki.model.UserItem;
+import jp.aegif.nemaki.model.VersionSeries;
+import jp.aegif.nemaki.model.exception.ParentNoLongerExistException;
+import jp.aegif.nemaki.util.DataUtil;
+import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.constant.CmisPermission;
+import jp.aegif.nemaki.util.constant.NodeType;
+import jp.aegif.nemaki.util.constant.PrincipalId;
+import jp.aegif.nemaki.util.constant.PropertyKey;
+import jp.aegif.nemaki.util.constant.RenditionKind;
 
 /**
  * Node Service implementation
@@ -413,6 +414,8 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public Set<String> getGroupIdsContainingUser(String repositoryId, String userId) {
+		log.info("ContentService#getJoinedGroupByUserId method start : " + userId);
+
 		String anonymous = getAnonymous(repositoryId);
 		String anyone = getAnyone(repositoryId);
 
@@ -426,7 +429,8 @@ public class ContentServiceImpl implements ContentService {
 		List<String> resultGroups = contentDaoService.getJoinedGroupByUserId(repositoryId, userId);
 		groupIds.addAll(resultGroups);
 		groupIds.add(anyone);
-		
+
+		log.info("ContentService#getJoinedGroupByUserId method end : " + userId);
 		return groupIds;
 	}
 
@@ -715,7 +719,7 @@ public class ContentServiceImpl implements ContentService {
 		updateVersionSeriesWithPwc(callContext, repositoryId, getVersionSeries(repositoryId, result), result);
 
 		// Write change event
-		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);		
+		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 
 		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing(repositoryId);
@@ -795,7 +799,7 @@ public class ContentServiceImpl implements ContentService {
 		// Record the change event
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 		writeChangeEvent(callContext, repositoryId, latest, ChangeType.UPDATED);
-		
+
 		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing(repositoryId);
 
@@ -842,7 +846,7 @@ public class ContentServiceImpl implements ContentService {
 		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing(repositoryId);
 
-		return result;		
+		return result;
 	}
 
 	private Document buildNewBasicDocument(CallContext callContext, String repositoryId, Properties properties,
@@ -1812,6 +1816,8 @@ public class ContentServiceImpl implements ContentService {
 	// Merge inherited ACL
 	@Override
 	public Acl calculateAcl(String repositoryId, Content content) {
+		log.info("ContentService#calculateAcl method : " + content.getName());
+
 		Acl acl = content.getAcl();
 
 		//boolean iht = (content.isAclInherited() == null) ? false : content.isAclInherited();

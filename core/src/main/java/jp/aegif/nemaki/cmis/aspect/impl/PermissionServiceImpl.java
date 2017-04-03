@@ -28,6 +28,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.apache.chemistry.opencmis.commons.data.AllowableActions;
+import org.apache.chemistry.opencmis.commons.data.ObjectData;
+import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
+import org.apache.chemistry.opencmis.commons.enums.Action;
+import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
+import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
@@ -39,22 +49,11 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.Relationship;
-import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.CmisPermission;
 import jp.aegif.nemaki.util.constant.PropertyKey;
-
-import org.apache.chemistry.opencmis.commons.data.AllowableActions;
-import org.apache.chemistry.opencmis.commons.data.ObjectData;
-import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
-import org.apache.chemistry.opencmis.commons.enums.Action;
-import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
-import org.apache.chemistry.opencmis.commons.server.CallContext;
-import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 
 /**
  * Permission Service implementation.
@@ -125,6 +124,7 @@ public class PermissionServiceImpl implements PermissionService {
 	@Override
 	public Boolean checkPermission(CallContext callContext, String repositoryId, String key,
 			Acl acl, String baseType, Content content) {
+		log.info("PermissionService#checkPermission method: " + content.getName());
 
 		//All permission checks must go through baseType check
 		if(!isAllowableBaseType(key, baseType, content, repositoryId)) return false;
@@ -132,10 +132,7 @@ public class PermissionServiceImpl implements PermissionService {
 		// Admin always pass a permission check
 		String userName = callContext.getUsername();
 		UserItem u = contentService.getUserItemById(repositoryId, userName);
-
-		if (u != null && u.isAdmin()) {
-			return true;
-		}
+		if (u != null && u.isAdmin()) return true;
 
 		//PWC doesn't accept any actions from a non-owner user
 		//TODO admin can manipulate PWC even when it is checked out ?
@@ -143,7 +140,7 @@ public class PermissionServiceImpl implements PermissionService {
 			Document document = (Document)content;
 			if(document.isPrivateWorkingCopy()){
 				VersionSeries vs = contentService.getVersionSeries(repositoryId, document);
-				if(!callContext.getUsername().equals(vs.getVersionSeriesCheckedOutBy())){
+				if(!userName.equals(vs.getVersionSeriesCheckedOutBy())){
 					return false;
 				}
 			}
@@ -169,7 +166,6 @@ public class PermissionServiceImpl implements PermissionService {
 
 		List<Ace> aces = acl.getAllAces();
 		Set<String> userPermissions = new HashSet<String>();
-		//Set<String> groups = principalService.getGroupIdsContainingUser(repositoryId, userName);
 		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
 		for (Ace ace : aces) {
 			// Filter ace which has not permissions

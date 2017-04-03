@@ -22,7 +22,6 @@
 package jp.aegif.nemaki.dao.impl.couch;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 
@@ -38,7 +37,6 @@ import org.ektorp.CouchDbConnector;
 import org.ektorp.ViewQuery;
 import org.ektorp.ViewResult;
 import org.ektorp.ViewResult.Row;
-import org.ektorp.support.CouchDbRepositorySupport;
 import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -101,7 +99,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	private static final Log log = LogFactory.getLog(ContentDaoServiceImpl.class);
 
 	private static final String DESIGN_DOCUMENT = "_design/_repo";
-	private static final String DESIGN_DOCUMENT2 = "_design/_repo2";	
+	private static final String DESIGN_DOCUMENT2 = "_design/_repo2";
 	private static final String ATTACHMENT_NAME = "content";
 
 	public ContentDaoServiceImpl() {
@@ -647,7 +645,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	public List<String> getJoinedGroupByUserId(String repositoryId, String userId) {
-
 		List<GroupItem> list = new ArrayList<>();
 
 		//first get directory joined groups
@@ -656,7 +653,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 		//get indirect joined group using above results
 		List<String> groupIdsToCheck = new ArrayList<String>();
-		List<String> resultGroupIds = new ArrayList<String>(); 
+		List<String> resultGroupIds = new ArrayList<String>();
 		for(CouchGroupItem item : couchGroupItems) {
 			groupIdsToCheck.add(item.getGroupId());
 			resultGroupIds.add(item.getGroupId());
@@ -666,9 +663,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			groupIdsToCheck = this.checkIndirectGroup(repositoryId, groupIdsToCheck);
 			resultGroupIds.addAll(groupIdsToCheck);
 		}
-		
+
 		//unique result
-		
+
 
 		return resultGroupIds;
 	}
@@ -689,11 +686,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			//divide into 20 param
 			if ( (i % batchSize) == batchSize - 1 || i == groupIdsToCheck.size() - 1 ) {
 				//query
-				ViewQuery query = 
+				ViewQuery query =
 						new ViewQuery().designDocId(DESIGN_DOCUMENT2).viewName("joinedDirectGroupsByGroupId");
 				query.keys(params);
-				List<CouchGroupItem> couchGroupItems = 
-						connectorPool.get(repositoryId).queryView(query, CouchGroupItem.class);	
+				List<CouchGroupItem> couchGroupItems =
+						connectorPool.get(repositoryId).queryView(query, CouchGroupItem.class);
 				for(CouchGroupItem item : couchGroupItems) {
 					resultGroupIds.add(item.getGroupId());
 				}

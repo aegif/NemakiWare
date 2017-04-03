@@ -17,6 +17,10 @@
 
   <logger name="play" level="INFO" />
   <logger name="application" level="INFO" />
+  <logger name="contorllers" level="INFO" />
+  <logger name="util" level="INFO" />
+  <logger name="org.pac4j" level="INFO" />
+
 
   <root level="INFO">
     <appender-ref ref="STDOUT" />

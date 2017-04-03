@@ -1,34 +1,25 @@
 package util.authentication;
 
-import org.apache.chemistry.opencmis.client.api.Session;
+import java.util.Optional;
+
 import org.apache.commons.lang3.StringUtils;
-import org.pac4j.core.client.Client;
-import org.pac4j.core.client.Clients;
 import org.pac4j.core.config.Config;
 import org.pac4j.core.context.HttpConstants;
 import org.pac4j.core.context.Pac4jConstants;
 import org.pac4j.core.profile.CommonProfile;
 import org.pac4j.core.profile.ProfileManager;
-import org.pac4j.http.client.indirect.FormClient;
 import org.pac4j.play.PlayWebContext;
 import org.pac4j.play.http.DefaultHttpActionAdapter;
-import org.pac4j.saml.client.SAML2Client;
 import org.pac4j.saml.profile.SAML2Profile;
 
 import com.google.inject.Inject;
 
 import constant.Token;
-import controllers.routes;
 import play.Logger;
 import play.Logger.ALogger;
 import play.i18n.Messages;
 import play.mvc.Result;
 import util.Util;
-
-import static play.mvc.Results.*;
-
-import java.util.List;
-import java.util.Optional;
 
 public class NemakiHttpActionAdapter extends DefaultHttpActionAdapter {
 	private static final ALogger logger = Logger.of(NemakiHttpActionAdapter.class);
