@@ -34,6 +34,7 @@ import org.pac4j.core.client.Clients;
 import org.pac4j.core.client.RedirectAction;
 import org.pac4j.core.config.Config;
 import org.pac4j.core.context.Pac4jConstants;
+import org.pac4j.core.credentials.Credentials;
 import org.pac4j.core.exception.HttpAction;
 import org.pac4j.core.profile.CommonProfile;
 import org.pac4j.core.profile.ProfileManager;
@@ -94,6 +95,7 @@ public class Application extends Controller {
 		}
 
 		Clients clients = config.getClients();
+		@SuppressWarnings("rawtypes")
 		List<Client> clientList = clients.findAllClients();
 		final SAML2Client samlClient = clientList.stream().filter(p -> p.getName().equals("SAML2Client")).map(p -> (SAML2Client)p).findFirst().orElse(null);
 		if( samlClient != null){
