@@ -2,11 +2,12 @@ package controllers;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-
+import java.net.URLEncoder;
 import org.apache.chemistry.opencmis.client.api.Session;
 import play.libs.Json;
 import play.mvc.Controller;
@@ -31,6 +32,13 @@ public class Principal extends Controller{
 	@Secure
 	public Result search(String repositoryId, String term, String groupId){
 		List<model.Principal>principals = new ArrayList<model.Principal>();
+		
+		try {
+			term = URLEncoder.encode(term,"UTF-8");
+		} catch (UnsupportedEncodingException e1) {
+			// TODO Auto-generated catch block
+			e1.printStackTrace();
+		}
 
 		//user search
 		JsonNode resultUsers = Util.getJsonResponse(ctx(), coreRestUri + "repo/" + repositoryId + "/user/search?query=" + term); //TODO
