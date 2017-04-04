@@ -16,8 +16,7 @@ import org.pac4j.saml.client.SAML2ClientConfiguration;
 
 import com.google.inject.AbstractModule;
 
-import 
-.Configuration;
+import play.Configuration;
 import play.Environment;
 import util.NemakiConfig;
 

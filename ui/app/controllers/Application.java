@@ -35,15 +35,19 @@ public class Application extends Controller {
 	@Secure(clients = "SAML2Client")
 	public Result samlLogin() {
 		logger.info("SAMLLogin");
-		final PlayWebContext context = new PlayWebContext(ctx());
+
+		@SuppressWarnings("unchecked")
+		final PlayWebContext context = new PlayWebContext(ctx(), config.getSessionStore());
 		String repositoryId = util.Util.getRepositoryId(context);
 		return redirect(routes.Node.index(repositoryId));
 	}
 
 	public Result adminlogin(String repositoryId) {
-		final PlayWebContext context = new PlayWebContext(ctx());
 		// remove session
 		ClearUserSession();
+
+		@SuppressWarnings("unchecked")
+		final PlayWebContext context = new PlayWebContext(ctx(), config.getSessionStore());
 
 		if(StringUtils.isBlank(repositoryId)){
 			repositoryId = Util.getRepositoryId(context);
@@ -64,7 +68,9 @@ public class Application extends Controller {
 	}
 
 	public Result login(String repositoryId) {
-		final PlayWebContext context = new PlayWebContext(ctx());
+		@SuppressWarnings("unchecked")
+		final PlayWebContext context = new PlayWebContext(ctx(), config.getSessionStore());
+
 		if(StringUtils.isBlank(repositoryId)){
 			repositoryId = Util.getRepositoryId(context);
 		}
@@ -91,7 +97,9 @@ public class Application extends Controller {
 	}
 
 	public Result getSaml2ServiceProviderMetadata() {
-		final PlayWebContext context = new PlayWebContext(ctx());
+		@SuppressWarnings("unchecked")
+		final PlayWebContext context = new PlayWebContext(ctx(), config.getSessionStore());
+
 		final SAML2Client saml2Client = (SAML2Client) config.getClients().findClient("SAML2Client");
 		saml2Client.init(context);
 
@@ -113,7 +121,8 @@ public class Application extends Controller {
 	}
 
 	private void ClearUserSession(){
-		final PlayWebContext context = new PlayWebContext(ctx());
+		@SuppressWarnings("unchecked")
+		final PlayWebContext context = new PlayWebContext(ctx(), config.getSessionStore());
 		final ProfileManager<CommonProfile> profileManager = new ProfileManager<>(context);
 		profileManager.logout();
 		ctx().session().clear();
