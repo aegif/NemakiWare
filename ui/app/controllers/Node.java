@@ -89,6 +89,18 @@ import util.NemakiConfig;
 import util.RelationshipUtil;
 import util.Util;
 import util.authentication.NemakiProfile;
+import views.html.node.blank;
+import views.html.node.detail;
+import views.html.node.detailFull;
+import views.html.node.file;
+import views.html.node.preview;
+import views.html.node.property;
+import views.html.node.relationship;
+import views.html.node.relationship_create;
+import views.html.node.search;
+import views.html.node.searchFreeQuery;
+import views.html.node.tree;
+import views.html.node.version;
 
 public class Node extends Controller {
 	private static final ALogger logger = Logger.of(Node.class);
