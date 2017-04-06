@@ -124,7 +124,6 @@ public class PermissionServiceImpl implements PermissionService {
 	@Override
 	public Boolean checkPermission(CallContext callContext, String repositoryId, String key,
 			Acl acl, String baseType, Content content) {
-		log.info("PermissionService#checkPermission method: " + content.getName());
 
 		//All permission checks must go through baseType check
 		if(!isAllowableBaseType(key, baseType, content, repositoryId)) return false;
