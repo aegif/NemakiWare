@@ -358,7 +358,6 @@ public class ExceptionServiceImpl implements ExceptionService,
 	@Override
 	public void permissionDenied(CallContext context, String repositoryId,
 			String key, Content content) {
-		log.info("ExceptionService#permissionDenied method : " + content.getName());
 
 		// Admin always pass a permission check(skip calculateAcl)
 		/*

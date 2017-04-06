@@ -414,8 +414,6 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public Set<String> getGroupIdsContainingUser(String repositoryId, String userId) {
-		log.info("ContentService#getJoinedGroupByUserId method start : " + userId);
-
 		String anonymous = getAnonymous(repositoryId);
 		String anyone = getAnyone(repositoryId);
 
@@ -430,7 +428,6 @@ public class ContentServiceImpl implements ContentService {
 		groupIds.addAll(resultGroups);
 		groupIds.add(anyone);
 
-		log.info("ContentService#getJoinedGroupByUserId method end : " + userId);
 		return groupIds;
 	}
 
@@ -1816,7 +1813,6 @@ public class ContentServiceImpl implements ContentService {
 	// Merge inherited ACL
 	@Override
 	public Acl calculateAcl(String repositoryId, Content content) {
-		log.info("ContentService#calculateAcl method : " + content.getName());
 
 		Acl acl = content.getAcl();
 
