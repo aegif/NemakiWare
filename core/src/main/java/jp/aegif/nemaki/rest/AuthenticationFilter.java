@@ -73,14 +73,14 @@ public class AuthenticationFilter implements Filter {
 		if(auth){
 			chain.doFilter(req, res);
 		}else{
-			log.error("REST API Unauthorized!");
+			log.warn("REST API Unauthorized! : " + hreq.getRequestURI());
 			hres.sendError(HttpServletResponse.SC_UNAUTHORIZED);
 		}
 	}
 
 	public boolean login(HttpServletRequest request, HttpServletResponse response){
 		final String repositoryId = getRepositoryId(request);
-		
+
 		//Make dummy callContext
 		NemakiAuthCallContextHandler callContextHandeler = new NemakiAuthCallContextHandler();
 		Map<String, String> map = callContextHandeler.getCallContextMap(request);
@@ -96,7 +96,7 @@ public class AuthenticationFilter implements Filter {
 		}else{
 			auth = authenticationService.login(ctxt);
 		}
-		
+
 		//Add attributes to Jersey @Context parameter
 		//TODO hard-coded key
 		request.setAttribute("CallContext", ctxt);
