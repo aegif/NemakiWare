@@ -86,7 +86,6 @@ import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
-import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.DataUtil;
@@ -359,15 +358,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 	@Override
 	public void permissionDenied(CallContext context, String repositoryId,
 			String key, Content content) {
-		if(content == null){
-			System.out.println();
-		}
-
-
 		String baseTypeId = content.getType();
 		Acl acl = contentService.calculateAcl(repositoryId, content);
 		permissionDeniedInternal(context, repositoryId, key, acl, baseTypeId, content);
-
 		permissionTopLevelFolder(context, repositoryId, key, content);
 	}
 
@@ -399,12 +392,6 @@ public class ExceptionServiceImpl implements ExceptionService,
 			String msg = "This operation is permitted only for administrator";
 			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
 		}
-
-		/*User user = principalService.getUserById(repositoryId, context.getUsername());
-		if(!user.isAdmin()){
-			String msg = "This operation is permitted only for administrator";
-			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
-		}*/
 	}
 
 	/**
