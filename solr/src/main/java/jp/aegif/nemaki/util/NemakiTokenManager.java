@@ -44,13 +44,11 @@ public class NemakiTokenManager {
 					.queryParam("app", "solr")
 					.accept(MediaType.APPLICATION_JSON_TYPE).get(String.class);
 		} catch (Exception e) {
-			logger.error("Cannot connect to Core REST API -> " + restUri, e);
+			logger.error("Cannot connect to Core REST API :" + restUri, e);
+			throw e;
 		}
 
 		try {
-			if(apiResult == null){
-				throw new Exception();
-			}
 			JSONObject result = (JSONObject) new JSONParser().parse(apiResult);
 			if ("success".equals(result.get("status").toString())) {
 				JSONObject value = (JSONObject) result.get("value");
@@ -58,10 +56,11 @@ public class NemakiTokenManager {
 				long expiration = (Long) value.get("expiration");
 				tokenMap.put(userName, new Token(repositoryId, userName, token, expiration));
 				return token;
+			}else{
+				logger.error("Return failure status from REST API response : " + restUri  );
 			}
-
 		} catch (Exception e) {
-			logger.error("Cannot export token from REST API response", e);
+			logger.error("Cannot export token from REST API response : " + restUri, e);
 		}
 
 		return null;
@@ -81,12 +80,11 @@ public class NemakiTokenManager {
 		Token token = tokenMap.get(userName);
 		if (token != null) {
 			if (token.getExpiration() < System.currentTimeMillis()) {
-				System.out.println(userName + ":basic auth token has expired");
+				logger.info(userName + ": Basic auth token has expired");
 				return null;
 			} else {
 				return token.getToken();
 			}
-
 		} else {
 			return null;
 		}
