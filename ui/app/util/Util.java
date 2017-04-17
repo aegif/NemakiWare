@@ -143,7 +143,6 @@ public class Util {
 	}
 
 	public static String getRepositoryId(WebContext context) {
-		logger.info("Util#getRepositoryId");
 		String repoId = (String) context.getSessionAttribute(Token.LOGIN_REPOSITORY_ID);
 		if (StringUtils.isBlank(repoId)) {
 			String uri = context.getFullRequestURL();
@@ -155,7 +154,6 @@ public class Util {
 				}
 			}
 		}
-		logger.info("Util#getRepositoryId success" + repoId);
 		return repoId;
 	}
 
@@ -194,10 +192,9 @@ public class Util {
 	}
 
 	public static Session createCmisSession(String repositoryId, play.mvc.Http.Context ctx) {
-		logger.info("Util#createCmisSession");
 		NemakiProfile profile = Util.getProfile(ctx);
 		String profileRepositoryId = profile.getRepositoryId();
-		// 作成時にはそのプロファイルである必要がある。いちど作ればキャッシュされるはず
+		// profile mismatch
 
 		if (profileRepositoryId != null && !repositoryId.equals(profileRepositoryId)) {
 			logger.error("Access repository mismatch [Profile]" + profileRepositoryId + " [AccessRepository]"
