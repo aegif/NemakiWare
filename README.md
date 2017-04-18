@@ -30,7 +30,7 @@ You can relax and enjoy happy enterprise time as if you are lying on the couch i
 
 License
 ----------
-Copyright (c) 2013-2016 aegif.
+Copyright (c) 2013-2017 aegif.
 
 NemakiWare is Open Source software and licensed under the `GNU Affero General Public License version 3`. You are welcome to change and redistribute it under certain conditions. For more information see the `legal/LICENSE` file.
 
