@@ -146,12 +146,18 @@ public class Util {
 		String repoId = (String) context.getSessionAttribute(Token.LOGIN_REPOSITORY_ID);
 		if (StringUtils.isBlank(repoId)) {
 			String uri = context.getFullRequestURL();
-			repoId = extractRepositoryId(uri);
-			if (StringUtils.isBlank(repoId)) {
-				repoId = Form.form().bindFromRequest().get("repositoryId");
-				if(StringUtils.isBlank(repoId)){
-					repoId = NemakiConfig.getDefualtRepositoryId();
-				}
+			repoId = getRepositoryId(uri);
+		}
+		return repoId;
+	}
+
+	public static String getRepositoryId(String uri) {
+		String repoId;
+		repoId = extractRepositoryId(uri);
+		if (StringUtils.isBlank(repoId)) {
+			repoId = Form.form().bindFromRequest().get("repositoryId");
+			if(StringUtils.isBlank(repoId)){
+				repoId = NemakiConfig.getDefualtRepositoryId();
 			}
 		}
 		return repoId;

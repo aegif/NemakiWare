@@ -4,6 +4,7 @@ import play.Logger;
 import play.http.HttpErrorHandler;
 import play.mvc.*;
 import play.mvc.Http.*;
+import util.Util;
 import play.libs.F.*;
 import views.html.*;
 
@@ -12,8 +13,9 @@ public class ErrorHandler implements HttpErrorHandler {
 	@Override
     public Promise<Result> onClientError(RequestHeader request, int statusCode, String message) {
         Logger.debug("onClientError");
+        String repositoryId = Util.getRepositoryId(request.uri());
         return Promise.<Result> pure(
-                Results.badRequest(error.render())
+                Results.badRequest(error.render(repositoryId))
         );
     }
 	@Override
