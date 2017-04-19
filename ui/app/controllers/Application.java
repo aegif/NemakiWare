@@ -130,7 +130,9 @@ public class Application extends Controller {
 
 
 	public Result error() {
-		return ok(views.html.error.render());
+		final PlayWebContext context = new PlayWebContext(ctx(), config.getSessionStore());
+		String repositoryId = Util.getRepositoryId(context);
+		return ok(views.html.error.render(repositoryId));
 	}
 
 	public Result jsRoutes() {
