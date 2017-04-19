@@ -413,7 +413,6 @@ public class SolrPredicateWalker{
 		List<String> descendantIds = new ArrayList<String>();
 		SolrDocumentList children = null;
 		try {
-			System.out.println("## query1:" + query1);
 			QueryResponse resp = solrServer.query(new SolrQuery(query1.toString()));
 			children = resp.getResults();
 		} catch (SolrServerException e) {
@@ -441,7 +440,6 @@ public class SolrPredicateWalker{
 			query2.add(tq, Occur.SHOULD);
 		}
 
-		System.out.println("## query2:" + query2);
 		return query2;
 	}
 
