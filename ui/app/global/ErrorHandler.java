@@ -15,14 +15,15 @@ public class ErrorHandler implements HttpErrorHandler {
         Logger.debug("onClientError");
         String repositoryId = Util.getRepositoryId(request.uri());
         return Promise.<Result> pure(
-                Results.badRequest(error.render(repositoryId))
+                Results.badRequest(views.html.error.render(repositoryId, "Client error."))
         );
     }
 	@Override
     public Promise<Result> onServerError(RequestHeader request, Throwable exception) {
         Logger.debug("onServerError");
+        String repositoryId = Util.getRepositoryId(request.uri());
         return Promise.<Result> pure(
-                Results.internalServerError("A server error occurred: " + exception.getMessage())
+                Results.internalServerError(views.html.error.render(repositoryId, exception.getMessage()))
         );
     }
 

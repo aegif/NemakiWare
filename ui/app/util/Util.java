@@ -155,7 +155,11 @@ public class Util {
 		String repoId;
 		repoId = extractRepositoryId(uri);
 		if (StringUtils.isBlank(repoId)) {
-			repoId = Form.form().bindFromRequest().get("repositoryId");
+			try{
+				repoId = Form.form().bindFromRequest().get("repositoryId");
+			}catch(Exception ex){
+				//no-op
+			}
 			if(StringUtils.isBlank(repoId)){
 				repoId = NemakiConfig.getDefualtRepositoryId();
 			}
