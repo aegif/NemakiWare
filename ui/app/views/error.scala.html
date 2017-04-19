@@ -1,6 +1,6 @@
 @*{<meta charset="UTF-8" />}*@
 
-@(repositoryId:String)
+@(repositoryId:String)(message: String=null)
 @import helper._
 
 <html>
@@ -14,6 +14,7 @@
 					A server error has occured.<br/>
 					Please report to the administrator.
 					</div>
+					<div>@message</div>
 					<div><a href="@routes.Node.index(repositoryId)" />Return to top page.</a></div>
 				</div>
 			</div>

@@ -92,7 +92,6 @@ public class Application extends Controller {
 		final FormClient formClient = (FormClient) clients.findClient("FormClient");
 		String message = ctx().request().getQueryString("error");
 
-		logger.info("Application#login STEP 4");
 		return ok(views.html.login.render(repositoryId, formClient.getCallbackUrl() , message));
 	}
 
@@ -132,7 +131,7 @@ public class Application extends Controller {
 	public Result error() {
 		final PlayWebContext context = new PlayWebContext(ctx(), config.getSessionStore());
 		String repositoryId = Util.getRepositoryId(context);
-		return ok(views.html.error.render(repositoryId));
+		return ok(views.html.error.render(repositoryId, ""));
 	}
 
 	public Result jsRoutes() {
