@@ -398,7 +398,7 @@ public class SolrPredicateWalker{
 			query1.add(new TermQuery(t), Occur.MUST);
 		}else{
 			String _folderId = folderId.replaceAll("\\/", "\\\\/"); //escape in Solr query
-			Term t1 = new Term(solrUtil.getPropertyNameInSolr(PropertyIds.PARENT_ID), _folderId);
+			Term t1 = new Term(solrUtil.getPropertyNameInSolr(PropertyIds.OBJECT_ID), _folderId);
 			String path = folderPath + "/*";
 			String _path = path.replaceAll("\\/", "\\\\/"); //escape in Solr query
 			Term t2 = new Term(solrUtil.getPropertyNameInSolr(PropertyIds.PATH), _path);
@@ -413,6 +413,7 @@ public class SolrPredicateWalker{
 		List<String> descendantIds = new ArrayList<String>();
 		SolrDocumentList children = null;
 		try {
+			System.out.println("## query1:" + query1);
 			QueryResponse resp = solrServer.query(new SolrQuery(query1.toString()));
 			children = resp.getResults();
 		} catch (SolrServerException e) {
@@ -424,7 +425,7 @@ public class SolrPredicateWalker{
 			Iterator<SolrDocument> it = children.iterator();
 			while(it.hasNext()){
 				SolrDocument sd = it.next();
-				String id = (String) sd.getFieldValue("id");
+				String id = (String) sd.getFieldValue("object_id");
 				descendantIds.add(id);
 			}
 		}
@@ -440,6 +441,7 @@ public class SolrPredicateWalker{
 			query2.add(tq, Occur.SHOULD);
 		}
 
+		System.out.println("## query2:" + query2);
 		return query2;
 	}
 
