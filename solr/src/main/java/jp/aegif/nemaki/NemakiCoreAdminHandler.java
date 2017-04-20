@@ -39,7 +39,10 @@ import jp.aegif.nemaki.util.yaml.RepositorySetting;
 import jp.aegif.nemaki.util.yaml.RepositorySettings;
 
 import org.apache.commons.lang3.StringUtils;
-import org.apache.log4j.Logger;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.client.solrj.embedded.EmbeddedSolrServer;
 import org.apache.solr.common.params.CoreAdminParams;
@@ -65,7 +68,7 @@ import org.quartz.impl.StdSchedulerFactory;
  */
 public class NemakiCoreAdminHandler extends CoreAdminHandler {
 
-	Logger logger = Logger.getLogger(NemakiCoreAdminHandler.class);
+	private static final Logger logger = LoggerFactory.getLogger(NemakiCoreAdminHandler.class);
 
 	ConcurrentHashMap<String, CoreTracker> trackers = new ConcurrentHashMap<String, CoreTracker>();
 	Scheduler scheduler = null;

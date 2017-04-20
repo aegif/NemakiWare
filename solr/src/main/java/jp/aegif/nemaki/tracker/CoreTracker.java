@@ -49,8 +49,12 @@ import org.apache.chemistry.opencmis.client.api.ChangeEvents;
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
 import org.apache.chemistry.opencmis.commons.spi.CmisBinding;
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
-import org.apache.log4j.Logger;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.client.solrj.SolrServerException;
@@ -74,7 +78,7 @@ public class CoreTracker extends CloseHook {
 
 	private static final Object LOCK = new Object();
 
-	Logger logger = Logger.getLogger(CoreTracker.class);
+	private static final Logger logger = LoggerFactory.getLogger(CoreTracker.class);
 
 	NemakiCoreAdminHandler adminHandler;
 	SolrCore core;
@@ -116,15 +120,15 @@ public class CoreTracker extends CloseHook {
 				// Initialize all documents
 				indexServer.deleteByQuery("*:*");
 				indexServer.commit();
-				logger.info(core.getName() + ":Successfully initialized!");
+				logger.info("{}:Successfully initialized!",core.getName());
 
 				tokenServer.deleteByQuery("*:*");
 				tokenServer.commit();
-				logger.info(core.getName() + ":Successfully initialized!");
+				logger.info("{}:Successfully initialized!",core.getName());
 			} catch (SolrServerException e) {
-				logger.error(core.getName() + ":Initialization failed!", e);
+				logger.error("{}:Initialization failed!",core.getName(), e);
 			} catch (IOException e) {
-				logger.error(core.getName() + ":Initialization failed!", e);
+				logger.error("{}:Initialization failed!",core.getName(), e);
 			}
 		}
 	}
@@ -135,14 +139,14 @@ public class CoreTracker extends CloseHook {
 				// Initialize all documents
 				indexServer.deleteByQuery(Constant.FIELD_REPOSITORY_ID + ":" + repositoryId);
 				indexServer.commit();
-				logger.info(core.getName() + ":Successfully initialized!");
+				logger.info("{}:Successfully initialized!",core.getName());
 
 				storeLatestChangeToken("", repositoryId);
 
 			} catch (SolrServerException e) {
-				logger.error(core.getName() + ":Initialization failed!", e);
+				logger.error("{}:Initialization failed!",core.getName(), e);
 			} catch (IOException e) {
-				logger.error(core.getName() + ":Initialization failed!", e);
+				logger.error("{}:Initialization failed!",core.getName(), e);
 			}
 		}
 	}
@@ -156,9 +160,10 @@ public class CoreTracker extends CloseHook {
 		RepositorySettings settings = CmisSessionFactory.getRepositorySettings();
 		for (String repositoryId : settings.getIds()) {
 			try{
-				index(trackingType, repositoryId); // TODO multi-threding
+				// TODO multi-threding
+				index(trackingType, repositoryId);
 			}catch(Exception ex){
-				logger.error(MessageFormat.format("Indexing error repository={0}",repositoryId), ex);
+				logger.error("Indexing error repository : {}",repositoryId, ex);
 			}
 		}
 	}
@@ -174,15 +179,10 @@ public class CoreTracker extends CloseHook {
 			// After 2nd crawling, discard the first item
 			// Because the specs say that it's included in the results
 			String token = readLatestChangeToken(repositoryId);
-
-			if (!StringUtils.isEmpty(token)) {
-				if (!org.apache.commons.collections.CollectionUtils.isEmpty(events)) {
+			if (StringUtils.isNotEmpty(token) && CollectionUtils.isNotEmpty(events)) {
 					events.remove(0);
-				}
 			}
-
-			if (events.isEmpty())
-				return;
+			if (events.isEmpty()) return;
 
 			// Parse filtering configuration
 			PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
@@ -221,7 +221,7 @@ public class CoreTracker extends CloseHook {
 				try {
 					t.join();
 				} catch (InterruptedException e) {
-					logger.error(e);
+					logger.error("Thred interuptted! ", e);
 				}
 			}
 
@@ -248,7 +248,7 @@ public class CoreTracker extends CloseHook {
 		try {
 			resp = tokenServer.query(solrQuery);
 		} catch (SolrServerException e) {
-			logger.error(MessageFormat.format("Read latest ChangeToken query failed : {0} ",solrQuery), e);
+			logger.error("Read latest ChangeToken query failed : {} ",solrQuery, e);
 		}
 
 		String latestChangeToken = "";
@@ -256,8 +256,8 @@ public class CoreTracker extends CloseHook {
 			SolrDocument doc = resp.getResults().get(0);
 			latestChangeToken = (String) doc.get(Constant.FIELD_TOKEN);
 		} else {
-			logger.info("No latest change token found for repository: " + repositoryId);
-			logger.info("Set blank latest change token for repository: " + repositoryId);
+			logger.info("No latest change token found for repository: {}", repositoryId);
+			logger.info("Set blank latest change token for repository: {}", repositoryId);
 			storeLatestChangeToken("", repositoryId);
 		}
 		return latestChangeToken;

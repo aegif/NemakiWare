@@ -4,6 +4,8 @@ public interface Constant {
 	String MODE_FULL = "FULL";
 	String MODE_DELTA = "DELTA";
 
+	String DATETIME_FORMAT = "yyyy-MM-dd'T'HH:mm:ss'Z'";
+
 	// Solr filed name
 	String FIELD_ID = "id";
 	String FIELD_REPOSITORY_ID = "repository_id";
