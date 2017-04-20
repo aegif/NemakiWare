@@ -321,7 +321,7 @@ public class Registration implements Runnable{
 			out.flush();
 			out.close();
 		} catch (IOException e) {
-			System.out.println(e.getMessage());
+			logger.error("Error occurred during output file stream.", e);
 		}
 		return file;
 	}
