@@ -1186,7 +1186,7 @@ public class CompileServiceImpl implements CompileService {
 					propDate = new PropertyDateTimeImpl(id,(GregorianCalendar) value);
 				}else if(value instanceof String){
 					try{
-						propDate = new PropertyDateTimeImpl(DataUtil.convertToCalender((String)value),cal);
+						propDate = new PropertyDateTimeImpl(id , DataUtil.convertToCalender((String)value));
 					}catch(ParseException ex){
 						propDate = createNullDateTimeProperty(tdf, id, value, pdf);
 					}
