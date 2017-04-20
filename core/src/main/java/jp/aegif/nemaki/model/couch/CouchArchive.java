@@ -32,6 +32,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.util.DataUtil;
+import jp.aegif.nemaki.util.constant.SystemConst;
 
 public class CouchArchive extends CouchNodeBase{
 
@@ -182,7 +183,7 @@ public class CouchArchive extends CouchNodeBase{
 	}
 
 	public String convertToDateFormat(GregorianCalendar cal) {
-		SimpleDateFormat sdf = new SimpleDateFormat(DataUtil.DATE_FORMAT);
+		SimpleDateFormat sdf = new SimpleDateFormat(SystemConst.DATETIME_FORMAT);
 		return sdf.format(cal.getTime());
 	}
 

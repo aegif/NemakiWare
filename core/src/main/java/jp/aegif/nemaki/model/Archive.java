@@ -34,6 +34,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.constant.DomainType;
 import jp.aegif.nemaki.util.constant.NodeType;
+import jp.aegif.nemaki.util.constant.SystemConst;
 
 /**
  * As of now, this class holds the minimum data to create ChangeEvent of a
@@ -184,17 +185,13 @@ public class Archive extends NodeBase {
 				if(getAttachmentNodeId() != null) put("nemakiAttachments", getAttachmentNodeId().toString());
 				if(getVersionSeriesId() != null) put("versionSeriesId", getVersionSeriesId());
 				if(isLatestVersion() != null) put("isLatestVersion", isLatestVersion());
-				if(getCreated() != null) put("created", convertToDateFormat(getCreated()));
+				if(getCreated() != null) put("created", DataUtil.convertToDateFormat(getCreated()));
 				if(getCreator() != null) put("creator", getCreator());
 			}
 		};
 		return m.toString();
 	}
 
-	public String convertToDateFormat(GregorianCalendar cal) {
-		SimpleDateFormat sdf = new SimpleDateFormat(DataUtil.DATE_FORMAT);
-		return sdf.format(cal.getTime());
-	}
 
 	@Override
 	public boolean equals(Object obj) {

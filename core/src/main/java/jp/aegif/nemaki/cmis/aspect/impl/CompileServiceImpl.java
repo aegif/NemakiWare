@@ -22,7 +22,12 @@
 package jp.aegif.nemaki.cmis.aspect.impl;
 
 import java.math.BigInteger;
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -30,6 +35,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.stream.Stream;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.AllowableActions;
@@ -115,6 +121,7 @@ import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.CmisExtensionToken;
 import jp.aegif.nemaki.util.constant.PropertyKey;
+import jp.aegif.nemaki.util.constant.SystemConst;
 import net.sf.ehcache.Element;
 
 public class CompileServiceImpl implements CompileService {
@@ -1160,21 +1167,31 @@ public class CompileServiceImpl implements CompileService {
 			case DATETIME:
 				PropertyDateTimeImpl propDate;
 				if (value instanceof List<?>) {
-					propDate = new PropertyDateTimeImpl(id,
-							(List<GregorianCalendar>) value);
+					Stream<?> values = ((List<?>)value).stream();
+					List<GregorianCalendar> calList = new ArrayList<GregorianCalendar>();
+					values.forEach(p -> {
+						if (p instanceof GregorianCalendar) {
+							calList.add( (GregorianCalendar)p );
+						}else if(value instanceof String){
+							try{
+								GregorianCalendar cal = DataUtil.convertToCalender((String)value);
+								calList.add( cal );
+							}catch(ParseException ex){
+								//skip
+							}
+						}
+					});
+					propDate = new PropertyDateTimeImpl(id, calList);
 				} else if (value instanceof GregorianCalendar) {
-					propDate = new PropertyDateTimeImpl(id,
-							(GregorianCalendar) value);
-				} else {
-					GregorianCalendar _null = null;
-					propDate = new PropertyDateTimeImpl(id, _null);
-					if (value != null) {
-						String msg = buildCastErrMsg(tdf.getId(), id,
-								pdf.getPropertyType(), value.getClass()
-										.getName(),
-								GregorianCalendar.class.getName());
-						log.warn(msg);
+					propDate = new PropertyDateTimeImpl(id,(GregorianCalendar) value);
+				}else if(value instanceof String){
+					try{
+						propDate = new PropertyDateTimeImpl(DataUtil.convertToCalender((String)value),cal);
+					}catch(ParseException ex){
+						propDate = createNullDateTimeProperty(tdf, id, value, pdf);
 					}
+				} else {
+					propDate = createNullDateTimeProperty(tdf, id, value, pdf);
 				}
 				addPropertyBase(props, id, propDate, pdf);
 				break;
@@ -1223,6 +1240,21 @@ public class CompileServiceImpl implements CompileService {
 			log.warn("typeId:" + tdf + ", propertyId:" + id
 					+ " Fail to add a property!", e);
 		}
+	}
+
+	private PropertyDateTimeImpl createNullDateTimeProperty(TypeDefinition tdf, String id, Object value,
+			PropertyDefinition<?> pdf) {
+		PropertyDateTimeImpl propDate;
+		GregorianCalendar _null = null;
+		propDate = new PropertyDateTimeImpl(id, _null);
+		if (value != null) {
+			String msg = buildCastErrMsg(tdf.getId(), id,
+					pdf.getPropertyType(), value.getClass()
+							.getName(),
+					GregorianCalendar.class.getName());
+			log.warn(msg);
+		}
+		return propDate;
 	}
 
 	private String buildCastErrMsg(String typeId, String propertyId,
