@@ -39,6 +39,7 @@ import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.exception.ParentNoLongerExistException;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.constant.NodeType;
+import jp.aegif.nemaki.util.constant.SystemConst;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -150,7 +151,7 @@ public class ArchiveResource extends ResourceBase {
 		archiveJson.put("parentId", archive.getParentId());
 		archiveJson.put("isDeletedWithParent", archive.isDeletedWithParent());
 		try{
-			String _created = new SimpleDateFormat(DataUtil.DATE_FORMAT).format(archive.getCreated().getTime());
+			String _created = new SimpleDateFormat(SystemConst.DATETIME_FORMAT).format(archive.getCreated().getTime());
 			archiveJson.put("created", _created);
 		}catch(Exception e){
 			log.warn(String.format("Archive(%s) 'created' property is broken.", archive.getId()));

@@ -2,12 +2,17 @@ package jp.aegif.nemaki.util;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.List;
 import java.util.TimeZone;
 
 import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.util.constant.SystemConst;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
@@ -47,7 +52,6 @@ import org.apache.lucene.document.DateTools.Resolution;
 public class DataUtil {
 	public static final String NAMESPACE = "http://www.aegif.jp/Nemaki";
 
-	public static final String DATE_FORMAT = "yyyy:MM:dd HH:mm:ss z";
 
 	private static final Log log = LogFactory.getLog(DataUtil.class);
 
@@ -519,4 +523,20 @@ public class DataUtil {
 			return BigInteger.valueOf(l);
 		}
 	}
+
+	public static String convertToDateFormat(GregorianCalendar cal) {
+		SimpleDateFormat sdf = new SimpleDateFormat(SystemConst.DATETIME_FORMAT);
+		return sdf.format(cal.getTime());
+	}
+
+	public static GregorianCalendar convertToCalender(String value) throws ParseException {
+		DateFormat sdf = new SimpleDateFormat(SystemConst.DATETIME_FORMAT);
+		sdf.setLenient(false);
+		Date date = sdf.parse(value);
+		GregorianCalendar  cal = new GregorianCalendar();
+		cal.setTime( date );
+		return cal;
+	}
+
+
 }
