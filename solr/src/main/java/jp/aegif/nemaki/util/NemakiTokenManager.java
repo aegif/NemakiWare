@@ -10,7 +10,10 @@ import javax.ws.rs.core.MediaType;
 import jp.aegif.nemaki.util.impl.PropertyManagerImpl;
 
 import org.apache.commons.lang.StringUtils;
-import org.apache.log4j.Logger;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
@@ -19,7 +22,7 @@ import com.sun.jersey.api.client.Client;
 import com.sun.jersey.api.client.filter.HTTPBasicAuthFilter;
 
 public class NemakiTokenManager {
-	Logger logger = Logger.getLogger(NemakiTokenManager.class);
+	private static final Logger logger = LoggerFactory.getLogger(NemakiTokenManager.class);
 
 	private final String restEndpoint;
 	private Map<String, Token> tokenMap;
@@ -44,7 +47,7 @@ public class NemakiTokenManager {
 					.queryParam("app", "solr")
 					.accept(MediaType.APPLICATION_JSON_TYPE).get(String.class);
 		} catch (Exception e) {
-			logger.error("Cannot connect to Core REST API :" + restUri, e);
+			logger.error("Cannot connect to Core REST API : {}", restUri, e);
 			throw e;
 		}
 
@@ -57,10 +60,10 @@ public class NemakiTokenManager {
 				tokenMap.put(userName, new Token(repositoryId, userName, token, expiration));
 				return token;
 			}else{
-				logger.error("Return failure status from REST API response : " + restUri  );
+				logger.error("Return failure status from REST API response : {}",restUri  );
 			}
 		} catch (Exception e) {
-			logger.error("Cannot export token from REST API response : " + restUri, e);
+			logger.error("Cannot export token from REST API response : {}",restUri, e);
 		}
 
 		return null;
@@ -80,7 +83,7 @@ public class NemakiTokenManager {
 		Token token = tokenMap.get(userName);
 		if (token != null) {
 			if (token.getExpiration() < System.currentTimeMillis()) {
-				logger.info(userName + ": Basic auth token has expired");
+				logger.info("{}: Basic auth token has expired!", userName );
 				return null;
 			} else {
 				return token.getToken();
@@ -104,10 +107,8 @@ public class NemakiTokenManager {
 		try {
 			URL url = new URL(protocol, host, Integer.parseInt(port), "");
 			return url.toString() + "/" + context + "/rest";
-		} catch (NumberFormatException e) {
-			e.printStackTrace();
-		} catch (MalformedURLException e) {
-			e.printStackTrace();
+		} catch (Exception e) {
+			logger.error("Error occurred during getting REST endpoint.", e);
 		}
 		return null;
 	}

@@ -33,13 +33,17 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
 
+import jp.aegif.nemaki.util.NemakiTokenManager;
 import jp.aegif.nemaki.util.PropertyKey;
 import jp.aegif.nemaki.util.PropertyManager;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.solr.core.SolrResourceLoader;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class PropertyManagerImpl implements PropertyManager{
+	private static final Logger logger = LoggerFactory.getLogger(PropertyManagerImpl.class);
 
 	private String propertiesFile;
 	private Properties config;
@@ -72,13 +76,12 @@ public class PropertyManagerImpl implements PropertyManager{
 				overrideFiles = split(_overrideFiles);
 			}
 		}catch(Exception e) {
-			e.printStackTrace();
+			logger.error("Error occurred during setting of PropertyManager.", e);
 		}finally{
 			try {
 				loader.close();
-			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
+			} catch (Exception e) {
+				logger.error("Error occurred during closing SolrResourceLoader.", e);
 			}
 		}
 	}
@@ -130,9 +133,8 @@ public class PropertyManagerImpl implements PropertyManager{
 			Properties properties = new Properties();
 			try {
 				properties.load(is);
-			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
+			} catch (Exception e) {
+				logger.error("Error occurred during loading porperties.", e);
 			}
 
 			String _value = properties.getProperty(key);
@@ -161,16 +163,8 @@ public class PropertyManagerImpl implements PropertyManager{
 		    else {
 			config.store(new FileOutputStream(new File(url.toURI())), null);
 		    }
-
-		} catch (FileNotFoundException e) {
-			// TODO 自動生成された catch ブロック
-			e.printStackTrace();
-		} catch (IOException e) {
-			// TODO 自動生成された catch ブロック
-			e.printStackTrace();
-		} catch (URISyntaxException e) {
-			// TODO 自動生成された catch ブロック
-			e.printStackTrace();
+		} catch (Exception e) {
+			logger.error("Error occurred during modification of porperty value.", e);
 		}
 
 	}
@@ -193,12 +187,8 @@ public class PropertyManagerImpl implements PropertyManager{
 		URL url = classLoader.getResource(propertiesFile);
 		try {
 			config.store(new FileOutputStream(new File(url.toURI())), null);
-		} catch (FileNotFoundException e) {
-			e.printStackTrace();
-		} catch (IOException e) {
-			e.printStackTrace();
-		} catch (URISyntaxException e) {
-			e.printStackTrace();
+		} catch (Exception e) {
+			logger.error("Error occurred during adding porperty value.", e);
 		}
 	}
 
@@ -221,12 +211,8 @@ public class PropertyManagerImpl implements PropertyManager{
 			URL url = classLoader.getResource(propertiesFile);
 			try {
 				config.store(new FileOutputStream(new File(url.toURI())), null);
-			} catch (FileNotFoundException e) {
-				e.printStackTrace();
-			} catch (IOException e) {
-				e.printStackTrace();
-			} catch (URISyntaxException e) {
-				e.printStackTrace();
+			} catch (Exception e) {
+				logger.error("Error occurred during removing porperty value.", e);
 			}
 		}
 	}

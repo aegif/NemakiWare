@@ -16,7 +16,9 @@ import org.apache.chemistry.opencmis.client.api.SessionFactory;
 import org.apache.chemistry.opencmis.client.runtime.SessionFactoryImpl;
 import org.apache.chemistry.opencmis.commons.SessionParameter;
 import org.apache.chemistry.opencmis.commons.enums.BindingType;
-import org.apache.log4j.Logger;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.esotericsoftware.yamlbeans.YamlReader;
 import com.esotericsoftware.yamlbeans.YamlWriter;
@@ -28,7 +30,7 @@ import jp.aegif.nemaki.util.yaml.RepositorySetting;
 import jp.aegif.nemaki.util.yaml.RepositorySettings;
 
 public class CmisSessionFactory {
-	private static final Logger logger = Logger.getLogger(CmisSessionFactory.class);
+	private static final Logger logger = LoggerFactory.getLogger(CmisSessionFactory.class);
 
 	private static Map<String, Session> sessions = new HashMap<String, Session>();
 	private static NemakiTokenManager nemakiTokenManager = new NemakiTokenManager();
@@ -42,7 +44,7 @@ public class CmisSessionFactory {
 
 		Session session = sessions.get(repositoryId);
 		if (session == null) {
-			logger.warn("No CMIS repositoryId:" + repositoryId);
+			logger.warn("No CMIS repositoryId:{}", repositoryId);
 		}
 		return sessions.get(repositoryId);
 	}
@@ -108,11 +110,8 @@ public class CmisSessionFactory {
 		try {
 			URL url = new URL(protocol, host, Integer.parseInt(port), "");
 			return String.format("%s/%s/atom/%s", url.toString(), context, repositoryId);
-		} catch (NumberFormatException e) {
-			logger.error("", e);
-			e.printStackTrace();
-		} catch (MalformedURLException e) {
-			logger.error("", e);
+		} catch (Exception e) {
+			logger.error("Error occurred during getting ATOM endpoint.", e);
 		}
 		return null;
 	}
@@ -182,25 +181,18 @@ public class CmisSessionFactory {
 		String location = pm.readValue(PropertyKey.REPOSITORIES_SETTING_FILE);
 		SolrResourceLoader loader = new SolrResourceLoader(null);
 		try {
-
 			String configDir = loader.getConfigDir();
 			File file = new File(configDir + location);
 			YamlWriter writer = new YamlWriter(new FileWriter(file));
 			writer.write(settings);
 			writer.close();
-		} catch (FileNotFoundException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+		} catch (Exception ex) {
+			logger.error("Error occurred during writing repository settings", ex);
 		} finally {
 			try {
 				loader.close();
-
-			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
+			} catch (Exception ex) {
+				logger.error("Error occurred during closing SolrResourceLoader", ex);
 			}
 		}
 	}

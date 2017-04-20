@@ -38,7 +38,10 @@ import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ObjectParentData;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.commons.collections.CollectionUtils;
-import org.apache.log4j.Logger;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.client.solrj.request.AbstractUpdateRequest;
@@ -59,7 +62,7 @@ public class Registration implements Runnable{
 	List<String> allowedMimeTypeFilter;
 	boolean fulltextEnabled;
 
-	Logger logger = Logger.getLogger(Registration.class);
+	private static final Logger logger = LoggerFactory.getLogger(Registration.class);
 
 	public Registration(Session cmisSession, SolrCore core, SolrServer repositoryServer, List<ChangeEvent> list, boolean fulltextEnabled, boolean mimeTypeFilterEnabled, List<String> allowedMimeTypeFilter){
 		this.cmisSession = cmisSession;
@@ -102,8 +105,7 @@ public class Registration implements Runnable{
 		try {
 			obj = cmisSession.getObject(ce.getObjectId());
 		} catch (Exception e) {
-			logger.warn("[objectId=" + ce.getObjectId()
-					+ "]object is deleted. Skip reading a change event.");
+			logger.warn("[ObjectId={}]CmisObject is deleted. Skip reading a change event.", ce.getObjectId());
 			return;
 		}
 
@@ -152,19 +154,15 @@ public class Registration implements Runnable{
 		// Send a request to Solr
 		try {
 			repositoryServer.request(req);
-			logger.info(logPrefix(ce) + successMsg);
+			logger.info("[ObjectId={}]{}", ce.getObjectId(), successMsg);
 		} catch (Exception e) {
-			logger.error(logPrefix(ce) + errMsg, e);
+			logger.error("[ObjectId={}]{}", ce.getObjectId(),errMsg, e);
 		}finally{
 			// Delete temp files
 			try {
 				deleteTempFile(req);
-			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			} catch (URISyntaxException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
+			} catch (Exception e) {
+				logger.error("[ObjectId={}]Error occurred during deleting temp files.", ce.getObjectId(), e);
 			}
 		}
 	}
@@ -198,26 +196,20 @@ public class Registration implements Runnable{
 			QueryResponse resp = repositoryServer.query(solrQuery);
 			if (resp != null && resp.getResults() != null) {
 				if (resp.getResults().getNumFound() == 0) {
-					logger.info(logPrefix(ce)
-							+ "DELETED type change event is skipped because there is no SolrDocument");
+					logger.info("[ObjectId={}]DELETED type change event is skipped because there is no SolrDocument", ce.getObjectId());
 					return;
 				}
 			} else {
-				logger.error(core.getName()
-						+ ":Something wrong in the connection to Solr server");
+				logger.error("{}:Something wrong in the connection to Solr server",core.getName());
 			}
 
 			// Delete
 			repositoryServer.deleteById(ce.getObjectId());
 			repositoryServer.commit();
-			logger.info(logPrefix(ce) + "Successfully deleted");
+			logger.info("[ObjectId={}]Successfully deleted.", ce.getObjectId());
 		} catch (Exception e) {
-			logger.error(logPrefix(ce) + "Failed to ", e);
+			logger.error("[ObjectId={}]Failed.", ce.getObjectId(), e);
 		}
-	}
-
-	private String logPrefix(ChangeEvent ce) {
-		return "[objectId=" + ce.getObjectId() + "]";
 	}
 
 	/**
@@ -500,7 +492,7 @@ public class Registration implements Runnable{
 	 * @return
 	 */
 	private String getUTC(GregorianCalendar cal) {
-		DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
+		DateFormat df = new SimpleDateFormat(Constant.DATETIME_FORMAT);
 		df.setTimeZone(TimeZone.getTimeZone("UTC"));
 		String timestamp = df.format(cal.getTime());
 		return timestamp;
