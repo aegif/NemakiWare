@@ -30,7 +30,7 @@
 	<root level="WARN">
 		<appender-ref ref="FILE" />
 	</root>
-	<logger name="jp.aegif.nemaki" level="INFO" additivity="false">
+	<logger name="jp.aegif.nemaki" level="INFO">
 		<appender-ref ref="FILE" />
 	</logger>
 
