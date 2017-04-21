@@ -105,7 +105,7 @@ public class Registration implements Runnable{
 		try {
 			obj = cmisSession.getObject(ce.getObjectId());
 		} catch (Exception e) {
-			logger.warn("[ObjectId={}]CmisObject is deleted. Skip reading a change event.", ce.getObjectId());
+			logger.info("[ObjectId={}]CmisObject is deleted. Skip reading a change event.", ce.getObjectId());
 			return;
 		}
 
