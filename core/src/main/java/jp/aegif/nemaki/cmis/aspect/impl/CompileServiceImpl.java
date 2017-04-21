@@ -1139,7 +1139,7 @@ public class CompileServiceImpl implements CompileService {
 						String msg = buildCastErrMsg(tdf.getId(), id,
 								pdf.getPropertyType(), value.getClass()
 										.getName(), Boolean.class.getName());
-						log.warn(msg);
+						log.warn("ObjectId=" + id + " Value=" + value.toString() + " Message=" + msg);
 					}
 				}
 				addPropertyBase(props, id, propBoolean, pdf);
@@ -1159,7 +1159,7 @@ public class CompileServiceImpl implements CompileService {
 						String msg = buildCastErrMsg(tdf.getId(), id,
 								pdf.getPropertyType(), value.getClass()
 										.getName(), Long.class.getName());
-						log.warn(msg);
+						log.warn("ObjectId=" + id + " Value=" + value.toString() + " Message=" + msg);
 					}
 				}
 				addPropertyBase(props, id, propInteger, pdf);
@@ -1209,7 +1209,7 @@ public class CompileServiceImpl implements CompileService {
 						String msg = buildCastErrMsg(tdf.getId(), id,
 								pdf.getPropertyType(), value.getClass()
 										.getName(), String.class.getName());
-						log.warn(msg);
+						log.warn("ObjectId=" + id + " Value=" + value.toString() + " Message=" + msg);
 					}
 				}
 				addPropertyBase(props, id, propString, pdf);
@@ -1229,7 +1229,7 @@ public class CompileServiceImpl implements CompileService {
 						String msg = buildCastErrMsg(tdf.getId(), id,
 								pdf.getPropertyType(), value.getClass()
 										.getName(), String.class.getName());
-						log.warn(msg);
+						log.warn("ObjectId=" + id + " Value=" + value.toString() + " Message=" + msg);
 					}
 				}
 				addPropertyBase(props, id, propId, pdf);
@@ -1252,7 +1252,7 @@ public class CompileServiceImpl implements CompileService {
 					pdf.getPropertyType(), value.getClass()
 							.getName(),
 					GregorianCalendar.class.getName());
-			log.warn(msg);
+			log.warn("ObjectId=" + id + " Value=" + value.toString() + " Message=" + msg);
 		}
 		return propDate;
 	}
