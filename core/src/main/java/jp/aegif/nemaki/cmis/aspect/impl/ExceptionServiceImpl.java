@@ -359,12 +359,10 @@ public class ExceptionServiceImpl implements ExceptionService,
 	public void permissionDenied(CallContext context, String repositoryId,
 			String key, Content content) {
 
-		// Admin always pass a permission check(skip calculateAcl)
-		/*
+		// Admin user always pass a permission check(skip calculateAcl)
 		String userName = context.getUsername();
 		UserItem u = contentService.getUserItemById(repositoryId, userName);
 		if (u != null && u.isAdmin()) return;
-		*/
 
 		String baseTypeId = content.getType();
 		Acl acl = contentService.calculateAcl(repositoryId, content);
