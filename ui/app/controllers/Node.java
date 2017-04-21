@@ -217,7 +217,7 @@ public class Node extends Controller {
 		List<CmisObject> list = new ArrayList<CmisObject>();
 		// Build WHERE clause(cmis:document)
 		MessageFormat docFormat = new MessageFormat(
-				"cmis:name LIKE ''%{0}%'' OR cmis:description LIKE ''%{0}%'' OR CONTAINS(''{0}'')");
+				"cmis:isLatestVersion=true AND ( cmis:name LIKE ''%{0}%'' OR cmis:description LIKE ''%{0}%'' OR CONTAINS(''{0}'') )");
 		String docStatement = "";
 		if (StringUtils.isNotBlank(term)) {
 			docStatement = docFormat.format(new String[] { term });
