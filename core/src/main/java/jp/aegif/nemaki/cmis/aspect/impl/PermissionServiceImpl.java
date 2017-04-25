@@ -170,18 +170,16 @@ public class PermissionServiceImpl implements PermissionService {
 
 		//Separate user/group check for performace
 
-		// Filter ace which has not permissions
-		Stream<Ace> aces = acl.getAllAces().stream().filter(p -> p.getPermissions() != null);
+		// Filter ace which has permissions
+		List<Ace> aces = acl.getAllAces().stream().filter(p -> p.getPermissions() != null).collect(Collectors.toList());
 
 		//User permission
 		Logger.info(MessageFormat.format("[{0}]CheckUserPermission Begin",content.getName()));
-		Set<String> userPermissions = new HashSet<String>();
-		aces.forEach (ace -> {
-			// Add user permissions
-			if (ace.getPrincipalId().equals(userName)) {
-				userPermissions.addAll(ace.getPermissions());
-			}
-		});
+		Set<String> userPermissions = aces.stream()
+			.filter(ace -> ace.getPrincipalId().equals(userName))
+			.flatMap(ace -> ace.getPermissions().stream())
+			.collect(Collectors.toSet());
+
 		// Check mapping between the user and the content
 		boolean calcPermission =  checkCalculatedPermissions(repositoryId, key, userPermissions);
 		Logger.info(MessageFormat.format("[{0}]CheckUserPermission End:{1}",content.getName(), calcPermission));
@@ -189,15 +187,13 @@ public class PermissionServiceImpl implements PermissionService {
 
 		//Group permission
 		Logger.info(MessageFormat.format("[{0}]CheckGroupPermission Begin",content.getName()));
-		Set<String> groupPermissions = new HashSet<String>();
 		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
-		if( CollectionUtils.isNotEmpty(groups)) return calcPermission;
-		aces.forEach (ace -> {
-			// Add inherited permissions which user inherits
-			if(groups.contains(ace.getPrincipalId())){
-				groupPermissions.addAll(ace.getPermissions());
-			}
-		});
+		if( CollectionUtils.isEmpty(groups)) return calcPermission;
+		Set<String> groupPermissions = aces.stream()
+				.filter(ace -> groups.contains(ace.getPrincipalId()))
+				.flatMap(ace -> ace.getPermissions().stream())
+				.collect(Collectors.toSet());
+
 		// Check mapping between the group and the content
 		calcPermission =  checkCalculatedPermissions(repositoryId, key, groupPermissions);
 		Logger.info(MessageFormat.format("[{0}]CheckGroupPermission End:{1}",content.getName(), calcPermission));

@@ -99,7 +99,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	private static final Log log = LogFactory.getLog(ContentDaoServiceImpl.class);
 
 	private static final String DESIGN_DOCUMENT = "_design/_repo";
-	private static final String DESIGN_DOCUMENT2 = "_design/_repo2";
 	private static final String ATTACHMENT_NAME = "content";
 
 	public ContentDaoServiceImpl() {
@@ -648,7 +647,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		List<GroupItem> list = new ArrayList<>();
 
 		//first get directory joined groups
-		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT2).viewName("joinedDirectGroupsByUserId").key(userId);
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("joinedDirectGroupsByUserId").key(userId);
 		List<CouchGroupItem> couchGroupItems = connectorPool.get(repositoryId).queryView(query, CouchGroupItem.class);
 
 		//get indirect joined group using above results
@@ -687,7 +686,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			if ( (i % batchSize) == batchSize - 1 || i == groupIdsToCheck.size() - 1 ) {
 				//query
 				ViewQuery query =
-						new ViewQuery().designDocId(DESIGN_DOCUMENT2).viewName("joinedDirectGroupsByGroupId");
+						new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("joinedDirectGroupsByGroupId");
 				query.keys(params);
 				List<CouchGroupItem> couchGroupItems =
 						connectorPool.get(repositoryId).queryView(query, CouchGroupItem.class);
