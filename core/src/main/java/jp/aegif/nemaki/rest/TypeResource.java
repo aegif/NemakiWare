@@ -36,10 +36,9 @@ import org.dom4j.Document;
 import org.dom4j.DocumentException;
 import org.dom4j.Element;
 import org.dom4j.io.SAXReader;
+import org.glassfish.jersey.media.multipart.FormDataParam;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
-
-import com.sun.jersey.multipart.FormDataParam;
 
 @Path("/repo/{repositoryId}/type")
 public class TypeResource extends ResourceBase{
@@ -152,8 +151,9 @@ public class TypeResource extends ResourceBase{
 				} else if ("cm:folder".equals(parent)) {
 					tdf.setBaseId(BaseTypeId.CMIS_FOLDER);
 					tdf.setParentId(BaseTypeId.CMIS_FOLDER.value());
-				} else {
-					// TODO association(relationship)
+				} else if ("cm:relationship".equals(parent)) {
+					tdf.setBaseId(BaseTypeId.CMIS_RELATIONSHIP);
+					tdf.setParentId(BaseTypeId.CMIS_RELATIONSHIP.value());
 				}
 			}else if("aspect".equals(type.getName())){
 				tdf.setBaseId(BaseTypeId.CMIS_SECONDARY);

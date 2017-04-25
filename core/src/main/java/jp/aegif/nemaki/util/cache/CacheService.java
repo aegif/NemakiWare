@@ -12,12 +12,13 @@ import org.apache.chemistry.opencmis.commons.data.ObjectData;
 
 import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Change;
+import jp.aegif.nemaki.model.Configuration;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Group;
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.VersionSeries;
-import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.SpringPropertyManager;
 import jp.aegif.nemaki.util.YamlManager;
 import jp.aegif.nemaki.util.cache.model.NemakiCache;
 import jp.aegif.nemaki.util.cache.model.Tree;
@@ -27,6 +28,7 @@ import jp.aegif.nemaki.util.constant.PropertyKey;
 public class CacheService {
 	private final CacheManager cacheManager;
 	private final Map<String, Boolean> enabled = new HashMap<>();
+	private final String CONFIG_CACHE = "configCache";
 	private final String OBJECT_DATA_CACHE = "objectDataCache";
 	private final String PROPERTIES_CACHE = "propertisCache";
 	private final String TYPE_CACHE = "typeCache";
@@ -43,7 +45,7 @@ public class CacheService {
 
 	private final String repositoryId;
 
-	public CacheService(String repositoryId, PropertyManager propertyManager) {
+	public CacheService(String repositoryId, SpringPropertyManager propertyManager) {
 		this.repositoryId = repositoryId;
 
 		cacheManager = CacheManager.newInstance();
@@ -51,7 +53,7 @@ public class CacheService {
 		loadConfig(propertyManager);
 	}
 
-	private void loadConfig(PropertyManager propertyManager) {
+	private void loadConfig(SpringPropertyManager propertyManager) {
 		String configFile = propertyManager.readValue(PropertyKey.CACHE_CONFIG);
 		YamlManager manager = new YamlManager(configFile);
 		Map<String, Map<String, Object>> yml = (Map<String, Map<String, Object>>) manager.loadYml();
@@ -98,6 +100,11 @@ public class CacheService {
 		}
 	}
 
+	public NemakiCache<Configuration> getConfigCache() {
+		String name = repositoryId + "_" + CONFIG_CACHE;
+		return new NemakiCache<Configuration>(enabled.get(name), cacheManager.getCache(name));
+	}
+	
 	public NemakiCache<ObjectData> getObjectDataCache() {
 		String name = repositoryId + "_" + OBJECT_DATA_CACHE;
 		return new NemakiCache<ObjectData>(enabled.get(name), cacheManager.getCache(name));

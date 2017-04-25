@@ -2,16 +2,15 @@ package jp.aegif.nemaki.cmis.factory.auth.impl;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.cmis.factory.auth.Token;
 import jp.aegif.nemaki.cmis.factory.auth.TokenService;
@@ -25,6 +24,7 @@ public class TokenServiceImpl implements TokenService{
 	private static final Log log = LogFactory
              .getLog(TokenServiceImpl.class);
 	private PropertyManager propertyManager;
+	private ContentService contentService;
 	private PrincipalService principalService;
 	private RepositoryInfoMap repositoryInfoMap;
 	
@@ -37,7 +37,7 @@ public class TokenServiceImpl implements TokenService{
 		private Token get(String app, String repositoryId, String userName){
 			Map<String, Map<String, Token>> appMap = map.get(app);
 			if(appMap == null){
-				log.warn(String.format("No such app(%s) regitered for AuthToken", app));
+				log.warn(String.format("No such app(%s) registered for AuthToken", app));
 				return null;
 			}else{
 				 Map<String, Token> repoMap = appMap.get(repositoryId);
@@ -106,6 +106,10 @@ public class TokenServiceImpl implements TokenService{
 		this.propertyManager = propertyManager;
 	}
 	
+	public void setContentService(ContentService contentService) {
+		this.contentService = contentService;
+	}
+
 	public void setPrincipalService(PrincipalService principalService) {
 		this.principalService = principalService;
 	}

@@ -78,9 +78,12 @@ import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.context.support.GenericApplicationContext;
 
 import com.rits.cloning.Cloner;
 
+import jp.aegif.nemaki.AppConfig;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
@@ -102,10 +105,18 @@ import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
+import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.model.VersionSeries;
+import jp.aegif.nemaki.plugin.action.ActionContext;
+import jp.aegif.nemaki.plugin.action.JavaBackedAction;
+import jp.aegif.nemaki.plugin.action.trigger.ActionTriggerBase;
+import jp.aegif.nemaki.plugin.action.trigger.UserButtonPerCmisObjcetActionTrigger;
 import jp.aegif.nemaki.util.DataUtil;
+import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.action.NemakiActionPlugin;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.CmisExtensionToken;
+import jp.aegif.nemaki.util.constant.PropertyKey;
 import net.sf.ehcache.Element;
 
 public class CompileServiceImpl implements CompileService {
@@ -121,8 +132,11 @@ public class CompileServiceImpl implements CompileService {
 	private AclCapabilities aclCapabilities;
 	private NemakiCachePool nemakiCachePool;
 	private SortUtil sortUtil;
+	private PropertyManager propertyManager;
 
-	private boolean includeRelationshipsEnabled = true;
+	private boolean includeRelationshipsEnabled(){
+		return propertyManager.readBoolean(PropertyKey.CAPABILITY_EXTENDED_INCLUDE_RELATIONSHIPS);
+	}
 
 	/**
 	 * Builds a CMIS ObjectData from the given CouchDB content.
@@ -144,6 +158,8 @@ public class CompileServiceImpl implements CompileService {
 
 		ObjectData result = filterObjectData(repositoryId, _result, filter, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
 
+		setPluginExtentionData(callContext, result);
+
 		return result;
 	}
 
@@ -163,10 +179,8 @@ public class CompileServiceImpl implements CompileService {
 		result.setAcl(compileAcl(acl, contentService.getAclInheritedWithDefault(repositoryId, content), false));
 
 		//Set Relationship(BOTH)
-		if (!content.isRelationship()) {
-			if(includeRelationshipsEnabled){
-				result.setRelationships(compileRelationships(callContext, repositoryId, content, IncludeRelationships.BOTH));
-			}
+		if (!content.isRelationship() && includeRelationshipsEnabled()){
+			result.setRelationships(compileRelationships(callContext, repositoryId, content, IncludeRelationships.BOTH));
 		}
 
 		// Set Renditions
@@ -307,14 +321,16 @@ public class CompileServiceImpl implements CompileService {
 				}
 
 				ObjectData od = filterObjectDataInList(callContext, repositoryId, _od, filter, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
+
+				setPluginExtentionData(callContext, od);
 				if(od != null){
 					ods.add(od);
 				}
 			}
-			
+
 			//Sort
 			sortUtil.sort(repositoryId, ods, orderBy);
-			
+
 			//Set metadata
 			ObjectListImpl list = new ObjectListImpl();
 			Integer _skipCount = skipCount.intValue();
@@ -328,7 +344,7 @@ public class CompileServiceImpl implements CompileService {
 				Boolean hasMoreItems = _skipCount + _maxItems < ods.size();
 				list.setHasMoreItems(hasMoreItems);
 				//paged list
-				Integer toIndex = Math.min(_skipCount + _maxItems, ods.size()); 
+				Integer toIndex = Math.min(_skipCount + _maxItems, ods.size());
 				list.setObjects(new ArrayList<>(ods.subList(_skipCount, toIndex)));
 			}
 			//totalNumItem
@@ -963,7 +979,7 @@ public class CompileServiceImpl implements CompileService {
 
 			if(attachment == null){
 				String attachmentId = (document.getAttachmentNodeId() == null) ? "" : document.getAttachmentNodeId();
-				log.warn("[objectId=" + document.getId() + " has no file (" + 
+				log.warn("[objectId=" + document.getId() + " has no file (" +
 						attachmentId + ")");
 			}else{
 				length = attachment.getLength();
@@ -1436,11 +1452,47 @@ public class CompileServiceImpl implements CompileService {
 		this.nemakiCachePool = nemakiCachePool;
 	}
 
-	public void setIncludeRelationshipsEnabled(boolean includeRelationshipsEnabled) {
-		this.includeRelationshipsEnabled = includeRelationshipsEnabled;
+	public void setPropertyManager(PropertyManager propertyManager) {
+		this.propertyManager = propertyManager;
 	}
 
 	public void setSortUtil(SortUtil sortUtil) {
 		this.sortUtil = sortUtil;
 	}
+
+	private void setPluginExtentionData(CallContext callContext, ObjectData result){
+		// Add extension deta from plugin
+		try (GenericApplicationContext context = new AnnotationConfigApplicationContext(AppConfig.class)) {
+			NemakiActionPlugin acionPlugin = context.getBean(NemakiActionPlugin.class);
+			Map<String, JavaBackedAction> pluginMap = acionPlugin.getPluginsMap();
+
+			String ns = DataUtil.NAMESPACE + "/action";
+			// set the extension list
+			List<CmisExtensionElement> extensions = result.getExtensions();
+			if (extensions == null){
+				extensions = new ArrayList<CmisExtensionElement>();
+			}
+			for (String beanId : pluginMap.keySet()) {
+				JavaBackedAction plugin = acionPlugin.getPlugin(beanId);
+				UserItem userItem = contentService.getUserItemById(callContext.getRepositoryId(), callContext.getUsername());
+				Properties props = this.compileProperties(callContext, callContext.getRepositoryId(), userItem);
+				ActionContext actionContext = new ActionContext(callContext, props, result);
+				if(plugin.canExecute(actionContext)){
+					String action_id = beanId;
+					List<CmisExtensionElement> extElements = new ArrayList<CmisExtensionElement>();
+					extElements.add(new CmisExtensionElementImpl(ns, "actionId", null, action_id));
+					ActionTriggerBase trigger = plugin.getActionTrigger(actionContext);
+					if(trigger instanceof  UserButtonPerCmisObjcetActionTrigger){
+						UserButtonPerCmisObjcetActionTrigger objectActionTrigger = (UserButtonPerCmisObjcetActionTrigger) trigger;
+						extElements.add(new CmisExtensionElementImpl(ns, "actionButtonLabel", null, (objectActionTrigger.getDisplayName())));
+						extElements.add(new CmisExtensionElementImpl(ns, "actionButtonIcon", null, (objectActionTrigger.getFontAwesomeName())));
+						extElements.add(new CmisExtensionElementImpl(ns, "actionFormHtml", null, (objectActionTrigger.getFormHtml())));
+					}
+					extensions.add(new CmisExtensionElementImpl(ns, "actionPluginExtension", null, extElements));
+				}
+			}
+			result.setExtensions(extensions);
+		}
+	}
+
 }

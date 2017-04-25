@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Set;
 
 import javax.servlet.http.HttpServletRequest;
+import javax.ws.rs.ApplicationPath;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.FormParam;
@@ -58,8 +59,7 @@ import org.json.simple.parser.ParseException;
 import org.mindrot.jbcrypt.BCrypt;
 import org.springframework.stereotype.Component;
 
-@Component
-@Path("/repo/{repositoryId}/user/")
+@Path("/repo/{repositoryId}/user-deprecated/")
 public class UserResource extends ResourceBase {
 
 	PrincipalService principalService;
@@ -400,7 +400,7 @@ public class UserResource extends ResourceBase {
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
 	}
-
+	
 	private boolean validateUser(boolean status, JSONArray errMsg, String userId, String userName, String firstName,
 			String lastName) {
 		if (StringUtils.isBlank(userId)) {

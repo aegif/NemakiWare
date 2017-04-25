@@ -1,76 +1,150 @@
+@*{<meta charset="UTF-8" />}*@
+
 @(repositoryId:String)(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(parentId:String)
 @import component._
 @import util._
 @import org.apache.chemistry.opencmis.client.api.Document
 @import org.apache.chemistry.opencmis.commons.PropertyIds
+@import play.mvc.Http.Context
 
-<div class="container tap-pane">
+<div class="container tab-pane">
 	<div class="row">
 		<div class="col-sm-12 col-md-12">
-			@if(Util.isFreezeCopy(obj, session)){
+			@if(Util.isFreezeCopy(obj, Http.Context.current)){
 				@lockedNotice(obj)
 			}else{
 				@if(Util.convertToDocument(obj).isVersionSeriesCheckedOut()){
+
 					<!-- update pwc form -->
+					<div class="row" style="padding-bottom:30px;">
 					@helper.form(action=routes.Node.upload(repositoryId, obj.getId()), 'enctype -> "multipart/form-data") {
 					<fieldset>
 						<legend><i class="fa fa-upload"></i>@Messages("view.node.file.update.pwc.caption")</legend>
-						<div>@Messages("view.node.file.update.pwc.description")</div>
-						<input type="file" name="file"/>
-						<input type="hidden" name="cmis:parentId" value="@parentId"/>
-				   		@executeButton()
+						<div class="row" style="padding-bottom:6px;">
+							<div class="col-sm-12">
+								<div>@Messages("view.node.file.update.pwc.description")</div>
+								<input type="file" name="file"/>
+								<input type="hidden" name="cmis:parentId" value="@parentId"/>
+							</div>
+						</div>
+						<div class="row" style="padding-bottom:6px;">
+							<div class="col-sm-12">
+				   				@executeButton()
+				   			</div>
+				   		</div>
 				   	</fieldset>
 					}
-					
-					<br/><br/>
-					
+					</div>
+
+					<!-- checkin pwc form -->
+					<div class="row" style="padding-bottom:30px;">
+						@helper.form(action=routes.Node.checkInPWC(repositoryId, obj.getId()), 'enctype -> "multipart/form-data") {
+							<fieldset>
+								<legend><i class="fa fa-upload"></i><i class="fa fa-unlock"></i>@Messages("view.node.file.checkin.pwc.caption")</legend>
+								<div class="row" style="padding-bottom:6px;">
+									<div class="col-sm-12">
+										<div>@Messages("view.node.file.checkin.pwc.description")</div>
+										<input type="text" name="cmis:checkinComment" size="50" placeholder="@Messages("view.node.file.checkin.comment")"/>
+										<input type="hidden" name="cmis:parentId" value="@parentId"/><br/>
+									</div>
+								</div>
+								<div class="row" style="padding-bottom:6px;">
+									<div class="col-sm-12">
+						   				@executeButton()
+						   			</div>
+						   		</div>
+						   	</fieldset>
+						}
+					</div>
+
 					<!-- checkin form -->
-					@helper.form(action=routes.Node.checkIn(repositoryId, obj.getId()), 'enctype -> "multipart/form-data") {
-					<fieldset>
-						<legend><i class="fa fa-upload"></i><i class="fa fa-unlock"></i>@Messages("view.node.file.checkin.caption")</legend>
-						<div>@Messages("view.node.file.checkin.description")</div>
-						<input type="file" name="file"/>
-						<input type="text" name="cmis:checkinComment" size="50" placeholder="@Messages("view.node.file.checkin.comment")"/>
-						<input type="hidden" name="cmis:parentId" value="@parentId"/><br/>
-				   		@executeButton()
-				   	</fieldset>
-					}
-					
-					<br/><br/>
-					
+					<div class="row" style="padding-bottom:30px;">
+						@helper.form(action=routes.Node.checkIn(repositoryId, obj.getId()), 'enctype -> "multipart/form-data") {
+							<fieldset>
+								<legend><i class="fa fa-upload"></i><i class="fa fa-unlock"></i>@Messages("view.node.file.checkin.caption")</legend>
+								<div class="row" style="padding-bottom:6px;">
+									<div class="col-sm-12">
+										<div>@Messages("view.node.file.checkin.description")</div>
+										<input type="file" name="file"/>
+										<input type="text" name="cmis:checkinComment" size="50" placeholder="@Messages("view.node.file.checkin.comment")"/>
+										<input type="hidden" name="cmis:parentId" value="@parentId"/><br/>
+									</div>
+								</div>
+								<div class="row" style="padding-bottom:6px;">
+									<div class="col-sm-12">
+						   				@executeButton()
+						   			</div>
+						   		</div>
+						   	</fieldset>
+						}
+					</div>
+
 					<!-- cancel checkout form -->
-					@helper.form(action = routes.Node.cancelCheckOut(repositoryId, obj.getId())) {
-					<fieldset>
-						<legend><i class="fa fa-undo"></i>@Messages("view.node.file.cancel.checkout.caption")</legend>
-						<div>@Messages("view.node.file.cancel.checkout.description")</div>
-						<input type="hidden" name="cmis:parentId" value="@parentId"/>
-				   		@executeButton()
-				   	</fieldset>
-					}
-				}else{
-					<!-- checkout form -->
-						<legend><i class="fa fa-lock"/>@Messages("view.node.file.checkout.caption")</legend>
-						<div>@Messages("view.node.file.checkout.description-1")</div>
-						<div>@Messages("view.node.file.checkout.description-2")</div>
-						<input type="hidden" name="cmis:parentId" value="@parentId"/>
-				   		@executeButton("checkout")
-					<br/><br/>
-			
-					<!-- direct upload -->
-					@helper.form(action = routes.Node.upload(repositoryId, obj.getId()), 'enctype -> "multipart/form-data") {
+					<div class="row" style="padding-bottom:30px;">
+						@helper.form(action = routes.Node.cancelCheckOut(repositoryId, obj.getId())) {
 						<fieldset>
-							<legend><i class="fa fa-upload"></i>@Messages("view.node.file.direct.caption")</legend>
-							<div>@Messages("view.node.file.direct.description")</div>
-							<input type="file" name="file"/>
-							<input type="hidden" name="cmis:parentId" value="@parentId"/>
-					   		@executeButton()
-				   		</fieldset>
-					}
+							<legend><i class="fa fa-undo"></i>@Messages("view.node.file.cancel.checkout.caption")</legend>
+							<div class="row" style="padding-bottom:6px;">
+								<div class="col-sm-12">
+									<div>@Messages("view.node.file.cancel.checkout.description")</div>
+									<input type="hidden" name="cmis:parentId" value="@parentId"/>
+								</div>
+							</div>
+							<div class="row" style="padding-bottom:6px;">
+								<div class="col-sm-12">
+					   				@executeButton()
+					   			</div>
+					   		</div>
+					   	</fieldset>
+						}
+				   	</div>
+				}else{
+					<!-- checkout -->
+					<div class="row" style="padding-bottom:30px;">
+						<div class="col-sm-12 col-md-12">
+							<legend><i class="fa fa-lock"/>@Messages("view.node.file.checkout.caption")</legend>
+							<div class="row" style="padding-bottom:6px;">
+								<div class="col-sm-12">
+									<div>@Messages("view.node.file.checkout.description-1")</div>
+									<div>@Messages("view.node.file.checkout.description-2")</div>
+									<input type="hidden" name="cmis:parentId" value="@parentId"/>
+								</div>
+							</div>
+							<div class="row" style="padding-bottom:6px;">
+								<div class="col-sm-12">
+					   				@executeButton("checkout")
+					   			</div>
+					   		</div>
+						</div>
+					</div>
+
+					<!-- direct upload -->
+					<div class="row" style="padding-bottom:30px;">
+						<div class="col-sm-12 col-md-12">
+							@helper.form(action = routes.Node.upload(repositoryId, obj.getId()), 'enctype -> "multipart/form-data") {
+								<fieldset>
+									<legend><i class="fa fa-upload"></i>@Messages("view.node.file.direct.caption")</legend>
+									<div class="row" style="padding-bottom:6px;">
+										<div class="col-sm-12">
+											<div>@Messages("view.node.file.direct.description")</div>
+											<input type="file" name="file"/>
+											<input type="hidden" name="cmis:parentId" value="@parentId"/>
+										</div>
+									</div>
+									<div class="row" style="padding-bottom:6px;">
+										<div class="col-sm-12">
+							   				@executeButton()
+							   			</div>
+							   		</div>
+						   		</fieldset>
+							}
+						</div>
+					</div>
 				}
 			}
 		</div>
 	</div>
-	
+
 </div>
 
 <!-- scripts -->

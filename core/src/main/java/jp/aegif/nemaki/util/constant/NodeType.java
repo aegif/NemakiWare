@@ -37,7 +37,9 @@ public enum NodeType {
 	VERSION_SERIES("versionSeries"),
 	CHANGE("change"),
 	USER("user"),
-	GROUP("group");
+	GROUP("group"),
+	PATCH("patch");
+
 
 	private final String value;
 

@@ -28,9 +28,13 @@ import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 
+import jp.aegif.nemaki.util.spring.aspect.log.LogParam;
+
 public interface RelationshipService {
-	public ObjectList getObjectRelationships(CallContext callContext,
-			String repositoryId, String objectId,
-			Boolean includeSubRelationshipTypes, RelationshipDirection relationshipDirection,
-			String typeId, String filter, Boolean includeAllowableActions, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension);
+	public ObjectList getObjectRelationships(@LogParam("callContext") CallContext callContext, @LogParam("repositoryId") String repositoryId,
+			@LogParam("objectId") String objectId, @LogParam("includeSubRelationshipTypes") Boolean includeSubRelationshipTypes,
+			@LogParam("relationshipDirection") RelationshipDirection relationshipDirection, @LogParam("typeId") String typeId,
+			@LogParam("filter") String filter, @LogParam("includeAllowableActions") Boolean includeAllowableActions,
+			@LogParam("maxItems") BigInteger maxItems, @LogParam("skipCount") BigInteger skipCount,
+			@LogParam("extension") ExtensionsData extension);
 }

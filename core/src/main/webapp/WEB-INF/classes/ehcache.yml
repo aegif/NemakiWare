@@ -6,6 +6,9 @@ default:
   timeToLiveSeconds: 3600
   timeToIdleSeconds: 3600  
 
+configCache:
+  eternal: true
+
 objectDataCache:
 
 propertisCache:

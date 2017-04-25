@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- This context file needs in another file: ContentService/PrincipalService/TypeService
+    bean definition -->
+
+<beans xmlns="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:aop="http://www.springframework.org/schema/aop"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
+
+
+    <bean id="PatchService"
+        class="jp.aegif.nemaki.patch.PatchService"
+        init-method="apply">
+        <property name="repositoryInfoMap">
+			<ref bean="repositoryInfoMap" />
+		</property>
+		<property name="connectorPool">
+			<ref bean="connectorPool" />
+		</property>
+        <property name="patch_20160815">
+            <ref bean="patch_20160815" />
+        </property>
+    </bean>
+
+	<bean id="patchUtil" class="jp.aegif.nemaki.patch.PatchUtil">
+      	<property name="propertyManager">
+        	<ref bean="propertyManager" />
+      	</property>
+      	<property name="repositoryInfoMap">
+			<ref bean="repositoryInfoMap" />
+		</property>
+		<property name="contentDaoService">
+        	<ref bean="ContentDaoService" />
+      	</property>
+      	<property name="contentService">
+        	<ref bean="ContentService" />
+      	</property>
+      	<property name="connectorPool">
+			<ref bean="connectorPool" />
+		</property>
+		<property name="repositoryService">
+        	<ref bean="RepositoryService" />
+      	</property>
+	</bean>
+
+	<bean id="patch_20160815" class="jp.aegif.nemaki.patch.Patch_20160815">
+      	<property name="patchUtil">
+        	<ref bean="patchUtil" />
+      	</property>
+      	<property name="principalService">
+        	<ref bean="PrincipalService" />
+      	</property>
+	</bean>
+</beans>

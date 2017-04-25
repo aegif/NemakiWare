@@ -1,7 +1,7 @@
 resolvers += "Typesafe repository" at "http://repo.typesafe.com/typesafe/releases/"
 
 // The Play plugin
-addSbtPlugin("com.typesafe.play" % "sbt-plugin" % "2.3.3")
+addSbtPlugin("com.typesafe.play" % "sbt-plugin" % "2.4.0")
 
 // web plugins
 
@@ -17,6 +17,12 @@ addSbtPlugin("com.typesafe.sbt" % "sbt-digest" % "1.0.0")
 
 addSbtPlugin("com.typesafe.sbt" % "sbt-mocha" % "1.0.0")
 
-addSbtPlugin("com.github.play2war" % "play2-war-plugin" % "1.3-beta2")
+addSbtPlugin("com.typesafe.sbt" % "sbt-play-enhancer" % "1.1.0")
 
-addSbtPlugin("com.typesafe.sbteclipse" % "sbteclipse-plugin" % "2.5.0")
+// addSbtPlugin("com.typesafe.sbt" % "sbt-play-ebean" % "1.0.0")
+
+addSbtPlugin("com.github.play2war" % "play2-war-plugin" % "1.4-beta1")
+
+//addSbtPlugin("com.typesafe.sbteclipse" % "sbteclipse-plugin" % "2.5.0")
+
+addSbtPlugin("com.typesafe.sbteclipse" % "sbteclipse-plugin" % "4.0.0")

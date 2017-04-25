@@ -32,6 +32,7 @@ import javax.annotation.PostConstruct;
 
 import jp.aegif.nemaki.model.NemakiPermissionDefinition;
 import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.SpringPropertyManager;
 import jp.aegif.nemaki.util.YamlManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
@@ -51,7 +52,7 @@ public class AclCapabilities extends org.apache.chemistry.opencmis.commons.impl.
 	private static final Log log = LogFactory.getLog(AclCapabilities.class);
 
 	private List<NemakiPermissionDefinition> nemakiPermissions;
-	private PropertyManager propertyManager;
+	private SpringPropertyManager propertyManager;
 	
 	@PostConstruct
 	public void init(){
@@ -213,7 +214,7 @@ public class AclCapabilities extends org.apache.chemistry.opencmis.commons.impl.
 		return map;
 	}
 
-	public void setPropertyManager(PropertyManager propertyManager) {
+	public void setPropertyManager(SpringPropertyManager propertyManager) {
 		this.propertyManager = propertyManager;
 	}
 }

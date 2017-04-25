@@ -1,13 +1,17 @@
-@import util._
+@*{<meta charset="UTF-8" />}*@
 
-@(repositoryId:String)(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(parentId:String)(activatePreviewTab:Boolean)(user:model.User)
+@import util._
+@import play.mvc.Http.Context
+
+
+@(repositoryId:String)(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(parentId:String)(activateTabName:String)(user:model.User)(session:org.apache.chemistry.opencmis.client.api.Session)
 
 @lightbox{
 	<!-- html -->
 	<div>
 		<h4>
-			<i class="fa @Util.getIconName(obj)"></i>@obj.getName()
-			@if(Util.isFreezeCopy(obj, session)){<i class="fa fa-lock"></i>}
+			<i class="fa @Util.getIconClassName(obj)"></i>@obj.getName()
+			@if(Util.isFreezeCopy(obj, Http.Context.current)){<i class="fa fa-lock"></i>}
 			<!-- fav star -->
 			<span class="favorite-toggle">
 			@if(user.favorites.contains(obj.getId)){
@@ -18,57 +22,81 @@
 			</span>
 		</h4>
 	</div>
-	
+
 	<ul class="nav nav-tabs">
-  		<li @if(!activatePreviewTab){class="active"}><a href="@routes.Node.showProperty(repositoryId, obj.getId)" data-toggle="tab" data-target="#property">@Messages("view.node.property")</a></li>
+  		<li @if(TabUtil.isPropertyTab(activateTabName)){class="active"}>
+  			<a href="@routes.Node.showProperty(repositoryId, obj.getId)" data-toggle="tab" data-target="#property">@Messages("view.node.property")</a></li>
   		@if(Util.isDocument(obj)){
   			<!-- TODO: Implement 'allowed' case correctly -->
  			@if(Util.hasContentStream(obj)){
- 				<li><a href="@routes.Node.showFile(repositoryId, obj.getId)" data-toggle="tab" data-target="#file">@Messages("view.node.file")</a></li>
- 				<li @if(activatePreviewTab){class="active"}><a href="@routes.Node.showPreview(repositoryId, obj.getId)" data-toggle="tab" data-target="#preview">@Messages("view.node.preview")</a></li>
+ 				<li @if(TabUtil.isFileTab(activateTabName)){class="active"}>
+ 					<a href="@routes.Node.showFile(repositoryId, obj.getId)" data-toggle="tab" data-target="#file">@Messages("view.node.file")</a>
+ 				</li>
+ 				<li @if(TabUtil.isPreviewTab(activateTabName)){class="active"}>
+ 					<a href="@routes.Node.showPreview(repositoryId, obj.getId)" data-toggle="tab" data-target="#preview">@Messages("view.node.preview")</a>
+ 				</li>
  			}
-	  		<li><a href="@routes.Node.showVersion(repositoryId, obj.getId)" data-toggle="tab" data-target="#version">@Messages("view.node.version")</a></li>
+	  		<li @if(TabUtil.isVersionTab(activateTabName)){class="active"}>
+	  			<a href="@routes.Node.showVersion(repositoryId, obj.getId)" data-toggle="tab" data-target="#version">@Messages("view.node.version")</a>
+	  		</li>
   		}
-  		<li><a href="@routes.Node.showPermission(repositoryId, obj.getId)" data-toggle="tab" data-target="#permission">@Messages("view.node.permission")</a></li>
+  		<li @if(TabUtil.isPermissionTab(activateTabName)){class="active"}>
+  			<a href="@routes.Node.showPermission(repositoryId, obj.getId)" data-toggle="tab" data-target="#permission">@Messages("view.node.permission")</a>
+  		</li>
+  		<li @if(TabUtil.isRelationshipTab(activateTabName)){class="active"}>
+  			<a href="@routes.Node.showRelationship(repositoryId, obj.getId)" data-toggle="tab" data-target="#relationship">@Messages("view.node.relationship")</a>
+  		</li>
+	  	@for(actionPluginUI <- Util.getUIActionPluginUIElementList(obj, session)){
+	  		<li>
+	  			<a href="@routes.Node.showAction(repositoryId, obj.getId, actionPluginUI.getActionId)" data-toggle="tab" data-target="#action-@actionPluginUI.getActionId">@actionPluginUI.getDisplayName</a>
+	  		</li>
+	  	}
 	</ul>
- 
+
 	<div class="tab-content">
-	  	<div class="tab-pane fade @if(!activatePreviewTab){active in}" id="property"></div>
-	  	<div class="tab-pane fade" id="file"></div>
-	  	<div class="tab-pane fade" id="version"></div>
-	  	<div class="tab-pane fade @if(activatePreviewTab){active in}" id="preview"></div>
-	  	<div class="tab-pane fade" id="permission"></div>
+	  	<div class="tab-pane fade @if(TabUtil.isDefaultTab(activateTabName)){active in}" id="property"></div>
+	  	<div class="tab-pane fade @if(TabUtil.isFileTab(activateTabName)){active in}" id="file"></div>
+	  	<div class="tab-pane fade @if(TabUtil.isVersionTab(activateTabName)){active in}" id="version"></div>
+	  	<div class="tab-pane fade @if(TabUtil.isPreviewTab(activateTabName)){active in}" id="preview"></div>
+	  	<div class="tab-pane fade @if(TabUtil.isPermissionTab(activateTabName)){active in}" id="permission"></div>
+	  	<div class="tab-pane fade @if(TabUtil.isRelationshipTab(activateTabName)){active in}" id="relationship"></div>
+	  	@for(actionPluginUI <- Util.getUIActionPluginUIElementList(obj, session)){
+	  		  	<div class="tab-pane fade @if(TabUtil.isActionTab(activateTabName, actionPluginUI.getActionId)){active in}" id="action-@actionPluginUI.getActionId"></div>
+	  	}
 	</div>
 
 
 	<!-- scripts -->
 	<script src="@routes.Assets.at("javascripts/jquery.tabs.js")"></script>
 	<script type="text/javascript">
-	@if(activatePreviewTab){
-		$.ajax({
-		     type: "GET",
-		     url: "@routes.Node.showPreview(repositoryId, obj.getId)",
-		     error: function(data){
-		       alert("There was a problem");
-		     },
-		     success: function(data){
-		       $("#preview").html(data);
-		     }
-		 });
-	}else{
-		$.ajax({
-		     type: "GET",
-		     url: "@routes.Node.showProperty(repositoryId, obj.getId)",
-		     error: function(data){
-		       alert("There was a problem");
-		     },
-		     success: function(data){
-		       $("#property").html(data);
-		     }
-		 });
+	@if(TabUtil.isDefaultTab(activateTabName)){
+		$.ajax(jsRoutes.controllers.Node.showProperty("@repositoryId", "@obj.getId" )).done(function(data){$("#property").html(data);});
+	} else {
+		@if(TabUtil.isFileTab(activateTabName)){
+			$.ajax(jsRoutes.controllers.Node.showFile("@repositoryId", "@obj.getId" )).done(function(data){$("#file").html(data);});
+		} else {
+			@if(TabUtil.isVersionTab(activateTabName)){
+				$.ajax(jsRoutes.controllers.Node.showVersion("@repositoryId", "@obj.getId" )).done(function(data){$("#version").html(data);});
+			} else {
+				@if(TabUtil.isPreviewTab(activateTabName)) {
+					$.ajax(jsRoutes.controllers.Node.showPreview("@repositoryId", "@obj.getId" )).done(function(data){$("#preview").html(data);});
+				} else {
+					@if(TabUtil.isPermissionTab(activateTabName)) {
+						$.ajax(jsRoutes.controllers.Node.showPermission("@repositoryId", "@obj.getId" )).done(function(data){$("#permission").html(data);});
+					} else {
+						@if(TabUtil.isRelationshipTab(activateTabName)) {
+						$.ajax(jsRoutes.controllers.Node.showRelationship("@repositoryId", "@obj.getId" )).done(function(data){$("#relationship").html(data);});
+						}else{
+							var actionId = "@TabUtil.getActionIdFrom(activateTabName)";
+							$.ajax(jsRoutes.controllers.Node.showAction("@repositoryId", "@obj.getId", actionId )).done(function(data){$("#action-" + actionId).html(data);});
+						}
+					}
+				}
+			}
+		}
 	}
-	
-	 
+
+
 	 $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
 		  var target = $(e.target).attr("href"); // activated tab
 		    $.ajax({
@@ -83,7 +111,7 @@
 		      }
 		  });
 		})
-		
+
 		$('.favorite-toggle').on('click', function(){
 			$.ajax({
 				type: "PUT",
@@ -99,8 +127,8 @@
 					$('#favorite-star').attr('title', "@Messages("view.user.favorite.toggled.desc1")" + "\n" + "@Messages("view.user.favorite.toggled.desc2")");
 				}
 			}).fail(function(xhr, status, error){
-				alert(xhr.status + " " + xhr.statusText + ": Failed to swith favorite star");	
+				alert(xhr.status + " " + xhr.statusText + ": Failed to swith favorite star");
 			});
 		});
 	</script>
-} 
+}

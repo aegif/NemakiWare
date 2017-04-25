@@ -74,7 +74,7 @@ public class NavigationServiceImpl implements NavigationService {
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
 			String renditionFilter, Boolean includePathSegments,
 			BigInteger maxItems, BigInteger skipCount,
-			ExtensionsData extension, Holder<ObjectData> parentObjectData) {
+			Holder<ObjectData> parentObjectData, ExtensionsData extension) {
 
 		exceptionService.invalidArgumentRequiredString("folderId", folderId);
 		
@@ -163,7 +163,7 @@ public class NavigationServiceImpl implements NavigationService {
 			BigInteger depth, String filter,
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
 			String renditionFilter, Boolean includePathSegment,
-			boolean foldersOnly, ExtensionsData extension, Holder<ObjectData> anscestorObjectData) {
+			boolean foldersOnly, Holder<ObjectData> anscestorObjectData, ExtensionsData extension) {
 
 		exceptionService.invalidArgumentRequiredString("folderId", folderId);
 		
@@ -257,7 +257,7 @@ public class NavigationServiceImpl implements NavigationService {
 
 	@Override
 	public ObjectData getFolderParent(CallContext callContext, String repositoryId,
-			String folderId, String filter) {
+			String folderId, String filter, ExtensionsData extension) {
 		
 		exceptionService.invalidArgumentRequiredString("folderId", folderId);
 		

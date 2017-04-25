@@ -104,6 +104,7 @@ public class NemakiPropertyDefinition extends NodeBase {
 		setPropertyType(core.getPropertyType());
 		setCardinality(core.getCardinality());
 		setUpdatability(detail.getUpdatability());
+		setRequired(detail.isRequired());
 		setQueryable(detail.isQueryable());
 		setOrderable(detail.isOrderable());
 		setChoices(detail.getChoices());
@@ -128,6 +129,7 @@ public class NemakiPropertyDefinition extends NodeBase {
 		setPropertyType(propertyDefinition.getPropertyType());
 		setCardinality(propertyDefinition.getCardinality());
 		setUpdatability(propertyDefinition.getUpdatability());
+		setRequired(propertyDefinition.isRequired());
 		setQueryable(propertyDefinition.isQueryable());
 		setOrderable(propertyDefinition.isOrderable());
 		setChoices(buildChoices(propertyDefinition.getChoices()));
@@ -271,7 +273,11 @@ public class NemakiPropertyDefinition extends NodeBase {
 	public void setOpenChoice(boolean openChoice) {
 		this.openChoice = openChoice;
 	}
-
+	/*
+	public void setOpenChoice(Boolean openChoice) {
+		this.openChoice = (openChoice == null) ? true: false;
+	}
+*/
 	public List<Object> getDefaultValue() {
 		return defaultValue;
 	}

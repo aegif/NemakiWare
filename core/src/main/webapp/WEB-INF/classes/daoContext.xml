@@ -43,5 +43,10 @@
 			<ref bean="nemakiCachePool" />
 		</property>
 	</bean>
-		
+	<bean id="propertyManager" class="jp.aegif.nemaki.util.PropertyManager">
+        <property name="propertyConfigurer" ref="propertyConfigurer" />
+        <property name="contentDaoService">
+			<ref bean="ContentDaoService" />
+		</property>
+    </bean>
 </beans>

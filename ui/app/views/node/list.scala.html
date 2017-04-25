@@ -1,28 +1,36 @@
-@import helper.twitterBootstrap._
+@*{<meta charset="UTF-8" />}*@
+
 @import util.Util
 @import util.NemakiConfig
 @import util.Formatter
 @import org.apache.chemistry.opencmis.commons.PropertyIds
 @import org.apache.chemistry.opencmis.client.api.Document
 @import org.apache.chemistry.opencmis.client.api.Folder
+@import org.apache.chemistry.opencmis.client.api.Item
 @import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition
 @import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed
+@import play.mvc.Http.Context.Implicit
 
-@(repositoryId:String)(objects: List[org.apache.chemistry.opencmis.client.api.CmisObject])
+@(repositoryId:String)(objects: java.util.List[org.apache.chemistry.opencmis.client.api.CmisObject])(session:org.apache.chemistry.opencmis.client.api.Session)
 
-<table class="footable" id="objects-table" data-sort="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
+<table class="footable" id="objects-table" data-sort="true"
+	   data-filter="#filter"
+	   data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
 	<thead>
 		<tr>
+			<th data-sort-ignore="true"   class="content-size"></th>
 			<th data-class="expand" data-sort-initial="true">@NemakiConfig.getLabel("cmis:name", lang().language)</th>
+			 <th class="content-size" data-class="expand" data-filter="#filter" >@NemakiConfig.getLabel("cmis:objectTypeId", Implicit.lang().language)</th>
 			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
-				<th class="content-size" data-class="expand">@NemakiConfig.getLabel(column, lang().language)</th>
+				<th class="content-size" data-class="expand">@NemakiConfig.getLabel(column, Implicit.lang().language)</th>
 			}
-			<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action")</th>
+			<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action") </th>
 		</tr>
 	</thead>
 	<tbody>
 	@for(obj <- objects){
 		<tr>
+			<td class="center"><input name="selection"  type="checkbox"  cmis-id="@obj.getId()" /></td>
 			<td>
 				@obj match {
 					case document:Document =>{
@@ -41,23 +49,41 @@
 						<a href="@routes.Node.showChildren(repositoryId, folder.getId)">
 					}
 
-					case _ =>{
+					case item:Item =>{
+						<a href="#">
+					}
 
+					case _ =>{
 					}
 				}
-					<i class="fa @Util.getIconName(obj)"></i><div class="obj-name" objectId="@obj.getId">@obj.getName()</div>
+					<i class="fa @Util.getIconClassName(obj)"></i><span class="obj-name" objectId="@obj.getId">@obj.getName()</span>
 				</a>
 			</td>
+			<td name="object_type">@NemakiConfig.getLabel(obj.getType().getId(), Implicit.lang().language) @obj.getType().getId()</td>
 			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
-				<td>@Util.displayValue(obj, column, lang.toLocale)</td>
+				<td>@Util.displayValue(obj, column, Implicit.lang.toLocale)</td>
 			}
 			<td>
 				<div class="btn-group">
-					<button type="button" class="btn btn-default show-detail" cmis-id="@obj.getId()"><i class="fa fa-wrench"></i>@Messages("view.detail")</button>
+					<button type="button" class="btn btn-default show-detail" cmis-id="@obj.getId()">
+						<i class="fa fa-wrench" ></i><div class="tooltips">@Messages("view.detail")</div>
+					</button>
 					@if(Util.hasContentStream(obj)){
-						<button type="button" class="btn btn-default show-preview" cmis-id="@obj.getId()"><i class="fa fa-file-pdf-o"></i>@Messages("view.node.preview")</button>
+						<button type="button" class="btn btn-default show-preview" cmis-id="@obj.getId()">
+							<i class="fa fa-file-pdf-o"></i><div class="tooltips">@Messages("view.node.preview")</div>
+						</button>
 					}
-					<button type="button" class="btn btn-default delete" cmis-id="@obj.getId()"><i class="fa fa-trash"></i>@Messages("view.delete")</button>
+					<button type="button" class="btn btn-default delete" cmis-id="@obj.getId()">
+						<i class="fa fa-trash"></i><div class="tooltips">@Messages("view.delete")</div>
+					</button>
+
+					@for(actionButton <- Util.getUIActionPluginUIElementList(obj, session)){
+						<button type="button" class="btn btn-default action-@actionButton.getActionId()-@obj.getId()" cmis-id="@obj.getId()">
+							<i class="@actionButton.getFontAwesomeName()"></i>
+							<div class="tooltips">@actionButton.getDisplayName()</div>
+						</button>
+					}
+
 				</div>
 			</td>
 		</tr>
@@ -65,7 +91,7 @@
 	</tbody>
 	<tfoot>
 		<tr>
-			@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 2){colSpan =>
+			@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 4){colSpan =>
 				<td colspan="@colSpan">
 			}
 				<div class="pagination pagination-centered hide-if-no-paging"></div>
@@ -83,7 +109,7 @@
         $(".show-detail").bind('click', function(){
        		var id = $(this).attr('cmis-id');
        		//Execute
-			$.ajax(jsRoutes.controllers.Node.showDetail("@repositoryId", id, false)
+			$.ajax(jsRoutes.controllers.Node.showDetail("@repositoryId", id, "property")
 			).done(function(data){
 				showLightbox('node-preview' + id, data);
 			}).fail(function(XMLHttpRequest, textStatus, errorThrown){
@@ -102,7 +128,7 @@
        		var id = $(this).attr('cmis-id');
 
        		//Execute
-			$.ajax(jsRoutes.controllers.Node.showDetail("@repositoryId", id, true)
+			$.ajax(jsRoutes.controllers.Node.showDetail("@repositoryId", id, "preview")
 			).done(function(data){
 				showLightbox('node-preview' + id, data);
 			}).fail(function(XMLHttpRequest, textStatus, errorThrown){
@@ -137,6 +163,30 @@
 		});
 	});
 </script>
+
+	@for(obj <- objects){
+		<!--  @obj.getId() -->
+		@for(actionPluginUI <- Util.getUIActionPluginUIElementList(obj, session)){
+			<!-- action -->
+			<script type="text/javascript">
+				$(function(){
+			        $(".action-@actionPluginUI.getActionId-@obj.getId()").bind('click', function(){
+			       		var id = $(this).attr('cmis-id');
+
+			       		//Execute
+						$.ajax(jsRoutes.controllers.Node.showDetail("@repositoryId", id, "action-@actionPluginUI.getActionId")
+						).done(function(data){
+							showLightbox("action-@actionPluginUI.getActionId" + id, data);
+						}).fail(function(XMLHttpRequest, textStatus, errorThrown){
+							//TODO
+						}).always(function(){
+							//TODO
+						});
+			        });
+			    });
+			</script>
+		}
+	}
 
 <!-- no content stream link -->
 <script type="text/javascript">

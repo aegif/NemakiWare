@@ -31,6 +31,11 @@ public class SolrAllResource extends ResourceBase {
 	
 	private SolrUtil solrUtil;
 
+	public SolrAllResource() {
+		super();
+		// TODO Auto-generated constructor stub
+	}
+
 	@GET
 	@Path("/url")
 	@Produces(MediaType.APPLICATION_JSON)

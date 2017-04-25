@@ -3,8 +3,9 @@
   <!-- Application info -->
   <info>
     <appname>NemakiWare</appname>
-    <appversion>2.3.15</appversion>
+    <appversion>2.4.0 beta</appversion>
     <url>http://www.nemakiware.com/</url>
+    <javaversion>1.8</javaversion>
     <!--
     If you a general user install on C:¥Program Files on Windows,
     some commands will fail. RUNAS command doesn't somehow work.
@@ -36,7 +37,7 @@
 
   <!-- Variables in this fhile-->
   <variables>
-    <variable name="TOMCAT" value="apache-tomcat-8.0.28" />
+    <variable name="TOMCAT" value="apache-tomcat-8.5.5" />
   </variables>
 
   <!-- Resource import -->
@@ -104,7 +105,7 @@
        <!-- Import configuration scripts -->
       <file src="setup/installer/install-util/target/install-util.jar" targetdir="$INSTALL_PATH/setup" />
       <fileset dir="setup/installer/tomcat" targetdir="$INSTALL_PATH/setup/tomcat">
-        <exclude name="apache-tomcat-7.0.54.zip" />
+        <exclude name="${TOMCAT}.zip" />
       </fileset>
     </pack>
 

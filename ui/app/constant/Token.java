@@ -6,6 +6,8 @@ public interface Token {
 	final String LOGIN_USER_IS_ADMIN = "loginUserIsAdmin";
 	final String LOGIN_REPOSITORY_ID = "loginRepositoryId";
 
+	final String HEADER_AUTH = "headerAuth";
+
 	final String NEMAKIWARE_VERSION = "NemakiWareProductVersion";
 
 	final String REST_STATUS = "status";

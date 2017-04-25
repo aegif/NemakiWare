@@ -37,6 +37,7 @@ import org.ektorp.CouchDbConnector;
 import org.ektorp.ViewQuery;
 import org.ektorp.ViewResult;
 import org.ektorp.ViewResult.Row;
+import org.ektorp.support.CouchDbRepositorySupport;
 import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -48,32 +49,40 @@ import jp.aegif.nemaki.dao.impl.couch.connector.ConnectorPool;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Change;
+import jp.aegif.nemaki.model.Configuration;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.GroupItem;
 import jp.aegif.nemaki.model.Item;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.model.NodeBase;
+import jp.aegif.nemaki.model.PatchHistory;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
+import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.model.couch.CouchArchive;
 import jp.aegif.nemaki.model.couch.CouchAttachmentNode;
 import jp.aegif.nemaki.model.couch.CouchChange;
+import jp.aegif.nemaki.model.couch.CouchConfiguration;
 import jp.aegif.nemaki.model.couch.CouchContent;
 import jp.aegif.nemaki.model.couch.CouchDocument;
 import jp.aegif.nemaki.model.couch.CouchFolder;
+import jp.aegif.nemaki.model.couch.CouchGroupItem;
 import jp.aegif.nemaki.model.couch.CouchItem;
 import jp.aegif.nemaki.model.couch.CouchNodeBase;
+import jp.aegif.nemaki.model.couch.CouchPatchHistory;
 import jp.aegif.nemaki.model.couch.CouchPolicy;
 import jp.aegif.nemaki.model.couch.CouchPropertyDefinitionCore;
 import jp.aegif.nemaki.model.couch.CouchPropertyDefinitionDetail;
 import jp.aegif.nemaki.model.couch.CouchRelationship;
 import jp.aegif.nemaki.model.couch.CouchRendition;
 import jp.aegif.nemaki.model.couch.CouchTypeDefinition;
+import jp.aegif.nemaki.model.couch.CouchUserItem;
 import jp.aegif.nemaki.model.couch.CouchVersionSeries;
 import jp.aegif.nemaki.util.constant.NodeType;
 
@@ -94,7 +103,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	private static final String ATTACHMENT_NAME = "content";
 
 	public ContentDaoServiceImpl() {
-
+		
 	}
 
 	// ///////////////////////////////////////
@@ -564,6 +573,104 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			return null;
 		}
 	}
+	
+	@Override
+	public UserItem getUserItem(String repositoryId, String objectId) {
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("items").key(objectId);
+		List<CouchUserItem> cpi = connectorPool.get(repositoryId).queryView(query, CouchUserItem.class);
+		if (!CollectionUtils.isEmpty(cpi)) {
+			return cpi.get(0).convert();
+		} else {
+			return null;
+		}
+	}
+	
+	@Override
+	public UserItem getUserItemById(String repositoryId, String userId) {
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("userItemsById").key(userId);
+		List<CouchUserItem> cui = connectorPool.get(repositoryId).queryView(query, CouchUserItem.class);
+		if (!CollectionUtils.isEmpty(cui)) {
+			return cui.get(0).convert();
+		} else {
+			return null;
+		}
+	}
+	
+	@Override
+	public List<UserItem> getUserItems(String repositoryId){
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("userItemsById");
+		List<CouchUserItem> couchUserItems = connectorPool.get(repositoryId).queryView(query, CouchUserItem.class);
+		if (!CollectionUtils.isEmpty(couchUserItems)) {
+			List<UserItem> list = new ArrayList<>();
+			for(CouchUserItem couchUserItem : couchUserItems){
+				list.add(couchUserItem.convert());
+			}
+			
+			return list;
+		} else {
+			return null;
+		}
+	}
+	
+	@Override
+	public GroupItem getGroupItem(String repositoryId, String objectId) {
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("items").key(objectId);
+		List<CouchGroupItem> cgi = connectorPool.get(repositoryId).queryView(query, CouchGroupItem.class);
+		if (!CollectionUtils.isEmpty(cgi)) {
+			return cgi.get(0).convert();
+		} else {
+			return null;
+		}
+	}
+
+	@Override
+	public GroupItem getGroupItemById(String repositoryId, String userId) {
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("groupItemsById").key(userId);
+		List<CouchGroupItem> cgi = connectorPool.get(repositoryId).queryView(query, CouchGroupItem.class);
+		if (!CollectionUtils.isEmpty(cgi)) {
+			return cgi.get(0).convert();
+		} else {
+			return null;
+		}
+	}
+
+	@Override
+	public List<GroupItem> getGroupItems(String repositoryId) {
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("groupItemsById");
+		List<CouchGroupItem> couchGroupItems = connectorPool.get(repositoryId).queryView(query, CouchGroupItem.class);
+		if (!CollectionUtils.isEmpty(couchGroupItems)) {
+			List<GroupItem> list = new ArrayList<>();
+			for(CouchGroupItem couchUserItem : couchGroupItems){
+				list.add(couchUserItem.convert());
+			}
+			
+			return list;
+		} else {
+			return null;
+		}
+	}
+
+	@Override
+	public PatchHistory getPatchHistoryByName(String repositoryId, String name) {
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("patch").key(name);
+		List<CouchPatchHistory> cph = connectorPool.get(repositoryId).queryView(query, CouchPatchHistory.class);
+		if (!CollectionUtils.isEmpty(cph)) {
+			return cph.get(0).convert();
+		} else {
+			return null;
+		}
+	}
+
+	@Override
+	public Configuration getConfiguration(String repositoryId) {
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("configuration");
+		List<CouchConfiguration> ccfg = connectorPool.get(repositoryId).queryView(query, CouchConfiguration.class);
+		if (!CollectionUtils.isEmpty(ccfg)) {
+			return ccfg.get(0).convert();
+		} else {
+			return null;
+		}
+	}
 
 	@Override
 	public Document create(String repositoryId, Document document) {
@@ -605,6 +712,41 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		CouchItem ci = new CouchItem(item);
 		connectorPool.get(repositoryId).create(ci);
 		return ci.convert();
+	}
+
+	@Override
+	public UserItem create(String repositoryId, UserItem userItem) {
+		CouchUserItem cui = new CouchUserItem(userItem);
+		connectorPool.get(repositoryId).create(cui);
+		return cui.convert();
+	}
+
+	@Override
+	public GroupItem create(String repositoryId, GroupItem groupItem) {
+		CouchGroupItem cgi = new CouchGroupItem(groupItem);
+		connectorPool.get(repositoryId).create(cgi);
+		return cgi.convert();
+	}
+
+	@Override
+	public PatchHistory create(String repositoryId, PatchHistory patchHistory) {
+		CouchPatchHistory cph = new CouchPatchHistory(patchHistory);
+		connectorPool.get(repositoryId).create(cph);
+		return cph.convert();
+	}
+
+	@Override
+	public Configuration create(String repositoryId, Configuration configuration) {
+		CouchConfiguration ccfg = new CouchConfiguration(configuration);
+		connectorPool.get(repositoryId).create(ccfg);
+		return ccfg.convert();
+	}
+
+	@Override
+	public NodeBase create(String repositoryId, NodeBase nodeBase) {
+		CouchNodeBase cnb = new CouchNodeBase(nodeBase);
+		connectorPool.get(repositoryId).create(cnb);
+		return cnb.convert();
 	}
 
 	@Override
@@ -682,6 +824,58 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		CouchItem update = new CouchItem(item);
 		update.setRevision(ci.getRevision());
 
+		connectorPool.get(repositoryId).update(update);
+		return update.convert();
+	}
+	
+	@Override
+	public UserItem update(String repositoryId, UserItem userItem) {
+		CouchUserItem ci = connectorPool.get(repositoryId).get(CouchUserItem.class, userItem.getId());
+		// Set the latest revision for avoid conflict
+		CouchUserItem update = new CouchUserItem(userItem);
+		update.setRevision(ci.getRevision());
+
+		connectorPool.get(repositoryId).update(update);
+		return update.convert();
+	}
+
+	@Override
+	public GroupItem update(String repositoryId, GroupItem groupItem) {
+		CouchGroupItem ci = connectorPool.get(repositoryId).get(CouchGroupItem.class, groupItem.getId());
+		// Set the latest revision for avoid conflict
+		CouchGroupItem update = new CouchGroupItem(groupItem);
+		update.setRevision(ci.getRevision());
+
+		connectorPool.get(repositoryId).update(update);
+		return update.convert();
+	}
+
+	@Override
+	public PatchHistory update(String repositoryId, PatchHistory patchHistory) {
+		CouchPatchHistory cph = connectorPool.get(repositoryId).get(CouchPatchHistory.class, patchHistory.getId());
+		CouchPatchHistory update = new CouchPatchHistory(patchHistory);
+		update.setRevision(cph.getRevision());
+		
+		connectorPool.get(repositoryId).update(update);
+		return update.convert();
+	}
+	
+	@Override
+	public Configuration update(String repositoryId, Configuration configuration) {
+		CouchConfiguration ccfg = connectorPool.get(repositoryId).get(CouchConfiguration.class, configuration.getId());
+		CouchConfiguration update = new CouchConfiguration(configuration);
+		update.setRevision(ccfg.getRevision());
+		
+		connectorPool.get(repositoryId).update(update);
+		return update.convert();
+	}
+
+	@Override
+	public NodeBase update(String repositoryId, NodeBase nodeBase) {
+		CouchNodeBase cnb = connectorPool.get(repositoryId).get(CouchPatchHistory.class, nodeBase.getId());
+		CouchNodeBase update = new CouchNodeBase(nodeBase);
+		update.setRevision(cnb.getRevision());
+		
 		connectorPool.get(repositoryId).update(update);
 		return update.convert();
 	}
@@ -946,6 +1140,33 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 		return archives;
 	}
+	
+	@Override
+	public List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc) {
+		String archiveId = repositoryInfoMap.getArchiveId(repositoryId);
+
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("allByCreated");
+		if(skip != null){
+			query.skip(skip);
+		}
+		if(limit != null){
+			query.limit(limit);
+		}
+		if(desc == null){
+			query.descending(true);
+		}else{
+			query.descending(desc);
+		}
+		
+		List<CouchArchive> list = connectorPool.get(archiveId).queryView(query, CouchArchive.class);
+
+		List<Archive> archives = new ArrayList<Archive>();
+		for (CouchArchive ca : list) {
+			archives.add(ca.convert());
+		}
+
+		return archives;
+	}
 
 	@Override
 	public Archive createArchive(String repositoryId, Archive archive, Boolean deletedWithParent) {
@@ -986,6 +1207,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		}
 	}
 
+	@Override
+	public void deleteDocumentArchive(String repositoryId, String archiveId) {
+		Archive docArchive = getArchive(repositoryId, archiveId);
+		Archive attachmentArchive = getArchiveByOriginalId(repositoryId, docArchive.getAttachmentNodeId());
+		
+		deleteArchive(repositoryId, docArchive.getId());
+		deleteArchive(repositoryId, attachmentArchive.getId());
+	}
+
 	@SuppressWarnings("deprecation")
 	@Override
 	public void restoreContent(String repositoryId, Archive archive) {
@@ -1019,6 +1249,14 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		CouchAttachmentNode restored = connector.get(CouchAttachmentNode.class, can.getId());
 		restored.setType(NodeType.ATTACHMENT.value());
 		connector.update(restored);
+	}
+
+	@Override
+	public void restoreDocumentWithArchive(String repositoryId, Archive contentArchive) {
+		restoreContent(repositoryId, contentArchive);
+		// Restore its attachment
+		Archive attachmentArchive = getAttachmentArchive(repositoryId, contentArchive);
+		restoreAttachment(repositoryId, attachmentArchive);
 	}
 
 	// ///////////////////////////////////////

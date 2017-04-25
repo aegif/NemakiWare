@@ -36,10 +36,10 @@ import javax.servlet.http.HttpServletResponse;
 import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
 import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
 import org.apache.chemistry.opencmis.server.shared.HttpUtils;
+import org.apache.commons.lang.ObjectUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
@@ -47,6 +47,7 @@ import jp.aegif.nemaki.cmis.factory.auth.NemakiAuthCallContextHandler;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
+import jp.aegif.nemaki.util.constant.SystemConst;
 
 public class AuthenticationFilter implements Filter {
 
@@ -78,8 +79,8 @@ public class AuthenticationFilter implements Filter {
 	}
 
 	public boolean login(HttpServletRequest request, HttpServletResponse response){
-		String repositoryId = getRepositoryId(request);
-
+		final String repositoryId = getRepositoryId(request);
+		
 		//Make dummy callContext
 		NemakiAuthCallContextHandler callContextHandeler = new NemakiAuthCallContextHandler();
 		Map<String, String> map = callContextHandeler.getCallContextMap(request);
@@ -88,8 +89,14 @@ public class AuthenticationFilter implements Filter {
 			ctxt.put(key, map.get(key));
 		}
 
-		boolean auth = authenticationService.login(ctxt);
-
+		// auth
+		boolean auth = false;
+		if(ObjectUtils.equals(repositoryId, SystemConst.NEMAKI_CONF_DB)){
+			auth = authenticationService.loginForNemakiConfDb(ctxt);
+		}else{
+			auth = authenticationService.login(ctxt);
+		}
+		
 		//Add attributes to Jersey @Context parameter
 		//TODO hard-coded key
 		request.setAttribute("CallContext", ctxt);
