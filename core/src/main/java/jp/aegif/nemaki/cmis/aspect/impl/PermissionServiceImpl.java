@@ -21,12 +21,15 @@
  ******************************************************************************/
 package jp.aegif.nemaki.cmis.aspect.impl;
 
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.apache.chemistry.opencmis.commons.data.AllowableActions;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
@@ -54,6 +57,7 @@ import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.CmisPermission;
 import jp.aegif.nemaki.util.constant.PropertyKey;
+import play.Logger;
 
 /**
  * Permission Service implementation.
@@ -163,26 +167,41 @@ public class PermissionServiceImpl implements PermissionService {
 		// Set<String> and remain unique.
 		// Get ACL for the current user
 
-		List<Ace> aces = acl.getAllAces();
-		Set<String> userPermissions = new HashSet<String>();
-		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
-		for (Ace ace : aces) {
-			// Filter ace which has not permissions
-			if (ace.getPermissions() == null)
-				continue;
 
+		//Separate user/group check for performace
+
+		// Filter ace which has not permissions
+		Stream<Ace> aces = acl.getAllAces().stream().filter(p -> p.getPermissions() != null);
+
+		//User permission
+		Logger.info(MessageFormat.format("[{0}]CheckUserPermission Begin",content.getName()));
+		Set<String> userPermissions = new HashSet<String>();
+		aces.forEach (ace -> {
 			// Add user permissions
 			if (ace.getPrincipalId().equals(userName)) {
 				userPermissions.addAll(ace.getPermissions());
 			}
-			// Add inherited permissions which user inherits
-			if(CollectionUtils.isNotEmpty(groups) && groups.contains(ace.getPrincipalId())){
-				userPermissions.addAll(ace.getPermissions());
-			}
-		}
-
+		});
 		// Check mapping between the user and the content
 		boolean calcPermission =  checkCalculatedPermissions(repositoryId, key, userPermissions);
+		Logger.info(MessageFormat.format("[{0}]CheckUserPermission End:{1}",content.getName(), calcPermission));
+		if(calcPermission) return true;
+
+		//Group permission
+		Logger.info(MessageFormat.format("[{0}]CheckGroupPermission Begin",content.getName()));
+		Set<String> groupPermissions = new HashSet<String>();
+		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
+		if( CollectionUtils.isNotEmpty(groups)) return calcPermission;
+		aces.forEach (ace -> {
+			// Add inherited permissions which user inherits
+			if(groups.contains(ace.getPrincipalId())){
+				groupPermissions.addAll(ace.getPermissions());
+			}
+		});
+		// Check mapping between the group and the content
+		calcPermission =  checkCalculatedPermissions(repositoryId, key, groupPermissions);
+		Logger.info(MessageFormat.format("[{0}]CheckGroupPermission End:{1}",content.getName(), calcPermission));
+
 		return calcPermission;
 	}
 
