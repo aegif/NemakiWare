@@ -414,6 +414,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public List<GroupItem> getGroupItems(String repositoryId) {
 		return nonCachedContentDaoService.getGroupItems(repositoryId);
 	}
+	
+	@Override
+	public List<String> getJoinedGroupByUserId(String repositoryId, String userId) {
+		return nonCachedContentDaoService.getJoinedGroupByUserId(repositoryId, userId);
+	}
 
 	@Override
 	public PatchHistory getPatchHistoryByName(String repositoryId, String name) {
@@ -994,4 +999,5 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public void setNemakiCachePool(NemakiCachePool nemakiCachePool) {
 		this.nemakiCachePool = nemakiCachePool;
 	}
+
 }

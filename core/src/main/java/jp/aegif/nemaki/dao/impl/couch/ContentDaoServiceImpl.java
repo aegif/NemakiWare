@@ -37,7 +37,6 @@ import org.ektorp.CouchDbConnector;
 import org.ektorp.ViewQuery;
 import org.ektorp.ViewResult;
 import org.ektorp.ViewResult.Row;
-import org.ektorp.support.CouchDbRepositorySupport;
 import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -642,6 +641,64 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			}
 		}
 		return list;
+	}
+
+	public List<String> getJoinedGroupByUserId(String repositoryId, String userId) {
+		List<GroupItem> list = new ArrayList<>();
+
+		//first get directory joined groups
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("joinedDirectGroupsByUserId").key(userId);
+		List<CouchGroupItem> couchGroupItems = connectorPool.get(repositoryId).queryView(query, CouchGroupItem.class);
+
+		//get indirect joined group using above results
+		List<String> groupIdsToCheck = new ArrayList<String>();
+		List<String> resultGroupIds = new ArrayList<String>();
+		for(CouchGroupItem item : couchGroupItems) {
+			groupIdsToCheck.add(item.getGroupId());
+			resultGroupIds.add(item.getGroupId());
+		}
+
+		while(groupIdsToCheck.size() > 0) {
+			groupIdsToCheck = this.checkIndirectGroup(repositoryId, groupIdsToCheck);
+			resultGroupIds.addAll(groupIdsToCheck);
+		}
+
+		//unique result
+
+
+		return resultGroupIds;
+	}
+
+	private List<String> checkIndirectGroup(String repositoryId, List<String> groupIdsToCheck) {
+
+		List<String> resultGroupIds = new ArrayList<String>();
+
+		int batchSize = 20;
+		ArrayList<ArrayList<String>> params = new ArrayList<ArrayList<String>>();
+		for(int i = 0 ; i < groupIdsToCheck.size() ; i ++ ) {
+
+			ArrayList<String> param = new ArrayList<String>();
+			param.add(String.valueOf(i % 20));
+			param.add(groupIdsToCheck.get(0));
+			groupIdsToCheck.remove(0);
+
+			//divide into 20 param
+			if ( (i % batchSize) == batchSize - 1 || i == groupIdsToCheck.size() - 1 ) {
+				//query
+				ViewQuery query =
+						new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("joinedDirectGroupsByGroupId");
+				query.keys(params);
+				List<CouchGroupItem> couchGroupItems =
+						connectorPool.get(repositoryId).queryView(query, CouchGroupItem.class);
+				for(CouchGroupItem item : couchGroupItems) {
+					resultGroupIds.add(item.getGroupId());
+				}
+				//after query, clear params
+				params = new ArrayList<ArrayList<String>>();
+			}
+		}
+
+		return resultGroupIds;
 	}
 
 	@Override

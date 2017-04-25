@@ -25,7 +25,9 @@ import jp.aegif.nemaki.util.CmisSessionFactory;
 import jp.aegif.nemaki.util.Constant;
 import jp.aegif.nemaki.util.yaml.RepositorySettings;
 
-import org.apache.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.quartz.Job;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
@@ -40,7 +42,7 @@ import com.ibm.icu.text.MessageFormat;
  */
 public class CoreTrackerJob implements Job {
 
-	Logger logger = Logger.getLogger(CoreTrackerJob.class);
+	private static final Logger logger = LoggerFactory.getLogger(CoreTrackerJob.class);
 
 	public CoreTrackerJob() {
 		super();
@@ -56,7 +58,7 @@ public class CoreTrackerJob implements Job {
 			try{
 				coreTracker.index(Constant.MODE_DELTA, repositoryId);
 			}catch(Exception ex){
-				logger.error(MessageFormat.format("Indexing error repository={0}",repositoryId), ex);
+				logger.error("Indexing error repository={}",repositoryId, ex);
 			}
 		}
 	}

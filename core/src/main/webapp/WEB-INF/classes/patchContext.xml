@@ -19,6 +19,9 @@
         <property name="patch_20160815">
             <ref bean="patch_20160815" />
         </property>
+        <property name="patch_20170425">
+            <ref bean="patch_20170425" />
+        </property>
     </bean>
 
 	<bean id="patchUtil" class="jp.aegif.nemaki.patch.PatchUtil">
@@ -50,4 +53,15 @@
         	<ref bean="PrincipalService" />
       	</property>
 	</bean>
+
+	<bean id="patch_20170425" class="jp.aegif.nemaki.patch.Patch_20170425">
+      	<property name="patchUtil">
+        	<ref bean="patchUtil" />
+      	</property>
+      	<property name="principalService">
+        	<ref bean="PrincipalService" />
+      	</property>
+	</bean>
+
+
 </beans>

@@ -38,6 +38,7 @@ import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.common.NemakiObjectType;
+import jp.aegif.nemaki.util.constant.CmisPermission;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 import jp.aegif.nemaki.util.constant.SystemConst;
 
@@ -258,7 +259,7 @@ public class Patch_20160815 extends AbstractNemakiPatch{
 		acl.setLocalAces(Arrays.asList(
 			new Ace(
 				user.getUserId(),
-				Arrays.asList("cmis:read", "cmis:write"),
+				Arrays.asList(CmisPermission.READ, CmisPermission.WRITE),
 				true)
 			)
 		);

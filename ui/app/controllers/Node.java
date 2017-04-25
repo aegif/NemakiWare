@@ -6,15 +6,13 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URLEncoder;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.net.URLEncoder;
 import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.GregorianCalendar;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
@@ -23,26 +21,31 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import model.ActionPluginUIElement;
-import model.Principal;
-import net.lingala.zip4j.core.*;
-import net.lingala.zip4j.io.*;
-import net.lingala.zip4j.model.*;
-import net.lingala.zip4j.util.*;
-
-import org.apache.chemistry.opencmis.client.api.*;
+import org.apache.chemistry.opencmis.client.api.CmisObject;
+import org.apache.chemistry.opencmis.client.api.Document;
+import org.apache.chemistry.opencmis.client.api.FileableCmisObject;
+import org.apache.chemistry.opencmis.client.api.Folder;
+import org.apache.chemistry.opencmis.client.api.ItemIterable;
+import org.apache.chemistry.opencmis.client.api.ObjectId;
+import org.apache.chemistry.opencmis.client.api.ObjectType;
+import org.apache.chemistry.opencmis.client.api.OperationContext;
+import org.apache.chemistry.opencmis.client.api.Property;
+import org.apache.chemistry.opencmis.client.api.QueryResult;
+import org.apache.chemistry.opencmis.client.api.Relationship;
+import org.apache.chemistry.opencmis.client.api.RelationshipType;
+import org.apache.chemistry.opencmis.client.api.Rendition;
+import org.apache.chemistry.opencmis.client.api.SecondaryType;
+import org.apache.chemistry.opencmis.client.api.Session;
+import org.apache.chemistry.opencmis.client.api.Tree;
 import org.apache.chemistry.opencmis.client.runtime.ObjectIdImpl;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
-import org.apache.chemistry.opencmis.commons.data.AllowableActions;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
-import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
-import org.apache.chemistry.opencmis.commons.enums.Action;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
@@ -50,49 +53,54 @@ import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
-import org.apache.chemistry.opencmis.commons.impl.MimeTypes;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.objectweb.asm.Type;
-import org.pac4j.play.PlayWebContext;
 import org.pac4j.play.java.Secure;
-import org.pac4j.saml.client.SAML2Client;
-import org.pac4j.saml.credentials.SAML2Credentials;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.inject.Inject;
+
+import constant.PropertyKey;
+import constant.Token;
+import jp.aegif.nemaki.plugin.action.JavaBackedUIAction;
+import jp.aegif.nemaki.plugin.action.UIActionContext;
+import model.ActionPluginUIElement;
+import model.Principal;
+import net.lingala.zip4j.io.ZipOutputStream;
+import net.lingala.zip4j.model.ZipModel;
+import net.lingala.zip4j.model.ZipParameters;
+import net.lingala.zip4j.util.Zip4jConstants;
 import play.Logger;
-import play.Play;
 import play.Logger.ALogger;
-import play.api.libs.Files.TemporaryFile;
-import play.i18n.Messages;
 import play.data.DynamicForm;
 import play.data.Form;
+import play.i18n.Messages;
 import play.libs.Json;
 import play.mvc.Controller;
 import play.mvc.Http.MultipartFormData;
 import play.mvc.Http.MultipartFormData.FilePart;
 import play.mvc.Result;
-import play.mvc.Security.Authenticated;
 import util.CmisObjectTree;
 import util.NemakiConfig;
 import util.RelationshipUtil;
 import util.Util;
 import util.authentication.NemakiProfile;
-import views.html.node.*;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-import constant.PropertyKey;
-import constant.Token;
-import jp.aegif.nemaki.common.NemakiObjectType;
-import jp.aegif.nemaki.plugin.action.JavaBackedUIAction;
-import jp.aegif.nemaki.plugin.action.UIActionContext;
-import com.google.inject.Inject;
+import views.html.node.blank;
+import views.html.node.detail;
+import views.html.node.detailFull;
+import views.html.node.file;
+import views.html.node.preview;
+import views.html.node.property;
+import views.html.node.relationship;
+import views.html.node.relationship_create;
+import views.html.node.search;
+import views.html.node.searchFreeQuery;
+import views.html.node.tree;
+import views.html.node.version;
 
 public class Node extends Controller {
 	private static final ALogger logger = Logger.of(Node.class);
@@ -108,7 +116,6 @@ public class Node extends Controller {
 	public Result index(String repositoryId) {
 		Session session = getCmisSession(repositoryId);
 		Folder root = session.getRootFolder();
-
 		return showChildren(repositoryId, root.getId());
 	}
 
@@ -210,7 +217,7 @@ public class Node extends Controller {
 		List<CmisObject> list = new ArrayList<CmisObject>();
 		// Build WHERE clause(cmis:document)
 		MessageFormat docFormat = new MessageFormat(
-				"cmis:name LIKE ''%{0}%'' OR cmis:description LIKE ''%{0}%'' OR CONTAINS(''{0}'')");
+				"cmis:isLatestVersion=true AND ( cmis:name LIKE ''%{0}%'' OR cmis:description LIKE ''%{0}%'' OR CONTAINS(''{0}'') )");
 		String docStatement = "";
 		if (StringUtils.isNotBlank(term)) {
 			docStatement = docFormat.format(new String[] { term });

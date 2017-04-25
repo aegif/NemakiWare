@@ -41,7 +41,7 @@
 		<dependency>
 			<groupId>jp.aegif.nemaki.plugin</groupId>
 			<artifactId>nemakiware-action</artifactId>
-			<version>0.0.5</version>
+			<version>0.0.6</version>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
@@ -77,7 +77,7 @@
 			<artifactId>spring-plugin-core</artifactId>
 			<version>1.2.0.RELEASE</version>
 		</dependency>
-		
+
 		<!-- Google Guice -->
 		<dependency>
 		    <groupId>com.google.inject</groupId>
