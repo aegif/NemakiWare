@@ -21,12 +21,25 @@
  ******************************************************************************/
 package jp.aegif.nemaki.cmis.aspect.impl;
 
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import org.apache.chemistry.opencmis.commons.data.AllowableActions;
+import org.apache.chemistry.opencmis.commons.data.ObjectData;
+import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
+import org.apache.chemistry.opencmis.commons.enums.Action;
+import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
+import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
@@ -39,22 +52,12 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.Relationship;
-import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.CmisPermission;
 import jp.aegif.nemaki.util.constant.PropertyKey;
-
-import org.apache.chemistry.opencmis.commons.data.AllowableActions;
-import org.apache.chemistry.opencmis.commons.data.ObjectData;
-import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
-import org.apache.chemistry.opencmis.commons.enums.Action;
-import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
-import org.apache.chemistry.opencmis.commons.server.CallContext;
-import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import play.Logger;
 
 /**
  * Permission Service implementation.
@@ -132,10 +135,7 @@ public class PermissionServiceImpl implements PermissionService {
 		// Admin always pass a permission check
 		String userName = callContext.getUsername();
 		UserItem u = contentService.getUserItemById(repositoryId, userName);
-
-		if (u != null && u.isAdmin()) {
-			return true;
-		}
+		if (u != null && u.isAdmin()) return true;
 
 		//PWC doesn't accept any actions from a non-owner user
 		//TODO admin can manipulate PWC even when it is checked out ?
@@ -143,7 +143,7 @@ public class PermissionServiceImpl implements PermissionService {
 			Document document = (Document)content;
 			if(document.isPrivateWorkingCopy()){
 				VersionSeries vs = contentService.getVersionSeries(repositoryId, document);
-				if(!callContext.getUsername().equals(vs.getVersionSeriesCheckedOutBy())){
+				if(!userName.equals(vs.getVersionSeriesCheckedOutBy())){
 					return false;
 				}
 			}
@@ -167,27 +167,37 @@ public class PermissionServiceImpl implements PermissionService {
 		// Set<String> and remain unique.
 		// Get ACL for the current user
 
-		List<Ace> aces = acl.getAllAces();
-		Set<String> userPermissions = new HashSet<String>();
-		//Set<String> groups = principalService.getGroupIdsContainingUser(repositoryId, userName);
-		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
-		for (Ace ace : aces) {
-			// Filter ace which has not permissions
-			if (ace.getPermissions() == null)
-				continue;
 
-			// Add user permissions
-			if (ace.getPrincipalId().equals(userName)) {
-				userPermissions.addAll(ace.getPermissions());
-			}
-			// Add inherited permissions which user inherits
-			if(CollectionUtils.isNotEmpty(groups) && groups.contains(ace.getPrincipalId())){
-				userPermissions.addAll(ace.getPermissions());
-			}
-		}
+		//Separate user/group check for performace
+
+		// Filter ace which has permissions
+		List<Ace> aces = acl.getAllAces().stream().filter(p -> p.getPermissions() != null).collect(Collectors.toList());
+
+		//User permission
+		Logger.info(MessageFormat.format("[{0}]CheckUserPermission Begin",content.getName()));
+		Set<String> userPermissions = aces.stream()
+			.filter(ace -> ace.getPrincipalId().equals(userName))
+			.flatMap(ace -> ace.getPermissions().stream())
+			.collect(Collectors.toSet());
 
 		// Check mapping between the user and the content
 		boolean calcPermission =  checkCalculatedPermissions(repositoryId, key, userPermissions);
+		Logger.info(MessageFormat.format("[{0}]CheckUserPermission End:{1}",content.getName(), calcPermission));
+		if(calcPermission) return true;
+
+		//Group permission
+		Logger.info(MessageFormat.format("[{0}]CheckGroupPermission Begin",content.getName()));
+		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
+		if( CollectionUtils.isEmpty(groups)) return calcPermission;
+		Set<String> groupPermissions = aces.stream()
+				.filter(ace -> groups.contains(ace.getPrincipalId()))
+				.flatMap(ace -> ace.getPermissions().stream())
+				.collect(Collectors.toSet());
+
+		// Check mapping between the group and the content
+		calcPermission =  checkCalculatedPermissions(repositoryId, key, groupPermissions);
+		Logger.info(MessageFormat.format("[{0}]CheckGroupPermission End:{1}",content.getName(), calcPermission));
+
 		return calcPermission;
 	}
 

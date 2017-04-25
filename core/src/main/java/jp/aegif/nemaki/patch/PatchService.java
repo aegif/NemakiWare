@@ -20,10 +20,11 @@ public class PatchService {
 	private ConnectorPool connectorPool;
 
 	private Patch_20160815 patch_20160815;
-
+	private Patch_20170425 patch_20170425;
 	public void apply(){
 		createPathView();
 		patch_20160815.apply();
+		patch_20170425.apply();
 	}
 
 	private void createPathView(){
@@ -50,4 +51,9 @@ public class PatchService {
 	public void setPatch_20160815(Patch_20160815 patch_20160815) {
 		this.patch_20160815 = patch_20160815;
 	}
+
+	public void setPatch_20170425(Patch_20170425 patch_20170425) {
+		this.patch_20170425 = patch_20170425;
+	}
+
 }

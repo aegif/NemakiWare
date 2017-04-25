@@ -55,6 +55,7 @@ import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.common.NemakiObjectType;
 import jp.aegif.nemaki.util.constant.PropertyKey;
+import jp.aegif.nemaki.util.constant.SystemConst;
 
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
@@ -503,7 +504,7 @@ public class UserItemResource extends ResourceBase {
 
 	@SuppressWarnings("unchecked")
 	private JSONObject convertUserToJson(UserItem user) {
-		SimpleDateFormat sdf = new SimpleDateFormat(DataUtil.DATE_FORMAT);
+		SimpleDateFormat sdf = new SimpleDateFormat(SystemConst.DATETIME_FORMAT);
 		String created = new String();
 		try {
 			if (user.getCreated() != null) {

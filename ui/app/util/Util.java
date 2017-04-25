@@ -11,7 +11,6 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
 import java.text.MessageFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
@@ -25,14 +24,13 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.ServiceLoader;
-import java.util.Map.Entry;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import org.apache.chemistry.opencmis.client.SessionParameterMap;
 import org.apache.chemistry.opencmis.client.api.CmisObject;
@@ -49,7 +47,6 @@ import org.apache.chemistry.opencmis.client.api.SessionFactory;
 import org.apache.chemistry.opencmis.client.runtime.PropertyImpl;
 import org.apache.chemistry.opencmis.client.runtime.SessionFactoryImpl;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
-import org.apache.chemistry.opencmis.commons.SessionParameter;
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
@@ -61,7 +58,6 @@ import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
-import org.apache.chemistry.opencmis.commons.enums.BindingType;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
 import org.apache.chemistry.opencmis.commons.enums.ExtensionLevel;
@@ -69,7 +65,6 @@ import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisUnauthorizedException;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
@@ -98,23 +93,10 @@ import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.message.BasicHeader;
 import org.apache.http.message.BasicNameValuePair;
 import org.pac4j.core.context.WebContext;
-import org.pac4j.core.exception.HttpAction;
 import org.pac4j.core.profile.CommonProfile;
 import org.pac4j.core.profile.ProfileManager;
 import org.pac4j.play.PlayWebContext;
 import org.pac4j.saml.profile.SAML2Profile;
-
-import play.Logger;
-import play.Logger.ALogger;
-import play.api.http.MediaRange;
-import play.data.DynamicForm;
-import play.data.Form;
-import play.libs.Json;
-import play.mvc.Http.MultipartFormData;
-import play.mvc.Http.MultipartFormData.FilePart;
-import play.mvc.Http.Request;
-import util.authentication.NemakiProfile;
-import util.authentication.NemakiProfile.CmisAuthType;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -125,16 +107,22 @@ import constant.PropertyKey;
 import constant.Token;
 import constant.UpdateContext;
 import controllers.CmisSessions;
-import controllers.Node;
-import jp.aegif.nemaki.plugin.action.JavaBackedAction;
 import jp.aegif.nemaki.plugin.action.JavaBackedActionModule;
 import jp.aegif.nemaki.plugin.action.JavaBackedUIAction;
 import jp.aegif.nemaki.plugin.action.UIActionContext;
 import jp.aegif.nemaki.plugin.action.trigger.ActionTriggerBase;
 import jp.aegif.nemaki.plugin.action.trigger.UserButtonPerCmisObjcetActionTrigger;
 import model.ActionPluginUIElement;
-
+import play.Logger;
+import play.Logger.ALogger;
+import play.api.http.MediaRange;
+import play.data.DynamicForm;
+import play.data.Form;
+import play.libs.Json;
+import play.mvc.Http.MultipartFormData.FilePart;
+import play.mvc.Http.Request;
 import util.authentication.NemakiProfile;
+import util.authentication.NemakiProfile.CmisAuthType;
 
 public class Util {
 	private static final ALogger logger = Logger.of(Util.class);
@@ -158,12 +146,22 @@ public class Util {
 		String repoId = (String) context.getSessionAttribute(Token.LOGIN_REPOSITORY_ID);
 		if (StringUtils.isBlank(repoId)) {
 			String uri = context.getFullRequestURL();
-			repoId = extractRepositoryId(uri);
-			if (StringUtils.isBlank(repoId)) {
+			repoId = getRepositoryId(uri);
+		}
+		return repoId;
+	}
+
+	public static String getRepositoryId(String uri) {
+		String repoId;
+		repoId = extractRepositoryId(uri);
+		if (StringUtils.isBlank(repoId)) {
+			try{
 				repoId = Form.form().bindFromRequest().get("repositoryId");
-				if(StringUtils.isBlank(repoId)){
-					repoId = NemakiConfig.getDefualtRepositoryId();
-				}
+			}catch(Exception ex){
+				//no-op
+			}
+			if(StringUtils.isBlank(repoId)){
+				repoId = NemakiConfig.getDefualtRepositoryId();
 			}
 		}
 		return repoId;
@@ -206,7 +204,7 @@ public class Util {
 	public static Session createCmisSession(String repositoryId, play.mvc.Http.Context ctx) {
 		NemakiProfile profile = Util.getProfile(ctx);
 		String profileRepositoryId = profile.getRepositoryId();
-		// 作成時にはそのプロファイルである必要がある。いちど作ればキャッシュされるはず
+		// profile mismatch
 
 		if (profileRepositoryId != null && !repositoryId.equals(profileRepositoryId)) {
 			logger.error("Access repository mismatch [Profile]" + profileRepositoryId + " [AccessRepository]"
@@ -313,7 +311,7 @@ public class Util {
 	}
 
 	public static Set<JavaBackedUIAction> getUIActions() {
-		Set<JavaBackedUIAction> actions = new HashSet<JavaBackedUIAction>();
+		HashSet<JavaBackedUIAction> actions = new HashSet<JavaBackedUIAction>();
 		try {
 			ServiceLoader<JavaBackedActionModule> loader = ServiceLoader.load(JavaBackedActionModule.class);
 			Injector injector = Guice.createInjector(loader);
@@ -1218,7 +1216,7 @@ public class Util {
 			String str = cal.toString();
 			return cal;
 		} catch (ParseException e) {
-			logger.info(MessageFormat.format("DateFormatError Pattern:{0} Text:{1}", format, date));
+			logger.debug(MessageFormat.format("DateFormatError Pattern:{0} Text:{1}", format, date));
 		}
 		return null;
 	}
