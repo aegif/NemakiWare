@@ -1183,7 +1183,7 @@ public class ContentServiceImpl implements ContentService {
 				// except oneself.
 				new Ace(
 						userId,
-						Arrays.asList("cmis:read", "cmis:write"),
+						Arrays.asList(CmisPermission.READ, CmisPermission.WRITE),
 						true)
 				)
 				);
