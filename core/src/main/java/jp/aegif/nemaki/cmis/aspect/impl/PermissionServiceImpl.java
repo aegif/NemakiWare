@@ -171,7 +171,9 @@ public class PermissionServiceImpl implements PermissionService {
 		//Separate user/group check for performace
 
 		// Filter ace which has permissions
-		List<Ace> aces = acl.getAllAces().stream().filter(p -> p.getPermissions() != null).collect(Collectors.toList());
+		List<Ace> aces = acl.getAllAces().stream()
+				.filter(p -> p.getPermissions() != null)
+				.collect(Collectors.toList());
 
 		//User permission
 		Logger.info(MessageFormat.format("[{0}]CheckUserPermission Begin",content.getName()));
@@ -212,16 +214,9 @@ public class PermissionServiceImpl implements PermissionService {
 		Map<String, PermissionMapping> table = repositoryInfoMap.get(repositoryId).getAclCapabilities().getPermissionMapping();
 		List<String> actionPermissions = table.get(key).getPermissions();
 
-		for (String up : userPermissions) {
-			if (actionPermissions.contains(up) ||
-				CmisPermission.ALL.equals(up)) {
-				//If any one of user permissions is contained, action is allowed.
-
-				return true;
-			}
+		return userPermissions.stream()
+				.anyMatch(up -> CmisPermission.ALL.equals(up) || actionPermissions.contains(up));
 		}
-		return false;
-	}
 
 	/**
 	 * TODO In the future, enable different configuration for Read/Update/Delete.
