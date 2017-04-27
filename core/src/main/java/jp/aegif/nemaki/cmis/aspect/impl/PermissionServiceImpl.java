@@ -176,7 +176,7 @@ public class PermissionServiceImpl implements PermissionService {
 				.collect(Collectors.toList());
 
 		//User permission
-		Logger.info(MessageFormat.format("[{0}]CheckUserPermission Begin",content.getName()));
+		Logger.info(MessageFormat.format("[{0}][{1}]CheckUserPermission BEGIN:{2}",content.getName(), userName, key));
 		Set<String> userPermissions = aces.stream()
 			.filter(ace -> ace.getPrincipalId().equals(userName))
 			.flatMap(ace -> ace.getPermissions().stream())
@@ -184,11 +184,11 @@ public class PermissionServiceImpl implements PermissionService {
 
 		// Check mapping between the user and the content
 		boolean calcPermission =  checkCalculatedPermissions(repositoryId, key, userPermissions);
-		Logger.info(MessageFormat.format("[{0}]CheckUserPermission End:{1}",content.getName(), calcPermission));
+		Logger.info(MessageFormat.format("[{0}][{1}]CheckUserPermission END:{2}",content.getName(), userName, calcPermission));
 		if(calcPermission) return true;
 
 		//Group permission
-		Logger.info(MessageFormat.format("[{0}]CheckGroupPermission Begin",content.getName()));
+		Logger.info(MessageFormat.format("[{0}][{1}]CheckGroupPermission BEGIN:{2}",content.getName(), userName, key));
 		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
 		if( CollectionUtils.isEmpty(groups)) return calcPermission;
 		Set<String> groupPermissions = aces.stream()
@@ -198,7 +198,7 @@ public class PermissionServiceImpl implements PermissionService {
 
 		// Check mapping between the group and the content
 		calcPermission =  checkCalculatedPermissions(repositoryId, key, groupPermissions);
-		Logger.info(MessageFormat.format("[{0}]CheckGroupPermission End:{1}",content.getName(), calcPermission));
+		Logger.info(MessageFormat.format("[{0}][{1}]CheckGroupPermission END:{2}",content.getName(), userName, calcPermission));
 
 		return calcPermission;
 	}

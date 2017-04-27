@@ -173,13 +173,14 @@ public class CompileServiceImpl implements CompileService {
 		PropertiesImpl properties = compileProperties(callContext, repositoryId, content);
 		result.setProperties(properties);
 
-		// Set Allowable actions
-		result.setAllowableActions(compileAllowableActions(callContext, repositoryId, content));
-
 		// Set Acl
 		Acl acl = contentService.calculateAcl(repositoryId, content);
 		result.setIsExactAcl(true);
 		result.setAcl(compileAcl(acl, contentService.getAclInheritedWithDefault(repositoryId, content), false));
+
+		// Set Allowable actions
+		result.setAllowableActions(compileAllowableActions(callContext, repositoryId, content, acl));
+
 
 		//Set Relationship(BOTH)
 		if (!content.isRelationship() && includeRelationshipsEnabled()){
@@ -470,15 +471,23 @@ public class CompileServiceImpl implements CompileService {
 	 * @param content
 	 */
 	@Override
-	public AllowableActions compileAllowableActions(CallContext callContext,
-			String repositoryId, Content content) {
-		// Get parameters to calculate AllowableActions
-		TypeDefinition tdf = typeManager.getTypeDefinition(repositoryId, content
-				.getObjectType());
-		jp.aegif.nemaki.model.Acl contentAcl = content.getAcl();
-		if (tdf.isControllableAcl() && contentAcl == null)
-			return null;
+	public AllowableActions compileAllowableActions(CallContext callContext, String repositoryId, Content content) {
 		Acl acl = contentService.calculateAcl(repositoryId, content);
+		return compileAllowableActions(callContext, repositoryId, content, acl);
+	}
+
+
+	/**
+	 * Sets allowable action for the content
+	 * @param content
+	 */
+	@Override
+	public AllowableActions compileAllowableActions(CallContext callContext, String repositoryId, Content content, Acl acl) {
+		// Get parameters to calculate AllowableActions
+		TypeDefinition tdf = typeManager.getTypeDefinition(repositoryId, content.getObjectType());
+		Acl contentAcl = content.getAcl();
+		if (tdf.isControllableAcl() && contentAcl == null)return null;
+
 		Map<String, PermissionMapping> permissionMap = repositoryInfoMap.get(repositoryId)
 				.getAclCapabilities().getPermissionMapping();
 		String baseType = content.getType();
