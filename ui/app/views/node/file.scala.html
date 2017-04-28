@@ -41,18 +41,22 @@
 						@helper.form(action=routes.Node.checkInPWC(repositoryId, obj.getId()), 'enctype -> "multipart/form-data") {
 							<fieldset>
 								<legend><i class="fa fa-upload"></i><i class="fa fa-unlock"></i>@Messages("view.node.file.checkin.pwc.caption")</legend>
-								<div class="row" style="padding-bottom:6px;">
-									<div class="col-sm-12">
-										<div>@Messages("view.node.file.checkin.pwc.description")</div>
-										<input type="text" name="cmis:checkinComment" size="50" placeholder="@Messages("view.node.file.checkin.comment")"/>
-										<input type="hidden" name="cmis:parentId" value="@parentId"/><br/>
+								@if(Util.canCheckIn(obj)){
+									<div class="row" style="padding-bottom:6px;">
+										<div class="col-sm-12">
+											<div>@Messages("view.node.file.checkin.pwc.description")</div>
+											<input type="text" name="cmis:checkinComment" size="50" placeholder="@Messages("view.node.file.checkin.comment")"/>
+											<input type="hidden" name="cmis:parentId" value="@parentId"/><br/>
+										</div>
 									</div>
-								</div>
-								<div class="row" style="padding-bottom:6px;">
-									<div class="col-sm-12">
-						   				@executeButton()
-						   			</div>
-						   		</div>
+									<div class="row" style="padding-bottom:6px;">
+										<div class="col-sm-12">
+							   				@executeButton()
+							   			</div>
+							   		</div>
+						   		}else{
+					   				<div class="row" style="padding-bottom:6px;"><div class="col-sm-12">@Messages("view.not_permitted")<div></div>
+					   			}
 						   	</fieldset>
 						}
 					</div>
@@ -62,19 +66,23 @@
 						@helper.form(action=routes.Node.checkIn(repositoryId, obj.getId()), 'enctype -> "multipart/form-data") {
 							<fieldset>
 								<legend><i class="fa fa-upload"></i><i class="fa fa-unlock"></i>@Messages("view.node.file.checkin.caption")</legend>
-								<div class="row" style="padding-bottom:6px;">
-									<div class="col-sm-12">
-										<div>@Messages("view.node.file.checkin.description")</div>
-										<input type="file" name="file"/>
-										<input type="text" name="cmis:checkinComment" size="50" placeholder="@Messages("view.node.file.checkin.comment")"/>
-										<input type="hidden" name="cmis:parentId" value="@parentId"/><br/>
+								@if(Util.canCheckIn(obj)){
+									<div class="row" style="padding-bottom:6px;">
+										<div class="col-sm-12">
+											<div>@Messages("view.node.file.checkin.description")</div>
+											<input type="file" name="file"/>
+											<input type="text" name="cmis:checkinComment" size="50" placeholder="@Messages("view.node.file.checkin.comment")"/>
+											<input type="hidden" name="cmis:parentId" value="@parentId"/><br/>
+										</div>
 									</div>
-								</div>
-								<div class="row" style="padding-bottom:6px;">
-									<div class="col-sm-12">
-						   				@executeButton()
-						   			</div>
-						   		</div>
+									<div class="row" style="padding-bottom:6px;">
+										<div class="col-sm-12">
+							   				@executeButton()
+							   			</div>
+							   		</div>
+						   		}else{
+					   				<div class="row" style="padding-bottom:6px;"><div class="col-sm-12">@Messages("view.not_permitted")<div></div>
+					   			}
 						   	</fieldset>
 						}
 					</div>
@@ -84,17 +92,21 @@
 						@helper.form(action = routes.Node.cancelCheckOut(repositoryId, obj.getId())) {
 						<fieldset>
 							<legend><i class="fa fa-undo"></i>@Messages("view.node.file.cancel.checkout.caption")</legend>
-							<div class="row" style="padding-bottom:6px;">
-								<div class="col-sm-12">
-									<div>@Messages("view.node.file.cancel.checkout.description")</div>
-									<input type="hidden" name="cmis:parentId" value="@parentId"/>
+							@if(Util.canCancelCheckOut(obj)){
+								<div class="row" style="padding-bottom:6px;">
+									<div class="col-sm-12">
+										<div>@Messages("view.node.file.cancel.checkout.description")</div>
+										<input type="hidden" name="cmis:parentId" value="@parentId"/>
+									</div>
 								</div>
-							</div>
-							<div class="row" style="padding-bottom:6px;">
-								<div class="col-sm-12">
-					   				@executeButton()
-					   			</div>
-					   		</div>
+								<div class="row" style="padding-bottom:6px;">
+									<div class="col-sm-12">
+						   				@executeButton()
+						   			</div>
+						   		</div>
+					   		}else{
+					   			<div class="row" style="padding-bottom:6px;"><div class="col-sm-12">@Messages("view.not_permitted")<div></div>
+					   		}
 					   	</fieldset>
 						}
 				   	</div>
@@ -103,18 +115,23 @@
 					<div class="row" style="padding-bottom:30px;">
 						<div class="col-sm-12 col-md-12">
 							<legend><i class="fa fa-lock"/>@Messages("view.node.file.checkout.caption")</legend>
-							<div class="row" style="padding-bottom:6px;">
-								<div class="col-sm-12">
-									<div>@Messages("view.node.file.checkout.description-1")</div>
-									<div>@Messages("view.node.file.checkout.description-2")</div>
-									<input type="hidden" name="cmis:parentId" value="@parentId"/>
+							@if(Util.canCheckOut(obj)){
+								<div class="row" style="padding-bottom:6px;">
+									<div class="col-sm-12">
+										<div>@Messages("view.node.file.checkout.description-1")</div>
+										<div>@Messages("view.node.file.checkout.description-2")</div>
+										<input type="hidden" name="cmis:parentId" value="@parentId"/>
+									</div>
 								</div>
-							</div>
-							<div class="row" style="padding-bottom:6px;">
-								<div class="col-sm-12">
-					   				@executeButton("checkout")
-					   			</div>
-					   		</div>
+
+								<div class="row" style="padding-bottom:6px;">
+									<div class="col-sm-12">
+						   					@executeButton("checkout")
+						   			</div>
+						   		</div>
+					   		}else{
+					   			<div class="row" style="padding-bottom:6px;"><div class="col-sm-12">@Messages("view.not_permitted")<div></div>
+					   		}
 						</div>
 					</div>
 

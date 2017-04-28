@@ -49,6 +49,7 @@ import org.apache.chemistry.opencmis.client.runtime.SessionFactoryImpl;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
+import org.apache.chemistry.opencmis.commons.data.AllowableActions;
 import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
@@ -57,6 +58,7 @@ import org.apache.chemistry.opencmis.commons.definitions.Choice;
 import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
+import org.apache.chemistry.opencmis.commons.enums.Action;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
@@ -308,6 +310,36 @@ public class Util {
 		} else {
 			return false;
 		}
+	}
+
+	public static boolean canDelete(CmisObject object) {
+		return canDoAction(object, Action.CAN_DELETE_OBJECT);
+	}
+
+	public static boolean canCheckOut(CmisObject object) {
+		return canDoAction(object, Action.CAN_CHECK_OUT);
+	}
+
+	public static boolean canCheckIn(CmisObject object) {
+		return canDoAction(object, Action.CAN_CHECK_IN);
+	}
+
+	public static boolean canCancelCheckOut(CmisObject object) {
+		return canDoAction(object, Action.CAN_CANCEL_CHECK_OUT);
+	}
+
+	public static boolean canCreateDocument(CmisObject object) {
+		return canDoAction(object, Action.CAN_CREATE_DOCUMENT);
+	}
+
+	public static boolean canCreateFolder(CmisObject object) {
+		return canDoAction(object, Action.CAN_CREATE_FOLDER);
+	}
+
+	private static boolean canDoAction(CmisObject object, Action action){
+		AllowableActions acs =  object.getAllowableActions();
+		if (acs == null) return false;
+		return acs.getAllowableActions().contains(action);
 	}
 
 	public static Set<JavaBackedUIAction> getUIActions() {

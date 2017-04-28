@@ -129,6 +129,7 @@ public class Application extends Controller {
 
 
 	public Result error() {
+		@SuppressWarnings("unchecked")
 		final PlayWebContext context = new PlayWebContext(ctx(), config.getSessionStore());
 		String repositoryId = Util.getRepositoryId(context);
 		return ok(views.html.error.render(repositoryId, ""));
