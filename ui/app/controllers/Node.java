@@ -1361,9 +1361,9 @@ public class Node extends Controller {
 		Document doc = folder.createDocument(newDocProps, cs, VersioningState.MAJOR, null, null, null,
 				session.getDefaultContext());
 
-		createRelation(relType, relName, repositoryId, sourceId, doc.getId());
+		ObjectId newId = createRelation(relType, relName, repositoryId, sourceId, doc.getId());
 
-		return ok();
+		return ok(newId.toString());
 	}
 
 	@Secure

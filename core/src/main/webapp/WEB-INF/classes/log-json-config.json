@@ -53,7 +53,7 @@
 				"targetFolderId":{"type":"simple"}
 			}
 		},
-		"jp.aegif.nemaki.cmis.service.ObjectService.updateProperties":{	
+		"jp.aegif.nemaki.cmis.service.ObjectService.updateProperties":{
 			"input":{
 				"properties": {
 					"type":"simple",
@@ -63,9 +63,9 @@
 					}
 				},
 				"changeToken": {"type":"simple"}
-			}		
+			}
 		},
-		"jp.aegif.nemaki.cmis.service.ObjectService.bulkUpdateProperties":{	
+		"jp.aegif.nemaki.cmis.service.ObjectService.bulkUpdateProperties":{
 			"input":{
 				"objectIdAndChangeToken": {
 					"type":"simple",
@@ -130,7 +130,9 @@
 				"properties": {
 					"type":"simple",
 					"properties": {
-						"cmis:name":true
+						"cmis:name":true,
+						"cmis:sourceId":true,
+						"cmis:targetId":true
 					}
 				}
 			}

@@ -159,22 +159,45 @@ public class PermissionServiceImpl implements PermissionService {
 		}
 
 		// Void Acl fails(but Admin can do an action)
-		if (acl == null){
-			return false;
-		}
+		if (acl == null)return false;
 
 		// Even if a user has multiple ACEs, the permissions is pushed into
 		// Set<String> and remain unique.
 		// Get ACL for the current user
-
-
 		//Separate user/group check for performace
-
 		// Filter ace which has permissions
-		List<Ace> aces = acl.getAllAces().stream().filter(p -> p.getPermissions() != null).collect(Collectors.toList());
+		List<Ace> aces = acl.getAllAces().stream()
+				.filter(p -> p.getPermissions() != null)
+				.collect(Collectors.toList());
 
 		//User permission
-		Logger.info(MessageFormat.format("[{0}]CheckUserPermission Begin",content.getName()));
+		if(calcUserPermission(repositoryId, key, content, userName, aces)) return true;
+
+		//Group permission
+		return calcGroupPermission(repositoryId, key, content, userName, aces);
+	}
+
+
+	private boolean calcGroupPermission(String repositoryId, String key, Content content, String userName, List<Ace> aces) {
+		Logger.info(MessageFormat.format("[{0}][{1}]CheckGroupPermission BEGIN:{2}",content.getName(), userName, key));
+		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
+		if( CollectionUtils.isEmpty(groups)) return false;
+
+		Set<String> groupPermissions = aces.stream()
+				.filter(ace -> groups.contains(ace.getPrincipalId()))
+				.flatMap(ace -> ace.getPermissions().stream())
+				.collect(Collectors.toSet());
+
+		// Check mapping between the group and the content
+		boolean calcPermission =  checkCalculatedPermissions(repositoryId, key, groupPermissions);
+		Logger.info(MessageFormat.format("[{0}][{1}]CheckGroupPermission END:{2}",content.getName(), userName, calcPermission));
+		return calcPermission;
+	}
+
+
+	private boolean calcUserPermission(String repositoryId, String key, Content content, String userName,
+			List<Ace> aces) {
+		Logger.info(MessageFormat.format("[{0}][{1}]CheckUserPermission BEGIN:{2}",content.getName(), userName, key));
 		Set<String> userPermissions = aces.stream()
 			.filter(ace -> ace.getPrincipalId().equals(userName))
 			.flatMap(ace -> ace.getPermissions().stream())
@@ -182,22 +205,7 @@ public class PermissionServiceImpl implements PermissionService {
 
 		// Check mapping between the user and the content
 		boolean calcPermission =  checkCalculatedPermissions(repositoryId, key, userPermissions);
-		Logger.info(MessageFormat.format("[{0}]CheckUserPermission End:{1}",content.getName(), calcPermission));
-		if(calcPermission) return true;
-
-		//Group permission
-		Logger.info(MessageFormat.format("[{0}]CheckGroupPermission Begin",content.getName()));
-		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
-		if( CollectionUtils.isEmpty(groups)) return calcPermission;
-		Set<String> groupPermissions = aces.stream()
-				.filter(ace -> groups.contains(ace.getPrincipalId()))
-				.flatMap(ace -> ace.getPermissions().stream())
-				.collect(Collectors.toSet());
-
-		// Check mapping between the group and the content
-		calcPermission =  checkCalculatedPermissions(repositoryId, key, groupPermissions);
-		Logger.info(MessageFormat.format("[{0}]CheckGroupPermission End:{1}",content.getName(), calcPermission));
-
+		Logger.info(MessageFormat.format("[{0}][{1}]CheckUserPermission END:{2}",content.getName(), userName, calcPermission));
 		return calcPermission;
 	}
 
@@ -212,16 +220,9 @@ public class PermissionServiceImpl implements PermissionService {
 		Map<String, PermissionMapping> table = repositoryInfoMap.get(repositoryId).getAclCapabilities().getPermissionMapping();
 		List<String> actionPermissions = table.get(key).getPermissions();
 
-		for (String up : userPermissions) {
-			if (actionPermissions.contains(up) ||
-				CmisPermission.ALL.equals(up)) {
-				//If any one of user permissions is contained, action is allowed.
-
-				return true;
-			}
+		return userPermissions.stream()
+				.anyMatch(up -> CmisPermission.ALL.equals(up) || actionPermissions.contains(up));
 		}
-		return false;
-	}
 
 	/**
 	 * TODO In the future, enable different configuration for Read/Update/Delete.
