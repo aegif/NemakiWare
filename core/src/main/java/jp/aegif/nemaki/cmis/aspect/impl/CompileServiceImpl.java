@@ -152,18 +152,27 @@ public class CompileServiceImpl implements CompileService {
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
 			String renditionFilter, Boolean includeAcl) {
 
-		ObjectDataImpl _result = new ObjectDataImpl();
-
-		ObjectData v = nemakiCachePool.get(repositoryId).getObjectDataCache().get(content.getId());
-		if(v == null){
-			_result = compileObjectDataWithFullAttributes(callContext, repositoryId, content);
-		}else{
-			_result = (ObjectDataImpl)v;
-		}
-
-		ObjectData result = filterObjectData(repositoryId, _result, filter, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
+		ObjectDataImpl objData = getRawObjectData(callContext, repositoryId, content);
+		ObjectData result = filterObjectData(repositoryId, objData, filter, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
 
 		return result;
+	}
+
+	private ObjectDataImpl getRawObjectData(CallContext callContext, String repositoryId, Content content){
+		ObjectDataImpl rawObjectData;
+		ObjectData cachedObjectData = nemakiCachePool.get(repositoryId).getObjectDataCache().get(content.getId());
+		if(cachedObjectData == null){
+			rawObjectData = compileObjectDataWithFullAttributes(callContext, repositoryId, content);
+		}else{
+			rawObjectData = (ObjectDataImpl)cachedObjectData;
+
+			// Recalcurate acl and allowable action because cache has no user context.
+			Acl acl = contentService.calculateAcl(repositoryId, content);
+			rawObjectData.setIsExactAcl(true);
+			rawObjectData.setAcl(compileAcl(acl, contentService.getAclInheritedWithDefault(repositoryId, content), false));
+			rawObjectData.setAllowableActions(compileAllowableActions(callContext, repositoryId, content, acl));
+		}
+		return rawObjectData;
 	}
 
 	private ObjectDataImpl compileObjectDataWithFullAttributes(CallContext callContext, String repositoryId, Content content){
@@ -173,14 +182,11 @@ public class CompileServiceImpl implements CompileService {
 		PropertiesImpl properties = compileProperties(callContext, repositoryId, content);
 		result.setProperties(properties);
 
-		// Set Acl
+		// Set Acl and Set Allowable actions
 		Acl acl = contentService.calculateAcl(repositoryId, content);
 		result.setIsExactAcl(true);
 		result.setAcl(compileAcl(acl, contentService.getAclInheritedWithDefault(repositoryId, content), false));
-
-		// Set Allowable actions
 		result.setAllowableActions(compileAllowableActions(callContext, repositoryId, content, acl));
-
 
 		//Set Relationship(BOTH)
 		if (!content.isRelationship() && includeRelationshipsEnabled()){
@@ -294,6 +300,8 @@ public class CompileServiceImpl implements CompileService {
 		}
 	}
 
+
+
 	@Override
 	public <T extends Content> ObjectList compileObjectDataList(CallContext callContext,
 			String repositoryId, List<T> contents, String filter,
@@ -308,50 +316,41 @@ public class CompileServiceImpl implements CompileService {
 			list.setHasMoreItems(false);
 			return list;
 		}else{
-			List<ObjectData>ods = new ArrayList<ObjectData>();
-			for(T c : contents){
+			List<ObjectData>objectDataList = new ArrayList<ObjectData>();
+			for(T content : contents){
 				//Filter by folderOnly
-				if(folderOnly && !c.isFolder()){
-					continue;
-				}
+				if(folderOnly && !content.isFolder())continue;
 
 				//Get each ObjectData
-				ObjectData _od;
-				ObjectData v = nemakiCachePool.get(repositoryId).getObjectDataCache().get(c.getId());
-				if(v == null){
-					_od = compileObjectDataWithFullAttributes(callContext, repositoryId, c);
-				}else{
-					_od = (ObjectDataImpl)v;
-				}
+				ObjectDataImpl rawObjectData = getRawObjectData(callContext, repositoryId, content);
+				ObjectData filteredObjectData = filterObjectDataInList(callContext, repositoryId, rawObjectData, filter, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
 
-				ObjectData od = filterObjectDataInList(callContext, repositoryId, _od, filter, includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
-
-				if(od != null){
-					ods.add(od);
+				if(filteredObjectData != null){
+					objectDataList.add(filteredObjectData);
 				}
 			}
 
 			//Sort
-			sortUtil.sort(repositoryId, ods, orderBy);
+			sortUtil.sort(repositoryId, objectDataList, orderBy);
 
 			//Set metadata
 			ObjectListImpl list = new ObjectListImpl();
 			Integer _skipCount = skipCount.intValue();
 			Integer _maxItems = maxItems.intValue();
 
-			if(_skipCount >= ods.size()){
+			if(_skipCount >= objectDataList.size()){
 				list.setHasMoreItems(false);
 				list.setObjects(new ArrayList<ObjectData>());
 			}else{
 				//hasMoreItems
-				Boolean hasMoreItems = _skipCount + _maxItems < ods.size();
+				Boolean hasMoreItems = _skipCount + _maxItems < objectDataList.size();
 				list.setHasMoreItems(hasMoreItems);
 				//paged list
-				Integer toIndex = Math.min(_skipCount + _maxItems, ods.size());
-				list.setObjects(new ArrayList<>(ods.subList(_skipCount, toIndex)));
+				Integer toIndex = Math.min(_skipCount + _maxItems, objectDataList.size());
+				list.setObjects(new ArrayList<>(objectDataList.subList(_skipCount, toIndex)));
 			}
 			//totalNumItem
-			list.setNumItems(BigInteger.valueOf(ods.size()));
+			list.setNumItems(BigInteger.valueOf(objectDataList.size()));
 
 			return list;
 		}
