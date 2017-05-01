@@ -312,6 +312,18 @@ public class Util {
 		}
 	}
 
+	public static boolean canApplyAcl(CmisObject object) {
+		return canDoAction(object, Action.CAN_APPLY_ACL);
+	}
+
+	public static boolean canUpdateProperties(CmisObject object) {
+		return canDoAction(object, Action.CAN_UPDATE_PROPERTIES);
+	}
+
+	public static boolean canUpdateContent(CmisObject object) {
+		return canDoAction(object, Action.CAN_SET_CONTENT_STREAM);
+	}
+
 	public static boolean canDelete(CmisObject object) {
 		return canDoAction(object, Action.CAN_DELETE_OBJECT);
 	}
