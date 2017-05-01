@@ -220,7 +220,7 @@ public class Node extends Controller {
 				"cmis:isLatestVersion=true AND ( cmis:name LIKE ''%{0}%'' OR cmis:description LIKE ''%{0}%'' OR CONTAINS(''{0}'') )");
 		String docStatement = "";
 		if (StringUtils.isNotBlank(term)) {
-			docStatement = docFormat.format(new String[] { term });
+			docStatement = docFormat.format(new String[] { term.replaceAll("%", "\\%").replaceAll("_", "\\_") });
 		}
 		ItemIterable<CmisObject> docResults = session.queryObjects("cmis:document", docStatement, false, ctxt);
 		Iterator<CmisObject> docItr = docResults.iterator();
