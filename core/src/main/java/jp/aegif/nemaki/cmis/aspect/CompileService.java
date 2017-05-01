@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -41,22 +41,25 @@ public interface CompileService {
 	public ObjectData compileObjectData(CallContext context,
 			String repositoryId, Content content, String filter,
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl);
-	
+
 	public <T extends Content> ObjectList compileObjectDataList(CallContext callContext,
 			String repositoryId, List<T> contents, String filter,
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl, BigInteger maxItems, BigInteger skipCount, boolean folderOnly, String orderBy);
-	
+
 	public ObjectList compileChangeDataList(CallContext context, String repositoryId,
 			List<Change> changes, Holder<String> changeLogToken, Boolean includeProperties,
 			String filter, Boolean includePolicyIds, Boolean includeAcl);
-	
+
 	public org.apache.chemistry.opencmis.commons.data.Acl compileAcl(
 			Acl acl, Boolean isInherited, Boolean onlyBasicPermissions);
-	
+
+
 	public PropertiesImpl compileProperties(CallContext callContext, String repositoryId, Content content);
-	
+
+	public AllowableActions compileAllowableActions(CallContext callContext, String repositoryId, Content content, Acl acl);
+
 	public AllowableActions compileAllowableActions(CallContext callContext,
 			String repositoryId, Content content);
-	
+
 	public Set<String> splitFilter(String filter);
 }

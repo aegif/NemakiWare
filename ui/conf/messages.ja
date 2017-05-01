@@ -168,6 +168,7 @@ view.unlink=切断
 view.add=追加
 view.remove=除外
 view.action=アクション
+view.not_permitted=許可されていません
 
 view.info=情報
 view.warning=警告

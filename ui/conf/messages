@@ -164,6 +164,8 @@ view.unlink=Unlink
 view.add=Add
 view.remove=Remove
 view.action=Action
+view.not_permitted=Not permitted.
+
 
 view.info=Infomation
 view.warning=Warning
