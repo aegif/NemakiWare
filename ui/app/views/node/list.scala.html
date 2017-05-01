@@ -73,7 +73,8 @@
 							<i class="fa fa-file-pdf-o"></i><div class="tooltips">@Messages("view.node.preview")</div>
 						</button>
 					}
-					<button type="button" class="btn btn-default delete" cmis-id="@obj.getId()">
+
+					<button type="button" class="btn btn-default delete" cmis-id="@obj.getId()" @if(!Util.canDelete(obj)){disabled="disabled"}>
 						<i class="fa fa-trash"></i><div class="tooltips">@Messages("view.delete")</div>
 					</button>
 
