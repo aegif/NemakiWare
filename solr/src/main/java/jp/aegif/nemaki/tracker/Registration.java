@@ -156,7 +156,7 @@ public class Registration implements Runnable{
 			repositoryServer.request(req);
 			logger.info("[ObjectId={}]{}", ce.getObjectId(), successMsg);
 		} catch (Exception e) {
-			logger.error("[ObjectId={}]{}", ce.getObjectId(),errMsg, e);
+			logger.error("[ObjectId={}]{}", ce.getObjectId(),errMsg);
 		}finally{
 			// Delete temp files
 			try {
