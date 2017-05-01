@@ -202,7 +202,8 @@ public class SolrQueryProcessor implements QueryProcessor {
 		
 		//TEST
 		solrQuery.set(CommonParams.START, 0);
-		solrQuery.set(CommonParams.ROWS, maxItems.intValue());
+		//solrQuery.set(CommonParams.ROWS, maxItems.intValue());
+		solrQuery.set(CommonParams.ROWS, 50);
 		
 
 		QueryResponse resp = null;
