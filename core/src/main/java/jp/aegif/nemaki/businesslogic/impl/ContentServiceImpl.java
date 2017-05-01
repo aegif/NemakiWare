@@ -1813,10 +1813,9 @@ public class ContentServiceImpl implements ContentService {
 	// Merge inherited ACL
 	@Override
 	public Acl calculateAcl(String repositoryId, Content content) {
-
+		log.info("CalculateAcl BEGIN:" + content.getName());
 		Acl acl = content.getAcl();
 
-		//boolean iht = (content.isAclInherited() == null) ? false : content.isAclInherited();
 		boolean iht = getAclInheritedWithDefault(repositoryId, content);
 
 		if (!isRoot(repositoryId, content) && iht) {
@@ -1839,6 +1838,7 @@ public class ContentServiceImpl implements ContentService {
 		// Convert anonymous and anyone
 		convertSystemPrincipalId(repositoryId, acl.getAllAces());
 
+		log.info("CalculateAcl END");
 		return acl;
 	}
 
