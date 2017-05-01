@@ -81,8 +81,8 @@ public class SolrUtil {
 		map.put(PropertyIds.CHECKIN_COMMENT, "checkein_comment");
 		map.put(PropertyIds.VERSION_LABEL, "version_label");
 		map.put(PropertyIds.VERSION_SERIES_ID, "version_series_id");
-		map.put(PropertyIds.CONTENT_STREAM_ID, "content_name");
-		map.put(PropertyIds.CONTENT_STREAM_FILE_NAME, "content_id");
+		map.put(PropertyIds.CONTENT_STREAM_ID, "content_id");
+		map.put(PropertyIds.CONTENT_STREAM_FILE_NAME, "content_name");
 		map.put(PropertyIds.CONTENT_STREAM_LENGTH, "content_length");
 		map.put(PropertyIds.CONTENT_STREAM_MIME_TYPE, "content_mimetype");
 
