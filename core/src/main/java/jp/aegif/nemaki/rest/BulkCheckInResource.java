@@ -34,6 +34,7 @@ import javax.ws.rs.Produces;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.MultivaluedMap;
+import javax.ws.rs.core.MultivaluedHashMap;
 import javax.ws.rs.core.Response;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
@@ -131,11 +132,12 @@ public class BulkCheckInResource extends ResourceBase {
 		this.typeManager = typeManager;
 	}
 
+	
 	@SuppressWarnings("unchecked")
 	@POST
 	@Path("/execute")
 	@Produces(MediaType.APPLICATION_JSON)
-	@Consumes(MediaType.APPLICATION_FORM_URLENCODED)
+	@Consumes({MediaType.APPLICATION_FORM_URLENCODED, MediaType.APPLICATION_JSON , MediaType.APPLICATION_XML })
 	public String execute(MultivaluedMap<String,String> form, @Context HttpServletRequest httpRequest) {
 		JSONObject result = new JSONObject();
 		//		JSONArray errMsg = new JSONArray();
