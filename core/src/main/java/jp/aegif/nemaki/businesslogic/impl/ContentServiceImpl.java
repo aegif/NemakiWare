@@ -584,7 +584,7 @@ public class ContentServiceImpl implements ContentService {
 			Folder target, Document original, VersioningState versioningState, List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces) {
-		Document copy = buildCopyDocumentWithBasicProperties(callContext, repositoryId, original, null, null);
+		Document copy = buildCopyDocument(callContext, repositoryId, original, null, null);
 
 		String attachmentId = copyAttachment(callContext, repositoryId, original.getAttachmentNodeId());
 		copy.setAttachmentNodeId(attachmentId);
@@ -616,7 +616,7 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public Document createDocumentWithNewStream(CallContext callContext, String repositoryId, Document original,
 			ContentStream contentStream) {
-		Document copy = buildCopyDocumentWithBasicProperties(callContext, repositoryId, original, null, null);
+		Document copy = buildCopyDocument(callContext, repositoryId, original, null, null);
 
 		// Attachment
 		String attachmentId = createAttachment(callContext, repositoryId, contentStream);
@@ -697,7 +697,7 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public Document checkOut(CallContext callContext, String repositoryId, String objectId, ExtensionsData extension) {
 		Document latest = getDocument(repositoryId, objectId);
-		Document pwc = buildCopyDocumentWithBasicProperties(callContext, repositoryId, latest, null, null);
+		Document pwc = buildCopyDocument(callContext, repositoryId, latest, null, null);
 
 		// Create PWC attachment
 		String attachmentId = copyAttachment(callContext, repositoryId, latest.getAttachmentNodeId());
@@ -764,7 +764,7 @@ public class ContentServiceImpl implements ContentService {
 		String id = objectId.getValue();
 
 		Document pwc = getDocument(repositoryId, id);
-		Document checkedIn = buildCopyDocumentWithBasicProperties(callContext, repositoryId, pwc, addAces, removeAces);
+		Document checkedIn = buildCopyDocument(callContext, repositoryId, pwc, addAces, removeAces);
 		Document latest = getDocumentOfLatestVersion(repositoryId, pwc.getVersionSeriesId());
 
 		// When PWCUpdatable is true
@@ -807,7 +807,7 @@ public class ContentServiceImpl implements ContentService {
 			Boolean major, Properties properties,
 			ContentStream contentStream, String checkinComment, Document previousDoc, VersionSeries vs) {
 
-		Document checkedIn = buildCopyDocumentWithBasicProperties(callContext, repositoryId, previousDoc, null, null);
+		Document checkedIn = buildCopyDocument(callContext, repositoryId, previousDoc, null, null);
 
 		checkedIn.setAttachmentNodeId(createAttachment(callContext, repositoryId, contentStream));
 
@@ -817,16 +817,6 @@ public class ContentServiceImpl implements ContentService {
 		modifyProperties(callContext, repositoryId, properties, checkedIn);
 		setSignature(callContext, checkedIn);
 		checkedIn.setCheckinComment(checkinComment);
-
-		//this operation for cache, we don't have to do it.
-		//		List<Document> versions = getAllVersions(callContext, repositoryId, vs.getId());
-		//		if(CollectionUtils.isNotEmpty(versions)){
-		//			//Collections.sort(versions, new VersionComparator());
-		//			for(Document version : versions){
-		//				contentDaoService.refreshCmisObjectData(repositoryId, version.getId());
-		//			}
-		//		}
-		//
 
 		// update version information
 		VersioningState versioningState = (major) ? VersioningState.MAJOR : VersioningState.MINOR;
@@ -888,7 +878,7 @@ public class ContentServiceImpl implements ContentService {
 		content.setAclInherited(getAclInheritedWithDefault(repositoryId, content));
 	}
 
-	private Document buildCopyDocumentWithBasicProperties(CallContext callContext, String repositoryId, Document original, org.apache.chemistry.opencmis.commons.data.Acl
+	private Document buildCopyDocument(CallContext callContext, String repositoryId, Document original, org.apache.chemistry.opencmis.commons.data.Acl
 			addAces, org.apache.chemistry.opencmis.commons.data.Acl removeAces) {
 		Document copy = new Document();
 		copy.setType(original.getType());
@@ -898,11 +888,13 @@ public class ContentServiceImpl implements ContentService {
 		copy.setParentId(original.getParentId());
 		copy.setImmutable(original.isImmutable());
 		copy.setAclInherited(original.isAclInherited());
+		copy.setSubTypeProperties(original.getSubTypeProperties());
+
 		setAclOnCreated(callContext, repositoryId, copy, addAces, removeAces);
 		copy.setAspects(original.getAspects());
 		copy.setSecondaryIds(original.getSecondaryIds());
-
 		setSignature(callContext, copy);
+
 		return copy;
 	}
 
@@ -1813,7 +1805,7 @@ public class ContentServiceImpl implements ContentService {
 	// Merge inherited ACL
 	@Override
 	public Acl calculateAcl(String repositoryId, Content content) {
-		log.info("CalculateAcl BEGIN:" + content.getName());
+		log.debug("CalculateAcl BEGIN:" + content.getName());
 		Acl acl = content.getAcl();
 
 		boolean iht = getAclInheritedWithDefault(repositoryId, content);
@@ -1838,7 +1830,7 @@ public class ContentServiceImpl implements ContentService {
 		// Convert anonymous and anyone
 		convertSystemPrincipalId(repositoryId, acl.getAllAces());
 
-		log.info("CalculateAcl END");
+		log.debug("CalculateAcl END");
 		return acl;
 	}
 
