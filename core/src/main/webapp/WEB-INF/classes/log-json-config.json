@@ -214,6 +214,18 @@
 			"input":{
 				"acl":{"type":"full"}
 			}
+		},
+		"jp.aegif.nemaki.businesslogic.ContentService.calculateAcl":{
+			"input":{
+				"repositoryId":{"type":"simple"},
+				"content":{"type":"simple"}
+			}
+		},
+		"jp.aegif.nemaki.cmis.aspect.CompileService.compileObjectData":{
+			"input":{
+				"repositoryId":{"type":"simple"},
+				"content":{"type":"simple"}
+			}
 		}
 	}
 }
