@@ -1805,8 +1805,7 @@ public class ContentServiceImpl implements ContentService {
 	// Merge inherited ACL
 	@Override
 	public Acl calculateAcl(String repositoryId, Content content) {
-		log.debug("CalculateAcl BEGIN:" + content.getName());
-		Acl acl = content.getAcl();
+		Acl acl;
 
 		boolean iht = getAclInheritedWithDefault(repositoryId, content);
 
@@ -1816,28 +1815,29 @@ public class ContentServiceImpl implements ContentService {
 			List<Ace> result = calculateAclInternal(repositoryId, aces, content);
 
 			// Convert result to Acl
-			Acl _acl = new Acl();
+			acl = new Acl();
 			for (Ace r : result) {
 				if (r.isDirect()) {
-					_acl.getLocalAces().add(r);
+					acl.getLocalAces().add(r);
 				} else {
-					_acl.getInheritedAces().add(r);
+					acl.getInheritedAces().add(r);
 				}
 			}
-			acl = _acl;
+		}else{
+			acl = content.getAcl();
 		}
 
 		// Convert anonymous and anyone
 		convertSystemPrincipalId(repositoryId, acl.getAllAces());
 
-		log.debug("CalculateAcl END");
 		return acl;
 	}
 
 	private List<Ace> calculateAclInternal(String repositoryId, List<Ace> result, Content content) {
+		List<Ace> aces = content.getAcl().getLocalAces();
 		if (isRoot(repositoryId, content) || !getAclInheritedWithDefault(repositoryId, content)) {
 			List<Ace> rootAces = new ArrayList<Ace>();
-			List<Ace> aces = content.getAcl().getLocalAces();
+
 			for (Ace ace : aces) {
 				Ace rootAce = deepCopy(ace);
 				rootAce.setDirect(true);
@@ -1845,9 +1845,9 @@ public class ContentServiceImpl implements ContentService {
 			}
 			return mergeAcl(repositoryId, result, rootAces);
 		} else {
-			Content parent = getParent(repositoryId, content.getId());
-			return mergeAcl(repositoryId, content.getAcl()
-					.getLocalAces(), calculateAclInternal(repositoryId, new ArrayList<Ace>(), parent));
+			// reduce db access instead of getParent(repositoryId, content.getId())
+			Folder parent = getFolder(repositoryId, content.getParentId());
+			return mergeAcl(repositoryId, aces, calculateAclInternal(repositoryId, new ArrayList<Ace>(), parent));
 		}
 	}
 
