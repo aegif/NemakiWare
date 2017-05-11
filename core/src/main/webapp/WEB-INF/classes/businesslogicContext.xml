@@ -4,7 +4,19 @@
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
 		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
-	
+
+	<!-- Cache -->
+	<bean id="nemakiCachePool" class="jp.aegif.nemaki.util.cache.impl.NemakiCachePoolImpl"
+	init-method="init">
+		<property name="propertyManager">
+            <ref bean="springPropertyManager" />
+        </property>
+        <property name="repositoryInfoMap">
+            <ref bean="repositoryInfoMap" />
+        </property>
+	</bean>
+
+
 	<bean id="ContentService" class="org.springframework.aop.framework.ProxyFactoryBean">
 		<property name="proxyInterfaces">
 			<list>
@@ -34,8 +46,11 @@
         <property name="solrUtil">
             <ref bean="solrUtil" />
         </property>
+        <property name="nemakiCachePool">
+            <ref bean="nemakiCachePool" />
+        </property>
 	</bean>
-	
+
 	<bean id="PrincipalService" class="org.springframework.aop.framework.ProxyFactoryBean">
 		<property name="proxyInterfaces">
 			<list>
@@ -54,7 +69,7 @@
 			<ref bean="repositoryInfoMap" />
 		</property>
 	</bean>
-	
+
 	<bean id="TypeService" class="org.springframework.aop.framework.ProxyFactoryBean">
 		<property name="proxyInterfaces">
 			<list>
@@ -70,7 +85,7 @@
 			<ref bean="contentDaoService" />
 		</constructor-arg>
 	</bean>
-	
+
 	<!-- Rendition builder -->
 	<bean id="RenditionManager" class="org.springframework.aop.framework.ProxyFactoryBean">
 		<property name="proxyInterfaces">

@@ -451,7 +451,6 @@ public class CompileServiceImpl implements CompileService {
 		if (iacl) {
 			if (content != null) {
 				Acl acl = contentService.calculateAcl(repositoryId, content);
-				//object.setAcl(compileAcl(acl, content.isAclInherited(), false));
 				object.setAcl(compileAcl(acl, contentService.getAclInheritedWithDefault(repositoryId, content), false));
 			}
 		}
