@@ -1358,7 +1358,7 @@ public class CompileServiceImpl implements CompileService {
 		// Filing Services
 		if (PermissionMapping.CAN_ADD_TO_FOLDER_OBJECT.equals(key))
 			return Action.CAN_ADD_OBJECT_TO_FOLDER;
-		if (PermissionMapping.CAN_ADD_TO_FOLDER_OBJECT.equals(key))
+		if (PermissionMapping.CAN_ADD_TO_FOLDER_FOLDER.equals(key))
 			return Action.CAN_ADD_OBJECT_TO_FOLDER;
 		if (PermissionMapping.CAN_REMOVE_FROM_FOLDER_OBJECT.equals(key))
 			return Action.CAN_REMOVE_OBJECT_FROM_FOLDER;
