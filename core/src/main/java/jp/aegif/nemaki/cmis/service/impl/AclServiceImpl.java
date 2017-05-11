@@ -86,7 +86,6 @@ public class AclServiceImpl implements AclService {
 			// Body of the method
 			// //////////////////
 			jp.aegif.nemaki.model.Acl acl = contentService.calculateAcl(repositoryId, content);
-			//return compileService.compileAcl(acl, content.isAclInherited(), onlyBasicPermissions);
 			return compileService.compileAcl(acl, contentService.getAclInheritedWithDefault(repositoryId, content), onlyBasicPermissions);
 		}finally{
 			lock.unlock();
@@ -148,12 +147,12 @@ public class AclServiceImpl implements AclService {
 			content.setAcl(nemakiAcl);
 			contentService.updateInternal(repositoryId, content);
 			contentService.writeChangeEvent(callContext, repositoryId, content, nemakiAcl, ChangeType.SECURITY );
-			
+
 			nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
 
 			clearCachesRecursively(Executors.newCachedThreadPool(), callContext, repositoryId, content, false);
 			writeChangeEventsRecursively(Executors.newCachedThreadPool(), callContext, repositoryId, content, false);
-			
+
 			return getAcl(callContext, repositoryId, objectId, false, null);
 		}finally{
 			lock.unlock();
@@ -162,14 +161,14 @@ public class AclServiceImpl implements AclService {
 	}
 
 	private void clearCachesRecursively(ExecutorService executorService, CallContext callContext, final String repositoryId, Content content, boolean executeOnParent){
-		
+
 		//Call threads for recursive applyAcl
 		if(content.isFolder()){
 			List<Content> children = contentService.getChildren(repositoryId, content.getId());
 			if(CollectionUtils.isEmpty(children)){
 				return;
 			}
-			
+
 			if(executeOnParent){
 				executorService.submit(new ClearCacheTask(repositoryId, content.getId()));
 			}
@@ -182,11 +181,11 @@ public class AclServiceImpl implements AclService {
 			executorService.submit(new ClearCacheTask(repositoryId, content.getId()));
 		}
 	}
-	
+
 	private class ClearCacheTask implements Runnable{
 		private String repositoryId;
 		private String objectId;
-		
+
 		public ClearCacheTask(String repositoryId, String objectId) {
 			super();
 			this.repositoryId = repositoryId;
@@ -199,13 +198,13 @@ public class AclServiceImpl implements AclService {
 			nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId);
 		}
 	}
-	
+
 	private class ClearCachesRecursivelyTask implements Runnable{
 		private ExecutorService executorService;
 		private CallContext callContext;
 		private String repositoryId;
 		private Content content;
-		
+
 		public ClearCachesRecursivelyTask(ExecutorService executorService, CallContext callContext, String repositoryId, Content content) {
 			super();
 			this.executorService = executorService;
@@ -219,34 +218,34 @@ public class AclServiceImpl implements AclService {
 			clearCachesRecursively(executorService, callContext, repositoryId, content, true);
 		}
 	}
-	
+
 private void writeChangeEventsRecursively(ExecutorService executorService, CallContext callContext, final String repositoryId, Content content, boolean executeOnParent){
-		
+
 		//Call threads for recursive applyAcl
 		if(content.isFolder()){
 			List<Content> children = contentService.getChildren(repositoryId, content.getId());
 			if(CollectionUtils.isEmpty(children)){
 				return;
 			}
-			
+
 			if(executeOnParent){
 				executorService.submit(new ClearCacheTask(repositoryId, content.getId()));
 			}
 			for(Content child : children){
 				if(contentService.getAclInheritedWithDefault(repositoryId, child)){
-					executorService.submit(new WriteChangeEventsRecursivelyTask(executorService, callContext, repositoryId, child));	
+					executorService.submit(new WriteChangeEventsRecursivelyTask(executorService, callContext, repositoryId, child));
 				}
 			}
 		}else{
 			executorService.submit(new WriteChangeEventTask(callContext, repositoryId, content));
 		}
 	}
-	
+
 	private class WriteChangeEventTask implements Runnable{
 		private CallContext callContext;
 		private String repositoryId;
 		private Content content;
-		
+
 		public WriteChangeEventTask(CallContext callContext, String repositoryId, Content content) {
 			super();
 			this.callContext = callContext;
@@ -260,13 +259,13 @@ private void writeChangeEventsRecursively(ExecutorService executorService, CallC
 			contentService.writeChangeEvent(callContext, repositoryId, content, content.getAcl(), ChangeType.SECURITY);
 		}
 	}
-	
+
 	private class WriteChangeEventsRecursivelyTask implements Runnable{
 		private ExecutorService executorService;
 		private CallContext callContext;
 		private String repositoryId;
 		private Content content;
-		
+
 		public WriteChangeEventsRecursivelyTask(ExecutorService executorService, CallContext callContext, String repositoryId, Content content) {
 			super();
 			this.executorService = executorService;
@@ -280,7 +279,7 @@ private void writeChangeEventsRecursively(ExecutorService executorService, CallC
 			writeChangeEventsRecursively(executorService, callContext, repositoryId, content, true);
 		}
 	}
-	
+
 	private void convertSystemPrinciaplId(String repositoryId, jp.aegif.nemaki.model.Acl acl){
 		List<jp.aegif.nemaki.model.Ace> aces = acl.getAllAces();
 		for (jp.aegif.nemaki.model.Ace ace : aces) {
