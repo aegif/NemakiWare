@@ -348,6 +348,10 @@ public class Util {
 		return canDoAction(object, Action.CAN_CREATE_FOLDER);
 	}
 
+	public static boolean canCreateDocumentOrFolder(CmisObject object) {
+		return canCreateDocument(object) || canCreateFolder(object);
+	}
+
 	private static boolean canDoAction(CmisObject object, Action action){
 		AllowableActions acs =  object.getAllowableActions();
 		if (acs == null) return false;

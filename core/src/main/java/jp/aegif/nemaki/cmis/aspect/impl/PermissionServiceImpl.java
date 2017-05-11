@@ -356,7 +356,7 @@ public class PermissionServiceImpl implements PermissionService {
 			return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)
 					|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM
 					.value().equals(baseType));
-		if (PermissionMapping.CAN_ADD_TO_FOLDER_OBJECT.equals(key))
+		if (PermissionMapping.CAN_ADD_TO_FOLDER_FOLDER.equals(key))
 			return (BaseTypeId.CMIS_DOCUMENT.value().equals(baseType)
 					|| BaseTypeId.CMIS_POLICY.value().equals(baseType) || BaseTypeId.CMIS_ITEM
 					.value().equals(baseType));
