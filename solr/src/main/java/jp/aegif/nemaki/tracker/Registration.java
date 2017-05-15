@@ -38,6 +38,7 @@ import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ObjectParentData;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -449,6 +450,13 @@ public class Registration implements Runnable{
 		for (String propId : propDefs.keySet()) {
 			if (!basePropDefs.containsKey(propId)) {
 				boolean isSecondary = false;
+				PropertyDefinition<?> pd = propDefs.get(propId);
+				String propValue;
+				if (pd.getPropertyType() == PropertyType.DATETIME){
+					propValue = getUTC(object.getPropertyValue(propId));
+				}else{
+					propValue = object.getPropertyValue(propId);
+				}
 
 				// Secondary type
 				List<SecondaryType> secs = object.getSecondaryTypes();
@@ -460,7 +468,7 @@ public class Registration implements Runnable{
 						if (secondaryPropDefs.containsKey(propId)) {
 							String type = "dynamic.property."
 									+ sec.getQueryName() + Constant.SEPARATOR + propId;
-							map.put(type, object.getPropertyValue(propId));
+							map.put(type, propValue);
 							isSecondary = true;
 							break;
 						}
@@ -470,7 +478,7 @@ public class Registration implements Runnable{
 				// Non-Secondary type
 				if (!isSecondary) {
 					String type = "dynamic.property." + propId;
-					map.put(type, object.getPropertyValue(propId));
+					map.put(type, propValue);
 				}
 			}
 		}
