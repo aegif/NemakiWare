@@ -26,9 +26,11 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.GregorianCalendar;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import javax.sound.midi.Patch;
 
+import jp.aegif.nemaki.businesslogic.impl.ContentServiceImpl;
 import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.AttachmentNode;
@@ -55,7 +57,10 @@ import jp.aegif.nemaki.util.cache.model.Tree;
 import net.sf.ehcache.Cache;
 import net.sf.ehcache.Element;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.solr.client.solrj.response.DocumentAnalysisResponse.FieldAnalysis;
+import org.jboss.logging.Message;
 import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
 
@@ -67,6 +72,7 @@ import org.springframework.util.CollectionUtils;
  */
 @Component
 public class ContentDaoServiceImpl implements ContentDaoService {
+	private static final Log log = LogFactory.getLog(ContentDaoServiceImpl.class);
 
 	private ContentDaoService nonCachedContentDaoService;
 	private NemakiCachePool nemakiCachePool;
@@ -231,25 +237,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Document getDocument(String repositoryId, String objectId) {
-		NemakiCache<Content> contentCache = nemakiCachePool.get(repositoryId).getContentCache();
-
-		Content v = contentCache.get(objectId);
-
-		if (v != null) {
+		Document doc = null;
+		Content c = this.getContent(repositoryId, objectId);
+		if (c != null) {
 			try {
-				return (Document) v;
+				doc = (Document) c;
 			} catch (ClassCastException e) {
-				throw e;
+				log.error("Content type is not document : " + c.getObjectType());
 			}
 		}
-
-		Document doc = nonCachedContentDaoService.getDocument(repositoryId, objectId);
-		if (doc == null) {
-			return null;
-		} else {
-			contentCache.put(new Element(objectId, doc));
-			return doc;
-		}
+		return doc;
 	}
 
 	@Override
@@ -291,25 +288,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Folder getFolder(String repositoryId, String objectId) {
-		NemakiCache<Content> contentCache = nemakiCachePool.get(repositoryId).getContentCache();
-		Content v = contentCache.get(objectId);
-
-		if (v != null) {
+		Folder folder = null;
+		Content c = this.getContent(repositoryId, objectId);
+		if (c != null) {
 			try {
-				return (Folder) v;
+				folder = (Folder) c;
 			} catch (ClassCastException e) {
-				throw e;
+				log.error("Content type is not folder : " + c.getObjectType());
 			}
 		}
-
-		Folder folder = nonCachedContentDaoService.getFolder(repositoryId, objectId);
-
-		if (folder == null) {
-			return null;
-		} else {
-			contentCache.put(new Element(objectId, folder));
-			return folder;
-		}
+		return folder;
 	}
 
 	@Override
@@ -321,16 +309,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public List<Content> getChildren(String repositoryId, String parentId) {
 		if(nemakiCachePool.get(repositoryId).getTreeCache().isCacheEnabled()){
 			Tree tree = getOrCreateTreeCache(repositoryId, parentId);
-
-			List<Content> result = new ArrayList<>();
-			for(String childId : tree.getChildren()){
-				Content child = getContent(repositoryId, childId);
-				if(child != null){
-					result.add(child);
-				}
-			}
-
-			return result;
+			return tree.getChildren().stream()
+				.map(childId -> getContent(repositoryId, childId))
+				.filter(child -> child != null)
+				.collect(Collectors.toList());
 		}else{
 			return nonCachedContentDaoService.getChildren(repositoryId, parentId);
 		}
@@ -348,14 +330,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Relationship getRelationship(String repositoryId, String objectId) {
-		NemakiCache<Content> cache = nemakiCachePool.get(repositoryId).getContentCache();
-		Content v = cache.get(objectId);
-
-		if (v != null) {
-			return (Relationship) v;
-		} else {
-			return nonCachedContentDaoService.getRelationship(repositoryId, objectId);
+		Relationship rel = null;
+		Content c = this.getContent(repositoryId, objectId);
+		if (c != null) {
+			try {
+				rel = (Relationship) c;
+			} catch (ClassCastException e) {
+				log.error("Content type is not relationship : " + c.getObjectType());
+			}
 		}
+		return rel;
 	}
 
 	@Override
@@ -380,8 +364,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Item getItem(String repositoryId, String objectId) {
-		//TODO cache
-		return nonCachedContentDaoService.getItem(repositoryId, objectId);
+
+		Item item = null;
+		Content c = this.getContent(repositoryId, objectId);
+		if (c != null) {
+			try {
+				item = (Item) c;
+			} catch (ClassCastException e) {
+				log.error("Content type is not item : " + c.getObjectType());
+			}
+		}
+		return item;
 	}
 
 	@Override
