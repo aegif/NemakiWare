@@ -24,6 +24,7 @@ package jp.aegif.nemaki.dao.impl.couch;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
@@ -441,18 +442,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public List<Content> getChildren(String repositoryId, String parentId) {
+		List<Content> contents = new ArrayList<Content>();
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("children").key(parentId);
 		List<CouchContent> list = connectorPool.get(repositoryId).queryView(query, CouchContent.class);
-
-		if (list != null && !list.isEmpty()) {
-			List<Content> contents = new ArrayList<Content>();
-			for (CouchContent cc : list) {
-				contents.add(cc.convert());
-			}
-			return contents;
-		} else {
-			return null;
+		if (CollectionUtils.isNotEmpty(list)) {
+			contents = list.stream().map(p -> p.convert()).collect(Collectors.toList());
 		}
+		return contents;
 	}
 
 	@Override

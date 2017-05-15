@@ -36,6 +36,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
@@ -149,28 +150,9 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public Content getContent(String repositoryId, String objectId) {
 		Content content = contentDaoService.getContent(repositoryId, objectId);
-		if (content == null)
-			return null;
+		if (content == null) return null;
 
-		if (content.isDocument()) {
-			return contentDaoService.getDocument(repositoryId, content.getId());
-		} else if (content.isFolder()) {
-			return contentDaoService.getFolder(repositoryId, content.getId());
-		} else if (content.isRelationship()) {
-			return contentDaoService.getRelationship(repositoryId, content.getId());
-		} else if (content.isPolicy()) {
-			return contentDaoService.getPolicy(repositoryId, content.getId());
-		} else if (content.isItem()) {
-			if (ObjectUtils.equals(NemakiObjectType.nemakiUser, content.getObjectType())) {
-				return contentDaoService.getUserItem(repositoryId, objectId);
-			} else if (ObjectUtils.equals(NemakiObjectType.nemakiGroup, content.getObjectType())) {
-				return contentDaoService.getGroupItem(repositoryId, objectId);
-			} else {
-				return contentDaoService.getItem(repositoryId, content.getId());
-			}
-		} else {
-			return null;
-		}
+		return getContentInternal(repositoryId, content);
 	}
 
 	/**
@@ -238,31 +220,31 @@ public class ContentServiceImpl implements ContentService {
 	 */
 	@Override
 	public List<Content> getChildren(String repositoryId, String folderId) {
-		List<Content> children = new ArrayList<Content>();
 
-		List<Content> indices = contentDaoService.getChildren(repositoryId, folderId);
-		if (CollectionUtils.isEmpty(indices))
-			return null;
-
-		// TODO getを重複して行う必要なし
-		for (Content c : indices) {
-			if (c.isDocument()) {
-				Document d = contentDaoService.getDocument(repositoryId, c.getId());
-				children.add(d);
-			} else if (c.isFolder()) {
-				Folder f = contentDaoService.getFolder(repositoryId, c.getId());
-				children.add(f);
-			} else if (c.isPolicy()) {
-				Policy p = contentDaoService.getPolicy(repositoryId, c.getId());
-				children.add(p);
-			} else if (c.isItem()) {
-				Item i = contentDaoService.getItem(repositoryId, c.getId());
-				children.add(i);
-			}
-		}
-
-		return children;
+		return contentDaoService.getChildren(repositoryId, folderId).stream()
+				.map(content -> getContentInternal(repositoryId, content))
+				.collect(Collectors.toList());
 	}
+
+	/**
+	 * content / user or group items are
+	 * @param content
+	 * @return
+	 */
+	private Content getContentInternal(String repositoryId, Content content){
+		if (content.isItem()) {
+			if (ObjectUtils.equals(NemakiObjectType.nemakiUser, content.getObjectType())) {
+				return contentDaoService.getUserItem(repositoryId, content.getId());
+			} else if (ObjectUtils.equals(NemakiObjectType.nemakiGroup, content.getObjectType())) {
+				return contentDaoService.getGroupItem(repositoryId, content.getId());
+			} else {
+				return contentDaoService.getItem(repositoryId, content.getId());
+			}
+		} else {
+			return content;
+		}
+	}
+
 
 	@Override
 	public Document getDocument(String repositoryId, String objectId) {

@@ -63,6 +63,7 @@ import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.chemistry.opencmis.client.api.ObjectFactory;
 import org.apache.chemistry.opencmis.client.api.ObjectType;
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -177,10 +178,10 @@ public class BulkCheckInResource extends ResourceBase {
 				properties.addProperty(new PropertyBooleanImpl (propertyName,propertyValue.equals("true")));
 			}
 			else if(propertyType.equals(PropertyType.DECIMAL)){
-				properties.addProperty(new PropertyDecimalImpl (propertyName, new BigDecimal(propertyValue)));				
+				properties.addProperty(new PropertyDecimalImpl (propertyName, new BigDecimal(propertyValue)));
 			}
 			else if(propertyType.equals(PropertyType.INTEGER)){
-				properties.addProperty(new PropertyIntegerImpl (propertyName, new BigInteger(propertyValue)));								
+				properties.addProperty(new PropertyIntegerImpl (propertyName, new BigInteger(propertyValue)));
 			}
 			else if(propertyType.equals(PropertyType.DATETIME)){
 				GregorianCalendar cal = new GregorianCalendar();
@@ -192,7 +193,7 @@ public class BulkCheckInResource extends ResourceBase {
 					continue;
 				}
 				cal.setTime(dt);
-				properties.addProperty(new PropertyDateTimeImpl (propertyName, cal));								
+				properties.addProperty(new PropertyDateTimeImpl (propertyName, cal));
 			}
 			else{
 				continue;
@@ -219,8 +220,8 @@ public class BulkCheckInResource extends ResourceBase {
 					PropertiesImpl newProps = new PropertiesImpl();
 					newProps.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID,rel.getObjectType()));
 					newProps.addProperty(new PropertyIdImpl(PropertyIds.TARGET_ID,rel.getTargetId()));
-					newProps.addProperty(new PropertyIdImpl(PropertyIds.SOURCE_ID,newDoc.getId()));	
-					newProps.addProperty(new PropertyStringImpl(PropertyIds.NAME,rel.getName()));	
+					newProps.addProperty(new PropertyIdImpl(PropertyIds.SOURCE_ID,newDoc.getId()));
+					newProps.addProperty(new PropertyStringImpl(PropertyIds.NAME,rel.getName()));
 					Relationship newRel = contentService.createRelationship(callContext, repositoryId, newProps, null, null, null, null);
 					newRel.setModifier("bulkCheckInService");
 				}
@@ -241,7 +242,7 @@ public class BulkCheckInResource extends ResourceBase {
 			@FormDataParam("parentFolderId") String parentFolderId
 			) throws Exception {
 
-		JSONArray resultArray = new JSONArray();		
+		JSONArray resultArray = new JSONArray();
 
 		try {
 			JSONParser parser = new JSONParser();
@@ -301,7 +302,7 @@ public class BulkCheckInResource extends ResourceBase {
 					else {
 						String v = (String)propJson.get(key);
 						properties.addProperty(new PropertyStringImpl(keyStr, v));
-					}	
+					}
 
 					if ( keyStr.equals("cmis:name")) {
 						docName = (String)propJson.get(key);
@@ -312,7 +313,7 @@ public class BulkCheckInResource extends ResourceBase {
 
 				if ( docName != null) {
 					List<Content> children = contentService.getChildren(repositoryId, parentFolder.getId());
-					if ( children != null ){
+					if (CollectionUtils.isNotEmpty(children)){
 						for(Content content : children) {
 							if ( content instanceof Document){
 								Document doc = (Document)content;
@@ -326,7 +327,7 @@ public class BulkCheckInResource extends ResourceBase {
 				}
 				if ( prevDoc == null) {
 					//first create document
-					firstDoc = contentService.createDocument(context, repositoryId, 
+					firstDoc = contentService.createDocument(context, repositoryId,
 							properties, parentFolder, contentStream, VersioningState.MAJOR, null, null, null);
 
 					JSONObject elm = new JSONObject();
