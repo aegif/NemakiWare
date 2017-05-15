@@ -1298,9 +1298,9 @@ public class ContentServiceImpl implements ContentService {
 				if (properties.getProperties().containsKey(priorProperty.getKey())) {
 					// Overwrite by removing the prior property.
 					allSubTypeProperties.remove(priorProperty);
-					log.error("Remove " + priorProperty.getKey());
+					log.info("Remove " + priorProperty.getKey());
 				} else {
-					log.error("Leave " + priorProperty.getKey());
+					log.info("Leave " + priorProperty.getKey());
 				}
 			}
 
