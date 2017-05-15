@@ -10,6 +10,7 @@ import java.util.Map.Entry;
 
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
 
+import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Configuration;
@@ -42,6 +43,7 @@ public class CacheService {
 	private final String USERS_CACHE = "usersCache";
 	private final String GROUP_CACHE = "groupCache";
 	private final String GROUPS_CACHE = "groupsCache";
+	private final String ACL_CACHE = "aclCache";
 
 	private final String repositoryId;
 
@@ -49,7 +51,7 @@ public class CacheService {
 		this.repositoryId = repositoryId;
 
 		cacheManager = CacheManager.newInstance();
-		
+
 		loadConfig(propertyManager);
 	}
 
@@ -68,7 +70,7 @@ public class CacheService {
 			if(configMap.getValue() != null){
 				config.override(configMap.getValue());
 			}
-			
+
 			Cache cache = new Cache(repositoryId + "_" + configMap.getKey(), config.maxElementsInMemory.intValue(),
 					config.overflowToDisc, config.eternal, config.timeToLiveSeconds, config.timeToIdleSeconds);
 			cacheManager.addCache(cache);
@@ -104,7 +106,7 @@ public class CacheService {
 		String name = repositoryId + "_" + CONFIG_CACHE;
 		return new NemakiCache<Configuration>(enabled.get(name), cacheManager.getCache(name));
 	}
-	
+
 	public NemakiCache<ObjectData> getObjectDataCache() {
 		String name = repositoryId + "_" + OBJECT_DATA_CACHE;
 		return new NemakiCache<ObjectData>(enabled.get(name), cacheManager.getCache(name));
@@ -169,13 +171,24 @@ public class CacheService {
 		String name = repositoryId + "_" + GROUPS_CACHE;
 		return new NemakiCache<List<Group>>(enabled.get(name), cacheManager.getCache(name));
 	}
+	/***
+	 * Acl cache related tree cache.
+	 * @see jp.aegif.nemaki.businesslogic.impl.ContentServiceImpl.calculateAcl(String, Content)
+	 * @see jp.aegif.nemaki.cmis.service.impl.AclServiceImpl.applyAcl(CallContext, String, String, Acl, AclPropagation)
+	 */
+	public NemakiCache<Acl> getAclCache() {
+		String name = repositoryId + "_" + ACL_CACHE;
+		return new NemakiCache<Acl>(enabled.get(name), cacheManager.getCache(name));
+	}
+
 
 	public void removeCmisCache(String objectId) {
 		getObjectDataCache().remove(objectId);
 	}
-	
+
 	public void removeCmisAndContentCache(String objectId) {
 		getContentCache().remove(objectId);
+		getAclCache().remove(objectId);
 		removeCmisCache(objectId);
 	}
 }
