@@ -150,8 +150,8 @@ public class AclServiceImpl implements AclService {
 
 			nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
 
-			clearCachesRecursively(Executors.newCachedThreadPool(), callContext, repositoryId, content, false);
-			writeChangeEventsRecursively(Executors.newCachedThreadPool(), callContext, repositoryId, content, false);
+			clearCachesRecursively(Executors.newCachedThreadPool(), callContext, repositoryId, content, true);
+			writeChangeEventsRecursively(Executors.newCachedThreadPool(), callContext, repositoryId, content, true);
 
 			return getAcl(callContext, repositoryId, objectId, false, null);
 		}finally{
@@ -164,13 +164,12 @@ public class AclServiceImpl implements AclService {
 
 		//Call threads for recursive applyAcl
 		if(content.isFolder()){
+			if(executeOnParent){
+				executorService.submit(new ClearCacheTask(repositoryId, content.getId()));
+			}
 			List<Content> children = contentService.getChildren(repositoryId, content.getId());
 			if(CollectionUtils.isEmpty(children)){
 				return;
-			}
-
-			if(executeOnParent){
-				executorService.submit(new ClearCacheTask(repositoryId, content.getId()));
 			}
 			for(Content child : children){
 				if(contentService.getAclInheritedWithDefault(repositoryId, child)){
@@ -223,14 +222,15 @@ private void writeChangeEventsRecursively(ExecutorService executorService, CallC
 
 		//Call threads for recursive applyAcl
 		if(content.isFolder()){
+			if(executeOnParent){
+				executorService.submit(new ClearCacheTask(repositoryId, content.getId()));
+			}
+
 			List<Content> children = contentService.getChildren(repositoryId, content.getId());
 			if(CollectionUtils.isEmpty(children)){
 				return;
 			}
 
-			if(executeOnParent){
-				executorService.submit(new ClearCacheTask(repositoryId, content.getId()));
-			}
 			for(Content child : children){
 				if(contentService.getAclInheritedWithDefault(repositoryId, child)){
 					executorService.submit(new WriteChangeEventsRecursivelyTask(executorService, callContext, repositoryId, child));
