@@ -452,10 +452,13 @@ public class Registration implements Runnable{
 				boolean isSecondary = false;
 				PropertyDefinition<?> pd = propDefs.get(propId);
 				String propValue;
+				String propPrefix;
 				if (pd.getPropertyType() == PropertyType.DATETIME){
 					propValue = getUTC(object.getPropertyValue(propId));
+					propPrefix = "dynamicDate.property.";
 				}else{
 					propValue = object.getPropertyValue(propId);
+					propPrefix = "dynamic.property.";
 				}
 
 				// Secondary type
@@ -466,7 +469,7 @@ public class Registration implements Runnable{
 								.getPropertyDefinitions();
 						// Secondary specific property
 						if (secondaryPropDefs.containsKey(propId)) {
-							String type = "dynamic.property."
+							String type = propPrefix
 									+ sec.getQueryName() + Constant.SEPARATOR + propId;
 							map.put(type, propValue);
 							isSecondary = true;
@@ -477,7 +480,7 @@ public class Registration implements Runnable{
 
 				// Non-Secondary type
 				if (!isSecondary) {
-					String type = "dynamic.property." + propId;
+					String type = propPrefix + propId;
 					map.put(type, propValue);
 				}
 			}
