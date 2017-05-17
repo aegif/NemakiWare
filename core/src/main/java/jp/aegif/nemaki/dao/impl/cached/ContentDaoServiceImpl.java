@@ -26,6 +26,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.GregorianCalendar;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import javax.sound.midi.Patch;
@@ -308,11 +309,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Content> getChildren(String repositoryId, String parentId) {
 		if(nemakiCachePool.get(repositoryId).getTreeCache().isCacheEnabled()){
+			List<Content> result = new ArrayList<Content>();
 			Tree tree = getOrCreateTreeCache(repositoryId, parentId);
-			return tree.getChildren().stream()
-				.map(childId -> getContent(repositoryId, childId))
-				.filter(child -> child != null)
-				.collect(Collectors.toList());
+			Set<String> children = tree.getChildren();
+			for(String childId : children){
+				Content content = getContent(repositoryId, childId);
+				if(content != null){
+					result.add(content);
+				}
+			}
+			return result;
 		}else{
 			return nonCachedContentDaoService.getChildren(repositoryId, parentId);
 		}

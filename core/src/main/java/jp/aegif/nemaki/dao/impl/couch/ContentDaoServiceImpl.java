@@ -434,7 +434,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public Folder getFolderByPath(String repositoryId, String path) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("foldersByPath").key(path);
 		List<CouchFolder> l = connectorPool.get(repositoryId).queryView(query, CouchFolder.class);
-
 		if (CollectionUtils.isEmpty(l))
 			return null;
 		return l.get(0).convert();
@@ -446,7 +445,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("children").key(parentId);
 		List<CouchContent> list = connectorPool.get(repositoryId).queryView(query, CouchContent.class);
 		if (CollectionUtils.isNotEmpty(list)) {
-			contents = list.stream().map(p -> p.convert()).collect(Collectors.toList());
+			for(CouchContent c : list){
+				contents.add(c.convert());
+			}
 		}
 		return contents;
 	}
