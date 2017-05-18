@@ -1280,6 +1280,11 @@ public class Util {
 		if (result == null) {
 			result = convertStringToCalendar(date, "yyyy-MM-dd HH:mm:ss z", Locale.JAPAN);
 		}
+
+		if (result == null) {
+			result = convertStringToCalendar(date, "yyyy-MM-dd HH:mm", Locale.JAPAN);
+		}
+
 		return result;
 	}
 

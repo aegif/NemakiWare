@@ -5,7 +5,12 @@ function bindEditable(valueFieldSelector){
 		if($(this).attr('on') != 'on'){
 			$(this).attr('on', 'on');
 			txt = $(this).text();
-			$(this).html('<input class="editable-value-input" type="text" value="" />');
+			if($(this).attr('property-type') == 'DATETIME'){
+				//$(this).html('<div class="input-group date" id="datetimepicker_field"><input class="editable-value-input" type="text" value="" /><span class="input-group-addon"><span class="glyphicon glyphicon-calendar"></span></span></div></div><script type="text/javascript">$(function () {$("datetimepicker_field").datetimepicker();});</script>');
+				$(this).html('<div style="position:relative"><input class="editable-value-input" type="text" value="" id="datetimepicker_field" /></div><script type="text/javascript"> $(function () { $("#datetimepicker_field").datetimepicker({widgetParent : "body"}); });</script>');
+			}else{
+				$(this).html('<input class="editable-value-input" type="text" value="" />');
+			}
 			$(this).find("input").val(txt);
 			$(this).children('.editable-value-input:first').focus();
 		}
@@ -15,7 +20,7 @@ function bindEditable(valueFieldSelector){
 			$(document).off('.editable-value');
 			revertField($(this));
 		});
-		
+
 		//binding: keypress
 		$(valueFieldSelector + ' > .editable-value-input:first').off().on('keypress', function(event){
 			if(event.which == 13){
@@ -30,19 +35,10 @@ function revertField(inputboxDom){
 	var parentDiv = inputboxDom.parent();
 	var wrap = inputboxDom.closest("div.antiscroll-wrap");
 	var inner = inputboxDom.closest("div.antiscroll-inner");
-	
-	/*//Validate
-	if(inputVal === ""){
-		if(parentDiv.attr('property-required') == 'true'){
-			alert("Please input: " + parentDiv.attr('property-id'));
-			inputboxDom.focus();
-			return;
-		}
-	}*/
-	
+
 	parentDiv.text(inputVal);
 	parentDiv.removeAttr('on');
-	
+
 	//re-enable　antiscroll
 	//TODO .closest() seems not to work
 	var height = parentDiv.height();
@@ -54,7 +50,7 @@ function revertField(inputboxDom){
 	});
 }
 
-//Get edited value 
+//Get edited value
 //TODO specify table tag
 function editedValue(selector){
 	selector = escape(selector);
