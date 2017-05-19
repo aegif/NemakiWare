@@ -227,7 +227,7 @@ public class SolrPredicateWalker{
 		String left = solrUtil.convertToString(leftNode);
 		String right = walkExpr(rightNode).toString();
 
-		map.put(FLD, ClientUtils.escapeQueryChars(solrUtil.getPropertyNameInSolr(left)));
+		map.put(FLD, ClientUtils.escapeQueryChars(solrUtil.getPropertyNameInSolr(repositoryId, left)));
 		map.put(CND, right);
 		return map;
 	}
@@ -256,7 +256,7 @@ public class SolrPredicateWalker{
 		}
 
 		// Build a statement
-		String field = solrUtil.getPropertyNameInSolr(solrUtil.convertToString(colNode));
+		String field = solrUtil.getPropertyNameInSolr(repositoryId,solrUtil.convertToString(colNode));
 		String pattern = translatePattern((String) rVal); // Solr wildcard
 															// expression
 		
@@ -281,7 +281,7 @@ public class SolrPredicateWalker{
 		// Build a statement
 		// Combine queries with "OR" because Solr doesn't have "IN" syntax
 		BooleanQuery q = new BooleanQuery();
-		String field = solrUtil.getPropertyNameInSolr(colRef.getPropertyQueryName().toString());
+		String field = solrUtil.getPropertyNameInSolr(repositoryId, colRef.getPropertyQueryName().toString());
 		List<?> list = (List<?>) walkExpr(listNode);
 		for (Object elm : list) {
 			Term t = new Term(field, elm.toString());
@@ -345,7 +345,7 @@ public class SolrPredicateWalker{
 
 		// Build a statement
 		String folderId = (String) walkExpr(paramNode);
-		Term t = new Term(solrUtil.getPropertyNameInSolr(PropertyIds.PARENT_ID), folderId);
+		Term t = new Term(solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.PARENT_ID), folderId);
 		Query q = new TermQuery(t);
 		if (qualNode != null) { // When a table alias exists
 			String qualifier = walkExpr(qualNode).toString();
@@ -394,14 +394,14 @@ public class SolrPredicateWalker{
 		String _folderPath = folderPath.replaceAll("\\/", "\\\\/"); //escape in Solr query
 
 		if(contentService.isRoot(repositoryId, folder)){
-			Term t = new Term(solrUtil.getPropertyNameInSolr(PropertyIds.PATH), _folderPath + "*");
+			Term t = new Term(solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.PATH), _folderPath + "*");
 			query1.add(new TermQuery(t), Occur.MUST);
 		}else{
 			String _folderId = folderId.replaceAll("\\/", "\\\\/"); //escape in Solr query
-			Term t1 = new Term(solrUtil.getPropertyNameInSolr(PropertyIds.OBJECT_ID), _folderId);
+			Term t1 = new Term(solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.OBJECT_ID), _folderId);
 			String path = folderPath + "/*";
 			String _path = path.replaceAll("\\/", "\\\\/"); //escape in Solr query
-			Term t2 = new Term(solrUtil.getPropertyNameInSolr(PropertyIds.PATH), _path);
+			Term t2 = new Term(solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.PATH), _path);
 			query1.add(new TermQuery(t1), Occur.SHOULD);
 			query1.add(new TermQuery(t2), Occur.SHOULD);
 		}
@@ -435,7 +435,7 @@ public class SolrPredicateWalker{
 		while (iterator.hasNext()) {
 			String descendantId = iterator.next();
 			String _descendantId = descendantId.replaceAll("\\/", "\\\\/");
-			Term t = new Term(solrUtil.getPropertyNameInSolr(PropertyIds.PARENT_ID), _descendantId);
+			Term t = new Term(solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.PARENT_ID), _descendantId);
 			TermQuery tq = new TermQuery(t);
 			query2.add(tq, Occur.SHOULD);
 		}
@@ -694,7 +694,7 @@ public class SolrPredicateWalker{
 	 */
 	private String buildQualField(String alias) {
 		String cmisName = queryObject.getTypeQueryName(alias);
-		String solrName = solrUtil.getPropertyNameInSolr(cmisName);
+		String solrName = solrUtil.getPropertyNameInSolr(repositoryId, cmisName);
 		return solrName;
 	}
 
@@ -713,8 +713,8 @@ public class SolrPredicateWalker{
 
 		SolrQuery query = new SolrQuery();
 
-		query.setQuery(solrUtil.getPropertyNameInSolr(PropertyIds.PARENT_ID) + ":" + folderId + " AND "
-				+ solrUtil.getPropertyNameInSolr(PropertyIds.BASE_TYPE_ID) + ":cmis\\:folder"); // only "folder" nodes
+		query.setQuery(solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.PARENT_ID) + ":" + folderId + " AND "
+				+ solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.BASE_TYPE_ID) + ":cmis\\:folder"); // only "folder" nodes
 
 		// Connect to SolrServer and add subfolder ids to the list
 		try {
