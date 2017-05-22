@@ -38,6 +38,7 @@ import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ObjectParentData;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 
 import org.slf4j.Logger;
@@ -109,7 +110,6 @@ public class Registration implements Runnable{
 			logger.info("[ObjectId={}]CmisObject is deleted. Skip reading a change event.", ce.getObjectId());
 			return;
 		}
-
 		AbstractUpdateRequest req = null;
 		Map<String, Object> map = buildParamMap(obj);
 		switch (obj.getBaseTypeId()) {
@@ -130,6 +130,7 @@ public class Registration implements Runnable{
 			break;
 		case CMIS_FOLDER:
 		case CMIS_ITEM:
+		case CMIS_RELATIONSHIP:
 			req = buildUpdateRequest(map);
 			break;
 		default:
@@ -334,9 +335,7 @@ public class Registration implements Runnable{
 	 */
 	private Map<String, Object> buildParamMap(CmisObject object) {
 		Map<String, Object> map = new HashMap<String, Object>();
-
 		buildBaseParamMap(map, object);
-
 		// BaseType specific property
 		switch (object.getBaseTypeId()) {
 		case CMIS_DOCUMENT:
@@ -451,9 +450,9 @@ public class Registration implements Runnable{
 			if (!basePropDefs.containsKey(propId)) {
 				boolean isSecondary = false;
 				PropertyDefinition<?> pd = propDefs.get(propId);
-				String propValue;
+				Object propValue;
 				String propPrefix;
-				if (pd.getPropertyType() == PropertyType.DATETIME){
+				if (pd.getPropertyType() == PropertyType.DATETIME && object.getPropertyValue(propId) != null){
 					propValue = getUTC(object.getPropertyValue(propId));
 					propPrefix = "dynamicDate.property.";
 				}else{

@@ -174,6 +174,7 @@ public class CoreTracker extends CloseHook {
 			if (changeEvents == null) {
 				return;
 			}
+
 			List<ChangeEvent> events = changeEvents.getChangeEvents();
 
 			// After 2nd crawling, discard the first item
@@ -208,11 +209,20 @@ public class CoreTracker extends CloseHook {
 				numberOfThread = list.size();
 				numberPerThread = 1;
 			}
-
+			int diff = list.size() - (numberOfThread * numberPerThread);
+			int toIndex = 0;
+			int fromIndex = 0;
 			for (int i = 0; i <= numberOfThread; i++) {
-				int toIndex = (numberPerThread * (i + 1) > list.size()) ? list.size() : numberPerThread * (i + 1);
+				fromIndex = toIndex;
+			    toIndex += numberPerThread;
+				if (i < diff){
+					toIndex += 1;
+				}
+				if (toIndex > list.size()){
+					continue;
+				}
 
-				List<ChangeEvent> listPerThread = list.subList(numberPerThread * i, toIndex);
+				List<ChangeEvent> listPerThread = list.subList(fromIndex, toIndex);
 				Session cmisSession = CmisSessionFactory.getSession(repositoryId);
 				Registration registration = new Registration(cmisSession, core, indexServer, listPerThread,
 						fulltextEnabled, mimeTypeFilterEnabled, allowedMimeTypeFilter);
@@ -227,7 +237,6 @@ public class CoreTracker extends CloseHook {
 
 			// Save the latest token
 			storeLatestChangeToken(changeEvents.getLatestChangeLogToken(), repositoryId);
-
 			// In case of FUll mode, repeat until indexing all change logs
 			if (Constant.MODE_FULL.equals(trackingType)) {
 				index(Constant.MODE_FULL, repositoryId);
