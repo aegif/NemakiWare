@@ -43,6 +43,8 @@ public class TokenServiceImpl implements TokenService{
 				 Map<String, Token> repoMap = appMap.get(repositoryId);
 				 if(repoMap == null){
 					 log.warn(String.format("No such repositoryId(%s) registered for AuthToken", repositoryId));
+					 log.warn("app: " + app + " user: " + userName);
+					 log.warn("appMap: "+appMap.toString());
 					 return null;
 				 }else{
 					 return repoMap.get(userName);
