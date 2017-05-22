@@ -1285,6 +1285,9 @@ public class Util {
 			result = convertStringToCalendar(date, "yyyy-MM-dd HH:mm", Locale.JAPAN);
 		}
 
+		if (result == null) {
+			result = convertStringToCalendar(date, "yyyy-MM-dd'T'HH:mm:ss.SSSZ",  Locale.JAPAN);
+		}
 		return result;
 	}
 
