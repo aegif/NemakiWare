@@ -5,15 +5,13 @@ function bindEditable(valueFieldSelector){
 		if($(this).attr('on') != 'on'){
 			$(this).attr('on', 'on');
 			txt = $(this).text();
-			var trid = $(this).attr('property-id');
 			if($(this).attr('property-type') == 'DATETIME'){
-				//$(this).html('<div class="input-group date" id="datetimepicker_field"><input class="editable-value-input" type="text" value="" /><span class="input-group-addon"><span class="glyphicon glyphicon-calendar"></span></span></div></div><script type="text/javascript">$(function () {$("datetimepicker_field").datetimepicker();});</script>');
-				$(this).html('<div style="position:relative"><input class="editable-value-input" type="text" value="" id="datetimepicker_field" /></div><script type="text/javascript"> $(function () { $("#datetimepicker_field").datetimepicker({widgetParent : "#obj-property-table", format: "YYYY-MM-DD hh:mm:00"}); });</script>');
+				$(this).html('<div style="position:relative"><input class="editable-value-input" type="text" value="" id="datetimepicker_field" /></div><script type="text/javascript"> $(function () { $("#datetimepicker_field").datetimepicker({widgetParent:"#obj-property-table", format:"YYYY-MM-DD hh:mm:00"}); });</script>');
 			}else{
 				$(this).html('<input class="editable-value-input" type="text" value="" />');
 			}
 			$(this).find("input").val(txt);
-			$(this).children('.editable-value-input:first').focus();
+			$(this).find('.editable-value-input:first').focus();
 		}
 
 		//end of editing
@@ -32,15 +30,12 @@ function bindEditable(valueFieldSelector){
 }
 
 function revertField(inputboxDom){
-	console.log('revert!');
-	console.log(inputboxDom);
 	var inputVal = inputboxDom.val();
 	var wrap = inputboxDom.closest("div.antiscroll-wrap");
 	var inner = inputboxDom.closest("div.antiscroll-inner");
 
-	console.log(inputboxDom);
 	inner.removeAttr('on');
-	inner.html(inputVal);
+	inner.text(inputVal);
 
 	var height = wrap.height();
 	var width = wrap.width();
