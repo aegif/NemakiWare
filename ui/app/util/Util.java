@@ -1269,6 +1269,18 @@ public class Util {
 		return null;
 	}
 
+	public static String getValueAsString(Property property){
+		if( property.getType() == PropertyType.DATETIME){
+			Object value = property.getValue();
+			GregorianCalendar dateTimeValue = (GregorianCalendar)value;
+
+			SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+	        return sdf.format(dateTimeValue.getTimeInMillis());
+		}else{
+			return property.getValueAsString();
+		}
+	}
+
 	public static GregorianCalendar convertStringToCalendar(String date) {
 		GregorianCalendar result = convertStringToCalendar(date, "EEE MMM dd HH:mm:ss Z yyyy", Locale.ENGLISH);
 		if (result == null) {
