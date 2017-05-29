@@ -6,23 +6,22 @@ function bindEditable(valueFieldSelector){
 			$(this).attr('on', 'on');
 			txt = $(this).text();
 			if($(this).attr('property-type') == 'DATETIME'){
-				//$(this).html('<div class="input-group date" id="datetimepicker_field"><input class="editable-value-input" type="text" value="" /><span class="input-group-addon"><span class="glyphicon glyphicon-calendar"></span></span></div></div><script type="text/javascript">$(function () {$("datetimepicker_field").datetimepicker();});</script>');
-				$(this).html('<div style="position:relative"><input class="editable-value-input" type="text" value="" id="datetimepicker_field" /></div><script type="text/javascript"> $(function () { $("#datetimepicker_field").datetimepicker({widgetParent : "body"}); });</script>');
+				$(this).html('<div style="position:relative"><input class="editable-value-input" type="text" value="" id="datetimepicker_field" /></div><script type="text/javascript"> $(function () { $("#datetimepicker_field").datetimepicker({widgetParent:"#obj-property-table", format:"YYYY-MM-DD hh:mm:00"}); });</script>');
 			}else{
 				$(this).html('<input class="editable-value-input" type="text" value="" />');
 			}
 			$(this).find("input").val(txt);
-			$(this).children('.editable-value-input:first').focus();
+			$(this).find('.editable-value-input:first').focus();
 		}
 
 		//end of editing
-		$(document).on('blur.editable-value', valueFieldSelector + ' > .editable-value-input:first', function(){
+		$(document).on('blur.editable-value', valueFieldSelector + ' .editable-value-input:first', function(){
 			$(document).off('.editable-value');
 			revertField($(this));
 		});
 
 		//binding: keypress
-		$(valueFieldSelector + ' > .editable-value-input:first').off().on('keypress', function(event){
+		$(valueFieldSelector + ' .editable-value-input:first').off().on('keypress', function(event){
 			if(event.which == 13){
 				revertField($(this));
 			}
@@ -32,17 +31,14 @@ function bindEditable(valueFieldSelector){
 
 function revertField(inputboxDom){
 	var inputVal = inputboxDom.val();
-	var parentDiv = inputboxDom.parent();
 	var wrap = inputboxDom.closest("div.antiscroll-wrap");
 	var inner = inputboxDom.closest("div.antiscroll-inner");
 
-	parentDiv.text(inputVal);
-	parentDiv.removeAttr('on');
+	inner.removeAttr('on');
+	inner.text(inputVal);
 
-	//re-enable　antiscroll
-	//TODO .closest() seems not to work
-	var height = parentDiv.height();
-	var width = parentDiv.width();
+	var height = wrap.height();
+	var width = wrap.width();
 	$(function () {
 		wrap.antiscroll();
 		inner.height(height);
