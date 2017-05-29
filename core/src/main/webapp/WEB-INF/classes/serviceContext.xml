@@ -603,6 +603,9 @@
         <property name="propertyManager">
             <ref bean="propertyManager" />
         </property>
+        <property name="typeService">
+            <ref bean="typeService" />
+        </property>        
     </bean>
 
     <!-- Extra Rest API implemented by Jersey -->
@@ -721,5 +724,6 @@
             <ref bean="TypeManager" />
         </property>
     </bean>
+
 
 </beans>
