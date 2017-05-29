@@ -193,7 +193,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 //				solrUtil.getPropertyNameInSolr(PropertyIds.OBJECT_TYPE_ID),
 //				StringUtils.join(tables, " "));
 //		fromQueryString += new TermQuery(t).toString();
-		fromQueryString += "("+ solrUtil.getPropertyNameInSolr(PropertyIds.OBJECT_TYPE_ID) +":"+ StringUtils.join(tables," " + solrUtil.getPropertyNameInSolr(PropertyIds.OBJECT_TYPE_ID) + ":") + ")";
+		fromQueryString += "("+ solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.OBJECT_TYPE_ID) +":"+ StringUtils.join(tables," " + solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.OBJECT_TYPE_ID) + ":") + ")";
 
 		// Execute query
 		SolrQuery solrQuery = new SolrQuery();

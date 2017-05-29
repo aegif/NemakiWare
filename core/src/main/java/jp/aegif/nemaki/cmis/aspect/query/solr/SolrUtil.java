@@ -36,9 +36,13 @@ import javax.ws.rs.core.Response;
 
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
+import jp.aegif.nemaki.model.NemakiPropertyDefinition;
+import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
+import jp.aegif.nemaki.businesslogic.TypeService;
 
 import org.antlr.runtime.tree.Tree;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
+import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -57,6 +61,7 @@ public class SolrUtil {
 	private final HashMap<String, String> map;
 
 	private PropertyManager propertyManager;
+	private TypeService typeService;
 
 	public SolrUtil() {
 		map = new HashMap<String, String>();
@@ -106,11 +111,18 @@ public class SolrUtil {
 	 * @param cmisColName
 	 * @return
 	 */
-	public String getPropertyNameInSolr(String cmisColName) {
+	public String getPropertyNameInSolr(String repositoryId,String cmisColName) {
+		
+	//TODO: secondary types
 		String val = map.get(cmisColName);
-
+		NemakiPropertyDefinitionCore pd = typeService.getPropertyDefinitionCoreByPropertyId(repositoryId, cmisColName);
 		if (val == null) {
-			val = "dynamic.property." + cmisColName;
+			if(pd.getPropertyType().equals(PropertyType.DATETIME)){
+				val = "dynamicDate.property." + cmisColName;
+			}else{
+				// case for STRING
+				val = "dynamic.property." + cmisColName;				
+			}
 		}
 
 		return val;
@@ -173,5 +185,8 @@ public class SolrUtil {
 
 	public void setPropertyManager(PropertyManager propertyManager) {
 		this.propertyManager = propertyManager;
+	}
+	public void setTypeService(TypeService typeService) {
+		this.typeService = typeService;
 	}
 }
