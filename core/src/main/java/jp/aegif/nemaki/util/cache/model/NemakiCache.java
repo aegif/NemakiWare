@@ -10,12 +10,16 @@ public class NemakiCache<T> {
 	private Cache cache;
 	private final boolean cacheEnabled;
 	private static final Log log = LogFactory.getLog(NemakiCache.class);
-	
+
 	public NemakiCache(boolean cacheEnabled, Cache cache){
 		this.cacheEnabled = cacheEnabled;
 		this.cache = cache;
 	}
-	
+
+	public long getLocalHeapSize(){
+		return this.cache.getStatistics().getLocalHeapSize();
+	}
+
 	public T get(String key){
 		if(cacheEnabled){
 			Element element = cache.get(key);
@@ -35,33 +39,33 @@ public class NemakiCache<T> {
 			cache.put(element);
 		}
 	}
-	
+
 	public void put(Element element){
 		if(cacheEnabled){
 			cache.put(element);
 		}
 	}
-	
+
 	public void remove(String key){
 		if(cacheEnabled){
 			cache.remove(key);
 		}
 	}
-	
+
 	public void removeAll(){
 		if(cacheEnabled){
 			cache.removeAll();
 		}
 	}
-	
+
 	public Cache getCache(){
 		return this.cache;
 	}
-	
+
 	public void setCache(Cache cache){
 		this.cache = cache;
 	}
-	
+
 	public boolean isCacheEnabled(){
 		return cacheEnabled;
 	}
