@@ -10,12 +10,17 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.net.SocketException;
 import java.net.URLDecoder;
 import java.text.MessageFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
@@ -1301,6 +1306,20 @@ public class Util {
 			result = convertStringToCalendar(date, "yyyy-MM-dd'T'HH:mm:ss.SSSZ",  Locale.JAPAN);
 		}
 		return result;
+	}
+
+	public static String getIPAddress(){
+		try {
+			for (NetworkInterface n : Collections.list(NetworkInterface.getNetworkInterfaces())) {
+				for (InetAddress addr : Collections.list(n.getInetAddresses())) {
+					if (addr instanceof Inet4Address && !addr.isLoopbackAddress()) {
+						return addr.getHostAddress();
+					}
+				}
+			}
+		} catch (SocketException e) {
+		}
+		return "";
 	}
 
 }
