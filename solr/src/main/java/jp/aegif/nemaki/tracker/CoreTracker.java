@@ -221,9 +221,6 @@ public class CoreTracker extends CloseHook {
 				if (toIndex > list.size()){
 					continue;
 				}
-				if(toIndex == list.size()){
-					toIndex -= 1;
-				}
 
 				List<ChangeEvent> listPerThread = list.subList(fromIndex, toIndex);
 				Session cmisSession = CmisSessionFactory.getSession(repositoryId);
