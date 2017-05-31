@@ -31,6 +31,8 @@ import jp.aegif.nemaki.util.constant.NodeType;
 
 /**
  * Nemaki user.
+ * This class is deprecated and remains for backward compatiblity (patch)
+ * @see jp.aegif.nemaki.model.UserItem
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class User extends NodeBase {

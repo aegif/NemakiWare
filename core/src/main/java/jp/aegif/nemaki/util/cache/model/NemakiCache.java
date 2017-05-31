@@ -5,6 +5,7 @@ import org.apache.commons.logging.LogFactory;
 
 import net.sf.ehcache.Cache;
 import net.sf.ehcache.Element;
+import net.sf.ehcache.statistics.StatisticsGateway;
 
 public class NemakiCache<T> {
 	private Cache cache;
@@ -16,8 +17,12 @@ public class NemakiCache<T> {
 		this.cache = cache;
 	}
 
-	public long getLocalHeapSize(){
-		return this.cache.getStatistics().getLocalHeapSize();
+	public String getStatisticString(){
+		StatisticsGateway s = this.cache.getStatistics();
+        String name = cache.getName();
+		long size = s.getLocalHeapSize();
+		long bytes = s.getLocalHeapSizeInBytes();
+		return String.format("CacheInfo name:%s items: %d, size: %d byte" ,name, size,bytes);
 	}
 
 	public T get(String key){
