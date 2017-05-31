@@ -1,8 +1,5 @@
 package jp.aegif.nemaki.util.cache;
 
-import net.sf.ehcache.Cache;
-import net.sf.ehcache.CacheManager;
-
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -15,16 +12,17 @@ import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Configuration;
 import jp.aegif.nemaki.model.Content;
-import jp.aegif.nemaki.model.Group;
+import jp.aegif.nemaki.model.GroupItem;
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
-import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.SpringPropertyManager;
 import jp.aegif.nemaki.util.YamlManager;
 import jp.aegif.nemaki.util.cache.model.NemakiCache;
 import jp.aegif.nemaki.util.cache.model.Tree;
-import jp.aegif.nemaki.util.cache.CacheService;
 import jp.aegif.nemaki.util.constant.PropertyKey;
+import net.sf.ehcache.Cache;
+import net.sf.ehcache.CacheManager;
 
 public class CacheService {
 	private final CacheManager cacheManager;
@@ -43,6 +41,8 @@ public class CacheService {
 	private final String USERS_CACHE = "usersCache";
 	private final String GROUP_CACHE = "groupCache";
 	private final String GROUPS_CACHE = "groupsCache";
+
+
 	private final String ACL_CACHE = "aclCache";
 
 	private final String repositoryId;
@@ -152,24 +152,25 @@ public class CacheService {
 		return new NemakiCache<Change>(enabled.get(name), cacheManager.getCache(name));
 	}
 
-	public NemakiCache<User> getUserCache() {
+
+	public NemakiCache<UserItem> getUserItemCache() {
 		String name = repositoryId + "_" + USER_CACHE;
-		return new NemakiCache<User>(enabled.get(name), cacheManager.getCache(name));
+		return new NemakiCache<UserItem>(enabled.get(name), cacheManager.getCache(name));
 	}
 
-	public NemakiCache<List<User>> getUsersCache() {
+	public NemakiCache<List<UserItem>> getUserItemsCache() {
 		String name = repositoryId + "_" + USERS_CACHE;
-		return new NemakiCache<List<User>>(enabled.get(name), cacheManager.getCache(name));
+		return new NemakiCache<List<UserItem>>(enabled.get(name), cacheManager.getCache(name));
 	}
 
-	public NemakiCache<Group> getGroupCache() {
+	public NemakiCache<GroupItem> getGroupItemCache() {
 		String name = repositoryId + "_" + GROUP_CACHE;
-		return new NemakiCache<Group>(enabled.get(name), cacheManager.getCache(name));
+		return new NemakiCache<GroupItem>(enabled.get(name), cacheManager.getCache(name));
 	}
 
-	public NemakiCache<List<Group>> getGroupsCache() {
+	public NemakiCache<List<GroupItem>> getGroupsCache() {
 		String name = repositoryId + "_" + GROUPS_CACHE;
-		return new NemakiCache<List<Group>>(enabled.get(name), cacheManager.getCache(name));
+		return new NemakiCache<List<GroupItem>>(enabled.get(name), cacheManager.getCache(name));
 	}
 	/***
 	 * Acl cache related tree cache.

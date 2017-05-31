@@ -360,8 +360,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 			String key, Content content) {
 
 		// Admin user always pass a permission check(skip calculateAcl)
-		String userName = context.getUsername();
-		UserItem u = contentService.getUserItemById(repositoryId, userName);
+		String userId = context.getUsername();
+		UserItem u = contentService.getUserItemById(repositoryId, userId);
 		if (u != null && u.isAdmin()) return;
 
 		String baseTypeId = content.getType();
