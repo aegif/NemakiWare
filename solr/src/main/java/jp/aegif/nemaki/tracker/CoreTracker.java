@@ -223,6 +223,7 @@ public class CoreTracker extends CloseHook {
 				}
 
 				List<ChangeEvent> listPerThread = list.subList(fromIndex, toIndex);
+				logger.info("Num of change events for this thread: " + listPerThread.size());
 				Session cmisSession = CmisSessionFactory.getSession(repositoryId);
 				Registration registration = new Registration(cmisSession, core, indexServer, listPerThread,
 						fulltextEnabled, mimeTypeFilterEnabled, allowedMimeTypeFilter);
