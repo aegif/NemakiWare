@@ -38,11 +38,11 @@ public class CacheResource extends ResourceBase{
 		}finally{
 			lock.unlock();
 		}
-		
+
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
 	}
-	
+
 	public void setNemakiCachePool(NemakiCachePool nemakiCachePool) {
 		this.nemakiCachePool = nemakiCachePool;
 	}

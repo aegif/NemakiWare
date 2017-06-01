@@ -5,11 +5,12 @@ import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.Locale;
 import java.util.Set;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 
-import util.Util;
+import util.DateTimeUtil;
 
 public class User {
 	public String id;
@@ -39,8 +40,8 @@ public class User {
 		this.lastName = json.get("lastName").asText();
 		this.email = json.get("email").asText();
 		this.isAdmin = json.get("isAdmin").asBoolean();
-		this.created = Util.convertStringToCalendar(json.get("created").asText());
-		this.modified = Util.convertStringToCalendar(json.get("modified").asText());
+		this.created = DateTimeUtil.convertStringToCalendar(json.get("created").asText(), Locale.getDefault());
+		this.modified = DateTimeUtil.convertStringToCalendar(json.get("modified").asText(), Locale.getDefault());
 
 
 

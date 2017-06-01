@@ -10,13 +10,15 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.net.SocketException;
 import java.net.URLDecoder;
-import java.text.MessageFormat;
-import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Date;
+import java.util.Collections;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -127,7 +129,7 @@ import util.authentication.NemakiProfile;
 import util.authentication.NemakiProfile.CmisAuthType;
 
 public class Util {
-	private static final ALogger logger = Logger.of(Util.class);
+	static final ALogger logger = Logger.of(Util.class);
 
 	public static NemakiProfile getProfile(play.mvc.Http.Context ctx) {
 		final PlayWebContext context = new PlayWebContext(ctx);
@@ -920,7 +922,7 @@ public class Util {
 	}
 
 	public static HashMap<String, Object> buildProperties(Map<String, PropertyDefinition<?>> propertyDefinitions,
-			DynamicForm input, List<Updatability> updatabilities) {
+			DynamicForm input, List<Updatability> updatabilities, Locale locale) {
 		HashMap<String, Object> data = new HashMap<String, Object>();
 
 		for (Entry<String, PropertyDefinition<?>> entry : propertyDefinitions.entrySet()) {
@@ -955,7 +957,7 @@ public class Util {
 					if (dateStr == null || dateStr.isEmpty()) {
 						continue;
 					}
-					GregorianCalendar cal = convertStringToCalendar(dateStr);
+					GregorianCalendar cal = DateTimeUtil.convertStringToCalendar(dateStr, locale);
 					if (cal == null) {
 						throw new RuntimeException("Invalid DateTime format.");
 					}
@@ -1129,11 +1131,11 @@ public class Util {
 		if (PropertyIds.CREATED_BY.equals(propertyId)) {
 			return obj.getCreatedBy();
 		} else if (PropertyIds.CREATION_DATE.equals(propertyId)) {
-			return Formatter.calToString(obj.getCreationDate(), locale);
+			return DateTimeUtil.calToString(obj.getCreationDate(), locale);
 		} else if (PropertyIds.LAST_MODIFIED_BY.equals(propertyId)) {
 			return obj.getLastModifiedBy();
 		} else if (PropertyIds.LAST_MODIFICATION_DATE.equals(propertyId)) {
-			return Formatter.calToString(obj.getLastModificationDate(), locale);
+			return DateTimeUtil.calToString(obj.getLastModificationDate(), locale);
 		} else if (PropertyIds.VERSION_SERIES_CHECKED_OUT_BY.equals(propertyId)) {
 			if (isDocument(obj)) {
 				Document doc = (Document) obj;
@@ -1154,7 +1156,7 @@ public class Util {
 		if (PropertyIds.CREATION_DATE.equals(propertyId) || PropertyIds.LAST_MODIFICATION_DATE.equals(propertyId)) {
 			PropertyData<Object> vals = queryResult.getPropertyById(propertyId);
 			if (vals.getFirstValue() != null) {
-				return Formatter.calToString((GregorianCalendar) vals.getFirstValue(), locale);
+				return DateTimeUtil.calToString((GregorianCalendar) vals.getFirstValue(), locale);
 			}
 		}
 		// else if (PropertyIds.OBJECT_TYPE_ID.equals(propertyId)) {
@@ -1254,53 +1256,30 @@ public class Util {
 		return Long.valueOf(_size);
 	}
 
-	public static GregorianCalendar convertStringToCalendar(String date, String format, Locale locale) {
-		SimpleDateFormat sdf = new SimpleDateFormat(format, locale);
-		Date d;
-		try {
-			d = sdf.parse(date);
-			GregorianCalendar cal = new GregorianCalendar();
-			cal.setTime(d);
-			String str = cal.toString();
-			return cal;
-		} catch (ParseException e) {
-			logger.debug(MessageFormat.format("DateFormatError Pattern:{0} Text:{1}", format, date));
-		}
-		return null;
-	}
-
-	public static String getValueAsString(Property property){
+	public static String getValueAsString(Property property, Locale locale){
 		if( property.getType() == PropertyType.DATETIME){
 			Object value = property.getValue();
-			GregorianCalendar dateTimeValue = (GregorianCalendar)value;
 
-			SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-	        return sdf.format(dateTimeValue.getTimeInMillis());
+			GregorianCalendar dateTimeValue = value instanceof GregorianCalendar ? (GregorianCalendar)value : DateTimeUtil.convertStringToCalendar(value.toString(), locale);
+			return DateTimeUtil.calToString(dateTimeValue, locale);
+
 		}else{
 			return property.getValueAsString();
 		}
 	}
 
-	public static GregorianCalendar convertStringToCalendar(String date) {
-		GregorianCalendar result = convertStringToCalendar(date, "EEE MMM dd HH:mm:ss Z yyyy", Locale.ENGLISH);
-		if (result == null) {
-			result = convertStringToCalendar(date, "yyyy-MM-dd HH:mm:ss", Locale.JAPAN);
+	public static String getIPAddress(){
+		try {
+			for (NetworkInterface n : Collections.list(NetworkInterface.getNetworkInterfaces())) {
+				for (InetAddress addr : Collections.list(n.getInetAddresses())) {
+					if (addr instanceof Inet4Address && !addr.isLoopbackAddress()) {
+						return addr.getHostAddress();
+					}
+				}
+			}
+		} catch (SocketException e) {
 		}
-		if (result == null) {
-			result = convertStringToCalendar(date, "yyyy:MM:dd HH:mm:ss z", Locale.JAPAN);
-		}
-		if (result == null) {
-			result = convertStringToCalendar(date, "yyyy-MM-dd HH:mm:ss z", Locale.JAPAN);
-		}
-
-		if (result == null) {
-			result = convertStringToCalendar(date, "yyyy-MM-dd HH:mm", Locale.JAPAN);
-		}
-
-		if (result == null) {
-			result = convertStringToCalendar(date, "yyyy-MM-dd'T'HH:mm:ss.SSSZ",  Locale.JAPAN);
-		}
-		return result;
+		return "";
 	}
 
 }
