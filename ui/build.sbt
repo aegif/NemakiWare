@@ -47,7 +47,8 @@ libraryDependencies ++= Seq(
   "com.google.inject.extensions" % "guice-multibindings" % "4.0",
   "org.pac4j" % "play-pac4j" % "2.3.2",
   "org.pac4j" % "pac4j-saml" % "1.9.4",
-  "org.pac4j" % "pac4j-http" % "1.9.4"
+  "org.pac4j" % "pac4j-http" % "1.9.4",
+  "org.easytesting" % "fest-assert" % "1.4"
 )
 
 routesGenerator := InjectedRoutesGenerator

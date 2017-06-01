@@ -2,6 +2,7 @@
 
 @import util.Formatter
 @import util.Util
+@import util.DateTimeUtil
 @import util.NemakiConfig
 @import component._
 @import play.mvc.Http.Context.Implicit
@@ -47,7 +48,7 @@
 								<td>@relationship.getName()</td>
 								<td>@relationship.getTarget().getName()</td>
 								<td>@relationship.getCreatedBy()</td>
-								<td>@Formatter.calToString(relationship.getCreationDate(), Implicit.lang.toLocale)</td>
+								<td>@DateTimeUtil.calToString(relationship.getCreationDate(), Implicit.lang.toLocale)</td>
 								<td>
 									<div class="btn-group">
 										<button type="button" class="btn btn-default delete" cmis-id="@relationship.getId()">
@@ -83,7 +84,7 @@
 								<td>@relationship.getName()</td>
 								<td>@relationship.getSource().getName()</td>
 								<td>@relationship.getCreatedBy()</td>
-								<td>@Formatter.calToString(relationship.getCreationDate(), Implicit.lang.toLocale)</td>
+								<td>@DateTimeUtil.calToString(relationship.getCreationDate(), Implicit.lang.toLocale)</td>
 								<td>
 									<div class="btn-group">
 										<button type="button" class="btn btn-default delete" cmis-id="@relationship.getId()">
