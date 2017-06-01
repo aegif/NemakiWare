@@ -2,6 +2,7 @@
 
 @import util.Util
 @import util.Formatter;
+@import util.DateTimeUtil
 @import util.NemakiConfig
 @import play.mvc.Http.Context.Implicit
 @import org.apache.commons.collections.CollectionUtils
@@ -72,8 +73,8 @@
 										<td>@user.lastName</td>
 										<td>@user.firstName</td>
 										<td>@user.email</td>
-										<td>@Formatter.calToString(user.created, Implicit.lang.toLocale)</td>
-										<td>@Formatter.calToString(user.modified,  Implicit.lang.toLocale)</td>
+										<td>@DateTimeUtil.calToString(user.created, Implicit.lang.toLocale)</td>
+										<td>@DateTimeUtil.calToString(user.modified,  Implicit.lang.toLocale)</td>
 										<td>
 											<button type='button' class='btn btn-default user-detail' user-id='@user.id'><i class="fa fa-wrench"></i>@Messages("view.detail")</button>
 											@if(!user.isAdmin){

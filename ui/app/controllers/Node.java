@@ -85,6 +85,7 @@ import play.mvc.Http.MultipartFormData;
 import play.mvc.Http.MultipartFormData.FilePart;
 import play.mvc.Result;
 import util.CmisObjectTree;
+import util.DateTimeUtil;
 import util.NemakiConfig;
 import util.RelationshipUtil;
 import util.Util;
@@ -805,6 +806,8 @@ public class Node extends Controller {
 
 	@Secure
 	public Result create(String repositoryId) {
+		NemakiProfile profile = Util.getProfile(ctx());
+
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
 
@@ -824,7 +827,8 @@ public class Node extends Controller {
 		List<Updatability> upds = new ArrayList<Updatability>();
 		upds.add(Updatability.ONCREATE);
 		upds.add(Updatability.READWRITE);
-		HashMap<String, Object> param = Util.buildProperties(pdfs, input, upds);
+
+		HashMap<String, Object> param = Util.buildProperties(pdfs, input, upds, ctx().lang().toLocale());
 		param.put(PropertyIds.OBJECT_TYPE_ID, objectTypeId);
 
 		// Document/Folder specific
@@ -879,6 +883,8 @@ public class Node extends Controller {
 
 	@Secure
 	public Result update(String repositoryId, String id) {
+		NemakiProfile profile = Util.getProfile(ctx());
+
 		// Get an object in the repository
 		Session session = getCmisSession(repositoryId);
 		CmisObject o = session.getObject(id);
@@ -903,7 +909,7 @@ public class Node extends Controller {
 					// TODO type conversion
 					if (pdf.getPropertyType() == PropertyType.DATETIME) {
 						if (strValue != null && !strValue.isEmpty()) {
-							value = Util.convertStringToCalendar(strValue);
+							value = DateTimeUtil.convertStringToCalendar(strValue, ctx().lang().toLocale());
 							if (value == null) {
 								throw new RuntimeException("Invalid DateTime format.");
 							}
