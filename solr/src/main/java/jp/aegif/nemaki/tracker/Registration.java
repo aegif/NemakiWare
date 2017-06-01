@@ -80,6 +80,7 @@ public class Registration implements Runnable{
 	public void run() {
 		//Read MIME-Type filtering
 		for (ChangeEvent ce : list) {
+logger.info("run Registration:" + ce.toString());
 			switch (ce.getChangeType()) {
 			case CREATED:
 				registerSolrDocument(ce, fulltextEnabled, mimeTypeFilterEnabled, allowedMimeTypeFilter);
@@ -170,6 +171,7 @@ public class Registration implements Runnable{
 	}
 
 	private void deleteTempFile(AbstractUpdateRequest req) throws IOException, URISyntaxException{
+logger.info("Start deleteTempFile");
 		Collection<org.apache.solr.common.util.ContentStream> streams = req.getContentStreams();
 		Iterator<org.apache.solr.common.util.ContentStream> itr = streams.iterator();
 		if(itr.hasNext()){
@@ -191,6 +193,7 @@ public class Registration implements Runnable{
 	 * @param ce
 	 */
 	private void deleteSolrDocument(ChangeEvent ce) {
+logger.info("Start deleteSolrDocument");
 		try {
 			// Check if the SolrDocument exists
 			SolrQuery solrQuery = new SolrQuery();
@@ -399,7 +402,9 @@ public class Registration implements Runnable{
 	}
 
 	private void buildBaseParamMap(Map<String, Object> map, CmisObject object) {
+logger.info("Build BaseParam: " + object.toString());
 		String repositoryId = cmisSession.getRepositoryInfo().getId();
+
 		String objectId = object.getId();
 		map.put(Constant.FIELD_ID, buildUniqueId(repositoryId, objectId));
 		map.put(Constant.FIELD_REPOSITORY_ID, repositoryId);
@@ -445,7 +450,7 @@ public class Registration implements Runnable{
 				.getPropertyDefinitions();
 		Map<String, PropertyDefinition<?>> basePropDefs = object.getBaseType()
 				.getPropertyDefinitions();
-
+logger.info("Build Dynamic Param");
 		for (String propId : propDefs.keySet()) {
 			if (!basePropDefs.containsKey(propId)) {
 				boolean isSecondary = false;
