@@ -1,6 +1,7 @@
 @*{<meta charset="UTF-8" />}*@
 
 @import util.Formatter
+@import util.DateTimeUtil
 @import util.NemakiConfig
 @import play.mvc.Http.Context.Implicit
 @(repositoryId:String)(versions: List[org.apache.chemistry.opencmis.client.api.Document])(targetVersionObjectId:String)
@@ -30,7 +31,7 @@
 							</td>
 							<td>@version.getName()</td>
 							<td>@version.getCreatedBy()</td>
-							<td>@Formatter.calToString(version.getCreationDate(), Implicit.lang.toLocale)</td>
+							<td>@DateTimeUtil.calToString(version.getCreationDate(), Implicit.lang.toLocale)</td>
 							<td>@version.getCheckinComment()</td>
 							<td>
 							@if(version.getId() != targetVersionObjectId){
@@ -38,7 +39,7 @@
 									<i class="fa fa-step-backward" ></i>switch
 								</a>
 							}else{
-							
+
 							}
 							</td>
 						</tr>
