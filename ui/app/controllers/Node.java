@@ -151,43 +151,51 @@ public class Node extends Controller {
 	}
 
 	@Secure
-	public Result showChildren(String repositoryId, String id) {
+	public Result showChildren(String repositoryId, String objectId) {
 		NemakiProfile profile = Util.getProfile(ctx());
 		Session session = getCmisSession(repositoryId);
+		ObjectId id = session.createObjectId(objectId);
 
-		CmisObject parent = session.getObject(id);
-		// TODO type check
-		Folder _parent = (Folder) parent;
-
-		// TODO check params
-		OperationContext cmisOpCtx =  new OperationContextImpl();
-		cmisOpCtx.setIncludeRelationships(IncludeRelationships.NONE);
-		cmisOpCtx.setIncludeAllowableActions(true);
-		ItemIterable<CmisObject> children = _parent.getChildren(cmisOpCtx);
+		OperationContext cmisOpCtxParent = new OperationContextImpl();
+		cmisOpCtxParent.setIncludeRelationships(IncludeRelationships.NONE);
+		cmisOpCtxParent.setIncludeAcls(true);
+		cmisOpCtxParent.setIncludeAllowableActions(true);
+		CmisObject parent = session.getObject(id, cmisOpCtxParent);
 
 		List<CmisObject> results = new ArrayList<CmisObject>();
-		Iterator<CmisObject> itr = children.iterator();
-		while (itr.hasNext()) {
-			CmisObject obj = itr.next();
+		if (Util.isFolder(parent)) {
+			Folder _parent = (Folder) parent;
 
-			// Check and replace to PWC for owner
-			if (Util.isDocument(obj)) {
-				Document doc = (Document) obj;
-				if (doc.isVersionSeriesCheckedOut()) {
-					// check owner
-					String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
-					String owner = doc.getVersionSeriesCheckedOutBy();
-					if (userId.equals(owner)) {
-						String pwcId = doc.getVersionSeriesCheckedOutId();
-						CmisObject pwc = session.getObject(pwcId);
-						results.add(pwc);
-						continue;
+			logger.warn("[Call Folder#getChildren]Begin");
+			OperationContext cmisOpCtx = new OperationContextImpl();
+			cmisOpCtx.setIncludeRelationships(IncludeRelationships.NONE);
+			cmisOpCtx.setIncludeAcls(true);
+			cmisOpCtx.setIncludeAllowableActions(true);
+
+			ItemIterable<CmisObject> children = _parent.getChildren(cmisOpCtx);
+			Iterator<CmisObject> itr = children.iterator();
+			while (itr.hasNext()) {
+				CmisObject obj = itr.next();
+
+				// Check and replace to PWC for owner
+				if (Util.isDocument(obj)) {
+					Document doc = (Document) obj;
+					if (doc.isVersionSeriesCheckedOut()) {
+						// check owner
+						String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
+						String owner = doc.getVersionSeriesCheckedOutBy();
+						if (userId.equals(owner)) {
+							String pwcId = doc.getVersionSeriesCheckedOutId();
+							CmisObject pwc = session.getObject(pwcId);
+							results.add(pwc);
+							continue;
+						}
 					}
 				}
+				results.add(obj);
 			}
 
-			results.add(obj);
-		}
+		logger.warn("[Call Folder#getChildren]End");
 
 		// Fill in CMIS types
 		List<Tree<ObjectType>> typeFolders = session.getTypeDescendants(BaseTypeId.CMIS_FOLDER.value(), -1, false);
@@ -201,7 +209,10 @@ public class Node extends Controller {
 		List<Tree<ObjectType>> viewTypes = types.stream().filter(p -> enableTypes.contains(p.getItem().getLocalName()))
 				.collect(Collectors.toList());
 
-		return ok(tree.render(repositoryId, _parent, results, viewTypes, session, profile));
+			return ok(tree.render(repositoryId, _parent, results, viewTypes, session, profile));
+		}else{
+			return internalServerError();
+		}
 	}
 
 	@Secure
@@ -618,9 +629,15 @@ public class Node extends Controller {
 	}
 
 	@Secure
-	public Result showRelationshipCreate(String repositoryId, String id) {
+	public Result showRelationshipCreate(String repositoryId, String objectId) {
 		Session session = getCmisSession(repositoryId);
-		CmisObject obj = session.getObject(id);
+
+		ObjectId id = session.createObjectId(objectId);
+		OperationContext cmisOpCtx = new OperationContextImpl();
+		cmisOpCtx.setIncludeRelationships(IncludeRelationships.BOTH);
+		cmisOpCtx.setIncludeAcls(true);
+		cmisOpCtx.setIncludeAllowableActions(true);
+		CmisObject obj = session.getObject(id, cmisOpCtx);
 
 		String parentId = null;
 		if (Util.isDocument(obj)) {
@@ -647,10 +664,16 @@ public class Node extends Controller {
 	}
 
 	@Secure
-	public Result showRelationship(String repositoryId, String id) {
+	public Result showRelationship(String repositoryId, String objectId) {
 		Session session = getCmisSession(repositoryId);
 
-		CmisObject obj = session.getObject(id);
+		ObjectId id = session.createObjectId(objectId);
+		OperationContext cmisOpCtx = new OperationContextImpl();
+		cmisOpCtx.setIncludeRelationships(IncludeRelationships.BOTH);
+		cmisOpCtx.setIncludeAcls(true);
+		cmisOpCtx.setIncludeAllowableActions(true);
+		CmisObject obj = session.getObject(id, cmisOpCtx);
+
 
 		List<Relationship> relationships = obj.getRelationships();
 		List<Relationship> result = new ArrayList<Relationship>();
@@ -1432,9 +1455,10 @@ public class Node extends Controller {
 	@Secure
 	public Result getAce(String repositoryId, String objectId, String principalId) {
 		Session session = getCmisSession(repositoryId);
-		CmisObject obj = session.getObject(objectId);
+		ObjectId id = session.createObjectId(objectId);
+		Acl acl = session.getAcl(id, false);
 
-		Map<String, Ace> map = Util.zipWithId(obj.getAcl());
+		Map<String, Ace> map = Util.zipWithId(acl);
 		Ace ace = map.get(principalId);
 
 		if (ace == null) {

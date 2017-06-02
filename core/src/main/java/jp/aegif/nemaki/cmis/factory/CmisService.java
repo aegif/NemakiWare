@@ -341,7 +341,7 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 		Holder<ObjectData> parentObjectData = new Holder<ObjectData>(null);
 
 		ObjectInFolderList children = navigationService.getChildren(getCallContext(), repositoryId, folderId, filter,
-				orderBy, includeAllowableActions, null, null, includePathSegment, maxItems, skipCount, parentObjectData,
+				orderBy, includeAllowableActions, includeRelationships, renditionFilter, includePathSegment, maxItems, skipCount, parentObjectData,
 				extension);
 
 		if (parentObjectData != null && parentObjectData.getValue() != null) {
