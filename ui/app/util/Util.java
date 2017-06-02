@@ -1259,7 +1259,7 @@ public class Util {
 	public static String getValueAsString(Property property, Locale locale){
 		if( property.getType() == PropertyType.DATETIME){
 			Object value = property.getValue();
-
+			if (value == null) return "";
 			GregorianCalendar dateTimeValue = value instanceof GregorianCalendar ? (GregorianCalendar)value : DateTimeUtil.convertStringToCalendar(value.toString(), locale);
 			return DateTimeUtil.calToString(dateTimeValue, locale);
 
