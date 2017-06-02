@@ -121,7 +121,7 @@ public class Node extends Controller {
 	}
 
 	@Secure
-	public Result direct(String repositoryId, String objectId, String activateTabName){
+	public Result direct(String repositoryId, String objectId, String activateTabName) {
 		NemakiProfile profile = Util.getProfile(ctx());
 		Session session = getCmisSession(repositoryId);
 
@@ -143,7 +143,8 @@ public class Node extends Controller {
 			internalServerError("User retrieveing failure");
 		}
 
-		return ok(detailFull.render(repositoryId, target, parent.getId(), latest.getId(), activateTabName, user, session, profile));
+		return ok(detailFull.render(repositoryId, target, parent.getId(), latest.getId(), activateTabName, user,
+				session, profile));
 
 	}
 
@@ -188,9 +189,10 @@ public class Node extends Controller {
 		types.addAll(typeFolders);
 		types.addAll(typeDocs);
 
-		List<String> enableTypes =  NemakiConfig.getValues(PropertyKey.UI_VISIBILITY_CREATE_OBJECT);
+		List<String> enableTypes = NemakiConfig.getValues(PropertyKey.UI_VISIBILITY_CREATE_OBJECT);
 
-		List<Tree<ObjectType>> viewTypes = types.stream().filter(p -> enableTypes.contains(p.getItem().getLocalName())).collect(Collectors.toList());
+		List<Tree<ObjectType>> viewTypes = types.stream().filter(p -> enableTypes.contains(p.getItem().getLocalName()))
+				.collect(Collectors.toList());
 
 		return ok(tree.render(repositoryId, _parent, results, viewTypes, session, profile));
 	}
@@ -206,7 +208,7 @@ public class Node extends Controller {
 	@Secure
 	public Result search(String repositoryId, String term) {
 
-		if ( term.startsWith("[cmis]")) {
+		if (term.startsWith("[cmis]")) {
 			return this.searchFreeQuery(repositoryId, term);
 		}
 
@@ -229,7 +231,8 @@ public class Node extends Controller {
 		while (docItr.hasNext()) {
 			CmisObject doc = docItr.next();
 			boolean val = doc.getPropertyValue("cmis:isLatestVersion");
-			if (!val) continue;
+			if (!val)
+				continue;
 			list.add(doc);
 		}
 
@@ -248,7 +251,7 @@ public class Node extends Controller {
 		Iterator<QueryResult> resultItr = results.iterator();
 		List<QueryResult> qrList = new ArrayList<QueryResult>();
 
-		while ( resultItr.hasNext() ) {
+		while (resultItr.hasNext()) {
 			qrList.add(resultItr.next());
 		}
 		return ok(searchFreeQuery.render(repositoryId, term, qrList, profile));
@@ -298,46 +301,54 @@ public class Node extends Controller {
 
 	@Secure
 	public Result showProperty(String repositoryId, String id) {
-		Session session = getCmisSession(repositoryId);
+		try {
+			Session session = getCmisSession(repositoryId);
 
-		FileableCmisObject o = (FileableCmisObject) session.getObject(id);
+			FileableCmisObject o = (FileableCmisObject) session.getObject(id);
 
-		List<Property<?>> properties = o.getProperties();
-		List<SecondaryType> secondaryTypes = o.getSecondaryTypes();
+			List<Property<?>> properties = o.getProperties();
+			List<SecondaryType> secondaryTypes = o.getSecondaryTypes();
 
-		// divide
-		List<Property<?>> primaries = new ArrayList<Property<?>>();
-		Map<SecondaryType, List<Property<?>>> secondaries = new HashMap<SecondaryType, List<Property<?>>>();
-
-		if (CollectionUtils.isNotEmpty(secondaryTypes)) {
-			Iterator<SecondaryType> itr = secondaryTypes.iterator();
-			while (itr.hasNext()) {
-				SecondaryType st = itr.next();
-				secondaries.put(st, new ArrayList<Property<?>>());
-			}
-		}
-
-		for (Property<?> p : properties) {
-			boolean isSecondary = false;
+			// divide
+			List<Property<?>> primaries = new ArrayList<Property<?>>();
+			Map<SecondaryType, List<Property<?>>> secondaries = new HashMap<SecondaryType, List<Property<?>>>();
 
 			if (CollectionUtils.isNotEmpty(secondaryTypes)) {
-				Iterator<SecondaryType> itr2 = secondaryTypes.iterator();
-				while (itr2.hasNext()) {
-					SecondaryType st = itr2.next();
-					if (st.getPropertyDefinitions().containsKey(p.getId())) {
-						secondaries.get(st).add(p);
-						isSecondary = true;
-					}
+				Iterator<SecondaryType> itr = secondaryTypes.iterator();
+				while (itr.hasNext()) {
+					SecondaryType st = itr.next();
+					secondaries.put(st, new ArrayList<Property<?>>());
 				}
 			}
 
-			if (!isSecondary) {
-				primaries.add(p);
+			for (Property<?> p : properties) {
+				boolean isSecondary = false;
+
+				try {
+					if (CollectionUtils.isNotEmpty(secondaryTypes)) {
+						Iterator<SecondaryType> itr2 = secondaryTypes.iterator();
+						while (itr2.hasNext()) {
+							SecondaryType st = itr2.next();
+							if (st.getPropertyDefinitions().containsKey(p.getId())) {
+								secondaries.get(st).add(p);
+								isSecondary = true;
+							}
+						}
+					}
+
+					if (!isSecondary) {
+						primaries.add(p);
+					}
+				} catch (Exception ex) {
+					logger.error("Property Error name=" + p.getDisplayName());
+				}
 			}
 
+			return ok(property.render(repositoryId, o, primaries, secondaries));
+		} catch (Exception ex) {
+			logger.error("Error", ex);
+			return internalServerError();
 		}
-
-		return ok(property.render(repositoryId, o, primaries, secondaries));
 	}
 
 	@Secure
@@ -358,27 +369,21 @@ public class Node extends Controller {
 		Session session = getCmisSession(repositoryId);
 		CmisObject cmisObject = session.getObject(id);
 
-		//Relation target
+		// Relation target
 		List<Relationship> rels = cmisObject.getRelationships();
 		List<Document> list = null;
-		if (rels != null){
-			try{
-				list = rels.stream()
-						.filter(p -> id.equals(p.getSourceId().getId()))
-						.map(Relationship::getTargetId)
-						.distinct()
-						.map(p ->  session.getObject(p))
-						.filter(p -> Util.isDocument(p))
-						.map(p ->  (Document)p)
-						.collect(Collectors.toList())
-						;
-			}catch(CmisObjectNotFoundException ex){
+		if (rels != null) {
+			try {
+				list = rels.stream().filter(p -> id.equals(p.getSourceId().getId())).map(Relationship::getTargetId)
+						.distinct().map(p -> session.getObject(p)).filter(p -> Util.isDocument(p))
+						.map(p -> (Document) p).collect(Collectors.toList());
+			} catch (CmisObjectNotFoundException ex) {
 				logger.error("Source or target cmis object not found.", ex);
 			}
 		}
 
-		if(Util.isDocument(cmisObject)){
-			list.add((Document)cmisObject);
+		if (Util.isDocument(cmisObject)) {
+			list.add((Document) cmisObject);
 		}
 
 		File tempFile = null;
@@ -619,25 +624,16 @@ public class Node extends Controller {
 			parentId = folder.getFolderParent().getId();
 		}
 
-		List<String> enableTypes =  NemakiConfig.getValues(PropertyKey.UI_VISIBILITY_CREATE_RELATIONSHIP);
+		List<String> enableTypes = NemakiConfig.getValues(PropertyKey.UI_VISIBILITY_CREATE_RELATIONSHIP);
 
-		List<RelationshipType> viewTypesTemp = session
-				.getTypeDescendants(null, -1, true)
-				.stream()
-				.map(Tree::getItem)
-				.filter(p -> p.getBaseTypeId() == BaseTypeId.CMIS_RELATIONSHIP)
-				.map( p -> (RelationshipType)p)
-				.filter(p -> enableTypes.contains(p.getLocalName()))
-				.collect(Collectors.toList());
+		List<RelationshipType> viewTypesTemp = session.getTypeDescendants(null, -1, true).stream().map(Tree::getItem)
+				.filter(p -> p.getBaseTypeId() == BaseTypeId.CMIS_RELATIONSHIP).map(p -> (RelationshipType) p)
+				.filter(p -> enableTypes.contains(p.getLocalName())).collect(Collectors.toList());
 
-		List<RelationshipType> viewTypes =
-				viewTypesTemp.stream()
-				.filter(p -> p.getAllowedSourceTypes().contains(obj.getType()))
-				.collect(Collectors.toList());
+		List<RelationshipType> viewTypes = viewTypesTemp.stream()
+				.filter(p -> p.getAllowedSourceTypes().contains(obj.getType())).collect(Collectors.toList());
 
-		Set<ObjectType> targetTypes = viewTypes.stream()
-				.flatMap(p -> p.getAllowedTargetTypes().stream())
-				.distinct()
+		Set<ObjectType> targetTypes = viewTypes.stream().flatMap(p -> p.getAllowedTargetTypes().stream()).distinct()
 				.collect(Collectors.toSet());
 
 		return ok(relationship_create.render(repositoryId, obj, parentId, viewTypes, targetTypes));
@@ -917,7 +913,7 @@ public class Node extends Controller {
 							value = null;
 						}
 					} else if (pdf.getPropertyType() == PropertyType.BOOLEAN) {
-						value = strValue.isEmpty() ? null: Boolean.valueOf(strValue);
+						value = strValue.isEmpty() ? null : Boolean.valueOf(strValue);
 					}
 
 					properties.put(pdf.getId(), value);
@@ -1089,7 +1085,6 @@ public class Node extends Controller {
 		return redirectToParent(repositoryId, input);
 	}
 
-
 	@Secure
 	public Result delete(String repositoryId, String id) {
 		List<String> deletedList = new ArrayList<String>();
@@ -1108,26 +1103,25 @@ public class Node extends Controller {
 		return ok(json);
 	}
 
-	private static List<String> delete(String id, Session session){
+	private static List<String> delete(String id, Session session) {
 		List<String> deletedList = new ArrayList<String>();
 		CmisObject cmisObject = session.getObject(id);
 
-		//Relation cascade delete
+		// Relation cascade delete
 		List<Relationship> rels = cmisObject.getRelationships();
-		if (rels != null){
-			try{
+		if (rels != null) {
+			try {
 				rels.stream()
-				.filter(p -> id.equals(p.getSourceId().getId()) && RelationshipUtil.isCascadeRelation(p.getType()))
-				.map(Relationship::getTargetId)
-				.distinct()
-				.forEach(tId -> {
-					try{
-						deletedList.addAll(delete(tId.getId(), session));
-					}catch(Exception ex){
-						logger.error("Target cmis object id not found", ex);
-					}
-				});
-			}catch(CmisObjectNotFoundException ex){
+						.filter(p -> id.equals(p.getSourceId().getId())
+								&& RelationshipUtil.isCascadeRelation(p.getType()))
+						.map(Relationship::getTargetId).distinct().forEach(tId -> {
+							try {
+								deletedList.addAll(delete(tId.getId(), session));
+							} catch (Exception ex) {
+								logger.error("Target cmis object id not found", ex);
+							}
+						});
+			} catch (CmisObjectNotFoundException ex) {
 				logger.error("Source or target cmis object not found.", ex);
 			}
 		}
@@ -1229,6 +1223,7 @@ public class Node extends Controller {
 			// no-op
 		}
 	}
+
 	@Secure
 	public Result checkInPWC(String repositoryId, String id) throws FileNotFoundException {
 		Session session = getCmisSession(repositoryId);
@@ -1246,7 +1241,7 @@ public class Node extends Controller {
 	private static void checkInPWC(CmisObject cmisObject, String checkinComment) {
 		if (Util.isDocument(cmisObject)) {
 			Document doc = (Document) cmisObject;
-			if ( doc.isPrivateWorkingCopy() ){
+			if (doc.isPrivateWorkingCopy()) {
 				Map<String, Object> param = new HashMap<String, Object>();
 				doc.checkIn(true, param, doc.getContentStream(), checkinComment);
 			}
@@ -1397,7 +1392,8 @@ public class Node extends Controller {
 		}
 	}
 
-	private static ObjectId createRelation(String relType, String name, String repositoryId, String sourceId, String targetId) {
+	private static ObjectId createRelation(String relType, String name, String repositoryId, String sourceId,
+			String targetId) {
 		// Get an object in the repository
 		Session session = getCmisSession(repositoryId);
 

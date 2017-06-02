@@ -13,15 +13,15 @@
 	<body>
 
 	<!-- html -->
-	
+
 	@menubar(repositoryId, profile)
-	<div class="lightbox-me-container" style="left: 50%; margin-left: -400px; z-index: 1002; position: fixed; top: 50%; margin-top: -300px 
+	<div class="lightbox-me-container" style="left: 50%; margin-left: -400px; z-index: 1002; position: fixed; top: 50%; margin-top: -300px
 	@if(obj.getId() != latestId){
 		@if(obj.isPrivateWorkingCopy()){
 			;border-style:double
 		}else{
 			;border-style:dashed
-		}	
+		}
 	}
 	">
 	<a id="close_x" class="close sprited" href="@routes.Node.showChildren(repositoryId, parentId)" style="top:-15px;position:relative"><i class="fa fa-times-circle-o" aria-hidden="true"></i></a>
@@ -29,7 +29,7 @@
 	<div>
 		<h4>
 			<i class="fa @Util.getIconClassName(obj)"></i>@obj.getName()
-			[ 
+			[
 			@if(obj.isPrivateWorkingCopy()){
 				Working Copy
 			}else{
@@ -65,7 +65,7 @@
  						<li @if(TabUtil.isFileTab(activateTabName)){class="active"}>
  							<a href="@routes.Node.showFile(repositoryId, obj.getId)" data-toggle="tab" data-target="#file">@Messages("view.node.file")</a>
  						</li>
- 					} 				
+ 					}
  				}
  				<li @if(TabUtil.isPreviewTab(activateTabName)){class="active"}>
  					<a href="@routes.Node.showPreview(repositoryId, obj.getId)" data-toggle="tab" data-target="#preview">@Messages("view.node.preview")</a>
@@ -135,38 +135,36 @@
 
 
 	 $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
-		  var target = $(e.target).attr("href"); // activated tab
-		    $.ajax({
-		      type: "GET",
-		      url: target,
-		      error: function(data){
-		        alert("There was a problem");
-		      },
-		      success: function(data){
-		    	var t = $(e.target).attr("data-target");
-		        $(t).html(data);
-		      }
-		  });
-		})
+		var target = $(e.target).attr("href"); // activated tab
+	    $.ajax({
+	      type: "GET",
+	      url: target,
+	    }).done(function(data){
+	    	var t = $(e.target).attr("data-target");
+	        $(t).html(data);
+	    }).fail(function(xhr, status, error){
+			alert(xhr.status + " " + xhr.statusText + ": Failed to show tab content! Url : " + target);
+	    });
+	});
 
-		$('.favorite-toggle').on('click', function(){
-			$.ajax({
-				type: "PUT",
-			    url: "@routes.User.toggleFavorite(repositoryId, user.id, obj.getId)",
-			}).done(function(){
-				if($('#favorite-star').hasClass('fa-star')){
-					$('#favorite-star').removeClass('fa-star');
-					$('#favorite-star').addClass('fa-star-o');
-					$('#favorite-star').attr('title', "@Messages("view.user.favorite.untoggled.desc1")" + "\n" + "@Messages("view.user.favorite.untoggled.desc2")");
-				}else{
-					$('#favorite-star').addClass('fa-star');
-					$('#favorite-star').removeClass('fa-star-o');
-					$('#favorite-star').attr('title', "@Messages("view.user.favorite.toggled.desc1")" + "\n" + "@Messages("view.user.favorite.toggled.desc2")");
-				}
-			}).fail(function(xhr, status, error){
-				alert(xhr.status + " " + xhr.statusText + ": Failed to swith favorite star");
-			});
+	$('.favorite-toggle').on('click', function(){
+		$.ajax({
+			type: "PUT",
+		    url: "@routes.User.toggleFavorite(repositoryId, user.id, obj.getId)",
+		}).done(function(){
+			if($('#favorite-star').hasClass('fa-star')){
+				$('#favorite-star').removeClass('fa-star');
+				$('#favorite-star').addClass('fa-star-o');
+				$('#favorite-star').attr('title', "@Messages("view.user.favorite.untoggled.desc1")" + "\n" + "@Messages("view.user.favorite.untoggled.desc2")");
+			}else{
+				$('#favorite-star').addClass('fa-star');
+				$('#favorite-star').removeClass('fa-star-o');
+				$('#favorite-star').attr('title', "@Messages("view.user.favorite.toggled.desc1")" + "\n" + "@Messages("view.user.favorite.toggled.desc2")");
+			}
+		}).fail(function(xhr, status, error){
+			alert(xhr.status + " " + xhr.statusText + ": Failed to swith favorite star");
 		});
+	});
 	</script>
 	</div>
 </body>
