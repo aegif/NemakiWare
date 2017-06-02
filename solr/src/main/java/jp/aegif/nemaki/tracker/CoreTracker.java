@@ -174,7 +174,7 @@ public class CoreTracker extends CloseHook {
 			if (changeEvents == null) {
 				return;
 			}
-
+logger.info("Start indexing of events:" + changeEvents.getTotalNumItems());
 			List<ChangeEvent> events = changeEvents.getChangeEvents();
 
 			// After 2nd crawling, discard the first item
@@ -184,6 +184,8 @@ public class CoreTracker extends CloseHook {
 					events.remove(0);
 			}
 			if (events.isEmpty()) return;
+
+logger.info("token: " + token);
 
 			// Parse filtering configuration
 			PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
@@ -223,6 +225,7 @@ public class CoreTracker extends CloseHook {
 				}
 
 				List<ChangeEvent> listPerThread = list.subList(fromIndex, toIndex);
+logger.info("Num of change events for this thread: " + listPerThread.size());
 				Session cmisSession = CmisSessionFactory.getSession(repositoryId);
 				Registration registration = new Registration(cmisSession, core, indexServer, listPerThread,
 						fulltextEnabled, mimeTypeFilterEnabled, allowedMimeTypeFilter);
@@ -250,6 +253,7 @@ public class CoreTracker extends CloseHook {
 	 * @return
 	 */
 	private String readLatestChangeToken(String repositoryId) {
+logger.info("Start readLatest");
 		SolrQuery solrQuery = new SolrQuery();
 		solrQuery.setQuery(Constant.FIELD_REPOSITORY_ID + ":" + repositoryId);
 
@@ -278,7 +282,7 @@ public class CoreTracker extends CloseHook {
 	 * @return
 	 */
 	private void storeLatestChangeToken(String token, String repositoryId) {
-
+logger.info("Start storeLatestChangeToken");
 		Map<String, Object> map = new HashMap<String, Object>();
 		map.put(Constant.FIELD_REPOSITORY_ID, repositoryId);
 		map.put(Constant.FIELD_TOKEN, token);
@@ -302,7 +306,7 @@ public class CoreTracker extends CloseHook {
 	 */
 	private ChangeEvents getCmisChangeLog(String trackingType, String repositoryId) {
 		PropertyManager propMgr = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
-
+logger.info("Start getCmisChangeLog");
 		String _latestToken = readLatestChangeToken(repositoryId);
 		String latestToken = (StringUtils.isEmpty(_latestToken)) ? null : _latestToken;
 
@@ -364,6 +368,7 @@ public class CoreTracker extends CloseHook {
 	 */
 	// TODO Unify that of Registration class
 	private AbstractUpdateRequest buildUpdateRequest(Map<String, Object> map) {
+logger.info("Start buildUpdateRequest");
 		UpdateRequest up = new UpdateRequest();
 		SolrInputDocument sid = new SolrInputDocument();
 
@@ -381,6 +386,7 @@ public class CoreTracker extends CloseHook {
 
 		// Set Solr action parameter
 		up.setAction(AbstractUpdateRequest.ACTION.COMMIT, true, true);
+logger.info(up.toString());
 		return up;
 	}
 }
