@@ -221,10 +221,13 @@ public class ContentServiceImpl implements ContentService {
 	 */
 	@Override
 	public List<Content> getChildren(String repositoryId, String folderId) {
+		List<Content> result = new ArrayList<Content>();
+		List<Content> daoContentList = contentDaoService.getChildren(repositoryId, folderId);
+		for(Content content : daoContentList){
+			result.add(getContentInternal(repositoryId, content));
+		}
 
-		return contentDaoService.getChildren(repositoryId, folderId).stream()
-				.map(content -> getContentInternal(repositoryId, content))
-				.collect(Collectors.toList());
+		return result;
 	}
 
 	/**
