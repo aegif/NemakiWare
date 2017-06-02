@@ -38,6 +38,7 @@ import org.apache.chemistry.opencmis.client.api.SecondaryType;
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.client.api.Tree;
 import org.apache.chemistry.opencmis.client.runtime.ObjectIdImpl;
+import org.apache.chemistry.opencmis.client.runtime.OperationContextImpl;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
@@ -49,6 +50,7 @@ import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
+import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
@@ -156,7 +158,12 @@ public class Node extends Controller {
 		CmisObject parent = session.getObject(id);
 		// TODO type check
 		Folder _parent = (Folder) parent;
-		ItemIterable<CmisObject> children = _parent.getChildren();
+
+		// TODO check params
+		OperationContext cmisOpCtx =  new OperationContextImpl();
+		cmisOpCtx.setIncludeRelationships(IncludeRelationships.NONE);
+		cmisOpCtx.setIncludeAllowableActions(true);
+		ItemIterable<CmisObject> children = _parent.getChildren(cmisOpCtx);
 
 		List<CmisObject> results = new ArrayList<CmisObject>();
 		Iterator<CmisObject> itr = children.iterator();
