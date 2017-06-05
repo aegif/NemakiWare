@@ -1,5 +1,7 @@
 package jp.aegif.nemaki.patch;
 
+import java.util.List;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.ektorp.CouchDbConnector;
@@ -19,12 +21,13 @@ public class PatchService {
 	private RepositoryInfoMap repositoryInfoMap;
 	private ConnectorPool connectorPool;
 
-	private Patch_20160815 patch_20160815;
-	private Patch_20170425 patch_20170425;
+	private List<AbstractNemakiPatch> patchList;
+
 	public void apply(){
 		createPathView();
-		patch_20160815.apply();
-		patch_20170425.apply();
+		for(AbstractNemakiPatch patch : patchList){
+			patch.apply();
+		}
 	}
 
 	private void createPathView(){
@@ -48,12 +51,10 @@ public class PatchService {
 		this.connectorPool = connectorPool;
 	}
 
-	public void setPatch_20160815(Patch_20160815 patch_20160815) {
-		this.patch_20160815 = patch_20160815;
+	public void setPatchList(List<AbstractNemakiPatch> patchList) {
+		this.patchList = patchList;
 	}
 
-	public void setPatch_20170425(Patch_20170425 patch_20170425) {
-		this.patch_20170425 = patch_20170425;
-	}
+
 
 }
