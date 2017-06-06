@@ -294,7 +294,7 @@ public interface ContentDaoService {
 	 * @return
 	 */
 	List<String> getChildrenNames(String repositoryId, String parentId);
-	
+
 	/**
 	 * Get a relationship
 	 * @param repositoryId TODO
@@ -352,15 +352,15 @@ public interface ContentDaoService {
 	UserItem getUserItem(String repositoryId, String objectId);
 	UserItem getUserItemById(String repositoryId, String userId);
 	List<UserItem> getUserItems(String repositoryId);
-	
+
 	GroupItem getGroupItem(String repositoryId, String objectId);
 	GroupItem getGroupItemById(String repositoryId, String userId);
 	List<GroupItem> getGroupItems(String repositoryId);
 	List<String> getJoinedGroupByUserId(String repositoryId, String userId);
-	
+
 	PatchHistory getPatchHistoryByName(String repositoryId, String name);
 	Configuration getConfiguration(String repositoryId);
-	
+
 	/**
 	 * Create a document
 	 * @param repositoryId TODO
@@ -414,15 +414,15 @@ public interface ContentDaoService {
 	 * @return the newly created item
 	 */
 	Item create(String repositoryId, Item item);
-	
+
 	UserItem create(String repositoryId, UserItem userItem);
 	GroupItem create(String repositoryId, GroupItem groupItem);
 
-	PatchHistory create(String repositoryId, PatchHistory patchHistory); 
+	PatchHistory create(String repositoryId, PatchHistory patchHistory);
 	Configuration create(String repositoryId, Configuration configuration);
-	
+
 	NodeBase create(String repositoryId, NodeBase nodeBase);
-	
+
 	/**
 	 * Update a document
 	 * @param repositoryId TODO
@@ -431,7 +431,7 @@ public interface ContentDaoService {
 	 * @return the newly updated document
 	 */
 	Document update(String repositoryId, Document document);
-	
+
 	Document move(String repositoryId, Document document, String sourceId);
 
 	/**
@@ -451,7 +451,7 @@ public interface ContentDaoService {
 	 * @return the newly updated folder
 	 */
 	Folder update(String repositoryId, Folder folder);
-	
+
 	Folder move(String repositoryId, Folder folder, String sourceId);
 
 	/**
@@ -480,16 +480,16 @@ public interface ContentDaoService {
 	 * @return the newly updated item
 	 */
 	Item update(String repositoryId, Item item);
-	
+
 	UserItem update(String repositoryId, UserItem userItem);
 	GroupItem update(String repositoryId, GroupItem groupItem);
 
 	PatchHistory update(String repositoryId, PatchHistory patchHistory);
-	
+
 	Configuration update(String repositoryId, Configuration configuration);
-	
+
 	NodeBase update(String repositoryId, NodeBase nodeBase);
-	
+
 	/**
 	 * Delete a content
 	 * @param repositoryId TODO
@@ -534,7 +534,7 @@ public interface ContentDaoService {
 	 * @return
 	 */
 	String createRendition(String repositoryId, Rendition rendition, ContentStream contentStream);
-	
+
 	/**
 	 * Create an attachment
 	 * @param repositoryId TODO
@@ -585,6 +585,14 @@ public interface ContentDaoService {
 	 * @return Return results with descending order by time
 	 */
 	List<Change> getLatestChanges(String repositoryId, String startToken, int maxItems);
+
+	/**
+	 *
+	 * @param repositoryId
+	 * @param objectId
+	 * @return
+	 */
+	List<Change> getObjectChanges(String repositoryId, String objectId);
 
 	/**
 	 * Create a change event
@@ -652,7 +660,7 @@ public interface ContentDaoService {
 	List<Archive> getAllArchives(String repositoryId);
 
 	List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc);
-	
+
 	/**
 	 * Create an archive of a content
 	 * @param repositoryId TODO
@@ -678,11 +686,11 @@ public interface ContentDaoService {
 	 * @param archiveId
 	 */
 	void deleteArchive(String repositoryId, String archiveId);
-	
+
 	void deleteDocumentArchive(String repositoryId, String archiveId);
 
 	void refreshCmisObjectData(String repositoryId, String objectId);
-	
+
 	/**
 	 * Restore a content from its archive
 	 * @param repositoryId TODO
@@ -696,6 +704,6 @@ public interface ContentDaoService {
 	 * @param archive
 	 */
 	void restoreAttachment(String repositoryId, Archive archive);
-	
+
 	void restoreDocumentWithArchive(String repositoryId, Archive archive);
 }
