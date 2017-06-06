@@ -42,7 +42,7 @@ public class CacheResource extends ResourceBase{
 	@Path("/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public String delete(@PathParam("repositoryId") String repositoryId, @PathParam("id") String objectId,
-			@QueryParam("before") String strBeforeDate, @Context HttpServletRequest httpRequest) {
+			@QueryParam("date") String strBeforeDate, @Context HttpServletRequest httpRequest) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
@@ -51,9 +51,9 @@ public class CacheResource extends ResourceBase{
 		try {
 			lock.lock();
 			if (StringUtils.isNotEmpty(strBeforeDate)) {
-				GregorianCalendar gc = DataUtil.convertToCalender(strBeforeDate);
+				GregorianCalendar beforeDate = DataUtil.convertToCalender(strBeforeDate);
 				Content c = nemakiCachePool.get(repositoryId).getContentCache().get(objectId);
-				if (gc.compareTo(c.getModified()) < 0) {
+				if (beforeDate.compareTo(c.getModified()) < 0) {
 					nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId);
 				}
 			}else{
