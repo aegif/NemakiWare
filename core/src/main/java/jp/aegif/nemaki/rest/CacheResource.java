@@ -21,6 +21,7 @@ import org.springframework.stereotype.Component;
 import jp.aegif.nemaki.common.ErrorCode;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.util.DataUtil;
+import jp.aegif.nemaki.util.cache.CacheService;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.lock.ThreadLockService;
 
@@ -49,15 +50,16 @@ public class CacheResource extends ResourceBase{
 
 		Lock lock = threadLockService.getWriteLock(repositoryId, objectId);
 		try {
+			CacheService cache = nemakiCachePool.get(repositoryId);
 			lock.lock();
 			if (StringUtils.isNotEmpty(strBeforeDate)) {
 				GregorianCalendar beforeDate = DataUtil.convertToCalender(strBeforeDate);
-				Content c = nemakiCachePool.get(repositoryId).getContentCache().get(objectId);
+				Content c = cache.getContentCache().get(objectId);
 				if (beforeDate.compareTo(c.getModified()) < 0) {
-					nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId);
+					cache.removeCmisAndContentCache(objectId);
 				}
 			}else{
-				nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId);
+				cache.removeCmisAndContentCache(objectId);
 			}
 		} catch (ParseException e) {
 			addErrMsg(errMsg, ITEM_ERROR, ErrorCode.ERR_READ);
