@@ -97,6 +97,7 @@ import jp.aegif.nemaki.model.exception.ParentNoLongerExistException;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
+import jp.aegif.nemaki.util.cache.model.NemakiCache;
 import jp.aegif.nemaki.util.constant.CmisPermission;
 import jp.aegif.nemaki.util.constant.NodeType;
 import jp.aegif.nemaki.util.constant.PrincipalId;
@@ -220,10 +221,13 @@ public class ContentServiceImpl implements ContentService {
 	 */
 	@Override
 	public List<Content> getChildren(String repositoryId, String folderId) {
+		List<Content> result = new ArrayList<Content>();
+		List<Content> daoContentList = contentDaoService.getChildren(repositoryId, folderId);
+		for(Content content : daoContentList){
+			result.add(getContentInternal(repositoryId, content));
+		}
 
-		return contentDaoService.getChildren(repositoryId, folderId).stream()
-				.map(content -> getContentInternal(repositoryId, content))
-				.collect(Collectors.toList());
+		return result;
 	}
 
 	/**
@@ -1785,7 +1789,8 @@ public class ContentServiceImpl implements ContentService {
 	// Merge inherited ACL
 	@Override
 	public Acl calculateAcl(String repositoryId, Content content) {
-		Acl acl = nemakiCachePool.get(repositoryId).getAclCache().get(content.getId());
+		NemakiCache<Acl> aclCache = nemakiCachePool.get(repositoryId).getAclCache();
+		Acl acl = aclCache.get(content.getId());
 
 		if (acl == null) {
 			boolean iht = getAclInheritedWithDefault(repositoryId, content);
@@ -1811,13 +1816,21 @@ public class ContentServiceImpl implements ContentService {
 			convertSystemPrincipalId(repositoryId, acl.getAllAces());
 
 			// Caching the results of calculation
-			nemakiCachePool.get(repositoryId).getAclCache().put(content.getId(), acl);
+			aclCache.put(content.getId(), acl);
 		}
 		return acl;
 	}
 
 	private List<Ace> calculateAclInternal(String repositoryId, List<Ace> result, Content content) {
-		List<Ace> aces = content.getAcl().getLocalAces();
+		Acl contentAcl = content.getAcl();
+		List<Ace> aces = null;
+		if (contentAcl == null){
+			log.error("Invalid Acl, content ACL is null! [ID=" + content.getId() + "]" + content.getName() );
+			aces = new ArrayList<Ace>();
+		}else{
+			aces = contentAcl.getLocalAces();
+		}
+
 		if (isRoot(repositoryId, content) || !getAclInheritedWithDefault(repositoryId, content)) {
 			List<Ace> rootAces = new ArrayList<Ace>();
 

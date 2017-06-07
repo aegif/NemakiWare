@@ -34,6 +34,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.ektorp.Attachment;
 import org.ektorp.AttachmentInputStream;
+import org.ektorp.ComplexKey;
 import org.ektorp.CouchDbConnector;
 import org.ektorp.ViewQuery;
 import org.ektorp.ViewResult;
@@ -309,12 +310,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		return null;
 	}
 
-	// TODO Use view
 	@Override
 	public Document getDocument(String repositoryId, String objectId) {
-		CouchDocument cd = connectorPool.get(repositoryId).get(CouchDocument.class, objectId);
-		Document doc = cd.convert();
-		return doc;
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("documents").key(objectId);
+		List<CouchDocument> cd = connectorPool.get(repositoryId).queryView(query, CouchDocument.class);
+		if (!CollectionUtils.isEmpty(cd)) {
+			return cd.get(0).convert();
+		} else {
+			return null;
+		}
 	}
 
 	@Override
@@ -434,7 +438,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public Folder getFolderByPath(String repositoryId, String path) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("foldersByPath").key(path);
 		List<CouchFolder> l = connectorPool.get(repositoryId).queryView(query, CouchFolder.class);
-
 		if (CollectionUtils.isEmpty(l))
 			return null;
 		return l.get(0).convert();
@@ -446,7 +449,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("children").key(parentId);
 		List<CouchContent> list = connectorPool.get(repositoryId).queryView(query, CouchContent.class);
 		if (CollectionUtils.isNotEmpty(list)) {
-			contents = list.stream().map(p -> p.convert()).collect(Collectors.toList());
+			for(CouchContent c : list){
+				contents.add(c.convert());
+			}
 		}
 		return contents;
 	}
@@ -1088,6 +1093,21 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		}
 		return result;
 	}
+
+	@Override
+	public List<Change> getObjectChanges(String repositoryId, String objectId) {
+		List<Change> result = new ArrayList<Change>();
+		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("changesByObjectId")
+				.key(objectId).descending(false);
+
+		List<CouchChange> l = connectorPool.get(repositoryId).queryView(query, CouchChange.class);
+		for (CouchChange cc : l) {
+			result.add(cc.convert());
+		}
+		return result;
+
+	}
+
 
 	@Override
 	public Change create(String repositoryId, Change change) {

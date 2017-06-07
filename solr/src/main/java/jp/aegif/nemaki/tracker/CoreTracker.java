@@ -37,6 +37,7 @@ import java.util.Set;
 import jp.aegif.nemaki.NemakiCoreAdminHandler;
 import jp.aegif.nemaki.util.CmisSessionFactory;
 import jp.aegif.nemaki.util.Constant;
+import jp.aegif.nemaki.util.NemakiCacheManager;
 import jp.aegif.nemaki.util.PropertyKey;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.StringPool;
@@ -120,15 +121,15 @@ public class CoreTracker extends CloseHook {
 				// Initialize all documents
 				indexServer.deleteByQuery("*:*");
 				indexServer.commit();
-				logger.info("{}:Successfully initialized!",core.getName());
+				logger.info("{}:Successfully initialized!", core.getName());
 
 				tokenServer.deleteByQuery("*:*");
 				tokenServer.commit();
-				logger.info("{}:Successfully initialized!",core.getName());
+				logger.info("{}:Successfully initialized!", core.getName());
 			} catch (SolrServerException e) {
-				logger.error("{}:Initialization failed!",core.getName(), e);
+				logger.error("{}:Initialization failed!", core.getName(), e);
 			} catch (IOException e) {
-				logger.error("{}:Initialization failed!",core.getName(), e);
+				logger.error("{}:Initialization failed!", core.getName(), e);
 			}
 		}
 	}
@@ -139,14 +140,14 @@ public class CoreTracker extends CloseHook {
 				// Initialize all documents
 				indexServer.deleteByQuery(Constant.FIELD_REPOSITORY_ID + ":" + repositoryId);
 				indexServer.commit();
-				logger.info("{}:Successfully initialized!",core.getName());
+				logger.info("{}:Successfully initialized!", core.getName());
 
 				storeLatestChangeToken("", repositoryId);
 
 			} catch (SolrServerException e) {
-				logger.error("{}:Initialization failed!",core.getName(), e);
+				logger.error("{}:Initialization failed!", core.getName(), e);
 			} catch (IOException e) {
-				logger.error("{}:Initialization failed!",core.getName(), e);
+				logger.error("{}:Initialization failed!", core.getName(), e);
 			}
 		}
 	}
@@ -159,11 +160,11 @@ public class CoreTracker extends CloseHook {
 	public void index(String trackingType) {
 		RepositorySettings settings = CmisSessionFactory.getRepositorySettings();
 		for (String repositoryId : settings.getIds()) {
-			try{
+			try {
 				// TODO multi-threding
 				index(trackingType, repositoryId);
-			}catch(Exception ex){
-				logger.error("Indexing error repository : {}",repositoryId, ex);
+			} catch (Exception ex) {
+				logger.error("Indexing error repository : {}", repositoryId, ex);
 			}
 		}
 	}
@@ -174,15 +175,19 @@ public class CoreTracker extends CloseHook {
 			if (changeEvents == null) {
 				return;
 			}
+			logger.info("Start indexing of events:{}" , changeEvents.getTotalNumItems());
 			List<ChangeEvent> events = changeEvents.getChangeEvents();
 
 			// After 2nd crawling, discard the first item
 			// Because the specs say that it's included in the results
 			String token = readLatestChangeToken(repositoryId);
 			if (StringUtils.isNotEmpty(token) && CollectionUtils.isNotEmpty(events)) {
-					events.remove(0);
+				events.remove(0);
 			}
-			if (events.isEmpty()) return;
+			if (events.isEmpty())
+				return;
+
+			logger.info("token: {}", token);
 
 			// Parse filtering configuration
 			PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
@@ -208,14 +213,25 @@ public class CoreTracker extends CloseHook {
 				numberOfThread = list.size();
 				numberPerThread = 1;
 			}
-
+			int diff = list.size() - (numberOfThread * numberPerThread);
+			int toIndex = 0;
+			int fromIndex = 0;
 			for (int i = 0; i <= numberOfThread; i++) {
-				int toIndex = (numberPerThread * (i + 1) > list.size()) ? list.size() : numberPerThread * (i + 1);
+				fromIndex = toIndex;
+				toIndex += numberPerThread;
+				if (i < diff) {
+					toIndex += 1;
+				}
+				if (toIndex > list.size()) {
+					continue;
+				}
 
-				List<ChangeEvent> listPerThread = list.subList(numberPerThread * i, toIndex);
+				List<ChangeEvent> listPerThread = list.subList(fromIndex, toIndex);
+				logger.info("Num of change events for this thread: {}" , listPerThread.size());
 				Session cmisSession = CmisSessionFactory.getSession(repositoryId);
+				NemakiCacheManager cache = new NemakiCacheManager(repositoryId);
 				Registration registration = new Registration(cmisSession, core, indexServer, listPerThread,
-						fulltextEnabled, mimeTypeFilterEnabled, allowedMimeTypeFilter);
+						fulltextEnabled, mimeTypeFilterEnabled, allowedMimeTypeFilter, cache);
 				Thread t = new Thread(registration);
 				t.start();
 				try {
@@ -227,7 +243,6 @@ public class CoreTracker extends CloseHook {
 
 			// Save the latest token
 			storeLatestChangeToken(changeEvents.getLatestChangeLogToken(), repositoryId);
-
 			// In case of FUll mode, repeat until indexing all change logs
 			if (Constant.MODE_FULL.equals(trackingType)) {
 				index(Constant.MODE_FULL, repositoryId);
@@ -241,6 +256,7 @@ public class CoreTracker extends CloseHook {
 	 * @return
 	 */
 	private String readLatestChangeToken(String repositoryId) {
+		logger.info("Start readLatest : {}", repositoryId);
 		SolrQuery solrQuery = new SolrQuery();
 		solrQuery.setQuery(Constant.FIELD_REPOSITORY_ID + ":" + repositoryId);
 
@@ -248,7 +264,7 @@ public class CoreTracker extends CloseHook {
 		try {
 			resp = tokenServer.query(solrQuery);
 		} catch (SolrServerException e) {
-			logger.error("Read latest ChangeToken query failed : {} ",solrQuery, e);
+			logger.error("Read latest ChangeToken query failed : {} ", solrQuery, e);
 		}
 
 		String latestChangeToken = "";
@@ -269,7 +285,7 @@ public class CoreTracker extends CloseHook {
 	 * @return
 	 */
 	private void storeLatestChangeToken(String token, String repositoryId) {
-
+		logger.info("Start storeLatestChangeToken");
 		Map<String, Object> map = new HashMap<String, Object>();
 		map.put(Constant.FIELD_REPOSITORY_ID, repositoryId);
 		map.put(Constant.FIELD_TOKEN, token);
@@ -293,9 +309,10 @@ public class CoreTracker extends CloseHook {
 	 */
 	private ChangeEvents getCmisChangeLog(String trackingType, String repositoryId) {
 		PropertyManager propMgr = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
-
+		logger.info("Start getCmisChangeLog {} : {}", trackingType, repositoryId);
 		String _latestToken = readLatestChangeToken(repositoryId);
 		String latestToken = (StringUtils.isEmpty(_latestToken)) ? null : _latestToken;
+		logger.info("Repository={} LastChangeToken={}",repositoryId, latestToken);
 
 		long _numItems = 0;
 		if (Constant.MODE_DELTA.equals(trackingType)) {
@@ -355,6 +372,7 @@ public class CoreTracker extends CloseHook {
 	 */
 	// TODO Unify that of Registration class
 	private AbstractUpdateRequest buildUpdateRequest(Map<String, Object> map) {
+		logger.info("Start buildUpdateRequest");
 		UpdateRequest up = new UpdateRequest();
 		SolrInputDocument sid = new SolrInputDocument();
 
@@ -372,6 +390,7 @@ public class CoreTracker extends CloseHook {
 
 		// Set Solr action parameter
 		up.setAction(AbstractUpdateRequest.ACTION.COMMIT, true, true);
+		logger.info(up.toString());
 		return up;
 	}
 }

@@ -99,38 +99,36 @@
 	}
 
 
-	 $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
-		  var target = $(e.target).attr("href"); // activated tab
-		    $.ajax({
-		      type: "GET",
-		      url: target,
-		      error: function(data){
-		        alert("There was a problem");
-		      },
-		      success: function(data){
-		    	var t = $(e.target).attr("data-target");
-		        $(t).html(data);
-		      }
-		  });
-		})
+	$('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+		var target = $(e.target).attr("href"); // activated tab
+	    $.ajax({
+	      type: "GET",
+	      url: target,
+	    }).done(function(data){
+	    	var t = $(e.target).attr("data-target");
+	        $(t).html(data);
+	    }).fail(function(xhr, status, error){
+			alert(xhr.status + " " + xhr.statusText + ": Failed to show tab content! Url : " + target);
+	    });
+	});
 
-		$('.favorite-toggle').on('click', function(){
-			$.ajax({
-				type: "PUT",
-			    url: "@routes.User.toggleFavorite(repositoryId, user.id, obj.getId)",
-			}).done(function(){
-				if($('#favorite-star').hasClass('fa-star')){
-					$('#favorite-star').removeClass('fa-star');
-					$('#favorite-star').addClass('fa-star-o');
-					$('#favorite-star').attr('title', "@Messages("view.user.favorite.untoggled.desc1")" + "\n" + "@Messages("view.user.favorite.untoggled.desc2")");
-				}else{
-					$('#favorite-star').addClass('fa-star');
-					$('#favorite-star').removeClass('fa-star-o');
-					$('#favorite-star').attr('title', "@Messages("view.user.favorite.toggled.desc1")" + "\n" + "@Messages("view.user.favorite.toggled.desc2")");
-				}
-			}).fail(function(xhr, status, error){
-				alert(xhr.status + " " + xhr.statusText + ": Failed to swith favorite star");
-			});
+	$('.favorite-toggle').on('click', function(){
+		$.ajax({
+			type: "PUT",
+		    url: "@routes.User.toggleFavorite(repositoryId, user.id, obj.getId)",
+		}).done(function(){
+			if($('#favorite-star').hasClass('fa-star')){
+				$('#favorite-star').removeClass('fa-star');
+				$('#favorite-star').addClass('fa-star-o');
+				$('#favorite-star').attr('title', "@Messages("view.user.favorite.untoggled.desc1")" + "\n" + "@Messages("view.user.favorite.untoggled.desc2")");
+			}else{
+				$('#favorite-star').addClass('fa-star');
+				$('#favorite-star').removeClass('fa-star-o');
+				$('#favorite-star').attr('title', "@Messages("view.user.favorite.toggled.desc1")" + "\n" + "@Messages("view.user.favorite.toggled.desc2")");
+			}
+		}).fail(function(xhr, status, error){
+			alert(xhr.status + " " + xhr.statusText + ": Failed to swith favorite star");
 		});
+	});
 	</script>
 }

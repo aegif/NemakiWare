@@ -38,6 +38,7 @@ import org.apache.chemistry.opencmis.client.api.SecondaryType;
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.client.api.Tree;
 import org.apache.chemistry.opencmis.client.runtime.ObjectIdImpl;
+import org.apache.chemistry.opencmis.client.runtime.OperationContextImpl;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
@@ -49,6 +50,7 @@ import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
+import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
@@ -85,6 +87,7 @@ import play.mvc.Http.MultipartFormData;
 import play.mvc.Http.MultipartFormData.FilePart;
 import play.mvc.Result;
 import util.CmisObjectTree;
+import util.DateTimeUtil;
 import util.NemakiConfig;
 import util.RelationshipUtil;
 import util.Util;
@@ -120,7 +123,7 @@ public class Node extends Controller {
 	}
 
 	@Secure
-	public Result direct(String repositoryId, String objectId, String activateTabName){
+	public Result direct(String repositoryId, String objectId, String activateTabName) {
 		NemakiProfile profile = Util.getProfile(ctx());
 		Session session = getCmisSession(repositoryId);
 
@@ -142,43 +145,57 @@ public class Node extends Controller {
 			internalServerError("User retrieveing failure");
 		}
 
-		return ok(detailFull.render(repositoryId, target, parent.getId(), latest.getId(), activateTabName, user, session, profile));
+		return ok(detailFull.render(repositoryId, target, parent.getId(), latest.getId(), activateTabName, user,
+				session, profile));
 
 	}
 
 	@Secure
-	public Result showChildren(String repositoryId, String id) {
+	public Result showChildren(String repositoryId, String objectId) {
 		NemakiProfile profile = Util.getProfile(ctx());
 		Session session = getCmisSession(repositoryId);
+		ObjectId id = session.createObjectId(objectId);
 
-		CmisObject parent = session.getObject(id);
-		// TODO type check
-		Folder _parent = (Folder) parent;
-		ItemIterable<CmisObject> children = _parent.getChildren();
+		OperationContext cmisOpCtxParent = new OperationContextImpl();
+		cmisOpCtxParent.setIncludeRelationships(IncludeRelationships.NONE);
+		cmisOpCtxParent.setIncludeAcls(true);
+		cmisOpCtxParent.setIncludeAllowableActions(true);
+		CmisObject parent = session.getObject(id, cmisOpCtxParent);
 
 		List<CmisObject> results = new ArrayList<CmisObject>();
-		Iterator<CmisObject> itr = children.iterator();
-		while (itr.hasNext()) {
-			CmisObject obj = itr.next();
+		if (Util.isFolder(parent)) {
+			Folder _parent = (Folder) parent;
 
-			// Check and replace to PWC for owner
-			if (Util.isDocument(obj)) {
-				Document doc = (Document) obj;
-				if (doc.isVersionSeriesCheckedOut()) {
-					// check owner
-					String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
-					String owner = doc.getVersionSeriesCheckedOutBy();
-					if (userId.equals(owner)) {
-						String pwcId = doc.getVersionSeriesCheckedOutId();
-						CmisObject pwc = session.getObject(pwcId);
-						results.add(pwc);
-						continue;
+			logger.warn("[Call Folder#getChildren]Begin");
+			OperationContext cmisOpCtx = new OperationContextImpl();
+			cmisOpCtx.setIncludeRelationships(IncludeRelationships.NONE);
+			cmisOpCtx.setIncludeAcls(true);
+			cmisOpCtx.setIncludeAllowableActions(true);
+
+			ItemIterable<CmisObject> children = _parent.getChildren(cmisOpCtx);
+			Iterator<CmisObject> itr = children.iterator();
+			while (itr.hasNext()) {
+				CmisObject obj = itr.next();
+
+				// Check and replace to PWC for owner
+				if (Util.isDocument(obj)) {
+					Document doc = (Document) obj;
+					if (doc.isVersionSeriesCheckedOut()) {
+						// check owner
+						String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
+						String owner = doc.getVersionSeriesCheckedOutBy();
+						if (userId.equals(owner)) {
+							String pwcId = doc.getVersionSeriesCheckedOutId();
+							CmisObject pwc = session.getObject(pwcId);
+							results.add(pwc);
+							continue;
+						}
 					}
 				}
+				results.add(obj);
 			}
 
-			results.add(obj);
-		}
+		logger.warn("[Call Folder#getChildren]End");
 
 		// Fill in CMIS types
 		List<Tree<ObjectType>> typeFolders = session.getTypeDescendants(BaseTypeId.CMIS_FOLDER.value(), -1, false);
@@ -187,11 +204,15 @@ public class Node extends Controller {
 		types.addAll(typeFolders);
 		types.addAll(typeDocs);
 
-		List<String> enableTypes =  NemakiConfig.getValues(PropertyKey.UI_VISIBILITY_CREATE_OBJECT);
+		List<String> enableTypes = NemakiConfig.getValues(PropertyKey.UI_VISIBILITY_CREATE_OBJECT);
 
-		List<Tree<ObjectType>> viewTypes = types.stream().filter(p -> enableTypes.contains(p.getItem().getLocalName())).collect(Collectors.toList());
+		List<Tree<ObjectType>> viewTypes = types.stream().filter(p -> enableTypes.contains(p.getItem().getLocalName()))
+				.collect(Collectors.toList());
 
-		return ok(tree.render(repositoryId, _parent, results, viewTypes, session, profile));
+			return ok(tree.render(repositoryId, _parent, results, viewTypes, session, profile));
+		}else{
+			return internalServerError();
+		}
 	}
 
 	@Secure
@@ -205,7 +226,7 @@ public class Node extends Controller {
 	@Secure
 	public Result search(String repositoryId, String term) {
 
-		if ( term.startsWith("[cmis]")) {
+		if (term.startsWith("[cmis]")) {
 			return this.searchFreeQuery(repositoryId, term);
 		}
 
@@ -228,7 +249,8 @@ public class Node extends Controller {
 		while (docItr.hasNext()) {
 			CmisObject doc = docItr.next();
 			boolean val = doc.getPropertyValue("cmis:isLatestVersion");
-			if (!val) continue;
+			if (!val)
+				continue;
 			list.add(doc);
 		}
 
@@ -247,7 +269,7 @@ public class Node extends Controller {
 		Iterator<QueryResult> resultItr = results.iterator();
 		List<QueryResult> qrList = new ArrayList<QueryResult>();
 
-		while ( resultItr.hasNext() ) {
+		while (resultItr.hasNext()) {
 			qrList.add(resultItr.next());
 		}
 		return ok(searchFreeQuery.render(repositoryId, term, qrList, profile));
@@ -297,46 +319,54 @@ public class Node extends Controller {
 
 	@Secure
 	public Result showProperty(String repositoryId, String id) {
-		Session session = getCmisSession(repositoryId);
+		try {
+			Session session = getCmisSession(repositoryId);
 
-		FileableCmisObject o = (FileableCmisObject) session.getObject(id);
+			FileableCmisObject o = (FileableCmisObject) session.getObject(id);
 
-		List<Property<?>> properties = o.getProperties();
-		List<SecondaryType> secondaryTypes = o.getSecondaryTypes();
+			List<Property<?>> properties = o.getProperties();
+			List<SecondaryType> secondaryTypes = o.getSecondaryTypes();
 
-		// divide
-		List<Property<?>> primaries = new ArrayList<Property<?>>();
-		Map<SecondaryType, List<Property<?>>> secondaries = new HashMap<SecondaryType, List<Property<?>>>();
-
-		if (CollectionUtils.isNotEmpty(secondaryTypes)) {
-			Iterator<SecondaryType> itr = secondaryTypes.iterator();
-			while (itr.hasNext()) {
-				SecondaryType st = itr.next();
-				secondaries.put(st, new ArrayList<Property<?>>());
-			}
-		}
-
-		for (Property<?> p : properties) {
-			boolean isSecondary = false;
+			// divide
+			List<Property<?>> primaries = new ArrayList<Property<?>>();
+			Map<SecondaryType, List<Property<?>>> secondaries = new HashMap<SecondaryType, List<Property<?>>>();
 
 			if (CollectionUtils.isNotEmpty(secondaryTypes)) {
-				Iterator<SecondaryType> itr2 = secondaryTypes.iterator();
-				while (itr2.hasNext()) {
-					SecondaryType st = itr2.next();
-					if (st.getPropertyDefinitions().containsKey(p.getId())) {
-						secondaries.get(st).add(p);
-						isSecondary = true;
-					}
+				Iterator<SecondaryType> itr = secondaryTypes.iterator();
+				while (itr.hasNext()) {
+					SecondaryType st = itr.next();
+					secondaries.put(st, new ArrayList<Property<?>>());
 				}
 			}
 
-			if (!isSecondary) {
-				primaries.add(p);
+			for (Property<?> p : properties) {
+				boolean isSecondary = false;
+
+				try {
+					if (CollectionUtils.isNotEmpty(secondaryTypes)) {
+						Iterator<SecondaryType> itr2 = secondaryTypes.iterator();
+						while (itr2.hasNext()) {
+							SecondaryType st = itr2.next();
+							if (st.getPropertyDefinitions().containsKey(p.getId())) {
+								secondaries.get(st).add(p);
+								isSecondary = true;
+							}
+						}
+					}
+
+					if (!isSecondary) {
+						primaries.add(p);
+					}
+				} catch (Exception ex) {
+					logger.error("Property Error name=" + p.getDisplayName());
+				}
 			}
 
+			return ok(property.render(repositoryId, o, primaries, secondaries));
+		} catch (Exception ex) {
+			logger.error("Error", ex);
+			return internalServerError();
 		}
-
-		return ok(property.render(repositoryId, o, primaries, secondaries));
 	}
 
 	@Secure
@@ -357,27 +387,21 @@ public class Node extends Controller {
 		Session session = getCmisSession(repositoryId);
 		CmisObject cmisObject = session.getObject(id);
 
-		//Relation target
+		// Relation target
 		List<Relationship> rels = cmisObject.getRelationships();
 		List<Document> list = null;
-		if (rels != null){
-			try{
-				list = rels.stream()
-						.filter(p -> id.equals(p.getSourceId().getId()))
-						.map(Relationship::getTargetId)
-						.distinct()
-						.map(p ->  session.getObject(p))
-						.filter(p -> Util.isDocument(p))
-						.map(p ->  (Document)p)
-						.collect(Collectors.toList())
-						;
-			}catch(CmisObjectNotFoundException ex){
+		if (rels != null) {
+			try {
+				list = rels.stream().filter(p -> id.equals(p.getSourceId().getId())).map(Relationship::getTargetId)
+						.distinct().map(p -> session.getObject(p)).filter(p -> Util.isDocument(p))
+						.map(p -> (Document) p).collect(Collectors.toList());
+			} catch (CmisObjectNotFoundException ex) {
 				logger.error("Source or target cmis object not found.", ex);
 			}
 		}
 
-		if(Util.isDocument(cmisObject)){
-			list.add((Document)cmisObject);
+		if (Util.isDocument(cmisObject)) {
+			list.add((Document) cmisObject);
 		}
 
 		File tempFile = null;
@@ -605,9 +629,15 @@ public class Node extends Controller {
 	}
 
 	@Secure
-	public Result showRelationshipCreate(String repositoryId, String id) {
+	public Result showRelationshipCreate(String repositoryId, String objectId) {
 		Session session = getCmisSession(repositoryId);
-		CmisObject obj = session.getObject(id);
+
+		ObjectId id = session.createObjectId(objectId);
+		OperationContext cmisOpCtx = new OperationContextImpl();
+		cmisOpCtx.setIncludeRelationships(IncludeRelationships.BOTH);
+		cmisOpCtx.setIncludeAcls(true);
+		cmisOpCtx.setIncludeAllowableActions(true);
+		CmisObject obj = session.getObject(id, cmisOpCtx);
 
 		String parentId = null;
 		if (Util.isDocument(obj)) {
@@ -618,35 +648,32 @@ public class Node extends Controller {
 			parentId = folder.getFolderParent().getId();
 		}
 
-		List<String> enableTypes =  NemakiConfig.getValues(PropertyKey.UI_VISIBILITY_CREATE_RELATIONSHIP);
+		List<String> enableTypes = NemakiConfig.getValues(PropertyKey.UI_VISIBILITY_CREATE_RELATIONSHIP);
 
-		List<RelationshipType> viewTypesTemp = session
-				.getTypeDescendants(null, -1, true)
-				.stream()
-				.map(Tree::getItem)
-				.filter(p -> p.getBaseTypeId() == BaseTypeId.CMIS_RELATIONSHIP)
-				.map( p -> (RelationshipType)p)
-				.filter(p -> enableTypes.contains(p.getLocalName()))
-				.collect(Collectors.toList());
+		List<RelationshipType> viewTypesTemp = session.getTypeDescendants(null, -1, true).stream().map(Tree::getItem)
+				.filter(p -> p.getBaseTypeId() == BaseTypeId.CMIS_RELATIONSHIP).map(p -> (RelationshipType) p)
+				.filter(p -> enableTypes.contains(p.getLocalName())).collect(Collectors.toList());
 
-		List<RelationshipType> viewTypes =
-				viewTypesTemp.stream()
-				.filter(p -> p.getAllowedSourceTypes().contains(obj.getType()))
-				.collect(Collectors.toList());
+		List<RelationshipType> viewTypes = viewTypesTemp.stream()
+				.filter(p -> p.getAllowedSourceTypes().contains(obj.getType())).collect(Collectors.toList());
 
-		Set<ObjectType> targetTypes = viewTypes.stream()
-				.flatMap(p -> p.getAllowedTargetTypes().stream())
-				.distinct()
+		Set<ObjectType> targetTypes = viewTypes.stream().flatMap(p -> p.getAllowedTargetTypes().stream()).distinct()
 				.collect(Collectors.toSet());
 
 		return ok(relationship_create.render(repositoryId, obj, parentId, viewTypes, targetTypes));
 	}
 
 	@Secure
-	public Result showRelationship(String repositoryId, String id) {
+	public Result showRelationship(String repositoryId, String objectId) {
 		Session session = getCmisSession(repositoryId);
 
-		CmisObject obj = session.getObject(id);
+		ObjectId id = session.createObjectId(objectId);
+		OperationContext cmisOpCtx = new OperationContextImpl();
+		cmisOpCtx.setIncludeRelationships(IncludeRelationships.BOTH);
+		cmisOpCtx.setIncludeAcls(true);
+		cmisOpCtx.setIncludeAllowableActions(true);
+		CmisObject obj = session.getObject(id, cmisOpCtx);
+
 
 		List<Relationship> relationships = obj.getRelationships();
 		List<Relationship> result = new ArrayList<Relationship>();
@@ -805,6 +832,8 @@ public class Node extends Controller {
 
 	@Secure
 	public Result create(String repositoryId) {
+		NemakiProfile profile = Util.getProfile(ctx());
+
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
 
@@ -824,7 +853,8 @@ public class Node extends Controller {
 		List<Updatability> upds = new ArrayList<Updatability>();
 		upds.add(Updatability.ONCREATE);
 		upds.add(Updatability.READWRITE);
-		HashMap<String, Object> param = Util.buildProperties(pdfs, input, upds);
+
+		HashMap<String, Object> param = Util.buildProperties(pdfs, input, upds, ctx().lang().toLocale());
 		param.put(PropertyIds.OBJECT_TYPE_ID, objectTypeId);
 
 		// Document/Folder specific
@@ -879,6 +909,8 @@ public class Node extends Controller {
 
 	@Secure
 	public Result update(String repositoryId, String id) {
+		NemakiProfile profile = Util.getProfile(ctx());
+
 		// Get an object in the repository
 		Session session = getCmisSession(repositoryId);
 		CmisObject o = session.getObject(id);
@@ -903,7 +935,7 @@ public class Node extends Controller {
 					// TODO type conversion
 					if (pdf.getPropertyType() == PropertyType.DATETIME) {
 						if (strValue != null && !strValue.isEmpty()) {
-							value = Util.convertStringToCalendar(strValue);
+							value = DateTimeUtil.convertStringToCalendar(strValue, ctx().lang().toLocale());
 							if (value == null) {
 								throw new RuntimeException("Invalid DateTime format.");
 							}
@@ -911,7 +943,7 @@ public class Node extends Controller {
 							value = null;
 						}
 					} else if (pdf.getPropertyType() == PropertyType.BOOLEAN) {
-						value = strValue.isEmpty() ? null: Boolean.valueOf(strValue);
+						value = strValue.isEmpty() ? null : Boolean.valueOf(strValue);
 					}
 
 					properties.put(pdf.getId(), value);
@@ -1083,7 +1115,6 @@ public class Node extends Controller {
 		return redirectToParent(repositoryId, input);
 	}
 
-
 	@Secure
 	public Result delete(String repositoryId, String id) {
 		List<String> deletedList = new ArrayList<String>();
@@ -1102,26 +1133,25 @@ public class Node extends Controller {
 		return ok(json);
 	}
 
-	private static List<String> delete(String id, Session session){
+	private static List<String> delete(String id, Session session) {
 		List<String> deletedList = new ArrayList<String>();
 		CmisObject cmisObject = session.getObject(id);
 
-		//Relation cascade delete
+		// Relation cascade delete
 		List<Relationship> rels = cmisObject.getRelationships();
-		if (rels != null){
-			try{
+		if (rels != null) {
+			try {
 				rels.stream()
-				.filter(p -> id.equals(p.getSourceId().getId()) && RelationshipUtil.isCascadeRelation(p.getType()))
-				.map(Relationship::getTargetId)
-				.distinct()
-				.forEach(tId -> {
-					try{
-						deletedList.addAll(delete(tId.getId(), session));
-					}catch(Exception ex){
-						logger.error("Target cmis object id not found", ex);
-					}
-				});
-			}catch(CmisObjectNotFoundException ex){
+						.filter(p -> id.equals(p.getSourceId().getId())
+								&& RelationshipUtil.isCascadeRelation(p.getType()))
+						.map(Relationship::getTargetId).distinct().forEach(tId -> {
+							try {
+								deletedList.addAll(delete(tId.getId(), session));
+							} catch (Exception ex) {
+								logger.error("Target cmis object id not found", ex);
+							}
+						});
+			} catch (CmisObjectNotFoundException ex) {
 				logger.error("Source or target cmis object not found.", ex);
 			}
 		}
@@ -1223,6 +1253,7 @@ public class Node extends Controller {
 			// no-op
 		}
 	}
+
 	@Secure
 	public Result checkInPWC(String repositoryId, String id) throws FileNotFoundException {
 		Session session = getCmisSession(repositoryId);
@@ -1240,7 +1271,7 @@ public class Node extends Controller {
 	private static void checkInPWC(CmisObject cmisObject, String checkinComment) {
 		if (Util.isDocument(cmisObject)) {
 			Document doc = (Document) cmisObject;
-			if ( doc.isPrivateWorkingCopy() ){
+			if (doc.isPrivateWorkingCopy()) {
 				Map<String, Object> param = new HashMap<String, Object>();
 				doc.checkIn(true, param, doc.getContentStream(), checkinComment);
 			}
@@ -1391,7 +1422,8 @@ public class Node extends Controller {
 		}
 	}
 
-	private static ObjectId createRelation(String relType, String name, String repositoryId, String sourceId, String targetId) {
+	private static ObjectId createRelation(String relType, String name, String repositoryId, String sourceId,
+			String targetId) {
 		// Get an object in the repository
 		Session session = getCmisSession(repositoryId);
 
@@ -1423,9 +1455,10 @@ public class Node extends Controller {
 	@Secure
 	public Result getAce(String repositoryId, String objectId, String principalId) {
 		Session session = getCmisSession(repositoryId);
-		CmisObject obj = session.getObject(objectId);
+		ObjectId id = session.createObjectId(objectId);
+		Acl acl = session.getAcl(id, false);
 
-		Map<String, Ace> map = Util.zipWithId(obj.getAcl());
+		Map<String, Ace> map = Util.zipWithId(acl);
 		Ace ace = map.get(principalId);
 
 		if (ace == null) {

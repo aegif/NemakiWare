@@ -58,7 +58,7 @@ public class CoreTrackerJob implements Job {
 			try{
 				coreTracker.index(Constant.MODE_DELTA, repositoryId);
 			}catch(Exception ex){
-				logger.error("Indexing error repository={}",repositoryId, ex);
+				logger.error("(job)Indexing error repository={}",repositoryId, ex);
 			}
 		}
 	}
