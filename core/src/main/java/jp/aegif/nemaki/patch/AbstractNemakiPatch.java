@@ -2,13 +2,17 @@ package jp.aegif.nemaki.patch;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 
 public abstract class AbstractNemakiPatch {
 	private static final Log log = LogFactory.getLog(AbstractNemakiPatch.class);
 
+	@Autowired
 	protected PatchUtil patchUtil;
+
+	@Autowired
 	protected PrincipalService principalService;
 
 

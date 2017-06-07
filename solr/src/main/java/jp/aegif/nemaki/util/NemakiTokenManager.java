@@ -30,7 +30,7 @@ public class NemakiTokenManager {
 	public NemakiTokenManager() {
 		tokenMap = new HashMap<String, Token>();
 
-		restEndpoint = getRestEndpoint();
+		restEndpoint = NemakiServer.getRestEndpoint();
 	}
 
 	public String register(String repositoryId, String userName, String password) {
@@ -97,21 +97,6 @@ public class NemakiTokenManager {
 		return restEndpoint + "/repo/" + repositoryId + "/authtoken/";
 	}
 
-	private String getRestEndpoint() {
-		PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
-		String protocol = pm.readValue(PropertyKey.CMIS_SERVER_PROTOCOL);
-		String host = pm.readValue(PropertyKey.CMIS_SERVER_HOST);
-		String port = pm.readValue(PropertyKey.CMIS_SERVER_PORT);
-		String context = pm.readValue(PropertyKey.CMIS_SERVER_CONTEXT);
-
-		try {
-			URL url = new URL(protocol, host, Integer.parseInt(port), "");
-			return url.toString() + "/" + context + "/rest";
-		} catch (Exception e) {
-			logger.error("Error occurred during getting REST endpoint.", e);
-		}
-		return null;
-	}
 
 	private class Token {
 		private String repositoryId;

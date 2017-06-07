@@ -211,7 +211,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		Content v = contentCache.get(objectId);
 
 		if (v != null) {
-			return (Content) v;
+			return v;
 		}
 
 		Content content = nonCachedContentDaoService.getContent(repositoryId, objectId);
@@ -949,6 +949,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Change> getLatestChanges(String repositoryId, String startToken, int maxItems) {
 		return nonCachedContentDaoService.getLatestChanges(repositoryId, startToken, maxItems);
+	}
+
+	@Override
+	public List<Change> getObjectChanges(String repositoryId, String objectId) {
+		return nonCachedContentDaoService.getObjectChanges(repositoryId, objectId);
 	}
 
 	// //////////////////////////////////////////////////////////////////////////////
