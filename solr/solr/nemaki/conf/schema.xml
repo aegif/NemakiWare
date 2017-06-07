@@ -187,8 +187,10 @@
         alternately, change the type="ignored" to some other type e.g. "text" if you want
         unknown fields indexed and/or stored by default -->
    <!--dynamicField name="*" type="ignored" multiValued="true" /-->
-   <dynamicField name="dynamic.*" type="string" indexed="true" stored="true" multiValued="true"/>
-   <dynamicField name="ignored_*" type="ignored"/>
+   <dynamicField name="dynamic.*" type="string" indexed="true" stored="true" multiValued="true"/><dynamicField
+   	name="dynamicDate.*" type="date" indexed="true" stored="true" multiValued="true">
+</dynamicField>
+ 	<dynamicField name="ignored_*" type="ignored"/>
 
  </fields>
 

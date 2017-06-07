@@ -23,7 +23,7 @@ import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.common.NemakiObjectType;
 
-
+@Component
 public class Patch_20170425 extends AbstractNemakiPatch {
 	private static final Log log = LogFactory.getLog(Patch_20170425.class);
 

@@ -93,9 +93,9 @@
 		$('#link-new-file').on("click", function(){
 			var formData = new FormData($('#link-new-file-form').get(0));
 
-			var rType = $('#relationship-type option:selected').val();
+			var rType = $('#relationship-type').val();
 			var rName = $('#relationship-name').val();
-			var dType = $('#document-type option:selected').val();
+			var dType = $('#document-type').val();
 
 			formData.append('nemaki:relationshipType', rType);
 			formData.append('nemaki:relationshipName', rName);
@@ -107,14 +107,14 @@
 				url: "@routes.Node.createRelationToNew(repositoryId, obj.getId())",
 				contentType: false,
 				processData: false,
-				dataType: text,
+				dataType: "text",
 				cache: false,
 				data: formData
 			}).done(function( data ) {
 			 	window.alert( '@Messages("view.message.create.success")');
 				window.location.reload();
 			}).fail(function( jqXHR, textStatus, errorThrown ) {
-				window.alert('@Messages("view.message.create.failure")' + " message : " + textStatus + " status : " + jqXHR.status);
+				window.alert('@Messages("view.message.create.failure")' + " status : " + textStatus + " HTTPStatus : " + jqXHR.status + " message : " + errorThrown.message );
 			}).always(function() {
 				 $.unblockUI();
 			});
@@ -123,7 +123,7 @@
 		$('#link-existing-object').on("click", function(){
 			var formData = new FormData($('#link-existing-object-form').get(0));
 
-			var rType = $('#relationship-type option:selected').val();
+			var rType = $('#relationship-type').val();
 			var rName = $('#relationship-name').val();
 
 			formData.append('nemaki:relationshipType', rType);
@@ -134,7 +134,7 @@
 				type: "POST",
 				contentType: false,
 				processData: false,
-				dataType: text,
+				dataType: "text",
 				cache: false,
 				data: formData
 			}).done(function( data ) {
