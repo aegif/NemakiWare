@@ -45,6 +45,7 @@ import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.model.Ace;
 import jp.aegif.nemaki.model.Acl;
@@ -169,6 +170,9 @@ public class PermissionServiceImpl implements PermissionService {
 		List<Ace> aces = acl.getAllAces().stream()
 				.filter(p -> p.getPermissions() != null)
 				.collect(Collectors.toList());
+		
+		// principalAnyone
+		if(calcAnyonePermission(repositoryId, key, content, aces)) return true;
 
 		//User permission
 		if(calcUserPermission(repositoryId, key, content, userName, aces)) return true;
@@ -176,13 +180,26 @@ public class PermissionServiceImpl implements PermissionService {
 		//Group permission
 		return calcGroupPermission(repositoryId, key, content, userName, aces);
 	}
+	private boolean calcAnyonePermission(String repositoryId, String key, Content content, List<Ace> aces){
+		Logger.info(MessageFormat.format("[{0}]CheckAnyonePermission BEGIN:{1}",content.getName(), key));
+		RepositoryInfo info = repositoryInfoMap.get(repositoryId);
+//log.info("key: " + key);
+//log.info("aces: " + aces.stream().flatMap(ace -> ace.getPermissions().stream()).toArray().toString());
+		Set<String> anyonePermissions = aces.stream()
+				.filter(ace -> ace.getPrincipalId().equals(info.getPrincipalIdAnyone()))
+				.flatMap(ace -> ace.getPermissions().stream())
+				.collect(Collectors.toSet());
+		boolean calcPermission =  checkCalculatedPermissions(repositoryId, key, anyonePermissions);
+		Logger.info(MessageFormat.format("[{0}]CheckAnyonePermission END:{1}",content.getName(),  calcPermission));
+		return calcPermission;
+	}
 
 
 	private boolean calcGroupPermission(String repositoryId, String key, Content content, String userName, List<Ace> aces) {
 		Logger.info(MessageFormat.format("[{0}][{1}]CheckGroupPermission BEGIN:{2}",content.getName(), userName, key));
 		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
 		if( CollectionUtils.isEmpty(groups)) return false;
-
+//log.info("groupcheck key: " + key);
 		Set<String> groupPermissions = aces.stream()
 				.filter(ace -> groups.contains(ace.getPrincipalId()))
 				.flatMap(ace -> ace.getPermissions().stream())
