@@ -24,6 +24,7 @@ import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.cache.CacheService;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.lock.ThreadLockService;
+import play.Logger;
 
 @Path("/repo/{repositoryId}/cache/")
 public class CacheResource extends ResourceBase{
@@ -57,9 +58,14 @@ public class CacheResource extends ResourceBase{
 				Content c = cache.getContentCache().get(objectId);
 				if (beforeDate.compareTo(c.getModified()) < 0) {
 					cache.removeCmisAndContentCache(objectId);
+					result.put("deleted", true);
+					Logger.warn("Remove cmis object and content cache because updated by other.");
+				}else{
+					result.put("deleted", false);
 				}
 			}else{
 				cache.removeCmisAndContentCache(objectId);
+				result.put("deleted", true);
 			}
 		} catch (ParseException e) {
 			addErrMsg(errMsg, ITEM_ERROR, ErrorCode.ERR_READ);
