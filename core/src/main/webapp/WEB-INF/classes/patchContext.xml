@@ -1,66 +1,55 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- This context file needs in another file: ContentService/PrincipalService/TypeService
-    bean definition -->
+	bean definition -->
 
 <beans xmlns="http://www.springframework.org/schema/beans"
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:aop="http://www.springframework.org/schema/aop"
-    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:aop="http://www.springframework.org/schema/aop"
+ xmlns:context="http://www.springframework.org/schema/context"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+    http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd
+    http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util-3.0.xsd
+    http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-3.2.xsd">
 
+    <context:annotation-config />
+	<context:component-scan base-package="jp.aegif.nemaki.patch" />
 
-    <bean id="PatchService"
-        class="jp.aegif.nemaki.patch.PatchService"
-        init-method="apply">
-        <property name="repositoryInfoMap">
+	<bean id="PatchService" class="jp.aegif.nemaki.patch.PatchService"
+		init-method="apply">
+		<property name="repositoryInfoMap">
 			<ref bean="repositoryInfoMap" />
 		</property>
 		<property name="connectorPool">
 			<ref bean="connectorPool" />
 		</property>
-        <property name="patch_20160815">
-            <ref bean="patch_20160815" />
-        </property>
-        <property name="patch_20170425">
-            <ref bean="patch_20170425" />
-        </property>
-    </bean>
+		<property name="patchList">
+			<list>
+				<ref bean="patch_20160815" />
+				<ref bean="patch_20170425" />
+				<ref bean="patch_20170602" />
+			</list>
+		</property>
+	</bean>
 
 	<bean id="patchUtil" class="jp.aegif.nemaki.patch.PatchUtil">
-      	<property name="propertyManager">
-        	<ref bean="propertyManager" />
-      	</property>
-      	<property name="repositoryInfoMap">
+		<property name="propertyManager">
+			<ref bean="propertyManager" />
+		</property>
+		<property name="repositoryInfoMap">
 			<ref bean="repositoryInfoMap" />
 		</property>
 		<property name="contentDaoService">
-        	<ref bean="ContentDaoService" />
-      	</property>
-      	<property name="contentService">
-        	<ref bean="ContentService" />
-      	</property>
-      	<property name="connectorPool">
+			<ref bean="ContentDaoService" />
+		</property>
+		<property name="contentService">
+			<ref bean="ContentService" />
+		</property>
+		<property name="connectorPool">
 			<ref bean="connectorPool" />
 		</property>
 		<property name="repositoryService">
-        	<ref bean="RepositoryService" />
-      	</property>
-	</bean>
-
-	<bean id="patch_20160815" class="jp.aegif.nemaki.patch.Patch_20160815">
-      	<property name="patchUtil">
-        	<ref bean="patchUtil" />
-      	</property>
-      	<property name="principalService">
-        	<ref bean="PrincipalService" />
-      	</property>
-	</bean>
-
-	<bean id="patch_20170425" class="jp.aegif.nemaki.patch.Patch_20170425">
-      	<property name="patchUtil">
-        	<ref bean="patchUtil" />
-      	</property>
-      	<property name="principalService">
-        	<ref bean="PrincipalService" />
-      	</property>
+			<ref bean="RepositoryService" />
+		</property>
 	</bean>
 
 

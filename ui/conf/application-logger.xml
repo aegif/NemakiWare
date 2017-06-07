@@ -5,13 +5,13 @@
   <appender name="FILE" class="ch.qos.logback.core.FileAppender">
      <file>${catalina.home}/logs/nemakiui.log</file>
      <encoder>
-       <pattern>%date %level %logger{15} %message %n%xException</pattern>
+       <pattern>%date %level %logger{15} %message %n%xException%n</pattern>
      </encoder>
    </appender>
 
   <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
     <encoder>
-      <pattern>%date %coloredLevel %logger{15}- %message</pattern>
+      <pattern>%date %coloredLevel %logger{15}- %message%n</pattern>
     </encoder>
   </appender>
 
