@@ -275,30 +275,33 @@ public class PermissionServiceImpl implements PermissionService {
 			return false;
 		}
 
+		String userName = callContext.getUsername();
+		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
+
 		//Read action when a relationship is specified directly
 		if(PermissionMapping.CAN_GET_PROPERTIES_OBJECT.equals(key)){
 			boolean readSource =
-					checkPermission(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, source), source.getType(), source);
+					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, source), source.getType(), source, userName, groups);
 			boolean readTarget =
-					checkPermission(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, target), target.getType(), target);
+					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, target), target.getType(), target, userName, groups);
 			return readSource | readTarget;
 		}
 
 		//Update action
 		if(PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT.equals(key)){
 			boolean updateSource =
-					checkPermission(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, source), source.getType(), source);
+					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, source), source.getType(), source, userName, groups);
 			boolean updateTarget =
-					checkPermission(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, target), target.getType(), target);
+					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, target), target.getType(), target, userName, groups);
 			return updateSource | updateTarget;
 		}
 
 		//Delete action
 		if(PermissionMapping.CAN_DELETE_OBJECT.equals(key)){
 			boolean deleteSource =
-					checkPermission(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, source), source.getType(), source);
+					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, source), source.getType(), source, userName, groups);
 			boolean deleteTarget =
-					checkPermission(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, target), target.getType(), target);
+					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, target), target.getType(), target, userName, groups);
 			return deleteSource | deleteTarget;
 		}
 
@@ -470,13 +473,16 @@ public class PermissionServiceImpl implements PermissionService {
 			return null;
 		}
 
+		String userName = callContext.getUsername();
+		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
+
 		// Filtering
 		for (T _content : contents) {
 			Content content = (Content) _content;
 			Acl acl = contentService.calculateAcl(repositoryId, content);
 
-			Boolean filtered = checkPermission(callContext,
-					repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT, acl, content.getType(), content);
+			Boolean filtered = checkPermissionInternal(callContext,
+					repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT, acl, content.getType(), content, userName, groups);
 			if (filtered) {
 				result.add(_content);
 			}
