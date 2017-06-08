@@ -130,11 +130,20 @@ public class PermissionServiceImpl implements PermissionService {
 	public Boolean checkPermission(CallContext callContext, String repositoryId, String key,
 			Acl acl, String baseType, Content content) {
 
+		// Admin always pass a permission check
+		String userName = callContext.getUsername();
+		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
+		
+		return checkPermissionInternal(callContext,repositoryId,key,acl,baseType,content,userName,groups);
+	}
+	
+	private Boolean checkPermissionInternal(CallContext callContext, String repositoryId, String key,
+			Acl acl, String baseType, Content content, String userName, Set<String> groups) {
+
 		//All permission checks must go through baseType check
 		if(!isAllowableBaseType(key, baseType, content, repositoryId)) return false;
 
 		// Admin always pass a permission check
-		String userName = callContext.getUsername();
 		UserItem u = contentService.getUserItemById(repositoryId, userName);
 		if (u != null && u.isAdmin()) return true;
 
@@ -176,10 +185,20 @@ public class PermissionServiceImpl implements PermissionService {
 
 		//User permission
 		if(calcUserPermission(repositoryId, key, content, userName, aces)) return true;
+		
+		groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
 
 		//Group permission
-		return calcGroupPermission(repositoryId, key, content, userName, aces);
+		return calcGroupPermission(repositoryId, key, content, groups, aces);
 	}
+	
+	@Override
+	public Boolean checkPermissionWithGivenList(CallContext callContext, String repositoryId, String key,
+			Acl acl, String baseType, Content content, String userName, Set<String> groups) {
+
+		return checkPermissionInternal(callContext,repositoryId,key,acl,baseType,content,userName,groups);
+	}
+	
 	private boolean calcAnyonePermission(String repositoryId, String key, Content content, List<Ace> aces){
 		Logger.info(MessageFormat.format("[{0}]CheckAnyonePermission BEGIN:{1}",content.getName(), key));
 		RepositoryInfo info = repositoryInfoMap.get(repositoryId);
@@ -195,11 +214,9 @@ public class PermissionServiceImpl implements PermissionService {
 	}
 
 
-	private boolean calcGroupPermission(String repositoryId, String key, Content content, String userName, List<Ace> aces) {
-		Logger.info(MessageFormat.format("[{0}][{1}]CheckGroupPermission BEGIN:{2}",content.getName(), userName, key));
-		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
+	private boolean calcGroupPermission(String repositoryId, String key, Content content, Set<String> groups, List<Ace> aces) {
+		Logger.info(MessageFormat.format("[{0}][{1}]CheckGroupPermission BEGIN:{2}",content.getName(), groups, key));
 		if( CollectionUtils.isEmpty(groups)) return false;
-//log.info("groupcheck key: " + key);
 		Set<String> groupPermissions = aces.stream()
 				.filter(ace -> groups.contains(ace.getPrincipalId()))
 				.flatMap(ace -> ace.getPermissions().stream())
@@ -207,7 +224,7 @@ public class PermissionServiceImpl implements PermissionService {
 
 		// Check mapping between the group and the content
 		boolean calcPermission =  checkCalculatedPermissions(repositoryId, key, groupPermissions);
-		Logger.info(MessageFormat.format("[{0}][{1}]CheckGroupPermission END:{2}",content.getName(), userName, calcPermission));
+		Logger.info(MessageFormat.format("[{0}][{1}]CheckGroupPermission END:{2}",content.getName(), groups, calcPermission));
 		return calcPermission;
 	}
 
