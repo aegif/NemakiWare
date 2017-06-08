@@ -32,9 +32,9 @@ GET     /repo/:repoId/                           			controllers.Node.index(repoI
 GET     /repo/:repoId/direct/:id                           	controllers.Node.direct(repoId:String, id:String, activateTabName:String ?= "property")
 
 # CMIS Rest API
-GET     /repo/:repoId/objects               				controllers.Node.showChildren(repoId:String, id="/")
+GET     /repo/:repoId/objects               				controllers.Node.showChildren(repoId:String, id="/", page:Int ?= 0)
 GET		/repo/:repoId/objects/children-by-path				controllers.Node.showChildrenByPath(repoId:String, path:String ?= "/")
-GET     /repo/:repoId/objects/search               			controllers.Node.search(repoId:String, term:String ?= "")
+GET     /repo/:repoId/objects/search               			controllers.Node.search(repoId:String, term:String ?= "", page:Int ?= 0)
 GET     /repo/:repoId/objects/new               			controllers.Node.showBlank(repoId:String)
 POST	/repo/:repoId/objects/create               			controllers.Node.create(repoId:String)
 POST    /repo/:repoId/objects/drag-and-drop          		controllers.Node.dragAndDrop(repoId:String, action:String ?= "")
@@ -56,7 +56,7 @@ POST	/repo/:repoId/objects/:sourceId/relationship/create-to-exist       controll
 GET		/repo/:repoId/objects/:id/action/:actionId			controllers.Node.showAction(repoId:String, id:String, actionId:String)
 POST	/repo/:repoId/objects/:id/action/execute			controllers.Node.doAction(repoId:String, id:String, actionId:String)
 
-GET     /repo/:repoId/objects/:id/children           		controllers.Node.showChildren(repoId:String, id:String)
+GET     /repo/:repoId/objects/:id/children           		controllers.Node.showChildren(repoId:String, id:String, page:Int ?= 0)
 POST    /repo/:repoId/objects/:id/update            		controllers.Node.update(repoId:String, id:String)
 POST    /repo/:repoId/objects/:id/update-permission  		controllers.Node.updatePermission(repoId:String, id:String)
 POST    /repo/:repoId/objects/:id/upload            		controllers.Node.upload(repoId:String, id:String)

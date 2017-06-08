@@ -11,7 +11,8 @@
 @import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed
 @import play.mvc.Http.Context.Implicit
 
-@(repositoryId:String)(objects: java.util.List[org.apache.chemistry.opencmis.client.api.CmisObject])(session:org.apache.chemistry.opencmis.client.api.Session)
+@(repositoryId:String)(objects: java.util.List[org.apache.chemistry.opencmis.client.api.CmisObject])(session:org.apache.chemistry.opencmis.client.api.Session)(currentPage:Int)(totalItemCount:Long)
+
 
 <table class="footable" id="objects-table" data-sort="true"
 	   data-filter="#filter"
@@ -95,6 +96,29 @@
 			@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 4){colSpan =>
 				<td colspan="@colSpan">
 			}
+
+			@if(Util.getNavigationPagingSize < totalItemCount){
+				<nav>
+					<ul class="pagination">
+						<li>
+							<a href="#" aria-label="Prev">
+								<span aria-hidden="true">«</span>
+							</a>
+						</li>
+						<li><a href="#">1</a></li>
+						<li><a href="#">2</a></li>
+						<li><a href="#">3</a></li>
+						<li><a href="#">4</a></li>
+						<li><a href="#">5</a></li>
+						<li>
+							<a href="#" aria-label="Next">
+								<span aria-hidden="true">»</span>
+							</a>
+						</li>
+					</ul>
+				</nav>
+				<div>total:@{totalItemCount}</div>
+				}
 				<div class="pagination pagination-centered hide-if-no-paging"></div>
 			</td>
 		</tr>

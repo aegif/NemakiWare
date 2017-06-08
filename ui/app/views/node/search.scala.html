@@ -1,6 +1,6 @@
 @*{<meta charset="UTF-8" />}*@
 
-@(repositoryId:String)(term: String, objects: java.util.List[org.apache.chemistry.opencmis.client.api.CmisObject])(session:org.apache.chemistry.opencmis.client.api.Session)(profile: util.authentication.NemakiProfile)
+@(repositoryId:String)(term: String, objects: java.util.List[org.apache.chemistry.opencmis.client.api.CmisObject])(session:org.apache.chemistry.opencmis.client.api.Session)(profile: util.authentication.NemakiProfile)(currentPage:Int)(totalItemCount:Long)
 
 <!DOCTYPE html>
 <html>
@@ -17,7 +17,7 @@
 
 				<div class="col-md-11">
 				 	<div id="list">
-						@list(repositoryId)(objects)(session)
+						@list(repositoryId)(objects)(session)(currentPage)(totalItemCount)
 				 	</div>
 				</div>
 	  		</div>
