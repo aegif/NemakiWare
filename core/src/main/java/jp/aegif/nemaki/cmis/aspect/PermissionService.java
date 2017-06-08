@@ -22,6 +22,7 @@
 package jp.aegif.nemaki.cmis.aspect;
 
 import java.util.List;
+import java.util.Set;
 
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Content;
@@ -55,4 +56,7 @@ public interface PermissionService {
 	 * @return
 	 */
 	public <T> List<T> getFiltered(CallContext callContext,String repositoryId, List<T>contents);
+
+	Boolean checkPermissionWithGivenList(CallContext callContext, String repositoryId, String key, Acl acl,
+			String baseType, Content content, String userName, Set<String> groups);
 }
