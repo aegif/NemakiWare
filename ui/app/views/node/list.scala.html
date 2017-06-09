@@ -1,5 +1,6 @@
 @*{<meta charset="UTF-8" />}*@
 
+@import math._
 @import util.Util
 @import util.NemakiConfig
 @import util.Formatter
@@ -14,9 +15,7 @@
 @(repositoryId:String)(objects: java.util.List[org.apache.chemistry.opencmis.client.api.CmisObject])(session:org.apache.chemistry.opencmis.client.api.Session)(currentPage:Int)(totalItemCount:Long)
 
 
-<table class="footable" id="objects-table" data-sort="true"
-	   data-filter="#filter"
-	   data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
+<table class="footable" id="objects-table" data-sort="true"  data-filter="#filter" data-paging="false">
 	<thead>
 		<tr>
 			<th data-sort-ignore="true"   class="content-size"></th>
@@ -25,7 +24,7 @@
 			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
 				<th class="content-size" data-class="expand">@NemakiConfig.getLabel(column, Implicit.lang().language)</th>
 			}
-			<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action") </th>
+			<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action")</th>
 		</tr>
 	</thead>
 	<tbody>
@@ -94,32 +93,46 @@
 	<tfoot>
 		<tr>
 			@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 4){colSpan =>
-				<td colspan="@colSpan">
+				<td colspan="@colSpan" align="center">
 			}
 
-			@if(Util.getNavigationPagingSize < totalItemCount){
+			@pageSize = @{Util.getNavigationPagingSize()}
+			@url = @{request.path}
+
+			@if(pageSize < totalItemCount){
 				<nav>
 					<ul class="pagination">
+						@if(currentPage > 3){
 						<li>
-							<a href="#" aria-label="Prev">
+							<a href="@{url}" aria-label="First">
 								<span aria-hidden="true">«</span>
 							</a>
 						</li>
-						<li><a href="#">1</a></li>
-						<li><a href="#">2</a></li>
-						<li><a href="#">3</a></li>
-						<li><a href="#">4</a></li>
-						<li><a href="#">5</a></li>
+						}
+						@if(currentPage > 2){
+							<li><a href="@{url}?page=@{currentPage - 2}">@{currentPage - 1}</a></li>
+						}
+						@if(currentPage > 1){
+							<li><a href="@{url}?page=@{currentPage - 1}">@{currentPage}</a></li>
+						}
+						<li  class="active"><a href="#">@{currentPage + 1}</a></li>
+						@if((currentPage + 1) * pageSize < totalItemCount){
+							<li><a href="@{url}?page=@{currentPage + 1}">@{currentPage + 2}</a></li>
+						}
+						@if((currentPage + 2) * pageSize < totalItemCount){
+							<li><a href="@{url}?page=@{currentPage + 2}">@{currentPage + 3}</a></li>
+						}
+						@if((currentPage + 3) * pageSize < totalItemCount){
 						<li>
-							<a href="#" aria-label="Next">
+							<a href="@{url}?page=@{(totalItemCount / pageSize).floor.toInt}" aria-label="Last">
 								<span aria-hidden="true">»</span>
 							</a>
 						</li>
+						}
 					</ul>
 				</nav>
-				<div>total:@{totalItemCount}</div>
+				<span class="label label-default">@{currentPage} of @{totalItemCount}</span>
 				}
-				<div class="pagination pagination-centered hide-if-no-paging"></div>
 			</td>
 		</tr>
 	</tfoot>
@@ -127,9 +140,12 @@
 
 
 
+
 <!-- ------------------------------------------------ -->
 <!-- detail -->
 <script type="text/javascript">
+
+
 	$(function(){
         $(".show-detail").bind('click', function(){
        		var id = $(this).attr('cmis-id');
@@ -226,7 +242,7 @@
 <!-- footable -->
 <script type="text/javascript">
         $(function () {
-            $('#objects-table').footable();
+            $('#objects-table').footable({ paginate:false });
         });
 </script>
 
