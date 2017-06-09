@@ -131,7 +131,13 @@
 						}
 					</ul>
 				</nav>
-				<span class="label label-default">@{currentPage} of @{totalItemCount}</span>
+				<span class="label label-default">@{currentPage * pageSize + 1} - 
+				@if((currentPage + 1) * pageSize > totalItemCount){
+					@{totalItemCount}
+				}else{
+					@{(currentPage + 1) * pageSize}
+				}
+				 of @{totalItemCount}</span>
 				}
 			</td>
 		</tr>
