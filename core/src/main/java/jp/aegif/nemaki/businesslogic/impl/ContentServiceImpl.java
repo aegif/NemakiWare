@@ -878,8 +878,7 @@ public class ContentServiceImpl implements ContentService {
 		copy.setParentId(original.getParentId());
 		copy.setImmutable(original.isImmutable());
 		copy.setAclInherited(original.isAclInherited());
-		copy.setSubTypeProperties(original.getSubTypeProperties());
-
+		copy.setSubTypeProperties(new ArrayList<Property>(original.getSubTypeProperties()));
 		setAclOnCreated(callContext, repositoryId, copy, addAces, removeAces);
 		copy.setAspects(original.getAspects());
 		copy.setSecondaryIds(original.getSecondaryIds());
