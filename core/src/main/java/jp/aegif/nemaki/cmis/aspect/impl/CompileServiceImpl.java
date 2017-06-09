@@ -521,6 +521,10 @@ public class CompileServiceImpl implements CompileService {
 			Document d = (Document) content;
 			versionSeries = contentService.getVersionSeries(repositoryId, d);
 		}
+		
+
+		String userName = callContext.getUsername();
+		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
 
 		for (Entry<String, PermissionMapping> mappingEntry : permissionMap.entrySet()) {
 			String key = mappingEntry.getValue().getKey();
@@ -553,8 +557,8 @@ public class CompileServiceImpl implements CompileService {
 			}
 
 			// Add an allowable action
-			boolean allowable = permissionService.checkPermission(callContext, repositoryId, mappingEntry.getKey(), acl,
-					baseType, content);
+			boolean allowable = permissionService.checkPermissionWithGivenList(callContext, repositoryId, mappingEntry.getKey(), acl,
+					baseType, content, userName, groups);
 
 			if (allowable) {
 				actionSet.add(convertKeyToAction(key));
