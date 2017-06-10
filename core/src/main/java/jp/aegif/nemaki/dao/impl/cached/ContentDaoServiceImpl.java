@@ -448,7 +448,22 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public List<String> getJoinedGroupByUserId(String repositoryId, String userId) {
-		return nonCachedContentDaoService.getJoinedGroupByUserId(repositoryId, userId);
+		NemakiCache<List<String>> joinedGroupCache = nemakiCachePool.get(repositoryId).getJoinedGroupCache();
+		List<String> v = joinedGroupCache.get(userId);
+		
+		if (v != null) {
+			return  v;
+		}	
+		
+		List<String> joinedGroup = nonCachedContentDaoService.getJoinedGroupByUserId(repositoryId, userId);
+		
+		if (joinedGroup == null){
+			return null;
+		}else{
+			joinedGroupCache.put(userId,joinedGroup);
+		}
+		
+		return joinedGroup;
 	}
 
 	@Override
@@ -761,6 +776,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		nemakiCachePool.get(repositoryId).getContentCache().put(updated.getId(), updated);
 		nemakiCachePool.get(repositoryId).getGroupItemCache().put(updated.getGroupId(), updated);
 		nemakiCachePool.get(repositoryId).getObjectDataCache().remove(updated.getId());
+		nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
 		return updated;
 	}
 

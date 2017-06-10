@@ -41,9 +41,9 @@ public class CacheService {
 	private final String USERS_CACHE = "usersCache";
 	private final String GROUP_CACHE = "groupCache";
 	private final String GROUPS_CACHE = "groupsCache";
-
-
+	
 	private final String ACL_CACHE = "aclCache";
+	private final String JOINED_GROUP_CACHE = "joinedGroupCache";
 
 	private final String repositoryId;
 
@@ -180,6 +180,11 @@ public class CacheService {
 	public NemakiCache<Acl> getAclCache() {
 		String name = repositoryId + "_" + ACL_CACHE;
 		return new NemakiCache<Acl>(enabled.get(name), cacheManager.getCache(name));
+	}
+	
+	public NemakiCache<List<String>> getJoinedGroupCache(){
+		String name = repositoryId + "_" + JOINED_GROUP_CACHE;
+		return new NemakiCache<List<String>>(enabled.get(name), cacheManager.getCache(name));
 	}
 
 
