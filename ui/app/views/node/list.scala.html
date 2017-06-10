@@ -12,10 +12,10 @@
 @import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed
 @import play.mvc.Http.Context.Implicit
 
-@(repositoryId:String)(objects: java.util.List[org.apache.chemistry.opencmis.client.api.CmisObject])(session:org.apache.chemistry.opencmis.client.api.Session)(currentPage:Int)(totalItemCount:Long)
+@(repositoryId:String)(objects: java.util.List[org.apache.chemistry.opencmis.client.api.CmisObject])(session:org.apache.chemistry.opencmis.client.api.Session)(currentPage:Int)(totalItemCount:Long)(orderBy:String)(term:String)
 
 
-<table class="footable" id="objects-table" data-sort="true"  data-filter="#filter" data-paging="false">
+<table class="footable" id="objects-table" data-sort="false"  data-filter="#filter" data-paging="false">
 	<thead>
 		<tr>
 			<th data-sort-ignore="true"   class="content-size"></th>
@@ -98,31 +98,32 @@
 
 			@pageSize = @{Util.getNavigationPagingSize()}
 			@url = @{request.path}
-			@lastPage = @{(totalItemCount / pageSize).floor.toInt}
+			
+			@lastPage = @{(totalItemCount / pageSize - 0.0000001).floor.toInt}
 
 			@if(pageSize < totalItemCount){
 				<nav>
 					<ul class="pagination">
 						@if(currentPage > 2){
-							<li><a href="@{url}" aria-label="First"><span aria-hidden="true">«</span></a></li>
+							<li><a href="@{url}?term=@{term}&orderBy=@{orderBy}" aria-label="First"><span aria-hidden="true">«</span></a></li>
 						}
 						@if(currentPage > 1){
-							<li><a href="@{url}?page=@{currentPage - 2}">@{currentPage -1}</a></li>
+							<li><a href="@{url}?term=@{term}&orderBy=@{orderBy}&page=@{currentPage - 2}">@{currentPage -1}</a></li>
 						}
 						@if(currentPage > 0){
-							<li><a href="@{url}?page=@{currentPage - 1}">@{currentPage}</a></li>
+							<li><a href="@{url}?term=@{term}&orderBy=@{orderBy}&page=@{currentPage - 1}">@{currentPage}</a></li>
 						}
 
 						<li  class="active"><a href="#">@{currentPage + 1}</a></li>
 
 						@if(currentPage < lastPage){
-							<li><a href="@{url}?page=@{currentPage + 1}">@{currentPage + 2}</a></li>
+							<li><a href="@{url}?term=@{term}&orderBy=@{orderBy}&page=@{currentPage + 1}">@{currentPage + 2}</a></li>
 						}
 						@if((currentPage + 1) < lastPage){
-							<li><a href="@{url}?page=@{currentPage + 2}">@{currentPage + 3}</a></li>
+							<li><a href="@{url}?term=@{term}&orderBy=@{orderBy}&page=@{currentPage + 2}">@{currentPage + 3}</a></li>
 						}
 						@if((currentPage + 2) < lastPage){
-							<li><a href="@{url}?page=@{lastPage}" aria-label="Last"><span aria-hidden="true">»</span></a></li>
+							<li><a href="@{url}?term=@{term}&orderBy=@{orderBy}&page=@{lastPage}" aria-label="Last"><span aria-hidden="true">»</span></a></li>
 						}
 					</ul>
 				</nav>
