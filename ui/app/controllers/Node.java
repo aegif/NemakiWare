@@ -119,7 +119,19 @@ public class Node extends Controller {
 	public Result index(String repositoryId) {
 		Session session = getCmisSession(repositoryId);
 		Folder root = session.getRootFolder();
-		return showChildren(repositoryId, root.getId());
+		return showChildren(repositoryId, root.getId(), 0);
+	}
+	@Secure
+	public Result index(String repositoryId, int currentPage) {
+		Session session = getCmisSession(repositoryId);
+		Folder root = session.getRootFolder();
+		return showChildren(repositoryId, root.getId(), currentPage);
+	}
+	@Secure
+	public Result index(String repositoryId, int currentPage, String orderBy) {
+		Session session = getCmisSession(repositoryId);
+		Folder root = session.getRootFolder();
+		return showChildren(repositoryId, root.getId(), currentPage, orderBy);
 	}
 
 	@Secure
@@ -151,10 +163,15 @@ public class Node extends Controller {
 	}
 	@Secure
 	public Result showChildren(String repositoryId, String objectId){
-		return showChildren(repositoryId,  objectId, 0);
+		return showChildren(repositoryId,  objectId, 0,null);
 	}
 	@Secure
 	public Result showChildren(String repositoryId, String objectId, int currentPage){
+		return showChildren(repositoryId,  objectId, currentPage,null);
+	}
+	
+	@Secure
+	public Result showChildren(String repositoryId, String objectId, int currentPage, String orderBy){
 		NemakiProfile profile = Util.getProfile(ctx());
 		Session session = getCmisSession(repositoryId);
 		ObjectId id = session.createObjectId(objectId);
@@ -163,6 +180,7 @@ public class Node extends Controller {
 		cmisOpCtxParent.setIncludeRelationships(IncludeRelationships.NONE);
 		cmisOpCtxParent.setIncludeAcls(true);
 		cmisOpCtxParent.setIncludeAllowableActions(true);
+		
 		CmisObject parent = session.getObject(id, cmisOpCtxParent);
 
 		List<CmisObject> results = new ArrayList<CmisObject>();
@@ -178,6 +196,9 @@ public class Node extends Controller {
 			cmisOpCtx.setIncludeAcls(true);
 			cmisOpCtx.setIncludeAllowableActions(true);
 			cmisOpCtx.setMaxItemsPerPage(maxItemsPerPage);
+			if(orderBy != null){
+				cmisOpCtx.setOrderBy(orderBy);
+			}
 
 			ItemIterable<CmisObject> allChildren = _parent.getChildren(cmisOpCtx);
 			ItemIterable<CmisObject> children = allChildren.skipTo(skipCount).getPage();
@@ -220,7 +241,7 @@ public class Node extends Controller {
 		List<Tree<ObjectType>> viewTypes = types.stream().filter(p -> enableTypes.contains(p.getItem().getLocalName()))
 				.collect(Collectors.toList());
 
-			return ok(tree.render(repositoryId, _parent, results, viewTypes, session, profile, currentPage, totalItemCount));
+			return ok(tree.render(repositoryId, _parent, results, viewTypes, session, profile, currentPage, totalItemCount,orderBy ,null));
 		}else{
 			return internalServerError();
 		}
@@ -233,12 +254,29 @@ public class Node extends Controller {
 
 		return showChildren(repositoryId, o.getId());
 	}
+	@Secure
+	public Result showChildrenByPath(String repositoryId, String path, int currentPage) {
+		Session session = getCmisSession(repositoryId);
+		CmisObject o = session.getObjectByPath(path);
+
+		return showChildren(repositoryId, o.getId(), currentPage);
+	}
+	@Secure
+	public Result showChildrenByPath(String repositoryId, String path, int currentPage, String orderBy) {
+		Session session = getCmisSession(repositoryId);
+		CmisObject o = session.getObjectByPath(path);
+
+		return showChildren(repositoryId, o.getId(), currentPage, orderBy);
+	}
 
 	@Secure
-	public Result search(String repositoryId, String term, int currentPage) {
+	public Result search(String repositoryId, String term, int currentPage, String orderBy) {
 
 		if (term.startsWith("[cmis]")) {
 			return this.searchFreeQuery(repositoryId, term);
+		}
+		if (term.trim().isEmpty()){
+			return this.index(repositoryId);
 		}
 
 		NemakiProfile profile = Util.getProfile(ctx());
@@ -259,7 +297,7 @@ public class Node extends Controller {
 		int skipCount = maxItemsPerPage * currentPage;
 
 		ItemIterable<CmisObject> allResults = session.queryObjects("cmis:document", docStatement, false, ctxt);
-		ItemIterable<CmisObject> docResults = allResults.skipTo(skipCount).getPage();
+		ItemIterable<CmisObject> docResults = allResults.skipTo(skipCount).getPage(maxItemsPerPage);
 		Iterator<CmisObject> docItr = docResults.iterator();
 		long totalItemCount = docResults.getTotalNumItems();
 
@@ -271,7 +309,7 @@ public class Node extends Controller {
 			list.add(doc);
 		}
 
-		return ok(search.render(repositoryId, term, list, session, profile, 0, totalItemCount));
+		return ok(search.render(repositoryId, term, list, session, profile, currentPage, totalItemCount, orderBy));
 	}
 
 	private Result searchFreeQuery(String repositoryId, String term) {
@@ -1463,9 +1501,9 @@ public class Node extends Controller {
 		String parentId = Util.getFormData(input, PropertyIds.PARENT_ID);
 		// TODO fix hard code
 		if (parentId == null || "".equals(parentId) || "/".equals(parentId)) {
-			return redirect(routes.Node.index(repositoryId));
+			return redirect(routes.Node.index(repositoryId,0));
 		} else {
-			return redirect(routes.Node.showChildren(repositoryId, parentId,0));
+			return redirect(routes.Node.showChildren(repositoryId, parentId,0,null));
 		}
 	}
 
