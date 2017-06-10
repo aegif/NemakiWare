@@ -98,46 +98,44 @@
 
 			@pageSize = @{Util.getNavigationPagingSize()}
 			@url = @{request.path}
+			@lastPage = @{(totalItemCount / pageSize).floor.toInt}
 
 			@if(pageSize < totalItemCount){
 				<nav>
 					<ul class="pagination">
-						@if(currentPage > 3){
-						<li>
-							<a href="@{url}" aria-label="First">
-								<span aria-hidden="true">«</span>
-							</a>
-						</li>
-						}
 						@if(currentPage > 2){
-							<li><a href="@{url}?page=@{currentPage - 2}">@{currentPage - 1}</a></li>
+							<li><a href="@{url}" aria-label="First"><span aria-hidden="true">«</span></a></li>
 						}
 						@if(currentPage > 1){
+							<li><a href="@{url}?page=@{currentPage - 2}">@{currentPage -1}</a></li>
+						}
+						@if(currentPage > 0){
 							<li><a href="@{url}?page=@{currentPage - 1}">@{currentPage}</a></li>
 						}
+
 						<li  class="active"><a href="#">@{currentPage + 1}</a></li>
-						@if((currentPage + 1) * pageSize < totalItemCount){
+
+						@if(currentPage < lastPage){
 							<li><a href="@{url}?page=@{currentPage + 1}">@{currentPage + 2}</a></li>
 						}
-						@if((currentPage + 2) * pageSize < totalItemCount){
+						@if((currentPage + 1) < lastPage){
 							<li><a href="@{url}?page=@{currentPage + 2}">@{currentPage + 3}</a></li>
 						}
-						@if((currentPage + 3) * pageSize < totalItemCount){
-						<li>
-							<a href="@{url}?page=@{(totalItemCount / pageSize).floor.toInt}" aria-label="Last">
-								<span aria-hidden="true">»</span>
-							</a>
-						</li>
+						@if((currentPage + 2) < lastPage){
+							<li><a href="@{url}?page=@{lastPage}" aria-label="Last"><span aria-hidden="true">»</span></a></li>
 						}
 					</ul>
 				</nav>
-				<span class="label label-default">@{currentPage * pageSize + 1} - 
-				@if((currentPage + 1) * pageSize > totalItemCount){
-					@{totalItemCount}
-				}else{
-					@{(currentPage + 1) * pageSize}
-				}
-				 of @{totalItemCount}</span>
+				<span class="label label-default">
+					@{currentPage * pageSize + 1}
+					 - 
+					@if((currentPage + 1) * pageSize > totalItemCount){
+						@{totalItemCount}
+					}else{
+						@{(currentPage + 1) * pageSize}
+					}
+				 	of @{totalItemCount}
+				</span>
 				}
 			</td>
 		</tr>
