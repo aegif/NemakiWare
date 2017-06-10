@@ -119,19 +119,19 @@ public class Node extends Controller {
 	public Result index(String repositoryId) {
 		Session session = getCmisSession(repositoryId);
 		Folder root = session.getRootFolder();
-		return showChildren(repositoryId, root.getId(), 0);
+		return showChildren(repositoryId, root.getId(), 0, null,null);
 	}
 	@Secure
 	public Result index(String repositoryId, int currentPage) {
 		Session session = getCmisSession(repositoryId);
 		Folder root = session.getRootFolder();
-		return showChildren(repositoryId, root.getId(), currentPage);
+		return showChildren(repositoryId, root.getId(), currentPage, null,null);
 	}
 	@Secure
 	public Result index(String repositoryId, int currentPage, String orderBy) {
 		Session session = getCmisSession(repositoryId);
 		Folder root = session.getRootFolder();
-		return showChildren(repositoryId, root.getId(), currentPage, orderBy);
+		return showChildren(repositoryId, root.getId(), currentPage, orderBy,null);
 	}
 
 	@Secure
@@ -163,15 +163,15 @@ public class Node extends Controller {
 	}
 	@Secure
 	public Result showChildren(String repositoryId, String objectId){
-		return showChildren(repositoryId,  objectId, 0,null);
+		return showChildren(repositoryId,  objectId, 0,null,null);
 	}
 	@Secure
 	public Result showChildren(String repositoryId, String objectId, int currentPage){
-		return showChildren(repositoryId,  objectId, currentPage,null);
+		return showChildren(repositoryId,  objectId, currentPage,null,null);
 	}
 	
 	@Secure
-	public Result showChildren(String repositoryId, String objectId, int currentPage, String orderBy){
+	public Result showChildren(String repositoryId, String objectId, int currentPage, String orderBy, String term){
 		NemakiProfile profile = Util.getProfile(ctx());
 		Session session = getCmisSession(repositoryId);
 		ObjectId id = session.createObjectId(objectId);
@@ -241,32 +241,32 @@ public class Node extends Controller {
 		List<Tree<ObjectType>> viewTypes = types.stream().filter(p -> enableTypes.contains(p.getItem().getLocalName()))
 				.collect(Collectors.toList());
 
-			return ok(tree.render(repositoryId, _parent, results, viewTypes, session, profile, currentPage, totalItemCount,orderBy ,null));
+			return ok(tree.render(repositoryId, _parent, results, viewTypes, session, profile, currentPage, totalItemCount,orderBy ,term));
 		}else{
 			return internalServerError();
 		}
 	}
 
 	@Secure
-	public Result showChildrenByPath(String repositoryId, String path) {
+	public Result showChildrenByPath(String repositoryId, String term) {
 		Session session = getCmisSession(repositoryId);
-		CmisObject o = session.getObjectByPath(path);
+		CmisObject o = session.getObjectByPath(term);
 
-		return showChildren(repositoryId, o.getId());
+		return showChildren(repositoryId, o.getId(), 0 ,null,term);
 	}
 	@Secure
-	public Result showChildrenByPath(String repositoryId, String path, int currentPage) {
+	public Result showChildrenByPath(String repositoryId, String term, int currentPage) {
 		Session session = getCmisSession(repositoryId);
-		CmisObject o = session.getObjectByPath(path);
+		CmisObject o = session.getObjectByPath(term);
 
-		return showChildren(repositoryId, o.getId(), currentPage);
+		return showChildren(repositoryId, o.getId(), currentPage, null,term);
 	}
 	@Secure
-	public Result showChildrenByPath(String repositoryId, String path, int currentPage, String orderBy) {
+	public Result showChildrenByPath(String repositoryId, String term, int currentPage, String orderBy) {
 		Session session = getCmisSession(repositoryId);
-		CmisObject o = session.getObjectByPath(path);
+		CmisObject o = session.getObjectByPath(term);
 
-		return showChildren(repositoryId, o.getId(), currentPage, orderBy);
+		return showChildren(repositoryId, o.getId(), currentPage, orderBy,term);
 	}
 
 	@Secure
@@ -1501,9 +1501,9 @@ public class Node extends Controller {
 		String parentId = Util.getFormData(input, PropertyIds.PARENT_ID);
 		// TODO fix hard code
 		if (parentId == null || "".equals(parentId) || "/".equals(parentId)) {
-			return redirect(routes.Node.index(repositoryId,0));
+			return redirect(routes.Node.index(repositoryId,0,null));
 		} else {
-			return redirect(routes.Node.showChildren(repositoryId, parentId,0,null));
+			return redirect(routes.Node.showChildren(repositoryId, parentId,0,null,null));
 		}
 	}
 

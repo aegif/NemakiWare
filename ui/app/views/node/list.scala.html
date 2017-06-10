@@ -19,10 +19,10 @@
 	<thead>
 		<tr>
 			<th data-sort-ignore="true"   class="content-size"></th>
-			<th data-class="expand" data-sort-initial="true">@NemakiConfig.getLabel("cmis:name", lang().language)</th>
-			 <th class="content-size" data-class="expand" data-filter="#filter" >@NemakiConfig.getLabel("cmis:objectTypeId", Implicit.lang().language)</th>
+			<th class="sort-button" data-class="expand" data-sort-initial="true" data-sort-type="cmis:name">@NemakiConfig.getLabel("cmis:name", lang().language)</th>
+			 <th class="sort-button" class="content-size" data-class="expand" data-filter="#filter" data-sort-type="cmis:objectTypeId">@NemakiConfig.getLabel("cmis:objectTypeId", Implicit.lang().language)</th>
 			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
-				<th class="content-size" data-class="expand">@NemakiConfig.getLabel(column, Implicit.lang().language)</th>
+				<th class="sort-button" class="content-size" data-class="expand" data-sort-type="@column">@NemakiConfig.getLabel(column, Implicit.lang().language)</th>
 			}
 			<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action")</th>
 		</tr>
@@ -99,7 +99,7 @@
 			@pageSize = @{Util.getNavigationPagingSize()}
 			@url = @{request.path}
 			
-			@lastPage = @{(totalItemCount / pageSize - 0.0000001).floor.toInt}
+			@lastPage = @{((totalItemCount - 0.1)/ pageSize).floor.toInt}
 
 			@if(pageSize < totalItemCount){
 				<nav>
@@ -136,6 +136,7 @@
 						@{(currentPage + 1) * pageSize}
 					}
 				 	of @{totalItemCount}
+				 	
 				</span>
 				}
 			</td>
@@ -250,6 +251,17 @@
             $('#objects-table').footable({ paginate:false });
         });
 </script>
+
+<!-- sort -->
+<script type="text/javascript">
+        $(function () {
+            $('.sort-button').bind('click',function(){
+            var type = $(this).attr('data-sort-type');
+            windows.location.href("@{url}?term=@{term}&orderBy=" + encodeURI(type + " DESC") + "&page=" + @{currentPage}");
+            }
+        });
+</script>
+
 
 
 
