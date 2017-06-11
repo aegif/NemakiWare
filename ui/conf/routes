@@ -28,12 +28,12 @@ GET		/logout												@org.pac4j.play.ApplicationLogoutController.logout()
 GET		/repo/:repoId/logout								controllers.Application.logout(repoId:String, message:String ?= null)
 
 # Home page
-GET     /repo/:repoId/                           			controllers.Node.index(repoId:String, page:Int ?= 0, orderBy:String ?= "")
+GET     /repo/:repoId/                           			controllers.Node.index(repoId:String, page:Int ?= 0, orderBy:String ?= "cmis:name DESC")
 GET     /repo/:repoId/direct/:id                           	controllers.Node.direct(repoId:String, id:String, activateTabName:String ?= "property")
 
 # CMIS Rest API
-GET     /repo/:repoId/objects               				controllers.Node.showChildren(repoId:String, id="/", page:Int ?= 0, orderBy:String ?= "", term:String ?="")
-GET		/repo/:repoId/objects/children-by-path	        	controllers.Node.showChildrenByPath(repoId:String, term:String ?= "", page:Int ?= 0, orderBy:String ?= "")
+GET     /repo/:repoId/objects               				controllers.Node.showChildren(repoId:String, id="/", page:Int ?= 0, orderBy:String ?= "cmis:name DESC", term:String ?="")
+GET		/repo/:repoId/objects/children-by-path	        	controllers.Node.showChildrenByPath(repoId:String, term:String ?= "", page:Int ?= 0, orderBy:String ?= "cmis:name DESC")
 GET     /repo/:repoId/objects/search               			controllers.Node.search(repoId:String, term:String ?= "", page:Int ?= 0, orderBy:String ?= "")
 GET     /repo/:repoId/objects/new               			controllers.Node.showBlank(repoId:String)
 POST	/repo/:repoId/objects/create               			controllers.Node.create(repoId:String)
