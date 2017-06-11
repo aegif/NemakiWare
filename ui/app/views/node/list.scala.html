@@ -19,10 +19,40 @@
 	<thead>
 		<tr>
 			<th data-sort-ignore="true"   class="content-size"></th>
-			<th class="sort-button" data-class="expand" data-sort-initial="true" data-sort-type="cmis:name">@NemakiConfig.getLabel("cmis:name", lang().language)</th>
-			 <th class="sort-button" class="content-size" data-class="expand" data-filter="#filter" data-sort-type="cmis:objectTypeId">@NemakiConfig.getLabel("cmis:objectTypeId", Implicit.lang().language)</th>
+			<th class="sort-button" data-class="expand" data-sort-initial="true" data-sort-type="cmis:name">@NemakiConfig.getLabel("cmis:name", lang().language) 
+			@if(orderBy == "cmis:name DESC"){
+				<span class="fa fa-sort-desc"></span>
+			}else{
+				@if(orderBy == "cmis:name ASC"){
+					<span class="fa fa-sort-asc"></span>
+				}else{
+					<span class="fa fa-sort"></span>				
+				}
+			}
+			</th>
+			<th class="sort-button" class="content-size" data-class="expand" data-filter="#filter" data-sort-type="cmis:objectTypeId">@NemakiConfig.getLabel("cmis:objectTypeId", Implicit.lang().language) 
+			@if(orderBy == "cmis:objectTypeId DESC"){
+				<span class="fa fa-sort-desc"></span>
+			}else{
+				@if(orderBy == "cmis:objectTypeId ASC"){
+					<span class="fa fa-sort-asc"></span>
+				}else{
+					<span class="fa fa-sort"></span>				
+				}
+			}
+			</th>
 			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
-				<th class="sort-button" class="content-size" data-class="expand" data-sort-type="@column">@NemakiConfig.getLabel(column, Implicit.lang().language)</th>
+				<th class="sort-button" class="content-size" data-class="expand" data-sort-type="@column">@NemakiConfig.getLabel(column, Implicit.lang().language) 
+			@if(orderBy == column+" DESC"){
+				<span class="fa fa-sort-desc"></span>
+			}else{
+				@if(orderBy == column+" ASC"){
+					<span class="fa fa-sort-asc"></span>
+				}else{
+					<span class="fa fa-sort"></span>				
+				}
+			}
+				</th>
 			}
 			<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action")</th>
 		</tr>
@@ -46,7 +76,7 @@
 					}
 
 					case folder:Folder =>{
-						<a href="@routes.Node.showChildren(repositoryId, folder.getId)">
+						<a href="@routes.Node.showChildren(repositoryId, folder.getId,0,null,null)">
 					}
 
 					case item:Item =>{
@@ -256,9 +286,13 @@
 <script type="text/javascript">
         $(function () {
             $('.sort-button').bind('click',function(){
-            var type = $(this).attr('data-sort-type');
-            windows.location.href("@{url}?term=@{term}&orderBy=" + encodeURI(type + " DESC") + "&page=" + @{currentPage}");
-            }
+           		var type = $(this).attr('data-sort-type');
+           		if(encodeURI(type + " DESC") == encodeURI("@{orderBy}")){
+            		window.location.href="@{url}?term=@{term}&orderBy=" + encodeURI(type + " ASC") + "&page=" + "@{currentPage}";
+            	}else{
+            		window.location.href="@{url}?term=@{term}&orderBy=" + encodeURI(type + " DESC") + "&page=" + "@{currentPage}";            	
+            	}
+            });
         });
 </script>
 

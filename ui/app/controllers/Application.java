@@ -55,7 +55,7 @@ public class Application extends Controller {
 		context.setSessionAttribute(Token.LOGIN_REPOSITORY_ID, repositoryId);
 
 		// set or override redirect url
-		String redircetURL = routes.Node.index(repositoryId, 0, null).absoluteURL(request());
+		String redircetURL = routes.Node.index(repositoryId, 0, "cmis:name DESC").absoluteURL(request());
 		context.setSessionAttribute(Pac4jConstants.REQUESTED_URL, redircetURL);
 
 		Clients clients = config.getClients();
@@ -78,7 +78,7 @@ public class Application extends Controller {
 		//ログイン画面に直接来た場合など、ログイン後のリダイレクト先の設定をしておかないとエラーになる
 		final Object uri = context.getSessionAttribute(Pac4jConstants.REQUESTED_URL);
 		if (uri == null){
-			String redircetURL = routes.Node.index(repositoryId, 0, null).absoluteURL(request());
+			String redircetURL = routes.Node.index(repositoryId, 0, "cmis:name DESC").absoluteURL(request());
 			context.setSessionAttribute(Pac4jConstants.REQUESTED_URL, redircetURL);
 		}
 
