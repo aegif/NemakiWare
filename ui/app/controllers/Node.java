@@ -169,7 +169,7 @@ public class Node extends Controller {
 		if (Util.isFolder(parent)) {
 			Folder _parent = (Folder) parent;
 
-			logger.warn("[Call Folder#getChildren]Begin");
+			logger.debug("[Call Folder#getChildren]Begin");
 			int maxItemsPerPage = Util.getNavigationPagingSize();
 			int skipCount = maxItemsPerPage * currentPage;
 
@@ -206,7 +206,7 @@ public class Node extends Controller {
 				results.add(obj);
 			}
 
-		logger.warn("[Call Folder#getChildren]End");
+		logger.debug("[Call Folder#getChildren]End");
 
 		// Fill in CMIS types
 		List<Tree<ObjectType>> typeFolders = session.getTypeDescendants(BaseTypeId.CMIS_FOLDER.value(), -1, false);
