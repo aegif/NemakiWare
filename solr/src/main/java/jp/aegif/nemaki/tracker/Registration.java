@@ -86,7 +86,7 @@ public class Registration implements Runnable {
 
 		// Read MIME-Type filtering
 		for (ChangeEvent ce : list) {
-			logger.info("Run Registration : {}" , ce.toString());
+			logger.info("Run Registration : Type={}, Id={}" ,ce.getChangeType(), ce.getObjectId());
 
 			// cache clean
 			cache.delete(ce.getObjectId(), ce.getChangeTime());
@@ -102,6 +102,7 @@ public class Registration implements Runnable {
 				deleteSolrDocument(ce);
 				continue;
 			default:
+				//SECURITY is iqnore
 				break;
 			}
 		}

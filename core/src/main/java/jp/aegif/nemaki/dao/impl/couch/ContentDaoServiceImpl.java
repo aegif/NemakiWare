@@ -1077,6 +1077,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				Long startKey = startChange.getToken();
 				query.startKey(startKey);
 			} catch (org.ektorp.DocumentNotFoundException ex) {
+				log.warn(ex);
 				return null;
 			}
 		}
