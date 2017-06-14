@@ -151,7 +151,10 @@ public class AclServiceImpl implements AclService {
 			nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
 
 			clearCachesRecursively(Executors.newCachedThreadPool(), callContext, repositoryId, content, true);
-			writeChangeEventsRecursively(Executors.newCachedThreadPool(), callContext, repositoryId, content, true);
+
+			// Temporary stopping write change evnets descendant
+			// TODO : depend on configuration
+			//writeChangeEventsRecursively(Executors.newCachedThreadPool(), callContext, repositoryId, content, true);
 
 			return getAcl(callContext, repositoryId, objectId, false, null);
 		}finally{
