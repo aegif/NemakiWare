@@ -147,7 +147,7 @@ public class User extends Controller {
 					list.add(session.getObject(favId));
 				}
 			}
-			return ok(favorites.render(repositoryId, user, list, session, profile,0, (long)fs.size()));
+			return ok(favorites.render(repositoryId, user, list, session, profile,0, (long)fs.size(),null,null));
 		}else{
 			return internalServerError();
 		}
