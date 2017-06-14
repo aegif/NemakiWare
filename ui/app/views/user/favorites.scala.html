@@ -2,7 +2,7 @@
 
 @import node.list
 
-@(repositoryId:String)(user:model.User)(objects: java.util.List[org.apache.chemistry.opencmis.client.api.CmisObject])(session:org.apache.chemistry.opencmis.client.api.Session)(profile: util.authentication.NemakiProfile)
+@(repositoryId:String)(user:model.User)(objects: java.util.List[org.apache.chemistry.opencmis.client.api.CmisObject])(session:org.apache.chemistry.opencmis.client.api.Session)(profile: util.authentication.NemakiProfile)(currentPage:Int)(totalItemCount:Long)(orderBy:String)(term:String)
 
 <!DOCTYPE html>
 <html>
@@ -20,7 +20,7 @@
 
 				<div class="col-md-11">
 				 	<div id="list">
-						@list(repositoryId)(objects)(session)
+						@list(repositoryId)(objects)(session)(currentPage)(totalItemCount)(orderBy)(term)
 				 	</div>
 				</div>
 	  		</div>

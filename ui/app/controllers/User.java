@@ -48,14 +48,14 @@ public class User extends Controller {
 
 	@Secure
 	public Result search(String repositoryId, String term){
-		
+
 		try {
 			term = URLEncoder.encode(term,"UTF-8");
 		} catch (UnsupportedEncodingException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-		
+
 		NemakiProfile profile = Util.getProfile(ctx());
     	JsonNode result = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "search?query=" + term);
 
@@ -141,12 +141,13 @@ public class User extends Controller {
 				session =  getCmisSession(repositoryId);
 
 				Iterator<String>fsItr = fs.iterator();
+
 				while(fsItr.hasNext()){
 					String favId = fsItr.next();
 					list.add(session.getObject(favId));
 				}
 			}
-			return ok(favorites.render(repositoryId, user, list, session, profile));
+			return ok(favorites.render(repositoryId, user, list, session, profile,0, (long)fs.size()));
 		}else{
 			return internalServerError();
 		}
