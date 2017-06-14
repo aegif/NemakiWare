@@ -175,7 +175,7 @@ public class CoreTracker extends CloseHook {
 			if (changeEvents == null) {
 				return;
 			}
-			logger.info("Start indexing of events:{}" , changeEvents.getTotalNumItems());
+			logger.info("Start indexing of events : Repo={} Count={}", repositoryId , changeEvents.getTotalNumItems());
 			List<ChangeEvent> events = changeEvents.getChangeEvents();
 
 			// After 2nd crawling, discard the first item
@@ -186,8 +186,6 @@ public class CoreTracker extends CloseHook {
 			}
 			if (events.isEmpty())
 				return;
-
-			logger.info("token: {}", token);
 
 			// Parse filtering configuration
 			PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
@@ -205,6 +203,7 @@ public class CoreTracker extends CloseHook {
 
 			// Extract only the last events of each objectId
 			List<ChangeEvent> list = extractChangeEvent(events);
+			logger.info("Extracted indexing of events : Repo={} Count={}", repositoryId, list.size());
 
 			PropertyManager propMgr = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
 			int numberOfThread = Integer.valueOf(propMgr.readValue(PropertyKey.SOLR_TRACKING_NUMBER_OF_THREAD));
@@ -227,7 +226,7 @@ public class CoreTracker extends CloseHook {
 				}
 
 				List<ChangeEvent> listPerThread = list.subList(fromIndex, toIndex);
-				logger.info("Num of change events for this thread: {}" , listPerThread.size());
+				logger.info("Num of change events for this thread : Repo={} Count={}", repositoryId, listPerThread.size());
 				Session cmisSession = CmisSessionFactory.getSession(repositoryId);
 				NemakiCacheManager cache = new NemakiCacheManager(repositoryId);
 				Registration registration = new Registration(cmisSession, core, indexServer, listPerThread,
@@ -237,8 +236,9 @@ public class CoreTracker extends CloseHook {
 				try {
 					t.join();
 				} catch (InterruptedException e) {
-					logger.error("Thred interuptted! ", e);
+					logger.error("Thred interuptted! : Repo={} Ex={}", repositoryId, e);
 				}
+
 			}
 
 			// Save the latest token
@@ -309,10 +309,9 @@ public class CoreTracker extends CloseHook {
 	 */
 	private ChangeEvents getCmisChangeLog(String trackingType, String repositoryId) {
 		PropertyManager propMgr = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
-		logger.info("Start getCmisChangeLog {} : {}", trackingType, repositoryId);
+		logger.info("Start getCmisChangeLog : Repo={} Type={}", repositoryId, trackingType);
 		String _latestToken = readLatestChangeToken(repositoryId);
 		String latestToken = (StringUtils.isEmpty(_latestToken)) ? null : _latestToken;
-		logger.info("Repository={} LastChangeToken={}",repositoryId, latestToken);
 
 		long _numItems = 0;
 		if (Constant.MODE_DELTA.equals(trackingType)) {
@@ -322,9 +321,11 @@ public class CoreTracker extends CloseHook {
 		}
 
 		long numItems = (-1 == _numItems) ? Long.MAX_VALUE : Long.valueOf(_numItems);
+		logger.info("Call CMIS getContentChanges : Repo={} LastChangeToken={} Items={}",repositoryId, latestToken, numItems);
 
 		Session cmisSession = CmisSessionFactory.getSession(repositoryId);
 		if (cmisSession == null) {
+			logger.info("Cannot create cmis session to {}.", repositoryId);
 			return null;
 		}
 
