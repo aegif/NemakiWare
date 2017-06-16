@@ -373,10 +373,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		UserItem item = null;
 		Content c = this.getContent(repositoryId, objectId);
 		if (c != null) {
-			try {
+			try{
 				item = (UserItem) c;
-			} catch (ClassCastException e) {
-				log.error("Content type is not UserItem : " + c.getObjectType());
+			}catch(ClassCastException ex){
+				log.warn("Content type is not UserItem : " + c.getObjectType());
 			}
 		}
 		return item;
@@ -386,7 +386,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public UserItem getUserItemById(String repositoryId, String userId) {
 		NemakiCache<UserItem> userItemCache = nemakiCachePool.get(repositoryId).getUserItemCache();
 		UserItem v = userItemCache.get(userId);
-
 		if (v != null) {
 			return  v;
 		}
@@ -412,10 +411,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		GroupItem item = null;
 		Content c = this.getContent(repositoryId, objectId);
 		if (c != null) {
-			try {
+			try{
 				item = (GroupItem) c;
-			} catch (ClassCastException e) {
-				log.error("Content type is not GroupItem : " + c.getObjectType());
+			}catch(ClassCastException ex){
+				log.warn("Content type is not GroupItem : " + c.getObjectType());
 			}
 		}
 		return item;
@@ -450,19 +449,19 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public List<String> getJoinedGroupByUserId(String repositoryId, String userId) {
 		NemakiCache<List<String>> joinedGroupCache = nemakiCachePool.get(repositoryId).getJoinedGroupCache();
 		List<String> v = joinedGroupCache.get(userId);
-		
+
 		if (v != null) {
 			return  v;
-		}	
-		
+		}
+
 		List<String> joinedGroup = nonCachedContentDaoService.getJoinedGroupByUserId(repositoryId, userId);
-		
+
 		if (joinedGroup == null){
 			return null;
 		}else{
 			joinedGroupCache.put(userId,joinedGroup);
 		}
-		
+
 		return joinedGroup;
 	}
 

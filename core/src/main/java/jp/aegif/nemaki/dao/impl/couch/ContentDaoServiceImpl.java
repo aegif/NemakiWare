@@ -21,6 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.dao.impl.couch;
 
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -1117,7 +1118,8 @@ log.info(item.toString());
 				Long startKey = startChange.getToken();
 				query.startKey(startKey);
 			} catch (org.ektorp.DocumentNotFoundException ex) {
-				log.warn(ex);
+				log.warn(MessageFormat.format("CouchChange is not found : Repo={0}, StartToken={1}",  repositoryId,  startToken));
+
 				return null;
 			}
 		}
