@@ -42,11 +42,13 @@ import org.apache.chemistry.opencmis.client.runtime.OperationContextImpl;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
+import org.apache.chemistry.opencmis.commons.data.AllowableActions;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
+import org.apache.chemistry.opencmis.commons.enums.Action;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
@@ -55,6 +57,7 @@ import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
 import org.apache.commons.collections.CollectionUtils;
@@ -169,7 +172,7 @@ public class Node extends Controller {
 	public Result showChildren(String repositoryId, String objectId, int currentPage){
 		return showChildren(repositoryId,  objectId, currentPage,"cmis:name DESC",null);
 	}
-	
+
 	@Secure
 	public Result showChildren(String repositoryId, String objectId, int currentPage, String orderBy, String term){
 		NemakiProfile profile = Util.getProfile(ctx());
@@ -180,7 +183,7 @@ public class Node extends Controller {
 		cmisOpCtxParent.setIncludeRelationships(IncludeRelationships.NONE);
 		cmisOpCtxParent.setIncludeAcls(true);
 		cmisOpCtxParent.setIncludeAllowableActions(true);
-		
+
 		CmisObject parent = session.getObject(id, cmisOpCtxParent);
 
 		List<CmisObject> results = new ArrayList<CmisObject>();
@@ -1221,9 +1224,8 @@ public class Node extends Controller {
 			Folder folder = (Folder) cmisObject;
 			deletedList.addAll(folder.deleteTree(true, null, true));
 		} else {
-			String id = cmisObject.getId();
-			session.delete(new ObjectIdImpl(id));
-			deletedList.add(id);
+			cmisObject.delete();
+			deletedList.add(cmisObject.getId());
 		}
 		return deletedList;
 	}

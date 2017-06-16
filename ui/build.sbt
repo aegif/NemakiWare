@@ -38,10 +38,11 @@ libraryDependencies ++= Seq(
   "org.webjars" % "bootstrap-select" % "1.12.0",
   "org.webjars" % "Eonasdan-bootstrap-datetimepicker" % "4.17.43",
   "org.webjars" % "momentjs" % "2.18.1",
+  "org.apache.chemistry.opencmis" % "chemistry-opencmis-commons-api" % "1.1.0",
+  "org.apache.chemistry.opencmis" % "chemistry-opencmis-commons-impl" % "1.1.0",
+  "org.apache.chemistry.opencmis" % "chemistry-opencmis-client-api" % "1.1.0",
   "org.apache.chemistry.opencmis" % "chemistry-opencmis-client-impl" % "1.1.0",
   "org.apache.chemistry.opencmis" % "chemistry-opencmis-client-bindings" % "1.1.0",
-  "org.apache.chemistry.opencmis" % "chemistry-opencmis-client-api" % "1.1.0",
-  "org.apache.chemistry.opencmis" % "chemistry-opencmis-commons-impl" % "1.1.0",
   "org.apache.httpcomponents" % "httpclient" % "4.4-beta1",
   "net.lingala.zip4j" % "zip4j" % "1.3.2",
   "com.google.inject.extensions" % "guice-multibindings" % "4.0",
@@ -62,6 +63,7 @@ Play2WarKeys.targetName := Option("ui")
 Play2WarKeys.explodedJar := true
 
 EclipseKeys.createSrc := EclipseCreateSrc.Default + EclipseCreateSrc.Resource
+EclipseKeys.withSource := true
 
 // Compile the project before generating Eclipse files, so that generated .scala or .class files for views and routes are present
 EclipseKeys.preTasks := Seq(compile in Compile)
