@@ -22,8 +22,10 @@
 package jp.aegif.nemaki.dao.impl.couch;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
@@ -645,7 +647,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	public List<String> getJoinedGroupByUserId(String repositoryId, String userId) {
-		List<GroupItem> list = new ArrayList<>();
 
 		//first get directory joined groups
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("joinedDirectGroupsByUserId").key(userId);
@@ -658,32 +659,43 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			groupIdsToCheck.add(item.getGroupId());
 			resultGroupIds.add(item.getGroupId());
 		}
-
-		while(groupIdsToCheck.size() > 0) {
+/*
+ 		while(groupIdsToCheck.size() > 0) {
+ 
 			groupIdsToCheck = this.checkIndirectGroup(repositoryId, groupIdsToCheck);
 			resultGroupIds.addAll(groupIdsToCheck);
+log.info("groupIdsToCheck: " + groupIdsToCheck.toString());
+log.info("resultGroupIds: " + resultGroupIds.toString());		
 		}
+*/
 
 		//unique result
-
+		resultGroupIds = this.checkIndirectGroup(repositoryId, groupIdsToCheck);
 
 		return resultGroupIds;
 	}
 
 	private List<String> checkIndirectGroup(String repositoryId, List<String> groupIdsToCheck) {
-
+		
+/*
 		List<String> resultGroupIds = new ArrayList<String>();
 
 		int batchSize = 20;
 		ArrayList<ArrayList<String>> params = new ArrayList<ArrayList<String>>();
 		for(int i = 0 ; i < groupIdsToCheck.size() ; i ++ ) {
-
+log.info("rg: " + resultGroupIds.toString());
 			ArrayList<String> param = new ArrayList<String>();
-			param.add(String.valueOf(i % 20));
+			param.add(String.valueOf(i % batchSize));
 			param.add(groupIdsToCheck.get(0));
+log.info("param: " + param.toString());
 			groupIdsToCheck.remove(0);
 
 			//divide into 20 param
+log.info("i: " + i);
+log.info("batchSize: " + batchSize);
+log.info("groupIdsTocCheck.size();: " + groupIdsToCheck.size());
+log.info("(i % batchSize) == batchSize - 1: "+((i % batchSize) == batchSize - 1));
+log.info("i == groupIdsToCheck.size() - 1: "+(i == groupIdsToCheck.size() - 1));
 			if ( (i % batchSize) == batchSize - 1 || i == groupIdsToCheck.size() - 1 ) {
 				//query
 				ViewQuery query =
@@ -693,6 +705,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 						connectorPool.get(repositoryId).queryView(query, CouchGroupItem.class);
 				for(CouchGroupItem item : couchGroupItems) {
 					resultGroupIds.add(item.getGroupId());
+log.info(item.toString());
 				}
 				//after query, clear params
 				params = new ArrayList<ArrayList<String>>();
@@ -700,7 +713,34 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		}
 
 		return resultGroupIds;
+*/
+		Set<String> resultSet = new HashSet<String>();
+		resultSet.addAll(groupIdsToCheck);
+		Set<String> workingSet = new HashSet<String>(resultSet);
+		Set<String> waitingSet = new HashSet<String>();
+		do{
+			if(!waitingSet.isEmpty()){
+				workingSet = new HashSet<String>(waitingSet);
+			}	
+			waitingSet.clear();
+		  for(String gid : workingSet) {
+				  ViewQuery query =
+					new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("joinedDirectGroupsByGroupId").rawStartKey("[\""+gid+"\",0]").rawEndKey("[\""+gid+"\",{}]");
+			  	List<CouchGroupItem> couchGroupItems = connectorPool.get(repositoryId).queryView(query, CouchGroupItem.class);
+			  	for(CouchGroupItem item : couchGroupItems) {
+			  		String retrievedId = item.getGroupId();
+					if(!resultSet.contains(retrievedId)){
+						waitingSet.add(retrievedId);
+						resultSet.add(retrievedId);
+					}
+			  	}		
+		  }
+		  workingSet.clear();
+		}while(!waitingSet.isEmpty());
+		
+		return new ArrayList<String>(resultSet);
 	}
+	
 
 	@Override
 	public PatchHistory getPatchHistoryByName(String repositoryId, String name) {
