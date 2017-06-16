@@ -1503,9 +1503,9 @@ public class Node extends Controller {
 		String parentId = Util.getFormData(input, PropertyIds.PARENT_ID);
 		// TODO fix hard code
 		if (parentId == null || "".equals(parentId) || "/".equals(parentId)) {
-			return redirect(routes.Node.index(repositoryId,0,"cmis:name DESC"));
+			return redirect(routes.Node.index(repositoryId,0,"cmis:name ASC"));
 		} else {
-			return redirect(routes.Node.showChildren(repositoryId, parentId,0,"cmis:name DESC",null));
+			return redirect(routes.Node.showChildren(repositoryId, parentId,0,"cmis:name ASC",null));
 		}
 	}
 
