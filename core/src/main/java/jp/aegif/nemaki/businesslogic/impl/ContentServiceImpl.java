@@ -1845,8 +1845,13 @@ public class ContentServiceImpl implements ContentService {
 		} else {
 			// reduce db access instead of getParent(repositoryId,
 			// content.getId())
+			
 			Folder parent = getFolder(repositoryId, content.getParentId());
+			if(parent == null){
+			return aces;
+			}else{
 			return mergeAcl(repositoryId, aces, calculateAclInternal(repositoryId, new ArrayList<Ace>(), parent));
+			}
 		}
 	}
 
