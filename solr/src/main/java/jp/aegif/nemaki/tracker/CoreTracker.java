@@ -322,8 +322,7 @@ public class CoreTracker extends CloseHook {
 		}
 
 		long numItems = (-1 == _numItems) ? Long.MAX_VALUE : Long.valueOf(_numItems);
-		logger.info("Call CMIS getContentChanges : Repo={} LastChangeToken={} Items={}", repositoryId, latestToken,
-				numItems);
+		logger.info("Call CMIS LastChangeToken={} Items={}", latestToken,numItems);
 
 		Session cmisSession = CmisSessionFactory.getSession(repositoryId);
 		if (cmisSession == null) {
