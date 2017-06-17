@@ -199,9 +199,11 @@ public class Node extends Controller {
 			cmisOpCtx.setIncludeAcls(true);
 			cmisOpCtx.setIncludeAllowableActions(true);
 			cmisOpCtx.setMaxItemsPerPage(maxItemsPerPage);
-			if(orderBy != null){
-				cmisOpCtx.setOrderBy(orderBy);
+			if(orderBy == null){
+				orderBy="cmis:name ASC";
 			}
+			cmisOpCtx.setOrderBy(orderBy);
+			
 
 			ItemIterable<CmisObject> allChildren = _parent.getChildren(cmisOpCtx);
 			ItemIterable<CmisObject> children = allChildren.skipTo(skipCount).getPage();
