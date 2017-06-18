@@ -50,11 +50,13 @@
 								<td>@relationship.getCreatedBy()</td>
 								<td>@DateTimeUtil.calToString(relationship.getCreationDate(), Implicit.lang.toLocale)</td>
 								<td>
+								<!--
 									<div class="btn-group">
 										<button type="button" class="btn btn-default delete" cmis-id="@relationship.getId()">
 											<i class="fa fa-unlink"></i><div class="tooltips">@Messages("view.unlink")</div>
 										</button>
 									</div>
+								-->
 								</td>
 							</tr>
 						}
