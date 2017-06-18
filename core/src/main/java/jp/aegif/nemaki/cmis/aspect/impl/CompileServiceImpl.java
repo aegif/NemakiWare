@@ -395,12 +395,14 @@ public class CompileServiceImpl implements CompileService {
 			Boolean includeAcl) {
 		ObjectListImpl results = new ObjectListImpl();
 		results.setObjects(new ArrayList<ObjectData>());
-
+log.info("start compile change data list");
 		Map<String, Content> cachedContents = new HashMap<String, Content>();
 		if (changes != null && CollectionUtils.isNotEmpty(changes)) {
 			for (Change change : changes) {
 				// Retrieve the content(using caches)
+				
 				String objectId = change.getId();
+log.info("obj id of the change: " + objectId);
 				Content content = new Content();
 				if (cachedContents.containsKey(objectId)) {
 					content = cachedContents.get(objectId);
@@ -413,7 +415,7 @@ public class CompileServiceImpl implements CompileService {
 						.add(compileChangeObjectData(repositoryId, change, content, includePolicyIds, includeAcl));
 			}
 		}
-
+log.info("numitem: " + results.getObjects().size());
 		results.setNumItems(BigInteger.valueOf(results.getObjects().size()));
 
 		String latestInRepository = repositoryService.getRepositoryInfo(repositoryId).getLatestChangeLogToken();
@@ -423,30 +425,36 @@ public class CompileServiceImpl implements CompileService {
 		} else {
 			results.setHasMoreItems(true);
 		}
+log.info("result: "+ results);
 		return results;
 	}
 
 	private ObjectData compileChangeObjectData(String repositoryId, Change change, Content content,
 			Boolean includePolicyIds, Boolean includeAcl) {
 		ObjectDataImpl o = new ObjectDataImpl();
-
+log.info("start compileChangeObjectData");
 		// Set Properties
 		PropertiesImpl properties = new PropertiesImpl();
 		setCmisBasicChangeProperties(properties, change);
 		o.setProperties(properties);
 		// Set PolicyIds
+log.info("set policyids");
 		setPolcyIds(o, change, includePolicyIds);
 		// Set Acl
+log.info("set acl");
 		if (!change.getChangeType().equals(ChangeType.DELETED)) {
 			setAcl(repositoryId, o, content, includeAcl);
 		}
 		// Set Change Event
+log.info("set change event");
 		setChangeEvent(o, change);
 
 		return o;
 	}
 
 	private void setCmisBasicChangeProperties(PropertiesImpl props, Change change) {
+log.info("start setCmisBasic...");		
+		
 		props.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_ID, change.getObjectId()));
 		props.addProperty(new PropertyIdImpl(PropertyIds.BASE_TYPE_ID, change.getBaseType()));
 		props.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, change.getObjectType()));

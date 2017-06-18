@@ -127,6 +127,10 @@ public class Registration implements Runnable {
 		AbstractUpdateRequest req = null;
 		Map<String, Object> map = buildParamMap(obj);
 		switch (obj.getBaseTypeId()) {
+		case CMIS_RELATIONSHIP:
+			return;
+		case CMIS_ITEM:
+			return;
 		case CMIS_DOCUMENT:
 			if (fulltextEnabled) {
 				String mimeType = (String) map.get(Constant.FIELD_CONTENT_MIMETYPE);
@@ -143,8 +147,8 @@ public class Registration implements Runnable {
 
 			break;
 		case CMIS_FOLDER:
-		case CMIS_ITEM:
-		case CMIS_RELATIONSHIP:
+//		case CMIS_ITEM:
+//		case CMIS_RELATIONSHIP:
 			req = buildUpdateRequest(map);
 			break;
 		default:
@@ -381,7 +385,7 @@ public class Registration implements Runnable {
 			map.put(Constant.FIELD_PARENT_ID, object.getPropertyValue(PropertyIds.PARENT_ID));
 			map.put(Constant.FIELD_PATH, object.getPropertyValue(PropertyIds.PATH));
 		default:
-			break;
+			return map;
 		}
 
 		// SubType & Secondary property

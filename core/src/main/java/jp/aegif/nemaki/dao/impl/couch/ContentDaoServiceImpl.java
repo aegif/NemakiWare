@@ -1110,7 +1110,8 @@ log.info(item.toString());
 	public List<Change> getLatestChanges(String repositoryId, String startToken, int maxItems) {
 		List<Change> result = new ArrayList<Change>();
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("changesByToken").descending(false);
-
+log.info("getLatestChanges start!");
+log.info("start token: " + startToken);
 		if (StringUtils.isNotBlank(startToken)) {
 			CouchDbConnector conn = connectorPool.get(repositoryId);
 			try {
@@ -1127,7 +1128,12 @@ log.info(item.toString());
 			query.limit(maxItems);
 		}
 
+		query.dbPath(connectorPool.getUrl());
+log.info("query: " + query.toString());
 		List<CouchChange> l = connectorPool.get(repositoryId).queryView(query, CouchChange.class);
+
+log.info("result: "+l.toString());
+		
 		if (CollectionUtils.isEmpty(l))
 			return null;
 

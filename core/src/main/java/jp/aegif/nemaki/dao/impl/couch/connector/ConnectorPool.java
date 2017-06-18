@@ -110,6 +110,9 @@ public class ConnectorPool {
 	public void setUrl(String url) {
 		this.url = url;
 	}
+	public String getUrl(){
+		return this.url;
+	}
 
 	public void setMaxConnections(int maxConnections) {
 		this.maxConnections = maxConnections;
