@@ -22,13 +22,9 @@
 package jp.aegif.nemaki.cmis.aspect.impl;
 
 import java.math.BigInteger;
-import java.text.DateFormat;
 import java.text.MessageFormat;
 import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Calendar;
-import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -85,8 +81,6 @@ import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.springframework.context.annotation.AnnotationConfigApplicationContext;
-import org.springframework.context.support.GenericApplicationContext;
 
 import com.rits.cloning.Cloner;
 
@@ -111,18 +105,12 @@ import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
-import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.model.VersionSeries;
-import jp.aegif.nemaki.plugin.action.ActionContext;
-import jp.aegif.nemaki.plugin.action.JavaBackedAction;
-import jp.aegif.nemaki.plugin.action.trigger.ActionTriggerBase;
-import jp.aegif.nemaki.plugin.action.trigger.UserButtonPerCmisObjcetActionTrigger;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.CmisExtensionToken;
 import jp.aegif.nemaki.util.constant.PropertyKey;
-import jp.aegif.nemaki.util.constant.SystemConst;
 import net.sf.ehcache.Element;
 
 public class CompileServiceImpl implements CompileService {
@@ -150,11 +138,17 @@ public class CompileServiceImpl implements CompileService {
 	public ObjectData compileObjectData(CallContext callContext, String repositoryId, Content content, String filter,
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includeAcl) {
+		log.info(MessageFormat.format("CompileService#compileObjectData START : Repo={0}, Id={1}", repositoryId, content.getId()));
 
 		ObjectDataImpl objData = getRawObjectData(callContext, repositoryId, content, filter, includeAllowableActions,
 				includeRelationships, renditionFilter, includeAcl);
+
+		log.info(MessageFormat.format("CompileService#compileObjectData getRawObjectData success : Repo={0}, Id={1}", repositoryId, content.getId()));
+
 		ObjectData result = filterObjectData(repositoryId, objData, filter, includeAllowableActions,
 				includeRelationships, renditionFilter, includeAcl);
+
+		log.info(MessageFormat.format("CompileService#compileObjectData END : Repo={0}, Id={1}", repositoryId, content.getId()));
 
 		return result;
 	}
@@ -171,6 +165,8 @@ public class CompileServiceImpl implements CompileService {
 			rawObjectData = (ObjectDataImpl) cachedObjectData;
 
 			// Recalcurate
+			log.info(MessageFormat.format("CompileService#getRawObjectData recalcurate acl : Repo={0}, Id={1}", repositoryId, content.getId()));
+
 			setAclAndAllowableActionsInternal(rawObjectData, callContext, repositoryId, content,
 					includeAllowableActions, includeAcl);
 			setRelationshipInternal(rawObjectData, callContext, repositoryId, content, includeRelationships);
@@ -181,6 +177,10 @@ public class CompileServiceImpl implements CompileService {
 	private ObjectDataImpl compileObjectDataWithFullAttributes(CallContext callContext, String repositoryId,
 			Content content, String filter, Boolean includeAllowableActions, IncludeRelationships includeRelationships,
 			String renditionFilter, Boolean includeAcl) {
+
+		log.info(MessageFormat.format("CompileService#compileObjectDataWithFullAttributes START : Repo={0}, Id={1}", repositoryId, content.getId()));
+
+
 		ObjectDataImpl result = new ObjectDataImpl();
 
 		// Filter(any property filter MUST be done here
@@ -188,26 +188,39 @@ public class CompileServiceImpl implements CompileService {
 		PropertiesImpl properties = compileProperties(callContext, repositoryId, content);
 		result.setProperties(properties);
 
+		log.info(MessageFormat.format("CompileService#compileObjectDataWithFullAttributes compileProperties success : Repo={0}, Id={1}", repositoryId, content.getId()));
+
+
+
 		// Set acl and allowable actions
 		setAclAndAllowableActionsInternal(result, callContext, repositoryId, content, includeAllowableActions,
 				includeAcl);
 
+		log.info(MessageFormat.format("CompileService#compileObjectDataWithFullAttributes setAclAndAllowableActionsInternal success : Repo={0}, Id={1}", repositoryId, content.getId()));
+
+
 		// Set relationship
 		setRelationshipInternal(result, callContext, repositoryId, content, includeRelationships);
+
+		log.info(MessageFormat.format("CompileService#compileObjectDataWithFullAttributes setRelationshipInternal success : Repo={0}, Id={1}", repositoryId, content.getId()));
+
 
 		// Set Renditions
 		if (content.isDocument()) {
 			result.setRenditions(compileRenditions(callContext, repositoryId, content));
 		}
+		log.info(MessageFormat.format("CompileService#compileObjectDataWithFullAttributes setRenditions if document success : Repo={0}, Id={1}", repositoryId, content.getId()));
 
 		nemakiCachePool.get(repositoryId).getObjectDataCache().put(new Element(content.getId(), result));
+
+		log.info(MessageFormat.format("CompileService#compileObjectDataWithFullAttributes END : Repo={0}, Id={1}", repositoryId, content.getId()));
+
 
 		return result;
 	}
 
 	private void setRelationshipInternal(ObjectDataImpl objectData, CallContext callContext, String repositoryId,
 			Content content, IncludeRelationships includeRelationships) {
-
 
 		if (!content.isRelationship() && includeRelationships != IncludeRelationships.NONE
 				&& includeRelationshipsEnabled()) {
@@ -219,22 +232,31 @@ public class CompileServiceImpl implements CompileService {
 
 	private void setAclAndAllowableActionsInternal(ObjectDataImpl objectData, CallContext callContext,
 			String repositoryId, Content content, Boolean includeAllowableActions, Boolean includeAcl) {
+		log.info(MessageFormat.format("CompileServicee#setAclAndAllowableActionsInternal START: Repo={0}, Id={1}", repositoryId, content.getId()));
 
 		// Set Acl and Set Allowable actions
 		org.apache.chemistry.opencmis.commons.data.Acl cmisAcl = null;
 		Acl nemakiAcl = null;
 		AllowableActions allowableActions = null;
 		if (includeAcl || includeAllowableActions) {
+			log.info(MessageFormat.format("CompileServicee#setAclAndAllowableActionsInternal STEP 1: Repo={0}, Id={1}", repositoryId, content.getId()));
 			nemakiAcl = contentService.calculateAcl(repositoryId, content);
 			objectData.setIsExactAcl(true);
+
+			log.info(MessageFormat.format("CompileServicee#setAclAndAllowableActionsInternal STEP 2: Repo={0}, Id={1}", repositoryId, content.getId()));
 			cmisAcl = compileAcl(nemakiAcl, contentService.getAclInheritedWithDefault(repositoryId, content), false);
 		}
 		if (includeAllowableActions) {
+			log.info(MessageFormat.format("CompileServicee#setAclAndAllowableActionsInternal STEP 3: Repo={0}, Id={1}", repositoryId, content.getId()));
 			allowableActions = compileAllowableActions(callContext, repositoryId, content, nemakiAcl);
 		}
+		log.info(MessageFormat.format("CompileServicee#setAclAndAllowableActionsInternal STEP 4: Repo={0}, Id={1}", repositoryId, content.getId()));
 
 		objectData.setAcl(cmisAcl);
 		objectData.setAllowableActions(allowableActions);
+
+		log.info(MessageFormat.format("CompileServicee#setAclAndAllowableActionsInternal END: Repo={0}, Id={1}", repositoryId, content.getId()));
+
 	}
 
 	private ObjectData filterObjectData(String repositoryId, ObjectData fullObjectData, String filter,
@@ -398,7 +420,7 @@ public class CompileServiceImpl implements CompileService {
 		results.setObjects(new ArrayList<ObjectData>());
 
 
-		log.warn(MessageFormat.format("compileChangeDataList : START M:{0}", Runtime.getRuntime().freeMemory() / 1024));
+		log.info(MessageFormat.format("compileChangeDataList : START M:{0}", Runtime.getRuntime().freeMemory() / 1024));
 		Map<String, Content> cachedContents = new HashMap<String, Content>();
 		if (changes != null && CollectionUtils.isNotEmpty(changes)) {
 			for (Change change : changes) {
@@ -407,7 +429,7 @@ public class CompileServiceImpl implements CompileService {
 				String objectId = change.getId();
 				Content content = new Content();
 
-				log.warn(MessageFormat.format("compileChangeDataList : LOOP START Change={1} M:{0}", Runtime.getRuntime().freeMemory() / 1024, objectId));
+				log.info(MessageFormat.format("compileChangeDataList : LOOP START Change={1} M:{0}", Runtime.getRuntime().freeMemory() / 1024, objectId));
 
 				if (cachedContents.containsKey(objectId)) {
 					content = cachedContents.get(objectId);
@@ -418,7 +440,7 @@ public class CompileServiceImpl implements CompileService {
 				// Compile a change object data depending on its type
 				results.getObjects()
 						.add(compileChangeObjectData(repositoryId, change, content, includePolicyIds, includeAcl));
-				log.warn(MessageFormat.format("compileChangeDataList : LOOP END Change={1} M:{0}", Runtime.getRuntime().freeMemory() / 1024, objectId));
+				log.info(MessageFormat.format("compileChangeDataList : LOOP END Change={1} M:{0}", Runtime.getRuntime().freeMemory() / 1024, objectId));
 			}
 		}
 
@@ -432,7 +454,7 @@ public class CompileServiceImpl implements CompileService {
 			results.setHasMoreItems(true);
 		}
 
-		log.warn(MessageFormat.format("compileChangeDataList : END M:{0}", Runtime.getRuntime().freeMemory() / 1024));
+		log.info(MessageFormat.format("compileChangeDataList : END M:{0}", Runtime.getRuntime().freeMemory() / 1024));
 
 		return results;
 	}
@@ -687,6 +709,10 @@ public class CompileServiceImpl implements CompileService {
 
 	private List<ObjectData> compileRelationships(CallContext context, String repositoryId, Content content,
 			IncludeRelationships irl) {
+
+		log.info(MessageFormat.format("CompileService#compileRelationships START: Repo={0}, Id={1}", repositoryId, content.getId()));
+
+
 		if (IncludeRelationships.NONE == irl) {
 			return null;
 		}
@@ -711,6 +737,7 @@ public class CompileServiceImpl implements CompileService {
 		List<ObjectData> rels = new ArrayList<ObjectData>();
 		if (CollectionUtils.isNotEmpty(_rels)) {
 			for (Relationship _rel : _rels) {
+
 				ObjectData rel = compileObjectData(context, repositoryId, _rel, null, false, IncludeRelationships.NONE,
 						null, false);
 				rels.add(rel);
