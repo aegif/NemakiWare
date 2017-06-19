@@ -45,6 +45,7 @@ import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.model.Ace;
 import jp.aegif.nemaki.model.Acl;
@@ -129,11 +130,20 @@ public class PermissionServiceImpl implements PermissionService {
 	public Boolean checkPermission(CallContext callContext, String repositoryId, String key,
 			Acl acl, String baseType, Content content) {
 
+		// Admin always pass a permission check
+		String userName = callContext.getUsername();
+		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
+		
+		return checkPermissionInternal(callContext,repositoryId,key,acl,baseType,content,userName,groups);
+	}
+	
+	private Boolean checkPermissionInternal(CallContext callContext, String repositoryId, String key,
+			Acl acl, String baseType, Content content, String userName, Set<String> groups) {
+
 		//All permission checks must go through baseType check
 		if(!isAllowableBaseType(key, baseType, content, repositoryId)) return false;
 
 		// Admin always pass a permission check
-		String userName = callContext.getUsername();
 		UserItem u = contentService.getUserItemById(repositoryId, userName);
 		if (u != null && u.isAdmin()) return true;
 
@@ -169,20 +179,44 @@ public class PermissionServiceImpl implements PermissionService {
 		List<Ace> aces = acl.getAllAces().stream()
 				.filter(p -> p.getPermissions() != null)
 				.collect(Collectors.toList());
+		
+		// principalAnyone
+		if(calcAnyonePermission(repositoryId, key, content, aces)) return true;
 
 		//User permission
 		if(calcUserPermission(repositoryId, key, content, userName, aces)) return true;
+		
+		groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
 
 		//Group permission
-		return calcGroupPermission(repositoryId, key, content, userName, aces);
+		return calcGroupPermission(repositoryId, key, content, groups, aces);
+	}
+	
+	@Override
+	public Boolean checkPermissionWithGivenList(CallContext callContext, String repositoryId, String key,
+			Acl acl, String baseType, Content content, String userName, Set<String> groups) {
+
+		return checkPermissionInternal(callContext,repositoryId,key,acl,baseType,content,userName,groups);
+	}
+	
+	private boolean calcAnyonePermission(String repositoryId, String key, Content content, List<Ace> aces){
+		Logger.info(MessageFormat.format("[{0}]CheckAnyonePermission BEGIN:{1}",content.getName(), key));
+		RepositoryInfo info = repositoryInfoMap.get(repositoryId);
+//log.info("key: " + key);
+//log.info("aces: " + aces.stream().flatMap(ace -> ace.getPermissions().stream()).toArray().toString());
+		Set<String> anyonePermissions = aces.stream()
+				.filter(ace -> ace.getPrincipalId().equals(info.getPrincipalIdAnyone()))
+				.flatMap(ace -> ace.getPermissions().stream())
+				.collect(Collectors.toSet());
+		boolean calcPermission =  checkCalculatedPermissions(repositoryId, key, anyonePermissions);
+		Logger.info(MessageFormat.format("[{0}]CheckAnyonePermission END:{1}",content.getName(),  calcPermission));
+		return calcPermission;
 	}
 
 
-	private boolean calcGroupPermission(String repositoryId, String key, Content content, String userName, List<Ace> aces) {
-		Logger.info(MessageFormat.format("[{0}][{1}]CheckGroupPermission BEGIN:{2}",content.getName(), userName, key));
-		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
+	private boolean calcGroupPermission(String repositoryId, String key, Content content, Set<String> groups, List<Ace> aces) {
+		Logger.info(MessageFormat.format("[{0}][{1}]CheckGroupPermission BEGIN:{2}",content.getName(), groups, key));
 		if( CollectionUtils.isEmpty(groups)) return false;
-
 		Set<String> groupPermissions = aces.stream()
 				.filter(ace -> groups.contains(ace.getPrincipalId()))
 				.flatMap(ace -> ace.getPermissions().stream())
@@ -190,7 +224,7 @@ public class PermissionServiceImpl implements PermissionService {
 
 		// Check mapping between the group and the content
 		boolean calcPermission =  checkCalculatedPermissions(repositoryId, key, groupPermissions);
-		Logger.info(MessageFormat.format("[{0}][{1}]CheckGroupPermission END:{2}",content.getName(), userName, calcPermission));
+		Logger.info(MessageFormat.format("[{0}][{1}]CheckGroupPermission END:{2}",content.getName(), groups, calcPermission));
 		return calcPermission;
 	}
 
@@ -241,30 +275,33 @@ public class PermissionServiceImpl implements PermissionService {
 			return false;
 		}
 
+		String userName = callContext.getUsername();
+		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
+
 		//Read action when a relationship is specified directly
 		if(PermissionMapping.CAN_GET_PROPERTIES_OBJECT.equals(key)){
 			boolean readSource =
-					checkPermission(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, source), source.getType(), source);
+					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, source), source.getType(), source, userName, groups);
 			boolean readTarget =
-					checkPermission(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, target), target.getType(), target);
+					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, target), target.getType(), target, userName, groups);
 			return readSource | readTarget;
 		}
 
 		//Update action
 		if(PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT.equals(key)){
 			boolean updateSource =
-					checkPermission(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, source), source.getType(), source);
+					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, source), source.getType(), source, userName, groups);
 			boolean updateTarget =
-					checkPermission(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, target), target.getType(), target);
+					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, target), target.getType(), target, userName, groups);
 			return updateSource | updateTarget;
 		}
 
 		//Delete action
 		if(PermissionMapping.CAN_DELETE_OBJECT.equals(key)){
 			boolean deleteSource =
-					checkPermission(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, source), source.getType(), source);
+					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, source), source.getType(), source, userName, groups);
 			boolean deleteTarget =
-					checkPermission(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, target), target.getType(), target);
+					checkPermissionInternal(callContext, repositoryId, PermissionMapping.CAN_GET_OBJECT_RELATIONSHIPS_OBJECT, contentService.calculateAcl(repositoryId, target), target.getType(), target, userName, groups);
 			return deleteSource | deleteTarget;
 		}
 
@@ -436,13 +473,16 @@ public class PermissionServiceImpl implements PermissionService {
 			return null;
 		}
 
+		String userName = callContext.getUsername();
+		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
+
 		// Filtering
 		for (T _content : contents) {
 			Content content = (Content) _content;
 			Acl acl = contentService.calculateAcl(repositoryId, content);
 
-			Boolean filtered = checkPermission(callContext,
-					repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT, acl, content.getType(), content);
+			Boolean filtered = checkPermissionInternal(callContext,
+					repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT, acl, content.getType(), content, userName, groups);
 			if (filtered) {
 				result.add(_content);
 			}

@@ -1,5 +1,6 @@
 @*{<meta charset="UTF-8" />}*@
 
+@import math._
 @import util.Util
 @import util.NemakiConfig
 @import util.Formatter
@@ -11,20 +12,49 @@
 @import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed
 @import play.mvc.Http.Context.Implicit
 
-@(repositoryId:String)(objects: java.util.List[org.apache.chemistry.opencmis.client.api.CmisObject])(session:org.apache.chemistry.opencmis.client.api.Session)
+@(repositoryId:String)(objects: java.util.List[org.apache.chemistry.opencmis.client.api.CmisObject])(session:org.apache.chemistry.opencmis.client.api.Session)(currentPage:Int)(totalItemCount:Long)(orderBy:String)(term:String)
 
-<table class="footable" id="objects-table" data-sort="true"
-	   data-filter="#filter"
-	   data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
+
+<table class="footable" id="objects-table" data-sort="false"  data-filter="#filter" data-paging="false">
 	<thead>
 		<tr>
 			<th data-sort-ignore="true"   class="content-size"></th>
-			<th data-class="expand" data-sort-initial="true">@NemakiConfig.getLabel("cmis:name", lang().language)</th>
-			 <th class="content-size" data-class="expand" data-filter="#filter" >@NemakiConfig.getLabel("cmis:objectTypeId", Implicit.lang().language)</th>
-			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
-				<th class="content-size" data-class="expand">@NemakiConfig.getLabel(column, Implicit.lang().language)</th>
+			<th class="sort-button" data-class="expand" data-sort-initial="true" data-sort-type="cmis:name">@NemakiConfig.getLabel("cmis:name", lang().language) 
+			@if(orderBy == "cmis:name DESC"){
+				<span class="fa fa-sort-desc"></span>
+			}else{
+				@if(orderBy == "cmis:name ASC"){
+					<span class="fa fa-sort-asc"></span>
+				}else{
+					<span class="fa fa-sort"></span>				
+				}
 			}
-			<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action") </th>
+			</th>
+			<th class="sort-button" class="content-size" data-class="expand" data-filter="#filter" data-sort-type="cmis:objectTypeId">@NemakiConfig.getLabel("cmis:objectTypeId", Implicit.lang().language) 
+			@if(orderBy == "cmis:objectTypeId DESC"){
+				<span class="fa fa-sort-desc"></span>
+			}else{
+				@if(orderBy == "cmis:objectTypeId ASC"){
+					<span class="fa fa-sort-asc"></span>
+				}else{
+					<span class="fa fa-sort"></span>				
+				}
+			}
+			</th>
+			@for(column <- play.Play.application().configuration().getStringList("navigation.column.displayed")){
+				<th class="sort-button" class="content-size" data-class="expand" data-sort-type="@column">@NemakiConfig.getLabel(column, Implicit.lang().language) 
+			@if(orderBy == column+" DESC"){
+				<span class="fa fa-sort-desc"></span>
+			}else{
+				@if(orderBy == column+" ASC"){
+					<span class="fa fa-sort-asc"></span>
+				}else{
+					<span class="fa fa-sort"></span>				
+				}
+			}
+				</th>
+			}
+			<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action")</th>
 		</tr>
 	</thead>
 	<tbody>
@@ -46,7 +76,7 @@
 					}
 
 					case folder:Folder =>{
-						<a href="@routes.Node.showChildren(repositoryId, folder.getId)">
+						<a href="@routes.Node.showChildren(repositoryId, folder.getId,0,orderBy,null)">
 					}
 
 					case item:Item =>{
@@ -93,9 +123,52 @@
 	<tfoot>
 		<tr>
 			@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 4){colSpan =>
-				<td colspan="@colSpan">
+				<td colspan="@colSpan" align="center">
 			}
-				<div class="pagination pagination-centered hide-if-no-paging"></div>
+
+			@pageSize = @{Util.getNavigationPagingSize()}
+			@url = @{request.path}
+			
+			@lastPage = @{((totalItemCount - 0.1)/ pageSize).floor.toInt}
+
+			@if(pageSize < totalItemCount){
+				<nav>
+					<ul class="pagination">
+						@if(currentPage > 2){
+							<li><a href="@{url}?term=@{term}&orderBy=@{orderBy}" aria-label="First"><span aria-hidden="true">«</span></a></li>
+						}
+						@if(currentPage > 1){
+							<li><a href="@{url}?term=@{term}&orderBy=@{orderBy}&page=@{currentPage - 2}">@{currentPage -1}</a></li>
+						}
+						@if(currentPage > 0){
+							<li><a href="@{url}?term=@{term}&orderBy=@{orderBy}&page=@{currentPage - 1}">@{currentPage}</a></li>
+						}
+
+						<li  class="active"><a href="#">@{currentPage + 1}</a></li>
+
+						@if(currentPage < lastPage){
+							<li><a href="@{url}?term=@{term}&orderBy=@{orderBy}&page=@{currentPage + 1}">@{currentPage + 2}</a></li>
+						}
+						@if((currentPage + 1) < lastPage){
+							<li><a href="@{url}?term=@{term}&orderBy=@{orderBy}&page=@{currentPage + 2}">@{currentPage + 3}</a></li>
+						}
+						@if((currentPage + 2) < lastPage){
+							<li><a href="@{url}?term=@{term}&orderBy=@{orderBy}&page=@{lastPage}" aria-label="Last"><span aria-hidden="true">»</span></a></li>
+						}
+					</ul>
+				</nav>
+				<span class="label label-default">
+					@{currentPage * pageSize + 1}
+					 - 
+					@if((currentPage + 1) * pageSize > totalItemCount){
+						@{totalItemCount}
+					}else{
+						@{(currentPage + 1) * pageSize}
+					}
+				 	of @{totalItemCount}
+				 	
+				</span>
+				}
 			</td>
 		</tr>
 	</tfoot>
@@ -103,9 +176,12 @@
 
 
 
+
 <!-- ------------------------------------------------ -->
 <!-- detail -->
 <script type="text/javascript">
+
+
 	$(function(){
         $(".show-detail").bind('click', function(){
        		var id = $(this).attr('cmis-id');
@@ -202,9 +278,24 @@
 <!-- footable -->
 <script type="text/javascript">
         $(function () {
-            $('#objects-table').footable();
+            $('#objects-table').footable({ paginate:false });
         });
 </script>
+
+<!-- sort -->
+<script type="text/javascript">
+        $(function () {
+            $('.sort-button').bind('click',function(){
+           		var type = $(this).attr('data-sort-type');
+           		if(encodeURI(type + " DESC") == encodeURI("@{orderBy}")){
+            		window.location.href="@{url}?term=@{term}&orderBy=" + encodeURI(type + " ASC") + "&page=" + "@{currentPage}";
+            	}else{
+            		window.location.href="@{url}?term=@{term}&orderBy=" + encodeURI(type + " DESC") + "&page=" + "@{currentPage}";            	
+            	}
+            });
+        });
+</script>
+
 
 
 

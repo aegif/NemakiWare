@@ -23,6 +23,7 @@ package jp.aegif.nemaki.cmis.aspect.impl;
 
 import java.math.BigInteger;
 import java.text.DateFormat;
+import java.text.MessageFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -396,12 +397,18 @@ public class CompileServiceImpl implements CompileService {
 		ObjectListImpl results = new ObjectListImpl();
 		results.setObjects(new ArrayList<ObjectData>());
 
+
+		log.warn(MessageFormat.format("compileChangeDataList : START M:{0}", Runtime.getRuntime().freeMemory() / 1024));
 		Map<String, Content> cachedContents = new HashMap<String, Content>();
 		if (changes != null && CollectionUtils.isNotEmpty(changes)) {
 			for (Change change : changes) {
+
 				// Retrieve the content(using caches)
 				String objectId = change.getId();
 				Content content = new Content();
+
+				log.warn(MessageFormat.format("compileChangeDataList : LOOP START Change={1} M:{0}", Runtime.getRuntime().freeMemory() / 1024, objectId));
+
 				if (cachedContents.containsKey(objectId)) {
 					content = cachedContents.get(objectId);
 				} else {
@@ -411,6 +418,7 @@ public class CompileServiceImpl implements CompileService {
 				// Compile a change object data depending on its type
 				results.getObjects()
 						.add(compileChangeObjectData(repositoryId, change, content, includePolicyIds, includeAcl));
+				log.warn(MessageFormat.format("compileChangeDataList : LOOP END Change={1} M:{0}", Runtime.getRuntime().freeMemory() / 1024, objectId));
 			}
 		}
 
@@ -423,6 +431,9 @@ public class CompileServiceImpl implements CompileService {
 		} else {
 			results.setHasMoreItems(true);
 		}
+
+		log.warn(MessageFormat.format("compileChangeDataList : END M:{0}", Runtime.getRuntime().freeMemory() / 1024));
+
 		return results;
 	}
 
@@ -522,6 +533,10 @@ public class CompileServiceImpl implements CompileService {
 			versionSeries = contentService.getVersionSeries(repositoryId, d);
 		}
 
+
+		String userName = callContext.getUsername();
+		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
+
 		for (Entry<String, PermissionMapping> mappingEntry : permissionMap.entrySet()) {
 			String key = mappingEntry.getValue().getKey();
 			// TODO WORKAROUND. implement class cast check
@@ -553,8 +568,8 @@ public class CompileServiceImpl implements CompileService {
 			}
 
 			// Add an allowable action
-			boolean allowable = permissionService.checkPermission(callContext, repositoryId, mappingEntry.getKey(), acl,
-					baseType, content);
+			boolean allowable = permissionService.checkPermissionWithGivenList(callContext, repositoryId, mappingEntry.getKey(), acl,
+					baseType, content, userName, groups);
 
 			if (allowable) {
 				actionSet.add(convertKeyToAction(key));

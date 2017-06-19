@@ -67,7 +67,6 @@ import org.apache.solr.common.SolrInputDocument;
 import org.apache.solr.core.CloseHook;
 import org.apache.solr.core.SolrCore;
 
-import com.ibm.icu.text.MessageFormat;
 
 /**
  * Index tracking class
@@ -88,6 +87,7 @@ public class CoreTracker extends CloseHook {
 
 	CmisBinding cmisBinding;
 	NemakiTokenManager nemakiTokenManager;
+	PropertyManagerImpl propertyManager;
 
 	public CoreTracker(NemakiCoreAdminHandler adminHandler, SolrCore core, SolrServer indexServer,
 			SolrServer tokenServer) {
@@ -98,6 +98,7 @@ public class CoreTracker extends CloseHook {
 		this.indexServer = indexServer;
 		this.tokenServer = tokenServer;
 		this.nemakiTokenManager = new NemakiTokenManager();
+		this.propertyManager = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
 	}
 
 	public SolrServer getIndexServer() {
@@ -171,82 +172,89 @@ public class CoreTracker extends CloseHook {
 
 	public void index(String trackingType, String repositoryId) {
 		synchronized (LOCK) {
-			ChangeEvents changeEvents = getCmisChangeLog(trackingType, repositoryId);
-			if (changeEvents == null) {
-				return;
-			}
-			logger.info("Start indexing of events:{}" , changeEvents.getTotalNumItems());
-			List<ChangeEvent> events = changeEvents.getChangeEvents();
-
-			// After 2nd crawling, discard the first item
-			// Because the specs say that it's included in the results
-			String token = readLatestChangeToken(repositoryId);
-			if (StringUtils.isNotEmpty(token) && CollectionUtils.isNotEmpty(events)) {
-				events.remove(0);
-			}
-			if (events.isEmpty())
-				return;
-
-			logger.info("token: {}", token);
-
-			// Parse filtering configuration
-			PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
-			boolean fulltextEnabled = Boolean.TRUE.toString()
-					.equalsIgnoreCase(pm.readValue(PropertyKey.SOLR_TRACKING_FULLTEXT_ENABLED));
-			boolean mimeTypeFilterEnabled = false; // default
-			List<String> allowedMimeTypeFilter = new ArrayList<String>(); // default
-			if (fulltextEnabled) {
-				String _filter = pm.readValue(PropertyKey.SOLR_TRACKING_MIMETYPE_FILTER_ENABLED);
-				mimeTypeFilterEnabled = Boolean.TRUE.toString().equalsIgnoreCase(_filter);
-				if (mimeTypeFilterEnabled) {
-					allowedMimeTypeFilter = pm.readValues(PropertyKey.SOLR_TRACKING_MIMETYPE);
+			do {
+				ChangeEvents changeEvents = getCmisChangeLog(trackingType, repositoryId);
+				
+				if (changeEvents == null) {
+					logger.info("change evensts is null");
+					return;
 				}
-			}
+				logger.info("size of change events: " + changeEvents.getTotalNumItems());
+				logger.info("Start indexing of events : Repo={} Count={}", repositoryId,
+						changeEvents.getTotalNumItems());
+				List<ChangeEvent> events = changeEvents.getChangeEvents();
 
-			// Extract only the last events of each objectId
-			List<ChangeEvent> list = extractChangeEvent(events);
-
-			PropertyManager propMgr = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
-			int numberOfThread = Integer.valueOf(propMgr.readValue(PropertyKey.SOLR_TRACKING_NUMBER_OF_THREAD));
-			int numberPerThread = list.size() / numberOfThread;
-			if (list.size() < numberOfThread) {
-				numberOfThread = list.size();
-				numberPerThread = 1;
-			}
-			int diff = list.size() - (numberOfThread * numberPerThread);
-			int toIndex = 0;
-			int fromIndex = 0;
-			for (int i = 0; i <= numberOfThread; i++) {
-				fromIndex = toIndex;
-				toIndex += numberPerThread;
-				if (i < diff) {
-					toIndex += 1;
+				// After 2nd crawling, discard the first item
+				// Because the specs say that it's included in the results
+logger.info("actual num of events: " + events.size());
+				String token = readLatestChangeToken(repositoryId);
+logger.info("latest token: +" + token);
+				if (StringUtils.isNotEmpty(token) && CollectionUtils.isNotEmpty(events)) {
+					events.remove(0);
 				}
-				if (toIndex > list.size()) {
-					continue;
+				if (events.isEmpty())
+					return;
+
+				// Parse filtering configuration
+//				PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
+				boolean fulltextEnabled = Boolean.TRUE.toString()
+						.equalsIgnoreCase(propertyManager.readValue(PropertyKey.SOLR_TRACKING_FULLTEXT_ENABLED));
+				boolean mimeTypeFilterEnabled = false; // default
+				List<String> allowedMimeTypeFilter = new ArrayList<String>(); // default
+				if (fulltextEnabled) {
+					String _filter = propertyManager.readValue(PropertyKey.SOLR_TRACKING_MIMETYPE_FILTER_ENABLED);
+					mimeTypeFilterEnabled = Boolean.TRUE.toString().equalsIgnoreCase(_filter);
+					if (mimeTypeFilterEnabled) {
+						allowedMimeTypeFilter = propertyManager.readValues(PropertyKey.SOLR_TRACKING_MIMETYPE);
+					}
 				}
 
-				List<ChangeEvent> listPerThread = list.subList(fromIndex, toIndex);
-				logger.info("Num of change events for this thread: {}" , listPerThread.size());
+				// Extract only the last events of each objectId
+logger.info("extraction start");
+				List<ChangeEvent> list = extractChangeEvent(events);
+				logger.info("Extracted indexing of events : Repo={} Count={}", repositoryId, list.size());
+
+//				PropertyManager propMgr = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
+				int numberOfThread = Integer.valueOf(propertyManager.readValue(PropertyKey.SOLR_TRACKING_NUMBER_OF_THREAD));
+				int numberPerThread = list.size() / numberOfThread;
+				if (list.size() < numberOfThread || numberPerThread == 0) {
+					numberOfThread = list.size();
+					numberPerThread = 1;
+				}
+				int diff = list.size() - (numberOfThread * numberPerThread);
+				int toIndex = 0;
+				int fromIndex = 0;
 				Session cmisSession = CmisSessionFactory.getSession(repositoryId);
 				NemakiCacheManager cache = new NemakiCacheManager(repositoryId);
-				Registration registration = new Registration(cmisSession, core, indexServer, listPerThread,
-						fulltextEnabled, mimeTypeFilterEnabled, allowedMimeTypeFilter, cache);
-				Thread t = new Thread(registration);
-				t.start();
-				try {
-					t.join();
-				} catch (InterruptedException e) {
-					logger.error("Thred interuptted! ", e);
-				}
-			}
+				for (int i = 0; i <= numberOfThread; i++) {
+					fromIndex = toIndex;
+					toIndex += numberPerThread;
+					if (i < diff) {
+						toIndex += 1;
+					}
+					if (toIndex > list.size()) {
+						continue;
+					}
 
-			// Save the latest token
-			storeLatestChangeToken(changeEvents.getLatestChangeLogToken(), repositoryId);
-			// In case of FUll mode, repeat until indexing all change logs
-			if (Constant.MODE_FULL.equals(trackingType)) {
-				index(Constant.MODE_FULL, repositoryId);
-			}
+					List<ChangeEvent> listPerThread = list.subList(fromIndex, toIndex);
+					logger.info("Num of change events for this thread : Repo={} Count={}", repositoryId,
+							listPerThread.size());
+					Registration registration = new Registration(cmisSession, core, indexServer, listPerThread,
+							fulltextEnabled, mimeTypeFilterEnabled, allowedMimeTypeFilter, cache);
+					Thread t = new Thread(registration);
+					t.start();
+					try {
+						t.join();
+					} catch (InterruptedException e) {
+						logger.error("Thred interuptted! : Repo={} Ex={}", repositoryId, e);
+					}
+
+				}
+
+				// Save the latest token
+				storeLatestChangeToken(changeEvents.getLatestChangeLogToken(), repositoryId);
+
+			} while (Constant.MODE_FULL.equals(trackingType));// In case of FUll mode, repeat until indexing all change logs
 		}
 	}
 
@@ -309,10 +317,9 @@ public class CoreTracker extends CloseHook {
 	 */
 	private ChangeEvents getCmisChangeLog(String trackingType, String repositoryId) {
 		PropertyManager propMgr = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
-		logger.info("Start getCmisChangeLog {} : {}", trackingType, repositoryId);
+		logger.info("Start getCmisChangeLog : Repo={} Type={}", repositoryId, trackingType);
 		String _latestToken = readLatestChangeToken(repositoryId);
 		String latestToken = (StringUtils.isEmpty(_latestToken)) ? null : _latestToken;
-		logger.info("Repository={} LastChangeToken={}",repositoryId, latestToken);
 
 		long _numItems = 0;
 		if (Constant.MODE_DELTA.equals(trackingType)) {
@@ -322,9 +329,12 @@ public class CoreTracker extends CloseHook {
 		}
 
 		long numItems = (-1 == _numItems) ? Long.MAX_VALUE : Long.valueOf(_numItems);
+		logger.info("Call CMIS LastChangeToken={} Items={}", latestToken,numItems);
 
 		Session cmisSession = CmisSessionFactory.getSession(repositoryId);
+logger.info("Session aquired");
 		if (cmisSession == null) {
+			logger.info("Cannot create cmis session to {}.", repositoryId);
 			return null;
 		}
 
