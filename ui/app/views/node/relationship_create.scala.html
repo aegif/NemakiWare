@@ -100,21 +100,23 @@
 			formData.append('nemaki:relationshipType', rType);
 			formData.append('nemaki:relationshipName', rName);
 			formData.append('nemaki:documentType', dType);
-
 			$.blockUI({message:'@Messages("view.message.please.wait")'});
 			$.ajax({
 				type: "POST",
 				url: "@routes.Node.createRelationToNew(repositoryId, obj.getId())",
 				contentType: false,
 				processData: false,
-				dataType: "text",
 				cache: false,
 				data: formData
 			}).done(function( data ) {
 			 	window.alert( '@Messages("view.message.create.success")');
 				window.location.reload();
 			}).fail(function( jqXHR, textStatus, errorThrown ) {
-				window.alert('@Messages("view.message.create.failure")' + " status : " + textStatus + " HTTPStatus : " + jqXHR.status + " message : " + errorThrown.message );
+				if(jqXHR != 0){
+					window.alert('@Messages("view.message.create.failure")' + " status : " + textStatus + " HTTPStatus : " + jqXHR.status + " message : " + errorThrown.message );
+				}else{
+					window.location.reload();
+				}
 			}).always(function() {
 				 $.unblockUI();
 			});
@@ -134,14 +136,17 @@
 				type: "POST",
 				contentType: false,
 				processData: false,
-				dataType: "text",
 				cache: false,
 				data: formData
 			}).done(function( data ) {
 			 	window.alert( '@Messages("view.message.create.success")');
 				window.location.reload();
 			}).fail(function( jqXHR, textStatus, errorThrown ) {
-				window.alert('@Messages("view.message.create.failure")' + " status : " + textStatus + " HTTPStatus : " + jqXHR.status + " message : " + errorThrown.message );
+				if(jqXHR.status !=0){
+					window.alert('@Messages("view.message.create.failure")' + " status : " + textStatus + " HTTPStatus : " + jqXHR.status + " message : " + errorThrown.message );
+				}else{
+					window.location.reload();
+				}
 			}).always(function() {
 				 $.unblockUI();
 			});
