@@ -42,11 +42,13 @@ import org.apache.chemistry.opencmis.client.runtime.OperationContextImpl;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
+import org.apache.chemistry.opencmis.commons.data.AllowableActions;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
+import org.apache.chemistry.opencmis.commons.enums.Action;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
@@ -55,6 +57,7 @@ import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
 import org.apache.commons.collections.CollectionUtils;
@@ -119,7 +122,19 @@ public class Node extends Controller {
 	public Result index(String repositoryId) {
 		Session session = getCmisSession(repositoryId);
 		Folder root = session.getRootFolder();
-		return showChildren(repositoryId, root.getId());
+		return showChildren(repositoryId, root.getId(), 0, "cmis:name ASC",null);
+	}
+	@Secure
+	public Result index(String repositoryId, int currentPage) {
+		Session session = getCmisSession(repositoryId);
+		Folder root = session.getRootFolder();
+		return showChildren(repositoryId, root.getId(), currentPage, "cmis:name ASC",null);
+	}
+	@Secure
+	public Result index(String repositoryId, int currentPage, String orderBy) {
+		Session session = getCmisSession(repositoryId);
+		Folder root = session.getRootFolder();
+		return showChildren(repositoryId, root.getId(), currentPage, orderBy,null);
 	}
 
 	@Secure
@@ -149,9 +164,17 @@ public class Node extends Controller {
 				session, profile));
 
 	}
+	@Secure
+	public Result showChildren(String repositoryId, String objectId){
+		return showChildren(repositoryId,  objectId, 0,"cmis:name ASC",null);
+	}
+	@Secure
+	public Result showChildren(String repositoryId, String objectId, int currentPage){
+		return showChildren(repositoryId,  objectId, currentPage,"cmis:name ASC",null);
+	}
 
 	@Secure
-	public Result showChildren(String repositoryId, String objectId) {
+	public Result showChildren(String repositoryId, String objectId, int currentPage, String orderBy, String term){
 		NemakiProfile profile = Util.getProfile(ctx());
 		Session session = getCmisSession(repositoryId);
 		ObjectId id = session.createObjectId(objectId);
@@ -160,19 +183,33 @@ public class Node extends Controller {
 		cmisOpCtxParent.setIncludeRelationships(IncludeRelationships.NONE);
 		cmisOpCtxParent.setIncludeAcls(true);
 		cmisOpCtxParent.setIncludeAllowableActions(true);
+
 		CmisObject parent = session.getObject(id, cmisOpCtxParent);
 
 		List<CmisObject> results = new ArrayList<CmisObject>();
 		if (Util.isFolder(parent)) {
 			Folder _parent = (Folder) parent;
 
-			logger.warn("[Call Folder#getChildren]Begin");
+			logger.debug("[Call Folder#getChildren]Begin");
+			int maxItemsPerPage = Util.getNavigationPagingSize();
+			int skipCount = maxItemsPerPage * currentPage;
+
 			OperationContext cmisOpCtx = new OperationContextImpl();
 			cmisOpCtx.setIncludeRelationships(IncludeRelationships.NONE);
 			cmisOpCtx.setIncludeAcls(true);
 			cmisOpCtx.setIncludeAllowableActions(true);
+			cmisOpCtx.setMaxItemsPerPage(maxItemsPerPage);
+			if(orderBy == null){
+				orderBy="cmis:name ASC";
+			}
+			cmisOpCtx.setOrderBy(orderBy);
+			
 
-			ItemIterable<CmisObject> children = _parent.getChildren(cmisOpCtx);
+			ItemIterable<CmisObject> allChildren = _parent.getChildren(cmisOpCtx);
+			ItemIterable<CmisObject> children = allChildren.skipTo(skipCount).getPage();
+			long totalItemCount = allChildren.getTotalNumItems();
+
+
 			Iterator<CmisObject> itr = children.iterator();
 			while (itr.hasNext()) {
 				CmisObject obj = itr.next();
@@ -195,7 +232,7 @@ public class Node extends Controller {
 				results.add(obj);
 			}
 
-		logger.warn("[Call Folder#getChildren]End");
+		logger.debug("[Call Folder#getChildren]End");
 
 		// Fill in CMIS types
 		List<Tree<ObjectType>> typeFolders = session.getTypeDescendants(BaseTypeId.CMIS_FOLDER.value(), -1, false);
@@ -209,25 +246,42 @@ public class Node extends Controller {
 		List<Tree<ObjectType>> viewTypes = types.stream().filter(p -> enableTypes.contains(p.getItem().getLocalName()))
 				.collect(Collectors.toList());
 
-			return ok(tree.render(repositoryId, _parent, results, viewTypes, session, profile));
+			return ok(tree.render(repositoryId, _parent, results, viewTypes, session, profile, currentPage, totalItemCount,orderBy ,term));
 		}else{
 			return internalServerError();
 		}
 	}
 
 	@Secure
-	public Result showChildrenByPath(String repositoryId, String path) {
+	public Result showChildrenByPath(String repositoryId, String term) {
 		Session session = getCmisSession(repositoryId);
-		CmisObject o = session.getObjectByPath(path);
+		CmisObject o = session.getObjectByPath(term);
 
-		return showChildren(repositoryId, o.getId());
+		return showChildren(repositoryId, o.getId(), 0 ,null,term);
+	}
+	@Secure
+	public Result showChildrenByPath(String repositoryId, String term, int currentPage) {
+		Session session = getCmisSession(repositoryId);
+		CmisObject o = session.getObjectByPath(term);
+
+		return showChildren(repositoryId, o.getId(), currentPage, null,term);
+	}
+	@Secure
+	public Result showChildrenByPath(String repositoryId, String term, int currentPage, String orderBy) {
+		Session session = getCmisSession(repositoryId);
+		CmisObject o = session.getObjectByPath(term);
+
+		return showChildren(repositoryId, o.getId(), currentPage, orderBy,term);
 	}
 
 	@Secure
-	public Result search(String repositoryId, String term) {
+	public Result search(String repositoryId, String term, int currentPage, String orderBy) {
 
 		if (term.startsWith("[cmis]")) {
 			return this.searchFreeQuery(repositoryId, term);
+		}
+		if (term.trim().isEmpty()){
+			return this.index(repositoryId);
 		}
 
 		NemakiProfile profile = Util.getProfile(ctx());
@@ -243,8 +297,14 @@ public class Node extends Controller {
 		if (StringUtils.isNotBlank(term)) {
 			docStatement = docFormat.format(new String[] { term.replaceAll("%", "\\%").replaceAll("_", "\\_") });
 		}
-		ItemIterable<CmisObject> docResults = session.queryObjects("cmis:document", docStatement, false, ctxt);
+
+		int maxItemsPerPage = Util.getNavigationPagingSize();
+		int skipCount = maxItemsPerPage * currentPage;
+
+		ItemIterable<CmisObject> allResults = session.queryObjects("cmis:document", docStatement, false, ctxt);
+		ItemIterable<CmisObject> docResults = allResults.skipTo(skipCount).getPage(maxItemsPerPage);
 		Iterator<CmisObject> docItr = docResults.iterator();
+		long totalItemCount = docResults.getTotalNumItems();
 
 		while (docItr.hasNext()) {
 			CmisObject doc = docItr.next();
@@ -254,7 +314,7 @@ public class Node extends Controller {
 			list.add(doc);
 		}
 
-		return ok(search.render(repositoryId, term, list, session, profile));
+		return ok(search.render(repositoryId, term, list, session, profile, currentPage, totalItemCount, orderBy));
 	}
 
 	private Result searchFreeQuery(String repositoryId, String term) {
@@ -1166,9 +1226,8 @@ public class Node extends Controller {
 			Folder folder = (Folder) cmisObject;
 			deletedList.addAll(folder.deleteTree(true, null, true));
 		} else {
-			String id = cmisObject.getId();
-			session.delete(new ObjectIdImpl(id));
-			deletedList.add(id);
+			cmisObject.delete();
+			deletedList.add(cmisObject.getId());
 		}
 		return deletedList;
 	}
@@ -1446,9 +1505,9 @@ public class Node extends Controller {
 		String parentId = Util.getFormData(input, PropertyIds.PARENT_ID);
 		// TODO fix hard code
 		if (parentId == null || "".equals(parentId) || "/".equals(parentId)) {
-			return redirect(routes.Node.index(repositoryId));
+			return redirect(routes.Node.index(repositoryId,0,"cmis:name ASC"));
 		} else {
-			return redirect(routes.Node.showChildren(repositoryId, parentId));
+			return redirect(routes.Node.showChildren(repositoryId, parentId,0,"cmis:name ASC",null));
 		}
 	}
 

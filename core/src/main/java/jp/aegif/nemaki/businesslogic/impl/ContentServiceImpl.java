@@ -237,6 +237,8 @@ public class ContentServiceImpl implements ContentService {
 	 */
 	private Content getContentInternal(String repositoryId, Content content){
 		if (content.isItem()) {
+			return content;
+			/**TODO: for userItems discard ok?
 			if (ObjectUtils.equals(NemakiObjectType.nemakiUser, content.getObjectType())) {
 				return contentDaoService.getUserItem(repositoryId, content.getId());
 			} else if (ObjectUtils.equals(NemakiObjectType.nemakiGroup, content.getObjectType())) {
@@ -244,6 +246,7 @@ public class ContentServiceImpl implements ContentService {
 			} else {
 				return contentDaoService.getItem(repositoryId, content.getId());
 			}
+			**/
 		} else {
 			return content;
 		}
@@ -1842,8 +1845,13 @@ public class ContentServiceImpl implements ContentService {
 		} else {
 			// reduce db access instead of getParent(repositoryId,
 			// content.getId())
+			
 			Folder parent = getFolder(repositoryId, content.getParentId());
+			if(parent == null){
+			return aces;
+			}else{
 			return mergeAcl(repositoryId, aces, calculateAclInternal(repositoryId, new ArrayList<Ace>(), parent));
+			}
 		}
 	}
 

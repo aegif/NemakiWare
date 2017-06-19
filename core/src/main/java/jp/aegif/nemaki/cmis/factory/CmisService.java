@@ -521,7 +521,7 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	public void deleteObjectOrCancelCheckOut(String repositoryId, String objectId, Boolean allVersions,
 			ExtensionsData extension) {
 		// TODO When checkOut implemented, implement switching the two methods
-		ObjectData o = getObject(repositoryId, objectId, null, false, IncludeRelationships.NONE, null, null, null,
+		ObjectData o = getObject(repositoryId, objectId, null, true, IncludeRelationships.BOTH, null, true, true,
 				null);
 		PropertyData<?> isPWC = o.getProperties().getProperties().get(PropertyIds.IS_PRIVATE_WORKING_COPY);
 		if (isPWC != null && isPWC.getFirstValue().equals(true)) {

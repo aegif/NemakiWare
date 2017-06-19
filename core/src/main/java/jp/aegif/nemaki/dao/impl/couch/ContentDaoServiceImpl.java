@@ -21,6 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.dao.impl.couch;
 
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -1077,6 +1078,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				Long startKey = startChange.getToken();
 				query.startKey(startKey);
 			} catch (org.ektorp.DocumentNotFoundException ex) {
+				log.warn(MessageFormat.format("CouchChange is not found : Repo={0}, StartToken={1}",  repositoryId,  startToken));
+
 				return null;
 			}
 		}
@@ -1084,6 +1087,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			query.limit(maxItems);
 		}
 
+		log.warn(MessageFormat.format("Get change from CouchDB : {0}", query.buildQuery()));
 		List<CouchChange> l = connectorPool.get(repositoryId).queryView(query, CouchChange.class);
 		if (CollectionUtils.isEmpty(l))
 			return null;
@@ -1091,6 +1095,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		for (CouchChange cc : l) {
 			result.add(cc.convert());
 		}
+		log.warn(MessageFormat.format("Get change success : {0}", result.size()));
 		return result;
 	}
 
