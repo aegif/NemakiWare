@@ -289,7 +289,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			try {
 				folder = (Folder) c;
 			} catch (ClassCastException e) {
-				log.error("Content type is not folder : " + c.getObjectType());
+				log.warn("Content type is not folder : " + c.getObjectType());
+				return null;
 			}
 		}
 		return folder;
