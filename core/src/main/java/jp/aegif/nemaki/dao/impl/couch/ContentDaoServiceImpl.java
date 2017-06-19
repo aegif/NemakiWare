@@ -1087,6 +1087,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			query.limit(maxItems);
 		}
 
+		log.warn(MessageFormat.format("Get change from CouchDB : {0}", query.buildQuery()));
 		List<CouchChange> l = connectorPool.get(repositoryId).queryView(query, CouchChange.class);
 		if (CollectionUtils.isEmpty(l))
 			return null;
@@ -1094,6 +1095,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		for (CouchChange cc : l) {
 			result.add(cc.convert());
 		}
+		log.warn(MessageFormat.format("Get change success : {0}", result.size()));
 		return result;
 	}
 
