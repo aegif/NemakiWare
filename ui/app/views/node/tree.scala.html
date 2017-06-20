@@ -158,7 +158,7 @@
 
 		// type filter
  		//http://stackoverflow.com/questions/22739211/footable-fine-filtering
-		$('table').footable().bind('footable_filtering', function (e) {
+		$('table').footable({ paginate:false }).bind('footable_filtering', function (e) {
 			var selected = $('input[name="type_filter_item"]:not(:checked)').map(function(){
 			    return $(this).val();
 			}).get().join('|');
@@ -170,6 +170,7 @@
 	      }
 	      e.clear = !e.filter;
 	    });
+
 
 		$(document).on('change','input[name="type_filter_item"]', function(e){
 		  e.preventDefault();
