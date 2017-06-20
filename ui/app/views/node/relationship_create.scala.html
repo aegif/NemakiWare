@@ -112,11 +112,7 @@
 			 	window.alert( '@Messages("view.message.create.success")');
 				window.location.reload();
 			}).fail(function( jqXHR, textStatus, errorThrown ) {
-				if(jqXHR != 0){
-					window.alert('@Messages("view.message.create.failure")' + " status : " + textStatus + " HTTPStatus : " + jqXHR.status + " message : " + errorThrown.message );
-				}else{
-					window.location.reload();
-				}
+				window.alert('@Messages("view.message.create.failure")' + " status : " + textStatus + " HTTPStatus : " + jqXHR.status + " message : " + errorThrown.message );
 			}).always(function() {
 				 $.unblockUI();
 			});
@@ -142,11 +138,7 @@
 			 	window.alert( '@Messages("view.message.create.success")');
 				window.location.reload();
 			}).fail(function( jqXHR, textStatus, errorThrown ) {
-				if(jqXHR.status !=0){
-					window.alert('@Messages("view.message.create.failure")' + " status : " + textStatus + " HTTPStatus : " + jqXHR.status + " message : " + errorThrown.message );
-				}else{
-					window.location.reload();
-				}
+				window.alert('@Messages("view.message.create.failure")' + " status : " + textStatus + " HTTPStatus : " + jqXHR.status + " message : " + errorThrown.message );
 			}).always(function() {
 				 $.unblockUI();
 			});

@@ -203,7 +203,7 @@ public class Node extends Controller {
 				orderBy="cmis:name ASC";
 			}
 			cmisOpCtx.setOrderBy(orderBy);
-			
+
 
 			ItemIterable<CmisObject> allChildren = _parent.getChildren(cmisOpCtx);
 			ItemIterable<CmisObject> children = allChildren.skipTo(skipCount).getPage();
@@ -1461,22 +1461,18 @@ public class Node extends Controller {
 		// Get input form data
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
-		String targetId = Util.getFormData(input, "nemaki:targetId");
+		String _targetId = Util.getFormData(input, "nemaki:targetId");
 		String relType = Util.getFormData(input, "nemaki:relationshipType");
 		String relName = Util.getFormData(input, "nemaki:relationshipName");
-		if (StringUtils.isEmpty(targetId)) {
+		if (StringUtils.isEmpty(_targetId)) {
 			return internalServerError("ObjectId is empty.");
 		}
-
-		// Get an object in the repository
-		Session session = getCmisSession(repositoryId);
-
-		try {
-			session.getObject(targetId);
+		String targetId = _targetId.trim();
+		try {;
 			createRelation(relType, relName, repositoryId, sourceId, targetId);
 			return ok();
 		} catch (CmisObjectNotFoundException e) {
-			e.printStackTrace();
+			logger.error("Create relation error : ", e);
 			return internalServerError("CmisObject is not found.");
 		}
 	}
