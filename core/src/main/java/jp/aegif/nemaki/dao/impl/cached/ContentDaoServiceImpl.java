@@ -21,6 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.dao.impl.cached;
 
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -207,6 +208,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	 */
 	@Override
 	public Content getContent(String repositoryId, String objectId) {
+		log.info(MessageFormat.format("cache.ContentDaoService#getContent START: Repo={0}, Id={1}", repositoryId, objectId));
+		if (objectId == null){
+			log.warn("DAO getContent param ObjcetId is null!");
+			return null;
+		}
+
 		NemakiCache<Content> contentCache = nemakiCachePool.get(repositoryId).getContentCache();
 		Content v = contentCache.get(objectId);
 
@@ -221,6 +228,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		} else {
 			contentCache.put(new Element(objectId, content));
 		}
+
+		log.info(MessageFormat.format("cache.ContentDaoService#getContent END: Repo={0}, Id={1}", repositoryId, objectId));
 
 		return content;
 	}
@@ -289,7 +298,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			try {
 				folder = (Folder) c;
 			} catch (ClassCastException e) {
-				log.error("Content type is not folder : " + c.getObjectType());
+				log.warn("Content type is not folder : " + c.getObjectType());
+				return null;
 			}
 		}
 		return folder;

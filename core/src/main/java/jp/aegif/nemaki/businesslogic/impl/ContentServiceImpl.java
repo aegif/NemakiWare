@@ -24,6 +24,7 @@ package jp.aegif.nemaki.businesslogic.impl;
 import java.io.InputStream;
 import java.io.SequenceInputStream;
 import java.math.BigInteger;
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -36,7 +37,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
@@ -62,7 +62,6 @@ import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
-import org.apache.commons.lang.ObjectUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -151,7 +150,8 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public Content getContent(String repositoryId, String objectId) {
 		Content content = contentDaoService.getContent(repositoryId, objectId);
-		if (content == null) return null;
+		if (content == null)
+			return null;
 
 		return getContentInternal(repositoryId, content);
 	}
@@ -223,7 +223,7 @@ public class ContentServiceImpl implements ContentService {
 	public List<Content> getChildren(String repositoryId, String folderId) {
 		List<Content> result = new ArrayList<Content>();
 		List<Content> daoContentList = contentDaoService.getChildren(repositoryId, folderId);
-		for(Content content : daoContentList){
+		for (Content content : daoContentList) {
 			result.add(getContentInternal(repositoryId, content));
 		}
 
@@ -232,26 +232,28 @@ public class ContentServiceImpl implements ContentService {
 
 	/**
 	 * content / user or group items are
+	 *
 	 * @param content
 	 * @return
 	 */
-	private Content getContentInternal(String repositoryId, Content content){
+	private Content getContentInternal(String repositoryId, Content content) {
 		if (content.isItem()) {
 			return content;
-			/**TODO: for userItems discard ok?
-			if (ObjectUtils.equals(NemakiObjectType.nemakiUser, content.getObjectType())) {
-				return contentDaoService.getUserItem(repositoryId, content.getId());
-			} else if (ObjectUtils.equals(NemakiObjectType.nemakiGroup, content.getObjectType())) {
-				return contentDaoService.getGroupItem(repositoryId, content.getId());
-			} else {
-				return contentDaoService.getItem(repositoryId, content.getId());
-			}
-			**/
+			/**
+			 * TODO: for userItems discard ok? if
+			 * (ObjectUtils.equals(NemakiObjectType.nemakiUser,
+			 * content.getObjectType())) { return
+			 * contentDaoService.getUserItem(repositoryId, content.getId()); }
+			 * else if (ObjectUtils.equals(NemakiObjectType.nemakiGroup,
+			 * content.getObjectType())) { return
+			 * contentDaoService.getGroupItem(repositoryId, content.getId()); }
+			 * else { return contentDaoService.getItem(repositoryId,
+			 * content.getId()); }
+			 **/
 		} else {
 			return content;
 		}
 	}
-
 
 	@Override
 	public Document getDocument(String repositoryId, String objectId) {
@@ -342,6 +344,10 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public List<Relationship> getRelationsipsOfObject(String repositoryId, String objectId,
 			RelationshipDirection relationshipDirection) {
+
+		log.info(MessageFormat.format("ContentService#getRelationsipsOfObject START: Repo={0}, Id={1}", repositoryId,
+				objectId));
+
 		// Set default (according to the specification)
 		relationshipDirection = (relationshipDirection == null) ? RelationshipDirection.SOURCE : relationshipDirection;
 		switch (relationshipDirection) {
@@ -1791,6 +1797,7 @@ public class ContentServiceImpl implements ContentService {
 	// Merge inherited ACL
 	@Override
 	public Acl calculateAcl(String repositoryId, Content content) {
+
 		NemakiCache<Acl> aclCache = nemakiCachePool.get(repositoryId).getAclCache();
 		Acl acl = aclCache.get(content.getId());
 
@@ -1826,10 +1833,10 @@ public class ContentServiceImpl implements ContentService {
 	private List<Ace> calculateAclInternal(String repositoryId, List<Ace> result, Content content) {
 		Acl contentAcl = content.getAcl();
 		List<Ace> aces = null;
-		if (contentAcl == null){
-			log.error("Invalid Acl, content ACL is null! [ID=" + content.getId() + "]" + content.getName() );
+		if (contentAcl == null) {
+			log.error("Invalid Acl, content ACL is null! [ID=" + content.getId() + "]" + content.getName());
 			aces = new ArrayList<Ace>();
-		}else{
+		} else {
 			aces = contentAcl.getLocalAces();
 		}
 
@@ -1845,8 +1852,17 @@ public class ContentServiceImpl implements ContentService {
 		} else {
 			// reduce db access instead of getParent(repositoryId,
 			// content.getId())
-			Folder parent = getFolder(repositoryId, content.getParentId());
-			return mergeAcl(repositoryId, aces, calculateAclInternal(repositoryId, new ArrayList<Ace>(), parent));
+			if (content.getParentId() == null) {
+				return aces;
+			} else {
+				Folder parent = getFolder(repositoryId, content.getParentId());
+				if (parent == null) {
+					return aces;
+				} else {
+					return mergeAcl(repositoryId, aces,
+							calculateAclInternal(repositoryId, new ArrayList<Ace>(), parent));
+				}
+			}
 		}
 	}
 

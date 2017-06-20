@@ -23,8 +23,8 @@ package jp.aegif.nemaki.cmis.service.impl;
 
 import java.io.InputStream;
 import java.math.BigInteger;
+import java.text.MessageFormat;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,12 +41,10 @@ import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.AllowableActions;
 import org.apache.chemistry.opencmis.commons.data.BulkUpdateObjectIdAndChangeToken;
-import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.FailedToDeleteData;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
-import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.RenditionData;
@@ -56,12 +54,10 @@ import org.apache.chemistry.opencmis.commons.definitions.RelationshipTypeDefinit
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
-import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
 import org.apache.chemistry.opencmis.commons.enums.UnfileObject;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.BulkUpdateObjectIdAndChangeTokenImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.CmisExtensionElementImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.FailedToDeleteDataImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.RenditionDataImpl;
@@ -70,8 +66,6 @@ import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.springframework.context.annotation.AnnotationConfigApplicationContext;
-import org.springframework.context.support.GenericApplicationContext;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
@@ -90,11 +84,9 @@ import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.model.VersionSeries;
-import jp.aegif.nemaki.plugin.action.JavaBackedAction;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.DomainType;
-import jp.aegif.nemaki.common.NemakiObjectType;
 import jp.aegif.nemaki.util.lock.ThreadLockService;
 
 public class ObjectServiceImpl implements ObjectService {
@@ -148,6 +140,8 @@ public class ObjectServiceImpl implements ObjectService {
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter,
 			Boolean includePolicyIds, Boolean includeAcl, ExtensionsData extension) {
 
+		log.info(MessageFormat.format("ObjcetService#getObject START: Repo={0}, Id={1}", repositoryId, objectId));
+
 		exceptionService.invalidArgumentRequired("objectId", objectId);
 
 		Lock lock = threadLockService.getReadLock(repositoryId, objectId);
@@ -158,6 +152,8 @@ public class ObjectServiceImpl implements ObjectService {
 			// General Exception
 			// //////////////////
 			Content content = contentService.getContent(repositoryId, objectId);
+			log.info(MessageFormat.format("ObjcetService#getObject getContent success: Repo={0}, Id={1}", repositoryId, objectId));
+
 			// WORK AROUND: getObject(versionSeriesId) is interpreted as
 			// getDocumentOflatestVersion
 			if (content == null) {
@@ -169,12 +165,15 @@ public class ObjectServiceImpl implements ObjectService {
 			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 			exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT,
 					content);
+			log.info(MessageFormat.format("ObjcetService#getObject permissionDenied check success: Repo={0}, Id={1}", repositoryId, objectId));
 
 			// //////////////////
 			// Body of the method
 			// //////////////////
 			ObjectData object = compileService.compileObjectData(callContext, repositoryId, content, filter,
 					includeAllowableActions, includeRelationships, null, includeAcl);
+
+			log.info(MessageFormat.format("ObjcetService#getObject END: Repo={0}, Id={1} Type={2} Name={3}", repositoryId, objectId, content.getObjectType(), content.getObjectType(), content.getName()));
 
 			return object;
 		} finally {

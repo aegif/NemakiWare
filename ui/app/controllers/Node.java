@@ -122,13 +122,13 @@ public class Node extends Controller {
 	public Result index(String repositoryId) {
 		Session session = getCmisSession(repositoryId);
 		Folder root = session.getRootFolder();
-		return showChildren(repositoryId, root.getId(), 0, "cmis:name DESC",null);
+		return showChildren(repositoryId, root.getId(), 0, "cmis:name ASC",null);
 	}
 	@Secure
 	public Result index(String repositoryId, int currentPage) {
 		Session session = getCmisSession(repositoryId);
 		Folder root = session.getRootFolder();
-		return showChildren(repositoryId, root.getId(), currentPage, "cmis:name DESC",null);
+		return showChildren(repositoryId, root.getId(), currentPage, "cmis:name ASC",null);
 	}
 	@Secure
 	public Result index(String repositoryId, int currentPage, String orderBy) {
@@ -166,11 +166,11 @@ public class Node extends Controller {
 	}
 	@Secure
 	public Result showChildren(String repositoryId, String objectId){
-		return showChildren(repositoryId,  objectId, 0,"cmis:name DESC",null);
+		return showChildren(repositoryId,  objectId, 0,"cmis:name ASC",null);
 	}
 	@Secure
 	public Result showChildren(String repositoryId, String objectId, int currentPage){
-		return showChildren(repositoryId,  objectId, currentPage,"cmis:name DESC",null);
+		return showChildren(repositoryId,  objectId, currentPage,"cmis:name ASC",null);
 	}
 
 	@Secure
@@ -199,9 +199,11 @@ public class Node extends Controller {
 			cmisOpCtx.setIncludeAcls(true);
 			cmisOpCtx.setIncludeAllowableActions(true);
 			cmisOpCtx.setMaxItemsPerPage(maxItemsPerPage);
-			if(orderBy != null){
-				cmisOpCtx.setOrderBy(orderBy);
+			if(orderBy == null){
+				orderBy="cmis:name ASC";
 			}
+			cmisOpCtx.setOrderBy(orderBy);
+			
 
 			ItemIterable<CmisObject> allChildren = _parent.getChildren(cmisOpCtx);
 			ItemIterable<CmisObject> children = allChildren.skipTo(skipCount).getPage();
@@ -1503,9 +1505,9 @@ public class Node extends Controller {
 		String parentId = Util.getFormData(input, PropertyIds.PARENT_ID);
 		// TODO fix hard code
 		if (parentId == null || "".equals(parentId) || "/".equals(parentId)) {
-			return redirect(routes.Node.index(repositoryId,0,"cmis:name DESC"));
+			return redirect(routes.Node.index(repositoryId,0,"cmis:name ASC"));
 		} else {
-			return redirect(routes.Node.showChildren(repositoryId, parentId,0,"cmis:name DESC",null));
+			return redirect(routes.Node.showChildren(repositoryId, parentId,0,"cmis:name ASC",null));
 		}
 	}
 

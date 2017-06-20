@@ -15,7 +15,7 @@
 	<!-- html -->
 
 	@menubar(repositoryId, profile)
-	<div class="lightbox-me-container" style="left: 50%; margin-left: -400px; z-index: 1002; position: fixed; top: 50%; margin-top: -300px
+	<div class="lightbox-me-container" style="left: 50%; margin-left: -400px; z-index: 1002; position: fixed; top: 50%; margin-top: -250px
 	@if(obj.getId() != latestId){
 		@if(obj.isPrivateWorkingCopy()){
 			;border-style:double
@@ -24,7 +24,7 @@
 		}
 	}
 	">
-	<a id="close_x" class="close sprited" href="@routes.Node.showChildren(repositoryId, parentId, 0,null ,null)" style="top:-15px;position:relative"><i class="fa fa-times-circle-o" aria-hidden="true"></i></a>
+	<a id="close_x" class="close sprited" href="@routes.Node.showChildren(repositoryId, parentId, 0,null ,null)" style="top:0px;position:relative"><i class="fa fa-times-circle-o" aria-hidden="true"></i></a>
 
 	<div>
 		<h4>
