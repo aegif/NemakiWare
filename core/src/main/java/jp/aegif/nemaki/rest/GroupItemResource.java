@@ -21,12 +21,9 @@
  ******************************************************************************/
 package jp.aegif.nemaki.rest;
 
-import jp.aegif.nemaki.common.ErrorCode;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.Consumes;
@@ -42,17 +39,6 @@ import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 
-import jp.aegif.nemaki.businesslogic.ContentService;
-import jp.aegif.nemaki.cmis.factory.SystemCallContext;
-import jp.aegif.nemaki.model.Content;
-import jp.aegif.nemaki.model.Folder;
-import jp.aegif.nemaki.model.GroupItem;
-import jp.aegif.nemaki.model.UserItem;
-import jp.aegif.nemaki.common.NemakiObjectType;
-import jp.aegif.nemaki.util.DataUtil;
-import jp.aegif.nemaki.util.constant.PropertyKey;
-import jp.aegif.nemaki.util.constant.SystemConst;
-
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
@@ -61,9 +47,18 @@ import org.apache.commons.lang.ObjectUtils;
 import org.apache.commons.lang.StringUtils;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
-import org.json.simple.JSONValue;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
+
+import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.cmis.factory.SystemCallContext;
+import jp.aegif.nemaki.common.ErrorCode;
+import jp.aegif.nemaki.common.NemakiObjectType;
+import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.GroupItem;
+import jp.aegif.nemaki.model.UserItem;
+import jp.aegif.nemaki.util.constant.SystemConst;
 
 
 @Path("/repo/{repositoryId}/group")
@@ -231,7 +226,10 @@ public class GroupItemResource extends ResourceBase{
 
 		//Existing group
 		GroupItem group = contentService.getGroupItemById(repositoryId, groupId);
-		if (group == null) status = false;
+		if (group == null) {
+			status = false;
+			addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_NOTFOUND);
+		}
 
 		//Validation
 		status = validateGroup(status, errMsg, groupId, name);
