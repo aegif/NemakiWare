@@ -25,7 +25,6 @@ import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.stream.Collectors;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
@@ -35,7 +34,6 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.ektorp.Attachment;
 import org.ektorp.AttachmentInputStream;
-import org.ektorp.ComplexKey;
 import org.ektorp.CouchDbConnector;
 import org.ektorp.ViewQuery;
 import org.ektorp.ViewResult;
@@ -1094,6 +1092,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		for (CouchChange cc : l) {
 			result.add(cc.convert());
 		}
+		log.info(MessageFormat.format("Repo={0} Get change success : {1}",repositoryId, result.size()));
 		return result;
 	}
 
