@@ -24,7 +24,7 @@
 	<div class="row">
 		<div class="col-sm-12 col-md-12">
 			<legend><i class="fa fa-arrow-circle-o-up"></i>@Messages("view.node.relationship.table.to.caption")</legend>
-			<div class="row" style="margin-bottom:15px">
+			<div class="row download-menu" style="margin-bottom:15px">
 				<div class="col-sm-12 col-md-12">
 					@Messages("view.node.relationship.download.targets.label") @executeButton("download-with-target")
 				</div>
@@ -43,7 +43,7 @@
 				<tbody>
 					@for(relationship <- relationships){
 							@if(obj.getId() == relationship.getSource().getId()){
-							<tr>
+							<tr class="download-target">
 								<td>@NemakiConfig.getLabel(relationship.getType().getId(), Implicit.lang().language)</td>
 								<td>@relationship.getName()</td>
 								<td><a href="@routes.Node.direct(repositoryId, relationship.getTarget().getId(),"property")">@relationship.getTarget().getName()</a></td>
@@ -108,6 +108,11 @@
 	$(function () {
 	    $('#relationship-table-source').footable();
 	    $('#relationship-table-target').footable();
+	    
+	    if(!$("download-target")[0]){
+	    	$("#download-menu").hide();
+	    	$("#download-menu").css("display","none");
+	    }
 
 		$('#create-new-relationship').on('click', function(){
 			$.get("@routes.Node.showRelationshipCreate(repositoryId, obj.getId())", function(html){
@@ -117,7 +122,7 @@
 
 		//multiple archive button
 		$("#download-with-target").on('click', function(){
-			if(window.confirm("@Messages("view.message.compress.confirm")")){
+			if(document.getElementsByClassName("download-target").length > 0 && window.confirm("@Messages("view.message.compress.confirm")")){
 			    $.fileDownload(jsRoutes.controllers.Node.downloadWithRelationTargetAsCompressedFile("@repositoryId", "@obj.getId()").url)
 		        .done(function () { })
 		        .fail(function (responseHtml, url, error) {
