@@ -20,18 +20,22 @@
 					@helper.form(action=routes.Node.upload(repositoryId, obj.getId()), 'enctype -> "multipart/form-data") {
 					<fieldset>
 						<legend><i class="fa fa-upload"></i>@Messages("view.node.file.update.pwc.caption")</legend>
-						<div class="row" style="padding-bottom:6px;">
-							<div class="col-sm-12">
-								<div>@Messages("view.node.file.update.pwc.description")</div>
-								<input type="file" name="file"/>
-								<input type="hidden" name="cmis:parentId" value="@parentId"/>
+						@if(Util.canCheckIn(obj)){
+							<div class="row" style="padding-bottom:6px;">
+								<div class="col-sm-12">
+									<div>@Messages("view.node.file.update.pwc.description")</div>
+									<input type="file" name="file"/>
+									<input type="hidden" name="cmis:parentId" value="@parentId"/>
+								</div>
 							</div>
-						</div>
-						<div class="row" style="padding-bottom:6px;">
-							<div class="col-sm-12">
-				   				@executeButton()
+							<div class="row" style="padding-bottom:6px;">
+								<div class="col-sm-12">
+				   					@executeButton()
+				   				</div>
 				   			</div>
-				   		</div>
+				 		}else{
+			   				<div class="row" style="padding-bottom:6px;"><div class="col-sm-12">@Messages("view.not_permitted")<div></div>
+						}
 				   	</fieldset>
 					}
 					</div>

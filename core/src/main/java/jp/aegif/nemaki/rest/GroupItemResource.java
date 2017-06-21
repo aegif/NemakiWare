@@ -85,8 +85,12 @@ public class GroupItemResource extends ResourceBase{
 		JSONArray queriedGroups = new JSONArray();
 
 		for(GroupItem g : groups) {
-			if ( g.getGroupId().startsWith(query)|| g.getName().startsWith(query)) {
-				queriedGroups.add(this.convertGroupToJson(g));
+			if ( g.getGroupId().contains(query)|| g.getName().contains(query)) {
+				if(queriedGroups.size()<50){
+					queriedGroups.add(this.convertGroupToJson(g));
+				}else{
+					break;
+				}
 			}
 		}
 
