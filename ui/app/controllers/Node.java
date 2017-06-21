@@ -300,17 +300,26 @@ public class Node extends Controller {
 
 		int maxItemsPerPage = Util.getNavigationPagingSize();
 		int skipCount = maxItemsPerPage * currentPage;
-
+		
 		ItemIterable<CmisObject> allResults = session.queryObjects("cmis:document", docStatement, false, ctxt);
 		ItemIterable<CmisObject> docResults = allResults.skipTo(skipCount).getPage(maxItemsPerPage);
 		Iterator<CmisObject> docItr = docResults.iterator();
 		long totalItemCount = docResults.getTotalNumItems();
 
 		while (docItr.hasNext()) {
-			CmisObject doc = docItr.next();
-			boolean val = doc.getPropertyValue("cmis:isLatestVersion");
-			if (!val)
-				continue;
+			CmisObject obj = docItr.next();
+			Document doc = (Document) obj;
+			if (doc.isVersionSeriesCheckedOut()) {
+				// check owner
+				String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
+				String owner = doc.getVersionSeriesCheckedOutBy();
+				if (userId.equals(owner)) {
+					String pwcId = doc.getVersionSeriesCheckedOutId();
+					CmisObject pwc = session.getObject(pwcId);
+					list.add(pwc);
+					continue;
+				}
+			}	
 			list.add(doc);
 		}
 
