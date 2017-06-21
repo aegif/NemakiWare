@@ -7,7 +7,7 @@
 @import component._
 @import play.mvc.Http.Context.Implicit
 @import org.apache.chemistry.opencmis.client.api.CmisObject
-@(repositoryId:String)(obj:CmisObject)(relationships: List[org.apache.chemistry.opencmis.client.api.Relationship])
+@(repositoryId:String)(obj:CmisObject)(relationships: List[org.apache.chemistry.opencmis.client.api.Relationship])(session:org.apache.chemistry.opencmis.client.api.Session)
 
 <div class="container tab-pane">
 	<div class="row" style="margin-bottom:15px">
@@ -16,7 +16,15 @@
 				@lockedNotice(obj)
 			}else{
 				@if(Util.isPropertyEditable(obj, Http.Context.current)){
-					@createButton("create-new-relationship")
+					@if(Util.hasCreatableRelationsTypes(session, obj)){
+						@createButton("create-new-relationship")
+					}else{
+						@Messages("view.node.relationship.cannot-create")<br />
+						@Messages("view.node.relationship.soruce-type")
+					}
+				}else{
+					@Messages("view.node.relationship.cannot-create")<br />
+					@Messages("view.not_permitted")
 				}
 			}
 		</div>

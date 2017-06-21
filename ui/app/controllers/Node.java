@@ -304,7 +304,7 @@ public class Node extends Controller {
 
 		int maxItemsPerPage = Util.getNavigationPagingSize();
 		int skipCount = maxItemsPerPage * currentPage;
-		
+
 		ItemIterable<CmisObject> allResults = session.queryObjects("cmis:document", docStatement, false, ctxt);
 		ItemIterable<CmisObject> docResults = allResults.skipTo(skipCount).getPage(maxItemsPerPage);
 		Iterator<CmisObject> docItr = docResults.iterator();
@@ -323,7 +323,7 @@ public class Node extends Controller {
 					list.add(pwc);
 					continue;
 				}
-			}	
+			}
 			list.add(doc);
 		}
 
@@ -721,20 +721,16 @@ public class Node extends Controller {
 			parentId = folder.getFolderParent().getId();
 		}
 
-		List<String> enableTypes = NemakiConfig.getValues(PropertyKey.UI_VISIBILITY_CREATE_RELATIONSHIP);
+		List<RelationshipType> viewTypes = RelationshipUtil.getCreatableRelationsTypes(session,obj);
 
-		List<RelationshipType> viewTypesTemp = session.getTypeDescendants(null, -1, true).stream().map(Tree::getItem)
-				.filter(p -> p.getBaseTypeId() == BaseTypeId.CMIS_RELATIONSHIP).map(p -> (RelationshipType) p)
-				.filter(p -> enableTypes.contains(p.getLocalName())).collect(Collectors.toList());
-
-		List<RelationshipType> viewTypes = viewTypesTemp.stream()
-				.filter(p -> p.getAllowedSourceTypes().contains(obj.getType())).collect(Collectors.toList());
-
-		Set<ObjectType> targetTypes = viewTypes.stream().flatMap(p -> p.getAllowedTargetTypes().stream()).distinct()
+		Set<ObjectType> targetTypes = viewTypes.stream()
+				.flatMap(p -> p.getAllowedTargetTypes().stream()).distinct()
 				.collect(Collectors.toSet());
 
 		return ok(relationship_create.render(repositoryId, obj, parentId, viewTypes, targetTypes));
 	}
+
+
 
 	@Secure
 	public Result showRelationship(String repositoryId, String objectId) {
@@ -754,7 +750,7 @@ public class Node extends Controller {
 		for(Relationship rel : rels){
 			result.add(rel);
 		}
-		return ok(relationship.render(repositoryId, session.getObject(objectId), result));
+		return ok(relationship.render(repositoryId, session.getObject(objectId), result, session));
 	}
 
 	@Secure
