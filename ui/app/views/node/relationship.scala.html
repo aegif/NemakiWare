@@ -50,13 +50,11 @@
 								<td>@relationship.getCreatedBy()</td>
 								<td>@DateTimeUtil.calToString(relationship.getCreationDate(), Implicit.lang.toLocale)</td>
 								<td>
-								<!--
 									<div class="btn-group">
-										<button type="button" class="btn btn-default delete" cmis-id="@relationship.getId()">
+										<button type="button" class="btn btn-default delete" cmis-id="@relationship.getId()"  @if(!Util.canDelete(relationship)){disabled="disabled"}>
 											<i class="fa fa-unlink"></i><div class="tooltips">@Messages("view.unlink")</div>
 										</button>
 									</div>
-								-->
 								</td>
 							</tr>
 						}
@@ -89,7 +87,7 @@
 								<td>@DateTimeUtil.calToString(relationship.getCreationDate(), Implicit.lang.toLocale)</td>
 								<td>
 									<div class="btn-group">
-										<button type="button" class="btn btn-default delete" cmis-id="@relationship.getId()">
+										<button type="button" class="btn btn-default delete" cmis-id="@relationship.getId()"  @if(!Util.canDelete(relationship)){disabled="disabled"}>
 											<i class="fa fa-unlink"></i><div class="tooltips">@Messages("view.unlink")</div>
 										</button>
 									</div>
