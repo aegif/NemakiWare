@@ -1440,7 +1440,10 @@ public class Node extends Controller {
 		Map<String, String> newDocProps = new HashMap<String, String>();
 		newDocProps.put(PropertyIds.OBJECT_TYPE_ID, StringUtils.isBlank(docType) ? "cmis:document" : docType);
 		newDocProps.put(PropertyIds.NAME, file.getFilename());
-		Document doc = folder.createDocument(newDocProps, cs, VersioningState.MAJOR, null, null, null,
+
+		Acl parentAcl = folder.getAcl();
+		List<Ace> parentAceList = parentAcl.getAces();
+		Document doc = folder.createDocument(newDocProps, cs, VersioningState.MAJOR, null, parentAceList, null,
 				session.getDefaultContext());
 
 		ObjectId newId = createRelation(relType, relName, repositoryId, sourceId, doc.getId());
@@ -1486,7 +1489,8 @@ public class Node extends Controller {
 		relProps.put(PropertyIds.NAME, relName);
 		relProps.put("cmis:sourceId", sourceId);
 		relProps.put("cmis:targetId", targetId);
-		return session.createRelationship(relProps, null, srcAceList, srcAceList);
+
+		return session.createRelationship(relProps, null, srcAceList, new ArrayList<Ace>());
 	}
 
 	private static Result redirectToParent(String repositoryId, DynamicForm input) {
