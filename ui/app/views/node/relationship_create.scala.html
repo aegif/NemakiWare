@@ -102,7 +102,7 @@
 			formData.append('nemaki:documentType', dType);
 			$.blockUI({message:'@Messages("view.message.please.wait")'});
 			$.ajax({
-				type: "POST",
+				method: 'post',
 				url: "@routes.Node.createRelationToNew(repositoryId, obj.getId())",
 				contentType: false,
 				processData: false,
@@ -112,11 +112,7 @@
 			 	window.alert( '@Messages("view.message.create.success")');
 				window.location.reload();
 			}).fail(function( jqXHR, textStatus, errorThrown ) {
-				if(jqXHR != 0){
-					window.alert('@Messages("view.message.create.failure")' + " status : " + textStatus + " HTTPStatus : " + jqXHR.status + " message : " + errorThrown.message );
-				}else{
-					window.location.reload();
-				}
+				window.alert('@Messages("view.message.create.failure")' + " status : " + textStatus + " HTTPStatus : " + jqXHR.status + " message : " + errorThrown.message );
 			}).always(function() {
 				 $.unblockUI();
 			});
@@ -133,7 +129,7 @@
 
 			$.blockUI({message:'@Messages("view.message.please.wait")'});
 			jsRoutes.controllers.Node.createRelationToExisting("@repositoryId", "@obj.getId()").ajax({
-				type: "POST",
+				method: 'post',
 				contentType: false,
 				processData: false,
 				cache: false,
@@ -142,11 +138,7 @@
 			 	window.alert( '@Messages("view.message.create.success")');
 				window.location.reload();
 			}).fail(function( jqXHR, textStatus, errorThrown ) {
-				if(jqXHR.status !=0){
-					window.alert('@Messages("view.message.create.failure")' + " status : " + textStatus + " HTTPStatus : " + jqXHR.status + " message : " + errorThrown.message );
-				}else{
-					window.location.reload();
-				}
+				window.alert('@Messages("view.message.create.failure")' + " status : " + textStatus + " HTTPStatus : " + jqXHR.status + " message : " + errorThrown.message );
 			}).always(function() {
 				 $.unblockUI();
 			});

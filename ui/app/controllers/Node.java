@@ -39,6 +39,7 @@ import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.client.api.Tree;
 import org.apache.chemistry.opencmis.client.runtime.ObjectIdImpl;
 import org.apache.chemistry.opencmis.client.runtime.OperationContextImpl;
+import org.apache.chemistry.opencmis.client.runtime.objecttype.RelationshipTypeImpl;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Ace;
 import org.apache.chemistry.opencmis.commons.data.Acl;
@@ -47,6 +48,7 @@ import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
+import org.apache.chemistry.opencmis.commons.definitions.RelationshipTypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
 import org.apache.chemistry.opencmis.commons.enums.Action;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
@@ -54,6 +56,7 @@ import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
+import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
@@ -67,6 +70,7 @@ import org.pac4j.play.java.Secure;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.collect.Lists;
 import com.google.inject.Inject;
 
 import constant.PropertyKey;
@@ -203,7 +207,7 @@ public class Node extends Controller {
 				orderBy="cmis:name ASC";
 			}
 			cmisOpCtx.setOrderBy(orderBy);
-			
+
 
 			ItemIterable<CmisObject> allChildren = _parent.getChildren(cmisOpCtx);
 			ItemIterable<CmisObject> children = allChildren.skipTo(skipCount).getPage();
@@ -738,31 +742,19 @@ public class Node extends Controller {
 
 		ObjectId id = session.createObjectId(objectId);
 		OperationContext cmisOpCtx = new OperationContextImpl();
-		cmisOpCtx.setIncludeRelationships(IncludeRelationships.BOTH);
+		cmisOpCtx.setIncludeRelationships(IncludeRelationships.NONE);
 		cmisOpCtx.setIncludeAcls(true);
 		cmisOpCtx.setIncludeAllowableActions(true);
-		CmisObject obj = session.getObject(id, cmisOpCtx);
 
+		//TODO String "cmis:relationship" extract nemaki-common project
+		ObjectType cmisRelType = new RelationshipTypeImpl(session, (RelationshipTypeDefinition) session.getTypeDefinition("cmis:relationship"));
+		Iterable<Relationship> rels = session.getRelationships(id, true, RelationshipDirection.EITHER, cmisRelType, cmisOpCtx);
 
-		List<Relationship> relationships = obj.getRelationships();
 		List<Relationship> result = new ArrayList<Relationship>();
-		if (relationships != null) {
-			result = relationships.stream().filter(r -> {
-				try {
-					r.getTarget();
-				} catch (CmisObjectNotFoundException e) {
-					return false;
-				}
-				try {
-					r.getSource();
-				} catch (CmisObjectNotFoundException e) {
-					return false;
-				}
-				return true;
-			}).collect(Collectors.toList());
+		for(Relationship rel : rels){
+			result.add(rel);
 		}
-
-		return ok(relationship.render(repositoryId, obj, result));
+		return ok(relationship.render(repositoryId, session.getObject(objectId), result));
 	}
 
 	@Secure
@@ -1457,7 +1449,10 @@ public class Node extends Controller {
 		Map<String, String> newDocProps = new HashMap<String, String>();
 		newDocProps.put(PropertyIds.OBJECT_TYPE_ID, StringUtils.isBlank(docType) ? "cmis:document" : docType);
 		newDocProps.put(PropertyIds.NAME, file.getFilename());
-		Document doc = folder.createDocument(newDocProps, cs, VersioningState.MAJOR, null, null, null,
+
+		Acl parentAcl = folder.getAcl();
+		List<Ace> parentAceList = parentAcl.getAces();
+		Document doc = folder.createDocument(newDocProps, cs, VersioningState.MAJOR, null, parentAceList, null,
 				session.getDefaultContext());
 
 		ObjectId newId = createRelation(relType, relName, repositoryId, sourceId, doc.getId());
@@ -1470,22 +1465,18 @@ public class Node extends Controller {
 		// Get input form data
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
-		String targetId = Util.getFormData(input, "nemaki:targetId");
+		String _targetId = Util.getFormData(input, "nemaki:targetId");
 		String relType = Util.getFormData(input, "nemaki:relationshipType");
 		String relName = Util.getFormData(input, "nemaki:relationshipName");
-		if (StringUtils.isEmpty(targetId)) {
+		if (StringUtils.isEmpty(_targetId)) {
 			return internalServerError("ObjectId is empty.");
 		}
-
-		// Get an object in the repository
-		Session session = getCmisSession(repositoryId);
-
-		try {
-			session.getObject(targetId);
+		String targetId = _targetId.trim();
+		try {;
 			createRelation(relType, relName, repositoryId, sourceId, targetId);
 			return ok();
 		} catch (CmisObjectNotFoundException e) {
-			e.printStackTrace();
+			logger.error("Create relation error : ", e);
 			return internalServerError("CmisObject is not found.");
 		}
 	}
@@ -1507,7 +1498,8 @@ public class Node extends Controller {
 		relProps.put(PropertyIds.NAME, relName);
 		relProps.put("cmis:sourceId", sourceId);
 		relProps.put("cmis:targetId", targetId);
-		return session.createRelationship(relProps, null, srcAceList, srcAceList);
+
+		return session.createRelationship(relProps, null, srcAceList, new ArrayList<Ace>());
 	}
 
 	private static Result redirectToParent(String repositoryId, DynamicForm input) {
