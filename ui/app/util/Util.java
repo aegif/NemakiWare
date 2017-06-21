@@ -43,6 +43,7 @@ import org.apache.chemistry.opencmis.client.api.ObjectType;
 import org.apache.chemistry.opencmis.client.api.OperationContext;
 import org.apache.chemistry.opencmis.client.api.Property;
 import org.apache.chemistry.opencmis.client.api.QueryResult;
+import org.apache.chemistry.opencmis.client.api.RelationshipType;
 import org.apache.chemistry.opencmis.client.api.Rendition;
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.client.api.SessionFactory;
@@ -358,6 +359,11 @@ public class Util {
 		AllowableActions acs =  object.getAllowableActions();
 		if (acs == null) return false;
 		return acs.getAllowableActions().contains(action);
+	}
+
+	public static boolean hasCreatableRelationsTypes(Session session, CmisObject obj){
+		List<RelationshipType> relTypes = RelationshipUtil.getCreatableRelationsTypes(session, obj);
+		return relTypes.size() > 0;
 	}
 
 	public static Set<JavaBackedUIAction> getUIActions() {
