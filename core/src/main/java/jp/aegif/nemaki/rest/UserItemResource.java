@@ -160,9 +160,13 @@ public class UserItemResource extends ResourceBase {
 		JSONArray queriedUsers = new JSONArray();
 		users = contentService.getUserItems(repositoryId);
 		for (UserItem user : users) {
-			if (user.getUserId().startsWith(query) || user.getName().startsWith(query)) {
+			if (user.getUserId().contains(query) || user.getName().contains(query)) {
 				JSONObject userJSON = convertUserToJson(user);
-				queriedUsers.add(userJSON);
+				if(queriedUsers.size() < 50){
+					queriedUsers.add(userJSON);
+				}else{
+					break;
+				}
 			}
 		}
 
