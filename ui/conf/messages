@@ -194,8 +194,9 @@ view.message.checkin.failure=Failed to checkin
 view.message.cancel-checkout.confirm=Do you really want to cancel checkout?
 view.message.cancel-checkout.success=Successfully checkout canceled
 view.message.cancel-checkout.failure=Failed to cancel checkout
-view.message.compress.confirm=圧縮してダウンロードしますか？
-view.message.compress.error.toolarge=対象ファイルの総容量が大きすぎます（ {0} 以下にする必要があります）
+view.message.compress.confirm=Do you really want to download as a zipped file?
+view.message.compress.error.toolarge=Target files are too large. It should be less than {0} byte
+view.message.compress.error.nofile=There is no relations for downloading
 
 view.message.password-change.is-same=New passwords should be same!
 view.message.password-change.wrong-old-password=Current password is wrong!
@@ -203,4 +204,4 @@ view.message.restore.failure=Failed to restore
 view.message.parent-no-longer-exists=Cannot restore the archive because parent folder no longer exists!
 view.message.destroy.failure=Failed to destroy
 
-view.message.config.danger=設定値によってはアプリケーションが正しく動作しなくなります。内容を理解した上で、書き換えは十分に注意して行ってください。
+view.message.config.danger=This settings may destroy the environment. Be careful.
