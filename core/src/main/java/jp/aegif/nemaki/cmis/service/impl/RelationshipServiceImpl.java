@@ -116,9 +116,12 @@ public class RelationshipServiceImpl implements RelationshipService {
 			}
 
 			// Compile to ObjectData
+
+			// cannot compile includeAllowableActions if includeAcl=false
+			boolean includeAcl = includeAllowableActions;
 			return compileService.compileObjectDataList(callContext,
 					repositoryId, extracted, filter,
-					includeAllowableActions, IncludeRelationships.NONE, null, false, maxItems, skipCount, false, null);
+					includeAllowableActions, IncludeRelationships.NONE, null, includeAcl, maxItems, skipCount, false, null);
 		}finally{
 			lock.unlock();
 		}
