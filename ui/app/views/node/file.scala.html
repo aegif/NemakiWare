@@ -138,7 +138,28 @@
 					   		}
 						</div>
 					</div>
+					<!-- checkout with relationships -->
+					<div class="row" style="padding-bottom:30px;">
+						<div class="col-sm-12 col-md-12">
+							<legend><i class="fa fa-lock"/>@Messages("view.node.file.checkoutWithRelationships.caption")</legend>
+							@if(Util.canCheckOut(obj)){
+								<div class="row" style="padding-bottom:6px;">
+									<div class="col-sm-12">
+										<div>@Messages("view.node.file.checkoutWithRelationships.description-1")</div>
+										<input type="hidden" name="cmis:parentId" value="@parentId"/>
+									</div>
+								</div>
 
+								<div class="row" style="padding-bottom:6px;">
+									<div class="col-sm-12">
+						   					@executeButton("checkoutWithRelationships")
+						   			</div>
+						   		</div>
+					   		}else{
+					   			<div class="row" style="padding-bottom:6px;"><div class="col-sm-12">@Messages("view.not_permitted")<div></div>
+					   		}
+						</div>
+					</div>
 					<!-- direct upload -->
 					<div class="row" style="padding-bottom:30px;">
 						<div class="col-sm-12 col-md-12">
@@ -181,6 +202,24 @@
 			$.ajax({
 				type: "POST",
 				  url: "@routes.Node.checkOut(repositoryId, obj.getId)",
+				  data: "",
+				  success: function(msg){
+				        alert( "正常にロックされました。ページを更新しますのでしばらくお待ちください ");
+				        window.location.reload();
+				  },
+				  error: function(XMLHttpRequest, textStatus, errorThrown) {
+				     alert("some error:" + textStatus);
+				  },
+				  complete: function(){
+					  $.unblockUI();
+				  }
+			});
+		});
+		$('#checkoutWithRelationships').click(function(){
+			$.blockUI({message:"@Messages("view.message.please.wait")"});
+			$.ajax({
+				type: "POST",
+				  url: "@routes.Node.checkOut(repositoryId, obj.getId, true)",
 				  data: "",
 				  success: function(msg){
 				        alert( "正常にロックされました。ページを更新しますのでしばらくお待ちください ");
