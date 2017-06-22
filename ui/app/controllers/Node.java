@@ -63,6 +63,8 @@ import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundExcept
 import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -1231,35 +1233,71 @@ public class Node extends Controller {
 
 	@Secure
 	public Result checkOut(String repositoryId, String id) {
+		return checkOut(repositoryId, id, false);
+	}
+	
+	@Secure
+	public Result checkOut(String repositoryId, String id, Boolean withRel) {
 		Session session = getCmisSession(repositoryId);
 		CmisObject cmisObject = session.getObject(id);
-		checkOut(cmisObject);
+		checkOut(cmisObject, session, withRel);
 		return ok();
+	}
+	
+	@Secure
+	public Result checkOutByBatch(String repositoryId, List<String> ids) {
+		return checkOutByBatch(repositoryId, ids, false);
 	}
 
 	@Secure
-	public Result checkOutByBatch(String repositoryId, List<String> ids) {
+	public Result checkOutByBatch(String repositoryId, List<String> ids, Boolean withRel) {
 		Session session = getCmisSession(repositoryId);
 		for (String id : ids) {
 			CmisObject cmisObject = session.getObject(id);
-			checkOut(cmisObject);
+			checkOut(cmisObject,session, withRel);
 		}
 		return ok();
 	}
-
+	/*
 	private static void checkOut(CmisObject cmisObject) {
+		checkOut(cmisObject, false);
+	}
+	*/
+	private static void checkOut(CmisObject cmisObject, Session session, Boolean withRel) {
 		if (Util.isDocument(cmisObject)) {
 			Document doc = (Document) cmisObject;
 			// Check if checkout is possible
 			if (doc.isVersionSeriesCheckedOut()) {
 				// Do nothing
 			} else {
-				doc.checkOut();
+				ObjectId pwcId = doc.checkOut();
+				if(withRel){
+					CmisObject pwc = session.getObject(pwcId);
+					OperationContext cmisOpCtx = new OperationContextImpl();
+					cmisOpCtx.setIncludeRelationships(IncludeRelationships.NONE);
+					cmisOpCtx.setIncludeAcls(true);
+					cmisOpCtx.setIncludeAllowableActions(true);
+
+					//TODO String "cmis:relationship" extract nemaki-common project
+					ObjectType cmisRelType = new RelationshipTypeImpl(session, (RelationshipTypeDefinition) session.getTypeDefinition("cmis:relationship"));
+					ItemIterable<Relationship> relationships = session.getRelationships(pwc, true , RelationshipDirection.SOURCE, cmisRelType, cmisOpCtx);
+					for(Relationship rel : relationships){
+						CmisObject linkedObj = rel.getTarget();
+						CmisObject targetObj = session.getLatestDocumentVersion(linkedObj.getId(),false,cmisOpCtx);
+						
+						Map<String, Object> properties = new HashMap<String, Object>();
+						properties.put(PropertyIds.OBJECT_TYPE_ID,rel.getType());
+						properties.put(PropertyIds.TARGET_ID,targetObj.getId());
+						properties.put(PropertyIds.SOURCE_ID,pwcId);
+						properties.put(PropertyIds.NAME,rel.getName());
+						session.createRelationship(properties);
+					}
+				}
 			}
 		} else if (Util.isFolder(cmisObject)) {
 			Folder dir = (Folder) cmisObject;
 			for (CmisObject childNode : dir.getChildren()) {
-				checkOut(childNode);
+				checkOut(childNode, session, withRel);
 			}
 		} else {
 			// no-op

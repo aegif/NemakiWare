@@ -60,7 +60,7 @@ GET     /repo/:repoId/objects/:id/children           		controllers.Node.showChil
 POST    /repo/:repoId/objects/:id/update            		controllers.Node.update(repoId:String, id:String)
 POST    /repo/:repoId/objects/:id/update-permission  		controllers.Node.updatePermission(repoId:String, id:String)
 POST    /repo/:repoId/objects/:id/upload            		controllers.Node.upload(repoId:String, id:String)
-POST    /repo/:repoId/objects/:id/checkout          		controllers.Node.checkOut(repoId:String, id:String)
+POST    /repo/:repoId/objects/:id/checkout          		controllers.Node.checkOut(repoId:String, id:String, withRel:Boolean ?= false)
 POST    /repo/:repoId/objects/checkout          			controllers.Node.checkOutByBatch(repoId:String, ids:java.util.List[String])
 POST    /repo/:repoId/objects/:id/checkin-pwc           	controllers.Node.checkInPWC(repoId:String, id:String)
 POST    /repo/:repoId/objects/checkin-pwc           		controllers.Node.checkInPWCByBatch(repoId:String,  ids:java.util.List[String])

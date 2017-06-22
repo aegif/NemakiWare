@@ -39,6 +39,9 @@ view.node.file.this.type.has.no.file=This type has no file.
 view.node.file.checkout.caption=Lock for offline editing
 view.node.file.checkout.description-1=The document will be locked and can be edited only by the editor.
 view.node.file.checkout.description-2=Download a copy to edit it.
+view.node.file.checkoutWithRelationships.caption=Lock for offline editing (Relationship copy)
+view.node.file.checkoutWithRelationships.description-1=The document will be locked and copy Relationships from current version.
+
 view.node.file.update.pwc.caption=Reflect offline editing temporarily
 view.node.file.update.pwc.description=Upload an edited file. The document stay unlocked.
 view.node.file.checkin.caption=Complete offline editing (With file)
