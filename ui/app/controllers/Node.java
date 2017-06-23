@@ -1375,16 +1375,20 @@ logger.info(properties.toString());
 			Document doc = (Document) cmisObject;
 			List<Relationship> rels = doc.getRelationships();
 			List<String[]> relPros = new ArrayList<String[]>();
-			for(Relationship rel:rels){
-				// copy relationship type, relationship name and target id of existing relationship on this pwc
-				String[] pro ={rel.getType().getId(),rel.getName(),rel.getTargetId().getId()};
-				relPros.add(pro);
+			if(rels!=null){
+				for(Relationship rel:rels){
+					// copy relationship type, relationship name and target id of existing relationship on this pwc
+					String[] pro ={rel.getType().getId(),rel.getName(),rel.getTargetId().getId()};
+					relPros.add(pro);
+				}
 			}
 			if (doc.isPrivateWorkingCopy()) {
 				Map<String, Object> param = new HashMap<String, Object>();
 				ObjectId newDoc = doc.checkIn(true, param, doc.getContentStream(), checkinComment);
-				for(String[] properties:relPros){
-					createRelation(properties[0],properties[1],repositoryId,newDoc.getId(),properties[2]);
+				if(relPros!=null){
+					for(String[] properties:relPros){
+						createRelation(properties[0],properties[1],repositoryId,newDoc.getId(),properties[2]);
+					}
 				}
 			}
 		} else if (Util.isFolder(cmisObject)) {
@@ -1440,18 +1444,21 @@ logger.info(properties.toString());
 		Document doc = (Document) obj;
 		List<Relationship> rels = doc.getRelationships();
 		List<String[]> relPros = new ArrayList<String[]>();
-		for(Relationship rel:rels){
-			// copy relationship type, relationship name and target id of existing relationship on this pwc
-			String[] pro ={rel.getType().getId(),rel.getName(),rel.getTargetId().getId()};
-			relPros.add(pro);
+		if(rels != null){
+			for(Relationship rel:rels){
+				// copy relationship type, relationship name and target id of existing relationship on this pwc
+				String[] pro ={rel.getType().getId(),rel.getName(),rel.getTargetId().getId()};
+				relPros.add(pro);
+			}
 		}
-
 		Map<String, Object> param = new HashMap<String, Object>();
 		ContentStream cs = Util.convertFileToContentStream(session, file);
 		ObjectId newDoc = doc.checkIn(true, param, cs, checkinComment);
-		for(String[] properties:relPros){
-			createRelation(properties[0],properties[1],repositoryId,newDoc.getId(),properties[2]);
-		}	
+		if(relPros != null){
+			for(String[] properties:relPros){
+				createRelation(properties[0],properties[1],repositoryId,newDoc.getId(),properties[2]);
+			}
+		}
 	}
 
 	private static Principal getPrincipal(String repositoryId, String principalId, String anyone, String anonymous) {
@@ -1564,8 +1571,13 @@ logger.info(properties.toString());
 		relProps.put(PropertyIds.NAME, relName);
 		relProps.put("cmis:sourceId", sourceId);
 		relProps.put("cmis:targetId", targetId);
-
-		return session.createRelationship(relProps, null, srcAceList, new ArrayList<Ace>());
+		ObjectId result = null;
+		try{
+		 result = session.createRelationship(relProps, null, srcAceList, new ArrayList<Ace>());
+		}catch(CmisPermissionDeniedException ex){
+			// atompub?
+		}
+		return result;
 	}
 
 	private static Result redirectToParent(String repositoryId, DynamicForm input) {
