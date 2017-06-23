@@ -1240,7 +1240,7 @@ public class Node extends Controller {
 	public Result checkOut(String repositoryId, String id, Boolean withRel) {
 		Session session = getCmisSession(repositoryId);
 		CmisObject cmisObject = session.getObject(id);
-		checkOut(cmisObject, session, withRel);
+		checkOut(cmisObject, session,repositoryId, withRel);
 		return ok();
 	}
 	
@@ -1254,7 +1254,7 @@ public class Node extends Controller {
 		Session session = getCmisSession(repositoryId);
 		for (String id : ids) {
 			CmisObject cmisObject = session.getObject(id);
-			checkOut(cmisObject,session, withRel);
+			checkOut(cmisObject,session,repositoryId, withRel);
 		}
 		return ok();
 	}
@@ -1263,7 +1263,8 @@ public class Node extends Controller {
 		checkOut(cmisObject, false);
 	}
 	*/
-	private static void checkOut(CmisObject cmisObject, Session session, Boolean withRel) {
+	private static void checkOut(CmisObject cmisObject, Session session,String repositoryId, Boolean withRel) {
+		
 		if (Util.isDocument(cmisObject)) {
 			Document doc = (Document) cmisObject;
 			// Check if checkout is possible
@@ -1272,32 +1273,38 @@ public class Node extends Controller {
 			} else {
 				ObjectId pwcId = doc.checkOut();
 				if(withRel){
-					CmisObject pwc = session.getObject(pwcId);
+
 					OperationContext cmisOpCtx = new OperationContextImpl();
 					cmisOpCtx.setIncludeRelationships(IncludeRelationships.NONE);
 					cmisOpCtx.setIncludeAcls(true);
 					cmisOpCtx.setIncludeAllowableActions(true);
+//					CmisObject pwc = session.getObject(pwcId);
 
-					//TODO String "cmis:relationship" extract nemaki-common project
 					ObjectType cmisRelType = new RelationshipTypeImpl(session, (RelationshipTypeDefinition) session.getTypeDefinition("cmis:relationship"));
-					ItemIterable<Relationship> relationships = session.getRelationships(pwc, true , RelationshipDirection.SOURCE, cmisRelType, cmisOpCtx);
+					ItemIterable<Relationship> relationships = session.getRelationships(doc, true , RelationshipDirection.SOURCE, cmisRelType, cmisOpCtx);
 					for(Relationship rel : relationships){
 						CmisObject linkedObj = rel.getTarget();
 						CmisObject targetObj = session.getLatestDocumentVersion(linkedObj.getId(),false,cmisOpCtx);
-						
+/*
+ 						Acl docAcl = doc.getAcl();
+
+						List<Ace> srcAces = docAcl.getAces();
 						Map<String, Object> properties = new HashMap<String, Object>();
-						properties.put(PropertyIds.OBJECT_TYPE_ID,rel.getType());
+						properties.put(PropertyIds.OBJECT_TYPE_ID,rel.getType().getId());
 						properties.put(PropertyIds.TARGET_ID,targetObj.getId());
-						properties.put(PropertyIds.SOURCE_ID,pwcId);
+						properties.put(PropertyIds.SOURCE_ID,pwcId.getId());
 						properties.put(PropertyIds.NAME,rel.getName());
-						session.createRelationship(properties);
+logger.info(properties.toString());
+						session.createRelationship(properties,null,srcAces,new ArrayList<Ace>());
+*/
+						createRelation(rel.getType().getId(),rel.getName(),repositoryId,pwcId.getId(),targetObj.getId());
 					}
 				}
 			}
 		} else if (Util.isFolder(cmisObject)) {
 			Folder dir = (Folder) cmisObject;
 			for (CmisObject childNode : dir.getChildren()) {
-				checkOut(childNode, session, withRel);
+				checkOut(childNode, session,repositoryId, withRel);
 			}
 		} else {
 			// no-op
@@ -1358,21 +1365,31 @@ public class Node extends Controller {
 		String checkinComment = Util.getFormData(input, PropertyIds.CHECKIN_COMMENT);
 
 		CmisObject cmisObject = session.getObject(id);
-		checkInPWC(cmisObject, checkinComment);
+		checkInPWC(cmisObject, repositoryId, checkinComment);
 		return redirectToParent(repositoryId, input);
 	}
 
-	private static void checkInPWC(CmisObject cmisObject, String checkinComment) {
+	private static void checkInPWC(CmisObject cmisObject, String repositoryId, String checkinComment) {
 		if (Util.isDocument(cmisObject)) {
 			Document doc = (Document) cmisObject;
+			List<Relationship> rels = doc.getRelationships();
+			List<String[]> relPros = new ArrayList<String[]>();
+			for(Relationship rel:rels){
+				// copy relationship type, relationship name and target id of existing relationship on this pwc
+				String[] pro ={rel.getType().getId(),rel.getName(),rel.getTargetId().getId()};
+				relPros.add(pro);
+			}
 			if (doc.isPrivateWorkingCopy()) {
 				Map<String, Object> param = new HashMap<String, Object>();
-				doc.checkIn(true, param, doc.getContentStream(), checkinComment);
+				ObjectId newDoc = doc.checkIn(true, param, doc.getContentStream(), checkinComment);
+				for(String[] properties:relPros){
+					createRelation(properties[0],properties[1],repositoryId,newDoc.getId(),properties[2]);
+				}
 			}
 		} else if (Util.isFolder(cmisObject)) {
 			Folder dir = (Folder) cmisObject;
 			for (CmisObject childNode : dir.getChildren()) {
-				checkInPWC(childNode, checkinComment);
+				checkInPWC(childNode, repositoryId, checkinComment);
 			}
 		} else {
 			// no-op
@@ -1385,7 +1402,7 @@ public class Node extends Controller {
 
 		for (String id : ids) {
 			CmisObject cmisObject = session.getObject(id);
-			checkInPWC(cmisObject, "");
+			checkInPWC(cmisObject, repositoryId, "");
 		}
 
 		DynamicForm input = Form.form();
@@ -1412,17 +1429,28 @@ public class Node extends Controller {
 		FilePart file = files.get(0);
 
 		CmisObject cmisObject = session.getObject(id);
-		checkIn(cmisObject, checkinComment, file, session);
+		checkIn(cmisObject, repositoryId, checkinComment, file, session);
 
 		return redirectToParent(repositoryId, input);
 	}
 
-	private static void checkIn(CmisObject obj, String checkinComment, FilePart file, Session session)
+	private static void checkIn(CmisObject obj,String repositoryId, String checkinComment, FilePart file, Session session)
 			throws FileNotFoundException {
 		Document doc = (Document) obj;
+		List<Relationship> rels = doc.getRelationships();
+		List<String[]> relPros = new ArrayList<String[]>();
+		for(Relationship rel:rels){
+			// copy relationship type, relationship name and target id of existing relationship on this pwc
+			String[] pro ={rel.getType().getId(),rel.getName(),rel.getTargetId().getId()};
+			relPros.add(pro);
+		}
+
 		Map<String, Object> param = new HashMap<String, Object>();
 		ContentStream cs = Util.convertFileToContentStream(session, file);
-		doc.checkIn(true, param, cs, checkinComment);
+		ObjectId newDoc = doc.checkIn(true, param, cs, checkinComment);
+		for(String[] properties:relPros){
+			createRelation(properties[0],properties[1],repositoryId,newDoc.getId(),properties[2]);
+		}	
 	}
 
 	private static Principal getPrincipal(String repositoryId, String principalId, String anyone, String anonymous) {
