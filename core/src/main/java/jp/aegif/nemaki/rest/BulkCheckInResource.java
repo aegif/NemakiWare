@@ -138,11 +138,10 @@ public class BulkCheckInResource extends ResourceBase {
 	@POST
 	@Path("/execute")
 	@Produces(MediaType.APPLICATION_JSON)
-	@Consumes({MediaType.APPLICATION_FORM_URLENCODED, MediaType.APPLICATION_JSON , MediaType.APPLICATION_XML })
+	@Consumes(MediaType.APPLICATION_FORM_URLENCODED)
 	public String execute(MultivaluedMap<String,String> form, @Context HttpServletRequest httpRequest) {
 		JSONObject result = new JSONObject();
 		//		JSONArray errMsg = new JSONArray();
-
 		String repositoryId = form.get("repositoryId").get(0);
 		String comment = form.get("comment").get(0);
 		Boolean force = form.get("force").get(0).equals("true");
@@ -150,7 +149,7 @@ public class BulkCheckInResource extends ResourceBase {
 		List<String> propertyIds = form.get("propertyId");
 		List<String> propertyValues = form.get("propertyValue");
 		List<String> objectIds = form.get("objectId");
-		List<String> changeTokens = form.get("changeToken");
+		//List<String> changeTokens = form.get("changeToken");
 		//declare properties variable
 		PropertiesImpl properties = new PropertiesImpl();
 
@@ -163,9 +162,9 @@ public class BulkCheckInResource extends ResourceBase {
 		if (propertyIds.size() != propertyValues.size()){
 			//
 		}
-		if (objectIds.size() != changeTokens.size()){
+		//if (objectIds.size() != changeTokens.size()){
 			//
-		}
+		//}
 		//Properties newProperties = new Properties();
 
 		for(int i = 0; i < propertyIds.size(); ++i){
@@ -212,6 +211,10 @@ public class BulkCheckInResource extends ResourceBase {
 				versioningService.checkOut(callContext, repositoryId, docIdHolder , new Holder<Boolean>(true), null);
 			}
 			// Check in with the property set and comment
+			if (!doc.isPrivateWorkingCopy()){
+				String pwcId = vs.getVersionSeriesCheckedOutId();
+				docIdHolder = new Holder<String>(pwcId);
+			}
 			versioningService.checkIn(callContext, repositoryId, docIdHolder, true, properties, null, comment, null, null, null, null);
 			Document newDoc = contentService.getDocumentOfLatestVersion(repositoryId, doc.getVersionSeriesId());
 			// get relationships if exists
