@@ -60,7 +60,7 @@ public class Patch_20170425 extends AbstractNemakiPatch {
 				+ "if ( doc.subTypeProperties[i].key == 'nemaki:groups' ) {"
 				+ "for(var group in doc.subTypeProperties[i].value) {";
 		for (int i = 0; i < GroupMaxDepth; i++) {
-			joinedDirectGroupsByGroupIdCode += "emit([" + i + ",doc.subTypeProperties[i].value[group]], doc);";
+			joinedDirectGroupsByGroupIdCode += "emit([doc.subTypeProperties[i].value[group]," + i + "], doc);";
 		}
 		joinedDirectGroupsByGroupIdCode += "}}}}}}";
 
