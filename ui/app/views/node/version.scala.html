@@ -1,6 +1,7 @@
 @*{<meta charset="UTF-8" />}*@
 
 @import util.Formatter
+@import util.Util
 @import util.DateTimeUtil
 @import util.NemakiConfig
 @import play.mvc.Http.Context.Implicit
@@ -9,7 +10,7 @@
 <div class="container tab-pane">
 	<div class="row">
 		<div class="col-sm-12">
-			<table class="footable" id="version-table">
+			<table class="footable" id="version-table" data-paging="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
 				<thead>
 					<tr>
 						<th>@NemakiConfig.getLabel("cmis:versionLabel", Implicit.lang().language)</th>
@@ -45,6 +46,15 @@
 						</tr>
 					}
 				</tbody>
+					<tfoot>
+		<tr>
+			@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() + 4){colSpan =>
+				<td colspan="@colSpan">
+			}
+				<div class="pagination pagination-centered hide-if-no-paging"></div>
+			</td>
+		</tr>
+	</tfoot>
 			</table>
 		</div>
 
@@ -54,6 +64,6 @@
 <!-- footable -->
 <script type="text/javascript">
 	$(function () {
-	    $('#version-table').footable();
+	    $('#version-table').footable({ paginate:true,paging:{enabled:true} });
 	});
 </script>
