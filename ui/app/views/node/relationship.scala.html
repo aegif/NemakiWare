@@ -37,7 +37,7 @@
 					@Messages("view.node.relationship.download.targets.label") @executeButton("download-with-target")
 				</div>
 			</div>
-			<table class="footable" id="relationship-table-source">
+			<table class="footable" id="relationship-table-source" data-paging="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
 				<thead>
 					<tr>
 						<th>@Messages("view.node.relationship.create.type.label")</th>
@@ -68,12 +68,21 @@
 						}
 					}
 				</tbody>
+					<tfoot>
+		<tr>
+			@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() +4){colSpan =>
+				<td colspan="@colSpan">
+			}
+				<div class="pagination pagination-centered hide-if-no-paging"></div>
+			</td>
+		</tr>
+	</tfoot>
 			</table>
 
 			<br/><br/>
 
 			<legend><i class="fa fa-arrow-circle-o-down"></i>@Messages("view.node.relationship.table.from.caption")</legend>
-			<table class="footable" id="relationship-table-target">
+			<table class="footable" id="relationship-table-target"  data-paging="true"  data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
 				<thead>
 					<tr>
 						<th>@Messages("view.node.relationship.create.type.label")</th>
@@ -104,6 +113,15 @@
 						}
 					}
 				</tbody>
+					<tfoot>
+		<tr>
+			@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size()+ 4){colSpan =>
+				<td colspan="@colSpan">
+			}
+				<div class="pagination pagination-centered hide-if-no-paging"></div>
+			</td>
+		</tr>
+	</tfoot>
 			</table>
 		</div>
 	</div>
@@ -112,8 +130,8 @@
 <!-- footable -->
 <script type="text/javascript">
 	$(function () {
-	    $('#relationship-table-source').footable();
-	    $('#relationship-table-target').footable();
+	    $('#relationship-table-source').footable({paginate:true,paging:{enabled:true}});
+	    $('#relationship-table-target').footable({paginate:true,paging:{enabled:true}});
 
 		$('#create-new-relationship').on('click', function(){
 			$.get("@routes.Node.showRelationshipCreate(repositoryId, obj.getId())", function(html){
