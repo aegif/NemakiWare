@@ -390,6 +390,60 @@ public class CompileServiceImpl implements CompileService {
 			return list;
 		}
 	}
+	@Override
+	public <T extends Content> ObjectList compileObjectDataListForSearchResult(CallContext callContext, String repositoryId,
+			List<T> contents, String filter, Boolean includeAllowableActions, IncludeRelationships includeRelationships,
+			String renditionFilter, Boolean includeAcl, BigInteger maxItems, BigInteger skipCount, boolean folderOnly,
+			String orderBy, long numFound) {
+		if (CollectionUtils.isEmpty(contents)) {
+			// Empty list
+			ObjectListImpl list = new ObjectListImpl();
+			list.setObjects(new ArrayList<ObjectData>());
+			list.setNumItems(BigInteger.ZERO);
+			list.setHasMoreItems(false);
+			return list;
+		} else {
+			List<ObjectData> objectDataList = new ArrayList<ObjectData>();
+			for (T content : contents) {
+				// Filter by folderOnly
+				if (folderOnly && !content.isFolder())
+					continue;
+
+				// Get each ObjectData
+				ObjectDataImpl rawObjectData = getRawObjectData(callContext, repositoryId, content, filter,
+						includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
+				ObjectData filteredObjectData = filterObjectDataInList(callContext, repositoryId, rawObjectData, filter,
+						includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
+
+				if (filteredObjectData != null) {
+					objectDataList.add(filteredObjectData);
+				}
+			}
+
+			// Sort
+			sortUtil.sort(repositoryId, objectDataList, orderBy);
+
+			// Set metadata
+			ObjectListImpl list = new ObjectListImpl();
+			Integer _skipCount = skipCount.intValue();
+			Integer _maxItems = maxItems.intValue();
+
+			if (_skipCount >= numFound) {
+				list.setHasMoreItems(false);
+				list.setObjects(new ArrayList<ObjectData>());
+			} else {
+				// hasMoreItems
+				Boolean hasMoreItems = _skipCount + _maxItems < numFound;
+				list.setHasMoreItems(hasMoreItems);
+				// paged list
+				list.setObjects(new ArrayList<>(objectDataList));
+			}
+			// totalNumItem
+			list.setNumItems(BigInteger.valueOf(numFound));
+
+			return list;
+		}
+	}
 
 	@Override
 	public ObjectList compileChangeDataList(CallContext context, String repositoryId, List<Change> changes,

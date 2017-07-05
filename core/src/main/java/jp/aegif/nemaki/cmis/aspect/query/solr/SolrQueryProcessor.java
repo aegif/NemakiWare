@@ -200,10 +200,20 @@ public class SolrQueryProcessor implements QueryProcessor {
 		solrQuery.setQuery(whereQueryString);
 		solrQuery.setFilterQueries(fromQueryString);
 		
-		//TEST
-		solrQuery.set(CommonParams.START, 0);
-		//solrQuery.set(CommonParams.ROWS, maxItems.intValue());
-		solrQuery.set(CommonParams.ROWS, 50);
+		//
+		logger.info("statement: " + statement);
+		logger.info("skipCount: " + skipCount);
+		logger.info("maxItems: " + maxItems);
+		if(skipCount == null){
+			solrQuery.set(CommonParams.START, 0);
+		}else{
+			solrQuery.set(CommonParams.START, skipCount.intValue());
+		}
+		if(maxItems == null){
+			solrQuery.set(CommonParams.ROWS, 50);
+		}else{
+			solrQuery.set(CommonParams.ROWS, maxItems.intValue());
+		}
 		
 
 		QueryResponse resp = null;
@@ -213,10 +223,12 @@ public class SolrQueryProcessor implements QueryProcessor {
 			e.printStackTrace();
 		}
 
+		long numFound =0;
 		// Output search results to ObjectList
 		if (resp != null && resp.getResults() != null
 				&& resp.getResults().getNumFound() != 0) {
 			SolrDocumentList docs = resp.getResults();
+			numFound = docs.getNumFound();
 
 			List<Content> contents = new ArrayList<Content>();
 			for (SolrDocument doc : docs) {
@@ -250,13 +262,14 @@ public class SolrQueryProcessor implements QueryProcessor {
 					// Create filter(queryNames) from query aliases
 					filter = StringUtils.join(requestedWithAliasKey.values(), ",");
 				}
+				
 
 				// Build ObjectList
 				String orderBy = orderBy(queryObject);
-				ObjectList result = compileService.compileObjectDataList(
+				ObjectList result = compileService.compileObjectDataListForSearchResult(
 						callContext, repositoryId, permitted, filter,
 						includeAllowableActions, includeRelationships, renditionFilter, false,
-						maxItems, skipCount, false, orderBy);
+						maxItems, skipCount, false, orderBy,numFound);
 
 				return result;
 				
