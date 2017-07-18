@@ -57,7 +57,7 @@ public class NemakiHttpActionAdapter extends DefaultHttpActionAdapter {
 					profileManager.save(true, nemakiProfile ,false);
 				} catch (Exception ex) {
 					String message = Messages.get("view.auth.login.error.saml.mismatch");
-					logger.error(message, ex);
+					logger.warn(message, ex);
 					return redirect(routes.Application.logout(repositoryId, message));
 				}
 			}
