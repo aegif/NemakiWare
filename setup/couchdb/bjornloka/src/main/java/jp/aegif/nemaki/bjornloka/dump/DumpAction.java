@@ -57,7 +57,7 @@ public abstract class DumpAction {
 		
 		Indicator indicator = new Indicator(docIds.size());
 
-		int unit = 500;
+		int unit = 5000;
 		int turn = docIds.size() / unit;
 		System.out.println("Writing to " + file.getAbsolutePath() + " ...");
 		for(int i=0; i <= turn ; i++){

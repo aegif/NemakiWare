@@ -103,7 +103,7 @@ public interface ExceptionService {
 	void streamNotSupported(DocumentTypeDefinition documentTypeDefinition, ContentStream contentStream);
 	void nameConstraintViolation(String repositoryId, Folder parentFolder, Properties properties);
 	void nameConstraintViolation(String repositoryId, Folder parentFolder, String proposedName);
-	void versioning(Document document);
+	void versioning(CallContext callContext,Document document);
 	void updateConflict(Content content, Holder<String>  changeToken);
 
 	//TODO Where to implement "storage" exception? Here or DAO service?

@@ -45,6 +45,10 @@ public interface CompileService {
 	public <T extends Content> ObjectList compileObjectDataList(CallContext callContext,
 			String repositoryId, List<T> contents, String filter,
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl, BigInteger maxItems, BigInteger skipCount, boolean folderOnly, String orderBy);
+	
+	public <T extends Content> ObjectList compileObjectDataListForSearchResult(CallContext callContext,
+			String repositoryId, List<T> contents, String filter,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl, BigInteger maxItems, BigInteger skipCount, boolean folderOnly, String orderBy, long numFound);
 
 	public ObjectList compileChangeDataList(CallContext context, String repositoryId,
 			List<Change> changes, Holder<String> changeLogToken, Boolean includeProperties,

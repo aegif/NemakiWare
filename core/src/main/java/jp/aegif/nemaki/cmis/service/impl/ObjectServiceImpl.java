@@ -83,6 +83,7 @@ import jp.aegif.nemaki.model.Item;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
+import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
@@ -486,7 +487,7 @@ public class ObjectServiceImpl implements ObjectService {
 			exceptionService.contentAlreadyExists(doc, overwriteFlag);
 			exceptionService.streamNotSupported(td, contentStream);
 			exceptionService.updateConflict(doc, changeToken);
-			exceptionService.versioning(doc);
+			exceptionService.versioning(callContext, doc);
 			Folder parent = contentService.getParent(repositoryId, objectId.getValue());
 			exceptionService.objectNotFoundParentFolder(repositoryId, objectId.getValue(), parent);
 
@@ -568,7 +569,7 @@ public class ObjectServiceImpl implements ObjectService {
 			// //////////////////
 			exceptionService.streamNotSupported(td, contentStream);
 			exceptionService.updateConflict(doc, changeToken);
-			exceptionService.versioning(doc);
+			exceptionService.versioning(callContext,doc);
 
 			// //////////////////
 			// Body of the method
@@ -720,13 +721,15 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// General Exception
 		// //////////////////
+		
 		exceptionService.invalidArgumentRequiredCollection("properties", properties.getPropertyList());
 		Content content = contentService.getContent(repositoryId, objectId.getValue());
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId.getValue());
 		if (content.isDocument()) {
 			Document d = (Document) content;
-			exceptionService.versioning(d);
+			exceptionService.versioning(callContext,d);
 			exceptionService.constraintUpdateWhenCheckedOut(repositoryId, callContext.getUsername(), d);
+			
 			TypeDefinition typeDef = typeManager.getTypeDefinition(repositoryId, d);
 			exceptionService.constraintImmutable(repositoryId, d, typeDef);
 		}
