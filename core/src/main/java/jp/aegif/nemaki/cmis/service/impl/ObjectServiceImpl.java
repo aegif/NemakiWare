@@ -83,6 +83,7 @@ import jp.aegif.nemaki.model.Item;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
+import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
@@ -720,13 +721,20 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// General Exception
 		// //////////////////
+		
 		exceptionService.invalidArgumentRequiredCollection("properties", properties.getPropertyList());
 		Content content = contentService.getContent(repositoryId, objectId.getValue());
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId.getValue());
 		if (content.isDocument()) {
 			Document d = (Document) content;
+			
+			String userId = callContext.getUsername();
+			UserItem u = contentService.getUserItemById(repositoryId, userId);
+			if (!u.isAdmin()){
 			exceptionService.versioning(d);
+			}
 			exceptionService.constraintUpdateWhenCheckedOut(repositoryId, callContext.getUsername(), d);
+			
 			TypeDefinition typeDef = typeManager.getTypeDefinition(repositoryId, d);
 			exceptionService.constraintImmutable(repositoryId, d, typeDef);
 		}

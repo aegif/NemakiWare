@@ -141,7 +141,7 @@
 
 		//multiple archive button
 		$("#download-with-target").on('click', function(){
-			if(!$("#download-target")[0]){
+			if(document.getElementsByClassName("download-target").length == 0){
 				window.alert("@Messages("view.message.compress.error.nofile")");
 			}
 			if(document.getElementsByClassName("download-target").length > 0 && window.confirm("@Messages("view.message.compress.confirm")")){
