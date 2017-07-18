@@ -1171,8 +1171,11 @@ public class ExceptionServiceImpl implements ExceptionService,
 	 *
 	 */
 	@Override
-	public void versioning(Document doc) {
-		if (!doc.isLatestVersion() && !doc.isPrivateWorkingCopy()) {
+	public void versioning(CallContext callContext, Document doc) {
+		String userId = callContext.getUsername();
+		UserItem u = contentService.getUserItemById(callContext.getRepositoryId(), userId);
+		
+		if (!doc.isLatestVersion() && !doc.isPrivateWorkingCopy() && !u.isAdmin()) {
 			String msg = "The operation is not allowed on a non-current version of a document";
 			throw new CmisVersioningException(buildMsgWithId(msg, doc.getId()),
 					HTTP_STATUS_CODE_409);

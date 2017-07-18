@@ -87,7 +87,7 @@ public class VersioningServiceImpl implements VersioningService {
 			// repeatedly
 			exceptionService.constraintAlreadyCheckedOut(repositoryId, document);
 			exceptionService.constraintVersionable(repositoryId, document.getObjectType());
-			exceptionService.versioning(document);
+			exceptionService.versioning(callContext, document);
 
 			// //////////////////
 			// Body of the method
