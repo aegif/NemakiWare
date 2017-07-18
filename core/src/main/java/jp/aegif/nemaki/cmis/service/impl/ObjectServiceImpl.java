@@ -487,7 +487,7 @@ public class ObjectServiceImpl implements ObjectService {
 			exceptionService.contentAlreadyExists(doc, overwriteFlag);
 			exceptionService.streamNotSupported(td, contentStream);
 			exceptionService.updateConflict(doc, changeToken);
-			exceptionService.versioning(doc);
+			exceptionService.versioning(callContext, doc);
 			Folder parent = contentService.getParent(repositoryId, objectId.getValue());
 			exceptionService.objectNotFoundParentFolder(repositoryId, objectId.getValue(), parent);
 
@@ -569,7 +569,7 @@ public class ObjectServiceImpl implements ObjectService {
 			// //////////////////
 			exceptionService.streamNotSupported(td, contentStream);
 			exceptionService.updateConflict(doc, changeToken);
-			exceptionService.versioning(doc);
+			exceptionService.versioning(callContext,doc);
 
 			// //////////////////
 			// Body of the method
@@ -727,12 +727,7 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId.getValue());
 		if (content.isDocument()) {
 			Document d = (Document) content;
-			
-			String userId = callContext.getUsername();
-			UserItem u = contentService.getUserItemById(repositoryId, userId);
-			if (!u.isAdmin()){
-			exceptionService.versioning(d);
-			}
+			exceptionService.versioning(callContext,d);
 			exceptionService.constraintUpdateWhenCheckedOut(repositoryId, callContext.getUsername(), d);
 			
 			TypeDefinition typeDef = typeManager.getTypeDefinition(repositoryId, d);
