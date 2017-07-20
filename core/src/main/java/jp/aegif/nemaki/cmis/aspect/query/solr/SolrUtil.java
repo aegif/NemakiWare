@@ -125,7 +125,7 @@ public class SolrUtil {
 			}
 		}
 
-		return val;
+		return val.replace(":", "\\:");
 	}
 
 	public String convertToString(Tree propertyNode) {
