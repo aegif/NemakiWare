@@ -291,7 +291,7 @@ public class Node extends Controller {
 			return this.index(repositoryId);
 		}
 		
-		term = term.replace(":", "").replace("\\", "").replace("¥", "");
+		term = term.replace(":", "").replace("\\", "").replace("¥", "").replace("'", "").replaceAll("\"", "");
 
 		NemakiProfile profile = Util.getProfile(ctx());
 		Session session = getCmisSession(repositoryId);
