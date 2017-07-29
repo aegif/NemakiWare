@@ -125,7 +125,7 @@ public class SolrUtil {
 			}
 		}
 
-		return val.replace(":", "\\:");
+		return val;
 	}
 
 	public String convertToString(Tree propertyNode) {
@@ -179,7 +179,7 @@ public class SolrUtil {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-		log.info("Solr URL:" + url);
+//		log.info("Solr URL:" + url);
 		return url;
 	}
 

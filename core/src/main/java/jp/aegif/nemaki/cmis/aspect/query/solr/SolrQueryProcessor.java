@@ -28,6 +28,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.locks.Lock;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
@@ -132,11 +134,15 @@ public class SolrQueryProcessor implements QueryProcessor {
 			String renditionFilter, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
 
 		SolrServer solrServer = solrUtil.getSolrServer();
+		// replacing backslashed for TIMESTAMP only
+		Pattern time_p = Pattern.compile("(TIMESTAMP\\s?'[\\-\\d]*T\\d{2})\\\\:(\\d{2})\\\\:([\\.\\d]*Z')", Pattern.CASE_INSENSITIVE);
+		Matcher time_m = time_p.matcher(statement);
+		statement = time_m.replaceAll("$1:$2:$3");
 
 		// TODO walker is required?
+
 		QueryUtilStrict util = new QueryUtilStrict(statement, new CmisTypeManager(repositoryId, typeManager), null);
 		QueryObject queryObject = util.getQueryObject();
-
 		// Get where caluse as Tree
 		Tree whereTree = null;
 		try {
@@ -157,7 +163,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 						queryObject, solrUtil, contentService);
 				Query whereQuery = solrPredicateWalker.walkPredicate(whereTree);
 				whereQueryString = whereQuery.toString();
-			} catch (Exception e) {
+				} catch (Exception e) {
 				e.printStackTrace();
 				// TODO Output more detailed exception
 				exceptionService.invalidArgument("Invalid CMIS SQL statement!");
@@ -170,8 +176,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 		String repositoryQuery = "repository_id:" + repositoryId;
 		
 		fromQueryString += repositoryQuery + " AND ";
-		
-		TypeDefinition td = queryObject.getMainFromName();
+		TypeDefinition td = null;
+
+		td = queryObject.getMainFromName();
+
 		// includedInSupertypeQuery
 		List<TypeDefinitionContainer> typeDescendants = typeManager
 				.getTypesDescendants(repositoryId, td.getId(), BigInteger.valueOf(-1), false);
@@ -200,7 +208,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 		solrQuery.setQuery(whereQueryString);
 		solrQuery.setFilterQueries(fromQueryString);
 		
-		//
+		logger.info(solrQuery.toString());
 		logger.info("statement: " + statement);
 		logger.info("skipCount: " + skipCount);
 		logger.info("maxItems: " + maxItems);
