@@ -121,8 +121,9 @@ public class SolrUtil {
 				val = "dynamicDate.property." + cmisColName;
 			}else{
 				// case for STRING
-				val = "dynamic.property." + cmisColName;				
+				val = "dynamic.property." + cmisColName.replace(":", "\\:").replace("\\\\:", "\\:");				
 			}
+			
 		}
 
 		return val;
