@@ -121,11 +121,12 @@ public class SolrUtil {
 				val = "dynamicDate.property." + cmisColName;
 			}else{
 				// case for STRING
-				val = "dynamic.property." + cmisColName;				
+				val = "dynamic.property." + cmisColName.replace(":", "\\:").replace("\\\\:", "\\:");				
 			}
+			
 		}
 
-		return val.replace(":", "\\:");
+		return val;
 	}
 
 	public String convertToString(Tree propertyNode) {
@@ -179,7 +180,7 @@ public class SolrUtil {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-		log.info("Solr URL:" + url);
+//		log.info("Solr URL:" + url);
 		return url;
 	}
 
