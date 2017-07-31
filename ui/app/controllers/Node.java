@@ -607,7 +607,7 @@ public class Node extends Controller {
 
 		Document doc = (Document) obj;
 		ContentStream cs = doc.getContentStream();
-		createAttachmentResponse(doc.getName(), cs.getMimeType());
+		createAttachmentResponse(doc.getContentStreamFileName(), cs.getMimeType());
 
 		File tmpFile = null;
 		try {
