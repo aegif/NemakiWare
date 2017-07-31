@@ -621,7 +621,7 @@ public class Node extends Controller {
 			e.printStackTrace();
 		}
 
-		createAttachmentResponse(doc.getName(), cs.getMimeType());
+		createAttachmentResponse(doc.getContentStreamFileName(), cs.getMimeType());
 		return ok(tmpFile);
 	}
 
