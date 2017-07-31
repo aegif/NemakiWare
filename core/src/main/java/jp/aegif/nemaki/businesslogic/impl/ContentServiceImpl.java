@@ -641,6 +641,8 @@ public class ContentServiceImpl implements ContentService {
 
 		// Record the change event
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
+		writeChangeEvent(callContext, repositoryId, original, ChangeType.UPDATED);
+		
 
 		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing(repositoryId);
