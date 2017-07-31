@@ -1710,6 +1710,7 @@ public class ContentServiceImpl implements ContentService {
 		AttachmentNode a = new AttachmentNode();
 		a.setMimeType(contentStream.getMimeType());
 		a.setLength(contentStream.getLength());
+		a.setName(contentStream.getFileName());
 		setSignature(callContext, a);
 		return contentDaoService.createAttachment(repositoryId, a, contentStream);
 	}
