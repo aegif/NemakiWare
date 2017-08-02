@@ -508,7 +508,7 @@ public class Node extends Controller {
 
 				for (Document doc : list) {
 					ZipParameters params = (ZipParameters) parameters.clone();
-					params.setFileNameInZip(doc.getName());
+					params.setFileNameInZip(doc.getContentStreamFileName());
 					outputStream.putNextEntry(null, params);
 
 					try (InputStream inputStream = doc.getContentStream().getStream();) {
