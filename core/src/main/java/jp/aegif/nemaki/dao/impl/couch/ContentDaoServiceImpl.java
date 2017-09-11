@@ -957,6 +957,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			an.setId(can.getId());
 			an.setMimeType(a.getContentType());
 			an.setLength(a.getContentLength());
+			if(can.getName() != null && !can.getName().isEmpty()){
+				an.setName(can.getName());
+			}
 
 			return an;
 		}

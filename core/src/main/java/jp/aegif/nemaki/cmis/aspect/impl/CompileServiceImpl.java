@@ -1036,7 +1036,11 @@ public class CompileServiceImpl implements CompileService {
 			} else {
 				length = attachment.getLength();
 				mimeType = attachment.getMimeType();
-				fileName = document.getName();
+				if(attachment.getName() == null || attachment.getName().isEmpty()){
+					fileName = document.getName();
+				}else{
+					fileName = attachment.getName();
+				}
 				streamId = attachment.getId();
 			}
 		}
