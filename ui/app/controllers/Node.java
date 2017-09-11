@@ -508,7 +508,7 @@ public class Node extends Controller {
 
 				for (Document doc : list) {
 					ZipParameters params = (ZipParameters) parameters.clone();
-					params.setFileNameInZip(doc.getName());
+					params.setFileNameInZip(doc.getContentStreamFileName());
 					outputStream.putNextEntry(null, params);
 
 					try (InputStream inputStream = doc.getContentStream().getStream();) {
@@ -607,7 +607,7 @@ public class Node extends Controller {
 
 		Document doc = (Document) obj;
 		ContentStream cs = doc.getContentStream();
-		createAttachmentResponse(doc.getName(), cs.getMimeType());
+		createAttachmentResponse(doc.getContentStreamFileName(), cs.getMimeType());
 
 		File tmpFile = null;
 		try {
@@ -621,7 +621,7 @@ public class Node extends Controller {
 			e.printStackTrace();
 		}
 
-		createAttachmentResponse(doc.getName(), cs.getMimeType());
+		createAttachmentResponse(doc.getContentStreamFileName(), cs.getMimeType());
 		return ok(tmpFile);
 	}
 

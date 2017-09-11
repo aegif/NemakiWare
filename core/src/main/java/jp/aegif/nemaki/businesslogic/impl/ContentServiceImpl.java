@@ -829,6 +829,7 @@ public class ContentServiceImpl implements ContentService {
 
 		// Record the change event
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
+		writeChangeEvent(callContext, repositoryId, previousDoc, ChangeType.UPDATED);
 
 		// Call Solr indexing(optional)
 		solrUtil.callSolrIndexing(repositoryId);
@@ -1709,6 +1710,7 @@ public class ContentServiceImpl implements ContentService {
 		AttachmentNode a = new AttachmentNode();
 		a.setMimeType(contentStream.getMimeType());
 		a.setLength(contentStream.getLength());
+		a.setName(contentStream.getFileName());
 		setSignature(callContext, a);
 		return contentDaoService.createAttachment(repositoryId, a, contentStream);
 	}
