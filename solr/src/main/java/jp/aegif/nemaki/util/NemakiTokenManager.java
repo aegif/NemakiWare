@@ -10,7 +10,10 @@ import javax.ws.rs.core.MediaType;
 import jp.aegif.nemaki.util.impl.PropertyManagerImpl;
 
 import org.apache.commons.lang.StringUtils;
-import org.apache.log4j.Logger;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
@@ -19,19 +22,20 @@ import com.sun.jersey.api.client.Client;
 import com.sun.jersey.api.client.filter.HTTPBasicAuthFilter;
 
 public class NemakiTokenManager {
-	Logger logger = Logger.getLogger(NemakiTokenManager.class);
+	private static final Logger logger = LoggerFactory.getLogger(NemakiTokenManager.class);
 
 	private final String restEndpoint;
 	private Map<String, Token> tokenMap;
 
 	public NemakiTokenManager() {
 		tokenMap = new HashMap<String, Token>();
-		
-		restEndpoint = getRestEndpoint();
+
+		restEndpoint = NemakiServer.getRestEndpoint();
 	}
 
 	public String register(String repositoryId, String userName, String password) {
 		String apiResult = null;
+		String restUri = getRestUri(repositoryId);
 		try {
 			Client c = Client.create();
 			c.setConnectTimeout(3 * 1000);
@@ -39,17 +43,15 @@ public class NemakiTokenManager {
 			c.setFollowRedirects(Boolean.TRUE);
 			c.addFilter(new HTTPBasicAuthFilter(userName, password));
 
-			apiResult = c.resource(getRestUri(repositoryId)).path(userName + "/register")
+			apiResult = c.resource(restUri).path(userName + "/register")
 					.queryParam("app", "solr")
 					.accept(MediaType.APPLICATION_JSON_TYPE).get(String.class);
 		} catch (Exception e) {
-			logger.error("Cannot connect to Core REST API", e);
+			logger.error("Cannot connect to Core REST API : {}", restUri, e);
+			throw e;
 		}
 
 		try {
-			if(apiResult == null){
-				throw new Exception();
-			}
 			JSONObject result = (JSONObject) new JSONParser().parse(apiResult);
 			if ("success".equals(result.get("status").toString())) {
 				JSONObject value = (JSONObject) result.get("value");
@@ -57,10 +59,11 @@ public class NemakiTokenManager {
 				long expiration = (Long) value.get("expiration");
 				tokenMap.put(userName, new Token(repositoryId, userName, token, expiration));
 				return token;
+			}else{
+				logger.error("Return failure status from REST API response : {}",restUri  );
 			}
-
 		} catch (Exception e) {
-			logger.error("Cannot connect to Core REST API", e);
+			logger.error("Cannot export token from REST API response : {}",restUri, e);
 		}
 
 		return null;
@@ -80,12 +83,11 @@ public class NemakiTokenManager {
 		Token token = tokenMap.get(userName);
 		if (token != null) {
 			if (token.getExpiration() < System.currentTimeMillis()) {
-				System.out.println(userName + ":basic auth token has expired");
+				logger.info("{}: Basic auth token has expired!", userName );
 				return null;
 			} else {
 				return token.getToken();
 			}
-
 		} else {
 			return null;
 		}
@@ -94,24 +96,7 @@ public class NemakiTokenManager {
 	private String getRestUri(String repositoryId){
 		return restEndpoint + "/repo/" + repositoryId + "/authtoken/";
 	}
-	
-	private String getRestEndpoint() {
-		PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
-		String protocol = pm.readValue(PropertyKey.CMIS_SERVER_PROTOCOL);
-		String host = pm.readValue(PropertyKey.CMIS_SERVER_HOST);
-		String port = pm.readValue(PropertyKey.CMIS_SERVER_PORT);
-		String context = pm.readValue(PropertyKey.CMIS_SERVER_CONTEXT);
 
-		try {
-			URL url = new URL(protocol, host, Integer.parseInt(port), "");
-			return url.toString() + "/" + context + "/rest";
-		} catch (NumberFormatException e) {
-			e.printStackTrace();
-		} catch (MalformedURLException e) {
-			e.printStackTrace();
-		}
-		return null;
-	}
 
 	private class Token {
 		private String repositoryId;

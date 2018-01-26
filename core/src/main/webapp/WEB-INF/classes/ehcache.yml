@@ -4,7 +4,10 @@ default:
   overflowToDisc: false
   eternal: false
   timeToLiveSeconds: 3600
-  timeToIdleSeconds: 3600  
+  timeToIdleSeconds: 3600
+
+configCache:
+  eternal: true
 
 objectDataCache:
 
@@ -34,3 +37,7 @@ usersCache:
 groupCache:
 
 groupsCache:
+
+aclCache:
+
+joinedGroupCache:

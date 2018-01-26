@@ -45,7 +45,7 @@ public class Setup {
 
 		if(StringUtils.isBlank(url)){
 			String defVal = "http://127.0.0.1:5984";
-			System.out.print("CouchDB URL[default:" + defVal + "]：");
+			System.out.print("CouchDB URL[default:" + defVal + "]: ");
 			url = in.readLine();
 			if(StringUtils.isBlank(url)){
 				url = defVal;
@@ -54,7 +54,7 @@ public class Setup {
 
 		if(StringUtils.isBlank(mainRepositoryId)){
 			String defVal = "bedroom";
-			System.out.print("Main repository ID[default:" + defVal + "]：");
+			System.out.print("Main repository ID[default:" + defVal + "]: ");
 			mainRepositoryId = in.readLine();
 			if(StringUtils.isBlank(mainRepositoryId)){
 				mainRepositoryId = defVal;
@@ -63,7 +63,7 @@ public class Setup {
 
 		if(StringUtils.isBlank(archiveRepositoryId)){
 			String defVal = mainRepositoryId + "_closet";
-			System.out.print("Archive repository ID[default:" + defVal + "]：");
+			System.out.print("Archive repository ID[default:" + defVal + "]: ");
 			archiveRepositoryId = in.readLine();
 			if(StringUtils.isBlank(archiveRepositoryId)){
 				archiveRepositoryId = defVal;
@@ -72,7 +72,7 @@ public class Setup {
 
 		if(StringUtils.isBlank(mainFilePath)){
 			String defVal = suggestedMainFilePath;
-			System.out.print("Import file(main):" + defVal + "]：");
+			System.out.print("Import file(main):" + defVal + "]: ");
 			mainFilePath = in.readLine();
 			if(StringUtils.isBlank(mainFilePath)){
 				mainFilePath = defVal;
@@ -81,7 +81,7 @@ public class Setup {
 
 		if(StringUtils.isBlank(archiveFilePath)){
 			String defVal = suggestedArchiveFilePath;
-			System.out.print("Import file(archive):" + defVal + "]：");
+			System.out.print("Import file(archive):" + defVal + "]: ");
 			archiveFilePath = in.readLine();
 			if(StringUtils.isBlank(archiveFilePath)){
 				archiveFilePath = defVal;

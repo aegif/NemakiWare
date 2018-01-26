@@ -4,6 +4,8 @@ public interface Constant {
 	String MODE_FULL = "FULL";
 	String MODE_DELTA = "DELTA";
 
+	String DATETIME_FORMAT = "yyyy-MM-dd'T'HH:mm:ss'Z'";
+
 	// Solr filed name
 	String FIELD_ID = "id";
 	String FIELD_REPOSITORY_ID = "repository_id";
@@ -24,6 +26,7 @@ public interface Constant {
 	String FIELD_CONTENT_LENGTH = "content_length";
 	String FIELD_IS_MAJOR_VEERSION = "is_major_version";
 	String FIELD_IS_PRIVATE_WORKING_COPY = "is_pwc";
+	String FIELD_IS_LATEST_VERSION = "is_latest_version";
 	String FIELD_IS_CHECKEDOUT = "is_checkedout";
 	String FIELD_CHECKEDOUT_BY = "checkedout_by";
 	String FIELD_CHECKEDOUT_ID = "checkedout_id";
@@ -37,7 +40,7 @@ public interface Constant {
 	String FIELD_TOKEN = "change_token";
 
 	String SEPARATOR = ".";
-	
+
 	//Auth token
 	String AUTH_TOKEN = "nemaki_auth_token";
 	String AUTH_TOKEN_APP = "nemaki_auth_token_app";

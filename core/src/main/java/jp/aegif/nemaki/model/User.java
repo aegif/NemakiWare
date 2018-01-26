@@ -22,17 +22,17 @@
 package jp.aegif.nemaki.model;
 
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import jp.aegif.nemaki.util.constant.NodeType;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
-import org.codehaus.jackson.annotate.JsonIgnoreProperties;
+import jp.aegif.nemaki.util.constant.NodeType;
 
 /**
  * Nemaki user.
+ * This class is deprecated and remains for backward compatiblity (patch)
+ * @see jp.aegif.nemaki.model.UserItem
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class User extends NodeBase {
@@ -46,7 +46,6 @@ public class User extends NodeBase {
 	private String firstName;
 	private String email;
 	private String passwordHash;
-	private Boolean fullTextIndexSearchAdmin;
 	private Boolean admin;
 	private Set<String> favorites;
 

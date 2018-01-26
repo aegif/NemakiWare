@@ -5,33 +5,49 @@ view.auth.login=Sign in
 view.auth.logout=Sign out
 view.auth.login.caption=Please sign in
 view.auth.login.error=Your sign in attempt has failed.
+view.auth.login.error.connection=Connection failed.
+view.auth.login.error.unknown=Unknown error.
+view.auth.login.error.saml.mismatch=Login status mismatch error.
 view.auth.account=Account
+view.auth.repostitory_id=Repository
+view.auth.logout.caption=Logout
+view.auth.logout.link-to-sso-logout=Jump to SSO Logout page
+view.auth.logout.link-to-login=Jump to login page
+
 
 view.node.property=Property
 view.node.file=File
 view.node.version=Version
 view.node.preview=Preview
 view.node.permission=Permission
+view.node.relationship=Relationship
 view.node.type=Type
 view.node.create.caption=New
 view.node.document=Document
 view.node.folder=Folder
 view.node.document.create=Create a new document
 view.node.folder.create=Create a new folder
+
 view.user.favorite.caption=Favorite contents
 view.user.favorite.toggled.desc1=This content is added to your Favorites.
 view.user.favorite.toggled.desc2=To remove it, click this star.
 view.user.favorite.untoggled.desc1=This content is not added to your Favorites.
 view.user.favorite.untoggled.desc2=To add it, click this star.
+
 view.node.file.select=Select a file
 view.node.file.this.type.has.no.file=This type has no file.
 view.node.file.checkout.caption=Lock for offline editing
 view.node.file.checkout.description-1=The document will be locked and can be edited only by the editor.
 view.node.file.checkout.description-2=Download a copy to edit it.
+view.node.file.checkoutWithRelationships.caption=Lock for offline editing (Relationship copy)
+view.node.file.checkoutWithRelationships.description-1=The document will be locked and copy Relationships from current version.
+
 view.node.file.update.pwc.caption=Reflect offline editing temporarily
 view.node.file.update.pwc.description=Upload an edited file. The document stay unlocked.
-view.node.file.checkin.caption=Complete offline editing
+view.node.file.checkin.caption=Complete offline editing (With file)
 view.node.file.checkin.description=Upload an edited file and unlock the docment.
+view.node.file.checkin.pwc.caption=Complete offline editing
+view.node.file.checkin.pwc.description=Unlock the docment.
 view.node.file.checkin.comment=Comment
 view.node.file.cancel.checkout.caption=Cancel offline editing
 view.node.file.cancel.checkout.description=Revert to the original state and unlock.
@@ -42,6 +58,23 @@ view.node.preview.none=No Preview
 view.node.version.label=Version
 view.node.permission.search.caption=User/Group Search
 view.node.permission.table.caption=Permission Table
+
+view.node.relationship.name=Relation Name
+view.node.relationship.target.name=Target Object Name
+view.node.relationship.source.name=Source Object Name
+view.node.relationship.table.to.caption=Relate To
+view.node.relationship.table.form.caption=Relate From
+view.node.relationship.create.caption=Create relation
+view.node.relationship.create.new-file-type.caption=Document Type
+view.node.relationship.create.new-file.caption=Add new file to create relationship
+view.node.relationship.create.existing-id.caption=Create relationship to exisiting object by id
+view.node.relationship.cannot-create=リレーションは作成できません
+view.node.relationship.soruce-type=この文書型をソースとするリレーション定義がありません
+view.node.relationship.create.type.label=Relationship Type
+view.node.relationship.create.name.label=Relationship Name
+view.node.relationship.create.existing-id.object-id.label=Object ID
+view.node.relationship.download.targets.label=Download all targets
+
 view.node.search.term=Search Term
 view.node.drag-and-drop.out-of-support=Your browser does not support file drag & drop.
 view.node.drag-and-drop.success=File(s) are uploaded.
@@ -82,12 +115,14 @@ view.user.email=E-Mail
 
 view.user.change-password.caption=Change Password
 
+view.favorite.caption=Favorite
+
 view.group.caption=Groups
 view.group.property=Property
 view.group.create=New Group
 view.group.create.caption=Create a new group
 view.group.id=ID
-view.group.name=DIsplay Name
+view.group.name=Display Name
 view.group.member.caption=Member
 view.group.member.user=User
 view.group.member.group=Group
@@ -103,24 +138,48 @@ view.search-engine.reindex.success=Reindexed search engine.
 
 view.type.caption=Types
 view.type.id=Type ID
+view.type.base-type-id=Base Type ID
+view.type.parent-type-id=Parent Type ID
+view.type.local-namespace=Namespace
 view.type.create.caption=New Type
 view.type.update.caption=Update Type
+
+view.config.key=Key
+view.config.value=Value
+view.config.isDefault=Default value
+view.config.edit.caption=Nemakiware Configuration
+view.config.edit.value.label=Config Value
+view.config.edit.key.label=Config Key
+
+view.archive.caption=Archive
 
 view.table.key=Key
 view.table.editable=Editable
 view.table.requred=Required
 view.table.value=Value
 
+view.select=Select
 view.execute=Execute
 view.create=Create
 view.save=Save
 view.detail=Detail
 view.update=Update
 view.delete=Delete
+view.unlink=Unlink
 view.add=Add
 view.remove=Remove
 view.action=Action
+view.not_permitted=Not permitted.
 
+
+view.info=Infomation
+view.warning=Warning
+view.error=Error
+view.danger=Danger
+
+
+view.message.failure=Failed
+view.message.success=Successfully done
 view.message.please.wait=Please wait...
 view.message.create.success=Successfully created
 view.message.create.failure=Failed to create
@@ -131,6 +190,23 @@ view.message.delete.success=Successfully deleted
 view.message.delete.failure=Failed to delete
 view.message.already.selected=Already selected!
 view.message.is-required=is required!
+view.message.checkout.confirm=Do you really want to checkout?
+view.message.checkout.success=Successfully checkouted
+view.message.checkout.failure=Failed to checkout
+view.message.checkin.confirm=Do you really want to cancel checkin?
+view.message.checkin.success=Successfully checkin
+view.message.checkin.failure=Failed to checkin
+view.message.cancel-checkout.confirm=Do you really want to cancel checkout?
+view.message.cancel-checkout.success=Successfully checkout canceled
+view.message.cancel-checkout.failure=Failed to cancel checkout
+view.message.compress.confirm=Do you really want to download as a zipped file?
+view.message.compress.error.toolarge=Target files are too large. It should be less than {0} byte
+view.message.compress.error.nofile=There is no relations for downloading
 
 view.message.password-change.is-same=New passwords should be same!
 view.message.password-change.wrong-old-password=Current password is wrong!
+view.message.restore.failure=Failed to restore
+view.message.parent-no-longer-exists=Cannot restore the archive because parent folder no longer exists!
+view.message.destroy.failure=Failed to destroy
+
+view.message.config.danger=This settings may destroy the environment. Be careful.

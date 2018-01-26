@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>jp.aegif.nemakiware</groupId>
+    <artifactId>nemakiware</artifactId>
+    <version>1.0</version>
+    <packaging>pom</packaging>
+    <name>nemakiware</name>
+    <url>https://github.com/aegif/NemakiWare</url>
+    <properties>
+        <nemakiware.version>2.4.0</nemakiware.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+    <modules>
+        <module>action</module>
+        <module>common</module>
+        <module>core</module>
+        <module>solr</module>
+  </modules>
+</project>
+

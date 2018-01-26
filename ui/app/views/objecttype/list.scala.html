@@ -1,22 +1,23 @@
-@import helper.twitterBootstrap._
+@*{<meta charset="UTF-8" />}*@
+
 @import util.Util
 @import util.NemakiConfig
 @import util.Formatter
 @import org.apache.chemistry.opencmis.commons.PropertyIds
 
-@(repositoryId:String)(objectTypes: List[org.apache.chemistry.opencmis.client.api.ObjectType])
+@(repositoryId:String)(objectTypes: java.util.List[org.apache.chemistry.opencmis.client.api.ObjectType])(profile: util.authentication.NemakiProfile)
 <!DOCTYPE html>
 <html>
 	@header()
 	<body>
-		@menubar(repositoryId)
+		@menubar(repositoryId, profile)
 		<div class="container">
 			<div class="row">
 	  			<div class="col-md-11">
 	  				<h3><i class="fa fa-cog"></i>@Messages("view.type.caption")</h3>
 	  			</div>
 	  		</div>
-		
+
 	  		<div class="row">
 				<div class="col-md-11">
 					<!-- create button -->
@@ -24,28 +25,33 @@
 					<button type="button" class="btn btn-default update"><i class="fa fa-edit"></i>@Messages("view.update")</button>
 					<br/><br/>
 				</div>
-				
-				
+
+
 				<div class="col-md-11">
 					<table class="footable" id="objects-table" data-sort="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
 						<thead>
 							<tr>
+								<th data-class="expand" data-sort-initial="true">@Messages("view.type.base-type-id")</th>
 								<th data-class="expand" data-sort-initial="true">@Messages("view.type.id")</th>
+								<th data-class="expand" data-sort-initial="true">@Messages("view.type.parent-type-id")</th>
+								<th data-class="expand" data-sort-initial="true">@Messages("view.type.local-namespace")</th>
 								<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action")</th>
 							</tr>
 						</thead>
 						<tbody>
 						@for(objectType <- objectTypes){
 							<tr>
+								<td>@objectType.getBaseTypeId</td>
 								<td>
 									<a href="@routes.Type.download(repositoryId, objectType.getId)">@objectType.getId</a>
 								</td>
-								
+								<td>@objectType.getParentTypeId</td>
+								<td>@objectType.getLocalNamespace</td>
 								<td>
 									<div class="btn-group">
-										<button type="button" class="btn btn-default delete" cmis-id="@objectType.getId"><i class="fa fa-trash"></i>@Messages("view.delete")</button>
-									</div> 
-								</td>							
+										<button type="button" class="btn btn-default delete" @if(!objectType.getTypeMutability().canDelete()){disabled="disabled"} cmis-id="@objectType.getId"><i class="fa fa-trash"></i>@Messages("view.delete")</button>
+									</div>
+								</td>
 							</tr>
 						}
 						</tbody>
@@ -66,7 +72,7 @@
 </html>
 
 
-<!-- ------------------------------------------------ -->	
+<!-- ------------------------------------------------ -->
 
 <script type="text/javascript">
 $(function(){
@@ -80,7 +86,7 @@ $(function(){
 			//TODO
 		});
     })
-	
+
 	$('.update').bind('click', function(){
 		$.ajax(jsRoutes.controllers.Type.edit("@repositoryId")
 		).done(function(data){
@@ -91,13 +97,13 @@ $(function(){
 			//TODO
 		});
     })
-    
+
     $('.delete').click(function(){
 		if(window.confirm("@Messages("view.message.delete.confirm")")){
 			var id = $(this).attr('cmis-id');
-		
+
 			$.blockUI({message:"@Messages("view.message.please.wait")"});
-			
+
 			$.ajax(jsRoutes.controllers.Type.delete("@repositoryId", id)
 			).done(function(data){
 				window.alert("@Messages("view.message.delete.success")");
@@ -117,4 +123,4 @@ $(function(){
         $(function () {
             $('#objects-table').footable();
         });
-</script> 
+</script>

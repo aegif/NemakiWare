@@ -1,6 +1,9 @@
+@*{<meta charset="UTF-8" />}*@
+
 @import util.Util
 @import org.apache.commons.collections.CollectionUtils
 @import org.apache.chemistry.opencmis.client.api.Property
+@import play.mvc.Http.Context.Implicit
 
 @(property:Property[_])
 
@@ -9,7 +12,7 @@
 }else{
 	<div class="editable-value-field-container">
 		<div class="antiscroll-wrap">
-			<div class="editable-value-field antiscroll-inner" property-id="@property.getId" property-required="@property.getDefinition.isRequired">@property.getValueAsString</div>
+			<div class="editable-value-field antiscroll-inner" property-id="@property.getId" property-required="@property.getDefinition.isRequired" property-type="@property.getDefinition.getPropertyType" >@Util.getValueAsString(property, Implicit.lang.toLocale)</div>
 		</div>
 	</div>
 }

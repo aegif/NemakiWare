@@ -1,12 +1,14 @@
+@*{<meta charset="UTF-8" />}*@
+
 @import node.list
 
-@(repositoryId:String)(user:model.User)(objects: List[org.apache.chemistry.opencmis.client.api.CmisObject])
+@(repositoryId:String)(user:model.User)(objects: java.util.List[org.apache.chemistry.opencmis.client.api.CmisObject])(session:org.apache.chemistry.opencmis.client.api.Session)(profile: util.authentication.NemakiProfile)(currentPage:Int)(totalItemCount:Long)(orderBy:String)(term:String)
 
 <!DOCTYPE html>
 <html>
 	@header()
 	<body>
-		@menubar(repositoryId)
+		@menubar(repositoryId, profile)
 		<div class="container">
 	  		<div class="row">
 	  			<div class="col-md-11">
@@ -15,10 +17,10 @@
 					</div>
 					<br/><br/>
 				</div>
-				
+
 				<div class="col-md-11">
 				 	<div id="list">
-						@list(repositoryId)(objects) 		
+						@list(repositoryId)(objects)(session)(currentPage)(totalItemCount)(orderBy)(term)
 				 	</div>
 				</div>
 	  		</div>

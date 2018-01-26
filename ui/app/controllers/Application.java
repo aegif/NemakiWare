@@ -1,107 +1,183 @@
 package controllers;
 
-import org.apache.chemistry.opencmis.client.api.Session;
-import org.apache.chemistry.opencmis.commons.data.RepositoryInfo;
+import java.util.List;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.http.entity.ContentType;
+import org.pac4j.core.client.Client;
+import org.pac4j.core.client.Clients;
+import org.pac4j.core.config.Config;
+import org.pac4j.core.context.Pac4jConstants;
+import org.pac4j.core.profile.CommonProfile;
+import org.pac4j.core.profile.ProfileManager;
+import org.pac4j.http.client.indirect.FormClient;
+import org.pac4j.play.PlayWebContext;
+import org.pac4j.play.java.Secure;
+import org.pac4j.saml.client.SAML2Client;
+import org.pac4j.saml.metadata.SAML2MetadataResolver;
+
+import com.google.inject.Inject;
 
 import constant.Token;
-import model.Login;
+import play.Logger;
+import play.Logger.ALogger;
 import play.Routes;
-import play.data.*;
 import play.mvc.Controller;
 import play.mvc.Result;
 import util.Util;
-import views.html.login;
 
-public class Application extends Controller{
+public class Application extends Controller {
+	private static final ALogger logger = Logger.of(Application.class);
 
-	public static Result login(String repositoryId) {
-	    return ok(login.render(repositoryId, Form.form(Login.class)));
+	@Inject
+	public Config config;
+
+	@Secure(clients = "SAML2Client")
+	public Result samlLogin() {
+		logger.info("SAMLLogin");
+
+		@SuppressWarnings("unchecked")
+		final PlayWebContext context = new PlayWebContext(ctx(), config.getSessionStore());
+		String repositoryId = util.Util.getRepositoryId(context);
+		return redirect(routes.Node.index(repositoryId, 0, null));
 	}
 
-	public static Result authenticate(String repositoryId){
-		Form<Login> formData = Form.form(Login.class);
-		formData = formData.bindFromRequest();
-		if(formData.hasErrors())
-			return badRequest(login.render(repositoryId, formData));
+	public Result adminlogin(String repositoryId) {
+		// remove session
+		ClearUserSession();
 
-		Login loginModel = formData.get();
-		session().clear();
-		session(Token.LOGIN_USER_ID, loginModel.id);
-		session(Token.LOGIN_USER_PASSWORD, loginModel.password);
-		session(Token.LOGIN_USER_IS_ADMIN, String.valueOf(isAdmin(repositoryId, loginModel.id)));
-		session(Token.LOGIN_REPOSITORY_ID, repositoryId);
-		session(Token.NEMAKIWARE_VERSION,getVersion(repositoryId));
-		return redirect(routes.Node.index(repositoryId));
+		@SuppressWarnings("unchecked")
+		final PlayWebContext context = new PlayWebContext(ctx(), config.getSessionStore());
+
+		if(StringUtils.isBlank(repositoryId)){
+			repositoryId = Util.getRepositoryId(context);
+		}
+		context.setSessionAttribute(Token.LOGIN_REPOSITORY_ID, repositoryId);
+
+		// set or override redirect url
+		String redircetURL = routes.Node.index(repositoryId, 0, "cmis:name ASC").absoluteURL(request());
+		context.setSessionAttribute(Pac4jConstants.REQUESTED_URL, redircetURL);
+
+		Clients clients = config.getClients();
+
+		final FormClient formClient = (FormClient) clients.findClient("FormClient");
+		String message = ctx().request().getQueryString("error");
+
+		logger.info("RedirectURL =" + redircetURL);
+		return ok(views.html.login.render(repositoryId, formClient.getCallbackUrl() , message));
 	}
-	public static String getVersion(String repositoryId){
-		Session session = CmisSessions.getCmisSession(repositoryId, session());
-		RepositoryInfo repo = session.getRepositoryInfo();
-		return repo.getProductVersion();
-	}
 
-	private static boolean isAdmin(String repositoryId, String id){
-		boolean isAdmin = false;
+	public Result login(String repositoryId) {
+		@SuppressWarnings("unchecked")
+		final PlayWebContext context = new PlayWebContext(ctx(), config.getSessionStore());
 
-		String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
-		String endPoint = coreRestUri + "repo/" + repositoryId + "/user/";
-
-		try{
-			JsonNode result = Util.getJsonResponse(session(), endPoint + "show/" + id);
-			if("success".equals(result.get("status").asText())){
-				JsonNode _user = result.get("user");
-				model.User user = new model.User(_user);
-
-				isAdmin = user.isAdmin;
-			}
-		}catch(Exception e){
-			//TODO logging
-			System.out.println("This user is not returned in REST API:" + id);
+		if(StringUtils.isBlank(repositoryId)){
+			repositoryId = Util.getRepositoryId(context);
 		}
 
-		return isAdmin;
+		//ログイン画面に直接来た場合など、ログイン後のリダイレクト先の設定をしておかないとエラーになる
+		final Object uri = context.getSessionAttribute(Pac4jConstants.REQUESTED_URL);
+		if (uri == null){
+			String redircetURL = routes.Node.index(repositoryId, 0, "cmis:name ASC").absoluteURL(request());
+			context.setSessionAttribute(Pac4jConstants.REQUESTED_URL, redircetURL);
+		}
+
+		Clients clients = config.getClients();
+		@SuppressWarnings("rawtypes")
+		List<Client> clientList = clients.findAllClients();
+		final SAML2Client samlClient = clientList.stream().filter(p -> p.getName().equals("SAML2Client")).map(p -> (SAML2Client)p).findFirst().orElse(null);
+		if( samlClient != null){
+			return redirect(routes.Application.samlLogin());
+		}
+		final FormClient formClient = (FormClient) clients.findClient("FormClient");
+		String message = ctx().request().getQueryString("error");
+
+		return ok(views.html.login.render(repositoryId, formClient.getCallbackUrl() , message));
 	}
 
-	public static Result logout(String repositoryId){
-		//CMIS session
-		CmisSessions.disconnect(repositoryId, session());
+	public Result getSaml2ServiceProviderMetadata() {
+		@SuppressWarnings("unchecked")
+		final PlayWebContext context = new PlayWebContext(ctx(), config.getSessionStore());
 
-		//Play session
-		session().remove("loginUserId");
+		final SAML2Client saml2Client = (SAML2Client) config.getClients().findClient("SAML2Client");
+		saml2Client.init(context);
 
-		return redirect(routes.Application.login(repositoryId));
+		SAML2MetadataResolver resolver = saml2Client.getServiceProviderMetadataResolver();
+		if (resolver != null) {
+			resolver.resolve();
+			String metadata = resolver.getMetadata();
+
+			response().setContentType(ContentType.APPLICATION_XML.getMimeType());
+			return ok(metadata);
+		} else {
+			return notFound();
+		}
+	}
+	public Result logout(String repositoryId, String message) {
+		ClearUserSession();
+
+		return ok(views.html.logout.render(repositoryId, message));
 	}
 
-	public static Result error(){
-		return ok(views.html.error.render());
+	private void ClearUserSession(){
+		@SuppressWarnings("unchecked")
+		final PlayWebContext context = new PlayWebContext(ctx(), config.getSessionStore());
+		final ProfileManager<CommonProfile> profileManager = new ProfileManager<>(context);
+		profileManager.logout();
+		ctx().session().clear();
 	}
-	
-	public static Result jsRoutes() {
+
+
+	public Result error() {
+		@SuppressWarnings("unchecked")
+		final PlayWebContext context = new PlayWebContext(ctx(), config.getSessionStore());
+		String repositoryId = Util.getRepositoryId(context);
+		return ok(views.html.error.render(repositoryId, ""));
+	}
+
+	public Result jsRoutes() {
 		response().setContentType("text/javascript");
-		return ok(
-			Routes.javascriptRouter("jsRoutes",
-				controllers.routes.javascript.Node.showDetail(),
-				controllers.routes.javascript.Node.getAce(),
-				controllers.routes.javascript.Node.update(),
+		return ok(Routes.javascriptRouter("jsRoutes", controllers.routes.javascript.Node.showDetail(),
+				controllers.routes.javascript.Node.showProperty(), controllers.routes.javascript.Node.showFile(),
+				controllers.routes.javascript.Node.showPreview(), controllers.routes.javascript.Node.showVersion(),
+				controllers.routes.javascript.Node.showPermission(),
+				controllers.routes.javascript.Node.showRelationship(),
+				controllers.routes.javascript.Node.showRelationshipCreate(),
+				controllers.routes.javascript.Node.showAction(),
+
+				controllers.routes.javascript.Node.getAce(), controllers.routes.javascript.Node.update(),
 				controllers.routes.javascript.Node.delete(),
 
-				controllers.routes.javascript.Type.showBlank(),
-				controllers.routes.javascript.Type.edit(),
+				controllers.routes.javascript.Archive.index(), controllers.routes.javascript.Archive.restore(),
+				controllers.routes.javascript.Archive.destroy(),
+
+				controllers.routes.javascript.Node.deleteByBatch(), controllers.routes.javascript.Node.checkOut(),
+				controllers.routes.javascript.Node.checkOutByBatch(),
+				controllers.routes.javascript.Node.cancelCheckOut(),
+				controllers.routes.javascript.Node.cancelCheckOutByBatch(),
+				controllers.routes.javascript.Node.checkIn(), controllers.routes.javascript.Node.checkInPWC(),
+				controllers.routes.javascript.Node.checkInPWCByBatch(),
+				controllers.routes.javascript.Node.downloadWithRelationTargetAsCompressedFile(),
+				controllers.routes.javascript.Node.downloadAsCompressedFile(),
+				controllers.routes.javascript.Node.downloadAsCompressedFileByBatch(),
+
+				controllers.routes.javascript.Node.createRelationToNew(),
+				controllers.routes.javascript.Node.createRelationToExisting(),
+
+				controllers.routes.javascript.Type.showBlank(), controllers.routes.javascript.Type.edit(),
 				controllers.routes.javascript.Type.delete(),
 
-				controllers.routes.javascript.User.showDetail(),
-				controllers.routes.javascript.User.delete(),
+				controllers.routes.javascript.User.showDetail(), controllers.routes.javascript.User.delete(),
 				controllers.routes.javascript.User.showPasswordChanger(),
 
-				controllers.routes.javascript.Group.showDetail(),
-				controllers.routes.javascript.Group.delete(),
+				controllers.routes.javascript.Group.showDetail(), controllers.routes.javascript.Group.delete(),
 
-				controllers.routes.javascript.SearchEngine.index(),
-				controllers.routes.javascript.SearchEngine.init(),
-				controllers.routes.javascript.SearchEngine.reindex()
-			)
-		);
+				controllers.routes.javascript.SearchEngine.index(), controllers.routes.javascript.SearchEngine.init(),
+				controllers.routes.javascript.SearchEngine.reindex(),
+
+				controllers.routes.javascript.Config.index(), controllers.routes.javascript.Config.showDetail()
+
+		));
 	}
 
 }

@@ -1,0 +1,177 @@
+@*{<meta charset="UTF-8" />}*@
+
+@import util.Formatter
+@import util.Util
+@import util.DateTimeUtil
+@import util.NemakiConfig
+@import component._
+@import play.mvc.Http.Context.Implicit
+@import org.apache.chemistry.opencmis.client.api.CmisObject
+@(repositoryId:String)(obj:CmisObject)(relationships: List[org.apache.chemistry.opencmis.client.api.Relationship])(session:org.apache.chemistry.opencmis.client.api.Session)
+
+<div class="container tab-pane">
+	<div class="row" style="margin-bottom:15px">
+		<div class="col-sm-6 col-md-6">
+			@if(Util.isFreezeCopy(obj, Http.Context.current)){
+				@lockedNotice(obj)
+			}else{
+				@if(Util.isPropertyEditable(obj, Http.Context.current)){
+					@if(Util.hasCreatableRelationsTypes(session, obj)){
+						@createButton("create-new-relationship")
+					}else{
+						@Messages("view.node.relationship.cannot-create")<br />
+						@Messages("view.node.relationship.soruce-type")
+					}
+				}else{
+					@Messages("view.node.relationship.cannot-create")<br />
+					@Messages("view.not_permitted")
+				}
+			}
+		</div>
+	</div>
+	<div class="row">
+		<div class="col-sm-12 col-md-12">
+			<legend><i class="fa fa-arrow-circle-o-up"></i>@Messages("view.node.relationship.table.to.caption")</legend>
+			<div class="row" style="margin-bottom:15px">
+				<div id="download-menu" class="col-sm-12 col-md-12">
+					@Messages("view.node.relationship.download.targets.label") @executeButton("download-with-target")
+				</div>
+			</div>
+			<table class="footable" id="relationship-table-source" data-paging="true" data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
+				<thead>
+					<tr>
+						<th>@Messages("view.node.relationship.create.type.label")</th>
+						<th>@Messages("view.node.relationship.name")</th>
+						<th>@Messages("view.node.relationship.target.name")</th>
+						<th>@NemakiConfig.getLabel("cmis:createdBy", Implicit.lang().language)</th>
+						<th>@NemakiConfig.getLabel("cmis:creationDate", Implicit.lang().language)</th>
+						<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action") </th>
+					</tr>
+				</thead>
+				<tbody>
+					@for(relationship <- relationships){
+							@if(obj.getId() == relationship.getSource().getId()){
+							<tr class="download-target">
+								<td>@NemakiConfig.getLabel(relationship.getType().getId(), Implicit.lang().language)</td>
+								<td>@relationship.getName()</td>
+								<td><a href="@routes.Node.direct(repositoryId, relationship.getTarget().getId(),"property")">@relationship.getTarget().getName()</a></td>
+								<td>@relationship.getCreatedBy()</td>
+								<td>@DateTimeUtil.calToString(relationship.getCreationDate(), Implicit.lang.toLocale)</td>
+								<td>
+									<div class="btn-group">
+										<button type="button" class="btn btn-default delete" cmis-id="@relationship.getId()"  @if(!Util.canDelete(relationship)){disabled="disabled"}>
+											<i class="fa fa-unlink"></i><div class="tooltips">@Messages("view.unlink")</div>
+										</button>
+									</div>
+								</td>
+							</tr>
+						}
+					}
+				</tbody>
+					<tfoot>
+		<tr>
+			@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() +4){colSpan =>
+				<td colspan="@colSpan">
+			}
+				<div class="pagination pagination-centered hide-if-no-paging"></div>
+			</td>
+		</tr>
+	</tfoot>
+			</table>
+
+			<br/><br/>
+
+			<legend><i class="fa fa-arrow-circle-o-down"></i>@Messages("view.node.relationship.table.from.caption")</legend>
+			<table class="footable" id="relationship-table-target"  data-paging="true"  data-page-navigation=".pagination" data-page-size="@Util.getNavigationPagingSize">
+				<thead>
+					<tr>
+						<th>@Messages("view.node.relationship.create.type.label")</th>
+						<th>@Messages("view.node.relationship.name")</th>
+						<th>@Messages("view.node.relationship.source.name")</th>
+						<th>@NemakiConfig.getLabel("cmis:createdBy", Implicit.lang().language)</th>
+						<th>@NemakiConfig.getLabel("cmis:creationDate", Implicit.lang().language)</th>
+						<th data-sort-ignore="true" class="col-sm-2 col-md-2">@Messages("view.action") </th>
+					</tr>
+				</thead>
+				<tbody>
+					@for(relationship <- relationships){
+							@if(obj.getId() == relationship.getTarget().getId()){
+							<tr>
+								<td>@NemakiConfig.getLabel(relationship.getType().getId(), Implicit.lang().language)</td>
+								<td>@relationship.getName()</td>
+								<td><a href="@routes.Node.direct(repositoryId, relationship.getSource().getId(),"property")">@relationship.getSource().getName()</a></td>
+								<td>@relationship.getCreatedBy()</td>
+								<td>@DateTimeUtil.calToString(relationship.getCreationDate(), Implicit.lang.toLocale)</td>
+								<td>
+									<div class="btn-group">
+										<button type="button" class="btn btn-default delete" cmis-id="@relationship.getId()"  @if(!Util.canDelete(relationship)){disabled="disabled"}>
+											<i class="fa fa-unlink"></i><div class="tooltips">@Messages("view.unlink")</div>
+										</button>
+									</div>
+								</td>
+							</tr>
+						}
+					}
+				</tbody>
+					<tfoot>
+		<tr>
+			@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size()+ 4){colSpan =>
+				<td colspan="@colSpan">
+			}
+				<div class="pagination pagination-centered hide-if-no-paging"></div>
+			</td>
+		</tr>
+	</tfoot>
+			</table>
+		</div>
+	</div>
+</div>
+
+<!-- footable -->
+<script type="text/javascript">
+	$(function () {
+	    $('#relationship-table-source').footable({paginate:true,paging:{enabled:true}});
+	    $('#relationship-table-target').footable({paginate:true,paging:{enabled:true}});
+
+		$('#create-new-relationship').on('click', function(){
+			$.get("@routes.Node.showRelationshipCreate(repositoryId, obj.getId())", function(html){
+				showLightbox('relationship-create', html);
+			});
+		});
+
+		//multiple archive button
+		$("#download-with-target").on('click', function(){
+			if(document.getElementsByClassName("download-target").length == 0){
+				window.alert("@Messages("view.message.compress.error.nofile")");
+			}
+			if(document.getElementsByClassName("download-target").length > 0 && window.confirm("@Messages("view.message.compress.confirm")")){
+			    $.fileDownload(jsRoutes.controllers.Node.downloadWithRelationTargetAsCompressedFile("@repositoryId", "@obj.getId()").url)
+		        .done(function () { })
+		        .fail(function (responseHtml, url, error) {
+			         window.alert("@Messages("view.message.failure")" + " : " + responseHtml);
+			      })
+			    .always(function(){	$.unblockUI(); });
+			}
+		});
+
+		$('.delete').on('click', function(){
+			if(window.confirm("@Messages("view.message.delete.confirm")")){
+				var id = $(this).attr('cmis-id');
+
+				$.blockUI({message:"@Messages("view.message.please.wait")"});
+
+				//Execute
+				$.ajax(jsRoutes.controllers.Node.delete("@repositoryId", id)
+				).done(function(data){
+					window.alert("@Messages("view.message.delete.success")");
+					window.location.reload();
+				}).fail(function(XMLHttpRequest, textStatus, errorThrown){
+					window.alert("@Messages("view.message.delete.failure")");
+				}).always(function(){
+					$.unblockUI();
+				});
+			}
+		});
+
+	});
+</script>

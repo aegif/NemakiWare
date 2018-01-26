@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -25,19 +25,21 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import jp.aegif.nemaki.util.constant.NodeType;
 
-import org.codehaus.jackson.annotate.JsonIgnoreProperties;
-
 /**
- * CMIS group.
+ * Nemaki group.
+ * This class is deprecated and remains for backward compatiblity (patch)
+ * @see jp.aegif.nemaki.model.GroupItem
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Group extends NodeBase {
 
 	@SuppressWarnings("unused")
 	private static final long serialVersionUID = 3444548324020557989L;
-	
+
 	private String groupId;
 	private String name;
 	private List<String> users;
@@ -47,7 +49,7 @@ public class Group extends NodeBase {
 		super();
 		setType(NodeType.GROUP.value());
 	}
-	
+
 	public Group(NodeBase n){
 		super();
 		setId(n.getId());
@@ -57,7 +59,7 @@ public class Group extends NodeBase {
 		setModified(n.getModified());
 		setModifier(n.getModifier());
 	}
-	
+
 	public Group(String groupId, String name, List<String> users,
 			List<String> groups) {
 		super();
@@ -67,7 +69,7 @@ public class Group extends NodeBase {
 		this.users = users;
 		this.groups = groups;
 	}
-	
+
 	/*
 	 * Getters/Setters
 	 */
@@ -102,7 +104,7 @@ public class Group extends NodeBase {
 	public void setGroups(List<String> groups) {
 		this.groups = groups;
 	}
-	
+
 	@Override
 	public String toString() {
 		@SuppressWarnings("serial")

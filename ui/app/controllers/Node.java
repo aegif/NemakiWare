@@ -4,9 +4,11 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
-import java.io.FilterOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URLEncoder;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -16,8 +18,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
-
-import model.Principal;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.chemistry.opencmis.client.api.CmisObject;
 import org.apache.chemistry.opencmis.client.api.Document;
@@ -28,102 +30,216 @@ import org.apache.chemistry.opencmis.client.api.ObjectId;
 import org.apache.chemistry.opencmis.client.api.ObjectType;
 import org.apache.chemistry.opencmis.client.api.OperationContext;
 import org.apache.chemistry.opencmis.client.api.Property;
+import org.apache.chemistry.opencmis.client.api.QueryResult;
+import org.apache.chemistry.opencmis.client.api.Relationship;
+import org.apache.chemistry.opencmis.client.api.RelationshipType;
 import org.apache.chemistry.opencmis.client.api.Rendition;
 import org.apache.chemistry.opencmis.client.api.SecondaryType;
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.client.api.Tree;
 import org.apache.chemistry.opencmis.client.runtime.ObjectIdImpl;
+import org.apache.chemistry.opencmis.client.runtime.OperationContextImpl;
+import org.apache.chemistry.opencmis.client.runtime.objecttype.RelationshipTypeImpl;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Ace;
+import org.apache.chemistry.opencmis.commons.data.Acl;
+import org.apache.chemistry.opencmis.commons.data.AllowableActions;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
+import org.apache.chemistry.opencmis.commons.definitions.RelationshipTypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.AclPropagation;
+import org.apache.chemistry.opencmis.commons.enums.Action;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
+import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
+import org.apache.chemistry.opencmis.commons.enums.PropertyType;
+import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.pac4j.play.java.Secure;
 
-import play.api.libs.Files.TemporaryFile;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.collect.Lists;
+import com.google.inject.Inject;
+
+import constant.PropertyKey;
+import constant.Token;
+import jp.aegif.nemaki.plugin.action.JavaBackedUIAction;
+import jp.aegif.nemaki.plugin.action.UIActionContext;
+import model.ActionPluginUIElement;
+import model.Principal;
+import net.lingala.zip4j.io.ZipOutputStream;
+import net.lingala.zip4j.model.ZipModel;
+import net.lingala.zip4j.model.ZipParameters;
+import net.lingala.zip4j.util.Zip4jConstants;
+import play.Logger;
+import play.Logger.ALogger;
 import play.data.DynamicForm;
 import play.data.Form;
+import play.i18n.Messages;
 import play.libs.Json;
 import play.mvc.Controller;
 import play.mvc.Http.MultipartFormData;
 import play.mvc.Http.MultipartFormData.FilePart;
 import play.mvc.Result;
-import play.mvc.Security.Authenticated;
+import util.CmisObjectTree;
+import util.DateTimeUtil;
+import util.NemakiConfig;
+import util.RelationshipUtil;
 import util.Util;
+import util.authentication.NemakiProfile;
 import views.html.node.blank;
 import views.html.node.detail;
+import views.html.node.detailFull;
 import views.html.node.file;
 import views.html.node.preview;
 import views.html.node.property;
+import views.html.node.relationship;
+import views.html.node.relationship_create;
 import views.html.node.search;
+import views.html.node.searchFreeQuery;
 import views.html.node.tree;
 import views.html.node.version;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-import constant.Token;
-
-@Authenticated(Secured.class)
 public class Node extends Controller {
+	private static final ALogger logger = Logger.of(Node.class);
+
+	@Inject
+	public org.pac4j.core.config.Config config;
 
 	private static Session getCmisSession(String repositoryId) {
-		return CmisSessions.getCmisSession(repositoryId, session());
+		return CmisSessions.getCmisSession(repositoryId, ctx());
 	}
 
-	public static Result index(String repositoryId) {
-		try {
-			Session session = getCmisSession(repositoryId);
-			Folder root = session.getRootFolder();
-			return showChildren(repositoryId, root.getId());
-		} catch (Exception ex) {
-			CmisSessions.disconnect(repositoryId, session());
-			return redirect(routes.Application.login(repositoryId));
-		}
+	@Secure
+	public Result index(String repositoryId) {
+		Session session = getCmisSession(repositoryId);
+		Folder root = session.getRootFolder();
+		return showChildren(repositoryId, root.getId(), 0, "cmis:name ASC",null);
+	}
+	@Secure
+	public Result index(String repositoryId, int currentPage) {
+		Session session = getCmisSession(repositoryId);
+		Folder root = session.getRootFolder();
+		return showChildren(repositoryId, root.getId(), currentPage, "cmis:name ASC",null);
+	}
+	@Secure
+	public Result index(String repositoryId, int currentPage, String orderBy) {
+		Session session = getCmisSession(repositoryId);
+		Folder root = session.getRootFolder();
+		return showChildren(repositoryId, root.getId(), currentPage, orderBy,null);
 	}
 
-	public static Result showChildren(String repositoryId, String id) {
+	@Secure
+	public Result direct(String repositoryId, String objectId, String activateTabName) {
+		NemakiProfile profile = Util.getProfile(ctx());
 		Session session = getCmisSession(repositoryId);
 
-		CmisObject parent = session.getObject(id);
-		// TODO type check
-		Folder _parent = (Folder) parent;
+		Document target = (Document) session.getObject(objectId);
+		Folder parent = target.getParents().get(0);
+		Document latest = target.getObjectOfLatestVersion(false);
 
-		ItemIterable<CmisObject> children = _parent.getChildren();
+		// Get user
+		String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
+		final String endPoint = Util.buildNemakiCoreRestRepositoryUri(repositoryId);
+		String url = endPoint + "user/show/" + userId;
+		JsonNode result = Util.getJsonResponse(ctx(), url);
+		model.User user = new model.User();
+
+		if ("success".equals(result.get("status").asText())) {
+			JsonNode _user = result.get("user");
+			user = new model.User(_user);
+		} else {
+			internalServerError("User retrieveing failure");
+		}
+
+		return ok(detailFull.render(repositoryId, target, parent.getId(), latest.getId(), activateTabName, user,
+				session, profile));
+
+	}
+	@Secure
+	public Result showChildren(String repositoryId, String objectId){
+		return showChildren(repositoryId,  objectId, 0,"cmis:name ASC",null);
+	}
+	@Secure
+	public Result showChildren(String repositoryId, String objectId, int currentPage){
+		return showChildren(repositoryId,  objectId, currentPage,"cmis:name ASC",null);
+	}
+
+	@Secure
+	public Result showChildren(String repositoryId, String objectId, int currentPage, String orderBy, String term){
+		NemakiProfile profile = Util.getProfile(ctx());
+		Session session = getCmisSession(repositoryId);
+		ObjectId id = session.createObjectId(objectId);
+
+		OperationContext cmisOpCtxParent = new OperationContextImpl();
+		cmisOpCtxParent.setIncludeRelationships(IncludeRelationships.NONE);
+		cmisOpCtxParent.setIncludeAcls(true);
+		cmisOpCtxParent.setIncludeAllowableActions(true);
+
+		CmisObject parent = session.getObject(id, cmisOpCtxParent);
 
 		List<CmisObject> results = new ArrayList<CmisObject>();
-		Iterator<CmisObject> itr = children.iterator();
-		while (itr.hasNext()) {
-			CmisObject obj = itr.next();
+		if (Util.isFolder(parent)) {
+			Folder _parent = (Folder) parent;
 
-			// Check and replace to PWC for owner
-			if (Util.isDocument(obj)) {
-				Document doc = (Document) obj;
-				if (doc.isVersionSeriesCheckedOut()) {
-					// check owner
-					String loginUser = session().get(Token.LOGIN_USER_ID);
-					String owner = doc.getVersionSeriesCheckedOutBy();
-					if (loginUser.equals(owner)) {
-						String pwcId = doc.getVersionSeriesCheckedOutId();
-						CmisObject pwc = session.getObject(pwcId);
-						results.add(pwc);
-						continue;
+			logger.debug("[Call Folder#getChildren]Begin");
+			int maxItemsPerPage = Util.getNavigationPagingSize();
+			int skipCount = maxItemsPerPage * currentPage;
+
+			OperationContext cmisOpCtx = new OperationContextImpl();
+			cmisOpCtx.setIncludeRelationships(IncludeRelationships.NONE);
+			cmisOpCtx.setIncludeAcls(true);
+			cmisOpCtx.setIncludeAllowableActions(true);
+			cmisOpCtx.setMaxItemsPerPage(maxItemsPerPage);
+			if(orderBy == null){
+				orderBy="cmis:name ASC";
+			}
+			cmisOpCtx.setOrderBy(orderBy);
+
+
+			ItemIterable<CmisObject> allChildren = _parent.getChildren(cmisOpCtx);
+			ItemIterable<CmisObject> children = allChildren.skipTo(skipCount).getPage();
+			long totalItemCount = allChildren.getTotalNumItems();
+
+
+			Iterator<CmisObject> itr = children.iterator();
+			while (itr.hasNext()) {
+				CmisObject obj = itr.next();
+
+				// Check and replace to PWC for owner
+				if (Util.isDocument(obj)) {
+					Document doc = (Document) obj;
+					if (doc.isVersionSeriesCheckedOut()) {
+						// check owner
+						String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
+						String owner = doc.getVersionSeriesCheckedOutBy();
+						if (userId.equals(owner)) {
+							String pwcId = doc.getVersionSeriesCheckedOutId();
+							CmisObject pwc = session.getObject(pwcId);
+							results.add(pwc);
+							continue;
+						}
 					}
 				}
+				results.add(obj);
 			}
 
-			results.add(obj);
-		}
+		logger.debug("[Call Folder#getChildren]End");
 
 		// Fill in CMIS types
 		List<Tree<ObjectType>> typeFolders = session.getTypeDescendants(BaseTypeId.CMIS_FOLDER.value(), -1, false);
@@ -132,17 +248,52 @@ public class Node extends Controller {
 		types.addAll(typeFolders);
 		types.addAll(typeDocs);
 
-		return ok(tree.render(repositoryId, _parent, results, types));
+		List<String> enableTypes = NemakiConfig.getValues(PropertyKey.UI_VISIBILITY_CREATE_OBJECT);
+
+		List<Tree<ObjectType>> viewTypes = types.stream().filter(p -> enableTypes.contains(p.getItem().getLocalName()))
+				.collect(Collectors.toList());
+
+			return ok(tree.render(repositoryId, _parent, results, viewTypes, session, profile, currentPage, totalItemCount,orderBy ,term));
+		}else{
+			return internalServerError();
+		}
 	}
 
-	public static Result showChildrenByPath(String repositoryId, String path) {
+	@Secure
+	public Result showChildrenByPath(String repositoryId, String term) {
 		Session session = getCmisSession(repositoryId);
-		CmisObject o = session.getObjectByPath(path);
+		CmisObject o = session.getObjectByPath(term);
 
-		return showChildren(repositoryId, o.getId());
+		return showChildren(repositoryId, o.getId(), 0 ,null,term);
+	}
+	@Secure
+	public Result showChildrenByPath(String repositoryId, String term, int currentPage) {
+		Session session = getCmisSession(repositoryId);
+		CmisObject o = session.getObjectByPath(term);
+
+		return showChildren(repositoryId, o.getId(), currentPage, null,term);
+	}
+	@Secure
+	public Result showChildrenByPath(String repositoryId, String term, int currentPage, String orderBy) {
+		Session session = getCmisSession(repositoryId);
+		CmisObject o = session.getObjectByPath(term);
+
+		return showChildren(repositoryId, o.getId(), currentPage, orderBy,term);
 	}
 
-	public static Result search(String repositoryId, String term) {
+	@Secure
+	public Result search(String repositoryId, String term, int currentPage, String orderBy) {
+
+		if (term.startsWith("[cmis]")) {
+			return this.searchFreeQuery(repositoryId, term);
+		}
+		if (term.trim().isEmpty()){
+			return this.index(repositoryId);
+		}
+		
+		term = term.replace(":", "").replace("\\", "").replace("¥", "").replace("'", "").replaceAll("\"", "");
+
+		NemakiProfile profile = Util.getProfile(ctx());
 		Session session = getCmisSession(repositoryId);
 
 		OperationContext ctxt = session.getDefaultContext();
@@ -150,25 +301,60 @@ public class Node extends Controller {
 		List<CmisObject> list = new ArrayList<CmisObject>();
 		// Build WHERE clause(cmis:document)
 		MessageFormat docFormat = new MessageFormat(
-				"cmis:name LIKE ''%{0}%'' OR cmis:description LIKE ''%{0}%'' OR CONTAINS(''{0}'')");
+				"cmis:isLatestVersion=true AND ( cmis:name LIKE ''%{0}%'' OR cmis:description LIKE ''%{0}%'' OR CONTAINS(''{0}'') )");
 		String docStatement = "";
 		if (StringUtils.isNotBlank(term)) {
-			docStatement = docFormat.format(new String[] { term });
+			docStatement = docFormat.format(new String[] { term.replaceAll("%", "\\%").replaceAll("_", "\\_") });
 		}
-		ItemIterable<CmisObject> docResults = session.queryObjects("cmis:document", docStatement, false, ctxt);
+
+		int maxItemsPerPage = Util.getNavigationPagingSize();
+		int skipCount = maxItemsPerPage * currentPage;
+
+		ItemIterable<CmisObject> allResults = session.queryObjects("cmis:document", docStatement, false, ctxt);
+		ItemIterable<CmisObject> docResults = allResults.skipTo(skipCount).getPage(maxItemsPerPage);
 		Iterator<CmisObject> docItr = docResults.iterator();
+		long totalItemCount = docResults.getTotalNumItems();
+
 		while (docItr.hasNext()) {
-			CmisObject doc = docItr.next();
-			boolean val = doc.getPropertyValue("cmis:isLatestVersion");
-			if (!val)
-				continue;
+			CmisObject obj = docItr.next();
+			Document doc = (Document) obj;
+			if (doc.isVersionSeriesCheckedOut()) {
+				// check owner
+				String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
+				String owner = doc.getVersionSeriesCheckedOutBy();
+				if (userId.equals(owner)) {
+					String pwcId = doc.getVersionSeriesCheckedOutId();
+					CmisObject pwc = session.getObject(pwcId);
+					list.add(pwc);
+					continue;
+				}
+			}
 			list.add(doc);
 		}
 
-		return ok(search.render(repositoryId, term, list));
+		return ok(search.render(repositoryId, term, list, session, profile, currentPage, totalItemCount, orderBy));
 	}
 
-	public static Result showBlank(String repositoryId) {
+	private Result searchFreeQuery(String repositoryId, String term) {
+
+		NemakiProfile profile = Util.getProfile(ctx());
+		Session session = getCmisSession(repositoryId);
+		OperationContext ctxt = session.getDefaultContext();
+
+		String pureQuery = term.replace("[cmis]", "");
+
+		ItemIterable<QueryResult> results = session.query(pureQuery, false, ctxt);
+		Iterator<QueryResult> resultItr = results.iterator();
+		List<QueryResult> qrList = new ArrayList<QueryResult>();
+
+		while (resultItr.hasNext()) {
+			qrList.add(resultItr.next());
+		}
+		return ok(searchFreeQuery.render(repositoryId, term, qrList, profile));
+	}
+
+	@Secure
+	public Result showBlank(String repositoryId) {
 		String parentId = request().getQueryString("parentId");
 		String objectTypeId = request().getQueryString("objectType");
 
@@ -182,7 +368,8 @@ public class Node extends Controller {
 		return ok(blank.render(repositoryId, parentId, objectType));
 	}
 
-	public static Result showDetail(String repositoryId, String id, Boolean activatePreviewTab) {
+	@Secure
+	public Result showDetail(String repositoryId, String id, String activateTabName) {
 		Session session = getCmisSession(repositoryId);
 
 		FileableCmisObject o = (FileableCmisObject) session.getObject(id);
@@ -191,10 +378,13 @@ public class Node extends Controller {
 		String parentId = o.getParents().get(0).getId();
 
 		// Get user
+		NemakiProfile profile = Util.getProfile(ctx());
+		String userId = profile.getAttribute(Token.LOGIN_USER_ID, String.class);
 		final String endPoint = Util.buildNemakiCoreRestRepositoryUri(repositoryId);
-		String url = endPoint + "user/show/" + session().get(Token.LOGIN_USER_ID);
-		JsonNode result = Util.getJsonResponse(session(), url);
+		String url = endPoint + "user/show/" + userId;
+		JsonNode result = Util.getJsonResponse(ctx(), url);
 		model.User user = new model.User();
+
 		if ("success".equals(result.get("status").asText())) {
 			JsonNode _user = result.get("user");
 			user = new model.User(_user);
@@ -202,53 +392,63 @@ public class Node extends Controller {
 			internalServerError("User retrieveing failure");
 		}
 
-		return ok(detail.render(repositoryId, o, parentId, activatePreviewTab, user));
+		return ok(detail.render(repositoryId, o, parentId, activateTabName, user, session));
 	}
 
-	public static Result showProperty(String repositoryId, String id) {
-		Session session = getCmisSession(repositoryId);
+	@Secure
+	public Result showProperty(String repositoryId, String id) {
+		try {
+			Session session = getCmisSession(repositoryId);
 
-		FileableCmisObject o = (FileableCmisObject) session.getObject(id);
+			FileableCmisObject o = (FileableCmisObject) session.getObject(id);
 
-		List<Property<?>> properties = o.getProperties();
-		List<SecondaryType> secondaryTypes = o.getSecondaryTypes();
+			List<Property<?>> properties = o.getProperties();
+			List<SecondaryType> secondaryTypes = o.getSecondaryTypes();
 
-		// divide
-		List<Property<?>> primaries = new ArrayList<Property<?>>();
-		Map<SecondaryType, List<Property<?>>> secondaries = new HashMap<SecondaryType, List<Property<?>>>();
-
-		if (CollectionUtils.isNotEmpty(secondaryTypes)) {
-			Iterator<SecondaryType> itr = secondaryTypes.iterator();
-			while (itr.hasNext()) {
-				SecondaryType st = itr.next();
-				secondaries.put(st, new ArrayList<Property<?>>());
-			}
-		}
-
-		for (Property<?> p : properties) {
-			boolean isSecondary = false;
+			// divide
+			List<Property<?>> primaries = new ArrayList<Property<?>>();
+			Map<SecondaryType, List<Property<?>>> secondaries = new HashMap<SecondaryType, List<Property<?>>>();
 
 			if (CollectionUtils.isNotEmpty(secondaryTypes)) {
-				Iterator<SecondaryType> itr2 = secondaryTypes.iterator();
-				while (itr2.hasNext()) {
-					SecondaryType st = itr2.next();
-					if (st.getPropertyDefinitions().containsKey(p.getId())) {
-						secondaries.get(st).add(p);
-						isSecondary = true;
-					}
+				Iterator<SecondaryType> itr = secondaryTypes.iterator();
+				while (itr.hasNext()) {
+					SecondaryType st = itr.next();
+					secondaries.put(st, new ArrayList<Property<?>>());
 				}
 			}
 
-			if (!isSecondary) {
-				primaries.add(p);
+			for (Property<?> p : properties) {
+				boolean isSecondary = false;
+
+				try {
+					if (CollectionUtils.isNotEmpty(secondaryTypes)) {
+						Iterator<SecondaryType> itr2 = secondaryTypes.iterator();
+						while (itr2.hasNext()) {
+							SecondaryType st = itr2.next();
+							if (st.getPropertyDefinitions().containsKey(p.getId())) {
+								secondaries.get(st).add(p);
+								isSecondary = true;
+							}
+						}
+					}
+
+					if (!isSecondary) {
+						primaries.add(p);
+					}
+				} catch (Exception ex) {
+					logger.error("Property Error name=" + p.getDisplayName());
+				}
 			}
 
+			return ok(property.render(repositoryId, o, primaries, secondaries));
+		} catch (Exception ex) {
+			logger.error("Error", ex);
+			return internalServerError();
 		}
-
-		return ok(property.render(repositoryId, o, primaries, secondaries));
 	}
 
-	public static Result showFile(String repositoryId, String id) {
+	@Secure
+	public Result showFile(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 
 		FileableCmisObject o = (FileableCmisObject) session.getObject(id);
@@ -260,7 +460,143 @@ public class Node extends Controller {
 
 	}
 
-	public static Result download(String repositoryId, String id) {
+	@Secure
+	public Result downloadWithRelationTargetAsCompressedFile(String repositoryId, String id) {
+		Session session = getCmisSession(repositoryId);
+		CmisObject cmisObject = session.getObject(id);
+
+		// Relation target
+		List<Relationship> rels = cmisObject.getRelationships();
+		List<Document> list = null;
+		if (rels != null) {
+			try {
+				list = rels.stream().filter(p -> id.equals(p.getSourceId().getId())).map(Relationship::getTargetId)
+						.distinct().map(p -> session.getObject(p)).filter(p -> Util.isDocument(p))
+						.map(p -> (Document) p).collect(Collectors.toList());
+			} catch (CmisObjectNotFoundException ex) {
+				logger.error("Source or target cmis object not found.", ex);
+			}
+		}
+
+		if (Util.isDocument(cmisObject)) {
+			list.add((Document) cmisObject);
+		}
+
+		File tempFile = null;
+		try {
+			// Error too large file
+			long maxsize = Util.getCompressionTargetMaxSize();
+			Long allDocSum = list.stream().mapToLong(p -> p.getContentStreamLength()).sum();
+			if (allDocSum > Util.getCompressionTargetMaxSize()) {
+				String errmsg = Messages.get("view.message.compress.error.toolarge", maxsize);
+				return internalServerError(errmsg);
+			}
+
+			// Archive
+			ZipParameters parameters = new ZipParameters();
+			parameters.setCompressionMethod(Zip4jConstants.COMP_DEFLATE);
+			parameters.setCompressionLevel(Zip4jConstants.DEFLATE_LEVEL_NORMAL);
+			parameters.setSourceExternalStream(true);
+
+			ZipModel zipModel = new ZipModel();
+			String prefix = NemakiConfig.getValue(PropertyKey.COMPRESSION_FILE_PREFIX);
+			Path tempPath = Files.createTempFile(prefix, ".zip");
+			tempFile = tempPath.toFile();
+			tempFile.deleteOnExit();
+
+			try (ZipOutputStream outputStream = new ZipOutputStream(new FileOutputStream(tempFile), zipModel)) {
+
+				for (Document doc : list) {
+					ZipParameters params = (ZipParameters) parameters.clone();
+					params.setFileNameInZip(doc.getContentStreamFileName());
+					outputStream.putNextEntry(null, params);
+
+					try (InputStream inputStream = doc.getContentStream().getStream();) {
+						byte[] readBuff = new byte[4096];
+						int readLen = -1;
+						while ((readLen = inputStream.read(readBuff)) != -1) {
+							outputStream.write(readBuff, 0, readLen);
+						}
+					}
+					outputStream.closeEntry();
+				}
+				outputStream.finish();
+			}
+
+		} catch (Exception e) {
+			logger.error("Zip packing error", e);
+		}
+		String fileName = FilenameUtils.getBaseName(cmisObject.getName());
+		createAttachmentResponse(fileName + ".zip", "application/zip");
+		return ok(tempFile);
+	}
+
+	@Secure
+	public Result downloadAsCompressedFile(String repositoryId, String id) {
+		return downloadAsCompressedFileByBatch(repositoryId, Arrays.asList(id));
+	}
+
+	@Secure
+	public Result downloadAsCompressedFileByBatch(String repositoryId, List<String> ids) {
+		Session session = getCmisSession(repositoryId);
+		File tempFile = null;
+
+		try {
+			CmisObjectTree tree = new CmisObjectTree(session);
+			tree.buildTree(ids.toArray(new String[0]));
+
+			// Erro too large file
+			long maxsize = Util.getCompressionTargetMaxSize();
+			if (tree.getContentsSize() > Util.getCompressionTargetMaxSize()) {
+				String errmsg = Messages.get("view.message.compress.error.toolarge", maxsize);
+				return internalServerError(errmsg);
+			}
+
+			// Archive
+			ZipParameters parameters = new ZipParameters();
+			parameters.setCompressionMethod(Zip4jConstants.COMP_DEFLATE);
+			parameters.setCompressionLevel(Zip4jConstants.DEFLATE_LEVEL_NORMAL);
+			parameters.setSourceExternalStream(true);
+
+			ZipModel zipModel = new ZipModel();
+			String prefix = NemakiConfig.getValue(PropertyKey.COMPRESSION_FILE_PREFIX);
+			Path tempPath = Files.createTempFile(prefix, ".zip");
+			tempFile = tempPath.toFile();
+			tempFile.deleteOnExit();
+
+			try (ZipOutputStream outputStream = new ZipOutputStream(new FileOutputStream(tempFile), zipModel)) {
+				HashMap<String, CmisObject> map = tree.getHashMap();
+				for (String key : map.keySet()) {
+					ZipParameters params = (ZipParameters) parameters.clone();
+					params.setFileNameInZip(StringUtils.stripStart(key, "/"));
+
+					outputStream.putNextEntry(null, params);
+
+					CmisObject obj = map.get(key);
+					if (Util.isDocument(obj)) {
+						try (InputStream inputStream = ((Document) obj).getContentStream().getStream();) {
+							byte[] readBuff = new byte[4096];
+							int readLen = -1;
+							while ((readLen = inputStream.read(readBuff)) != -1) {
+								outputStream.write(readBuff, 0, readLen);
+							}
+						}
+					}
+					outputStream.closeEntry();
+				}
+				outputStream.finish();
+			}
+
+		} catch (Exception e) {
+			logger.error("Zip packing error", e);
+		}
+
+		createAttachmentResponse("compressed-files.zip", "application/zip");
+		return ok(tempFile);
+	}
+
+	@Secure
+	public Result download(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 
 		CmisObject obj = session.getObject(id);
@@ -271,41 +607,44 @@ public class Node extends Controller {
 
 		Document doc = (Document) obj;
 		ContentStream cs = doc.getContentStream();
+		createAttachmentResponse(doc.getContentStreamFileName(), cs.getMimeType());
 
 		File tmpFile = null;
 		try {
 			tmpFile = Util.convertInputStreamToFile(cs);
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-
-		try {
-			if (request().getHeader("User-Agent").indexOf("MSIE") == -1) {
-				// Firefox, Opera 11
-				response().setHeader("Content-Disposition", String.format(Locale.JAPAN,
-						"attachment; filename*=utf-8'jp'%s", URLEncoder.encode(doc.getName(), "utf-8")));
-			} else {
-				// IE7, 8, 9
-				response().setHeader("Content-Disposition", String.format(Locale.JAPAN, "attachment; filename=\"%s\"",
-						new String(doc.getName().getBytes("MS932"), "ISO8859_1")));
-			}
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-
-		response().setContentType(cs.getMimeType());
-
-		try {
 			TemporaryFileInputStream fin = new TemporaryFileInputStream(tmpFile);
 			return ok(fin);
 		} catch (FileNotFoundException e) {
 			e.printStackTrace();
 			return internalServerError("File not found");
+		} catch (Exception e) {
+			e.printStackTrace();
 		}
+
+		createAttachmentResponse(doc.getContentStreamFileName(), cs.getMimeType());
+		return ok(tmpFile);
 	}
 
-	public static Result downloadPreview(String repositoryId, String id) {
+	private static void createAttachmentResponse(String name, String mimeType) {
+		try {
+			if (request().getHeader("User-Agent").indexOf("MSIE") == -1) {
+				// Firefox, Opera 11
+				response().setHeader("Content-Disposition", String.format(Locale.JAPAN,
+						"attachment; filename*=utf-8'jp'%s", URLEncoder.encode(name, "utf-8")));
+			} else {
+				// IE7, 8, 9
+				response().setHeader("Content-Disposition", String.format(Locale.JAPAN, "attachment; filename=\"%s\"",
+						new String(name.getBytes("MS932"), "ISO8859_1")));
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+
+		response().setContentType(mimeType);
+	}
+
+	@Secure
+	public Result downloadPreview(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 
 		CmisObject obj = session.getObject(id);
@@ -350,7 +689,8 @@ public class Node extends Controller {
 
 	}
 
-	public static Result showVersion(String repositoryId, String id) {
+	@Secure
+	public Result showVersion(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 
 		CmisObject o = session.getObject(id);
@@ -362,18 +702,72 @@ public class Node extends Controller {
 			result = doc.getAllVersions();
 		}
 
-		return ok(version.render(repositoryId, result));
+		return ok(version.render(repositoryId, result, id));
 
 	}
 
-	public static Result showPreview(String repositoryId, String id) {
+	@Secure
+	public Result showRelationshipCreate(String repositoryId, String objectId) {
+		Session session = getCmisSession(repositoryId);
+
+		ObjectId id = session.createObjectId(objectId);
+		OperationContext cmisOpCtx = new OperationContextImpl();
+		cmisOpCtx.setIncludeRelationships(IncludeRelationships.BOTH);
+		cmisOpCtx.setIncludeAcls(true);
+		cmisOpCtx.setIncludeAllowableActions(true);
+		CmisObject obj = session.getObject(id, cmisOpCtx);
+
+		String parentId = null;
+		if (Util.isDocument(obj)) {
+			Document doc = (Document) obj;
+			parentId = doc.getParents().get(0).getId();
+		} else if (Util.isDocument(obj)) {
+			Folder folder = (Folder) obj;
+			parentId = folder.getFolderParent().getId();
+		}
+
+		List<RelationshipType> viewTypes = RelationshipUtil.getCreatableRelationsTypes(session,obj);
+
+		Set<ObjectType> targetTypes = viewTypes.stream()
+				.flatMap(p -> p.getAllowedTargetTypes().stream()).distinct()
+				.collect(Collectors.toSet());
+
+		return ok(relationship_create.render(repositoryId, obj, parentId, viewTypes, targetTypes));
+	}
+
+
+
+	@Secure
+	public Result showRelationship(String repositoryId, String objectId) {
+		Session session = getCmisSession(repositoryId);
+
+		ObjectId id = session.createObjectId(objectId);
+		OperationContext cmisOpCtx = new OperationContextImpl();
+		cmisOpCtx.setIncludeRelationships(IncludeRelationships.NONE);
+		cmisOpCtx.setIncludeAcls(true);
+		cmisOpCtx.setIncludeAllowableActions(true);
+
+		//TODO String "cmis:relationship" extract nemaki-common project
+		ObjectType cmisRelType = new RelationshipTypeImpl(session, (RelationshipTypeDefinition) session.getTypeDefinition("cmis:relationship"));
+		Iterable<Relationship> rels = session.getRelationships(id, true, RelationshipDirection.EITHER, cmisRelType, cmisOpCtx);
+
+		List<Relationship> result = new ArrayList<Relationship>();
+		for(Relationship rel : rels){
+			result.add(rel);
+		}
+		return ok(relationship.render(repositoryId, session.getObject(objectId), result, session));
+	}
+
+	@Secure
+	public Result showPreview(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 		CmisObject obj = session.getObject(id);
 
 		return ok(preview.render(repositoryId, obj));
 	}
 
-	public static Result showPermission(String repositoryId, String id) {
+	@Secure
+	public Result showPermission(String repositoryId, String id) {
 		Session session = getCmisSession(repositoryId);
 
 		CmisObject obj = session.getObject(id);
@@ -405,14 +799,39 @@ public class Node extends Controller {
 		return ok(views.html.node.permission.render(repositoryId, obj, members, permissionDefs));
 	}
 
+	@Secure
+	public Result showAction(String repositoryId, String id, String actionId) {
+		Session session = getCmisSession(repositoryId);
+
+		CmisObject obj = session.getObject(id);
+
+		ActionPluginUIElement elm = Util.getActionPluginUIElement(obj, actionId, session);
+
+		return ok(views.html.node.action.render(repositoryId, obj, elm));
+	}
+
+	@Secure
+	public Result doAction(String repositoryId, String id, String actionId) {
+		JsonNode json = request().body().asJson();
+
+		Session session = getCmisSession(repositoryId);
+		CmisObject obj = session.getObject(id);
+		JavaBackedUIAction action = Util.getActionPlugin(obj, actionId, session);
+		UIActionContext context = new UIActionContext(obj, session);
+		String result = action.executeAction(context, json.toString());
+		return ok(result);
+	}
+
 	/**
-	 * Handle with a file per each request
-	 * Multiple drag & drop should be made by calling this as many times
+	 * Handle with a file per each request Multiple drag & drop should be made
+	 * by calling this as many times
+	 *
 	 * @param repositoryId
 	 * @param action
 	 * @return
 	 */
-	public static Result dragAndDrop(String repositoryId, String action) {
+	@Secure
+	public Result dragAndDrop(String repositoryId, String action) {
 		// Bind input parameters
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
@@ -451,8 +870,8 @@ public class Node extends Controller {
 		Session session = getCmisSession(repositoryId);
 		ContentStream cs = Util.convertFileToContentStream(session, file);
 		session.createDocument(param, parentId, cs, VersioningState.MAJOR);
-		
-		//Clean temp file just after CMIS createDocument finished
+
+		// Clean temp file just after CMIS createDocument finished
 		file.getFile().delete();
 	}
 
@@ -466,14 +885,17 @@ public class Node extends Controller {
 		// Execute
 		Session session = getCmisSession(repositoryId);
 		ContentStream cs = Util.convertFileToContentStream(session, file);
-		Document d0 = (Document) session.getObject(objectId);
-		Document d1 = d0.setContentStream(cs, true);
-		
-		//Clean temp file just after CMIS createDocument finished
+		Document doc = (Document) session.getObject(objectId);
+		doc.setContentStream(cs, true);
+
+		// Clean temp file just after CMIS createDocument finished
 		file.getFile().delete();
 	}
 
-	public static Result create(String repositoryId) {
+	@Secure
+	public Result create(String repositoryId) {
+		NemakiProfile profile = Util.getProfile(ctx());
+
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
 
@@ -488,21 +910,24 @@ public class Node extends Controller {
 
 		// Set CMIS parameter
 		Map<String, PropertyDefinition<?>> pdfs = session.getTypeDefinition(objectTypeId).getPropertyDefinitions();
+		Map<String, String> stringMap = Util.createPropFormDataMap(pdfs, input);
+
 		List<Updatability> upds = new ArrayList<Updatability>();
 		upds.add(Updatability.ONCREATE);
 		upds.add(Updatability.READWRITE);
-		HashMap<String, Object> param = Util.buildProperties(pdfs, input, upds);
+
+		HashMap<String, Object> param = Util.buildProperties(pdfs, input, upds, ctx().lang().toLocale());
 		param.put(PropertyIds.OBJECT_TYPE_ID, objectTypeId);
 
 		// Document/Folder specific
 		switch (Util.getBaseType(session, objectTypeId)) {
 		case CMIS_DOCUMENT:
 			ContentStreamAllowed csa = ((DocumentTypeDefinition) objectType).getContentStreamAllowed();
-			
+
 			if (csa == ContentStreamAllowed.NOTALLOWED) {
 				// don't set content stream
 				session.createDocument(param, parentId, null, VersioningState.MAJOR);
-			}else{
+			} else {
 				List<FilePart> files = null;
 				MultipartFormData body = request().body().asMultipartFormData();
 				if (body != null && CollectionUtils.isNotEmpty(body.getFiles())) {
@@ -510,29 +935,29 @@ public class Node extends Controller {
 				}
 
 				if (CollectionUtils.isEmpty(files)) {
-					//Case: no file
-					if (csa == ContentStreamAllowed.REQUIRED){
+					// Case: no file
+					if (csa == ContentStreamAllowed.REQUIRED) {
 						return internalServerError(objectTypeId + ":This type requires a file");
-					}else if(csa == ContentStreamAllowed.ALLOWED){
+					} else if (csa == ContentStreamAllowed.ALLOWED) {
 						session.createDocument(param, parentId, null, VersioningState.MAJOR);
 					}
-				}else{
-					//Case: file exists
+				} else {
+					// Case: file exists
 					ContentStream contentStream = Util.convertFileToContentStream(session, files.get(0));
 					if (param.get(PropertyIds.NAME) == null) {
 						param.put(PropertyIds.NAME, contentStream.getFileName());
 					}
 					session.createDocument(param, parentId, contentStream, VersioningState.MAJOR);
-					
-					//Clean temp file just after CMIS createDocument finished
-					if(CollectionUtils.isNotEmpty(files)){
-						for(FilePart file : files){
+
+					// Clean temp file just after CMIS createDocument finished
+					if (CollectionUtils.isNotEmpty(files)) {
+						for (FilePart file : files) {
 							file.getFile().delete();
 						}
 					}
 				}
 			}
-			
+
 			break;
 		case CMIS_FOLDER:
 			session.createFolder(param, parentId);
@@ -540,11 +965,14 @@ public class Node extends Controller {
 		default:
 			break;
 		}
-		
+
 		return redirectToParent(repositoryId, input);
 	}
 
-	public static Result update(String repositoryId, String id) {
+	@Secure
+	public Result update(String repositoryId, String id) {
+		NemakiProfile profile = Util.getProfile(ctx());
+
 		// Get an object in the repository
 		Session session = getCmisSession(repositoryId);
 		CmisObject o = session.getObject(id);
@@ -564,19 +992,40 @@ public class Node extends Controller {
 				}
 
 				if (Cardinality.SINGLE == pdf.getCardinality()) {
-					String value = input.data().get(pdf.getId());
+					String strValue = input.data().get(pdf.getId());
+					Object value = strValue;
 					// TODO type conversion
+					if (pdf.getPropertyType() == PropertyType.DATETIME) {
+						if (strValue != null && !strValue.isEmpty()) {
+							value = DateTimeUtil.convertStringToCalendar(strValue, ctx().lang().toLocale());
+							if (value == null) {
+								throw new RuntimeException("Invalid DateTime format.");
+							}
+						} else {
+							value = null;
+						}
+					} else if (pdf.getPropertyType() == PropertyType.BOOLEAN) {
+						value = strValue.isEmpty() ? null : Boolean.valueOf(strValue);
+					}
+
 					properties.put(pdf.getId(), value);
 				} else {
 					// TODO find better way
 					List<String> list = new ArrayList<String>();
-					for (int i = 0; i < input.data().keySet().size(); i++) {
-						String keyWithIndex = pdf.getId() + "[" + i + "]";
-						String value = input.data().get(keyWithIndex);
-						if (value == null) {
-							break;
+					if (input.data().containsKey(pdf.getId())) {
+						// one item
+						list.add(input.data().get(pdf.getId()));
+					} else {
+						// multiple items
+						for (int i = 0; i < input.data().keySet().size(); i++) {
+							String keyWithIndex = pdf.getId() + "[" + i + "]";
+							String value = input.data().get(keyWithIndex);
+							Map<String, String> data = input.data();
+							if (value == null) {
+								break;
+							}
+							list.add(value);
 						}
-						list.add(value);
 					}
 					properties.put(pdf.getId(), list);
 				}
@@ -593,7 +1042,8 @@ public class Node extends Controller {
 		return ok();
 	}
 
-	public static Result updatePermission(String repositoryId, String id) {
+	@Secure
+	public Result updatePermission(String repositoryId, String id) {
 		// Get an object in the repository
 		Session session = getCmisSession(repositoryId);
 		CmisObject obj = session.getObject(id);
@@ -699,13 +1149,14 @@ public class Node extends Controller {
 		return ace;
 	}
 
-	public static Result upload(String repositoryId, String id) {
-
+	@Secure
+	public Result upload(String repositoryId, String id) {
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
 
 		Session session = getCmisSession(repositoryId);
 		CmisObject o = session.getObject(id);
+
 		if (o.getType() instanceof DocumentTypeDefinition) {
 			ContentStreamAllowed csa = ((DocumentTypeDefinition) (o.getType())).getContentStreamAllowed();
 			if (csa == ContentStreamAllowed.NOTALLOWED) {
@@ -713,102 +1164,303 @@ public class Node extends Controller {
 			}
 		}
 
+		Document doc = (Document) o;
 		MultipartFormData body = request().body().asMultipartFormData();
 		List<FilePart> files = body.getFiles();
-		if (files.isEmpty()) {
-			// TODO error
+		if (files.isEmpty())
 			System.err.println("There is no file when uploading");
-		}
 		FilePart file = files.get(0);
 
-		Document doc = (Document) o;
 		ContentStream cs = Util.convertFileToContentStream(session, file);
 		doc.setContentStream(cs, true);
 
 		return redirectToParent(repositoryId, input);
 	}
 
-	public static Result delete(String repositoryId, String id) {
+	@Secure
+	public Result delete(String repositoryId, String id) {
+		List<String> deletedList = new ArrayList<String>();
 		Session session = getCmisSession(repositoryId);
-
-		CmisObject object = session.getObject(id);
-		if (BaseTypeId.CMIS_FOLDER == object.getBaseTypeId()) {
-			Folder folder = (Folder) object;
-			folder.deleteTree(true, null, true);
-		} else {
-			session.delete(new ObjectIdImpl(id));
-		}
-
-		return ok();
+		deletedList.addAll(delete(id, session));
+		JsonNode json = Json.toJson(deletedList);
+		return ok(json);
 	}
 
-	public static Result checkOut(String repositoryId, String id) {
+	@Secure
+	public Result deleteByBatch(String repositoryId, List<String> ids) {
+		List<String> deletedList = new ArrayList<String>();
 		Session session = getCmisSession(repositoryId);
-		CmisObject o = session.getObject(id);
+		ids.forEach(id -> deletedList.addAll(delete(id, session)));
+		JsonNode json = Json.toJson(deletedList);
+		return ok(json);
+	}
+
+	private static List<String> delete(String id, Session session) {
+		List<String> deletedList = new ArrayList<String>();
+		CmisObject cmisObject = session.getObject(id);
+
+		// Relation cascade delete
+		List<Relationship> rels = cmisObject.getRelationships();
+		if (rels != null) {
+			try {
+				rels.stream()
+						.filter(p -> id.equals(p.getSourceId().getId())
+								&& RelationshipUtil.isCascadeRelation(p.getType()))
+						.map(Relationship::getTargetId).distinct().forEach(tId -> {
+							try {
+								deletedList.addAll(delete(tId.getId(), session));
+							} catch (Exception ex) {
+								logger.error("Target cmis object id not found", ex);
+							}
+						});
+			} catch (CmisObjectNotFoundException ex) {
+				logger.error("Source or target cmis object not found.", ex);
+			}
+		}
+		deletedList.addAll(delete(cmisObject, session));
+
+		return deletedList;
+	}
+
+	private static List<String> delete(CmisObject cmisObject, Session session) {
+		List<String> deletedList = new ArrayList<String>();
+		if (Util.isFolder(cmisObject)) {
+			Folder folder = (Folder) cmisObject;
+			deletedList.addAll(folder.deleteTree(true, null, true));
+		} else {
+			cmisObject.delete();
+			deletedList.add(cmisObject.getId());
+		}
+		return deletedList;
+	}
+
+	@Secure
+	public Result checkOut(String repositoryId, String id) {
+		return checkOut(repositoryId, id, false);
+	}
+	
+	@Secure
+	public Result checkOut(String repositoryId, String id, Boolean withRel) {
+		Session session = getCmisSession(repositoryId);
+		CmisObject cmisObject = session.getObject(id);
+		checkOut(cmisObject, session,repositoryId, withRel);
+		return ok();
+	}
+	
+	@Secure
+	public Result checkOutByBatch(String repositoryId, List<String> ids) {
+		return checkOutByBatch(repositoryId, ids, false);
+	}
+
+	@Secure
+	public Result checkOutByBatch(String repositoryId, List<String> ids, Boolean withRel) {
+		Session session = getCmisSession(repositoryId);
+		for (String id : ids) {
+			CmisObject cmisObject = session.getObject(id);
+			checkOut(cmisObject,session,repositoryId, withRel);
+		}
+		return ok();
+	}
+	/*
+	private static void checkOut(CmisObject cmisObject) {
+		checkOut(cmisObject, false);
+	}
+	*/
+	private static void checkOut(CmisObject cmisObject, Session session,String repositoryId, Boolean withRel) {
+		
+		if (Util.isDocument(cmisObject)) {
+			Document doc = (Document) cmisObject;
+			// Check if checkout is possible
+			if (doc.isVersionSeriesCheckedOut()) {
+				// Do nothing
+			} else {
+				ObjectId pwcId = doc.checkOut();
+				if(withRel){
+
+					OperationContext cmisOpCtx = new OperationContextImpl();
+					cmisOpCtx.setIncludeRelationships(IncludeRelationships.NONE);
+					cmisOpCtx.setIncludeAcls(true);
+					cmisOpCtx.setIncludeAllowableActions(true);
+//					CmisObject pwc = session.getObject(pwcId);
+
+					ObjectType cmisRelType = new RelationshipTypeImpl(session, (RelationshipTypeDefinition) session.getTypeDefinition("cmis:relationship"));
+					ItemIterable<Relationship> relationships = session.getRelationships(doc, true , RelationshipDirection.SOURCE, cmisRelType, cmisOpCtx);
+					for(Relationship rel : relationships){
+						CmisObject linkedObj = rel.getTarget();
+						CmisObject targetObj = session.getLatestDocumentVersion(linkedObj.getId(),false,cmisOpCtx);
+/*
+ 						Acl docAcl = doc.getAcl();
+
+						List<Ace> srcAces = docAcl.getAces();
+						Map<String, Object> properties = new HashMap<String, Object>();
+						properties.put(PropertyIds.OBJECT_TYPE_ID,rel.getType().getId());
+						properties.put(PropertyIds.TARGET_ID,targetObj.getId());
+						properties.put(PropertyIds.SOURCE_ID,pwcId.getId());
+						properties.put(PropertyIds.NAME,rel.getName());
+logger.info(properties.toString());
+						session.createRelationship(properties,null,srcAces,new ArrayList<Ace>());
+*/
+						createRelation(rel.getType().getId(),rel.getName(),repositoryId,pwcId.getId(),targetObj.getId());
+					}
+				}
+			}
+		} else if (Util.isFolder(cmisObject)) {
+			Folder dir = (Folder) cmisObject;
+			for (CmisObject childNode : dir.getChildren()) {
+				checkOut(childNode, session,repositoryId, withRel);
+			}
+		} else {
+			// no-op
+		}
+
+	}
+
+	@Secure
+	public Result cancelCheckOut(String repositoryId, String id) {
+		Session session = getCmisSession(repositoryId);
+		CmisObject cmisObject = session.getObject(id);
+
+		cancelCheckOut(cmisObject);
 
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
 
-		if (!Util.isDocument(o)) {
-			// TODO error
-		}
-
-		Document doc = (Document) o;
-
-		// Check if checkout is possible
-		if (doc.isVersionSeriesCheckedOut()) {
-			// TODO error
-			System.out.println("already checked out");
-		} else {
-			// Check out
-			doc.checkOut();
-
-		}
-
-		return ok();
-	}
-
-	public static Result cancelCheckOut(String repositoryId, String id) {
-		Session session = getCmisSession(repositoryId);
-		CmisObject o = session.getObject(id);
-
-		if (!Util.isDocument(o)) {
-			// TODO error
-		}
-
-		Document doc = (Document) o;
-		doc.cancelCheckOut();
-
-		DynamicForm input = Form.form();
-		input = input.bindFromRequest();
 		return redirectToParent(repositoryId, input);
 	}
 
-	public static Result checkIn(String repositoryId, String id) {
+	@Secure
+	public Result cancelCheckOutByBatch(String repositoryId, List<String> ids) {
 		Session session = getCmisSession(repositoryId);
-		CmisObject obj = session.getObject(id);
+
+		for (String id : ids) {
+			CmisObject cmisObject = session.getObject(id);
+
+			cancelCheckOut(cmisObject);
+		}
 
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
-		MultipartFormData body = request().body().asMultipartFormData();
 
-		// Files
-		List<FilePart> files = body.getFiles();
-		if (files.isEmpty()) {
-			// TODO error
+		return redirectToParent(repositoryId, input);
+	}
+
+	public static void cancelCheckOut(CmisObject cmisObject) {
+		if (Util.isDocument(cmisObject)) {
+			Document doc = (Document) cmisObject;
+			doc.cancelCheckOut();
+		} else if (Util.isFolder(cmisObject)) {
+			Folder dir = (Folder) cmisObject;
+			for (CmisObject childNode : dir.getChildren()) {
+				cancelCheckOut(childNode);
+			}
+		} else {
+			// no-op
 		}
-		FilePart file = files.get(0);
-		Document doc = (Document) obj;
-		ContentStream cs = Util.convertFileToContentStream(session, file);
+	}
+
+	@Secure
+	public Result checkInPWC(String repositoryId, String id) throws FileNotFoundException {
+		Session session = getCmisSession(repositoryId);
 
 		// Comment
+		DynamicForm input = Form.form();
+		input = input.bindFromRequest();
 		String checkinComment = Util.getFormData(input, PropertyIds.CHECKIN_COMMENT);
 
-		// Execute
-		Map<String, Object> param = new HashMap<String, Object>();
-		doc.checkIn(true, param, cs, checkinComment);
+		CmisObject cmisObject = session.getObject(id);
+		checkInPWC(cmisObject, repositoryId, checkinComment);
+		return redirectToParent(repositoryId, input);
+	}
+
+	private static void checkInPWC(CmisObject cmisObject, String repositoryId, String checkinComment) {
+		if (Util.isDocument(cmisObject)) {
+			Document doc = (Document) cmisObject;
+			List<Relationship> rels = doc.getRelationships();
+			List<String[]> relPros = new ArrayList<String[]>();
+			if(rels!=null){
+				for(Relationship rel:rels){
+					// copy relationship type, relationship name and target id of existing relationship on this pwc
+					String[] pro ={rel.getType().getId(),rel.getName(),rel.getTargetId().getId()};
+					relPros.add(pro);
+				}
+			}
+			if (doc.isPrivateWorkingCopy()) {
+				Map<String, Object> param = new HashMap<String, Object>();
+				ObjectId newDoc = doc.checkIn(true, param, doc.getContentStream(), checkinComment);
+				if(relPros!=null){
+					for(String[] properties:relPros){
+						createRelation(properties[0],properties[1],repositoryId,newDoc.getId(),properties[2]);
+					}
+				}
+			}
+		} else if (Util.isFolder(cmisObject)) {
+			Folder dir = (Folder) cmisObject;
+			for (CmisObject childNode : dir.getChildren()) {
+				checkInPWC(childNode, repositoryId, checkinComment);
+			}
+		} else {
+			// no-op
+		}
+	}
+
+	@Secure
+	public Result checkInPWCByBatch(String repositoryId, List<String> ids) {
+		Session session = getCmisSession(repositoryId);
+
+		for (String id : ids) {
+			CmisObject cmisObject = session.getObject(id);
+			checkInPWC(cmisObject, repositoryId, "");
+		}
+
+		DynamicForm input = Form.form();
+		input = input.bindFromRequest();
 
 		return redirectToParent(repositoryId, input);
+	}
+
+	@Secure
+	public Result checkIn(String repositoryId, String id) throws FileNotFoundException {
+		Session session = getCmisSession(repositoryId);
+
+		// Comment
+		DynamicForm input = Form.form();
+		input = input.bindFromRequest();
+		String checkinComment = Util.getFormData(input, PropertyIds.CHECKIN_COMMENT);
+
+		// File
+		MultipartFormData body = request().body().asMultipartFormData();
+		List<FilePart> files = body.getFiles();
+		if (files.isEmpty()) {
+			throw new FileNotFoundException();
+		}
+		FilePart file = files.get(0);
+
+		CmisObject cmisObject = session.getObject(id);
+		checkIn(cmisObject, repositoryId, checkinComment, file, session);
+
+		return redirectToParent(repositoryId, input);
+	}
+
+	private static void checkIn(CmisObject obj,String repositoryId, String checkinComment, FilePart file, Session session)
+			throws FileNotFoundException {
+		Document doc = (Document) obj;
+		List<Relationship> rels = doc.getRelationships();
+		List<String[]> relPros = new ArrayList<String[]>();
+		if(rels != null){
+			for(Relationship rel:rels){
+				// copy relationship type, relationship name and target id of existing relationship on this pwc
+				String[] pro ={rel.getType().getId(),rel.getName(),rel.getTargetId().getId()};
+				relPros.add(pro);
+			}
+		}
+		Map<String, Object> param = new HashMap<String, Object>();
+		ContentStream cs = Util.convertFileToContentStream(session, file);
+		ObjectId newDoc = doc.checkIn(true, param, cs, checkinComment);
+		if(relPros != null){
+			for(String[] properties:relPros){
+				createRelation(properties[0],properties[1],repositoryId,newDoc.getId(),properties[2]);
+			}
+		}
 	}
 
 	private static Principal getPrincipal(String repositoryId, String principalId, String anyone, String anonymous) {
@@ -825,7 +1477,7 @@ public class Node extends Controller {
 		String coreRestUri = Util.buildNemakiCoreRestRepositoryUri(repositoryId);
 
 		// user
-		JsonNode resultUser = Util.getJsonResponse(session(), coreRestUri + "user/show/" + principalId);
+		JsonNode resultUser = Util.getJsonResponse(ctx(), coreRestUri + "user/show/" + principalId);
 		// TODO check status
 		JsonNode user = resultUser.get("user");
 		if (user != null) {
@@ -834,7 +1486,7 @@ public class Node extends Controller {
 		}
 
 		// group
-		JsonNode resultGroup = Util.getJsonResponse(session(), coreRestUri + "group/show/" + principalId);
+		JsonNode resultGroup = Util.getJsonResponse(ctx(), coreRestUri + "group/show/" + principalId);
 		// TODO check status
 		JsonNode group = resultGroup.get("group");
 		if (group != null) {
@@ -845,21 +1497,108 @@ public class Node extends Controller {
 		return null;
 	}
 
-	private static Result redirectToParent(String repositoryId, DynamicForm input) {
+	@Secure
+	public Result createRelationToNew(String repositoryId, String sourceId) {
+		// Get input form data
+		DynamicForm input = Form.form();
+		input = input.bindFromRequest();
 		String parentId = Util.getFormData(input, PropertyIds.PARENT_ID);
-		// TODO fix hard code
-		if ("".equals(parentId) || "/".equals(parentId)) {
-			return redirect(routes.Node.index(repositoryId));
-		} else {
-			return redirect(routes.Node.showChildren(repositoryId, parentId));
+		String relType = Util.getFormData(input, "nemaki:relationshipType");
+		String relName = Util.getFormData(input, "nemaki:relationshipName");
+		String docType = Util.getFormData(input, "nemaki:documentType");
+
+		// Get an object in the repository
+		Session session = getCmisSession(repositoryId);
+		Folder folder = (Folder) session.getObject(parentId);
+
+		MultipartFormData body = request().body().asMultipartFormData();
+		List<FilePart> files = body.getFiles();
+		if (files.isEmpty())
+			System.err.println("There is no file when uploading");
+		FilePart file = files.get(0);
+		ContentStream cs = Util.convertFileToContentStream(session, file);
+
+		Map<String, String> newDocProps = new HashMap<String, String>();
+		newDocProps.put(PropertyIds.OBJECT_TYPE_ID, StringUtils.isBlank(docType) ? "cmis:document" : docType);
+		newDocProps.put(PropertyIds.NAME, file.getFilename());
+
+		Acl parentAcl = folder.getAcl();
+		List<Ace> parentAceList = parentAcl.getAces();
+		Document doc = folder.createDocument(newDocProps, cs, VersioningState.MAJOR, null, parentAceList, null,
+				session.getDefaultContext());
+
+		try{
+			createRelation(relType, relName, repositoryId, sourceId, doc.getId());
+		}catch(CmisPermissionDeniedException ex){
+			//atompub binding bug???
+		}
+		return ok();
+	}
+
+	@Secure
+	public Result createRelationToExisting(String repositoryId, String sourceId) {
+		// Get input form data
+		DynamicForm input = Form.form();
+		input = input.bindFromRequest();
+		String _targetId = Util.getFormData(input, "nemaki:targetId");
+		String relType = Util.getFormData(input, "nemaki:relationshipType");
+		String relName = Util.getFormData(input, "nemaki:relationshipName");
+		if (StringUtils.isEmpty(_targetId)) {
+			return internalServerError("ObjectId is empty.");
+		}
+		String targetId = _targetId.trim();
+		try {;
+			createRelation(relType, relName, repositoryId, sourceId, targetId);
+			return ok();
+		} catch (CmisObjectNotFoundException e) {
+			logger.error("Create relation error : ", e);
+			return internalServerError("CmisObject is not found.");
 		}
 	}
 
-	public static Result getAce(String repositoryId, String objectId, String principalId) {
+	private static ObjectId createRelation(String relType, String name, String repositoryId, String sourceId,
+			String targetId) {
+		// Get an object in the repository
 		Session session = getCmisSession(repositoryId);
-		CmisObject obj = session.getObject(objectId);
 
-		Map<String, Ace> map = Util.zipWithId(obj.getAcl());
+		// Source acl copy to relation acl
+		CmisObject srcObj = session.getObject(sourceId);
+		CmisObject targetObj = session.getObject(targetId);
+		Acl srcAcl = srcObj.getAcl();
+		List<Ace> srcAceList = srcAcl.getAces();
+		String relName = StringUtils.isEmpty(name) ? FilenameUtils.removeExtension(targetObj.getName()) : name;
+
+		Map<String, String> relProps = new HashMap<String, String>();
+		relProps.put(PropertyIds.OBJECT_TYPE_ID, relType);
+		relProps.put(PropertyIds.NAME, relName);
+		relProps.put("cmis:sourceId", sourceId);
+		relProps.put("cmis:targetId", targetId);
+		ObjectId result = null;
+		try{
+		 result = session.createRelationship(relProps, null, srcAceList, new ArrayList<Ace>());
+		}catch(CmisPermissionDeniedException ex){
+			// atompub?
+		}
+		return result;
+	}
+
+	private static Result redirectToParent(String repositoryId, DynamicForm input) {
+		String parentId = Util.getFormData(input, PropertyIds.PARENT_ID);
+		// TODO fix hard code
+		if (parentId == null || "".equals(parentId) || "/".equals(parentId)) {
+			return redirect(routes.Node.index(repositoryId,0,"cmis:name ASC"));
+		} else {
+			return redirect(routes.Node.showChildren(repositoryId, parentId,0,"cmis:name ASC",null));
+		}
+	}
+
+	@Secure
+	public Result getAce(String repositoryId, String objectId, String principalId) {
+		Session session = getCmisSession(repositoryId);
+		ObjectId id = session.createObjectId(objectId);
+		Acl acl = session.getAcl(id, false);
+
+		Map<String, Ace> map = Util.zipWithId(acl);
 		Ace ace = map.get(principalId);
 
 		if (ace == null) {

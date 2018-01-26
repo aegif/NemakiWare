@@ -27,20 +27,27 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
-import jp.aegif.nemaki.cmis.aspect.SortUtil;
+import javax.ws.rs.client.Client;
+import javax.ws.rs.client.ClientBuilder;
+import javax.ws.rs.client.Invocation;
+import javax.ws.rs.client.WebTarget;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
+
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
+import jp.aegif.nemaki.model.NemakiPropertyDefinition;
+import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
+import jp.aegif.nemaki.businesslogic.TypeService;
 
 import org.antlr.runtime.tree.Tree;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
+import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.client.solrj.impl.HttpSolrServer;
-
-import com.sun.jersey.api.client.Client;
-import com.sun.jersey.api.client.WebResource;
 
 /**
  * Common utility class for Solr query
@@ -49,11 +56,12 @@ import com.sun.jersey.api.client.WebResource;
  *
  */
 public class SolrUtil {
-	private static final Log log = LogFactory.getLog(SortUtil.class);
+	private static final Log log = LogFactory.getLog(SolrUtil.class);
 
 	private final HashMap<String, String> map;
 
 	private PropertyManager propertyManager;
+	private TypeService typeService;
 
 	public SolrUtil() {
 		map = new HashMap<String, String>();
@@ -69,6 +77,7 @@ public class SolrUtil {
 		map.put(PropertyIds.SECONDARY_OBJECT_TYPE_IDS,
 				"secondary_object_type_ids");
 
+		map.put(PropertyIds.IS_LATEST_VERSION, "is_latest_version");
 		map.put(PropertyIds.IS_MAJOR_VERSION, "is_major_version");
 		map.put(PropertyIds.IS_PRIVATE_WORKING_COPY, "is_pwc");
 		map.put(PropertyIds.IS_VERSION_SERIES_CHECKED_OUT, "is_checkedout");
@@ -77,8 +86,8 @@ public class SolrUtil {
 		map.put(PropertyIds.CHECKIN_COMMENT, "checkein_comment");
 		map.put(PropertyIds.VERSION_LABEL, "version_label");
 		map.put(PropertyIds.VERSION_SERIES_ID, "version_series_id");
-		map.put(PropertyIds.CONTENT_STREAM_ID, "content_name");
-		map.put(PropertyIds.CONTENT_STREAM_FILE_NAME, "content_id");
+		map.put(PropertyIds.CONTENT_STREAM_ID, "content_id");
+		map.put(PropertyIds.CONTENT_STREAM_FILE_NAME, "content_name");
 		map.put(PropertyIds.CONTENT_STREAM_LENGTH, "content_length");
 		map.put(PropertyIds.CONTENT_STREAM_MIME_TYPE, "content_mimetype");
 
@@ -102,11 +111,19 @@ public class SolrUtil {
 	 * @param cmisColName
 	 * @return
 	 */
-	public String getPropertyNameInSolr(String cmisColName) {
+	public String getPropertyNameInSolr(String repositoryId,String cmisColName) {
+		
+	//TODO: secondary types
 		String val = map.get(cmisColName);
-
+		NemakiPropertyDefinitionCore pd = typeService.getPropertyDefinitionCoreByPropertyId(repositoryId, cmisColName);
 		if (val == null) {
-			val = "dynamic.property." + cmisColName;
+			if(pd.getPropertyType().equals(PropertyType.DATETIME)){
+				val = "dynamicDate.property." + cmisColName;
+			}else{
+				// case for STRING
+				val = "dynamic.property." + cmisColName.replace(":", "\\:").replace("\\\\:", "\\:");				
+			}
+			
 		}
 
 		return val;
@@ -130,11 +147,21 @@ public class SolrUtil {
 
 		String url = getSolrUrl();
 
-		Client client = Client.create();
-		// TODO Regardless a slash on the last, build the correct URL
-		WebResource webResource = client.resource(url
+		Client client = ClientBuilder.newClient();
+		WebTarget webTarget = client.target(url
 				+ "admin/cores?core=nemaki&action=index&tracking=AUTO&repositoryId=" + repositoryId);
-		 String xml = webResource.accept("application/xml").get(String.class);
+		Invocation.Builder invocationBuilder =  webTarget.request();
+		Response response = invocationBuilder.accept(MediaType.APPLICATION_XML_TYPE).get();
+
+
+
+//		Client client = Client.create();
+//		// TODO Regardless a slash on the last, build the correct URL
+//		WebResource webResource = client.resource(url
+//				+ "admin/cores?core=nemaki&action=index&tracking=AUTO&repositoryId=" + repositoryId);
+
+		String xml = response.readEntity(String.class);
+				//String xml = webResource.accept("application/xml").get(String.class);
 		// TODO log according to the response status
 	}
 
@@ -153,11 +180,14 @@ public class SolrUtil {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-		log.info("Solr URL:" + url);
+//		log.info("Solr URL:" + url);
 		return url;
 	}
 
 	public void setPropertyManager(PropertyManager propertyManager) {
 		this.propertyManager = propertyManager;
+	}
+	public void setTypeService(TypeService typeService) {
+		this.typeService = typeService;
 	}
 }

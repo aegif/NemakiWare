@@ -33,9 +33,6 @@ import jp.aegif.nemaki.model.couch.CouchNodeBase;
 import jp.aegif.nemaki.model.couch.CouchUser;
 
 import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
-import org.apache.log4j.Logger;
 import org.ektorp.ViewQuery;
 import org.springframework.stereotype.Component;
 
@@ -49,7 +46,6 @@ public class PrincipalDaoServiceImpl implements
 		PrincipalDaoService {
 
 	private ConnectorPool connectorPool;
-	private static final  Log log = LogFactory.getLog(PrincipalDaoServiceImpl.class);
 	private static final String DESIGN_DOCUMENT = "_design/_repo";
 
 	public PrincipalDaoServiceImpl() {

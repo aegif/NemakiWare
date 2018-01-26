@@ -1,13 +1,23 @@
-@()
+@*{<meta charset="UTF-8" />}*@
 
-@header()
-<body>
-	<div class="container">
-		<div class="row">
-			<div class="col-xs-4 col-xs-offset-4" style="text-align:center;">
-				<div><img src="@routes.Assets.at("images/nemaki-logo.png")" width="150" /></div>
-				<div>A server error has occured.<br/>Please report to the administrator.r</div>
+@(repositoryId:String)(message: String=null)
+@import helper._
+
+<html>
+	@header()
+	<body>
+		<div class="container">
+			<div class="row">
+				<div class="col-xs-4 col-xs-offset-4" style="text-align:center;">
+					<div><img src="@routes.Assets.at("images/nemaki-logo.png")" width="150" /></div>
+					<div>
+					A server error has occured.<br/>
+					Please report to the administrator.
+					</div>
+					<div>@message</div>
+					<div><a href="@routes.Node.index(repositoryId)" />Return to top page.</a></div>
+				</div>
 			</div>
 		</div>
-	</div>
 </body>
+<html>

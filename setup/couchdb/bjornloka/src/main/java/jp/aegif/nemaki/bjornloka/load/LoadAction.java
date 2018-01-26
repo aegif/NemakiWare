@@ -89,7 +89,7 @@ public abstract class LoadAction {
 		
 		//TEST
 		List<String> documentsResult = new ArrayList<String>();
-		int unit = 500;
+		int unit = 5000;
 		int turn = documents.size() / unit;
 		Indicator metadataIndicator = new Indicator(documents.size());
 		for(int i=0; i <= turn ; i++){

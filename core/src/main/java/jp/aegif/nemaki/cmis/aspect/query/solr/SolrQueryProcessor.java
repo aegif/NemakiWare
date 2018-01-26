@@ -28,6 +28,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.locks.Lock;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
@@ -40,6 +42,7 @@ import jp.aegif.nemaki.util.lock.ThreadLockService;
 
 import org.antlr.runtime.tree.Tree;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
+import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
@@ -128,14 +131,18 @@ public class SolrQueryProcessor implements QueryProcessor {
 	public ObjectList query(CallContext callContext, String repositoryId,
 			String statement, Boolean searchAllVersions,
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
-			String renditionFilter, BigInteger maxItems, BigInteger skipCount) {
+			String renditionFilter, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
 
 		SolrServer solrServer = solrUtil.getSolrServer();
+		// replacing backslashed for TIMESTAMP only
+		Pattern time_p = Pattern.compile("(TIMESTAMP\\s?'[\\-\\d]*T\\d{2})\\\\:(\\d{2})\\\\:([\\.\\d]*Z')", Pattern.CASE_INSENSITIVE);
+		Matcher time_m = time_p.matcher(statement);
+		statement = time_m.replaceAll("$1:$2:$3");
 
 		// TODO walker is required?
+
 		QueryUtilStrict util = new QueryUtilStrict(statement, new CmisTypeManager(repositoryId, typeManager), null);
 		QueryObject queryObject = util.getQueryObject();
-
 		// Get where caluse as Tree
 		Tree whereTree = null;
 		try {
@@ -156,7 +163,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 						queryObject, solrUtil, contentService);
 				Query whereQuery = solrPredicateWalker.walkPredicate(whereTree);
 				whereQueryString = whereQuery.toString();
-			} catch (Exception e) {
+				} catch (Exception e) {
 				e.printStackTrace();
 				// TODO Output more detailed exception
 				exceptionService.invalidArgument("Invalid CMIS SQL statement!");
@@ -169,8 +176,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 		String repositoryQuery = "repository_id:" + repositoryId;
 		
 		fromQueryString += repositoryQuery + " AND ";
-		
-		TypeDefinition td = queryObject.getMainFromName();
+		TypeDefinition td = null;
+
+		td = queryObject.getMainFromName();
+
 		// includedInSupertypeQuery
 		List<TypeDefinitionContainer> typeDescendants = typeManager
 				.getTypesDescendants(repositoryId, td.getId(), BigInteger.valueOf(-1), false);
@@ -188,19 +197,31 @@ public class SolrQueryProcessor implements QueryProcessor {
 			tables.add(table.replaceAll(":", "\\\\:"));
 		}
 		
-		Term t = new Term(
-				solrUtil.getPropertyNameInSolr(PropertyIds.OBJECT_TYPE_ID),
-				StringUtils.join(tables, " "));
-		fromQueryString += new TermQuery(t).toString();
+//		Term t = new Term(
+//				solrUtil.getPropertyNameInSolr(PropertyIds.OBJECT_TYPE_ID),
+//				StringUtils.join(tables, " "));
+//		fromQueryString += new TermQuery(t).toString();
+		fromQueryString += "("+ solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.OBJECT_TYPE_ID) +":"+ StringUtils.join(tables," " + solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.OBJECT_TYPE_ID) + ":") + ")";
 
 		// Execute query
 		SolrQuery solrQuery = new SolrQuery();
 		solrQuery.setQuery(whereQueryString);
 		solrQuery.setFilterQueries(fromQueryString);
 		
-		//TEST
-		solrQuery.set(CommonParams.START, 0);
-		solrQuery.set(CommonParams.ROWS, maxItems.intValue());
+		logger.info(solrQuery.toString());
+		logger.info("statement: " + statement);
+		logger.info("skipCount: " + skipCount);
+		logger.info("maxItems: " + maxItems);
+		if(skipCount == null){
+			solrQuery.set(CommonParams.START, 0);
+		}else{
+			solrQuery.set(CommonParams.START, skipCount.intValue());
+		}
+		if(maxItems == null){
+			solrQuery.set(CommonParams.ROWS, 50);
+		}else{
+			solrQuery.set(CommonParams.ROWS, maxItems.intValue());
+		}
 		
 
 		QueryResponse resp = null;
@@ -210,10 +231,12 @@ public class SolrQueryProcessor implements QueryProcessor {
 			e.printStackTrace();
 		}
 
+		long numFound =0;
 		// Output search results to ObjectList
 		if (resp != null && resp.getResults() != null
 				&& resp.getResults().getNumFound() != 0) {
 			SolrDocumentList docs = resp.getResults();
+			numFound = docs.getNumFound();
 
 			List<Content> contents = new ArrayList<Content>();
 			for (SolrDocument doc : docs) {
@@ -247,13 +270,14 @@ public class SolrQueryProcessor implements QueryProcessor {
 					// Create filter(queryNames) from query aliases
 					filter = StringUtils.join(requestedWithAliasKey.values(), ",");
 				}
+				
 
 				// Build ObjectList
 				String orderBy = orderBy(queryObject);
-				ObjectList result = compileService.compileObjectDataList(
+				ObjectList result = compileService.compileObjectDataListForSearchResult(
 						callContext, repositoryId, permitted, filter,
 						includeAllowableActions, includeRelationships, renditionFilter, false,
-						maxItems, skipCount, false, orderBy);
+						maxItems, skipCount, false, orderBy,numFound);
 
 				return result;
 				

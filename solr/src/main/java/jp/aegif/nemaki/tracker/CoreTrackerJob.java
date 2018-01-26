@@ -25,20 +25,24 @@ import jp.aegif.nemaki.util.CmisSessionFactory;
 import jp.aegif.nemaki.util.Constant;
 import jp.aegif.nemaki.util.yaml.RepositorySettings;
 
-import org.apache.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.quartz.Job;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
 
+import com.ibm.icu.text.MessageFormat;
+
 /**
  * Job class of index tracking
- * 
+ *
  * @author linzhixing
  *
  */
 public class CoreTrackerJob implements Job {
 
-	Logger logger = Logger.getLogger(CoreTrackerJob.class);
+	private static final Logger logger = LoggerFactory.getLogger(CoreTrackerJob.class);
 
 	public CoreTrackerJob() {
 		super();
@@ -48,10 +52,14 @@ public class CoreTrackerJob implements Job {
 	public void execute(JobExecutionContext jec) throws JobExecutionException {
 		CoreTracker coreTracker = (CoreTracker) jec.getJobDetail()
 				.getJobDataMap().get("TRACKER");
-		
+
 		RepositorySettings settings = CmisSessionFactory.getRepositorySettings();
 		for(String repositoryId : settings.getIds()){
-			coreTracker.index(Constant.MODE_DELTA, repositoryId);
+			try{
+				coreTracker.index(Constant.MODE_DELTA, repositoryId);
+			}catch(Exception ex){
+				logger.error("(job)Indexing error repository={}",repositoryId, ex);
+			}
 		}
 	}
 }

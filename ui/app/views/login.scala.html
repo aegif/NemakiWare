@@ -1,4 +1,6 @@
-@(repositoryId:String)(loginForm: Form[model.Login])
+@*{<meta charset="UTF-8" />}*@
+
+@(repositoryId:String)(callbackUri: String)(message: String=null)
 @import helper._
 
 <html>
@@ -7,38 +9,38 @@
 		<div class="container">
 		    <div class="row" style="padding-top:35px;">
 		    	<div class="col-md-4 col-md-offset-4">
-					<img src="@routes.Assets.at("images/nemaki-logo.png")" width="300" />
+					<span  style="text-align:center"><img src="@routes.Assets.at("images/nemaki-logo.png")" width="300" /></span>
 		    		<div class="panel panel-default">
 						<div class="panel-heading">
 							<h3 class="panel-title">@Messages("view.auth.login.caption")</h3>
-							@if(loginForm.hasGlobalErrors) {
-								<div class="error"> @loginForm.globalError.message </div>
+							@if(message != null){
+								<div class="error">@message</div>
 							}
 					 	</div>
 					  	<div class="panel-body">
-					    	@form(action=routes.Application.authenticate(repositoryId)){
+					    	<form action="@callbackUri" method="POST">
 					    		<fieldset>
-					    			<input type="hidden" name="repositoryId" value="@repositoryId" />
+					    			<div class="form-group">
+						    			@if(repositoryId == null){
+							    		    <input class="form-control" placeholder="@Messages("view.auth.repostitory_id")" name="repositoryId" type="text">
+							    		}else{
+							    		    <input class="form-control" placeholder="@Messages("view.auth.repostitory_id")" name="repositoryId" type="text" value="@repositoryId" readonly>
+							    		}
+					    			</div>
 						    	  	<div class="form-group">
-						    		    <input class="form-control" placeholder="@Messages("view.user.id")" name="id" type="text">
+						    		    <input class="form-control" placeholder="@Messages("view.user.id")" name="userId" type="text">
 						    		</div>
 						    		<div class="form-group">
 						    			<input class="form-control" placeholder="@Messages("view.user.password")" name="password" type="password" value="">
 						    		</div>
-						    		<!--
-						    		<div class="checkbox">
-						    	    	<label>
-						    	    		<input name="remember" type="checkbox" value="Remember Me"> Remember Me
-						    	    	</label>
-						    	    </div>
-						    		 -->
 						    		<input class="btn btn-lg btn-primary btn-block" type="submit" value="@Messages("view.auth.login")">
 						    	</fieldset>
-					    	}
+					    	</form>
 					    </div>
 					</div>
 				</div>
 			</div>
 		</div>
 	</body>
+	@footer()
 </html>

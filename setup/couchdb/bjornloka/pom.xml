@@ -8,7 +8,7 @@
 	<packaging>jar</packaging>
 
 	<name>bjornloka</name>
-	<url>http://maven.apache.org</url>
+	<url>https://github.com/aegif/NemakiWare</url>
 
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -47,23 +47,26 @@
 	<artifactId>httpclient</artifactId>
 	<version>4.5</version>
 </dependency>
-		
+
 	</dependencies>
 
 	<build>
 		<finalName>bjornloka</finalName>
 		<plugins>
 			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
-				<version>2.3.2</version>
+				<version>3.6.0</version>
 				<configuration>
 					<encoding>UTF-8</encoding>
-					<source>1.6</source>
-					<target>1.6</target>
+					<source>1.8</source>
+					<target>1.8</target>
 				</configuration>
 			</plugin>
 			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-assembly-plugin</artifactId>
+				<version>3.0.0</version>
 				<executions>
 					<execution>
 						<phase>package</phase>

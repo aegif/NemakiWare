@@ -1,3 +1,5 @@
+@*{<meta charset="UTF-8" />}*@
+
 @import component._
 @import principal._
 
@@ -5,33 +7,43 @@
 @import org.apache.commons.collections.CollectionUtils
 @import org.apache.chemistry.opencmis.commons.definitions.PermissionDefinition
 @import org.apache.chemistry.opencmis.commons.data.Ace
+@import play.mvc.Http.Context
 
-@(repositoryId:String)(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(members:List[model.Principal])(permissionDefinitions:List[PermissionDefinition] = null)
+@(repositoryId:String)(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(members:java.util.List[model.Principal])(permissionDefinitions:java.util.List[PermissionDefinition] = null)
 
 @script(repositoryId)(permissionDefinitions)()
 
 <div class="container tab-pane">
-	<div class="row" style="margin-bottom:15px">
-		<div class="col-sm-6 col-md-6">
-			@if(Util.isFreezeCopy(obj, session)){
-				@lockedNotice(obj)
-			}else{
-				@saveButton("permission-update")
-			}
+	@if(Util.canApplyAcl(obj)){
+		<div class="row" style="margin-bottom:15px">
+			<div class="col-sm-6 col-md-6">
+				@if(Util.isFreezeCopy(obj, Http.Context.current)){
+					@lockedNotice(obj)
+				}else{
+					@saveButton("permission-update")
+				}
+			</div>
 		</div>
-	</div>
 
-	<div class="row">
-		<div class="col-sm-6 col-md-6">
-			@searchBox("追加可能なメンバを検索")
+		<div class="row">
+			<div class="col-sm-6 col-md-6">
+				@searchBox("追加可能なメンバを検索")
+			</div>
 		</div>
-	</div>
 
-	<div class="row">
-		<div class="col-sm-6 col-md-6">
-			@searchTable(Messages("view.node.permission.search.caption"))(members)
+		<div class="row">
+			<div class="col-sm-6 col-md-6">
+				@searchTable(Messages("view.node.permission.search.caption"))(members)
+			</div>
 		</div>
-	</div>
+
+	}else{
+		<div class="row" style="margin-bottom:15px">
+			<div class="col-sm-6 col-md-6">
+				@Messages("view.not_permitted")
+			</div>
+		</div>
+	}
 
 	<div class="row">
 		<div class="col-sm-12 col-md-12">

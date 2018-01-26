@@ -1,6 +1,9 @@
+@*{<meta charset="UTF-8" />}*@
+
 @import table._
 @import util.Util
 @import util.NemakiConfig
+@import play.mvc.Http.Context.Implicit
 
 @(repositoryId:String)(user:model.User)
 
@@ -70,11 +73,11 @@
 
 			//Validation
 			if(!data['userId']){
-				alert("@NemakiConfig.getLabel("user-id", lang().language) @Messages("view.message.is-required")");
+				alert("@NemakiConfig.getLabel("user-id", Implicit.lang().language) @Messages("view.message.is-required")");
 				return;  //End click event
 			}
 			if(!data['userName']){
-				alert("@NemakiConfig.getLabel("user-name", lang().language) @Messages("view.message.is-required")");
+				alert("@NemakiConfig.getLabel("user-name", Implicit.lang().language) @Messages("view.message.is-required")");
 				return;  //End click event
 			}
 

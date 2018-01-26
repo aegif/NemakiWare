@@ -78,16 +78,20 @@ import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
+import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
+import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
-import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.DataUtil;
+import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.DomainType;
+import jp.aegif.nemaki.util.constant.PropertyKey;
 
 public class ExceptionServiceImpl implements ExceptionService,
 		ApplicationContextAware {
@@ -96,6 +100,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 	private PermissionService permissionService;
 	private RepositoryInfoMap repositoryInfoMap;
 	private PrincipalService principalService;
+	private ContentDaoService contentDaoService;
+	private PropertyManager propertyManager;
 
 	private static final Log log = LogFactory
 			.getLog(ExceptionServiceImpl.class);
@@ -314,14 +320,14 @@ public class ExceptionServiceImpl implements ExceptionService,
 				+ "The specified object is not found";
 		objectNotFound(type, object, id, msg);
 	}
-	
+
 	@Override
 	public void objectNotFoundByPath(DomainType type, Object object, String path,
 			String msg) {
 		if (object == null)
 			throw new CmisObjectNotFoundException(msg, HTTP_STATUS_CODE_404);
 	}
-	
+
 	@Override
 	public void objectNotFoundByPath(DomainType type, Object object, String path) {
 		String msg = "[" + type.value() + " path:" + path + "]"
@@ -352,15 +358,15 @@ public class ExceptionServiceImpl implements ExceptionService,
 	@Override
 	public void permissionDenied(CallContext context, String repositoryId,
 			String key, Content content) {
-		if(content == null){
-			System.out.println();
-		}
-		
-		
+
+		// Admin user always pass a permission check(skip calculateAcl)
+		String userId = context.getUsername();
+		UserItem u = contentService.getUserItemById(repositoryId, userId);
+		if (u != null && u.isAdmin()) return;
+
 		String baseTypeId = content.getType();
 		Acl acl = contentService.calculateAcl(repositoryId, content);
 		permissionDeniedInternal(context, repositoryId, key, acl, baseTypeId, content);
-
 		permissionTopLevelFolder(context, repositoryId, key, content);
 	}
 
@@ -372,7 +378,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
 		}
 	}
-	
+
 	private void permissionTopLevelFolder(CallContext context, String repositoryId, String key, Content content){
 		boolean result = permissionService.checkPermissionAtTopLevel(context, repositoryId, key, content);
 		if(!result){
@@ -383,10 +389,13 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void perimissionAdmin(CallContext context, String repositoryId) {
-		List<User> admins = principalService.getAdmins(repositoryId);
+		if(context instanceof SystemCallContext){
+			return;
+		}
 
-		if (!admins.contains(context.getUsername())) {
-			String msg = "This operation if permitted only for administrator";
+		UserItem userItem = contentService.getUserItemById(repositoryId, context.getUsername());
+		if(!userItem.isAdmin()){
+			String msg = "This operation is permitted only for administrator";
 			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
 		}
 	}
@@ -418,23 +427,34 @@ public class ExceptionServiceImpl implements ExceptionService,
 	}
 
 	@Override
-	public void constraintAllowedChildObjectTypeId(Folder folder,
-			Properties childProperties) {
-		List<String> allowedTypes = folder.getAllowedChildTypeIds();
+	public void constraintAllowedChildObjectTypeId(String repositoryId, Folder folder,Properties childProperties) {
+		List<String> allowedTypeIds = folder.getAllowedChildTypeIds();
+		String childTypeId = DataUtil.getIdProperty(childProperties, PropertyIds.OBJECT_TYPE_ID);
 
-		// If cmis:allowedCHildTypeIds is not set, all types are allowed.
-		if (!CollectionUtils.isEmpty(allowedTypes)) {
-			String childType = DataUtil.getIdProperty(childProperties,
-					PropertyIds.OBJECT_TYPE_ID);
-			if (!allowedTypes.contains(childType)) {
-				String objectId = DataUtil.getIdProperty(childProperties,
-						PropertyIds.OBJECT_ID);
-				constraint(
-						objectId,
-						"cmis:objectTypeId="
-								+ childType
-								+ " is not in the list of AllowedChildObjectTypeIds of the parent folder");
-			}
+		boolean result = false;
+		if (CollectionUtils.isEmpty(allowedTypeIds)) {
+			// If cmis:allowedChildTypeIds is not set, all types are allowed.
+			result = true;
+		}else{
+			String targetTypeId = childTypeId;
+			do{
+				if (allowedTypeIds.contains(targetTypeId)) {
+					result = true;
+					break;
+				}
+				TypeDefinition targetType = typeManager.getTypeById(repositoryId, targetTypeId).getTypeDefinition();
+				if (targetType.getId().equals(targetType.getBaseTypeId())) break;
+				targetTypeId =  targetType.getParentTypeId();
+			}while(true);
+		}
+
+		if (!result) {
+			String objectId = DataUtil.getIdProperty(childProperties,PropertyIds.OBJECT_ID);
+			constraint(
+					objectId,
+					"cmis:objectTypeId="
+							+ childTypeId
+							+ " is not in the list of AllowedChildObjectTypeIds of the parent folder");
 		}
 	}
 
@@ -1109,7 +1129,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 		if (propertyDefinition.isOrderable()
 				&& propertyDefinition.getCardinality() == Cardinality.MULTI) {
 			String msg = DataUtil.buildPrefixTypeProperty(typeId, propertyId)
-					+ "PropertyDefinition violates the specification";
+					+ "PropertyDefinition violates the specification: cardinality=multi should not be orderable";
 			constraint(msg);
 		}
 	}
@@ -1151,24 +1171,44 @@ public class ExceptionServiceImpl implements ExceptionService,
 	 *
 	 */
 	@Override
-	public void versioning(Document doc) {
-		if (!doc.isLatestVersion() && !doc.isPrivateWorkingCopy()) {
+	public void versioning(CallContext callContext, Document doc) {
+		String userId = callContext.getUsername();
+		UserItem u = contentService.getUserItemById(callContext.getRepositoryId(), userId);
+		
+		if (!doc.isLatestVersion() && !doc.isPrivateWorkingCopy() && !u.isAdmin()) {
 			String msg = "The operation is not allowed on a non-current version of a document";
 			throw new CmisVersioningException(buildMsgWithId(msg, doc.getId()),
 					HTTP_STATUS_CODE_409);
 		}
 	}
 
-	// TODO implement!
 	@Override
-	public void nameConstraintViolation(Properties properties,
-			Folder parentFolder) {
-		// If name conflicts, modify names by the repository without outputting
-		// error
+	public void nameConstraintViolation(String repositoryId, Folder parentFolder,
+			Properties properties) {
+		String proposedName = DataUtil.getStringProperty(properties, PropertyIds.NAME);
+		nameConstraintViolation(repositoryId, parentFolder, proposedName);
+	}
+
+	@Override
+	public void nameConstraintViolation(String repositoryId, Folder parentFolder,
+			String proposedName) {
+		boolean mustUnique = propertyManager.readBoolean(PropertyKey.CAPABILITY_EXTENDED_UNIQUE_NAME_CHECK);
+		if (!mustUnique) {
+			return;
+		}
+
 		if (parentFolder == null) {
 
 		} else {
-
+			List<String> names = contentDaoService.getChildrenNames(repositoryId, parentFolder.getId());
+			String lowerCaseProposedName = proposedName.toLowerCase();
+			for(String name: names) {
+				if (lowerCaseProposedName.equals(name.toLowerCase())) {
+					throw new CmisContentAlreadyExistsException(
+							"A content with the specified name already exists",
+							HTTP_STATUS_CODE_409);
+				}
+			}
 		}
 	}
 
@@ -1220,5 +1260,13 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	public void setPrincipalService(PrincipalService principalService) {
 		this.principalService = principalService;
+	}
+
+	public void setContentDaoService(ContentDaoService contentDaoService) {
+		this.contentDaoService = contentDaoService;
+	}
+
+	public void setPropertyManager(PropertyManager propertyManager) {
+		this.propertyManager = propertyManager;
 	}
 }

@@ -6,6 +6,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
 
 import org.apache.chemistry.opencmis.client.api.CmisObject;
 import org.apache.chemistry.opencmis.client.api.Session;
@@ -19,6 +21,7 @@ import play.mvc.Result;
 import play.mvc.Security.Authenticated;
 import util.ErrorMessage;
 import util.Util;
+import util.authentication.NemakiProfile;
 import views.html.user.blank;
 import views.html.user.index;
 import views.html.user.property;
@@ -28,23 +31,33 @@ import views.html.user.password;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import org.pac4j.play.java.Secure;
 
-
-@Authenticated(Secured.class)
 public class User extends Controller {
 
 	private static String coreRestUri = Util.buildNemakiCoreUri() + "rest/";
 
 	private static Session getCmisSession(String repositoryId){
-		return CmisSessions.getCmisSession(repositoryId, session());
+		return CmisSessions.getCmisSession(repositoryId, ctx());
 	}
 
-	public static Result index(String repositoryId){
+	@Secure
+	public Result index(String repositoryId){
 	    	return search(repositoryId, "");
 	  }
 
-	public static Result search(String repositoryId, String term){
-    	JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "search?query=" + term);
+	@Secure
+	public Result search(String repositoryId, String term){
+
+		try {
+			term = URLEncoder.encode(term,"UTF-8");
+		} catch (UnsupportedEncodingException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+
+		NemakiProfile profile = Util.getProfile(ctx());
+    	JsonNode result = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "search?query=" + term);
 
     	//TODO check status
     	JsonNode users = result.get("result");
@@ -57,23 +70,14 @@ public class User extends Controller {
     		Iterator<JsonNode>itr = users.elements();
         	while(itr.hasNext()){
         		JsonNode node = itr.next();
-
-        		model.User user = new model.User();
-        		user.id = node.get("userId").asText();
-        		user.name = node.get("userName").asText();
-        		user.firstName = node.get("firstName").asText();
-        		user.lastName = node.get("lastName").asText();
-        		user.email = node.get("email").asText();
-        		user.isAdmin = node.get("isAdmin").asBoolean();
-
+        		model.User user = new model.User(node);
         		list.add(user);
         	}
     	}
 
-
     	//render
     	if(Util.dataTypeIsHtml(request().acceptedTypes())){
-    		return ok(index.render(repositoryId, list));
+    		return ok(index.render(repositoryId, list, profile));
     	}else{
     		return ok(users);
 
@@ -81,14 +85,16 @@ public class User extends Controller {
 
     }
 
-	public static Result showBlank(String repositoryId){
+	@Secure
+	public Result showBlank(String repositoryId){
 		model.User emptyUser = new model.User("", "", "", "", "", "", false, null);
 
 		return ok(blank.render(repositoryId, emptyUser));
 	}
 
-	public static Result showDetail(String repositoryId, String id){
-		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "show/" + id);
+	@Secure
+	public Result showDetail(String repositoryId, String id){
+		JsonNode result = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "show/" + id);
 
 		if("success".equals(result.get("status").asText())){
 			JsonNode _user = result.get("user");
@@ -103,8 +109,9 @@ public class User extends Controller {
 
 
 
-	public static Result showPasswordChanger(String repositoryId, String id){
-		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "show/" + id);
+	@Secure
+	public Result showPasswordChanger(String repositoryId, String id){
+		JsonNode result = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "show/" + id);
 
 		if("success".equals(result.get("status").asText())){
 			JsonNode _user = result.get("user");
@@ -117,8 +124,10 @@ public class User extends Controller {
 		}
 	}
 
-	public static Result showFavorites(String repositoryId, String id){
-		JsonNode result = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "show/" + id);
+	@Secure
+	public Result showFavorites(String repositoryId, String id){
+		NemakiProfile profile = Util.getProfile(ctx());
+		JsonNode result = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "show/" + id);
 
 		if("success".equals(result.get("status").asText())){
 			JsonNode _user = result.get("user");
@@ -126,28 +135,30 @@ public class User extends Controller {
 
 			List<CmisObject> list = new ArrayList<CmisObject>();
 			Set<String>fs = user.favorites;
+			Session session = null;
 			if(CollectionUtils.isNotEmpty(fs)){
 				//CMIS session
-				Session session =  getCmisSession(repositoryId);
+				session =  getCmisSession(repositoryId);
 
 				Iterator<String>fsItr = fs.iterator();
+
 				while(fsItr.hasNext()){
 					String favId = fsItr.next();
 					list.add(session.getObject(favId));
 				}
 			}
-			return ok(favorites.render(repositoryId, user, list));
+			return ok(favorites.render(repositoryId, user, list, session, profile,0, (long)fs.size(),null,null));
 		}else{
-			//TODO
 			return internalServerError();
 		}
 	}
 
-	public static Result toggleFavorite(String repositoryId, String userId, String objectId){
+	@Secure
+	public Result toggleFavorite(String repositoryId, String userId, String objectId){
 		Map<String, String>params = new HashMap<String, String>();
 		params.put("id", userId);
 
-		JsonNode getResult = Util.getJsonResponse(session(), getEndpoint(repositoryId) + "show/" + userId);
+		JsonNode getResult = Util.getJsonResponse(ctx(), getEndpoint(repositoryId) + "show/" + userId);
 
 		if("success".equals(getResult.get("status").asText())){
 			JsonNode _user = getResult.get("user");
@@ -162,7 +173,7 @@ public class User extends Controller {
 			}
 
 			//Update
-			JsonNode putResult = Util.putJsonResponse(session(), getEndpoint(repositoryId) + "update/" + userId , params);
+			JsonNode putResult = Util.putJsonResponse(ctx(), getEndpoint(repositoryId) + "update/" + userId , params);
 			if("success".equals(putResult.get("status").asText())){
 				return ok();
 			}else{
@@ -175,9 +186,10 @@ public class User extends Controller {
 		}
 	}
 
-	public static Result create(String repositoryId){
+	@Secure
+	public Result create(String repositoryId){
     	Map<String, String>params = buildParams();
-    	JsonNode result = Util.postJsonResponse(session(), getEndpoint(repositoryId) + "create/" + params.get("id"), params);
+    	JsonNode result = Util.postJsonResponse(ctx(), getEndpoint(repositoryId) + "create/" + params.get("id"), params);
 
     	if(isSuccess(result)){
     		flash("flash message");
@@ -188,11 +200,12 @@ public class User extends Controller {
     	}
 	}
 
-	public static Result update(String repositoryId, String id){
+	@Secure
+	public Result update(String repositoryId, String id){
 
     	Map<String, String>params = buildParams();
 
-    	JsonNode result = Util.putJsonResponse(session(), getEndpoint(repositoryId) + "update/" + id , params);
+    	JsonNode result = Util.putJsonResponse(ctx(), getEndpoint(repositoryId) + "update/" + id , params);
 
     	if(isSuccess(result)){
     		return ok();
@@ -201,25 +214,27 @@ public class User extends Controller {
     	}
 	}
 
-	public static Result changePassword(String repositoryId, String id){
+	@Secure
+	public Result changePassword(String repositoryId, String id){
 		DynamicForm input = Form.form();
     	input = input.bindFromRequest();
     	Map<String, String>changeParams = new HashMap<String, String>();
     	changeParams.put("id", input.get("userId"));
     	changeParams.put("oldPassword",  input.get("oldPassword"));
     	changeParams.put("newPassword",  input.get("newPassword1"));
-    	JsonNode changeResult = Util.putJsonResponse(session(), getEndpoint(repositoryId) + "changePassword/" + id , changeParams);
+    	JsonNode changeResult = Util.putJsonResponse(ctx(), getEndpoint(repositoryId) + "changePassword/" + id , changeParams);
 
     	if(isSuccess(changeResult)){
-    		return redirect(routes.Application.logout(repositoryId));
+    		return redirect(routes.Application.logout(repositoryId, "Password Changed."));
     	}else{
     		String errorCode = changeResult.get("error").get(0).get("user").asText();
     		return internalServerError(ErrorMessage.getMessage(errorCode));
     	}
 	}
 
-	public static Result delete(String repositoryId, String id){
-		JsonNode deleteResult = Util.deleteJsonResponse(session(), getEndpoint(repositoryId) + "delete/" + id);
+	@Secure
+	public Result delete(String repositoryId, String id){
+		JsonNode deleteResult = Util.deleteJsonResponse(ctx(), getEndpoint(repositoryId) + "delete/" + id);
 
     	if(isSuccess(deleteResult)){
     		return ok();
