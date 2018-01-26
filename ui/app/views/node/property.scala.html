@@ -1,3 +1,5 @@
+@*{<meta charset="UTF-8" />}*@
+
 @import table._
 @import component._
 
@@ -11,20 +13,23 @@
 @import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition
 @import org.apache.chemistry.opencmis.client.api.Property
 @import org.apache.chemistry.opencmis.client.api.SecondaryType
+@import play.mvc.Http.Context.Implicit
+@import play.mvc.Http.Context
+@(repositoryId:String)(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(primaries: java.util.List[Property[_]])(secondary: java.util.Map[SecondaryType, List[Property[_]]])
 
-@(repositoryId:String)(obj:org.apache.chemistry.opencmis.client.api.CmisObject)(primaries: List[Property[_]])(secondary: Map[SecondaryType, List[Property[_]]])
-<!-- html -->
-<div class="container tap-pane">
+<div class="container tab-pane">
 	<div class="row" style="margin-bottom:15px">
 		<div class="col-sm-6 col-md-6">
-			@if(Util.isFreezeCopy(obj, session)){
+			@if(Util.isFreezeCopy(obj, Http.Context.current)){
 				@lockedNotice(obj)
 			}else{
-				@saveButton("property-update")
+				@if(Util.isPropertyEditable(obj, Http.Context.current)){
+					@saveButton("property-update")
+				}
 			}
 		</div>
 	</div>
-	
+
 	<div class="row">
 		<div class="col-sm-12 col-md-12">
 			<div><h4>@Messages("view.node.property")</h4></div>
@@ -54,18 +59,18 @@
 				@if(!masking.contains(p.getId) &&
 						Util.isEditable(p.getDefinition, UpdateContext.NORMAL)){
 					data["@p.getId"] = editedValue("#@p.getId");
-					
+
 					//Validation
 					@if(p.getDefinition.isRequired){
 						if(!data["@p.getId"]){
-							alert("@NemakiConfig.getLabel(p.getId, lang().language) @Messages("view.message.is-required")");
+							alert("@NemakiConfig.getLabel(p.getId, Implicit.lang().language) @Messages("view.message.is-required")");
 							return; //End click event
 						}
 					}
 				}
 			}
 		}
-		
+
 		//Check duplicate
 		var duplicate = checkDuplicateOnUpdate(data["cmis:name"], "@obj.getName");
 		if(duplicate){
@@ -84,18 +89,18 @@
 			window.alert("@Messages("view.message.update.failure")");
 		}).always(function(data){
 			$.unblockUI();
-		}); 
+		});
 	});
-	
+
 	//duplicate name check
 	function checkDuplicateOnUpdate(newName, oldName){
 		//Read all names in the folder
 		var names = [];
 		var list = $('#objects-table').find('.obj-name');
 		list.map(function() {
-			names.push($(this).text());
+			names.push($(this).text().toLowerCase());
 		});
-		
-		return (newName != oldName && $.inArray(newName, names) >= 0);
+
+		return (newName.toLowerCase() != oldName.toLowerCase() && $.inArray(newName.toLowerCase(), names) >= 0);
 	}
 </script>

@@ -1,21 +1,28 @@
 body {
 	/*For menu bar*/
-    padding-top: 70px;
+	padding-top: 70px;
+}
+
+legend {
+    margin-bottom: 10px !important;
+    border-bottom: 1px solid #cccccc !important;
 }
 
 i.fa {
-	padding-right:2px;
+	padding-right: 0.2em;
+	padding-left: 0.2em;
 }
 
-.error{
+.error {
 	color: red;
 }
 
 div.menubar {
-   background-color: #cccccc;
+	background-color: #cccccc;
 }
-div.lightbox-me-container{
-	border-style:solid;
+
+div.lightbox-me-container {
+	border-style: solid;
 	border-width: 3px;
 	background-color: #eeeeee;
 	overflow: auto;
@@ -25,156 +32,211 @@ div.lightbox-me-container{
 	padding-left: 20px;
 }
 
-div.lightbox-me-container div.container, div.lightbox-me-container div.row{
+#close_x {
+    width: 24px; height: 23px;
+    overflow: hidden;
+    display: block;
+    position: absolute; top: 5px; right: 5px;
+}
+
+div.lightbox-me-container div.container, div.lightbox-me-container div.row
+	{
 	width: 760px !important;
 }
 
-div.tab-pane{
-	padding-top:20px;
+div.tab-pane {
+	padding-top: 8px;
 }
 
-/*隶�諛�ｽｴ�ｽ｢驕ｯ�ｿｽ*/
 .navbar-search {
-    position: relative;
+	position: relative;
 }
 
 .navbar-search .search-query {
-    padding-left: 29px;
+	padding-left: 29px;
 }
 
 .navbar-search .icon-search {
-    position: absolute;
-    top: 7px;
-    left: 11px;
+	position: absolute;
+	top: 7px;
+	left: 11px;
 }
 
-.navbar-search .search-query:focus, .navbar-search .search-query.focused {
-    padding-left: 30px;
-}遯ｶ�ｿｽ
+.navbar-search .search-query:focus, .navbar-search .search-query.focused
+	{
+	padding-left: 30px;
+}
+
+.btn-group button {
+	position: relative;
+}
+
+.btn-group button:hover {
+	background: #deb3ba;
+}
+
+.tooltips {
+	display: none;
+	position: absolute;
+	bottom: -2.8em;
+	left: 0.3em;
+	z-index: 9999;
+	padding: 0.3em 0.5em;
+	color: #FFFFFF;
+	background: #c72439;
+	border-radius: 0.5em;
+}
+
+.tooltips:after {
+	width: 100%;
+	content: "";
+	display: block;
+	position: absolute;
+	left: 0.5em;
+	top: -8px;
+	border-top: 8px solid transparent;
+	border-left: 8px solid #c72439;
+}
+
+.btn-group button:hover .tooltips {
+	display: block;
+}
+
+div.list-operation {
+	margin-bottom: 1em !important;
+}
 
 .table {
-  width: 100%;
-  table-layout: fixed;
-  word-wrap: break-word;
+	width: 100%;
+	table-layout: fixed;
+	word-wrap: break-word;
 }
 
-table.editable-table .key{
+.footable>tbody>tr>td {
+	padding: 0.5em !important;
+}
+
+td.center {
+	vertical-align: middle;
+	text-align: center;
+}
+
+table.editable-table .key {
 	width: 1%;
-	white-space:nowrap;
+	white-space: nowrap;
 }
 
-table.editable-table .editable{
+table.editable-table .editable {
 	width: 1%;
-	white-space:nowrap;
+	white-space: nowrap;
 }
 
-table.editable-table .required{
+table.editable-table .required {
 	width: 1%;
-	white-space:nowrap;
+	white-space: nowrap;
 }
 
-table.editable-table .value{
+table.editable-table .value {
 	width: 310px;
-	padding-top:2px !important;
-	padding-bottom:0px !important;
+	padding-top: 2px !important;
+	padding-bottom: 0px !important;
 }
 
 div.editable-value-field, input.editable-value-input {
 	width: 300px;
 }
 
-div.editable-value-field.multi, div.editable-value-field.multi input.editable-value-input{
+div.editable-value-field.multi, div.editable-value-field.multi input.editable-value-input
+	{
 	width: 230px;
 }
 
-div.editable-value-field{
+div.editable-value-field {
 	height: 28px;
 }
 
-div.antiscroll-wrap *{
-	overflow:hidden;
+div.antiscroll-wrap * {
+	overflow: hidden;
 }
 
 div.editable-value-field {
-	white-space:nowrap;
-	background: url(../images/transparent.gif) repeat;	/*so that empty field can be clicked*/
+	white-space: nowrap;
+	background: url(../images/transparent.gif) repeat;
+	/*so that empty field can be clicked*/
 }
 
 input.editable-value-input {
-	height:25px;
-	background-color : #f8f8f8;
-
-	border:0;
-	color:#aaa;
-
+	height: 25px;
+	background-color: #f8f8f8;
+	border: 0;
+	color: #aaa;
 	-webkit-border-radius: 3px;
 	-moz-border-radius: 3px;
 	border-radius: 3px;
-
-	-moz-box-shadow: inset 1px 4px 9px -6px rgba(0,0,0,0.5);
+	-moz-box-shadow: inset 1px 4px 9px -6px rgba(0, 0, 0, 0.5);
 	-webkit-box-shadow: inset 1px 4px 9px -6px rgba(0, 0, 0, 0.5);
-	box-shadow: inset 1px 4px 9px -6px rgba(0,0,0,0.5);
+	box-shadow: inset 1px 4px 9px -6px rgba(0, 0, 0, 0.5);
 }
 
-input.editable-value-input:focus{
-	border:solid 1px #7eb0e0;
+input.editable-value-input:focus {
+	border: solid 1px #7eb0e0;
 }
 
-tr.ace-inherited{
-	background-color:#f0f0f0;
+tr.ace-inherited {
+	background-color: #f0f0f0;
 }
 
-input.ace-direct{
-	display:none;
+input.ace-direct {
+	display: none;
 }
 
-input.form-control.principal-searach{
-	width:290px;
+input.form-control.principal-searach {
+	width: 290px;
 }
 
-.principal-table .column-action{
-	width:1px;
-	white-space:nowrap;
-	text-align: center !important;,
+.principal-table .column-action {
+	width: 1px;
+	white-space: nowrap;
+	text-align: center !important; ,
 	vertical-align: center !important;
 }
 
-.principal-table .column-genre{
-	width:1px;
-	white-space:nowrap;
-	text-align: center !important;,
+.principal-table .column-genre {
+	width: 1px;
+	white-space: nowrap;
+	text-align: center !important; ,
 	vertical-align: center !important;
 }
 
-.principal-table .column-id, .principal-table .column-name{
+.principal-table .column-id, .principal-table .column-name {
 	word-break: break-all;
 }
 
 .nopadding {
-   padding: 0 !important;
-   margin: 0 !important;
+	padding: 0 !important;
+	margin: 0 !important;
 }
 
-.content-size{
-	width:1px;
-	white-space:nowrap;
+.content-size {
+	width: 1px;
+	white-space: nowrap;
 }
 
-div.fav.caption{
-	float:left;
-	font-size:x-large;
+div.fav.caption {
+	float: left;
+	font-size: x-large;
 	border: 3px black solid;
 	border-radius: 20px;
 	padding: 5px;
 	margin: 10px;
-	border-color:#CCC;
-	background-color:#EEE;
+	border-color: #CCC;
+	background-color: #EEE;
 }
 
-.nmk-action.hover{
-	background-color:#f0f8ff;
+.nmk-action.hover {
+	background-color: #f0f8ff;
 }
 
-#nmk-dd-duplicate-confirm .modal-header{
-	background-color:#DCE9F9;
+#nmk-dd-duplicate-confirm .modal-header {
+	background-color: #DCE9F9;
 }

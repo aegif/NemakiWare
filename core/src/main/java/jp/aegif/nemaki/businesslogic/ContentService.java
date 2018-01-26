@@ -22,6 +22,7 @@ package jp.aegif.nemaki.businesslogic;
 
 import java.math.BigInteger;
 import java.util.List;
+import java.util.Set;
 
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Archive;
@@ -30,11 +31,14 @@ import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.GroupItem;
 import jp.aegif.nemaki.model.Item;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
+import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.model.VersionSeries;
+import jp.aegif.nemaki.model.exception.ParentNoLongerExistException;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
@@ -177,6 +181,8 @@ public interface ContentService {
 	 */
 	Folder getFolder(String repositoryId, String objectId);
 
+	Folder getSystemFolder(String repositoryId);
+	
 	/**
 	 * Get a path string
 	 * @param repositoryId TODO
@@ -224,6 +230,18 @@ public interface ContentService {
 	 * @return
 	 */
 	Item getItem(String repositoryId, String objectId);
+	
+	UserItem getUserItem(String repositoryId, String objectId);
+	UserItem getUserItemById(String repositoryId, String userId);
+	List<UserItem> getUserItems(String repositoryId);
+	
+	GroupItem getGroupItem(String repositoryId, String objectId);
+	GroupItem getGroupItemById(String repositoryId, String groupId);
+	List<GroupItem> getGroupItems(String repositoryId);
+	
+	Set<String> getGroupIdsContainingUser(String repositoryId, String userId);
+	String getAnonymous(String repositoryId);
+	String getAnyone(String repositoryId);
 
 	/**
 	 * Create a document
@@ -234,12 +252,11 @@ public interface ContentService {
 	 * @param parentFolder
 	 * @param contentStream
 	 * @param versioningState
-	 * @param versionSeriesId
 	 * @return
 	 */
 	Document createDocument(CallContext callContext, String repositoryId,
 			Properties properties, Folder parentFolder,
-			ContentStream contentStream, VersioningState versioningState, String versionSeriesId);
+			ContentStream contentStream, VersioningState versioningState, List<String> policies, org.apache.chemistry.opencmis.commons.data.Acl addAces, org.apache.chemistry.opencmis.commons.data.Acl removeAces);
 
 	/**
 	 * Copy a document
@@ -328,10 +345,12 @@ public interface ContentService {
 	 * @param repositoryId TODO
 	 * @param properties
 	 * @param parentFolder
+	 * @param extension TODO
 	 * @return
 	 */
 	Folder createFolder(CallContext callContext, String repositoryId,
-			Properties properties, Folder parentFolder);
+			Properties properties, Folder parentFolder, List<String> policies, org.apache.chemistry.opencmis.commons.data.Acl
+			 addAces, org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension);
 
 	/**
 	 * Create a relationship
@@ -385,6 +404,17 @@ public interface ContentService {
 			Properties properties, String folderId, List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces, org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension);
 
+	UserItem createUserItem(CallContext callContext, String repositoryId, Properties properties, String folderId,
+			List<String> policies, org.apache.chemistry.opencmis.commons.data.Acl addAces,
+			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension);
+	UserItem createUserItem(CallContext callContext, String repositoryId, UserItem userItem);
+	GroupItem createGroupItem(CallContext callContext, String repositoryId, Properties properties, String folderId,
+			List<String> policies, org.apache.chemistry.opencmis.commons.data.Acl addAces,
+			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension);
+	GroupItem createGroupItem(CallContext callContext, String repositoryId, GroupItem groupItem);
+	
+	Content update(CallContext callContext, String repositoryId, Content content);
+	
 	/**
 	 * Update a content(for general-purpose)
 	 * @param repositoryId TODO
@@ -392,7 +422,7 @@ public interface ContentService {
 	 *
 	 * @return
 	 */
-	Content update(String repositoryId, Content content);
+	Content updateInternal(String repositoryId, Content content);
 
 	/**
 	 * Update properties of a content
@@ -610,6 +640,17 @@ public interface ContentService {
 	List<Archive> getAllArchives(String repositoryId);
 
 	/**
+	 * Get a specified number of archives
+	 * @param repositoryId
+	 * @param skip
+	 * @param limit
+	 * @param desc
+	 * @return
+	 */
+	List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc);
+	
+	
+	/**
 	 * Get an archive
 	 * @param repositoryId TODO
 	 * @param archiveId
@@ -648,14 +689,21 @@ public interface ContentService {
 	 * @return
 	 */
 	Archive createAttachmentArchive(CallContext callContext, String repositoryId, String attachmentId);
-
+	
 	/**
 	 * Restore a content from an archive
 	 * @param repositoryId TODO
 	 * @param archiveId
 	 */
-	void restoreArchive(String repositoryId, String archiveId);
+	void restoreArchive(String repositoryId, String archiveId) throws ParentNoLongerExistException;
 
+	/**
+	 * Destroy an archive from database 
+	 * @param repositoryId
+	 * @param archiveId
+	 */
+	public void destroyArchive(String repositoryId, String archiveId);
+	
 	/**
 	 * Write change event
 	 * @param callContext
@@ -666,5 +714,20 @@ public interface ContentService {
 	 */
 	String writeChangeEvent(CallContext callContext, String repositoryId, Content content,
 			Acl acl, ChangeType changeType);
-
+	
+	/**
+	 * Update version without checkIn/Out
+	 * @param callContext
+	 * @param repositoryId
+	 * @param objectId
+	 * @param major
+	 * @param properties
+	 * @param contentStream
+	 * @param checkinComment
+	 * @param originalDoc
+	 * @return
+	 */
+	public Document updateWithoutCheckInOut(CallContext callContext, String repositoryId,
+			Boolean major, Properties properties,
+			ContentStream contentStream, String checkinComment, Document previousDoc, VersionSeries versionSeries);
 }

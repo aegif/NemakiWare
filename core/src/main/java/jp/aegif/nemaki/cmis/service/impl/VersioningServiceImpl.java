@@ -62,7 +62,7 @@ public class VersioningServiceImpl implements VersioningService {
 	 * Repository only allow the latest version to be checked out
 	 */
 	public void checkOut(CallContext callContext, String repositoryId,
-			Holder<String> objectId, ExtensionsData extension, Holder<Boolean> contentCopied) {
+			Holder<String> objectId, Holder<Boolean> contentCopied, ExtensionsData extension) {
 
 		exceptionService.invalidArgumentRequiredHolderString("objectId", objectId);
 		String originalId = objectId.getValue();
@@ -87,7 +87,7 @@ public class VersioningServiceImpl implements VersioningService {
 			// repeatedly
 			exceptionService.constraintAlreadyCheckedOut(repositoryId, document);
 			exceptionService.constraintVersionable(repositoryId, document.getObjectType());
-			exceptionService.versioning(document);
+			exceptionService.versioning(callContext, document);
 
 			// //////////////////
 			// Body of the method
@@ -208,7 +208,7 @@ public class VersioningServiceImpl implements VersioningService {
 	}
 
 	@Override
-	public ObjectData getObjectOfLatestVersion(CallContext context,
+	public ObjectData getObjectOfLatestVersion(CallContext callContext,
 			String repositoryId, String objectId, String versionSeriesId,
 			Boolean major, String filter,
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
@@ -243,13 +243,13 @@ public class VersioningServiceImpl implements VersioningService {
 			
 			exceptionService.objectNotFound(DomainType.OBJECT, document,
 					versionSeriesId);
-			exceptionService.permissionDenied(context,
+			exceptionService.permissionDenied(callContext,
 					repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT, document);
 
 			// //////////////////
 			// Body of the method
 			// //////////////////
-			ObjectData objectData = compileService.compileObjectData(context,
+			ObjectData objectData = compileService.compileObjectData(callContext,
 					repositoryId, document, filter,
 					includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
 			return objectData;
@@ -260,7 +260,7 @@ public class VersioningServiceImpl implements VersioningService {
 	}
 
 	@Override
-	public List<ObjectData> getAllVersions(CallContext context,
+	public List<ObjectData> getAllVersions(CallContext callContext,
 			String repositoryId, String objectId, String versionSeriesId,
 			String filter, Boolean includeAllowableActions, ExtensionsData extension) {
 		// //////////////////
@@ -276,7 +276,7 @@ public class VersioningServiceImpl implements VersioningService {
 		}
 		
 		List<Document> allVersions = contentService
-				.getAllVersions(context, repositoryId, versionSeriesId);
+				.getAllVersions(callContext, repositoryId, versionSeriesId);
 		exceptionService.objectNotFoundVersionSeries(versionSeriesId,
 				allVersions);
 		
@@ -290,7 +290,7 @@ public class VersioningServiceImpl implements VersioningService {
 			Document latest = allVersions.get(0);
 			if(latest.isPrivateWorkingCopy()){
 				VersionSeries vs = contentService.getVersionSeries(repositoryId, latest);
-				if(!context.getUsername().equals(vs.getVersionSeriesCheckedOutBy())){
+				if(!callContext.getUsername().equals(vs.getVersionSeriesCheckedOutBy())){
 					allVersions.remove(latest);
 				}
 			}
@@ -301,7 +301,7 @@ public class VersioningServiceImpl implements VersioningService {
 			List<ObjectData> result = new ArrayList<ObjectData>();
 			for (Content content : allVersions) {
 				ObjectData objectData = compileService.compileObjectData(
-						context, repositoryId, content, filter,
+						callContext, repositoryId, content, filter,
 						includeAllowableActions, IncludeRelationships.NONE, null, true);
 				result.add(objectData);
 			}

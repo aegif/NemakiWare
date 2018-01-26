@@ -155,7 +155,8 @@ nmk.dragAndDrop = {
 		}
 
 		function checkDuplicate(name, names) {
-			var duplicate = ($.inArray(name, names) >= 0);
+			var namesLower = $.map(names, function(n,i){return n.toLowerCase();});
+			var duplicate = ($.inArray(name.toLowerCase(), namesLower) >= 0);
 			return duplicate;
 		}
 		

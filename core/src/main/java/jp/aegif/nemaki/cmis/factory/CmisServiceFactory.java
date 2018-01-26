@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import javax.annotation.PostConstruct;
+import javax.servlet.http.HttpServletRequest;
 
 import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
 import jp.aegif.nemaki.cmis.factory.auth.CmisServiceWrapper;
@@ -34,7 +35,7 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 	private PropertyManager propertyManager;
 
 	private RepositoryInfoMap repositoryInfoMap;
-	
+
 	private AuthenticationService authenticationService;
 
 	private static BigInteger DEFAULT_MAX_ITEMS_TYPES;
@@ -78,7 +79,7 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 			if(calledCmisService == null){
 				log.error("RepositoryId=" + repositoryId + " does not exist", new Throwable());
 			}
-			
+
 			CmisServiceWrapper wrapper = new CmisServiceWrapper(
 					calledCmisService,
 					DEFAULT_MAX_ITEMS_TYPES, DEFAULT_DEPTH_TYPES,
@@ -86,15 +87,15 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 					callContext);
 			if(log.isTraceEnabled()){
 				log.trace("nemaki_log[FACTORY]"
-						+ "CmisService@" 
-						+ calledCmisService.hashCode() 
-						+ " with CallContext@" 
+						+ "CmisService@"
+						+ calledCmisService.hashCode()
+						+ " with CallContext@"
 						+ callContext.hashCode()
 						+ "[repositoryId=" + callContext.getRepositoryId()
 						+ ", userId=" + callContext.getUsername()
 						+ "] is generated");
 			}
-			
+
 			return wrapper;
 		} else {
 			String msg = String.format("[Repository=%1$s][UserName=%2$s]Authentication failed",repositoryId, userName);

@@ -1,8 +1,5 @@
 package jp.aegif.nemaki.util.cache;
 
-import net.sf.ehcache.Cache;
-import net.sf.ehcache.CacheManager;
-
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -10,23 +7,27 @@ import java.util.Map.Entry;
 
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
 
+import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Change;
+import jp.aegif.nemaki.model.Configuration;
 import jp.aegif.nemaki.model.Content;
-import jp.aegif.nemaki.model.Group;
+import jp.aegif.nemaki.model.GroupItem;
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
-import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.model.VersionSeries;
-import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.SpringPropertyManager;
 import jp.aegif.nemaki.util.YamlManager;
 import jp.aegif.nemaki.util.cache.model.NemakiCache;
 import jp.aegif.nemaki.util.cache.model.Tree;
-import jp.aegif.nemaki.util.cache.CacheService;
 import jp.aegif.nemaki.util.constant.PropertyKey;
+import net.sf.ehcache.Cache;
+import net.sf.ehcache.CacheManager;
 
 public class CacheService {
 	private final CacheManager cacheManager;
 	private final Map<String, Boolean> enabled = new HashMap<>();
+	private final String CONFIG_CACHE = "configCache";
 	private final String OBJECT_DATA_CACHE = "objectDataCache";
 	private final String PROPERTIES_CACHE = "propertisCache";
 	private final String TYPE_CACHE = "typeCache";
@@ -40,18 +41,21 @@ public class CacheService {
 	private final String USERS_CACHE = "usersCache";
 	private final String GROUP_CACHE = "groupCache";
 	private final String GROUPS_CACHE = "groupsCache";
+	
+	private final String ACL_CACHE = "aclCache";
+	private final String JOINED_GROUP_CACHE = "joinedGroupCache";
 
 	private final String repositoryId;
 
-	public CacheService(String repositoryId, PropertyManager propertyManager) {
+	public CacheService(String repositoryId, SpringPropertyManager propertyManager) {
 		this.repositoryId = repositoryId;
 
 		cacheManager = CacheManager.newInstance();
-		
+
 		loadConfig(propertyManager);
 	}
 
-	private void loadConfig(PropertyManager propertyManager) {
+	private void loadConfig(SpringPropertyManager propertyManager) {
 		String configFile = propertyManager.readValue(PropertyKey.CACHE_CONFIG);
 		YamlManager manager = new YamlManager(configFile);
 		Map<String, Map<String, Object>> yml = (Map<String, Map<String, Object>>) manager.loadYml();
@@ -66,7 +70,7 @@ public class CacheService {
 			if(configMap.getValue() != null){
 				config.override(configMap.getValue());
 			}
-			
+
 			Cache cache = new Cache(repositoryId + "_" + configMap.getKey(), config.maxElementsInMemory.intValue(),
 					config.overflowToDisc, config.eternal, config.timeToLiveSeconds, config.timeToIdleSeconds);
 			cacheManager.addCache(cache);
@@ -96,6 +100,11 @@ public class CacheService {
 			if (map.get("timeToIdleSeconds") != null)
 				timeToIdleSeconds = (Long) map.get("timeToIdleSeconds");
 		}
+	}
+
+	public NemakiCache<Configuration> getConfigCache() {
+		String name = repositoryId + "_" + CONFIG_CACHE;
+		return new NemakiCache<Configuration>(enabled.get(name), cacheManager.getCache(name));
 	}
 
 	public NemakiCache<ObjectData> getObjectDataCache() {
@@ -143,32 +152,49 @@ public class CacheService {
 		return new NemakiCache<Change>(enabled.get(name), cacheManager.getCache(name));
 	}
 
-	public NemakiCache<User> getUserCache() {
+
+	public NemakiCache<UserItem> getUserItemCache() {
 		String name = repositoryId + "_" + USER_CACHE;
-		return new NemakiCache<User>(enabled.get(name), cacheManager.getCache(name));
+		return new NemakiCache<UserItem>(enabled.get(name), cacheManager.getCache(name));
 	}
 
-	public NemakiCache<List<User>> getUsersCache() {
+	public NemakiCache<List<UserItem>> getUserItemsCache() {
 		String name = repositoryId + "_" + USERS_CACHE;
-		return new NemakiCache<List<User>>(enabled.get(name), cacheManager.getCache(name));
+		return new NemakiCache<List<UserItem>>(enabled.get(name), cacheManager.getCache(name));
 	}
 
-	public NemakiCache<Group> getGroupCache() {
+	public NemakiCache<GroupItem> getGroupItemCache() {
 		String name = repositoryId + "_" + GROUP_CACHE;
-		return new NemakiCache<Group>(enabled.get(name), cacheManager.getCache(name));
+		return new NemakiCache<GroupItem>(enabled.get(name), cacheManager.getCache(name));
 	}
 
-	public NemakiCache<List<Group>> getGroupsCache() {
+	public NemakiCache<List<GroupItem>> getGroupsCache() {
 		String name = repositoryId + "_" + GROUPS_CACHE;
-		return new NemakiCache<List<Group>>(enabled.get(name), cacheManager.getCache(name));
+		return new NemakiCache<List<GroupItem>>(enabled.get(name), cacheManager.getCache(name));
 	}
+	/***
+	 * Acl cache related tree cache.
+	 * @see jp.aegif.nemaki.businesslogic.impl.ContentServiceImpl.calculateAcl(String, Content)
+	 * @see jp.aegif.nemaki.cmis.service.impl.AclServiceImpl.applyAcl(CallContext, String, String, Acl, AclPropagation)
+	 */
+	public NemakiCache<Acl> getAclCache() {
+		String name = repositoryId + "_" + ACL_CACHE;
+		return new NemakiCache<Acl>(enabled.get(name), cacheManager.getCache(name));
+	}
+	
+	public NemakiCache<List<String>> getJoinedGroupCache(){
+		String name = repositoryId + "_" + JOINED_GROUP_CACHE;
+		return new NemakiCache<List<String>>(enabled.get(name), cacheManager.getCache(name));
+	}
+
 
 	public void removeCmisCache(String objectId) {
 		getObjectDataCache().remove(objectId);
 	}
-	
+
 	public void removeCmisAndContentCache(String objectId) {
 		getContentCache().remove(objectId);
+		getAclCache().remove(objectId);
 		removeCmisCache(objectId);
 	}
 }

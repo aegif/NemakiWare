@@ -35,15 +35,19 @@ import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.service.RelationshipService;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Relationship;
+import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.constant.DomainType;
 import jp.aegif.nemaki.util.lock.ThreadLockService;
 
+import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
+import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectListImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 
 public class RelationshipServiceImpl implements RelationshipService {
@@ -59,17 +63,17 @@ public class RelationshipServiceImpl implements RelationshipService {
 			Boolean includeSubRelationshipTypes, RelationshipDirection relationshipDirection,
 			String typeId, String filter,
 			Boolean includeAllowableActions, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
-		
+
 		exceptionService.invalidArgumentRequiredString("objectId", objectId);
-		
+
 		Lock lock = threadLockService.getReadLock(repositoryId, objectId);
 		try{
 			lock.lock();
-			
+
 			// //////////////////
 			// General Exception
 			// //////////////////
-			
+
 			Content content = contentService.getContent(repositoryId, objectId);
 			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 			exceptionService.permissionDenied(callContext,
@@ -101,7 +105,9 @@ public class RelationshipServiceImpl implements RelationshipService {
 				}
 
 				for (Relationship rel : rels) {
-					if (typeIds.contains(rel.getId())) {
+					ObjectData objectData = compileService.compileObjectData(callContext, repositoryId, rel, null, false, null, null, false);
+					String objectTypeId = DataUtil.getIdProperty(objectData.getProperties(), PropertyIds.OBJECT_TYPE_ID);
+					if (typeIds.contains(objectTypeId) ){
 						extracted.add(rel);
 					}
 				}
@@ -110,9 +116,12 @@ public class RelationshipServiceImpl implements RelationshipService {
 			}
 
 			// Compile to ObjectData
+
+			// cannot compile includeAllowableActions if includeAcl=false
+			boolean includeAcl = includeAllowableActions;
 			return compileService.compileObjectDataList(callContext,
 					repositoryId, extracted, filter,
-					includeAllowableActions, IncludeRelationships.NONE, null, false, maxItems, skipCount, false, null);
+					includeAllowableActions, IncludeRelationships.NONE, null, includeAcl, maxItems, skipCount, false, null);
 		}finally{
 			lock.unlock();
 		}
@@ -125,7 +134,7 @@ public class RelationshipServiceImpl implements RelationshipService {
 	public void setContentService(ContentService contentService) {
 		this.contentService = contentService;
 	}
-	
+
 	public void setCompileService(CompileService compileService) {
 		this.compileService = compileService;
 	}

@@ -13,6 +13,7 @@ public interface PropertyKey {
 	final String CMIS_SERVER_DEFAULT_MAX_ITEMS_OBJECTS = "cmis.server.default.max.items.objects";
 	final String CMIS_SERVER_DEFAULT_MAX_DEPTH_OBJECTS = "cmis.server.default.depth.objects";
 	final String REPOSITORY_DEFINITION = "repository.definition";
+	final String REPOSITORY_DEFINITION_DEFAULT = "repository.definition.default";
 
 	//Solr
 	final String SOLR_PROTOCOL = "solr.protocol";
@@ -33,9 +34,12 @@ public interface PropertyKey {
 	final String CAPABILITY_EXTENDED_PREVIEW = "capability.extended.preview";
 	final String CAPABILITY_EXTENDED_INCLUDE_RELATIONSHIPS = "capability.extended.include.relationships";
 	final String CAPABILITY_EXTENDED_BUILD_UNIQUE_NAME = "capability.extended.build.unique.name";
+	final String CAPABILITY_EXTENDED_UNIQUE_NAME_CHECK = "capability.extended.unique.name.check";
 	final String CAPABILITY_EXTENDED_AUTH_TOKEN = "capability.extended.auth.token";
 	final String CAPABILITY_EXTENDED_PERMISSION_TOPLEVEL = "capability.extended.permission.toplevel";
 	final String CAPABILITY_EXTENDED_PERMISSION_INHERITANCE_TOPLEVEL = "capability.extended.permission.inheritance.toplevel";
+	final String CAPABILITY_EXTENDED_USER_ITEM_FOLDER = "capability.extended.user.item.folder";
+	final String SYSTEM_FOLDER = "system.folder";
 
 	//Rest
 	final String REST_USER_ENABLED = "rest.user.enabled";
@@ -245,7 +249,8 @@ public interface PropertyKey {
 	//Log
 	final String LOG_ASPECT_DEFAULT = "log.aspect.default";
 	final String LOG_ASPECT_EXPRESSION = "log.aspect.expression";
-	final String LOG_CONFIG_PATH = "log.config.path";
+	final String LOG_CONFIG_FILE = "log.config.file";
+	final String LOG_CONFIG_JSON_FILE = "log.config.json.file";
 	final String LOG_LEVEL = "log.level";
 	final String LOG_RETURN_VALUE = "log.return.value";
 	final String LOG_FQN = "log.fqn";
@@ -262,7 +267,8 @@ public interface PropertyKey {
 
 	//External authentication
 	final String EXTERNAL_AUTHENTICATION_PROXY_HEADER = "external.authenticaion.proxyHeader";
-	
+	final String EXTERNAL_AUTHENTICATION_AUTO_CREATE_USER = "external.authenticaion.isAutoCreateUser";
+
 	//Thread
 	final String THREAD_MAX = "thread.max";
 }

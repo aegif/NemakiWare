@@ -1,21 +1,21 @@
 /*******************************************************************************
  * Copyright (c) 2013 aegif.
- * 
+ *
  * This file is part of NemakiWare.
- * 
+ *
  * NemakiWare is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * NemakiWare is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Contributors:
  *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
@@ -27,12 +27,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.constant.DomainType;
 import jp.aegif.nemaki.util.constant.NodeType;
-
-import org.codehaus.jackson.annotate.JsonIgnore;
-import org.codehaus.jackson.annotate.JsonIgnoreProperties;
-import org.codehaus.jackson.annotate.JsonProperty;
+import jp.aegif.nemaki.util.constant.SystemConst;
 
 /**
  * As of now, this class holds the minimum data to create ChangeEvent of a
@@ -52,7 +54,7 @@ public class Archive extends NodeBase {
 	private Boolean latestVersion;
 	private String mimeType;
 
-	
+
 	public Archive() {
 		super();
 	}
@@ -84,7 +86,7 @@ public class Archive extends NodeBase {
 		setModified(n.getModified());
 		setModifier(n.getModifier());
 	}
-	
+
 	/**
 	 * Getter & Setter
 	 */
@@ -183,17 +185,13 @@ public class Archive extends NodeBase {
 				if(getAttachmentNodeId() != null) put("nemakiAttachments", getAttachmentNodeId().toString());
 				if(getVersionSeriesId() != null) put("versionSeriesId", getVersionSeriesId());
 				if(isLatestVersion() != null) put("isLatestVersion", isLatestVersion());
-				if(getCreated() != null) put("created", convertToDateFormat(getCreated()));
+				if(getCreated() != null) put("created", DataUtil.convertToDateFormat(getCreated()));
 				if(getCreator() != null) put("creator", getCreator());
 			}
 		};
 		return m.toString();
 	}
 
-	public String convertToDateFormat(GregorianCalendar cal) {
-		SimpleDateFormat sdf = new SimpleDateFormat("yyyy:MM:dd HH:mm:ss z");
-		return sdf.format(cal.getTime());
-	}
 
 	@Override
 	public boolean equals(Object obj) {
@@ -205,7 +203,7 @@ public class Archive extends NodeBase {
 	public int hashCode() {
 		return this.getId().hashCode();
 	}
-	
+
 	@JsonIgnore
 	public Boolean isFolder(){
 		if(NodeType.CMIS_FOLDER.value().equals(type)){

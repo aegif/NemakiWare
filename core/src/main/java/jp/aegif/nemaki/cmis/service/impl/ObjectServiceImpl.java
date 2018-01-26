@@ -23,6 +23,7 @@ package jp.aegif.nemaki.cmis.service.impl;
 
 import java.io.InputStream;
 import java.math.BigInteger;
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -73,6 +74,7 @@ import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.service.ObjectService;
 import jp.aegif.nemaki.cmis.service.ObjectServiceInternal;
+import jp.aegif.nemaki.cmis.service.RelationshipService;
 import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
@@ -81,6 +83,7 @@ import jp.aegif.nemaki.model.Item;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
+import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
@@ -89,25 +92,23 @@ import jp.aegif.nemaki.util.lock.ThreadLockService;
 
 public class ObjectServiceImpl implements ObjectService {
 
-	private static final Log log = LogFactory
-			.getLog(ObjectServiceImpl.class);
+	private static final Log log = LogFactory.getLog(ObjectServiceImpl.class);
 
 	private TypeManager typeManager;
 	private ObjectServiceInternal objectServiceInternal;
 	private ContentService contentService;
 	private ExceptionService exceptionService;
 	private CompileService compileService;
+	private RelationshipService relationshipService;
 	private SolrUtil solrUtil;
 	private NemakiCachePool nemakiCachePool;
 	private ThreadLockService threadLockService;
 	private int threadMax;
 
 	@Override
-	public ObjectData getObjectByPath(CallContext callContext, String repositoryId,
-			String path, String filter,
-			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
-			String renditionFilter, Boolean includePolicyIds,
-			Boolean includeAcl, ExtensionsData extension) {
+	public ObjectData getObjectByPath(CallContext callContext, String repositoryId, String path, String filter,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter,
+			Boolean includePolicyIds, Boolean includeAcl, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -117,86 +118,87 @@ public class ObjectServiceImpl implements ObjectService {
 
 		// TODO create objectNotFoundByPath method
 		exceptionService.objectNotFoundByPath(DomainType.OBJECT, content, path);
-		
+
 		Lock lock = threadLockService.getReadLock(repositoryId, content.getId());
-		try{
+		try {
 			lock.lock();
-			
-			exceptionService.permissionDenied(callContext,
-					repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT, content);
+
+			exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT,
+					content);
 
 			// //////////////////
 			// Body of the method
 			// //////////////////
-			return compileService.compileObjectData(callContext, repositoryId,
-					content, filter, includeAllowableActions,
+			return compileService.compileObjectData(callContext, repositoryId, content, filter, includeAllowableActions,
 					includeRelationships, renditionFilter, includeAcl);
-		}finally{
+		} finally {
 			lock.unlock();
 		}
 	}
 
 	@Override
-	public ObjectData getObject(CallContext callContext, String repositoryId,
-			String objectId, String filter,
-			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
-			String renditionFilter, Boolean includePolicyIds,
-			Boolean includeAcl, ExtensionsData extension) {
-		
+	public ObjectData getObject(CallContext callContext, String repositoryId, String objectId, String filter,
+			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter,
+			Boolean includePolicyIds, Boolean includeAcl, ExtensionsData extension) {
+
+		log.info(MessageFormat.format("ObjcetService#getObject START: Repo={0}, Id={1}", repositoryId, objectId));
+
 		exceptionService.invalidArgumentRequired("objectId", objectId);
-		
+
 		Lock lock = threadLockService.getReadLock(repositoryId, objectId);
-		try{
+		try {
 			lock.lock();
-			
+
 			// //////////////////
 			// General Exception
 			// //////////////////
 			Content content = contentService.getContent(repositoryId, objectId);
+			log.info(MessageFormat.format("ObjcetService#getObject getContent success: Repo={0}, Id={1}", repositoryId, objectId));
+
 			// WORK AROUND: getObject(versionSeriesId) is interpreted as
 			// getDocumentOflatestVersion
 			if (content == null) {
-				VersionSeries versionSeries = contentService
-						.getVersionSeries(repositoryId, objectId);
+				VersionSeries versionSeries = contentService.getVersionSeries(repositoryId, objectId);
 				if (versionSeries != null) {
 					content = contentService.getDocumentOfLatestVersion(repositoryId, objectId);
 				}
 			}
 			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
-			exceptionService.permissionDenied(callContext,
-					repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT, content);
+			exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT,
+					content);
+			log.info(MessageFormat.format("ObjcetService#getObject permissionDenied check success: Repo={0}, Id={1}", repositoryId, objectId));
 
 			// //////////////////
 			// Body of the method
 			// //////////////////
-			ObjectData object = compileService.compileObjectData(callContext,
-					repositoryId, content, filter, includeAllowableActions,
-					includeRelationships, null, includeAcl);
+			ObjectData object = compileService.compileObjectData(callContext, repositoryId, content, filter,
+					includeAllowableActions, includeRelationships, null, includeAcl);
+
+			log.info(MessageFormat.format("ObjcetService#getObject END: Repo={0}, Id={1} Type={2} Name={3}", repositoryId, objectId, content.getObjectType(), content.getObjectType(), content.getName()));
 
 			return object;
-		}finally{
+		} finally {
 			lock.unlock();
 		}
 	}
 
 	@Override
-	public ContentStream getContentStream(CallContext callContext,
-			String repositoryId, String objectId, String streamId,
-			BigInteger offset, BigInteger length) {
+	public ContentStream getContentStream(CallContext callContext, String repositoryId, String objectId,
+			String streamId, BigInteger offset, BigInteger length) {
 
 		exceptionService.invalidArgumentRequired("objectId", objectId);
-		
+
 		Lock lock = threadLockService.getReadLock(repositoryId, objectId);
-		try{
+		try {
 			lock.lock();
-			
+
 			// //////////////////
 			// General Exception
 			// //////////////////
 			Content content = contentService.getContent(repositoryId, objectId);
 			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
-			exceptionService.permissionDenied(callContext,
-					repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT, content);
+			exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT,
+					content);
 
 			// //////////////////
 			// Body of the method
@@ -206,24 +208,22 @@ public class ObjectServiceImpl implements ObjectService {
 			} else {
 				return getRenditionStream(repositoryId, content, streamId);
 			}
-		}finally{
+		} finally {
 			lock.unlock();
 		}
 	}
 
 	// TODO Implement HTTP range(offset and length of stream), though it is not
 	// obligatory.
-	private ContentStream getContentStreamInternal(String repositoryId,
-			Content content, BigInteger rangeOffset, BigInteger rangeLength) {
+	private ContentStream getContentStreamInternal(String repositoryId, Content content, BigInteger rangeOffset,
+			BigInteger rangeLength) {
 		if (!content.isDocument()) {
-			exceptionService
-					.constraint(content.getId(),
-							"getContentStream cannnot be invoked to other than document type.");
+			exceptionService.constraint(content.getId(),
+					"getContentStream cannnot be invoked to other than document type.");
 		}
 		Document document = (Document) content;
 		exceptionService.constraintContentStreamDownload(repositoryId, document);
-		AttachmentNode attachment = contentService.getAttachment(repositoryId, document
-				.getAttachmentNodeId());
+		AttachmentNode attachment = contentService.getAttachment(repositoryId, document.getAttachmentNodeId());
 		attachment.setRangeOffset(rangeOffset);
 		attachment.setRangeLength(rangeLength);
 
@@ -239,9 +239,8 @@ public class ObjectServiceImpl implements ObjectService {
 
 	private ContentStream getRenditionStream(String repositoryId, Content content, String streamId) {
 		if (!content.isDocument() && !content.isFolder()) {
-			exceptionService
-					.constraint(content.getId(),
-							"getRenditionStream cannnot be invoked to other than document or folder type.");
+			exceptionService.constraint(content.getId(),
+					"getRenditionStream cannnot be invoked to other than document or folder type.");
 		}
 
 		exceptionService.constraintRenditionStreamDownload(content, streamId);
@@ -257,42 +256,39 @@ public class ObjectServiceImpl implements ObjectService {
 	}
 
 	@Override
-	public List<RenditionData> getRenditions(CallContext callContext,
-			String repositoryId, String objectId, String renditionFilter,
-			BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
-		
+	public List<RenditionData> getRenditions(CallContext callContext, String repositoryId, String objectId,
+			String renditionFilter, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
+
 		Lock lock = threadLockService.getReadLock(repositoryId, objectId);
-		try{
+		try {
 			lock.lock();
-			
+
 			List<Rendition> renditions = contentService.getRenditions(repositoryId, objectId);
 
 			List<RenditionData> results = new ArrayList<RenditionData>();
 			for (Rendition rnd : renditions) {
-				RenditionDataImpl data = new RenditionDataImpl(rnd.getId(),
-						rnd.getMimetype(), BigInteger.valueOf(rnd.getLength()),
-						rnd.getKind(), rnd.getTitle(), BigInteger.valueOf(rnd
-								.getWidth()), BigInteger.valueOf(rnd.getHeight()),
+				RenditionDataImpl data = new RenditionDataImpl(rnd.getId(), rnd.getMimetype(),
+						BigInteger.valueOf(rnd.getLength()), rnd.getKind(), rnd.getTitle(),
+						BigInteger.valueOf(rnd.getWidth()), BigInteger.valueOf(rnd.getHeight()),
 						rnd.getRenditionDocumentId());
 				results.add(data);
 			}
 			return results;
-		}finally{
+		} finally {
 			lock.unlock();
 		}
 	}
 
 	@Override
-	public AllowableActions getAllowableActions(CallContext callContext,
-			String repositoryId, String objectId) {
+	public AllowableActions getAllowableActions(CallContext callContext, String repositoryId, String objectId) {
 
 		exceptionService.invalidArgumentRequired("objectId", objectId);
-		
+
 		Lock lock = threadLockService.getReadLock(repositoryId, objectId);
-		
-		try{
+
+		try {
 			lock.lock();
-			
+
 			// //////////////////
 			// General Exception
 			// //////////////////
@@ -300,109 +296,92 @@ public class ObjectServiceImpl implements ObjectService {
 			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 			// NOTE: The permission key doesn't exist according to CMIS
 			// specification.
-	
+
 			// //////////////////
 			// Body of the method
 			// //////////////////
-			return compileService.compileAllowableActions(callContext,
-					repositoryId, content);
-			
-		}finally{
+			return compileService.compileAllowableActions(callContext, repositoryId, content);
+
+		} finally {
 			lock.unlock();
 		}
 	}
 
 	@Override
-	public ObjectData create(CallContext callContext, String repositoryId,
-			Properties properties, String folderId,
-			ContentStream contentStream, VersioningState versioningState,
-			List<String> policies, ExtensionsData extension) {
+	public ObjectData create(CallContext callContext, String repositoryId, Properties properties, String folderId,
+			ContentStream contentStream, VersioningState versioningState, List<String> policies,
+			ExtensionsData extension) {
 
 		String typeId = DataUtil.getObjectTypeId(properties);
 		TypeDefinition type = typeManager.getTypeDefinition(repositoryId, typeId);
 		if (type == null) {
-			throw new CmisObjectNotFoundException("Type '" + typeId
-					+ "' is unknown!");
+			throw new CmisObjectNotFoundException("Type '" + typeId + "' is unknown!");
 		}
 
 		String objectId = null;
 		// TODO ACE can be set !
 		if (type.getBaseTypeId() == BaseTypeId.CMIS_DOCUMENT) {
-			objectId = createDocument(callContext, repositoryId, properties,
-					folderId, contentStream, versioningState, null, null, null);
+			objectId = createDocument(callContext, repositoryId, properties, folderId, contentStream, versioningState,
+					null, null, null, null);
 		} else if (type.getBaseTypeId() == BaseTypeId.CMIS_FOLDER) {
-			objectId = createFolder(callContext, repositoryId, properties,
-					folderId, policies, null, null, extension);
+			objectId = createFolder(callContext, repositoryId, properties, folderId, policies, null, null, extension);
 		} else if (type.getBaseTypeId() == BaseTypeId.CMIS_RELATIONSHIP) {
-			objectId = createRelationship(callContext, repositoryId, properties,
-					policies, null, null, extension);
+			objectId = createRelationship(callContext, repositoryId, properties, policies, null, null, extension);
 		} else if (type.getBaseTypeId() == BaseTypeId.CMIS_POLICY) {
-			objectId = createPolicy(callContext, repositoryId, properties, folderId,
-					policies, null, null, extension);
+			objectId = createPolicy(callContext, repositoryId, properties, folderId, policies, null, null, extension);
 		} else if (type.getBaseTypeId() == BaseTypeId.CMIS_ITEM) {
-			objectId = createItem(callContext, repositoryId, properties, folderId,
-					policies, null, null, extension);
+			objectId = createItem(callContext, repositoryId, properties, folderId, policies, null, null, extension);
 		} else {
-			throw new CmisObjectNotFoundException(
-					"Cannot create object of type '" + typeId + "'!");
+			throw new CmisObjectNotFoundException("Cannot create object of type '" + typeId + "'!");
 		}
 
-		ObjectData object = compileService.compileObjectData(callContext,
-				repositoryId, contentService.getContent(repositoryId, objectId), null,
-				false, IncludeRelationships.NONE, null, false);
+		ObjectData object = compileService.compileObjectData(callContext, repositoryId,
+				contentService.getContent(repositoryId, objectId), null, false, IncludeRelationships.NONE, null, false);
 
 		return object;
 	}
 
 	@Override
-	public String createFolder(CallContext callContext, String repositoryId,
-			Properties properties, String folderId, List<String> policies,
-			Acl addAces, Acl removeAces, ExtensionsData extension) {
-		FolderTypeDefinition td = (FolderTypeDefinition) typeManager
-				.getTypeDefinition(repositoryId, DataUtil.getObjectTypeId(properties));
+	public String createFolder(CallContext callContext, String repositoryId, Properties properties, String folderId,
+			List<String> policies, Acl addAces, Acl removeAces, ExtensionsData extension) {
+		FolderTypeDefinition td = (FolderTypeDefinition) typeManager.getTypeDefinition(repositoryId,
+				DataUtil.getObjectTypeId(properties));
 		Folder parentFolder = contentService.getFolder(repositoryId, folderId);
 
 		// //////////////////
 		// General Exception
 		// //////////////////
 		exceptionService.objectNotFoundParentFolder(repositoryId, folderId, parentFolder);
-		exceptionService.permissionDenied(callContext,
-				repositoryId, PermissionMapping.CAN_CREATE_FOLDER_FOLDER, parentFolder);
+		exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_CREATE_FOLDER_FOLDER,
+				parentFolder);
 
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		exceptionService.constraintBaseTypeId(repositoryId,
-				properties, BaseTypeId.CMIS_FOLDER);
-		exceptionService.constraintAllowedChildObjectTypeId(parentFolder,
-				properties);
-		exceptionService.constraintPropertyValue(repositoryId, td,
-				properties, DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
-		exceptionService
-				.constraintCotrollablePolicies(td, policies, properties);
-		exceptionService.constraintCotrollableAcl(td, addAces, removeAces,
-				properties);
+		exceptionService.constraintBaseTypeId(repositoryId, properties, BaseTypeId.CMIS_FOLDER);
+		exceptionService.constraintAllowedChildObjectTypeId(repositoryId, parentFolder, properties);
+		exceptionService.constraintPropertyValue(repositoryId, td, properties,
+				DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
+		exceptionService.constraintCotrollablePolicies(td, policies, properties);
+		exceptionService.constraintCotrollableAcl(td, addAces, removeAces, properties);
 		exceptionService.constraintPermissionDefined(repositoryId, addAces, null);
 		exceptionService.constraintPermissionDefined(repositoryId, removeAces, null);
-		exceptionService.nameConstraintViolation(properties, parentFolder);
+		exceptionService.nameConstraintViolation(repositoryId, parentFolder, properties);
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		Folder folder = contentService.createFolder(callContext, repositoryId,
-				properties, parentFolder);
+		Folder folder = contentService.createFolder(callContext, repositoryId, properties, parentFolder, policies,
+				addAces, removeAces, null);
 		return folder.getId();
 	}
 
 	@Override
-	public String createDocument(CallContext callContext,
-			String repositoryId, Properties properties,
-			String folderId, ContentStream contentStream,
-			VersioningState versioningState, List<String> policies, Acl addAces, Acl removeAces) {
-		String objectTypeId = DataUtil.getIdProperty(properties,
-				PropertyIds.OBJECT_TYPE_ID);
-		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
-				.getTypeDefinition(repositoryId, objectTypeId);
+	public String createDocument(CallContext callContext, String repositoryId, Properties properties, String folderId,
+			ContentStream contentStream, VersioningState versioningState, List<String> policies, Acl addAces,
+			Acl removeAces, ExtensionsData extension) {
+		String objectTypeId = DataUtil.getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID);
+		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager.getTypeDefinition(repositoryId, objectTypeId);
 		Folder parentFolder = contentService.getFolder(repositoryId, folderId);
 
 		// //////////////////
@@ -411,47 +390,41 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.invalidArgumentRequired("properties", properties);
 		exceptionService.invalidArgumentRequiredParentFolderId(repositoryId, folderId);
 		exceptionService.objectNotFoundParentFolder(repositoryId, folderId, parentFolder);
-		exceptionService.permissionDenied(callContext,
-				repositoryId, PermissionMapping.CAN_CREATE_FOLDER_FOLDER, parentFolder);
+		exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_CREATE_FOLDER_FOLDER,
+				parentFolder);
 
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		exceptionService.constraintBaseTypeId(repositoryId,
-				properties, BaseTypeId.CMIS_DOCUMENT);
-		exceptionService.constraintAllowedChildObjectTypeId(parentFolder,
-				properties);
-		exceptionService.constraintPropertyValue(repositoryId, td,
-				properties, DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
+		exceptionService.constraintBaseTypeId(repositoryId, properties, BaseTypeId.CMIS_DOCUMENT);
+		exceptionService.constraintAllowedChildObjectTypeId(repositoryId, parentFolder, properties);
+		exceptionService.constraintPropertyValue(repositoryId, td, properties,
+				DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
 		exceptionService.constraintContentStreamRequired(td, contentStream);
-		exceptionService.constraintControllableVersionable(td, versioningState,
-				null);
+		exceptionService.constraintControllableVersionable(td, versioningState, null);
 		versioningState = (td.isVersionable() && versioningState == null) ? VersioningState.MAJOR : versioningState;
-		exceptionService
-				.constraintCotrollablePolicies(td, policies, properties);
-		exceptionService.constraintCotrollableAcl(td, addAces, removeAces,
-				properties);
+		exceptionService.constraintCotrollablePolicies(td, policies, properties);
+		exceptionService.constraintCotrollableAcl(td, addAces, removeAces, properties);
 		exceptionService.constraintPermissionDefined(repositoryId, addAces, null);
 		exceptionService.constraintPermissionDefined(repositoryId, removeAces, null);
 		exceptionService.streamNotSupported(td, contentStream);
-		exceptionService.nameConstraintViolation(properties, parentFolder);
+		exceptionService.nameConstraintViolation(repositoryId, parentFolder, properties);
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		Document document = contentService.createDocument(callContext,
-				repositoryId, properties, parentFolder, contentStream, versioningState, null);
+		Document document = contentService.createDocument(callContext, repositoryId, properties, parentFolder,
+				contentStream, versioningState, policies, addAces, removeAces);
 		return document.getId();
 	}
 
 	@Override
-	public String createDocumentFromSource(CallContext callContext,
-			String repositoryId, String sourceId, Properties properties,
-			String folderId, VersioningState versioningState,
-			List<String> policies, Acl addAces, Acl removeAces) {
+	public String createDocumentFromSource(CallContext callContext, String repositoryId, String sourceId,
+			Properties properties, String folderId, VersioningState versioningState, List<String> policies, Acl addAces,
+			Acl removeAces, ExtensionsData extension) {
 		Document original = contentService.getDocument(repositoryId, sourceId);
-		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
-				.getTypeDefinition(repositoryId, original.getObjectType());
+		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager.getTypeDefinition(repositoryId,
+				original.getObjectType());
 
 		// //////////////////
 		// General Exception
@@ -460,60 +433,52 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.invalidArgumentRequiredParentFolderId(repositoryId, folderId);
 		Folder parentFolder = contentService.getFolder(repositoryId, folderId);
 		exceptionService.objectNotFoundParentFolder(repositoryId, folderId, parentFolder);
-		exceptionService.permissionDenied(callContext,
-				repositoryId, PermissionMapping.CAN_CREATE_FOLDER_FOLDER, parentFolder);
+		exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_CREATE_FOLDER_FOLDER,
+				parentFolder);
 
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		exceptionService.constraintBaseTypeId(repositoryId,
-				properties, BaseTypeId.CMIS_DOCUMENT);
-		exceptionService.constraintAllowedChildObjectTypeId(parentFolder,
-				properties);
-		exceptionService.constraintPropertyValue(repositoryId, td,
-				properties, DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
-		exceptionService.constraintControllableVersionable(td, versioningState,
-				null);
+		exceptionService.constraintBaseTypeId(repositoryId, properties, BaseTypeId.CMIS_DOCUMENT);
+		exceptionService.constraintAllowedChildObjectTypeId(repositoryId, parentFolder, properties);
+		exceptionService.constraintPropertyValue(repositoryId, td, properties,
+				DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
+		exceptionService.constraintControllableVersionable(td, versioningState, null);
 		versioningState = (td.isVersionable() && versioningState == null) ? VersioningState.MAJOR : versioningState;
-		exceptionService
-				.constraintCotrollablePolicies(td, policies, properties);
-		exceptionService.constraintCotrollableAcl(td, addAces, removeAces,
-				properties);
+		exceptionService.constraintCotrollablePolicies(td, policies, properties);
+		exceptionService.constraintCotrollableAcl(td, addAces, removeAces, properties);
 		exceptionService.constraintPermissionDefined(repositoryId, addAces, null);
 		exceptionService.constraintPermissionDefined(repositoryId, removeAces, null);
-		exceptionService.nameConstraintViolation(properties, parentFolder);
+		exceptionService.nameConstraintViolation(repositoryId, parentFolder, properties);
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		Document document = contentService.createDocumentFromSource(
-				callContext, repositoryId, properties, parentFolder,
+		Document document = contentService.createDocumentFromSource(callContext, repositoryId, properties, parentFolder,
 				original, versioningState, policies, addAces, removeAces);
 		return document.getId();
 	}
 
 	@Override
-	public void setContentStream(CallContext callContext,
-			String repositoryId, Holder<String> objectId,
-			boolean overwriteFlag, ContentStream contentStream, Holder<String> changeToken) {
-		
+	public void setContentStream(CallContext callContext, String repositoryId, Holder<String> objectId,
+			boolean overwriteFlag, ContentStream contentStream, Holder<String> changeToken, ExtensionsData extension) {
+
 		exceptionService.invalidArgumentRequiredHolderString("objectId", objectId);
-		
+
 		Lock lock = threadLockService.getWriteLock(repositoryId, objectId.getValue());
-		try{
+		try {
 			lock.lock();
 			// //////////////////
 			// General Exception
 			// //////////////////
-		
-			exceptionService
-					.invalidArgumentRequired("contentStream", contentStream);
+
+			exceptionService.invalidArgumentRequired("contentStream", contentStream);
 			Document doc = (Document) contentService.getContent(repositoryId, objectId.getValue());
 			exceptionService.objectNotFound(DomainType.OBJECT, doc, objectId.getValue());
-			exceptionService.permissionDenied(callContext,
-					repositoryId, PermissionMapping.CAN_SET_CONTENT_DOCUMENT, doc);
-			DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
-					.getTypeDefinition(repositoryId, doc.getObjectType());
+			exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_SET_CONTENT_DOCUMENT,
+					doc);
+			DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager.getTypeDefinition(repositoryId,
+					doc.getObjectType());
 			exceptionService.constraintImmutable(repositoryId, doc, td);
 
 			// //////////////////
@@ -522,7 +487,7 @@ public class ObjectServiceImpl implements ObjectService {
 			exceptionService.contentAlreadyExists(doc, overwriteFlag);
 			exceptionService.streamNotSupported(td, contentStream);
 			exceptionService.updateConflict(doc, changeToken);
-			exceptionService.versioning(doc);
+			exceptionService.versioning(callContext, doc);
 			Folder parent = contentService.getParent(repositoryId, objectId.getValue());
 			exceptionService.objectNotFoundParentFolder(repositoryId, objectId.getValue(), parent);
 
@@ -532,40 +497,36 @@ public class ObjectServiceImpl implements ObjectService {
 			String oldId = objectId.getValue();
 
 			// TODO Externalize versioningState
-			if(doc.isPrivateWorkingCopy()){
-				Document result = contentService.replacePwc(callContext, repositoryId,
-						doc, contentStream);
+			if (doc.isPrivateWorkingCopy()) {
+				Document result = contentService.replacePwc(callContext, repositoryId, doc, contentStream);
 				objectId.setValue(result.getId());
-			}else{
-				Document result = contentService.createDocumentWithNewStream(callContext, repositoryId,
-						doc, contentStream);
+			} else {
+				Document result = contentService.createDocumentWithNewStream(callContext, repositoryId, doc,
+						contentStream);
 				objectId.setValue(result.getId());
 			}
 
 			nemakiCachePool.get(repositoryId).removeCmisCache(oldId);
-		}finally{
+		} finally {
 			lock.unlock();
 		}
 	}
 
 	@Override
-	public void deleteContentStream(CallContext callContext,
-			String repositoryId, Holder<String> objectId,
+	public void deleteContentStream(CallContext callContext, String repositoryId, Holder<String> objectId,
 			Holder<String> changeToken, ExtensionsData extension) {
 
-		exceptionService.invalidArgumentRequiredHolderString("objectId",
-				objectId);
-		
+		exceptionService.invalidArgumentRequiredHolderString("objectId", objectId);
+
 		Lock lock = threadLockService.getWriteLock(repositoryId, objectId.getValue());
-		try{
+		try {
 			lock.lock();
-			
+
 			// //////////////////
 			// Exception
 			// //////////////////
 			Document document = contentService.getDocument(repositoryId, objectId.getValue());
-			exceptionService.objectNotFound(DomainType.OBJECT, document,
-					document.getId());
+			exceptionService.objectNotFound(DomainType.OBJECT, document, document.getId());
 			exceptionService.constraintContentStreamRequired(repositoryId, document);
 
 			// //////////////////
@@ -574,107 +535,95 @@ public class ObjectServiceImpl implements ObjectService {
 			contentService.deleteContentStream(callContext, repositoryId, objectId);
 
 			nemakiCachePool.get(repositoryId).removeCmisCache(objectId.getValue());
-		
-		}finally{
+
+		} finally {
 			lock.unlock();
 		}
 	}
 
 	@Override
-	public void appendContentStream(CallContext callContext,
-			String repositoryId, Holder<String> objectId,
-			Holder<String> changeToken, ContentStream contentStream,
-			boolean isLastChunk, ExtensionsData extension) {
-		
+	public void appendContentStream(CallContext callContext, String repositoryId, Holder<String> objectId,
+			Holder<String> changeToken, ContentStream contentStream, boolean isLastChunk, ExtensionsData extension) {
+
 		exceptionService.invalidArgumentRequiredHolderString("objectId", objectId);
-		
+
 		Lock lock = threadLockService.getWriteLock(repositoryId, objectId.getValue());
-		try{
+		try {
 			lock.lock();
-		
-				// //////////////////
-				// General Exception
-				// //////////////////
-				
-				exceptionService
-						.invalidArgumentRequired("contentStream", contentStream);
-				Document doc = (Document) contentService.getContent(repositoryId, objectId.getValue());
-				exceptionService.objectNotFound(DomainType.OBJECT, doc, objectId.getValue());
-				exceptionService.permissionDenied(callContext,
-						repositoryId, PermissionMapping.CAN_SET_CONTENT_DOCUMENT, doc);
-				DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager
-						.getTypeDefinition(repositoryId, doc.getObjectType());
-				exceptionService.constraintImmutable(repositoryId, doc, td);
 
-				// //////////////////
-				// Specific Exception
-				// //////////////////
-				exceptionService.streamNotSupported(td, contentStream);
-				exceptionService.updateConflict(doc, changeToken);
-				exceptionService.versioning(doc);
+			// //////////////////
+			// General Exception
+			// //////////////////
 
-				// //////////////////
-				// Body of the method
-				// //////////////////
-				contentService.appendAttachment(callContext, repositoryId, objectId,
-						changeToken, contentStream, isLastChunk, extension);
+			exceptionService.invalidArgumentRequired("contentStream", contentStream);
+			Document doc = (Document) contentService.getContent(repositoryId, objectId.getValue());
+			exceptionService.objectNotFound(DomainType.OBJECT, doc, objectId.getValue());
+			exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_SET_CONTENT_DOCUMENT,
+					doc);
+			DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager.getTypeDefinition(repositoryId,
+					doc.getObjectType());
+			exceptionService.constraintImmutable(repositoryId, doc, td);
 
-				nemakiCachePool.get(repositoryId).removeCmisCache(objectId.getValue());
-		}finally{
+			// //////////////////
+			// Specific Exception
+			// //////////////////
+			exceptionService.streamNotSupported(td, contentStream);
+			exceptionService.updateConflict(doc, changeToken);
+			exceptionService.versioning(callContext,doc);
+
+			// //////////////////
+			// Body of the method
+			// //////////////////
+			contentService.appendAttachment(callContext, repositoryId, objectId, changeToken, contentStream,
+					isLastChunk, extension);
+
+			nemakiCachePool.get(repositoryId).removeCmisCache(objectId.getValue());
+		} finally {
 			lock.unlock();
 		}
 	}
 
 	@Override
-	public String createRelationship(CallContext callContext,
-			String repositoryId, Properties properties, List<String> policies,
-			Acl addAces, Acl removeAces, ExtensionsData extension) {
-		String objectTypeId = DataUtil.getIdProperty(properties,
-				PropertyIds.OBJECT_TYPE_ID);
-		RelationshipTypeDefinition td = (RelationshipTypeDefinition) typeManager
-				.getTypeDefinition(repositoryId, objectTypeId);
+	public String createRelationship(CallContext callContext, String repositoryId, Properties properties,
+			List<String> policies, Acl addAces, Acl removeAces, ExtensionsData extension) {
+		String objectTypeId = DataUtil.getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID);
+		RelationshipTypeDefinition td = (RelationshipTypeDefinition) typeManager.getTypeDefinition(repositoryId,
+				objectTypeId);
 		// //////////////////
 		// Exception
 		// //////////////////
-		exceptionService.invalidArgumentRequiredCollection("properties",
-				properties.getPropertyList());
-		String sourceId = DataUtil.getIdProperty(properties,
-				PropertyIds.SOURCE_ID);
+		exceptionService.invalidArgumentRequiredCollection("properties", properties.getPropertyList());
+		String sourceId = DataUtil.getIdProperty(properties, PropertyIds.SOURCE_ID);
 		if (sourceId != null) {
 			Content source = contentService.getContent(repositoryId, sourceId);
 			if (source == null)
 				exceptionService.constraintAllowedSourceTypes(td, source);
-			exceptionService.permissionDenied(callContext,
-					repositoryId, PermissionMapping.CAN_CREATE_RELATIONSHIP_SOURCE, source);
+			exceptionService.permissionDenied(callContext, repositoryId,
+					PermissionMapping.CAN_CREATE_RELATIONSHIP_SOURCE, source);
 		}
-		String targetId = DataUtil.getIdProperty(properties,
-				PropertyIds.TARGET_ID);
+		String targetId = DataUtil.getIdProperty(properties, PropertyIds.TARGET_ID);
 		if (targetId != null) {
 			Content target = contentService.getContent(repositoryId, targetId);
 			if (target == null)
 				exceptionService.constraintAllowedTargetTypes(td, target);
-			exceptionService.permissionDenied(callContext,
-					repositoryId, PermissionMapping.CAN_CREATE_RELATIONSHIP_TARGET, target);
+			exceptionService.permissionDenied(callContext, repositoryId,
+					PermissionMapping.CAN_CREATE_RELATIONSHIP_TARGET, target);
 		}
 
-		exceptionService.constraintBaseTypeId(repositoryId,
-				properties, BaseTypeId.CMIS_RELATIONSHIP);
-		exceptionService.constraintPropertyValue(repositoryId, td,
-				properties, DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
-		exceptionService
-				.constraintCotrollablePolicies(td, policies, properties);
-		exceptionService.constraintCotrollableAcl(td, addAces, removeAces,
-				properties);
+		exceptionService.constraintBaseTypeId(repositoryId, properties, BaseTypeId.CMIS_RELATIONSHIP);
+		exceptionService.constraintPropertyValue(repositoryId, td, properties,
+				DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
+		exceptionService.constraintCotrollablePolicies(td, policies, properties);
+		exceptionService.constraintCotrollableAcl(td, addAces, removeAces, properties);
 		exceptionService.constraintPermissionDefined(repositoryId, addAces, null);
 		exceptionService.constraintPermissionDefined(repositoryId, removeAces, null);
-		exceptionService.nameConstraintViolation(properties, null);
+		exceptionService.nameConstraintViolation(repositoryId, null, properties);
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		Relationship relationship = contentService.createRelationship(
-				callContext, repositoryId, properties, policies, addAces,
-				removeAces, extension);
+		Relationship relationship = contentService.createRelationship(callContext, repositoryId, properties, policies,
+				addAces, removeAces, extension);
 		nemakiCachePool.get(repositoryId).removeCmisCache(relationship.getSourceId());
 		nemakiCachePool.get(repositoryId).removeCmisCache(relationship.getTargetId());
 
@@ -682,91 +631,79 @@ public class ObjectServiceImpl implements ObjectService {
 	}
 
 	@Override
-	public String createPolicy(CallContext callContext, String repositoryId,
-			Properties properties, String folderId, List<String> policies,
-			Acl addAces, Acl removeAces, ExtensionsData extension) {
+	public String createPolicy(CallContext callContext, String repositoryId, Properties properties, String folderId,
+			List<String> policies, Acl addAces, Acl removeAces, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
-		exceptionService.invalidArgumentRequiredCollection("properties",
-				properties.getPropertyList());
+		exceptionService.invalidArgumentRequiredCollection("properties", properties.getPropertyList());
 		// NOTE: folderId is ignored because policy is not filable in Nemaki
-		TypeDefinition td = typeManager.getTypeDefinition(repositoryId, DataUtil
-				.getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID));
-		exceptionService.constraintPropertyValue(repositoryId, td,
-				properties, DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
+		TypeDefinition td = typeManager.getTypeDefinition(repositoryId,
+				DataUtil.getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID));
+		exceptionService.constraintPropertyValue(repositoryId, td, properties,
+				DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
 
 		// //////////////////
 		// Specific Exception
 		// //////////////////
-		exceptionService.constraintBaseTypeId(repositoryId,
-				properties, BaseTypeId.CMIS_POLICY);
+		exceptionService.constraintBaseTypeId(repositoryId, properties, BaseTypeId.CMIS_POLICY);
 		// exceptionService.constraintAllowedChildObjectTypeId(parent,
 		// properties);
-		exceptionService
-				.constraintCotrollablePolicies(td, policies, properties);
-		exceptionService.constraintCotrollableAcl(td, addAces, removeAces,
-				properties);
+		exceptionService.constraintCotrollablePolicies(td, policies, properties);
+		exceptionService.constraintCotrollableAcl(td, addAces, removeAces, properties);
 		// exceptionService.nameConstraintViolation(properties, parent);
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		Policy policy = contentService.createPolicy(callContext, repositoryId,
-				properties, policies, addAces, removeAces, extension);
+		Policy policy = contentService.createPolicy(callContext, repositoryId, properties, policies, addAces,
+				removeAces, extension);
 		return policy.getId();
 	}
 
 	@Override
-	public String createItem(CallContext callContext, String repositoryId,
-			Properties properties, String folderId, List<String> policies,
-			Acl addAces, Acl removeAces, ExtensionsData extension) {
+	public String createItem(CallContext callContext, String repositoryId, Properties properties, String folderId,
+			List<String> policies, Acl addAces, Acl removeAces, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
-		TypeDefinition td = typeManager.getTypeDefinition(repositoryId, DataUtil
-				.getObjectTypeId(properties));
+		TypeDefinition td = typeManager.getTypeDefinition(repositoryId, DataUtil.getObjectTypeId(properties));
 		Folder parentFolder = contentService.getFolder(repositoryId, folderId);
 		exceptionService.objectNotFoundParentFolder(repositoryId, folderId, parentFolder);
-		exceptionService.invalidArgumentRequiredCollection("properties",
-				properties.getPropertyList());
+		exceptionService.invalidArgumentRequiredCollection("properties", properties.getPropertyList());
 
 		// //////////////////
 		// Specific Exception
 		// //////////////////
 		exceptionService.constraintBaseTypeId(repositoryId, properties, BaseTypeId.CMIS_ITEM);
-		exceptionService.constraintPropertyValue(repositoryId, td,
-				properties, DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
-		exceptionService
-				.constraintCotrollablePolicies(td, policies, properties);
-		exceptionService.constraintCotrollableAcl(td, addAces, removeAces,
-				properties);
+		exceptionService.constraintPropertyValue(repositoryId, td, properties,
+				DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
+		exceptionService.constraintCotrollablePolicies(td, policies, properties);
+		exceptionService.constraintCotrollableAcl(td, addAces, removeAces, properties);
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		Item item = contentService.createItem(callContext, repositoryId,
-				properties, folderId, policies, addAces, removeAces, extension);
+		Item item = contentService.createItem(callContext, repositoryId, properties, folderId, policies, addAces,
+				removeAces, extension);
 		return item.getId();
 	}
 
 	@Override
-	public void updateProperties(CallContext callContext,
-			String repositoryId, Holder<String> objectId,
-			Properties properties, Holder<String> changeToken) {
-		
-		exceptionService.invalidArgumentRequiredHolderString("objectId",
-				objectId);
-		
+	public void updateProperties(CallContext callContext, String repositoryId, Holder<String> objectId,
+			Properties properties, Holder<String> changeToken, ExtensionsData extension) {
+
+		exceptionService.invalidArgumentRequiredHolderString("objectId", objectId);
+
 		Lock lock = threadLockService.getWriteLock(repositoryId, objectId.getValue());
-		try{
+		try {
 			lock.lock();
-			
+
 			// //////////////////
 			// Exception
 			// //////////////////
-			Content content = checkExceptionBeforeUpdateProperties(callContext,
-					repositoryId, objectId, properties, changeToken);
+			Content content = checkExceptionBeforeUpdateProperties(callContext, repositoryId, objectId, properties,
+					changeToken);
 
 			// //////////////////
 			// Body of the method
@@ -774,54 +711,47 @@ public class ObjectServiceImpl implements ObjectService {
 			contentService.updateProperties(callContext, repositoryId, properties, content);
 
 			nemakiCachePool.get(repositoryId).removeCmisCache(objectId.getValue());
-		}finally{
+		} finally {
 			lock.unlock();
 		}
 	}
 
-	private Content checkExceptionBeforeUpdateProperties(
-			CallContext callContext, String repositoryId,
+	private Content checkExceptionBeforeUpdateProperties(CallContext callContext, String repositoryId,
 			Holder<String> objectId, Properties properties, Holder<String> changeToken) {
 		// //////////////////
 		// General Exception
 		// //////////////////
-		exceptionService.invalidArgumentRequiredCollection("properties",
-				properties.getPropertyList());
+		
+		exceptionService.invalidArgumentRequiredCollection("properties", properties.getPropertyList());
 		Content content = contentService.getContent(repositoryId, objectId.getValue());
-		exceptionService.objectNotFound(DomainType.OBJECT, content,
-				objectId.getValue());
+		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId.getValue());
 		if (content.isDocument()) {
 			Document d = (Document) content;
-			exceptionService.versioning(d);
+			exceptionService.versioning(callContext,d);
 			exceptionService.constraintUpdateWhenCheckedOut(repositoryId, callContext.getUsername(), d);
+			
 			TypeDefinition typeDef = typeManager.getTypeDefinition(repositoryId, d);
 			exceptionService.constraintImmutable(repositoryId, d, typeDef);
 		}
-		exceptionService.permissionDenied(callContext,
-				repositoryId, PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT, content);
+		exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_UPDATE_PROPERTIES_OBJECT,
+				content);
 		exceptionService.updateConflict(content, changeToken);
 
-
-
 		TypeDefinition tdf = typeManager.getTypeDefinition(repositoryId, content);
-		exceptionService.constraintPropertyValue(repositoryId, tdf,
-				properties, objectId.getValue());
+		exceptionService.constraintPropertyValue(repositoryId, tdf, properties, objectId.getValue());
 
 		return content;
 	}
 
 	@Override
-	public List<BulkUpdateObjectIdAndChangeToken> bulkUpdateProperties(
-			CallContext callContext,
-			String repositoryId,
+	public List<BulkUpdateObjectIdAndChangeToken> bulkUpdateProperties(CallContext callContext, String repositoryId,
 			List<BulkUpdateObjectIdAndChangeToken> objectIdAndChangeTokenList, Properties properties,
 			List<String> addSecondaryTypeIds, List<String> removeSecondaryTypeIds, ExtensionsData extension) {
 		// //////////////////
 		// General Exception
 		// //////////////////
 		// Each permission is checked at each execution
-		exceptionService.invalidArgumentRequiredCollection(
-				"objectIdAndChangeToken", objectIdAndChangeTokenList);
+		exceptionService.invalidArgumentRequiredCollection("objectIdAndChangeToken", objectIdAndChangeTokenList);
 		exceptionService.invalidArgumentSecondaryTypeIds(repositoryId, properties);
 
 		// //////////////////
@@ -832,29 +762,30 @@ public class ObjectServiceImpl implements ObjectService {
 		ExecutorService executor = Executors.newCachedThreadPool();
 		List<BulkUpdateTask> tasks = new ArrayList<>();
 		for (BulkUpdateObjectIdAndChangeToken objectIdAndChangeToken : objectIdAndChangeTokenList) {
-			tasks.add(new BulkUpdateTask(callContext, repositoryId, objectIdAndChangeToken, properties, addSecondaryTypeIds, removeSecondaryTypeIds, extension));
+			tasks.add(new BulkUpdateTask(callContext, repositoryId, objectIdAndChangeToken, properties,
+					addSecondaryTypeIds, removeSecondaryTypeIds, extension));
 		}
-		
+
 		try {
 			List<Future<BulkUpdateObjectIdAndChangeToken>> _results = executor.invokeAll(tasks);
-			for(Future<BulkUpdateObjectIdAndChangeToken> _result : _results){
-				try{
+			for (Future<BulkUpdateObjectIdAndChangeToken> _result : _results) {
+				try {
 					BulkUpdateObjectIdAndChangeToken result = _result.get();
 					results.add(result);
-				}catch(Exception e){
-					//TODO log
-					//do nothing
+				} catch (Exception e) {
+					// TODO log
+					// do nothing
 				}
 			}
 		} catch (InterruptedException e1) {
-			//TODO log
+			// TODO log
 			e1.printStackTrace();
 		}
 
 		return results;
 	}
 
-	private class BulkUpdateTask implements Callable<BulkUpdateObjectIdAndChangeToken>{
+	private class BulkUpdateTask implements Callable<BulkUpdateObjectIdAndChangeToken> {
 
 		private CallContext callContext;
 		private String repositoryId;
@@ -863,10 +794,10 @@ public class ObjectServiceImpl implements ObjectService {
 		private List<String> addSecondaryTypeIds;
 		private List<String> removeSecondaryTypeIds;
 		private ExtensionsData extension;
-		
-		public BulkUpdateTask(CallContext callContext, String repositoryId, BulkUpdateObjectIdAndChangeToken objectIdAndChangeToken,
-				Properties properties, List<String> addSecondaryTypeIds, List<String> removeSecondaryTypeIds,
-				ExtensionsData extension) {
+
+		public BulkUpdateTask(CallContext callContext, String repositoryId,
+				BulkUpdateObjectIdAndChangeToken objectIdAndChangeToken, Properties properties,
+				List<String> addSecondaryTypeIds, List<String> removeSecondaryTypeIds, ExtensionsData extension) {
 			super();
 			this.callContext = callContext;
 			this.repositoryId = repositoryId;
@@ -879,70 +810,58 @@ public class ObjectServiceImpl implements ObjectService {
 
 		@Override
 		public BulkUpdateObjectIdAndChangeToken call() throws Exception {
-			exceptionService.invalidArgumentRequiredString("objectId",
-					objectIdAndChangeToken.getId());
-			
+			exceptionService.invalidArgumentRequiredString("objectId", objectIdAndChangeToken.getId());
+
 			Lock lock = threadLockService.getWriteLock(repositoryId, objectIdAndChangeToken.getId());
 			try {
 				lock.lock();
-				
-				Content content = checkExceptionBeforeUpdateProperties(
-						callContext, repositoryId,
-						new Holder<String>(objectIdAndChangeToken.getId()),
-						properties, new Holder<String>(objectIdAndChangeToken.getChangeToken()));
-				contentService.updateProperties(callContext, repositoryId,
-						properties, content);
+
+				Content content = checkExceptionBeforeUpdateProperties(callContext, repositoryId,
+						new Holder<String>(objectIdAndChangeToken.getId()), properties,
+						new Holder<String>(objectIdAndChangeToken.getChangeToken()));
+				contentService.updateProperties(callContext, repositoryId, properties, content);
 				nemakiCachePool.get(repositoryId).removeCmisCache(content.getId());
 
 				BulkUpdateObjectIdAndChangeToken result = new BulkUpdateObjectIdAndChangeTokenImpl(
-						objectIdAndChangeToken.getId(), content.getId(),
-						String.valueOf(content.getChangeToken()));
+						objectIdAndChangeToken.getId(), content.getId(), String.valueOf(content.getChangeToken()));
 				return result;
 			} catch (Exception e) {
 				// Don't throw an error
 				// Don't return any BulkUpdateObjectIdAndChangetoken
-			}finally{
+			} finally {
 				lock.unlock();
 			}
-			
+
 			// TODO Auto-generated method stub
 			return null;
 		}
-		
+
 	}
-	
+
 	@Override
-	public void moveObject(CallContext callContext, String repositoryId,
-			Holder<String> objectId, String sourceFolderId, String targetFolderId) {
-		
-		exceptionService.invalidArgumentRequiredHolderString("objectId",
-				objectId);
-		
+	public void moveObject(CallContext callContext, String repositoryId, Holder<String> objectId, String sourceFolderId,
+			String targetFolderId, ExtensionsData extension) {
+
+		exceptionService.invalidArgumentRequiredHolderString("objectId", objectId);
+
 		Lock lock = threadLockService.getWriteLock(repositoryId, objectId.getValue());
-		try{
+		try {
 			lock.lock();
 			// //////////////////
 			// General Exception
 			// //////////////////
-			exceptionService.invalidArgumentRequiredString("sourceFolderId",
-					sourceFolderId);
-			exceptionService.invalidArgumentRequiredString("targetFolderId",
-					targetFolderId);
+			exceptionService.invalidArgumentRequiredString("sourceFolderId", sourceFolderId);
+			exceptionService.invalidArgumentRequiredString("targetFolderId", targetFolderId);
 			Content content = contentService.getContent(repositoryId, objectId.getValue());
-			exceptionService.objectNotFound(DomainType.OBJECT, content,
-					objectId.getValue());
+			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId.getValue());
 			Folder source = contentService.getFolder(repositoryId, sourceFolderId);
-			exceptionService.objectNotFound(DomainType.OBJECT, source,
-					sourceFolderId);
+			exceptionService.objectNotFound(DomainType.OBJECT, source, sourceFolderId);
 			Folder target = contentService.getFolder(repositoryId, targetFolderId);
-			exceptionService.objectNotFound(DomainType.OBJECT, target,
-					targetFolderId);
-			exceptionService.permissionDenied(callContext,
-					repositoryId, PermissionMapping.CAN_MOVE_OBJECT, content);
-			exceptionService.permissionDenied(callContext,
-					repositoryId, PermissionMapping.CAN_MOVE_SOURCE, source);
-			exceptionService.permissionDenied(callContext,
-					repositoryId, PermissionMapping.CAN_MOVE_TARGET, target);
+			exceptionService.objectNotFound(DomainType.OBJECT, target, targetFolderId);
+			exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_MOVE_OBJECT, content);
+			exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_MOVE_SOURCE, source);
+			exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_MOVE_TARGET, target);
+			exceptionService.nameConstraintViolation(repositoryId, target, content.getName());
 
 			// //////////////////
 			// Body of the method
@@ -950,21 +869,21 @@ public class ObjectServiceImpl implements ObjectService {
 			contentService.move(callContext, repositoryId, content, target);
 
 			nemakiCachePool.get(repositoryId).removeCmisCache(content.getId());
-		}finally{
+		} finally {
 			lock.unlock();
 		}
 	}
-	
+
 	@Override
-	public void deleteObject(CallContext callContext, String repositoryId,
-			String objectId, Boolean allVersions) {
+	public void deleteObject(CallContext callContext, String repositoryId, String objectId, Boolean allVersions,
+			ExtensionsData extension) {
+
 		objectServiceInternal.deleteObjectInternal(callContext, repositoryId, objectId, allVersions, false);
 	}
 
 	@Override
-	public FailedToDeleteData deleteTree(CallContext callContext,
-			String repositoryId, String folderId, Boolean allVersions,
-			UnfileObject unfileObjects, Boolean continueOnFailure, ExtensionsData extension) {
+	public FailedToDeleteData deleteTree(CallContext callContext, String repositoryId, String folderId,
+			Boolean allVersions, UnfileObject unfileObjects, Boolean continueOnFailure, ExtensionsData extension) {
 		// //////////////////
 		// Inner classes
 		// //////////////////
@@ -973,57 +892,62 @@ public class ObjectServiceImpl implements ObjectService {
 			private String repositoryId;
 			private Content content;
 			private Boolean allVersions;
-			
-			public DeleteTask(){}
-			
-			public DeleteTask(CallContext callContext, String repositoryId, Content content, Boolean allVersions){
+
+			public DeleteTask() {
+			}
+
+			public DeleteTask(CallContext callContext, String repositoryId, Content content, Boolean allVersions) {
 				this.callContext = callContext;
 				this.repositoryId = repositoryId;
 				this.content = content;
 				this.allVersions = allVersions;
 			}
 
-		    @Override
-		    public Boolean call() throws Exception {
-		        try{
-		        	objectServiceInternal.deleteObjectInternal(callContext, repositoryId, content, allVersions, true);
-		        	return false;
-		        }catch(Exception e){
-		        	return true;
-		        }
-		    }
+			@Override
+			public Boolean call() throws Exception {
+				try {
+					objectServiceInternal.deleteObjectInternal(callContext, repositoryId, content, allVersions, true);
+					return false;
+				} catch (Exception e) {
+					return true;
+				}
+			}
 		}
-		
-		class WrappedExecutorService{
+
+		class WrappedExecutorService {
 			private ExecutorService service;
 			private Folder folder;
-			
-			private WrappedExecutorService(){};
-			public WrappedExecutorService(ExecutorService service, Folder folder){
+
+			private WrappedExecutorService() {
+			};
+
+			public WrappedExecutorService(ExecutorService service, Folder folder) {
 				this.service = service;
 				this.folder = folder;
 			}
-			
-			public ExecutorService getService(){
+
+			public ExecutorService getService() {
 				return service;
 			}
+
 			public Folder getFolder() {
 				return folder;
 			}
 		}
-		
-		class DeleteService{
+
+		class DeleteService {
 			private Map<String, Future<Boolean>> failureIds;
 			private WrappedExecutorService parentService;
 			private CallContext callContext;
 			private String repositoryId;
 			private Content content;
 			private Boolean allVersions;
-			
-			public DeleteService(){}
 
-			public DeleteService(Map<String, Future<Boolean>> failureIds, WrappedExecutorService parentService, CallContext callContext, String repositoryId, Content content,
-					Boolean allVersions) {
+			public DeleteService() {
+			}
+
+			public DeleteService(Map<String, Future<Boolean>> failureIds, WrappedExecutorService parentService,
+					CallContext callContext, String repositoryId, Content content, Boolean allVersions) {
 				super();
 				this.failureIds = failureIds;
 				this.parentService = parentService;
@@ -1032,54 +956,55 @@ public class ObjectServiceImpl implements ObjectService {
 				this.content = content;
 				this.allVersions = allVersions;
 			}
-			
-			public void execute(){
-				if(content.isDocument()){
-					Future<Boolean> result = parentService.getService().submit(new DeleteTask(callContext, repositoryId, content, allVersions));
+
+			public void execute() {
+				if (content.isDocument()) {
+					Future<Boolean> result = parentService.getService()
+							.submit(new DeleteTask(callContext, repositoryId, content, allVersions));
 					failureIds.put(content.getId(), result);
-				}else if(content.isFolder()){
-					WrappedExecutorService childrenService = new WrappedExecutorService
-							(Executors.newFixedThreadPool(threadMax), (Folder)content);
-					
+				} else if (content.isFolder()) {
+					WrappedExecutorService childrenService = new WrappedExecutorService(
+							Executors.newFixedThreadPool(threadMax), (Folder) content);
+
 					List<Content> children = contentService.getChildren(repositoryId, content.getId());
-					if(CollectionUtils.isNotEmpty(children)){
-						for(Content child : children){
-							DeleteService deleteService = new DeleteService(this.failureIds, childrenService, callContext, repositoryId, child, allVersions);
+					if (CollectionUtils.isNotEmpty(children)) {
+						for (Content child : children) {
+							DeleteService deleteService = new DeleteService(this.failureIds, childrenService,
+									callContext, repositoryId, child, allVersions);
 							deleteService.execute();
 						}
 					}
-					
-					//wait til newService ends
+
+					// wait til newService ends
 					childrenService.getService().shutdown();
 					try {
 						childrenService.getService().awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
 					} catch (InterruptedException e) {
 						log.error(e, e);
 					}
-					
-					//Lastly, delete self
-					Future<Boolean> result = parentService.getService().submit(new DeleteTask(callContext, repositoryId, content, allVersions));
+
+					// Lastly, delete self
+					Future<Boolean> result = parentService.getService()
+							.submit(new DeleteTask(callContext, repositoryId, content, allVersions));
 					failureIds.put(content.getId(), result);
 				}
-				
+
 			}
 		}
-		
+
 		// //////////////////
 		// General Exception
 		// //////////////////
 		exceptionService.invalidArgumentRequiredString("objectId", folderId);
 		Folder folder = contentService.getFolder(repositoryId, folderId);
-		exceptionService.permissionDenied(callContext,
-				repositoryId, PermissionMapping.CAN_DELETE_TREE_FOLDER, folder);
+		exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_DELETE_TREE_FOLDER, folder);
 		exceptionService.constraintDeleteRootFolder(repositoryId, folderId);
 
 		// //////////////////
 		// Specific Exception
 		// //////////////////
 		if (folder == null)
-			exceptionService.constraint(folderId,
-					"deleteTree cannot be invoked on a non-folder object");
+			exceptionService.constraint(folderId, "deleteTree cannot be invoked on a non-folder object");
 
 		// //////////////////
 		// Body of the method
@@ -1087,21 +1012,22 @@ public class ObjectServiceImpl implements ObjectService {
 		// Delete descendants
 		Map<String, Future<Boolean>> failureIds = new HashMap<String, Future<Boolean>>();
 
-		DeleteService deleteService = new DeleteService(failureIds, new WrappedExecutorService
-				(Executors.newFixedThreadPool(threadMax), folder), callContext, repositoryId, folder, allVersions);
+		DeleteService deleteService = new DeleteService(failureIds,
+				new WrappedExecutorService(Executors.newFixedThreadPool(threadMax), folder), callContext, repositoryId,
+				folder, allVersions);
 		deleteService.execute();
-		
+
 		solrUtil.callSolrIndexing(repositoryId);
 
 		// Check FailedToDeleteData
 		// FIXME Consider orphans that was failed to be deleted
 		FailedToDeleteDataImpl fdd = new FailedToDeleteDataImpl();
 		List<String> ids = new ArrayList<String>();
-		for(Entry<String, Future<Boolean>> entry : failureIds.entrySet()){
+		for (Entry<String, Future<Boolean>> entry : failureIds.entrySet()) {
 			Boolean failed;
 			try {
 				failed = entry.getValue().get();
-				if(failed){
+				if (failed) {
 					ids.add(entry.getKey());
 				}
 			} catch (InterruptedException e) {
@@ -1130,6 +1056,10 @@ public class ObjectServiceImpl implements ObjectService {
 
 	public void setCompileService(CompileService compileService) {
 		this.compileService = compileService;
+	}
+
+	public void setRelationshipService(RelationshipService relationshipService) {
+		this.relationshipService = relationshipService;
 	}
 
 	public void setTypeManager(TypeManager typeManager) {

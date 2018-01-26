@@ -21,36 +21,44 @@
  ******************************************************************************/
 package jp.aegif.nemaki.dao.impl.cached;
 
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.GregorianCalendar;
 import java.util.List;
+import java.util.Set;
+
+import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.springframework.stereotype.Component;
+import org.springframework.util.CollectionUtils;
 
 import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Change;
+import jp.aegif.nemaki.model.Configuration;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.GroupItem;
 import jp.aegif.nemaki.model.Item;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.model.NodeBase;
+import jp.aegif.nemaki.model.PatchHistory;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
+import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.cache.model.NemakiCache;
 import jp.aegif.nemaki.util.cache.model.Tree;
-import net.sf.ehcache.Cache;
 import net.sf.ehcache.Element;
-import org.apache.chemistry.opencmis.commons.data.ContentStream;
-import org.springframework.stereotype.Component;
-import org.springframework.util.CollectionUtils;
 
 /**
  * Dao Service implementation for CouchDB.
@@ -60,6 +68,7 @@ import org.springframework.util.CollectionUtils;
  */
 @Component
 public class ContentDaoServiceImpl implements ContentDaoService {
+	private static final Log log = LogFactory.getLog(ContentDaoServiceImpl.class);
 
 	private ContentDaoService nonCachedContentDaoService;
 	private NemakiCachePool nemakiCachePool;
@@ -199,11 +208,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	 */
 	@Override
 	public Content getContent(String repositoryId, String objectId) {
+		log.info(MessageFormat.format("cache.ContentDaoService#getContent START: Repo={0}, Id={1}", repositoryId, objectId));
+		if (objectId == null){
+			log.warn("DAO getContent param ObjcetId is null!");
+			return null;
+		}
+
 		NemakiCache<Content> contentCache = nemakiCachePool.get(repositoryId).getContentCache();
 		Content v = contentCache.get(objectId);
 
 		if (v != null) {
-			return (Content) v;
+			return v;
 		}
 
 		Content content = nonCachedContentDaoService.getContent(repositoryId, objectId);
@@ -213,6 +228,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		} else {
 			contentCache.put(new Element(objectId, content));
 		}
+
+		log.info(MessageFormat.format("cache.ContentDaoService#getContent END: Repo={0}, Id={1}", repositoryId, objectId));
 
 		return content;
 	}
@@ -224,25 +241,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Document getDocument(String repositoryId, String objectId) {
-		NemakiCache<Content> contentCache = nemakiCachePool.get(repositoryId).getContentCache();
-
-		Content v = contentCache.get(objectId);
-
-		if (v != null) {
+		Document doc = null;
+		Content c = this.getContent(repositoryId, objectId);
+		if (c != null) {
 			try {
-				return (Document) v;
+				doc = (Document) c;
 			} catch (ClassCastException e) {
-				throw e;
+				log.error("Content type is not document : " + c.getObjectType());
 			}
 		}
-
-		Document doc = nonCachedContentDaoService.getDocument(repositoryId, objectId);
-		if (doc == null) {
-			return null;
-		} else {
-			contentCache.put(new Element(objectId, doc));
-			return doc;
-		}
+		return doc;
 	}
 
 	@Override
@@ -284,25 +292,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Folder getFolder(String repositoryId, String objectId) {
-		NemakiCache<Content> contentCache = nemakiCachePool.get(repositoryId).getContentCache();
-		Content v = contentCache.get(objectId);
-
-		if (v != null) {
+		Folder folder = null;
+		Content c = this.getContent(repositoryId, objectId);
+		if (c != null) {
 			try {
-				return (Folder) v;
+				folder = (Folder) c;
 			} catch (ClassCastException e) {
-				throw e;
+				log.warn("Content type is not folder : " + c.getObjectType());
+				return null;
 			}
 		}
-
-		Folder folder = nonCachedContentDaoService.getFolder(repositoryId, objectId);
-
-		if (folder == null) {
-			return null;
-		} else {
-			contentCache.put(new Element(objectId, folder));
-			return folder;
-		}
+		return folder;
 	}
 
 	@Override
@@ -313,16 +313,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Content> getChildren(String repositoryId, String parentId) {
 		if(nemakiCachePool.get(repositoryId).getTreeCache().isCacheEnabled()){
+			List<Content> result = new ArrayList<Content>();
 			Tree tree = getOrCreateTreeCache(repositoryId, parentId);
-			
-			List<Content> result = new ArrayList<>();
-			for(String childId : tree.getChildren()){
-				Content child = getContent(repositoryId, childId);
-				if(child != null){
-					result.add(child);
+			Set<String> children = tree.getChildren();
+			for(String childId : children){
+				Content content = getContent(repositoryId, childId);
+				if(content != null){
+					result.add(content);
 				}
 			}
-			
 			return result;
 		}else{
 			return nonCachedContentDaoService.getChildren(repositoryId, parentId);
@@ -341,14 +340,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Relationship getRelationship(String repositoryId, String objectId) {
-		NemakiCache<Content> cache = nemakiCachePool.get(repositoryId).getContentCache();
-		Content v = cache.get(objectId);
-
-		if (v != null) {
-			return (Relationship) v;
-		} else {
-			return nonCachedContentDaoService.getRelationship(repositoryId, objectId);
+		Relationship rel = null;
+		Content c = this.getContent(repositoryId, objectId);
+		if (c != null) {
+			try {
+				rel = (Relationship) c;
+			} catch (ClassCastException e) {
+				log.error("Content type is not relationship : " + c.getObjectType());
+			}
 		}
+		return rel;
 	}
 
 	@Override
@@ -373,20 +374,148 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Item getItem(String repositoryId, String objectId) {
-		return nonCachedContentDaoService.getItem(repositoryId, objectId);
+		Item item = nonCachedContentDaoService.getItem(repositoryId, objectId);
+		return item;
+	}
+
+	@Override
+	public UserItem getUserItem(String repositoryId, String objectId) {
+		UserItem item = null;
+		Content c = this.getContent(repositoryId, objectId);
+		if (c != null) {
+			try{
+				item = (UserItem) c;
+			}catch(ClassCastException ex){
+				log.warn("Content type is not UserItem : " + c.getObjectType());
+			}
+		}
+		return item;
+	}
+
+	@Override
+	public UserItem getUserItemById(String repositoryId, String userId) {
+		NemakiCache<UserItem> userItemCache = nemakiCachePool.get(repositoryId).getUserItemCache();
+		UserItem v = userItemCache.get(userId);
+		if (v != null) {
+			return  v;
+		}
+
+		UserItem userItem = nonCachedContentDaoService.getUserItemById(repositoryId, userId);
+
+		if (userItem == null) {
+			return null;
+		} else {
+			userItemCache.put(userId, userItem);
+		}
+
+		return userItem;
+	}
+
+	@Override
+	public List<UserItem> getUserItems(String repositoryId) {
+		return nonCachedContentDaoService.getUserItems(repositoryId);
+	}
+
+	@Override
+	public GroupItem getGroupItem(String repositoryId, String objectId) {
+		GroupItem item = null;
+		Content c = this.getContent(repositoryId, objectId);
+		if (c != null) {
+			try{
+				item = (GroupItem) c;
+			}catch(ClassCastException ex){
+				log.warn("Content type is not GroupItem : " + c.getObjectType());
+			}
+		}
+		return item;
+	}
+
+	@Override
+	public GroupItem getGroupItemById(String repositoryId, String groupId) {
+		NemakiCache<GroupItem> groupItemCache = nemakiCachePool.get(repositoryId).getGroupItemCache();
+		GroupItem v = groupItemCache.get(groupId);
+
+		if (v != null) {
+			return  v;
+		}
+
+		GroupItem groupItem = nonCachedContentDaoService.getGroupItemById(repositoryId, groupId);
+
+		if (groupItem == null) {
+			return null;
+		} else {
+			groupItemCache.put(groupId, groupItem);
+		}
+
+		return groupItem;
+	}
+
+	@Override
+	public List<GroupItem> getGroupItems(String repositoryId) {
+		return nonCachedContentDaoService.getGroupItems(repositoryId);
+	}
+
+	@Override
+	public List<String> getJoinedGroupByUserId(String repositoryId, String userId) {
+		NemakiCache<List<String>> joinedGroupCache = nemakiCachePool.get(repositoryId).getJoinedGroupCache();
+		List<String> v = joinedGroupCache.get(userId);
+
+		if (v != null) {
+			return  v;
+		}
+
+		List<String> joinedGroup = nonCachedContentDaoService.getJoinedGroupByUserId(repositoryId, userId);
+
+		if (joinedGroup == null){
+			return null;
+		}else{
+			joinedGroupCache.put(userId,joinedGroup);
+		}
+
+		return joinedGroup;
+	}
+
+	@Override
+	public PatchHistory getPatchHistoryByName(String repositoryId, String name) {
+		return nonCachedContentDaoService.getPatchHistoryByName(repositoryId, name);
+	}
+
+	@Override
+	public Configuration getConfiguration(String repositoryId) {
+		NemakiCache<Configuration> configCache = nemakiCachePool.get(repositoryId).getConfigCache();
+		Configuration v = configCache.get("configuration");
+
+		if (v != null) {
+			try {
+				return (Configuration) v;
+			} catch (ClassCastException e) {
+				throw e;
+			}
+		}
+
+		Configuration configuration = nonCachedContentDaoService.getConfiguration(repositoryId);
+
+		if (configuration == null) {
+			return null;
+		} else {
+			configCache.put(new Element("configuration", configuration));
+			return configuration;
+		}
 	}
 
 	@Override
 	public Document create(String repositoryId, Document document) {
 		Document created = nonCachedContentDaoService.create(repositoryId, document);
 		nemakiCachePool.get(repositoryId).getContentCache().put(new Element(created.getId(), created));
-		
+
 		//Tree cache
 		addToTreeCache(repositoryId, created);
-		
+
 		return created;
 	}
-	
+
+
+
 	private Tree getOrCreateTreeCache(String repositoryId, String parentId){
 		NemakiCache<Tree> treeCache = nemakiCachePool.get(repositoryId).getTreeCache();
 		Tree tree = treeCache.get(parentId);
@@ -400,18 +529,18 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			}
 			treeCache.put(tree.getParent(), tree);
 		}
-		
+
 		return tree;
 	}
-	
+
 	private void addToTreeCache(String repositoryId, Content content){
 		if(!nemakiCachePool.get(repositoryId).getTreeCache().isCacheEnabled()){
 			//do nothing when cache disabled
 			return;
 		}
-		
+
 		Tree tree = getOrCreateTreeCache(repositoryId, content.getParentId());
-		
+
 		if(content instanceof Document){
 			Document doc = (Document)content;
 			if(doc.isPrivateWorkingCopy()){
@@ -434,7 +563,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			tree.add(content.getId());
 		}
 	}
-	
+
 	private class VersionComparator implements Comparator<Content> {
 		@Override
 		public int compare(Content content0, Content content1) {
@@ -451,9 +580,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			}
 		}
 	}
-	
+
 	/**
-	 * 
+	 *
 	 * @param repositoryId
 	 * @param doc
 	 * @return Previous version. If previous version does not exist, return null.
@@ -495,7 +624,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		Folder created = nonCachedContentDaoService.create(repositoryId, folder);
 		nemakiCachePool.get(repositoryId).getContentCache().put(new Element(created.getId(), created));
 		addToTreeCache(repositoryId, created);
-		
+
 		return created;
 	}
 
@@ -516,9 +645,45 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Item create(String repositoryId, Item item) {
 		Item created = nonCachedContentDaoService.create(repositoryId, item);
-		nemakiCachePool.get(repositoryId).getContentCache().put(new Element(created.getId(), created));
+		nemakiCachePool.get(repositoryId).getContentCache().put(created.getId(), created);
 		addToTreeCache(repositoryId, created);
 		return created;
+	}
+
+	@Override
+	public UserItem create(String repositoryId, UserItem userItem) {
+		UserItem created = nonCachedContentDaoService.create(repositoryId, userItem);
+		nemakiCachePool.get(repositoryId).getContentCache().put(created.getId(), created);
+		nemakiCachePool.get(repositoryId).getUserItemCache().put(created.getUserId(), created);
+		addToTreeCache(repositoryId, created);
+		return created;
+	}
+
+	@Override
+	public GroupItem create(String repositoryId, GroupItem groupItem) {
+		GroupItem created = nonCachedContentDaoService.create(repositoryId, groupItem);
+		nemakiCachePool.get(repositoryId).getContentCache().put(created.getId(), created);
+		nemakiCachePool.get(repositoryId).getGroupItemCache().put(created.getGroupId(), created);
+		addToTreeCache(repositoryId, created);
+		return created;
+	}
+
+	@Override
+	public PatchHistory create(String repositoryId, PatchHistory patchHistory) {
+		PatchHistory created = nonCachedContentDaoService.create(repositoryId, patchHistory);
+		return created;
+	}
+
+	@Override
+	public Configuration create(String repositoryId, Configuration configuration) {
+		Configuration created = nonCachedContentDaoService.create(repositoryId, configuration);
+		nemakiCachePool.get(repositoryId).getConfigCache().put(new Element(created.getId(), created));
+		return created;
+	}
+
+	@Override
+	public NodeBase create(String repositoryId, NodeBase nodeBase) {
+		return nonCachedContentDaoService.create(repositoryId, nodeBase);
 	}
 
 	@Override
@@ -526,9 +691,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		Document updated = nonCachedContentDaoService.update(repositoryId, document);
 		nemakiCachePool.get(repositoryId).getContentCache().put(new Element(updated.getId(), updated));
 		nemakiCachePool.get(repositoryId).getObjectDataCache().remove(updated.getId());
+
 		return updated;
 	}
-	
+
 	@Override
 	public Document move(String repositoryId, Document document, String sourceId) {
 		moveTreeCache(repositoryId, document, sourceId);
@@ -549,9 +715,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		Folder updated = nonCachedContentDaoService.update(repositoryId, folder);
 		nemakiCachePool.get(repositoryId).getContentCache().put(new Element(updated.getId(), updated));
 		nemakiCachePool.get(repositoryId).getObjectDataCache().remove(updated.getId());
+
 		return updated;
 	}
-	
+
 	@Override
 	public Folder move(String repositoryId, Folder folder, String sourceId) {
 		moveTreeCache(repositoryId, folder, sourceId);
@@ -564,21 +731,21 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			//do nothing when disabled
 			return;
 		}
-		
+
 		String targetId = updated.getParentId();
-		
+
 		if(!sourceId.equals(targetId)){
 			//Remove from source
 			Tree souceTree = cache.get(sourceId);
 			if(souceTree != null){
 				souceTree.remove(updated.getId());
 			}
-			
+
 			//Add to target
 			addToTreeCache(repositoryId, updated);
 		}
 	}
-	
+
 	@Override
 	public Relationship update(String repositoryId, Relationship relationship) {
 		Relationship updated = nonCachedContentDaoService.update(repositoryId, relationship);
@@ -598,8 +765,46 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Item update(String repositoryId, Item item) {
 		Item updated = nonCachedContentDaoService.update(repositoryId, item);
-		nemakiCachePool.get(repositoryId).getContentCache().put(new Element(updated.getId(), updated));
+		nemakiCachePool.get(repositoryId).getContentCache().put(updated.getId(), updated);
 		nemakiCachePool.get(repositoryId).getObjectDataCache().remove(updated.getId());
+		return updated;
+	}
+
+	@Override
+	public UserItem update(String repositoryId, UserItem userItem) {
+		UserItem updated = nonCachedContentDaoService.update(repositoryId, userItem);
+		nemakiCachePool.get(repositoryId).getContentCache().put(updated.getId(), updated);
+		nemakiCachePool.get(repositoryId).getUserItemCache().put(updated.getUserId(), updated);
+		nemakiCachePool.get(repositoryId).getObjectDataCache().remove(updated.getId());
+		return updated;
+	}
+
+	@Override
+	public GroupItem update(String repositoryId, GroupItem groupItem) {
+		GroupItem updated = nonCachedContentDaoService.update(repositoryId, groupItem);
+		nemakiCachePool.get(repositoryId).getContentCache().put(updated.getId(), updated);
+		nemakiCachePool.get(repositoryId).getGroupItemCache().put(updated.getGroupId(), updated);
+		nemakiCachePool.get(repositoryId).getObjectDataCache().remove(updated.getId());
+		nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
+		return updated;
+	}
+
+	@Override
+	public PatchHistory update(String repositoryId, PatchHistory patchHistory) {
+		PatchHistory updated = nonCachedContentDaoService.update(repositoryId, patchHistory);
+		return updated;
+	}
+
+	@Override
+	public Configuration update(String repositoryId, Configuration configuration) {
+		Configuration updated = nonCachedContentDaoService.update(repositoryId, configuration);
+		nemakiCachePool.get(repositoryId).getConfigCache().put(new Element(updated.getId(), updated));
+		return updated;
+	}
+
+	@Override
+	public NodeBase update(String repositoryId, NodeBase nodeBase) {
+		NodeBase updated = nonCachedContentDaoService.update(repositoryId, nodeBase);
 		return updated;
 	}
 
@@ -607,13 +812,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public void delete(String repositoryId, String objectId) {
 		//Check if cache enabled
 		boolean treeCacheEnabled = nemakiCachePool.get(repositoryId).getTreeCache().isCacheEnabled();
-		
+
 		NodeBase nb = nonCachedContentDaoService.getNodeBase(repositoryId, objectId);
 
 		if(nb == null){
 			return;
 		}
-		
+
 		//read document in advance
 		Document doc = null;
 		Document previous = null;
@@ -625,17 +830,26 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				e.printStackTrace();
 			}
 		}
-		
+
 		//read tree in advance
 		Tree tree = null;
-		if(treeCacheEnabled && (nb.isDocument() || nb.isFolder())){
+		if(treeCacheEnabled && (nb.isDocument() || nb.isFolder() || nb.isItem())){
 			Content _c = getContent(repositoryId, objectId);
 			tree = getOrCreateTreeCache(repositoryId, _c.getParentId());
-		}		
-		
+		}
+
+		//delete user/group from cache
+		if(nb.isUser()){
+			UserItem item = getUserItem(repositoryId, objectId);
+			nemakiCachePool.get(repositoryId).getUserItemCache().remove(item.getUserId());
+		}else if(nb.isGroup()){
+			GroupItem item = getGroupItem(repositoryId, objectId);
+			nemakiCachePool.get(repositoryId).getGroupItemCache().remove(item.getGroupId());
+		}
+
 		// remove from database
 		nonCachedContentDaoService.delete(repositoryId, objectId);
-		
+
 		// remove from cache
 		if(doc == null){
 			if (nb.isAttachment()) {
@@ -643,7 +857,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			}else{
 				nemakiCachePool.get(repositoryId).getContentCache().remove(objectId);
 				nemakiCachePool.get(repositoryId).getObjectDataCache().remove(objectId);
-				if(treeCacheEnabled)tree.remove(objectId);
+				nemakiCachePool.get(repositoryId).getAclCache().remove(objectId);
+				if(tree != null)tree.remove(objectId);
 			}
 		}else{
 			//DOCUMENT case
@@ -652,17 +867,20 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				nemakiCachePool.get(repositoryId).getAttachmentCache().remove(doc.getAttachmentNodeId());
 				nemakiCachePool.get(repositoryId).getContentCache().remove(doc.getId());
 				nemakiCachePool.get(repositoryId).getObjectDataCache().remove(doc.getId());
+				nemakiCachePool.get(repositoryId).getAclCache().remove(doc.getId());
 				nemakiCachePool.get(repositoryId).getVersionSeriesCache().remove(doc.getVersionSeriesId());
 			}else{
 				nemakiCachePool.get(repositoryId).getAttachmentCache().remove(doc.getAttachmentNodeId());
 				nemakiCachePool.get(repositoryId).getContentCache().remove(doc.getId());
 				nemakiCachePool.get(repositoryId).getObjectDataCache().remove(doc.getId());
-				if(treeCacheEnabled)tree.remove(doc.getId());
+				nemakiCachePool.get(repositoryId).getAclCache().remove(doc.getId());
+				if(tree != null)tree.remove(doc.getId());
 				nemakiCachePool.get(repositoryId).getVersionSeriesCache().remove(doc.getVersionSeriesId());
+
 			}
 		}
 	}
-	
+
 	// ///////////////////////////////////////
 	// Attachment
 	// ///////////////////////////////////////
@@ -758,6 +976,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		return nonCachedContentDaoService.getLatestChanges(repositoryId, startToken, maxItems);
 	}
 
+	@Override
+	public List<Change> getObjectChanges(String repositoryId, String objectId) {
+		return nonCachedContentDaoService.getObjectChanges(repositoryId, objectId);
+	}
+
 	// //////////////////////////////////////////////////////////////////////////////
 	// Archive
 	// //////////////////////////////////////////////////////////////////////////////
@@ -792,6 +1015,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc) {
+		return nonCachedContentDaoService.getArchives(repositoryId, skip, limit, desc);
+	}
+
+	@Override
 	public Archive createArchive(String repositoryId, Archive archive, Boolean deletedWithParent) {
 		return nonCachedContentDaoService.createArchive(repositoryId, archive, deletedWithParent);
 	}
@@ -807,6 +1035,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public void deleteDocumentArchive(String repositoryId, String archiveId) {
+		nonCachedContentDaoService.deleteDocumentArchive(repositoryId, archiveId);
+	}
+
+	@Override
 	public void restoreContent(String repositoryId, Archive archive) {
 		nonCachedContentDaoService.restoreContent(repositoryId, archive);
 	}
@@ -816,14 +1049,28 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		nonCachedContentDaoService.restoreAttachment(repositoryId, archive);
 	}
 
+	@Override
+	public void restoreDocumentWithArchive(String repositoryId, Archive archive) {
+		final String originalId = archive.getOriginalId();
+		nonCachedContentDaoService.restoreDocumentWithArchive(repositoryId, archive);
+
+		Content restored = getContent(repositoryId, originalId);
+		if(restored == null){
+			//TODO log
+		}else{
+			//TODO rebuild cache into getChildren()
+			addToTreeCache(repositoryId, restored);
+		}
+	}
+
 	// //////////////////////////////////////////////////////////////////////////////
 	// Cache management
 	// //////////////////////////////////////////////////////////////////////////////
 	public void refreshCmisObjectData(String repositoryId, String objectId){
 		nemakiCachePool.get(repositoryId).getObjectDataCache().remove(objectId);
 	}
-	
-	
+
+
 	// //////////////////////////////////////////////////////////////////////////////
 	// Spring
 	// //////////////////////////////////////////////////////////////////////////////
@@ -834,4 +1081,5 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public void setNemakiCachePool(NemakiCachePool nemakiCachePool) {
 		this.nemakiCachePool = nemakiCachePool;
 	}
+
 }

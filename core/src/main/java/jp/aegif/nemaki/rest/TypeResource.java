@@ -1,6 +1,7 @@
 package jp.aegif.nemaki.rest;
 
 import java.io.InputStream;
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -36,13 +37,12 @@ import org.dom4j.Document;
 import org.dom4j.DocumentException;
 import org.dom4j.Element;
 import org.dom4j.io.SAXReader;
+import org.glassfish.jersey.media.multipart.FormDataParam;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
-import com.sun.jersey.multipart.FormDataParam;
-
 @Path("/repo/{repositoryId}/type")
-public class TypeResource extends ResourceBase{
+public class TypeResource extends ResourceBase {
 
 	private TypeService typeService;
 	private TypeManager typeManager;
@@ -58,19 +58,18 @@ public class TypeResource extends ResourceBase{
 	@Path("/register")
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.MULTIPART_FORM_DATA)
-	public String register(@PathParam("repositoryId") String repositoryId,
-			@FormDataParam("data") InputStream is) {
+	public String register(@PathParam("repositoryId") String repositoryId, @FormDataParam("data") InputStream is) {
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		try{
+		try {
 			parse(repositoryId, is);
 			create(repositoryId);
 			typeManager.refreshTypes();
 
 			status = true;
-		}catch(Exception e){
+		} catch (Exception e) {
 			log.warn("Type registrations fails", e);
 			addErrMsg(errMsg, "types", "failsToRegister");
 		}
@@ -79,28 +78,20 @@ public class TypeResource extends ResourceBase{
 		return result.toJSONString();
 	}
 
-	private void parse(String repositoryId, InputStream is){
+	private void parse(String repositoryId, InputStream is) throws DocumentException {
 		SAXReader saxReader = new SAXReader();
-		Document document;
+		Document document = saxReader.read(is);
+		Element model = document.getRootElement();
 
-		try {
-			document = saxReader.read(is);
-			Element model = document.getRootElement();
+		// Types
+		Element _types = getElement(model, "types");
+		List<Element> types = getElements(_types, "type");
+		parseTypes(repositoryId, types);
 
-			//Types
-			Element _types = getElement(model, "types");
-			List<Element> types = getElements(_types, "type");
-			parseTypes(repositoryId, types);
-
-			//Aspects
-			Element _aspects = getElement(model, "aspects");
-			List<Element> aspects = getElements(_aspects, "aspect");
-			parseTypes(repositoryId, aspects);
-
-		} catch (DocumentException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
+		// Aspects
+		Element _aspects = getElement(model, "aspects");
+		List<Element> aspects = getElements(_aspects, "aspect");
+		parseTypes(repositoryId, aspects);
 	}
 
 	private void parseTypes(String repositoryId, List<Element> types) {
@@ -117,12 +108,10 @@ public class TypeResource extends ResourceBase{
 			String typeId = getAttributeValue(type, "name");
 			if (StringUtils.isEmpty(typeId)) {
 				log.warn("typeId should be specified. SKIP.");
-			} else {
-				if (existType(repositoryId, typeId)) {
-					log.warn("typeId:" + typeId
-							+ " already exists in DB! SKIP.");
-					continue;
-				}
+				continue;
+			} else if (existType(repositoryId, typeId)) {
+				log.warn(MessageFormat.format("typeId:{0} already exists in DB! SKIP.",typeId));
+				continue;
 			}
 			tdf.setTypeId(typeId);
 			tdf.setLocalName(typeId);
@@ -130,8 +119,7 @@ public class TypeResource extends ResourceBase{
 			// title
 			String title = getElementValue(type, "title");
 			if (StringUtils.isEmpty(title)) {
-				log.warn("typeId:" + typeId
-						+ " 'title' is nos specified. Default to typeId.");
+				log.warn(MessageFormat.format("typeId:{0} 'title' is nos specified. Default to typeId.",typeId));
 			}
 			tdf.setLocalNameSpace("");
 			tdf.setDisplayName(title);
@@ -140,9 +128,8 @@ public class TypeResource extends ResourceBase{
 			// parent and baseType
 			String parent = getElementValue(type, "parent");
 			if ("type".equals(type.getName())) {
-				if(StringUtils.isEmpty(parent)){
-					log.warn("typeId:" + typeId
-							+ " 'parent' should be specified. SKIP.");
+				if (StringUtils.isEmpty(parent)) {
+					log.warn(MessageFormat.format("typeId:{0} 'parent' should be specified. SKIP.",typeId));
 					continue;
 				}
 
@@ -152,14 +139,15 @@ public class TypeResource extends ResourceBase{
 				} else if ("cm:folder".equals(parent)) {
 					tdf.setBaseId(BaseTypeId.CMIS_FOLDER);
 					tdf.setParentId(BaseTypeId.CMIS_FOLDER.value());
-				} else {
-					// TODO association(relationship)
+				} else if ("cm:relationship".equals(parent)) {
+					tdf.setBaseId(BaseTypeId.CMIS_RELATIONSHIP);
+					tdf.setParentId(BaseTypeId.CMIS_RELATIONSHIP.value());
 				}
-			}else if("aspect".equals(type.getName())){
+			} else if ("aspect".equals(type.getName())) {
 				tdf.setBaseId(BaseTypeId.CMIS_SECONDARY);
-				if(StringUtils.isBlank(parent)){
+				if (StringUtils.isBlank(parent)) {
 					tdf.setParentId(BaseTypeId.CMIS_SECONDARY.value());
-				}else{
+				} else {
 					tdf.setParentId(parent);
 				}
 			}
@@ -167,7 +155,7 @@ public class TypeResource extends ResourceBase{
 			// properties
 			Element _properties = getElement(type, "properties");
 			List<Element> properties = getElements(_properties, "property");
-			if(CollectionUtils.isNotEmpty(properties)){
+			if (CollectionUtils.isNotEmpty(properties)) {
 				parseProperties(repositoryId, typeId, properties);
 			}
 
@@ -177,7 +165,7 @@ public class TypeResource extends ResourceBase{
 
 	}
 
-	private void parseProperties(String repositoryId, String typeId, List<Element> properties){
+	private void parseProperties(String repositoryId, String typeId, List<Element> properties) {
 		List<String> propertyIds = new ArrayList<String>();
 
 		for (Element property : properties) {
@@ -188,8 +176,7 @@ public class TypeResource extends ResourceBase{
 			String propName = getAttributeValue(property, "name");
 			// Check existing property definitions
 			if (existProperty(repositoryId, propName)) {
-				log.warn("propertyId:" + propName
-						+ " already exists in DB! SKIP.");
+				log.warn(MessageFormat.format("propertyId:{0} already exists in DB! SKIP.",propName));
 				continue;
 			}
 			propertyIds.add(propName);
@@ -205,30 +192,23 @@ public class TypeResource extends ResourceBase{
 
 			// data type
 			String dataType = getElementValue(property, "type");
-			if ("d:text".equals(dataType)
-					|| "d:mltext".equals(dataType)
-					|| "d:content".equals(dataType)) {
+			if ("d:text".equals(dataType) || "d:mltext".equals(dataType) || "d:content".equals(dataType)) {
 				core.setPropertyType(PropertyType.STRING);
-			} else if ("d:int".equals(dataType)
-					|| "d:long".equals(dataType)) {
+			} else if ("d:int".equals(dataType) || "d:long".equals(dataType)) {
 				core.setPropertyType(PropertyType.INTEGER);
-			} else if ("d:float".equals(dataType)
-					|| "d:double".equals(dataType)) {
+			} else if ("d:float".equals(dataType) || "d:double".equals(dataType)) {
 				// FIXME is this mapping OK?
 				core.setPropertyType(PropertyType.DECIMAL);
-			} else if ("d:date".equals(dataType)
-					|| "d:datetime".equals(dataType)) {
+			} else if ("d:date".equals(dataType) || "d:datetime".equals(dataType)) {
 				// TODO implement datePrecision
 				core.setPropertyType(PropertyType.DATETIME);
 			} else if ("d:boolean".equals(dataType)) {
 				core.setPropertyType(PropertyType.BOOLEAN);
 			} else if ("d:any".equals(dataType)) {
-				log.info(buildMsg(typeId, propName,
-						"'d:any data' types is not allowed. Defaults to STRING."));
+				log.info(buildMsg(typeId, propName, "'d:any data' types is not allowed. Defaults to STRING."));
 				core.setPropertyType(PropertyType.STRING);
 			} else {
-				log.info(buildMsg(typeId, propName,
-						"'Unknown data type. Defaults to STRING."));
+				log.info(buildMsg(typeId, propName, "'Unknown data type. Defaults to STRING."));
 				core.setPropertyType(PropertyType.STRING);
 			}
 
@@ -238,8 +218,7 @@ public class TypeResource extends ResourceBase{
 				core.setCardinality(Cardinality.MULTI);
 			} else {
 				if (StringUtils.isBlank(multiple)) {
-					log.info(buildMsg(typeId, propName,
-							"'multiple' is not specified. Default to false"));
+					log.info(buildMsg(typeId, propName, "'multiple' is not specified. Default to false"));
 				}
 				core.setCardinality(Cardinality.SINGLE);
 			}
@@ -254,7 +233,7 @@ public class TypeResource extends ResourceBase{
 			// defaultValue
 			String defaultValue = getElementValue(property, "default");
 			// TODO multiple default values are allowed?
-			if(!StringUtils.isBlank(defaultValue)){
+			if (!StringUtils.isBlank(defaultValue)) {
 				List<Object> defaults = new ArrayList<Object>();
 				defaults.add(defaultValue);
 				detail.setDefaultValue(defaults);
@@ -264,15 +243,14 @@ public class TypeResource extends ResourceBase{
 			Element _constraints = getElement(property, "constraints");
 			setConstraints(detail, _constraints);
 
-			//updatability
+			// updatability
 			detail.setUpdatability(Updatability.READWRITE);
 
 			// required
 			if (existElement(property, "mandatory")) {
 				detail.setRequired(true);
 			} else {
-				log.info(buildMsg(typeId, propName,
-					"'mandatory' is not specified. Default to false"));
+				log.info(buildMsg(typeId, propName, "'mandatory' is not specified. Default to false"));
 				detail.setRequired(false);
 			}
 
@@ -285,8 +263,7 @@ public class TypeResource extends ResourceBase{
 			if (indexEnabled) {
 				detail.setQueryable(true);
 			} else {
-				log.info(buildMsg(typeId, propName,
-						"'index' is not specified. Default to false"));
+				log.info(buildMsg(typeId, propName, "'index' is not specified. Default to false"));
 
 				detail.setQueryable(false);
 			}
@@ -300,8 +277,7 @@ public class TypeResource extends ResourceBase{
 		typeProperties.put(typeId, propertyIds);
 	}
 
-	private void setConstraints(NemakiPropertyDefinitionDetail detail,
-			Element _constraints) {
+	private void setConstraints(NemakiPropertyDefinitionDetail detail, Element _constraints) {
 		List<Element> constraints = getElements(_constraints, "constraint");
 		for (Element constraint : constraints) {
 			String type = getAttributeValue(constraint, "type");
@@ -325,8 +301,7 @@ public class TypeResource extends ResourceBase{
 					Element _allowed = getElement(constraint, "parameter");
 					if (_allowed != null) {
 						Element list = getElement(_allowed, "list");
-						List<String> values = getElementsValues(_allowed,
-								"value");
+						List<String> values = getElementsValues(_allowed, "value");
 
 						Choice choice = new Choice();
 						List<Object> _values = new ArrayList<Object>();
@@ -344,49 +319,47 @@ public class TypeResource extends ResourceBase{
 
 	private void create(String repositoryId) {
 		// First, create properties
-		for (Entry<String, NemakiPropertyDefinitionCore> coreEntry : coreMaps
-				.entrySet()) {
-			NemakiPropertyDefinition p = new NemakiPropertyDefinition(
-					coreEntry.getValue(), detailMaps.get(coreEntry.getKey()));
+		for (Entry<String, NemakiPropertyDefinitionCore> coreEntry : coreMaps.entrySet()) {
+			NemakiPropertyDefinition p = new NemakiPropertyDefinition(coreEntry.getValue(),
+					detailMaps.get(coreEntry.getKey()));
 			typeService.createPropertyDefinition(repositoryId, p);
-			NemakiPropertyDefinitionCore createdCore = typeService
-					.getPropertyDefinitionCoreByPropertyId(repositoryId, p.getPropertyId());
+			NemakiPropertyDefinitionCore createdCore = typeService.getPropertyDefinitionCoreByPropertyId(repositoryId,
+					p.getPropertyId());
 
 			coreEntry.getValue().setId(createdCore.getId());
 		}
 
-		//Prepare types
-		for (Entry<String, NemakiTypeDefinition> typeEntry : typeMaps
-				.entrySet()) {
+		// Prepare types
+		for (Entry<String, NemakiTypeDefinition> typeEntry : typeMaps.entrySet()) {
 			NemakiTypeDefinition t = typeEntry.getValue();
 
 			// TODO Set property detail ids
 			List<String> propertyNodeIds = new ArrayList<String>();
 			List<String> propertyIds = typeProperties.get(t.getTypeId());
-			if(CollectionUtils.isNotEmpty(propertyIds)){
+			if (CollectionUtils.isNotEmpty(propertyIds)) {
 				for (String propertyId : typeProperties.get(t.getTypeId())) {
-					NemakiPropertyDefinitionCore core = typeService
-							.getPropertyDefinitionCoreByPropertyId(repositoryId, propertyId);
-					//propertyNodeIds.add(core.getId());
-					List<NemakiPropertyDefinitionDetail> details =
-							typeService.getPropertyDefinitionDetailByCoreNodeId(repositoryId, core.getId());
-					if(CollectionUtils.isEmpty(details)){
+					NemakiPropertyDefinitionCore core = typeService.getPropertyDefinitionCoreByPropertyId(repositoryId,
+							propertyId);
+					// propertyNodeIds.add(core.getId());
+					List<NemakiPropertyDefinitionDetail> details = typeService
+							.getPropertyDefinitionDetailByCoreNodeId(repositoryId, core.getId());
+					if (CollectionUtils.isEmpty(details)) {
 						log.warn(buildMsg(t.getTypeId(), propertyId,
 								"Skipped to add this property because of incorrect data in DB."));
-					}else{
-						//Presuppose there is no multiple detail for each core
+					} else {
+						// Presuppose there is no multiple detail for each core
 						NemakiPropertyDefinitionDetail detail = details.get(0);
-								propertyNodeIds.add(detail.getId());
+						propertyNodeIds.add(detail.getId());
 					}
 				}
 				t.setProperties(propertyNodeIds);
 			}
 
-			//Remove orphan types
-			if(typeMaps.get(t.getParentId()) == null && !isBaseType(t.getParentId())){
+			// Remove orphan types
+			if (typeMaps.get(t.getParentId()) == null && !isBaseType(t.getParentId())) {
 				log.warn(buildMsg(t.getId(), null,
 						"Skipped to create this type because it has an unknown parent type."));
-			}else{
+			} else {
 				typeService.createTypeDefinition(repositoryId, t);
 			}
 		}
@@ -395,13 +368,12 @@ public class TypeResource extends ResourceBase{
 	private Element getElement(Element parent, String name) {
 		Element result = null;
 
-		if(existElement(parent, name)){
-			for (Iterator<Element> iterator = parent.elementIterator(name); iterator
-					.hasNext();) {
+		if (existElement(parent, name)) {
+			for (Iterator<Element> iterator = parent.elementIterator(name); iterator.hasNext();) {
 				result = iterator.next();
 			}
 			return result;
-		}else{
+		} else {
 			log.info("Cannot parse " + "'" + name + "'.");
 			return result;
 		}
@@ -410,14 +382,13 @@ public class TypeResource extends ResourceBase{
 	private List<Element> getElements(Element parent, String name) {
 		List<Element> results = new ArrayList<Element>();
 
-		if(existElement(parent, name)){
-			for (Iterator<Element> iterator = parent.elementIterator(name); iterator
-					.hasNext();) {
+		if (existElement(parent, name)) {
+			for (Iterator<Element> iterator = parent.elementIterator(name); iterator.hasNext();) {
 				results.add(iterator.next());
 			}
 			return results;
-		}else{
-			log.info("Cannot parse " + "'" + name + "'.");
+		} else {
+			log.info(MessageFormat.format("Cannot parse '{0}'.",name));
 			return results;
 		}
 	}
@@ -427,7 +398,7 @@ public class TypeResource extends ResourceBase{
 		if (elm != null) {
 			return elm.getStringValue();
 		} else {
-			log.info("Cannot parse " + "'" + name + "'.");
+			log.info(MessageFormat.format("Cannot parse '{0}'.",name));
 			return null;
 		}
 	}
@@ -442,22 +413,19 @@ public class TypeResource extends ResourceBase{
 		return result;
 	}
 
-	private String getAttributeValue(Element element, String name){
-		if(existAttribute(element, name)){
+	private String getAttributeValue(Element element, String name) {
+		if (existAttribute(element, name)) {
 			Attribute attr = element.attribute(name);
 			return attr.getStringValue();
-		}else{
+		} else {
 			return null;
 		}
 	}
 
 	private boolean isBaseType(String typeId) {
-		if (BaseTypeId.CMIS_DOCUMENT.value().equals(typeId)
-				|| BaseTypeId.CMIS_FOLDER.value().equals(typeId)
-				|| BaseTypeId.CMIS_RELATIONSHIP.value().equals(typeId)
-				|| BaseTypeId.CMIS_POLICY.value().equals(typeId)
-				|| BaseTypeId.CMIS_ITEM.value().equals(typeId)
-				|| BaseTypeId.CMIS_SECONDARY.value().equals(typeId)) {
+		if (BaseTypeId.CMIS_DOCUMENT.value().equals(typeId) || BaseTypeId.CMIS_FOLDER.value().equals(typeId)
+				|| BaseTypeId.CMIS_RELATIONSHIP.value().equals(typeId) || BaseTypeId.CMIS_POLICY.value().equals(typeId)
+				|| BaseTypeId.CMIS_ITEM.value().equals(typeId) || BaseTypeId.CMIS_SECONDARY.value().equals(typeId)) {
 			return true;
 		} else {
 			return false;
@@ -474,8 +442,8 @@ public class TypeResource extends ResourceBase{
 	}
 
 	private boolean existProperty(String repositoryId, String propertyId) {
-		NemakiPropertyDefinitionCore existing = typeService
-				.getPropertyDefinitionCoreByPropertyId(repositoryId, propertyId);
+		NemakiPropertyDefinitionCore existing = typeService.getPropertyDefinitionCoreByPropertyId(repositoryId,
+				propertyId);
 		if (existing == null) {
 			return false;
 		} else {
@@ -483,36 +451,35 @@ public class TypeResource extends ResourceBase{
 		}
 	}
 
-	private boolean existElement(Element parent, String name){
-		try{
+	private boolean existElement(Element parent, String name) {
+		try {
 			parent.element(name);
 			return true;
-		}catch(Exception e){
+		} catch (Exception e) {
 			return false;
 		}
 	}
 
-
-	private boolean existAttribute(Element element, String name){
-		try{
+	private boolean existAttribute(Element element, String name) {
+		try {
 			element.attribute(name);
 			return true;
-		}catch(Exception e){
+		} catch (Exception e) {
 			return false;
 		}
 	}
 
-	private String buildMsg(String typeId, String propertyId, String msg){
+	private String buildMsg(String typeId, String propertyId, String msg) {
 		List<String> header = new ArrayList<String>();
 
 		String _typeId = "";
-		if(StringUtils.isNotBlank(typeId)){
+		if (StringUtils.isNotBlank(typeId)) {
 			_typeId = "typeId=" + typeId;
 			header.add(_typeId);
 		}
 
 		String _proeprtyId = "";
-		if(StringUtils.isNotBlank(propertyId)){
+		if (StringUtils.isNotBlank(propertyId)) {
 			_proeprtyId = "propertyId=" + propertyId;
 			header.add(_proeprtyId);
 		}

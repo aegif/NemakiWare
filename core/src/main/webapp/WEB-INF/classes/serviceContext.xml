@@ -6,16 +6,6 @@
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:aop="http://www.springframework.org/schema/aop"
     xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
 
-	<!-- Cache -->
-	<bean id="nemakiCachePool" class="jp.aegif.nemaki.util.cache.impl.NemakiCachePoolImpl"
-	init-method="init">
-		<property name="propertyManager">
-            <ref bean="propertyManager" />
-        </property>
-        <property name="repositoryInfoMap">
-            <ref bean="repositoryInfoMap" />
-        </property>
-	</bean>
 
     <!-- CMIS Repository Beans -->
     <bean id="CmisLifecycleBean" class="jp.aegif.nemaki.cmis.factory.CmisLifecycleBean">
@@ -71,14 +61,14 @@
     		<ref bean="aclCapabilities"/>
     	</property>
     	<property name="propertyManager">
-            <ref bean="propertyManager" />
+            <ref bean="springPropertyManager" />
         </property>
     </bean>
 
     <bean id="capabilities"
         class="jp.aegif.nemaki.cmis.factory.info.Capabilities" init-method="init">
         <property name="propertyManager">
-            <ref bean="propertyManager" />
+            <ref bean="springPropertyManager" />
         </property>
     </bean>
 
@@ -86,7 +76,7 @@
         class="jp.aegif.nemaki.cmis.factory.info.AclCapabilities"
         init-method="init">
         <property name="propertyManager">
-            <ref bean="propertyManager" />
+            <ref bean="springPropertyManager" />
         </property>
     </bean>
 
@@ -209,6 +199,9 @@
         <property name="compileService">
             <ref bean="CompileService" />
         </property>
+        <property name="relationshipService">
+            <ref bean="RelationshipService" />
+        </property>
         <property name="solrUtil">
             <ref bean="solrUtil" />
         </property>
@@ -222,7 +215,7 @@
             <ref bean="ThreadLockService" />
         </property>
     </bean>
-    
+
     <bean id="ObjectServiceInternal" class="org.springframework.aop.framework.ProxyFactoryBean">
         <property name="proxyInterfaces">
             <list>
@@ -417,6 +410,9 @@
     </bean>
     <bean id="authenticationService"
         class="jp.aegif.nemaki.cmis.factory.auth.impl.AuthenticationServiceImpl">
+        <property name="contentService">
+            <ref bean="ContentService" />
+        </property>
         <property name="principalService">
             <ref bean="PrincipalService" />
         </property>
@@ -446,6 +442,9 @@
         class="jp.aegif.nemaki.cmis.factory.auth.impl.TokenServiceImpl" init-method="init" depends-on="PrincipalService">
         <property name="propertyManager">
             <ref bean="propertyManager" />
+        </property>
+         <property name="contentService">
+            <ref bean="ContentService" />
         </property>
         <property name="principalService">
             <ref bean="PrincipalService" />
@@ -489,8 +488,8 @@
         <property name="nemakiCachePool">
             <ref bean="nemakiCachePool" />
         </property>
-        <property name="includeRelationshipsEnabled">
-        	<value>${capability.extended.include.relationships}</value>
+        <property name="propertyManager">
+            <ref bean="propertyManager" />
         </property>
         <property name="sortUtil">
             <ref bean="sortUtil" />
@@ -555,6 +554,12 @@
         <property name="principalService">
             <ref bean="PrincipalService" />
         </property>
+        <property name="contentDaoService">
+            <ref bean="contentDaoService" />
+        </property>
+        <property name="propertyManager">
+            <ref bean="propertyManager" />
+        </property>
     </bean>
 
 
@@ -598,8 +603,10 @@
         <property name="propertyManager">
             <ref bean="propertyManager" />
         </property>
+        <property name="typeService">
+            <ref bean="typeService" />
+        </property>        
     </bean>
-
 
     <!-- Extra Rest API implemented by Jersey -->
     <bean id="restAuthenticationFilter" class="jp.aegif.nemaki.rest.AuthenticationFilter">
@@ -620,11 +627,9 @@
         </property>
     </bean>
 
-
-
-    <bean id="groupResource" class="jp.aegif.nemaki.rest.GroupResource">
-        <property name="principalService">
-            <ref bean="PrincipalService" />
+	<bean id="groupItemResource" class="jp.aegif.nemaki.rest.GroupItemResource">
+        <property name="contentService">
+            <ref bean="ContentService" />
         </property>
     </bean>
 
@@ -643,12 +648,21 @@
         </property>
     </bean>
 
-    <bean id="userResource" class="jp.aegif.nemaki.rest.UserResource">
-        <property name="principalService">
-            <ref bean="PrincipalService" />
+    <bean id="userItemResource" class="jp.aegif.nemaki.rest.UserItemResource">
+        <property name="contentService">
+            <ref bean="ContentService" />
         </property>
-        <property name="solrResource">
-            <ref bean="solrResource" />
+         <property name="propertyManager">
+            <ref bean="propertyManager" />
+        </property>
+    </bean>
+
+    <bean id="configResource" class="jp.aegif.nemaki.rest.ConfigResource">
+        <property name="contentDaoService">
+            <ref bean="ContentDaoService" />
+        </property>
+        <property name="threadLockService">
+            <ref bean="ThreadLockService" />
         </property>
          <property name="propertyManager">
             <ref bean="propertyManager" />
@@ -666,7 +680,7 @@
        		<ref bean="TokenService" />
         </property>
     </bean>
-    
+
     <bean id="cacheResource" class="jp.aegif.nemaki.rest.CacheResource">
     	<property name="nemakiCachePool">
 			<ref bean="nemakiCachePool" />
@@ -675,7 +689,7 @@
        		<ref bean="ThreadLockService" />
         </property>
     </bean>
-    
+
     <!-- Thread Lock -->
     <bean id="ThreadLockService" class="org.springframework.aop.framework.ProxyFactoryBean">
         <property name="proxyInterfaces">
@@ -690,4 +704,26 @@
     </bean>
     <bean id="threadLockService" class="jp.aegif.nemaki.util.lock.impl.ThreadLockServiceImpl">
     </bean>
+    <bean id="bulkCheckInResource" class="jp.aegif.nemaki.rest.BulkCheckInResource">
+    	<property name="contentService">
+       		<ref bean="ContentService" />
+        </property>
+        <property name="versioningService">
+            <ref bean="VersioningService" />
+        </property>
+        <property name="relationshipService">
+            <ref bean="RelationshipService" />
+        </property>
+    	<property name="compileService">
+       		<ref bean="CompileService" />
+        </property>
+        <property name="typeService">
+            <ref bean="TypeService" />
+        </property>
+        <property name="typeManager">
+            <ref bean="TypeManager" />
+        </property>
+    </bean>
+
+
 </beans>

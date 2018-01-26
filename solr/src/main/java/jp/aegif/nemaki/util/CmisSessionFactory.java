@@ -6,23 +6,19 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.Writer;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.Properties;
-
 import org.apache.chemistry.opencmis.client.api.OperationContext;
-import org.apache.chemistry.opencmis.client.api.Repository;
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.client.api.SessionFactory;
 import org.apache.chemistry.opencmis.client.runtime.SessionFactoryImpl;
 import org.apache.chemistry.opencmis.commons.SessionParameter;
 import org.apache.chemistry.opencmis.commons.enums.BindingType;
-import org.apache.commons.collections.CollectionUtils;
-import org.apache.log4j.Logger;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.esotericsoftware.yamlbeans.YamlReader;
 import com.esotericsoftware.yamlbeans.YamlWriter;
@@ -34,34 +30,35 @@ import jp.aegif.nemaki.util.yaml.RepositorySetting;
 import jp.aegif.nemaki.util.yaml.RepositorySettings;
 
 public class CmisSessionFactory {
-	private static final Logger logger = Logger.getLogger(CmisSessionFactory.class);
+	private static final Logger logger = LoggerFactory.getLogger(CmisSessionFactory.class);
 
-	private static Map<String,Session> sessions = new HashMap<String,Session>();
+	private static Map<String, Session> sessions = new HashMap<String, Session>();
 	private static NemakiTokenManager nemakiTokenManager = new NemakiTokenManager();
 	private static RepositorySettings repositorySettings;
 	private static PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
 
-
-	public static Session getSession(String repositoryId){
-		if(!isConnectionSetup(repositoryId)){
+	public static Session getSession(String repositoryId) {
+		if (!isConnectionSetup(repositoryId)) {
 			sessions.put(repositoryId, setupCmisSession(repositoryId));
 		}
 
 		Session session = sessions.get(repositoryId);
-		if(session == null){
-			logger.warn("No CMIS repositoryId:" + repositoryId);
+		if (session == null) {
+			logger.warn("No CMIS repositoryId:{}", repositoryId);
 		}
 		return sessions.get(repositoryId);
 	}
-	public static void clearSession(String repositoryId){
+
+	public static void clearSession(String repositoryId) {
 		Session session = sessions.get(repositoryId);
-		if(session == null) return;
+		if (session == null)
+			return;
 		sessions.remove(repositoryId);
 	}
 
-	private static Session setupCmisSession(String repositoryId){
+	private static Session setupCmisSession(String repositoryId) {
 		// Parameter
-		Map<String, String> parameter = buildCommonParam();
+		Map<String, String> parameter = buildCommonParam(repositoryId);
 		buildRepositoryParam(parameter, repositoryId);
 
 		// Create session
@@ -70,9 +67,8 @@ public class CmisSessionFactory {
 			// create session
 			SessionFactory f = SessionFactoryImpl.newInstance();
 			session = f.createSession(parameter);
-			OperationContext operationContext = session
-					.createOperationContext(null, false, false, false, null,
-							null, false, null, false, 100); //Cache disabled
+			OperationContext operationContext = session.createOperationContext(null, false, false, false, null, null,
+					false, null, false, 100); // Cache disabled
 			session.setDefaultContext(operationContext);
 
 			return session;
@@ -83,84 +79,79 @@ public class CmisSessionFactory {
 		return null;
 	}
 
-	private static Map<String,String> buildCommonParam(){
+	private static Map<String, String> buildCommonParam(String repositoryId) {
 		Map<String, String> parameter = new HashMap<>();
+
+		// session locale
+		parameter.put(SessionParameter.LOCALE_ISO3166_COUNTRY, "");
+		parameter.put(SessionParameter.LOCALE_ISO639_LANGUAGE, "");
+
+		// repository
+		// String repositoryId =
+		// NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_REPOSITORY);
+		parameter.put(SessionParameter.REPOSITORY_ID, repositoryId);
+		// parameter.put(org.apache.chemistry.opencmis.commons.impl.Constants.PARAM_REPOSITORY_ID,
+		// NemakiConfig.getValue(PropertyKey.NEMAKI_CORE_URI_REPOSITORY));
+
+		parameter.put(SessionParameter.BINDING_TYPE, BindingType.ATOMPUB.value());
 
 		String protocol = pm.readValue(PropertyKey.CMIS_SERVER_PROTOCOL);
 		String host = pm.readValue(PropertyKey.CMIS_SERVER_HOST);
 		String port = pm.readValue(PropertyKey.CMIS_SERVER_PORT);
 		String context = pm.readValue(PropertyKey.CMIS_SERVER_CONTEXT);
-		String wsEndpoint = pm.readValue(PropertyKey.CMIS_SERVER_WS_ENDPOINT);
-		String url = getCmisUrl(protocol, host, port, context, wsEndpoint);
-		String country = pm.readValue(PropertyKey.CMIS_LOCALE_COUNTRY);
-		String language = pm.readValue(PropertyKey.CMIS_LOCALE_LANGUAGE);
-
-		// session locale
-		parameter.put(SessionParameter.LOCALE_ISO3166_COUNTRY, country);
-		parameter.put(SessionParameter.LOCALE_ISO639_LANGUAGE, language);
-
-		// WebServices ports
-		parameter.put(SessionParameter.BINDING_TYPE,
-				BindingType.WEBSERVICES.value());
-
-		parameter.put(SessionParameter.WEBSERVICES_ACL_SERVICE, url
-				+ "ACLService?wsdl");
-		parameter.put(SessionParameter.WEBSERVICES_DISCOVERY_SERVICE, url
-				+ "DiscoveryService?wsdl");
-		parameter.put(SessionParameter.WEBSERVICES_MULTIFILING_SERVICE, url
-				+ "MultiFilingService?wsdl");
-		parameter.put(SessionParameter.WEBSERVICES_NAVIGATION_SERVICE, url
-				+ "NavigationService?wsdl");
-		parameter.put(SessionParameter.WEBSERVICES_OBJECT_SERVICE, url
-				+ "ObjectService?wsdl");
-		parameter.put(SessionParameter.WEBSERVICES_POLICY_SERVICE, url
-				+ "PolicyService?wsdl");
-		parameter.put(SessionParameter.WEBSERVICES_RELATIONSHIP_SERVICE, url
-				+ "RelationshipService?wsdl");
-		parameter.put(SessionParameter.WEBSERVICES_REPOSITORY_SERVICE, url
-				+ "RepositoryService?wsdl");
-		parameter.put(SessionParameter.WEBSERVICES_VERSIONING_SERVICE, url
-				+ "VersioningService?wsdl");
+		String endpoint = getAtomEndpoint(protocol, host, port, context, repositoryId);
+		parameter.put(SessionParameter.ATOMPUB_URL, endpoint);
 
 		return parameter;
 	}
 
-	private static void buildRepositoryParam(Map<String, String> parameter, String repositoryId){
-		// repository
-		parameter.put(SessionParameter.REPOSITORY_ID, repositoryId);
+	private static String getAtomEndpoint(String protocol, String host, String port, String context,
+			String repositoryId) {
+		try {
+			URL url = new URL(protocol, host, Integer.parseInt(port), "");
+			return String.format("%s/%s/atom/%s", url.toString(), context, repositoryId);
+		} catch (Exception e) {
+			logger.error("Error occurred during getting ATOM endpoint.", e);
+		}
+		return null;
+	}
 
+	private static void buildRepositoryParam(Map<String, String> parameter, String repositoryId) {
+		// repository
 		RepositorySetting setting = getRepositorySettings().get(repositoryId);
 
 		// user credentials
 		String user = setting.getUser();
-		parameter.put(SessionParameter.USER, setting.getUser());
 		String password = setting.getPassword();
-		parameter.put(SessionParameter.PASSWORD, setting.getPassword());
+		parameter.put(SessionParameter.USER, user);
+		parameter.put(SessionParameter.PASSWORD, password);
 
-		//Auth token
-		Boolean authTokenEnabled =
-				Boolean.valueOf(pm.readValue(PropertyKey.NEMAKI_CAPABILITY_EXTENDED_AUTH_TOKEN));
-		if(authTokenEnabled){
-			parameter.put(SessionParameter.AUTHENTICATION_PROVIDER_CLASS, "jp.aegif.nemaki.util.NemakiAuthenticationProvider");
+		// Auth token
+		Boolean authTokenEnabled = Boolean.valueOf(pm.readValue(PropertyKey.NEMAKI_CAPABILITY_EXTENDED_AUTH_TOKEN));
+		if (authTokenEnabled) {
 			String authToken = nemakiTokenManager.getOrRegister(repositoryId, user, password);
-			parameter.put(Constant.AUTH_TOKEN, authToken);
-			parameter.put(Constant.AUTH_TOKEN_APP, "solr");
+			if (authToken != null) {
+				parameter.put(SessionParameter.AUTHENTICATION_PROVIDER_CLASS,
+						"jp.aegif.nemaki.util.NemakiAuthenticationProvider");
+				parameter.put(Constant.AUTH_TOKEN, authToken);
+				parameter.put(Constant.AUTH_TOKEN_APP, "solr");
+			}
 		}
 	}
 
-	public static RepositorySettings getRepositorySettings(){
-		if (repositorySettings == null){
+	public static RepositorySettings getRepositorySettings() {
+		if (repositorySettings == null) {
 			buildRepositorySettings();
 		}
 		return repositorySettings;
 	}
 
-	private static void buildRepositorySettings(){
+	private static void buildRepositorySettings() {
 		String location = pm.readValue(PropertyKey.REPOSITORIES_SETTING_FILE);
 		CmisSessionFactory.repositorySettings = readRepositorySettings(location);
 	}
 
-	private static RepositorySettings readRepositorySettings(String location){
+	private static RepositorySettings readRepositorySettings(String location) {
 		SolrResourceLoader loader = new SolrResourceLoader(null);
 		try {
 			InputStream in = loader.openResource(location);
@@ -175,7 +166,7 @@ public class CmisSessionFactory {
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
-		}finally{
+		} finally {
 			try {
 				loader.close();
 			} catch (IOException e) {
@@ -186,62 +177,28 @@ public class CmisSessionFactory {
 		return null;
 	}
 
-	public static void modifyRepositorySettings(RepositorySettings settings){
+	public static void modifyRepositorySettings(RepositorySettings settings) {
 		String location = pm.readValue(PropertyKey.REPOSITORIES_SETTING_FILE);
 		SolrResourceLoader loader = new SolrResourceLoader(null);
 		try {
-
 			String configDir = loader.getConfigDir();
 			File file = new File(configDir + location);
 			YamlWriter writer = new YamlWriter(new FileWriter(file));
 			writer.write(settings);
 			writer.close();
-		} catch (FileNotFoundException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}finally{
+		} catch (Exception ex) {
+			logger.error("Error occurred during writing repository settings", ex);
+		} finally {
 			try {
 				loader.close();
-
-			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
+			} catch (Exception ex) {
+				logger.error("Error occurred during closing SolrResourceLoader", ex);
 			}
 		}
-	}
-
-
-	private static String getCmisUrl(String protocol, String host, String port,
-			String context, String wsEndpoint) {
-		try {
-			URL url = new URL(protocol, host, Integer.parseInt(port), "");
-			return url.toString() + "/" + context + "/" + wsEndpoint + "/";
-		} catch (NumberFormatException e) {
-			logger.error("", e);
-			e.printStackTrace();
-		} catch (MalformedURLException e) {
-			logger.error("", e);
-		}
-		return null;
 	}
 
 	public static boolean isConnectionSetup(String repositoryId) {
 		return (sessions.get(repositoryId) != null);
 	}
 
-	public static List<Repository> getRepositories(){
-		Map<String,String> parameter = buildCommonParam();
-		SessionFactory f = SessionFactoryImpl.newInstance();
-		List<Repository> repositories = f.getRepositories(parameter);
-
-		if(CollectionUtils.isEmpty(repositories)){
-			logger.error("No CMIS repository!");
-		}
-
-		return repositories;
-
-	}
 }

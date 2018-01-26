@@ -20,23 +20,26 @@
  ******************************************************************************/
 package jp.aegif.nemaki.cmis.factory.auth.impl;
 
+import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
+import org.apache.commons.lang.ObjectUtils;
+import org.apache.commons.lang.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
+import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
 import jp.aegif.nemaki.cmis.factory.auth.Token;
 import jp.aegif.nemaki.cmis.factory.auth.TokenService;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
-import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.dao.ContentDaoService;
+import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.AuthenticationUtil;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.util.constant.PropertyKey;
-
-import org.apache.chemistry.opencmis.commons.server.CallContext;
-import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
-import org.apache.commons.lang.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
-import org.mindrot.jbcrypt.BCrypt;
+import jp.aegif.nemaki.util.constant.SystemConst;
 
 /**
  * Authentication Service implementation.
@@ -45,16 +48,20 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 	private static final Log log = LogFactory.getLog(AuthenticationServiceImpl.class);
 
+	private ContentService contentService;
+	private ContentDaoService contentDaoService;
 	private PrincipalService principalService;
 	private TokenService tokenService;
 	private PropertyManager propertyManager;
 	private RepositoryInfoMap repositoryInfoMap;
 
 	public boolean login(CallContext callContext) {
+		String repositoryId = callContext.getRepositoryId();
+
 		// Set flag of SuperUsers
 		String suId = repositoryInfoMap.getSuperUsers().getId();
 		((CallContextImpl)callContext).put(CallContextKey.IS_SU,
-				suId.equals(callContext.getRepositoryId()));
+				suId.equals(repositoryId));
 
 		// SSO
 		if (loginWithExternalAuth(callContext)) {
@@ -71,30 +78,30 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	}
 
 	private boolean loginWithExternalAuth(CallContext callContext) {
-		final String repositoryId = "bedroom"; // TODO hard coding
+		String repositoryId = callContext.getRepositoryId();
 
 		String proxyHeaderKey = propertyManager.readValue(PropertyKey.EXTERNAL_AUTHENTICATION_PROXY_HEADER);
-		if(StringUtils.isBlank(proxyHeaderKey)){
-			return false;
-		}
+		if(StringUtils.isBlank(proxyHeaderKey)) return false;
+
 		String proxyUserId = (String) callContext.get(proxyHeaderKey);
 		if (StringUtils.isBlank(proxyUserId)) {
-			log.warn("Not authenticated user");
 			return false;
 		} else {
-			User user = principalService.getUserById(repositoryId, proxyUserId);
-			if (user == null) {
-				User newUser = new User(proxyUserId, proxyUserId, "", "", "",
-						BCrypt.hashpw(proxyUserId, BCrypt.gensalt()));
-				principalService.createUser(repositoryId, newUser);
-				log.debug("Authenticated userId=" + newUser.getUserId());
+			UserItem userItem = contentService.getUserItemById(repositoryId, proxyUserId);
+			if (userItem == null) {
+				Boolean isAutoCreate = propertyManager.readBoolean(PropertyKey.EXTERNAL_AUTHENTICATION_AUTO_CREATE_USER);
+				if(isAutoCreate){
+					String parentFolderId = propertyManager.readValue(PropertyKey.CAPABILITY_EXTENDED_USER_ITEM_FOLDER);
+					userItem = new UserItem(null, "nemaki:user", proxyUserId, proxyUserId, null, false, parentFolderId);
+					contentDaoService.create(repositoryId, userItem);
+				}else{
+					return false;
+				}
 			} else {
-				log.debug("Authenticated userId=" + user.getUserId());
-
-				//Admin check
-				boolean isAdmin = user.isAdmin() == null ? false : true;
+				boolean isAdmin = userItem.isAdmin() == null ? false : true;
 				setAdminFlagInContext(callContext, isAdmin);
 			}
+			log.debug("Header Authenticated. UserId=" + userItem.getUserId());
 			return true;
 		}
 	}
@@ -102,15 +109,15 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	private boolean loginWithToken(CallContext callContext) {
 		String userName = callContext.getUsername();
 		String token;
-		if (callContext.get("nemaki_auth_token") == null) {
+		if (callContext.get(CallContextKey.AUTH_TOKEN) == null) {
 			return false;
 		} else {
-			token = (String) callContext.get("nemaki_auth_token");
+			token = (String) callContext.get(CallContextKey.AUTH_TOKEN);
 			if (StringUtils.isBlank(token)) {
 				return false;
 			}
 		}
-		Object _app = callContext.get("nemaki_auth_token_app");
+		Object _app = callContext.get(CallContextKey.AUTH_TOKEN_APP);
 		String app = (_app == null) ? "" : (String) _app;
 
 		if (authenticateUserByToken(app, callContext.getRepositoryId(), userName, token)) {
@@ -122,36 +129,41 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 			return true;
 		}
 
+
 		return false;
 	}
 
 	private boolean loginWithBasicAuth(CallContext callContext) {
 		String repositoryId = callContext.getRepositoryId();
+
 		//Check repositoryId exists
-		if(!repositoryInfoMap.contains(repositoryId)){
-			return false;
-		}
+		if(!repositoryInfoMap.contains(repositoryId)) return false;
 
 		// Basic auth with id/password
-		User user = getAuthenticatedUser(callContext.getRepositoryId(), callContext.getUsername(), callContext.getPassword());
-		if (user == null)
-			return false;
+		UserItem user = getAuthenticatedUserItem(callContext.getRepositoryId(), callContext.getUsername(), callContext.getPassword());
+		if (user == null) return false;
 
 		boolean isAdmin = user.isAdmin() == null ? false : true;
 		setAdminFlagInContext(callContext, isAdmin);
+		return true;
+	}
 
-		//if not exist create solr user
-		String solrUserId = propertyManager.readValue(PropertyKey.SOLR_NEMAKI_USERID);
-		User solrUser = principalService.getUserById(repositoryId, solrUserId);
-		if (solrUser == null) {
-			User newSolrUser = new User(solrUserId, solrUserId, "", "", "", BCrypt.hashpw(solrUserId, BCrypt.gensalt()));
-			newSolrUser.setAdmin(true);
-			principalService.createUser(repositoryId, newSolrUser);
+	@Override
+	public boolean loginForNemakiConfDb(CallContext callContext){
+		final String suId = repositoryInfoMap.getSuperUsers().getId();
+		final String repositoryId = callContext.getRepositoryId();
+
+		// check system config db
+		if(ObjectUtils.equals(repositoryId, SystemConst.NEMAKI_CONF_DB)){
+			UserItem user = getAuthenticatedUserItem(suId, callContext.getUsername(), callContext.getPassword());
+			if (user == null)
+				return false;
+
+			boolean isAdmin = user.isAdmin() == null ? false : true;
+			return isAdmin;
 		}
 
-
-
-		return true;
+		return false;
 	}
 
 	private void setAdminFlagInContext(CallContext callContext, Boolean isAdmin) {
@@ -177,20 +189,20 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		return tokenService.isAdmin(repositoryId, userName);
 	}
 
-	private User getAuthenticatedUser(String repositoryId, String userName, String password) {
-		User u = principalService.getUserById(repositoryId, userName);
+	private UserItem getAuthenticatedUserItem(String repositoryId, String userId, String password) {
+		UserItem u = contentService.getUserItemById(repositoryId, userId);
 
 		// succeeded
-		if (u != null) {
-			if (AuthenticationUtil.passwordMatches(password, u.getPasswordHash())) {
-				log.debug(String.format( "[%s][%s]Get authenticated user successfully ! , Is admin?  : %s", repositoryId, userName , u.isAdmin()));
+		if (u != null && StringUtils.isNotBlank(u.getPassowrd())) {
+			if (AuthenticationUtil.passwordMatches(password, u.getPassowrd())) {
+				log.debug(String.format( "[%s][%s]Get authenticated user successfully ! , Is admin?  : %s", repositoryId, userId , u.isAdmin()));
 				return u;
 			}
 		}
 
 		// Check anonymous
 		String anonymousId = principalService.getAnonymous(repositoryId);
-		if (StringUtils.isNotBlank(anonymousId) && anonymousId.equals(userName)) {
+		if (StringUtils.isNotBlank(anonymousId) && anonymousId.equals(userId)) {
 			if (u != null) {
 				log.warn(anonymousId + " should have not been registered in the database.");
 			}
@@ -200,9 +212,16 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		return null;
 	}
 
+	public void setContentService(ContentService contentService) {
+		this.contentService = contentService;
+	}
 
 	public void setPrincipalService(PrincipalService principalService) {
 		this.principalService = principalService;
+	}
+
+	public void setContentDaoService(ContentDaoService contentDaoService) {
+		this.contentDaoService = contentDaoService;
 	}
 
 	public void setTokenService(TokenService tokenService) {

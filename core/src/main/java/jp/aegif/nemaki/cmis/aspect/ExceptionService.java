@@ -75,7 +75,7 @@ public interface ExceptionService {
 	void perimissionAdmin(CallContext context, String repositoryId);
 	void constraint(String objectId, String msg);
 	void constraintBaseTypeId(String repositoryId, Properties properties, BaseTypeId baseTypeId);
-	void constraintAllowedChildObjectTypeId(Folder folder, Properties childProperties);
+	void constraintAllowedChildObjectTypeId(String repositoryId, Folder folder, Properties childProperties);
 	<T>void constraintPropertyValue(String repositoryId, TypeDefinition typeDefinition, Properties properties, String objectId);
 	void constraintControllableVersionable(DocumentTypeDefinition documentTypeDefinition, VersioningState versioningState, String objectId);
 	void constraintCotrollablePolicies(TypeDefinition typeDefinition, List<String> policies, Properties properties);
@@ -101,8 +101,9 @@ public interface ExceptionService {
 	void constraintDeleteRootFolder(String repositoryId, String objectId);
 	void contentAlreadyExists(Content content, Boolean overwriteFlag);
 	void streamNotSupported(DocumentTypeDefinition documentTypeDefinition, ContentStream contentStream);
-	void nameConstraintViolation(Properties properties, Folder parentFolder);
-	void versioning(Document document);
+	void nameConstraintViolation(String repositoryId, Folder parentFolder, Properties properties);
+	void nameConstraintViolation(String repositoryId, Folder parentFolder, String proposedName);
+	void versioning(CallContext callContext,Document document);
 	void updateConflict(Content content, Holder<String>  changeToken);
 
 	//TODO Where to implement "storage" exception? Here or DAO service?

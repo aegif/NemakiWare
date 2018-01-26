@@ -44,6 +44,7 @@ import jp.aegif.nemaki.util.constant.DomainType;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
+import org.apache.chemistry.opencmis.commons.definitions.RelationshipTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionList;
@@ -76,21 +77,21 @@ public class RepositoryServiceImpl implements RepositoryService,
 	}
 
 	public List<org.apache.chemistry.opencmis.commons.data.RepositoryInfo> getRepositoryInfos(){
-		List<org.apache.chemistry.opencmis.commons.data.RepositoryInfo> result = 
+		List<org.apache.chemistry.opencmis.commons.data.RepositoryInfo> result =
 				new ArrayList<org.apache.chemistry.opencmis.commons.data.RepositoryInfo>();
 		for(String key : repositoryInfoMap.keys()){
 			result.add(repositoryInfoMap.get(key));
 		}
 		return result;
 	}
-	
+
 	/**
 	 * CMIS Service method
 	 */
 	@Override
 	public TypeDefinitionList getTypeChildren(CallContext callContext,
 			String repositoryId, String typeId,
-			Boolean includePropertyDefinitions, BigInteger maxItems, BigInteger skipCount) {
+			Boolean includePropertyDefinitions, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
 
 		return typeManager.getTypesChildren(callContext, repositoryId,
 				typeId, includePropertyDefinitions, maxItems, skipCount);
@@ -99,14 +100,14 @@ public class RepositoryServiceImpl implements RepositoryService,
 	@Override
 	public List<TypeDefinitionContainer> getTypeDescendants(
 			CallContext callContext, String repositoryId, String typeId,
-			BigInteger depth, Boolean includePropertyDefinitions) {
+			BigInteger depth, Boolean includePropertyDefinitions, ExtensionsData extension) {
 		return typeManager.getTypesDescendants(repositoryId, typeId,
 				depth, includePropertyDefinitions);
 	}
 
 	@Override
 	public TypeDefinition getTypeDefinition(CallContext callContext,
-			String repositoryId, String typeId) {
+			String repositoryId, String typeId, ExtensionsData extension) {
 		TypeDefinition typeDefinition = typeManager.getTypeDefinition(repositoryId, typeId);
 		exceptionService.objectNotFound(DomainType.OBJECT_TYPE, typeDefinition,
 				typeId);
@@ -143,7 +144,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 					//Check PropertyDefinition
 					exceptionService.constraintQueryName(propDef);
 					exceptionService.constraintPropertyDefinition(type, propDef);
-					
+
 					NemakiPropertyDefinition create = new NemakiPropertyDefinition(
 							propDef);
 					NemakiPropertyDefinitionDetail created = typeService
@@ -303,8 +304,14 @@ public class RepositoryServiceImpl implements RepositoryService,
 			ntd.setVersionable(dtdf.isVersionable());
 			ntd.setContentStreamAllowed(dtdf.getContentStreamAllowed());
 		}
-		
-		
+
+		//specific to RelationshipTypeDefinition
+		if(typeDefinition instanceof RelationshipTypeDefinition){
+			RelationshipTypeDefinition dtdf = (RelationshipTypeDefinition)typeDefinition;
+			ntd.setAllowedSourceTypes(dtdf.getAllowedSourceTypeIds());
+			ntd.setAllowedTargetTypes(dtdf.getAllowedTargetTypeIds());
+		}
+
 		return ntd;
 	}
 

@@ -5,18 +5,23 @@ function bindEditable(valueFieldSelector){
 		if($(this).attr('on') != 'on'){
 			$(this).attr('on', 'on');
 			txt = $(this).text();
-			$(this).html('<input class="editable-value-input" type="text" value="'+txt+'" />');
-			$(this).children('.editable-value-input:first').focus();
+			if($(this).attr('property-type') == 'DATETIME'){
+				$(this).html('<div style="position:relative"><input class="editable-value-input" type="text" value="" id="datetimepicker_field" /></div><script type="text/javascript"> $(function () { $("#datetimepicker_field").datetimepicker({widgetParent:"#obj-property-table", format:"YYYY-MM-DD hh:mm:00"}); });</script>');
+			}else{
+				$(this).html('<input class="editable-value-input" type="text" value="" />');
+			}
+			$(this).find("input").val(txt);
+			$(this).find('.editable-value-input:first').focus();
 		}
 
 		//end of editing
-		$(document).on('blur.editable-value', valueFieldSelector + ' > .editable-value-input:first', function(){
+		$(document).on('blur.editable-value', valueFieldSelector + ' .editable-value-input:first', function(){
 			$(document).off('.editable-value');
 			revertField($(this));
 		});
-		
+
 		//binding: keypress
-		$(valueFieldSelector + ' > .editable-value-input:first').off().on('keypress', function(event){
+		$(valueFieldSelector + ' .editable-value-input:first').off().on('keypress', function(event){
 			if(event.which == 13){
 				revertField($(this));
 			}
@@ -26,26 +31,14 @@ function bindEditable(valueFieldSelector){
 
 function revertField(inputboxDom){
 	var inputVal = inputboxDom.val();
-	var parentDiv = inputboxDom.parent();
 	var wrap = inputboxDom.closest("div.antiscroll-wrap");
 	var inner = inputboxDom.closest("div.antiscroll-inner");
-	
-	/*//Validate
-	if(inputVal === ""){
-		if(parentDiv.attr('property-required') == 'true'){
-			alert("Please input: " + parentDiv.attr('property-id'));
-			inputboxDom.focus();
-			return;
-		}
-	}*/
-	
-	parentDiv.text(inputVal);
-	parentDiv.removeAttr('on');
-	
-	//re-enable　antiscroll
-	//TODO .closest() seems not to work
-	var height = parentDiv.height();
-	var width = parentDiv.width();
+
+	inner.removeAttr('on');
+	inner.text(inputVal);
+
+	var height = wrap.height();
+	var width = wrap.width();
 	$(function () {
 		wrap.antiscroll();
 		inner.height(height);
@@ -53,7 +46,7 @@ function revertField(inputboxDom){
 	});
 }
 
-//Get edited value 
+//Get edited value
 //TODO specify table tag
 function editedValue(selector){
 	selector = escape(selector);
