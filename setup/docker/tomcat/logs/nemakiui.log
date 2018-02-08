@@ -1,0 +1,18 @@
+2018-02-05 20:10:52,443 INFO play Force Play 'application.context' to '/ui/' 
+
+2018-02-05 20:10:54,006 INFO p.a.l.c.ActorSystemProvider Starting application default Akka system: application 
+
+2018-02-05 20:10:54,030 WARN application hardcoded value: application.context is deprecated, use play.http.context instead 
+
+2018-02-05 20:10:54,420 INFO application Application has started 
+
+2018-02-05 20:10:54,427 INFO play.api.Play$ Application started (Prod) 
+
+2018-02-05 20:11:01,766 INFO o.h.v.i.u.Version HV000001: Hibernate Validator 5.0.3.Final 
+
+2018-02-05 20:11:09,002 INFO play Stopping play server... 
+
+2018-02-05 20:11:09,023 INFO application Application shutdown... 
+
+2018-02-05 20:11:09,025 INFO p.a.l.c.ActorSystemProvider Shutdown application default Akka system: application 
+

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Context docBase="D:\Nemaki2018-2/apache-tomcat-8.5.5/webapps/solr" crossContext="true">
+  <Environment name="solr/home" type="java.lang.String" value="D:\Nemaki2018-2/solr" override="true"/>
+</Context>
