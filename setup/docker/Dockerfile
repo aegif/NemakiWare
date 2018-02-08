@@ -7,22 +7,23 @@ RUN apt-get update #&& apt-get install couchdb -y
 
 RUN apt-get --no-install-recommends -y install \
     build-essential pkg-config erlang \
-    libicu-dev libmozjs185-dev libcurl4-openssl-dev -y
+    libicu-dev libmozjs185-dev libcurl4-openssl-dev \
+	make maven openjdk-8-jdk -y
 
-RUN apt-get install make -y
-
-RUN apt-get update && apt-get install maven -y
-
-RUN apt-get install openjdk-8-jdk -y
-
+# Transfer files
+#couchdb installation files
 ADD install-couchdb /usr/local/install-couchdb
+#startup scripts
+ADD scripts /scripts
+#couchdb init java project
+COPY ./couchdb /usr/local
+#tomcat server
+COPY 		./tomcat /usr/local/tomcat
 
-#install couchdb
+# Install couchdb
 RUN tar -xvzf /usr/local/install-couchdb/apache-couchdb-2.1.1.tar.gz -C /usr/local/install-couchdb/
 RUN cd /usr/local/install-couchdb/apache-couchdb-2.1.1 && ./configure && make release 
 
-#startup scripts
-ADD scripts /scripts
 RUN chmod +x /scripts/*.sh
 
 RUN touch /.firstrun
@@ -40,8 +41,6 @@ RUN sed -e 's/^bind_address = .*$/bind_address = 0.0.0.0/' -i /home/couchdb/etc/
     sed -e 's/^database_dir = .*$/database_dir = \/data/' -i /home/couchdb/etc/default.ini && \
     sed -e 's/^view_index_dir = .*$/view_index_dir = \/data/' -i /home/couchdb/etc/default.ini 
 
-#couchdb init java project
-COPY ./couchdb /usr/local
 
 # Command to run
 ENTRYPOINT ["/scripts/run3.sh"]
@@ -51,5 +50,3 @@ EXPOSE 5984
 
 # Expose our data, logs and configuration volumes
 VOLUME ["/data", "c:\couchdb_vol", "/usr/local/etc/couchdb"]
-
-COPY 		./tomcat /usr/local/tomcat
