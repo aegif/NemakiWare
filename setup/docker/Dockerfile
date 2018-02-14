@@ -43,7 +43,7 @@ RUN sed -e 's/^bind_address = .*$/bind_address = 0.0.0.0/' -i /home/couchdb/etc/
 
 
 # Command to run
-ENTRYPOINT ["/scripts/run3.sh"]
+ENTRYPOINT ["/scripts/run.sh"]
 CMD [""]
 
 EXPOSE 5984
