@@ -1,5 +1,5 @@
 <!DOCTYPE html SYSTEM "about:legacy-compat">
-<html lang="en"><head><META http-equiv="Content-Type" content="text/html; charset=UTF-8"><link href="../images/docs-stylesheet.css" rel="stylesheet" type="text/css"><title>Apache Tomcat 8 Configuration Reference (8.5.5) - The HTTP Connector</title><meta name="author" content="Craig R. McClanahan"><meta name="author" content="Yoav Shapira"><script type="application/javascript" data-comments-identifier="tomcat-8.5-doc/config/http">
+<html lang="en"><head><META http-equiv="Content-Type" content="text/html; charset=UTF-8"><link href="../images/docs-stylesheet.css" rel="stylesheet" type="text/css"><title>Apache Tomcat 9 Configuration Reference (9.0.5) - The HTTP Connector</title><meta name="author" content="Craig R. McClanahan"><meta name="author" content="Yoav Shapira"><script type="application/javascript" data-comments-identifier="tomcat-9.0-doc/config/http">
     "use strict"; // Enable strict mode
 
     (function() {
@@ -29,9 +29,9 @@
         })(window, document);
       }), false);
     })();
-  </script></head><body><div id="wrapper"><header><div id="header"><div><div><div class="logo noPrint"><a href="http://tomcat.apache.org/"><img alt="Tomcat Home" src="../images/tomcat.png"></a></div><div style="height: 1px;"></div><div class="asfLogo noPrint"><a href="http://www.apache.org/" target="_blank"><img src="../images/asf-feather.png" alt="The Apache Software Foundation" style="width: 266px; height: 83px;"></a></div><h1>Apache Tomcat 8 Configuration Reference</h1><div class="versionInfo">
-          Version 8.5.5,
-          <time datetime="2016-08-31">Aug 31 2016</time></div><div style="height: 1px;"></div><div style="clear: left;"></div></div></div></div></header><div id="middle"><div><div id="mainLeft" class="noprint"><div><nav><div><h2>Links</h2><ul><li><a href="../index.html">Docs Home</a></li><li><a href="index.html">Config Ref. Home</a></li><li><a href="http://wiki.apache.org/tomcat/FAQ">FAQ</a></li><li><a href="#comments_section">User Comments</a></li></ul></div><div><h2>Top Level Elements</h2><ul><li><a href="server.html">Server</a></li><li><a href="service.html">Service</a></li></ul></div><div><h2>Executors</h2><ul><li><a href="executor.html">Executor</a></li></ul></div><div><h2>Connectors</h2><ul><li><a href="http.html">HTTP</a></li><li><a href="ajp.html">AJP</a></li></ul></div><div><h2>Containers</h2><ul><li><a href="context.html">Context</a></li><li><a href="engine.html">Engine</a></li><li><a href="host.html">Host</a></li><li><a href="cluster.html">Cluster</a></li></ul></div><div><h2>Nested Components</h2><ul><li><a href="cookie-processor.html">CookieProcessor</a></li><li><a href="credentialhandler.html">CredentialHandler</a></li><li><a href="globalresources.html">Global Resources</a></li><li><a href="jar-scanner.html">JarScanner</a></li><li><a href="jar-scan-filter.html">JarScanFilter</a></li><li><a href="listeners.html">Listeners</a></li><li><a href="loader.html">Loader</a></li><li><a href="manager.html">Manager</a></li><li><a href="realm.html">Realm</a></li><li><a href="resources.html">Resources</a></li><li><a href="sessionidgenerator.html">SessionIdGenerator</a></li><li><a href="valve.html">Valve</a></li></ul></div><div><h2>Cluster Elements</h2><ul><li><a href="cluster.html">Cluster</a></li><li><a href="cluster-manager.html">Manager</a></li><li><a href="cluster-channel.html">Channel</a></li><li><a href="cluster-membership.html">Channel/Membership</a></li><li><a href="cluster-sender.html">Channel/Sender</a></li><li><a href="cluster-receiver.html">Channel/Receiver</a></li><li><a href="cluster-interceptor.html">Channel/Interceptor</a></li><li><a href="cluster-valve.html">Valve</a></li><li><a href="cluster-deployer.html">Deployer</a></li><li><a href="cluster-listener.html">ClusterListener</a></li></ul></div><div><h2>web.xml</h2><ul><li><a href="filter.html">Filter</a></li></ul></div><div><h2>Other</h2><ul><li><a href="systemprops.html">System properties</a></li><li><a href="jaspic.html">JASPIC</a></li></ul></div></nav></div></div><div id="mainRight"><div id="content"><h2>The HTTP Connector</h2><h3 id="Table_of_Contents">Table of Contents</h3><div class="text">
+  </script></head><body><div id="wrapper"><header><div id="header"><div><div><div class="logo noPrint"><a href="http://tomcat.apache.org/"><img alt="Tomcat Home" src="../images/tomcat.png"></a></div><div style="height: 1px;"></div><div class="asfLogo noPrint"><a href="http://www.apache.org/" target="_blank"><img src="../images/asf-logo.svg" alt="The Apache Software Foundation" style="width: 266px; height: 83px;"></a></div><h1>Apache Tomcat 9 Configuration Reference</h1><div class="versionInfo">
+          Version 9.0.5,
+          <time datetime="2018-02-06">Feb 6 2018</time></div><div style="height: 1px;"></div><div style="clear: left;"></div></div></div></div></header><div id="middle"><div><div id="mainLeft" class="noprint"><div><nav><div><h2>Links</h2><ul><li><a href="../index.html">Docs Home</a></li><li><a href="index.html">Config Ref. Home</a></li><li><a href="http://wiki.apache.org/tomcat/FAQ">FAQ</a></li><li><a href="#comments_section">User Comments</a></li></ul></div><div><h2>Top Level Elements</h2><ul><li><a href="server.html">Server</a></li><li><a href="service.html">Service</a></li></ul></div><div><h2>Executors</h2><ul><li><a href="executor.html">Executor</a></li></ul></div><div><h2>Connectors</h2><ul><li><a href="http.html">HTTP/1.1</a></li><li><a href="http2.html">HTTP/2</a></li><li><a href="ajp.html">AJP</a></li></ul></div><div><h2>Containers</h2><ul><li><a href="context.html">Context</a></li><li><a href="engine.html">Engine</a></li><li><a href="host.html">Host</a></li><li><a href="cluster.html">Cluster</a></li></ul></div><div><h2>Nested Components</h2><ul><li><a href="cookie-processor.html">CookieProcessor</a></li><li><a href="credentialhandler.html">CredentialHandler</a></li><li><a href="globalresources.html">Global Resources</a></li><li><a href="jar-scanner.html">JarScanner</a></li><li><a href="jar-scan-filter.html">JarScanFilter</a></li><li><a href="listeners.html">Listeners</a></li><li><a href="loader.html">Loader</a></li><li><a href="manager.html">Manager</a></li><li><a href="realm.html">Realm</a></li><li><a href="resources.html">Resources</a></li><li><a href="sessionidgenerator.html">SessionIdGenerator</a></li><li><a href="valve.html">Valve</a></li></ul></div><div><h2>Cluster Elements</h2><ul><li><a href="cluster.html">Cluster</a></li><li><a href="cluster-manager.html">Manager</a></li><li><a href="cluster-channel.html">Channel</a></li><li><a href="cluster-membership.html">Channel/Membership</a></li><li><a href="cluster-sender.html">Channel/Sender</a></li><li><a href="cluster-receiver.html">Channel/Receiver</a></li><li><a href="cluster-interceptor.html">Channel/Interceptor</a></li><li><a href="cluster-valve.html">Valve</a></li><li><a href="cluster-deployer.html">Deployer</a></li><li><a href="cluster-listener.html">ClusterListener</a></li></ul></div><div><h2>web.xml</h2><ul><li><a href="filter.html">Filter</a></li></ul></div><div><h2>Other</h2><ul><li><a href="systemprops.html">System properties</a></li><li><a href="jaspic.html">JASPIC</a></li></ul></div></nav></div></div><div id="mainRight"><div id="content"><h2>The HTTP Connector</h2><h3 id="Table_of_Contents">Table of Contents</h3><div class="text">
 <ul><li><a href="#Introduction">Introduction</a></li><li><a href="#Attributes">Attributes</a><ol><li><a href="#Common_Attributes">Common Attributes</a></li><li><a href="#Standard_Implementation">Standard Implementation</a></li><li><a href="#Java_TCP_socket_attributes">Java TCP socket attributes</a></li><li><a href="#NIO_specific_configuration">NIO specific configuration</a></li><li><a href="#NIO2_specific_configuration">NIO2 specific configuration</a></li><li><a href="#APR/native_specific_configuration">APR/native specific configuration</a></li></ol></li><li><a href="#Nested_Components">Nested Components</a></li><li><a href="#Special_Features">Special Features</a><ol><li><a href="#HTTP/1.1_and_HTTP/1.0_Support">HTTP/1.1 and HTTP/1.0 Support</a></li><li><a href="#HTTP/2_Support">HTTP/2 Support</a></li><li><a href="#Proxy_Support">Proxy Support</a></li><li><a href="#SSL_Support">SSL Support</a></li><li><a href="#SSL_Support_-_SSLHostConfig">SSL Support - SSLHostConfig</a></li><li><a href="#SSL_Support_-_Certificate">SSL Support - Certificate</a></li><li><a href="#SSL_Support_-_Connector_-_NIO_and_NIO2">SSL Support - Connector - NIO and NIO2</a></li><li><a href="#SSL_Support_-_Connector_-_NIO_and_NIO2_(deprecated)">SSL Support - Connector - NIO and NIO2 (deprecated)</a></li><li><a href="#SSL_Support_-_Connector_-_APR/Native_(deprecated)">SSL Support - Connector - APR/Native (deprecated)</a></li><li><a href="#Connector_Comparison">Connector Comparison</a></li></ol></li></ul>
 </div><h3 id="Introduction">Introduction</h3><div class="text">
 
@@ -265,10 +265,21 @@
       for the <code>java.lang.Thread</code> class for more details on what
       this priority means.</p>
     </td></tr><tr><td><code class="attributeName">address</code></td><td>
-      <p>For servers with more than one IP address, this attribute
-      specifies which address will be used for listening on the specified
-      port.  By default, this port will be used on all IP addresses
-      associated with the server.</p>
+      <p>For servers with more than one IP address, this attribute specifies
+      which address will be used for listening on the specified port. By
+      default, the connector will listen all local addresses. Unless the JVM is
+      configured otherwise using system properties, the Java based connectors
+      (NIO, NIO2) will listen on both IPv4 and IPv6 addresses when configured
+      with either <code>0.0.0.0</code> or <code>::</code>. The APR/native
+      connector will only listen on IPv4 addresses if configured with
+      <code>0.0.0.0</code> and will listen on IPv6 addresses (and optionally
+      IPv4 addresses depending on the setting of <strong>ipv6onlyv6</strong>) if
+      configured with <code>::</code>.</p>
+    </td></tr><tr><td><code class="attributeName">allowHostHeaderMismatch</code></td><td>
+      <p>By default Tomcat will reject requests that specify a host in the
+      request line but specify a different host in the host header. This
+      chekc can be disabled by setting this attribute to <code>false</code>. If
+      not specified, the default is <code>true</code>.</p>
     </td></tr><tr><td><code class="attributeName">allowedTrailerHeaders</code></td><td>
       <p>By default Tomcat will ignore all trailer headers when processing
       chunked input. For a header to be processed, it must be added to this
@@ -287,12 +298,12 @@
       with the <a href="valve.html#SSL_Authenticator_Valve">
       org.apache.catalina.valves.SSLValve</a>. If not specified, the default
       provider will be used.</p>
-    </td></tr><tr><td><code class="attributeName">compressableMimeType</code></td><td>
+    </td></tr><tr><td><code class="attributeName">compressibleMimeType</code></td><td>
       <p>The value is a comma separated list of MIME types for which HTTP
       compression may be used.
       The default value is
       <code>
-      text/html,text/xml,text/plain,text/css,text/javascript,application/javascript
+      text/html,text/xml,text/plain,text/css,text/javascript,application/javascript,application/json,application/xml
       </code>.
       </p>
     </td></tr><tr><td><code class="attributeName">compression</code></td><td>
@@ -409,7 +420,10 @@
       maximum number of simultaneous requests that can be handled.  If
       not specified, this attribute is set to 200. If an executor is associated
       with this connector, this attribute is ignored as the connector will
-      execute tasks using the executor rather than an internal thread pool.</p>
+      execute tasks using the executor rather than an internal thread pool. Note
+      that if an executor is configured any value set for this attribute will be
+      recorded correctly but it will be reported (e.g. via JMX) as
+      <code>-1</code> to make clear that it is not used.</p>
     </td></tr><tr><td><code class="attributeName">maxTrailerSize</code></td><td>
       <p>Limits the total length of trailing headers in the last chunk of
       a chunked HTTP request. If the value is <code>-1</code>, no limit will be
@@ -417,7 +431,12 @@
       used.</p>
     </td></tr><tr><td><code class="attributeName">minSpareThreads</code></td><td>
       <p>The minimum number of threads always kept running. If not specified,
-      the default of <code>10</code> is used.</p>
+      the default of <code>10</code> is used. If an executor is associated
+      with this connector, this attribute is ignored as the connector will
+      execute tasks using the executor rather than an internal thread pool. Note
+      that if an executor is configured any value set for this attribute will be
+      recorded correctly but it will be reported (e.g. via JMX) as
+      <code>-1</code> to make clear that it is not used.</p>
     </td></tr><tr><td><code class="attributeName">noCompressionUserAgents</code></td><td>
       <p>The value is a regular expression (using <code>java.util.regex</code>)
       matching the <code>user-agent</code> header of HTTP clients for which
@@ -433,6 +452,12 @@
       the maxThreads setting. If using Servlet 3.0 asynchronous processing, a
       good default is to use the larger of maxThreads and the maximum number of
       expected concurrent requests (synchronous and asynchronous).</p>
+    </td></tr><tr><td><code class="attributeName">rejectIllegalHeaderName</code></td><td>
+      <p>If an HTTP request is received that contains an illegal header name
+      (i.e. the header name is not a token) this setting determines if the
+      request will be rejected with a 400 response (<code>true</code>) or if the
+      illegal header be ignored (<code>false</code>). The default value is
+      <code>true</code> which will cause the request to be rejected.</p>
     </td></tr><tr><td><code class="attributeName">restrictedUserAgents</code></td><td>
       <p>The value is a regular expression (using <code>java.util.regex</code>)
       matching the <code>user-agent</code> header of HTTP clients for which
@@ -445,7 +470,7 @@
       If not set, any value specified by the application is used. If the
       application does not specify a value then no Server header is set.</p>
     </td></tr><tr><td><code class="attributeName">serverRemoveAppProvidedValues</code></td><td>
-      <p>If <code>true</code>, any Server header Server header set by a web
+      <p>If <code>true</code>, any Server header set by a web
       application will be removed. Note that if <strong>server</strong> is set,
       this attribute is effectively ignored. If not set, the default value of
       <code>false</code> will be used.</p>
@@ -469,8 +494,18 @@
       The default value is <code>5</code> (the value of the
       <code>java.lang.Thread.NORM_PRIORITY</code> constant). See the JavaDoc
       for the <code>java.lang.Thread</code> class for more details on what
-      this priority means.
-      </p>
+      this priority means. If an executor is associated
+      with this connector, this attribute is ignored as the connector will
+      execute tasks using the executor rather than an internal thread pool. Note
+      that if an executor is configured any value set for this attribute will be
+      recorded correctly but it will be reported (e.g. via JMX) as
+      <code>-1</code> to make clear that it is not used.</p>
+    </td></tr><tr><td><code class="attributeName">throwOnFailure</code></td><td>
+      <p>If the Connector experiences an Exception during a Lifecycle transition
+      should the Exception be rethrown or logged? If not specified, the default
+      of <code>false</code> will be used. Note that the default can be changed
+      by the <code>org.apache.catalina.startup.EXIT_ON_INIT_FAILURE</code>
+      system property.</p>
     </td></tr></table>
 
   </div></div>
@@ -746,6 +781,11 @@
         for this connector. The default value is <code>true</code> where
         <code>TCP_DEFER_ACCEPT</code> is supported by the operating system,
         otherwise it is <code>false</code>.</p>
+      </td></tr><tr><td><code class="attributeName">ipv6v6only</code></td><td>
+        <p>If listening on an IPv6 address on a dual stack system, should the
+        connector only listen on the IPv6 address? If not specified the default
+        is <code>false</code> and the connector will listen on the IPv6 address
+        and the equivalent IPv4 address if present.</p>
       </td></tr><tr><td><code class="attributeName">pollerThreadCount</code></td><td>
         <p>Number of threads used to poll kept alive connections. On Windows the
         default is chosen so that the sockets managed by each thread is
@@ -835,6 +875,9 @@
      <code>sslImplementationName</code> attribute of the
      <strong>Connector</strong>.</p>
 
+  <p>Additional configuration attributes are available. See the
+  <a href="http2.html">HTTP/2 Upgrade Protocol</a> documentation for details.</p>
+
   </div></div>
 
   <div class="subsection"><h4 id="Proxy_Support">Proxy Support</h4><div class="text">
@@ -907,7 +950,7 @@
           Attribute
         </th><th style="width: 85%;">
           Description
-        </th></tr><tr><td><code class="attributeName">certificateRevocationFile</code></td><td>
+        </th></tr><tr><td><code class="attributeName">certificateRevocationListFile</code></td><td>
       <p>Name of the file that contains the concatenated certificate revocation
       lists for the certificate authorities. The format is PEM-encoded. If not
       defined, client certificates will not be checked against a certificate
@@ -915,7 +958,7 @@
       <strong>certificateRevocationPath</strong> is defined). Relative paths
       will be resolved against <code>$CATALINA_BASE</code>. JSSE based
       connectors may also specify a URL for this attribute.</p>
-    </td></tr><tr><td><code class="attributeName">certificateRevocationPath</code></td><td>
+    </td></tr><tr><td><code class="attributeName">certificateRevocationListPath</code></td><td>
       <p>OpenSSL only.</p>
       <p>Name of the directory that contains the certificate revocation lists
       for the certificate authorities. The format is PEM-encoded. Relative paths
@@ -966,13 +1009,16 @@
       compression then the default for that OpenSSL version will be used.</p>
     </td></tr><tr><td><code class="attributeName">disableSessionTickets</code></td><td>
       <p>OpenSSL only.</p>
-      <p>Disables use of TLS Session Tickets (RFC 4507) if set to
-      <code>true</code>. Default is <code>false</code>.</p>
+      <p>Disables use of TLS session tickets (RFC 5077) if set to
+      <code>true</code>. Default is <code>false</code>. Note that when TLS
+      session tickets are in use, the full peer certificate chain will only be
+      available on the first connection. Subsequent connections (that use a
+      ticket to estrablish the TLS session) will only have the peer certificate,
+      not the full chain.</p>
     </td></tr><tr><td><code class="attributeName">honorCipherOrder</code></td><td>
       <p>Set to <code>true</code> to enforce the server's cipher order
       (from the <code>ciphers</code> setting) instead of allowing
-      the client to choose the cipher. The default is <code>false</code>.
-      Use of this feature requires Java 8 or later.</p>
+      the client to choose the cipher. The default is <code>false</code>.</p>
     </td></tr><tr><td><code class="attributeName">hostName</code></td><td>
       <p>The name of the SSL Host. This should either be the fully qualified
       domain name (e.g. <code>tomcat.apache.org</code>) or a wild card domain
@@ -995,8 +1041,8 @@
       <p>The names of the protocols to support when communicating with clients.
       This should be a list of any combination of the following:
       </p>
-      <ul><li>SSLv2Hello</li><li>SSLv2</li><li>SSLv3</li><li>TLSv1</li>
-          <li>TLSv1.1</li><li>TLSv1.2</li><li>all</li></ul>
+      <ul><li>SSLv2Hello</li><li>SSLv3</li><li>TLSv1</li><li>TLSv1.1</li>
+      <li>TLSv1.2</li><li>all</li></ul>
       <p>Each token in the list can be prefixed with a plus sign ("+")
       or a minus sign ("-"). A plus sign adds the protocol, a minus sign
       removes it form the current list. The list is built starting from
@@ -1012,6 +1058,14 @@
       unsafe.</p>
       <p>If not specified, the default value of <code>all</code> will be
       used.</p>
+    </td></tr><tr><td><code class="attributeName">revocationEnabled</code></td><td>
+      <p>JSSE only.</p>
+      <p>Should the JSSE provider enable certificate revocation checks? If
+      <strong>certificateRevocationListFile</strong> is set then this attribute
+      is ignored and revocation checks are always enabled. This attribute is
+      intended to enable revocation checks that have been configured for the
+      current JSSE provider via other means. If not specified, a default of
+      <code>false</code> is used.</p>
     </td></tr><tr><td><code class="attributeName">sessionCacheSize</code></td><td>
       <p>JSSE only.</p>
       <p>The number of SSL sessions to maintain in the session cache. Use 0 to
@@ -1075,8 +1129,11 @@
       <p>JSSE only.</p>
       <p>The type of key store used for the trust store. The default is the
       value of the <code>javax.net.ssl.trustStoreType</code> system property. If
-      that property is null, the value of <code>keystoreType</code> is used as
-      the default.</p>
+      that property is null, a single certificate has been configured for this
+      TLS virtual host and that certificate has a <code>keystoreType</code> that
+      is not <code>PKCS12</code> then the default will be the
+      <code>keystoreType</code> of the single certificate. If none of these
+      identify a default, the default will be <code>JKS</code>.</p>
      </td></tr></table>
 
   </div></div>
@@ -1207,7 +1264,7 @@
       intending to use the APR connector, and Tomcat will automatically enable it
       and the default value of this attribute becomes
       <code>org.apache.tomcat.util.net.openssl.OpenSSLImplementation</code>.
-      In that case, the attributes from either from either JSSE and OpenSSL
+      In that case, the attributes from either JSSE and OpenSSL
       configuration styles can be used, as long as the two types are not mixed
       (for example, it is not allowed to define use of a Java keystore and
       specify a separate pem private key using the OpenSSL attribute).</p>
@@ -1500,5 +1557,5 @@
                     Comments may be removed by our moderators if they are either
                     implemented or considered invalid/off-topic.
                   </p><div id="comments_thread"></div></div></div></div></div></div></div><footer><div id="footer">
-    Copyright &copy; 1999-2016, The Apache Software Foundation
+    Copyright &copy; 1999-2018, The Apache Software Foundation
   </div></footer></div></body></html>

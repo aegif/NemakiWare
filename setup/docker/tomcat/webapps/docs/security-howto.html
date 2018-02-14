@@ -1,5 +1,5 @@
 <!DOCTYPE html SYSTEM "about:legacy-compat">
-<html lang="en"><head><META http-equiv="Content-Type" content="text/html; charset=UTF-8"><link href="./images/docs-stylesheet.css" rel="stylesheet" type="text/css"><title>Apache Tomcat 8 (8.5.5) - Security Considerations</title><script type="application/javascript" data-comments-identifier="tomcat-8.5-doc/security-howto">
+<html lang="en"><head><META http-equiv="Content-Type" content="text/html; charset=UTF-8"><link href="./images/docs-stylesheet.css" rel="stylesheet" type="text/css"><title>Apache Tomcat 9 (9.0.5) - Security Considerations</title><script type="application/javascript" data-comments-identifier="tomcat-9.0-doc/security-howto">
     "use strict"; // Enable strict mode
 
     (function() {
@@ -29,10 +29,10 @@
         })(window, document);
       }), false);
     })();
-  </script></head><body><div id="wrapper"><header><div id="header"><div><div><div class="logo noPrint"><a href="http://tomcat.apache.org/"><img alt="Tomcat Home" src="./images/tomcat.png"></a></div><div style="height: 1px;"></div><div class="asfLogo noPrint"><a href="http://www.apache.org/" target="_blank"><img src="./images/asf-feather.png" alt="The Apache Software Foundation" style="width: 266px; height: 83px;"></a></div><h1>Apache Tomcat 8</h1><div class="versionInfo">
-          Version 8.5.5,
-          <time datetime="2016-08-31">Aug 31 2016</time></div><div style="height: 1px;"></div><div style="clear: left;"></div></div></div></div></header><div id="middle"><div><div id="mainLeft" class="noprint"><div><nav><div><h2>Links</h2><ul><li><a href="index.html">Docs Home</a></li><li><a href="http://wiki.apache.org/tomcat/FAQ">FAQ</a></li><li><a href="#comments_section">User Comments</a></li></ul></div><div><h2>User Guide</h2><ul><li><a href="introduction.html">1) Introduction</a></li><li><a href="setup.html">2) Setup</a></li><li><a href="appdev/index.html">3) First webapp</a></li><li><a href="deployer-howto.html">4) Deployer</a></li><li><a href="manager-howto.html">5) Manager</a></li><li><a href="realm-howto.html">6) Realms and AAA</a></li><li><a href="security-manager-howto.html">7) Security Manager</a></li><li><a href="jndi-resources-howto.html">8) JNDI Resources</a></li><li><a href="jndi-datasource-examples-howto.html">9) JDBC DataSources</a></li><li><a href="class-loader-howto.html">10) Classloading</a></li><li><a href="jasper-howto.html">11) JSPs</a></li><li><a href="ssl-howto.html">12) SSL/TLS</a></li><li><a href="ssi-howto.html">13) SSI</a></li><li><a href="cgi-howto.html">14) CGI</a></li><li><a href="proxy-howto.html">15) Proxy Support</a></li><li><a href="mbeans-descriptors-howto.html">16) MBeans Descriptors</a></li><li><a href="default-servlet.html">17) Default Servlet</a></li><li><a href="cluster-howto.html">18) Clustering</a></li><li><a href="balancer-howto.html">19) Load Balancer</a></li><li><a href="connectors.html">20) Connectors</a></li><li><a href="monitoring.html">21) Monitoring and Management</a></li><li><a href="logging.html">22) Logging</a></li><li><a href="apr.html">23) APR/Native</a></li><li><a href="virtual-hosting-howto.html">24) Virtual Hosting</a></li><li><a href="aio.html">25) Advanced IO</a></li><li><a href="extras.html">26) Additional Components</a></li><li><a href="maven-jars.html">27) Mavenized</a></li><li><a href="security-howto.html">28) Security Considerations</a></li><li><a href="windows-service-howto.html">29) Windows Service</a></li><li><a href="windows-auth-howto.html">30) Windows Authentication</a></li><li><a href="jdbc-pool.html">31) Tomcat's JDBC Pool</a></li><li><a href="web-socket-howto.html">32) WebSocket</a></li><li><a href="rewrite.html">33) Rewrite</a></li></ul></div><div><h2>Reference</h2><ul><li><a href="RELEASE-NOTES.txt">Release Notes</a></li><li><a href="config/index.html">Configuration</a></li><li><a href="api/index.html">Tomcat Javadocs</a></li><li><a href="servletapi/index.html">Servlet Javadocs</a></li><li><a href="jspapi/index.html">JSP 2.3 Javadocs</a></li><li><a href="elapi/index.html">EL 3.0 Javadocs</a></li><li><a href="websocketapi/index.html">WebSocket 1.1 Javadocs</a></li><li><a href="http://tomcat.apache.org/connectors-doc/">JK 1.2 Documentation</a></li></ul></div><div><h2>Apache Tomcat Development</h2><ul><li><a href="building.html">Building</a></li><li><a href="changelog.html">Changelog</a></li><li><a href="http://wiki.apache.org/tomcat/TomcatVersions">Status</a></li><li><a href="developers.html">Developers</a></li><li><a href="architecture/index.html">Architecture</a></li><li><a href="funcspecs/index.html">Functional Specs.</a></li><li><a href="tribes/introduction.html">Tribes</a></li></ul></div></nav></div></div><div id="mainRight"><div id="content"><h2>Security Considerations</h2><h3 id="Table_of_Contents">Table of Contents</h3><div class="text">
-<ul><li><a href="#Introduction">Introduction</a></li><li><a href="#Non-Tomcat_settings">Non-Tomcat settings</a></li><li><a href="#Default_web_applications">Default web applications</a><ol><li><a href="#Default_web_applications/General">General</a></li><li><a href="#ROOT">ROOT</a></li><li><a href="#Documentation">Documentation</a></li><li><a href="#Examples">Examples</a></li><li><a href="#Default_web_applications/Manager">Manager</a></li><li><a href="#Host_Manager">Host Manager</a></li><li><a href="#Securing_Management_Applications">Securing Management Applications</a></li></ol></li><li><a href="#Security_manager">Security manager</a></li><li><a href="#server.xml">server.xml</a><ol><li><a href="#server.xml/General">General</a></li><li><a href="#Server">Server</a></li><li><a href="#Listeners">Listeners</a></li><li><a href="#Connectors">Connectors</a></li><li><a href="#Host">Host</a></li><li><a href="#Context">Context</a></li><li><a href="#Valves">Valves</a></li><li><a href="#Realms">Realms</a></li><li><a href="#server.xml/Manager">Manager</a></li></ol></li><li><a href="#System_Properties">System Properties</a></li><li><a href="#web.xml">web.xml</a></li><li><a href="#General">General</a></li></ul>
+  </script></head><body><div id="wrapper"><header><div id="header"><div><div><div class="logo noPrint"><a href="http://tomcat.apache.org/"><img alt="Tomcat Home" src="./images/tomcat.png"></a></div><div style="height: 1px;"></div><div class="asfLogo noPrint"><a href="http://www.apache.org/" target="_blank"><img src="./images/asf-logo.svg" alt="The Apache Software Foundation" style="width: 266px; height: 83px;"></a></div><h1>Apache Tomcat 9</h1><div class="versionInfo">
+          Version 9.0.5,
+          <time datetime="2018-02-06">Feb 6 2018</time></div><div style="height: 1px;"></div><div style="clear: left;"></div></div></div></div></header><div id="middle"><div><div id="mainLeft" class="noprint"><div><nav><div><h2>Links</h2><ul><li><a href="index.html">Docs Home</a></li><li><a href="http://wiki.apache.org/tomcat/FAQ">FAQ</a></li><li><a href="#comments_section">User Comments</a></li></ul></div><div><h2>User Guide</h2><ul><li><a href="introduction.html">1) Introduction</a></li><li><a href="setup.html">2) Setup</a></li><li><a href="appdev/index.html">3) First webapp</a></li><li><a href="deployer-howto.html">4) Deployer</a></li><li><a href="manager-howto.html">5) Manager</a></li><li><a href="realm-howto.html">6) Realms and AAA</a></li><li><a href="security-manager-howto.html">7) Security Manager</a></li><li><a href="jndi-resources-howto.html">8) JNDI Resources</a></li><li><a href="jndi-datasource-examples-howto.html">9) JDBC DataSources</a></li><li><a href="class-loader-howto.html">10) Classloading</a></li><li><a href="jasper-howto.html">11) JSPs</a></li><li><a href="ssl-howto.html">12) SSL/TLS</a></li><li><a href="ssi-howto.html">13) SSI</a></li><li><a href="cgi-howto.html">14) CGI</a></li><li><a href="proxy-howto.html">15) Proxy Support</a></li><li><a href="mbeans-descriptors-howto.html">16) MBeans Descriptors</a></li><li><a href="default-servlet.html">17) Default Servlet</a></li><li><a href="cluster-howto.html">18) Clustering</a></li><li><a href="balancer-howto.html">19) Load Balancer</a></li><li><a href="connectors.html">20) Connectors</a></li><li><a href="monitoring.html">21) Monitoring and Management</a></li><li><a href="logging.html">22) Logging</a></li><li><a href="apr.html">23) APR/Native</a></li><li><a href="virtual-hosting-howto.html">24) Virtual Hosting</a></li><li><a href="aio.html">25) Advanced IO</a></li><li><a href="extras.html">26) Additional Components</a></li><li><a href="maven-jars.html">27) Mavenized</a></li><li><a href="security-howto.html">28) Security Considerations</a></li><li><a href="windows-service-howto.html">29) Windows Service</a></li><li><a href="windows-auth-howto.html">30) Windows Authentication</a></li><li><a href="jdbc-pool.html">31) Tomcat's JDBC Pool</a></li><li><a href="web-socket-howto.html">32) WebSocket</a></li><li><a href="rewrite.html">33) Rewrite</a></li></ul></div><div><h2>Reference</h2><ul><li><a href="RELEASE-NOTES.txt">Release Notes</a></li><li><a href="config/index.html">Configuration</a></li><li><a href="api/index.html">Tomcat Javadocs</a></li><li><a href="servletapi/index.html">Servlet Javadocs</a></li><li><a href="jspapi/index.html">JSP 2.3 Javadocs</a></li><li><a href="elapi/index.html">EL 3.0 Javadocs</a></li><li><a href="websocketapi/index.html">WebSocket 1.1 Javadocs</a></li><li><a href="http://tomcat.apache.org/connectors-doc/">JK 1.2 Documentation</a></li></ul></div><div><h2>Apache Tomcat Development</h2><ul><li><a href="building.html">Building</a></li><li><a href="changelog.html">Changelog</a></li><li><a href="http://wiki.apache.org/tomcat/TomcatVersions">Status</a></li><li><a href="developers.html">Developers</a></li><li><a href="architecture/index.html">Architecture</a></li><li><a href="funcspecs/index.html">Functional Specs.</a></li><li><a href="tribes/introduction.html">Tribes</a></li></ul></div></nav></div></div><div id="mainRight"><div id="content"><h2>Security Considerations</h2><h3 id="Table_of_Contents">Table of Contents</h3><div class="text">
+<ul><li><a href="#Introduction">Introduction</a></li><li><a href="#Non-Tomcat_settings">Non-Tomcat settings</a><ol><li><a href="#JMX">JMX</a></li></ol></li><li><a href="#Default_web_applications">Default web applications</a><ol><li><a href="#Default_web_applications/General">General</a></li><li><a href="#ROOT">ROOT</a></li><li><a href="#Documentation">Documentation</a></li><li><a href="#Examples">Examples</a></li><li><a href="#Default_web_applications/Manager">Manager</a></li><li><a href="#Host_Manager">Host Manager</a></li><li><a href="#Securing_Management_Applications">Securing Management Applications</a></li></ol></li><li><a href="#Security_manager">Security manager</a></li><li><a href="#server.xml">server.xml</a><ol><li><a href="#server.xml/General">General</a></li><li><a href="#Server">Server</a></li><li><a href="#Listeners">Listeners</a></li><li><a href="#Connectors">Connectors</a></li><li><a href="#Host">Host</a></li><li><a href="#Context">Context</a></li><li><a href="#Valves">Valves</a></li><li><a href="#Realms">Realms</a></li><li><a href="#server.xml/Manager">Manager</a></li><li><a href="#Cluster">Cluster</a></li></ol></li><li><a href="#System_Properties">System Properties</a></li><li><a href="#web.xml">web.xml</a></li><li><a href="#General">General</a></li></ul>
 </div><h3 id="Introduction">Introduction</h3><div class="text">
     <p>Tomcat is configured to be reasonably secure for most use cases by
     default. Some environments may require more, or less, secure configurations.
@@ -73,6 +73,36 @@
     <p>At the network level, consider using a firewall to limit both incoming
     and outgoing connections to only those connections you  expect to be
     present.</p>
+
+    <div class="subsection"><h4 id="JMX">JMX</h4><div class="text">
+      <p>The security of the JMX connection is dependent on the implementation
+      provided by the JRE and therefore falls outside the control of Tomcat.</p>
+
+      <p>Typically, access control is very limited (either read-only to
+      everything or read-write to everything). Tomcat exposes a large amount
+      of internal information and control via JMX to aid debugging, monitoring
+      and management. Given the limited access control available, JMX access
+      should be treated as equivalent to local root/admin access and restricted
+      accordingly.</p>
+
+      <p>The JMX access control provided by most (all?) JRE vendors does not
+      log failed authentication attempts, nor does it provide an account
+      lock-out feature after repeated failed authentications. This makes a
+      brute force attack easy to mount and difficult to detect.</p>
+
+      <p>Given all of the above, care should be taken to ensure that, if used,
+      the JMX interface is appropriately secured. Options you may wish to
+      consider to secure the JMX interface include:</p>
+
+      <ul>
+        <li>configuring a strong password for all JMX users;</li>
+        <li>binding the JMX listener only to an internal network;</li>
+        <li>limiting network access to the JMX port to trusted clients; and</li>
+        <li>providing an application specific health page for use by external
+            monitoring systems.</li>
+      </ul>
+    </div></div>
+
   </div><h3 id="Default_web_applications">Default web applications</h3><div class="text">
 
     <div class="subsection"><h4 id="Default_web_applications/General">General</h4><div class="text">
@@ -239,7 +269,7 @@
       <p>The <strong>xpoweredBy</strong> attribute controls whether or not the
       X-Powered-By HTTP header is sent with each request. If sent, the value of
       the header contains the Servlet and JSP specification versions, the full
-      Tomcat version (e.g. Apache Tomcat/8.5), the name of
+      Tomcat version (e.g. Apache Tomcat/9.0), the name of
       the JVM vendor and
       the version of the JVM. This header is disabled by default. This header
       can provide useful information to both legitimate clients and attackers.
@@ -247,7 +277,7 @@
 
       <p>The <strong>server</strong> attribute controls the value of the Server
       HTTP header. The default value of this header for Tomcat 4.1.x to
-      8.5.x is Apache-Coyote/1.1. This header can provide
+      9.0.x is Apache-Coyote/1.1. This header can provide
       limited information to both legitimate clients and attackers.</p>
 
       <p>The <strong>SSLEnabled</strong>, <strong>scheme</strong> and
@@ -262,26 +292,6 @@
       connectors to pass secure and non-secure requests to Tomcat. If the
       proxy uses AJP then the SSL attributes of the client connection are
       passed via the AJP protocol and separate connectors are not needed.</p>
-
-      <p>The <strong>sslEnabledProtocols</strong> attribute determines which
-      versions of the SSL/TLS protocol are used.  Since the POODLE attack in
-      2014, all SSL protocols are considered unsafe and a secure setting for
-      this attribute in a standalone Tomcat setup might be
-      <code>sslEnabledProtocols="TLSv1,TLSv1.1,TLSv1.2"</code></p>
-
-      <p>The <strong>ciphers</strong> attribute controls the ciphers used for
-      SSL connections. By default, the default ciphers for the JVM will be used.
-      This usually means that the weak export grade ciphers will be included in
-      the list of available ciphers. Secure environments will normally want to
-      configure a more limited set of ciphers.  This attribute accepts the
-      <a href="https://www.openssl.org/docs/apps/ciphers.html" target="_blank" rel="nofollow">
-      OpenSSL syntax</a> for including/excluding cipher suites.
-      As of 2014-11-19, with standalone Tomcat 8 and Java 8, Forward Secrecy
-      can be achieved by specifying only TLS protocols using
-      the sslEnabledProtocols attribute (above) and excluding non-DH ciphers,
-      and weak/broken ciphers.  The
-      <a href="https://www.ssllabs.com/ssltest/index.html" target="_blank" rel="nofollow">Qualys SSL/TLS test</a> is a useful tool for
-      configuring these settings.</p>
 
       <p>The <strong>tomcatAuthentication</strong> and
       <strong>tomcatAuthorization</strong> attributes are used with the
@@ -369,7 +379,7 @@
       Alternatively, the version number can be changed by creating the file
       CATALINA_BASE/lib/org/apache/catalina/util/ServerInfo.properties with
       content as follows:</p>
-      <div class="codeBox"><pre><code>server.info=Apache Tomcat/8.5.x</code></pre></div>
+      <div class="codeBox"><pre><code>server.info=Apache Tomcat/9.0.x</code></pre></div>
       <p>Modify the values as required. Note that this will also change the version
       number reported in some of the management tools and may make it harder to
       determine the real version installed. The CATALINA_HOME/bin/version.bat|sh
@@ -411,6 +421,12 @@
       <p>The length of the session ID may be changed with the
       <strong>sessionIdLength</strong> attribute.</p>
     </div></div>
+
+    <div class="subsection"><h4 id="Cluster">Cluster</h4><div class="text">
+      <p>The cluster implementation is written on the basis that a secure,
+      trusted network is used for all of the cluster related network traffic. It
+      is not safe to run a cluster on a insecure, untrusted network.</p>
+    </div></div>
   </div><h3 id="System_Properties">System Properties</h3><div class="text">
     <p>Setting <strong>org.apache.catalina.connector.RECYCLE_FACADES</strong>
     system property to <code>true</code> will cause a new facade object to be
@@ -433,9 +449,9 @@
     that are safe for ISO-8859-1 but trigger an XSS vulnerability if interpreted
     as UTF-7.</p>
   </div><h3 id="web.xml">web.xml</h3><div class="text">
-    <p>This applies to the default <code>conf/web.xml</code> file and
-    <code>WEB-INF/web.xml</code> files in web applications if they define
-    the components mentioned here.</p>
+    <p>This applies to the default <code>conf/web.xml</code> file, the
+    <code>/WEB-INF/tomcat-web.xml</code> and the <code>/WEB-INF/web.xml</code>
+    files in web applications if they define the components mentioned here.</p>
 
     <p>The <a href="default-servlet.html">DefaultServlet</a> is configured
     with <strong>readonly</strong> set to
@@ -458,7 +474,7 @@
     Alternatively, the version number can be changed by creating the file
     CATALINA_BASE/lib/org/apache/catalina/util/ServerInfo.properties with
     content as follows:</p>
-    <div class="codeBox"><pre><code>server.info=Apache Tomcat/8.5.x</code></pre></div>
+    <div class="codeBox"><pre><code>server.info=Apache Tomcat/9.0.x</code></pre></div>
     <p>Modify the values as required. Note that this will also change the version
     number reported in some of the management tools and may make it harder to
     determine the real version installed. The CATALINA_HOME/bin/version.bat|sh
@@ -503,5 +519,5 @@
                     Comments may be removed by our moderators if they are either
                     implemented or considered invalid/off-topic.
                   </p><div id="comments_thread"></div></div></div></div></div></div></div><footer><div id="footer">
-    Copyright &copy; 1999-2016, The Apache Software Foundation
+    Copyright &copy; 1999-2018, The Apache Software Foundation
   </div></footer></div></body></html>

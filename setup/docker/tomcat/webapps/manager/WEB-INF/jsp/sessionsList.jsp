@@ -17,7 +17,6 @@
 --%>
 <%@page session="false" contentType="text/html; charset=ISO-8859-1" %>
 <%@page import="java.util.Collection" %>
-<%@page import="java.util.Iterator" %>
 <%@page import="org.apache.catalina.manager.JspHelper" %>
 <%@page import="org.apache.catalina.Session" %>
 <%@page import="org.apache.catalina.ha.session.DeltaSession" %>
@@ -34,7 +33,7 @@
    String submitUrl = JspHelper.escapeXml(response.encodeURL(
            ((HttpServletRequest) pageContext.getRequest()).getRequestURI() +
            "?path=" + path + "&version=" + version));
-   Collection activeSessions = (Collection) request.getAttribute("activeSessions");
+   Collection<Session> activeSessions = (Collection<Session>) request.getAttribute("activeSessions");
 %>
 <head>
     <meta http-equiv="content-type" content="text/html; charset=iso-8859-1"/>
@@ -43,7 +42,7 @@
     <meta http-equiv="expires" content="0"/><!-- 0 is an invalid value and should be treated as 'now' -->
     <meta http-equiv="content-language" content="en"/>
     <meta name="author" content="Cedrik LIME"/>
-    <meta name="copyright" content="copyright 2005-2016 the Apache Software Foundation"/>
+    <meta name="copyright" content="copyright 2005-2018 the Apache Software Foundation"/>
     <meta name="robots" content="noindex,nofollow,noarchive"/>
     <title>Sessions Administration for <%= JspHelper.escapeXml(cn.getDisplayName()) %></title>
 </head>
@@ -101,9 +100,8 @@
             </tfoot>
             <% } // end if %>
             <tbody>
-<% Iterator iter = activeSessions.iterator();
-   while (iter.hasNext()) {
-       Session currentSession = (Session) iter.next();
+<%
+    for (Session currentSession : activeSessions) {
        String currentSessionId = JspHelper.escapeXml(currentSession.getId());
        String type;
        if (currentSession instanceof DeltaSession) {

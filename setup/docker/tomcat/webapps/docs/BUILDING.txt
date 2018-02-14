@@ -16,11 +16,11 @@
 ================================================================================
 
             ====================================================
-            Building The Apache Tomcat 8.5 Servlet/JSP Container
+            Building The Apache Tomcat 9.0 Servlet/JSP Container
             ====================================================
 
-This subproject contains the source code for Tomcat 8.5, a container that
-implements the Servlet 3.1, JSP 2.3, EL 3.0, WebSocket 1.1 and JASPIC 1.1
+This subproject contains the source code for Tomcat 9.0, a container that
+implements the Servlet 4.0, JSP 2.3, EL 3.0, WebSocket 1.1 and JASPIC 1.1
 specifications from the Java Community Process <http://www.jcp.org/>.
 
 Note: If you just need to run Apache Tomcat, it is not necessary to build
@@ -89,9 +89,9 @@ source distribution, do the following:
     available, which will be used to actually perform the build.
 
 
-(3) Building Tomcat 8.5
+(3) Building Tomcat 9.0
 
-(3.1) Checkout or obtain the source code for Tomcat 8.5
+(3.1) Checkout or obtain the source code for Tomcat 9.0
 
 Checkout the source using SVN, selecting a tag for released version or
 trunk for the current development code, or download and unpack a source
@@ -99,14 +99,26 @@ package.
 
  *  Tomcat SVN repository URL:
 
-        http://svn.apache.org/repos/asf/tomcat/tc8.5.x/trunk/
+        http://svn.apache.org/repos/asf/tomcat/tc9.0.x/trunk/
 
  *  Source packages can be downloaded from:
 
-        http://tomcat.apache.org/download-80.cgi
+        http://tomcat.apache.org/download-90.cgi
 
 The location where the source has been placed will be further referred as
 ${tomcat.source}.
+
+The Tomcat local build process does not modify line-endings. The svn repository
+is configured so that all files will be checked out with the line-ending
+appropriate for the current platform. When using a source package you should
+ensure that you use the source package that has the appropriate line-ending
+for your platform:
+
+  zip    -> CRLF
+  tar.gz -> LF
+
+Note that the release build process does modify line-endings to ensure that
+each release package has the appropriate line-endings.
 
 (3.2) Building
 
@@ -171,7 +183,7 @@ ${tomcat.source}.
 
 (4) Updating sources and rebuilding
 
-It is recommended that you regularly update the downloaded Tomcat 8.5
+It is recommended that you regularly update the downloaded Tomcat 9.0
 sources using your SVN client.
 
 For a quick rebuild of only modified code you can use:
@@ -282,15 +294,9 @@ You can build them by using the following commands:
         codesigning.user=request-via-pmc
         codesigning.pwd=request-via-pmc
         codesigning.partnercode=request-via-pmc
-        codesigning.service=Microsoft Signing
+        codesigning.service=Microsoft Windows Signing
 
     Release managers will be provided with the necessary credentials by the PMC.
-    It will also be necessary to enable TLS 1.1 and TLS 1.2 by default (they are
-    disabled by default on Java 7) for the build process to communicate with the
-    code signing service. The simplest way is by setting the ANT_OPTS
-    environment variable. E.g. (for Windows):
-
-    set ANT_OPTS=-Dhttps.protocols=TLSv1,TLSv1.1,TLSv1.2
 
  4. Build the release:
 
@@ -385,6 +391,12 @@ For example:
 
     test.name=**/TestSsl.java,**/TestWebSocketFrameClientSSL.java
 
+You can exclude specific JUnit test classes by adding the "test.exclude"
+property to the build.properties file. The property specifies an Ant
+excludes pattern for the fileset of test class files to exclude form the run.
+The default value is empty, so no classes are excluded. The syntax is the same
+as for the property "test.name".
+
 
 (7.4) Other configuration options
 
@@ -469,6 +481,11 @@ NOTE: Cobertura is licensed under GPL v2 with parts of it being under
 
         java.net.preferIPv4Stack=true
 
+ 10. It is possible to control whether the output of the tests is displayed
+     on the console or not. By default it is displayed and can be disabled
+     by the following property:
+
+        test.verbose=true
 
 (8) Source code checks
 

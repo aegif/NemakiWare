@@ -1,5 +1,5 @@
 <!DOCTYPE html SYSTEM "about:legacy-compat">
-<html lang="en"><head><META http-equiv="Content-Type" content="text/html; charset=UTF-8"><link href="../images/docs-stylesheet.css" rel="stylesheet" type="text/css"><title>Apache Tomcat 8 Configuration Reference (8.5.5) - The Valve Component</title><meta name="author" content="Craig R. McClanahan"><script type="application/javascript" data-comments-identifier="tomcat-8.5-doc/config/valve">
+<html lang="en"><head><META http-equiv="Content-Type" content="text/html; charset=UTF-8"><link href="../images/docs-stylesheet.css" rel="stylesheet" type="text/css"><title>Apache Tomcat 9 Configuration Reference (9.0.5) - The Valve Component</title><meta name="author" content="Craig R. McClanahan"><script type="application/javascript" data-comments-identifier="tomcat-9.0-doc/config/valve">
     "use strict"; // Enable strict mode
 
     (function() {
@@ -29,10 +29,10 @@
         })(window, document);
       }), false);
     })();
-  </script></head><body><div id="wrapper"><header><div id="header"><div><div><div class="logo noPrint"><a href="http://tomcat.apache.org/"><img alt="Tomcat Home" src="../images/tomcat.png"></a></div><div style="height: 1px;"></div><div class="asfLogo noPrint"><a href="http://www.apache.org/" target="_blank"><img src="../images/asf-feather.png" alt="The Apache Software Foundation" style="width: 266px; height: 83px;"></a></div><h1>Apache Tomcat 8 Configuration Reference</h1><div class="versionInfo">
-          Version 8.5.5,
-          <time datetime="2016-08-31">Aug 31 2016</time></div><div style="height: 1px;"></div><div style="clear: left;"></div></div></div></div></header><div id="middle"><div><div id="mainLeft" class="noprint"><div><nav><div><h2>Links</h2><ul><li><a href="../index.html">Docs Home</a></li><li><a href="index.html">Config Ref. Home</a></li><li><a href="http://wiki.apache.org/tomcat/FAQ">FAQ</a></li><li><a href="#comments_section">User Comments</a></li></ul></div><div><h2>Top Level Elements</h2><ul><li><a href="server.html">Server</a></li><li><a href="service.html">Service</a></li></ul></div><div><h2>Executors</h2><ul><li><a href="executor.html">Executor</a></li></ul></div><div><h2>Connectors</h2><ul><li><a href="http.html">HTTP</a></li><li><a href="ajp.html">AJP</a></li></ul></div><div><h2>Containers</h2><ul><li><a href="context.html">Context</a></li><li><a href="engine.html">Engine</a></li><li><a href="host.html">Host</a></li><li><a href="cluster.html">Cluster</a></li></ul></div><div><h2>Nested Components</h2><ul><li><a href="cookie-processor.html">CookieProcessor</a></li><li><a href="credentialhandler.html">CredentialHandler</a></li><li><a href="globalresources.html">Global Resources</a></li><li><a href="jar-scanner.html">JarScanner</a></li><li><a href="jar-scan-filter.html">JarScanFilter</a></li><li><a href="listeners.html">Listeners</a></li><li><a href="loader.html">Loader</a></li><li><a href="manager.html">Manager</a></li><li><a href="realm.html">Realm</a></li><li><a href="resources.html">Resources</a></li><li><a href="sessionidgenerator.html">SessionIdGenerator</a></li><li><a href="valve.html">Valve</a></li></ul></div><div><h2>Cluster Elements</h2><ul><li><a href="cluster.html">Cluster</a></li><li><a href="cluster-manager.html">Manager</a></li><li><a href="cluster-channel.html">Channel</a></li><li><a href="cluster-membership.html">Channel/Membership</a></li><li><a href="cluster-sender.html">Channel/Sender</a></li><li><a href="cluster-receiver.html">Channel/Receiver</a></li><li><a href="cluster-interceptor.html">Channel/Interceptor</a></li><li><a href="cluster-valve.html">Valve</a></li><li><a href="cluster-deployer.html">Deployer</a></li><li><a href="cluster-listener.html">ClusterListener</a></li></ul></div><div><h2>web.xml</h2><ul><li><a href="filter.html">Filter</a></li></ul></div><div><h2>Other</h2><ul><li><a href="systemprops.html">System properties</a></li><li><a href="jaspic.html">JASPIC</a></li></ul></div></nav></div></div><div id="mainRight"><div id="content"><h2>The Valve Component</h2><h3 id="Table_of_Contents">Table of Contents</h3><div class="text">
-<ul><li><a href="#Introduction">Introduction</a></li><li><a href="#Access_Logging">Access Logging</a><ol><li><a href="#Access_Log_Valve">Access Log Valve</a><ol><li><a href="#Access_Log_Valve/Introduction">Introduction</a></li><li><a href="#Access_Log_Valve/Attributes">Attributes</a></li></ol></li><li><a href="#Extended_Access_Log_Valve">Extended Access Log Valve</a><ol><li><a href="#Extended_Access_Log_Valve/Introduction">Introduction</a></li><li><a href="#Extended_Access_Log_Valve/Attributes">Attributes</a></li></ol></li></ol></li><li><a href="#Access_Control">Access Control</a><ol><li><a href="#Remote_Address_Valve">Remote Address Valve</a><ol><li><a href="#Remote_Address_Valve/Introduction">Introduction</a></li><li><a href="#Remote_Address_Valve/Attributes">Attributes</a></li><li><a href="#Remote_Address_Valve/Example_localhost">Example 1</a></li><li><a href="#Remote_Address_Valve/Example_localhost_port">Example 2</a></li><li><a href="#Remote_Address_Valve/Example_port_auth">Example 3</a></li></ol></li><li><a href="#Remote_Host_Valve">Remote Host Valve</a><ol><li><a href="#Remote_Host_Valve/Introduction">Introduction</a></li><li><a href="#Remote_Host_Valve/Attributes">Attributes</a></li></ol></li></ol></li><li><a href="#Proxies_Support">Proxies Support</a><ol><li><a href="#Remote_IP_Valve">Remote IP Valve</a><ol><li><a href="#Remote_IP_Valve/Introduction">Introduction</a></li><li><a href="#Remote_IP_Valve/Attributes">Attributes</a></li></ol></li><li><a href="#SSL_Valve">SSL Valve</a><ol><li><a href="#SSL_Valve/Introduction">Introduction</a></li><li><a href="#SSL_Valve/Attributes">Attributes</a></li></ol></li></ol></li><li><a href="#Single_Sign_On_Valve">Single Sign On Valve</a><ol><li><a href="#Single_Sign_On_Valve/Introduction">Introduction</a></li><li><a href="#Single_Sign_On_Valve/Attributes">Attributes</a></li></ol></li><li><a href="#Authentication">Authentication</a><ol><li><a href="#Basic_Authenticator_Valve">Basic Authenticator Valve</a><ol><li><a href="#Basic_Authenticator_Valve/Introduction">Introduction</a></li><li><a href="#Basic_Authenticator_Valve/Attributes">Attributes</a></li></ol></li><li><a href="#Digest_Authenticator_Valve">Digest Authenticator Valve</a><ol><li><a href="#Digest_Authenticator_Valve/Introduction">Introduction</a></li><li><a href="#Digest_Authenticator_Valve/Attributes">Attributes</a></li></ol></li><li><a href="#Form_Authenticator_Valve">Form Authenticator Valve</a><ol><li><a href="#Form_Authenticator_Valve/Introduction">Introduction</a></li><li><a href="#Form_Authenticator_Valve/Attributes">Attributes</a></li></ol></li><li><a href="#SSL_Authenticator_Valve">SSL Authenticator Valve</a><ol><li><a href="#SSL_Authenticator_Valve/Introduction">Introduction</a></li><li><a href="#SSL_Authenticator_Valve/Attributes">Attributes</a></li></ol></li><li><a href="#SPNEGO_Valve">SPNEGO Valve</a><ol><li><a href="#SPNEGO_Valve/Introduction">Introduction</a></li><li><a href="#SPNEGO_Valve/Attributes">Attributes</a></li></ol></li></ol></li><li><a href="#Error_Report_Valve">Error Report Valve</a><ol><li><a href="#Error_Report_Valve/Introduction">Introduction</a></li><li><a href="#Error_Report_Valve/Attributes">Attributes</a></li></ol></li><li><a href="#Crawler_Session_Manager_Valve">Crawler Session Manager Valve</a><ol><li><a href="#Crawler_Session_Manager_Valve/Introduction">Introduction</a></li><li><a href="#Crawler_Session_Manager_Valve/Attributes">Attributes</a></li></ol></li><li><a href="#Stuck_Thread_Detection_Valve">Stuck Thread Detection Valve</a><ol><li><a href="#Stuck_Thread_Detection_Valve/Introduction">Introduction</a></li><li><a href="#Stuck_Thread_Detection_Valve/Attributes">Attributes</a></li></ol></li><li><a href="#Semaphore_Valve">Semaphore Valve</a><ol><li><a href="#Semaphore_Valve/Introduction">Introduction</a></li><li><a href="#Semaphore_Valve/Attributes">Attributes</a></li></ol></li></ul>
+  </script></head><body><div id="wrapper"><header><div id="header"><div><div><div class="logo noPrint"><a href="http://tomcat.apache.org/"><img alt="Tomcat Home" src="../images/tomcat.png"></a></div><div style="height: 1px;"></div><div class="asfLogo noPrint"><a href="http://www.apache.org/" target="_blank"><img src="../images/asf-logo.svg" alt="The Apache Software Foundation" style="width: 266px; height: 83px;"></a></div><h1>Apache Tomcat 9 Configuration Reference</h1><div class="versionInfo">
+          Version 9.0.5,
+          <time datetime="2018-02-06">Feb 6 2018</time></div><div style="height: 1px;"></div><div style="clear: left;"></div></div></div></div></header><div id="middle"><div><div id="mainLeft" class="noprint"><div><nav><div><h2>Links</h2><ul><li><a href="../index.html">Docs Home</a></li><li><a href="index.html">Config Ref. Home</a></li><li><a href="http://wiki.apache.org/tomcat/FAQ">FAQ</a></li><li><a href="#comments_section">User Comments</a></li></ul></div><div><h2>Top Level Elements</h2><ul><li><a href="server.html">Server</a></li><li><a href="service.html">Service</a></li></ul></div><div><h2>Executors</h2><ul><li><a href="executor.html">Executor</a></li></ul></div><div><h2>Connectors</h2><ul><li><a href="http.html">HTTP/1.1</a></li><li><a href="http2.html">HTTP/2</a></li><li><a href="ajp.html">AJP</a></li></ul></div><div><h2>Containers</h2><ul><li><a href="context.html">Context</a></li><li><a href="engine.html">Engine</a></li><li><a href="host.html">Host</a></li><li><a href="cluster.html">Cluster</a></li></ul></div><div><h2>Nested Components</h2><ul><li><a href="cookie-processor.html">CookieProcessor</a></li><li><a href="credentialhandler.html">CredentialHandler</a></li><li><a href="globalresources.html">Global Resources</a></li><li><a href="jar-scanner.html">JarScanner</a></li><li><a href="jar-scan-filter.html">JarScanFilter</a></li><li><a href="listeners.html">Listeners</a></li><li><a href="loader.html">Loader</a></li><li><a href="manager.html">Manager</a></li><li><a href="realm.html">Realm</a></li><li><a href="resources.html">Resources</a></li><li><a href="sessionidgenerator.html">SessionIdGenerator</a></li><li><a href="valve.html">Valve</a></li></ul></div><div><h2>Cluster Elements</h2><ul><li><a href="cluster.html">Cluster</a></li><li><a href="cluster-manager.html">Manager</a></li><li><a href="cluster-channel.html">Channel</a></li><li><a href="cluster-membership.html">Channel/Membership</a></li><li><a href="cluster-sender.html">Channel/Sender</a></li><li><a href="cluster-receiver.html">Channel/Receiver</a></li><li><a href="cluster-interceptor.html">Channel/Interceptor</a></li><li><a href="cluster-valve.html">Valve</a></li><li><a href="cluster-deployer.html">Deployer</a></li><li><a href="cluster-listener.html">ClusterListener</a></li></ul></div><div><h2>web.xml</h2><ul><li><a href="filter.html">Filter</a></li></ul></div><div><h2>Other</h2><ul><li><a href="systemprops.html">System properties</a></li><li><a href="jaspic.html">JASPIC</a></li></ul></div></nav></div></div><div id="mainRight"><div id="content"><h2>The Valve Component</h2><h3 id="Table_of_Contents">Table of Contents</h3><div class="text">
+<ul><li><a href="#Introduction">Introduction</a></li><li><a href="#Access_Logging">Access Logging</a><ol><li><a href="#Access_Log_Valve">Access Log Valve</a><ol><li><a href="#Access_Log_Valve/Introduction">Introduction</a></li><li><a href="#Access_Log_Valve/Attributes">Attributes</a></li></ol></li><li><a href="#Extended_Access_Log_Valve">Extended Access Log Valve</a><ol><li><a href="#Extended_Access_Log_Valve/Introduction">Introduction</a></li><li><a href="#Extended_Access_Log_Valve/Attributes">Attributes</a></li></ol></li></ol></li><li><a href="#Access_Control">Access Control</a><ol><li><a href="#Remote_Address_Valve">Remote Address Valve</a><ol><li><a href="#Remote_Address_Valve/Introduction">Introduction</a></li><li><a href="#Remote_Address_Valve/Attributes">Attributes</a></li><li><a href="#Remote_Address_Valve/Example_localhost">Example 1</a></li><li><a href="#Remote_Address_Valve/Example_localhost_port">Example 2</a></li><li><a href="#Remote_Address_Valve/Example_port_auth">Example 3</a></li></ol></li><li><a href="#Remote_Host_Valve">Remote Host Valve</a><ol><li><a href="#Remote_Host_Valve/Introduction">Introduction</a></li><li><a href="#Remote_Host_Valve/Attributes">Attributes</a></li></ol></li></ol></li><li><a href="#Proxies_Support">Proxies Support</a><ol><li><a href="#Load_Balancer_Draining_Valve">Load Balancer Draining Valve</a><ol><li><a href="#Load_Balancer_Draining_Valve/Introduction">Introduction</a></li><li><a href="#Load_Balancer_Draining_Valve/Attributes">Attributes</a></li></ol></li><li><a href="#Remote_IP_Valve">Remote IP Valve</a><ol><li><a href="#Remote_IP_Valve/Introduction">Introduction</a></li><li><a href="#Remote_IP_Valve/Attributes">Attributes</a></li></ol></li><li><a href="#SSL_Valve">SSL Valve</a><ol><li><a href="#SSL_Valve/Introduction">Introduction</a></li><li><a href="#SSL_Valve/Attributes">Attributes</a></li></ol></li></ol></li><li><a href="#Single_Sign_On_Valve">Single Sign On Valve</a><ol><li><a href="#Single_Sign_On_Valve/Introduction">Introduction</a></li><li><a href="#Single_Sign_On_Valve/Attributes">Attributes</a></li></ol></li><li><a href="#Authentication">Authentication</a><ol><li><a href="#Basic_Authenticator_Valve">Basic Authenticator Valve</a><ol><li><a href="#Basic_Authenticator_Valve/Introduction">Introduction</a></li><li><a href="#Basic_Authenticator_Valve/Attributes">Attributes</a></li></ol></li><li><a href="#Digest_Authenticator_Valve">Digest Authenticator Valve</a><ol><li><a href="#Digest_Authenticator_Valve/Introduction">Introduction</a></li><li><a href="#Digest_Authenticator_Valve/Attributes">Attributes</a></li></ol></li><li><a href="#Form_Authenticator_Valve">Form Authenticator Valve</a><ol><li><a href="#Form_Authenticator_Valve/Introduction">Introduction</a></li><li><a href="#Form_Authenticator_Valve/Attributes">Attributes</a></li></ol></li><li><a href="#SSL_Authenticator_Valve">SSL Authenticator Valve</a><ol><li><a href="#SSL_Authenticator_Valve/Introduction">Introduction</a></li><li><a href="#SSL_Authenticator_Valve/Attributes">Attributes</a></li></ol></li><li><a href="#SPNEGO_Valve">SPNEGO Valve</a><ol><li><a href="#SPNEGO_Valve/Introduction">Introduction</a></li><li><a href="#SPNEGO_Valve/Attributes">Attributes</a></li></ol></li></ol></li><li><a href="#Error_Report_Valve">Error Report Valve</a><ol><li><a href="#Error_Report_Valve/Introduction">Introduction</a></li><li><a href="#Error_Report_Valve/Attributes">Attributes</a></li></ol></li><li><a href="#Crawler_Session_Manager_Valve">Crawler Session Manager Valve</a><ol><li><a href="#Crawler_Session_Manager_Valve/Introduction">Introduction</a></li><li><a href="#Crawler_Session_Manager_Valve/Attributes">Attributes</a></li></ol></li><li><a href="#Stuck_Thread_Detection_Valve">Stuck Thread Detection Valve</a><ol><li><a href="#Stuck_Thread_Detection_Valve/Introduction">Introduction</a></li><li><a href="#Stuck_Thread_Detection_Valve/Attributes">Attributes</a></li></ol></li><li><a href="#Semaphore_Valve">Semaphore Valve</a><ol><li><a href="#Semaphore_Valve/Introduction">Introduction</a></li><li><a href="#Semaphore_Valve/Attributes">Attributes</a></li></ol></li></ul>
 </div><h3 id="Introduction">Introduction</h3><div class="text">
 
   <p>A <strong>Valve</strong> element represents a component that will be
@@ -257,6 +257,13 @@
     <li><b>%T</b> - Time taken to process the request, in seconds</li>
     <li><b>%F</b> - Time taken to commit the response, in millis</li>
     <li><b>%I</b> - Current request thread name (can compare later with stacktraces)</li>
+    <li><b>%X</b> - Connection status when response is completed:
+      <ul>
+      <li><code>X</code> = Connection aborted before the response completed.</li>
+      <li><code>+</code> = Connection may be kept alive after the response is sent.</li>
+      <li><code>-</code> = Connection will be closed after the response is sent.</li>
+      </ul>
+    </li>
     </ul>
 
     <p>
@@ -636,6 +643,77 @@
 
 
 </div><h3 id="Proxies_Support">Proxies Support</h3><div class="text">
+  <div class="subsection"><h4 id="Load_Balancer_Draining_Valve">Load Balancer Draining Valve</h4><div class="text">
+    <div class="subsection"><h4 id="Load_Balancer_Draining_Valve/Introduction">Introduction</h4><div class="text">
+      <p>
+        When using mod_jk or mod_proxy_ajp, the client's session id is used to
+        determine which back-end server will be used to serve the request. If the
+        target node is being "drained" (in mod_jk, this is the <i>DISABLED</i>
+        state; in mod_proxy_ajp, this is the <i>Drain (N)</i> state), requests
+        for expired sessions can actually cause the draining node to fail to
+        drain.
+      </p>
+      <p>
+        Unfortunately, AJP-based load-balancers cannot prove whether the
+        client-provided session id is valid or not and therefore will send any
+        requests for a session that appears to be targeted to that node to the
+        disabled (or "draining") node, causing the "draining" process to take
+        longer than necessary.
+      </p>
+      <p>
+        This Valve detects requests for invalid sessions, strips the session
+        information from the request, and redirects back to the same URL, where
+        the load-balancer should choose a different (active)  node to handle the
+        request. This will accelerate the "draining" process for the disabled
+        node(s).
+      </p>
+
+      <p>
+        The activation state of the node is sent by the load-balancer in the
+        request, so no state change on the node being disabled is necessary. Simply
+        configure this Valve in your valve pipeline and it will take action when
+        the activation state is set to "disabled".
+      </p>
+
+      <p>
+        You should take care to register this Valve earlier in the Valve pipeline
+        than any authentication Valves, because this Valve should be able to
+        redirect a request before any authentication Valve saves a request to a
+        protected resource. If this happens, a new session will be created and
+        the draining process will stall because a new, valid session will be
+        established.
+      </p>
+    </div></div>
+
+    <div class="subsection"><h4 id="Load_Balancer_Draining_Valve/Attributes">Attributes</h4><div class="text">
+      <p>The <strong>Load Balancer Draining Valve</strong> supports the
+      following configuration attributes:</p>
+
+      <table class="defaultTable"><tr><th style="width: 15%;">
+          Attribute
+        </th><th style="width: 85%;">
+          Description
+        </th></tr><tr><td><strong><code class="attributeName">className</code></strong></td><td>
+          <p>Java class name of the implementation to use. This MUST be set to
+          <strong>org.apache.catalina.valves.LoadBalancerDrainingValve</strong>.
+          </p>
+        </td></tr><tr><td><code class="attributeName">redirectStatusCode</code></td><td>
+          <p>Allows setting a custom redirect code to be used when the client
+          is redirected to be re-balanced by the load-balancer. The default is
+          307 TEMPORARY_REDIRECT.</p>
+        </td></tr><tr><td><code class="attributeName">ignoreCookieName</code></td><td>
+          <p>When used with <code>ignoreCookieValue</code>, a client can present
+          this cookie (and accompanying value) that will cause this Valve to
+          do nothing. This will allow you to probe your <i>disabled</i> node
+          before re-enabling it to make sure that it is working as expected.</p>
+        </td></tr><tr><td><code class="attributeName">ignoreCookieValue</code></td><td>
+          <p>When used with <code>ignoreCookieName</code>, a client can present
+          a cookie (and accompanying value) that will cause this Valve to
+          do nothing. This will allow you to probe your <i>disabled</i> node
+          before re-enabling it to make sure that it is working as expected.</p>
+        </td></tr></table>
+    </div></div>
+  </div></div>
 
 <div class="subsection"><h4 id="Remote_IP_Valve">Remote IP Valve</h4><div class="text">
 
@@ -908,6 +986,17 @@
         point where users are authenticated. This is to prevent session fixation
         attacks. If not set, the default value of <code>true</code> will be
         used.</p>
+      </td></tr><tr><td><code class="attributeName">charset</code></td><td>
+        <p>Controls if the <code>WWW-Authenticate</code> HTTP header includes a
+        <code>charset</code> authentication parameter as per RFC 7617. The only
+        permitted options are <code>null</code>, the empty string and
+        <code>UTF-8</code>. If <code>UTF-8</code> is specified then the
+        <code>charset</code> authentication parameter will be sent with that
+        value and the provided user name and optional password will be converted
+        from bytes to characters using UTF-8. Otherwise, no <code>charset</code>
+        authentication parameter will be sent and the provided user name and
+        optional password will be converted from bytes to characters using
+        ISO-8859-1. The default value is <code>null</code></p>
       </td></tr><tr><td><strong><code class="attributeName">className</code></strong></td><td>
         <p>Java class name of the implementation to use.  This MUST be set to
         <strong>org.apache.catalina.authenticator.BasicAuthenticator</strong>.</p>
@@ -947,6 +1036,12 @@
         session IDs. If an invalid algorithm and/or provider is specified, the
         platform default provider and the default algorithm will be used. If not
         specified, the platform default provider will be used.</p>
+      </td></tr><tr><td><code class="attributeName">jaspicCallbackHandlerClass</code></td><td>
+        <p>Name of the Java class of the
+        <code>javax.security.auth.callback.CallbackHandler</code> implementation
+        which should be used by JASPIC. If none is specified the default
+        <code>org.apache.catalina.authenticator.jaspic.CallbackHandlerImpl</code>
+        will be used.</p>
       </td></tr></table>
 
   </div></div>
@@ -1065,6 +1160,12 @@
         normally only be set when Tomcat is located behind a reverse proxy and
         the proxy is modifying the URI passed to Tomcat such that DIGEST
         authentication always fails.</p>
+      </td></tr><tr><td><code class="attributeName">jaspicCallbackHandlerClass</code></td><td>
+        <p>Name of the Java class of the
+        <code>javax.security.auth.callback.CallbackHandler</code> implementation
+        which should be used by JASPIC. If none is specified the default
+        <code>org.apache.catalina.authenticator.jaspic.CallbackHandlerImpl</code>
+        will be used.</p>
       </td></tr></table>
 
   </div></div>
@@ -1154,6 +1255,12 @@
         session IDs. If an invalid algorithm and/or provider is specified, the
         platform default provider and the default algorithm will be used. If not
         specified, the platform default provider will be used.</p>
+      </td></tr><tr><td><code class="attributeName">jaspicCallbackHandlerClass</code></td><td>
+        <p>Name of the Java class of the
+        <code>javax.security.auth.callback.CallbackHandler</code> implementation
+        which should be used by JASPIC. If none is specified the default
+        <code>org.apache.catalina.authenticator.jaspic.CallbackHandlerImpl</code>
+        will be used.</p>
       </td></tr></table>
 
   </div></div>
@@ -1232,6 +1339,12 @@
         session IDs. If an invalid algorithm and/or provider is specified, the
         platform default provider and the default algorithm will be used. If not
         specified, the platform default provider will be used.</p>
+      </td></tr><tr><td><code class="attributeName">jaspicCallbackHandlerClass</code></td><td>
+        <p>Name of the Java class of the
+        <code>javax.security.auth.callback.CallbackHandler</code> implementation
+        which should be used by JASPIC. If none is specified the default
+        <code>org.apache.catalina.authenticator.jaspic.CallbackHandlerImpl</code>
+        will be used.</p>
       </td></tr></table>
 
   </div></div>
@@ -1358,6 +1471,12 @@
         services) via the <code>org.apache.catalina.realm.GSS_CREDENTIAL</code>
         request attribute. If not set, the default value of <code>true</code>
         will be used.</p>
+      </td></tr><tr><td><code class="attributeName">jaspicCallbackHandlerClass</code></td><td>
+        <p>Name of the Java class of the
+        <code>javax.security.auth.callback.CallbackHandler</code> implementation
+        which should be used by JASPIC. If none is specified the default
+        <code>org.apache.catalina.authenticator.jaspic.CallbackHandlerImpl</code>
+        will be used.</p>
       </td></tr></table>
 
   </div></div>
@@ -1439,6 +1558,10 @@
         <p>Java class name of the implementation to use.  This MUST be set to
         <strong>org.apache.catalina.valves.CrawlerSessionManagerValve</strong>.
         </p>
+      </td></tr><tr><td><code class="attributeName">crawlerIps</code></td><td>
+        <p>Regular expression (using <code>java.util.regex</code>) that client
+        IP is matched against to determine if a request is from a web crawler.
+        By default such regular expression is not set.</p>
       </td></tr><tr><td><code class="attributeName">crawlerUserAgents</code></td><td>
         <p>Regular expression (using <code>java.util.regex</code>) that the user
         agent HTTP request header is matched against to determine if a request
@@ -1563,5 +1686,5 @@
                     Comments may be removed by our moderators if they are either
                     implemented or considered invalid/off-topic.
                   </p><div id="comments_thread"></div></div></div></div></div></div></div><footer><div id="footer">
-    Copyright &copy; 1999-2016, The Apache Software Foundation
+    Copyright &copy; 1999-2018, The Apache Software Foundation
   </div></footer></div></body></html>

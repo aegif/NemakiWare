@@ -18,13 +18,13 @@
 <%@page session="false" contentType="text/html; charset=ISO-8859-1" %>
 <%@page import="java.util.Map" %>
 <%@page import="java.util.Map.Entry" %>
-<%@page import="java.util.Set" %>
+<%@page import="java.util.List" %>
 <!DOCTYPE html
      PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
      "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
-<% Map<String,Set<String>> cipherList = (Map<String,Set<String>>) request.getAttribute("cipherList");
+<% Map<String,List<String>> cipherList = (Map<String,List<String>>) request.getAttribute("cipherList");
 %>
 <head>
     <meta http-equiv="content-type" content="text/html; charset=iso-8859-1"/>
@@ -32,7 +32,7 @@
     <meta http-equiv="cache-control" content="no-cache,must-revalidate"/><!-- HTTP 1.1 -->
     <meta http-equiv="expires" content="0"/><!-- 0 is an invalid value and should be treated as 'now' -->
     <meta http-equiv="content-language" content="en"/>
-    <meta name="copyright" content="copyright 2005-2016 the Apache Software Foundation"/>
+    <meta name="copyright" content="copyright 2005-2018 the Apache Software Foundation"/>
     <meta name="robots" content="noindex,nofollow,noarchive"/>
     <title>Configured ciphers per Connector</title>
 </head>
@@ -42,13 +42,13 @@
 <table border="1" cellpadding="2" cellspacing="2" width="100%">
     <thead>
         <tr>
-            <th>Connector</th>
+            <th>Connector / TLS Virtual Host</th>
             <th>Enabled Ciphers</th>
         </tr>
     </thead>
     <tbody>
         <%
-        for (Map.Entry<String, Set<String>> entry : cipherList.entrySet()) {
+        for (Map.Entry<String, List<String>> entry : cipherList.entrySet()) {
         %>
         <tr>
             <td><%=entry.getKey()%></td>

@@ -1,5 +1,5 @@
 <!DOCTYPE html SYSTEM "about:legacy-compat">
-<html lang="en"><head><META http-equiv="Content-Type" content="text/html; charset=UTF-8"><link href="./images/docs-stylesheet.css" rel="stylesheet" type="text/css"><title>Apache Tomcat 8 (8.5.5) - Security Manager HOW-TO</title><meta name="author" content="Glenn Nielsen"><meta name="author" content="Jean-Francois Arcand"><script type="application/javascript" data-comments-identifier="tomcat-8.5-doc/security-manager-howto">
+<html lang="en"><head><META http-equiv="Content-Type" content="text/html; charset=UTF-8"><link href="./images/docs-stylesheet.css" rel="stylesheet" type="text/css"><title>Apache Tomcat 9 (9.0.5) - Security Manager HOW-TO</title><meta name="author" content="Glenn Nielsen"><meta name="author" content="Jean-Francois Arcand"><script type="application/javascript" data-comments-identifier="tomcat-9.0-doc/security-manager-howto">
     "use strict"; // Enable strict mode
 
     (function() {
@@ -29,10 +29,10 @@
         })(window, document);
       }), false);
     })();
-  </script></head><body><div id="wrapper"><header><div id="header"><div><div><div class="logo noPrint"><a href="http://tomcat.apache.org/"><img alt="Tomcat Home" src="./images/tomcat.png"></a></div><div style="height: 1px;"></div><div class="asfLogo noPrint"><a href="http://www.apache.org/" target="_blank"><img src="./images/asf-feather.png" alt="The Apache Software Foundation" style="width: 266px; height: 83px;"></a></div><h1>Apache Tomcat 8</h1><div class="versionInfo">
-          Version 8.5.5,
-          <time datetime="2016-08-31">Aug 31 2016</time></div><div style="height: 1px;"></div><div style="clear: left;"></div></div></div></div></header><div id="middle"><div><div id="mainLeft" class="noprint"><div><nav><div><h2>Links</h2><ul><li><a href="index.html">Docs Home</a></li><li><a href="http://wiki.apache.org/tomcat/FAQ">FAQ</a></li><li><a href="#comments_section">User Comments</a></li></ul></div><div><h2>User Guide</h2><ul><li><a href="introduction.html">1) Introduction</a></li><li><a href="setup.html">2) Setup</a></li><li><a href="appdev/index.html">3) First webapp</a></li><li><a href="deployer-howto.html">4) Deployer</a></li><li><a href="manager-howto.html">5) Manager</a></li><li><a href="realm-howto.html">6) Realms and AAA</a></li><li><a href="security-manager-howto.html">7) Security Manager</a></li><li><a href="jndi-resources-howto.html">8) JNDI Resources</a></li><li><a href="jndi-datasource-examples-howto.html">9) JDBC DataSources</a></li><li><a href="class-loader-howto.html">10) Classloading</a></li><li><a href="jasper-howto.html">11) JSPs</a></li><li><a href="ssl-howto.html">12) SSL/TLS</a></li><li><a href="ssi-howto.html">13) SSI</a></li><li><a href="cgi-howto.html">14) CGI</a></li><li><a href="proxy-howto.html">15) Proxy Support</a></li><li><a href="mbeans-descriptors-howto.html">16) MBeans Descriptors</a></li><li><a href="default-servlet.html">17) Default Servlet</a></li><li><a href="cluster-howto.html">18) Clustering</a></li><li><a href="balancer-howto.html">19) Load Balancer</a></li><li><a href="connectors.html">20) Connectors</a></li><li><a href="monitoring.html">21) Monitoring and Management</a></li><li><a href="logging.html">22) Logging</a></li><li><a href="apr.html">23) APR/Native</a></li><li><a href="virtual-hosting-howto.html">24) Virtual Hosting</a></li><li><a href="aio.html">25) Advanced IO</a></li><li><a href="extras.html">26) Additional Components</a></li><li><a href="maven-jars.html">27) Mavenized</a></li><li><a href="security-howto.html">28) Security Considerations</a></li><li><a href="windows-service-howto.html">29) Windows Service</a></li><li><a href="windows-auth-howto.html">30) Windows Authentication</a></li><li><a href="jdbc-pool.html">31) Tomcat's JDBC Pool</a></li><li><a href="web-socket-howto.html">32) WebSocket</a></li><li><a href="rewrite.html">33) Rewrite</a></li></ul></div><div><h2>Reference</h2><ul><li><a href="RELEASE-NOTES.txt">Release Notes</a></li><li><a href="config/index.html">Configuration</a></li><li><a href="api/index.html">Tomcat Javadocs</a></li><li><a href="servletapi/index.html">Servlet Javadocs</a></li><li><a href="jspapi/index.html">JSP 2.3 Javadocs</a></li><li><a href="elapi/index.html">EL 3.0 Javadocs</a></li><li><a href="websocketapi/index.html">WebSocket 1.1 Javadocs</a></li><li><a href="http://tomcat.apache.org/connectors-doc/">JK 1.2 Documentation</a></li></ul></div><div><h2>Apache Tomcat Development</h2><ul><li><a href="building.html">Building</a></li><li><a href="changelog.html">Changelog</a></li><li><a href="http://wiki.apache.org/tomcat/TomcatVersions">Status</a></li><li><a href="developers.html">Developers</a></li><li><a href="architecture/index.html">Architecture</a></li><li><a href="funcspecs/index.html">Functional Specs.</a></li><li><a href="tribes/introduction.html">Tribes</a></li></ul></div></nav></div></div><div id="mainRight"><div id="content"><h2>Security Manager HOW-TO</h2><h3 id="Table_of_Contents">Table of Contents</h3><div class="text">
-<ul><li><a href="#Background">Background</a></li><li><a href="#Permissions">Permissions</a><ol><li><a href="#Standard_Permissions">Standard Permissions</a></li><li><a href="#Tomcat_Custom_Permissions">Tomcat Custom Permissions</a></li></ol></li><li><a href="#Configuring_Tomcat_With_A_SecurityManager">Configuring Tomcat With A SecurityManager</a></li><li><a href="#Configuring_Package_Protection_in_Tomcat">Configuring Package Protection in Tomcat</a></li><li><a href="#Troubleshooting">Troubleshooting</a></li></ul>
+  </script></head><body><div id="wrapper"><header><div id="header"><div><div><div class="logo noPrint"><a href="http://tomcat.apache.org/"><img alt="Tomcat Home" src="./images/tomcat.png"></a></div><div style="height: 1px;"></div><div class="asfLogo noPrint"><a href="http://www.apache.org/" target="_blank"><img src="./images/asf-logo.svg" alt="The Apache Software Foundation" style="width: 266px; height: 83px;"></a></div><h1>Apache Tomcat 9</h1><div class="versionInfo">
+          Version 9.0.5,
+          <time datetime="2018-02-06">Feb 6 2018</time></div><div style="height: 1px;"></div><div style="clear: left;"></div></div></div></div></header><div id="middle"><div><div id="mainLeft" class="noprint"><div><nav><div><h2>Links</h2><ul><li><a href="index.html">Docs Home</a></li><li><a href="http://wiki.apache.org/tomcat/FAQ">FAQ</a></li><li><a href="#comments_section">User Comments</a></li></ul></div><div><h2>User Guide</h2><ul><li><a href="introduction.html">1) Introduction</a></li><li><a href="setup.html">2) Setup</a></li><li><a href="appdev/index.html">3) First webapp</a></li><li><a href="deployer-howto.html">4) Deployer</a></li><li><a href="manager-howto.html">5) Manager</a></li><li><a href="realm-howto.html">6) Realms and AAA</a></li><li><a href="security-manager-howto.html">7) Security Manager</a></li><li><a href="jndi-resources-howto.html">8) JNDI Resources</a></li><li><a href="jndi-datasource-examples-howto.html">9) JDBC DataSources</a></li><li><a href="class-loader-howto.html">10) Classloading</a></li><li><a href="jasper-howto.html">11) JSPs</a></li><li><a href="ssl-howto.html">12) SSL/TLS</a></li><li><a href="ssi-howto.html">13) SSI</a></li><li><a href="cgi-howto.html">14) CGI</a></li><li><a href="proxy-howto.html">15) Proxy Support</a></li><li><a href="mbeans-descriptors-howto.html">16) MBeans Descriptors</a></li><li><a href="default-servlet.html">17) Default Servlet</a></li><li><a href="cluster-howto.html">18) Clustering</a></li><li><a href="balancer-howto.html">19) Load Balancer</a></li><li><a href="connectors.html">20) Connectors</a></li><li><a href="monitoring.html">21) Monitoring and Management</a></li><li><a href="logging.html">22) Logging</a></li><li><a href="apr.html">23) APR/Native</a></li><li><a href="virtual-hosting-howto.html">24) Virtual Hosting</a></li><li><a href="aio.html">25) Advanced IO</a></li><li><a href="extras.html">26) Additional Components</a></li><li><a href="maven-jars.html">27) Mavenized</a></li><li><a href="security-howto.html">28) Security Considerations</a></li><li><a href="windows-service-howto.html">29) Windows Service</a></li><li><a href="windows-auth-howto.html">30) Windows Authentication</a></li><li><a href="jdbc-pool.html">31) Tomcat's JDBC Pool</a></li><li><a href="web-socket-howto.html">32) WebSocket</a></li><li><a href="rewrite.html">33) Rewrite</a></li></ul></div><div><h2>Reference</h2><ul><li><a href="RELEASE-NOTES.txt">Release Notes</a></li><li><a href="config/index.html">Configuration</a></li><li><a href="api/index.html">Tomcat Javadocs</a></li><li><a href="servletapi/index.html">Servlet Javadocs</a></li><li><a href="jspapi/index.html">JSP 2.3 Javadocs</a></li><li><a href="elapi/index.html">EL 3.0 Javadocs</a></li><li><a href="websocketapi/index.html">WebSocket 1.1 Javadocs</a></li><li><a href="http://tomcat.apache.org/connectors-doc/">JK 1.2 Documentation</a></li></ul></div><div><h2>Apache Tomcat Development</h2><ul><li><a href="building.html">Building</a></li><li><a href="changelog.html">Changelog</a></li><li><a href="http://wiki.apache.org/tomcat/TomcatVersions">Status</a></li><li><a href="developers.html">Developers</a></li><li><a href="architecture/index.html">Architecture</a></li><li><a href="funcspecs/index.html">Functional Specs.</a></li><li><a href="tribes/introduction.html">Tribes</a></li></ul></div></nav></div></div><div id="mainRight"><div id="content"><h2>Security Manager HOW-TO</h2><h3 id="Table_of_Contents">Table of Contents</h3><div class="text">
+<ul><li><a href="#Background">Background</a></li><li><a href="#Permissions">Permissions</a><ol><li><a href="#Standard_Permissions">Standard Permissions</a></li></ol></li><li><a href="#Configuring_Tomcat_With_A_SecurityManager">Configuring Tomcat With A SecurityManager</a><ol><li><a href="#Permissions_for_packed_WAR_files">Permissions for packed WAR files</a></li></ol></li><li><a href="#Configuring_Package_Protection_in_Tomcat">Configuring Package Protection in Tomcat</a></li><li><a href="#Troubleshooting">Troubleshooting</a></li></ul>
 </div><h3 id="Background">Background</h3><div class="text">
 
   <p>The Java <strong>SecurityManager</strong> is what allows a web browser
@@ -99,40 +99,6 @@
     </ul>
 
   </div></div>
-
-
-  <div class="subsection"><h4 id="Tomcat_Custom_Permissions">Tomcat Custom Permissions</h4><div class="text">
-
-    <p>Tomcat utilizes a custom permission class called
-    <strong>org.apache.naming.JndiPermission</strong>.  This permission
-    controls read access to JNDI named file based resources.  The permission
-    name is the JNDI name and there are no actions.  A trailing "*" can be
-    used to do wild card matching for a JNDI named file resource when
-    granting permission.  For example, you might include the following
-    in your policy file:</p>
-<div class="codeBox"><pre><code>permission  org.apache.naming.JndiPermission  "jndi://localhost/examples/*";</code></pre></div>
-
-    <p>A Permission entry like this is generated dynamically for each web
-    application that is deployed, to allow it to read its own static resources
-    but disallow it from using file access to read any other files (unless
-    permissions for those files are explicitly granted).</p>
-
-    <p>Also, Tomcat always dynamically creates the following file permissions:</p>
-<div class="codeBox"><pre><code>
-permission java.io.FilePermission "** your application context**", "read";
-
-permission java.io.FilePermission
-  "** application working directory**", "read,write";
-permission java.io.FilePermission
-  "** application working directory**/-", "read,write,delete";
-</code></pre></div>
-    <p>Where **your application context** equals the folder (or WAR file) under which
-    your application has been deployed and **application working directory** is the
-    temporary directory provided to your application as required by the
-    Servlet Specification.</p>
-
-  </div></div>
-
 
 </div><h3 id="Configuring_Tomcat_With_A_SecurityManager">Configuring Tomcat With A SecurityManager</h3><div class="text">
 
@@ -243,7 +209,7 @@ grant codeBase "file:${catalina.home}/bin/tomcat-juli.jar" {
         permission java.io.FilePermission
          "${catalina.base}${file.separator}logs", "read, write";
         permission java.io.FilePermission
-         "${catalina.base}${file.separator}logs${file.separator}*", "read, write";
+         "${catalina.base}${file.separator}logs${file.separator}*", "read, write, delete";
 
         permission java.lang.RuntimePermission "shutdownHooks";
         permission java.lang.RuntimePermission "getClassLoader";
@@ -360,16 +326,13 @@ grant {
     // Applications using WebSocket need to be able to access these packages
     permission java.lang.RuntimePermission "accessClassInPackage.org.apache.tomcat.websocket";
     permission java.lang.RuntimePermission "accessClassInPackage.org.apache.tomcat.websocket.server";
-
-    // Applications need to access these packages to use the Servlet 4.0 Preview
-    permission java.lang.RuntimePermission "accessClassInPackage.org.apache.catalina.servlet4preview";
-    permission java.lang.RuntimePermission "accessClassInPackage.org.apache.catalina.servlet4preview.http";
 };
 
 
 // The Manager application needs access to the following packages to support the
-// session display functionality. These settings support the following
-// configurations:
+// session display functionality. It also requires the custom Tomcat
+// DeployXmlPermission to enable the use of META-INF/context.xml
+// These settings support the following configurations:
 // - default CATALINA_HOME == CATALINA_BASE
 // - CATALINA_HOME != CATALINA_BASE, per instance Manager in CATALINA_BASE
 // - CATALINA_HOME != CATALINA_BASE, shared Manager in CATALINA_HOME
@@ -379,6 +342,7 @@ grant codeBase "file:${catalina.base}/webapps/manager/-" {
     permission java.lang.RuntimePermission "accessClassInPackage.org.apache.catalina.manager";
     permission java.lang.RuntimePermission "accessClassInPackage.org.apache.catalina.manager.util";
     permission java.lang.RuntimePermission "accessClassInPackage.org.apache.catalina.util";
+    permission org.apache.catalina.security.DeployXmlPermission "manager";
 };
 grant codeBase "file:${catalina.home}/webapps/manager/-" {
     permission java.lang.RuntimePermission "accessClassInPackage.org.apache.catalina";
@@ -386,7 +350,22 @@ grant codeBase "file:${catalina.home}/webapps/manager/-" {
     permission java.lang.RuntimePermission "accessClassInPackage.org.apache.catalina.manager";
     permission java.lang.RuntimePermission "accessClassInPackage.org.apache.catalina.manager.util";
     permission java.lang.RuntimePermission "accessClassInPackage.org.apache.catalina.util";
+    permission org.apache.catalina.security.DeployXmlPermission "manager";
 };
+
+// The Host Manager application needs the custom Tomcat DeployXmlPermission to
+// enable the use of META-INF/context.xml
+// These settings support the following configurations:
+// - default CATALINA_HOME == CATALINA_BASE
+// - CATALINA_HOME != CATALINA_BASE, per instance Host Manager in CATALINA_BASE
+// - CATALINA_HOME != CATALINA_BASE, shared Host Manager in CATALINA_HOME
+grant codeBase "file:${catalina.base}/webapps/host-manager/-" {
+    permission org.apache.catalina.security.DeployXmlPermission "host-manager";
+};
+grant codeBase "file:${catalina.home}/webapps/host-manager/-" {
+    permission org.apache.catalina.security.DeployXmlPermission "host-manager";
+};
+
 
 // You can assign additional permissions to particular web applications by
 // adding additional "grant" entries here, based on the code base for that
@@ -420,7 +399,16 @@ grant codeBase "file:${catalina.home}/webapps/manager/-" {
 //      permission java.net.SocketPermission "*.noaa.gov:80", "connect";
 // };
 
-</code></pre></div>
+// To grant permissions for web applications using packed WAR files, use the
+// Tomcat specific WAR url scheme.
+//
+// The permissions granted to the entire web application
+// grant codeBase "war:file:${catalina.base}/webapps/examples.war*/-" {
+// };
+//
+// The permissions granted to a specific JAR
+// grant codeBase "war:file:${catalina.base}/webapps/examples.war*/WEB-INF/lib/foo.jar" {
+// };</code></pre></div>
 
   <h3>Starting Tomcat With A SecurityManager</h3>
 
@@ -429,6 +417,31 @@ grant codeBase "file:${catalina.home}/webapps/manager/-" {
   place by using the "-security" option:</p>
 <div class="codeBox"><pre><code>$CATALINA_HOME/bin/catalina.sh start -security    (Unix)
 %CATALINA_HOME%\bin\catalina start -security      (Windows)</code></pre></div>
+
+  <div class="subsection"><h4 id="Permissions_for_packed_WAR_files">Permissions for packed WAR files</h4><div class="text">
+
+    <p>When using packed WAR files, it is necessary to use Tomcat's custom war
+    URL protocol to assign permissions to web application code.</p>
+
+    <p>To assign permissions to the entire web application the entry in the
+    policy file would look like this:</p>
+
+<div class="codeBox"><pre><code>// Example policy file entry
+grant codeBase "war:file:${catalina.base}/webapps/examples.war*/-" {
+    ...
+};
+</code></pre></div>
+
+    <p>To assign permissions to a single JAR within the web application the
+    entry in the policy file would look like this:</p>
+
+<div class="codeBox"><pre><code>// Example policy file entry
+grant codeBase "war:file:${catalina.base}/webapps/examples.war*/WEB-INF/lib/foo.jar" {
+    ...
+};
+</code></pre></div>
+
+  </div></div>
 
 </div><h3 id="Configuring_Package_Protection_in_Tomcat">Configuring Package Protection in Tomcat</h3><div class="text">
   <p>Starting with Tomcat 5, it is now possible to configure which Tomcat
@@ -502,5 +515,5 @@ set CATALINA_OPTS=-Djava.security.debug=all       (Windows)</code></pre></div>
                     Comments may be removed by our moderators if they are either
                     implemented or considered invalid/off-topic.
                   </p><div id="comments_thread"></div></div></div></div></div></div></div><footer><div id="footer">
-    Copyright &copy; 1999-2016, The Apache Software Foundation
+    Copyright &copy; 1999-2018, The Apache Software Foundation
   </div></footer></div></body></html>

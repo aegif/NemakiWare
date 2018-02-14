@@ -1,5 +1,5 @@
 <!DOCTYPE html SYSTEM "about:legacy-compat">
-<html lang="en"><head><META http-equiv="Content-Type" content="text/html; charset=UTF-8"><link href="./images/docs-stylesheet.css" rel="stylesheet" type="text/css"><title>Apache Tomcat 8 (8.5.5) - The Tomcat JDBC Connection Pool</title><meta name="author" content="Filip Hanik"><script type="application/javascript" data-comments-identifier="tomcat-8.5-doc/jdbc-pool">
+<html lang="en"><head><META http-equiv="Content-Type" content="text/html; charset=UTF-8"><link href="./images/docs-stylesheet.css" rel="stylesheet" type="text/css"><title>Apache Tomcat 9 (9.0.5) - The Tomcat JDBC Connection Pool</title><meta name="author" content="Filip Hanik"><script type="application/javascript" data-comments-identifier="tomcat-9.0-doc/jdbc-pool">
     "use strict"; // Enable strict mode
 
     (function() {
@@ -29,9 +29,9 @@
         })(window, document);
       }), false);
     })();
-  </script></head><body><div id="wrapper"><header><div id="header"><div><div><div class="logo noPrint"><a href="http://tomcat.apache.org/"><img alt="Tomcat Home" src="./images/tomcat.png"></a></div><div style="height: 1px;"></div><div class="asfLogo noPrint"><a href="http://www.apache.org/" target="_blank"><img src="./images/asf-feather.png" alt="The Apache Software Foundation" style="width: 266px; height: 83px;"></a></div><h1>Apache Tomcat 8</h1><div class="versionInfo">
-          Version 8.5.5,
-          <time datetime="2016-08-31">Aug 31 2016</time></div><div style="height: 1px;"></div><div style="clear: left;"></div></div></div></div></header><div id="middle"><div><div id="mainLeft" class="noprint"><div><nav><div><h2>Links</h2><ul><li><a href="index.html">Docs Home</a></li><li><a href="http://wiki.apache.org/tomcat/FAQ">FAQ</a></li><li><a href="#comments_section">User Comments</a></li></ul></div><div><h2>User Guide</h2><ul><li><a href="introduction.html">1) Introduction</a></li><li><a href="setup.html">2) Setup</a></li><li><a href="appdev/index.html">3) First webapp</a></li><li><a href="deployer-howto.html">4) Deployer</a></li><li><a href="manager-howto.html">5) Manager</a></li><li><a href="realm-howto.html">6) Realms and AAA</a></li><li><a href="security-manager-howto.html">7) Security Manager</a></li><li><a href="jndi-resources-howto.html">8) JNDI Resources</a></li><li><a href="jndi-datasource-examples-howto.html">9) JDBC DataSources</a></li><li><a href="class-loader-howto.html">10) Classloading</a></li><li><a href="jasper-howto.html">11) JSPs</a></li><li><a href="ssl-howto.html">12) SSL/TLS</a></li><li><a href="ssi-howto.html">13) SSI</a></li><li><a href="cgi-howto.html">14) CGI</a></li><li><a href="proxy-howto.html">15) Proxy Support</a></li><li><a href="mbeans-descriptors-howto.html">16) MBeans Descriptors</a></li><li><a href="default-servlet.html">17) Default Servlet</a></li><li><a href="cluster-howto.html">18) Clustering</a></li><li><a href="balancer-howto.html">19) Load Balancer</a></li><li><a href="connectors.html">20) Connectors</a></li><li><a href="monitoring.html">21) Monitoring and Management</a></li><li><a href="logging.html">22) Logging</a></li><li><a href="apr.html">23) APR/Native</a></li><li><a href="virtual-hosting-howto.html">24) Virtual Hosting</a></li><li><a href="aio.html">25) Advanced IO</a></li><li><a href="extras.html">26) Additional Components</a></li><li><a href="maven-jars.html">27) Mavenized</a></li><li><a href="security-howto.html">28) Security Considerations</a></li><li><a href="windows-service-howto.html">29) Windows Service</a></li><li><a href="windows-auth-howto.html">30) Windows Authentication</a></li><li><a href="jdbc-pool.html">31) Tomcat's JDBC Pool</a></li><li><a href="web-socket-howto.html">32) WebSocket</a></li><li><a href="rewrite.html">33) Rewrite</a></li></ul></div><div><h2>Reference</h2><ul><li><a href="RELEASE-NOTES.txt">Release Notes</a></li><li><a href="config/index.html">Configuration</a></li><li><a href="api/index.html">Tomcat Javadocs</a></li><li><a href="servletapi/index.html">Servlet Javadocs</a></li><li><a href="jspapi/index.html">JSP 2.3 Javadocs</a></li><li><a href="elapi/index.html">EL 3.0 Javadocs</a></li><li><a href="websocketapi/index.html">WebSocket 1.1 Javadocs</a></li><li><a href="http://tomcat.apache.org/connectors-doc/">JK 1.2 Documentation</a></li></ul></div><div><h2>Apache Tomcat Development</h2><ul><li><a href="building.html">Building</a></li><li><a href="changelog.html">Changelog</a></li><li><a href="http://wiki.apache.org/tomcat/TomcatVersions">Status</a></li><li><a href="developers.html">Developers</a></li><li><a href="architecture/index.html">Architecture</a></li><li><a href="funcspecs/index.html">Functional Specs.</a></li><li><a href="tribes/introduction.html">Tribes</a></li></ul></div></nav></div></div><div id="mainRight"><div id="content"><h2>The Tomcat JDBC Connection Pool</h2><h3 id="Table_of_Contents">Table of Contents</h3><div class="text">
+  </script></head><body><div id="wrapper"><header><div id="header"><div><div><div class="logo noPrint"><a href="http://tomcat.apache.org/"><img alt="Tomcat Home" src="./images/tomcat.png"></a></div><div style="height: 1px;"></div><div class="asfLogo noPrint"><a href="http://www.apache.org/" target="_blank"><img src="./images/asf-logo.svg" alt="The Apache Software Foundation" style="width: 266px; height: 83px;"></a></div><h1>Apache Tomcat 9</h1><div class="versionInfo">
+          Version 9.0.5,
+          <time datetime="2018-02-06">Feb 6 2018</time></div><div style="height: 1px;"></div><div style="clear: left;"></div></div></div></div></header><div id="middle"><div><div id="mainLeft" class="noprint"><div><nav><div><h2>Links</h2><ul><li><a href="index.html">Docs Home</a></li><li><a href="http://wiki.apache.org/tomcat/FAQ">FAQ</a></li><li><a href="#comments_section">User Comments</a></li></ul></div><div><h2>User Guide</h2><ul><li><a href="introduction.html">1) Introduction</a></li><li><a href="setup.html">2) Setup</a></li><li><a href="appdev/index.html">3) First webapp</a></li><li><a href="deployer-howto.html">4) Deployer</a></li><li><a href="manager-howto.html">5) Manager</a></li><li><a href="realm-howto.html">6) Realms and AAA</a></li><li><a href="security-manager-howto.html">7) Security Manager</a></li><li><a href="jndi-resources-howto.html">8) JNDI Resources</a></li><li><a href="jndi-datasource-examples-howto.html">9) JDBC DataSources</a></li><li><a href="class-loader-howto.html">10) Classloading</a></li><li><a href="jasper-howto.html">11) JSPs</a></li><li><a href="ssl-howto.html">12) SSL/TLS</a></li><li><a href="ssi-howto.html">13) SSI</a></li><li><a href="cgi-howto.html">14) CGI</a></li><li><a href="proxy-howto.html">15) Proxy Support</a></li><li><a href="mbeans-descriptors-howto.html">16) MBeans Descriptors</a></li><li><a href="default-servlet.html">17) Default Servlet</a></li><li><a href="cluster-howto.html">18) Clustering</a></li><li><a href="balancer-howto.html">19) Load Balancer</a></li><li><a href="connectors.html">20) Connectors</a></li><li><a href="monitoring.html">21) Monitoring and Management</a></li><li><a href="logging.html">22) Logging</a></li><li><a href="apr.html">23) APR/Native</a></li><li><a href="virtual-hosting-howto.html">24) Virtual Hosting</a></li><li><a href="aio.html">25) Advanced IO</a></li><li><a href="extras.html">26) Additional Components</a></li><li><a href="maven-jars.html">27) Mavenized</a></li><li><a href="security-howto.html">28) Security Considerations</a></li><li><a href="windows-service-howto.html">29) Windows Service</a></li><li><a href="windows-auth-howto.html">30) Windows Authentication</a></li><li><a href="jdbc-pool.html">31) Tomcat's JDBC Pool</a></li><li><a href="web-socket-howto.html">32) WebSocket</a></li><li><a href="rewrite.html">33) Rewrite</a></li></ul></div><div><h2>Reference</h2><ul><li><a href="RELEASE-NOTES.txt">Release Notes</a></li><li><a href="config/index.html">Configuration</a></li><li><a href="api/index.html">Tomcat Javadocs</a></li><li><a href="servletapi/index.html">Servlet Javadocs</a></li><li><a href="jspapi/index.html">JSP 2.3 Javadocs</a></li><li><a href="elapi/index.html">EL 3.0 Javadocs</a></li><li><a href="websocketapi/index.html">WebSocket 1.1 Javadocs</a></li><li><a href="http://tomcat.apache.org/connectors-doc/">JK 1.2 Documentation</a></li></ul></div><div><h2>Apache Tomcat Development</h2><ul><li><a href="building.html">Building</a></li><li><a href="changelog.html">Changelog</a></li><li><a href="http://wiki.apache.org/tomcat/TomcatVersions">Status</a></li><li><a href="developers.html">Developers</a></li><li><a href="architecture/index.html">Architecture</a></li><li><a href="funcspecs/index.html">Functional Specs.</a></li><li><a href="tribes/introduction.html">Tribes</a></li></ul></div></nav></div></div><div id="mainRight"><div id="content"><h2>The Tomcat JDBC Connection Pool</h2><h3 id="Table_of_Contents">Table of Contents</h3><div class="text">
 <ul><li><a href="#Introduction">Introduction</a></li><li><a href="#How_to_use">How to use</a><ol><li><a href="#Additional_features">Additional features</a></li><li><a href="#Inside_the_Apache_Tomcat_Container">Inside the Apache Tomcat Container</a></li><li><a href="#Standalone">Standalone</a></li><li><a href="#JMX">JMX</a></li></ol></li><li><a href="#Attributes">Attributes</a><ol><li><a href="#JNDI_Factory_and_Type">JNDI Factory and Type</a></li><li><a href="#System_Properties">System Properties</a></li><li><a href="#Common_Attributes">Common Attributes</a></li><li><a href="#Tomcat_JDBC_Enhanced_Attributes">Tomcat JDBC Enhanced Attributes</a></li></ol></li><li><a href="#Advanced_usage">Advanced usage</a><ol><li><a href="#JDBC_interceptors">JDBC interceptors</a></li><li><a href="#Configuring_JDBC_interceptors">Configuring JDBC interceptors</a></li><li><a href="#org.apache.tomcat.jdbc.pool.JdbcInterceptor">org.apache.tomcat.jdbc.pool.JdbcInterceptor</a></li><li><a href="#org.apache.tomcat.jdbc.pool.interceptor.ConnectionState">org.apache.tomcat.jdbc.pool.interceptor.ConnectionState</a></li><li><a href="#org.apache.tomcat.jdbc.pool.interceptor.StatementFinalizer">org.apache.tomcat.jdbc.pool.interceptor.StatementFinalizer</a></li><li><a href="#org.apache.tomcat.jdbc.pool.interceptor.StatementCache">org.apache.tomcat.jdbc.pool.interceptor.StatementCache</a></li><li><a href="#org.apache.tomcat.jdbc.pool.interceptor.StatementDecoratorInterceptor">org.apache.tomcat.jdbc.pool.interceptor.StatementDecoratorInterceptor</a></li><li><a href="#org.apache.tomcat.jdbc.pool.interceptor.QueryTimeoutInterceptor">org.apache.tomcat.jdbc.pool.interceptor.QueryTimeoutInterceptor</a></li><li><a href="#org.apache.tomcat.jdbc.pool.interceptor.SlowQueryReport">org.apache.tomcat.jdbc.pool.interceptor.SlowQueryReport</a></li><li><a href="#org.apache.tomcat.jdbc.pool.interceptor.SlowQueryReportJmx">org.apache.tomcat.jdbc.pool.interceptor.SlowQueryReportJmx</a></li><li><a href="#org.apache.tomcat.jdbc.pool.interceptor.ResetAbandonedTimer">org.apache.tomcat.jdbc.pool.interceptor.ResetAbandonedTimer</a></li></ol></li><li><a href="#Code_Example">Code Example</a><ol><li><a href="#Plain_Ol'_Java">Plain Ol' Java</a></li><li><a href="#As_a_Resource">As a Resource</a></li><li><a href="#Asynchronous_Connection_Retrieval">Asynchronous Connection Retrieval</a></li><li><a href="#Interceptors">Interceptors</a></li><li><a href="#Getting_the_actual_JDBC_connection">Getting the actual JDBC connection</a></li></ol></li><li><a href="#Building">Building</a><ol><li><a href="#Building_from_source">Building from source</a></li></ol></li></ul>
 </div><h3 id="Introduction">Introduction</h3><div class="text">
 
@@ -256,29 +256,21 @@
     </td></tr><tr><td><code class="attributeName">testOnBorrow</code></td><td>
       <p>(boolean) The indication of whether objects will be validated before being borrowed from the pool.
          If the object fails to validate, it will be dropped from the pool, and we will attempt to borrow another.
-         NOTE - for a true value to have any effect, the <code>validationQuery</code>
-         or <code>validatorClassName</code> parameter must be set to a non-null string.
          In order to have a more efficient validation, see <code>validationInterval</code>.
          Default value is <code>false</code>
       </p>
     </td></tr><tr><td><code class="attributeName">testOnConnect</code></td><td>
       <p>(boolean) The indication of whether objects will be validated when a connection is first created.
          If an object fails to validate, it will be throw <code>SQLException</code>.
-         NOTE - for a true value to have any effect, the <code>validationQuery</code>, <code>initSQL</code>
-         or <code>validatorClassName</code> parameter must be set to a non-null string.
          Default value is <code>false</code>
       </p>
     </td></tr><tr><td><code class="attributeName">testOnReturn</code></td><td>
       <p>(boolean) The indication of whether objects will be validated before being returned to the pool.
-         NOTE - for a true value to have any effect, the <code>validationQuery</code>
-         or <code>validatorClassName</code> parameter must be set to a non-null string.
          The default value is <code>false</code>.
       </p>
     </td></tr><tr><td><code class="attributeName">testWhileIdle</code></td><td>
       <p>(boolean) The indication of whether objects will be validated by the idle object evictor (if any).
          If an object fails to validate, it will be dropped from the pool.
-         NOTE - for a true value to have any effect, the <code>validationQuery</code>
-         or <code>validatorClassName</code> parameter must be set to a non-null string.
          The default value is <code>false</code> and this property has to be set in order for the
          pool cleaner/test thread is to run (also see <code>timeBetweenEvictionRunsMillis</code>)
       </p>
@@ -286,6 +278,7 @@
       <p>(String) The SQL query that will be used to validate connections from this pool before returning them to the caller.
          If specified, this query does not have to return any data, it just can't throw a <code>SQLException</code>.
          The default value is <code>null</code>.
+         If not specified, connections will be validation by the isValid() method.
          Example values are <code>SELECT 1</code>(mysql), <code>select 1 from dual</code>(oracle), <code>SELECT 1</code>(MS Sql Server)
       </p>
     </td></tr><tr><td><code class="attributeName">validationQueryTimeout</code></td><td>
@@ -359,7 +352,7 @@
       <p>(String) A semicolon separated list of classnames extending
          <code>org.apache.tomcat.jdbc.pool.JdbcInterceptor</code> class.
          See <a href="#Configuring_JDBC_interceptors">Configuring JDBC interceptors</a>
-         below for more detailed description of syntaz and examples.
+         below for more detailed description of syntax and examples.
       </p>
       <p>
          These interceptors will be inserted as an interceptor into the chain
@@ -380,7 +373,7 @@
     </td></tr><tr><td><code class="attributeName">validationInterval</code></td><td>
       <p>(long) avoid excess validation, only run validation at most at this frequency - time in milliseconds.
          If a connection is due for validation, but has been validated previously within this interval, it will not be validated again.
-         The default value is <code>30000</code> (30 seconds).</p>
+         The default value is <code>3000</code> (3 seconds).</p>
     </td></tr><tr><td><code class="attributeName">jmxEnabled</code></td><td>
       <p>(boolean) Register the pool with JMX or not.
          The default value is <code>true</code>.</p>
@@ -480,6 +473,12 @@
          Set to false if you want to fail the initialization of the pool by throwing exception.
          The default value is <code>false</code>.
       </p>
+    </td></tr><tr><td><code class="attributeName">useStatementFacade</code></td><td>
+      <p>(boolean) Set this to true if you wish to wrap statements in order to
+         enable <code>equals()</code> and <code>hashCode()</code> methods to be
+         called on the closed statements if any statement proxy is set.
+         Default value is <code>true</code>.
+      </p>
     </td></tr></table>
   </div></div>
 </div><h3 id="Advanced_usage">Advanced usage</h3><div class="text">
@@ -491,7 +490,7 @@
     </p>
     <p>Further interceptors will be added to the core of the pool as the need arises. Contributions are always welcome!</p>
     <p>Interceptors are of course not limited to just <code>java.sql.Connection</code> but can be used to wrap any
-    of the results from a method invokation as well. You could build query performance analyzer that provides JMX notifications when a
+    of the results from a method invocation as well. You could build query performance analyzer that provides JMX notifications when a
     query is running longer than the expected time.</p>
   </div></div>
   <div class="subsection"><h4 id="Configuring_JDBC_interceptors">Configuring JDBC interceptors</h4><div class="text">
@@ -822,7 +821,7 @@
 <div class="codeBox"><pre><code>  public Object invoke(Object proxy, Method method, Object[] args) throws Throwable</code></pre></div>
     <p>
        method to get invoked. The <code>Method method</code> is the actual method invoked, and <code>Object[] args</code> are the arguments.
-       To look at a very simple example, where we demonstrate how to make the invokation to <code>java.sql.Connection.close()</code> a noop
+       To look at a very simple example, where we demonstrate how to make the invocation to <code>java.sql.Connection.close()</code> a noop
        if the connection has been closed
     </p>
 <div class="codeBox"><pre><code>  if (CLOSE_VAL==method.getName()) {
@@ -926,5 +925,5 @@
                     Comments may be removed by our moderators if they are either
                     implemented or considered invalid/off-topic.
                   </p><div id="comments_thread"></div></div></div></div></div></div></div><footer><div id="footer">
-    Copyright &copy; 1999-2016, The Apache Software Foundation
+    Copyright &copy; 1999-2018, The Apache Software Foundation
   </div></footer></div></body></html>

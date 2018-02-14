@@ -110,7 +110,7 @@ request.setAttribute("tomcatExamplesUrl", "/examples/");
                         <p>For security, access to the <a href="/manager/html">manager webapp</a> is restricted.
                         Users are defined in:</p>
                         <pre>$CATALINA_HOME/conf/tomcat-users.xml</pre>
-                        <p>In Tomcat 8.5 access to the manager application is split between
+                        <p>In Tomcat 9.0 access to the manager application is split between
                            different users. &nbsp; <a href="${tomcatDocUrl}manager-howto.html">Read more...</a></p>
                         <br />
                         <h4><a href="${tomcatDocUrl}RELEASE-NOTES.txt">Release Notes</a></h4>
@@ -122,16 +122,16 @@ request.setAttribute("tomcatExamplesUrl", "/examples/");
                 <div id="low-docs" class="">
                     <div class="curved container">
                         <h3>Documentation</h3>
-                        <h4><a href="${tomcatDocUrl}">Tomcat 8.5 Documentation</a></h4>
-                        <h4><a href="${tomcatDocUrl}config/">Tomcat 8.5 Configuration</a></h4>
+                        <h4><a href="${tomcatDocUrl}">Tomcat 9.0 Documentation</a></h4>
+                        <h4><a href="${tomcatDocUrl}config/">Tomcat 9.0 Configuration</a></h4>
                         <h4><a href="http://wiki.apache.org/tomcat/FrontPage">Tomcat Wiki</a></h4>
                         <p>Find additional important configuration information in:</p>
                         <pre>$CATALINA_HOME/RUNNING.txt</pre>
                         <p>Developers may be interested in:</p>
                         <ul>
-                            <li><a href="http://tomcat.apache.org/bugreport.html">Tomcat 8.5 Bug Database</a></li>
-                            <li><a href="${tomcatDocUrl}api/index.html">Tomcat 8.5 JavaDocs</a></li>
-                            <li><a href="http://svn.apache.org/repos/asf/tomcat/tc8.5.x/">Tomcat 8.5 SVN Repository</a></li>
+                            <li><a href="http://tomcat.apache.org/bugreport.html">Tomcat 9.0 Bug Database</a></li>
+                            <li><a href="${tomcatDocUrl}api/index.html">Tomcat 9.0 JavaDocs</a></li>
+                            <li><a href="http://svn.apache.org/repos/asf/tomcat/tc9.0.x/">Tomcat 9.0 SVN Repository</a></li>
                         </ul>
                     </div>
                 </div>

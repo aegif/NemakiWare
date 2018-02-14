@@ -1,5 +1,5 @@
 <!DOCTYPE html SYSTEM "about:legacy-compat">
-<html lang="en"><head><META http-equiv="Content-Type" content="text/html; charset=UTF-8"><link href="../images/docs-stylesheet.css" rel="stylesheet" type="text/css"><title>Apache Tomcat 8 Configuration Reference (8.5.5) - The Resources Component</title><script type="application/javascript" data-comments-identifier="tomcat-8.5-doc/config/resources">
+<html lang="en"><head><META http-equiv="Content-Type" content="text/html; charset=UTF-8"><link href="../images/docs-stylesheet.css" rel="stylesheet" type="text/css"><title>Apache Tomcat 9 Configuration Reference (9.0.5) - The Resources Component</title><script type="application/javascript" data-comments-identifier="tomcat-9.0-doc/config/resources">
     "use strict"; // Enable strict mode
 
     (function() {
@@ -29,9 +29,9 @@
         })(window, document);
       }), false);
     })();
-  </script></head><body><div id="wrapper"><header><div id="header"><div><div><div class="logo noPrint"><a href="http://tomcat.apache.org/"><img alt="Tomcat Home" src="../images/tomcat.png"></a></div><div style="height: 1px;"></div><div class="asfLogo noPrint"><a href="http://www.apache.org/" target="_blank"><img src="../images/asf-feather.png" alt="The Apache Software Foundation" style="width: 266px; height: 83px;"></a></div><h1>Apache Tomcat 8 Configuration Reference</h1><div class="versionInfo">
-          Version 8.5.5,
-          <time datetime="2016-08-31">Aug 31 2016</time></div><div style="height: 1px;"></div><div style="clear: left;"></div></div></div></div></header><div id="middle"><div><div id="mainLeft" class="noprint"><div><nav><div><h2>Links</h2><ul><li><a href="../index.html">Docs Home</a></li><li><a href="index.html">Config Ref. Home</a></li><li><a href="http://wiki.apache.org/tomcat/FAQ">FAQ</a></li><li><a href="#comments_section">User Comments</a></li></ul></div><div><h2>Top Level Elements</h2><ul><li><a href="server.html">Server</a></li><li><a href="service.html">Service</a></li></ul></div><div><h2>Executors</h2><ul><li><a href="executor.html">Executor</a></li></ul></div><div><h2>Connectors</h2><ul><li><a href="http.html">HTTP</a></li><li><a href="ajp.html">AJP</a></li></ul></div><div><h2>Containers</h2><ul><li><a href="context.html">Context</a></li><li><a href="engine.html">Engine</a></li><li><a href="host.html">Host</a></li><li><a href="cluster.html">Cluster</a></li></ul></div><div><h2>Nested Components</h2><ul><li><a href="cookie-processor.html">CookieProcessor</a></li><li><a href="credentialhandler.html">CredentialHandler</a></li><li><a href="globalresources.html">Global Resources</a></li><li><a href="jar-scanner.html">JarScanner</a></li><li><a href="jar-scan-filter.html">JarScanFilter</a></li><li><a href="listeners.html">Listeners</a></li><li><a href="loader.html">Loader</a></li><li><a href="manager.html">Manager</a></li><li><a href="realm.html">Realm</a></li><li><a href="resources.html">Resources</a></li><li><a href="sessionidgenerator.html">SessionIdGenerator</a></li><li><a href="valve.html">Valve</a></li></ul></div><div><h2>Cluster Elements</h2><ul><li><a href="cluster.html">Cluster</a></li><li><a href="cluster-manager.html">Manager</a></li><li><a href="cluster-channel.html">Channel</a></li><li><a href="cluster-membership.html">Channel/Membership</a></li><li><a href="cluster-sender.html">Channel/Sender</a></li><li><a href="cluster-receiver.html">Channel/Receiver</a></li><li><a href="cluster-interceptor.html">Channel/Interceptor</a></li><li><a href="cluster-valve.html">Valve</a></li><li><a href="cluster-deployer.html">Deployer</a></li><li><a href="cluster-listener.html">ClusterListener</a></li></ul></div><div><h2>web.xml</h2><ul><li><a href="filter.html">Filter</a></li></ul></div><div><h2>Other</h2><ul><li><a href="systemprops.html">System properties</a></li><li><a href="jaspic.html">JASPIC</a></li></ul></div></nav></div></div><div id="mainRight"><div id="content"><h2>The Resources Component</h2><h3 id="Table_of_Contents">Table of Contents</h3><div class="text">
+  </script></head><body><div id="wrapper"><header><div id="header"><div><div><div class="logo noPrint"><a href="http://tomcat.apache.org/"><img alt="Tomcat Home" src="../images/tomcat.png"></a></div><div style="height: 1px;"></div><div class="asfLogo noPrint"><a href="http://www.apache.org/" target="_blank"><img src="../images/asf-logo.svg" alt="The Apache Software Foundation" style="width: 266px; height: 83px;"></a></div><h1>Apache Tomcat 9 Configuration Reference</h1><div class="versionInfo">
+          Version 9.0.5,
+          <time datetime="2018-02-06">Feb 6 2018</time></div><div style="height: 1px;"></div><div style="clear: left;"></div></div></div></div></header><div id="middle"><div><div id="mainLeft" class="noprint"><div><nav><div><h2>Links</h2><ul><li><a href="../index.html">Docs Home</a></li><li><a href="index.html">Config Ref. Home</a></li><li><a href="http://wiki.apache.org/tomcat/FAQ">FAQ</a></li><li><a href="#comments_section">User Comments</a></li></ul></div><div><h2>Top Level Elements</h2><ul><li><a href="server.html">Server</a></li><li><a href="service.html">Service</a></li></ul></div><div><h2>Executors</h2><ul><li><a href="executor.html">Executor</a></li></ul></div><div><h2>Connectors</h2><ul><li><a href="http.html">HTTP/1.1</a></li><li><a href="http2.html">HTTP/2</a></li><li><a href="ajp.html">AJP</a></li></ul></div><div><h2>Containers</h2><ul><li><a href="context.html">Context</a></li><li><a href="engine.html">Engine</a></li><li><a href="host.html">Host</a></li><li><a href="cluster.html">Cluster</a></li></ul></div><div><h2>Nested Components</h2><ul><li><a href="cookie-processor.html">CookieProcessor</a></li><li><a href="credentialhandler.html">CredentialHandler</a></li><li><a href="globalresources.html">Global Resources</a></li><li><a href="jar-scanner.html">JarScanner</a></li><li><a href="jar-scan-filter.html">JarScanFilter</a></li><li><a href="listeners.html">Listeners</a></li><li><a href="loader.html">Loader</a></li><li><a href="manager.html">Manager</a></li><li><a href="realm.html">Realm</a></li><li><a href="resources.html">Resources</a></li><li><a href="sessionidgenerator.html">SessionIdGenerator</a></li><li><a href="valve.html">Valve</a></li></ul></div><div><h2>Cluster Elements</h2><ul><li><a href="cluster.html">Cluster</a></li><li><a href="cluster-manager.html">Manager</a></li><li><a href="cluster-channel.html">Channel</a></li><li><a href="cluster-membership.html">Channel/Membership</a></li><li><a href="cluster-sender.html">Channel/Sender</a></li><li><a href="cluster-receiver.html">Channel/Receiver</a></li><li><a href="cluster-interceptor.html">Channel/Interceptor</a></li><li><a href="cluster-valve.html">Valve</a></li><li><a href="cluster-deployer.html">Deployer</a></li><li><a href="cluster-listener.html">ClusterListener</a></li></ul></div><div><h2>web.xml</h2><ul><li><a href="filter.html">Filter</a></li></ul></div><div><h2>Other</h2><ul><li><a href="systemprops.html">System properties</a></li><li><a href="jaspic.html">JASPIC</a></li></ul></div></nav></div></div><div id="mainRight"><div id="content"><h2>The Resources Component</h2><h3 id="Table_of_Contents">Table of Contents</h3><div class="text">
 <ul><li><a href="#Introduction">Introduction</a></li><li><a href="#Attributes">Attributes</a><ol><li><a href="#Common_Attributes">Common Attributes</a></li><li><a href="#Standard_Implementation">Standard Implementation</a></li></ol></li><li><a href="#Nested_Components">Nested Components</a></li><li><a href="#Special_Features">Special Features</a></li></ul>
 </div><h3 id="Introduction">Introduction</h3><div class="text">
 
@@ -68,9 +68,9 @@
           Description
         </th></tr><tr><td><code class="attributeName">allowLinking</code></td><td>
         <p>If the value of this flag is <code>true</code>, symlinks will be
-        allowed inside the web application, pointing to resources outside the
-        web application base path. If not specified, the default value
-        of the flag is <code>false</code>.</p>
+        allowed inside the web application, pointing to resources inside or
+        outside the web application base path. If not specified, the default
+        value of the flag is <code>false</code>.</p>
         <p><b>NOTE: This flag MUST NOT be set to true on the Windows platform
         (or any other OS which does not have a case sensitive filesystem),
         as it will disable case sensitivity checks, allowing JSP source code
@@ -135,9 +135,27 @@
 
   <div class="subsection"><h4 id="Standard_Implementation">Standard Implementation</h4><div class="text">
 
+    <h3>Standard Root Implementation</h3>
+
     <p>The standard implementation of <strong>Resources</strong> is
-    <strong>org.apache.catalina.webresources.StandardRoot</strong>, and
-    is configured by its parent Context element.</p>
+    <strong>org.apache.catalina.webresources.StandardRoot</strong>. It does not
+    support any additional attributes.</p>
+
+    <h3>Extracting Root Implementation</h3>
+
+    <p>The extracting implementation of <strong>Resources</strong> is
+    <strong>org.apache.catalina.webresources.ExtractingRoot</strong>. It does not
+    support any additional attributes.</p>
+
+    <p>When deploying web applications as packed WAR files, the extracting root
+    will extract any JAR files from <code>/WEB-INF/lib</code> to a
+    <code>application-jars</code> directory located in the web
+    application's working directory. These extracted JARs will be removed
+    when the web application stops.</p>
+
+    <p>Extracting JAR files from a packed WAR may provide a performance
+    improvement, particularly at web application start when JAR scanning is
+    required by the application.</p>
 
   </div></div>
 
@@ -208,12 +226,76 @@
   <strong>PreResources</strong>.
   </p>
 
+  <p>During web application start, the JAR scanning process checks scanned JARs
+  for content under <code>/META-INF/resources</code>. Where found, this static
+  content is added to the JarResources.
+  </p>
+
   <h3>Post-resources</h3>
 
   <p>PostResources are searched after the resource JARs. They will be searched
   in the order they are defined. To configure PostResources, nest a
   &lt;PostResources&gt; element inside the &lt;Resources&gt; element. The
   configuration attributes are the same as for <strong>PreResources</strong>.
+  </p>
+
+  <h3>Ordering</h3>
+
+  <p>In addition to the sets of resources described above, the standard
+  implementation also maintains ClassResources which represent the classes
+  contained in the JAR files mapped to <code>/WEB-INF/classes</code>. This
+  allows other components to search for classes with a single call rather than
+  one call to search <code>/WEB-INF/classes</code> followed by another to search
+  the JARs in <code>/WEB-INF/lib</code>. The ClassResources are populated
+  from the JARs mapped to <code>/WEB-INF/lib</code> when the web application
+  starts.</p>
+
+  <p>Therefore, the complete search order is:</p>
+  <ul>
+    <li>PreResources</li>
+    <li>MainResources</li>
+    <li>ClassResources</li>
+    <li>JarResources</li>
+    <li>PostResources</li>
+  </ul>
+
+  <p>The population of ClassResources and JarResources at web application start
+  means that care needs to be taken to add JAR based resources correctly to
+  obtain the desired behaviour. Consider the following example:</p>
+
+  <div class="codeBox"><pre><code>&lt;Resources&gt;
+  &lt;PostResources base="D:\Projects\external\classes"
+                 className="org.apache.catalina.webresources.DirResourceSet"
+                 webAppMount="/WEB-INF/classes"/&gt;
+  &lt;PostResources base="D:\Projects\lib\library1.jar"
+                 className="org.apache.catalina.webresources.FileResourceSet"
+                 webAppMount="/WEB-INF/lib/library1.jar"/&gt;
+&lt;/Resources&gt;</code></pre></div>
+
+  <p>Since both resources are PostResources, it might be expected that
+  <code>D:\Projects\external\classes</code> will be searched for classes before
+  <code>D:\Projects\lib\library1.jar</code>. However, by adding the JAR using a
+  <code>FileResourceSet</code>, the JAR is mapped to <code>/WEB-INF/lib</code>
+  and will be processed at application start along with the other JARs in
+  <code>/WEB-INF/lib</code>. The classes from the JAR file will be added to the
+  ClassResources which means they will be searched before the classes from
+  <code>D:\Projects\external\classes</code>. If the desired behaviour is that
+  <code>D:\Projects\external\classes</code> is searched before
+  <code>D:\Projects\lib\library1.jar</code> then a slightly different
+  configuration is required:</p>
+
+  <div class="codeBox"><pre><code>&lt;Resources&gt;
+  &lt;PostResources base="D:\Projects\external\classes"
+                 className="org.apache.catalina.webresources.DirResourceSet"
+                 webAppMount="/WEB-INF/classes"/&gt;
+  &lt;PostResources base="D:\Projects\lib\library1.jar"
+                 className="org.apache.catalina.webresources.JarResourceSet"
+                 webAppMount="/WEB-INF/classes"/&gt;
+&lt;/Resources&gt;</code></pre></div>
+
+  <p>In short, the JAR file should be added as a <code>JarResourceSet</code>
+  mapped to <code>/WEB-INF/classes</code> rather than using a
+  <code>FileResourceSet</code> mapped to <code>/WEB-INF/lib</code>.
   </p>
 
 </div><h3 id="Special_Features">Special Features</h3><div class="text">
@@ -234,5 +316,5 @@
                     Comments may be removed by our moderators if they are either
                     implemented or considered invalid/off-topic.
                   </p><div id="comments_thread"></div></div></div></div></div></div></div><footer><div id="footer">
-    Copyright &copy; 1999-2016, The Apache Software Foundation
+    Copyright &copy; 1999-2018, The Apache Software Foundation
   </div></footer></div></body></html>

@@ -94,6 +94,15 @@ test ".$TOMCAT_USER" = . && TOMCAT_USER=tomcat
 #
 if [ -z "$JAVA_HOME" ]; then
     JAVA_BIN="`which java 2>/dev/null || type java 2>&1`"
+    while [ -h "$JAVA_BIN" ]; do
+        ls=`ls -ld "$JAVA_BIN"`
+        link=`expr "$ls" : '.*-> \(.*\)$'`
+        if expr "$link" : '/.*' > /dev/null; then
+            JAVA_BIN="$link"
+        else
+            JAVA_BIN="`dirname $JAVA_BIN`/$link"
+        fi
+    done
     test -x "$JAVA_BIN" && JAVA_HOME="`dirname $JAVA_BIN`"
     test ".$JAVA_HOME" != . && JAVA_HOME=`cd "$JAVA_HOME/.." >/dev/null; pwd`
 else
@@ -172,6 +181,18 @@ if [ "$cygwin" = "false" ]; then
     fi
 fi
 
+# Java 9 no longer supports the java.endorsed.dirs
+# system property. Only try to use it if
+# JAVA_ENDORSED_DIRS was explicitly set
+# or CATALINA_HOME/endorsed exists.
+ENDORSED_PROP=ignore.endorsed.dirs
+if [ -n "$JAVA_ENDORSED_DIRS" ]; then
+    ENDORSED_PROP=java.endorsed.dirs
+fi
+if [ -d "$CATALINA_HOME/endorsed" ]; then
+    ENDORSED_PROP=java.endorsed.dirs
+fi
+
 # ----- Execute The Requested Command -----------------------------------------
 case "$1" in
     run     )
@@ -186,6 +207,7 @@ case "$1" in
       -errfile "&2" \
       -classpath "$CLASSPATH" \
       "$LOGGING_CONFIG" $JAVA_OPTS $CATALINA_OPTS \
+      -D$ENDORSED_PROP="$JAVA_ENDORSED_DIRS" \
       -Dcatalina.base="$CATALINA_BASE" \
       -Dcatalina.home="$CATALINA_HOME" \
       -Djava.io.tmpdir="$CATALINA_TMP" \
@@ -202,6 +224,7 @@ case "$1" in
       -errfile "&1" \
       -classpath "$CLASSPATH" \
       "$LOGGING_CONFIG" $JAVA_OPTS $CATALINA_OPTS \
+      -D$ENDORSED_PROP="$JAVA_ENDORSED_DIRS" \
       -Dcatalina.base="$CATALINA_BASE" \
       -Dcatalina.home="$CATALINA_HOME" \
       -Djava.io.tmpdir="$CATALINA_TMP" \
@@ -213,6 +236,7 @@ case "$1" in
       -stop \
       -pidfile "$CATALINA_PID" \
       -classpath "$CLASSPATH" \
+      -D$ENDORSED_PROP="$JAVA_ENDORSED_DIRS" \
       -Dcatalina.base="$CATALINA_BASE" \
       -Dcatalina.home="$CATALINA_HOME" \
       -Djava.io.tmpdir="$CATALINA_TMP" \
