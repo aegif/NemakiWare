@@ -226,6 +226,10 @@
       <!-- Create UI setting file -->
       <file src="setup/installer/tomcat/app-server-ui.properties" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
       <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-ui.properties"/>
+
+      <!-- Create reference.conf file -->
+      <file src="setup/installer/tomcat/reference.conf" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
+      <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/reference.conf"/>
     </pack>
 
     <!-- Pack: Delete tmp files -->
