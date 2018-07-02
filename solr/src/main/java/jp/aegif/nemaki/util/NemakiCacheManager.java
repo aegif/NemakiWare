@@ -1,5 +1,6 @@
 package jp.aegif.nemaki.util;
 
+import java.time.format.DateTimeFormatter;
 import java.util.GregorianCalendar;
 
 import javax.ws.rs.core.MediaType;
@@ -14,6 +15,9 @@ import jp.aegif.nemaki.util.yaml.RepositorySetting;
 
 public class NemakiCacheManager {
 	private static final Logger logger = LoggerFactory.getLogger(NemakiCacheManager.class);
+	
+	public static final String DATETIME_FORMAT = "yyyy-MM-dd'T'HH:mm:ss.SSSZ";
+	private static DateTimeFormatter dtf = DateTimeFormatter.ofPattern(DATETIME_FORMAT);
 
 	String userName = "";
 	String password = "";
@@ -41,7 +45,7 @@ public class NemakiCacheManager {
 
 			apiResult = c.resource(restUri)
 							.path(objectId)
-							.queryParam("date", date.toString())
+							.queryParam("date", dtf.format(date.toZonedDateTime()))
 							.accept(MediaType.APPLICATION_JSON_TYPE)
 							.delete(String.class);
 

@@ -56,18 +56,33 @@ public class CacheResource extends ResourceBase{
 			if (StringUtils.isNotEmpty(strBeforeDate)) {
 				GregorianCalendar beforeDate = DataUtil.convertToCalender(strBeforeDate);
 				Content c = cache.getContentCache().get(objectId);
-				if (beforeDate.compareTo(c.getModified()) < 0) {
-					cache.removeCmisAndContentCache(objectId);
-					result.put("deleted", true);
-					Logger.warn("Remove cmis object and content cache because updated by other.");
-				}else{
+				if (c == null) {
+					Logger.warn("Target cache not found.");
 					result.put("deleted", false);
+				} else {
+					if (beforeDate.compareTo(c.getModified()) >= 0) {
+						cache.removeCmisAndContentCache(objectId);
+						result.put("deleted", true);
+						Logger.warn("Remove cmis object and content cache because updated by other.");
+					}else{
+						result.put("deleted", false);
+					}
 				}
 			}else{
 				cache.removeCmisAndContentCache(objectId);
 				result.put("deleted", true);
 			}
 		} catch (ParseException e) {
+			Logger.error(e.getMessage());
+			addErrMsg(errMsg, ITEM_ERROR, ErrorCode.ERR_READ);
+		} finally {
+			lock.unlock();
+		}
+
+		result = makeResult(status, result, errMsg);
+		return result.toJSONString();
+	}
+
 			addErrMsg(errMsg, ITEM_ERROR, ErrorCode.ERR_READ);
 		} finally {
 			lock.unlock();
