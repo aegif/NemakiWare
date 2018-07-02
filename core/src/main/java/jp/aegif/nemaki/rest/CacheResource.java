@@ -83,6 +83,36 @@ public class CacheResource extends ResourceBase{
 		return result.toJSONString();
 	}
 
+	/**
+	 *
+	 * @param repositoryId
+	 * @param parentId
+	 * @param httpRequest
+	 * @return
+	 */
+	@DELETE
+	@Path("/tree/{id}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public String delete(@PathParam("repositoryId") String repositoryId, @PathParam("id") String parentId,
+			@Context HttpServletRequest httpRequest) {
+		boolean status = true;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+				
+		if(!nemakiCachePool.get(repositoryId).getTreeCache().isCacheEnabled()){
+			//do nothing when cache disabled
+			result.put("treeCacheEnabled", false);
+			return result.toJSONString();
+		}
+
+		Lock lock = threadLockService.getWriteLock(repositoryId, parentId);
+		try {
+			CacheService cache = nemakiCachePool.get(repositoryId);
+			lock.lock();
+			cache.removeCmisAndTreeCache(parentId);
+			result.put("deleted", true);
+		} catch (Exception e) {
+			Logger.error(e.getMessage());
 			addErrMsg(errMsg, ITEM_ERROR, ErrorCode.ERR_READ);
 		} finally {
 			lock.unlock();

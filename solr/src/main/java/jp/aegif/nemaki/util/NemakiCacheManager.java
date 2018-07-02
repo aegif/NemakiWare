@@ -58,6 +58,30 @@ public class NemakiCacheManager {
 
 	}
 
+
+	public void deleteTree(String objectId){
+		String apiResult = null;
+		String restUri = getRestUri(repositoryId) + "tree/";
+
+		try {
+			Client c = Client.create();
+			c.setConnectTimeout(3 * 1000);
+			c.setReadTimeout(5 * 1000);
+			c.setFollowRedirects(Boolean.TRUE);
+			c.addFilter(new HTTPBasicAuthFilter(userName, password));
+
+			apiResult = c.resource(restUri)
+							.path(objectId)
+							.accept(MediaType.APPLICATION_JSON_TYPE)
+							.delete(String.class);
+
+
+		} catch (Exception e) {
+			logger.error("Cannot connect to Core REST API : {}", restUri, e);
+			throw e;
+		}
+	}
+
 	private  String getRestUri(String repositoryId){
 		return restEndPoint + "/repo/" + repositoryId + "/cache/";
 	}
