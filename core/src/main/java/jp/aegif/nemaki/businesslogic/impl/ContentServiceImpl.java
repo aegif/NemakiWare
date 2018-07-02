@@ -1590,10 +1590,18 @@ public class ContentServiceImpl implements ContentService {
 		List<Relationship> targetRelationships = contentDaoService.getRelationshipsByTarget(repositoryId, objectId);
 
 		for (Relationship relationship : sourceRelationships) {
-			contentDaoService.delete(repositoryId, relationship.getId());
+			try{
+				contentDaoService.delete(repositoryId, relationship.getId());
+			}catch(Exception e){
+				log.error("Error deleting relationship: " + e.getMessage());
+			}
 		}
 		for (Relationship relationship : targetRelationships) {
-			contentDaoService.delete(repositoryId, relationship.getId());
+			try{
+				contentDaoService.delete(repositoryId, relationship.getId());
+			}catch(Exception e){
+				log.error("Error deleting relationship: " + e.getMessage());
+			}
 		}
 
 		// Delete item
