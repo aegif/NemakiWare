@@ -40,6 +40,7 @@ import org.apache.chemistry.opencmis.commons.data.ObjectParentData;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
+import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 
 import org.slf4j.Logger;
@@ -156,6 +157,15 @@ public class Registration implements Runnable {
 			return;
 		}
 
+		if (ce.getChangeType() == ChangeType.CREATED) {
+			try {
+				// Clear tree cache 
+				clearTreeCache(obj);
+			} catch (Exception e) {
+				logger.error("[ObjectId={}]{}", ce.getObjectId(), "Failed to delete tree cache.");
+			}
+		}
+		
 		String successMsg = "";
 		String errMsg = "";
 		switch (ce.getChangeType()) {
@@ -225,9 +235,19 @@ public class Registration implements Runnable {
 			} else {
 				logger.error("{}:Something wrong in the connection to Solr server", core.getName());
 			}
+			
+			try {
+				// Clear tree cache
+				String parentId = (String)resp.getResults().get(0).getFieldValue(Constant.FIELD_PARENT_ID);
+				clearTreeCache(parentId);
+			} catch (Exception ex) {
+				logger.error("[ObjectId={}]{}", ce.getObjectId(), "Failed to delete tree cache.");
+			}
 
-			// Delete
-			repositoryServer.deleteById(ce.getObjectId());
+			// Delete			
+			String repositoryId = cmisSession.getRepositoryInfo().getId();
+			String objectId = ce.getObjectId();
+			repositoryServer.deleteById(buildUniqueId(repositoryId, objectId));
 			repositoryServer.commit();
 			logger.info("[ObjectId={}]Successfully deleted.", ce.getObjectId());
 		} catch (Exception e) {
@@ -480,12 +500,37 @@ public class Registration implements Runnable {
 		}
 	}
 
+	/**
+	 * Clear target parent's tree cache
+	 * @param object
+	 */
+	private void clearTreeCache(CmisObject object) {
+		ObjectParentData parent = getParent(object);
+		if (parent != null) {
+			String parentId = parent.getObject().getId();
+			clearTreeCache(parentId);
+		}
+	}
+	
+	/**
+	 * Clear target tree cache
+	 * @param objectId
+	 */
+	private void clearTreeCache(String objectId) {
+		cache.deleteTree(objectId);
+	}
+
+	/**
+	 * Get target parent
+	 * @param object
+	 * @return
+	 */
 	private ObjectParentData getParent(CmisObject object) {
 		List<ObjectParentData> parents = cmisSession.getBinding().getNavigationService().getObjectParents(
 				cmisSession.getRepositoryInfo().getId(), object.getId(), null, false, null, null, true, null);
-		return parents.get(0);
+		return (parents.size() != 0)? parents.get(0): null;
 	}
-
+	
 	/**
 	 *
 	 * @param cal

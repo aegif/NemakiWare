@@ -197,4 +197,10 @@ public class CacheService {
 		getAclCache().remove(objectId);
 		removeCmisCache(objectId);
 	}
+	
+	public void removeCmisAndTreeCache(String objectId) {
+		getTreeCache().remove(objectId);
+		getAclCache().remove(objectId);
+		removeCmisCache(objectId);
+	}
 }
