@@ -1582,8 +1582,21 @@ public class ContentServiceImpl implements ContentService {
 		// Record the change event(Before the content is deleted!)
 		writeChangeEvent(callContext, repositoryId, content, ChangeType.DELETED);
 
-		// Archive and then Delete
+		// Archive
 		createArchive(callContext, repositoryId, objectId, deletedWithParent);
+		
+		// delete attached relationships:
+		List<Relationship> sourceRelationships = contentDaoService.getRelationshipsBySource(repositoryId,objectId);
+		List<Relationship> targetRelationships = contentDaoService.getRelationshipsByTarget(repositoryId, objectId);
+
+		for (Relationship relationship : sourceRelationships) {
+			contentDaoService.delete(repositoryId, relationship.getId());
+		}
+		for (Relationship relationship : targetRelationships) {
+			contentDaoService.delete(repositoryId, relationship.getId());
+		}
+
+		// Delete item
 		contentDaoService.delete(repositoryId, objectId);
 
 		// Call Solr indexing(optional)
