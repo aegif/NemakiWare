@@ -168,7 +168,7 @@
 			}
 		});
 
-		$('.delete').on('click', function(){
+		$('#relationship-table-target .delete, #relationship-table-source .delete').on('click', function(){
 			if(window.confirm("@Messages("view.message.delete.confirm")")){
 				var id = $(this).attr('cmis-id');
 
