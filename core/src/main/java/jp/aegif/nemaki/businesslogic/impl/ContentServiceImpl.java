@@ -477,9 +477,6 @@ public class ContentServiceImpl implements ContentService {
 		case UPDATED:
 			change.setTime(content.getModified());
 			break;
-		case DELETED:
-			change.setTime(content.getCreated());
-			break;
 		case SECURITY:
 			change.setTime(content.getModified());
 			break;

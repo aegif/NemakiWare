@@ -61,11 +61,12 @@ public class CouchChange extends CouchNodeBase implements Comparable<CouchChange
 
 	public CouchChange(Change c){
 		super(c);
+		GregorianCalendar time = c.getTime();
 		setObjectId(c.getObjectId());
 		Long token = convertChangeToken(c.getToken());
 		setToken(token);
 		setChangeType(c.getChangeType());
-		setTime(c.getCreated());
+		setTime(time != null ? time : c.getCreated());
 		setType(c.getType());
 		setName(c.getName());
 		setBaseType(c.getBaseType());
