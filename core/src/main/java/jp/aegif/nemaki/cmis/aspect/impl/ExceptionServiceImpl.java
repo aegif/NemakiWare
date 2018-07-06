@@ -641,7 +641,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 		}
 		if (documentTypeDefinition.isVersionable()
 				&& versioningState == VersioningState.NONE) {
-			String msg = "Versioning state is set for a non-versionable object-type";
+			String msg = "Versioning state must be set for a versionable object-type";
 			throw new CmisConstraintException(buildMsgWithId(msg, objectId),
 					HTTP_STATUS_CODE_409);
 		}
