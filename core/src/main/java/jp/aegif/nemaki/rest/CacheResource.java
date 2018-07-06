@@ -60,7 +60,7 @@ public class CacheResource extends ResourceBase{
 					Logger.warn("Target cache not found.");
 					result.put("deleted", false);
 				} else {
-					if (beforeDate.compareTo(c.getModified()) >= 0) {
+					if (beforeDate.compareTo(c.getModified()) > 0) {
 						cache.removeCmisAndContentCache(objectId);
 						result.put("deleted", true);
 						Logger.warn("Remove cmis object and content cache because updated by other.");
