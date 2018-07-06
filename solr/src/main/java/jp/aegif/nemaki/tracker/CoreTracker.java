@@ -88,6 +88,9 @@ public class CoreTracker extends CloseHook {
 	CmisBinding cmisBinding;
 	NemakiTokenManager nemakiTokenManager;
 	PropertyManagerImpl propertyManager;
+	
+	Set<String> latestIndexedChangeLogIds = new HashSet<String>();
+	
 
 	public CoreTracker(NemakiCoreAdminHandler adminHandler, SolrCore core, SolrServer indexServer,
 			SolrServer tokenServer) {
@@ -183,17 +186,24 @@ public class CoreTracker extends CloseHook {
 				logger.info("Start indexing of events : Repo={} Count={}", repositoryId,
 						changeEvents.getTotalNumItems());
 				List<ChangeEvent> events = changeEvents.getChangeEvents();
-
-				// After 2nd crawling, discard the first item
-				// Because the specs say that it's included in the results
-logger.info("actual num of events: " + events.size());
-				String token = readLatestChangeToken(repositoryId);
-logger.info("latest token: +" + token);
-				if (StringUtils.isNotEmpty(token) && CollectionUtils.isNotEmpty(events)) {
-					events.remove(0);
+				
+				if (!Constant.MODE_FULL.equals(trackingType)) {
+					// remove processed changeEvent
+					Set<String> eventIds = new HashSet<String>();
+					events.forEach(ev -> eventIds.add(createChangeLogId(ev)));
+					events.removeIf(ev -> latestIndexedChangeLogIds.contains(createChangeLogId(ev)));
+					this.latestIndexedChangeLogIds = eventIds;
+				} else {
+					// If Full indexing, process all changeEvent
+					this.latestIndexedChangeLogIds = new HashSet<String>();
 				}
-				if (events.isEmpty())
+
+logger.info("actual num of events: " + events.size());
+
+				if (events.isEmpty()) {
+					logger.info("actual change event is empty. Tracker job finished.");
 					return;
+				}
 
 				// Parse filtering configuration
 //				PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
@@ -259,12 +269,39 @@ logger.info("extraction start");
 	}
 
 	/**
+	 * Create the change log's Id
+	 *
+	 * @return
+	 */
+	private String createChangeLogId(ChangeEvent event) {
+		return event.getObjectId() + "_" + String.valueOf(event.getChangeTime().getTimeInMillis());		
+	}
+
+	/**
 	 * Get the last change token stored in Solr
 	 *
 	 * @return
 	 */
 	private String readLatestChangeToken(String repositoryId) {
-		logger.info("Start readLatest : {}", repositoryId);
+		return readLatestChangeTokens(repositoryId)[0];
+	}
+
+	/**
+	 * Get the second last change token stored in Solr
+	 *
+	 * @return
+	 */	
+	private String readSecondLatestChangeToken(String repositoryId) {
+		return readLatestChangeTokens(repositoryId)[1];
+	}
+	
+	/**
+	 * Get the last and 2nd change token stored in Solr
+	 *
+	 * @return String[] result[0]: latestToken, result[1]: secondLatestToken
+	 */
+	private String[] readLatestChangeTokens(String repositoryId) {
+		logger.info("Start readLatest2 : {}", repositoryId);
 		SolrQuery solrQuery = new SolrQuery();
 		solrQuery.setQuery(Constant.FIELD_REPOSITORY_ID + ":" + repositoryId);
 
@@ -276,15 +313,24 @@ logger.info("extraction start");
 		}
 
 		String latestChangeToken = "";
+		String[] changeTokens = new String[2];
 		if (resp != null && resp.getResults() != null && resp.getResults().getNumFound() != 0) {
 			SolrDocument doc = resp.getResults().get(0);
 			latestChangeToken = (String) doc.get(Constant.FIELD_TOKEN);
+			if (latestChangeToken.contains(",")) {
+				changeTokens = latestChangeToken.split(",");
+			} else {
+				changeTokens[0] = latestChangeToken;
+				changeTokens[1] = latestChangeToken;
+			}
 		} else {
 			logger.info("No latest change token found for repository: {}", repositoryId);
 			logger.info("Set blank latest change token for repository: {}", repositoryId);
 			storeLatestChangeToken("", repositoryId);
+			changeTokens[0] = "";
+			changeTokens[1] = "";
 		}
-		return latestChangeToken;
+		return changeTokens;
 	}
 
 	/**
@@ -294,9 +340,11 @@ logger.info("extraction start");
 	 */
 	private void storeLatestChangeToken(String token, String repositoryId) {
 		logger.info("Start storeLatestChangeToken");
+		String latestChangeToken = readLatestChangeToken(repositoryId);
+		String tokens = token + "," + latestChangeToken;
 		Map<String, Object> map = new HashMap<String, Object>();
 		map.put(Constant.FIELD_REPOSITORY_ID, repositoryId);
-		map.put(Constant.FIELD_TOKEN, token);
+		map.put(Constant.FIELD_TOKEN, tokens);
 
 		AbstractUpdateRequest req = buildUpdateRequest(map);
 
@@ -318,7 +366,7 @@ logger.info("extraction start");
 	private ChangeEvents getCmisChangeLog(String trackingType, String repositoryId) {
 		PropertyManager propMgr = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
 		logger.info("Start getCmisChangeLog : Repo={} Type={}", repositoryId, trackingType);
-		String _latestToken = readLatestChangeToken(repositoryId);
+		String _latestToken = readSecondLatestChangeToken(repositoryId);
 		String latestToken = (StringUtils.isEmpty(_latestToken)) ? null : _latestToken;
 
 		long _numItems = 0;
