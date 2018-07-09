@@ -297,6 +297,7 @@ logger.info("extraction start");
 	 * @return
 	 */
 	private String readLatestChangeToken(String repositoryId) {
+		logger.info("Start readLatest : {}", repositoryId);
 		return readLatestChangeTokens(repositoryId)[0];
 	}
 
@@ -306,6 +307,7 @@ logger.info("extraction start");
 	 * @return
 	 */	
 	private String readSecondLatestChangeToken(String repositoryId) {
+		logger.info("Start readSecondLatest : {}", repositoryId);
 		return readLatestChangeTokens(repositoryId)[1];
 	}
 	
@@ -315,7 +317,6 @@ logger.info("extraction start");
 	 * @return String[] result[0]: latestToken, result[1]: secondLatestToken
 	 */
 	private String[] readLatestChangeTokens(String repositoryId) {
-		logger.info("Start readLatest2 : {}", repositoryId);
 		SolrQuery solrQuery = new SolrQuery();
 		solrQuery.setQuery(Constant.FIELD_REPOSITORY_ID + ":" + repositoryId);
 
