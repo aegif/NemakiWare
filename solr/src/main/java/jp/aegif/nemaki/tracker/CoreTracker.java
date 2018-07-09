@@ -25,7 +25,9 @@ import static org.apache.solr.handler.extraction.ExtractingParams.UNKNOWN_FIELD_
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collections;
+import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -186,21 +188,24 @@ public class CoreTracker extends CloseHook {
 				logger.info("Start indexing of events : Repo={} Count={}", repositoryId,
 						changeEvents.getTotalNumItems());
 				List<ChangeEvent> events = changeEvents.getChangeEvents();
-				
-				if (!Constant.MODE_FULL.equals(trackingType)) {
-					// remove processed changeEvent
-					Set<String> eventIds = new HashSet<String>();
-					events.forEach(ev -> eventIds.add(createChangeLogId(ev)));
-					events.removeIf(ev -> latestIndexedChangeLogIds.contains(createChangeLogId(ev)));
-					this.latestIndexedChangeLogIds = eventIds;
-				} else {
-					// If Full indexing, process all changeEvent
-					this.latestIndexedChangeLogIds = new HashSet<String>();
-				}
+				Calendar currentTime = GregorianCalendar.getInstance();
+				ChangeEvent latestEvent = events.get(events.size() - 1);
+				int eventSize = events.size();
+				int oldEventSize = this.latestIndexedChangeLogIds.size();
 
+				// remove processed changeEvent
+				Set<String> eventIds = new HashSet<String>();
+				events.forEach(ev -> eventIds.add(createChangeLogId(ev)));
+				events.removeIf(ev -> latestIndexedChangeLogIds.contains(createChangeLogId(ev)));
+				this.latestIndexedChangeLogIds = eventIds;
+				
 logger.info("actual num of events: " + events.size());
 
 				if (events.isEmpty()) {
+					if (eventSize == oldEventSize) {
+						// Update the latest token 
+						storeLatestChangeToken(changeEvents.getLatestChangeLogToken(), repositoryId);
+					}
 					logger.info("actual change event is empty. Tracker job finished.");
 					return;
 				}
@@ -263,7 +268,16 @@ logger.info("extraction start");
 
 				// Save the latest token
 				storeLatestChangeToken(changeEvents.getLatestChangeLogToken(), repositoryId);
-
+				
+				// If the latest event is older than the specified second, it is processed continuously
+				Calendar latestCheckTime = latestEvent.getChangeTime();
+				int delta = Integer.valueOf(propertyManager.readValue(PropertyKey.SOLR_TRACKING_LATEST_CHECK_DELTA));
+				latestCheckTime.add(Calendar.SECOND, delta);
+				if (currentTime.compareTo(latestCheckTime) > 0) {
+					// Update the latest token 
+					storeLatestChangeToken(changeEvents.getLatestChangeLogToken(), repositoryId);
+				}
+				
 			} while (Constant.MODE_FULL.equals(trackingType));// In case of FUll mode, repeat until indexing all change logs
 		}
 	}
@@ -318,7 +332,16 @@ logger.info("extraction start");
 			SolrDocument doc = resp.getResults().get(0);
 			latestChangeToken = (String) doc.get(Constant.FIELD_TOKEN);
 			if (latestChangeToken.contains(",")) {
-				changeTokens = latestChangeToken.split(",");
+				String[] tokens = latestChangeToken.split(",");
+				if (tokens.length == 0) {
+					changeTokens[0] = "";
+					changeTokens[1] = "";
+				} else if (tokens.length < 2) {
+					changeTokens[0] = tokens[0];
+					changeTokens[1] = "";
+				} else {					
+					changeTokens = tokens;
+				}
 			} else {
 				changeTokens[0] = latestChangeToken;
 				changeTokens[1] = latestChangeToken;
@@ -341,6 +364,9 @@ logger.info("extraction start");
 	private void storeLatestChangeToken(String token, String repositoryId) {
 		logger.info("Start storeLatestChangeToken");
 		String latestChangeToken = readLatestChangeToken(repositoryId);
+		if (latestChangeToken.isEmpty()) {
+			latestChangeToken = token;
+		}
 		String tokens = token + "," + latestChangeToken;
 		Map<String, Object> map = new HashMap<String, Object>();
 		map.put(Constant.FIELD_REPOSITORY_ID, repositoryId);
