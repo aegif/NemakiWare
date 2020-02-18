@@ -2,12 +2,13 @@ FROM ubuntu
 
 RUN apt-get update
 RUN apt-get install curl -y
+RUN apt-get update && apt-get install -y gnupg2
 RUN curl -L https://couchdb.apache.org/repo/bintray-pubkey.asc | apt-key add -
 RUN apt-get update #&& apt-get install couchdb -y
 
 RUN apt-get --no-install-recommends -y install \
     build-essential pkg-config erlang \
-    libicu-dev libmozjs185-dev libcurl4-openssl-dev \
+    libicu-dev libcurl4-openssl-dev \
 	make maven openjdk-8-jdk -y
 
 # Transfer files
@@ -21,6 +22,9 @@ COPY ./couchdb /usr/local
 COPY 		./tomcat /usr/local/tomcat
 
 # Install couchdb
+RUN apt-get --no-install-recommends -y install libnspr4-dev libffi-dev
+RUN dpkg -i /usr/local/install-couchdb/libmozjs185-1.0_1.8.5-1.0.0+dfsg-7_amd64.deb
+RUN dpkg -i /usr/local/install-couchdb/libmozjs185-dev_1.8.5-1.0.0+dfsg-7_amd64.deb
 RUN tar -xvzf /usr/local/install-couchdb/apache-couchdb-2.1.1.tar.gz -C /usr/local/install-couchdb/
 RUN cd /usr/local/install-couchdb/apache-couchdb-2.1.1 && ./configure && make release 
 
