@@ -11,6 +11,8 @@ RUN apt-get --no-install-recommends -y install \
     libicu-dev libcurl4-openssl-dev \
 	make maven openjdk-8-jdk -y
 
+RUN update-java-alternatives --set /usr/lib/jvm/java-1.8.0-openjdk-amd64
+
 # Transfer files
 #couchdb installation files
 ADD install-couchdb /usr/local/install-couchdb
