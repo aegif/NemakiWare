@@ -11,5 +11,6 @@ mvn -f $UTIL_HOME clean
 # delete sentinel file
 rm -f /.firstrun
 
+curl -X PUT http://127.0.0.1:5984/_users
 
 sh /usr/local/tomcat/bin/startup.sh
