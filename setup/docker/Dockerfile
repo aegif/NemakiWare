@@ -28,7 +28,7 @@ RUN apt-get --no-install-recommends -y install libnspr4-dev libffi-dev
 RUN dpkg -i /usr/local/install-couchdb/libmozjs185-1.0_1.8.5-1.0.0+dfsg-7_amd64.deb
 RUN dpkg -i /usr/local/install-couchdb/libmozjs185-dev_1.8.5-1.0.0+dfsg-7_amd64.deb
 RUN tar -xvzf /usr/local/install-couchdb/apache-couchdb-2.1.1.tar.gz -C /usr/local/install-couchdb/
-RUN cd /usr/local/install-couchdb/apache-couchdb-2.1.1 && ./configure && make release 
+RUN cd /usr/local/install-couchdb/apache-couchdb-2.1.1 && ./configure && make release
 
 RUN chmod +x /scripts/*.sh
 
@@ -39,13 +39,13 @@ RUN adduser --system \
         --group --gecos \
         "CouchDB Administrator" couchdb
 
-RUN cp -R /usr/local/install-couchdb/apache-couchdb-2.1.1/rel/couchdb/ /home && chown -R couchdb:couchdb /home/couchdb && find /home/couchdb -type d -exec chmod 0770 {} \; 
+RUN cp -R /usr/local/install-couchdb/apache-couchdb-2.1.1/rel/couchdb/ /home && chown -R couchdb:couchdb /home/couchdb && find /home/couchdb -type d -exec chmod 0770 {} \;
 
 RUN chmod 0644 /home/couchdb/etc/*
 
 RUN sed -e 's/^bind_address = .*$/bind_address = 0.0.0.0/' -i /home/couchdb/etc/default.ini && \
     sed -e 's/^database_dir = .*$/database_dir = \/data/' -i /home/couchdb/etc/default.ini && \
-    sed -e 's/^view_index_dir = .*$/view_index_dir = \/data/' -i /home/couchdb/etc/default.ini 
+    sed -e 's/^view_index_dir = .*$/view_index_dir = \/data/' -i /home/couchdb/etc/default.ini
 
 
 # Command to run
@@ -55,4 +55,4 @@ CMD [""]
 EXPOSE 5984
 
 # Expose our data, logs and configuration volumes
-VOLUME ["/data", "c:\couchdb_vol", "/usr/local/etc/couchdb"]
+VOLUME ["/data", "/usr/local/etc/couchdb"]
