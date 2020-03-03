@@ -23,7 +23,7 @@ $ docker build -t nemakiware .
 To run the image and bind to host port 5984:
 
 ```
-$ docker run -d --name nemakiware-server -p 5984:5984 -p 8080:8080 -v data:/data -v couchdb_data:/usr/local/etc/couchdb nemakiware
+$ docker run -d --name nemakiware-server -p 5984:5984 -p 8080:8080 nemakiware
 ```
 
 The first time you run your container, it will take some time (1 to 2 minutes) to populate the database with some init scripts. Tomcat will not start until this process is complete. Subsequent runs will start much quicker.
