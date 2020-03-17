@@ -1,0 +1,4 @@
+[repositories] 
+local
+jcenter: https://jcenter.bintray.com/
+maven-local

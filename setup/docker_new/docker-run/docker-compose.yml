@@ -1,0 +1,31 @@
+version: '3'
+
+services:
+  nemaki-couchdb:
+    image: couchdb:2.3.1
+    ports:
+      - 5984:5984
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=password
+    volumes:
+      - ./nemaki-couchdb/data:/opt/couchdb/data
+  nemaki-core:
+    image: tomcat:9.0-alpine
+    volumes:
+      - ./../../../core/target/core.war:/usr/local/tomcat/webapps/core.war
+      - ./nemaki-core/classes:/usr/local/tomcat/shared/classes
+    ports:
+      - 8080:8080
+  nemaki-solr:
+    image: tomcat:9.0-alpine
+    volumes:
+      - ./../../../solr/target/solr.war:/usr/local/tomcat/webapps/solr.war
+      - ./nemaki-solr/classes:/usr/local/tomcat/shared/classes
+    ports:
+      - 8080:8080  # database-dump:
+    # build: ./database-dump
+    # volumes:
+      # - ./database-dump/scripts/:/home/scripts/
+    # tty: true
+    # command: /bin/bash
