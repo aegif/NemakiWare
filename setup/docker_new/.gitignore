@@ -1,1 +1,3 @@
-docker-run/nemaki-couchdb/data
+docker-run/nemaki-couchdb/data/*
+docker-run/data
+docker-run/nemaki-ui/ui.war

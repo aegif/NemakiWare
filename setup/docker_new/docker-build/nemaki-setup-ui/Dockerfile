@@ -1,19 +1,24 @@
-FROM openjdk:8u151-jre-alpine
+FROM java:8
 
-ENV SCALA_VERSION=2.11.8 \
-    SCALA_HOME=/usr/share/scala
+ENV ACTIVATOR_VERSION 1.3.8
 
-# NOTE: bash is used by scala/scalac scripts, and it cannot be easily replaced with ash.
-RUN apk add --no-cache --virtual=.build-dependencies wget ca-certificates && \
-    apk add --no-cache bash curl jq && \
-    cd "/tmp" && \
-    wget --no-verbose "https://downloads.typesafe.com/scala/${SCALA_VERSION}/scala-${SCALA_VERSION}.tgz" && \
-    tar xzf "scala-${SCALA_VERSION}.tgz" && \
-    mkdir "${SCALA_HOME}" && \
-    rm "/tmp/scala-${SCALA_VERSION}/bin/"*.bat && \
-    mv "/tmp/scala-${SCALA_VERSION}/bin" "/tmp/scala-${SCALA_VERSION}/lib" "${SCALA_HOME}" && \
-    ln -s "${SCALA_HOME}/bin/"* "/usr/bin/" && \
-    apk del .build-dependencies && \
-    rm -rf "/tmp/"*
+# Download and install Activator
+RUN wget --output-document /opt/typesafe-activator-$ACTIVATOR_VERSION.zip http://downloads.typesafe.com/typesafe-activator/$ACTIVATOR_VERSION/typesafe-activator-$ACTIVATOR_VERSION.zip
+RUN unzip /opt/typesafe-activator-$ACTIVATOR_VERSION.zip -d /opt
+RUN rm -f /opt/typesafe-activator-$ACTIVATOR_VERSION.zip
+RUN mv /opt/activator-dist-$ACTIVATOR_VERSION /opt/activator
+  
+# Create a working directory to run your app from
+# RUN mkdir /home/app/ui
+WORKDIR /home/app/ui
+
+# Expose port 8888 for Activator UI
+EXPOSE 8888
+# Expose port 9000 for the app under /home/app
+EXPOSE 9000
  
- #RUN export PATH="/usr/local/sbt/bin:$PATH" &&  apk update && apk add ca-certificates wget tar && mkdir -p "/usr/local/sbt" && wget -qO - --no-check-certificate "https://cocl.us/sbt-0.13.16.tgz" | tar xz -C /usr/local/sbt --strip-components=1 && sbt sbtVersion
+# Default Entry Point
+# ENTRYPOINT ["/opt/activator/activator", "-Dhttp.address=0.0.0.0"]
+
+# Default Command
+# CMD ["ui"]
