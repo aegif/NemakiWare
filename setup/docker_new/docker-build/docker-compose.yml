@@ -6,19 +6,19 @@ services:
     # image: maven:3.6-jdk-8
     # image: mozilla/sbt
     #image: frolvlad/alpine-scala
-    # build: ./nemaki-setup-ui
-    image: openjdk:8-jre-alpine
+    build: ./nemaki-setup-ui
+    # image: ubuntu
     # image: jeroenminnaert/activator
     # image: mcr.microsoft.com/java/jdk:8u242-zulu-windowsservercore
     environment:
       - SCALA_VERSION=2.11.8 
     volumes:
-      - ./nemaki-setup-ui/repositories:/root/.sbt/repositories
+      - ./nemaki-setup-ui/repositories:/root/.sbt/repositories.txt
       - ./nemaki-setup-ui/setup.sh:/home/scripts/setup.sh
-      - ./../../../ui/activator-launch-1.2.10.jar:/root/.ivy2/local/com.typesafe.activator/activator-launcher/1.2.10/jars/activator-launcher.jar
-      - ./../../../:/home/app/
+      # - ./../../../ui/activator-launch-1.2.10.jar:/root/.ivy2/local/com.typesafe.activator/activator-launcher/1.2.10/jars/activator-launcher.jar
+      - ./../../../:/root/.sbt/app/
     tty: true
-    # command: /home/scripts/setup.sh
+    command: /home/scripts/setup.sh
   # nemaki-setup-mvn:
   #   image: maven:3.6-jdk-8
   #   volumes: 
