@@ -1,0 +1,9 @@
+repositories:
+  - id: canopy
+    name: canopy
+    archive: canopy_closet
+    thinClientUri: http://localhost:8080/ui/repo/canopy/
+  - id: bedroom
+    name: bedroom
+    archive: bedroom_closet
+    thinClientUri: http://localhost:8080/ui/repo/bedroom/
