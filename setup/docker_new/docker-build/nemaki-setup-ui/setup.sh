@@ -1,5 +1,11 @@
 #!/bin/bash
-export ACTIVATOR_HOME=/root/.sbt/app/ui
-cd /root/.sbt/app/ui/ && sbt update
-cp /root/.sbt/repositories.txt /root/.sbt/repositories
-./root/.sbt/app/ui/activator war
+cd /app && mvn install
+cd /app/action && mvn install
+cd /app/common && mvn install
+
+cd /app/ui && activator clean
+cd /app/ui && activator war
+
+cd /app && mvn clean package
+cd /app/core && mvn clean package
+cd /app/solr && mvn clean package

@@ -16,17 +16,17 @@ services:
     image: tomcat:9.0-jre8-alpine
     volumes:
       - ./../../../ui/target/ui.war:/usr/local/tomcat/webapps/ui.war
-      - ./nemaki-ui/classes:/usr/local/shared/classes
+      - ./nemaki-ui/classes:/usr/local/tomcat/shared/classes
       - ./tomcat-addins/bin/setenv.bat:/usr/local/tomcat/bin/setenv.bat
       - ./tomcat-addins/bin/setenv.sh:/usr/local/tomcat/bin/setenv.sh
-      - ./tomcat-addins/conf/Catalina:/usr/local/tomcat/conf/Catalina
+      # - ./tomcat-addins/conf/Catalina:/usr/local/tomcat/conf/Catalina
     ports:
       - 8080:8080
 
   nemaki-core:
     image: tomcat:9.0-jre8-alpine
     volumes:
-      - ./nemaki-core/core.war:/usr/local/tomcat/webapps/core.war
+      - ./../../../core/target/core.war:/usr/local/tomcat/webapps/core.war
       - ./nemaki-core/classes:/usr/local/tomcat/shared/classes
       - ./tomcat-addins/bin/setenv.bat:/usr/local/tomcat/bin/setenv.bat
       - ./tomcat-addins/bin/setenv.sh:/usr/local/tomcat/bin/setenv.sh
