@@ -5,9 +5,9 @@ services:
     image: apache/couchdb:2.3.1
     ports:
       - 5984:5984
-    # environment:
-    #   - COUCHDB_USER=admin
-    #   - COUCHDB_PASSWORD=password
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=password
     volumes:
       - ./nemaki-couchdb/data:/opt/couchdb/data
       - ./nemaki-couchdb/local.ini:/opt/couchdb/etc/local.ini

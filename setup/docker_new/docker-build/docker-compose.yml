@@ -2,33 +2,14 @@ version: '3'
 
 services:
   nemaki-setup-ui:
-    # image: mcr.microsoft.com/java/jdk:8u242-zulu-ubuntu-18.04
-    # image: maven:3.6-jdk-8
-    # image: mozilla/sbt
-    #image: frolvlad/alpine-scala
     build: ./../../../
-    # image: ubuntu
-    # image: jeroenminnaert/activator
-    # image: mcr.microsoft.com/java/jdk:8u242-zulu-windowsservercore
-    # image: openjdk:8-jdk-alpine
-    # image: holandajunior/alpine-activator
     environment:
       - SCALA_VERSION=2.11.8 
       - nemakiware.version=2.5
     volumes:
       - ./nemaki-setup-ui/repositories:/root/.sbt/repositories.txt
-      - ./nemaki-setup-ui/setup.sh:/home/scripts/setup.sh
+      # - ./nemaki-setup-ui/setup.sh:/home/scripts/setup.sh
       - ./../../../ui/activator-launch-1.2.10.jar:/root/.ivy2/local/com.typesafe.activator/activator-launcher/1.2.10/jars/activator-launcher.jar
       - ./../../../:/app
-      # - ./../../../ui:/root/.sbt/app/ui
-      # - ./../../../common:/root/.sbt/app/common
-      # - ./../../../action:/root/.sbt/app/action
     tty: true
     command: /home/scripts/setup.sh
-    #command: /bin/bash
-  # nemaki-setup-mvn:
-  #   image: maven:3.6-jdk-8
-  #   volumes: 
-  #     - ./nemaki-setup-core/scripts/:/home/scripts/
-  #     - ./../../../:/home/app
-  #   tty: true

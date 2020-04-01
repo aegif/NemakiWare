@@ -10,6 +10,8 @@ RUN wget http://archive.apache.org/dist/maven/maven-3/$MAVEN_VERSION/binaries/ap
   mv apache-maven-$MAVEN_VERSION /usr/lib/mvn
 
 # COPY . /app
+COPY /setup/docker_new/docker-build/nemaki-setup-ui/setup.sh /home/scripts/setup.sh
+RUN chmod 777 /home/scripts/setup.sh
 
 # RUN mvn -f /app/common/pom.xml install
 # RUN mvn -f /app/action/pom.xml install
