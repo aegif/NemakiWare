@@ -1,8 +1,4 @@
-FROM couchdb
+FROM apache/couchdb:2.3.1
 
-COPY ./local.ini /opt/couchdb/etc/
-
-# startup scripts
-ADD scripts /scripts
-
-RUN touch /.firstrun
+ADD ./data.tar.gz /opt/couchdb
+COPY ./local.ini /opt/couchdb/etc/local.ini
