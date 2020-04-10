@@ -1,0 +1,49 @@
+<?xml version="1.0" ?>
+<project>
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>net.sourceforge.cobertura</groupId>
+  <artifactId>cobertura-runtime</artifactId>
+  <name>Cobertura :: Limited Runtime</name>
+  <version>1.9.4.1</version>
+  <packaging>pom</packaging>
+
+  <description>
+    Cobertura Runtime artifact to prevent unneeded dependencies at runtime.
+  </description>
+
+  <licenses>
+    <license>
+      <name>The GNU General Public License, Version 2</name>
+      <url>http://www.gnu.org/licenses/gpl.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <dependencies>
+    <dependency>
+      <groupId>net.sourceforge.cobertura</groupId>
+      <artifactId>cobertura</artifactId>
+      <version>1.9.4.1</version>
+      <exclusions>
+        <exclusion>
+          <groupId>oro</groupId>
+          <artifactId>oro</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>asm</groupId>
+          <artifactId>asm</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>asm</groupId>
+          <artifactId>asm-tree</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>log4j</groupId>
+          <artifactId>log4j</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+  </dependencies>
+
+</project>
