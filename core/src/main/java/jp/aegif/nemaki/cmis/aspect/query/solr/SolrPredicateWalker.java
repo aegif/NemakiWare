@@ -519,7 +519,7 @@ public class SolrPredicateWalker{
 	private Query walkTextPhrase(Tree node) {
 		String termString = escapeString(node.toString());
 		if(termString.charAt(0) == '\'' && termString.charAt(termString.length()-1) == '\'' ){
-			termString = '"' + termString.substring(1,termString.length() -2) + '"';
+			termString = '"' + termString.substring(1, termString.length() -1) + '"';
 		}
 		Term term = new Term("text", termString);
 		TermQuery q = new TermQuery(term);

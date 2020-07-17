@@ -1,5 +1,6 @@
 package jp.aegif.nemaki.util;
 
+import java.time.format.DateTimeFormatter;
 import java.util.GregorianCalendar;
 
 import javax.ws.rs.core.MediaType;
@@ -14,6 +15,9 @@ import jp.aegif.nemaki.util.yaml.RepositorySetting;
 
 public class NemakiCacheManager {
 	private static final Logger logger = LoggerFactory.getLogger(NemakiCacheManager.class);
+	
+	public static final String DATETIME_FORMAT = "yyyy-MM-dd'T'HH:mm:ss.SSSZ";
+	private static DateTimeFormatter dtf = DateTimeFormatter.ofPattern(DATETIME_FORMAT);
 
 	String userName = "";
 	String password = "";
@@ -41,7 +45,7 @@ public class NemakiCacheManager {
 
 			apiResult = c.resource(restUri)
 							.path(objectId)
-							.queryParam("date", date.toString())
+							.queryParam("date", dtf.format(date.toZonedDateTime()))
 							.accept(MediaType.APPLICATION_JSON_TYPE)
 							.delete(String.class);
 
@@ -52,6 +56,30 @@ public class NemakiCacheManager {
 		}
 
 
+	}
+
+
+	public void deleteTree(String objectId){
+		String apiResult = null;
+		String restUri = getRestUri(repositoryId) + "tree/";
+
+		try {
+			Client c = Client.create();
+			c.setConnectTimeout(3 * 1000);
+			c.setReadTimeout(5 * 1000);
+			c.setFollowRedirects(Boolean.TRUE);
+			c.addFilter(new HTTPBasicAuthFilter(userName, password));
+
+			apiResult = c.resource(restUri)
+							.path(objectId)
+							.accept(MediaType.APPLICATION_JSON_TYPE)
+							.delete(String.class);
+
+
+		} catch (Exception e) {
+			logger.error("Cannot connect to Core REST API : {}", restUri, e);
+			throw e;
+		}
 	}
 
 	private  String getRestUri(String repositoryId){

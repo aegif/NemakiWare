@@ -752,10 +752,19 @@ public class Node extends Controller {
 		Iterable<Relationship> rels = session.getRelationships(id, true, RelationshipDirection.EITHER, cmisRelType, cmisOpCtx);
 
 		List<Relationship> result = new ArrayList<Relationship>();
+		List<String> sourceNames = new ArrayList<String>();
+		int i = 0;
 		for(Relationship rel : rels){
+			try{
+				CmisObject sourceObject = rel.getSource();
+				sourceNames.add("sourceObject.getName()");
+			}catch (CmisObjectNotFoundException nfe){
+				sourceNames.add("");	
+			}
 			result.add(rel);
+
 		}
-		return ok(relationship.render(repositoryId, session.getObject(objectId), result, session));
+		return ok(relationship.render(repositoryId, session.getObject(objectId), result, session, sourceNames));
 	}
 
 	@Secure

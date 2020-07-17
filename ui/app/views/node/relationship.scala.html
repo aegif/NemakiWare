@@ -7,7 +7,7 @@
 @import component._
 @import play.mvc.Http.Context.Implicit
 @import org.apache.chemistry.opencmis.client.api.CmisObject
-@(repositoryId:String)(obj:CmisObject)(relationships: List[org.apache.chemistry.opencmis.client.api.Relationship])(session:org.apache.chemistry.opencmis.client.api.Session)
+@(repositoryId:String)(obj:CmisObject)(relationships: List[org.apache.chemistry.opencmis.client.api.Relationship])(session:org.apache.chemistry.opencmis.client.api.Session)(sourceNames:List[String])
 
 <div class="container tab-pane">
 	<div class="row" style="margin-bottom:15px">
@@ -29,6 +29,7 @@
 			}
 		</div>
 	</div>
+	
 	<div class="row">
 		<div class="col-sm-12 col-md-12">
 			<legend><i class="fa fa-arrow-circle-o-up"></i>@Messages("view.node.relationship.table.to.caption")</legend>
@@ -49,8 +50,9 @@
 					</tr>
 				</thead>
 				<tbody>
-					@for(relationship <- relationships){
-							@if(obj.getId() == relationship.getSource().getId()){
+					
+					@for((relationship,i) <- relationships.zipWithIndex){
+						@if(obj.getId() != relationship.getTarget().getId()){
 							<tr class="download-target">
 								<td>@NemakiConfig.getLabel(relationship.getType().getId(), Implicit.lang().language)</td>
 								<td>@relationship.getName()</td>
@@ -94,19 +96,31 @@
 					</tr>
 				</thead>
 				<tbody>
-					@for(relationship <- relationships){
+					@for((relationship,i) <- relationships.zipWithIndex){
 							@if(obj.getId() == relationship.getTarget().getId()){
 							<tr>
 								<td>@NemakiConfig.getLabel(relationship.getType().getId(), Implicit.lang().language)</td>
 								<td>@relationship.getName()</td>
-								<td><a href="@routes.Node.direct(repositoryId, relationship.getSource().getId(),"property")">@relationship.getSource().getName()</a></td>
+								<td>
+									@if(sourceNames(i) == ""){
+										@Messages("view.node.relationship.source.missing-source-file")
+									}else{
+										<a href="@routes.Node.direct(repositoryId, relationship.getSource().getId(),"property")">@relationship.getSource().getName()</a>
+									}
+								</td>
 								<td>@relationship.getCreatedBy()</td>
 								<td>@DateTimeUtil.calToString(relationship.getCreationDate(), Implicit.lang.toLocale)</td>
 								<td>
 									<div class="btn-group">
-										<button type="button" class="btn btn-default delete" cmis-id="@relationship.getId()"  @if(!Util.canDelete(relationship)){disabled="disabled"}>
-											<i class="fa fa-unlink"></i><div class="tooltips">@Messages("view.unlink")</div>
-										</button>
+										@if(sourceNames(i) == ""){
+											<button type="button" class="btn btn-default delete" cmis-id="@relationship.getId()"  @if(!Util.canDelete(relationship)){disabled="disabled"}>
+												<i class="fa fa-ban"></i><div class="tooltips">@Messages("view.node.relationship.delete")</div>
+											</button>
+										}else{
+											<button type="button" class="btn btn-default delete" cmis-id="@relationship.getId()"  @if(!Util.canDelete(relationship)){disabled="disabled"}>
+												<i class="fa fa-unlink"></i><div class="tooltips">@Messages("view.unlink")</div>
+											</button>
+										}
 									</div>
 								</td>
 							</tr>
@@ -154,7 +168,7 @@
 			}
 		});
 
-		$('.delete').on('click', function(){
+		$('#relationship-table-target .delete, #relationship-table-source .delete').on('click', function(){
 			if(window.confirm("@Messages("view.message.delete.confirm")")){
 				var id = $(this).attr('cmis-id');
 

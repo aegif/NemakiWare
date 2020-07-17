@@ -9,6 +9,7 @@ public interface PropertyKey {
 	public final String SOLR_TRACKING_MIMETYPE_FILTER_ENABLED = "solr.tracking.mimetype.filter.enabled";
 	public final String SOLR_TRACKING_MIMETYPE = "solr.tracking.mimetype";
 	public final String SOLR_TRACKING_NUMBER_OF_THREAD = "solr.tracking.number.of.thread";
+	public final String SOLR_TRACKING_LATEST_CHECK_DELTA = "solr.tracking.latest.check.delta";
 
 	public final String CMIS_SERVER_PROTOCOL = "cmis.server.protocol";
 	public final String CMIS_SERVER_HOST = "cmis.server.host";

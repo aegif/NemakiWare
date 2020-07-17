@@ -477,9 +477,6 @@ public class ContentServiceImpl implements ContentService {
 		case UPDATED:
 			change.setTime(content.getModified());
 			break;
-		case DELETED:
-			change.setTime(content.getCreated());
-			break;
 		case SECURITY:
 			change.setTime(content.getModified());
 			break;
@@ -1582,8 +1579,29 @@ public class ContentServiceImpl implements ContentService {
 		// Record the change event(Before the content is deleted!)
 		writeChangeEvent(callContext, repositoryId, content, ChangeType.DELETED);
 
-		// Archive and then Delete
+		// Archive
 		createArchive(callContext, repositoryId, objectId, deletedWithParent);
+		
+		// delete attached relationships:
+		List<Relationship> sourceRelationships = contentDaoService.getRelationshipsBySource(repositoryId,objectId);
+		List<Relationship> targetRelationships = contentDaoService.getRelationshipsByTarget(repositoryId, objectId);
+
+		for (Relationship relationship : sourceRelationships) {
+			try{
+				contentDaoService.delete(repositoryId, relationship.getId());
+			}catch(Exception e){
+				log.error("Error deleting relationship: " + e.getMessage());
+			}
+		}
+		for (Relationship relationship : targetRelationships) {
+			try{
+				contentDaoService.delete(repositoryId, relationship.getId());
+			}catch(Exception e){
+				log.error("Error deleting relationship: " + e.getMessage());
+			}
+		}
+
+		// Delete item
 		contentDaoService.delete(repositoryId, objectId);
 
 		// Call Solr indexing(optional)
