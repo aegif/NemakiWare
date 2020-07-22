@@ -37,4 +37,15 @@ public class RelationshipUtil {
 
 		return viewTypes;
 	}
+
+	public static List<RelationshipType> getPossibleRelationsTypes(Session session, CmisObject obj){
+
+		List<RelationshipType> viewTypesTemp = session.getTypeDescendants(null, -1, true).stream().map(Tree::getItem)
+				.filter(p -> p.getBaseTypeId() == BaseTypeId.CMIS_RELATIONSHIP).map(p -> (RelationshipType) p).collect(Collectors.toList());
+
+		List<RelationshipType> viewTypes = viewTypesTemp.stream()
+				.filter(p -> p.getAllowedSourceTypes().contains(obj.getType())).collect(Collectors.toList());
+
+		return viewTypes;
+	}
 }

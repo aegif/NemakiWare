@@ -747,23 +747,27 @@ public class Node extends Controller {
 		cmisOpCtx.setIncludeAcls(true);
 		cmisOpCtx.setIncludeAllowableActions(true);
 
-		//TODO String "cmis:relationship" extract nemaki-common project
-		ObjectType cmisRelType = new RelationshipTypeImpl(session, (RelationshipTypeDefinition) session.getTypeDefinition("cmis:relationship"));
-		Iterable<Relationship> rels = session.getRelationships(id, true, RelationshipDirection.EITHER, cmisRelType, cmisOpCtx);
-
 		List<Relationship> result = new ArrayList<Relationship>();
 		List<String> sourceNames = new ArrayList<String>();
-		int i = 0;
-		for(Relationship rel : rels){
-			try{
-				CmisObject sourceObject = rel.getSource();
-				sourceNames.add("sourceObject.getName()");
-			}catch (CmisObjectNotFoundException nfe){
-				sourceNames.add("");	
-			}
-			result.add(rel);
+		Iterable<Relationship> rels = new ArrayList<Relationship>();
 
+		//TODO String "cmis:relationship" extract nemaki-common project
+		ObjectType cmisRelType = new RelationshipTypeImpl(session, (RelationshipTypeDefinition) session.getTypeDefinition("cmis:relationship"));
+		try {
+			rels = session.getRelationships(id, true, RelationshipDirection.EITHER, cmisRelType, cmisOpCtx);
+			for(Relationship rel : rels){
+				try{
+					CmisObject sourceObject = rel.getSource();
+					sourceNames.add("sourceObject.getName()");
+				}catch (CmisObjectNotFoundException nfe){
+					sourceNames.add("");	
+				}
+				result.add(rel);
+			}
+		} catch (Exception e) {
+			logger.error("relationship error",e);
 		}
+
 		return ok(relationship.render(repositoryId, session.getObject(objectId), result, session, sourceNames));
 	}
 

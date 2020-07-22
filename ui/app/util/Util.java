@@ -366,6 +366,11 @@ public class Util {
 		return relTypes.size() > 0;
 	}
 
+	public static boolean hasPossibleRelationsTypes(Session session, CmisObject obj){
+		List<RelationshipType> relTypes = RelationshipUtil.getPossibleRelationsTypes(session, obj);
+		return relTypes.size() > 0;
+	}
+
 	public static Set<JavaBackedUIAction> getUIActions() {
 		HashSet<JavaBackedUIAction> actions = new HashSet<JavaBackedUIAction>();
 		try {

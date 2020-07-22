@@ -9,6 +9,7 @@
 @import org.apache.chemistry.opencmis.client.api.CmisObject
 @(repositoryId:String)(obj:CmisObject)(relationships: List[org.apache.chemistry.opencmis.client.api.Relationship])(session:org.apache.chemistry.opencmis.client.api.Session)(sourceNames:List[String])
 
+@if(Util.hasPossibleRelationsTypes(session,obj)){
 <div class="container tab-pane">
 	<div class="row" style="margin-bottom:15px">
 		<div class="col-sm-6 col-md-6">
@@ -70,15 +71,15 @@
 						}
 					}
 				</tbody>
-					<tfoot>
-		<tr>
-			@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() +4){colSpan =>
-				<td colspan="@colSpan">
-			}
-				<div class="pagination pagination-centered hide-if-no-paging"></div>
-			</td>
-		</tr>
-	</tfoot>
+				<tfoot>
+					<tr>
+					@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size() +4){colSpan =>
+						<td colspan="@colSpan">
+					}
+						<div class="pagination pagination-centered hide-if-no-paging"></div>
+						</td>
+					</tr>
+				</tfoot>
 			</table>
 
 			<br/><br/>
@@ -127,15 +128,15 @@
 						}
 					}
 				</tbody>
-					<tfoot>
-		<tr>
-			@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size()+ 4){colSpan =>
-				<td colspan="@colSpan">
-			}
-				<div class="pagination pagination-centered hide-if-no-paging"></div>
-			</td>
-		</tr>
-	</tfoot>
+				<tfoot>
+					<tr>
+					@defining(play.Play.application().configuration().getStringList("navigation.column.displayed").size()+ 4){colSpan =>
+						<td colspan="@colSpan">
+					}
+							<div class="pagination pagination-centered hide-if-no-paging"></div>
+						</td>
+					</tr>
+				</tfoot>
 			</table>
 		</div>
 	</div>
@@ -189,3 +190,7 @@
 
 	});
 </script>
+
+}else{
+	@Messages("view.not_permitted")	
+}

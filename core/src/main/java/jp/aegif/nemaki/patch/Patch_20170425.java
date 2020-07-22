@@ -1,5 +1,7 @@
 package jp.aegif.nemaki.patch;
 
+import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -87,6 +89,8 @@ public class Patch_20170425 extends AbstractNemakiPatch {
 			tdf.setIsControllablePolicy(false);
 			tdf.setIsControllableAcl(true);
 			tdf.setIsFulltextIndexed(false);
+			tdf.setAllowedSourceTypes(new ArrayList<String>(Arrays.asList(BaseTypeId.CMIS_DOCUMENT.toString())));
+			tdf.setAllowedTargetTypes(new ArrayList<String>(Arrays.asList(BaseTypeId.CMIS_DOCUMENT.toString())));
 			tdf.setIsIncludedInSupertypeQuery(true);
 			TypeMutabilityImpl typeMutability = new TypeMutabilityImpl();
 			typeMutability.setCanCreate(true);
