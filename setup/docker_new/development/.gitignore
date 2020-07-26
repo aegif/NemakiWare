@@ -1,0 +1,5 @@
+image/dep/*.tar.gz
+dependencies/*.tar.gz
+dependencies/*
+dep/*
+db/data/*

@@ -1,0 +1,11 @@
+version: '3'
+
+services:
+  nemaki-setup-ui:
+    image: aegif/nemakibuild
+    environment:
+      - SCALA_VERSION=2.11.8 
+      - nemakiware.version=2.5
+    volumes:
+      - ../war-files:/share
+    command: /home/scripts/setup.sh

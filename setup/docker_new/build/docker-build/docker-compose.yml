@@ -1,0 +1,15 @@
+version: '3'
+
+services:
+  nemaki-setup-ui:
+    build: ./../../../
+    environment:
+      - SCALA_VERSION=2.11.8 
+      - nemakiware.version=2.5
+    volumes:
+      - ./nemaki-setup-ui/repositories:/root/.sbt/repositories.txt
+      # - ./nemaki-setup-ui/setup.sh:/home/scripts/setup.sh
+      - ./../../../ui/activator-launch-1.2.10.jar:/root/.ivy2/local/com.typesafe.activator/activator-launcher/1.2.10/jars/activator-launcher.jar
+      - ./../../../:/app
+    tty: true
+    command: /home/scripts/setup.sh

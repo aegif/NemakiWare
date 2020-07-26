@@ -1265,7 +1265,7 @@ public class TypeManagerImpl implements TypeManager {
 	public TypeDefinitionList getTypesChildren(CallContext context,
 			String repositoryId, String typeId,
 			boolean includePropertyDefinitions, BigInteger maxItems, BigInteger skipCount) {
-		
+				
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
 		
 		TypeDefinitionListImpl result = new TypeDefinitionListImpl(
@@ -1280,6 +1280,10 @@ public class TypeManagerImpl implements TypeManager {
 		if (max < 1) {
 			return result;
 		}
+// Boolean hasMoreItems:
+// 	TRUE if the Repository contains additional items after those contained in the response. 
+// 	FALSE otherwise. 
+// 	If TRUE, a request with a larger skipCount or larger maxItems is expected to return additional results (unless the contents of the repository has changed).
 
 		if (typeId == null) {
 			int count = skip;
@@ -1290,9 +1294,15 @@ public class TypeManagerImpl implements TypeManager {
 				TypeDefinitionContainer type = basetypes.get(key);
 				result.getList().add(
 						DataUtil.copyTypeDefinition(type.getTypeDefinition()));
+
+				// don't return more than max!
+				max--;
+				if (max == 0) {
+					break;
+				}
 			}
 
-			result.setHasMoreItems((result.getList().size() + skip) < max);
+			result.setHasMoreItems(result.getList().size() + skip < basetypes.size());
 			result.setNumItems(BigInteger.valueOf(basetypes.size()));
 		} else {
 			TypeDefinitionContainer tc = types.get(typeId);
@@ -1315,8 +1325,7 @@ public class TypeManagerImpl implements TypeManager {
 				}
 			}
 
-			result.setHasMoreItems((result.getList().size() + skip) < tc
-					.getChildren().size());
+			result.setHasMoreItems(result.getList().size() + skip < tc.getChildren().size());
 			result.setNumItems(BigInteger.valueOf(tc.getChildren().size()));
 		}
 
