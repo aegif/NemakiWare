@@ -744,30 +744,61 @@ public class Node extends Controller {
 
 		ObjectId id = session.createObjectId(objectId);
 		OperationContext cmisOpCtx = new OperationContextImpl();
-		cmisOpCtx.setIncludeRelationships(IncludeRelationships.NONE);
+		cmisOpCtx.setIncludeRelationships(IncludeRelationships.BOTH);
 		cmisOpCtx.setIncludeAcls(true);
 		cmisOpCtx.setIncludeAllowableActions(true);
+		cmisOpCtx.setCacheEnabled(true);
+		cmisOpCtx.setIncludePolicies(true);
+		cmisOpCtx.setLoadSecondaryTypeProperties(true);
+
 
 		List<Relationship> result = new ArrayList<Relationship>();
 		List<String> sourceNames = new ArrayList<String>();
-		Iterable<Relationship> rels = new ArrayList<Relationship>();
+	//	Iterable<Relationship> rels = new ArrayList<Relationship>();
 
 		//TODO String "cmis:relationship" extract nemaki-common project
 		ObjectType cmisRelType = new RelationshipTypeImpl(session, (RelationshipTypeDefinition) session.getTypeDefinition("cmis:relationship"));
 		try {
-			rels = session.getRelationships(id, true, RelationshipDirection.EITHER, cmisRelType, cmisOpCtx);
-			for(Relationship rel : rels){
-				try{
-					CmisObject sourceObject = rel.getSource();
-					sourceNames.add("sourceObject.getName()");
-				}catch (CmisObjectNotFoundException nfe){
-					sourceNames.add("");	
-				}
-				result.add(rel);
+
+//			ItemIterable<Relationship> rels = session.getRelationships(id, true, RelationshipDirection.EITHER, cmisRelType, cmisOpCtx);
+//			Iterator<Relationship> relsItr = rels.iterator();
+			CmisObject obj = session.getObject(id,cmisOpCtx);
+			List<Relationship> relationships = obj.getRelationships();
+
+			if (relationships != null) {
+				result = relationships.stream().filter(r -> {
+					try {
+						r.getTarget();
+					} catch (CmisObjectNotFoundException e) {
+						return false;
+					}
+					try {
+						r.getSource();
+					} catch (CmisObjectNotFoundException e) {
+						return false;
+					}
+					return true;
+				}).collect(Collectors.toList());
 			}
-		} catch (CmisNotSupportedException e) {
+
+
+/*				while (relsItr.hasNext()) {
+					logger.warn("before smaller try");
+					Relationship rel = relsItr.next();
+					try {
+						CmisObject sourceObject = rel.getSource();
+						sourceNames.add("sourceObject.getName()");
+					} catch (CmisObjectNotFoundException nfe) {
+						sourceNames.add("");
+					}
+					result.add(rel);
+					logger.warn("after add");
+				}
+*/
+
+		} catch (Exception e) {
 			//TODO better exception handling
-			logger.info("relationship not supported");
+			logger.info("relationship not supported",e);
 		}
 
 		return ok(relationship.render(repositoryId, session.getObject(objectId), result, session, sourceNames));
@@ -1588,9 +1619,10 @@ logger.info(properties.toString());
 		relProps.put(PropertyIds.NAME, relName);
 		relProps.put("cmis:sourceId", sourceId);
 		relProps.put("cmis:targetId", targetId);
+
 		ObjectId result = null;
 		try{
-		 result = session.createRelationship(relProps, null, srcAceList, new ArrayList<Ace>());
+			result = session.createRelationship(relProps, null, srcAceList, new ArrayList<Ace>());
 		}catch(CmisPermissionDeniedException ex){
 			// atompub?
 		}
