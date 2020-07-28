@@ -62,6 +62,7 @@ import org.apache.chemistry.opencmis.commons.enums.VersioningState;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisNotSupportedException;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlEntryImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AccessControlPrincipalDataImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
@@ -764,8 +765,9 @@ public class Node extends Controller {
 				}
 				result.add(rel);
 			}
-		} catch (Exception e) {
-			logger.error("relationship error",e);
+		} catch (CmisNotSupportedException e) {
+			//TODO better exception handling
+			logger.info("relationship not supported");
 		}
 
 		return ok(relationship.render(repositoryId, session.getObject(objectId), result, session, sourceNames));
