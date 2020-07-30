@@ -2,7 +2,8 @@ package jp.aegif.nemaki.patch;
 
 import java.util.HashMap;
 import java.util.Map;
-
+import java.util.Arrays;
+import java.util.ArrayList;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
@@ -88,6 +89,8 @@ public class Patch_20170425 extends AbstractNemakiPatch {
 			tdf.setIsControllableAcl(true);
 			tdf.setIsFulltextIndexed(false);
 			tdf.setIsIncludedInSupertypeQuery(true);
+			tdf.setAllowedSourceTypes(new ArrayList<String>(Arrays.asList(BaseTypeId.CMIS_DOCUMENT.value())));
+			tdf.setAllowedTargetTypes(new ArrayList<String>(Arrays.asList(BaseTypeId.CMIS_DOCUMENT.value())));
 			TypeMutabilityImpl typeMutability = new TypeMutabilityImpl();
 			typeMutability.setCanCreate(true);
 			typeMutability.setCanUpdate(false);
