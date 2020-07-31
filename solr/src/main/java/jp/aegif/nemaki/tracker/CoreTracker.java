@@ -350,7 +350,7 @@ logger.info("extraction start");
 		} else {
 			logger.info("No latest change token found for repository: {}", repositoryId);
 			logger.info("Set blank latest change token for repository: {}", repositoryId);
-			storeLatestChangeToken("", repositoryId);
+			//storeLatestChangeToken("", repositoryId);
 			changeTokens[0] = "";
 			changeTokens[1] = "";
 		}
