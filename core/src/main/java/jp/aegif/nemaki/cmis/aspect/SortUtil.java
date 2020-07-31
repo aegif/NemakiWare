@@ -182,7 +182,7 @@ public class SortUtil {
 				if ("DESC".equals(order[1])) {
 					desc = true;
 				} else if (StringUtils.isNotBlank(order[1])) {
-					log.warn("Invalid modifier other than DESC in orderBy parameter is ignored: propertyId="
+					log.info("Invalid modifier other than DESC in orderBy parameter is ignored: propertyId="
 							+ order[0]);
 				}
 			}
