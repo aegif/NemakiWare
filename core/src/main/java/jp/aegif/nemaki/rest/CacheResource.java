@@ -35,7 +35,7 @@ public class CacheResource extends ResourceBase{
 	 *
 	 * @param repositoryId
 	 * @param objectId
-	 * @param before
+	 * @param strBeforeDate
 	 *            delete if cache data modification before this date
 	 * @param httpRequest
 	 * @return
@@ -57,13 +57,13 @@ public class CacheResource extends ResourceBase{
 				GregorianCalendar beforeDate = DataUtil.convertToCalender(strBeforeDate);
 				Content c = cache.getContentCache().get(objectId);
 				if (c == null) {
-					Logger.warn("Target cache not found.");
+					Logger.info("Target cache not found.");
 					result.put("deleted", false);
 				} else {
 					if (beforeDate.compareTo(c.getModified()) > 0) {
 						cache.removeCmisAndContentCache(objectId);
 						result.put("deleted", true);
-						Logger.warn("Remove cmis object and content cache because updated by other.");
+						Logger.info("Remove cmis object and content cache because updated by other.");
 					}else{
 						result.put("deleted", false);
 					}
