@@ -130,7 +130,7 @@
           <arg value="$INSTALL_PATH/${TOMCAT}" />
           <arg value="${tomcat.port}" />
           <arg value="${tomcat.shutdown.port}" />
-          <arg value="${tomcat.ajp.port}" />
+          <arg value="8009" />
         </args>
       </executable>
     </pack>
