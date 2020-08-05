@@ -1,33 +1,24 @@
 package jp.aegif.nemaki.util;
 
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.util.HashMap;
-import java.util.Map;
+import com.esotericsoftware.yamlbeans.YamlReader;
+import com.esotericsoftware.yamlbeans.YamlWriter;
+import jp.aegif.nemaki.util.impl.PropertyManagerImpl;
+import jp.aegif.nemaki.util.yaml.RepositorySetting;
+import jp.aegif.nemaki.util.yaml.RepositorySettings;
 import org.apache.chemistry.opencmis.client.api.OperationContext;
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.client.api.SessionFactory;
 import org.apache.chemistry.opencmis.client.runtime.SessionFactoryImpl;
 import org.apache.chemistry.opencmis.commons.SessionParameter;
 import org.apache.chemistry.opencmis.commons.enums.BindingType;
-
+import org.apache.solr.core.SolrResourceLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.esotericsoftware.yamlbeans.YamlReader;
-import com.esotericsoftware.yamlbeans.YamlWriter;
-
-import org.apache.solr.core.SolrResourceLoader;
-
-import jp.aegif.nemaki.util.impl.PropertyManagerImpl;
-import jp.aegif.nemaki.util.yaml.RepositorySetting;
-import jp.aegif.nemaki.util.yaml.RepositorySettings;
+import java.io.*;
+import java.net.URL;
+import java.util.HashMap;
+import java.util.Map;
 
 public class CmisSessionFactory {
 	private static final Logger logger = LoggerFactory.getLogger(CmisSessionFactory.class);
@@ -38,10 +29,11 @@ public class CmisSessionFactory {
 	private static PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
 
 	public static Session getSession(String repositoryId) {
+logger.warn("sessions1:" + sessions.toString());
 		if (!isConnectionSetup(repositoryId)) {
 			sessions.put(repositoryId, setupCmisSession(repositoryId));
 		}
-
+logger.warn("sessions2:" + sessions.toString());
 		Session session = sessions.get(repositoryId);
 		if (session == null) {
 			logger.warn("No CMIS repositoryId:{}", repositoryId);
@@ -127,7 +119,7 @@ public class CmisSessionFactory {
 		parameter.put(SessionParameter.PASSWORD, password);
 
 		// Auth token
-		Boolean authTokenEnabled = Boolean.valueOf(pm.readValue(PropertyKey.NEMAKI_CAPABILITY_EXTENDED_AUTH_TOKEN));
+		boolean authTokenEnabled = Boolean.parseBoolean(pm.readValue(PropertyKey.NEMAKI_CAPABILITY_EXTENDED_AUTH_TOKEN));
 		if (authTokenEnabled) {
 			String authToken = nemakiTokenManager.getOrRegister(repositoryId, user, password);
 			if (authToken != null) {
@@ -148,7 +140,9 @@ public class CmisSessionFactory {
 
 	private static void buildRepositorySettings() {
 		String location = pm.readValue(PropertyKey.REPOSITORIES_SETTING_FILE);
+logger.warn(location);
 		CmisSessionFactory.repositorySettings = readRepositorySettings(location);
+
 	}
 
 	private static RepositorySettings readRepositorySettings(String location) {

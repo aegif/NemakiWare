@@ -21,43 +21,17 @@
  ******************************************************************************/
 package jp.aegif.nemaki.tracker;
 
-import static org.apache.solr.handler.extraction.ExtractingParams.UNKNOWN_FIELD_PREFIX;
-
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Calendar;
-import java.util.Collections;
-import java.util.GregorianCalendar;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.ListIterator;
-import java.util.Map;
-import java.util.Set;
-
+import com.google.common.collect.Iterables;
 import jp.aegif.nemaki.NemakiCoreAdminHandler;
-import jp.aegif.nemaki.util.CmisSessionFactory;
-import jp.aegif.nemaki.util.Constant;
-import jp.aegif.nemaki.util.NemakiCacheManager;
-import jp.aegif.nemaki.util.PropertyKey;
-import jp.aegif.nemaki.util.PropertyManager;
-import jp.aegif.nemaki.util.StringPool;
-import jp.aegif.nemaki.util.NemakiTokenManager;
+import jp.aegif.nemaki.util.*;
 import jp.aegif.nemaki.util.impl.PropertyManagerImpl;
 import jp.aegif.nemaki.util.yaml.RepositorySettings;
-
 import org.apache.chemistry.opencmis.client.api.ChangeEvent;
 import org.apache.chemistry.opencmis.client.api.ChangeEvents;
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
 import org.apache.chemistry.opencmis.commons.spi.CmisBinding;
-import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.client.solrj.SolrServerException;
@@ -68,6 +42,13 @@ import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrInputDocument;
 import org.apache.solr.core.CloseHook;
 import org.apache.solr.core.SolrCore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.util.*;
+
+import static org.apache.solr.handler.extraction.ExtractingParams.UNKNOWN_FIELD_PREFIX;
 
 
 /**
@@ -178,18 +159,22 @@ public class CoreTracker extends CloseHook {
 	public void index(String trackingType, String repositoryId) {
 		synchronized (LOCK) {
 			do {
+logger.warn("tracing type:" + trackingType);
+logger.warn("repository id:" + repositoryId);
+
 				ChangeEvents changeEvents = getCmisChangeLog(trackingType, repositoryId);
 				
 				if (changeEvents == null) {
 					logger.info("change evensts is null");
 					return;
 				}
-				logger.info("size of change events: " + changeEvents.getTotalNumItems());
-				logger.info("Start indexing of events : Repo={} Count={}", repositoryId,
+logger.warn("size of change events: " + changeEvents.getTotalNumItems());
+logger.warn("Start indexing of events : Repo={} Count={}", repositoryId,
 						changeEvents.getTotalNumItems());
 				List<ChangeEvent> events = changeEvents.getChangeEvents();
 				Calendar currentTime = GregorianCalendar.getInstance();
-				ChangeEvent latestEvent = events.get(events.size() - 1);
+
+				ChangeEvent latestEvent = Iterables.getLast(events,null);
 				int eventSize = events.size();
 				int oldEventSize = this.latestIndexedChangeLogIds.size();
 
@@ -268,9 +253,14 @@ logger.info("extraction start");
 
 				// Save the latest token
 				storeLatestChangeToken(changeEvents.getLatestChangeLogToken(), repositoryId);
-				
+				Calendar latestCheckTime;
 				// If the latest event is older than the specified second, it is processed continuously
-				Calendar latestCheckTime = latestEvent.getChangeTime();
+				if (latestEvent == null){
+					latestCheckTime = Calendar.getInstance();
+					latestCheckTime.set(1900,1,1);
+				}else {
+					latestCheckTime = latestEvent.getChangeTime();
+				}
 				int delta = Integer.valueOf(propertyManager.readValue(PropertyKey.SOLR_TRACKING_LATEST_CHECK_DELTA));
 				latestCheckTime.add(Calendar.SECOND, delta);
 				if (currentTime.compareTo(latestCheckTime) > 0) {
@@ -452,7 +442,7 @@ logger.info("Session aquired");
 	/**
 	 * Build an update request to Solr without file
 	 *
-	 * @param content
+	 *
 	 * @return
 	 */
 	// TODO Unify that of Registration class
