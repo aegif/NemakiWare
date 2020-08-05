@@ -1,34 +1,7 @@
 package jp.aegif.nemaki.tracker;
 
-import static org.apache.solr.handler.extraction.ExtractingParams.LITERALS_PREFIX;
-import static org.apache.solr.handler.extraction.ExtractingParams.UNKNOWN_FIELD_PREFIX;
-
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.GregorianCalendar;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.TimeZone;
-
-import jp.aegif.nemaki.util.PropertyKey;
-import jp.aegif.nemaki.util.PropertyManager;
-import jp.aegif.nemaki.util.StringPool;
-import jp.aegif.nemaki.util.impl.PropertyManagerImpl;
 import jp.aegif.nemaki.util.Constant;
 import jp.aegif.nemaki.util.NemakiCacheManager;
-
 import org.apache.chemistry.opencmis.client.api.ChangeEvent;
 import org.apache.chemistry.opencmis.client.api.CmisObject;
 import org.apache.chemistry.opencmis.client.api.SecondaryType;
@@ -38,14 +11,9 @@ import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ObjectParentData;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
-import org.apache.commons.collections.CollectionUtils;
-import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.client.solrj.request.AbstractUpdateRequest;
@@ -55,6 +23,18 @@ import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrInputDocument;
 import org.apache.solr.common.params.ModifiableSolrParams;
 import org.apache.solr.core.SolrCore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.*;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.*;
+
+import static org.apache.solr.handler.extraction.ExtractingParams.LITERALS_PREFIX;
+import static org.apache.solr.handler.extraction.ExtractingParams.UNKNOWN_FIELD_PREFIX;
 
 public class Registration implements Runnable {
 
@@ -258,7 +238,7 @@ public class Registration implements Runnable {
 	/**
 	 * Build update request with file to Solr
 	 *
-	 * @param content
+	 * @param map
 	 * @param inputStream
 	 * @return
 	 */
@@ -311,7 +291,7 @@ public class Registration implements Runnable {
 	/**
 	 * Build an update request to Solr without file
 	 *
-	 * @param content
+	 * @param map
 	 * @return
 	 */
 	public AbstractUpdateRequest buildUpdateRequest(Map<String, Object> map) {
@@ -366,7 +346,7 @@ public class Registration implements Runnable {
 
 	/**
 	 *
-	 * @param content
+	 * @param object
 	 * @return
 	 */
 	private Map<String, Object> buildParamMap(CmisObject object) {
