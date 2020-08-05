@@ -1,33 +1,27 @@
 package jp.aegif.nemaki.businesslogic.rendition.impl;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.math.BigInteger;
-import java.util.List;
-import java.util.Map;
-
-import javax.activation.MimeType;
-import javax.annotation.PostConstruct;
-
+import jp.aegif.nemaki.businesslogic.rendition.RenditionManager;
+import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.YamlManager;
+import jp.aegif.nemaki.util.constant.PropertyKey;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.artofsolving.jodconverter.OfficeDocumentConverter;
-import org.artofsolving.jodconverter.document.DefaultDocumentFormatRegistry;
-import org.artofsolving.jodconverter.document.DocumentFormat;
-import org.artofsolving.jodconverter.office.DefaultOfficeManagerConfiguration;
-import org.artofsolving.jodconverter.office.OfficeManager;
+import org.jodconverter.OfficeDocumentConverter;
+import org.jodconverter.office.DefaultOfficeManagerBuilder;
+import org.jodconverter.document.DefaultDocumentFormatRegistry;
+import org.jodconverter.document.DocumentFormat;
+import org.jodconverter.office.OfficeException;
+import org.jodconverter.office.OfficeManager;
 
-import jp.aegif.nemaki.businesslogic.rendition.RenditionManager;
-import jp.aegif.nemaki.util.PropertyManager;
-import jp.aegif.nemaki.util.YamlManager;
-import jp.aegif.nemaki.util.constant.PropertyKey;
+import javax.annotation.PostConstruct;
+import java.io.*;
+import java.math.BigInteger;
+import java.util.List;
+import java.util.Map;
+
 
 public class JodRenditionManagerImpl implements RenditionManager {
 
@@ -38,7 +32,7 @@ public class JodRenditionManagerImpl implements RenditionManager {
 
 	@PostConstruct
 	public void init() {
-		registry = new DefaultDocumentFormatRegistry();
+		registry = DefaultDocumentFormatRegistry.getInstance();
 
 		String definitionFile = "";
 		try {
@@ -85,10 +79,13 @@ public class JodRenditionManagerImpl implements RenditionManager {
 
 			String officehome = propertyManager
 					.readValue(PropertyKey.JODCONVERTER_OFFICEHOME);
-
+/*
 			OfficeManager officeManager = new DefaultOfficeManagerConfiguration()
 					.setPortNumber(8100).setOfficeHome(officehome)
 					.buildOfficeManager();
+*/
+			//TODO: retrieve port number from conf
+			OfficeManager officeManager = new DefaultOfficeManagerBuilder().setOfficeHome(officehome).setPortNumber(8100).build();
 			officeManager.start();
 
 			OfficeDocumentConverter converter = new OfficeDocumentConverter(
@@ -110,6 +107,8 @@ public class JodRenditionManagerImpl implements RenditionManager {
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			// log.debug(e);
+		} catch (OfficeException e) {
+			log.warn(e);
 		} finally {
 
 			if (outputStream != null) {
