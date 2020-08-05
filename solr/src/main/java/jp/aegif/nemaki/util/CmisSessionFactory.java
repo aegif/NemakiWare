@@ -29,11 +29,9 @@ public class CmisSessionFactory {
 	private static PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
 
 	public static Session getSession(String repositoryId) {
-logger.warn("sessions1:" + sessions.toString());
 		if (!isConnectionSetup(repositoryId)) {
 			sessions.put(repositoryId, setupCmisSession(repositoryId));
 		}
-logger.warn("sessions2:" + sessions.toString());
 		Session session = sessions.get(repositoryId);
 		if (session == null) {
 			logger.warn("No CMIS repositoryId:{}", repositoryId);
@@ -140,7 +138,6 @@ logger.warn("sessions2:" + sessions.toString());
 
 	private static void buildRepositorySettings() {
 		String location = pm.readValue(PropertyKey.REPOSITORIES_SETTING_FILE);
-logger.warn(location);
 		CmisSessionFactory.repositorySettings = readRepositorySettings(location);
 
 	}
