@@ -159,8 +159,6 @@ public class CoreTracker extends CloseHook {
 	public void index(String trackingType, String repositoryId) {
 		synchronized (LOCK) {
 			do {
-logger.warn("tracing type:" + trackingType);
-logger.warn("repository id:" + repositoryId);
 
 				ChangeEvents changeEvents = getCmisChangeLog(trackingType, repositoryId);
 				
@@ -168,8 +166,8 @@ logger.warn("repository id:" + repositoryId);
 					logger.info("change evensts is null");
 					return;
 				}
-logger.warn("size of change events: " + changeEvents.getTotalNumItems());
-logger.warn("Start indexing of events : Repo={} Count={}", repositoryId,
+logger.info("size of change events: " + changeEvents.getTotalNumItems());
+logger.info("Start indexing of events : Repo={} Count={}", repositoryId,
 						changeEvents.getTotalNumItems());
 				List<ChangeEvent> events = changeEvents.getChangeEvents();
 				Calendar currentTime = GregorianCalendar.getInstance();
