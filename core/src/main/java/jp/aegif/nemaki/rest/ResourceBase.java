@@ -1,47 +1,40 @@
-/*******************************************************************************
- * Copyright (c) 2013 aegif.
- *
- * This file is part of NemakiWare.
- *
- * NemakiWare is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * NemakiWare is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along with NemakiWare.
- * If not, see <http://www.gnu.org/licenses/>.
- *
- * Contributors:
- *     linzhixing(https://github.com/linzhixing) - initial API and implementation
- ******************************************************************************/
+/*****************************************************************************
+ Copyright (c) 2013 aegif.
+
+ This file is part of NemakiWare.
+
+ NemakiWare is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+
+ NemakiWare is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License along with NemakiWare.
+ If not, see <http://www.gnu.org/licenses/>.
+
+ Contributors:
+ linzhixing(https://github.com/linzhixing) - initial API and implementation
+ */
 package jp.aegif.nemaki.rest;
-
-import jp.aegif.nemaki.common.*;
-import java.util.GregorianCalendar;
-import java.util.TimeZone;
-
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpSession;
-import javax.ws.rs.ApplicationPath;
-import javax.ws.rs.core.Context;
-
-import jp.aegif.nemaki.model.NodeBase;
-import jp.aegif.nemaki.util.constant.CallContextKey;
-
-import org.apache.chemistry.opencmis.commons.server.CallContext;
-import org.apache.tools.ant.types.Mapper.MapperType;
-import org.json.simple.JSONArray;
-import org.json.simple.JSONObject;
-import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import jp.aegif.nemaki.common.ErrorCode;
+import jp.aegif.nemaki.model.NodeBase;
+import jp.aegif.nemaki.util.constant.CallContextKey;
+import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.json.simple.JSONArray;
+import org.json.simple.JSONObject;
+import org.springframework.stereotype.Component;
+
+import javax.servlet.http.HttpServletRequest;
+import java.util.GregorianCalendar;
+import java.util.TimeZone;
 
 @Component
 public class ResourceBase {
@@ -120,13 +113,14 @@ public class ResourceBase {
 	}
 
 	//Utility methods
+	@SuppressWarnings("unchecked")
 	protected JSONArray addErrMsg(JSONArray errMsg, String item, String msg){
 		JSONObject obj = new JSONObject();
 		obj.put(item, msg);
 		errMsg.add(obj);
 		return errMsg;
 	}
-
+	@SuppressWarnings("unchecked")
 	protected JSONObject makeResult(boolean status, JSONObject result, JSONArray errMsg){
 		if(status && errMsg.size() == 0){
 			result.put(ITEM_STATUS, SUCCESS);
@@ -140,7 +134,7 @@ public class ResourceBase {
 	protected boolean checkAdmin(JSONArray errMsg, HttpServletRequest request){
 		CallContext callContext = (CallContext) request.getAttribute("CallContext");
 		Boolean _isAdmin = (Boolean) callContext.get(CallContextKey.IS_ADMIN);
-		boolean isAdmin = (_isAdmin == null) ? false : _isAdmin;
+		boolean isAdmin = _isAdmin != null && _isAdmin;
 		if(!isAdmin){
 			addErrMsg(errMsg, ErrorCode.ERR_ONLY_ALLOWED_FOR_ADMIN, callContext.getRepositoryId());
 		}
@@ -167,7 +161,7 @@ public class ResourceBase {
 	protected boolean checkAdmin(ArrayNode errMsg, HttpServletRequest request){
 		CallContext callContext = (CallContext) request.getAttribute("CallContext");
 		Boolean _isAdmin = (Boolean) callContext.get(CallContextKey.IS_ADMIN);
-		boolean isAdmin = (_isAdmin == null) ? false : _isAdmin;
+		boolean isAdmin = _isAdmin != null && _isAdmin;
 		if(!isAdmin){
 			addErrMsg(errMsg, ErrorCode.ERR_ONLY_ALLOWED_FOR_ADMIN, callContext.getRepositoryId());
 		}
@@ -175,11 +169,7 @@ public class ResourceBase {
 	}
 
 	protected boolean nonZeroString(String param){
-		if (param == null || param.equals("")){
-			return false;
-		}else{
-			return true;
-		}
+		return param != null && !param.equals("");
 	}
 	protected GregorianCalendar millisToCalendar(long millis) {
 		GregorianCalendar calendar = new GregorianCalendar();

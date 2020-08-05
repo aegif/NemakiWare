@@ -1,13 +1,11 @@
 package jp.aegif.nemaki.model;
 
-import java.lang.reflect.InvocationTargetException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
 import org.apache.commons.beanutils.BeanUtils;
 import org.apache.commons.lang.ObjectUtils;
+
+import java.lang.reflect.InvocationTargetException;
+import java.util.ArrayList;
+import java.util.List;
 
 public class GroupItem extends Item{
 	private String groupId;
@@ -34,10 +32,7 @@ public class GroupItem extends Item{
 		super(item);
 		try {
 			BeanUtils.copyProperties(this, item);
-		} catch (IllegalAccessException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} catch (InvocationTargetException e) {
+		} catch (IllegalAccessException | InvocationTargetException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
@@ -50,7 +45,7 @@ public class GroupItem extends Item{
 	public void setGroupId(String groupId) {
 		this.groupId = groupId;
 	}
-
+	@SuppressWarnings("unchecked")
 	public List<String> getUsers() {
 		Property users = getSubTypeProperty("nemaki:users");
 		if(users != null && users.getValue() != null && users.getValue() instanceof List){
@@ -58,7 +53,7 @@ public class GroupItem extends Item{
 		}
 		return new ArrayList<>();
 	}
-
+	@SuppressWarnings("unchecked")
 	public List<String> getGroups() {
 		Property groups = getSubTypeProperty("nemaki:groups");
 		if(groups != null && groups.getValue() != null && groups.getValue() instanceof List){
@@ -83,7 +78,7 @@ public class GroupItem extends Item{
 
 	private Property getSubTypeProperty(String key){
 		List<Property> properties = getSubTypeProperties();
-		Map<String, Property> map = new HashMap<>();
+		//Map<String, Property> map = new HashMap<>();
 		for(Property property : properties) {
 			if(ObjectUtils.equals(property.getKey(), key)){
 				return property;
