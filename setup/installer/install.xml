@@ -35,7 +35,7 @@
     <langpack iso3="fra"/>
   </locale>
 
-  <!-- Variables in this fhile-->
+  <!-- Variables in this file-->
   <variables>
     <variable name="TOMCAT" value="apache-tomcat-9.0.37" />
   </variables>
@@ -213,6 +213,9 @@
       <!-- Create Solr context fragment -->
       <file src="setup/installer/tomcat/solr.xml" targetdir="$INSTALL_PATH/${TOMCAT}/conf/Catalina/localhost" />
       <parsable targetfile="$INSTALL_PATH/${TOMCAT}/conf/Catalina/localhost/solr.xml"/>
+      <file src="setup/installer/tomcat/nemakisolr.properties" targetdir="$INSTALL_PATH/solr/conf" />
+      <parsable targetfile="$INSTALL_PATH/solr/conf/nemakisolr.properties"/>
+
     </pack>
 
      <!-- Pack: UI -->
