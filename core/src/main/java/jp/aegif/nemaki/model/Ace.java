@@ -21,9 +21,9 @@
  ******************************************************************************/
 package jp.aegif.nemaki.model;
 
-import java.util.List;
+import org.apache.commons.lang3.ObjectUtils;
 
-import org.apache.commons.lang.ObjectUtils;
+import java.util.List;
 
 public class Ace {
 	private String principalId;

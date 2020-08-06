@@ -62,12 +62,8 @@ public class NemakiTokenManager {
 
 	public String getOrRegister(String repositoryId, String userName, String password) {
 		String token = getStoredToken(repositoryId);
-logger.warn("userName: " + userName);
-logger.warn("repositoryId: " + repositoryId);
-logger.warn("token: " + token);
 
 		if (StringUtils.isBlank(token)) {
-logger.warn("try to register");
 			return register(repositoryId, userName, password);
 		} else {
 			return token;

@@ -1,30 +1,23 @@
 package jp.aegif.nemaki.rest;
 
-import java.text.ParseException;
-import java.util.GregorianCalendar;
-import java.util.concurrent.locks.Lock;
-
-import javax.servlet.http.HttpServletRequest;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.MediaType;
-
-import org.apache.commons.lang.StringUtils;
-import org.json.simple.JSONArray;
-import org.json.simple.JSONObject;
-import org.springframework.stereotype.Component;
-
 import jp.aegif.nemaki.common.ErrorCode;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.cache.CacheService;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.lock.ThreadLockService;
+import org.apache.commons.lang3.StringUtils;
+import org.json.simple.JSONArray;
+import org.json.simple.JSONObject;
 import play.Logger;
+
+import javax.servlet.http.HttpServletRequest;
+import javax.ws.rs.*;
+import javax.ws.rs.core.Context;
+import javax.ws.rs.core.MediaType;
+import java.text.ParseException;
+import java.util.GregorianCalendar;
+import java.util.concurrent.locks.Lock;
 
 @Path("/repo/{repositoryId}/cache/")
 public class CacheResource extends ResourceBase{
