@@ -2,7 +2,7 @@ import com.github.play2war.plugin._
 
 name := """ui"""
 
-version := "2.4.0"
+version := "2.4.1"
 
 // lazy val root = (project in file(".")).enablePlugins(PlayJava, PlayEbean)
 lazy val root = (project in file(".")).enablePlugins(PlayJava)
@@ -25,7 +25,7 @@ libraryDependencies ++= Seq(
   javaJdbc,
   cache,
   javaWs,
-  "jp.aegif.nemaki.common" % "nemakiware-common" % "2.4.0" changing(),
+  "jp.aegif.nemaki.common" % "nemakiware-common" % "2.4.1" changing(),
   "jp.aegif.nemaki.plugin" % "nemakiware-action" % "0.0.6" changing(),
   "commons-collections" % "commons-collections" % "3.2.1",
   "commons-io" % "commons-io" % "2.5",

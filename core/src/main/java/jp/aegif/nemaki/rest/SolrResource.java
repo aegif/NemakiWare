@@ -1,37 +1,25 @@
 package jp.aegif.nemaki.rest;
 
-import java.io.ByteArrayInputStream;
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.List;
-
-import javax.servlet.http.HttpServletRequest;
-import javax.ws.rs.FormParam;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.MediaType;
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-
 import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
 import org.apache.http.HttpResponse;
 import org.apache.http.HttpStatus;
 import org.apache.http.client.HttpClient;
-import org.apache.http.client.entity.UrlEncodedFormEntity;
 import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.methods.HttpPost;
 import org.apache.http.impl.client.HttpClientBuilder;
-import org.apache.http.message.BasicNameValuePair;
-import org.apache.http.params.HttpParams;
 import org.apache.http.util.EntityUtils;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.w3c.dom.Node;
+
+import javax.servlet.http.HttpServletRequest;
+import javax.ws.rs.*;
+import javax.ws.rs.core.Context;
+import javax.ws.rs.core.MediaType;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 
 @Path("/repo/{repositoryId}/search-engine")
 public class SolrResource extends ResourceBase {
@@ -81,12 +69,8 @@ public class SolrResource extends ResourceBase {
 			}
 
 			String body = EntityUtils.toString(response.getEntity(), "UTF-8");
-			if (checkSuccess(body)) {
-				status = true;
-			} else {
-				status = false;
-				// TODO error message
-			}
+			// TODO error message
+			status = checkSuccess(body);
 		} catch (Exception e) {
 			status = false;
 			// TODO error message
@@ -124,12 +108,8 @@ public class SolrResource extends ResourceBase {
 			}
 
 			String body = EntityUtils.toString(response.getEntity(), "UTF-8");
-			if (checkSuccess(body)) {
-				status = true;
-			} else {
-				status = false;
-				// TODO error message
-			}
+			// TODO error message
+			status = checkSuccess(body);
 		} catch (Exception e) {
 			status = false;
 			// TODO error message
@@ -186,12 +166,8 @@ public class SolrResource extends ResourceBase {
 			}
 
 			String body = EntityUtils.toString(response.getEntity(), "UTF-8");
-			if (checkSuccess(body)) {
-				status = true;
-			} else {
-				status = false;
-				// TODO error message
-			}
+			// TODO error message
+			status = checkSuccess(body);
 		} catch (Exception e) {
 			status = false;
 			// TODO error message
@@ -211,7 +187,7 @@ public class SolrResource extends ResourceBase {
 		DocumentBuilder db = dbf.newDocumentBuilder();
 
 		// traverse
-		InputStream bais = new ByteArrayInputStream(xml.getBytes("utf-8"));
+		InputStream bais = new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8));
 		Node root = db.parse(bais);
 		Node response = root.getFirstChild();
 		Node lst = response.getFirstChild();

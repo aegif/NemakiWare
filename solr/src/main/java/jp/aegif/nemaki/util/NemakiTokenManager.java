@@ -1,25 +1,16 @@
 package jp.aegif.nemaki.util;
 
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.util.HashMap;
-import java.util.Map;
-
-import javax.ws.rs.core.MediaType;
-
-import jp.aegif.nemaki.util.impl.PropertyManagerImpl;
-
+import com.sun.jersey.api.client.Client;
+import com.sun.jersey.api.client.filter.HTTPBasicAuthFilter;
 import org.apache.commons.lang.StringUtils;
-
+import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.json.simple.JSONObject;
-import org.json.simple.parser.JSONParser;
-import org.json.simple.parser.ParseException;
-
-import com.sun.jersey.api.client.Client;
-import com.sun.jersey.api.client.filter.HTTPBasicAuthFilter;
+import javax.ws.rs.core.MediaType;
+import java.util.HashMap;
+import java.util.Map;
 
 public class NemakiTokenManager {
 	private static final Logger logger = LoggerFactory.getLogger(NemakiTokenManager.class);
@@ -57,7 +48,7 @@ public class NemakiTokenManager {
 				JSONObject value = (JSONObject) result.get("value");
 				String token = value.get("token").toString();
 				long expiration = (Long) value.get("expiration");
-				tokenMap.put(userName, new Token(repositoryId, userName, token, expiration));
+				tokenMap.put(repositoryId, new Token(repositoryId, userName, token, expiration));
 				return token;
 			}else{
 				logger.error("Return failure status from REST API response : {}",restUri  );
@@ -70,20 +61,24 @@ public class NemakiTokenManager {
 	}
 
 	public String getOrRegister(String repositoryId, String userName, String password) {
-		String token = getStoredToken(userName);
+		String token = getStoredToken(repositoryId);
+logger.warn("userName: " + userName);
+logger.warn("repositoryId: " + repositoryId);
+logger.warn("token: " + token);
 
 		if (StringUtils.isBlank(token)) {
+logger.warn("try to register");
 			return register(repositoryId, userName, password);
 		} else {
 			return token;
 		}
 	}
 
-	public String getStoredToken(String userName) {
-		Token token = tokenMap.get(userName);
-		if (token != null) {
+	public String getStoredToken(String repositoryId) {
+		Token token = tokenMap.get(repositoryId);
+		if (token != null ) {
 			if (token.getExpiration() < System.currentTimeMillis()) {
-				logger.info("{}: Basic auth token has expired!", userName );
+				logger.info("{}: Basic auth token has expired!", repositoryId );
 				return null;
 			} else {
 				return token.getToken();

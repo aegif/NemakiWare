@@ -3,8 +3,8 @@
   <!-- Application info -->
   <info>
     <appname>NemakiWare</appname>
-    <appversion>2.4.0 beta</appversion>
-    <url>http://www.nemakiware.com/</url>
+    <appversion>2.4.1</appversion>
+    <url>https://www.nemakiware.com/</url>
     <javaversion>1.8</javaversion>
     <!--
     If you a general user install on C:¥Program Files on Windows,
@@ -35,9 +35,9 @@
     <langpack iso3="fra"/>
   </locale>
 
-  <!-- Variables in this fhile-->
+  <!-- Variables in this file-->
   <variables>
-    <variable name="TOMCAT" value="apache-tomcat-8.5.5" />
+    <variable name="TOMCAT" value="apache-tomcat-9.0.37" />
   </variables>
 
   <!-- Resource import -->
@@ -130,7 +130,7 @@
           <arg value="$INSTALL_PATH/${TOMCAT}" />
           <arg value="${tomcat.port}" />
           <arg value="${tomcat.shutdown.port}" />
-          <arg value="${tomcat.ajp.port}" />
+          <arg value="8009" />
         </args>
       </executable>
     </pack>
@@ -149,6 +149,9 @@
       <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-core.properties"/>
       <file src="setup/installer/tomcat/app-server-core-repositories.yml" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
       <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-core-repositories.yml"/>
+
+      <file src="setup/installer/tomcat/context.xml" targetdir="$INSTALL_PATH/${TOMCAT}/conf" override="true"/>
+      <parsable targetfile="$INSTALL_PATH/${TOMCAT}/conf/context.xml"/>
     </pack>
 
     <!-- Pack: CouchDB configuration -->
@@ -213,6 +216,9 @@
       <!-- Create Solr context fragment -->
       <file src="setup/installer/tomcat/solr.xml" targetdir="$INSTALL_PATH/${TOMCAT}/conf/Catalina/localhost" />
       <parsable targetfile="$INSTALL_PATH/${TOMCAT}/conf/Catalina/localhost/solr.xml"/>
+      <file src="setup/installer/tomcat/nemakisolr.properties" targetdir="$INSTALL_PATH/solr/conf" />
+      <parsable targetfile="$INSTALL_PATH/solr/conf/nemakisolr.properties"/>
+
     </pack>
 
      <!-- Pack: UI -->

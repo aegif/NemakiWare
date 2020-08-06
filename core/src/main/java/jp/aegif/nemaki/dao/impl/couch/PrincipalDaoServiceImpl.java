@@ -32,7 +32,7 @@ import jp.aegif.nemaki.model.couch.CouchGroup;
 import jp.aegif.nemaki.model.couch.CouchNodeBase;
 import jp.aegif.nemaki.model.couch.CouchUser;
 
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import org.ektorp.ViewQuery;
 import org.springframework.stereotype.Component;
 

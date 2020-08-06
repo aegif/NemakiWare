@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.apache.commons.collections.MapUtils;
+import org.apache.commons.collections4.MapUtils;
 
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.SpringPropertyManager;

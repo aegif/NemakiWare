@@ -67,8 +67,8 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.TypeDefinitionCont
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.TypeDefinitionListImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.TypeMutabilityImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
-import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.collections.MapUtils;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.MapUtils;
 
 /**
  * Type Manager class

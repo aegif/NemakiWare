@@ -141,7 +141,7 @@ public class NemakiPropertyDefinition extends NodeBase {
 
 	private <T> List<Choice> buildChoices(List<org.apache.chemistry.opencmis.commons.definitions.Choice<T>> choices){
 		List<Choice> list = new ArrayList<Choice>();
-		if(org.apache.commons.collections.CollectionUtils.isNotEmpty(choices)){
+		if(org.apache.commons.collections4.CollectionUtils.isNotEmpty(choices)){
 			for(org.apache.chemistry.opencmis.commons.definitions.Choice<T> choice : choices){
 				List<Object> values = new ArrayList<Object>(choice.getValue());
 				Choice c = new Choice(choice.getDisplayName(), values, buildChoices(choice.getChoice()));

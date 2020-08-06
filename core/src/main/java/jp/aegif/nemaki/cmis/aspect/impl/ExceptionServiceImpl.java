@@ -64,8 +64,8 @@ import org.apache.chemistry.opencmis.commons.exceptions.CmisUpdateConflictExcept
 import org.apache.chemistry.opencmis.commons.exceptions.CmisVersioningException;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
-import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.collections.MapUtils;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -641,7 +641,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 		}
 		if (documentTypeDefinition.isVersionable()
 				&& versioningState == VersioningState.NONE) {
-			String msg = "Versioning state is set for a non-versionable object-type";
+			String msg = "Versioning state must be set for a versionable object-type";
 			throw new CmisConstraintException(buildMsgWithId(msg, objectId),
 					HTTP_STATUS_CODE_409);
 		}
