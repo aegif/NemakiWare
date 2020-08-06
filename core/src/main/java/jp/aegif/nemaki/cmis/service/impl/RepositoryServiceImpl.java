@@ -51,8 +51,8 @@ import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionList;
 import org.apache.chemistry.opencmis.commons.definitions.TypeMutability;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
-import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.collections.MapUtils;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.MapUtils;
 import org.springframework.beans.factory.InitializingBean;
 
 public class RepositoryServiceImpl implements RepositoryService,

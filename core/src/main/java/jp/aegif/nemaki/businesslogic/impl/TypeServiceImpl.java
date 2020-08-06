@@ -14,7 +14,7 @@ import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 
 public class TypeServiceImpl implements TypeService{
 

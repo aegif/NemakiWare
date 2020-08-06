@@ -6,7 +6,7 @@ import jp.aegif.nemaki.util.YamlManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.jodconverter.OfficeDocumentConverter;

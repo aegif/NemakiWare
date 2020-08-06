@@ -56,7 +56,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectInFolderList
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectParentDataImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 
 public class NavigationServiceImpl implements NavigationService {

@@ -1,15 +1,5 @@
 package jp.aegif.nemaki.cmis.factory.auth.impl;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-
-import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
-
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.cmis.factory.auth.Token;
@@ -18,6 +8,11 @@ import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
+import java.util.*;
 
 public class TokenServiceImpl implements TokenService{
 	
