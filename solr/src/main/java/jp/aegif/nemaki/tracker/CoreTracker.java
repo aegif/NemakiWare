@@ -31,9 +31,9 @@ import org.apache.chemistry.opencmis.client.api.ChangeEvents;
 import org.apache.chemistry.opencmis.client.api.Session;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
 import org.apache.chemistry.opencmis.commons.spi.CmisBinding;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.solr.client.solrj.SolrQuery;
-import org.apache.solr.client.solrj.SolrServer;
+import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.request.AbstractUpdateRequest;
 import org.apache.solr.client.solrj.request.UpdateRequest;
@@ -65,8 +65,8 @@ public class CoreTracker extends CloseHook {
 
 	NemakiCoreAdminHandler adminHandler;
 	SolrCore core;
-	SolrServer indexServer;
-	SolrServer tokenServer;
+	SolrClient indexServer;
+	SolrClient tokenServer;
 
 	CmisBinding cmisBinding;
 	NemakiTokenManager nemakiTokenManager;
@@ -75,8 +75,8 @@ public class CoreTracker extends CloseHook {
 	Set<String> latestIndexedChangeLogIds = new HashSet<String>();
 	
 
-	public CoreTracker(NemakiCoreAdminHandler adminHandler, SolrCore core, SolrServer indexServer,
-			SolrServer tokenServer) {
+	public CoreTracker(NemakiCoreAdminHandler adminHandler, SolrCore core, SolrClient indexServer,
+			SolrClient tokenServer) {
 		super();
 
 		this.adminHandler = adminHandler;
@@ -87,7 +87,7 @@ public class CoreTracker extends CloseHook {
 		this.propertyManager = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
 	}
 
-	public SolrServer getIndexServer() {
+	public SolrClient getIndexServer() {
 		return indexServer;
 	}
 
@@ -311,7 +311,7 @@ logger.info("extraction start");
 		QueryResponse resp = null;
 		try {
 			resp = tokenServer.query(solrQuery);
-		} catch (SolrServerException e) {
+		} catch (SolrServerException | IOException e) {
 			logger.error("Read latest ChangeToken query failed : {} ", solrQuery, e);
 		}
 

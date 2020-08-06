@@ -21,29 +21,14 @@
  ******************************************************************************/
 package jp.aegif.nemaki;
 
-import static org.quartz.JobBuilder.newJob;
-import static org.quartz.TriggerBuilder.newTrigger;
-
-import java.util.Properties;
-import java.util.concurrent.ConcurrentHashMap;
-
 import jp.aegif.nemaki.tracker.CoreTracker;
 import jp.aegif.nemaki.tracker.CoreTrackerJob;
-import jp.aegif.nemaki.util.CmisSessionFactory;
-import jp.aegif.nemaki.util.Constant;
-import jp.aegif.nemaki.util.PropertyKey;
-import jp.aegif.nemaki.util.PropertyManager;
-import jp.aegif.nemaki.util.StringPool;
+import jp.aegif.nemaki.util.*;
 import jp.aegif.nemaki.util.impl.PropertyManagerImpl;
 import jp.aegif.nemaki.util.yaml.RepositorySetting;
 import jp.aegif.nemaki.util.yaml.RepositorySettings;
-
 import org.apache.commons.lang3.StringUtils;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import org.apache.solr.client.solrj.SolrServer;
+import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.embedded.EmbeddedSolrServer;
 import org.apache.solr.common.params.CoreAdminParams;
 import org.apache.solr.common.params.SolrParams;
@@ -52,13 +37,16 @@ import org.apache.solr.core.SolrCore;
 import org.apache.solr.handler.admin.CoreAdminHandler;
 import org.apache.solr.request.SolrQueryRequest;
 import org.apache.solr.response.SolrQueryResponse;
-import org.quartz.CronScheduleBuilder;
-import org.quartz.JobDataMap;
-import org.quartz.JobDetail;
-import org.quartz.Scheduler;
-import org.quartz.SchedulerException;
-import org.quartz.Trigger;
+import org.quartz.*;
 import org.quartz.impl.StdSchedulerFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Properties;
+import java.util.concurrent.ConcurrentHashMap;
+
+import static org.quartz.JobBuilder.newJob;
+import static org.quartz.TriggerBuilder.newTrigger;
 
 /**
  * Solr core handler classs
@@ -87,8 +75,8 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 		String repositoryCorename = pm.readValue(PropertyKey.SOLR_CORE_MAIN);
 		String tokenCoreName = pm.readValue(PropertyKey.SOLR_CORE_TOKEN);
 
-		SolrServer repositoryServer = new EmbeddedSolrServer(coreContainer, repositoryCorename);
-		SolrServer tokenServer = new EmbeddedSolrServer(coreContainer, tokenCoreName);
+		SolrClient repositoryServer = new EmbeddedSolrServer(coreContainer, repositoryCorename);
+		SolrClient tokenServer = new EmbeddedSolrServer(coreContainer, tokenCoreName);
 
 		SolrCore core = getCoreContainer().getCore(repositoryCorename);
 		CoreTracker tracker = new CoreTracker(this, core, repositoryServer, tokenServer);
@@ -153,8 +141,8 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 		String indexCoreName = params.get(CoreAdminParams.CORE);
 		String tokenCoreName = "token";
 
-		SolrServer indexServer = new EmbeddedSolrServer(coreContainer, indexCoreName);
-		SolrServer tokenServer = new EmbeddedSolrServer(coreContainer, tokenCoreName);
+		SolrClient indexServer = new EmbeddedSolrServer(coreContainer, indexCoreName);
+		SolrClient tokenServer = new EmbeddedSolrServer(coreContainer, tokenCoreName);
 		SolrCore core = getCoreContainer().getCore(indexCoreName);
 		CoreTracker tracker = new CoreTracker(this, core, indexServer, tokenServer);
 
