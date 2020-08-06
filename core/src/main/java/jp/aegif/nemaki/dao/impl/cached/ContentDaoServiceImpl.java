@@ -522,7 +522,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		if(tree == null){
 			List<Content> list = nonCachedContentDaoService.getChildren(repositoryId, parentId);
 			tree = new Tree(parentId);
-			if(org.apache.commons.collections.CollectionUtils.isNotEmpty(list)){
+			if(org.apache.commons.collections4.CollectionUtils.isNotEmpty(list)){
 				for(Content child : list){
 					tree.add(child.getId());
 				}

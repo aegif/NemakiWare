@@ -21,33 +21,22 @@
  ******************************************************************************/
 package jp.aegif.nemaki.cmis.service.impl;
 
-import java.io.InputStream;
-import java.math.BigInteger;
-import java.text.MessageFormat;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.Lock;
-
+import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.cmis.aspect.CompileService;
+import jp.aegif.nemaki.cmis.aspect.ExceptionService;
+import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
+import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
+import jp.aegif.nemaki.cmis.service.ObjectService;
+import jp.aegif.nemaki.cmis.service.ObjectServiceInternal;
+import jp.aegif.nemaki.cmis.service.RelationshipService;
+import jp.aegif.nemaki.model.*;
+import jp.aegif.nemaki.util.DataUtil;
+import jp.aegif.nemaki.util.cache.NemakiCachePool;
+import jp.aegif.nemaki.util.constant.DomainType;
+import jp.aegif.nemaki.util.lock.ThreadLockService;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Acl;
-import org.apache.chemistry.opencmis.commons.data.AllowableActions;
-import org.apache.chemistry.opencmis.commons.data.BulkUpdateObjectIdAndChangeToken;
-import org.apache.chemistry.opencmis.commons.data.ContentStream;
-import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
-import org.apache.chemistry.opencmis.commons.data.FailedToDeleteData;
-import org.apache.chemistry.opencmis.commons.data.ObjectData;
-import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
-import org.apache.chemistry.opencmis.commons.data.Properties;
-import org.apache.chemistry.opencmis.commons.data.RenditionData;
+import org.apache.chemistry.opencmis.commons.data.*;
 import org.apache.chemistry.opencmis.commons.definitions.DocumentTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.FolderTypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.RelationshipTypeDefinition;
@@ -63,32 +52,20 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.FailedToDeleteData
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.RenditionDataImpl;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
-import jp.aegif.nemaki.businesslogic.ContentService;
-import jp.aegif.nemaki.cmis.aspect.CompileService;
-import jp.aegif.nemaki.cmis.aspect.ExceptionService;
-import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
-import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
-import jp.aegif.nemaki.cmis.service.ObjectService;
-import jp.aegif.nemaki.cmis.service.ObjectServiceInternal;
-import jp.aegif.nemaki.cmis.service.RelationshipService;
-import jp.aegif.nemaki.model.AttachmentNode;
-import jp.aegif.nemaki.model.Content;
-import jp.aegif.nemaki.model.Document;
-import jp.aegif.nemaki.model.Folder;
-import jp.aegif.nemaki.model.Item;
-import jp.aegif.nemaki.model.Policy;
-import jp.aegif.nemaki.model.Relationship;
-import jp.aegif.nemaki.model.Rendition;
-import jp.aegif.nemaki.model.UserItem;
-import jp.aegif.nemaki.model.VersionSeries;
-import jp.aegif.nemaki.util.DataUtil;
-import jp.aegif.nemaki.util.cache.NemakiCachePool;
-import jp.aegif.nemaki.util.constant.DomainType;
-import jp.aegif.nemaki.util.lock.ThreadLockService;
+import java.io.InputStream;
+import java.math.BigInteger;
+import java.text.MessageFormat;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.concurrent.*;
+import java.util.concurrent.locks.Lock;
 
 public class ObjectServiceImpl implements ObjectService {
 
