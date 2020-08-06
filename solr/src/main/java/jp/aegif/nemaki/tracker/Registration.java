@@ -79,11 +79,14 @@ public class Registration implements Runnable {
 			case UPDATED:
 				registerSolrDocument(ce, fulltextEnabled, mimeTypeFilterEnabled, allowedMimeTypeFilter);
 				break;
+			case SECURITY:
+				registerSolrDocument(ce, fulltextEnabled, mimeTypeFilterEnabled, allowedMimeTypeFilter);
+				break;
 			case DELETED:
 				deleteSolrDocument(ce);
 				continue;
 			default:
-				//SECURITY is iqnore
+				//
 				break;
 			}
 		}
