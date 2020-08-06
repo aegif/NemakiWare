@@ -2,7 +2,7 @@ package jp.aegif.nemaki.util;
 
 import com.sun.jersey.api.client.Client;
 import com.sun.jersey.api.client.filter.HTTPBasicAuthFilter;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.slf4j.Logger;
@@ -62,12 +62,8 @@ public class NemakiTokenManager {
 
 	public String getOrRegister(String repositoryId, String userName, String password) {
 		String token = getStoredToken(repositoryId);
-logger.warn("userName: " + userName);
-logger.warn("repositoryId: " + repositoryId);
-logger.warn("token: " + token);
 
 		if (StringUtils.isBlank(token)) {
-logger.warn("try to register");
 			return register(repositoryId, userName, password);
 		} else {
 			return token;

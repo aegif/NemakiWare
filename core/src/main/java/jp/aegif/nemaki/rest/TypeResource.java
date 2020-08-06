@@ -1,35 +1,15 @@
 package jp.aegif.nemaki.rest;
 
-import java.io.InputStream;
-import java.text.MessageFormat;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map.Entry;
-
-import javax.ws.rs.Consumes;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
-
 import jp.aegif.nemaki.businesslogic.TypeService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
-import jp.aegif.nemaki.model.Choice;
-import jp.aegif.nemaki.model.NemakiPropertyDefinition;
-import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
-import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
-import jp.aegif.nemaki.model.NemakiTypeDefinition;
+import jp.aegif.nemaki.model.*;
 import jp.aegif.nemaki.util.constant.NodeType;
-
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.dom4j.Attribute;
@@ -40,6 +20,16 @@ import org.dom4j.io.SAXReader;
 import org.glassfish.jersey.media.multipart.FormDataParam;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
+
+import javax.ws.rs.*;
+import javax.ws.rs.core.MediaType;
+import java.io.InputStream;
+import java.text.MessageFormat;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map.Entry;
 
 @Path("/repo/{repositoryId}/type")
 public class TypeResource extends ResourceBase {

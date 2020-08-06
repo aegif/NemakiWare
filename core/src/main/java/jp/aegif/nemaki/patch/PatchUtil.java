@@ -1,23 +1,5 @@
 package jp.aegif.nemaki.patch;
 
-import java.util.List;
-import java.util.Map;
-
-import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
-import org.apache.chemistry.opencmis.commons.enums.Cardinality;
-import org.apache.chemistry.opencmis.commons.enums.PropertyType;
-import org.apache.chemistry.opencmis.commons.enums.Updatability;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
-import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.lang.ObjectUtils;
-import org.ektorp.CouchDbConnector;
-import org.ektorp.support.DesignDocument;
-import org.ektorp.support.DesignDocument.View;
-import org.ektorp.support.StdDesignDocumentFactory;
-
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
@@ -29,6 +11,23 @@ import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.PatchHistory;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.PropertyManager;
+import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
+import org.apache.chemistry.opencmis.commons.enums.Cardinality;
+import org.apache.chemistry.opencmis.commons.enums.PropertyType;
+import org.apache.chemistry.opencmis.commons.enums.Updatability;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.ObjectUtils;
+import org.ektorp.CouchDbConnector;
+import org.ektorp.support.DesignDocument;
+import org.ektorp.support.DesignDocument.View;
+import org.ektorp.support.StdDesignDocumentFactory;
+
+import java.util.List;
+import java.util.Map;
 
 public class PatchUtil {
 	protected PropertyManager propertyManager;

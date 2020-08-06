@@ -2,7 +2,7 @@ package jp.aegif.nemaki.rest;
 
 import jp.aegif.nemaki.cmis.factory.auth.Token;
 import jp.aegif.nemaki.cmis.factory.auth.TokenService;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.slf4j.Logger;

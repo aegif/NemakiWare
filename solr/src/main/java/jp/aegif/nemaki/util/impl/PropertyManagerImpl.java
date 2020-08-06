@@ -21,26 +21,21 @@
  ******************************************************************************/
 package jp.aegif.nemaki.util.impl;
 
+import jp.aegif.nemaki.util.PropertyKey;
+import jp.aegif.nemaki.util.PropertyManager;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.solr.core.SolrResourceLoader;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
-import java.io.IOException;
 import java.io.InputStream;
-import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
-
-import jp.aegif.nemaki.util.NemakiTokenManager;
-import jp.aegif.nemaki.util.PropertyKey;
-import jp.aegif.nemaki.util.PropertyManager;
-
-import org.apache.commons.lang.StringUtils;
-import org.apache.solr.core.SolrResourceLoader;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class PropertyManagerImpl implements PropertyManager{
 	private static final Logger logger = LoggerFactory.getLogger(PropertyManagerImpl.class);

@@ -21,11 +21,18 @@
  ******************************************************************************/
 package jp.aegif.nemaki.cmis.aspect.query.solr;
 
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
+import jp.aegif.nemaki.businesslogic.TypeService;
+import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
+import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.constant.PropertyKey;
+import org.antlr.runtime.tree.Tree;
+import org.apache.chemistry.opencmis.commons.PropertyIds;
+import org.apache.chemistry.opencmis.commons.enums.PropertyType;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.apache.solr.client.solrj.SolrServer;
+import org.apache.solr.client.solrj.impl.HttpSolrServer;
 
 import javax.ws.rs.client.Client;
 import javax.ws.rs.client.ClientBuilder;
@@ -33,21 +40,11 @@ import javax.ws.rs.client.Invocation;
 import javax.ws.rs.client.WebTarget;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
-
-import jp.aegif.nemaki.util.PropertyManager;
-import jp.aegif.nemaki.util.constant.PropertyKey;
-import jp.aegif.nemaki.model.NemakiPropertyDefinition;
-import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
-import jp.aegif.nemaki.businesslogic.TypeService;
-
-import org.antlr.runtime.tree.Tree;
-import org.apache.chemistry.opencmis.commons.PropertyIds;
-import org.apache.chemistry.opencmis.commons.enums.PropertyType;
-import org.apache.commons.lang.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
-import org.apache.solr.client.solrj.SolrServer;
-import org.apache.solr.client.solrj.impl.HttpSolrServer;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 
 /**
  * Common utility class for Solr query

@@ -1,33 +1,20 @@
 package jp.aegif.nemaki.rest;
 
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.locks.Lock;
-
-import javax.servlet.http.HttpServletRequest;
-import javax.ws.rs.FormParam;
-import javax.ws.rs.GET;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.MediaType;
-
-import org.apache.commons.lang.StringUtils;
-import org.json.simple.JSONArray;
-import org.json.simple.JSONObject;
-import org.springframework.stereotype.Component;
-
-
-
 import jp.aegif.nemaki.common.ErrorCode;
 import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.model.Configuration;
-import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.lock.ThreadLockService;
+import org.json.simple.JSONArray;
+import org.json.simple.JSONObject;
+
+import javax.servlet.http.HttpServletRequest;
+import javax.ws.rs.*;
+import javax.ws.rs.core.Context;
+import javax.ws.rs.core.MediaType;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.locks.Lock;
 
 @Path("/repo/{repositoryId}/config")
 public class ConfigResource extends ResourceBase{
