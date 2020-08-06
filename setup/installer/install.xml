@@ -149,6 +149,9 @@
       <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-core.properties"/>
       <file src="setup/installer/tomcat/app-server-core-repositories.yml" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
       <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-core-repositories.yml"/>
+
+      <file src="setup/installer/tomcat/context.xml" targetdir="$INSTALL_PATH/${TOMCAT}/conf" override="true"/>
+      <parsable targetfile="$INSTALL_PATH/${TOMCAT}/conf/context.xml"/>
     </pack>
 
     <!-- Pack: CouchDB configuration -->
