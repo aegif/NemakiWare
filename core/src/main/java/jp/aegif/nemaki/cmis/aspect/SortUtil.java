@@ -20,9 +20,9 @@ import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.enums.CapabilityOrderBy;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
-import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.collections.MapUtils;
-import org.apache.commons.collections.comparators.ComparatorChain;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.MapUtils;
+import org.apache.commons.collections4.comparators.ComparatorChain;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -182,7 +182,7 @@ public class SortUtil {
 				if ("DESC".equals(order[1])) {
 					desc = true;
 				} else if (StringUtils.isNotBlank(order[1])) {
-					log.warn("Invalid modifier other than DESC in orderBy parameter is ignored: propertyId="
+					log.info("Invalid modifier other than DESC in orderBy parameter is ignored: propertyId="
 							+ order[0]);
 				}
 			}

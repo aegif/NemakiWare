@@ -1,21 +1,20 @@
 package jp.aegif.nemaki.rest;
 
-import javax.ws.rs.GET;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.MediaType;
-
+import jp.aegif.nemaki.cmis.factory.auth.Token;
+import jp.aegif.nemaki.cmis.factory.auth.TokenService;
 import org.apache.commons.lang.StringUtils;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import jp.aegif.nemaki.cmis.factory.auth.Token;
-import jp.aegif.nemaki.cmis.factory.auth.TokenService;
+import javax.ws.rs.*;
+import javax.ws.rs.core.MediaType;
 
 @Path("/repo/{repositoryId}/authtoken/")
 public class AuthTokenResource extends ResourceBase{
+
+	private static final Logger logger = LoggerFactory.getLogger(AuthTokenResource.class);
 
 	private TokenService tokenService;
 	
@@ -26,13 +25,13 @@ public class AuthTokenResource extends ResourceBase{
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
-		
+
 		if(StringUtils.isBlank(app)){
 			app = "";
 		}
 		
 		Token token = tokenService.getToken(app, repositoryId, userName);
-		
+
 		if(token == null){
 			status = false;
 			errMsg = new JSONArray();	//TODO
@@ -57,7 +56,7 @@ public class AuthTokenResource extends ResourceBase{
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
-		
+
 		//Validation
 		if(StringUtils.isBlank(app)){
 			app = "";
@@ -73,6 +72,8 @@ public class AuthTokenResource extends ResourceBase{
 		
 		
 		Token token = tokenService.setToken(app, repositoryId, userName);
+
+
 		JSONObject obj = new JSONObject();
 		obj.put("app", app);
 		obj.put("repositoryId", repositoryId);

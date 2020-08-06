@@ -41,7 +41,7 @@ import org.apache.chemistry.opencmis.commons.enums.CapabilityRenditions;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.CreatablePropertyTypesImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.NewTypeSettableAttributesImpl;
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 
 public class Capabilities extends org.apache.chemistry.opencmis.commons.impl.dataobjects.RepositoryCapabilitiesImpl {
 

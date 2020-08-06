@@ -1,34 +1,7 @@
 package jp.aegif.nemaki.tracker;
 
-import static org.apache.solr.handler.extraction.ExtractingParams.LITERALS_PREFIX;
-import static org.apache.solr.handler.extraction.ExtractingParams.UNKNOWN_FIELD_PREFIX;
-
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.GregorianCalendar;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.TimeZone;
-
-import jp.aegif.nemaki.util.PropertyKey;
-import jp.aegif.nemaki.util.PropertyManager;
-import jp.aegif.nemaki.util.StringPool;
-import jp.aegif.nemaki.util.impl.PropertyManagerImpl;
 import jp.aegif.nemaki.util.Constant;
 import jp.aegif.nemaki.util.NemakiCacheManager;
-
 import org.apache.chemistry.opencmis.client.api.ChangeEvent;
 import org.apache.chemistry.opencmis.client.api.CmisObject;
 import org.apache.chemistry.opencmis.client.api.SecondaryType;
@@ -38,13 +11,9 @@ import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ObjectParentData;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
-import org.apache.commons.collections.CollectionUtils;
-import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
+import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.client.solrj.request.AbstractUpdateRequest;
@@ -54,6 +23,18 @@ import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrInputDocument;
 import org.apache.solr.common.params.ModifiableSolrParams;
 import org.apache.solr.core.SolrCore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.*;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.*;
+
+import static org.apache.solr.handler.extraction.ExtractingParams.LITERALS_PREFIX;
+import static org.apache.solr.handler.extraction.ExtractingParams.UNKNOWN_FIELD_PREFIX;
 
 public class Registration implements Runnable {
 
@@ -98,11 +79,14 @@ public class Registration implements Runnable {
 			case UPDATED:
 				registerSolrDocument(ce, fulltextEnabled, mimeTypeFilterEnabled, allowedMimeTypeFilter);
 				break;
+			case SECURITY:
+				registerSolrDocument(ce, fulltextEnabled, mimeTypeFilterEnabled, allowedMimeTypeFilter);
+				break;
 			case DELETED:
 				deleteSolrDocument(ce);
 				continue;
 			default:
-				//SECURITY is iqnore
+				//
 				break;
 			}
 		}
@@ -156,6 +140,15 @@ public class Registration implements Runnable {
 			return;
 		}
 
+		if (ce.getChangeType() == ChangeType.CREATED) {
+			try {
+				// Clear tree cache 
+				clearTreeCache(obj);
+			} catch (Exception e) {
+				logger.error("[ObjectId={}]{}", ce.getObjectId(), "Failed to delete tree cache.");
+			}
+		}
+		
 		String successMsg = "";
 		String errMsg = "";
 		switch (ce.getChangeType()) {
@@ -225,9 +218,19 @@ public class Registration implements Runnable {
 			} else {
 				logger.error("{}:Something wrong in the connection to Solr server", core.getName());
 			}
+			
+			try {
+				// Clear tree cache
+				String parentId = (String)resp.getResults().get(0).getFieldValue(Constant.FIELD_PARENT_ID);
+				clearTreeCache(parentId);
+			} catch (Exception ex) {
+				logger.error("[ObjectId={}]{}", ce.getObjectId(), "Failed to delete tree cache.");
+			}
 
-			// Delete
-			repositoryServer.deleteById(ce.getObjectId());
+			// Delete			
+			String repositoryId = cmisSession.getRepositoryInfo().getId();
+			String objectId = ce.getObjectId();
+			repositoryServer.deleteById(buildUniqueId(repositoryId, objectId));
 			repositoryServer.commit();
 			logger.info("[ObjectId={}]Successfully deleted.", ce.getObjectId());
 		} catch (Exception e) {
@@ -238,7 +241,7 @@ public class Registration implements Runnable {
 	/**
 	 * Build update request with file to Solr
 	 *
-	 * @param content
+	 * @param map
 	 * @param inputStream
 	 * @return
 	 */
@@ -291,7 +294,7 @@ public class Registration implements Runnable {
 	/**
 	 * Build an update request to Solr without file
 	 *
-	 * @param content
+	 * @param map
 	 * @return
 	 */
 	public AbstractUpdateRequest buildUpdateRequest(Map<String, Object> map) {
@@ -346,7 +349,7 @@ public class Registration implements Runnable {
 
 	/**
 	 *
-	 * @param content
+	 * @param object
 	 * @return
 	 */
 	private Map<String, Object> buildParamMap(CmisObject object) {
@@ -480,12 +483,37 @@ public class Registration implements Runnable {
 		}
 	}
 
+	/**
+	 * Clear target parent's tree cache
+	 * @param object
+	 */
+	private void clearTreeCache(CmisObject object) {
+		ObjectParentData parent = getParent(object);
+		if (parent != null) {
+			String parentId = parent.getObject().getId();
+			clearTreeCache(parentId);
+		}
+	}
+	
+	/**
+	 * Clear target tree cache
+	 * @param objectId
+	 */
+	private void clearTreeCache(String objectId) {
+		cache.deleteTree(objectId);
+	}
+
+	/**
+	 * Get target parent
+	 * @param object
+	 * @return
+	 */
 	private ObjectParentData getParent(CmisObject object) {
 		List<ObjectParentData> parents = cmisSession.getBinding().getNavigationService().getObjectParents(
 				cmisSession.getRepositoryInfo().getId(), object.getId(), null, false, null, null, true, null);
-		return parents.get(0);
+		return (parents.size() != 0)? parents.get(0): null;
 	}
-
+	
 	/**
 	 *
 	 * @param cal
