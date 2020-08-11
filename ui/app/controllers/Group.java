@@ -10,7 +10,7 @@ import java.net.URLEncoder;
 
 import model.Principal;
 
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import play.data.DynamicForm;
 import play.data.Form;
 import play.libs.Json;
