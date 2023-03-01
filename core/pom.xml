@@ -29,7 +29,7 @@
 	<repositories>
         <repository>
             <id>central</id>
-            <url>https://repo1.maven.org/maven2/</url>
+            <url>https://repo.maven.apache.org/maven2/</url>
             <releases>
                 <enabled>true</enabled>
             </releases>
@@ -38,7 +38,7 @@
 		<repository>
 			<id>version99</id>
 			<!-- highly available repository serving empty artifacts -->
-			<url>http://version99.qos.ch/</url>
+			<url>https://version99.qos.ch/</url>
 		</repository>
 	</repositories>
 
@@ -419,7 +419,7 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-war-plugin</artifactId>
-				<version>3.0.0</version>
+				<version>3.3.1</version>
 				<configuration>
 					 <packagingExcludes>**/custom-nemakiware.properties</packagingExcludes>
 					 <packagingExcludes>**/custom-repository.yml</packagingExcludes>
