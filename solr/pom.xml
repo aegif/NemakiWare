@@ -21,8 +21,20 @@
 		<org.apache.chemistry.opencmis.version>1.1.0</org.apache.chemistry.opencmis.version>
 		<org.apache.solr.version>4.10.4</org.apache.solr.version>
 	</properties>
+	<repositories>
+        <repository>
+            <id>maven-restlet</id>
+            <name>Public online Restlet repository</name>
+            <url>https://maven.restlet.com</url>
+        </repository>  
+	</repositories>    
 
 	<dependencies>
+		<dependency>
+            <groupId>org.restlet.jee</groupId>
+            <artifactId>org.restlet</artifactId>
+            <version>2.1.1</version>
+        </dependency>
 		<dependency>
 			<groupId>org.apache.solr</groupId>
 			<artifactId>solr-core</artifactId>
@@ -203,7 +215,15 @@
 					<target>1.8</target>
 				</configuration>
 			</plugin>
-
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-war-plugin</artifactId>
+				<version>3.3.1</version>
+				<configuration>
+					 <packagingExcludes>**/custom-nemakiware.properties</packagingExcludes>
+					 <packagingExcludes>**/custom-repository.yml</packagingExcludes>
+				</configuration>
+			</plugin>
 			<plugin>
 				  <groupId>org.eclipse.jetty</groupId>
 				  <artifactId>jetty-maven-plugin</artifactId>
