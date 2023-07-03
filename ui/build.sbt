@@ -25,6 +25,7 @@ libraryDependencies ++= Seq(
   javaJdbc,
   cache,
   javaWs,
+  "org.openjfx" % "javafx-media" % "14" pomOnly(),
   "jp.aegif.nemaki.common" % "nemakiware-common" % "2.4.1" changing(),
   "jp.aegif.nemaki.plugin" % "nemakiware-action" % "0.0.6" changing(),
   "commons-collections" % "commons-collections" % "3.2.1",
