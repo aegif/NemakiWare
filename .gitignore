@@ -15,3 +15,8 @@ core/catalina.home_IS_UNDEFINED/
 core/src/main/webapp/WEB-INF/classes/custom-nemakiware.properties
 core/src/main/webapp/WEB-INF/classes/custom-repositories.yml
 /*/catalina.home_IS_UNDEFINED
+action/nemakiware-action.iml
+common/nemakiware-common.iml
+core/core.iml
+solr/solr.iml
+.idea

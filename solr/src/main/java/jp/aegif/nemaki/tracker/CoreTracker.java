@@ -213,7 +213,7 @@ logger.info("extraction start");
 				logger.info("Extracted indexing of events : Repo={} Count={}", repositoryId, list.size());
 
 //				PropertyManager propMgr = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
-				int numberOfThread = Integer.valueOf(propertyManager.readValue(PropertyKey.SOLR_TRACKING_NUMBER_OF_THREAD));
+				int numberOfThread = Integer.parseInt(propertyManager.readValue(PropertyKey.SOLR_TRACKING_NUMBER_OF_THREAD));
 				int numberPerThread = list.size() / numberOfThread;
 				if (list.size() < numberOfThread || numberPerThread == 0) {
 					numberOfThread = list.size();
@@ -244,7 +244,7 @@ logger.info("extraction start");
 					try {
 						t.join();
 					} catch (InterruptedException e) {
-						logger.error("Thred interuptted! : Repo={} Ex={}", repositoryId, e);
+						logger.error("Thread interrupted! : Repo={} Ex={}", repositoryId, e);
 					}
 
 				}
@@ -259,7 +259,7 @@ logger.info("extraction start");
 				}else {
 					latestCheckTime = latestEvent.getChangeTime();
 				}
-				int delta = Integer.valueOf(propertyManager.readValue(PropertyKey.SOLR_TRACKING_LATEST_CHECK_DELTA));
+				int delta = Integer.parseInt(propertyManager.readValue(PropertyKey.SOLR_TRACKING_LATEST_CHECK_DELTA));
 				latestCheckTime.add(Calendar.SECOND, delta);
 				if (currentTime.compareTo(latestCheckTime) > 0) {
 					// Update the latest token 
@@ -386,9 +386,9 @@ logger.info("extraction start");
 
 		long _numItems = 0;
 		if (Constant.MODE_DELTA.equals(trackingType)) {
-			_numItems = Long.valueOf(propMgr.readValue(PropertyKey.CMIS_CHANGELOG_ITEMS_DELTA));
+			_numItems = Long.parseLong(propMgr.readValue(PropertyKey.CMIS_CHANGELOG_ITEMS_DELTA));
 		} else if (Constant.MODE_FULL.equals(trackingType)) {
-			_numItems = Long.valueOf(propMgr.readValue(PropertyKey.CMIS_CHANGELOG_ITEMS_FULL));
+			_numItems = Long.parseLong(propMgr.readValue(PropertyKey.CMIS_CHANGELOG_ITEMS_FULL));
 		}
 
 		long numItems = (-1 == _numItems) ? Long.MAX_VALUE : Long.valueOf(_numItems);
