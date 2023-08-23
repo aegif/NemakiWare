@@ -2,12 +2,12 @@ import com.github.play2war.plugin._
 
 name := """ui"""
 
-version := "2.4.1"
+version := "2.4.0"
 
 // lazy val root = (project in file(".")).enablePlugins(PlayJava, PlayEbean)
 lazy val root = (project in file(".")).enablePlugins(PlayJava)
 
-scalaVersion := "2.11.8"
+scalaVersion := "2.11.12"
 
 javacOptions ++= Seq("-source", "1.8", "-target", "1.8", "-Xlint")
 
