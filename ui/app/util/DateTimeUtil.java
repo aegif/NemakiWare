@@ -7,6 +7,11 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.Locale;
+import java.time.ZoneId;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.FormatStyle;
+import java.time.format.DateTimeParseException;
 
 public class DateTimeUtil {
 
@@ -14,17 +19,35 @@ public class DateTimeUtil {
 		if(gc == null) return "";
 
 		Date date = gc.getTime();
-		DateFormat df = DateFormat.getDateTimeInstance(DateFormat.LONG, DateFormat.MEDIUM,  locale);
-		String result = df.format(date);
+		DateTimeFormatter formatter = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT)
+				.withLocale(locale);
+		String result = formatter.format(gc.toZonedDateTime());
+		//DateFormat df = DateFormat.getDateTimeInstance(DateFormat.LONG, DateFormat.MEDIUM,  locale);
+		//String result = df.format(date);
 		return result;
 	}
 
 	public static GregorianCalendar convertStringToCalendar(String date, String format, Locale locale) {
-		SimpleDateFormat sdf = new SimpleDateFormat(format, locale);
-		return convertStringToCalendar(date, sdf);
+		DateTimeFormatter formatter = DateTimeFormatter.ofPattern(format).withLocale(locale);
+		if(date == null || date.isEmpty()){
+			return null;
+		}
+		try {
+			LocalDateTime localDateTime = LocalDateTime.parse(date, formatter);
+			return GregorianCalendar.from(localDateTime.atZone(ZoneId.systemDefault()));
+		}
+		catch(DateTimeParseException e){
+			Util.logger.debug(MessageFormat.format("DateFormatError Pattern:{0} Text:{1}", format, date));
+		}
+		return null;
+		//SimpleDateFormat sdf = new SimpleDateFormat(format, locale);
+		//return convertStringToCalendar(date, sdf);
 	}
 	public static GregorianCalendar convertStringToCalendar(String date, DateFormat sdf) {
 		Date d;
+		if(date == null || date.isEmpty()){
+			return null;
+		}
 		try {
 			d = sdf.parse(date);
 			GregorianCalendar cal = new GregorianCalendar();
