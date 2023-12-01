@@ -844,7 +844,7 @@ public class Node extends Controller {
 		// Bind input parameters
 		DynamicForm input = Form.form();
 		input = input.bindFromRequest();
-
+Util.logger.debug("Start dragAndDrop");
 		// Process the file
 		MultipartFormData body = request().body().asMultipartFormData();
 		List<FilePart> files = body.getFiles();
@@ -875,12 +875,17 @@ public class Node extends Controller {
 		setParam(param, input, PropertyIds.OBJECT_TYPE_ID);
 		setParam(param, input, PropertyIds.NAME);
 
+Util.logger.debug(MessageFormat.format("DnD-Create Action Parent:{0} ", parentId));
+
 		// Execute
 		Session session = getCmisSession(repositoryId);
+Util.logger.debug(MessageFormat.format("Session Required from:{0} ", repositoryId));
 		ContentStream cs = Util.convertFileToContentStream(session, file);
+Util.logger.debug("Call core service...");
 		session.createDocument(param, parentId, cs, VersioningState.MAJOR);
-
+Util.logger.debug("done.");
 		// Clean temp file just after CMIS createDocument finished
+Util.logger.debug("Delete temp file");
 		file.getFile().delete();
 	}
 
@@ -890,19 +895,24 @@ public class Node extends Controller {
 		ObjectId objectId = new ObjectIdImpl(Util.getFormData(input, PropertyIds.OBJECT_ID));
 		setParam(param, input, PropertyIds.OBJECT_TYPE_ID);
 		// setParam(param, input, PropertyIds.NAME);
-
+Util.logger.debug(MessageFormat.format("DnD-Update Action Parent:{0} ", objectId));
 		// Execute
 		Session session = getCmisSession(repositoryId);
+Util.logger.debug(MessageFormat.format("Session Required from:{0} ", repositoryId));
 		ContentStream cs = Util.convertFileToContentStream(session, file);
+Util.logger.debug("Call core service...");
 		Document doc = (Document) session.getObject(objectId);
 		doc.setContentStream(cs, true);
+Util.logger.debug("done.");
 
 		// Clean temp file just after CMIS createDocument finished
+Util.logger.debug("Delete temp file");
 		file.getFile().delete();
 	}
 
 	@Secure
 	public Result create(String repositoryId) {
+Util.logger.debug("Start create");
 		NemakiProfile profile = Util.getProfile(ctx());
 
 		DynamicForm input = Form.form();
@@ -931,6 +941,7 @@ public class Node extends Controller {
 		// Document/Folder specific
 		switch (Util.getBaseType(session, objectTypeId)) {
 		case CMIS_DOCUMENT:
+Util.logger.debug("create DOCUMENT");
 			ContentStreamAllowed csa = ((DocumentTypeDefinition) objectType).getContentStreamAllowed();
 
 			if (csa == ContentStreamAllowed.NOTALLOWED) {
@@ -969,9 +980,11 @@ public class Node extends Controller {
 
 			break;
 		case CMIS_FOLDER:
+Util.logger.debug("create FOLDER");
 			session.createFolder(param, parentId);
 			break;
 		default:
+Util.logger.debug("create nothing.");
 			break;
 		}
 
@@ -980,6 +993,7 @@ public class Node extends Controller {
 
 	@Secure
 	public Result update(String repositoryId, String id) {
+Util.logger.debug("Start update");
 		NemakiProfile profile = Util.getProfile(ctx());
 
 		// Get an object in the repository

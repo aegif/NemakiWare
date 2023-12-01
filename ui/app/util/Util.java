@@ -130,7 +130,7 @@ import util.authentication.NemakiProfile;
 import util.authentication.NemakiProfile.CmisAuthType;
 
 public class Util {
-	static final ALogger logger = Logger.of(Util.class);
+	static public final ALogger logger = Logger.of(Util.class);
 
 	public static NemakiProfile getProfile(play.mvc.Http.Context ctx) {
 		final PlayWebContext context = new PlayWebContext(ctx);
