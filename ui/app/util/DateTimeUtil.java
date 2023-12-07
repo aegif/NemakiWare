@@ -19,8 +19,9 @@ public class DateTimeUtil {
 		if(gc == null) return "";
 
 		Date date = gc.getTime();
-		DateTimeFormatter formatter = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT)
-				.withLocale(locale);
+		DateTimeFormatter formatter = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)
+				.withLocale(locale)
+				.withZone(ZoneId.systemDefault());
 		String result = formatter.format(gc.toZonedDateTime());
 		//DateFormat df = DateFormat.getDateTimeInstance(DateFormat.LONG, DateFormat.MEDIUM,  locale);
 		//String result = df.format(date);
@@ -54,16 +55,31 @@ public class DateTimeUtil {
 			cal.setTime(d);
 			return cal;
 		} catch (ParseException e) {
-			Util.logger.debug(MessageFormat.format("DateFormatError Pattern:{0} Text:{1}", sdf, date));
+			Util.logger.debug(MessageFormat.format("DateFormatError FormatObj:{0} Text:{1}", sdf, date));
+		}
+		return null;
+	}
+	public static GregorianCalendar convertStringToCalendar(String date, DateTimeFormatter dtf) {
+		if(date == null || date.isEmpty()){
+			return null;
+		}
+		try {
+			LocalDateTime localDateTime = LocalDateTime.parse(date, dtf);
+			return GregorianCalendar.from(localDateTime.atZone(ZoneId.systemDefault()));
+		} catch (Exception e) {
+			Util.logger.debug(MessageFormat.format("DateFormatError Formatter:{0} Text:{1}", dtf, date));
 		}
 		return null;
 	}
 
-
 	public static GregorianCalendar convertStringToCalendar(String date, Locale locale) {
-		DateFormat df = DateFormat.getDateTimeInstance(DateFormat.LONG, DateFormat.MEDIUM,  locale);
+		//DateFormat df = DateFormat.getDateTimeInstance(DateFormat.LONG, DateFormat.MEDIUM,  locale);
+		//GregorianCalendar result = convertStringToCalendar(date,df);
+		DateTimeFormatter formatter = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)
+				.withLocale(locale)
+				.withZone(ZoneId.systemDefault());
+		GregorianCalendar result = convertStringToCalendar(date,formatter);
 
-		GregorianCalendar result = convertStringToCalendar(date,df);
 		if (result == null) {
 			result = convertStringToCalendar(date, "yyyy-MM-dd'T'HH:mm:ss.SSSZ",  Locale.JAPAN);
 		}
@@ -81,6 +97,15 @@ public class DateTimeUtil {
 		}
 		if (result == null) {
 			result = convertStringToCalendar(date, "yyyy-MM-dd HH:mm", Locale.JAPAN);
+		}
+		if (result == null) {
+			result = convertStringToCalendar(date, "yyyy/MM/dd HH:mm:ss", Locale.JAPAN);
+		}
+		if (result == null) {
+			result = convertStringToCalendar(date, "yyyy/MM/dd HH:mm", Locale.JAPAN);
+		}
+		if (result == null) {
+			result = convertStringToCalendar(date, "yyyy/MM/dd", Locale.JAPAN);
 		}
 		return result;
 	}
