@@ -1,53 +1,29 @@
 package jp.aegif.nemaki.util;
 
-import java.math.BigDecimal;
-import java.math.BigInteger;
-import java.text.DateFormat;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.GregorianCalendar;
-import java.util.List;
-import java.util.TimeZone;
-
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.util.constant.SystemConst;
-
 import org.apache.chemistry.opencmis.commons.PropertyIds;
-import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.data.Properties;
-import org.apache.chemistry.opencmis.commons.data.PropertyBoolean;
-import org.apache.chemistry.opencmis.commons.data.PropertyData;
-import org.apache.chemistry.opencmis.commons.data.PropertyId;
-import org.apache.chemistry.opencmis.commons.data.PropertyString;
+import org.apache.chemistry.opencmis.commons.data.*;
 import org.apache.chemistry.opencmis.commons.definitions.Choice;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
-import org.apache.chemistry.opencmis.commons.enums.Cardinality;
-import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
-import org.apache.chemistry.opencmis.commons.enums.DateTimeResolution;
-import org.apache.chemistry.opencmis.commons.enums.DecimalPrecision;
-import org.apache.chemistry.opencmis.commons.enums.PropertyType;
-import org.apache.chemistry.opencmis.commons.enums.Updatability;
+import org.apache.chemistry.opencmis.commons.enums.*;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
 import org.apache.chemistry.opencmis.commons.impl.WSConverter;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyDefinition;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.ChoiceImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectDataImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyBooleanDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDecimalDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyHtmlDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
-import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyUriDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.*;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.lucene.document.DateTools.Resolution;
+
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.*;
 
 public class DataUtil {
 	public static final String NAMESPACE = "http://www.aegif.jp/Nemaki";
@@ -529,13 +505,35 @@ public class DataUtil {
 		return sdf.format(cal.getTime());
 	}
 
+
+	private static final String[] SUPPORTED_FORMATS = {
+			"yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
+			SystemConst.DATETIME_FORMAT,
+			"yyyy-MM-dd'T'HH:mm:ss.SSSX", // ISO 8601 with milliseconds and timezone
+			"yyyy-MM-dd'T'HH:mm:ssX",     // ISO 8601 without milliseconds
+			"yyyy-MM-dd HH:mm:ss",        // Common format without timezone
+			"yyyy-MM-dd"                  // Date only
+	};
+
 	public static GregorianCalendar convertToCalender(String value) throws ParseException {
-		DateFormat sdf = new SimpleDateFormat(SystemConst.DATETIME_FORMAT);
-		sdf.setLenient(false);
-		Date date = sdf.parse(value);
-		GregorianCalendar  cal = new GregorianCalendar();
-		cal.setTime( date );
-		return cal;
+		ParseException lastException = null;
+		for (String format : SUPPORTED_FORMATS) {
+			try {
+				DateFormat sdf = new SimpleDateFormat(format);
+				sdf.setLenient(false);
+				Date date = sdf.parse(value);
+				GregorianCalendar cal = new GregorianCalendar();
+				cal.setTime(date);
+				return cal;
+			} catch (ParseException e) {
+				lastException = e; // Store the exception to throw later if needed
+			}
+		}
+		// If none of the formats succeeded, throw the last caught ParseException
+		if (lastException != null) {
+			throw lastException;
+		}
+		return null;
 	}
 
 
