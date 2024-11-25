@@ -21,7 +21,7 @@
         <maven.compiler.source>${java.version}</maven.compiler.source>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<org.apache.chemistry.opencmis.version>1.1.0</org.apache.chemistry.opencmis.version>
-		<org.apache.solr.version>4.10.4</org.apache.solr.version>
+		<org.apache.solr.version>8.8.2</org.apache.solr.version>
 	</properties>
 	<repositories>
         <repository>
