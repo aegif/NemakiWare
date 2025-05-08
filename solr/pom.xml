@@ -21,7 +21,7 @@
         <maven.compiler.source>${java-version}</maven.compiler.source>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<org.apache.chemistry.opencmis.version>1.1.0</org.apache.chemistry.opencmis.version>
-		<org.apache.solr.version>4.10.3</org.apache.solr.version>
+		<org.apache.solr.version>4.10.4</org.apache.solr.version>
 	</properties>
 	<repositories>
         <repository>
@@ -38,6 +38,21 @@
             <id>maven-restlet-org</id>
             <name>Restlet organization repository</name>
             <url>https://maven.restlet.org/</url>
+        </repository>
+        <repository>
+            <id>apache-archive</id>
+            <name>Apache Archive Repository</name>
+            <url>https://archive.apache.org/dist/</url>
+        </repository>
+        <repository>
+            <id>jboss-public</id>
+            <name>JBoss Public Repository</name>
+            <url>https://repository.jboss.org/nexus/content/groups/public/</url>
+        </repository>
+        <repository>
+            <id>alfresco-public</id>
+            <name>Alfresco Public Repository</name>
+            <url>https://artifacts.alfresco.com/nexus/content/repositories/public/</url>
         </repository>
 	</repositories>    
 
