@@ -1,5 +1,8 @@
 package jp.aegif.nemaki.util;
 
+/**
+ * Property keys used in the application
+ */
 public interface PropertyKey {
 	public final String SOLR_CORE_MAIN = "solr.core.main";
 	public final String SOLR_CORE_TOKEN = "solr.core.token";
