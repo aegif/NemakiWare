@@ -65,15 +65,21 @@ public class CouchDBInitializer {
         this.force = force;
         this.objectMapper = new ObjectMapper();
         
-        CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
-        credentialsProvider.setCredentials(
-            AuthScope.ANY,
-            new UsernamePasswordCredentials(username, password)
-        );
-        
-        this.httpClient = HttpClients.custom()
-            .setDefaultCredentialsProvider(credentialsProvider)
-            .build();
+        if (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(password)) {
+            System.out.println("Using authenticated connection for CouchDB");
+            CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
+            credentialsProvider.setCredentials(
+                AuthScope.ANY,
+                new UsernamePasswordCredentials(username, password)
+            );
+            
+            this.httpClient = HttpClients.custom()
+                .setDefaultCredentialsProvider(credentialsProvider)
+                .build();
+        } else {
+            System.out.println("Using non-authenticated connection for CouchDB");
+            this.httpClient = HttpClients.createDefault();
+        }
     }
 
     public static void main(String[] args) {
