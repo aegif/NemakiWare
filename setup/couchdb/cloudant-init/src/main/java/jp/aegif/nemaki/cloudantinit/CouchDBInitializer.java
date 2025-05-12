@@ -4,7 +4,11 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -13,25 +17,34 @@ import java.util.Map.Entry;
 
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.http.HttpEntity;
+import org.apache.http.HttpResponse;
+import org.apache.http.HttpStatus;
+import org.apache.http.auth.AuthScope;
+import org.apache.http.auth.UsernamePasswordCredentials;
+import org.apache.http.client.CredentialsProvider;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.client.methods.HttpPut;
+import org.apache.http.client.utils.URIBuilder;
+import org.apache.http.entity.ContentType;
+import org.apache.http.entity.InputStreamEntity;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.BasicCredentialsProvider;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.util.EntityUtils;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.ibm.cloud.cloudant.v1.Cloudant;
-import com.ibm.cloud.cloudant.v1.model.Document;
-import com.ibm.cloud.cloudant.v1.model.DocumentResult;
-import com.ibm.cloud.cloudant.v1.model.GetDatabaseInformationOptions;
-import com.ibm.cloud.cloudant.v1.model.Ok;
-import com.ibm.cloud.cloudant.v1.model.PostBulkDocsOptions;
-import com.ibm.cloud.cloudant.v1.model.PutAttachmentOptions;
-import com.ibm.cloud.cloudant.v1.model.PutDatabaseOptions;
-import com.ibm.cloud.sdk.core.http.Response;
-import com.ibm.cloud.sdk.core.security.BasicAuthenticator;
 
 /**
- * CouchDB 3.x initializer using IBM Cloudant Java SDK
+ * CouchDB 3.x initializer using direct RESTful API calls
  */
 public class CouchDBInitializer {
     private final String url;
@@ -40,7 +53,8 @@ public class CouchDBInitializer {
     private final String repositoryId;
     private final File file;
     private final boolean force;
-    private final Cloudant client;
+    private final CloseableHttpClient httpClient;
+    private final ObjectMapper objectMapper;
 
     public CouchDBInitializer(String url, String username, String password, String repositoryId, File file, boolean force) {
         this.url = sanitizeUrl(url);
@@ -49,14 +63,17 @@ public class CouchDBInitializer {
         this.repositoryId = repositoryId;
         this.file = file;
         this.force = force;
+        this.objectMapper = new ObjectMapper();
         
-        BasicAuthenticator authenticator = new BasicAuthenticator.Builder()
-            .username(username)
-            .password(password)
+        CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
+        credentialsProvider.setCredentials(
+            AuthScope.ANY,
+            new UsernamePasswordCredentials(username, password)
+        );
+        
+        this.httpClient = HttpClients.custom()
+            .setDefaultCredentialsProvider(credentialsProvider)
             .build();
-        
-        this.client = new Cloudant("cloudant", authenticator);
-        this.client.setServiceUrl(this.url);
     }
 
     public static void main(String[] args) {
@@ -66,13 +83,9 @@ public class CouchDBInitializer {
         }
 
         String url = args[0];
-
         String username = args[1];
-
         String password = args[2];
-
         String repositoryId = args[3];
-
         String filePath = args[4];
         File file = new File(filePath);
 
@@ -107,11 +120,11 @@ public class CouchDBInitializer {
             }
         }
 
-        List<Document> documents = new ArrayList<>();
+        List<Map<String, Object>> documents = new ArrayList<>();
         Map<String, Map<String, JsonNode>> payloads = new HashMap<>();
 
         try {
-            JsonNode _dump = new ObjectMapper().readTree(file);
+            JsonNode _dump = objectMapper.readTree(file);
             ArrayNode dump = (ArrayNode) _dump;
 
             Iterator<JsonNode> iterator = dump.iterator();
@@ -120,17 +133,7 @@ public class CouchDBInitializer {
                 ObjectNode documentNode = (ObjectNode) _entry.get("document");
                 processDocument(documentNode); // remove some fields
                 
-                Document document = new Document();
-                document.setId(documentNode.get("_id").textValue());
-                
-                Iterator<String> docFieldNames = documentNode.fieldNames();
-                while (docFieldNames.hasNext()) {
-                    String fieldName = docFieldNames.next();
-                    if (!fieldName.equals("_id")) {
-                        document.put(fieldName, documentNode.get(fieldName));
-                    }
-                }
-                
+                Map<String, Object> document = objectMapper.convertValue(documentNode, new TypeReference<Map<String, Object>>() {});
                 documents.add(document);
 
                 JsonNode attachments = _entry.get("attachments");
@@ -163,30 +166,36 @@ public class CouchDBInitializer {
         List<String> documentsResult = new ArrayList<>();
         for (int i = 0; i <= turn; i++) {
             int toIndex = Math.min(unit * (i + 1), documents.size());
-            List<Document> subList = documents.subList(i * unit, toIndex);
+            List<Map<String, Object>> subList = documents.subList(i * unit, toIndex);
             
             try {
-                ObjectMapper mapper = new ObjectMapper();
                 Map<String, Object> bulkDocsBody = new HashMap<>();
                 bulkDocsBody.put("docs", subList);
-                String bulkDocsJson = mapper.writeValueAsString(bulkDocsBody);
+                String bulkDocsJson = objectMapper.writeValueAsString(bulkDocsBody);
                 
-                PostBulkDocsOptions bulkDocsOptions = new PostBulkDocsOptions.Builder()
-                    .db(repositoryId)
-                    .body(new ByteArrayInputStream(bulkDocsJson.getBytes()))
-                    .build();
+                HttpPost httpPost = new HttpPost(url + "/" + repositoryId + "/_bulk_docs");
+                httpPost.setHeader("Content-Type", "application/json");
+                httpPost.setEntity(new StringEntity(bulkDocsJson, ContentType.APPLICATION_JSON));
                 
-                Response<List<DocumentResult>> response = client.postBulkDocs(bulkDocsOptions).execute();
-                
-                if (response.getStatusCode() >= 400) {
-                    System.err.println("Error inserting documents: " + response.getStatusCode());
-                    return false;
-                }
-                
-                List<DocumentResult> results = response.getResult();
-                for (DocumentResult result : results) {
-                    if (result.getError() != null) {
-                        documentsResult.add(result.getId() + ": " + result.getReason());
+                try (CloseableHttpResponse response = httpClient.execute(httpPost)) {
+                    int statusCode = response.getStatusLine().getStatusCode();
+                    
+                    if (statusCode >= 400) {
+                        System.err.println("Error inserting documents: " + statusCode);
+                        return false;
+                    }
+                    
+                    HttpEntity entity = response.getEntity();
+                    if (entity != null) {
+                        String responseBody = EntityUtils.toString(entity);
+                        List<Map<String, Object>> results = objectMapper.readValue(responseBody, 
+                                new TypeReference<List<Map<String, Object>>>() {});
+                        
+                        for (Map<String, Object> result : results) {
+                            if (result.containsKey("error")) {
+                                documentsResult.add(result.get("id") + ": " + result.get("reason"));
+                            }
+                        }
                     }
                 }
                 
@@ -212,6 +221,12 @@ public class CouchDBInitializer {
             String docId = entry.getKey();
             Map<String, JsonNode> attachments = entry.getValue();
             
+            String rev = getLatestRevision(docId);
+            if (rev == null) {
+                System.err.println("Could not get latest revision for document: " + docId);
+                continue;
+            }
+            
             for (Entry<String, JsonNode> attachmentEntry : attachments.entrySet()) {
                 String attachmentId = attachmentEntry.getKey();
                 JsonNode attachment = attachmentEntry.getValue();
@@ -220,21 +235,34 @@ public class CouchDBInitializer {
                     String data = attachment.get("data").asText();
                     String contentType = attachment.get("content_type").asText();
                     
-                    byte[] attachmentData = java.util.Base64.getDecoder().decode(data);
+                    byte[] attachmentData = Base64.getDecoder().decode(data);
                     InputStream attachmentStream = new ByteArrayInputStream(attachmentData);
                     
-                    PutAttachmentOptions attachmentOptions = new PutAttachmentOptions.Builder()
-                        .db(repositoryId)
-                        .docId(docId)
-                        .attachmentName(attachmentId)
-                        .attachment(attachmentStream)
-                        .contentType(contentType)
-                        .build();
+                    URI uri = new URIBuilder(url + "/" + repositoryId + "/" + docId + "/" + attachmentId)
+                            .addParameter("rev", rev)
+                            .build();
                     
-                    Response<DocumentResult> response = client.putAttachment(attachmentOptions).execute();
+                    HttpPut httpPut = new HttpPut(uri);
+                    httpPut.setHeader("Content-Type", contentType);
+                    httpPut.setEntity(new InputStreamEntity(attachmentStream, attachmentData.length));
                     
-                    if (response.getStatusCode() >= 400) {
-                        System.err.println("Error uploading attachment " + attachmentId + " for document " + docId + ": " + response.getStatusCode());
+                    try (CloseableHttpResponse response = httpClient.execute(httpPut)) {
+                        int statusCode = response.getStatusLine().getStatusCode();
+                        
+                        if (statusCode >= 400) {
+                            System.err.println("Error uploading attachment " + attachmentId + 
+                                    " for document " + docId + ": " + statusCode);
+                        } else {
+                            HttpEntity entity = response.getEntity();
+                            if (entity != null) {
+                                String responseBody = EntityUtils.toString(entity);
+                                Map<String, Object> result = objectMapper.readValue(responseBody, 
+                                        new TypeReference<Map<String, Object>>() {});
+                                if (result.containsKey("rev")) {
+                                    rev = (String) result.get("rev");
+                                }
+                            }
+                        }
                     }
                 } catch (Exception e) {
                     System.err.println("Error processing attachment " + attachmentId + " for document " + docId);
@@ -246,7 +274,44 @@ public class CouchDBInitializer {
         }
 
         System.out.println("Loading attachments: END");
+        
+        try {
+            httpClient.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        
         return true;
+    }
+
+    /**
+     * Get the latest revision of a document
+     */
+    private String getLatestRevision(String docId) {
+        try {
+            HttpGet httpGet = new HttpGet(url + "/" + repositoryId + "/" + docId);
+            
+            try (CloseableHttpResponse response = httpClient.execute(httpGet)) {
+                int statusCode = response.getStatusLine().getStatusCode();
+                
+                if (statusCode == HttpStatus.SC_OK) {
+                    HttpEntity entity = response.getEntity();
+                    if (entity != null) {
+                        String responseBody = EntityUtils.toString(entity);
+                        Map<String, Object> doc = objectMapper.readValue(responseBody, 
+                                new TypeReference<Map<String, Object>>() {});
+                        
+                        if (doc.containsKey("_rev")) {
+                            return (String) doc.get("_rev");
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        
+        return null;
     }
 
     /**
@@ -254,22 +319,22 @@ public class CouchDBInitializer {
      */
     public boolean initRepository() {
         try {
-            try {
-                GetDatabaseInformationOptions options = new GetDatabaseInformationOptions.Builder()
-                    .db(repositoryId)
-                    .build();
+            HttpGet httpGet = new HttpGet(url + "/" + repositoryId);
+            
+            try (CloseableHttpResponse response = httpClient.execute(httpGet)) {
+                int statusCode = response.getStatusLine().getStatusCode();
                 
-                client.getDatabaseInformation(options).execute();
+                if (statusCode == HttpStatus.SC_OK) {
+                    return false;
+                }
+            }
+            
+            HttpPut httpPut = new HttpPut(url + "/" + repositoryId);
+            
+            try (CloseableHttpResponse response = httpClient.execute(httpPut)) {
+                int statusCode = response.getStatusLine().getStatusCode();
                 
-                return false;
-            } catch (Exception e) {
-                PutDatabaseOptions options = new PutDatabaseOptions.Builder()
-                    .db(repositoryId)
-                    .build();
-                
-                Response<Ok> response = client.putDatabase(options).execute();
-                
-                return response.getStatusCode() == 201 || response.getStatusCode() == 202;
+                return statusCode == HttpStatus.SC_CREATED || statusCode == HttpStatus.SC_ACCEPTED;
             }
         } catch (Exception e) {
             e.printStackTrace();

@@ -34,9 +34,14 @@
             <version>3.12.0</version>
         </dependency>
         <dependency>
-            <groupId>com.ibm.cloud</groupId>
-            <artifactId>cloudant</artifactId>
-            <version>0.10.3</version>
+            <groupId>org.apache.httpcomponents</groupId>
+            <artifactId>httpclient</artifactId>
+            <version>4.5.14</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.httpcomponents</groupId>
+            <artifactId>httpmime</artifactId>
+            <version>4.5.14</version>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
