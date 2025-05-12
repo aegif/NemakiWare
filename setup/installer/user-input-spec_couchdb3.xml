@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<userInput>
+  <panel id="user.inputpanel.appserver">
+    <field type="title" txt="Application Server" bold="true" size="1" />
+    <field type="staticText" align="left"
+      txt="Please specify the port number for Tomcat." />
+    <field type="divider" />
+    <field type="text" variable="tomcat.port">
+      <spec txt="HTTP Port:" size="5" set="8080" />
+    </field>
+    <field type="text" variable="tomcat.shutdown.port">
+      <spec txt="Shutdown Port:" size="5" set="8005" />
+    </field>
+  </panel>
+
+  <panel id="user.inputpanel.repository">
+    <field type="title" txt="Repository" bold="true" size="1" />
+    <field type="staticText" align="left"
+      txt="Please specify the repository ID." />
+    <field type="divider" />
+    <field type="text" variable="cmis.repository.main">
+      <spec txt="Main Repository ID:" size="20" set="bedroom" />
+    </field>
+  </panel>
+
+  <panel id="user.inputpanel.couchdb.configuration">
+    <field type="title" txt="CouchDB" bold="true" size="1" />
+    <field type="staticText" align="left"
+      txt="Please specify the CouchDB connection information." />
+    <field type="divider" />
+    <field type="text" variable="db.couchdb.url">
+      <spec txt="CouchDB URL:" size="30" set="http://127.0.0.1:5984" />
+    </field>
+    <field type="text" variable="db.couchdb.username">
+      <spec txt="CouchDB Username:" size="20" set="admin" />
+    </field>
+    <field type="password" variable="db.couchdb.password">
+      <spec txt="CouchDB Password:" size="20" set="" />
+    </field>
+  </panel>
+
+  <panel id="user.inputpanel.rails">
+    <field type="title" txt="UI" bold="true" size="1" />
+    <field type="staticText" align="left"
+      txt="Please specify the port number for UI." />
+    <field type="divider" />
+    <field type="text" variable="rails.port">
+      <spec txt="Port:" size="5" set="3000" />
+    </field>
+  </panel>
+</userInput>
