@@ -1,11 +1,18 @@
 
 
+
 set -e
 
 SCRIPT_DIR=$(cd $(dirname $0); pwd)
 NEMAKI_HOME=$(cd $SCRIPT_DIR/..; pwd)
 
 echo "Building NemakiWare components..."
+
+echo "Creating Docker directories..."
+mkdir -p $NEMAKI_HOME/docker/core
+mkdir -p $NEMAKI_HOME/docker/solr
+mkdir -p $NEMAKI_HOME/docker/ui
+mkdir -p $NEMAKI_HOME/docker/ui/conf
 
 echo "Building core server..."
 cd $NEMAKI_HOME
@@ -17,13 +24,58 @@ mvn clean package -pl solr -am
 cp solr/target/solr.war docker/solr/
 
 echo "Copying configuration files..."
-cp core/src/main/webapp/WEB-INF/classes/nemakiware.properties docker/core/
-cp core/src/main/webapp/WEB-INF/classes/repositories.yml docker/core/
-cp core/src/main/webapp/WEB-INF/classes/log4j.properties docker/core/
-cp solr/src/main/webapp/WEB-INF/classes/nemakisolr.properties docker/solr/
-cp solr/src/main/webapp/WEB-INF/classes/log4j.properties docker/solr/
-cp ui/conf/application.conf docker/ui/
-cp ui/conf/nemakiware_ui.properties docker/ui/
+if [ -f core/src/main/webapp/WEB-INF/classes/nemakiware.properties ]; then
+  cp core/src/main/webapp/WEB-INF/classes/nemakiware.properties docker/core/
+else
+  echo "Warning: nemakiware.properties not found"
+  touch docker/core/nemakiware.properties
+fi
+
+if [ -f core/src/main/webapp/WEB-INF/classes/repositories.yml ]; then
+  cp core/src/main/webapp/WEB-INF/classes/repositories.yml docker/core/
+else
+  echo "Warning: repositories.yml not found"
+  touch docker/core/repositories.yml
+fi
+
+if [ -f core/src/main/webapp/WEB-INF/classes/log4j.properties ]; then
+  cp core/src/main/webapp/WEB-INF/classes/log4j.properties docker/core/
+else
+  echo "Warning: core log4j.properties not found"
+  touch docker/core/log4j.properties
+fi
+
+if [ -f solr/src/main/webapp/WEB-INF/classes/nemakisolr.properties ]; then
+  cp solr/src/main/webapp/WEB-INF/classes/nemakisolr.properties docker/solr/
+else
+  echo "Warning: nemakisolr.properties not found"
+  touch docker/solr/nemakisolr.properties
+fi
+
+if [ -f solr/src/main/webapp/WEB-INF/classes/log4j.properties ]; then
+  cp solr/src/main/webapp/WEB-INF/classes/log4j.properties docker/solr/
+else
+  echo "Warning: solr log4j.properties not found"
+  touch docker/solr/log4j.properties
+fi
+
+if [ -f ui/conf/application.conf ]; then
+  cp ui/conf/application.conf docker/ui/
+else
+  echo "Warning: application.conf not found"
+  touch docker/ui/application.conf
+fi
+
+if [ -f ui/conf/nemakiware_ui.properties ]; then
+  cp ui/conf/nemakiware_ui.properties docker/ui/
+else
+  echo "Warning: nemakiware_ui.properties not found"
+  touch docker/ui/nemakiware_ui.properties
+fi
+
+echo "Copying UI application..."
+mkdir -p docker/ui/ui
+cp -r ui/* docker/ui/ui/
 
 echo "Building CouchDB initializer..."
 cd $NEMAKI_HOME/setup/couchdb/cloudant-init
