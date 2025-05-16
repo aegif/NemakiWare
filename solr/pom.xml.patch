@@ -1,0 +1,11 @@
+--- pom.xml.original	2025-05-16 05:50:09.000000000 +0000
++++ pom.xml	2025-05-16 05:50:09.000000000 +0000
+@@ -42,7 +42,7 @@
+ 			<groupId>jdk.tools</groupId>
+ 			<artifactId>jdk.tools</artifactId>
+ 			<version>1.8.0</version>
+-			<scope>system</scope>
+-			<systemPath>${java.home}/../lib/tools.jar</systemPath>
++			<scope>provided</scope>
+ 		</dependency>
+ 	</dependencies>
