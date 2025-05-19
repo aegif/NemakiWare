@@ -3,10 +3,14 @@ package jp.aegif.nemaki.cloudantinit;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.net.ConnectException;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.junit.After;
+import org.junit.Assume;
 import org.junit.Before;
 import org.junit.Test;
 import static org.junit.Assert.*;
@@ -22,6 +26,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
  * Note: These tests require a running CouchDB instance.
  * For CouchDB 2.x tests: Set COUCHDB_URL environment variable (default: http://localhost:5984)
  * For CouchDB 3.x tests: Set COUCHDB_URL, COUCHDB_USERNAME, COUCHDB_PASSWORD environment variables
+ * 
+ * Tests will be skipped if CouchDB is not available.
  */
 public class CouchDBInitializerTest {
     
@@ -30,6 +36,7 @@ public class CouchDBInitializerTest {
     private String couchdbUrl;
     private String username;
     private String password;
+    private boolean couchdbAvailable = false;
     
     @Before
     public void setUp() throws IOException {
@@ -42,6 +49,32 @@ public class CouchDBInitializerTest {
         password = System.getenv("COUCHDB_PASSWORD");
         
         testFile = createTestDataFile();
+        
+        try {
+            URL url = new URL(couchdbUrl);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            
+            if (username != null && password != null) {
+                String auth = username + ":" + password;
+                String encodedAuth = java.util.Base64.getEncoder().encodeToString(auth.getBytes());
+                conn.setRequestProperty("Authorization", "Basic " + encodedAuth);
+            }
+            
+            conn.setConnectTimeout(2000);
+            conn.setReadTimeout(2000);
+            conn.setRequestMethod("GET");
+            
+            int responseCode = conn.getResponseCode();
+            couchdbAvailable = (responseCode == 200);
+            
+            System.out.println("CouchDB connection test: " + (couchdbAvailable ? "SUCCESS" : "FAILED"));
+        } catch (ConnectException e) {
+            System.out.println("CouchDB is not available at " + couchdbUrl + ". Tests will be skipped.");
+            couchdbAvailable = false;
+        } catch (Exception e) {
+            System.out.println("Error checking CouchDB availability: " + e.getMessage());
+            couchdbAvailable = false;
+        }
     }
     
     @After
@@ -50,24 +83,28 @@ public class CouchDBInitializerTest {
             testFile.delete();
         }
         
-        try {
-            java.net.URL url = new java.net.URL(couchdbUrl + "/" + TEST_DB);
-            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("DELETE");
-            
-            if (username != null && password != null) {
-                String auth = username + ":" + password;
-                String encodedAuth = java.util.Base64.getEncoder().encodeToString(auth.getBytes());
-                conn.setRequestProperty("Authorization", "Basic " + encodedAuth);
+        if (couchdbAvailable) {
+            try {
+                URL url = new URL(couchdbUrl + "/" + TEST_DB);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("DELETE");
+                
+                if (username != null && password != null) {
+                    String auth = username + ":" + password;
+                    String encodedAuth = java.util.Base64.getEncoder().encodeToString(auth.getBytes());
+                    conn.setRequestProperty("Authorization", "Basic " + encodedAuth);
+                }
+                
+                conn.getResponseCode();
+            } catch (Exception e) {
             }
-            
-            conn.getResponseCode();
-        } catch (Exception e) {
         }
     }
     
     @Test
     public void testInitRepository() {
+        Assume.assumeTrue("CouchDB is not available. Skipping test.", couchdbAvailable);
+        
         CouchDBInitializer initializer = new CouchDBInitializer(
                 couchdbUrl, username, password, TEST_DB, testFile, true);
         
@@ -80,6 +117,8 @@ public class CouchDBInitializerTest {
     
     @Test
     public void testLoad() {
+        Assume.assumeTrue("CouchDB is not available. Skipping test.", couchdbAvailable);
+        
         CouchDBInitializer initializer = new CouchDBInitializer(
                 couchdbUrl, username, password, TEST_DB, testFile, true);
         
@@ -87,8 +126,8 @@ public class CouchDBInitializerTest {
         assertTrue("Data load should succeed", result);
         
         try {
-            java.net.URL url = new java.net.URL(couchdbUrl + "/" + TEST_DB + "/_all_docs");
-            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+            URL url = new URL(couchdbUrl + "/" + TEST_DB + "/_all_docs");
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             
             if (username != null && password != null) {
                 String auth = username + ":" + password;
