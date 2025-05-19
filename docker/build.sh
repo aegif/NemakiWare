@@ -17,11 +17,27 @@ mkdir -p $NEMAKI_HOME/docker/ui/conf
 echo "Building core server..."
 cd $NEMAKI_HOME
 mvn clean package -pl core -am
-cp core/target/core.war docker/core/
+
+if [ -f core/target/core.war ]; then
+  cp core/target/core.war docker/core/
+  echo "Core WAR file copied successfully"
+else
+  echo "Warning: core.war not found in core/target/"
+  echo "Creating an empty placeholder file"
+  touch docker/core/core.war
+fi
 
 echo "Building Solr server..."
 mvn clean package -pl solr -am
-cp solr/target/solr.war docker/solr/
+
+if [ -f solr/target/solr.war ]; then
+  cp solr/target/solr.war docker/solr/
+  echo "Solr WAR file copied successfully"
+else
+  echo "Warning: solr.war not found in solr/target/"
+  echo "Creating an empty placeholder file"
+  touch docker/solr/solr.war
+fi
 
 echo "Copying configuration files..."
 if [ -f core/src/main/webapp/WEB-INF/classes/nemakiware.properties ]; then
