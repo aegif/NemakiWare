@@ -1,0 +1,20 @@
+FROM tomcat:8-jre8
+
+# Remove default Tomcat applications
+RUN rm -rf /usr/local/tomcat/webapps/*
+
+# Copy the UI WAR file
+COPY ui.war /usr/local/tomcat/webapps/ROOT.war
+
+# Copy configuration files
+COPY nemakiware_ui.properties /usr/local/tomcat/conf/
+COPY log4j.properties /usr/local/tomcat/conf/
+
+# Set environment variables
+ENV CATALINA_OPTS="-Xms512m -Xmx1024m -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Dnemakiware_ui.properties=/usr/local/tomcat/conf/nemakiware_ui.properties"
+
+# Expose the default Tomcat port
+EXPOSE 8080
+
+# Start Tomcat
+CMD ["catalina.sh", "run"]

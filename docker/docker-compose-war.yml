@@ -1,0 +1,120 @@
+version: '3'
+
+services:
+  # CouchDB 2.x
+  couchdb2:
+    image: couchdb:2.3.1
+    ports:
+      - "5984:5984"
+    volumes:
+      - couchdb2_data:/opt/couchdb/data
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=password
+
+  # CouchDB 3.x
+  couchdb3:
+    image: couchdb:3.2.2
+    ports:
+      - "5985:5984"
+    volumes:
+      - couchdb3_data:/opt/couchdb/data
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=password
+
+  # CouchDB 2.x Initializer
+  initializer2:
+    build: ./initializer
+    depends_on:
+      - couchdb2
+    environment:
+      - COUCHDB_URL=http://couchdb2:5984
+      - REPOSITORY_ID=bedroom
+      - DUMP_FILE=/app/bedroom_init.dump
+    volumes:
+      - ../setup/couchdb/initial_import/bedroom_init.dump:/app/bedroom_init.dump
+
+  # CouchDB 3.x Initializer
+  initializer3:
+    build: ./initializer
+    depends_on:
+      - couchdb3
+    environment:
+      - COUCHDB_URL=http://couchdb3:5984
+      - COUCHDB_USERNAME=admin
+      - COUCHDB_PASSWORD=password
+      - REPOSITORY_ID=bedroom
+      - DUMP_FILE=/app/bedroom_init.dump
+    volumes:
+      - ../setup/couchdb/initial_import/bedroom_init.dump:/app/bedroom_init.dump
+
+  # Solr for CouchDB 2.x
+  solr2:
+    build: ./solr
+    ports:
+      - "8983:8080"
+    environment:
+      - CATALINA_OPTS=-Xms512m -Xmx1024m -Dsolr.solr.home=/usr/local/tomcat/solr
+    volumes:
+      - ../setup/solr/solr:/usr/local/tomcat/solr
+
+  # Solr for CouchDB 3.x
+  solr3:
+    build: ./solr
+    ports:
+      - "8984:8080"
+    environment:
+      - CATALINA_OPTS=-Xms512m -Xmx1024m -Dsolr.solr.home=/usr/local/tomcat/solr
+    volumes:
+      - ../setup/solr/solr:/usr/local/tomcat/solr
+
+  # Core for CouchDB 2.x
+  core2:
+    build: ./core
+    ports:
+      - "8080:8080"
+    depends_on:
+      - couchdb2
+      - solr2
+    environment:
+      - CATALINA_OPTS=-Xms512m -Xmx1024m -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties
+
+  # Core for CouchDB 3.x
+  core3:
+    build: ./core
+    ports:
+      - "8081:8080"
+    depends_on:
+      - couchdb3
+      - solr3
+    environment:
+      - CATALINA_OPTS=-Xms512m -Xmx1024m -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties
+
+  # UI for CouchDB 2.x (WAR version)
+  ui2-war:
+    build: ./ui-war
+    ports:
+      - "9000:8080"
+    depends_on:
+      - core2
+    environment:
+      - CATALINA_OPTS=-Xms512m -Xmx1024m -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Dnemakiware_ui.properties=/usr/local/tomcat/conf/nemakiware_ui.properties
+
+  # UI for CouchDB 3.x (WAR version)
+  ui3-war:
+    build: ./ui-war
+    ports:
+      - "9001:8080"
+    depends_on:
+      - core3
+    environment:
+      - CATALINA_OPTS=-Xms512m -Xmx1024m -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Dnemakiware_ui.properties=/usr/local/tomcat/conf/nemakiware_ui.properties
+
+volumes:
+  couchdb2_data:
+  couchdb3_data:
+
+networks:
+  default:
+    name: nemaki-network
