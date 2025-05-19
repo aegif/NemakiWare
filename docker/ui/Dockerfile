@@ -3,7 +3,7 @@ FROM openjdk:8
 # Set environment variables
 ENV PLAY_HOME /opt/play
 ENV ACTIVATOR_HOME $PLAY_HOME/activator-1.3.12-minimal
-ENV PATH $ACTIVATOR_HOME:$PATH
+ENV PATH $ACTIVATOR_HOME/bin:$PATH
 ENV PLAY_OPTS="-Xms512m -Xmx1024m -XX:MaxPermSize=256m"
 
 # Install Play Framework - use a more reliable download source
@@ -14,8 +14,8 @@ RUN apt-get update && \
     wget -q https://downloads.typesafe.com/typesafe-activator/1.3.12/typesafe-activator-1.3.12-minimal.zip && \
     unzip typesafe-activator-1.3.12-minimal.zip && \
     rm typesafe-activator-1.3.12-minimal.zip && \
-    chmod +x $ACTIVATOR_HOME/activator && \
-    ln -s $ACTIVATOR_HOME/activator /usr/local/bin/activator
+    chmod +x $ACTIVATOR_HOME/bin/activator && \
+    ln -s $ACTIVATOR_HOME/bin/activator /usr/local/bin/activator
 
 # Create app directory
 RUN mkdir -p /app
