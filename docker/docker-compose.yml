@@ -124,7 +124,7 @@ services:
   # CouchDB initializer for CouchDB 2.x
   initializer2:
     build:
-      context: ../setup/couchdb/cloudant-init
+      context: ./initializer
     environment:
       - COUCHDB_URL=http://couchdb2:5984
       - COUCHDB_USERNAME=${COUCHDB_USER:-admin}
@@ -149,7 +149,7 @@ services:
   # CouchDB initializer for CouchDB 3.x
   initializer3:
     build:
-      context: ../setup/couchdb/cloudant-init
+      context: ./initializer
     environment:
       - COUCHDB_URL=http://couchdb3:5984
       - COUCHDB_USERNAME=${COUCHDB_USER:-admin}
