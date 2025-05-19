@@ -7,7 +7,7 @@ CLOUDANT_INIT_DIR=$NEMAKI_HOME/setup/couchdb/cloudant-init
 
 echo "Building cloudant-init JAR..."
 cd $CLOUDANT_INIT_DIR
-mvn clean package
+mvn clean package -DskipTests
 
 echo "Creating initializer directory..."
 mkdir -p $NEMAKI_HOME/docker/initializer
