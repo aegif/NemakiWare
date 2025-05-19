@@ -5,13 +5,15 @@ ENV PLAY_HOME /opt/play
 ENV PATH $PLAY_HOME:$PATH
 ENV PLAY_OPTS="-Xms512m -Xmx1024m -XX:MaxPermSize=256m"
 
-# Install Play Framework
+# Install Play Framework - use a more reliable download source
 RUN mkdir -p $PLAY_HOME
 WORKDIR $PLAY_HOME
-RUN curl -O https://downloads.typesafe.com/play/2.2.6/play-2.2.6.zip && \
-    unzip play-2.2.6.zip && \
-    rm play-2.2.6.zip && \
-    ln -s $PLAY_HOME/play-2.2.6/play /usr/local/bin/play
+RUN apt-get update && \
+    apt-get install -y wget unzip && \
+    wget -q https://downloads.typesafe.com/typesafe-activator/1.3.12/typesafe-activator-1.3.12-minimal.zip && \
+    unzip typesafe-activator-1.3.12-minimal.zip && \
+    rm typesafe-activator-1.3.12-minimal.zip && \
+    ln -s $PLAY_HOME/activator-1.3.12-minimal/activator /usr/local/bin/activator
 
 # Create app directory
 RUN mkdir -p /app
@@ -28,4 +30,4 @@ COPY ./nemakiware_ui.properties /app/conf/
 EXPOSE 9000
 
 # Start Play application
-CMD ["play", "run"]
+CMD ["activator", "run"]
