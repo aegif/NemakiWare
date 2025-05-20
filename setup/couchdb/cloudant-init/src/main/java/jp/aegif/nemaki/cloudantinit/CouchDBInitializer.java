@@ -545,6 +545,14 @@ public class CouchDBInitializer {
                         
                         if (checkDatabaseExists()) {
                             System.out.println("DEBUG: Verified database " + repositoryId + " exists after creation");
+                            
+                            boolean securitySet = setDatabaseSecurity();
+                            if (securitySet) {
+                                System.out.println("DEBUG: Database security set successfully for " + repositoryId);
+                            } else {
+                                System.out.println("WARN: Failed to set database security for " + repositoryId + ", operations may fail for non-admin users");
+                            }
+                            
                             return true;
                         } else {
                             System.err.println("ERROR: Database " + repositoryId + " not found after creation, will retry");
@@ -579,6 +587,14 @@ public class CouchDBInitializer {
                                 
                                 if (forceStatusCode == HttpStatus.SC_CREATED || forceStatusCode == HttpStatus.SC_ACCEPTED) {
                                     System.out.println("DEBUG: Database created successfully with force attempt");
+                                    
+                                    boolean securitySet = setDatabaseSecurity();
+                                    if (securitySet) {
+                                        System.out.println("DEBUG: Database security set successfully for " + repositoryId + " after force creation");
+                                    } else {
+                                        System.out.println("WARN: Failed to set database security for " + repositoryId + " after force creation, operations may fail for non-admin users");
+                                    }
+                                    
                                     return true;
                                 }
                             }
@@ -674,6 +690,50 @@ public class CouchDBInitializer {
      */
     public boolean initRepository() {
         return ensureDatabaseExists();
+    }
+    
+    /**
+     * Set database security to allow access for the current user
+     * This is especially important for CouchDB 3.x where databases are created with admin-only access by default
+     */
+    public boolean setDatabaseSecurity() {
+        try {
+            System.out.println("DEBUG: Setting security object for database " + repositoryId);
+            
+            String securityJson = "{"
+                + "\"admins\": {\"names\": [], \"roles\": []},"
+                + "\"members\": {\"names\": [], \"roles\": []}"
+                + "}";
+            
+            HttpPut httpPut = new HttpPut(url + "/" + repositoryId + "/_security");
+            httpPut.setHeader("Content-Type", "application/json");
+            
+            if (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(password)) {
+                String auth = username + ":" + password;
+                String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes("UTF-8"));
+                httpPut.setHeader("Authorization", "Basic " + encodedAuth);
+                System.out.println("DEBUG: Added Authorization header for authenticated security request");
+            }
+            
+            httpPut.setEntity(new StringEntity(securityJson, ContentType.APPLICATION_JSON));
+            
+            try (CloseableHttpResponse response = httpClient.execute(httpPut)) {
+                int statusCode = response.getStatusLine().getStatusCode();
+                System.out.println("DEBUG: Set security response status code: " + statusCode);
+                
+                HttpEntity entity = response.getEntity();
+                if (entity != null) {
+                    String responseBody = EntityUtils.toString(entity);
+                    System.out.println("DEBUG: Set security response body: " + responseBody);
+                }
+                
+                return statusCode == HttpStatus.SC_OK || statusCode == HttpStatus.SC_CREATED || statusCode == HttpStatus.SC_ACCEPTED;
+            }
+        } catch (Exception e) {
+            System.err.println("Exception setting database security: " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
     }
 
     /**
