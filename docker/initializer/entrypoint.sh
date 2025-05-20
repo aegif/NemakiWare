@@ -104,7 +104,17 @@ if [ "$db_created" = "false" ]; then
   echo "Listing all databases to check if it exists with a different name:"
   curl -s -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/_all_dbs"
   
-  echo "Continuing due to FORCE=true, but import will likely fail"
+  echo "Making one final attempt to create database with different approach..."
+  curl -s -X PUT -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/$REPOSITORY_ID"
+  sleep 5
+  
+  verify_response=$(curl -s -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/$REPOSITORY_ID")
+  if echo "$verify_response" | grep -q "\"db_name\""; then
+    echo "Database $REPOSITORY_ID created successfully on final attempt!"
+    db_created=true
+  else
+    echo "Continuing due to FORCE=true, but import will likely fail"
+  fi
 fi
 
 echo "Waiting for database to be fully available..."
@@ -123,6 +133,12 @@ echo "java -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitia
 
 java -Xmx512m -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer "$COUCHDB_URL" "$COUCHDB_USERNAME" "$COUCHDB_PASSWORD" "$REPOSITORY_ID" "$DUMP_FILE" "$FORCE"
 
+JAVA_EXIT_CODE=$?
+if [ $JAVA_EXIT_CODE -ne 0 ]; then
+  echo "ERROR: CouchDBInitializer exited with code $JAVA_EXIT_CODE"
+  exit $JAVA_EXIT_CODE
+fi
+
 echo "Verifying database exists after import..."
 final_verify=$(curl -s -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/$REPOSITORY_ID")
 if echo "$final_verify" | grep -q "\"db_name\""; then
@@ -131,4 +147,11 @@ if echo "$final_verify" | grep -q "\"db_name\""; then
   curl -s -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/$REPOSITORY_ID"
 else
   echo "ERROR: Database $REPOSITORY_ID does not exist after import!"
+  exit 1
 fi
+
+echo "Creating canopy database if it doesn't exist..."
+canopy_response=$(curl -s -X PUT -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/canopy")
+echo "Canopy database creation response: $canopy_response"
+
+echo "Database initialization completed successfully!"
