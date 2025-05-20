@@ -17,6 +17,15 @@ echo "Repository ID: $REPOSITORY_ID"
 echo "Dump file: $DUMP_FILE"
 echo "Force: $FORCE"
 
+# Debug output as requested
+echo "DEBUG: 渡される引数:"
+echo "1: $URL"
+echo "2: $USERNAME" 
+echo "3: $PASSWORD"
+echo "4: $REPOSITORY_ID"
+echo "5: $DUMP_FILE"
+echo "6: $FORCE"
+
 if [ ! -f "$DUMP_FILE" ]; then
     echo "ERROR: Dump file $DUMP_FILE does not exist!"
     echo "Contents of /app directory:"
@@ -24,7 +33,7 @@ if [ ! -f "$DUMP_FILE" ]; then
     exit 1
 fi
 
-echo "Executing CouchDBInitializer with arguments:"
+echo "DEBUG: 実行コマンド:"
 echo "java -Xmx512m -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer \"$URL\" \"$USERNAME\" \"$PASSWORD\" \"$REPOSITORY_ID\" \"$DUMP_FILE\" \"$FORCE\""
 
 # Pass all 6 arguments explicitly to the Java application
