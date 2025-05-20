@@ -12,7 +12,7 @@ echo "Username: $COUCHDB_USER"
 echo "Password: $COUCHDB_PASSWORD (masked for security)"
 
 echo "Stopping any running containers..."
-docker compose -f docker-compose-war.yml down
+docker compose -f docker-compose-war.yml down --remove-orphans
 
 echo "Building cloudant-init JAR..."
 cd $NEMAKI_HOME/setup/couchdb/cloudant-init
@@ -72,7 +72,7 @@ if [ ! -f $NEMAKI_HOME/docker/core/log4j.properties ]; then
 fi
 
 echo "Starting containers..."
-docker compose -f docker-compose-war.yml up -d
+docker compose -f docker-compose-war.yml up -d --remove-orphans
 
 echo "Waiting for CouchDB services to fully initialize..."
 sleep 20
@@ -89,7 +89,7 @@ cat /tmp/couchdb3_check.json | grep -q "db_name" && echo "CouchDB 3.x database e
 
 echo "Running initializers..."
 echo "CouchDB 2.x initializer:"
-docker compose -f docker-compose-war.yml run --rm \
+docker compose -f docker-compose-war.yml run --rm --remove-orphans \
   -e COUCHDB_URL=http://couchdb2:5984 \
   -e COUCHDB_USERNAME=${COUCHDB_USER} \
   -e COUCHDB_PASSWORD=${COUCHDB_PASSWORD} \
@@ -101,7 +101,7 @@ docker compose -f docker-compose-war.yml run --rm \
   http://couchdb2:5984 "${COUCHDB_USER}" "${COUCHDB_PASSWORD}" bedroom /app/bedroom_init.dump true
 
 echo "CouchDB 3.x initializer:"
-docker compose -f docker-compose-war.yml run --rm \
+docker compose -f docker-compose-war.yml run --rm --remove-orphans \
   -e COUCHDB_URL=http://couchdb3:5984 \
   -e COUCHDB_USERNAME=${COUCHDB_USER} \
   -e COUCHDB_PASSWORD=${COUCHDB_PASSWORD} \
