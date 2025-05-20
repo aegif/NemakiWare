@@ -1,4 +1,4 @@
-
+#!/bin/bash
 set -e
 
 SCRIPT_DIR=$(cd $(dirname $0); pwd)
@@ -33,7 +33,7 @@ echo "Creating core/repositories.yml if it doesn't exist..."
 mkdir -p $NEMAKI_HOME/docker/core
 if [ ! -f $NEMAKI_HOME/docker/core/repositories.yml ]; then
   echo "Creating default repositories.yml..."
-  cat > $NEMAKI_HOME/docker/core/repositories.yml << EOF
+  cat > $NEMAKI_HOME/docker/core/repositories.yml << EOF2
 repositories:
   - id: canopy
     name: canopy
@@ -41,7 +41,7 @@ repositories:
   - id: bedroom
     name: bedroom
     archive: bedroom_closet
-EOF
+EOF2
 fi
 
 echo "Starting containers..."
@@ -58,7 +58,7 @@ curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5985/bedroom |
 
 echo "Running initializers..."
 echo "CouchDB 2.x initializer:"
-docker-compose -f docker-compose-war.yml run --rm \
+docker compose -f docker-compose-war.yml run --rm \
   -e COUCHDB_URL=http://couchdb2:5984 \
   -e COUCHDB_USERNAME=${COUCHDB_USER} \
   -e COUCHDB_PASSWORD=${COUCHDB_PASSWORD} \
@@ -68,7 +68,7 @@ docker-compose -f docker-compose-war.yml run --rm \
   initializer2
 
 echo "CouchDB 3.x initializer:"
-docker-compose -f docker-compose-war.yml run --rm \
+docker compose -f docker-compose-war.yml run --rm \
   -e COUCHDB_URL=http://couchdb3:5984 \
   -e COUCHDB_USERNAME=${COUCHDB_USER} \
   -e COUCHDB_PASSWORD=${COUCHDB_PASSWORD} \
@@ -83,23 +83,6 @@ curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5984/bedroom |
 
 echo "CouchDB 3.x database:"
 curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5985/bedroom | grep -q "db_name" && echo "SUCCESS: CouchDB 3.x database exists" || echo "ERROR: CouchDB 3.x database does not exist"
-
-echo "Waiting for initialization to complete..."
-sleep 5
-
-echo "Checking initializer logs..."
-echo "CouchDB 2.x initializer logs:"
-docker logs docker-initializer2-1 | tail -n 20
-
-echo "CouchDB 3.x initializer logs:"
-docker logs docker-initializer3-1 | tail -n 20
-
-echo "Checking core logs..."
-echo "CouchDB 2.x core logs:"
-docker logs docker-core2-1 | tail -n 20
-
-echo "CouchDB 3.x core logs:"
-docker logs docker-core3-1 | tail -n 20
 
 echo "UI endpoints:"
 echo "CouchDB 2.x UI: http://localhost:9000"
