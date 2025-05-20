@@ -7,7 +7,7 @@ NEMAKI_HOME=$(cd $SCRIPT_DIR/..; pwd)
 echo "Building Solr WAR file using Docker with Java 8..."
 
 cat > $SCRIPT_DIR/Dockerfile.solr-build << EOF
-FROM maven:3.6-jdk-8
+FROM maven:3.8-openjdk-8
 
 WORKDIR /app
 COPY . /app
