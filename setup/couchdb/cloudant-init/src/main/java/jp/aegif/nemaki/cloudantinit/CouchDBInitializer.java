@@ -559,6 +559,33 @@ public class CouchDBInitializer {
                         }
                         
                         System.err.println("ERROR: Database reported as already existing but cannot be accessed");
+                        System.out.println("DEBUG: Attempting to forcefully create the database despite error");
+                        
+                        try {
+                            System.out.println("DEBUG: Waiting 3 seconds before force creation attempt...");
+                            Thread.sleep(3000);
+                            
+                            HttpPut forcePut = new HttpPut(url + "/" + repositoryId);
+                            
+                            if (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(password)) {
+                                String auth = username + ":" + password;
+                                String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes("UTF-8"));
+                                forcePut.setHeader("Authorization", "Basic " + encodedAuth);
+                            }
+                            
+                            try (CloseableHttpResponse forceResponse = httpClient.execute(forcePut)) {
+                                int forceStatusCode = forceResponse.getStatusLine().getStatusCode();
+                                System.out.println("DEBUG: Force database creation status: " + forceStatusCode);
+                                
+                                if (forceStatusCode == HttpStatus.SC_CREATED || forceStatusCode == HttpStatus.SC_ACCEPTED) {
+                                    System.out.println("DEBUG: Database created successfully with force attempt");
+                                    return true;
+                                }
+                            }
+                        } catch (Exception e) {
+                            System.err.println("ERROR during force database creation: " + e.getMessage());
+                        }
+                        
                         return false;
                     } else {
                         System.err.println("ERROR: Unexpected status code when creating database: " + statusCode);
