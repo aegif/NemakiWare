@@ -119,9 +119,27 @@ public class CouchDBInitializer {
         boolean initResult = initRepository();
         if (!initResult) {
             if (force) {
-                System.out.println("Database already exists, continuing with import");
+                System.out.println("Database already exists or creation failed, continuing with import");
+                
+                try {
+                    HttpGet httpGet = new HttpGet(url + "/" + repositoryId);
+                    
+                    try (CloseableHttpResponse response = httpClient.execute(httpGet)) {
+                        int statusCode = response.getStatusLine().getStatusCode();
+                        
+                        if (statusCode != HttpStatus.SC_OK) {
+                            System.err.println("Error: Database " + repositoryId + " does not exist and could not be created");
+                            System.err.println("Status code: " + statusCode);
+                            return false;
+                        }
+                    }
+                } catch (Exception e) {
+                    System.err.println("Error checking database existence: " + e.getMessage());
+                    e.printStackTrace();
+                    return false;
+                }
             } else {
-                System.out.println("Database already exists, skipping import");
+                System.out.println("Database already exists or creation failed, skipping import");
                 return false;
             }
         }
@@ -187,20 +205,27 @@ public class CouchDBInitializer {
                     int statusCode = response.getStatusLine().getStatusCode();
                     
                     if (statusCode >= 400) {
-                        System.err.println("Error inserting documents: " + statusCode);
-                        return false;
+                        System.err.println("Warning: Error inserting documents: " + statusCode);
+                        if (statusCode >= 500) {
+                            return false;
+                        }
                     }
                     
                     HttpEntity entity = response.getEntity();
                     if (entity != null) {
                         String responseBody = EntityUtils.toString(entity);
-                        List<Map<String, Object>> results = objectMapper.readValue(responseBody, 
-                                new TypeReference<List<Map<String, Object>>>() {});
-                        
-                        for (Map<String, Object> result : results) {
-                            if (result.containsKey("error")) {
-                                documentsResult.add(result.get("id") + ": " + result.get("reason"));
+                        try {
+                            List<Map<String, Object>> results = objectMapper.readValue(responseBody, 
+                                    new TypeReference<List<Map<String, Object>>>() {});
+                            
+                            for (Map<String, Object> result : results) {
+                                if (result.containsKey("error")) {
+                                    documentsResult.add(result.get("id") + ": " + result.get("reason"));
+                                }
                             }
+                        } catch (Exception e) {
+                            System.err.println("Warning: Error parsing response: " + e.getMessage());
+                            System.err.println("Response body: " + responseBody);
                         }
                     }
                 }
@@ -256,7 +281,7 @@ public class CouchDBInitializer {
                         int statusCode = response.getStatusLine().getStatusCode();
                         
                         if (statusCode >= 400) {
-                            System.err.println("Error uploading attachment " + attachmentId + 
+                            System.err.println("Warning: Error uploading attachment " + attachmentId + 
                                     " for document " + docId + ": " + statusCode);
                         } else {
                             HttpEntity entity = response.getEntity();
@@ -331,7 +356,17 @@ public class CouchDBInitializer {
                 int statusCode = response.getStatusLine().getStatusCode();
                 
                 if (statusCode == HttpStatus.SC_OK) {
+                    System.out.println("Database " + repositoryId + " already exists");
                     return false;
+                } else if (statusCode == HttpStatus.SC_NOT_FOUND) {
+                    System.out.println("Database " + repositoryId + " does not exist, creating it");
+                } else {
+                    System.err.println("Error checking database: " + statusCode);
+                    HttpEntity entity = response.getEntity();
+                    if (entity != null) {
+                        String responseBody = EntityUtils.toString(entity);
+                        System.err.println("Response body: " + responseBody);
+                    }
                 }
             }
             
@@ -340,9 +375,21 @@ public class CouchDBInitializer {
             try (CloseableHttpResponse response = httpClient.execute(httpPut)) {
                 int statusCode = response.getStatusLine().getStatusCode();
                 
-                return statusCode == HttpStatus.SC_CREATED || statusCode == HttpStatus.SC_ACCEPTED;
+                if (statusCode == HttpStatus.SC_CREATED || statusCode == HttpStatus.SC_ACCEPTED) {
+                    System.out.println("Database " + repositoryId + " created successfully");
+                    return true;
+                } else {
+                    System.err.println("Error creating database: " + statusCode);
+                    HttpEntity entity = response.getEntity();
+                    if (entity != null) {
+                        String responseBody = EntityUtils.toString(entity);
+                        System.err.println("Response body: " + responseBody);
+                    }
+                    return false;
+                }
             }
         } catch (Exception e) {
+            System.err.println("Exception during database initialization: " + e.getMessage());
             e.printStackTrace();
             return false;
         }
