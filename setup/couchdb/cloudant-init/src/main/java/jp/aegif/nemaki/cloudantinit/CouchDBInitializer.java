@@ -370,6 +370,11 @@ public class CouchDBInitializer {
         try {
             HttpGet httpGet = new HttpGet(url + "/" + repositoryId + "/" + docId);
             
+            if (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(password)) {
+                String auth = username + ":" + password;
+                String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes("UTF-8"));
+                httpGet.setHeader("Authorization", "Basic " + encodedAuth);
+            }
             
             try (CloseableHttpResponse response = httpClient.execute(httpGet)) {
                 int statusCode = response.getStatusLine().getStatusCode();
@@ -411,7 +416,14 @@ public class CouchDBInitializer {
             try {
                 HttpPut httpPut = new HttpPut(url + "/" + repositoryId);
                 
-                System.out.println("Using HttpClient's CredentialsProvider for authentication");
+                if (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(password)) {
+                    String auth = username + ":" + password;
+                    String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes("UTF-8"));
+                    httpPut.setHeader("Authorization", "Basic " + encodedAuth);
+                    System.out.println("Added explicit Basic Auth header for database creation");
+                } else {
+                    System.out.println("No credentials provided, attempting without authentication");
+                }
                 
                 try (CloseableHttpResponse response = httpClient.execute(httpPut)) {
                     int statusCode = response.getStatusLine().getStatusCode();
@@ -474,6 +486,11 @@ public class CouchDBInitializer {
             System.out.println("Checking if database " + repositoryId + " exists at " + url + "/" + repositoryId);
             HttpGet httpGet = new HttpGet(url + "/" + repositoryId);
             
+            if (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(password)) {
+                String auth = username + ":" + password;
+                String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes("UTF-8"));
+                httpGet.setHeader("Authorization", "Basic " + encodedAuth);
+            }
             
             try (CloseableHttpResponse response = httpClient.execute(httpGet)) {
                 int statusCode = response.getStatusLine().getStatusCode();

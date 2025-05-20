@@ -9,10 +9,7 @@ COPY entrypoint.sh /app/entrypoint.sh
 
 RUN chmod +x /app/entrypoint.sh
 
-# Remove healthcheck as this is a one-time initialization container
-# that doesn't expose any HTTP endpoints
 
 ENTRYPOINT ["/app/entrypoint.sh"]
 
-# Default arguments that will be overridden by docker-compose command
 CMD ["http://localhost:5984", "", "", "bedroom", "/app/data/bedroom_init.dump", "true"]
