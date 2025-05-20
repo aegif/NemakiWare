@@ -43,8 +43,8 @@ services:
         condition: service_healthy
     environment:
       - COUCHDB_URL=http://couchdb2:5984
-      - COUCHDB_USERNAME=admin
-      - COUCHDB_PASSWORD=password
+      - COUCHDB_USERNAME=${COUCHDB_USER:-admin}
+      - COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-password}
       - REPOSITORY_ID=bedroom
       - DUMP_FILE=/app/bedroom_init.dump
       - FORCE=true
@@ -69,8 +69,8 @@ services:
         condition: service_healthy
     environment:
       - COUCHDB_URL=http://couchdb3:5984
-      - COUCHDB_USERNAME=admin
-      - COUCHDB_PASSWORD=password
+      - COUCHDB_USERNAME=${COUCHDB_USER:-admin}
+      - COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-password}
       - REPOSITORY_ID=bedroom
       - DUMP_FILE=/app/bedroom_init.dump
       - FORCE=true
