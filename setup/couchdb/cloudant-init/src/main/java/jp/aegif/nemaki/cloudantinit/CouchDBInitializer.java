@@ -576,11 +576,11 @@ public class CouchDBInitializer {
                             
                             HttpPut forcePut = new HttpPut(url + "/" + repositoryId);
                             
-                            if (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(password)) {
-                                String auth = username + ":" + password;
-                                String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes("UTF-8"));
-                                forcePut.setHeader("Authorization", "Basic " + encodedAuth);
-                            }
+                            String forceAuth = StringUtils.isNotBlank(username) ? username : "admin";
+                            String forcePass = StringUtils.isNotBlank(password) ? password : "password";
+                            String forceEncodedAuth = Base64.getEncoder().encodeToString((forceAuth + ":" + forcePass).getBytes("UTF-8"));
+                            forcePut.setHeader("Authorization", "Basic " + forceEncodedAuth);
+                            System.out.println("DEBUG: Added Authorization header for force creation request");
                             
                             try (CloseableHttpResponse forceResponse = httpClient.execute(forcePut)) {
                                 int forceStatusCode = forceResponse.getStatusLine().getStatusCode();
@@ -637,12 +637,11 @@ public class CouchDBInitializer {
             System.out.println("DEBUG: Using authentication: " + (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(password) ? "yes" : "no"));
             HttpGet httpGet = new HttpGet(url + "/" + repositoryId);
             
-            if (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(password)) {
-                String auth = username + ":" + password;
-                String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes("UTF-8"));
-                httpGet.setHeader("Authorization", "Basic " + encodedAuth);
-                System.out.println("DEBUG: Added Authorization header for authenticated request");
-            }
+            String checkAuth = StringUtils.isNotBlank(username) ? username : "admin";
+            String checkPass = StringUtils.isNotBlank(password) ? password : "password";
+            String checkEncodedAuth = Base64.getEncoder().encodeToString((checkAuth + ":" + checkPass).getBytes("UTF-8"));
+            httpGet.setHeader("Authorization", "Basic " + checkEncodedAuth);
+            System.out.println("DEBUG: Added Authorization header for authenticated request");
             
             try (CloseableHttpResponse response = httpClient.execute(httpGet)) {
                 int statusCode = response.getStatusLine().getStatusCode();
@@ -765,10 +764,10 @@ public class CouchDBInitializer {
                         
                         HttpGet securityGet = new HttpGet(url + "/" + repositoryId + "/_security");
                         
-                        String auth = StringUtils.isNotBlank(username) ? username : "admin";
-                        String pass = StringUtils.isNotBlank(password) ? password : "password";
-                        String encodedAuth = Base64.getEncoder().encodeToString((auth + ":" + pass).getBytes("UTF-8"));
-                        securityGet.setHeader("Authorization", "Basic " + encodedAuth);
+                        String verifyAuth = StringUtils.isNotBlank(username) ? username : "admin";
+                        String verifyPass = StringUtils.isNotBlank(password) ? password : "password";
+                        String verifyEncodedAuth = Base64.getEncoder().encodeToString((verifyAuth + ":" + verifyPass).getBytes("UTF-8"));
+                        securityGet.setHeader("Authorization", "Basic " + verifyEncodedAuth);
                         System.out.println("DEBUG: Added Authorization header for security verification request");
                         
                         try (CloseableHttpResponse verifyResponse = httpClient.execute(securityGet)) {
