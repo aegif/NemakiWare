@@ -41,17 +41,25 @@ services:
     depends_on:
       couchdb2:
         condition: service_healthy
-    # Use environment variables for credentials
     environment:
       - COUCHDB_URL=http://couchdb2:5984
-      - COUCHDB_USER=${COUCHDB_USER:-admin}
-      - COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-password}
+      - COUCHDB_USERNAME=admin
+      - COUCHDB_PASSWORD=password
       - REPOSITORY_ID=bedroom
-      - DUMP_FILE=/app/data/bedroom_init.dump
+      - DUMP_FILE=/app/bedroom_init.dump
       - FORCE=true
     volumes:
-      - ../setup/couchdb/initial_import/bedroom_init.dump:/app/data/bedroom_init.dump
+      - ../setup/couchdb/initial_import/bedroom_init.dump:/app/bedroom_init.dump
     restart: "no"
+    deploy:
+      restart_policy:
+        condition: none
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-u", "admin:password", "http://couchdb2:5984/bedroom"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
 
   # CouchDB 3.x Initializer
   initializer3:
@@ -59,19 +67,25 @@ services:
     depends_on:
       couchdb3:
         condition: service_healthy
-    # Use environment variables for credentials
     environment:
       - COUCHDB_URL=http://couchdb3:5984
-      - COUCHDB_USER=${COUCHDB_USER:-admin}
-      - COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-password}
+      - COUCHDB_USERNAME=admin
+      - COUCHDB_PASSWORD=password
       - REPOSITORY_ID=bedroom
-      - DUMP_FILE=/app/data/bedroom_init.dump
+      - DUMP_FILE=/app/bedroom_init.dump
       - FORCE=true
     volumes:
-      - ../setup/couchdb/initial_import/bedroom_init.dump:/app/data/bedroom_init.dump
+      - ../setup/couchdb/initial_import/bedroom_init.dump:/app/bedroom_init.dump
     restart: "no"
-    # One-time initializer containers don't need healthchecks
-    # They should exit after initialization
+    deploy:
+      restart_policy:
+        condition: none
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-u", "admin:password", "http://couchdb3:5984/bedroom"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
 
   # Solr for CouchDB 2.x
   solr2:

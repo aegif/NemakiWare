@@ -1,10 +1,10 @@
 set -e
 
 URL=${COUCHDB_URL:-${1:-"http://localhost:5984"}}
-USERNAME=${COUCHDB_USER:-${2:-""}}
+USERNAME=${COUCHDB_USERNAME:-${2:-""}}
 PASSWORD=${COUCHDB_PASSWORD:-${3:-""}}
 REPOSITORY_ID=${REPOSITORY_ID:-${4:-"bedroom"}}
-DUMP_FILE=${DUMP_FILE:-${5:-"/app/data/bedroom_init.dump"}}
+DUMP_FILE=${DUMP_FILE:-${5:-"/app/bedroom_init.dump"}}
 FORCE=${FORCE:-${6:-"true"}}
 
 echo "Initializing CouchDB database:"
@@ -18,8 +18,6 @@ if [ ! -f "$DUMP_FILE" ]; then
     echo "ERROR: Dump file $DUMP_FILE does not exist!"
     echo "Contents of /app directory:"
     ls -la /app
-    echo "Contents of /app/data directory:"
-    ls -la /app/data
     exit 1
 fi
 
