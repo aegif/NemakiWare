@@ -72,7 +72,6 @@ public class CouchDBInitializer {
                 AuthScope.ANY,
                 new UsernamePasswordCredentials(username, password)
             );
-            
             this.httpClient = HttpClients.custom()
                 .setDefaultCredentialsProvider(credentialsProvider)
                 .build();
@@ -80,6 +79,11 @@ public class CouchDBInitializer {
             System.out.println("Using non-authenticated connection for CouchDB");
             this.httpClient = HttpClients.createDefault();
         }
+        
+        System.out.println("CouchDB URL: " + url);
+        System.out.println("Repository ID: " + repositoryId);
+        System.out.println("Username: " + (StringUtils.isNotBlank(username) ? username : "none"));
+        System.out.println("Password: " + (StringUtils.isNotBlank(password) ? "******" : "none"));
     }
 
     public static void main(String[] args) {
@@ -237,6 +241,8 @@ public class CouchDBInitializer {
                 
                 HttpPost httpPost = new HttpPost(url + "/" + repositoryId + "/_bulk_docs");
                 httpPost.setHeader("Content-Type", "application/json");
+                
+                
                 httpPost.setEntity(new StringEntity(bulkDocsJson, ContentType.APPLICATION_JSON));
                 
                 try (CloseableHttpResponse response = httpClient.execute(httpPost)) {
@@ -315,6 +321,8 @@ public class CouchDBInitializer {
                     
                     HttpPut httpPut = new HttpPut(uri);
                     httpPut.setHeader("Content-Type", contentType);
+                    
+                    
                     httpPut.setEntity(new InputStreamEntity(attachmentStream, attachmentData.length));
                     
                     try (CloseableHttpResponse response = httpClient.execute(httpPut)) {
@@ -362,6 +370,7 @@ public class CouchDBInitializer {
         try {
             HttpGet httpGet = new HttpGet(url + "/" + repositoryId + "/" + docId);
             
+            
             try (CloseableHttpResponse response = httpClient.execute(httpGet)) {
                 int statusCode = response.getStatusLine().getStatusCode();
                 
@@ -401,6 +410,8 @@ public class CouchDBInitializer {
             
             try {
                 HttpPut httpPut = new HttpPut(url + "/" + repositoryId);
+                
+                System.out.println("Using HttpClient's CredentialsProvider for authentication");
                 
                 try (CloseableHttpResponse response = httpClient.execute(httpPut)) {
                     int statusCode = response.getStatusLine().getStatusCode();
@@ -462,6 +473,7 @@ public class CouchDBInitializer {
         try {
             System.out.println("Checking if database " + repositoryId + " exists at " + url + "/" + repositoryId);
             HttpGet httpGet = new HttpGet(url + "/" + repositoryId);
+            
             
             try (CloseableHttpResponse response = httpClient.execute(httpGet)) {
                 int statusCode = response.getStatusLine().getStatusCode();
