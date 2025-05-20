@@ -1,5 +1,3 @@
-version: '3'
-
 services:
   # CouchDB 2.x
   couchdb2:
