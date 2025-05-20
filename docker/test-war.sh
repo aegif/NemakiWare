@@ -51,10 +51,14 @@ echo "Waiting for CouchDB services to fully initialize..."
 sleep 20
 
 echo "Checking CouchDB 2.x database..."
-curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5984/bedroom | grep -q "db_name" && echo "CouchDB 2.x database exists" || echo "CouchDB 2.x database does not exist"
+echo "DEBUG: Running: curl -s -u \"${COUCHDB_USER}:${COUCHDB_PASSWORD}\" http://localhost:5984/bedroom"
+curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5984/bedroom | tee /tmp/couchdb2_check.json
+cat /tmp/couchdb2_check.json | grep -q "db_name" && echo "CouchDB 2.x database exists" || echo "CouchDB 2.x database does not exist"
 
 echo "Checking CouchDB 3.x database..."
-curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5985/bedroom | grep -q "db_name" && echo "CouchDB 3.x database exists" || echo "CouchDB 3.x database does not exist"
+echo "DEBUG: Running: curl -s -u \"${COUCHDB_USER}:${COUCHDB_PASSWORD}\" http://localhost:5985/bedroom"
+curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5985/bedroom | tee /tmp/couchdb3_check.json
+cat /tmp/couchdb3_check.json | grep -q "db_name" && echo "CouchDB 3.x database exists" || echo "CouchDB 3.x database does not exist"
 
 echo "Running initializers..."
 echo "CouchDB 2.x initializer:"
@@ -79,10 +83,14 @@ docker compose -f docker-compose-war.yml run --rm \
 
 echo "Verifying database initialization..."
 echo "CouchDB 2.x database:"
-curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5984/bedroom | grep -q "db_name" && echo "SUCCESS: CouchDB 2.x database exists" || echo "ERROR: CouchDB 2.x database does not exist"
+echo "DEBUG: Running: curl -s -u \"${COUCHDB_USER}:${COUCHDB_PASSWORD}\" http://localhost:5984/bedroom"
+curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5984/bedroom | tee /tmp/couchdb2_response.json
+cat /tmp/couchdb2_response.json | grep -q "db_name" && echo "SUCCESS: CouchDB 2.x database exists" || echo "ERROR: CouchDB 2.x database does not exist"
 
 echo "CouchDB 3.x database:"
-curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5985/bedroom | grep -q "db_name" && echo "SUCCESS: CouchDB 3.x database exists" || echo "ERROR: CouchDB 3.x database does not exist"
+echo "DEBUG: Running: curl -s -u \"${COUCHDB_USER}:${COUCHDB_PASSWORD}\" http://localhost:5985/bedroom"
+curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5985/bedroom | tee /tmp/couchdb3_response.json
+cat /tmp/couchdb3_response.json | grep -q "db_name" && echo "SUCCESS: CouchDB 3.x database exists" || echo "ERROR: CouchDB 3.x database does not exist"
 
 echo "UI endpoints:"
 echo "CouchDB 2.x UI: http://localhost:9000"

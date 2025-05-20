@@ -120,15 +120,17 @@ public class CouchDBInitializer {
      * Load data into CouchDB
      */
     public boolean load() {
+        System.out.println("DEBUG: Starting load process for repository: " + repositoryId);
+        
         // First, check if database exists
         boolean databaseExists = checkDatabaseExists();
         
         if (!databaseExists) {
-            System.out.println("Database does not exist, attempting to create it");
+            System.out.println("DEBUG: Database does not exist, attempting to create it");
             boolean databaseCreated = ensureDatabaseExists();
             
             if (!databaseCreated && !force) {
-                System.err.println("Failed to create database and force=false, aborting import");
+                System.err.println("ERROR: Failed to create database and force=false, aborting import");
                 return false;
             }
             
@@ -138,33 +140,34 @@ public class CouchDBInitializer {
                 System.err.println("CRITICAL ERROR: Database does not exist after creation attempts");
                 
                 try {
-                    System.out.println("Making one final attempt to create database with direct PUT request");
+                    System.out.println("DEBUG: Making one final attempt to create database with direct PUT request");
                     HttpPut httpPut = new HttpPut(url + "/" + repositoryId);
                     
                     if (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(password)) {
                         String auth = username + ":" + password;
                         String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes("UTF-8"));
                         httpPut.setHeader("Authorization", "Basic " + encodedAuth);
+                        System.out.println("DEBUG: Added Authorization header for authenticated request");
                     }
                     
                     try (CloseableHttpResponse response = httpClient.execute(httpPut)) {
                         int statusCode = response.getStatusLine().getStatusCode();
-                        System.out.println("Final database creation attempt status: " + statusCode);
+                        System.out.println("DEBUG: Final database creation attempt status: " + statusCode);
                         
                         HttpEntity entity = response.getEntity();
                         if (entity != null) {
                             String responseBody = EntityUtils.toString(entity);
-                            System.out.println("Response body: " + responseBody);
+                            System.out.println("DEBUG: Response body: " + responseBody);
                         }
                         
-                        System.out.println("Waiting 10 seconds for database to be fully available...");
+                        System.out.println("DEBUG: Waiting 10 seconds for database to be fully available...");
                         Thread.sleep(10000);
                         
                         databaseExists = checkDatabaseExists();
                         if (databaseExists) {
-                            System.out.println("Database " + repositoryId + " created successfully on final attempt");
+                            System.out.println("DEBUG: Database " + repositoryId + " created successfully on final attempt");
                         } else {
-                            System.err.println("Database " + repositoryId + " still does not exist after final attempt");
+                            System.err.println("ERROR: Database " + repositoryId + " still does not exist after final attempt");
                             if (!force) {
                                 return false;
                             } else {
@@ -181,7 +184,7 @@ public class CouchDBInitializer {
                 }
             }
         } else {
-            System.out.println("Database " + repositoryId + " already exists");
+            System.out.println("DEBUG: Database " + repositoryId + " already exists");
         }
         
         databaseExists = checkDatabaseExists();
@@ -189,7 +192,7 @@ public class CouchDBInitializer {
             System.err.println("FATAL ERROR: Database " + repositoryId + " does not exist after all creation attempts");
             return false;
         } else {
-            System.out.println("Database " + repositoryId + " exists and is ready for import");
+            System.out.println("DEBUG: Database " + repositoryId + " exists and is ready for import");
         }
 
         List<Map<String, Object>> documents = new ArrayList<>();
@@ -466,13 +469,17 @@ public class CouchDBInitializer {
     public boolean ensureDatabaseExists() {
         int maxAttempts = 5;
         
+        System.out.println("DEBUG: Starting ensureDatabaseExists for " + repositoryId);
+        
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
-            System.out.println("Attempt " + attempt + " of " + maxAttempts + " to ensure database " + repositoryId + " exists");
+            System.out.println("DEBUG: Attempt " + attempt + " of " + maxAttempts + " to ensure database " + repositoryId + " exists");
             
             if (checkDatabaseExists()) {
-                System.out.println("Database " + repositoryId + " already exists");
+                System.out.println("DEBUG: Database " + repositoryId + " already exists, no need to create");
                 return true;
             }
+            
+            System.out.println("DEBUG: Database " + repositoryId + " does not exist, attempting to create");
             
             try {
                 HttpPut httpPut = new HttpPut(url + "/" + repositoryId);
@@ -481,42 +488,50 @@ public class CouchDBInitializer {
                     String auth = username + ":" + password;
                     String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes("UTF-8"));
                     httpPut.setHeader("Authorization", "Basic " + encodedAuth);
-                    System.out.println("Added explicit Basic Auth header for database creation");
+                    System.out.println("DEBUG: Added Authorization header for authenticated request");
                 } else {
-                    System.out.println("No credentials provided, attempting without authentication");
+                    System.out.println("DEBUG: No credentials provided, attempting without authentication");
                 }
                 
                 try (CloseableHttpResponse response = httpClient.execute(httpPut)) {
                     int statusCode = response.getStatusLine().getStatusCode();
+                    System.out.println("DEBUG: Database creation response status code: " + statusCode);
                     String responseBody = "";
                     
                     HttpEntity entity = response.getEntity();
                     if (entity != null) {
                         responseBody = EntityUtils.toString(entity);
+                        System.out.println("DEBUG: Database creation response body: " + responseBody);
                     }
                     
                     if (statusCode == HttpStatus.SC_CREATED || statusCode == HttpStatus.SC_ACCEPTED) {
                         System.out.println("Database " + repositoryId + " created successfully");
                         
                         try {
-                            System.out.println("Waiting 3 seconds for database creation to complete...");
+                            System.out.println("DEBUG: Waiting 3 seconds for database creation to complete...");
                             Thread.sleep(3000);
                         } catch (InterruptedException ie) {
                             Thread.currentThread().interrupt();
                         }
                         
                         if (checkDatabaseExists()) {
-                            System.out.println("Verified database " + repositoryId + " exists after creation");
+                            System.out.println("DEBUG: Verified database " + repositoryId + " exists after creation");
                             return true;
                         } else {
-                            System.err.println("Database " + repositoryId + " not found after creation, will retry");
+                            System.err.println("ERROR: Database " + repositoryId + " not found after creation, will retry");
                         }
                     } else if (statusCode == HttpStatus.SC_PRECONDITION_FAILED || 
                               (statusCode == HttpStatus.SC_BAD_REQUEST && responseBody.contains("already exists"))) {
-                        System.out.println("Database " + repositoryId + " already exists (status: " + statusCode + ")");
+                        System.out.println("DEBUG: Database " + repositoryId + " already exists (status: " + statusCode + ")");
+                        
+                        if (checkDatabaseExists()) {
+                            System.out.println("DEBUG: Database exists despite creation error");
+                            return true;
+                        }
+                        
                         return true;
                     } else {
-                        System.err.println("Error creating database: " + statusCode);
+                        System.err.println("ERROR: Unexpected status code when creating database: " + statusCode);
                         System.err.println("Response body: " + responseBody);
                     }
                 }
@@ -527,7 +542,7 @@ public class CouchDBInitializer {
             
             if (attempt < maxAttempts) {
                 try {
-                    System.out.println("Waiting 3 seconds before retry...");
+                    System.out.println("DEBUG: Waiting 3 seconds before retry...");
                     Thread.sleep(3000);
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
@@ -535,7 +550,7 @@ public class CouchDBInitializer {
             }
         }
         
-        System.err.println("Failed to create database " + repositoryId + " after " + maxAttempts + " attempts");
+        System.err.println("ERROR: Failed to create database " + repositoryId + " after " + maxAttempts + " attempts");
         return false;
     }
     
@@ -544,22 +559,26 @@ public class CouchDBInitializer {
      */
     public boolean checkDatabaseExists() {
         try {
-            System.out.println("Checking if database " + repositoryId + " exists at " + url + "/" + repositoryId);
+            System.out.println("DEBUG: Checking if database " + repositoryId + " exists at " + url + "/" + repositoryId);
+            System.out.println("DEBUG: Using authentication: " + (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(password) ? "yes" : "no"));
             HttpGet httpGet = new HttpGet(url + "/" + repositoryId);
             
             if (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(password)) {
                 String auth = username + ":" + password;
                 String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes("UTF-8"));
                 httpGet.setHeader("Authorization", "Basic " + encodedAuth);
+                System.out.println("DEBUG: Added Authorization header for authenticated request");
             }
             
             try (CloseableHttpResponse response = httpClient.execute(httpGet)) {
                 int statusCode = response.getStatusLine().getStatusCode();
+                System.out.println("DEBUG: Database check response status code: " + statusCode);
                 
                 if (statusCode == HttpStatus.SC_OK) {
                     HttpEntity entity = response.getEntity();
                     if (entity != null) {
                         String responseBody = EntityUtils.toString(entity);
+                        System.out.println("DEBUG: Database check response body: " + responseBody);
                         if (responseBody.contains("\"db_name\"")) {
                             System.out.println("Database " + repositoryId + " exists and is valid");
                             return true;
@@ -573,7 +592,7 @@ public class CouchDBInitializer {
                         return false;
                     }
                 } else if (statusCode == HttpStatus.SC_NOT_FOUND) {
-                    System.out.println("Database " + repositoryId + " does not exist");
+                    System.out.println("DEBUG: Database " + repositoryId + " does not exist (404 Not Found)");
                     return false;
                 } else {
                     System.err.println("Unexpected status code when checking database: " + statusCode);
