@@ -65,8 +65,7 @@ docker compose -f docker-compose-war.yml run --rm \
   -e REPOSITORY_ID=bedroom \
   -e DUMP_FILE=/app/bedroom_init.dump \
   -e FORCE=true \
-  --entrypoint "/bin/bash" \
-  initializer2 -c "/app/entrypoint.sh http://couchdb2:5984 ${COUCHDB_USER} ${COUCHDB_PASSWORD} bedroom /app/bedroom_init.dump true"
+  initializer2 http://couchdb2:5984 "${COUCHDB_USER}" "${COUCHDB_PASSWORD}" bedroom /app/bedroom_init.dump true
 
 echo "CouchDB 3.x initializer:"
 docker compose -f docker-compose-war.yml run --rm \
@@ -76,8 +75,7 @@ docker compose -f docker-compose-war.yml run --rm \
   -e REPOSITORY_ID=bedroom \
   -e DUMP_FILE=/app/bedroom_init.dump \
   -e FORCE=true \
-  --entrypoint "/bin/bash" \
-  initializer3 -c "/app/entrypoint.sh http://couchdb3:5984 ${COUCHDB_USER} ${COUCHDB_PASSWORD} bedroom /app/bedroom_init.dump true"
+  initializer3 http://couchdb3:5984 "${COUCHDB_USER}" "${COUCHDB_PASSWORD}" bedroom /app/bedroom_init.dump true
 
 echo "Verifying database initialization..."
 echo "CouchDB 2.x database:"
