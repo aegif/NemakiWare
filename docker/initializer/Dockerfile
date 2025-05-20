@@ -4,8 +4,7 @@ RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY cloudant-init.jar /app/cloudant-init.jar
-# Create directory for dump files
-RUN mkdir -p /app/data
+COPY data /app/data
 COPY entrypoint.sh /app/entrypoint.sh
 
 RUN chmod +x /app/entrypoint.sh
@@ -13,4 +12,4 @@ RUN chmod +x /app/entrypoint.sh
 
 ENTRYPOINT ["/app/entrypoint.sh"]
 
-CMD ["http://localhost:5984", "", "", "bedroom", "/app/bedroom_init.dump", "true"]
+CMD ["http://localhost:5984", "", "", "bedroom", "/app/data/bedroom_init.dump", "true"]
