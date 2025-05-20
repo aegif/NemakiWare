@@ -20,12 +20,14 @@ mkdir -p $NEMAKI_HOME/docker/ui-war/config2
 mkdir -p $NEMAKI_HOME/docker/ui-war/config3
 
 echo "Creating configuration files..."
-cat > $NEMAKI_HOME/docker/ui-war/config2/nemakiware_ui.properties << EOF
+cat > $NEMAKI_HOME/docker/ui-war/nemakiware_ui.properties << EOF
 nemaki.core.uri=http://core2:8080/core
 nemaki.core.uri.archive=http://core2:8080/core
 nemaki.auth.superuser.id=admin
 nemaki.auth.superuser.password=admin
 EOF
+
+cp $NEMAKI_HOME/docker/ui-war/nemakiware_ui.properties $NEMAKI_HOME/docker/ui-war/config2/
 
 cat > $NEMAKI_HOME/docker/ui-war/config3/nemakiware_ui.properties << EOF
 nemaki.core.uri=http://core3:8080/core
