@@ -116,59 +116,57 @@ public class CouchDBInitializer {
      * Load data into CouchDB
      */
     public boolean load() {
-        boolean initResult = initRepository();
-        if (!initResult) {
-            if (force) {
-                System.out.println("Database already exists or creation failed, continuing with import");
-                
-                try {
-                    HttpPut httpPut = new HttpPut(url + "/" + repositoryId);
-                    
-                    try (CloseableHttpResponse response = httpClient.execute(httpPut)) {
-                        int statusCode = response.getStatusLine().getStatusCode();
-                        
-                        if (statusCode != HttpStatus.SC_CREATED && statusCode != HttpStatus.SC_ACCEPTED && statusCode != HttpStatus.SC_PRECONDITION_FAILED) {
-                            System.err.println("Error: Database " + repositoryId + " does not exist and could not be created");
-                            System.err.println("Status code: " + statusCode);
-                            HttpEntity entity = response.getEntity();
-                            if (entity != null) {
-                                String responseBody = EntityUtils.toString(entity);
-                                System.err.println("Response body: " + responseBody);
-                            }
-                            return false;
-                        } else if (statusCode == HttpStatus.SC_PRECONDITION_FAILED) {
-                            System.out.println("Database " + repositoryId + " already exists, continuing with import");
-                        } else {
-                            System.out.println("Database " + repositoryId + " created successfully");
-                        }
-                    }
-                } catch (Exception e) {
-                    System.err.println("Error creating database: " + e.getMessage());
-                    e.printStackTrace();
-                    return false;
-                }
-                
-                try {
-                    HttpGet httpGet = new HttpGet(url + "/" + repositoryId);
-                    
-                    try (CloseableHttpResponse response = httpClient.execute(httpGet)) {
-                        int statusCode = response.getStatusLine().getStatusCode();
-                        
-                        if (statusCode != HttpStatus.SC_OK) {
-                            System.err.println("Error: Database " + repositoryId + " does not exist after creation attempt");
-                            System.err.println("Status code: " + statusCode);
-                            return false;
-                        }
-                    }
-                } catch (Exception e) {
-                    System.err.println("Error checking database existence: " + e.getMessage());
-                    e.printStackTrace();
-                    return false;
-                }
-            } else {
-                System.out.println("Database already exists or creation failed, skipping import");
+        // First, check if database exists
+        boolean databaseExists = checkDatabaseExists();
+        
+        if (!databaseExists) {
+            System.out.println("Database does not exist, attempting to create it");
+            boolean databaseCreated = ensureDatabaseExists();
+            
+            if (!databaseCreated && !force) {
+                System.err.println("Failed to create database and force=false, aborting import");
                 return false;
             }
+            
+            databaseExists = checkDatabaseExists();
+        } else {
+            System.out.println("Database " + repositoryId + " already exists");
+        }
+        
+        if (!databaseExists) {
+            System.err.println("CRITICAL ERROR: Database does not exist after creation attempts");
+            
+            try {
+                System.out.println("Making one final attempt to create database with direct PUT request");
+                HttpPut httpPut = new HttpPut(url + "/" + repositoryId);
+                try (CloseableHttpResponse response = httpClient.execute(httpPut)) {
+                    int statusCode = response.getStatusLine().getStatusCode();
+                    System.out.println("Final database creation attempt status: " + statusCode);
+                    
+                    System.out.println("Waiting 10 seconds for database to be fully available...");
+                    Thread.sleep(10000);
+                    
+                    databaseExists = checkDatabaseExists();
+                    if (databaseExists) {
+                        System.out.println("Database " + repositoryId + " created successfully on final attempt");
+                    } else {
+                        System.err.println("Database " + repositoryId + " still does not exist after final attempt");
+                        if (!force) {
+                            return false;
+                        } else {
+                            System.err.println("Continuing with import due to force=true, but this will likely fail");
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("Exception during final database creation attempt: " + e.getMessage());
+                e.printStackTrace();
+                if (!force) {
+                    return false;
+                }
+            }
+        } else {
+            System.out.println("Database " + repositoryId + " exists and is ready for import");
         }
 
         List<Map<String, Object>> documents = new ArrayList<>();
@@ -210,6 +208,19 @@ public class CouchDBInitializer {
 
         System.out.println("Loading metadata: START");
         
+        databaseExists = checkDatabaseExists();
+        if (!databaseExists) {
+            System.err.println("Database " + repositoryId + " does not exist before loading metadata, attempting to create it again");
+            databaseExists = ensureDatabaseExists();
+            
+            if (!databaseExists) {
+                System.err.println("Cannot proceed with metadata loading: database does not exist");
+                return false;
+            }
+        } else {
+            System.out.println("Verified database " + repositoryId + " exists before loading metadata");
+        }
+        
         int unit = 500; // Smaller batch size for CouchDB 3.x
         int turn = documents.size() / unit;
         ProgressIndicator metadataIndicator = new ProgressIndicator(documents.size());
@@ -236,6 +247,8 @@ public class CouchDBInitializer {
                         if (statusCode >= 500) {
                             return false;
                         }
+                    } else {
+                        System.out.println("Successfully inserted batch of " + subList.size() + " documents");
                     }
                     
                     HttpEntity entity = response.getEntity();
@@ -373,40 +386,94 @@ public class CouchDBInitializer {
     }
 
     /**
-     * Initialize repository (create database)
+     * Ensure database exists by checking and creating if necessary
      */
-    public boolean initRepository() {
+    public boolean ensureDatabaseExists() {
+        int maxAttempts = 5;
+        
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            System.out.println("Attempt " + attempt + " of " + maxAttempts + " to ensure database " + repositoryId + " exists");
+            
+            if (checkDatabaseExists()) {
+                System.out.println("Database " + repositoryId + " already exists");
+                return true;
+            }
+            
+            try {
+                HttpPut httpPut = new HttpPut(url + "/" + repositoryId);
+                
+                try (CloseableHttpResponse response = httpClient.execute(httpPut)) {
+                    int statusCode = response.getStatusLine().getStatusCode();
+                    String responseBody = "";
+                    
+                    HttpEntity entity = response.getEntity();
+                    if (entity != null) {
+                        responseBody = EntityUtils.toString(entity);
+                    }
+                    
+                    if (statusCode == HttpStatus.SC_CREATED || statusCode == HttpStatus.SC_ACCEPTED) {
+                        System.out.println("Database " + repositoryId + " created successfully");
+                        
+                        try {
+                            System.out.println("Waiting 3 seconds for database creation to complete...");
+                            Thread.sleep(3000);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                        }
+                        
+                        if (checkDatabaseExists()) {
+                            System.out.println("Verified database " + repositoryId + " exists after creation");
+                            return true;
+                        } else {
+                            System.err.println("Database " + repositoryId + " not found after creation, will retry");
+                        }
+                    } else if (statusCode == HttpStatus.SC_PRECONDITION_FAILED || 
+                              (statusCode == HttpStatus.SC_BAD_REQUEST && responseBody.contains("already exists"))) {
+                        System.out.println("Database " + repositoryId + " already exists (status: " + statusCode + ")");
+                        return true;
+                    } else {
+                        System.err.println("Error creating database: " + statusCode);
+                        System.err.println("Response body: " + responseBody);
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("Exception during database creation attempt " + attempt + ": " + e.getMessage());
+                e.printStackTrace();
+            }
+            
+            if (attempt < maxAttempts) {
+                try {
+                    System.out.println("Waiting 3 seconds before retry...");
+                    Thread.sleep(3000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+        
+        System.err.println("Failed to create database " + repositoryId + " after " + maxAttempts + " attempts");
+        return false;
+    }
+    
+    /**
+     * Check if database exists
+     */
+    public boolean checkDatabaseExists() {
         try {
+            System.out.println("Checking if database " + repositoryId + " exists at " + url + "/" + repositoryId);
             HttpGet httpGet = new HttpGet(url + "/" + repositoryId);
             
             try (CloseableHttpResponse response = httpClient.execute(httpGet)) {
                 int statusCode = response.getStatusLine().getStatusCode();
                 
                 if (statusCode == HttpStatus.SC_OK) {
-                    System.out.println("Database " + repositoryId + " already exists");
-                    return false;
-                } else if (statusCode == HttpStatus.SC_NOT_FOUND) {
-                    System.out.println("Database " + repositoryId + " does not exist, creating it");
-                } else {
-                    System.err.println("Error checking database: " + statusCode);
-                    HttpEntity entity = response.getEntity();
-                    if (entity != null) {
-                        String responseBody = EntityUtils.toString(entity);
-                        System.err.println("Response body: " + responseBody);
-                    }
-                }
-            }
-            
-            HttpPut httpPut = new HttpPut(url + "/" + repositoryId);
-            
-            try (CloseableHttpResponse response = httpClient.execute(httpPut)) {
-                int statusCode = response.getStatusLine().getStatusCode();
-                
-                if (statusCode == HttpStatus.SC_CREATED || statusCode == HttpStatus.SC_ACCEPTED) {
-                    System.out.println("Database " + repositoryId + " created successfully");
+                    System.out.println("Database " + repositoryId + " exists");
                     return true;
+                } else if (statusCode == HttpStatus.SC_NOT_FOUND) {
+                    System.out.println("Database " + repositoryId + " does not exist");
+                    return false;
                 } else {
-                    System.err.println("Error creating database: " + statusCode);
+                    System.err.println("Unexpected status code when checking database: " + statusCode);
                     HttpEntity entity = response.getEntity();
                     if (entity != null) {
                         String responseBody = EntityUtils.toString(entity);
@@ -416,10 +483,18 @@ public class CouchDBInitializer {
                 }
             }
         } catch (Exception e) {
-            System.err.println("Exception during database initialization: " + e.getMessage());
+            System.err.println("Exception checking database existence: " + e.getMessage());
             e.printStackTrace();
             return false;
         }
+    }
+    
+    /**
+     * Initialize repository (create database)
+     * @deprecated Use ensureDatabaseExists() instead
+     */
+    public boolean initRepository() {
+        return ensureDatabaseExists();
     }
 
     /**
