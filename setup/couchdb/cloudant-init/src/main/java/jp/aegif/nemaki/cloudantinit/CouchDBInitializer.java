@@ -122,13 +122,40 @@ public class CouchDBInitializer {
                 System.out.println("Database already exists or creation failed, continuing with import");
                 
                 try {
+                    HttpPut httpPut = new HttpPut(url + "/" + repositoryId);
+                    
+                    try (CloseableHttpResponse response = httpClient.execute(httpPut)) {
+                        int statusCode = response.getStatusLine().getStatusCode();
+                        
+                        if (statusCode != HttpStatus.SC_CREATED && statusCode != HttpStatus.SC_ACCEPTED && statusCode != HttpStatus.SC_PRECONDITION_FAILED) {
+                            System.err.println("Error: Database " + repositoryId + " does not exist and could not be created");
+                            System.err.println("Status code: " + statusCode);
+                            HttpEntity entity = response.getEntity();
+                            if (entity != null) {
+                                String responseBody = EntityUtils.toString(entity);
+                                System.err.println("Response body: " + responseBody);
+                            }
+                            return false;
+                        } else if (statusCode == HttpStatus.SC_PRECONDITION_FAILED) {
+                            System.out.println("Database " + repositoryId + " already exists, continuing with import");
+                        } else {
+                            System.out.println("Database " + repositoryId + " created successfully");
+                        }
+                    }
+                } catch (Exception e) {
+                    System.err.println("Error creating database: " + e.getMessage());
+                    e.printStackTrace();
+                    return false;
+                }
+                
+                try {
                     HttpGet httpGet = new HttpGet(url + "/" + repositoryId);
                     
                     try (CloseableHttpResponse response = httpClient.execute(httpGet)) {
                         int statusCode = response.getStatusLine().getStatusCode();
                         
                         if (statusCode != HttpStatus.SC_OK) {
-                            System.err.println("Error: Database " + repositoryId + " does not exist and could not be created");
+                            System.err.println("Error: Database " + repositoryId + " does not exist after creation attempt");
                             System.err.println("Status code: " + statusCode);
                             return false;
                         }
