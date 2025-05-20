@@ -60,20 +60,20 @@ echo "Running initializers..."
 echo "CouchDB 2.x initializer:"
 docker-compose -f docker-compose-war.yml run --rm \
   -e COUCHDB_URL=http://couchdb2:5984 \
-  -e COUCHDB_USER=${COUCHDB_USER} \
+  -e COUCHDB_USERNAME=${COUCHDB_USER} \
   -e COUCHDB_PASSWORD=${COUCHDB_PASSWORD} \
   -e REPOSITORY_ID=bedroom \
-  -e DUMP_FILE=/app/data/bedroom_init.dump \
+  -e DUMP_FILE=/app/bedroom_init.dump \
   -e FORCE=true \
   initializer2
 
 echo "CouchDB 3.x initializer:"
 docker-compose -f docker-compose-war.yml run --rm \
   -e COUCHDB_URL=http://couchdb3:5984 \
-  -e COUCHDB_USER=${COUCHDB_USER} \
+  -e COUCHDB_USERNAME=${COUCHDB_USER} \
   -e COUCHDB_PASSWORD=${COUCHDB_PASSWORD} \
   -e REPOSITORY_ID=bedroom \
-  -e DUMP_FILE=/app/data/bedroom_init.dump \
+  -e DUMP_FILE=/app/bedroom_init.dump \
   -e FORCE=true \
   initializer3
 
