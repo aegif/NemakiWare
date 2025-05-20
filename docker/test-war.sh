@@ -52,11 +52,13 @@ fi
 mkdir -p $NEMAKI_HOME/docker/core/config2
 mkdir -p $NEMAKI_HOME/docker/core/config3
 
-cat > $NEMAKI_HOME/docker/core/config2/nemakiware.properties << EOF3
+cat > $NEMAKI_HOME/docker/core/nemakiware.properties << EOF3
 db.couchdb.url=http://couchdb2:5984
 db.couchdb.user=${COUCHDB_USER:-admin}
 db.couchdb.password=${COUCHDB_PASSWORD:-password}
 EOF3
+
+cp $NEMAKI_HOME/docker/core/nemakiware.properties $NEMAKI_HOME/docker/core/config2/
 
 cat > $NEMAKI_HOME/docker/core/config3/nemakiware.properties << EOF4
 db.couchdb.url=http://couchdb3:5984
