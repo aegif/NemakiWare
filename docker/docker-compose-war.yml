@@ -50,7 +50,10 @@ services:
       - FORCE=true
     volumes:
       - ../setup/couchdb/initial_import/bedroom_init.dump:/app/bedroom_init.dump
-    restart: on-failure
+    restart: "no"
+    deploy:
+      restart_policy:
+        condition: none
     healthcheck:
       test: ["CMD", "curl", "-f", "-u", "admin:password", "http://couchdb2:5984/bedroom"]
       interval: 5s
@@ -73,7 +76,10 @@ services:
       - FORCE=true
     volumes:
       - ../setup/couchdb/initial_import/bedroom_init.dump:/app/bedroom_init.dump
-    restart: on-failure
+    restart: "no"
+    deploy:
+      restart_policy:
+        condition: none
     healthcheck:
       test: ["CMD", "curl", "-f", "-u", "admin:password", "http://couchdb3:5984/bedroom"]
       interval: 5s
@@ -107,7 +113,7 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      initializer2:
+      couchdb2:
         condition: service_healthy
       solr2:
         condition: service_started
@@ -125,7 +131,7 @@ services:
     ports:
       - "8081:8080"
     depends_on:
-      initializer3:
+      couchdb3:
         condition: service_healthy
       solr3:
         condition: service_started
