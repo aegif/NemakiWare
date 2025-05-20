@@ -9,6 +9,17 @@ REPOSITORY_ID=${REPOSITORY_ID:-"bedroom"}
 DUMP_FILE=${DUMP_FILE:-"/app/bedroom_init.dump"}
 FORCE=${FORCE:-"false"}
 
+echo "Initializing CouchDB database:"
+echo "URL: $COUCHDB_URL"
+echo "Username: $COUCHDB_USERNAME"
+echo "Password: [hidden]"
+echo "Repository ID: $REPOSITORY_ID"
+echo "Dump file: $DUMP_FILE"
+echo "Force: $FORCE"
+
+echo "Files in /app directory:"
+ls -la /app
+
 if [ ! -f "$DUMP_FILE" ]; then
   echo "Warning: Dump file not found at $DUMP_FILE"
   echo "Checking if it exists in the mounted volume..."
@@ -23,18 +34,9 @@ if [ ! -f "$DUMP_FILE" ]; then
   
   if [ ! -f "$DUMP_FILE" ]; then
     echo "Error: Could not find dump file. Please check volume mapping."
-    # exit 1
+    exit 1
   fi
 fi
-
-echo "Initializing CouchDB database:"
-echo "URL: $COUCHDB_URL"
-echo "Repository ID: $REPOSITORY_ID"
-echo "Dump file: $DUMP_FILE"
-echo "Force: $FORCE"
-
-echo "Files in /app directory:"
-ls -la /app
 
 echo "Waiting for CouchDB to be ready..."
 max_attempts=30
@@ -58,10 +60,7 @@ echo "Creating database $REPOSITORY_ID directly..."
 curl -s -X PUT -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/$REPOSITORY_ID" || echo "Database may already exist, continuing..."
 
 # Execute CouchDBInitializer with arguments
-java -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer \
-  "$COUCHDB_URL" \
-  "$COUCHDB_USERNAME" \
-  "$COUCHDB_PASSWORD" \
-  "$REPOSITORY_ID" \
-  "$DUMP_FILE" \
-  "$FORCE"
+echo "Executing CouchDBInitializer with arguments:"
+echo "java -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer \"$COUCHDB_URL\" \"$COUCHDB_USERNAME\" \"$COUCHDB_PASSWORD\" \"$REPOSITORY_ID\" \"$DUMP_FILE\" \"$FORCE\""
+
+java -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer "$COUCHDB_URL" "$COUCHDB_USERNAME" "$COUCHDB_PASSWORD" "$REPOSITORY_ID" "$DUMP_FILE" "$FORCE"
