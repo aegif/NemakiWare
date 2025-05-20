@@ -131,6 +131,21 @@ curl -s -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/_all_dbs"
 echo "Executing CouchDBInitializer with arguments:"
 echo "java -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer \"$COUCHDB_URL\" \"$COUCHDB_USERNAME\" \"$COUCHDB_PASSWORD\" \"$REPOSITORY_ID\" \"$DUMP_FILE\" \"$FORCE\""
 
+verify_db_response=$(curl -s -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/$REPOSITORY_ID")
+if ! echo "$verify_db_response" | grep -q "\"db_name\""; then
+  echo "WARNING: Database $REPOSITORY_ID still does not exist before running initializer, creating it again..."
+  create_db_response=$(curl -s -X PUT -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/$REPOSITORY_ID")
+  echo "Final database creation response: $create_db_response"
+  sleep 5
+  
+  final_check=$(curl -s -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/$REPOSITORY_ID")
+  if ! echo "$final_check" | grep -q "\"db_name\""; then
+    echo "CRITICAL ERROR: Cannot create database $REPOSITORY_ID. Listing all databases:"
+    curl -s -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/_all_dbs"
+    echo "Will try to continue anyway, but import will likely fail."
+  fi
+fi
+
 java -Xmx512m -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer "$COUCHDB_URL" "$COUCHDB_USERNAME" "$COUCHDB_PASSWORD" "$REPOSITORY_ID" "$DUMP_FILE" "$FORCE"
 
 JAVA_EXIT_CODE=$?
