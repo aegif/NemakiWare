@@ -233,18 +233,29 @@ public class CouchDBInitializer {
         }
 
         System.out.println("Loading metadata: START");
-        
-        databaseExists = checkDatabaseExists();
-        if (!databaseExists) {
-            System.err.println("Database " + repositoryId + " does not exist before loading metadata, attempting to create it again");
-            databaseExists = ensureDatabaseExists();
-            
-            if (!databaseExists) {
-                System.err.println("Cannot proceed with metadata loading: database does not exist");
-                return false;
+
+        System.out.println("DEBUG: Final verification before loading documents");
+        boolean databaseExists = false;
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            databaseExists = checkDatabaseExists();
+            if (databaseExists) {
+                System.out.println("DEBUG: Database " + repositoryId + " exists on verification attempt " + attempt);
+                break;
             }
+            System.out.println("DEBUG: Database " + repositoryId + " does not exist on verification attempt " + attempt + ", attempting to create");
+            ensureDatabaseExists();
+            try {
+                Thread.sleep(2000);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        if (!databaseExists) {
+            System.err.println("FATAL ERROR: Cannot proceed with metadata loading: database does not exist after multiple attempts");
+            return false;
         } else {
-            System.out.println("Verified database " + repositoryId + " exists before loading metadata");
+            System.out.println("Final verification: database " + repositoryId + " exists before loading metadata");
         }
         
         int unit = 500; // Smaller batch size for CouchDB 3.x
@@ -285,8 +296,23 @@ public class CouchDBInitializer {
                         }
                         
                         if (statusCode == 404) {
-                            System.err.println("Database not found (404). Attempting to create database again...");
-                            boolean created = ensureDatabaseExists();
+                            System.err.println("Database not found (404) during document insertion. Attempting to create database again...");
+                            boolean created = false;
+                            for (int createAttempt = 1; createAttempt <= 3; createAttempt++) {
+                                System.out.println("DEBUG: Attempt " + createAttempt + " to create database after 404 error");
+                                created = ensureDatabaseExists();
+                                if (created) {
+                                    System.out.println("DEBUG: Database created successfully on attempt " + createAttempt);
+                                    break;
+                                }
+                                try {
+                                    System.out.println("DEBUG: Waiting before retry...");
+                                    Thread.sleep(3000);
+                                } catch (InterruptedException ie) {
+                                    Thread.currentThread().interrupt();
+                                }
+                            }
+                            
                             if (created) {
                                 System.out.println("Database created successfully after 404 error. Retrying document insertion...");
                                 httpPost = new HttpPost(url + "/" + repositoryId + "/_bulk_docs");
@@ -304,15 +330,18 @@ public class CouchDBInitializer {
                                     int retryStatusCode = retryResponse.getStatusLine().getStatusCode();
                                     if (retryStatusCode >= 400) {
                                         System.err.println("Still failed after retry: " + retryStatusCode);
+                                        HttpEntity retryEntity = retryResponse.getEntity();
+                                        if (retryEntity != null) {
+                                            String retryResponseBody = EntityUtils.toString(retryEntity);
+                                            System.err.println("Retry error response body: " + retryResponseBody);
+                                        }
                                     } else {
                                         System.out.println("Successfully inserted batch of " + subList.size() + " documents after retry");
                                     }
                                 }
                             } else {
-                                System.err.println("Failed to create database after 404 error");
-                                if (statusCode >= 500) {
-                                    return false;
-                                }
+                                System.err.println("FATAL ERROR: Failed to create database after 404 error despite multiple attempts");
+                                return false;
                             }
                         } else if (statusCode >= 500) {
                             return false;

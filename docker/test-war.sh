@@ -97,7 +97,7 @@ docker compose -f docker-compose-war.yml run --rm \
   -e DUMP_FILE=/app/bedroom_init.dump \
   -e FORCE=true \
   --entrypoint java \
-  initializer2 -Xmx512m -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer \
+  initializer2 -Xmx512m -Dlog.level=DEBUG -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer \
   http://couchdb2:5984 "${COUCHDB_USER}" "${COUCHDB_PASSWORD}" bedroom /app/bedroom_init.dump true
 
 echo "CouchDB 3.x initializer:"
@@ -109,7 +109,7 @@ docker compose -f docker-compose-war.yml run --rm \
   -e DUMP_FILE=/app/bedroom_init.dump \
   -e FORCE=true \
   --entrypoint java \
-  initializer3 -Xmx512m -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer \
+  initializer3 -Xmx512m -Dlog.level=DEBUG -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer \
   http://couchdb3:5984 "${COUCHDB_USER}" "${COUCHDB_PASSWORD}" bedroom /app/bedroom_init.dump true
 
 echo "Verifying database initialization..."
