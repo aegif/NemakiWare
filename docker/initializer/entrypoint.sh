@@ -36,6 +36,27 @@ echo "Force: $FORCE"
 echo "Files in /app directory:"
 ls -la /app
 
+echo "Waiting for CouchDB to be ready..."
+max_attempts=30
+attempt=0
+while [ $attempt -lt $max_attempts ]; do
+  if curl -s -f -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL" > /dev/null; then
+    echo "CouchDB is ready!"
+    break
+  fi
+  attempt=$((attempt+1))
+  echo "Waiting for CouchDB... attempt $attempt/$max_attempts"
+  sleep 2
+done
+
+if [ $attempt -eq $max_attempts ]; then
+  echo "Error: CouchDB is not available after $max_attempts attempts"
+  exit 1
+fi
+
+echo "Creating database $REPOSITORY_ID directly..."
+curl -s -X PUT -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/$REPOSITORY_ID" || echo "Database may already exist, continuing..."
+
 # Execute CouchDBInitializer with arguments
 java -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer \
   "$COUCHDB_URL" \
