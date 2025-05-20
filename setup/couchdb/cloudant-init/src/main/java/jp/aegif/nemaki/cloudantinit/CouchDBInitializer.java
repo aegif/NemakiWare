@@ -133,42 +133,61 @@ public class CouchDBInitializer {
             }
             
             databaseExists = checkDatabaseExists();
+            
+            if (!databaseExists) {
+                System.err.println("CRITICAL ERROR: Database does not exist after creation attempts");
+                
+                try {
+                    System.out.println("Making one final attempt to create database with direct PUT request");
+                    HttpPut httpPut = new HttpPut(url + "/" + repositoryId);
+                    
+                    if (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(password)) {
+                        String auth = username + ":" + password;
+                        String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes("UTF-8"));
+                        httpPut.setHeader("Authorization", "Basic " + encodedAuth);
+                    }
+                    
+                    try (CloseableHttpResponse response = httpClient.execute(httpPut)) {
+                        int statusCode = response.getStatusLine().getStatusCode();
+                        System.out.println("Final database creation attempt status: " + statusCode);
+                        
+                        HttpEntity entity = response.getEntity();
+                        if (entity != null) {
+                            String responseBody = EntityUtils.toString(entity);
+                            System.out.println("Response body: " + responseBody);
+                        }
+                        
+                        System.out.println("Waiting 10 seconds for database to be fully available...");
+                        Thread.sleep(10000);
+                        
+                        databaseExists = checkDatabaseExists();
+                        if (databaseExists) {
+                            System.out.println("Database " + repositoryId + " created successfully on final attempt");
+                        } else {
+                            System.err.println("Database " + repositoryId + " still does not exist after final attempt");
+                            if (!force) {
+                                return false;
+                            } else {
+                                System.err.println("Continuing with import due to force=true, but this will likely fail");
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    System.err.println("Exception during final database creation attempt: " + e.getMessage());
+                    e.printStackTrace();
+                    if (!force) {
+                        return false;
+                    }
+                }
+            }
         } else {
             System.out.println("Database " + repositoryId + " already exists");
         }
         
+        databaseExists = checkDatabaseExists();
         if (!databaseExists) {
-            System.err.println("CRITICAL ERROR: Database does not exist after creation attempts");
-            
-            try {
-                System.out.println("Making one final attempt to create database with direct PUT request");
-                HttpPut httpPut = new HttpPut(url + "/" + repositoryId);
-                try (CloseableHttpResponse response = httpClient.execute(httpPut)) {
-                    int statusCode = response.getStatusLine().getStatusCode();
-                    System.out.println("Final database creation attempt status: " + statusCode);
-                    
-                    System.out.println("Waiting 10 seconds for database to be fully available...");
-                    Thread.sleep(10000);
-                    
-                    databaseExists = checkDatabaseExists();
-                    if (databaseExists) {
-                        System.out.println("Database " + repositoryId + " created successfully on final attempt");
-                    } else {
-                        System.err.println("Database " + repositoryId + " still does not exist after final attempt");
-                        if (!force) {
-                            return false;
-                        } else {
-                            System.err.println("Continuing with import due to force=true, but this will likely fail");
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                System.err.println("Exception during final database creation attempt: " + e.getMessage());
-                e.printStackTrace();
-                if (!force) {
-                    return false;
-                }
-            }
+            System.err.println("FATAL ERROR: Database " + repositoryId + " does not exist after all creation attempts");
+            return false;
         } else {
             System.out.println("Database " + repositoryId + " exists and is ready for import");
         }
@@ -242,6 +261,11 @@ public class CouchDBInitializer {
                 HttpPost httpPost = new HttpPost(url + "/" + repositoryId + "/_bulk_docs");
                 httpPost.setHeader("Content-Type", "application/json");
                 
+                if (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(password)) {
+                    String auth = username + ":" + password;
+                    String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes("UTF-8"));
+                    httpPost.setHeader("Authorization", "Basic " + encodedAuth);
+                }
                 
                 httpPost.setEntity(new StringEntity(bulkDocsJson, ContentType.APPLICATION_JSON));
                 
@@ -250,7 +274,44 @@ public class CouchDBInitializer {
                     
                     if (statusCode >= 400) {
                         System.err.println("Warning: Error inserting documents: " + statusCode);
-                        if (statusCode >= 500) {
+                        HttpEntity entity = response.getEntity();
+                        if (entity != null) {
+                            String responseBody = EntityUtils.toString(entity);
+                            System.err.println("Error response body: " + responseBody);
+                            EntityUtils.consume(entity);
+                        }
+                        
+                        if (statusCode == 404) {
+                            System.err.println("Database not found (404). Attempting to create database again...");
+                            boolean created = ensureDatabaseExists();
+                            if (created) {
+                                System.out.println("Database created successfully after 404 error. Retrying document insertion...");
+                                httpPost = new HttpPost(url + "/" + repositoryId + "/_bulk_docs");
+                                httpPost.setHeader("Content-Type", "application/json");
+                                
+                                if (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(password)) {
+                                    String auth = username + ":" + password;
+                                    String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes("UTF-8"));
+                                    httpPost.setHeader("Authorization", "Basic " + encodedAuth);
+                                }
+                                
+                                httpPost.setEntity(new StringEntity(bulkDocsJson, ContentType.APPLICATION_JSON));
+                                
+                                try (CloseableHttpResponse retryResponse = httpClient.execute(httpPost)) {
+                                    int retryStatusCode = retryResponse.getStatusLine().getStatusCode();
+                                    if (retryStatusCode >= 400) {
+                                        System.err.println("Still failed after retry: " + retryStatusCode);
+                                    } else {
+                                        System.out.println("Successfully inserted batch of " + subList.size() + " documents after retry");
+                                    }
+                                }
+                            } else {
+                                System.err.println("Failed to create database after 404 error");
+                                if (statusCode >= 500) {
+                                    return false;
+                                }
+                            }
+                        } else if (statusCode >= 500) {
                             return false;
                         }
                     } else {
@@ -507,9 +568,10 @@ public class CouchDBInitializer {
                             System.out.println("Response body: " + responseBody);
                             return false;
                         }
+                    } else {
+                        System.out.println("Database " + repositoryId + " exists but response entity is null");
+                        return false;
                     }
-                    System.out.println("Database " + repositoryId + " exists");
-                    return true;
                 } else if (statusCode == HttpStatus.SC_NOT_FOUND) {
                     System.out.println("Database " + repositoryId + " does not exist");
                     return false;
