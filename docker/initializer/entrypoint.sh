@@ -1,11 +1,11 @@
 set -e
 
-URL=${COUCHDB_URL:-${1:-"http://localhost:5984"}}
-USERNAME=${COUCHDB_USERNAME:-${2:-""}}
-PASSWORD=${COUCHDB_PASSWORD:-${3:-""}}
-REPOSITORY_ID=${REPOSITORY_ID:-${4:-"bedroom"}}
-DUMP_FILE=${DUMP_FILE:-${5:-"/app/bedroom_init.dump"}}
-FORCE=${FORCE:-${6:-"true"}}
+URL=${COUCHDB_URL:-"http://localhost:5984"}
+USERNAME=${COUCHDB_USERNAME:-""}
+PASSWORD=${COUCHDB_PASSWORD:-""}
+REPOSITORY_ID=${REPOSITORY_ID:-"bedroom"}
+DUMP_FILE=${DUMP_FILE:-"/app/bedroom_init.dump"}
+FORCE=${FORCE:-"true"}
 
 echo "Initializing CouchDB database:"
 echo "URL: $URL"
