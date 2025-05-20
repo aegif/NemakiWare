@@ -4,7 +4,7 @@ RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY cloudant-init.jar /app/cloudant-init.jar
-COPY data /app/data
+COPY bedroom_init.dump /app/bedroom_init.dump
 COPY entrypoint.sh /app/entrypoint.sh
 
 RUN chmod +x /app/entrypoint.sh
