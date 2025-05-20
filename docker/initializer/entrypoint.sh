@@ -1,3 +1,4 @@
+#!/bin/bash
 set -e
 
 URL=${1:-${COUCHDB_URL:-"http://localhost:5984"}}

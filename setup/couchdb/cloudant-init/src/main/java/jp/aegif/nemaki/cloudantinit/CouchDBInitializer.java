@@ -529,7 +529,8 @@ public class CouchDBInitializer {
                             return true;
                         }
                         
-                        return true;
+                        System.err.println("ERROR: Database reported as already existing but cannot be accessed");
+                        return false;
                     } else {
                         System.err.println("ERROR: Unexpected status code when creating database: " + statusCode);
                         System.err.println("Response body: " + responseBody);
