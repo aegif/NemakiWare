@@ -70,7 +70,15 @@ echo "Listing all databases before creation:"
 curl -s -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/_all_dbs"
 
 echo "Deleting database $REPOSITORY_ID if it exists..."
-delete_response=$(curl -s -X DELETE -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/$REPOSITORY_ID")
+if [[ "$COUCHDB_URL" == *"couchdb3"* ]]; then
+  delete_response=$(curl -s -X DELETE -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/$REPOSITORY_ID")
+else
+  if [ -n "$COUCHDB_USERNAME" ] && [ -n "$COUCHDB_PASSWORD" ]; then
+    delete_response=$(curl -s -X DELETE -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/$REPOSITORY_ID")
+  else
+    delete_response=$(curl -s -X DELETE "$COUCHDB_URL/$REPOSITORY_ID")
+  fi
+fi
 echo "Database deletion response: $delete_response"
 sleep 2
 
@@ -81,22 +89,20 @@ if [[ "$COUCHDB_URL" == *"couchdb3"* ]]; then
   curl -s -X PUT -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/_replicator"
   curl -s -X PUT -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/_global_changes"
   sleep 2
-fi
-
-if [ -n "$COUCHDB_USERNAME" ] && [ -n "$COUCHDB_PASSWORD" ]; then
-  echo "Creating database with authentication..."
-  create_response=$(curl -s -X PUT -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/$REPOSITORY_ID")
-  echo "Database creation response (with auth): $create_response"
   
-  if echo "$create_response" | grep -q "\"error\""; then
-    echo "Creating database without authentication..."
-    create_response=$(curl -s -X PUT "$COUCHDB_URL/$REPOSITORY_ID")
-    echo "Database creation response (without auth): $create_response"
-  fi
+  echo "Creating database with authentication (CouchDB 3.x)..."
+  create_response=$(curl -s -X PUT -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/$REPOSITORY_ID")
+  echo "Database creation response (CouchDB 3.x): $create_response"
 else
-  echo "Creating database without authentication..."
-  create_response=$(curl -s -X PUT "$COUCHDB_URL/$REPOSITORY_ID")
-  echo "Database creation response (without auth): $create_response"
+  if [ -n "$COUCHDB_USERNAME" ] && [ -n "$COUCHDB_PASSWORD" ]; then
+    echo "Creating database with authentication (CouchDB 2.x)..."
+    create_response=$(curl -s -X PUT -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/$REPOSITORY_ID")
+    echo "Database creation response (CouchDB 2.x with auth): $create_response"
+  else
+    echo "Creating database without authentication (CouchDB 2.x)..."
+    create_response=$(curl -s -X PUT "$COUCHDB_URL/$REPOSITORY_ID")
+    echo "Database creation response (CouchDB 2.x without auth): $create_response"
+  fi
 fi
 
 max_db_attempts=5
