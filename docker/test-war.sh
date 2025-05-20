@@ -25,6 +25,11 @@ cd $NEMAKI_HOME/docker
 echo "Preparing UI WAR..."
 ./prepare-ui-war.sh
 
+echo "Building core server..."
+cd $NEMAKI_HOME
+mvn clean package -pl core -am -DskipTests
+cp core/target/core.war $NEMAKI_HOME/docker/core/
+
 echo "Building Solr WAR file using Docker with Java 8..."
 cd $NEMAKI_HOME/docker
 ./build-solr.sh
@@ -42,6 +47,26 @@ repositories:
     name: bedroom
     archive: bedroom_closet
 EOF2
+fi
+
+mkdir -p $NEMAKI_HOME/docker/core/config2
+mkdir -p $NEMAKI_HOME/docker/core/config3
+
+cat > $NEMAKI_HOME/docker/core/config2/nemakiware.properties << EOF3
+db.couchdb.url=http://couchdb2:5984
+db.couchdb.user=${COUCHDB_USER:-admin}
+db.couchdb.password=${COUCHDB_PASSWORD:-password}
+EOF3
+
+cat > $NEMAKI_HOME/docker/core/config3/nemakiware.properties << EOF4
+db.couchdb.url=http://couchdb3:5984
+db.couchdb.user=${COUCHDB_USER:-admin}
+db.couchdb.password=${COUCHDB_PASSWORD:-password}
+EOF4
+
+echo "Creating log4j.properties if it doesn't exist..."
+if [ ! -f $NEMAKI_HOME/docker/core/log4j.properties ]; then
+  touch $NEMAKI_HOME/docker/core/log4j.properties
 fi
 
 echo "Starting containers..."
