@@ -467,6 +467,18 @@ public class CouchDBInitializer {
                 int statusCode = response.getStatusLine().getStatusCode();
                 
                 if (statusCode == HttpStatus.SC_OK) {
+                    HttpEntity entity = response.getEntity();
+                    if (entity != null) {
+                        String responseBody = EntityUtils.toString(entity);
+                        if (responseBody.contains("\"db_name\"")) {
+                            System.out.println("Database " + repositoryId + " exists and is valid");
+                            return true;
+                        } else {
+                            System.out.println("Database " + repositoryId + " exists but response doesn't contain db_name");
+                            System.out.println("Response body: " + responseBody);
+                            return false;
+                        }
+                    }
                     System.out.println("Database " + repositoryId + " exists");
                     return true;
                 } else if (statusCode == HttpStatus.SC_NOT_FOUND) {
