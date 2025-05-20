@@ -39,6 +39,7 @@ EOF
 
 echo "Creating entrypoint.sh script..."
 cat > $NEMAKI_HOME/docker/initializer/entrypoint.sh << 'EOF'
+#!/bin/bash
 set -e
 
 URL=${1:-${COUCHDB_URL:-"http://localhost:5984"}}
