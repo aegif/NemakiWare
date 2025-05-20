@@ -4,6 +4,13 @@ set -e
 SCRIPT_DIR=$(cd $(dirname $0); pwd)
 NEMAKI_HOME=$(cd $SCRIPT_DIR/..; pwd)
 
+export COUCHDB_USER=${COUCHDB_USER:-admin}
+export COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-password}
+
+echo "Using CouchDB credentials:"
+echo "Username: $COUCHDB_USER"
+echo "Password: $COUCHDB_PASSWORD (masked for security)"
+
 echo "Stopping any running containers..."
 docker compose -f docker-compose-war.yml down
 
@@ -17,6 +24,10 @@ cd $NEMAKI_HOME/docker
 
 echo "Preparing UI WAR..."
 ./prepare-ui-war.sh
+
+echo "Building Solr WAR file using Docker with Java 8..."
+cd $NEMAKI_HOME/docker
+./build-solr.sh
 
 echo "Creating core/repositories.yml if it doesn't exist..."
 mkdir -p $NEMAKI_HOME/docker/core
@@ -36,11 +47,8 @@ fi
 echo "Starting containers..."
 docker compose -f docker-compose-war.yml up -d
 
-echo "Waiting for services to start..."
-sleep 10
-
-COUCHDB_USER=${COUCHDB_USER:-admin}
-COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-password}
+echo "Waiting for CouchDB services to fully initialize..."
+sleep 20
 
 echo "Checking CouchDB 2.x database..."
 curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5984/bedroom | grep -q "db_name" && echo "CouchDB 2.x database exists" || echo "CouchDB 2.x database does not exist"
@@ -50,10 +58,10 @@ curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5985/bedroom |
 
 echo "Running initializers manually..."
 echo "CouchDB 2.x initializer:"
-docker exec docker-initializer2-1 java -Xmx512m -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer "http://couchdb2:5984" "${COUCHDB_USER}" "${COUCHDB_PASSWORD}" "bedroom" "/app/data/bedroom_init.dump" "true"
+docker exec docker-initializer2-1 bash -c "java -Xmx512m -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer 'http://couchdb2:5984' '${COUCHDB_USER}' '${COUCHDB_PASSWORD}' 'bedroom' '/app/data/bedroom_init.dump' 'true'"
 
 echo "CouchDB 3.x initializer:"
-docker exec docker-initializer3-1 java -Xmx512m -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer "http://couchdb3:5984" "${COUCHDB_USER}" "${COUCHDB_PASSWORD}" "bedroom" "/app/data/bedroom_init.dump" "true"
+docker exec docker-initializer3-1 bash -c "java -Xmx512m -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer 'http://couchdb3:5984' '${COUCHDB_USER}' '${COUCHDB_PASSWORD}' 'bedroom' '/app/data/bedroom_init.dump' 'true'"
 
 echo "Verifying database initialization..."
 echo "CouchDB 2.x database:"

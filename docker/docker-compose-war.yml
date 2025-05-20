@@ -41,8 +41,14 @@ services:
     depends_on:
       couchdb2:
         condition: service_healthy
-    # Pass arguments directly to match ENTRYPOINT/CMD in Dockerfile
-    command: ["http://couchdb2:5984", "${COUCHDB_USER:-admin}", "${COUCHDB_PASSWORD:-password}", "bedroom", "/app/data/bedroom_init.dump", "true"]
+    # Use environment variables for credentials
+    environment:
+      - COUCHDB_URL=http://couchdb2:5984
+      - COUCHDB_USER=${COUCHDB_USER:-admin}
+      - COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-password}
+      - REPOSITORY_ID=bedroom
+      - DUMP_FILE=/app/data/bedroom_init.dump
+      - FORCE=true
     volumes:
       - ../setup/couchdb/initial_import/bedroom_init.dump:/app/data/bedroom_init.dump
     restart: "no"
@@ -53,8 +59,14 @@ services:
     depends_on:
       couchdb3:
         condition: service_healthy
-    # Pass arguments directly to match ENTRYPOINT/CMD in Dockerfile
-    command: ["http://couchdb3:5984", "${COUCHDB_USER:-admin}", "${COUCHDB_PASSWORD:-password}", "bedroom", "/app/data/bedroom_init.dump", "true"]
+    # Use environment variables for credentials
+    environment:
+      - COUCHDB_URL=http://couchdb3:5984
+      - COUCHDB_USER=${COUCHDB_USER:-admin}
+      - COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-password}
+      - REPOSITORY_ID=bedroom
+      - DUMP_FILE=/app/data/bedroom_init.dump
+      - FORCE=true
     volumes:
       - ../setup/couchdb/initial_import/bedroom_init.dump:/app/data/bedroom_init.dump
     restart: "no"
