@@ -1,11 +1,14 @@
+#!/bin/bash
 set -e
 
-URL=${COUCHDB_URL:-"http://localhost:5984"}
-USERNAME=${COUCHDB_USERNAME:-""}
-PASSWORD=${COUCHDB_PASSWORD:-""}
-REPOSITORY_ID=${REPOSITORY_ID:-"bedroom"}
-DUMP_FILE=${DUMP_FILE:-"/app/bedroom_init.dump"}
-FORCE=${FORCE:-"true"}
+# Get values from environment variables or command-line arguments
+# Command-line arguments take precedence over environment variables
+URL=${1:-${COUCHDB_URL:-"http://localhost:5984"}}
+USERNAME=${2:-${COUCHDB_USERNAME:-""}}
+PASSWORD=${3:-${COUCHDB_PASSWORD:-""}}
+REPOSITORY_ID=${4:-${REPOSITORY_ID:-"bedroom"}}
+DUMP_FILE=${5:-${DUMP_FILE:-"/app/bedroom_init.dump"}}
+FORCE=${6:-${FORCE:-"true"}}
 
 echo "Initializing CouchDB database:"
 echo "URL: $URL"
@@ -24,6 +27,7 @@ fi
 echo "Executing CouchDBInitializer with arguments:"
 echo "java -Xmx512m -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer \"$URL\" \"$USERNAME\" \"$PASSWORD\" \"$REPOSITORY_ID\" \"$DUMP_FILE\" \"$FORCE\""
 
+# Pass all 6 arguments explicitly to the Java application
 java -Xmx512m -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer "$URL" "$USERNAME" "$PASSWORD" "$REPOSITORY_ID" "$DUMP_FILE" "$FORCE"
 
 exit $?
