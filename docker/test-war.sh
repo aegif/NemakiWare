@@ -24,9 +24,12 @@ if [ ! -f $NEMAKI_HOME/docker/core/repositories.yml ]; then
   echo "Creating default repositories.yml..."
   cat > $NEMAKI_HOME/docker/core/repositories.yml << EOF
 repositories:
+  - id: canopy
+    name: canopy
+    archive: canopy_closet
   - id: bedroom
     name: bedroom
-    description: Default repository
+    archive: bedroom_closet
 EOF
 fi
 
