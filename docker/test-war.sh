@@ -58,22 +58,26 @@ curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5985/bedroom |
 
 echo "Running initializers..."
 echo "CouchDB 2.x initializer:"
-docker exec -e COUCHDB_URL=http://couchdb2:5984 \
+docker compose -f docker-compose-war.yml run --rm \
+  -e COUCHDB_URL=http://couchdb2:5984 \
   -e COUCHDB_USERNAME=${COUCHDB_USER} \
   -e COUCHDB_PASSWORD=${COUCHDB_PASSWORD} \
   -e REPOSITORY_ID=bedroom \
   -e DUMP_FILE=/app/bedroom_init.dump \
   -e FORCE=true \
-  docker-initializer2-1 /app/entrypoint.sh
+  --entrypoint "/bin/bash" \
+  initializer2 -c "/app/entrypoint.sh http://couchdb2:5984 ${COUCHDB_USER} ${COUCHDB_PASSWORD} bedroom /app/bedroom_init.dump true"
 
 echo "CouchDB 3.x initializer:"
-docker exec -e COUCHDB_URL=http://couchdb3:5984 \
+docker compose -f docker-compose-war.yml run --rm \
+  -e COUCHDB_URL=http://couchdb3:5984 \
   -e COUCHDB_USERNAME=${COUCHDB_USER} \
   -e COUCHDB_PASSWORD=${COUCHDB_PASSWORD} \
   -e REPOSITORY_ID=bedroom \
   -e DUMP_FILE=/app/bedroom_init.dump \
   -e FORCE=true \
-  docker-initializer3-1 /app/entrypoint.sh
+  --entrypoint "/bin/bash" \
+  initializer3 -c "/app/entrypoint.sh http://couchdb3:5984 ${COUCHDB_USER} ${COUCHDB_PASSWORD} bedroom /app/bedroom_init.dump true"
 
 echo "Verifying database initialization..."
 echo "CouchDB 2.x database:"
