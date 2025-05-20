@@ -235,7 +235,7 @@ public class CouchDBInitializer {
         System.out.println("Loading metadata: START");
 
         System.out.println("DEBUG: Final verification before loading documents");
-        boolean databaseExists = false;
+        databaseExists = false;
         for (int attempt = 1; attempt <= 3; attempt++) {
             databaseExists = checkDatabaseExists();
             if (databaseExists) {
