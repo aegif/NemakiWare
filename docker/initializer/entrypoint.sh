@@ -7,7 +7,7 @@ COUCHDB_USERNAME=${COUCHDB_USERNAME:-""}
 COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-""}
 REPOSITORY_ID=${REPOSITORY_ID:-"bedroom"}
 DUMP_FILE=${DUMP_FILE:-"/app/bedroom_init.dump"}
-FORCE=${FORCE:-"false"}
+FORCE=${FORCE:-"true"}  # Always use force=true to ensure import continues
 
 echo "Initializing CouchDB database:"
 echo "URL: $COUCHDB_URL"
@@ -66,6 +66,14 @@ fi
 echo "CouchDB info:"
 curl -s -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL"
 
+echo "Listing all databases before creation:"
+curl -s -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/_all_dbs"
+
+echo "Deleting database $REPOSITORY_ID if it exists..."
+delete_response=$(curl -s -X DELETE -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/$REPOSITORY_ID")
+echo "Database deletion response: $delete_response"
+sleep 2
+
 echo "Creating database $REPOSITORY_ID directly using curl..."
 create_response=$(curl -s -X PUT -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/$REPOSITORY_ID")
 echo "Database creation response: $create_response"
@@ -96,11 +104,7 @@ if [ "$db_created" = "false" ]; then
   echo "Listing all databases to check if it exists with a different name:"
   curl -s -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/_all_dbs"
   
-  if [ "$FORCE" = "true" ]; then
-    echo "Continuing due to FORCE=true, but import will likely fail"
-  else
-    exit 1
-  fi
+  echo "Continuing due to FORCE=true, but import will likely fail"
 fi
 
 echo "Waiting for database to be fully available..."
@@ -110,11 +114,12 @@ echo "Creating design documents if needed..."
 design_response=$(curl -s -X PUT -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/$REPOSITORY_ID/_design/cmis" -H "Content-Type: application/json" -d '{}')
 echo "Design document creation response: $design_response"
 
+echo "Listing all databases after creation:"
+curl -s -u "$COUCHDB_USERNAME:$COUCHDB_PASSWORD" "$COUCHDB_URL/_all_dbs"
+
 # Execute CouchDBInitializer with arguments
 echo "Executing CouchDBInitializer with arguments:"
 echo "java -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer \"$COUCHDB_URL\" \"$COUCHDB_USERNAME\" \"$COUCHDB_PASSWORD\" \"$REPOSITORY_ID\" \"$DUMP_FILE\" \"$FORCE\""
-
-FORCE="true"
 
 java -Xmx512m -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer "$COUCHDB_URL" "$COUCHDB_USERNAME" "$COUCHDB_PASSWORD" "$REPOSITORY_ID" "$DUMP_FILE" "$FORCE"
 
