@@ -65,25 +65,24 @@ public class CouchDBInitializer {
         this.force = force;
         this.objectMapper = new ObjectMapper();
         
-        if (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(password)) {
-            System.out.println("Using authenticated connection for CouchDB");
-            CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
-            credentialsProvider.setCredentials(
-                AuthScope.ANY,
-                new UsernamePasswordCredentials(username, password)
-            );
-            this.httpClient = HttpClients.custom()
-                .setDefaultCredentialsProvider(credentialsProvider)
-                .build();
-        } else {
-            System.out.println("Using non-authenticated connection for CouchDB");
-            this.httpClient = HttpClients.createDefault();
-        }
+        String effectiveUsername = StringUtils.isNotBlank(username) ? username : "admin";
+        String effectivePassword = StringUtils.isNotBlank(password) ? password : "password";
+        
+        System.out.println("Using authenticated connection for CouchDB");
+        System.out.println("Effective username: " + effectiveUsername);
+        System.out.println("Effective password: ******");
+        
+        CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
+        credentialsProvider.setCredentials(
+            AuthScope.ANY,
+            new UsernamePasswordCredentials(effectiveUsername, effectivePassword)
+        );
+        this.httpClient = HttpClients.custom()
+            .setDefaultCredentialsProvider(credentialsProvider)
+            .build();
         
         System.out.println("CouchDB URL: " + url);
         System.out.println("Repository ID: " + repositoryId);
-        System.out.println("Username: " + (StringUtils.isNotBlank(username) ? username : "none"));
-        System.out.println("Password: " + (StringUtils.isNotBlank(password) ? "******" : "none"));
     }
 
     public static void main(String[] args) {
@@ -377,10 +376,15 @@ public class CouchDBInitializer {
         }
 
         if (CollectionUtils.isNotEmpty(documentsResult)) {
-            System.err.println("Some documents were not imported because of errors:");
+            System.out.println("Some documents were not imported because of errors:");
+            int conflictCount = 0;
             for (String error : documentsResult) {
-                System.err.println(error);
+                System.out.println(error);
+                if (error.contains("Document update conflict")) {
+                    conflictCount++;
+                }
             }
+            System.out.println("Total document conflicts: " + conflictCount + " (these are normal if database already contained data)");
         }
         System.out.println("Loading metadata: END");
 
@@ -513,14 +517,11 @@ public class CouchDBInitializer {
             try {
                 HttpPut httpPut = new HttpPut(url + "/" + repositoryId);
                 
-                if (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(password)) {
-                    String auth = username + ":" + password;
-                    String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes("UTF-8"));
-                    httpPut.setHeader("Authorization", "Basic " + encodedAuth);
-                    System.out.println("DEBUG: Added Authorization header for authenticated request");
-                } else {
-                    System.out.println("DEBUG: No credentials provided, attempting without authentication");
-                }
+                String auth = StringUtils.isNotBlank(username) ? username : "admin";
+                String pass = StringUtils.isNotBlank(password) ? password : "password";
+                String encodedAuth = Base64.getEncoder().encodeToString((auth + ":" + pass).getBytes("UTF-8"));
+                httpPut.setHeader("Authorization", "Basic " + encodedAuth);
+                System.out.println("DEBUG: Added Authorization header for authenticated request");
                 
                 try (CloseableHttpResponse response = httpClient.execute(httpPut)) {
                     int statusCode = response.getStatusLine().getStatusCode();
@@ -705,15 +706,43 @@ public class CouchDBInitializer {
                 + "\"members\": {\"names\": [], \"roles\": []}"
                 + "}";
             
+            // First, check if this is CouchDB 3.x by looking at the server info
+            boolean isCouchDB3 = false;
+            try {
+                HttpGet infoGet = new HttpGet(url);
+                
+                String auth = StringUtils.isNotBlank(username) ? username : "admin";
+                String pass = StringUtils.isNotBlank(password) ? password : "password";
+                String encodedAuth = Base64.getEncoder().encodeToString((auth + ":" + pass).getBytes("UTF-8"));
+                infoGet.setHeader("Authorization", "Basic " + encodedAuth);
+                System.out.println("DEBUG: Added Authorization header for CouchDB version check");
+                
+                try (CloseableHttpResponse infoResponse = httpClient.execute(infoGet)) {
+                    int infoStatusCode = infoResponse.getStatusLine().getStatusCode();
+                    if (infoStatusCode == HttpStatus.SC_OK) {
+                        HttpEntity infoEntity = infoResponse.getEntity();
+                        if (infoEntity != null) {
+                            String infoBody = EntityUtils.toString(infoEntity);
+                            if (infoBody.contains("\"version\":\"3.") || url.contains("couchdb3")) {
+                                isCouchDB3 = true;
+                                System.out.println("DEBUG: Detected CouchDB 3.x, will apply special security settings");
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("Error detecting CouchDB version: " + e.getMessage());
+                isCouchDB3 = true;
+            }
+            
             HttpPut httpPut = new HttpPut(url + "/" + repositoryId + "/_security");
             httpPut.setHeader("Content-Type", "application/json");
             
-            if (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(password)) {
-                String auth = username + ":" + password;
-                String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes("UTF-8"));
-                httpPut.setHeader("Authorization", "Basic " + encodedAuth);
-                System.out.println("DEBUG: Added Authorization header for authenticated security request");
-            }
+            String auth = StringUtils.isNotBlank(username) ? username : "admin";
+            String pass = StringUtils.isNotBlank(password) ? password : "password";
+            String encodedAuth = Base64.getEncoder().encodeToString((auth + ":" + pass).getBytes("UTF-8"));
+            httpPut.setHeader("Authorization", "Basic " + encodedAuth);
+            System.out.println("DEBUG: Added Authorization header for authenticated security request");
             
             httpPut.setEntity(new StringEntity(securityJson, ContentType.APPLICATION_JSON));
             
@@ -727,7 +756,39 @@ public class CouchDBInitializer {
                     System.out.println("DEBUG: Set security response body: " + responseBody);
                 }
                 
-                return statusCode == HttpStatus.SC_OK || statusCode == HttpStatus.SC_CREATED || statusCode == HttpStatus.SC_ACCEPTED;
+                boolean success = statusCode == HttpStatus.SC_OK || statusCode == HttpStatus.SC_CREATED || statusCode == HttpStatus.SC_ACCEPTED;
+                
+                if (success && isCouchDB3) {
+                    System.out.println("DEBUG: Verifying security settings for CouchDB 3.x");
+                    try {
+                        Thread.sleep(1000); // Give CouchDB time to apply the settings
+                        
+                        HttpGet securityGet = new HttpGet(url + "/" + repositoryId + "/_security");
+                        
+                        String auth = StringUtils.isNotBlank(username) ? username : "admin";
+                        String pass = StringUtils.isNotBlank(password) ? password : "password";
+                        String encodedAuth = Base64.getEncoder().encodeToString((auth + ":" + pass).getBytes("UTF-8"));
+                        securityGet.setHeader("Authorization", "Basic " + encodedAuth);
+                        System.out.println("DEBUG: Added Authorization header for security verification request");
+                        
+                        try (CloseableHttpResponse verifyResponse = httpClient.execute(securityGet)) {
+                            int verifyStatusCode = verifyResponse.getStatusLine().getStatusCode();
+                            System.out.println("DEBUG: Security verification status code: " + verifyStatusCode);
+                            
+                            if (verifyStatusCode == HttpStatus.SC_OK) {
+                                HttpEntity verifyEntity = verifyResponse.getEntity();
+                                if (verifyEntity != null) {
+                                    String verifyBody = EntityUtils.toString(verifyEntity);
+                                    System.out.println("DEBUG: Current security settings: " + verifyBody);
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        System.err.println("Error verifying security settings: " + e.getMessage());
+                    }
+                }
+                
+                return success;
             }
         } catch (Exception e) {
             System.err.println("Exception setting database security: " + e.getMessage());

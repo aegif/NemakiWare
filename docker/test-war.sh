@@ -106,29 +106,48 @@ else
 fi
 
 echo "Running initializers..."
-echo "CouchDB 2.x initializer:"
-docker compose -f docker-compose-war.yml run --rm --remove-orphans \
-  -e COUCHDB_URL=http://couchdb2:5984 \
-  -e COUCHDB_USERNAME=${COUCHDB_USER} \
-  -e COUCHDB_PASSWORD=${COUCHDB_PASSWORD} \
-  -e REPOSITORY_ID=bedroom \
-  -e DUMP_FILE=/app/bedroom_init.dump \
-  -e FORCE=true \
-  --entrypoint java \
-  initializer2 -Xmx512m -Dlog.level=DEBUG -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer \
-  http://couchdb2:5984 "${COUCHDB_USER}" "${COUCHDB_PASSWORD}" bedroom /app/bedroom_init.dump true
 
-echo "CouchDB 3.x initializer:"
-docker compose -f docker-compose-war.yml run --rm --remove-orphans \
-  -e COUCHDB_URL=http://couchdb3:5984 \
-  -e COUCHDB_USERNAME=${COUCHDB_USER} \
-  -e COUCHDB_PASSWORD=${COUCHDB_PASSWORD} \
-  -e REPOSITORY_ID=bedroom \
-  -e DUMP_FILE=/app/bedroom_init.dump \
-  -e FORCE=true \
-  --entrypoint java \
-  initializer3 -Xmx512m -Dlog.level=DEBUG -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer \
-  http://couchdb3:5984 "${COUCHDB_USER}" "${COUCHDB_PASSWORD}" bedroom /app/bedroom_init.dump true
+initialize_database() {
+    local couchdb_version=$1
+    local repo_id=$2
+    local port=$3
+    local container_name=$4
+    
+    echo "CouchDB ${couchdb_version} initializer for ${repo_id}:"
+    
+    echo "Checking CouchDB ${couchdb_version} database ${repo_id}..."
+    echo "DEBUG: Running: curl -s -u \"${COUCHDB_USER}:${COUCHDB_PASSWORD}\" http://localhost:${port}/${repo_id}"
+    curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:${port}/${repo_id} | tee /tmp/couchdb${couchdb_version}_${repo_id}_check.json
+    if ! cat /tmp/couchdb${couchdb_version}_${repo_id}_check.json | grep -q "db_name"; then
+        echo "CouchDB ${couchdb_version} database ${repo_id} does not exist"
+        echo "Creating CouchDB ${couchdb_version} database ${repo_id}..."
+        echo "DEBUG: Running: curl -X PUT -s -u \"${COUCHDB_USER}:${COUCHDB_PASSWORD}\" http://localhost:${port}/${repo_id}"
+        curl -X PUT -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:${port}/${repo_id} | tee /tmp/couchdb${couchdb_version}_${repo_id}_create.json
+    else
+        echo "CouchDB ${couchdb_version} database ${repo_id} exists"
+    fi
+    
+    docker compose -f docker-compose-war.yml run --rm --remove-orphans \
+      -e COUCHDB_URL=http://${container_name}:5984 \
+      -e COUCHDB_USERNAME=${COUCHDB_USER} \
+      -e COUCHDB_PASSWORD=${COUCHDB_PASSWORD} \
+      -e REPOSITORY_ID=${repo_id} \
+      -e DUMP_FILE=/app/bedroom_init.dump \
+      -e FORCE=true \
+      --entrypoint java \
+      initializer${couchdb_version} -Xmx512m -Dlog.level=DEBUG -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer \
+      http://${container_name}:5984 "${COUCHDB_USER}" "${COUCHDB_PASSWORD}" ${repo_id} /app/bedroom_init.dump true
+}
+
+initialize_database "2" "bedroom" "5984" "couchdb2"
+initialize_database "2" "bedroom_closet" "5984" "couchdb2"
+initialize_database "2" "canopy" "5984" "couchdb2"
+initialize_database "2" "canopy_closet" "5984" "couchdb2"
+
+initialize_database "3" "bedroom" "5985" "couchdb3"
+initialize_database "3" "bedroom_closet" "5985" "couchdb3"
+initialize_database "3" "canopy" "5985" "couchdb3"
+initialize_database "3" "canopy_closet" "5985" "couchdb3"
 
 echo "Verifying database initialization..."
 echo "CouchDB 2.x database:"
