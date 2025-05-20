@@ -1,8 +1,5 @@
-#!/bin/bash
 set -e
 
-# Get values from environment variables or command-line arguments
-# Command-line arguments take precedence over environment variables
 URL=${1:-${COUCHDB_URL:-"http://localhost:5984"}}
 USERNAME=${2:-${COUCHDB_USERNAME:-""}}
 PASSWORD=${3:-${COUCHDB_PASSWORD:-""}}
@@ -17,7 +14,6 @@ echo "Repository ID: $REPOSITORY_ID"
 echo "Dump file: $DUMP_FILE"
 echo "Force: $FORCE"
 
-# Debug output as requested
 echo "DEBUG: 渡される引数:"
 echo "1: $URL"
 echo "2: $USERNAME" 
@@ -36,7 +32,6 @@ fi
 echo "DEBUG: 実行コマンド:"
 echo "java -Xmx512m -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer \"$URL\" \"$USERNAME\" \"$PASSWORD\" \"$REPOSITORY_ID\" \"$DUMP_FILE\" \"$FORCE\""
 
-# Pass all 6 arguments explicitly to the Java application
 java -Xmx512m -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer "$URL" "$USERNAME" "$PASSWORD" "$REPOSITORY_ID" "$DUMP_FILE" "$FORCE"
 
 exit $?
