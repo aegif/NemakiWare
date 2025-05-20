@@ -9,7 +9,12 @@ COPY entrypoint.sh /app/entrypoint.sh
 
 RUN chmod +x /app/entrypoint.sh
 
+# Use environment variables instead of command-line arguments
+ENV COUCHDB_URL="http://localhost:5984" \
+    COUCHDB_USER="" \
+    COUCHDB_PASSWORD="" \
+    REPOSITORY_ID="bedroom" \
+    DUMP_FILE="/app/data/bedroom_init.dump" \
+    FORCE="true"
 
 ENTRYPOINT ["/app/entrypoint.sh"]
-
-CMD ["http://localhost:5984", "", "", "bedroom", "/app/data/bedroom_init.dump", "true"]
