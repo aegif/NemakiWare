@@ -80,12 +80,30 @@ sleep 20
 echo "Checking CouchDB 2.x database..."
 echo "DEBUG: Running: curl -s -u \"${COUCHDB_USER}:${COUCHDB_PASSWORD}\" http://localhost:5984/bedroom"
 curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5984/bedroom | tee /tmp/couchdb2_check.json
-cat /tmp/couchdb2_check.json | grep -q "db_name" && echo "CouchDB 2.x database exists" || echo "CouchDB 2.x database does not exist"
+if cat /tmp/couchdb2_check.json | grep -q "db_name"; then
+  echo "CouchDB 2.x database exists"
+else
+  echo "CouchDB 2.x database does not exist"
+  echo "Creating CouchDB 2.x database..."
+  echo "DEBUG: Running: curl -X PUT -s -u \"${COUCHDB_USER}:${COUCHDB_PASSWORD}\" http://localhost:5984/bedroom"
+  curl -X PUT -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5984/bedroom | tee /tmp/couchdb2_create.json
+  echo "CouchDB 2.x database creation response:"
+  cat /tmp/couchdb2_create.json
+fi
 
 echo "Checking CouchDB 3.x database..."
 echo "DEBUG: Running: curl -s -u \"${COUCHDB_USER}:${COUCHDB_PASSWORD}\" http://localhost:5985/bedroom"
 curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5985/bedroom | tee /tmp/couchdb3_check.json
-cat /tmp/couchdb3_check.json | grep -q "db_name" && echo "CouchDB 3.x database exists" || echo "CouchDB 3.x database does not exist"
+if cat /tmp/couchdb3_check.json | grep -q "db_name"; then
+  echo "CouchDB 3.x database exists"
+else
+  echo "CouchDB 3.x database does not exist"
+  echo "Creating CouchDB 3.x database..."
+  echo "DEBUG: Running: curl -X PUT -s -u \"${COUCHDB_USER}:${COUCHDB_PASSWORD}\" http://localhost:5985/bedroom"
+  curl -X PUT -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5985/bedroom | tee /tmp/couchdb3_create.json
+  echo "CouchDB 3.x database creation response:"
+  cat /tmp/couchdb3_create.json
+fi
 
 echo "Running initializers..."
 echo "CouchDB 2.x initializer:"
