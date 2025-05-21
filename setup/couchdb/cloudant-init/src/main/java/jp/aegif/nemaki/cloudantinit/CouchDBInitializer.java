@@ -274,11 +274,11 @@ public class CouchDBInitializer {
                 HttpPost httpPost = new HttpPost(url + "/" + repositoryId + "/_bulk_docs");
                 httpPost.setHeader("Content-Type", "application/json");
                 
-                if (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(password)) {
-                    String auth = username + ":" + password;
-                    String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes("UTF-8"));
-                    httpPost.setHeader("Authorization", "Basic " + encodedAuth);
-                }
+                String auth = StringUtils.isNotBlank(username) ? username : "admin";
+                String pass = StringUtils.isNotBlank(password) ? password : "password";
+                String encodedAuth = Base64.getEncoder().encodeToString((auth + ":" + pass).getBytes("UTF-8"));
+                httpPost.setHeader("Authorization", "Basic " + encodedAuth);
+                System.out.println("DEBUG: Added Authorization header for authenticated request");
                 
                 httpPost.setEntity(new StringEntity(bulkDocsJson, ContentType.APPLICATION_JSON));
                 
@@ -317,11 +317,11 @@ public class CouchDBInitializer {
                                 httpPost = new HttpPost(url + "/" + repositoryId + "/_bulk_docs");
                                 httpPost.setHeader("Content-Type", "application/json");
                                 
-                                if (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(password)) {
-                                    String auth = username + ":" + password;
-                                    String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes("UTF-8"));
-                                    httpPost.setHeader("Authorization", "Basic " + encodedAuth);
-                                }
+                                String retryAuth = StringUtils.isNotBlank(username) ? username : "admin";
+                                String retryPass = StringUtils.isNotBlank(password) ? password : "password";
+                                String retryEncodedAuth = Base64.getEncoder().encodeToString((retryAuth + ":" + retryPass).getBytes("UTF-8"));
+                                httpPost.setHeader("Authorization", "Basic " + retryEncodedAuth);
+                                System.out.println("DEBUG: Added Authorization header for authenticated retry request");
                                 
                                 httpPost.setEntity(new StringEntity(bulkDocsJson, ContentType.APPLICATION_JSON));
                                 
@@ -378,13 +378,17 @@ public class CouchDBInitializer {
         if (CollectionUtils.isNotEmpty(documentsResult)) {
             System.out.println("Some documents were not imported because of errors:");
             int conflictCount = 0;
+            int errorCount = 0;
             for (String error : documentsResult) {
                 System.out.println(error);
                 if (error.contains("Document update conflict")) {
                     conflictCount++;
+                } else {
+                    errorCount++;
                 }
             }
             System.out.println("Total document conflicts: " + conflictCount + " (these are normal if database already contained data)");
+            System.out.println("Total other errors: " + errorCount + " (these may require attention)");
         }
         System.out.println("Loading metadata: END");
 
@@ -419,6 +423,11 @@ public class CouchDBInitializer {
                     HttpPut httpPut = new HttpPut(uri);
                     httpPut.setHeader("Content-Type", contentType);
                     
+                    String auth = StringUtils.isNotBlank(username) ? username : "admin";
+                    String pass = StringUtils.isNotBlank(password) ? password : "password";
+                    String encodedAuth = Base64.getEncoder().encodeToString((auth + ":" + pass).getBytes("UTF-8"));
+                    httpPut.setHeader("Authorization", "Basic " + encodedAuth);
+                    System.out.println("DEBUG: Added Authorization header for attachment upload");
                     
                     httpPut.setEntity(new InputStreamEntity(attachmentStream, attachmentData.length));
                     
@@ -467,11 +476,11 @@ public class CouchDBInitializer {
         try {
             HttpGet httpGet = new HttpGet(url + "/" + repositoryId + "/" + docId);
             
-            if (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(password)) {
-                String auth = username + ":" + password;
-                String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes("UTF-8"));
-                httpGet.setHeader("Authorization", "Basic " + encodedAuth);
-            }
+            String auth = StringUtils.isNotBlank(username) ? username : "admin";
+            String pass = StringUtils.isNotBlank(password) ? password : "password";
+            String encodedAuth = Base64.getEncoder().encodeToString((auth + ":" + pass).getBytes("UTF-8"));
+            httpGet.setHeader("Authorization", "Basic " + encodedAuth);
+            System.out.println("DEBUG: Added Authorization header for getLatestRevision request");
             
             try (CloseableHttpResponse response = httpClient.execute(httpGet)) {
                 int statusCode = response.getStatusLine().getStatusCode();
