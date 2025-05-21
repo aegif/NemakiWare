@@ -9,9 +9,10 @@ RUN rm -rf $CATALINA_HOME/webapps/*
 
 # Create necessary directories
 RUN mkdir -p $CATALINA_HOME/conf/Catalina/localhost/
+RUN mkdir -p /opt/nemaki/
 
-# Copy the WAR file
-COPY ./core.war $CATALINA_HOME/webapps/core.war
+# Copy the WAR file to a location outside of webapps
+COPY ./core.war /opt/nemaki/core.war
 
 # Copy context configuration
 COPY ./context.xml $CATALINA_HOME/conf/Catalina/localhost/core.xml
