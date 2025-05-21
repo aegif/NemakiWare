@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Context>
+    <!-- Disable session persistence across Tomcat restarts -->
+    <Manager pathname="" />
+    
+    <!-- Configure thread cleanup on context destruction -->
+    <Listener className="org.apache.catalina.core.ThreadLocalLeakPreventionListener" />
+    
+    <!-- Set this to true to force Tomcat to stop threads on context unload -->
+    <JarScanner scanManifest="false" />
+    
+    <!-- Add a custom system property to disable Ektorp idle connection monitor -->
+    <Environment name="org.ektorp.support.AutoUpdateViewOnChange" value="true" type="java.lang.Boolean" />
+    <Environment name="org.ektorp.http.IdleConnectionMonitor.enabled" value="false" type="java.lang.Boolean" />
+</Context>

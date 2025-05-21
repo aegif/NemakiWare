@@ -170,7 +170,40 @@ cat /tmp/couchdb2_response.json | grep -q "db_name" && echo "SUCCESS: CouchDB 2.
 #COMMENTED: cat /tmp/couchdb3_response.json | grep -q "db_name" && echo "SUCCESS: CouchDB 3.x database exists" || echo "ERROR: CouchDB 3.x database does not exist"
 
 echo "UI endpoints:"
-echo "CouchDB 2.x UI: http://localhost:9000"
-#COMMENTED: echo "CouchDB 3.x UI: http://localhost:9001"
+echo "CouchDB 2.x UI: http://localhost:9000/ui/"
+#COMMENTED: echo "CouchDB 3.x UI: http://localhost:9001/ui/"
+
+echo "Checking UI server status..."
+UI_UI_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/ui/ || echo "connection_error")
+if [ "$UI_UI_STATUS" = "200" ]; then
+    echo "✓ UI server is up and running at /ui/ path"
+else
+    echo "✗ UI server returned status $UI_UI_STATUS at /ui/ path"
+    
+    echo "Checking alternate UI paths:"
+    UI_ROOT_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/ || echo "connection_error")
+    UI_REPO_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/repo/bedroom/ || echo "connection_error")
+    UI_UI_REPO_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/ui/repo/bedroom/ || echo "connection_error")
+    
+    echo "Root path (/): $UI_ROOT_STATUS"
+    echo "UI path (/ui/): $UI_UI_STATUS"
+    echo "Repo path (/repo/bedroom/): $UI_REPO_STATUS"
+    echo "UI+Repo path (/ui/repo/bedroom/): $UI_UI_REPO_STATUS"
+    
+    echo "Checking UI server logs:"
+    docker logs docker-ui2-war-1 | grep -i "error\|exception\|failure" | tail -20
+    
+    echo "Checking UI server configuration:"
+    docker exec docker-ui2-war-1 ls -la /usr/local/tomcat/conf/Catalina/localhost/
+    docker exec docker-ui2-war-1 cat /usr/local/tomcat/conf/Catalina/localhost/ui.xml 2>/dev/null || echo "ui.xml not found"
+    
+    echo "Checking UI server webapps:"
+    docker exec docker-ui2-war-1 ls -la /usr/local/tomcat/webapps/
+fi
+
+echo "Checking UI to Core connectivity:"
+echo "UI is configured to connect to: $(docker exec docker-ui2-war-1 cat /usr/local/tomcat/conf/nemakiware_ui.properties | grep nemaki.core.uri)"
+echo "Testing Core server connectivity from UI container:"
+docker exec docker-ui2-war-1 curl -s -o /dev/null -w "%{http_code}" http://core2:8080/core || echo "connection_error"
 
 echo "Test complete!"

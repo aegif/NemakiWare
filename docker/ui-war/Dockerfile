@@ -6,11 +6,8 @@ RUN rm -rf /usr/local/tomcat/webapps/*
 # Create necessary directories for context configuration
 RUN mkdir -p /usr/local/tomcat/conf/Catalina/localhost
 
-# Copy the UI WAR file
-COPY ui.war /usr/local/tomcat/webapps/ROOT.war
-
-# Copy context configuration
-COPY ui.xml /usr/local/tomcat/conf/Catalina/localhost/ui.xml
+# Copy the UI WAR file with the correct context path name
+COPY ui.war /usr/local/tomcat/webapps/ui.war
 
 # Copy configuration files
 COPY nemakiware_ui.properties /usr/local/tomcat/conf/

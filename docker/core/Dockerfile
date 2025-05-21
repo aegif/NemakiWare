@@ -1,4 +1,4 @@
-FROM tomcat:9-jdk8
+FROM tomcat:8-jre8
 
 # Set environment variables
 ENV CATALINA_HOME /usr/local/tomcat
@@ -12,16 +12,19 @@ RUN rm -rf $CATALINA_HOME/webapps/*
 RUN mkdir -p $CATALINA_HOME/shared/classes/
 RUN mkdir -p $CATALINA_HOME/conf/Catalina/localhost/
 
-# Copy the WAR file
-COPY ./core.war $CATALINA_HOME/webapps/ROOT.war
+# Copy the WAR file directly with the context path name
+COPY ./core.war $CATALINA_HOME/webapps/core.war
 
-# Create context configuration
-RUN echo '<?xml version="1.0" encoding="UTF-8"?><Context path="/core" docBase="ROOT.war" />' > $CATALINA_HOME/conf/Catalina/localhost/core.xml
+# Copy context configuration
+COPY ./context.xml $CATALINA_HOME/conf/Catalina/localhost/core.xml
 
 # Copy configuration files
 COPY ./nemakiware.properties $CATALINA_HOME/shared/classes/
 COPY ./repositories.yml $CATALINA_HOME/shared/classes/
 COPY ./log4j.properties $CATALINA_HOME/shared/classes/
+
+# Set environment variables for Ektorp
+ENV CATALINA_OPTS="-Xms512m -Xmx1024m -Dorg.ektorp.support.AutoUpdateViewOnChange=true -Dorg.ektorp.http.IdleConnectionMonitor.enabled=false"
 
 # Expose the default Tomcat port
 EXPOSE 8080
