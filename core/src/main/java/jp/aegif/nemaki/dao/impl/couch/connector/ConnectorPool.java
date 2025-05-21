@@ -8,6 +8,19 @@ import java.util.Map;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.params.ClientPNames;
+import org.apache.http.conn.ClientConnectionManager;
+import org.apache.http.conn.params.ConnManagerParams;
+import org.apache.http.conn.params.ConnPerRouteBean;
+import org.apache.http.conn.scheme.PlainSocketFactory;
+import org.apache.http.conn.scheme.Scheme;
+import org.apache.http.conn.scheme.SchemeRegistry;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.impl.conn.tsccm.ThreadSafeClientConnManager;
+import org.apache.http.params.BasicHttpParams;
+import org.apache.http.params.CoreConnectionPNames;
+import org.apache.http.params.HttpParams;
 import org.ektorp.CouchDbConnector;
 import org.ektorp.CouchDbInstance;
 import org.ektorp.DocumentNotFoundException;
@@ -49,6 +62,8 @@ public class ConnectorPool {
 		System.setProperty("org.apache.http.impl.conn.PoolingHttpClientConnectionManager.idleConnectionMonitor", "false");
 		System.setProperty("org.apache.catalina.loader.WebappClassLoader.ENABLE_CLEAR_REFERENCES", "true");
 		
+		disableIdleConnectionMonitor();
+		
 		Runtime.getRuntime().addShutdownHook(new Thread() {
 			@Override
 			public void run() {
@@ -61,11 +76,28 @@ public class ConnectorPool {
 			}
 		});
 		
-		disableIdleConnectionMonitor();
-		
 		try {
-			this.builder = new StdHttpClient.Builder()
-			.url(url)
+			DefaultHttpClient httpClient = new DefaultHttpClient();
+			httpClient.getParams().setParameter(CoreConnectionPNames.CONNECTION_TIMEOUT, connectionTimeout);
+			httpClient.getParams().setParameter(CoreConnectionPNames.SO_TIMEOUT, socketTimeout);
+			
+			ClientConnectionManager conman = httpClient.getConnectionManager();
+			if (conman instanceof ThreadSafeClientConnManager) {
+				ThreadSafeClientConnManager tcm = (ThreadSafeClientConnManager) conman;
+				tcm.setMaxTotal(maxConnections);
+				tcm.setDefaultMaxPerRoute(maxConnections);
+			}
+			
+			HttpClient client = httpClient;
+			
+			this.builder = new StdHttpClient.Builder() {
+				@Override
+				public HttpClient configureClient() {
+					return client;
+				}
+			};
+			
+			builder.url(url)
 			.maxConnections(maxConnections)
 			.connectionTimeout(connectionTimeout)
 			.socketTimeout(socketTimeout)
