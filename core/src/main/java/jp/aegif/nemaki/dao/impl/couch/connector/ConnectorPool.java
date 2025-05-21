@@ -166,13 +166,44 @@ public class ConnectorPool {
 	}
 
 	private void initNemakiConfDb(){
-		CouchDbInstance dbInstance = new StdCouchDbInstance(builder.build());
-		if(dbInstance.checkIfDbExists(SystemConst.NEMAKI_CONF_DB)){
-			add(SystemConst.NEMAKI_CONF_DB);
-		}else{
-			addNemakiConfDb();
-			add(SystemConst.NEMAKI_CONF_DB);
-			createConfiguration(get(SystemConst.NEMAKI_CONF_DB));
+		int maxRetries = 10;
+		int retryIntervalMs = 2000;
+		int retryCount = 0;
+		boolean connected = false;
+		
+		while (!connected && retryCount < maxRetries) {
+			try {
+				log.info("Attempting to connect to CouchDB (attempt " + (retryCount + 1) + " of " + maxRetries + ")");
+				org.ektorp.http.HttpClient httpClient = builder.build();
+				CouchDbInstance dbInstance = new StdCouchDbInstance(httpClient);
+				
+				if(dbInstance.checkIfDbExists(SystemConst.NEMAKI_CONF_DB)){
+					add(SystemConst.NEMAKI_CONF_DB);
+				}else{
+					addNemakiConfDb();
+					add(SystemConst.NEMAKI_CONF_DB);
+					createConfiguration(get(SystemConst.NEMAKI_CONF_DB));
+				}
+				
+				connected = true;
+				log.info("Successfully connected to CouchDB");
+			} catch (Exception e) {
+				retryCount++;
+				log.warn("Failed to connect to CouchDB: " + e.getMessage() + ". Retrying in " + retryIntervalMs + "ms...");
+				
+				try {
+					Thread.sleep(retryIntervalMs);
+				} catch (InterruptedException ie) {
+					Thread.currentThread().interrupt();
+					log.error("Thread interrupted while waiting to retry CouchDB connection", ie);
+					break;
+				}
+			}
+		}
+		
+		if (!connected) {
+			log.error("Failed to connect to CouchDB after " + maxRetries + " attempts");
+			throw new RuntimeException("Failed to connect to CouchDB after " + maxRetries + " attempts");
 		}
 	}
 
