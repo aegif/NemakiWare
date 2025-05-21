@@ -113,6 +113,14 @@ initialize_database() {
     local port=$3
     local container_name=$4
     
+    local dump_file="/app/bedroom_init.dump"
+    if [[ "${repo_id}" == *"_closet" ]]; then
+        dump_file="/app/archive_init.dump"
+        echo "Using archive dump file for ${repo_id}"
+    else
+        echo "Using bedroom dump file for ${repo_id}"
+    fi
+    
     echo "CouchDB ${couchdb_version} initializer for ${repo_id}:"
     
     echo "Checking CouchDB ${couchdb_version} database ${repo_id}..."
@@ -132,11 +140,11 @@ initialize_database() {
       -e COUCHDB_USERNAME=${COUCHDB_USER} \
       -e COUCHDB_PASSWORD=${COUCHDB_PASSWORD} \
       -e REPOSITORY_ID=${repo_id} \
-      -e DUMP_FILE=/app/bedroom_init.dump \
+      -e DUMP_FILE=${dump_file} \
       -e FORCE=true \
       --entrypoint java \
       initializer${couchdb_version} -Xmx512m -Dlog.level=DEBUG -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer \
-      http://${container_name}:5984 "${COUCHDB_USER}" "${COUCHDB_PASSWORD}" ${repo_id} /app/bedroom_init.dump true
+      http://${container_name}:5984 "${COUCHDB_USER}" "${COUCHDB_PASSWORD}" ${repo_id} ${dump_file} true
 }
 
 initialize_database "2" "bedroom" "5984" "couchdb2"
