@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Context path="" docBase="/usr/local/tomcat/webapps/ROOT.war">
+<Context path="" docBase="ROOT.war">
     <!-- Disable session persistence across Tomcat restarts -->
     <Manager pathname="" />
     
@@ -8,7 +8,7 @@
     <Listener className="org.apache.catalina.core.JreMemoryLeakPreventionListener" />
     
     <!-- Set this to true to force Tomcat to stop threads on context unload -->
-    <JarScanner scanManifest="false" scanAllDirectories="false" scanClassPath="false">
+    <JarScanner scanManifest="false">
         <JarScanFilter defaultPluggabilityScan="false" defaultTldScan="false" />
     </JarScanner>
     
