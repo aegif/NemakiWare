@@ -60,11 +60,11 @@ EOF3
 
 cp $NEMAKI_HOME/docker/core/nemakiware.properties $NEMAKI_HOME/docker/core/config2/
 
-cat > $NEMAKI_HOME/docker/core/config3/nemakiware.properties << EOF4
-db.couchdb.url=http://couchdb3:5984
-db.couchdb.user=${COUCHDB_USER:-admin}
-db.couchdb.password=${COUCHDB_PASSWORD:-password}
-EOF4
+#COMMENTED: cat > $NEMAKI_HOME/docker/core/config3/nemakiware.properties << EOF4
+#COMMENTED: db.couchdb.url=http://couchdb3:5984
+#COMMENTED: db.couchdb.user=${COUCHDB_USER:-admin}
+#COMMENTED: db.couchdb.password=${COUCHDB_PASSWORD:-password}
+#COMMENTED: EOF4
 
 echo "Creating log4j.properties if it doesn't exist..."
 if [ ! -f $NEMAKI_HOME/docker/core/log4j.properties ]; then
@@ -72,7 +72,7 @@ if [ ! -f $NEMAKI_HOME/docker/core/log4j.properties ]; then
 fi
 
 echo "Building and starting containers..."
-docker compose -f docker-compose-war.yml build --no-cache initializer2 initializer3
+docker compose -f docker-compose-war.yml build --no-cache initializer2
 docker compose -f docker-compose-war.yml up -d --remove-orphans
 
 echo "Waiting for CouchDB services to fully initialize..."
@@ -92,19 +92,19 @@ else
   cat /tmp/couchdb2_create.json
 fi
 
-echo "Checking CouchDB 3.x database..."
-echo "DEBUG: Running: curl -s -u \"${COUCHDB_USER}:${COUCHDB_PASSWORD}\" http://localhost:5985/bedroom"
-curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5985/bedroom | tee /tmp/couchdb3_check.json
-if cat /tmp/couchdb3_check.json | grep -q "db_name"; then
-  echo "CouchDB 3.x database exists"
-else
-  echo "CouchDB 3.x database does not exist"
-  echo "Creating CouchDB 3.x database..."
-  echo "DEBUG: Running: curl -X PUT -s -u \"${COUCHDB_USER}:${COUCHDB_PASSWORD}\" http://localhost:5985/bedroom"
-  curl -X PUT -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5985/bedroom | tee /tmp/couchdb3_create.json
-  echo "CouchDB 3.x database creation response:"
-  cat /tmp/couchdb3_create.json
-fi
+#COMMENTED: echo "Checking CouchDB 3.x database..."
+#COMMENTED: echo "DEBUG: Running: curl -s -u \"${COUCHDB_USER}:${COUCHDB_PASSWORD}\" http://localhost:5985/bedroom"
+#COMMENTED: curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5985/bedroom | tee /tmp/couchdb3_check.json
+#COMMENTED: if cat /tmp/couchdb3_check.json | grep -q "db_name"; then
+#COMMENTED:   echo "CouchDB 3.x database exists"
+#COMMENTED: else
+#COMMENTED:   echo "CouchDB 3.x database does not exist"
+#COMMENTED:   echo "Creating CouchDB 3.x database..."
+#COMMENTED:   echo "DEBUG: Running: curl -X PUT -s -u \"${COUCHDB_USER}:${COUCHDB_PASSWORD}\" http://localhost:5985/bedroom"
+#COMMENTED:   curl -X PUT -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5985/bedroom | tee /tmp/couchdb3_create.json
+#COMMENTED:   echo "CouchDB 3.x database creation response:"
+#COMMENTED:   cat /tmp/couchdb3_create.json
+#COMMENTED: fi
 
 echo "Running initializers..."
 
@@ -153,10 +153,10 @@ initialize_database "2" "bedroom_closet" "5984" "couchdb2"
 initialize_database "2" "canopy" "5984" "couchdb2"
 initialize_database "2" "canopy_closet" "5984" "couchdb2"
 
-initialize_database "3" "bedroom" "5985" "couchdb3"
-initialize_database "3" "bedroom_closet" "5985" "couchdb3"
-initialize_database "3" "canopy" "5985" "couchdb3"
-initialize_database "3" "canopy_closet" "5985" "couchdb3"
+#COMMENTED: initialize_database "3" "bedroom" "5985" "couchdb3"
+#COMMENTED: initialize_database "3" "bedroom_closet" "5985" "couchdb3"
+#COMMENTED: initialize_database "3" "canopy" "5985" "couchdb3"
+#COMMENTED: initialize_database "3" "canopy_closet" "5985" "couchdb3"
 
 echo "Verifying database initialization..."
 echo "CouchDB 2.x database:"
@@ -164,13 +164,13 @@ echo "DEBUG: Running: curl -s -u \"${COUCHDB_USER}:${COUCHDB_PASSWORD}\" http://
 curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5984/bedroom | tee /tmp/couchdb2_response.json
 cat /tmp/couchdb2_response.json | grep -q "db_name" && echo "SUCCESS: CouchDB 2.x database exists" || echo "ERROR: CouchDB 2.x database does not exist"
 
-echo "CouchDB 3.x database:"
-echo "DEBUG: Running: curl -s -u \"${COUCHDB_USER}:${COUCHDB_PASSWORD}\" http://localhost:5985/bedroom"
-curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5985/bedroom | tee /tmp/couchdb3_response.json
-cat /tmp/couchdb3_response.json | grep -q "db_name" && echo "SUCCESS: CouchDB 3.x database exists" || echo "ERROR: CouchDB 3.x database does not exist"
+#COMMENTED: echo "CouchDB 3.x database:"
+#COMMENTED: echo "DEBUG: Running: curl -s -u \"${COUCHDB_USER}:${COUCHDB_PASSWORD}\" http://localhost:5985/bedroom"
+#COMMENTED: curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5985/bedroom | tee /tmp/couchdb3_response.json
+#COMMENTED: cat /tmp/couchdb3_response.json | grep -q "db_name" && echo "SUCCESS: CouchDB 3.x database exists" || echo "ERROR: CouchDB 3.x database does not exist"
 
 echo "UI endpoints:"
 echo "CouchDB 2.x UI: http://localhost:9000"
-echo "CouchDB 3.x UI: http://localhost:9001"
+#COMMENTED: echo "CouchDB 3.x UI: http://localhost:9001"
 
 echo "Test complete!"
