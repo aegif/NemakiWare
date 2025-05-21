@@ -1,5 +1,2 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Context path="/ui" docBase="ROOT.war">
-    <!-- Disable session persistence across Tomcat restarts -->
-    <Manager pathname="" />
-</Context>
+<Context path="/ui" docBase="ROOT.war" />

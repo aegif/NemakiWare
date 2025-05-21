@@ -12,6 +12,7 @@ COPY ui.war /usr/local/tomcat/webapps/ui.war
 # Copy configuration files
 COPY nemakiware_ui.properties /usr/local/tomcat/conf/
 COPY log4j.properties /usr/local/tomcat/conf/
+COPY ui.xml /usr/local/tomcat/conf/Catalina/localhost/
 
 # Set environment variables
 ENV CATALINA_OPTS="-Xms512m -Xmx1024m -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Dnemakiware_ui.properties=/usr/local/tomcat/conf/nemakiware_ui.properties"
