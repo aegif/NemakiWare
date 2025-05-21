@@ -45,7 +45,7 @@ fi
 
 cat > $NEMAKI_HOME/docker/ui-war/ui.xml << EOF
 <?xml version="1.0" encoding="UTF-8"?>
-<Context path="/ui" docBase="ROOT.war" />
+<Context path="/ui" docBase="ui.war" />
 EOF
 
 echo "UI WAR file prepared successfully!"
