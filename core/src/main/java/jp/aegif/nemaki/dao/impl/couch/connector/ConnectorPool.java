@@ -51,7 +51,7 @@ public class ConnectorPool {
 			.maxConnections(maxConnections)
 			.connectionTimeout(connectionTimeout)
 			.socketTimeout(socketTimeout)
-			.cleanupIdleConnections(true);
+			.cleanupIdleConnections(false);
 		} catch (MalformedURLException e) {
 			log.error("CouchDB URL is not well-formed!: " + url, e);
 			e.printStackTrace();
