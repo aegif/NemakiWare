@@ -54,8 +54,12 @@ mkdir -p $NEMAKI_HOME/docker/core/config3
 
 cat > $NEMAKI_HOME/docker/core/nemakiware.properties << EOF3
 db.couchdb.url=http://couchdb2:5984
-db.couchdb.user=${COUCHDB_USER:-admin}
-db.couchdb.password=${COUCHDB_PASSWORD:-password}
+db.couchdb.auth.enabled=true
+db.couchdb.auth.username=${COUCHDB_USER:-admin}
+db.couchdb.auth.password=${COUCHDB_PASSWORD:-password}
+db.couchdb.max.connections=20
+db.couchdb.connection.timeout=1000
+db.couchdb.socket.timeout=10000
 EOF3
 
 cp $NEMAKI_HOME/docker/core/nemakiware.properties $NEMAKI_HOME/docker/core/config2/
