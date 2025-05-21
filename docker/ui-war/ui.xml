@@ -1,2 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Context path="/ui" docBase="ui.war" />
+<Context path="/ui" docBase="ui.war">
+    <!-- Disable session persistence across Tomcat restarts -->
+    <Manager pathname="" />
+    
+    <!-- Configure thread cleanup on context destruction -->
+    <Listener className="org.apache.catalina.core.ThreadLocalLeakPreventionListener" />
+    
+    <!-- Set this to true to force Tomcat to stop threads on context unload -->
+    <JarScanner scanManifest="false" />
+</Context>
