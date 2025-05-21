@@ -53,40 +53,56 @@ public class ConnectorPool {
 			@Override
 			public void run() {
 				try {
-					Class<?> idleMonitorClass = Class.forName("org.ektorp.http.IdleConnectionMonitor");
-					java.lang.reflect.Field instanceField = idleMonitorClass.getDeclaredField("INSTANCE");
-					instanceField.setAccessible(true);
-					Object instance = instanceField.get(null);
-					if (instance != null) {
-						java.lang.reflect.Method shutdownMethod = idleMonitorClass.getDeclaredMethod("shutdown");
-						shutdownMethod.setAccessible(true);
-						shutdownMethod.invoke(instance);
-						log.info("Shutdown hook: Successfully disabled Ektorp IdleConnectionMonitor");
-					}
+					disableIdleConnectionMonitor();
+					log.info("Shutdown hook: Successfully disabled Ektorp IdleConnectionMonitor");
 				} catch (Exception e) {
+					log.warn("Shutdown hook: Failed to disable Ektorp IdleConnectionMonitor: " + e.getMessage());
 				}
 			}
 		});
 		
+		disableIdleConnectionMonitor();
+		
 		try {
+			this.builder = new StdHttpClient.Builder()
+			.url(url)
+			.maxConnections(maxConnections)
+			.connectionTimeout(connectionTimeout)
+			.socketTimeout(socketTimeout)
+			.cleanupIdleConnections(false);
+			
+			if(authEnabled){
+				builder.username(authUserName).password(authPassword);
+			}
+		} catch (MalformedURLException e) {
+			log.error("CouchDB URL is not well-formed!: " + url, e);
+			e.printStackTrace();
+		}
+	}
+	
+	/**
+	 * Disable Ektorp IdleConnectionMonitor to prevent thread leaks
+	 */
+	private void disableIdleConnectionMonitor() {
+		try {
+			Class<?> idleMonitorClass = Class.forName("org.ektorp.http.IdleConnectionMonitor");
+			
 			try {
-				Class<?> idleMonitorClass = Class.forName("org.ektorp.http.IdleConnectionMonitor");
-				
-				try {
-					java.lang.reflect.Field schedulerField = idleMonitorClass.getDeclaredField("scheduler");
-					schedulerField.setAccessible(true);
-					Object scheduler = schedulerField.get(null);
-					if (scheduler != null) {
-						java.lang.reflect.Method shutdownNowMethod = scheduler.getClass().getMethod("shutdownNow");
-						shutdownNowMethod.invoke(scheduler);
-						log.info("Successfully shutdown IdleConnectionMonitor scheduler");
-						
-						schedulerField.set(null, null);
-					}
-				} catch (Exception e) {
-					log.warn("Failed to shutdown IdleConnectionMonitor scheduler: " + e.getMessage());
+				java.lang.reflect.Field schedulerField = idleMonitorClass.getDeclaredField("scheduler");
+				schedulerField.setAccessible(true);
+				Object scheduler = schedulerField.get(null);
+				if (scheduler != null) {
+					java.lang.reflect.Method shutdownNowMethod = scheduler.getClass().getMethod("shutdownNow");
+					shutdownNowMethod.invoke(scheduler);
+					
+					schedulerField.set(null, null);
+					log.info("Successfully shutdown IdleConnectionMonitor scheduler");
 				}
-				
+			} catch (Exception e) {
+				log.warn("Failed to shutdown IdleConnectionMonitor scheduler: " + e.getMessage());
+			}
+			
+			try {
 				java.lang.reflect.Field instanceField = idleMonitorClass.getDeclaredField("INSTANCE");
 				instanceField.setAccessible(true);
 				Object instance = instanceField.get(null);
@@ -98,17 +114,17 @@ public class ConnectorPool {
 					instanceField.set(null, null);
 					log.info("Successfully disabled Ektorp IdleConnectionMonitor instance");
 				}
-				
-				try {
-					java.lang.reflect.Field enabledField = idleMonitorClass.getDeclaredField("MONITOR_ENABLED");
-					enabledField.setAccessible(true);
-					enabledField.set(null, false);
-					log.info("Successfully disabled IdleConnectionMonitor MONITOR_ENABLED flag");
-				} catch (Exception e) {
-					log.warn("Failed to disable IdleConnectionMonitor MONITOR_ENABLED flag: " + e.getMessage());
-				}
 			} catch (Exception e) {
-				log.warn("Failed to disable existing Ektorp IdleConnectionMonitor: " + e.getMessage());
+				log.warn("Failed to disable IdleConnectionMonitor instance: " + e.getMessage());
+			}
+			
+			try {
+				java.lang.reflect.Field enabledField = idleMonitorClass.getDeclaredField("MONITOR_ENABLED");
+				enabledField.setAccessible(true);
+				enabledField.set(null, false);
+				log.info("Successfully disabled IdleConnectionMonitor MONITOR_ENABLED flag");
+			} catch (Exception e) {
+				log.warn("Failed to disable IdleConnectionMonitor MONITOR_ENABLED flag: " + e.getMessage());
 			}
 			
 			try {
@@ -127,22 +143,6 @@ public class ConnectorPool {
 			}
 		} catch (Exception e) {
 			log.warn("Failed to completely disable Ektorp IdleConnectionMonitor: " + e.getMessage());
-		}
-		
-		try {
-			this.builder = new StdHttpClient.Builder()
-			.url(url)
-			.maxConnections(maxConnections)
-			.connectionTimeout(connectionTimeout)
-			.socketTimeout(socketTimeout)
-			.cleanupIdleConnections(false);
-			
-			if(authEnabled){
-				builder.username(authUserName).password(authPassword);
-			}
-		} catch (MalformedURLException e) {
-			log.error("CouchDB URL is not well-formed!: " + url, e);
-			e.printStackTrace();
 		}
 
 		//Create connector(all-repository config)
