@@ -8,7 +8,6 @@ import java.util.Map;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.http.client.HttpClient;
 import org.apache.http.client.params.ClientPNames;
 import org.apache.http.conn.ClientConnectionManager;
 import org.apache.http.conn.params.ConnManagerParams;
@@ -25,7 +24,6 @@ import org.ektorp.CouchDbConnector;
 import org.ektorp.CouchDbInstance;
 import org.ektorp.DocumentNotFoundException;
 import org.ektorp.ViewQuery;
-import org.ektorp.http.HttpClient;
 import org.ektorp.http.StdHttpClient;
 import org.ektorp.http.StdHttpClient.Builder;
 import org.ektorp.impl.StdCouchDbInstance;
@@ -88,12 +86,12 @@ public class ConnectorPool {
 				tcm.setDefaultMaxPerRoute(maxConnections);
 			}
 			
-			HttpClient client = httpClient;
+			org.apache.http.client.HttpClient client = httpClient;
 			
 			this.builder = new StdHttpClient.Builder() {
 				@Override
-				public HttpClient configureClient() {
-					return client;
+				public org.ektorp.http.HttpClient configureClient() {
+					return new org.ektorp.http.RestTemplate(client);
 				}
 			};
 			
@@ -208,7 +206,7 @@ public class ConnectorPool {
 	public CouchDbConnector add(String repositoryId){
 		CouchDbConnector connector = pool.get(repositoryId);
 		if(connector == null){
-			HttpClient httpClient = builder.build();
+			org.ektorp.http.HttpClient httpClient = builder.build();
 			CouchDbInstance dbInstance = new StdCouchDbInstance(httpClient);
 			connector = dbInstance.createConnector(repositoryId, true);
 			pool.put(repositoryId, connector);
