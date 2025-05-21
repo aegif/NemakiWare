@@ -1,23 +1,28 @@
-FROM tomcat:7-jre8
+FROM tomcat:9-jre8
+
+# Install unzip
+RUN apt-get update && apt-get install -y unzip curl && rm -rf /var/lib/apt/lists/*
 
 # Remove default Tomcat applications
 RUN rm -rf /usr/local/tomcat/webapps/*
 
-# Create necessary directories for context configuration
+# Create necessary directories
 RUN mkdir -p /usr/local/tomcat/conf/Catalina/localhost
 
-# Copy the UI WAR file with the correct context path name
-COPY ui.war /usr/local/tomcat/webapps/ui.war
-
-# Copy context configuration
-COPY ui.xml /usr/local/tomcat/conf/Catalina/localhost/ui.xml
+# Copy the UI WAR file with ## naming convention for context path
+COPY ui.war /usr/local/tomcat/webapps/ui##.war
 
 # Copy configuration files
-COPY nemakiware_ui.properties /usr/local/tomcat/conf/
-COPY log4j.properties /usr/local/tomcat/conf/
+COPY nemakiware_ui.properties /usr/local/tomcat/conf/nemakiware_ui.properties
+COPY log4j.properties /usr/local/tomcat/conf/log4j.properties
 
-# Set environment variables
-ENV CATALINA_OPTS="-Xms512m -Xmx1024m -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Dnemakiware_ui.properties=/usr/local/tomcat/conf/nemakiware_ui.properties"
+# Set environment variables for Play Framework
+ENV JAVA_OPTS="-Dorg.apache.catalina.loader.WebappClassLoader.ENABLE_CLEAR_REFERENCES=true -Dorg.apache.tomcat.util.scan.StandardJarScanFilter.jarsToSkip=*.jar"
+ENV CATALINA_OPTS="-Xms512m -Xmx1024m -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Dnemakiware_ui.properties=/usr/local/tomcat/conf/nemakiware_ui.properties -Dplay.http.context=/ui/ -Dapplication.context=/ui/"
+
+# Create a simple ROOT webapp that redirects to /ui/
+RUN mkdir -p /usr/local/tomcat/webapps/ROOT && \
+    echo '<html><head><meta http-equiv="refresh" content="0;URL=/ui/"></head><body>Redirecting to <a href="/ui/">/ui/</a></body></html>' > /usr/local/tomcat/webapps/ROOT/index.html
 
 # Expose the default Tomcat port
 EXPOSE 8080

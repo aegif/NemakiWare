@@ -44,7 +44,91 @@ public class ConnectorPool {
 	public void init() {
 		log.info("CouchDB URL:" + url);
 
-		//Builder
+		System.setProperty("org.ektorp.http.IdleConnectionMonitor.enabled", "false");
+		System.setProperty("org.apache.http.impl.conn.PoolingClientConnectionManager.idleConnectionMonitor", "false");
+		System.setProperty("org.apache.http.impl.conn.PoolingHttpClientConnectionManager.idleConnectionMonitor", "false");
+		System.setProperty("org.apache.catalina.loader.WebappClassLoader.ENABLE_CLEAR_REFERENCES", "true");
+		
+		Runtime.getRuntime().addShutdownHook(new Thread() {
+			@Override
+			public void run() {
+				try {
+					Class<?> idleMonitorClass = Class.forName("org.ektorp.http.IdleConnectionMonitor");
+					java.lang.reflect.Field instanceField = idleMonitorClass.getDeclaredField("INSTANCE");
+					instanceField.setAccessible(true);
+					Object instance = instanceField.get(null);
+					if (instance != null) {
+						java.lang.reflect.Method shutdownMethod = idleMonitorClass.getDeclaredMethod("shutdown");
+						shutdownMethod.setAccessible(true);
+						shutdownMethod.invoke(instance);
+						log.info("Shutdown hook: Successfully disabled Ektorp IdleConnectionMonitor");
+					}
+				} catch (Exception e) {
+				}
+			}
+		});
+		
+		try {
+			try {
+				Class<?> idleMonitorClass = Class.forName("org.ektorp.http.IdleConnectionMonitor");
+				
+				try {
+					java.lang.reflect.Field schedulerField = idleMonitorClass.getDeclaredField("scheduler");
+					schedulerField.setAccessible(true);
+					Object scheduler = schedulerField.get(null);
+					if (scheduler != null) {
+						java.lang.reflect.Method shutdownNowMethod = scheduler.getClass().getMethod("shutdownNow");
+						shutdownNowMethod.invoke(scheduler);
+						log.info("Successfully shutdown IdleConnectionMonitor scheduler");
+						
+						schedulerField.set(null, null);
+					}
+				} catch (Exception e) {
+					log.warn("Failed to shutdown IdleConnectionMonitor scheduler: " + e.getMessage());
+				}
+				
+				java.lang.reflect.Field instanceField = idleMonitorClass.getDeclaredField("INSTANCE");
+				instanceField.setAccessible(true);
+				Object instance = instanceField.get(null);
+				if (instance != null) {
+					java.lang.reflect.Method shutdownMethod = idleMonitorClass.getDeclaredMethod("shutdown");
+					shutdownMethod.setAccessible(true);
+					shutdownMethod.invoke(instance);
+					
+					instanceField.set(null, null);
+					log.info("Successfully disabled Ektorp IdleConnectionMonitor instance");
+				}
+				
+				try {
+					java.lang.reflect.Field enabledField = idleMonitorClass.getDeclaredField("MONITOR_ENABLED");
+					enabledField.setAccessible(true);
+					enabledField.set(null, false);
+					log.info("Successfully disabled IdleConnectionMonitor MONITOR_ENABLED flag");
+				} catch (Exception e) {
+					log.warn("Failed to disable IdleConnectionMonitor MONITOR_ENABLED flag: " + e.getMessage());
+				}
+			} catch (Exception e) {
+				log.warn("Failed to disable existing Ektorp IdleConnectionMonitor: " + e.getMessage());
+			}
+			
+			try {
+				Thread.currentThread().setContextClassLoader(new ClassLoader(Thread.currentThread().getContextClassLoader()) {
+					@Override
+					public Class<?> loadClass(String name) throws ClassNotFoundException {
+						if (name.equals("org.ektorp.http.IdleConnectionMonitor")) {
+							return null;
+						}
+						return super.loadClass(name);
+					}
+				});
+				log.info("Successfully overrode ClassLoader for IdleConnectionMonitor");
+			} catch (Exception e) {
+				log.warn("Failed to override ClassLoader for Ektorp IdleConnectionMonitor: " + e.getMessage());
+			}
+		} catch (Exception e) {
+			log.warn("Failed to completely disable Ektorp IdleConnectionMonitor: " + e.getMessage());
+		}
+		
 		try {
 			this.builder = new StdHttpClient.Builder()
 			.url(url)
@@ -52,12 +136,13 @@ public class ConnectorPool {
 			.connectionTimeout(connectionTimeout)
 			.socketTimeout(socketTimeout)
 			.cleanupIdleConnections(false);
+			
+			if(authEnabled){
+				builder.username(authUserName).password(authPassword);
+			}
 		} catch (MalformedURLException e) {
 			log.error("CouchDB URL is not well-formed!: " + url, e);
 			e.printStackTrace();
-		}
-		if(authEnabled){
-			builder.username(authUserName).password(authPassword);
 		}
 
 		//Create connector(all-repository config)
