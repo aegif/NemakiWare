@@ -8,11 +8,15 @@ ENV JAVA_OPTS="-Xms512m -Xmx1024m -XX:MaxPermSize=256m"
 # Remove default Tomcat applications
 RUN rm -rf $CATALINA_HOME/webapps/*
 
-# Copy the WAR file
-COPY ./core.war $CATALINA_HOME/webapps/core.war
-
-# Create configuration directory
+# Create necessary directories
 RUN mkdir -p $CATALINA_HOME/shared/classes/
+RUN mkdir -p $CATALINA_HOME/conf/Catalina/localhost/
+
+# Copy the WAR file
+COPY ./core.war $CATALINA_HOME/webapps/ROOT.war
+
+# Create context configuration
+RUN echo '<?xml version="1.0" encoding="UTF-8"?><Context path="/core" docBase="ROOT.war" />' > $CATALINA_HOME/conf/Catalina/localhost/core.xml
 
 # Copy configuration files
 COPY ./nemakiware.properties $CATALINA_HOME/shared/classes/

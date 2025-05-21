@@ -43,4 +43,9 @@ else
   touch $NEMAKI_HOME/docker/ui-war/log4j.properties
 fi
 
+cat > $NEMAKI_HOME/docker/ui-war/ui.xml << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<Context path="/ui" docBase="ROOT.war" />
+EOF
+
 echo "UI WAR file prepared successfully!"
