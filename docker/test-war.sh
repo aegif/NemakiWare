@@ -71,7 +71,8 @@ if [ ! -f $NEMAKI_HOME/docker/core/log4j.properties ]; then
   touch $NEMAKI_HOME/docker/core/log4j.properties
 fi
 
-echo "Starting containers..."
+echo "Building and starting containers..."
+docker compose -f docker-compose-war.yml build --no-cache initializer2 initializer3
 docker compose -f docker-compose-war.yml up -d --remove-orphans
 
 echo "Waiting for CouchDB services to fully initialize..."
