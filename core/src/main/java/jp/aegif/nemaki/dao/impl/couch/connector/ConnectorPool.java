@@ -110,6 +110,13 @@ public class ConnectorPool {
 			log.error("CouchDB URL is not well-formed!: " + url, e);
 			e.printStackTrace();
 		}
+		
+		initNemakiConfDb();
+		
+		for(String key : repositoryInfoMap.keys()){
+			add(key);
+			add(repositoryInfoMap.getArchiveId(key));
+		}
 	}
 	
 	/**
@@ -175,16 +182,6 @@ public class ConnectorPool {
 			}
 		} catch (Exception e) {
 			log.warn("Failed to completely disable Ektorp IdleConnectionMonitor: " + e.getMessage());
-		}
-
-		//Create connector(all-repository config)
-		initNemakiConfDb();
-
-
-		//Create connectors
-		for(String key : repositoryInfoMap.keys()){
-			add(key);
-			add(repositoryInfoMap.getArchiveId(key));
 		}
 	}
 
