@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Context docBase="core.war">
+<Context path="/core" docBase="core.war">
     <!-- Disable session persistence across Tomcat restarts -->
     <Manager pathname="" />
     
@@ -13,7 +13,7 @@
     </JarScanner>
     
     <!-- Add custom system properties to disable Ektorp idle connection monitor -->
-    <Environment name="org.ektorp.support.AutoUpdateViewOnChange" value="true" type="java.lang.Boolean" />
+    <Environment name="org.ektorp.support.AutoUpdateViewOnChange" value="false" type="java.lang.Boolean" />
     <Environment name="org.ektorp.http.IdleConnectionMonitor.enabled" value="false" type="java.lang.Boolean" />
     <Environment name="org.ektorp.support.DesignDocument.UPDATE_ON_DIFF" value="false" type="java.lang.Boolean" />
     <Environment name="org.ektorp.support.DesignDocument.ALLOW_AUTO_UPDATE" value="false" type="java.lang.Boolean" />
@@ -22,4 +22,10 @@
     <!-- Disable thread creation for Ektorp -->
     <Loader className="org.apache.catalina.loader.WebappLoader" delegate="true" />
     <Resources cachingAllowed="false" />
+    
+    <!-- Set context parameters to disable Ektorp thread creation -->
+    <Parameter name="org.ektorp.support.AutoUpdateViewOnChange" value="false" override="false" />
+    <Parameter name="org.ektorp.http.IdleConnectionMonitor.enabled" value="false" override="false" />
+    <Parameter name="org.ektorp.support.DesignDocument.UPDATE_ON_DIFF" value="false" override="false" />
+    <Parameter name="org.ektorp.support.DesignDocument.ALLOW_AUTO_UPDATE" value="false" override="false" />
 </Context>
