@@ -75,25 +75,7 @@ public class ConnectorPool {
 		});
 		
 		try {
-			DefaultHttpClient httpClient = new DefaultHttpClient();
-			httpClient.getParams().setParameter(CoreConnectionPNames.CONNECTION_TIMEOUT, connectionTimeout);
-			httpClient.getParams().setParameter(CoreConnectionPNames.SO_TIMEOUT, socketTimeout);
-			
-			ClientConnectionManager conman = httpClient.getConnectionManager();
-			if (conman instanceof ThreadSafeClientConnManager) {
-				ThreadSafeClientConnManager tcm = (ThreadSafeClientConnManager) conman;
-				tcm.setMaxTotal(maxConnections);
-				tcm.setDefaultMaxPerRoute(maxConnections);
-			}
-			
-			org.apache.http.client.HttpClient client = httpClient;
-			
-			this.builder = new StdHttpClient.Builder() {
-				@Override
-				public org.ektorp.http.HttpClient configureClient() {
-					return new org.ektorp.http.RestTemplate(client);
-				}
-			};
+			this.builder = new StdHttpClient.Builder();
 			
 			builder.url(url)
 			.maxConnections(maxConnections)
