@@ -73,17 +73,48 @@ public class ConnectorPool {
 	}
 
 	private void initNemakiConfDb(){
-		CouchDbInstance dbInstance = new StdCouchDbInstance(builder.build());
-		log.info("Checking if Nemaki configuration database exists: " + SystemConst.NEMAKI_CONF_DB);
-		boolean dbExists = dbInstance.checkIfDbExists(SystemConst.NEMAKI_CONF_DB);
-		log.info("Nemaki configuration database (" + SystemConst.NEMAKI_CONF_DB + ") exists: " + dbExists);
-		if(dbExists){
-			add(SystemConst.NEMAKI_CONF_DB);
-		}else{
-			log.info("Nemaki configuration database (" + SystemConst.NEMAKI_CONF_DB + ") not found, creating it.");
-			addNemakiConfDb();
-			add(SystemConst.NEMAKI_CONF_DB);
-			createConfiguration(get(SystemConst.NEMAKI_CONF_DB));
+		int maxRetries = 10;
+		int retryIntervalMs = 2000;
+		int retryCount = 0;
+		boolean connected = false;
+		
+		while (!connected && retryCount < maxRetries) {
+			try {
+				log.info("Attempting to connect to CouchDB (attempt " + (retryCount + 1) + " of " + maxRetries + ")");
+				HttpClient httpClient = builder.build();
+				CouchDbInstance dbInstance = new StdCouchDbInstance(httpClient);
+				
+				boolean dbExists = dbInstance.checkIfDbExists(SystemConst.NEMAKI_CONF_DB);
+				log.info("Nemaki configuration database (" + SystemConst.NEMAKI_CONF_DB + ") exists: " + dbExists);
+				
+				if(dbExists){
+					add(SystemConst.NEMAKI_CONF_DB);
+				}else{
+					log.info("Nemaki configuration database (" + SystemConst.NEMAKI_CONF_DB + ") not found, creating it.");
+					addNemakiConfDb();
+					add(SystemConst.NEMAKI_CONF_DB);
+					createConfiguration(get(SystemConst.NEMAKI_CONF_DB));
+				}
+				
+				connected = true;
+				log.info("Successfully connected to CouchDB");
+			} catch (Exception e) {
+				retryCount++;
+				log.warn("Failed to connect to CouchDB: " + e.getMessage() + ". Retrying in " + retryIntervalMs + "ms...");
+				
+				try {
+					Thread.sleep(retryIntervalMs);
+				} catch (InterruptedException ie) {
+					Thread.currentThread().interrupt();
+					log.error("Thread interrupted while waiting to retry CouchDB connection", ie);
+					break;
+				}
+			}
+		}
+		
+		if (!connected) {
+			log.error("Failed to connect to CouchDB after " + maxRetries + " attempts");
+			throw new RuntimeException("Failed to connect to CouchDB after " + maxRetries + " attempts");
 		}
 	}
 
@@ -110,7 +141,6 @@ public class ConnectorPool {
 				log.info("Successfully created and pooled new CouchDbConnector for repository: " + repositoryId);
 			} catch (Exception e) {
 				log.error("Failed to create CouchDbConnector for repository: " + repositoryId, e);
-				// Depending on desired behavior, we might re-throw or handle differently
 				throw new RuntimeException("Failed to create CouchDbConnector for repository: " + repositoryId, e);
 			}
 		} else {
