@@ -47,7 +47,7 @@
     <res id="HTMLInfoPanel.infoCouchDB" src="setup/installer/resources/infoCouchDB.html"/>
     <res id="HTMLInfoPanel.infoCouchDB_jpn" src="setup/installer/resources/infoCouchDB_jpn.html"/>
     <res id="HTMLInfoPanel.infoCouchDB_fra" src="setup/installer/resources/infoCouchDB_fra.html"/>
-    <res id="userInputSpec.xml" src="setup/installer/user-input-spec_couchdb3.xml" parse="yes" type="xml" />
+    <res id="userInputSpec.xml" src="setup/installer/user-input-spec_modified.xml" parse="yes" type="xml" />
 
     <res id="packsLang.xml_jpn" src="setup/installer/i18n/packsLang_jpn.xml"/>
     <res id="packsLang.xml_fra" src="setup/installer/i18n/packsLang_fra.xml"/>

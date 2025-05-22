@@ -79,7 +79,7 @@ public class CouchConnector {
 		.maxConnections(maxConnections)
 		.connectionTimeout(connectionTimeout)
 		.socketTimeout(socketTimeout)
-		.cleanupIdleConnections(false);
+		.cleanupIdleConnections(true);
 		
 		if(authEnabled){
 			builder.username(authUserName).password(authPassword);
