@@ -16,7 +16,7 @@
     <Environment name="org.ektorp.support.AutoUpdateViewOnChange" value="false" type="java.lang.Boolean" />
     <Environment name="org.ektorp.http.IdleConnectionMonitor.enabled" value="false" type="java.lang.Boolean" />
     <Environment name="org.ektorp.support.DesignDocument.UPDATE_ON_DIFF" value="false" type="java.lang.Boolean" />
-    <Environment name="org.ektorp.support.DesignDocument.ALLOW_AUTO_UPDATE" value="false" type="java.lang.Boolean" />
+    <Environment name="org.ektorp.support.DesignDocument.ALLOW_AUTO_UPDATE" value="true" type="java.lang.Boolean" />
     <Environment name="org.apache.catalina.loader.WebappClassLoader.ENABLE_CLEAR_REFERENCES" value="true" type="java.lang.Boolean" />
     
     <!-- Disable thread creation for Ektorp -->
@@ -27,5 +27,5 @@
     <Parameter name="org.ektorp.support.AutoUpdateViewOnChange" value="false" override="false" />
     <Parameter name="org.ektorp.http.IdleConnectionMonitor.enabled" value="false" override="false" />
     <Parameter name="org.ektorp.support.DesignDocument.UPDATE_ON_DIFF" value="false" override="false" />
-    <Parameter name="org.ektorp.support.DesignDocument.ALLOW_AUTO_UPDATE" value="false" override="false" />
+    <Parameter name="org.ektorp.support.DesignDocument.ALLOW_AUTO_UPDATE" value="true" override="false" />
 </Context>
