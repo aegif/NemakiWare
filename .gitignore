@@ -20,10 +20,3 @@ common/nemakiware-common.iml
 core/core.iml
 solr/solr.iml
 .idea
-
-# Docker build files
-docker/*/ui.war
-docker/*/core.war
-docker/*/solr.war
-docker/*/cloudant-init.jar
-docker/*/data/

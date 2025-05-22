@@ -1,7 +1,0 @@
-repositories:
-  - id: canopy
-    name: canopy
-    archive: canopy_closet
-  - id: bedroom
-    name: bedroom
-    archive: bedroom_closet

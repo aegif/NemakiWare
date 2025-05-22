@@ -8,22 +8,11 @@ import java.util.Map;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.http.client.params.ClientPNames;
-import org.apache.http.conn.ClientConnectionManager;
-import org.apache.http.conn.params.ConnManagerParams;
-import org.apache.http.conn.params.ConnPerRouteBean;
-import org.apache.http.conn.scheme.PlainSocketFactory;
-import org.apache.http.conn.scheme.Scheme;
-import org.apache.http.conn.scheme.SchemeRegistry;
-import org.apache.http.impl.client.DefaultHttpClient;
-import org.apache.http.impl.conn.tsccm.ThreadSafeClientConnManager;
-import org.apache.http.params.BasicHttpParams;
-import org.apache.http.params.CoreConnectionPNames;
-import org.apache.http.params.HttpParams;
 import org.ektorp.CouchDbConnector;
 import org.ektorp.CouchDbInstance;
 import org.ektorp.DocumentNotFoundException;
 import org.ektorp.ViewQuery;
+import org.ektorp.http.HttpClient;
 import org.ektorp.http.StdHttpClient;
 import org.ektorp.http.StdHttpClient.Builder;
 import org.ektorp.impl.StdCouchDbInstance;
@@ -54,175 +43,78 @@ public class ConnectorPool {
 
 	public void init() {
 		log.info("CouchDB URL:" + url);
+		log.info("Authentication enabled: " + authEnabled);
 
-		System.setProperty("org.ektorp.http.IdleConnectionMonitor.enabled", "false");
-		System.setProperty("org.apache.http.impl.conn.PoolingClientConnectionManager.idleConnectionMonitor", "false");
-		System.setProperty("org.apache.http.impl.conn.PoolingHttpClientConnectionManager.idleConnectionMonitor", "false");
-		System.setProperty("org.apache.catalina.loader.WebappClassLoader.ENABLE_CLEAR_REFERENCES", "true");
-		
-		disableIdleConnectionMonitor();
-		
-		Runtime.getRuntime().addShutdownHook(new Thread() {
-			@Override
-			public void run() {
-				try {
-					disableIdleConnectionMonitor();
-					log.info("Shutdown hook: Successfully disabled Ektorp IdleConnectionMonitor");
-				} catch (Exception e) {
-					log.warn("Shutdown hook: Failed to disable Ektorp IdleConnectionMonitor: " + e.getMessage());
-				}
-			}
-		});
-		
+		//Builder
 		try {
-			this.builder = new StdHttpClient.Builder();
-			
-			builder.url(url)
+			this.builder = new StdHttpClient.Builder()
+			.url(url)
 			.maxConnections(maxConnections)
 			.connectionTimeout(connectionTimeout)
 			.socketTimeout(socketTimeout)
-			.cleanupIdleConnections(false);
-			
-			if(authEnabled){
-				builder.username(authUserName).password(authPassword);
-			}
+			.cleanupIdleConnections(true);
 		} catch (MalformedURLException e) {
 			log.error("CouchDB URL is not well-formed!: " + url, e);
 			e.printStackTrace();
 		}
-		
+		if(authEnabled){
+			builder.username(authUserName).password(authPassword);
+		}
+
+		//Create connector(all-repository config)
 		initNemakiConfDb();
-		
+
+
+		//Create connectors
 		for(String key : repositoryInfoMap.keys()){
 			add(key);
 			add(repositoryInfoMap.getArchiveId(key));
 		}
 	}
-	
-	/**
-	 * Disable Ektorp IdleConnectionMonitor to prevent thread leaks
-	 */
-	private void disableIdleConnectionMonitor() {
-		try {
-			Class<?> idleMonitorClass = Class.forName("org.ektorp.http.IdleConnectionMonitor");
-			
-			try {
-				java.lang.reflect.Field schedulerField = idleMonitorClass.getDeclaredField("scheduler");
-				schedulerField.setAccessible(true);
-				Object scheduler = schedulerField.get(null);
-				if (scheduler != null) {
-					java.lang.reflect.Method shutdownNowMethod = scheduler.getClass().getMethod("shutdownNow");
-					shutdownNowMethod.invoke(scheduler);
-					
-					schedulerField.set(null, null);
-					log.info("Successfully shutdown IdleConnectionMonitor scheduler");
-				}
-			} catch (Exception e) {
-				log.warn("Failed to shutdown IdleConnectionMonitor scheduler: " + e.getMessage());
-			}
-			
-			try {
-				java.lang.reflect.Field instanceField = idleMonitorClass.getDeclaredField("INSTANCE");
-				instanceField.setAccessible(true);
-				Object instance = instanceField.get(null);
-				if (instance != null) {
-					java.lang.reflect.Method shutdownMethod = idleMonitorClass.getDeclaredMethod("shutdown");
-					shutdownMethod.setAccessible(true);
-					shutdownMethod.invoke(instance);
-					
-					instanceField.set(null, null);
-					log.info("Successfully disabled Ektorp IdleConnectionMonitor instance");
-				}
-			} catch (Exception e) {
-				log.warn("Failed to disable IdleConnectionMonitor instance: " + e.getMessage());
-			}
-			
-			try {
-				java.lang.reflect.Field enabledField = idleMonitorClass.getDeclaredField("MONITOR_ENABLED");
-				enabledField.setAccessible(true);
-				enabledField.set(null, false);
-				log.info("Successfully disabled IdleConnectionMonitor MONITOR_ENABLED flag");
-			} catch (Exception e) {
-				log.warn("Failed to disable IdleConnectionMonitor MONITOR_ENABLED flag: " + e.getMessage());
-			}
-			
-			try {
-				Thread.currentThread().setContextClassLoader(new ClassLoader(Thread.currentThread().getContextClassLoader()) {
-					@Override
-					public Class<?> loadClass(String name) throws ClassNotFoundException {
-						if (name.equals("org.ektorp.http.IdleConnectionMonitor")) {
-							return null;
-						}
-						return super.loadClass(name);
-					}
-				});
-				log.info("Successfully overrode ClassLoader for IdleConnectionMonitor");
-			} catch (Exception e) {
-				log.warn("Failed to override ClassLoader for Ektorp IdleConnectionMonitor: " + e.getMessage());
-			}
-		} catch (Exception e) {
-			log.warn("Failed to completely disable Ektorp IdleConnectionMonitor: " + e.getMessage());
-		}
-	}
 
 	private void initNemakiConfDb(){
-		int maxRetries = 10;
-		int retryIntervalMs = 2000;
-		int retryCount = 0;
-		boolean connected = false;
-		
-		while (!connected && retryCount < maxRetries) {
-			try {
-				log.info("Attempting to connect to CouchDB (attempt " + (retryCount + 1) + " of " + maxRetries + ")");
-				org.ektorp.http.HttpClient httpClient = builder.build();
-				CouchDbInstance dbInstance = new StdCouchDbInstance(httpClient);
-				
-				if(dbInstance.checkIfDbExists(SystemConst.NEMAKI_CONF_DB)){
-					add(SystemConst.NEMAKI_CONF_DB);
-				}else{
-					addNemakiConfDb();
-					add(SystemConst.NEMAKI_CONF_DB);
-					createConfiguration(get(SystemConst.NEMAKI_CONF_DB));
-				}
-				
-				connected = true;
-				log.info("Successfully connected to CouchDB");
-			} catch (Exception e) {
-				retryCount++;
-				log.warn("Failed to connect to CouchDB: " + e.getMessage() + ". Retrying in " + retryIntervalMs + "ms...");
-				
-				try {
-					Thread.sleep(retryIntervalMs);
-				} catch (InterruptedException ie) {
-					Thread.currentThread().interrupt();
-					log.error("Thread interrupted while waiting to retry CouchDB connection", ie);
-					break;
-				}
-			}
-		}
-		
-		if (!connected) {
-			log.error("Failed to connect to CouchDB after " + maxRetries + " attempts");
-			throw new RuntimeException("Failed to connect to CouchDB after " + maxRetries + " attempts");
+		CouchDbInstance dbInstance = new StdCouchDbInstance(builder.build());
+		log.info("Checking if Nemaki configuration database exists: " + SystemConst.NEMAKI_CONF_DB);
+		boolean dbExists = dbInstance.checkIfDbExists(SystemConst.NEMAKI_CONF_DB);
+		log.info("Nemaki configuration database (" + SystemConst.NEMAKI_CONF_DB + ") exists: " + dbExists);
+		if(dbExists){
+			add(SystemConst.NEMAKI_CONF_DB);
+		}else{
+			log.info("Nemaki configuration database (" + SystemConst.NEMAKI_CONF_DB + ") not found, creating it.");
+			addNemakiConfDb();
+			add(SystemConst.NEMAKI_CONF_DB);
+			createConfiguration(get(SystemConst.NEMAKI_CONF_DB));
 		}
 	}
 
 	public CouchDbConnector get(String repositoryId){
 		CouchDbConnector connector = pool.get(repositoryId);
 		if(connector == null){
-			throw new Error("CouchDbConnector for repository:" + " cannot be found!");
+			log.error("CouchDbConnector for repository '" + repositoryId + "' cannot be found in the pool!");
+			throw new Error("CouchDbConnector for repository:" + repositoryId + " cannot be found!");
 		}
-
+		log.info("Retrieved CouchDbConnector for repository '" + repositoryId + "' from pool.");
 		return connector;
 	}
 
 	public CouchDbConnector add(String repositoryId){
 		CouchDbConnector connector = pool.get(repositoryId);
 		if(connector == null){
-			org.ektorp.http.HttpClient httpClient = builder.build();
+			log.info("No existing connector found for repository '" + repositoryId + "'. Creating a new one.");
+			HttpClient httpClient = builder.build();
 			CouchDbInstance dbInstance = new StdCouchDbInstance(httpClient);
-			connector = dbInstance.createConnector(repositoryId, true);
-			pool.put(repositoryId, connector);
+			try {
+				log.info("Attempting to create new CouchDbConnector for repository: " + repositoryId);
+				connector = dbInstance.createConnector(repositoryId, true);
+				pool.put(repositoryId, connector);
+				log.info("Successfully created and pooled new CouchDbConnector for repository: " + repositoryId);
+			} catch (Exception e) {
+				log.error("Failed to create CouchDbConnector for repository: " + repositoryId, e);
+				// Depending on desired behavior, we might re-throw or handle differently
+				throw new RuntimeException("Failed to create CouchDbConnector for repository: " + repositoryId, e);
+			}
+		} else {
+			log.info("Found existing connector for repository '" + repositoryId + "' in pool.");
 		}
 
 		return connector;

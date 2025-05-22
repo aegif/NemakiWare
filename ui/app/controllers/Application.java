@@ -135,11 +135,6 @@ public class Application extends Controller {
 		return ok(views.html.error.render(repositoryId, ""));
 	}
 
-	public Result defaultIndex() {
-		String repositoryId = NemakiConfig.getDefualtRepositoryId();
-		return redirect(routes.Node.index(repositoryId, 0, "cmis:name ASC"));
-	}
-
 	public Result jsRoutes() {
 		response().setContentType("text/javascript");
 		return ok(Routes.javascriptRouter("jsRoutes", controllers.routes.javascript.Node.showDetail(),

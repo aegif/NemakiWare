@@ -1,8 +1,5 @@
 package jp.aegif.nemaki.util;
 
-/**
- * Constants used throughout the application
- */
 public interface Constant {
 	String MODE_FULL = "FULL";
 	String MODE_DELTA = "DELTA";

@@ -4,9 +4,6 @@
 
 # Map static resources from the /public folder to the /assets URL path
 
-# Default route handler for root path
-GET     /                                       controllers.Application.defaultIndex()
-
 # Javascript Router
 GET		/assets/javascripts/routes							controllers.Application.jsRoutes()
 
@@ -130,3 +127,4 @@ PUT		/repo/:repoId/configs/:key				    		controllers.Config.update(repoId:String
 
 # Javascript scala template API
 GET		/jstemplate/duplicateNameCheck.js					controllers.JsTemplate.duplicateNameCheck(repoId:String)
+
