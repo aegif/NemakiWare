@@ -6,8 +6,8 @@ RUN apt-get update && apt-get install -y unzip curl && rm -rf /var/lib/apt/lists
 # Remove default Tomcat applications
 RUN rm -rf /usr/local/tomcat/webapps/*
 
-# Copy the UI WAR file to ui.war to deploy at /ui context
-COPY ui.war /usr/local/tomcat/webapps/ui.war
+# Copy the UI WAR file to ROOT.war to deploy at root context
+COPY ui.war /usr/local/tomcat/webapps/ROOT.war
 
 # Copy configuration files
 COPY nemakiware_ui.properties /usr/local/tomcat/conf/nemakiware_ui.properties
