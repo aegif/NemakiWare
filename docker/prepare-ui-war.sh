@@ -14,6 +14,8 @@ mkdir -p $NEMAKI_HOME/docker/ui-war
 
 echo "Copying WAR file..."
 cp $UI_DIR/target/ui.war $NEMAKI_HOME/docker/ui-war/
+echo "Renaming to ui##.war to ensure proper /ui context path in Tomcat 9..."
+cp $NEMAKI_HOME/docker/ui-war/ui.war $NEMAKI_HOME/docker/ui-war/ui##.war
 
 echo "Creating configuration directories..."
 mkdir -p $NEMAKI_HOME/docker/ui-war/config2
