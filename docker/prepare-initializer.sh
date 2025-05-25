@@ -1,86 +1,67 @@
+#!/bin/bash
 
+# Exit on error
 set -e
 
-SCRIPT_DIR=$(cd $(dirname $0); pwd)
-NEMAKI_HOME=$(cd $SCRIPT_DIR/..; pwd)
-CLOUDANT_INIT_DIR=$NEMAKI_HOME/setup/couchdb/cloudant-init
+# Get the absolute path of the NemakiWare repository
+NEMAKI_HOME=$(cd $(dirname $0)/.. && pwd)
 
+# Build the cloudant-init JAR
 echo "Building cloudant-init JAR..."
-cd $CLOUDANT_INIT_DIR
-mvn clean package -DskipTests
+cd $NEMAKI_HOME/setup/couchdb/cloudant-init
+mvn clean package
 
+# Create the initializer directory
 echo "Creating initializer directory..."
 mkdir -p $NEMAKI_HOME/docker/initializer
 
+# Copy the JAR file
 echo "Copying JAR file..."
-cp $CLOUDANT_INIT_DIR/target/cloudant-init.jar $NEMAKI_HOME/docker/initializer/
+cp $NEMAKI_HOME/setup/couchdb/cloudant-init/target/cloudant-init.jar $NEMAKI_HOME/docker/initializer/
 
+# Copy the dump files
 echo "Copying dump files..."
-cp $NEMAKI_HOME/setup/couchdb/initial_import/bedroom_init.dump $NEMAKI_HOME/docker/initializer/
-cp $NEMAKI_HOME/setup/couchdb/initial_import/archive_init.dump $NEMAKI_HOME/docker/initializer/
+cp -r $NEMAKI_HOME/setup/couchdb/dump $NEMAKI_HOME/docker/initializer/
 
+# Create the Dockerfile
 echo "Creating Dockerfile..."
-cat > $NEMAKI_HOME/docker/initializer/Dockerfile << 'EOF'
-FROM openjdk:8-jre-slim
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+cat > $NEMAKI_HOME/docker/initializer/Dockerfile << EOL
+FROM openjdk:8-jre-alpine
 
 WORKDIR /app
-COPY cloudant-init.jar /app/cloudant-init.jar
-COPY bedroom_init.dump /app/bedroom_init.dump
-COPY archive_init.dump /app/archive_init.dump
-COPY entrypoint.sh /app/entrypoint.sh
 
+COPY cloudant-init.jar /app/
+COPY dump /app/dump
+
+COPY entrypoint.sh /app/
 RUN chmod +x /app/entrypoint.sh
 
-
 ENTRYPOINT ["/app/entrypoint.sh"]
+EOL
 
-CMD ["http://localhost:5984", "", "", "bedroom", "/app/bedroom_init.dump", "true"]
-EOF
-
+# Create the entrypoint.sh script
 echo "Creating entrypoint.sh script..."
-cat > $NEMAKI_HOME/docker/initializer/entrypoint.sh << 'EOF'
-#!/bin/bash
-set -e
+cat > $NEMAKI_HOME/docker/initializer/entrypoint.sh << EOL
+#!/bin/sh
 
-URL=${1:-${COUCHDB_URL:-"http://localhost:5984"}}
-USERNAME=${2:-${COUCHDB_USERNAME:-""}}
-PASSWORD=${3:-${COUCHDB_PASSWORD:-""}}
-REPOSITORY_ID=${4:-${REPOSITORY_ID:-"bedroom"}}
-DUMP_FILE=${5:-${DUMP_FILE:-"/app/bedroom_init.dump"}}
-FORCE=${6:-${FORCE:-"true"}}
+# Wait for CouchDB to be ready
+echo "Waiting for CouchDB to be ready..."
+until curl -s http://${COUCHDB_HOST}:5984 > /dev/null; do
+    echo "CouchDB is unavailable - sleeping"
+    sleep 1
+done
 
-echo "Initializing CouchDB database:"
-echo "URL: $URL"
-echo "Username: $USERNAME"
-echo "Repository ID: $REPOSITORY_ID"
-echo "Dump file: $DUMP_FILE"
-echo "Force: $FORCE"
-
-echo "DEBUG: 渡される引数:"
-echo "1: $URL"
-echo "2: $USERNAME" 
-echo "3: $PASSWORD"
-echo "4: $REPOSITORY_ID"
-echo "5: $DUMP_FILE"
-echo "6: $FORCE"
-
-if [ ! -f "$DUMP_FILE" ]; then
-    echo "ERROR: Dump file $DUMP_FILE does not exist!"
-    echo "Contents of /app directory:"
-    ls -la /app
-    exit 1
+# Create admin user if auth is enabled
+if [ "${COUCHDB_AUTH_ENABLED}" = "true" ]; then
+    echo "Creating admin user..."
+    curl -X PUT http://${COUCHDB_HOST}:5984/_node/nonode@nohost/_config/admins/${COUCHDB_USER} -d '"${COUCHDB_PASSWORD}"'
 fi
 
-echo "DEBUG: 実行コマンド:"
-echo "java -Xmx512m -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer \"$URL\" \"$USERNAME\" \"$PASSWORD\" \"$REPOSITORY_ID\" \"$DUMP_FILE\" \"$FORCE\""
+# Initialize databases
+echo "Initializing databases..."
+java -jar /app/cloudant-init.jar     --host=${COUCHDB_HOST}     --port=5984     --auth-enabled=${COUCHDB_AUTH_ENABLED}     --username=${COUCHDB_USER}     --password=${COUCHDB_PASSWORD}     --dump-dir=/app/dump
 
-java -Xmx512m -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer "$URL" "$USERNAME" "$PASSWORD" "$REPOSITORY_ID" "$DUMP_FILE" "$FORCE"
-
-exit $?
-EOF
-
-chmod +x $NEMAKI_HOME/docker/initializer/entrypoint.sh
+echo "Initialization complete!"
+EOL
 
 echo "cloudant-init.jar and Dockerfile prepared successfully!"
