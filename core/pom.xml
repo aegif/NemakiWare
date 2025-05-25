@@ -10,12 +10,6 @@
 	<description>NemakiWare Core Server</description>
 	<url>https://github.com/aegif/NemakiWare</url>
 
-	<parent>
-		<groupId>jp.aegif.nemakiware</groupId>
-		<artifactId>nemakiware</artifactId>
-		<version>1.0</version>
-	</parent>
-
 	<properties>
 		<java-version>1.8</java-version>
 		<nemakiware.version>${project.version}</nemakiware.version>
