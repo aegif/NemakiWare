@@ -1,0 +1,10 @@
+{
+  "bedroom": {
+    "name": "bedroom",
+    "description": "Default repository"
+  },
+  "archive": {
+    "name": "archive",
+    "description": "Archive repository"
+  }
+}
