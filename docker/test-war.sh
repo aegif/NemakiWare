@@ -141,7 +141,7 @@ initialize_database() {
       -e FORCE=true \
       --entrypoint java \
       initializer${couchdb_version} -Xmx512m -Dlog.level=DEBUG -cp /app/cloudant-init.jar jp.aegif.nemaki.cloudantinit.CouchDBInitializer \
-      http://${container_name}:5984 "${COUCHDB_USER}" "${COUCHDB_PASSWORD}" ${repo_id} ${dump_file} true
+      -u http://${container_name}:5984 -n "${COUCHDB_USER}" -p "${COUCHDB_PASSWORD}" -r ${repo_id} -d ${dump_file} -f true
 }
 
 initialize_database "2" "bedroom" "5984" "couchdb2"
