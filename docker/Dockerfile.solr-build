@@ -1,0 +1,6 @@
+FROM maven:3.8-jdk-8
+
+WORKDIR /app
+COPY solr /app/solr
+
+RUN cd /app/solr && mvn clean package -DskipTests
