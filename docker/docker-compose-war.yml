@@ -124,6 +124,12 @@ services:
       - ./core/log4j.properties:/usr/local/tomcat/conf/log4j.properties
       - ./core/context.xml:/usr/local/tomcat/conf/Catalina/localhost/core.xml
       - ./core/config2/WEB-INF/classes/:/usr/local/tomcat/webapps/core/WEB-INF/classes/
+      - ../core/src/main/webapp/WEB-INF/web.xml:/usr/local/tomcat/webapps/core/WEB-INF/web.xml
+      - ../core/src/main/webapp/WEB-INF/classes/applicationContext.xml:/usr/local/tomcat/webapps/core/WEB-INF/classes/applicationContext.xml
+      - ../core/src/main/webapp/WEB-INF/classes/propertyContext.xml:/usr/local/tomcat/webapps/core/WEB-INF/classes/propertyContext.xml
+      - ../core/src/main/webapp/WEB-INF/classes/serviceContext.xml:/usr/local/tomcat/webapps/core/WEB-INF/classes/serviceContext.xml
+      - ../core/src/main/webapp/WEB-INF/classes/couchContext.xml:/usr/local/tomcat/webapps/core/WEB-INF/classes/couchContext.xml
+      - ../core/src/main/webapp/WEB-INF/classes/logContext.xml:/usr/local/tomcat/webapps/core/WEB-INF/classes/logContext.xml
     restart: on-failure
 
   # Core for CouchDB 3.x
@@ -143,6 +149,12 @@ services:
       - ./core/repositories.yml:/usr/local/tomcat/conf/repositories.yml
       - ./core/log4j.properties:/usr/local/tomcat/conf/log4j.properties
       - ./core/config3/WEB-INF/classes/:/usr/local/tomcat/webapps/core/WEB-INF/classes/
+      - ../core/src/main/webapp/WEB-INF/web.xml:/usr/local/tomcat/webapps/core/WEB-INF/web.xml
+      - ../core/src/main/webapp/WEB-INF/classes/applicationContext.xml:/usr/local/tomcat/webapps/core/WEB-INF/classes/applicationContext.xml
+      - ../core/src/main/webapp/WEB-INF/classes/propertyContext.xml:/usr/local/tomcat/webapps/core/WEB-INF/classes/propertyContext.xml
+      - ../core/src/main/webapp/WEB-INF/classes/serviceContext.xml:/usr/local/tomcat/webapps/core/WEB-INF/classes/serviceContext.xml
+      - ../core/src/main/webapp/WEB-INF/classes/couchContext.xml:/usr/local/tomcat/webapps/core/WEB-INF/classes/couchContext.xml
+      - ../core/src/main/webapp/WEB-INF/classes/logContext.xml:/usr/local/tomcat/webapps/core/WEB-INF/classes/logContext.xml
     restart: on-failure
 
   # UI for CouchDB 2.x (WAR version)
