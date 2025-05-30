@@ -1,0 +1,94 @@
+version: '3.7'
+
+services:
+  couchdb2:
+    image: couchdb:2.3.1
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=password
+    ports:
+      - "5984:5984"
+    volumes:
+      - couchdb2-data:/opt/couchdb/data
+    networks:
+      - nemaki-network
+
+  solr2:
+    image: solr:8.11.2
+    ports:
+      - "8983:8983"
+    volumes:
+      - ./solr/solr.war:/opt/solr/server/solr-webapp/webapp/solr.war
+      - solr2-data:/var/solr
+    networks:
+      - nemaki-network
+
+  initializer2:
+    build:
+      context: ./initializer
+    environment:
+      - COUCHDB_URL=http://couchdb2:5984
+      - COUCHDB_USERNAME=admin
+      - COUCHDB_PASSWORD=password
+      - REPOSITORY_ID=bedroom
+      - DUMP_FILE=/app/bedroom_init.dump
+      - FORCE=true
+    volumes:
+      - ../setup/couchdb/initial_import/bedroom_init.dump:/app/bedroom_init.dump
+      - ./initializer/dump/archive_init.dump:/app/archive_init.dump
+    restart: "no"
+    deploy:
+      restart_policy:
+        condition: none
+    depends_on:
+      - couchdb2
+    networks:
+      - nemaki-network
+
+  core2:
+    image: tomcat:9.0.71-jdk8
+    ports:
+      - "8080:8080"
+    environment:
+      - JAVA_OPTS=-Dorg.ektorp.support.AutoUpdateViewOnChange=false -Dorg.ektorp.http.IdleConnectionMonitor.enabled=false -Dorg.ektorp.support.DesignDocument.UPDATE_ON_DIFF=false -Dorg.ektorp.support.DesignDocument.ALLOW_AUTO_UPDATE=true -Dorg.apache.catalina.loader.WebappClassLoader.ENABLE_CLEAR_REFERENCES=true -Dorg.apache.tomcat.util.scan.StandardJarScanFilter.jarsToSkip=*.jar
+      - CATALINA_OPTS=-Xms512m -Xmx1024m -XX:+DisableExplicitGC -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties
+    volumes:
+      - ./core/config2/nemakiware.properties:/usr/local/tomcat/conf/nemakiware.properties
+      - ./core/repositories.yml:/usr/local/tomcat/conf/repositories.yml
+      - ./core/log4j.properties:/usr/local/tomcat/conf/log4j.properties
+      - ./core/config2/WEB-INF/classes/logContext.xml:/usr/local/tomcat/webapps/core/WEB-INF/classes/logContext.xml
+      - ./core/context.xml:/usr/local/tomcat/conf/Catalina/localhost/core.xml
+      - ./core/config2/WEB-INF/classes/:/usr/local/tomcat/webapps/core/WEB-INF/classes/
+    restart: on-failure
+    depends_on:
+      - couchdb2
+      - solr2
+      - initializer2
+    networks:
+      - nemaki-network
+
+  ui2-war:
+    image: tomcat:9.0.71-jdk8
+    ports:
+      - "9000:8080"
+    environment:
+      - JAVA_OPTS=-Dorg.apache.catalina.loader.WebappClassLoader.ENABLE_CLEAR_REFERENCES=true -Dorg.apache.tomcat.util.scan.StandardJarScanFilter.jarsToSkip=*.jar
+      - CATALINA_OPTS=-Xms512m -Xmx1024m -XX:+DisableExplicitGC -Dnemakiware_ui.properties=/usr/local/tomcat/conf/nemakiware_ui.properties -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties
+    volumes:
+      - ./ui-war/nemakiware_ui.properties:/usr/local/tomcat/conf/nemakiware_ui.properties
+      - ./ui-war/log4j.properties:/usr/local/tomcat/conf/log4j.properties
+      - ./ui-war/ui.xml:/usr/local/tomcat/conf/Catalina/localhost/ui.xml
+      - ./ui-war/ROOT.xml:/usr/local/tomcat/conf/Catalina/localhost/ROOT.xml
+    restart: on-failure
+    depends_on:
+      - core2
+    networks:
+      - nemaki-network
+
+volumes:
+  couchdb2-data:
+  solr2-data:
+
+networks:
+  nemaki-network:
+    driver: bridge
