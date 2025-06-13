@@ -1,0 +1,8 @@
+!jp.aegif.nemaki.util.yaml.RepositorySettings
+settings: 
+   canopy: !jp.aegif.nemaki.util.yaml.RepositorySetting
+      password: solr
+      user: solr
+   bedroom: !jp.aegif.nemaki.util.yaml.RepositorySetting
+      password: solr
+      user: solr

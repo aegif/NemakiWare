@@ -10,11 +10,11 @@ services:
       - COUCHDB_USER=${COUCHDB_USER:-admin}
       - COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-password}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5984"]
+      test: ["CMD", "curl", "-f", "-u", "admin:password", "http://localhost:5984/_all_dbs"]
       interval: 5s
-      timeout: 3s
-      retries: 10
-      start_period: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
 
   # CouchDB 3.x
   couchdb3:
@@ -27,11 +27,11 @@ services:
       - COUCHDB_USER=${COUCHDB_USER:-admin}
       - COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-password}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5984"]
+      test: ["CMD", "curl", "-f", "-u", "admin:password", "http://localhost:5984/_all_dbs"]
       interval: 5s
-      timeout: 3s
-      retries: 10
-      start_period: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
 
   # CouchDB 2.x Initializer
   initializer2:
@@ -48,6 +48,7 @@ services:
       - FORCE=true
     volumes:
       - ../setup/couchdb/initial_import/bedroom_init.dump:/app/bedroom_init.dump
+      - ../setup/couchdb/initial_import/archive_init.dump:/app/archive_init.dump
     restart: "no"
     deploy:
       restart_policy:
@@ -74,6 +75,7 @@ services:
       - FORCE=true
     volumes:
       - ../setup/couchdb/initial_import/bedroom_init.dump:/app/bedroom_init.dump
+      - ../setup/couchdb/initial_import/archive_init.dump:/app/archive_init.dump
     restart: "no"
     deploy:
       restart_policy:
@@ -93,7 +95,7 @@ services:
     environment:
       - CATALINA_OPTS=-Xms512m -Xmx1024m -Dsolr.solr.home=/usr/local/tomcat/solr
     volumes:
-      - ../setup/solr/solr:/usr/local/tomcat/solr
+      - ./solr/solr:/usr/local/tomcat/solr
 
   # Solr for CouchDB 3.x
   solr3:
@@ -103,7 +105,7 @@ services:
     environment:
       - CATALINA_OPTS=-Xms512m -Xmx1024m -Dsolr.solr.home=/usr/local/tomcat/solr
     volumes:
-      - ../setup/solr/solr:/usr/local/tomcat/solr
+      - ./solr/solr:/usr/local/tomcat/solr
 
   # Core for CouchDB 2.x
   core2:
@@ -115,22 +117,19 @@ services:
         condition: service_healthy
       solr2:
         condition: service_started
+      initializer2:
+        condition: service_completed_successfully
     environment:
       - JAVA_OPTS=-Dorg.ektorp.support.AutoUpdateViewOnChange=false -Dorg.ektorp.http.IdleConnectionMonitor.enabled=false -Dorg.ektorp.support.DesignDocument.UPDATE_ON_DIFF=false -Dorg.ektorp.support.DesignDocument.ALLOW_AUTO_UPDATE=true -Dorg.apache.catalina.loader.WebappClassLoader.ENABLE_CLEAR_REFERENCES=true -Dorg.apache.tomcat.util.scan.StandardJarScanFilter.jarsToSkip=*.jar
       - CATALINA_OPTS=-Xms512m -Xmx1024m -XX:+DisableExplicitGC -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties
-    volumes:
-      - ./core/config2/nemakiware.properties:/usr/local/tomcat/conf/nemakiware.properties
-      - ./core/repositories.yml:/usr/local/tomcat/conf/repositories.yml
-      - ./core/log4j.properties:/usr/local/tomcat/conf/log4j.properties
-      - ./core/context.xml:/usr/local/tomcat/conf/Catalina/localhost/core.xml
-      - ./core/config2/WEB-INF/classes/:/usr/local/tomcat/webapps/core/WEB-INF/classes/
-      - ../core/src/main/webapp/WEB-INF/web.xml:/usr/local/tomcat/webapps/core/WEB-INF/web.xml
-      - ../core/src/main/webapp/WEB-INF/classes/applicationContext.xml:/usr/local/tomcat/webapps/core/WEB-INF/classes/applicationContext.xml
-      - ../core/src/main/webapp/WEB-INF/classes/propertyContext.xml:/usr/local/tomcat/webapps/core/WEB-INF/classes/propertyContext.xml
-      - ../core/src/main/webapp/WEB-INF/classes/serviceContext.xml:/usr/local/tomcat/webapps/core/WEB-INF/classes/serviceContext.xml
-      - ../core/src/main/webapp/WEB-INF/classes/couchContext.xml:/usr/local/tomcat/webapps/core/WEB-INF/classes/couchContext.xml
-      - ../core/src/main/webapp/WEB-INF/classes/logContext.xml:/usr/local/tomcat/webapps/core/WEB-INF/classes/logContext.xml
+    # All configuration is now built into the Docker image
     restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-u", "admin:admin", "http://localhost:8080/core/atom?repositoryId=bedroom"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
 
   # Core for CouchDB 3.x
   core3:
@@ -142,20 +141,20 @@ services:
         condition: service_healthy
       solr3:
         condition: service_started
+      initializer3:
+        condition: service_completed_successfully
     environment:
+      - JAVA_OPTS=-Dorg.ektorp.support.AutoUpdateViewOnChange=false -Dorg.ektorp.http.IdleConnectionMonitor.enabled=false -Dorg.ektorp.support.DesignDocument.UPDATE_ON_DIFF=false -Dorg.ektorp.support.DesignDocument.ALLOW_AUTO_UPDATE=true -Dnet.sf.ehcache.enableShutdownHook=true -Dnet.sf.ehcache.statisticsEnabled=false -Dnet.sf.ehcache.cache.statisticsEnabled=false -Dorg.apache.catalina.loader.WebappClassLoader.ENABLE_CLEAR_REFERENCES=true -Dorg.apache.tomcat.util.scan.StandardJarScanFilter.jarsToSkip=*.jar
       - CATALINA_OPTS=-Xms512m -Xmx1024m -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties
     volumes:
-      - ./core/config3/nemakiware.properties:/usr/local/tomcat/conf/nemakiware.properties
-      - ./core/repositories.yml:/usr/local/tomcat/conf/repositories.yml
-      - ./core/log4j.properties:/usr/local/tomcat/conf/log4j.properties
-      - ./core/config3/WEB-INF/classes/:/usr/local/tomcat/webapps/core/WEB-INF/classes/
-      - ../core/src/main/webapp/WEB-INF/web.xml:/usr/local/tomcat/webapps/core/WEB-INF/web.xml
-      - ../core/src/main/webapp/WEB-INF/classes/applicationContext.xml:/usr/local/tomcat/webapps/core/WEB-INF/classes/applicationContext.xml
-      - ../core/src/main/webapp/WEB-INF/classes/propertyContext.xml:/usr/local/tomcat/webapps/core/WEB-INF/classes/propertyContext.xml
-      - ../core/src/main/webapp/WEB-INF/classes/serviceContext.xml:/usr/local/tomcat/webapps/core/WEB-INF/classes/serviceContext.xml
-      - ../core/src/main/webapp/WEB-INF/classes/couchContext.xml:/usr/local/tomcat/webapps/core/WEB-INF/classes/couchContext.xml
-      - ../core/src/main/webapp/WEB-INF/classes/logContext.xml:/usr/local/tomcat/webapps/core/WEB-INF/classes/logContext.xml
+      - ./core/config3:/usr/local/tomcat/core-config3:ro
     restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-u", "admin:admin", "http://localhost:8080/core/atom?repositoryId=bedroom"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
 
   # UI for CouchDB 2.x (WAR version)
   ui2-war:
@@ -163,7 +162,8 @@ services:
     ports:
       - "9000:8080"
     depends_on:
-      - core2
+      core2:
+        condition: service_healthy
     environment:
       - CATALINA_OPTS=-Xms512m -Xmx1024m -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Dnemakiware_ui.properties=/usr/local/tomcat/conf/nemakiware_ui.properties
     volumes:
@@ -175,7 +175,8 @@ services:
     ports:
       - "9001:8080"
     depends_on:
-      - core3
+      core3:
+        condition: service_healthy
     environment:
       - CATALINA_OPTS=-Xms512m -Xmx1024m -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Dnemakiware_ui.properties=/usr/local/tomcat/conf/nemakiware_ui.properties
     volumes:

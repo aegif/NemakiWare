@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<ehcache statistics="false" name="NemakiCore3Cache">
+	<diskStore path="/tmp/nemaki-core3-cache" />
+	<defaultCache maxElementsInMemory="10000" eternal="false"
+		timeToIdleSeconds="3600" timeToLiveSeconds="3600" overflowToDisk="false"
+		diskPersistent="false" memoryStoreEvictionPolicy="LRU" statistics="false" />
+		
+	<cache name="sampleCache1"
+    maxElementsInMemory="10000"
+    eternal="false"
+    timeToIdleSeconds="120"
+    timeToLiveSeconds="120"
+    overflowToDisk="false"
+    diskPersistent="false"
+    statistics="false" />
+    
+	<!-- Disable all caches for Core3 to prevent conflicts -->
+	<cache name="configCache"
+		maxElementsInMemory="1"
+		eternal="true"
+		overflowToDisk="false"
+		diskPersistent="false"
+		statistics="false" />
+		
+	<cache name="objectDataCache"
+		maxElementsInMemory="1"
+		eternal="false"
+		timeToIdleSeconds="300"
+		timeToLiveSeconds="300"
+		overflowToDisk="false"
+		diskPersistent="false"
+		statistics="false" />
+</ehcache>

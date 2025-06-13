@@ -17,19 +17,25 @@ import org.apache.commons.cli.Option;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 import org.apache.http.HttpEntity;
+import org.apache.http.HttpHost;
 import org.apache.http.HttpResponse;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.UsernamePasswordCredentials;
+import org.apache.http.client.AuthCache;
 import org.apache.http.client.CredentialsProvider;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpDelete;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPut;
+import org.apache.http.client.protocol.HttpClientContext;
 import org.apache.http.entity.ContentType;
 import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.auth.BasicScheme;
+import org.apache.http.impl.client.BasicAuthCache;
 import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.util.EntityUtils;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 public class CouchDBInitializer {
@@ -47,6 +53,8 @@ public class CouchDBInitializer {
     private String dumpFile;
     private boolean force;
     private HttpClient httpClient;
+    private HttpHost targetHost;
+    private HttpClientContext context;
 
     public CouchDBInitializer(String url, String username, String password, String repository, String dumpFile, boolean force) {
         this.url = url;
@@ -56,15 +64,39 @@ public class CouchDBInitializer {
         this.dumpFile = dumpFile;
         this.force = force;
         
+        // Parse URL to get host and port
+        try {
+            URL parsedUrl = new URL(url);
+            int port = parsedUrl.getPort();
+            if (port == -1) {
+                port = parsedUrl.getProtocol().equals("https") ? 443 : 80;
+            }
+            this.targetHost = new HttpHost(parsedUrl.getHost(), port, parsedUrl.getProtocol());
+        } catch (MalformedURLException e) {
+            throw new IllegalArgumentException("Invalid URL: " + url, e);
+        }
+        
         // Create HTTP client with authentication if needed
         HttpClientBuilder builder = HttpClientBuilder.create();
+        CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
+        
         if (username != null && !username.isEmpty() && password != null) {
-            CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
             credentialsProvider.setCredentials(
-                    AuthScope.ANY,
+                    new AuthScope(targetHost.getHostName(), targetHost.getPort()),
                     new UsernamePasswordCredentials(username, password));
             builder.setDefaultCredentialsProvider(credentialsProvider);
+            
+            // Setup preemptive authentication
+            AuthCache authCache = new BasicAuthCache();
+            BasicScheme basicAuth = new BasicScheme();
+            authCache.put(targetHost, basicAuth);
+            
+            this.context = HttpClientContext.create();
+            this.context.setAuthCache(authCache);
+        } else {
+            this.context = HttpClientContext.create();
         }
+        
         this.httpClient = builder.build();
     }
 
@@ -98,7 +130,7 @@ public class CouchDBInitializer {
     
     private boolean checkDatabaseExists() throws IOException {
         HttpGet request = new HttpGet(url + "/" + repository);
-        HttpResponse response = httpClient.execute(request);
+        HttpResponse response = httpClient.execute(targetHost, request, context);
         int statusCode = response.getStatusLine().getStatusCode();
         EntityUtils.consume(response.getEntity());
         return statusCode == 200;
@@ -106,7 +138,7 @@ public class CouchDBInitializer {
     
     private void deleteDatabase() throws IOException {
         HttpDelete request = new HttpDelete(url + "/" + repository);
-        HttpResponse response = httpClient.execute(request);
+        HttpResponse response = httpClient.execute(targetHost, request, context);
         int statusCode = response.getStatusLine().getStatusCode();
         EntityUtils.consume(response.getEntity());
         if (statusCode != 200 && statusCode != 202) {
@@ -116,7 +148,7 @@ public class CouchDBInitializer {
     
     private void createDatabase() throws IOException {
         HttpPut request = new HttpPut(url + "/" + repository);
-        HttpResponse response = httpClient.execute(request);
+        HttpResponse response = httpClient.execute(targetHost, request, context);
         int statusCode = response.getStatusLine().getStatusCode();
         EntityUtils.consume(response.getEntity());
         if (statusCode != 201) {
@@ -139,33 +171,80 @@ public class CouchDBInitializer {
             }
         }
         
-        // Parse JSON
-        JSONObject json = new JSONObject(content.toString());
+        // Parse JSON - handle both array and object formats
+        String jsonStr = content.toString().trim();
+        int count = 0;
         
-        // Import documents
-        if (json.has("docs")) {
-            int count = 0;
-            for (Object doc : json.getJSONArray("docs")) {
-                JSONObject docJson = (JSONObject) doc;
-                String id = docJson.getString("_id");
-                
-                // Put document
-                HttpPut request = new HttpPut(url + "/" + repository + "/" + id);
-                request.setEntity(new StringEntity(docJson.toString(), ContentType.APPLICATION_JSON));
-                HttpResponse response = httpClient.execute(request);
-                int statusCode = response.getStatusLine().getStatusCode();
-                EntityUtils.consume(response.getEntity());
-                
-                if (statusCode == 201 || statusCode == 202) {
-                    count++;
-                } else {
-                    System.err.println("Failed to import document " + id + ": " + statusCode);
+        if (jsonStr.startsWith("[")) {
+            // Array format (NemakiWare dump format)
+            JSONArray jsonArray = new JSONArray(jsonStr);
+            for (int i = 0; i < jsonArray.length(); i++) {
+                JSONObject item = jsonArray.getJSONObject(i);
+                if (item.has("document")) {
+                    JSONObject docJson = item.getJSONObject("document");
+                    String id = docJson.getString("_id");
+                    
+                    // Remove _rev field for fresh imports
+                    if (docJson.has("_rev")) {
+                        docJson.remove("_rev");
+                    }
+                    
+                    // Put document
+                    HttpPut request = new HttpPut(url + "/" + repository + "/" + id);
+                    request.setEntity(new StringEntity(docJson.toString(), ContentType.APPLICATION_JSON));
+                    HttpResponse response = httpClient.execute(targetHost, request, context);
+                    int statusCode = response.getStatusLine().getStatusCode();
+                    
+                    if (statusCode == 201 || statusCode == 202) {
+                        EntityUtils.consume(response.getEntity());
+                        count++;
+                    } else if (statusCode == 409) {
+                        EntityUtils.consume(response.getEntity());
+                        // Document already exists, skip
+                        System.out.println("Document " + id + " already exists, skipping.");
+                    } else {
+                        String responseBody = EntityUtils.toString(response.getEntity());
+                        System.err.println("Failed to import document " + id + ": " + statusCode + " - " + responseBody);
+                    }
                 }
             }
-            System.out.println("Imported " + count + " documents.");
+        } else if (jsonStr.startsWith("{")) {
+            // Object format (CouchDB bulk_docs format)
+            JSONObject json = new JSONObject(jsonStr);
+            if (json.has("docs")) {
+                for (Object doc : json.getJSONArray("docs")) {
+                    JSONObject docJson = (JSONObject) doc;
+                    String id = docJson.getString("_id");
+                    
+                    // Remove _rev field for fresh imports
+                    if (docJson.has("_rev")) {
+                        docJson.remove("_rev");
+                    }
+                    
+                    // Put document
+                    HttpPut request = new HttpPut(url + "/" + repository + "/" + id);
+                    request.setEntity(new StringEntity(docJson.toString(), ContentType.APPLICATION_JSON));
+                    HttpResponse response = httpClient.execute(targetHost, request, context);
+                    int statusCode = response.getStatusLine().getStatusCode();
+                    
+                    if (statusCode == 201 || statusCode == 202) {
+                        EntityUtils.consume(response.getEntity());
+                        count++;
+                    } else if (statusCode == 409) {
+                        EntityUtils.consume(response.getEntity());
+                        // Document already exists, skip
+                        System.out.println("Document " + id + " already exists, skipping.");
+                    } else {
+                        String responseBody = EntityUtils.toString(response.getEntity());
+                        System.err.println("Failed to import document " + id + ": " + statusCode + " - " + responseBody);
+                    }
+                }
+            }
         } else {
-            System.out.println("No documents found in dump file.");
+            throw new IOException("Invalid JSON format in dump file");
         }
+        
+        System.out.println("Imported " + count + " documents.");
     }
     
     public static void main(String[] args) {

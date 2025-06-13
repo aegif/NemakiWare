@@ -20,3 +20,13 @@ common/nemakiware-common.iml
 core/core.iml
 solr/solr.iml
 .idea
+
+# Claude-related files (temporary and cache)
+.claude/
+# Note: CLAUDE.md is intentionally NOT ignored as it contains project documentation
+
+# Generated Docker artifacts
+docker/core/core.war
+docker/initializer/*.jar
+docker/ui-war/*.war
+docker/solr/solr.war

@@ -1,0 +1,19 @@
+- name: "Bitmap"
+  extension: "bmp"
+  mediaType: "image/bmp"
+
+- name: "GIF"
+  extension: "gif"
+  mediaType: "image/gif"
+
+- name: "JPEG"
+  extension: "jpg"
+  mediaType: "image/jpeg"
+
+- name: "JPEG"
+  extension: "jpeg"
+  mediaType: "image/jpeg"
+
+- name: "PNG"
+  extension: "png"
+  mediaType: "image/png"

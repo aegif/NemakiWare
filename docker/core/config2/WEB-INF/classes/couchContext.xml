@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:aop="http://www.springframework.org/schema/aop"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
+
+	<!-- multi repo test -->
+	<bean id="connectorPool" class="jp.aegif.nemaki.dao.impl.couch.connector.ConnectorPool" init-method="init">
+		<property name="repositoryInfoMap">
+			<ref bean="repositoryInfoMap" />
+		</property>
+		<property name="url">
+			<value>${db.couchdb.url}</value>
+		</property>
+		<property name="maxConnections">
+			<value>${db.couchdb.max.connections}</value>
+		</property>
+		<property name="connectionTimeout">
+			<value>${db.couchdb.connection.timeout}</value>
+		</property>
+		<property name="socketTimeout">
+			<value>${db.couchdb.socket.timeout}</value>
+		</property>
+		<property name="authEnabled">
+			<value>${db.couchdb.auth.enabled}</value>
+		</property>
+		<property name="authUserName">
+			<value>${db.couchdb.auth.username}</value>
+		</property>
+		<property name="authPassword">
+			<value>${db.couchdb.auth.password}</value>
+		</property>
+	</bean>
+	
+	<bean id="nonCachedContentDaoService" class="jp.aegif.nemaki.dao.impl.couch.ContentDaoServiceImpl">
+		<property name="connectorPool">
+			<ref bean="connectorPool" />
+		</property>
+		<property name="repositoryInfoMap">
+			<ref bean="repositoryInfoMap" />
+		</property>
+	</bean>
+	
+	<bean id="nonCachedPrincipalDaoService" class="jp.aegif.nemaki.dao.impl.couch.PrincipalDaoServiceImpl">
+		<property name="connectorPool">
+			<ref bean="connectorPool" />
+		</property>
+	</bean>
+	
+</beans>

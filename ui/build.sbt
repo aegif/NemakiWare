@@ -19,6 +19,9 @@ initialize := {
 
 
 resolvers += Resolver.mavenLocal
+resolvers += "Typesafe Repository" at "https://repo.typesafe.com/typesafe/releases/"
+resolvers += "Maven Central" at "https://repo1.maven.org/maven2/"
+resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots"
 
 libraryDependencies ++= Seq(
   evolutions,
@@ -45,6 +48,7 @@ libraryDependencies ++= Seq(
   "org.apache.chemistry.opencmis" % "chemistry-opencmis-client-impl" % "1.1.0",
   "org.apache.chemistry.opencmis" % "chemistry-opencmis-client-bindings" % "1.1.0",
   "org.apache.httpcomponents" % "httpclient" % "4.4-beta1",
+  "org.apache.httpcomponents" % "httpcore" % "4.4.13",
   "net.lingala.zip4j" % "zip4j" % "1.3.2",
   "com.google.inject.extensions" % "guice-multibindings" % "4.0",
   "org.pac4j" % "play-pac4j" % "2.3.2",
