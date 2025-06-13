@@ -29,11 +29,7 @@
             </releases>
         </repository>
 
-		<repository>
-			<id>version99</id>
-			<!-- highly available repository serving empty artifacts -->
-			<url>https://version99.qos.ch/</url>
-		</repository>
+		<!-- Removed version99 repository - not needed anymore -->
 	</repositories>
 
 	<dependencyManagement>
@@ -41,7 +37,8 @@
 			<dependency>
 				<groupId>commons-logging</groupId>
 				<artifactId>commons-logging</artifactId>
-				<version>99-empty</version>
+				<version>1.2</version>
+				<scope>provided</scope>
 			</dependency>
 			<dependency>
 				<groupId>joda-time</groupId>

@@ -101,18 +101,44 @@ public class TypeManagerImpl implements TypeManager {
 
 	// Map of propertyDefinition cores(id, name, queryName, propertyType)
 	private Map<String, PropertyDefinition<?>> propertyDefinitionCoresForQueryName;
+	
+	// Flag to track initialization
+	private volatile boolean initialized = false;
+	private final Object initLock = new Object();
 
 	// /////////////////////////////////////////////////
 	// Constructor
 	// /////////////////////////////////////////////////
 	public void init() {
-		initGlobalTypes();
+		// Check if already initialized to avoid duplicate initialization
+		if (initialized) {
+			return;
+		}
 		
-		basetypes = new HashMap<String, TypeDefinitionContainer>();
-		subTypeProperties = new HashMap<String, List<PropertyDefinition<?>>>();
-		propertyDefinitionCoresForQueryName = new HashMap<String, PropertyDefinition<?>>();
+		synchronized (initLock) {
+			if (initialized) {
+				return;
+			}
+			
+			initGlobalTypes();
+			
+			basetypes = new HashMap<String, TypeDefinitionContainer>();
+			subTypeProperties = new HashMap<String, List<PropertyDefinition<?>>>();
+			propertyDefinitionCoresForQueryName = new HashMap<String, PropertyDefinition<?>>();
 
-		generate();
+			generate();
+			initialized = true;
+		}
+	}
+	
+	private void ensureInitialized() {
+		if (!initialized) {
+			synchronized (initLock) {
+				if (!initialized) {
+					init();
+				}
+			}
+		}
 	}
 
 	private void initGlobalTypes(){
@@ -149,15 +175,24 @@ public class TypeManagerImpl implements TypeManager {
 	// /////////////////////////////////////////////////
 	@Override
 	public void refreshTypes() {
-		initGlobalTypes();
-		
-		basetypes.clear();
-		basetypes = new HashMap<String, TypeDefinitionContainer>();
-		
-		subTypeProperties.clear();
-		subTypeProperties = new HashMap<String, List<PropertyDefinition<?>>>();
+		synchronized (initLock) {
+			// Reset initialization flag to force re-initialization
+			initialized = false;
+			
+			initGlobalTypes();
+			
+			basetypes.clear();
+			basetypes = new HashMap<String, TypeDefinitionContainer>();
+			
+			subTypeProperties.clear();
+			subTypeProperties = new HashMap<String, List<PropertyDefinition<?>>>();
+			
+			propertyDefinitionCoresForQueryName.clear();
+			propertyDefinitionCoresForQueryName = new HashMap<String, PropertyDefinition<?>>();
 
-		generate();
+			generate();
+			initialized = true;
+		}
 	}
 
 	// /////////////////////////////////////////////////
@@ -867,6 +902,8 @@ public class TypeManagerImpl implements TypeManager {
 	@Override
 	public AbstractTypeDefinition buildTypeDefinitionFromDB(
 			String repositoryId, NemakiTypeDefinition nemakiType) {
+		// Do NOT call ensureInitialized() here as this method is called during initialization
+		// and would cause infinite recursion
 		switch (nemakiType.getBaseId()) {
 		case CMIS_DOCUMENT:
 			return buildDocumentTypeDefinitionFromDB(repositoryId, nemakiType);
@@ -1169,12 +1206,14 @@ public class TypeManagerImpl implements TypeManager {
 	// /////////////////////////////////////////////////
 	@Override
 	public TypeDefinitionContainer getTypeById(String repositoryId, String typeId) {
+		ensureInitialized();
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
 		return types.get(typeId);
 	}
 
 	@Override
 	public TypeDefinition getTypeByQueryName(String repositoryId, String typeQueryName) {
+		ensureInitialized();
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
 		
 		for (Entry<String, TypeDefinitionContainer> entry : types.entrySet()) {
@@ -1187,6 +1226,7 @@ public class TypeManagerImpl implements TypeManager {
 
 	@Override
 	public Collection<TypeDefinitionContainer> getTypeDefinitionList(String repositoryId) {
+		ensureInitialized();
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
 		
 		List<TypeDefinitionContainer> typeRoots = new ArrayList<TypeDefinitionContainer>();
@@ -1201,6 +1241,7 @@ public class TypeManagerImpl implements TypeManager {
 
 	@Override
 	public List<TypeDefinitionContainer> getRootTypes(String repositoryId) {
+		ensureInitialized();
 		List<TypeDefinitionContainer> rootTypes = new ArrayList<TypeDefinitionContainer>();
 		for (String key : basetypes.keySet()) {
 			rootTypes.add(basetypes.get(key));
@@ -1237,11 +1278,13 @@ public class TypeManagerImpl implements TypeManager {
 	@Override
 	public PropertyDefinition<?> getPropertyDefinitionCoreForQueryName(
 			String queryName) {
+		ensureInitialized();
 		return propertyDefinitionCoresForQueryName.get(queryName);
 	}
 
 	@Override
 	public TypeDefinition getTypeDefinition(String repositoryId, String typeId) {
+		ensureInitialized();
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
 		TypeDefinitionContainer tc = types.get(typeId);
 		if (tc == null) {
@@ -1254,6 +1297,7 @@ public class TypeManagerImpl implements TypeManager {
 	@Override
 	public List<PropertyDefinition<?>> getSpecificPropertyDefinitions(
 			String typeId) {
+		ensureInitialized();
 		return subTypeProperties.get(typeId);
 	}
 
@@ -1265,7 +1309,7 @@ public class TypeManagerImpl implements TypeManager {
 	public TypeDefinitionList getTypesChildren(CallContext context,
 			String repositoryId, String typeId,
 			boolean includePropertyDefinitions, BigInteger maxItems, BigInteger skipCount) {
-		
+		ensureInitialized();
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
 		
 		TypeDefinitionListImpl result = new TypeDefinitionListImpl(
@@ -1341,6 +1385,7 @@ public class TypeManagerImpl implements TypeManager {
 	@Override
 	public List<TypeDefinitionContainer> getTypesDescendants(String repositoryId,
 			String typeId, BigInteger depth, Boolean includePropertyDefinitions) {
+		ensureInitialized();
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
 		
 		List<TypeDefinitionContainer> result = new ArrayList<TypeDefinitionContainer>();

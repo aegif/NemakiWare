@@ -14,8 +14,7 @@
     <context:annotation-config />
 	<context:component-scan base-package="jp.aegif.nemaki.patch" />
 
-	<bean id="PatchService" class="jp.aegif.nemaki.patch.PatchService"
-		init-method="apply">
+	<bean id="PatchService" class="jp.aegif.nemaki.patch.PatchService" init-method="applyPatchesOnStartup">
 		<property name="repositoryInfoMap">
 			<ref bean="repositoryInfoMap" />
 		</property>

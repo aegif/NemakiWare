@@ -1,0 +1,15 @@
+.metadata/
+*.class
+javadoc-pdf.xml
+log4j.properties
+doc/
+load_tesat/
+target/
+solr/*/data/
+*.DS_Store
+log/
+tracking.properties
+log4j.log
+src/main/resources/custom-nemakisolr.properties
+solr/conf/custom-repositories.yml
+/bin/

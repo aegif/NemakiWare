@@ -2,6 +2,7 @@ package jp.aegif.nemaki.patch;
 
 import java.util.List;
 
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.ektorp.CouchDbConnector;
@@ -22,6 +23,35 @@ public class PatchService {
 	private ConnectorPool connectorPool;
 
 	private List<AbstractNemakiPatch> patchList;
+	
+	public PatchService() {
+		System.out.println("=== PATCH DEBUG: PatchService constructor called ===");
+		log.info("=== PATCH DEBUG: PatchService constructor called ===");
+	}
+
+	public void applyPatchesOnStartup() {
+		System.out.println("=== PATCH DEBUG: applyPatchesOnStartup() CALLED ===");
+		log.info("=== PATCH DEBUG: applyPatchesOnStartup() CALLED ===");
+		try {
+			System.out.println("=== PATCH DEBUG: Starting automatic patch application on startup ===");
+			log.info("Starting automatic patch application on startup");
+			
+			System.out.println("=== PATCH DEBUG: repositoryInfoMap=" + (repositoryInfoMap != null ? repositoryInfoMap.getClass().getName() : "null"));
+			System.out.println("=== PATCH DEBUG: connectorPool=" + (connectorPool != null ? connectorPool.getClass().getName() : "null"));
+			System.out.println("=== PATCH DEBUG: patchList=" + (patchList != null ? "size=" + patchList.size() : "null"));
+			
+			apply();
+			
+			System.out.println("=== PATCH DEBUG: Automatic patch application completed successfully ===");
+			log.info("Automatic patch application completed successfully");
+		} catch (Exception e) {
+			System.out.println("=== PATCH DEBUG: Failed to apply patches on startup: " + e.getMessage());
+			log.error("Failed to apply patches on startup", e);
+			e.printStackTrace();
+			// Continue with application startup even if patches fail
+			// This ensures the application can start even with patch issues
+		}
+	}
 
 	public void apply(){
 		createPathView();
@@ -31,27 +61,47 @@ public class PatchService {
 	}
 
 	private void createPathView(){
-		for(String repositoryId : repositoryInfoMap.keys()){
-			// create view
-			CouchDbConnector connector = connectorPool.get(repositoryId);
-			StdDesignDocumentFactory factory = new StdDesignDocumentFactory();
-			DesignDocument designDoc = factory.getFromDatabase(connector, "_design/_repo");
-			if(!designDoc.containsView("patch")){
-				designDoc.addView("patch", new View("function(doc) { if (doc.type == 'patch')  emit(doc.name, doc) }"));
-				connector.update(designDoc);
+		System.out.println("=== PATCH DEBUG: createPathView() CALLED ===");
+		try {
+			for(String repositoryId : repositoryInfoMap.keys()){
+				System.out.println("=== PATCH DEBUG: Processing repository: " + repositoryId);
+				// create view
+				CouchDbConnector connector = connectorPool.get(repositoryId);
+				System.out.println("=== PATCH DEBUG: Got connector for " + repositoryId + ": " + (connector != null ? connector.getClass().getName() : "null"));
+				
+				StdDesignDocumentFactory factory = new StdDesignDocumentFactory();
+				DesignDocument designDoc = factory.getFromDatabase(connector, "_design/_repo");
+				System.out.println("=== PATCH DEBUG: Got design doc for " + repositoryId + ", views: " + designDoc.getViews().keySet());
+				
+				if(!designDoc.containsView("patch")){
+					System.out.println("=== PATCH DEBUG: Adding patch view to " + repositoryId);
+					designDoc.addView("patch", new View("function(doc) { if (doc.type == 'patch')  emit(doc.name, doc) }"));
+					connector.update(designDoc);
+					System.out.println("=== PATCH DEBUG: Successfully added patch view to " + repositoryId);
+				} else {
+					System.out.println("=== PATCH DEBUG: Patch view already exists in " + repositoryId);
+				}
 			}
+			System.out.println("=== PATCH DEBUG: createPathView() completed successfully");
+		} catch (Exception e) {
+			System.out.println("=== PATCH DEBUG: createPathView() failed: " + e.getMessage());
+			e.printStackTrace();
+			throw e;
 		}
 	}
 
 	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
+		System.out.println("=== PATCH DEBUG: setRepositoryInfoMap called with " + (repositoryInfoMap != null ? repositoryInfoMap.getClass().getName() : "null"));
 		this.repositoryInfoMap = repositoryInfoMap;
 	}
 
 	public void setConnectorPool(ConnectorPool connectorPool) {
+		System.out.println("=== PATCH DEBUG: setConnectorPool called with " + (connectorPool != null ? connectorPool.getClass().getName() : "null"));
 		this.connectorPool = connectorPool;
 	}
 
 	public void setPatchList(List<AbstractNemakiPatch> patchList) {
+		System.out.println("=== PATCH DEBUG: setPatchList called with " + (patchList != null ? "size=" + patchList.size() : "null"));
 		this.patchList = patchList;
 	}
 

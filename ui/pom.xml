@@ -87,6 +87,7 @@
 
 	<build>
 		<finalName>ui</finalName>
+		<sourceDirectory>app</sourceDirectory>
 		<plugins>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>

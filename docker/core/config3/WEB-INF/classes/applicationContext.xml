@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:aop="http://www.springframework.org/schema/aop"
+	xmlns:util="http://www.springframework.org/schema/util" xmlns:context="http://www.springframework.org/schema/context"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+    http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd
+    http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util-3.0.xsd
+    http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-3.2.xsd">
+
+	<import resource="classpath:propertyContext.xml" />
+
+	<bean id="customSystemProperty"
+		class="org.springframework.beans.factory.config.MethodInvokingFactoryBean">
+		<property name="targetObject">
+			<bean
+				class="org.springframework.beans.factory.config.MethodInvokingFactoryBean">
+				<property name="targetClass" value="java.lang.System" />
+				<property name="targetMethod" value="getProperties" />
+			</bean>
+		</property>
+		<property name="targetMethod" value="putAll" />
+		<property name="arguments">
+			<util:properties>
+			</util:properties>
+		</property>
+	</bean>
+
+	<bean id="nemakiApplicationContextLoader"
+		class="jp.aegif.nemaki.util.spring.NemakiApplicationContextLoader">
+		<property name="propertyConfigurer">
+			<ref bean="propertyConfigurer" />
+		</property>
+		<property name="configLocations">
+			<list>
+				<value>classpath*:${context.log}</value>
+				<value>classpath:propertyContext.xml</value>
+				<value>classpath*:${context.dao.implementation}</value>
+				<value>classpath*:${context.dao}</value>
+				<value>classpath*:${context.businesslogic}</value>
+				<value>classpath:serviceContext.xml</value>
+				<value>classpath*:patchContext.xml</value>
+			</list>
+		</property>
+	</bean>
+
+	<bean id="SpringContext" class="jp.aegif.nemaki.util.spring.SpringContext">
+	</bean>
+</beans>

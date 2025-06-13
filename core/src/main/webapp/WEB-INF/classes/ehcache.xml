@@ -1,15 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<ehcache>
-	<diskStore path="java.io.tmpdir" />
+<ehcache statistics="false" name="NemakiCore2Cache">
+	<diskStore path="/tmp/nemaki-core2-cache" />
 	<defaultCache maxElementsInMemory="10000" eternal="false"
 		timeToIdleSeconds="3600" timeToLiveSeconds="3600" overflowToDisk="false"
-		diskPersistent="false" memoryStoreEvictionPolicy="LRU" />
+		diskPersistent="false" memoryStoreEvictionPolicy="LRU" statistics="false" />
 		
 	<cache name="sampleCache1"
     maxElementsInMemory="10000"
     eternal="false"
     timeToIdleSeconds="120"
     timeToLiveSeconds="120"
-    overflowToDisk="true" />
+    overflowToDisk="true"
+    statistics="false" />
 </ehcache>
