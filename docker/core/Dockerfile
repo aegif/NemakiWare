@@ -79,13 +79,11 @@ fi\n\
 \n\
 echo "Waiting for CouchDB to be ready..."\n\
 # Wait for CouchDB to be accessible using curl (which works)\n\
-# Check appropriate CouchDB based on environment\n\
+# Check if this is Core3 environment and use appropriate CouchDB\n\
+COUCHDB_URL="http://couchdb2:5984"\n\
 if [ -d "/usr/local/tomcat/core-config3" ]; then\n\
   COUCHDB_URL="http://couchdb3:5984"\n\
-else\n\
-  COUCHDB_URL="http://couchdb2:5984"\n\
 fi\n\
-echo "Checking CouchDB at: $COUCHDB_URL"\n\
 for i in {1..60}; do\n\
   if curl -s $COUCHDB_URL > /dev/null 2>&1; then\n\
     echo "CouchDB is ready!"\n\
