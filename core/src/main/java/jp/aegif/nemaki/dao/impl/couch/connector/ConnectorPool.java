@@ -526,7 +526,7 @@ public class ConnectorPool {
 					System.out.println("=== Ektorp Connection Attempt Debug ===");
 					try {
 						// Test if we can make a simple HTTP connection to the same URL
-						java.net.URL testUrl = new java.net.URL("http://couchdb2:5984");
+						java.net.URL testUrl = new java.net.URL(url);
 						java.net.HttpURLConnection testConn = (java.net.HttpURLConnection) testUrl.openConnection();
 						testConn.setConnectTimeout(5000);
 						testConn.setRequestMethod("GET");
