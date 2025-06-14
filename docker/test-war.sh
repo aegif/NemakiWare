@@ -108,8 +108,7 @@ echo "Creating .sbtopts for optimized SBT performance..."
 cat > .sbtopts << 'EOF_SBTOPTS'
 -Xmx2G
 -Xms1G
--XX:+UseConcMarkSweepGC
--XX:+CMSClassUnloadingEnabled
+-XX:+UseG1GC
 -Dsbt.boot.directory=$HOME/.sbt/boot
 -Dsbt.global.base=$HOME/.sbt/global
 -Dsbt.ivy.home=$HOME/.ivy2
@@ -125,7 +124,7 @@ echo "Building UI WAR with SBT (this may take a few minutes)..."
 echo "Running: sbt clean compile war"
 
 # Set SBT options for better performance and to avoid timeout
-export SBT_OPTS="-Xmx2G -XX:+UseConcMarkSweepGC -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=512M -Dsbt.global.base=$HOME/.sbt/global"
+export SBT_OPTS="-Xmx2G -XX:+UseG1GC -Dsbt.global.base=$HOME/.sbt/global"
 
 # Initialize SBT result variable
 SBT_RESULT=0

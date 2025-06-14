@@ -6,16 +6,13 @@
 		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
 
 	<!-- Cache - DISABLED for Core3 to prevent conflicts -->
-	<bean id="nemakiCachePool" class="jp.aegif.nemaki.util.cache.impl.NemakiCachePoolImpl"
-	init-method="init">
+	<bean id="nemakiCachePool" class="jp.aegif.nemaki.util.cache.impl.NemakiCachePoolImpl">
 		<property name="propertyManager">
             <ref bean="springPropertyManager" />
         </property>
         <property name="repositoryInfoMap">
             <ref bean="repositoryInfoMap" />
         </property>
-        <!-- Disable cache initialization -->
-        <property name="cacheEnabled" value="false" />
 	</bean>
 
 
