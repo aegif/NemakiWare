@@ -569,8 +569,7 @@ external.authenticaion.proxyHeader=X-NemakiWare-Remote-User
 external.authenticaion.isAutoCreateUser=false
 EOF3
 
-# Copy the Core3 configuration to the main docker/core directory (for Core3 containers)
-cp $NEMAKI_HOME/docker/core/config3/nemakiware.properties $NEMAKI_HOME/docker/core/nemakiware.properties
+# Do not copy to main directory as it would overwrite Core2 configuration
 
 #COMMENTED: cat > $NEMAKI_HOME/docker/core/config3/nemakiware.properties << EOF4
 #COMMENTED: db.couchdb.url=http://couchdb3:5984
