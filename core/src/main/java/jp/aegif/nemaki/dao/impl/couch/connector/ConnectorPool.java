@@ -531,7 +531,7 @@ public class ConnectorPool {
 						testConn.setConnectTimeout(5000);
 						testConn.setRequestMethod("GET");
 						int responseCode = testConn.getResponseCode();
-						System.out.println("Raw HttpURLConnection to " + testUrl + " response: " + responseCode);
+						System.out.println("Raw HttpURLConnection to " + url + " response: " + responseCode);
 						testConn.disconnect();
 						
 						// Debug Ektorp CouchDbInstance and HttpClient settings
