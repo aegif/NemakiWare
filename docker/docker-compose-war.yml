@@ -144,10 +144,8 @@ services:
       initializer3:
         condition: service_completed_successfully
     environment:
-      - JAVA_OPTS=-Dorg.ektorp.support.AutoUpdateViewOnChange=false -Dorg.ektorp.http.IdleConnectionMonitor.enabled=false -Dorg.ektorp.support.DesignDocument.UPDATE_ON_DIFF=false -Dorg.ektorp.support.DesignDocument.ALLOW_AUTO_UPDATE=true -Dnet.sf.ehcache.enableShutdownHook=true -Dnet.sf.ehcache.statisticsEnabled=false -Dnet.sf.ehcache.cache.statisticsEnabled=false -Dorg.apache.catalina.loader.WebappClassLoader.ENABLE_CLEAR_REFERENCES=true -Dorg.apache.tomcat.util.scan.StandardJarScanFilter.jarsToSkip=*.jar
+      - JAVA_OPTS=-Dorg.ektorp.support.AutoUpdateViewOnChange=false -Dorg.ektorp.http.IdleConnectionMonitor.enabled=false -Dorg.ektorp.support.DesignDocument.UPDATE_ON_DIFF=false -Dorg.ektorp.support.DesignDocument.ALLOW_AUTO_UPDATE=true -Dorg.apache.catalina.loader.WebappClassLoader.ENABLE_CLEAR_REFERENCES=true -Dorg.apache.tomcat.util.scan.StandardJarScanFilter.jarsToSkip=*.jar
       - CATALINA_OPTS=-Xms512m -Xmx1024m -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties
-    volumes:
-      - ./core/config3:/usr/local/tomcat/core-config3:ro
     restart: on-failure
     healthcheck:
       test: ["CMD", "curl", "-f", "-u", "admin:admin", "http://localhost:8080/core/atom?repositoryId=bedroom"]
