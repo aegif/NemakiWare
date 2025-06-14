@@ -30,3 +30,12 @@ docker/core/core.war
 docker/initializer/*.jar
 docker/ui-war/*.war
 docker/solr/solr.war
+docker/temp/
+
+# Compiled class files (should never be committed)
+*.class
+
+# Test or temporary directories
+core-check/
+temp/
+*/temp/
