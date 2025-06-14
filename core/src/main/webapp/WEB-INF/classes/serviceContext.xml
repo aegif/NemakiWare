@@ -13,7 +13,7 @@
     </bean>
 
     <bean id="CmisServiceFactory" class="jp.aegif.nemaki.cmis.factory.CmisServiceFactory"
-    init-method="setup" depends-on="cmisService">
+    init-method="setup">
         <property name="propertyManager">
             <ref bean="propertyManager" />
         </property>
