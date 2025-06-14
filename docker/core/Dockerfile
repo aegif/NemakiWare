@@ -58,48 +58,22 @@ if [ -f "/usr/local/tomcat/conf/nemakiware.properties" ]; then\n\
   echo "Configuration files copied."\n\
 fi\n\
 \n\
-# Check if this is Core3 by examining environment variables or port mapping\n\
-if [ "$CATALINA_OPTS" = *"8081"* ] || [ -n "$CORE3_MODE" ]; then\n\
+# Check if this is Core3 and copy Core3-specific configuration\n\
+if [ -d "/usr/local/tomcat/core-config3" ]; then\n\
   echo "Detected Core3 environment - applying Core3-specific configuration..."\n\
-  # Copy Core3 ehcache.xml to override the default Core2 version\n\
-  echo "Applying Core3 ehcache.xml configuration..."\n\
-  cat > /usr/local/tomcat/webapps/core/WEB-INF/classes/ehcache.xml << '"'"'EOF_EHCACHE3'"'"'\n\
-<?xml version="1.0" encoding="UTF-8"?>\n\
-\n\
-<ehcache statistics="false" name="NemakiCore3Cache">\n\
-	<diskStore path="/tmp/nemaki-core3-cache" />\n\
-	<defaultCache maxElementsInMemory="10000" eternal="false"\n\
-		timeToIdleSeconds="3600" timeToLiveSeconds="3600" overflowToDisk="false"\n\
-		diskPersistent="false" memoryStoreEvictionPolicy="LRU" statistics="false" />\n\
-		\n\
-	<cache name="sampleCache1"\n\
-    maxElementsInMemory="10000"\n\
-    eternal="false"\n\
-    timeToIdleSeconds="120"\n\
-    timeToLiveSeconds="120"\n\
-    overflowToDisk="false"\n\
-    diskPersistent="false"\n\
-    statistics="false" />\n\
-    \n\
-	<!-- Disable all caches for Core3 to prevent conflicts -->\n\
-	<cache name="configCache"\n\
-		maxElementsInMemory="1"\n\
-		eternal="true"\n\
-		overflowToDisk="false"\n\
-		diskPersistent="false"\n\
-		statistics="false" />\n\
-		\n\
-	<cache name="objectDataCache"\n\
-		maxElementsInMemory="1"\n\
-		eternal="false"\n\
-		timeToIdleSeconds="300"\n\
-		timeToLiveSeconds="300"\n\
-		overflowToDisk="false"\n\
-		diskPersistent="false"\n\
-		statistics="false" />\n\
-</ehcache>\n\
-EOF_EHCACHE3\n\
-  echo "Core3 ehcache.xml applied with NemakiCore3Cache configuration"\n\
+  if [ -f "/usr/local/tomcat/core-config3/nemakiware.properties" ]; then\n\
+    cp /usr/local/tomcat/core-config3/nemakiware.properties /usr/local/tomcat/conf/nemakiware.properties\n\
+    cp /usr/local/tomcat/core-config3/nemakiware.properties /usr/local/tomcat/webapps/core/WEB-INF/classes/nemakiware.properties\n\
+    echo "Core3 nemakiware.properties applied"\n\
+  fi\n\
+  if [ -f "/usr/local/tomcat/core-config3/WEB-INF/classes/ehcache.xml" ]; then\n\
+    cp /usr/local/tomcat/core-config3/WEB-INF/classes/ehcache.xml /usr/local/tomcat/webapps/core/WEB-INF/classes/ehcache.xml\n\
+    echo "Core3 ehcache.xml applied"\n\
+  fi\n\
+  if [ -f "/usr/local/tomcat/core-config3/WEB-INF/classes/businesslogicContext.xml" ]; then\n\
+    cp /usr/local/tomcat/core-config3/WEB-INF/classes/businesslogicContext.xml /usr/local/tomcat/webapps/core/WEB-INF/classes/businesslogicContext.xml\n\
+    echo "Core3 businesslogicContext.xml applied"\n\
+  fi\n\
   echo "Core3 configuration application completed"\n\
 fi\n\
 \n\
@@ -107,7 +81,7 @@ echo "Waiting for CouchDB to be ready..."\n\
 # Wait for CouchDB to be accessible using curl (which works)\n\
 # Check if this is Core3 environment and use appropriate CouchDB\n\
 COUCHDB_URL="http://couchdb2:5984"\n\
-if [ "$CATALINA_OPTS" = *"8081"* ] || [ -n "$CORE3_MODE" ]; then\n\
+if [ -d "/usr/local/tomcat/core-config3" ]; then\n\
   COUCHDB_URL="http://couchdb3:5984"\n\
 fi\n\
 for i in {1..60}; do\n\
