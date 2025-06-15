@@ -65,6 +65,7 @@ public class PatchService {
 		try {
 			for(String repositoryId : repositoryInfoMap.keys()){
 				System.out.println("=== PATCH DEBUG: Processing repository: " + repositoryId);
+				System.out.println("=== PATCH DEBUG: Archive ID for " + repositoryId + ": " + repositoryInfoMap.get(repositoryId).getArchiveId());
 				// create view
 				CouchDbConnector connector = connectorPool.get(repositoryId);
 				System.out.println("=== PATCH DEBUG: Got connector for " + repositoryId + ": " + (connector != null ? connector.getClass().getName() : "null"));
@@ -73,13 +74,87 @@ public class PatchService {
 				DesignDocument designDoc = factory.getFromDatabase(connector, "_design/_repo");
 				System.out.println("=== PATCH DEBUG: Got design doc for " + repositoryId + ", views: " + designDoc.getViews().keySet());
 				
+				boolean updated = false;
+				
 				if(!designDoc.containsView("patch")){
 					System.out.println("=== PATCH DEBUG: Adding patch view to " + repositoryId);
 					designDoc.addView("patch", new View("function(doc) { if (doc.type == 'patch')  emit(doc.name, doc) }"));
-					connector.update(designDoc);
-					System.out.println("=== PATCH DEBUG: Successfully added patch view to " + repositoryId);
+					updated = true;
+					System.out.println("=== PATCH DEBUG: patch view added to " + repositoryId);
 				} else {
 					System.out.println("=== PATCH DEBUG: Patch view already exists in " + repositoryId);
+				}
+				
+				// Always update admin view to ensure correct definition
+				String correctAdminViewMap = "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:user' && doc.admin == true)  emit(doc.userId, doc) }";
+				System.out.println("=== PATCH DEBUG: About to update admin view for " + repositoryId);
+				if(!designDoc.containsView("admin")){
+					System.out.println("=== PATCH DEBUG: Adding admin view to " + repositoryId);
+					designDoc.addView("admin", new View(correctAdminViewMap));
+					updated = true;
+					System.out.println("=== PATCH DEBUG: admin view added to " + repositoryId);
+				} else {
+					System.out.println("=== PATCH DEBUG: Updating existing admin view definition in " + repositoryId);
+					designDoc.addView("admin", new View(correctAdminViewMap));
+					updated = true;
+					System.out.println("=== PATCH DEBUG: admin view updated in " + repositoryId);
+				}
+				System.out.println("=== PATCH DEBUG: Admin view processing completed for " + repositoryId);
+				
+				if(updated) {
+					connector.update(designDoc);
+					System.out.println("=== PATCH DEBUG: Successfully updated design document for " + repositoryId);
+				}
+				
+				// Also process archive repositories
+				String archiveId = repositoryInfoMap.get(repositoryId).getArchiveId();
+				System.out.println("=== PATCH DEBUG: Archive ID for " + repositoryId + ": " + archiveId);
+				if(archiveId != null && !archiveId.isEmpty()) {
+					System.out.println("=== PATCH DEBUG: Processing archive repository: " + archiveId + " for " + repositoryId);
+					try {
+						CouchDbConnector archiveConnector = connectorPool.get(archiveId);
+						System.out.println("=== PATCH DEBUG: Got archive connector for " + archiveId + ": " + (archiveConnector != null ? archiveConnector.getClass().getName() : "null"));
+						
+						StdDesignDocumentFactory archiveFactory = new StdDesignDocumentFactory();
+						DesignDocument archiveDesignDoc = archiveFactory.getFromDatabase(archiveConnector, "_design/_repo");
+						System.out.println("=== PATCH DEBUG: Got archive design doc for " + archiveId + ", views: " + archiveDesignDoc.getViews().keySet());
+						
+						boolean archiveUpdated = false;
+						
+						if(!archiveDesignDoc.containsView("patch")){
+							System.out.println("=== PATCH DEBUG: Adding patch view to archive " + archiveId);
+							archiveDesignDoc.addView("patch", new View("function(doc) { if (doc.type == 'patch')  emit(doc.name, doc) }"));
+							archiveUpdated = true;
+							System.out.println("=== PATCH DEBUG: patch view added to archive " + archiveId);
+						} else {
+							System.out.println("=== PATCH DEBUG: Patch view already exists in archive " + archiveId);
+						}
+						
+						// Always update admin view to ensure correct definition
+						String correctArchiveAdminViewMap = "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:user' && doc.admin == true)  emit(doc.userId, doc) }";
+						if(!archiveDesignDoc.containsView("admin")){
+							System.out.println("=== PATCH DEBUG: Adding admin view to archive " + archiveId);
+							archiveDesignDoc.addView("admin", new View(correctArchiveAdminViewMap));
+							archiveUpdated = true;
+							System.out.println("=== PATCH DEBUG: admin view added to archive " + archiveId);
+						} else {
+							System.out.println("=== PATCH DEBUG: Updating admin view definition in archive " + archiveId);
+							archiveDesignDoc.addView("admin", new View(correctArchiveAdminViewMap));
+							archiveUpdated = true;
+							System.out.println("=== PATCH DEBUG: admin view updated in archive " + archiveId);
+						}
+						
+						if(archiveUpdated) {
+							archiveConnector.update(archiveDesignDoc);
+							System.out.println("=== PATCH DEBUG: Successfully updated archive design document for " + archiveId);
+						}
+					} catch (Exception archiveException) {
+						System.out.println("=== PATCH DEBUG: Failed to process archive repository " + archiveId + ": " + archiveException.getMessage());
+						archiveException.printStackTrace();
+						// Continue processing even if archive fails
+					}
+				} else {
+					System.out.println("=== PATCH DEBUG: No archive repository defined for " + repositoryId);
 				}
 			}
 			System.out.println("=== PATCH DEBUG: createPathView() completed successfully");

@@ -1,0 +1,93 @@
+services:
+  # CouchDB 2.x - Production ready version
+  couchdb:
+    image: couchdb:2.3.1
+    ports:
+      - "5984:5984"
+    volumes:
+      - couchdb_data:/opt/couchdb/data
+    environment:
+      - COUCHDB_USER=${COUCHDB_USER:-admin}
+      - COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-password}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-u", "${COUCHDB_USER:-admin}:${COUCHDB_PASSWORD:-password}", "http://localhost:5984/_all_dbs"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+
+  # Database Initializer
+  initializer:
+    build: ./initializer
+    depends_on:
+      couchdb:
+        condition: service_healthy
+    environment:
+      - COUCHDB_URL=http://couchdb:5984
+      - COUCHDB_USERNAME=${COUCHDB_USER:-admin}
+      - COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-password}
+      - REPOSITORY_ID=${REPOSITORY_ID:-bedroom}
+      - DUMP_FILE=${DUMP_FILE:-/app/bedroom_init.dump}
+      - FORCE=${FORCE:-true}
+    volumes:
+      - ../setup/couchdb/initial_import/bedroom_init.dump:/app/bedroom_init.dump
+      - ../setup/couchdb/initial_import/archive_init.dump:/app/archive_init.dump
+    restart: "no"
+    deploy:
+      restart_policy:
+        condition: none
+
+  # Solr Search Engine
+  solr:
+    build: ./solr
+    ports:
+      - "8983:8080"
+    environment:
+      - CATALINA_OPTS=-Xms512m -Xmx1024m -Dsolr.solr.home=/usr/local/tomcat/solr
+    volumes:
+      - ./solr/solr:/usr/local/tomcat/solr
+
+  # Core CMIS Server
+  core:
+    build:
+      context: ./core
+      dockerfile: Dockerfile.simple
+    ports:
+      - "8080:8080"
+    depends_on:
+      couchdb:
+        condition: service_healthy
+      solr:
+        condition: service_started
+      initializer:
+        condition: service_completed_successfully
+    environment:
+      - JAVA_OPTS=-Dorg.ektorp.support.AutoUpdateViewOnChange=false -Dorg.ektorp.http.IdleConnectionMonitor.enabled=false -Dorg.ektorp.support.DesignDocument.UPDATE_ON_DIFF=false -Dorg.ektorp.support.DesignDocument.ALLOW_AUTO_UPDATE=true -Dorg.apache.catalina.loader.WebappClassLoader.ENABLE_CLEAR_REFERENCES=true -Dorg.apache.tomcat.util.scan.StandardJarScanFilter.jarsToSkip=*.jar
+      - CATALINA_OPTS=-Xms512m -Xmx1024m -XX:+DisableExplicitGC -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/core"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # UI Web Interface
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile.simple
+    ports:
+      - "9000:8080"
+    depends_on:
+      core:
+        condition: service_healthy
+    environment:
+      - CATALINA_OPTS=-Xms512m -Xmx1024m -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Dnemakiware_ui.properties=/usr/local/tomcat/conf/nemakiware_ui.properties
+
+volumes:
+  couchdb_data:
+
+networks:
+  default:
+    name: nemaki-network

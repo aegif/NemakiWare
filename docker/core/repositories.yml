@@ -5,6 +5,3 @@ repositories:
   - id: bedroom
     name: bedroom
     archive: bedroom_closet
-  - id: archive
-    name: archive
-    archive: archive_closet

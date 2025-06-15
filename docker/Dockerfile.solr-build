@@ -3,9 +3,11 @@ FROM maven:3.8-openjdk-8
 WORKDIR /app
 COPY solr /app/solr
 
-# Try building with offline mode to skip problematic dependencies
-RUN cd /app/solr && mvn clean package -DskipTests -o || \
-    echo "Build failed with offline mode, creating placeholder WAR" && \
-    mkdir -p target && \
-    cd src/main/webapp && \
-    jar cf ../../../target/solr.war .
+# Create custom Maven settings to allow HTTP repositories for Restlet
+RUN mkdir -p /root/.m2
+COPY maven-settings.xml /root/.m2/settings.xml
+
+# Build Solr WAR with proper dependencies and custom settings
+RUN cd /app/solr && \
+    echo "Building Solr WAR with Maven..." && \
+    mvn clean compile package -DskipTests -Pdevelopment -s /root/.m2/settings.xml
