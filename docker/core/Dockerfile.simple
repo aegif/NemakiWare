@@ -1,0 +1,34 @@
+FROM tomcat:9-jre8
+
+# Install curl and openjdk for jar command
+RUN apt-get update && apt-get install -y curl openjdk-8-jdk-headless && rm -rf /var/lib/apt/lists/*
+
+# Remove default Tomcat applications
+RUN rm -rf /usr/local/tomcat/webapps/*
+
+# Create necessary directories
+RUN mkdir -p /usr/local/tomcat/conf/Catalina/localhost/
+
+# Copy the WAR file
+COPY ./core.war /usr/local/tomcat/webapps/core.war
+
+# Extract WAR to ensure proper deployment structure
+RUN cd /usr/local/tomcat/webapps && mkdir -p core && cd core && jar -xf ../core.war
+
+# Copy context configuration
+COPY ./context.xml /usr/local/tomcat/conf/Catalina/localhost/core.xml
+
+# Copy configuration files and overwrite WAR contents
+COPY ./nemakiware.properties /usr/local/tomcat/conf/nemakiware.properties
+COPY ./nemakiware.properties /usr/local/tomcat/webapps/core/WEB-INF/classes/nemakiware.properties
+COPY ./repositories.yml /usr/local/tomcat/conf/repositories.yml
+COPY ./log4j.properties /usr/local/tomcat/conf/log4j.properties
+
+# Set environment variables
+ENV CATALINA_OPTS="-Xms512m -Xmx1024m -XX:+DisableExplicitGC -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties"
+
+# Expose the default Tomcat port
+EXPOSE 8080
+
+# Start Tomcat
+CMD ["catalina.sh", "run"]

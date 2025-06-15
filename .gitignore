@@ -27,15 +27,25 @@ solr/solr.iml
 
 # Generated Docker artifacts
 docker/core/core.war
-docker/initializer/*.jar
+# Note: bjornloka.jar and cloudant-init.jar are needed for initialization
+# docker/initializer/*.jar  # Commented out to keep initialization JARs
 docker/ui-war/*.war
 docker/solr/solr.war
 docker/temp/
 
 # Compiled class files (should never be committed)
 *.class
+**/*.class
 
 # Test or temporary directories
 core-check/
 temp/
 */temp/
+WEB-INF/classes/
+
+# Build artifacts in docker directory
+docker/core/WEB-INF/
+docker/core/META-INF/
+docker/core/core.war
+docker/solr/solr.war
+docker/ui/ui/target/

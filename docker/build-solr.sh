@@ -12,45 +12,48 @@ FROM maven:3.8-openjdk-8
 WORKDIR /app
 COPY solr /app/solr
 
-# Try building with offline mode to skip problematic dependencies
-RUN cd /app/solr && mvn clean package -DskipTests -o || \\
-    echo "Build failed with offline mode, creating placeholder WAR" && \\
-    mkdir -p target && \\
-    cd src/main/webapp && \\
-    jar cf ../../../target/solr.war .
+# Create custom Maven settings to allow HTTP repositories for Restlet
+RUN mkdir -p /root/.m2
+COPY maven-settings.xml /root/.m2/settings.xml
+
+# Build Solr WAR with proper dependencies and custom settings
+RUN cd /app/solr && \\
+    echo "Building Solr WAR with Maven..." && \\
+    mvn clean compile package -DskipTests -Pdevelopment -s /root/.m2/settings.xml
 EOF
 
 mkdir -p $NEMAKI_HOME/docker/solr
 
+# Remove existing WAR file to force rebuild
 if [ -f "$NEMAKI_HOME/docker/solr/solr.war" ]; then
-  echo "Solr WAR file already exists, skipping build..."
-  exit 0
+  echo "Removing existing Solr WAR file to force rebuild..."
+  rm -f "$NEMAKI_HOME/docker/solr/solr.war"
 fi
 
 if [ -d "$NEMAKI_HOME/solr" ]; then
   echo "Copying Solr source from repository..."
   cp -r $NEMAKI_HOME/solr $NEMAKI_HOME/docker/
-else
-  echo "Creating empty Solr WAR file as placeholder..."
-  mkdir -p $NEMAKI_HOME/docker/solr/target
-  touch $NEMAKI_HOME/docker/solr/target/solr.war
-fi
-
-if [ -d "$NEMAKI_HOME/solr" ]; then
+  
   echo "Building Solr WAR file using Docker..."
   cd $NEMAKI_HOME/docker
-  docker build -t nemaki-solr-build -f Dockerfile.solr-build .
-  # Copy the WAR file from the built Docker image
-  docker run --rm -v $NEMAKI_HOME/docker/solr:/host-solr nemaki-solr-build sh -c "cp /app/solr/target/solr.war /host-solr/ 2>/dev/null || echo 'WAR file may not exist, that is okay'"
+  
+  # Build Docker image
+  if docker build -t nemaki-solr-build -f Dockerfile.solr-build .; then
+    echo "Docker build successful, extracting WAR file..."
+    # Copy the WAR file from the built Docker image
+    if docker run --rm -v $NEMAKI_HOME/docker/solr:/host-solr nemaki-solr-build sh -c "cp /app/solr/target/solr.war /host-solr/ && echo 'WAR file copied successfully'"; then
+      echo "Solr WAR file extracted successfully"
+    else
+      echo "ERROR: Failed to extract WAR file from Docker container"
+      exit 1
+    fi
+  else
+    echo "ERROR: Docker build failed"
+    exit 1
+  fi
 else
-  echo "Skipping Solr build as source directory doesn't exist..."
-fi
-
-if [ -f "$NEMAKI_HOME/docker/solr/target/solr.war" ]; then
-  cp $NEMAKI_HOME/docker/solr/target/solr.war $NEMAKI_HOME/docker/solr/
-else
-  echo "Creating empty Solr WAR file as placeholder..."
-  touch $NEMAKI_HOME/docker/solr/solr.war
+  echo "ERROR: Solr source directory does not exist at $NEMAKI_HOME/solr"
+  exit 1
 fi
 
 echo "Solr WAR file prepared successfully!"

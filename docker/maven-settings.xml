@@ -2,9 +2,35 @@
 <settings>
   <mirrors>
     <mirror>
-      <id>central-mirror</id>
-      <mirrorOf>maven-restlet</mirrorOf>
-      <url>https://repo1.maven.org/maven2</url>
+      <id>maven-default-http-blocker</id>
+      <mirrorOf>external:dummy:*</mirrorOf>
+      <name>Pseudo repository to mirror external repositories initially using HTTP.</name>
+      <url>http://0.0.0.0/</url>
+      <blocked>false</blocked>
     </mirror>
   </mirrors>
+  <repositories>
+    <repository>
+      <id>restlet-public</id>
+      <name>Restlet Public Repository</name>
+      <url>https://maven.restlet.talend.com</url>
+      <releases>
+        <enabled>true</enabled>
+      </releases>
+      <snapshots>
+        <enabled>false</enabled>
+      </snapshots>
+    </repository>
+    <repository>
+      <id>central</id>
+      <name>Maven Central Repository</name>
+      <url>https://repo1.maven.org/maven2</url>
+      <releases>
+        <enabled>true</enabled>
+      </releases>
+      <snapshots>
+        <enabled>false</enabled>
+      </snapshots>
+    </repository>
+  </repositories>
 </settings>

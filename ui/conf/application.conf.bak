@@ -1,0 +1,111 @@
+# This is the main configuration file for the application.
+# ~~~~~
+
+play.modules.enabled += "util.authentication.SecurityModule"
+
+# Secret key
+# ~~~~~
+# The secret key is used to secure cryptographics functions.
+#
+# This must be changed for production, but we recommend not changing it in this file.
+#
+# See http://www.playframework.com/documentation/latest/ApplicationSecret for more details.
+play.crypto.secret="ny:U3Id/arH1nfb^wL<X72TF4CS@tWYKBu<:rKow<s>Ff59ULsj@NqfCtuOjgUdN"
+
+# The application languages
+# ~~~~~
+# application.langs="en,en-US,ja,ja-JP"
+play.i18n.langs=["en","en-US","ja","ja-JP"]
+
+# Global object class
+# ~~~~~
+# Define the Global object class for this application.
+# Default to Global in the root package.
+application.global=global.Global
+
+# Router
+# ~~~~~
+# Define the Router object to use for this application.
+# This router will be looked up first when the application is starting up,
+# so make sure this is the entry point.
+# Furthermore, it's assumed your route file is named properly.
+# So for an application router like `conf/my.application.Router`,
+# you may need to define a router file `my.application.routes`.
+# Default to Routes in the root package (and `conf/routes`)
+# application.router=my.application.Routes
+
+# Database configuration
+# ~~~~~
+# You can declare as many datasources as you want.
+# By convention, the default datasource is named `default`
+#
+# db.default.driver=org.h2.Driver
+# db.default.url="jdbc:h2:mem:play"
+# db.default.username=sa
+# db.default.password=""
+#
+# You can expose this datasource via JNDI if needed (Useful for JPA)
+# db.default.jndiName=DefaultDS
+
+# Evolutions
+# ~~~~~
+# You can disable evolutions if needed
+play.evolutions.enabled=false
+
+# Ebean configuration
+# ~~~~~
+# You can declare as many Ebean servers as you want.
+# By convention, the default server is named `default`
+# ebean.default = ["models.*"]
+# ebean.orders = ["models.Order", "models.OrderItem"]
+
+# Prevent memory leak
+play.akka.daemonic=on
+
+# Application context
+play.http.context="/ui/"
+
+# Custom Error hander
+play.http.errorHandler = "global.ErrorHandler"
+
+# Property files
+property.files=["app-server-ui.properties", "custom.properties", "label.properties"]
+
+# NemakiCore URL
+nemaki.core.uri.protocol="http"
+nemaki.core.uri.host="127.0.0.1"
+nemaki.core.uri.port="8080"
+nemaki.core.uri.context="core"
+nemaki.core.uri.repository="repo"
+nemaki.core.uri.rest="rest"
+
+# Default Repository
+nemaki.default.repository.id="bedroom"
+
+# NemakiUI(self) URL
+#nemaki.ui.uri.protocol="http"
+#nemaki.ui.uri.host="127.0.0.1"
+#nemaki.ui.uri.port="8080"
+
+#Navigation
+navigation.paging.size="20"
+navigation.column.displayed=["cmis:lastModifiedBy", "cmis:lastModificationDate", "cmis:createdBy", "cmis:creationDate", "cmis:versionSeriesCheckedOutBy"]
+
+#UI visibility
+ui.visibility.create-cmis-object="cmis:document, cmis:folder"
+ui.visibility.create-relationship="nemaki:bidirectionalRelationship, nemaki:parentChildRelationship"
+
+#Zip compression
+#6164480
+compression.target.maxsize=61640
+compression.file.prefix="Compress"
+
+#SSO Authentication
+sso.saml.idp.metadata.path="classpath:idp-metadata.xml"
+sso.saml.enabled="false"
+sso.header.remote.authenticated.user="X-NemakiWare-Remote-User"
+sso.mapper.key.userid="ssoUserId"
+
+play.http.parser.maxDiskBuffer=500MB
+
+
