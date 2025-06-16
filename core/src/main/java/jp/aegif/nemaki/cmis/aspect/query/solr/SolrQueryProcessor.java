@@ -133,9 +133,15 @@ public class SolrQueryProcessor implements QueryProcessor {
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
 			String renditionFilter, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
 
+		logger.info("=== CMIS Query Processing Started ===");
+		logger.info("Repository ID: " + repositoryId);
+		logger.info("CMIS-SQL Statement: " + statement);
+
 		SolrServer solrServer = solrUtil.getSolrServer();
 		// replacing backslashed for TIMESTAMP only
 		Pattern time_p = Pattern.compile("(TIMESTAMP\\s?'[\\-\\d]*T\\d{2})\\\\:(\\d{2})\\\\:([\\.\\d]*Z')", Pattern.CASE_INSENSITIVE);
+		logger.info("SolrServer instance created successfully");
+
 		Matcher time_m = time_p.matcher(statement);
 		statement = time_m.replaceAll("$1:$2:$3");
 
@@ -209,7 +215,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 		solrQuery.setQuery(whereQueryString);
 		solrQuery.setFilterQueries(fromQueryString);
 		
-		logger.info(solrQuery.toString());
+		logger.info("=== Generated Solr Query Details ===");
+		logger.info("Full Solr query: " + solrQuery.toString());
+		logger.info("WHERE query string: " + whereQueryString);
+		logger.info("FROM query string: " + fromQueryString);
 		logger.info("statement: " + statement);
 		logger.info("skipCount: " + skipCount);
 		logger.info("maxItems: " + maxItems);
@@ -219,9 +228,14 @@ public class SolrQueryProcessor implements QueryProcessor {
 			solrQuery.set(CommonParams.START, skipCount.intValue());
 		}
 		if(maxItems == null){
+			logger.info("=== Executing Solr Query ===");
+			logger.info("Attempting to connect to Solr server...");
+
 			solrQuery.set(CommonParams.ROWS, 50);
 		}else{
 			solrQuery.set(CommonParams.ROWS, maxItems.intValue());
+			logger.info("Solr query executed successfully, results: " + (resp != null ? resp.getResults().getNumFound() : "null"));
+
 		}
 		
 
