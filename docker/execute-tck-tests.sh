@@ -43,6 +43,8 @@ echo "✓ Core service is accessible from host"
 
 echo "Preparing TCK configuration for host-based execution..."
 cp $SCRIPT_DIR/cmis-tck-parameters-docker.properties $NEMAKI_HOME/core/src/test/resources/cmis-tck-parameters-docker.properties
+echo "Verifying configuration file placement..."
+ls -la $NEMAKI_HOME/core/src/test/resources/cmis-tck-parameters-docker.properties
 
 echo "Compiling comprehensive TCK test classes..."
 cd $NEMAKI_HOME/core
@@ -57,10 +59,14 @@ echo "Executing comprehensive TCK tests (using standard OpenCMIS test groups)...
 echo "Using host-based Maven execution with comprehensive test coverage..."
 
 cd $NEMAKI_HOME/core
+echo "Compiling test classes first..."
+mvn test-compile -Ptck-docker -q
+
 echo "Running comprehensive TCK tests via Maven exec plugin (standalone runner)..."
 mvn exec:java -Dexec.mainClass="jp.aegif.nemaki.cmis.tck.ComprehensiveAllTest" \
     -Dexec.classpathScope=test \
-    -Pproduct \
+    -Ptck-docker \
+    -Djetty.skip=true \
     > $SCRIPT_DIR/tck-reports/tck-execution.log 2>&1
 
 TCK_EXIT_CODE=$?

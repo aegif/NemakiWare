@@ -22,16 +22,24 @@ fi
 
 echo "Parsing TCK test results..."
 
-if grep -q "TCK Test Summary" "$REPORTS_DIR/tck-report.txt" 2>/dev/null; then
+if [ -f "$REPORTS_DIR/tck-maven-exec.log" ] && grep -q "TCK Test Summary" "$REPORTS_DIR/tck-maven-exec.log" 2>/dev/null; then
+    TOTAL_TESTS=$(grep "Total tests:" "$REPORTS_DIR/tck-maven-exec.log" | tail -1 | sed -n 's/.*Total tests: \([0-9]*\).*/\1/p')
+    PASSED_TESTS=$(grep "Passed:" "$REPORTS_DIR/tck-maven-exec.log" | tail -1 | sed -n 's/.*Passed: \([0-9]*\).*/\1/p')
+    FAILED_TESTS=$(grep "Failures:" "$REPORTS_DIR/tck-maven-exec.log" | tail -1 | sed -n 's/.*Failures: \([0-9]*\).*/\1/p')
+    SKIPPED_TESTS=$(grep "Warnings:" "$REPORTS_DIR/tck-maven-exec.log" | tail -1 | sed -n 's/.*Warnings: \([0-9]*\).*/\1/p')
+    echo "Using Maven exec results: Total=$TOTAL_TESTS, Passed=$PASSED_TESTS, Failed=$FAILED_TESTS, Warnings=$SKIPPED_TESTS"
+elif grep -q "TCK Test Summary" "$REPORTS_DIR/tck-report.txt" 2>/dev/null; then
     TOTAL_TESTS=$(grep "Total tests:" "$REPORTS_DIR/tck-report.txt" | sed -n 's/.*Total tests: \([0-9]*\).*/\1/p')
     PASSED_TESTS=$(grep "Passed:" "$REPORTS_DIR/tck-report.txt" | sed -n 's/.*Passed: \([0-9]*\).*/\1/p')
     FAILED_TESTS=$(grep "Failures:" "$REPORTS_DIR/tck-report.txt" | sed -n 's/.*Failures: \([0-9]*\).*/\1/p')
     SKIPPED_TESTS=$(grep "Warnings:" "$REPORTS_DIR/tck-report.txt" | sed -n 's/.*Warnings: \([0-9]*\).*/\1/p')
+    echo "Using text report results: Total=$TOTAL_TESTS, Passed=$PASSED_TESTS, Failed=$FAILED_TESTS, Warnings=$SKIPPED_TESTS"
 else
     TOTAL_TESTS=$(grep -c "Test:" "$REPORTS_DIR/tck-report.txt" || echo "0")
     PASSED_TESTS=$(grep -c "Test:.*PASSED" "$REPORTS_DIR/tck-report.txt" || echo "0")
     FAILED_TESTS=$(grep -c "Test:.*FAILED" "$REPORTS_DIR/tck-report.txt" || echo "0")
     SKIPPED_TESTS=$(grep -c "Test:.*SKIPPED" "$REPORTS_DIR/tck-report.txt" || echo "0")
+    echo "Using fallback parsing: Total=$TOTAL_TESTS, Passed=$PASSED_TESTS, Failed=$FAILED_TESTS, Skipped=$SKIPPED_TESTS"
 fi
 
 if [ "$TOTAL_TESTS" -gt 0 ]; then
