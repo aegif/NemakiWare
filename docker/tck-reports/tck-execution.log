@@ -1,0 +1,98 @@
+[[1;34mINFO[m] Scanning for projects...
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m---------------------< [0;36mjp.aegif.nemaki.core:core[0;1m >----------------------[m
+[[1;34mINFO[m] [1mBuilding core 2.4.1[m
+[[1;34mINFO[m] [1m--------------------------------[ war ]---------------------------------[m
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mmaven-resources-plugin:2.6:resources[m [1m(default-resources)[m @ [36mcore[0;1m ---[m
+[[1;34mINFO[m] Using 'UTF-8' encoding to copy filtered resources.
+[[1;34mINFO[m] Copying 0 resource
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mmaven-compiler-plugin:3.6.0:compile[m [1m(default-compile)[m @ [36mcore[0;1m ---[m
+[[1;34mINFO[m] Nothing to compile - all classes are up to date
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mmaven-resources-plugin:2.6:testResources[m [1m(default-testResources)[m @ [36mcore[0;1m ---[m
+[[1;34mINFO[m] Using 'UTF-8' encoding to copy filtered resources.
+[[1;34mINFO[m] Copying 5 resources
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mmaven-compiler-plugin:3.6.0:testCompile[m [1m(default-testCompile)[m @ [36mcore[0;1m ---[m
+[[1;34mINFO[m] Nothing to compile - all classes are up to date
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m>>> [0;32mjetty-maven-plugin:9.3.12.v20160915:run[m [1m(start-jetty)[0;1m > [0;1mtest-compile[m @ [36mcore[0;1m >>>[m
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mmaven-resources-plugin:2.6:resources[m [1m(default-resources)[m @ [36mcore[0;1m ---[m
+[[1;34mINFO[m] Using 'UTF-8' encoding to copy filtered resources.
+[[1;34mINFO[m] Copying 0 resource
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mmaven-compiler-plugin:3.6.0:compile[m [1m(default-compile)[m @ [36mcore[0;1m ---[m
+[[1;34mINFO[m] Nothing to compile - all classes are up to date
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mmaven-resources-plugin:2.6:testResources[m [1m(default-testResources)[m @ [36mcore[0;1m ---[m
+[[1;34mINFO[m] Using 'UTF-8' encoding to copy filtered resources.
+[[1;34mINFO[m] Copying 5 resources
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mmaven-compiler-plugin:3.6.0:testCompile[m [1m(default-testCompile)[m @ [36mcore[0;1m ---[m
+[[1;34mINFO[m] Nothing to compile - all classes are up to date
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m<<< [0;32mjetty-maven-plugin:9.3.12.v20160915:run[m [1m(start-jetty)[0;1m < [0;1mtest-compile[m @ [36mcore[0;1m <<<[m
+[[1;34mINFO[m] 
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mjetty-maven-plugin:9.3.12.v20160915:run[m [1m(start-jetty)[m @ [36mcore[0;1m ---[m
+[[1;34mINFO[m] Logging initialized @1788ms
+[[1;34mINFO[m] Configuring Jetty for project: core
+[[1;34mINFO[m] Skipping Jetty start: jetty.skip==true
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mmaven-surefire-plugin:2.19.1:test[m [1m(default-test)[m @ [36mcore[0;1m ---[m
+
+-------------------------------------------------------
+ T E S T S
+-------------------------------------------------------
+Running jp.aegif.nemaki.cmis.tck.AllTest
+Tests run: 38, Failures: 3, Errors: 0, Skipped: 9, Time elapsed: 442.219 sec <<< FAILURE! - in jp.aegif.nemaki.cmis.tck.AllTest
+setAndDeleteContentTest(jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup)  Time elapsed: 11.835 sec  <<< FAILURE!
+java.lang.AssertionError: 
+Appending content via an OutputStream failed! Exception: Could not append to document: org.apache.chemistry.opencmis.commons.exceptions.CmisUpdateConflictException: Change token is required to update
+[Ljava.lang.StackTraceElement;@687e99d8
+	at jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup.setAndDeleteContentTest(CrudTestGroup.java:103)
+
+propertyFilterTest(jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup)  Time elapsed: 3.52 sec  <<< FAILURE!
+java.lang.AssertionError: 
+Exception: java.lang.NullPointerException
+[Ljava.lang.StackTraceElement;@757acd7b
+	at jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup.propertyFilterTest(CrudTestGroup.java:85)
+
+baseTypesTest(jp.aegif.nemaki.cmis.tck.tests.TypesTestGroup)  Time elapsed: 7.068 sec  <<< FAILURE!
+java.lang.AssertionError: 
+A getTypeChildren() call on the base types must retrun an empty list if skipCount is >= 6! The repository returned hasMoreItems == true.
+[Ljava.lang.StackTraceElement;@77eca502
+	at jp.aegif.nemaki.cmis.tck.tests.TypesTestGroup.baseTypesTest(TypesTestGroup.java:14)
+
+
+Results :
+
+Failed tests: 
+  CrudTestGroup.propertyFilterTest:85->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 Exception: java.lang.NullPointerException
+[Ljava.lang.StackTraceElement;@757acd7b
+  CrudTestGroup.setAndDeleteContentTest:103->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 Appending content via an OutputStream failed! Exception: Could not append to document: org.apache.chemistry.opencmis.commons.exceptions.CmisUpdateConflictException: Change token is required to update
+[Ljava.lang.StackTraceElement;@687e99d8
+  TypesTestGroup.baseTypesTest:14->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 A getTypeChildren() call on the base types must retrun an empty list if skipCount is >= 6! The repository returned hasMoreItems == true.
+[Ljava.lang.StackTraceElement;@77eca502
+
+Tests run: 38, Failures: 3, Errors: 0, Skipped: 9
+
+[[1;34mINFO[m] [1m------------------------------------------------------------------------[m
+[[1;34mINFO[m] [1;31mBUILD FAILURE[m
+[[1;34mINFO[m] [1m------------------------------------------------------------------------[m
+[[1;34mINFO[m] Total time:  07:24 min
+[[1;34mINFO[m] Finished at: 2025-06-16T06:44:20Z
+[[1;34mINFO[m] [1m------------------------------------------------------------------------[m
+[[1;31mERROR[m] Failed to execute goal [32morg.apache.maven.plugins:maven-surefire-plugin:2.19.1:test[m [1m(default-test)[m on project [36mcore[m: [1;31mThere are test failures.[m
+[[1;31mERROR[m] [1;31m[m
+[[1;31mERROR[m] [1;31mPlease refer to /home/ubuntu/repos/NemakiWare/core/target/surefire-reports for the individual test results.[m
+[[1;31mERROR[m] -> [1m[Help 1][m
+[[1;31mERROR[m] 
+[[1;31mERROR[m] To see the full stack trace of the errors, re-run Maven with the [1m-e[m switch.
+[[1;31mERROR[m] Re-run Maven using the [1m-X[m switch to enable full debug logging.
+[[1;31mERROR[m] 
+[[1;31mERROR[m] For more information about the errors and possible solutions, please read the following articles:
+[[1;31mERROR[m] [1m[Help 1][m http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException
