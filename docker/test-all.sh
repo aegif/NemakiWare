@@ -513,6 +513,13 @@ sleep 20
 
 echo "Running repository initializers..."
 
+# Clean initialization - remove all existing databases to ensure fresh start
+echo "Cleaning existing databases for fresh initialization..."
+for db in bedroom bedroom_closet canopy canopy_closet; do
+    echo "Removing database ${db} if it exists..."
+    curl -X DELETE -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" "http://localhost:5984/${db}" 2>/dev/null || echo "Database ${db} did not exist"
+done
+
 initialize_database() {
     local repo_id=$1
     local container_name="couchdb"
@@ -540,33 +547,92 @@ initialize_database() {
         echo "CouchDB database ${repo_id} exists"
     fi
     
+    # Always use force=true to ensure proper repository initialization even if database exists
+    # This is necessary because database creation and data initialization are separate steps
     local force_param="true"
     
-    docker compose -f docker-compose-simple.yml run --rm --remove-orphans \
+    echo "Running bjornloka.jar initialization for ${repo_id} (force=${force_param})..."
+    
+    # Wait a moment between initializations to avoid conflicts
+    sleep 2
+    
+    # Run the initializer with proper error handling
+    if docker compose -f docker-compose-simple.yml run --rm --remove-orphans \
       -e COUCHDB_URL=http://${container_name}:5984 \
       -e COUCHDB_USERNAME=${COUCHDB_USER} \
       -e COUCHDB_PASSWORD=${COUCHDB_PASSWORD} \
       -e REPOSITORY_ID=${repo_id} \
       -e DUMP_FILE=${dump_file} \
       -e FORCE=${force_param} \
-      initializer
+      initializer; then
+        echo "✓ bjornloka.jar execution completed for ${repo_id}"
+    else
+        echo "✗ bjornloka.jar execution failed for ${repo_id}"
+        return 1
+    fi
+    
+    # Wait for database consistency
+    sleep 3
+    
+    # Verify design documents were created
+    echo "Verifying design documents for ${repo_id}..."
+    local design_check=$(curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" "http://localhost:5984/${repo_id}/_design/_repo" | grep -o '"_id":"_design/_repo"' || echo "")
+    if [ -n "$design_check" ]; then
+        echo "✓ Design documents successfully created for ${repo_id}"
+        
+        # Also verify admin view exists
+        local admin_view_check=$(curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" "http://localhost:5984/${repo_id}/_design/_repo/_view/admin?limit=0" 2>/dev/null | grep -o '"total_rows"' || echo "")
+        if [ -n "$admin_view_check" ]; then
+            echo "✓ Admin view is accessible for ${repo_id}"
+        else
+            echo "✗ WARNING: Admin view may not be accessible for ${repo_id}"
+        fi
+    else
+        echo "✗ ERROR: Design documents were not created for ${repo_id}"
+        return 1
+    fi
 }
 
 echo "=== STARTING REPOSITORY INITIALIZATION ==="
 
 echo "1/4: Initializing bedroom..."
-initialize_database "bedroom"
+if ! initialize_database "bedroom"; then
+    echo "ERROR: Failed to initialize bedroom repository"
+    exit 1
+fi
 
 echo "2/4: Initializing bedroom_closet..."
-initialize_database "bedroom_closet"
+if ! initialize_database "bedroom_closet"; then
+    echo "ERROR: Failed to initialize bedroom_closet repository"  
+    exit 1
+fi
 
 echo "3/4: Initializing canopy..."
-initialize_database "canopy"
+if ! initialize_database "canopy"; then
+    echo "ERROR: Failed to initialize canopy repository"
+    exit 1
+fi
 
 echo "4/4: Initializing canopy_closet..."
-initialize_database "canopy_closet"
+if ! initialize_database "canopy_closet"; then
+    echo "ERROR: Failed to initialize canopy_closet repository"
+    exit 1
+fi
 
 echo "=== REPOSITORY INITIALIZATION COMPLETED ==="
+
+# Final verification that all databases have the necessary views
+echo "Final verification of all repositories..."
+for repo in bedroom bedroom_closet canopy canopy_closet; do
+    echo "Checking ${repo}..."
+    if curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" "http://localhost:5984/${repo}/_design/_repo/_view/admin?limit=0" 2>/dev/null | grep -q "total_rows"; then
+        echo "✓ ${repo} admin view is working"
+    else
+        echo "✗ ERROR: ${repo} admin view is not accessible - this will cause Core startup failures"
+        exit 1
+    fi
+done
+echo "✓ All repositories verified successfully"
 
 echo "Waiting for Core to become healthy..."
 sleep 30
