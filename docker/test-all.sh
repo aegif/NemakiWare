@@ -676,6 +676,94 @@ else
 fi
 
 echo ""
+echo "Configuring and initializing Solr indexing..."
+configure_solr_indexing() {
+    echo "1. Fixing Core nemakiware.properties for Solr internal communication..."
+    # Fix Solr port in Core configuration (internal communication uses 8080, not 8983)
+    if docker exec docker-core-1 grep -q "solr.port=8983" /usr/local/tomcat/webapps/core/WEB-INF/classes/nemakiware.properties 2>/dev/null; then
+        docker exec docker-core-1 sed -i 's/solr.port=8983/solr.port=8080/' /usr/local/tomcat/webapps/core/WEB-INF/classes/nemakiware.properties
+        echo "✓ Fixed Solr port in Core configuration"
+        CORE_RESTART_NEEDED=true
+    else
+        echo "✓ Core Solr port configuration is already correct"
+    fi
+    
+    # Enable force indexing
+    if docker exec docker-core-1 grep -q "solr.indexing.force=false" /usr/local/tomcat/webapps/core/WEB-INF/classes/nemakiware.properties 2>/dev/null; then
+        docker exec docker-core-1 sed -i 's/solr.indexing.force=false/solr.indexing.force=true/' /usr/local/tomcat/webapps/core/WEB-INF/classes/nemakiware.properties
+        echo "✓ Enabled force indexing in Core configuration"
+        CORE_RESTART_NEEDED=true
+    fi
+    
+    echo ""
+    echo "2. Fixing Solr nemakisolr.properties for CMIS server communication..."
+    # Fix CMIS server host in Solr configuration
+    if docker exec docker-solr-1 grep -q "cmis.server.host=127.0.0.1" /usr/local/tomcat/solr/conf/nemakisolr.properties 2>/dev/null; then
+        docker exec docker-solr-1 sed -i 's/cmis.server.host=127.0.0.1/cmis.server.host=core/' /usr/local/tomcat/solr/conf/nemakisolr.properties
+        echo "✓ Fixed CMIS server host in Solr configuration"
+        SOLR_RESTART_NEEDED=true
+    else
+        echo "✓ Solr CMIS host configuration is already correct"
+    fi
+    
+    # Restart containers if configuration changed
+    if [ "$CORE_RESTART_NEEDED" = "true" ]; then
+        echo "Restarting Core container to apply configuration changes..."
+        docker compose -f docker-compose-simple.yml restart core
+        sleep 20
+    fi
+    
+    if [ "$SOLR_RESTART_NEEDED" = "true" ]; then
+        echo "Restarting Solr container to apply configuration changes..."
+        docker compose -f docker-compose-simple.yml restart solr
+        sleep 20
+    fi
+    
+    echo ""
+    echo "3. Waiting for services to stabilize..."
+    sleep 10
+    
+    echo ""
+    echo "4. Initializing Solr indexes for all repositories..."
+    # Initialize and index each repository
+    for repo in bedroom canopy; do
+        echo ""
+        echo "Initializing index for repository: $repo"
+        
+        # Initialize repository
+        INIT_RESPONSE=$(curl -s "http://localhost:8983/solr/admin/cores?action=INIT&core=nemaki&repositoryId=$repo")
+        if echo "$INIT_RESPONSE" | grep -q "Successfully initialized"; then
+            echo "✓ Successfully initialized $repo"
+        else
+            echo "⚠ Warning: Could not initialize $repo (may already be initialized)"
+        fi
+        
+        # Perform full indexing
+        echo "Performing full indexing for $repo..."
+        INDEX_RESPONSE=$(curl -s "http://localhost:8983/solr/admin/cores?action=INDEX&core=nemaki&repositoryId=$repo&tracking=FULL")
+        if echo "$INDEX_RESPONSE" | grep -q "Successfully tracked"; then
+            echo "✓ Successfully indexed $repo"
+        else
+            echo "⚠ Warning: Indexing may have failed for $repo"
+        fi
+    done
+    
+    echo ""
+    echo "5. Verifying Solr index status..."
+    sleep 5
+    INDEXED_DOCS=$(curl -s "http://localhost:8983/solr/nemaki/select?q=*:*&rows=0&wt=json" | jq -r '.response.numFound // 0' 2>/dev/null || echo "0")
+    echo "✓ Total documents indexed in Solr: $INDEXED_DOCS"
+    
+    if [ "$INDEXED_DOCS" -gt 0 ]; then
+        echo "✓ Solr indexing is working correctly"
+    else
+        echo "⚠ Warning: No documents indexed yet. Indexing may take more time."
+    fi
+}
+
+configure_solr_indexing
+
+echo ""
 
 # ========================================
 # 5. SYSTEM TESTING
