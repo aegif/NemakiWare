@@ -38,7 +38,7 @@
 [[1;34mINFO[m] 
 [[1;34mINFO[m] 
 [[1;34mINFO[m] [1m--- [0;32mjetty-maven-plugin:9.3.12.v20160915:run[m [1m(start-jetty)[m @ [36mcore[0;1m ---[m
-[[1;34mINFO[m] Logging initialized @1788ms
+[[1;34mINFO[m] Logging initialized @1804ms
 [[1;34mINFO[m] Configuring Jetty for project: core
 [[1;34mINFO[m] Skipping Jetty start: jetty.skip==true
 [[1;34mINFO[m] 
@@ -48,20 +48,20 @@
  T E S T S
 -------------------------------------------------------
 Running jp.aegif.nemaki.cmis.tck.AllTest
-Tests run: 38, Failures: 3, Errors: 0, Skipped: 9, Time elapsed: 442.219 sec <<< FAILURE! - in jp.aegif.nemaki.cmis.tck.AllTest
-setAndDeleteContentTest(jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup)  Time elapsed: 11.835 sec  <<< FAILURE!
+Tests run: 38, Failures: 3, Errors: 0, Skipped: 9, Time elapsed: 447.064 sec <<< FAILURE! - in jp.aegif.nemaki.cmis.tck.AllTest
+setAndDeleteContentTest(jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup)  Time elapsed: 11.997 sec  <<< FAILURE!
 java.lang.AssertionError: 
 Appending content via an OutputStream failed! Exception: Could not append to document: org.apache.chemistry.opencmis.commons.exceptions.CmisUpdateConflictException: Change token is required to update
 [Ljava.lang.StackTraceElement;@687e99d8
 	at jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup.setAndDeleteContentTest(CrudTestGroup.java:103)
 
-propertyFilterTest(jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup)  Time elapsed: 3.52 sec  <<< FAILURE!
+propertyFilterTest(jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup)  Time elapsed: 3.507 sec  <<< FAILURE!
 java.lang.AssertionError: 
 Exception: java.lang.NullPointerException
 [Ljava.lang.StackTraceElement;@757acd7b
 	at jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup.propertyFilterTest(CrudTestGroup.java:85)
 
-baseTypesTest(jp.aegif.nemaki.cmis.tck.tests.TypesTestGroup)  Time elapsed: 7.068 sec  <<< FAILURE!
+baseTypesTest(jp.aegif.nemaki.cmis.tck.tests.TypesTestGroup)  Time elapsed: 7.054 sec  <<< FAILURE!
 java.lang.AssertionError: 
 A getTypeChildren() call on the base types must retrun an empty list if skipCount is >= 6! The repository returned hasMoreItems == true.
 [Ljava.lang.StackTraceElement;@77eca502
@@ -83,8 +83,8 @@ Tests run: 38, Failures: 3, Errors: 0, Skipped: 9
 [[1;34mINFO[m] [1m------------------------------------------------------------------------[m
 [[1;34mINFO[m] [1;31mBUILD FAILURE[m
 [[1;34mINFO[m] [1m------------------------------------------------------------------------[m
-[[1;34mINFO[m] Total time:  07:24 min
-[[1;34mINFO[m] Finished at: 2025-06-16T06:44:20Z
+[[1;34mINFO[m] Total time:  07:28 min
+[[1;34mINFO[m] Finished at: 2025-06-16T07:08:46Z
 [[1;34mINFO[m] [1m------------------------------------------------------------------------[m
 [[1;31mERROR[m] Failed to execute goal [32morg.apache.maven.plugins:maven-surefire-plugin:2.19.1:test[m [1m(default-test)[m on project [36mcore[m: [1;31mThere are test failures.[m
 [[1;31mERROR[m] [1;31m[m
