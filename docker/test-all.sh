@@ -758,3 +758,31 @@ fi
 
 echo ""
 echo "Test complete! NemakiWare running on CouchDB 2.x"
+
+# ========================================
+# ========================================
+
+# Check for --run-tck flag
+if [[ "$*" == *"--run-tck"* ]]; then
+    echo ""
+    echo "=========================================="
+    echo "RUNNING TCK TESTS"
+    echo "=========================================="
+    echo "TCK execution requested via --run-tck flag"
+    echo "Starting automated TCK test execution..."
+    
+    cd $SCRIPT_DIR
+    ./run-tck.sh
+    
+    echo ""
+    echo "=========================================="
+    echo "TCK EXECUTION COMPLETED"
+    echo "=========================================="
+    echo "TCK reports available in: docker/tck-reports/"
+    echo "View HTML summary: docker/tck-reports/tck-summary.html"
+    
+    if [ -f "$SCRIPT_DIR/tck-reports/current-score.txt" ]; then
+        CURRENT_SCORE=$(cat "$SCRIPT_DIR/tck-reports/current-score.txt")
+        echo "Current TCK Score: ${CURRENT_SCORE}%"
+    fi
+fi
