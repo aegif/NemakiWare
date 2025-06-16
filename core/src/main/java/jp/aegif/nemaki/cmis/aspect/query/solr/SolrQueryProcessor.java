@@ -163,6 +163,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 						queryObject, solrUtil, contentService);
 				Query whereQuery = solrPredicateWalker.walkPredicate(whereTree);
 				whereQueryString = whereQuery.toString();
+				logger.info("WHERE clause translation successful: " + whereQueryString);
 				} catch (Exception e) {
 				e.printStackTrace();
 				// TODO Output more detailed exception

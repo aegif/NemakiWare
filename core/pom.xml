@@ -424,6 +424,8 @@
 					<redirectTestOutputToFile>true</redirectTestOutputToFile>
 					<includes>
 						<include>**/*TestGroup.java</include>
+						<include>**/ComprehensiveAllTest.java</include>
+						<include>**/DockerTckRunner.java</include>
 					</includes>
 				</configuration>
 			</plugin>
@@ -457,7 +459,7 @@
 							<goal>run</goal>
 						</goals>
 						<configuration>
-							<skip>${maven.test.skip}</skip>
+							<skip>${jetty.skip}</skip>
 							<daemon>true</daemon>
 						</configuration>
 					</execution>
@@ -468,7 +470,7 @@
 							<goal>stop</goal>
 						</goals>
 						<configuration>
-							<skip>${maven.test.skip}</skip>
+							<skip>${jetty.skip}</skip>
 						</configuration>
 					</execution>
 				</executions>
@@ -490,6 +492,13 @@
 			<id>product</id>
 			<properties>
 				<maven.test.skip>false</maven.test.skip>
+			</properties>
+		</profile>
+		<profile>
+			<id>tck-docker</id>
+			<properties>
+				<maven.test.skip>false</maven.test.skip>
+				<jetty.skip>true</jetty.skip>
 			</properties>
 
 			<build>
