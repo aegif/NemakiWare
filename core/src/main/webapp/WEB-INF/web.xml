@@ -27,6 +27,11 @@
     <listener>
 		<listener-class>org.springframework.web.context.ContextLoaderListener</listener-class>
     </listener>
+    
+    <!-- EHCache Shutdown Listener to prevent memory leaks and thread issues -->
+    <listener>
+		<listener-class>jp.aegif.nemaki.util.EHCacheShutdownListener</listener-class>
+    </listener>
 
 	<servlet>
 		<servlet-name>cmisws</servlet-name>

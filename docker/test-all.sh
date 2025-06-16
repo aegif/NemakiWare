@@ -121,6 +121,117 @@ else
     echo "✓ PatchService.java @PostConstruct is correct"
 fi
 
+# Check EHCacheShutdownListener exists
+if [ ! -f "$NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/util/EHCacheShutdownListener.java" ]; then
+    if [ "$AUTO_FIX" = true ]; then
+        echo "Creating EHCacheShutdownListener..."
+        mkdir -p $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/util/
+        cat > $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/util/EHCacheShutdownListener.java << 'EOF_EHCACHE'
+package jp.aegif.nemaki.util;
+
+import javax.servlet.ServletContextEvent;
+import javax.servlet.ServletContextListener;
+
+/**
+ * EHCacheShutdownListener - A ServletContextListener to properly shutdown EHCache
+ * This ensures that all EHCache threads are properly cleaned up when the application stops.
+ */
+public class EHCacheShutdownListener implements ServletContextListener {
+    
+    @Override
+    public void contextInitialized(ServletContextEvent sce) {
+        System.out.println("EHCacheShutdownListener: Context initialized - setting EHCache properties");
+        
+        // Set system properties to disable EHCache background operations
+        System.setProperty("net.sf.ehcache.enableShutdownHook", "true");
+        System.setProperty("net.sf.ehcache.statisticsEnabled", "false");
+        System.setProperty("net.sf.ehcache.cache.statisticsEnabled", "false");
+        System.setProperty("net.sf.ehcache.skipUpdateCheck", "true");
+        System.setProperty("net.sf.ehcache.disabled", "false");
+    }
+    
+    @Override
+    public void contextDestroyed(ServletContextEvent sce) {
+        System.out.println("EHCacheShutdownListener: Context destroyed - cleaning up EHCache");
+        
+        try {
+            // Force shutdown of EHCache Manager
+            Class<?> cacheManagerClass = Class.forName("net.sf.ehcache.CacheManager");
+            Object instance = cacheManagerClass.getMethod("getInstance").invoke(null);
+            if (instance != null) {
+                cacheManagerClass.getMethod("shutdown").invoke(instance);
+                System.out.println("EHCacheShutdownListener: EHCache CacheManager shutdown completed");
+            }
+        } catch (Exception e) {
+            System.out.println("EHCacheShutdownListener: Could not shutdown EHCache properly: " + e.getMessage());
+        }
+        
+        // Force interrupt any remaining EHCache threads
+        ThreadGroup rootGroup = Thread.currentThread().getThreadGroup();
+        ThreadGroup parentGroup;
+        while ((parentGroup = rootGroup.getParent()) != null) {
+            rootGroup = parentGroup;
+        }
+        
+        Thread[] threads = new Thread[rootGroup.activeCount()];
+        rootGroup.enumerate(threads);
+        
+        for (Thread thread : threads) {
+            if (thread != null && thread.getName() != null) {
+                String name = thread.getName().toLowerCase();
+                if (name.contains("statistics thread") || 
+                    name.contains("__default__") ||
+                    name.contains("ehcache") || 
+                    name.contains("cache") ||
+                    name.contains("disk") ||
+                    name.contains("expiry")) {
+                    System.out.println("EHCacheShutdownListener: Interrupting thread: " + thread.getName());
+                    try {
+                        thread.interrupt();
+                        Thread.sleep(50);
+                        if (thread.isAlive()) {
+                            thread.stop();
+                        }
+                    } catch (Exception e) {
+                        System.out.println("EHCacheShutdownListener: Could not stop thread: " + e.getMessage());
+                    }
+                }
+            }
+        }
+        
+        System.out.println("EHCacheShutdownListener: Context cleanup completed");
+    }
+}
+EOF_EHCACHE
+        echo "✓ EHCacheShutdownListener created"
+    else
+        FIXES_NEEDED+=("EHCacheShutdownListener.java missing")
+    fi
+else
+    echo "✓ EHCacheShutdownListener exists"
+fi
+
+# Check web.xml has EHCacheShutdownListener registered
+if ! grep -q "jp.aegif.nemaki.util.EHCacheShutdownListener" $NEMAKI_HOME/core/src/main/webapp/WEB-INF/web.xml; then
+    if [ "$AUTO_FIX" = true ]; then
+        echo "Adding EHCacheShutdownListener to web.xml..."
+        # Create backup
+        cp $NEMAKI_HOME/core/src/main/webapp/WEB-INF/web.xml $NEMAKI_HOME/core/src/main/webapp/WEB-INF/web.xml.bak
+        # Add listener after ContextLoaderListener
+        sed -i '' '/<listener-class>org.springframework.web.context.ContextLoaderListener<\/listener-class>/a\
+    </listener>\
+    \
+    <!-- EHCache Shutdown Listener to prevent memory leaks and thread issues -->\
+    <listener>\
+        <listener-class>jp.aegif.nemaki.util.EHCacheShutdownListener</listener-class>' $NEMAKI_HOME/core/src/main/webapp/WEB-INF/web.xml
+        echo "✓ EHCacheShutdownListener added to web.xml"
+    else
+        FIXES_NEEDED+=("web.xml needs EHCacheShutdownListener registration")
+    fi
+else
+    echo "✓ EHCacheShutdownListener registered in web.xml"
+fi
+
 # Handle unfixed issues
 if [ ${#FIXES_NEEDED[@]} -ne 0 ]; then
     echo ""
