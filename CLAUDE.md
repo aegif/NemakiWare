@@ -311,14 +311,24 @@ docker exec docker-ui3-war-1 ls -la /usr/local/tomcat/webapps/
 The following critical fixes have been identified and MUST be maintained in `docker/test-war.sh`:
 
 #### 1. Ektorp Thread Management Fix
-**Problem**: Ektorp creates idle connection monitor threads that cause memory leaks
-**Solution**: Disable cleanupIdleConnections in ConnectorPool.java source code
+**Problem**: Ektorp creates idle connection monitor threads that cause memory leaks and Spring startup failures
+**Solution**: Disable cleanupIdleConnections in BOTH ConnectorPool.java AND CouchConnector.java source code
 ```bash
-# Fix Ektorp IdleConnectionMonitor issue by disabling cleanupIdleConnections in ConnectorPool
+# Fix Ektorp IdleConnectionMonitor issue by disabling cleanupIdleConnections in both files
+# CRITICAL: Both ConnectorPool.java and CouchConnector.java must be fixed to prevent startup failures
+
+# Fix ConnectorPool.java
 if grep -q "cleanupIdleConnections(true)" $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/ConnectorPool.java; then
-  echo "Disabling cleanupIdleConnections to prevent thread leaks..."
+  echo "Disabling cleanupIdleConnections in ConnectorPool..."
   sed -i '.bak' 's/cleanupIdleConnections(true)/cleanupIdleConnections(false)/' $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/ConnectorPool.java
   echo "ConnectorPool cleanupIdleConnections disabled"
+fi
+
+# Fix CouchConnector.java (CRITICAL - missing this causes "One or more listeners failed to start")
+if grep -q "cleanupIdleConnections(true)" $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/CouchConnector.java; then
+  echo "Disabling cleanupIdleConnections in CouchConnector..."
+  sed -i '.bak' 's/cleanupIdleConnections(true)/cleanupIdleConnections(false)/' $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/CouchConnector.java
+  echo "CouchConnector cleanupIdleConnections disabled"
 fi
 ```
 

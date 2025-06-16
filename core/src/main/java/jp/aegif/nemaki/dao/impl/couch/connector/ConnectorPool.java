@@ -81,7 +81,7 @@ public class ConnectorPool {
 			.maxConnections(maxConnections)
 			.connectionTimeout(connectionTimeout)
 			.socketTimeout(socketTimeout)
-			.cleanupIdleConnections(false);
+			.cleanupIdleConnections(false);  // Fixed: prevents thread leaks and startup failures
 			
 			System.out.println("StdHttpClient.Builder created successfully");
 		} catch (MalformedURLException e) {
