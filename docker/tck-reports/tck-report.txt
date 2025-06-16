@@ -1,0 +1,934 @@
+***************************************************************
+Test Report: Mon Jun 16 07:41:31 UTC 2025
+***************************************************************
+org.apache.chemistry.opencmis.binding.atompub.url = http://localhost:8080/core/atom/bedroom
+org.apache.chemistry.opencmis.binding.spi.type = atompub
+org.apache.chemistry.opencmis.password = admin
+org.apache.chemistry.opencmis.session.repository.id = bedroom
+org.apache.chemistry.opencmis.tck.revision = 1741103
+org.apache.chemistry.opencmis.tck.timestamp = Version: 0.14.0 / Revision: 1741103 / Build: 2016-04-26T14:09:01-0700
+
+org.apache.chemistry.opencmis.user = admin
+***************************************************************
+===============================================================
+Basics Test Group (ATOMPUB)
+===============================================================
+---------------------------------------------------------------
+Security Test (ATOMPUB) (179 ms)
+---------------------------------------------------------------
+
+  INFO: Binding: ATOMPUB (SecurityTest.java:50)
+
+  WARNING: HTTPS is not used. Credentials might be transferred as plain text! (SecurityTest.java:57)
+
+
+---------------------------------------------------------------
+Repository Info Test (ATOMPUB) (55 ms)
+---------------------------------------------------------------
+
+  OK: Repository ID: bedroom (RepositoryInfoTest.java:61)
+
+  OK: Repository name: bedroom (RepositoryInfoTest.java:69)
+
+  OK: Repository description: NemakiWare, Lightweight CMIS Server (RepositoryInfoTest.java:77)
+
+  OK: Vendor name: aegif (RepositoryInfoTest.java:85)
+
+  OK: Product name: NemakiWare (RepositoryInfoTest.java:93)
+
+  OK: Product version: 2.4.1 (RepositoryInfoTest.java:101)
+
+  OK: CMIS Version Supported: 1.1 (RepositoryInfoTest.java:106)
+
+  OK: Root folder ID: e02f784f8360a02cc14d1314c10038ff (RepositoryInfoTest.java:115)
+
+  OK: Thin client URI: http://localhost:8080/ui/ (RepositoryInfoTest.java:120)
+
+  WARNING: Unable to connect to thin client 'http://localhost:8080/ui/'. HTTP status code: 404 (RepositoryInfoTest.java:131)
+    INFO: False!
+
+  OK: Principal ID anonymous: anonymous (RepositoryInfoTest.java:143)
+
+  OK: Principal ID anyone: GROUP_EVERYONE (RepositoryInfoTest.java:148)
+
+  OK: Latest change log token: c855d4453ebf3de47f50df3f6028ed45 (RepositoryInfoTest.java:153)
+
+  WARNING: Changes Incomplete is not set! (RepositoryInfoTest.java:158)
+    INFO: Object is null!
+
+  OK: Changes on type: [] (RepositoryInfoTest.java:163)
+
+  OK: No repository features exposed. (RepositoryInfoTest.java:174)
+    INFO: Object is null!
+
+  OK: ACL capability: MANAGE (RepositoryInfoTest.java:193)
+
+  OK: Changes capability: OBJECTIDSONLY (RepositoryInfoTest.java:198)
+
+  OK: Content stream updates capability: ANYTIME (RepositoryInfoTest.java:203)
+
+  OK: Get descendants capability: true (RepositoryInfoTest.java:208)
+
+  OK: Get folder tree capability: true (RepositoryInfoTest.java:213)
+
+  OK: Multifiling capability: false (RepositoryInfoTest.java:218)
+
+  OK: Unfiling capability: false (RepositoryInfoTest.java:223)
+
+  OK: Version specific filing capability: false (RepositoryInfoTest.java:228)
+
+  OK: Query capability: BOTHCOMBINED (RepositoryInfoTest.java:233)
+
+  OK: JOIN capability: NONE (RepositoryInfoTest.java:238)
+
+  OK: All versions searchable capability: false (RepositoryInfoTest.java:243)
+
+  OK: PWC searchable capability: false (RepositoryInfoTest.java:248)
+
+  OK: PWC updatable capability: true (RepositoryInfoTest.java:253)
+
+  OK: Renditions capability: READ (RepositoryInfoTest.java:258)
+
+  OK: 'New type settable attributes' flags are set. (RepositoryInfoTest.java:264)
+
+  OK: 'Creatable property types' flags are set. (RepositoryInfoTest.java:269)
+
+  OK: Supported permissions: BOTH (RepositoryInfoTest.java:282)
+
+  OK: ACL propagation: PROPAGATE (RepositoryInfoTest.java:287)
+
+  OK: Permissions: 4 (RepositoryInfoTest.java:293)
+
+  OK: Permission mapping: 34 (RepositoryInfoTest.java:314)
+
+
+---------------------------------------------------------------
+Root Folder Test (ATOMPUB) (3558 ms)
+---------------------------------------------------------------
+
+  OK: Root folder id: e02f784f8360a02cc14d1314c10038ff (RootFolderTest.java:57)
+
+
+---------------------------------------------------------------
+Security Test (ATOMPUB) (53 ms)
+---------------------------------------------------------------
+
+  INFO: Binding: ATOMPUB (SecurityTest.java:50)
+
+  WARNING: HTTPS is not used. Credentials might be transferred as plain text! (SecurityTest.java:57)
+
+
+---------------------------------------------------------------
+Repository Info Test (ATOMPUB) (52 ms)
+---------------------------------------------------------------
+
+  OK: Repository ID: bedroom (RepositoryInfoTest.java:61)
+
+  OK: Repository name: bedroom (RepositoryInfoTest.java:69)
+
+  OK: Repository description: NemakiWare, Lightweight CMIS Server (RepositoryInfoTest.java:77)
+
+  OK: Vendor name: aegif (RepositoryInfoTest.java:85)
+
+  OK: Product name: NemakiWare (RepositoryInfoTest.java:93)
+
+  OK: Product version: 2.4.1 (RepositoryInfoTest.java:101)
+
+  OK: CMIS Version Supported: 1.1 (RepositoryInfoTest.java:106)
+
+  OK: Root folder ID: e02f784f8360a02cc14d1314c10038ff (RepositoryInfoTest.java:115)
+
+  OK: Thin client URI: http://localhost:8080/ui/ (RepositoryInfoTest.java:120)
+
+  WARNING: Unable to connect to thin client 'http://localhost:8080/ui/'. HTTP status code: 404 (RepositoryInfoTest.java:131)
+    INFO: False!
+
+  OK: Principal ID anonymous: anonymous (RepositoryInfoTest.java:143)
+
+  OK: Principal ID anyone: GROUP_EVERYONE (RepositoryInfoTest.java:148)
+
+  OK: Latest change log token: c855d4453ebf3de47f50df3f6028ed45 (RepositoryInfoTest.java:153)
+
+  WARNING: Changes Incomplete is not set! (RepositoryInfoTest.java:158)
+    INFO: Object is null!
+
+  OK: Changes on type: [] (RepositoryInfoTest.java:163)
+
+  OK: No repository features exposed. (RepositoryInfoTest.java:174)
+    INFO: Object is null!
+
+  OK: ACL capability: MANAGE (RepositoryInfoTest.java:193)
+
+  OK: Changes capability: OBJECTIDSONLY (RepositoryInfoTest.java:198)
+
+  OK: Content stream updates capability: ANYTIME (RepositoryInfoTest.java:203)
+
+  OK: Get descendants capability: true (RepositoryInfoTest.java:208)
+
+  OK: Get folder tree capability: true (RepositoryInfoTest.java:213)
+
+  OK: Multifiling capability: false (RepositoryInfoTest.java:218)
+
+  OK: Unfiling capability: false (RepositoryInfoTest.java:223)
+
+  OK: Version specific filing capability: false (RepositoryInfoTest.java:228)
+
+  OK: Query capability: BOTHCOMBINED (RepositoryInfoTest.java:233)
+
+  OK: JOIN capability: NONE (RepositoryInfoTest.java:238)
+
+  OK: All versions searchable capability: false (RepositoryInfoTest.java:243)
+
+  OK: PWC searchable capability: false (RepositoryInfoTest.java:248)
+
+  OK: PWC updatable capability: true (RepositoryInfoTest.java:253)
+
+  OK: Renditions capability: READ (RepositoryInfoTest.java:258)
+
+  OK: 'New type settable attributes' flags are set. (RepositoryInfoTest.java:264)
+
+  OK: 'Creatable property types' flags are set. (RepositoryInfoTest.java:269)
+
+  OK: Supported permissions: BOTH (RepositoryInfoTest.java:282)
+
+  OK: ACL propagation: PROPAGATE (RepositoryInfoTest.java:287)
+
+  OK: Permissions: 4 (RepositoryInfoTest.java:293)
+
+  OK: Permission mapping: 34 (RepositoryInfoTest.java:314)
+
+
+---------------------------------------------------------------
+Root Folder Test (ATOMPUB) (3531 ms)
+---------------------------------------------------------------
+
+  OK: Root folder id: e02f784f8360a02cc14d1314c10038ff (RootFolderTest.java:57)
+
+
+===============================================================
+Control Test Group (ATOMPUB)
+===============================================================
+---------------------------------------------------------------
+ACL Test (ATOMPUB) (2442 ms)
+---------------------------------------------------------------
+
+
+---------------------------------------------------------------
+ACL Test (ATOMPUB) (2436 ms)
+---------------------------------------------------------------
+
+
+===============================================================
+Filing Test Group (ATOMPUB)
+===============================================================
+---------------------------------------------------------------
+Multifiling Test (ATOMPUB) (56 ms)
+---------------------------------------------------------------
+
+  SKIPPED: Multifling not supported. Test Skipped! (MultifilingTest.java:124)
+
+
+---------------------------------------------------------------
+Unfiling Test (ATOMPUB) (52 ms)
+---------------------------------------------------------------
+
+  SKIPPED: Unfiling not supported. Test Skipped! (UnfilingTest.java:105)
+
+
+---------------------------------------------------------------
+Multifiling Test (ATOMPUB) (53 ms)
+---------------------------------------------------------------
+
+  SKIPPED: Multifling not supported. Test Skipped! (MultifilingTest.java:124)
+
+
+---------------------------------------------------------------
+Unfiling Test (ATOMPUB) (52 ms)
+---------------------------------------------------------------
+
+  SKIPPED: Unfiling not supported. Test Skipped! (UnfilingTest.java:105)
+
+
+===============================================================
+Query Test Group (ATOMPUB)
+===============================================================
+---------------------------------------------------------------
+Query Smoke Test (ATOMPUB) (173 ms)
+---------------------------------------------------------------
+
+  INFO: Query: SELECT * FROM cmis:document (QuerySmokeTest.java:62)
+
+  INFO: 0 query results for "SELECT * FROM cmis:document" (page size = 100) (QuerySmokeTest.java:123)
+
+
+---------------------------------------------------------------
+Query Root Folder Test (ATOMPUB) (395 ms)
+---------------------------------------------------------------
+
+  INFO: Query: SELECT cmis:name AS folderName, cmis:objectId AS folderId FROM cmis:folder WHERE cmis:objectId = 'e02f784f8360a02cc14d1314c10038ff' (QueryRootFolderTest.java:78)
+
+  FAILURE: The query should return exactly one result but returned 0! (QueryRootFolderTest.java:96)
+    INFO: expected: 1 / actual: 0
+
+  FAILURE: The query returned a total number of items != 1, but there can be only exactly one hit! (QueryRootFolderTest.java:101)
+    INFO: expected: 1 / actual: 0
+
+  INFO: Query: SELECT cmis:name AS folderName, cmis:objectId AS folderId FROM cmis:folder WHERE cmis:creationDate > TIMESTAMP '2012-12-31T23:00:00.000Z' AND cmis:creationDate < TIMESTAMP '2013-01-01T01:00:00.000Z' (QueryRootFolderTest.java:129)
+
+  FAILURE: The query should return the root folder but does not! (QueryRootFolderTest.java:148)
+    INFO: False!
+
+  FAILURE: The query returned a total number of items < 1, but there must be at least one hit! (QueryRootFolderTest.java:153)
+    INFO: False!
+
+
+---------------------------------------------------------------
+Query For Object Test (ATOMPUB) (2277 ms)
+---------------------------------------------------------------
+
+  INFO: Folder query: SELECT * FROM cmis:folder WHERE cmis:objectId = 'c855d4453ebf3de47f50df3f6029ddca' (QueryForObject.java:91)
+
+  FAILURE: Folder query should return exactly one hit, but returned 0. (QueryForObject.java:104)
+    INFO: expected: 1 / actual: 0
+
+  INFO: Folder query: SELECT * FROM cmis:folder WHERE cmis:objectId IN ('c855d4453ebf3de47f50df3f6029ddca') (QueryForObject.java:91)
+
+  FAILURE: Folder query should return exactly one hit, but returned 0. (QueryForObject.java:104)
+    INFO: expected: 1 / actual: 0
+
+  INFO: Document query: SELECT * FROM cmis:document WHERE cmis:objectId = 'c855d4453ebf3de47f50df3f602a080f' (QueryForObject.java:126)
+
+  FAILURE: Document query should return exactly one hit, but returned 0. (QueryForObject.java:139)
+    INFO: expected: 1 / actual: 0
+
+  INFO: Document query: SELECT * FROM cmis:document WHERE cmis:objectId IN ('c855d4453ebf3de47f50df3f602a080f') (QueryForObject.java:126)
+
+  FAILURE: Document query should return exactly one hit, but returned 0. (QueryForObject.java:139)
+    INFO: expected: 1 / actual: 0
+
+
+---------------------------------------------------------------
+Query LIKE Test (ATOMPUB) (45014 ms)
+---------------------------------------------------------------
+
+  FAILURE: No documents starting with 'a' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'a' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'b' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'b' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'c' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'c' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'd' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'd' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'e' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'e' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'f' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'f' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'g' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'g' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'h' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'h' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'i' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'i' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'j' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'j' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'k' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'k' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'l' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'l' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'm' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'm' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'n' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'n' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'o' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'o' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'p' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'p' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'q' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'q' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'r' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'r' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 's' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 's' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 't' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 't' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'u' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'u' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'v' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'v' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'w' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'w' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'x' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'x' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'y' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'y' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'z' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'z' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+
+---------------------------------------------------------------
+Query IN_FOLDER and IN_TREE Test (ATOMPUB) (45658 ms)
+---------------------------------------------------------------
+
+  INFO: Query: SELECT cmis:objectId FROM cmis:document WHERE IN_FOLDER('c855d4453ebf3de47f50df3f6038b8b0') (QueryInFolderTest.java:110)
+
+  INFO: Hits: 0 (QueryInFolderTest.java:151)
+
+  INFO: Query: SELECT cmis:objectId FROM cmis:document WHERE IN_TREE('c855d4453ebf3de47f50df3f6038b8b0') (QueryInFolderTest.java:110)
+
+  INFO: Hits: 0 (QueryInFolderTest.java:151)
+
+  INFO: Query: SELECT cmis:objectId FROM cmis:folder WHERE IN_FOLDER('c855d4453ebf3de47f50df3f6038b8b0') (QueryInFolderTest.java:110)
+
+  INFO: Hits: 0 (QueryInFolderTest.java:151)
+
+  INFO: Query: SELECT cmis:objectId FROM cmis:folder WHERE IN_TREE('c855d4453ebf3de47f50df3f6038b8b0') (QueryInFolderTest.java:110)
+
+  INFO: Hits: 0 (QueryInFolderTest.java:151)
+
+
+---------------------------------------------------------------
+Invalid Query Test (ATOMPUB) (380 ms)
+---------------------------------------------------------------
+
+  FAILURE: This query is invalid and an unexcepted exception (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException: ) has been thrown: SELECT (InvalidQueryTest.java:85)
+  Exception: 
+
+  FAILURE: This query is invalid and an unexcepted exception (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException: ) has been thrown: SELECT * (InvalidQueryTest.java:85)
+  Exception: 
+
+  FAILURE: This query is invalid and an unexcepted exception (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException: ) has been thrown: THIS_IS_NOT_A_SELECT (InvalidQueryTest.java:85)
+  Exception: 
+
+  FAILURE: This query is invalid and an unexcepted exception (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException: ) has been thrown: SELECT FROM cmis:document (InvalidQueryTest.java:85)
+  Exception: 
+
+  FAILURE: This query is invalid and an unexcepted exception (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException: ) has been thrown: SELECT ,cmis:name FROM cmis:document (InvalidQueryTest.java:85)
+  Exception: 
+
+
+---------------------------------------------------------------
+Content Changes Smoke Test (ATOMPUB) (129824 ms)
+---------------------------------------------------------------
+
+  INFO: Change log token is not null. Probably an OpenCMIS based server. (ContentChangesSmokeTest.java:75)
+    INFO: Object is not null!
+
+
+---------------------------------------------------------------
+Query Smoke Test (ATOMPUB) (173 ms)
+---------------------------------------------------------------
+
+  INFO: Query: SELECT * FROM cmis:document (QuerySmokeTest.java:62)
+
+  INFO: 0 query results for "SELECT * FROM cmis:document" (page size = 100) (QuerySmokeTest.java:123)
+
+
+---------------------------------------------------------------
+Query Root Folder Test (ATOMPUB) (391 ms)
+---------------------------------------------------------------
+
+  INFO: Query: SELECT cmis:name AS folderName, cmis:objectId AS folderId FROM cmis:folder WHERE cmis:objectId = 'e02f784f8360a02cc14d1314c10038ff' (QueryRootFolderTest.java:78)
+
+  FAILURE: The query should return exactly one result but returned 0! (QueryRootFolderTest.java:96)
+    INFO: expected: 1 / actual: 0
+
+  FAILURE: The query returned a total number of items != 1, but there can be only exactly one hit! (QueryRootFolderTest.java:101)
+    INFO: expected: 1 / actual: 0
+
+  INFO: Query: SELECT cmis:name AS folderName, cmis:objectId AS folderId FROM cmis:folder WHERE cmis:creationDate > TIMESTAMP '2012-12-31T23:00:00.000Z' AND cmis:creationDate < TIMESTAMP '2013-01-01T01:00:00.000Z' (QueryRootFolderTest.java:129)
+
+  FAILURE: The query should return the root folder but does not! (QueryRootFolderTest.java:148)
+    INFO: False!
+
+  FAILURE: The query returned a total number of items < 1, but there must be at least one hit! (QueryRootFolderTest.java:153)
+    INFO: False!
+
+
+---------------------------------------------------------------
+Query For Object Test (ATOMPUB) (2319 ms)
+---------------------------------------------------------------
+
+  INFO: Folder query: SELECT * FROM cmis:folder WHERE cmis:objectId = 'c855d4453ebf3de47f50df3f6051585b' (QueryForObject.java:91)
+
+  FAILURE: Folder query should return exactly one hit, but returned 0. (QueryForObject.java:104)
+    INFO: expected: 1 / actual: 0
+
+  INFO: Folder query: SELECT * FROM cmis:folder WHERE cmis:objectId IN ('c855d4453ebf3de47f50df3f6051585b') (QueryForObject.java:91)
+
+  FAILURE: Folder query should return exactly one hit, but returned 0. (QueryForObject.java:104)
+    INFO: expected: 1 / actual: 0
+
+  INFO: Document query: SELECT * FROM cmis:document WHERE cmis:objectId = 'c855d4453ebf3de47f50df3f605170e7' (QueryForObject.java:126)
+
+  FAILURE: Document query should return exactly one hit, but returned 0. (QueryForObject.java:139)
+    INFO: expected: 1 / actual: 0
+
+  INFO: Document query: SELECT * FROM cmis:document WHERE cmis:objectId IN ('c855d4453ebf3de47f50df3f605170e7') (QueryForObject.java:126)
+
+  FAILURE: Document query should return exactly one hit, but returned 0. (QueryForObject.java:139)
+    INFO: expected: 1 / actual: 0
+
+
+---------------------------------------------------------------
+Query LIKE Test (ATOMPUB) (47051 ms)
+---------------------------------------------------------------
+
+  FAILURE: No documents starting with 'a' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'a' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'b' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'b' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'c' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'c' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'd' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'd' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'e' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'e' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'f' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'f' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'g' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'g' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'h' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'h' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'i' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'i' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'j' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'j' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'k' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'k' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'l' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'l' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'm' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'm' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'n' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'n' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'o' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'o' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'p' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'p' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'q' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'q' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'r' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'r' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 's' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 's' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 't' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 't' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'u' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'u' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'v' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'v' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'w' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'w' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'x' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'x' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'y' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'y' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+  FAILURE: No documents starting with 'z' have been found, but there must be at least one! (QueryLikeTest.java:108)
+    INFO: False!
+
+  FAILURE: No folders starting with 'z' have been found, but there must be at least one! (QueryLikeTest.java:146)
+    INFO: False!
+
+
+---------------------------------------------------------------
+Query IN_FOLDER and IN_TREE Test (ATOMPUB) (44956 ms)
+---------------------------------------------------------------
+
+  INFO: Query: SELECT cmis:objectId FROM cmis:document WHERE IN_FOLDER('c855d4453ebf3de47f50df3f6060ada6') (QueryInFolderTest.java:110)
+
+  INFO: Hits: 0 (QueryInFolderTest.java:151)
+
+  INFO: Query: SELECT cmis:objectId FROM cmis:document WHERE IN_TREE('c855d4453ebf3de47f50df3f6060ada6') (QueryInFolderTest.java:110)
+
+  INFO: Hits: 0 (QueryInFolderTest.java:151)
+
+  INFO: Query: SELECT cmis:objectId FROM cmis:folder WHERE IN_FOLDER('c855d4453ebf3de47f50df3f6060ada6') (QueryInFolderTest.java:110)
+
+  INFO: Hits: 0 (QueryInFolderTest.java:151)
+
+  INFO: Query: SELECT cmis:objectId FROM cmis:folder WHERE IN_TREE('c855d4453ebf3de47f50df3f6060ada6') (QueryInFolderTest.java:110)
+
+  INFO: Hits: 0 (QueryInFolderTest.java:151)
+
+
+---------------------------------------------------------------
+Invalid Query Test (ATOMPUB) (374 ms)
+---------------------------------------------------------------
+
+  FAILURE: This query is invalid and an unexcepted exception (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException: ) has been thrown: SELECT (InvalidQueryTest.java:85)
+  Exception: 
+
+  FAILURE: This query is invalid and an unexcepted exception (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException: ) has been thrown: SELECT * (InvalidQueryTest.java:85)
+  Exception: 
+
+  FAILURE: This query is invalid and an unexcepted exception (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException: ) has been thrown: THIS_IS_NOT_A_SELECT (InvalidQueryTest.java:85)
+  Exception: 
+
+  FAILURE: This query is invalid and an unexcepted exception (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException: ) has been thrown: SELECT FROM cmis:document (InvalidQueryTest.java:85)
+  Exception: 
+
+  FAILURE: This query is invalid and an unexcepted exception (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException: ) has been thrown: SELECT ,cmis:name FROM cmis:document (InvalidQueryTest.java:85)
+  Exception: 
+
+
+---------------------------------------------------------------
+Content Changes Smoke Test (ATOMPUB) (161057 ms)
+---------------------------------------------------------------
+
+  INFO: Change log token is not null. Probably an OpenCMIS based server. (ContentChangesSmokeTest.java:75)
+    INFO: Object is not null!
+
+
+===============================================================
+Types Test Group (ATOMPUB)
+===============================================================
+---------------------------------------------------------------
+Types Test (ATOMPUB) (4807 ms)
+---------------------------------------------------------------
+
+  FAILURE: A getTypeChildren() call on the base types must retrun an empty list if skipCount is >= 6! The repository returned hasMoreItems == true. (BaseTypesTest.java:195)
+
+  INFO: Checked 16 type definitions. (BaseTypesTest.java:204)
+
+
+---------------------------------------------------------------
+Create and Delete Type Test (ATOMPUB) (1998 ms)
+---------------------------------------------------------------
+
+  INFO: Created type 'tck:testid_without_properties'. Repository assigned the following type ID: tck:testid_without_properties (AbstractSessionTest.java:865)
+
+  INFO: Created type 'tck:testid_with_properties'. Repository assigned the following type ID: tck:testid_with_properties (AbstractSessionTest.java:865)
+
+  INFO: Repository assigned the property 'tck:boolean' the following property id: tck:boolean (CreateAndDeleteTypeTest.java:172)
+
+  INFO: Repository assigned the property 'tck:id' the following property id: tck:id (CreateAndDeleteTypeTest.java:172)
+
+  INFO: Repository assigned the property 'tck:integer' the following property id: tck:integer (CreateAndDeleteTypeTest.java:172)
+
+  INFO: Repository assigned the property 'tck:datetime' the following property id: tck:datetime (CreateAndDeleteTypeTest.java:172)
+
+  INFO: Repository assigned the property 'tck:decimal' the following property id: tck:decimal (CreateAndDeleteTypeTest.java:172)
+
+  INFO: Repository assigned the property 'tck:html' the following property id: tck:html (CreateAndDeleteTypeTest.java:172)
+
+  INFO: Repository assigned the property 'tck:string' the following property id: tck:string (CreateAndDeleteTypeTest.java:172)
+
+  INFO: Repository assigned the property 'tck:uri' the following property id: tck:uri (CreateAndDeleteTypeTest.java:172)
+
+
+---------------------------------------------------------------
+Secondary Types Test (ATOMPUB) (3942 ms)
+---------------------------------------------------------------
+
+
+---------------------------------------------------------------
+Types Test (ATOMPUB) (4790 ms)
+---------------------------------------------------------------
+
+  FAILURE: A getTypeChildren() call on the base types must retrun an empty list if skipCount is >= 6! The repository returned hasMoreItems == true. (BaseTypesTest.java:195)
+
+  INFO: Checked 16 type definitions. (BaseTypesTest.java:204)
+
+
+---------------------------------------------------------------
+Create and Delete Type Test (ATOMPUB) (1995 ms)
+---------------------------------------------------------------
+
+  INFO: Created type 'tck:testid_without_properties'. Repository assigned the following type ID: tck:testid_without_properties (AbstractSessionTest.java:865)
+
+  INFO: Created type 'tck:testid_with_properties'. Repository assigned the following type ID: tck:testid_with_properties (AbstractSessionTest.java:865)
+
+  INFO: Repository assigned the property 'tck:boolean' the following property id: tck:boolean (CreateAndDeleteTypeTest.java:172)
+
+  INFO: Repository assigned the property 'tck:id' the following property id: tck:id (CreateAndDeleteTypeTest.java:172)
+
+  INFO: Repository assigned the property 'tck:integer' the following property id: tck:integer (CreateAndDeleteTypeTest.java:172)
+
+  INFO: Repository assigned the property 'tck:datetime' the following property id: tck:datetime (CreateAndDeleteTypeTest.java:172)
+
+  INFO: Repository assigned the property 'tck:decimal' the following property id: tck:decimal (CreateAndDeleteTypeTest.java:172)
+
+  INFO: Repository assigned the property 'tck:html' the following property id: tck:html (CreateAndDeleteTypeTest.java:172)
+
+  INFO: Repository assigned the property 'tck:string' the following property id: tck:string (CreateAndDeleteTypeTest.java:172)
+
+  INFO: Repository assigned the property 'tck:uri' the following property id: tck:uri (CreateAndDeleteTypeTest.java:172)
+
+
+---------------------------------------------------------------
+Secondary Types Test (ATOMPUB) (3898 ms)
+---------------------------------------------------------------
+
+
+===============================================================
+Versioning Test Group (ATOMPUB)
+===============================================================
+---------------------------------------------------------------
+Versioning Smoke Test (ATOMPUB) (10638 ms)
+---------------------------------------------------------------
+
+  INFO: Repository allows check out on a version that is not the latest version. (VersioningSmokeTest.java:224)
+
+
+---------------------------------------------------------------
+Versioning Delete Test (ATOMPUB) (6776 ms)
+---------------------------------------------------------------
+
+
+---------------------------------------------------------------
+Versioning State Create Test (ATOMPUB) (3408 ms)
+---------------------------------------------------------------
+
+
+---------------------------------------------------------------
+Checked out Test (ATOMPUB) (3156 ms)
+---------------------------------------------------------------
+
+  INFO: 1 checked out document(s) overall. (CheckedOutTest.java:74)
+
+  INFO: 1 checked out document(s) in the test folder. (CheckedOutTest.java:84)
+
+
+---------------------------------------------------------------
+Latest Accessible State ID Test (ATOMPUB) (2057 ms)
+---------------------------------------------------------------
+
+  SKIPPED: Repository does not support the Latest State Identifier feature extension. Test skipped! (LatestAccessibleStateIdTest.java:56)
+
+
+---------------------------------------------------------------
+Versioning Smoke Test (ATOMPUB) (10619 ms)
+---------------------------------------------------------------
+
+  INFO: Repository allows check out on a version that is not the latest version. (VersioningSmokeTest.java:224)
+
+
+---------------------------------------------------------------
+Versioning Delete Test (ATOMPUB) (6746 ms)
+---------------------------------------------------------------
+
+
+---------------------------------------------------------------
+Versioning State Create Test (ATOMPUB) (3426 ms)
+---------------------------------------------------------------
+
+
+---------------------------------------------------------------
+Checked out Test (ATOMPUB) (3148 ms)
+---------------------------------------------------------------
+
+  INFO: 1 checked out document(s) overall. (CheckedOutTest.java:74)
+
+  INFO: 1 checked out document(s) in the test folder. (CheckedOutTest.java:84)
+
+
+---------------------------------------------------------------
+Latest Accessible State ID Test (ATOMPUB) (2076 ms)
+---------------------------------------------------------------
+
+  SKIPPED: Repository does not support the Latest State Identifier feature extension. Test skipped! (LatestAccessibleStateIdTest.java:56)
+
+
