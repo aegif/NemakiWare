@@ -457,7 +457,7 @@
 							<goal>run</goal>
 						</goals>
 						<configuration>
-							<skip>${maven.test.skip}</skip>
+							<skip>${maven.jetty.skip}</skip>
 							<daemon>true</daemon>
 						</configuration>
 					</execution>
@@ -468,7 +468,7 @@
 							<goal>stop</goal>
 						</goals>
 						<configuration>
-							<skip>${maven.test.skip}</skip>
+							<skip>${maven.jetty.skip}</skip>
 						</configuration>
 					</execution>
 				</executions>
@@ -484,12 +484,14 @@
 			</activation>
 			<properties>
 				<maven.test.skip>true</maven.test.skip>
+				<maven.jetty.skip>true</maven.jetty.skip>
 			</properties>
 		</profile>
 		<profile>
 			<id>product</id>
 			<properties>
 				<maven.test.skip>false</maven.test.skip>
+				<maven.jetty.skip>false</maven.jetty.skip>
 			</properties>
 
 			<build>

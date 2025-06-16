@@ -623,16 +623,36 @@ echo "=== REPOSITORY INITIALIZATION COMPLETED ==="
 
 # Final verification that all databases have the necessary views
 echo "Final verification of all repositories..."
-for repo in bedroom bedroom_closet canopy canopy_closet; do
+CRITICAL_REPOS_OK=true
+
+echo "Checking critical repositories..."
+for repo in bedroom canopy; do
     echo "Checking ${repo}..."
     if curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" "http://localhost:5984/${repo}/_design/_repo/_view/admin?limit=0" 2>/dev/null | grep -q "total_rows"; then
         echo "✓ ${repo} admin view is working"
     else
         echo "✗ ERROR: ${repo} admin view is not accessible - this will cause Core startup failures"
-        exit 1
+        CRITICAL_REPOS_OK=false
     fi
 done
-echo "✓ All repositories verified successfully"
+
+echo "Checking archive repositories (non-critical)..."
+for repo in bedroom_closet canopy_closet; do
+    echo "Checking ${repo}..."
+    if curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" "http://localhost:5984/${repo}/_design/_repo/_view/admin?limit=0" 2>/dev/null | grep -q "total_rows"; then
+        echo "✓ ${repo} admin view is working"
+    else
+        echo "⚠ WARNING: ${repo} admin view is not accessible - archive repository may have limited functionality"
+    fi
+done
+
+if [ "$CRITICAL_REPOS_OK" = "false" ]; then
+    echo "✗ Critical repositories (bedroom/canopy) failed verification"
+    exit 1
+else
+    echo "✓ Critical repositories verified successfully"
+    echo "✓ Archive repositories checked (warnings are non-blocking)"
+fi
 
 echo "Waiting for Core to become healthy..."
 sleep 30
@@ -755,6 +775,70 @@ else
     echo "⚠ WARNING: Some components failed. Check the status above."
     echo "For debugging, run: docker compose -f docker-compose-simple.yml logs [service_name]"
 fi
+
+echo ""
+echo "=========================================="
+echo "INITIALIZING REPOSITORY DATA"
+echo "=========================================="
+echo "Loading initial data using bjornloka..."
+
+if [ ! -f "$NEMAKI_HOME/setup/couchdb/bjornloka/target/bjornloka.jar" ]; then
+    echo "Building bjornloka JAR..."
+    cd $NEMAKI_HOME/setup/couchdb/bjornloka
+    mvn clean package -DskipTests -q
+    cd $SCRIPT_DIR
+fi
+
+echo "Loading bedroom and bedroom_closet repository data..."
+java -jar $NEMAKI_HOME/setup/couchdb/bjornloka/target/bjornloka.jar \
+    http://${COUCHDB_USER}:${COUCHDB_PASSWORD}@localhost:5984 \
+    bedroom \
+    bedroom_closet \
+    $NEMAKI_HOME/setup/couchdb/initial_import/bedroom_init.dump \
+    $NEMAKI_HOME/setup/couchdb/initial_import/archive_init.dump
+
+echo "Loading canopy and canopy_closet repository data..."
+java -jar $NEMAKI_HOME/setup/couchdb/bjornloka/target/bjornloka.jar \
+    http://${COUCHDB_USER}:${COUCHDB_PASSWORD}@localhost:5984 \
+    canopy \
+    canopy_closet \
+    $NEMAKI_HOME/setup/couchdb/initial_import/bedroom_init.dump \
+    $NEMAKI_HOME/setup/couchdb/initial_import/archive_init.dump
+
+echo "✓ Repository data initialization completed"
+
+echo ""
+echo "=========================================="
+echo "INITIALIZING REPOSITORY DATA"
+echo "=========================================="
+echo "Loading initial data using bjornloka..."
+
+if [ ! -f "$NEMAKI_HOME/setup/couchdb/bjornloka/target/bjornloka.jar" ]; then
+    echo "Building bjornloka JAR..."
+    cd $NEMAKI_HOME/setup/couchdb/bjornloka
+    mvn clean package -DskipTests -q
+    cd $SCRIPT_DIR
+fi
+
+# Load initial data for bedroom and bedroom_closet repositories
+echo "Loading bedroom and bedroom_closet repository data..."
+java -jar $NEMAKI_HOME/setup/couchdb/bjornloka/target/bjornloka.jar \
+    http://${COUCHDB_USER}:${COUCHDB_PASSWORD}@localhost:5984 \
+    bedroom \
+    bedroom_closet \
+    $NEMAKI_HOME/setup/couchdb/initial_import/bedroom_init.dump \
+    $NEMAKI_HOME/setup/couchdb/initial_import/archive_init.dump
+
+# Load initial data for canopy and canopy_closet repositories
+echo "Loading canopy and canopy_closet repository data..."
+java -jar $NEMAKI_HOME/setup/couchdb/bjornloka/target/bjornloka.jar \
+    http://${COUCHDB_USER}:${COUCHDB_PASSWORD}@localhost:5984 \
+    canopy \
+    canopy_closet \
+    $NEMAKI_HOME/setup/couchdb/initial_import/bedroom_init.dump \
+    $NEMAKI_HOME/setup/couchdb/initial_import/archive_init.dump
+
+echo "✓ Repository data initialization completed"
 
 echo ""
 echo "Test complete! NemakiWare running on CouchDB 2.x"

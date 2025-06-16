@@ -22,10 +22,33 @@ fi
 
 echo "Parsing TCK test results..."
 
-TOTAL_TESTS=$(grep -c "Test:" "$REPORTS_DIR/tck-report.txt" || echo "0")
-PASSED_TESTS=$(grep -c "Test:.*PASSED" "$REPORTS_DIR/tck-report.txt" || echo "0")
-FAILED_TESTS=$(grep -c "Test:.*FAILED" "$REPORTS_DIR/tck-report.txt" || echo "0")
-SKIPPED_TESTS=$(grep -c "Test:.*SKIPPED" "$REPORTS_DIR/tck-report.txt" || echo "0")
+if [ -f "$REPORTS_DIR/tck-execution.log" ]; then
+    TEST_SUMMARY=$(grep "Tests run:" "$REPORTS_DIR/tck-execution.log" | tail -1)
+    
+    if [ -n "$TEST_SUMMARY" ]; then
+        TOTAL_TESTS=$(echo "$TEST_SUMMARY" | sed -n 's/.*Tests run: \([0-9]*\).*/\1/p')
+        FAILED_TESTS=$(echo "$TEST_SUMMARY" | sed -n 's/.*Failures: \([0-9]*\).*/\1/p')
+        ERROR_TESTS=$(echo "$TEST_SUMMARY" | sed -n 's/.*Errors: \([0-9]*\).*/\1/p')
+        SKIPPED_TESTS=$(echo "$TEST_SUMMARY" | sed -n 's/.*Skipped: \([0-9]*\).*/\1/p')
+        
+        PASSED_TESTS=$((TOTAL_TESTS - FAILED_TESTS - ERROR_TESTS - SKIPPED_TESTS))
+    else
+        TOTAL_TESTS=$(grep -c "Test:" "$REPORTS_DIR/tck-report.txt" 2>/dev/null || echo "0")
+        PASSED_TESTS=$(grep -c "Test:.*PASSED" "$REPORTS_DIR/tck-report.txt" 2>/dev/null || echo "0")
+        FAILED_TESTS=$(grep -c "Test:.*FAILED" "$REPORTS_DIR/tck-report.txt" 2>/dev/null || echo "0")
+        SKIPPED_TESTS=$(grep -c "Test:.*SKIPPED" "$REPORTS_DIR/tck-report.txt" 2>/dev/null || echo "0")
+    fi
+else
+    TOTAL_TESTS=$(grep -c "Test:" "$REPORTS_DIR/tck-report.txt" 2>/dev/null || echo "0")
+    PASSED_TESTS=$(grep -c "Test:.*PASSED" "$REPORTS_DIR/tck-report.txt" 2>/dev/null || echo "0")
+    FAILED_TESTS=$(grep -c "Test:.*FAILED" "$REPORTS_DIR/tck-report.txt" 2>/dev/null || echo "0")
+    SKIPPED_TESTS=$(grep -c "Test:.*SKIPPED" "$REPORTS_DIR/tck-report.txt" 2>/dev/null || echo "0")
+fi
+
+TOTAL_TESTS=${TOTAL_TESTS:-0}
+PASSED_TESTS=${PASSED_TESTS:-0}
+FAILED_TESTS=${FAILED_TESTS:-0}
+SKIPPED_TESTS=${SKIPPED_TESTS:-0}
 
 if [ "$TOTAL_TESTS" -gt 0 ]; then
     PASS_RATE=$(echo "scale=2; $PASSED_TESTS * 100 / $TOTAL_TESTS" | bc -l 2>/dev/null || echo "0")
