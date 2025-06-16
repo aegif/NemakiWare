@@ -486,6 +486,7 @@
 			</activation>
 			<properties>
 				<maven.test.skip>true</maven.test.skip>
+				<jetty.skip>false</jetty.skip>
 			</properties>
 		</profile>
 		<profile>
@@ -496,6 +497,11 @@
 		</profile>
 		<profile>
 			<id>tck-docker</id>
+			<activation>
+				<property>
+					<name>tck.docker</name>
+				</property>
+			</activation>
 			<properties>
 				<maven.test.skip>false</maven.test.skip>
 				<jetty.skip>true</jetty.skip>

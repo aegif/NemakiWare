@@ -228,14 +228,9 @@ public class SolrQueryProcessor implements QueryProcessor {
 			solrQuery.set(CommonParams.START, skipCount.intValue());
 		}
 		if(maxItems == null){
-			logger.info("=== Executing Solr Query ===");
-			logger.info("Attempting to connect to Solr server...");
-
 			solrQuery.set(CommonParams.ROWS, 50);
 		}else{
 			solrQuery.set(CommonParams.ROWS, maxItems.intValue());
-			logger.info("Solr query executed successfully, results: " + (resp != null ? resp.getResults().getNumFound() : "null"));
-
 		}
 		
 
