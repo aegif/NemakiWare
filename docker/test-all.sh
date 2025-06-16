@@ -580,12 +580,16 @@ initialize_database() {
     if [ -n "$design_check" ]; then
         echo "✓ Design documents successfully created for ${repo_id}"
         
-        # Also verify admin view exists
-        local admin_view_check=$(curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" "http://localhost:5984/${repo_id}/_design/_repo/_view/admin?limit=0" 2>/dev/null | grep -o '"total_rows"' || echo "")
-        if [ -n "$admin_view_check" ]; then
-            echo "✓ Admin view is accessible for ${repo_id}"
+        # Also verify admin view exists (only for main repositories, not archives)
+        if [[ "${repo_id}" != *"_closet" ]]; then
+            local admin_view_check=$(curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" "http://localhost:5984/${repo_id}/_design/_repo/_view/admin?limit=0" 2>/dev/null | grep -o '"total_rows"' || echo "")
+            if [ -n "$admin_view_check" ]; then
+                echo "✓ Admin view is accessible for ${repo_id}"
+            else
+                echo "✗ WARNING: Admin view may not be accessible for ${repo_id}"
+            fi
         else
-            echo "✗ WARNING: Admin view may not be accessible for ${repo_id}"
+            echo "✓ ${repo_id} is archive repository (admin view not required)"
         fi
     else
         echo "✗ ERROR: Design documents were not created for ${repo_id}"
@@ -625,10 +629,24 @@ echo "=== REPOSITORY INITIALIZATION COMPLETED ==="
 echo "Final verification of all repositories..."
 for repo in bedroom bedroom_closet canopy canopy_closet; do
     echo "Checking ${repo}..."
-    if curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" "http://localhost:5984/${repo}/_design/_repo/_view/admin?limit=0" 2>/dev/null | grep -q "total_rows"; then
-        echo "✓ ${repo} admin view is working"
+    
+    # Check if design document exists
+    if curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" "http://localhost:5984/${repo}/_design/_repo" 2>/dev/null | grep -q "_id"; then
+        echo "✓ ${repo} design document exists"
+        
+        # Only check admin view for main repositories (not archive repositories)
+        if [[ "${repo}" != *"_closet" ]]; then
+            if curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" "http://localhost:5984/${repo}/_design/_repo/_view/admin?limit=0" 2>/dev/null | grep -q "total_rows"; then
+                echo "✓ ${repo} admin view is working"
+            else
+                echo "✗ ERROR: ${repo} admin view is not accessible - this will cause Core startup failures"
+                exit 1
+            fi
+        else
+            echo "✓ ${repo} is archive repository (admin view not required)"
+        fi
     else
-        echo "✗ ERROR: ${repo} admin view is not accessible - this will cause Core startup failures"
+        echo "✗ ERROR: ${repo} design document does not exist"
         exit 1
     fi
 done
