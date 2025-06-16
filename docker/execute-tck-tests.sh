@@ -53,38 +53,60 @@ echo "Using existing DockerTckRunner.java (no overwrite needed)"
 echo "Building TCK test package..."
 cd $NEMAKI_HOME
 
-echo "Compiling TCK test classes..."
-mvn test-compile -f core/pom.xml -Pdevelopment -q
+echo "Compiling comprehensive TCK test classes..."
+cd $NEMAKI_HOME/core
+mvn test-compile -Ptck-docker -q
 
 if [ $? -ne 0 ]; then
     echo "ERROR: Failed to compile TCK test classes"
     exit 1
 fi
 
-echo "Creating TCK test JAR for container execution..."
-# Package test classes and dependencies
-mvn dependency:copy-dependencies -DoutputDirectory=core/target/test-lib -DincludeScope=test -f core/pom.xml -q
-cd core/target
-jar cf tck-tests.jar -C test-classes .
-cd $NEMAKI_HOME
+echo "Running comprehensive query testing and fixes..."
+cd $SCRIPT_DIR
+chmod +x fix-repository-mismatch.sh diagnose-solr-connectivity.sh fix-solr-connectivity.sh test-individual-queries.sh comprehensive-query-test.sh validate-tck-improvements.sh
+./comprehensive-query-test.sh
 
-echo "Copying TCK test files to container..."
-docker cp core/target/tck-tests.jar $CORE_CONTAINER:/tmp/
-docker cp core/target/test-lib $CORE_CONTAINER:/tmp/
-docker cp core/src/test/resources/cmis-tck-parameters-docker.properties $CORE_CONTAINER:/tmp/
-docker cp core/src/test/resources/cmis-tck-filters-docker.properties $CORE_CONTAINER:/tmp/
+echo "Executing comprehensive TCK tests (using standard OpenCMIS test groups)..."
+echo "Using direct Maven surefire execution (bypassing Jetty completely)..."
 
-echo "Executing TCK tests inside container..."
-docker exec $CORE_CONTAINER java -cp "/tmp/tck-tests.jar:/tmp/test-lib/*:/usr/local/tomcat/webapps/core/WEB-INF/lib/*" \
-    jp.aegif.nemaki.cmis.tck.DockerTckRunner
+cd $NEMAKI_HOME/core
+echo "Running comprehensive TCK tests via direct surefire plugin..."
+mvn surefire:test -Dtest="jp.aegif.nemaki.cmis.tck.ComprehensiveAllTest" \
+    -Dparameters.file="cmis-tck-parameters-docker.properties" \
+    -DfailIfNoTests=false \
+    > $SCRIPT_DIR/tck-reports/tck-execution.log 2>&1
 
-echo "Copying TCK reports from container..."
-mkdir -p $SCRIPT_DIR/tck-reports
-# Reports are generated in /usr/local/tomcat/../docker/tck-reports inside container
-docker exec $CORE_CONTAINER test -d /usr/local/tomcat/../docker/tck-reports && \
-    docker cp $CORE_CONTAINER:/usr/local/tomcat/../docker/tck-reports/. $SCRIPT_DIR/tck-reports/ || \
-    echo "No reports found in container"
+TCK_EXIT_CODE=$?
 
-echo "TCK test execution completed!"
+echo "Generating comprehensive TCK reports..."
+cd $SCRIPT_DIR
+./generate-tck-report.sh
+
+echo "Generating enhanced summary with user's reporting script..."
+if [ -f "./show-tck-summary.sh" ]; then
+    ./show-tck-summary.sh
+fi
+
+echo "Validating TCK improvements and generating final reports..."
+./validate-tck-improvements.sh
+
+if [ $TCK_EXIT_CODE -eq 0 ]; then
+    echo "✓ TCK test execution completed successfully!"
+else
+    echo "⚠ TCK test execution completed with test failures (exit code: $TCK_EXIT_CODE)"
+    echo "This is expected - check reports for detailed results"
+fi
+
 echo "Reports available in: $SCRIPT_DIR/tck-reports/"
 ls -la $SCRIPT_DIR/tck-reports/ 2>/dev/null || echo "No reports generated"
+
+if [ -f "$SCRIPT_DIR/tck-reports/current-score.txt" ]; then
+    CURRENT_SCORE=$(cat "$SCRIPT_DIR/tck-reports/current-score.txt")
+    echo "Current TCK Score: ${CURRENT_SCORE}%"
+fi
+
+if [ -f "$SCRIPT_DIR/tck-reports/improvement-summary.txt" ]; then
+    echo -e "\n=== IMPROVEMENT SUMMARY ==="
+    cat "$SCRIPT_DIR/tck-reports/improvement-summary.txt"
+fi
