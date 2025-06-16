@@ -22,10 +22,17 @@ fi
 
 echo "Parsing TCK test results..."
 
-TOTAL_TESTS=$(grep -c "Test:" "$REPORTS_DIR/tck-report.txt" || echo "0")
-PASSED_TESTS=$(grep -c "Test:.*PASSED" "$REPORTS_DIR/tck-report.txt" || echo "0")
-FAILED_TESTS=$(grep -c "Test:.*FAILED" "$REPORTS_DIR/tck-report.txt" || echo "0")
-SKIPPED_TESTS=$(grep -c "Test:.*SKIPPED" "$REPORTS_DIR/tck-report.txt" || echo "0")
+if grep -q "TCK Test Summary" "$REPORTS_DIR/tck-report.txt" 2>/dev/null; then
+    TOTAL_TESTS=$(grep "Total tests:" "$REPORTS_DIR/tck-report.txt" | sed -n 's/.*Total tests: \([0-9]*\).*/\1/p')
+    PASSED_TESTS=$(grep "Passed:" "$REPORTS_DIR/tck-report.txt" | sed -n 's/.*Passed: \([0-9]*\).*/\1/p')
+    FAILED_TESTS=$(grep "Failures:" "$REPORTS_DIR/tck-report.txt" | sed -n 's/.*Failures: \([0-9]*\).*/\1/p')
+    SKIPPED_TESTS=$(grep "Warnings:" "$REPORTS_DIR/tck-report.txt" | sed -n 's/.*Warnings: \([0-9]*\).*/\1/p')
+else
+    TOTAL_TESTS=$(grep -c "Test:" "$REPORTS_DIR/tck-report.txt" || echo "0")
+    PASSED_TESTS=$(grep -c "Test:.*PASSED" "$REPORTS_DIR/tck-report.txt" || echo "0")
+    FAILED_TESTS=$(grep -c "Test:.*FAILED" "$REPORTS_DIR/tck-report.txt" || echo "0")
+    SKIPPED_TESTS=$(grep -c "Test:.*SKIPPED" "$REPORTS_DIR/tck-report.txt" || echo "0")
+fi
 
 if [ "$TOTAL_TESTS" -gt 0 ]; then
     PASS_RATE=$(echo "scale=2; $PASSED_TESTS * 100 / $TOTAL_TESTS" | bc -l 2>/dev/null || echo "0")

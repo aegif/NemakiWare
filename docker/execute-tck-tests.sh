@@ -5,7 +5,8 @@ SCRIPT_DIR=$(cd $(dirname $0); pwd)
 NEMAKI_HOME=$(cd $SCRIPT_DIR/..; pwd)
 
 echo "=========================================="
-echo "NemakiWare TCK Test Execution"
+echo "NemakiWare Comprehensive TCK Test Execution"
+echo "Host-based Maven execution with 278 tests"
 echo "=========================================="
 
 # Check if containers are running with more flexible pattern matching
@@ -28,62 +29,57 @@ if [ -z "$COUCHDB_RUNNING" ]; then
     exit 1
 fi
 
-# Get the actual container name for core
-CORE_CONTAINER=$(docker ps --format "{{.Names}}" | grep -E "(core|core-1)" | head -1)
-echo "✓ Found core container: $CORE_CONTAINER"
-
 echo "✓ Docker containers are running"
 
 mkdir -p $SCRIPT_DIR/tck-reports
 
 echo "Testing connectivity to NemakiWare core service..."
-if ! docker exec $CORE_CONTAINER curl -f -s http://localhost:8080/core > /dev/null; then
-    echo "ERROR: Cannot connect to NemakiWare core service"
-    echo "Please ensure the Docker environment is fully started and healthy"
+if ! curl -f -s http://localhost:8080/core > /dev/null; then
+    echo "ERROR: Cannot connect to NemakiWare core service on localhost:8080"
+    echo "Please ensure the Docker environment is fully started and port 8080 is exposed"
     exit 1
 fi
-echo "✓ Core service is accessible"
+echo "✓ Core service is accessible from host"
 
-echo "Preparing TCK configuration for Docker environment..."
+echo "Preparing TCK configuration for host-based execution..."
 cp $SCRIPT_DIR/cmis-tck-parameters-docker.properties $NEMAKI_HOME/core/src/test/resources/cmis-tck-parameters-docker.properties
-cp $SCRIPT_DIR/cmis-tck-filters-docker.properties $NEMAKI_HOME/core/src/test/resources/cmis-tck-filters-docker.properties
 
-echo "Using existing DockerTckRunner.java (no overwrite needed)"
-
-echo "Building TCK test package..."
-cd $NEMAKI_HOME
-
-echo "Compiling TCK test classes..."
-mvn test-compile -f core/pom.xml -Pdevelopment -q
+echo "Compiling comprehensive TCK test classes..."
+cd $NEMAKI_HOME/core
+mvn test-compile -Pdevelopment -q
 
 if [ $? -ne 0 ]; then
     echo "ERROR: Failed to compile TCK test classes"
     exit 1
 fi
 
-echo "Creating TCK test JAR for container execution..."
-# Package test classes and dependencies
-mvn dependency:copy-dependencies -DoutputDirectory=core/target/test-lib -DincludeScope=test -f core/pom.xml -q
-cd core/target
-jar cf tck-tests.jar -C test-classes .
-cd $NEMAKI_HOME
+echo "Executing comprehensive TCK tests (using standard OpenCMIS test groups)..."
+echo "Using host-based Maven execution with comprehensive test coverage..."
 
-echo "Copying TCK test files to container..."
-docker cp core/target/tck-tests.jar $CORE_CONTAINER:/tmp/
-docker cp core/target/test-lib $CORE_CONTAINER:/tmp/
-docker cp core/src/test/resources/cmis-tck-parameters-docker.properties $CORE_CONTAINER:/tmp/
-docker cp core/src/test/resources/cmis-tck-filters-docker.properties $CORE_CONTAINER:/tmp/
+cd $NEMAKI_HOME/core
+echo "Running comprehensive TCK tests via Maven exec plugin (standalone runner)..."
+mvn exec:java -Dexec.mainClass="jp.aegif.nemaki.cmis.tck.ComprehensiveAllTest" \
+    -Dexec.classpathScope=test \
+    -Pproduct \
+    > $SCRIPT_DIR/tck-reports/tck-execution.log 2>&1
 
-echo "Executing TCK tests inside container..."
-docker exec $CORE_CONTAINER java -cp "/tmp/tck-tests.jar:/tmp/test-lib/*:/usr/local/tomcat/webapps/core/WEB-INF/lib/*" \
-    jp.aegif.nemaki.cmis.tck.DockerTckRunner
+TCK_EXIT_CODE=$?
 
-echo "Copying TCK reports from container..."
-mkdir -p $SCRIPT_DIR/tck-reports
-docker exec $CORE_CONTAINER test -d /docker/tck-reports && \
-    docker cp $CORE_CONTAINER:/docker/tck-reports/. $SCRIPT_DIR/tck-reports/ || \
-    echo "No reports found in container"
+echo "Generating comprehensive TCK reports..."
+cd $SCRIPT_DIR
+./generate-tck-report.sh
 
-echo "TCK test execution completed!"
+if [ $TCK_EXIT_CODE -eq 0 ]; then
+    echo "✓ TCK test execution completed successfully!"
+else
+    echo "⚠ TCK test execution completed with test failures (exit code: $TCK_EXIT_CODE)"
+    echo "This is expected - check reports for detailed results"
+fi
+
 echo "Reports available in: $SCRIPT_DIR/tck-reports/"
 ls -la $SCRIPT_DIR/tck-reports/ 2>/dev/null || echo "No reports generated"
+
+if [ -f "$SCRIPT_DIR/tck-reports/current-score.txt" ]; then
+    CURRENT_SCORE=$(cat "$SCRIPT_DIR/tck-reports/current-score.txt")
+    echo "Current TCK Score: ${CURRENT_SCORE}%"
+fi

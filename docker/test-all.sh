@@ -790,7 +790,7 @@ if [[ "$*" == *"--run-tck"* ]]; then
     echo "Starting automated TCK test execution..."
     
     cd $SCRIPT_DIR
-    ./run-tck.sh
+    ./execute-tck-tests.sh
     
     echo ""
     echo "=========================================="
