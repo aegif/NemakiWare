@@ -7,12 +7,143 @@ NEMAKI_HOME=$(cd $SCRIPT_DIR/..; pwd)
 export COUCHDB_USER=${COUCHDB_USER:-admin}
 export COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-password}
 
-echo "=========================================="
-echo "NemakiWare Simple Docker Test Environment"
-echo "=========================================="
+echo "==========================================="
+echo "NemakiWare Complete Docker Test Environment"
+echo "==========================================="
 echo "Using CouchDB 2.x with authentication:"
 echo "Username: $COUCHDB_USER"
 echo "Password: $COUCHDB_PASSWORD"
+echo ""
+
+# ========================================
+# 1. PREREQUISITE CHECKS
+# ========================================
+echo "1. CHECKING PREREQUISITES..."
+echo "----------------------------------------"
+
+# Check required tools
+MISSING_TOOLS=()
+if ! command -v docker > /dev/null; then
+    MISSING_TOOLS+=("docker")
+fi
+if ! command -v docker-compose > /dev/null && ! docker compose version > /dev/null 2>&1; then
+    MISSING_TOOLS+=("docker-compose")
+fi
+if ! command -v mvn > /dev/null; then
+    MISSING_TOOLS+=("maven")
+fi
+if ! command -v sbt > /dev/null; then
+    MISSING_TOOLS+=("sbt")
+fi
+if ! command -v java > /dev/null; then
+    MISSING_TOOLS+=("java")
+fi
+
+if [ ${#MISSING_TOOLS[@]} -ne 0 ]; then
+    echo "✗ Missing required tools: ${MISSING_TOOLS[*]}"
+    echo "Please install the missing tools before proceeding."
+    exit 1
+fi
+echo "✓ All required tools are available"
+
+# Check Java version
+JAVA_VERSION=$(java -version 2>&1 | grep "version" | awk '{print $3}' | sed 's/"//g' | cut -d'.' -f1-2)
+echo "Java version: $JAVA_VERSION"
+if [[ "$JAVA_VERSION" < "1.8" ]] || [[ "$JAVA_VERSION" == "1.8"* ]]; then
+    echo "✓ Java 8 compatible version detected"
+else
+    echo "⚠ Warning: Java version may not be compatible (Java 8 recommended)"
+fi
+
+# Check Docker daemon
+if docker info > /dev/null 2>&1; then
+    echo "✓ Docker daemon is running"
+else
+    echo "✗ Docker daemon is not running"
+    echo "Please start Docker daemon before proceeding."
+    exit 1
+fi
+
+echo ""
+
+# ========================================
+# 2. SOURCE CODE VERIFICATION
+# ========================================
+echo "2. VERIFYING CRITICAL SOURCE CODE FIXES..."
+echo "----------------------------------------"
+
+FIXES_NEEDED=()
+AUTO_FIX=false
+
+# Check for --auto-fix flag
+if [[ "$*" == *"--auto-fix"* ]]; then
+    AUTO_FIX=true
+    echo "Auto-fix mode enabled - will apply source code fixes automatically"
+fi
+
+# Check CouchConnector.java
+if grep -q "cleanupIdleConnections(true)" $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/CouchConnector.java; then
+    if [ "$AUTO_FIX" = true ]; then
+        echo "Fixing CouchConnector.java cleanupIdleConnections..."
+        sed -i '.bak' 's/cleanupIdleConnections(true)/cleanupIdleConnections(false)/' $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/CouchConnector.java
+        echo "✓ CouchConnector.java fixed"
+    else
+        FIXES_NEEDED+=("CouchConnector.java needs cleanupIdleConnections(false)")
+    fi
+else
+    echo "✓ CouchConnector.java cleanupIdleConnections is correct"
+fi
+
+# Check ConnectorPool.java
+if grep -q "cleanupIdleConnections(true)" $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/ConnectorPool.java; then
+    if [ "$AUTO_FIX" = true ]; then
+        echo "Fixing ConnectorPool.java cleanupIdleConnections..."
+        sed -i '.bak' 's/cleanupIdleConnections(true)/cleanupIdleConnections(false)/' $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/ConnectorPool.java
+        echo "✓ ConnectorPool.java fixed"
+    else
+        FIXES_NEEDED+=("ConnectorPool.java needs cleanupIdleConnections(false)")
+    fi
+else
+    echo "✓ ConnectorPool.java cleanupIdleConnections is correct"
+fi
+
+# Check PatchService.java
+if grep -q "@PostConstruct" $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/patch/PatchService.java; then
+    if [ "$AUTO_FIX" = true ]; then
+        echo "Fixing PatchService.java @PostConstruct..."
+        sed -i '.bak' '/@PostConstruct/d' $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/patch/PatchService.java
+        sed -i '.bak2' '/import javax.annotation.PostConstruct;/d' $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/patch/PatchService.java
+        echo "✓ PatchService.java fixed"
+    else
+        FIXES_NEEDED+=("PatchService.java needs @PostConstruct removed")
+    fi
+else
+    echo "✓ PatchService.java @PostConstruct is correct"
+fi
+
+# Handle unfixed issues
+if [ ${#FIXES_NEEDED[@]} -ne 0 ]; then
+    echo ""
+    echo "ERROR: The following critical fixes must be applied:"
+    for fix in "${FIXES_NEEDED[@]}"; do
+        echo "  ✗ $fix"
+    done
+    echo ""
+    echo "Options:"
+    echo "1. Apply fixes manually and commit them to git"
+    echo "2. Run with --auto-fix flag to apply fixes automatically:"
+    echo "   ./test-all.sh --auto-fix"
+    echo ""
+    exit 1
+fi
+
+echo ""
+
+# ========================================
+# 3. BUILD PROCESS
+# ========================================
+echo "3. BUILDING COMPONENTS..."
+echo "----------------------------------------"
 
 echo "Stopping any running containers..."
 cd $SCRIPT_DIR
@@ -30,7 +161,6 @@ echo "Building UI WAR with SBT..."
 cd $NEMAKI_HOME/ui
 
 # Ensure SBT configuration is properly set up for HTTPS repositories
-echo "Verifying SBT configuration..."
 if ! grep -q "https://repo.typesafe.com" project/plugins.sbt; then
   echo "Updating SBT plugins.sbt with HTTPS repositories..."
   cat > project/plugins.sbt << 'EOF_PLUGINS'
@@ -73,30 +203,6 @@ fi
 if [ -d "project/target" ]; then
   rm -rf project/target
 fi
-# Also clean SBT cache to ensure fresh build with updated configuration
-if [ -d "$HOME/.sbt" ]; then
-  echo "Cleaning SBT cache for fresh build..."
-  rm -rf "$HOME/.sbt/1.0/plugins"
-fi
-
-# Fix HttpComponents dependency issue in build.sbt
-echo "Fixing HttpComponents dependency for ContentType class..."
-if ! grep -q "httpcore.*4.4" build.sbt; then
-  # Add httpcore dependency right after httpclient
-  sed -i '.bak' '/httpclient.*4.4-beta1/a\
-  "org.apache.httpcomponents" % "httpcore" % "4.4.13",
-' build.sbt
-fi
-
-# Fix ContentType import issue in Application.java
-echo "Fixing ContentType import in Application.java..."
-if grep -q "import org.apache.http.entity.ContentType;" app/controllers/Application.java; then
-  # Remove the import line
-  sed -i '.bak' '/import org.apache.http.entity.ContentType;/d' app/controllers/Application.java
-  # Replace the usage with a direct string
-  sed -i '.bak2' 's/ContentType.APPLICATION_XML.getMimeType()/\"application\/xml\"/' app/controllers/Application.java
-  echo "Fixed ContentType usage in Application.java"
-fi
 
 # Fix UI application.conf for Docker environment
 echo "Fixing UI application.conf for Docker environment..."
@@ -113,67 +219,14 @@ if grep -q 'nemaki.core.uri.host="core2"' conf/application.conf; then
   echo "Core URI host updated from core2 to core in application.conf"
 fi
 
-# Create .sbtopts file for optimized SBT performance
-echo "Creating .sbtopts for optimized SBT performance..."
-cat > .sbtopts << 'EOF_SBTOPTS'
--Xmx2G
--Xms1G
--XX:+UseConcMarkSweepGC
--XX:+CMSClassUnloadingEnabled
--Dsbt.boot.directory=$HOME/.sbt/boot
--Dsbt.global.base=$HOME/.sbt/global
--Dsbt.ivy.home=$HOME/.ivy2
--Dsbt.coursier.home=$HOME/.coursier
--Djline.terminal=jline.UnsupportedTerminal
--Dsbt.log.noformat=true
--Djdk.http.auth.tunneling.disabledSchemes=""
--Djdk.http.auth.proxying.disabledSchemes=""
-EOF_SBTOPTS
-
 # Build the UI WAR file
 echo "Building UI WAR with SBT (this may take a few minutes)..."
-echo "Running: sbt clean compile war"
+export SBT_OPTS="-Xmx2G -XX:+UseConcMarkSweepGC -XX:+CMSClassUnloadingEnabled"
 
-# Set SBT options for better performance and to avoid timeout
-export SBT_OPTS="-Xmx2G -XX:+UseConcMarkSweepGC -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=512M -Dsbt.global.base=$HOME/.sbt/global"
-
-# Initialize SBT result variable
-SBT_RESULT=0
-
-# Use timeout to prevent hanging, with extended time for initial dependency resolution
-# Try different timeout commands based on OS
-if command -v gtimeout > /dev/null; then
-  TIMEOUT_CMD="gtimeout 1200"
-elif command -v timeout > /dev/null; then
-  TIMEOUT_CMD="timeout 1200"
-else
-  TIMEOUT_CMD=""
-fi
-
-# Run SBT build with timeout if available
-if [ -n "$TIMEOUT_CMD" ]; then
-  echo "Using timeout command: $TIMEOUT_CMD"
-  $TIMEOUT_CMD sbt clean compile war || SBT_RESULT=$?
-else
-  echo "No timeout command available, running SBT without timeout"
-  sbt clean compile war || SBT_RESULT=$?
-fi
-
-# Check build results
-if [ $SBT_RESULT -ne 0 ]; then
-  echo "SBT build failed or timed out. Checking for partial WAR files..."
-  if [ -f "target/ui.war" ]; then
-    echo "Found WAR file in target directory, proceeding..."
-  elif [ -f "target/universal/ui.war" ]; then
-    echo "Found WAR file in target/universal directory, copying..."
-    cp target/universal/ui.war target/ui.war
-  else
-    echo "No WAR file found. Using existing WAR files if available..."
-    if [ ! -f "$NEMAKI_HOME/docker/ui-war/ui.war" ]; then
-      echo "ERROR: No UI WAR file available. Please run 'cd ui && sbt war' manually to build UI."
-      exit 1
-    fi
-  fi
+sbt clean compile war
+if [ $? -ne 0 ]; then
+  echo "ERROR: SBT build failed for UI"
+  exit 1
 fi
 
 # Copy the built WAR files
@@ -184,11 +237,8 @@ if [ -f "target/ui.war" ]; then
   cp target/ui.war $NEMAKI_HOME/docker/ui-war/ui##.war
   echo "UI WAR files successfully created"
 else
-  echo "Using existing UI WAR files..."
-  if [ ! -f "$NEMAKI_HOME/docker/ui-war/ui.war" ]; then
-    echo "ERROR: No UI WAR file available"
-    exit 1
-  fi
+  echo "ERROR: No UI WAR file found"
+  exit 1
 fi
 
 echo "Building core.war with complete configuration..."
@@ -197,34 +247,6 @@ echo "Building core.war with complete configuration..."
 if [ -f "$NEMAKI_HOME/docker/core/core.war" ]; then
   echo "Removing existing core.war..."
   rm -f "$NEMAKI_HOME/docker/core/core.war"
-fi
-
-# Apply critical Core fixes before building
-echo "Applying critical Core source code fixes..."
-
-# Remove @PostConstruct from PatchService to prevent Spring initialization conflicts
-if grep -q "@PostConstruct" $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/patch/PatchService.java; then
-  echo "Removing @PostConstruct from PatchService to prevent initialization conflicts..."
-  sed -i '.bak' '/@PostConstruct/d' $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/patch/PatchService.java
-  sed -i '.bak2' '/import javax.annotation.PostConstruct;/d' $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/patch/PatchService.java
-  echo "PatchService @PostConstruct removed"
-fi
-
-# Fix Ektorp IdleConnectionMonitor issue by disabling cleanupIdleConnections in both files
-echo "Fixing Ektorp IdleConnectionMonitor issue in ConnectorPool and CouchConnector..."
-
-# Fix ConnectorPool.java
-if grep -q "cleanupIdleConnections(true)" $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/ConnectorPool.java; then
-  echo "Disabling cleanupIdleConnections in ConnectorPool..."
-  sed -i '.bak' 's/cleanupIdleConnections(true)/cleanupIdleConnections(false)/' $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/ConnectorPool.java
-  echo "ConnectorPool cleanupIdleConnections disabled"
-fi
-
-# Fix CouchConnector.java  
-if grep -q "cleanupIdleConnections(true)" $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/CouchConnector.java; then
-  echo "Disabling cleanupIdleConnections in CouchConnector..."
-  sed -i '.bak' 's/cleanupIdleConnections(true)/cleanupIdleConnections(false)/' $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/CouchConnector.java
-  echo "CouchConnector cleanupIdleConnections disabled"
 fi
 
 # Update the source nemakiware.properties with complete configuration
@@ -289,7 +311,7 @@ jodconverter.registry.dataformats=rendition-format.yml
 
 ###Logging
 log.aspect.class=jp.aegif.nemaki.util.spring.aspect.log.JsonLogger
-log.aspect.expression=execution(* jp.aegif.nemaki.cmis.service..*Impl.*(..)) and !execution(* jp.aegif.nemaki.cmis.service.impl.RepositoryServiceImpl.*(..))
+log.aspect.expression=execution(* jp.aegif.nemaki.cmis.service..*Impl.*(..)) and !execution(* jp.aegif.nemaki.cmis.service.impl.RepositoryServiceImpl.*(..)
 log.config.json.file=log-json-config.json
 
 ###Cache
@@ -322,8 +344,6 @@ if [ ! -f "$NEMAKI_HOME/docker/core/core.war" ]; then
   echo "ERROR: core.war was not created successfully"
   exit 1
 fi
-
-echo "core.war built successfully with updated configuration"
 
 echo "Building Solr WAR file using Docker with Java 8..."
 cd $NEMAKI_HOME/docker
@@ -359,15 +379,19 @@ if [ ! -f $NEMAKI_HOME/docker/core/log4j.properties ]; then
   touch $NEMAKI_HOME/docker/core/log4j.properties
 fi
 
+echo ""
+
+# ========================================
+# 4. DOCKER DEPLOYMENT
+# ========================================
+echo "4. DEPLOYING DOCKER ENVIRONMENT..."
+echo "----------------------------------------"
+
 echo "Starting Docker containers..."
 cd $SCRIPT_DIR
 
 # Stop and remove all containers to ensure clean state
 docker compose -f docker-compose-simple.yml down --remove-orphans
-
-# Clear any cached volumes
-echo "Clearing Docker volumes and cached data..."
-docker volume prune -f
 
 echo "Building and starting containers..."
 docker compose -f docker-compose-simple.yml build
@@ -396,25 +420,16 @@ initialize_database() {
     echo "CouchDB initializer for ${repo_id}:"
     
     echo "Checking CouchDB database ${repo_id}..."
-    echo "DEBUG: Running: curl -s -u \"${COUCHDB_USER}:${COUCHDB_PASSWORD}\" http://localhost:5984/${repo_id}"
     curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5984/${repo_id} | tee /tmp/couchdb_${repo_id}_check.json
     if ! cat /tmp/couchdb_${repo_id}_check.json | grep -q "db_name"; then
         echo "CouchDB database ${repo_id} does not exist"
         echo "Creating CouchDB database ${repo_id}..."
-        echo "DEBUG: Running: curl -X PUT -s -u \"${COUCHDB_USER}:${COUCHDB_PASSWORD}\" http://localhost:5984/${repo_id}"
         curl -X PUT -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5984/${repo_id} | tee /tmp/couchdb_${repo_id}_create.json
     else
         echo "CouchDB database ${repo_id} exists"
     fi
     
-    # Always use force=true to ensure proper repository initialization even if database exists
-    # This is necessary because database creation and data initialization are separate steps
     local force_param="true"
-    
-    # Always use authentication (required for CouchDB 3.x compatibility)
-    couchdb_url="http://${COUCHDB_USER}:${COUCHDB_PASSWORD}@${container_name}:5984"
-    echo "Using authenticated CouchDB URL for bjornloka.jar"
-    echo "Executing: bjornloka.jar ${couchdb_url} ${repo_id} ${dump_file} ${force_param}"
     
     docker compose -f docker-compose-simple.yml run --rm --remove-orphans \
       -e COUCHDB_URL=http://${container_name}:5984 \
@@ -450,7 +465,6 @@ docker compose -f docker-compose-simple.yml restart core
 sleep 20
 
 echo "Verifying and fixing UI runtime configuration..."
-# Check if UI container has incorrect core host settings and fix them
 if docker exec docker-ui-1 test -f /usr/local/tomcat/webapps/ui/WEB-INF/classes/application.conf 2>/dev/null; then
   if docker exec docker-ui-1 grep -q 'nemaki.core.uri.host="core2"' /usr/local/tomcat/webapps/ui/WEB-INF/classes/application.conf 2>/dev/null; then
     echo "Fixing UI runtime Core host configuration from core2 to core..."
@@ -466,9 +480,13 @@ else
   echo "UI application.conf not found in expected location"
 fi
 
-echo "=============================================="
-echo "SIMPLE ENVIRONMENT TEST"
-echo "=============================================="
+echo ""
+
+# ========================================
+# 5. SYSTEM TESTING
+# ========================================
+echo "5. TESTING SYSTEM FUNCTIONALITY..."
+echo "----------------------------------------"
 
 echo "1. COUCHDB TEST:"
 echo "----------------"
@@ -501,9 +519,6 @@ if [ "$SOLR_STATUS" = "200" ]; then
     else
         echo "⚠ Solr admin interface not accessible (HTTP $SOLR_ADMIN_STATUS)"
     fi
-elif [ "$SOLR_STATUS" = "500" ]; then
-    echo "⚠ Solr partially working - deployment issues with Restlet dependencies (HTTP $SOLR_STATUS)"
-    echo "  Container running but application initialization incomplete"
 else
     echo "✗ Solr is not accessible (HTTP $SOLR_STATUS)"
 fi
@@ -511,7 +526,6 @@ fi
 echo ""
 echo "3. CORE TEST:"
 echo "-------------"
-# Test specific CMIS endpoints with proper authentication
 echo "Testing CMIS endpoints with admin:admin authentication..."
 CMIS_ATOM_STATUS=$(curl -s -u admin:admin -o /dev/null -w "%{http_code}" http://localhost:8080/core/atom/bedroom || echo "connection_error")
 echo "CMIS AtomPub (bedroom): HTTP $CMIS_ATOM_STATUS"
@@ -522,21 +536,19 @@ echo "CMIS Web Services: HTTP $CMIS_SERVICES_STATUS"
 echo ""
 echo "4. UI TEST:"
 echo "-----------"
-# Test UI login page accessibility (note: actual usage will redirect to 0.0.0.0)
 echo "Testing UI login page accessibility..."
 UI_LOGIN_BEDROOM=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:9000/ui/repo/bedroom/login" || echo "connection_error")
 echo "UI login page (bedroom): HTTP $UI_LOGIN_BEDROOM"
 
 echo ""
-echo "NOTE: UI is accessible via localhost:9000 but login will redirect to 0.0.0.0:9000"
-echo "For actual usage, access http://0.0.0.0:9000/ui/repo/bedroom/login directly"
 
-echo ""
+# ========================================
+# 6. SUMMARY REPORT
+# ========================================
 echo "=============================================="
-echo "SIMPLE ENVIRONMENT SUMMARY"
+echo "COMPLETE SYSTEM TEST SUMMARY"
 echo "=============================================="
 
-# Overall status summary
 echo "Component Status Summary:"
 echo "- CouchDB: $([ "$COUCHDB_STATUS" = "200" ] && echo "✓ Running" || echo "✗ Failed (HTTP $COUCHDB_STATUS)")"
 echo "- Solr: $(if [ "$SOLR_STATUS" = "200" ]; then echo "✓ Running"; elif [ "$SOLR_STATUS" = "500" ]; then echo "⚠ Partial (HTTP $SOLR_STATUS)"; else echo "✗ Failed (HTTP $SOLR_STATUS)"; fi)"
@@ -551,11 +563,21 @@ echo "- Solr: http://localhost:8983/solr/ ($([ "$SOLR_STATUS" = "200" ] && echo 
 echo "- Core CMIS AtomPub: http://localhost:8080/core/atom/bedroom (HTTP $CMIS_ATOM_STATUS)"
 echo "- Core CMIS Services: http://localhost:8080/core/services (HTTP $CMIS_SERVICES_STATUS)"
 echo ""
-echo "UI Access (Note: Login redirects to 0.0.0.0):"
-echo "- Primary: http://0.0.0.0:9000/ui/repo/bedroom/login"
-echo "- Fallback: http://localhost:9000/ui/repo/bedroom/login (will redirect)"
+echo "UI Access:"
+echo "- Primary: http://localhost:9000/ui/repo/bedroom/login"
 echo ""
 echo "Authentication: Use admin:admin for all endpoints"
 
+# Check overall success
+if [ "$COUCHDB_STATUS" = "200" ] && [ "$SOLR_STATUS" = "200" ] && [ "$CMIS_ATOM_STATUS" = "200" ] && [ "$CMIS_SERVICES_STATUS" = "200" ] && [ "$UI_LOGIN_BEDROOM" = "200" ]; then
+    echo ""
+    echo "🎉 SUCCESS: All components are running correctly!"
+    echo "NemakiWare Docker environment is ready for use."
+else
+    echo ""
+    echo "⚠ WARNING: Some components failed. Check the status above."
+    echo "For debugging, run: docker compose -f docker-compose-simple.yml logs [service_name]"
+fi
+
 echo ""
-echo "Test complete! All services should be running on CouchDB 2.x"
+echo "Test complete! NemakiWare running on CouchDB 2.x"
