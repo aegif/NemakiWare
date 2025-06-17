@@ -169,10 +169,13 @@ public class SolrUtil {
 				.readValue(PropertyKey.SOLR_PORT));
 		String context = propertyManager.readValue(PropertyKey.SOLR_CONTEXT);
 
+		System.out.println("DEBUG SolrUtil.getSolrUrl: protocol=" + protocol + ", host=" + host + ", port=" + port + ", context=" + context);
+
 		String url = null;
 		try {
 			URL _url = new URL(protocol, host, port, "");
 			url = _url.toString() + "/" + context + "/";
+			System.out.println("DEBUG SolrUtil.getSolrUrl: final URL=" + url);
 		} catch (MalformedURLException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();

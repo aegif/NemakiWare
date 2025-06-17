@@ -168,6 +168,116 @@ Property files override defaults:
 - **Build**: Maven (core), SBT (UI)
 - **Java Version**: 1.8
 
+## Source Code Modification and Redeployment
+
+### Rebuilding and Redeploying Core after Source Changes
+
+When modifying Java source code in the core module, the changes will not take effect until the core.war is rebuilt and redeployed. Follow these steps:
+
+#### 1. Rebuild Core WAR
+
+```bash
+# Navigate to project root
+cd /Users/ishiiakinori/NemakiWare
+
+# Clean and rebuild core module
+mvn clean package -f core/pom.xml -Pdevelopment
+
+# Verify new WAR was created
+ls -la core/target/core.war
+```
+
+#### 2. Copy WAR to Docker Context
+
+```bash
+# Copy newly built WAR to Docker build context
+cp core/target/core.war docker/core/core.war
+
+# Verify copy succeeded
+ls -la docker/core/core.war
+```
+
+#### 3. Rebuild and Restart Core Container
+
+```bash
+cd docker/
+
+# Stop current core container
+docker stop docker-core-1
+
+# Rebuild core image with new WAR
+docker build -t nemakiware/core docker/core/
+
+# Start core container with new image
+docker start docker-core-1
+
+# Wait for startup (check logs)
+sleep 15 && docker logs docker-core-1 --tail 10
+```
+
+#### 4. Alternative: Full Environment Restart
+
+For complex changes or if individual container restart fails:
+
+```bash
+cd docker/
+
+# Stop all containers
+docker compose down
+
+# Rebuild core image
+docker build -t nemakiware/core docker/core/
+
+# Start all containers
+docker compose up -d
+
+# Wait for full startup
+sleep 30 && ./verify-core.sh
+```
+
+#### 5. Verification After Redeployment
+
+```bash
+# Verify Core application is running
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/core
+# Expected: 302 (redirect)
+
+# Test CMIS endpoints
+curl -s -u admin:admin -o /dev/null -w "%{http_code}" http://localhost:8080/core/atom/bedroom
+# Expected: 200
+
+# Check application logs for errors
+docker logs docker-core-1 --tail 20 | grep -E "ERROR|Exception"
+# Expected: No errors related to your changes
+```
+
+### Common Redeployment Issues
+
+1. **Maven Build Failures**: Check for compilation errors in source code
+2. **WAR Copy Issues**: Ensure docker/core/core.war is updated with timestamp
+3. **Container Startup Failures**: Check Docker logs for Spring initialization errors
+4. **Old Code Still Running**: Verify WAR file timestamp and container restart
+
+### Source Code Change Workflow
+
+```bash
+# 1. Make source code changes in core/src/main/java/
+vim core/src/main/java/jp/aegif/nemaki/cmis/aspect/impl/CompileServiceImpl.java
+
+# 2. Rebuild and redeploy
+mvn clean package -f core/pom.xml -Pdevelopment
+cp core/target/core.war docker/core/core.war
+docker stop docker-core-1
+docker build -t nemakiware/core docker/core/
+docker start docker-core-1
+
+# 3. Test changes
+curl -s -u admin:admin "http://localhost:8080/core/atom/bedroom/query?q=SELECT%20*%20FROM%20cmis%3Adocument&maxItems=5"
+
+# 4. Check logs for your changes
+docker logs docker-core-1 --tail 30 | grep -E "your_log_message|ERROR"
+```
+
 ## Testing and Verification
 
 ### Core Application Health Check

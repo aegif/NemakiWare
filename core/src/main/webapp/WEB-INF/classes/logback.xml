@@ -30,8 +30,13 @@
 	<root level="WARN">
 		<appender-ref ref="FILE" />
 	</root>
-	<logger name="jp.aegif.nemaki" level="WARN" additivity="false">
+	<logger name="jp.aegif.nemaki" level="INFO" additivity="false">
 		<appender-ref ref="FILE" />
+		<appender-ref ref="STDOUT" />
+	</logger>
+	<logger name="jp.aegif.nemaki.cmis.aspect.query.solr.SolrQueryProcessor" level="INFO" additivity="false">
+		<appender-ref ref="FILE" />
+		<appender-ref ref="STDOUT" />
 	</logger>
 
 </configuration>

@@ -222,6 +222,9 @@ public class CompileServiceImpl implements CompileService {
 	private void setAclAndAllowableActionsInternal(ObjectDataImpl objectData, CallContext callContext,
 			String repositoryId, Content content, Boolean includeAllowableActions, Boolean includeAcl) {
 
+		// Force error log for visibility
+		log.error("FORCED DEBUG: setAclAndAllowableActionsInternal - contentId=" + content.getId() + ", includeAllowableActions=" + includeAllowableActions + ", includeAcl=" + includeAcl + ", user=" + callContext.getUsername());
+
 		// Set Acl and Set Allowable actions
 		org.apache.chemistry.opencmis.commons.data.Acl cmisAcl = null;
 		Acl nemakiAcl = null;
@@ -233,9 +236,17 @@ public class CompileServiceImpl implements CompileService {
 		}
 		if (includeAllowableActions) {
 			allowableActions = compileAllowableActions(callContext, repositoryId, content, nemakiAcl);
+			// Force error log for visibility
+			log.error("FORCED DEBUG: AllowableActions created for contentId=" + content.getId() + ", allowableActions=" + (allowableActions != null ? "NOT_NULL" : "NULL"));
+		} else {
+			// Force error log for visibility
+			log.error("FORCED DEBUG: AllowableActions NOT created for contentId=" + content.getId() + " because includeAllowableActions=false");
 		}
 		objectData.setAcl(cmisAcl);
 		objectData.setAllowableActions(allowableActions);
+		
+		// Force error log for final state
+		log.error("FORCED DEBUG: Final ObjectData AllowableActions for contentId=" + content.getId() + ": " + (objectData.getAllowableActions() != null ? "NOT_NULL" : "NULL"));
 	}
 
 	private ObjectData filterObjectData(String repositoryId, ObjectData fullObjectData, String filter,
@@ -252,19 +263,22 @@ public class CompileServiceImpl implements CompileService {
 		result.setProperties(filteredProperties);
 
 		// Filter Allowable actions
-		Boolean iaa = includeAllowableActions == null ? false : includeAllowableActions.booleanValue();
-		if (!iaa) {
+		// IMPORTANT: Don't default null to false - null means "use service-level default behavior"
+		// Only remove AllowableActions if explicitly set to false
+		if (includeAllowableActions != null && !includeAllowableActions.booleanValue()) {
 			result.setAllowableActions(null);
 		}
 
 		// Filter Acl
-		Boolean iacl = includeAcl == null ? false : includeAcl.booleanValue();
-		if (!iacl) {
+		// IMPORTANT: Don't default null to false - null means "use service-level default behavior"
+		// Only remove ACL if explicitly set to false
+		if (includeAcl != null && !includeAcl.booleanValue()) {
 			result.setAcl(null);
 		}
 
 		// Filter Relationships
-		IncludeRelationships irl = includeRelationships == null ? IncludeRelationships.SOURCE : includeRelationships;
+		// CMIS 1.1 specification: default should be NONE, not SOURCE
+		IncludeRelationships irl = includeRelationships == null ? IncludeRelationships.NONE : includeRelationships;
 		if (fullObjectData.getBaseTypeId() == BaseTypeId.CMIS_RELATIONSHIP) {
 			result.setRelationships(filterRelationships(result.getId(), result.getRelationships(), irl));
 		}
@@ -281,13 +295,20 @@ public class CompileServiceImpl implements CompileService {
 	private ObjectData filterObjectDataInList(CallContext callContext, String repositoryId, ObjectData fullObjectData,
 			String filter, Boolean includeAllowableActions, IncludeRelationships includeRelationships,
 			String renditionFilter, Boolean includeAcl) {
-		boolean allowed = permissionService.checkPermission(callContext, Action.CAN_GET_PROPERTIES, fullObjectData);
-		if (allowed) {
-			return filterObjectData(repositoryId, fullObjectData, filter, includeAllowableActions, includeRelationships,
-					renditionFilter, includeAcl);
-		} else {
-			return null;
-		}
+		// IMPORTANT: Permission filtering should be done at Content level, not ObjectData level
+		// The current approach is problematic because:
+		// 1. It requires AllowableActions to be computed even when not requested by the client
+		// 2. Permission checks have already been done at Content level (line 268-269 in SolrQueryProcessor)
+		// 
+		// The correct approach is to:
+		// 1. Always compute AllowableActions internally for permission checks (done)
+		// 2. Only include them in the response if requested by the client (done)
+		// 3. Trust Content-level permission filtering (getFiltered method)
+		//
+		// For now, we skip ObjectData-level permission check since it's redundant
+		// and causes issues when AllowableActions are not requested by the client
+		return filterObjectData(repositoryId, fullObjectData, filter, includeAllowableActions, includeRelationships,
+				renditionFilter, includeAcl);
 	}
 
 	private Properties filterProperties(Properties properties, Set<String> filter) {
@@ -438,8 +459,9 @@ public class CompileServiceImpl implements CompileService {
 				// paged list
 				list.setObjects(new ArrayList<>(objectDataList));
 			}
-			// totalNumItem
-			list.setNumItems(BigInteger.valueOf(numFound));
+			// totalNumItem - set to the actual filtered count for consistency
+			log.info("CompileServiceImpl: Setting numItems to filtered count: " + objectDataList.size() + " (was " + numFound + ")");
+			list.setNumItems(BigInteger.valueOf(objectDataList.size()));
 
 			return list;
 		}

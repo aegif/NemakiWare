@@ -140,12 +140,28 @@ public class PermissionServiceImpl implements PermissionService {
 	private Boolean checkPermissionInternal(CallContext callContext, String repositoryId, String key,
 			Acl acl, String baseType, Content content, String userName, Set<String> groups) {
 
+		log.info("PermissionServiceImpl.checkPermissionInternal: user=" + userName + ", key=" + key + ", content=" + content.getId() + ", groups=" + groups);
+		System.out.println("DEBUG PermissionServiceImpl.checkPermissionInternal: user=" + userName + ", key=" + key + ", content=" + content.getId() + ", groups=" + groups);
+
 		//All permission checks must go through baseType check
-		if(!isAllowableBaseType(key, baseType, content, repositoryId)) return false;
+		if(!isAllowableBaseType(key, baseType, content, repositoryId)) {
+			log.info("PermissionServiceImpl.checkPermissionInternal: baseType check failed for key=" + key + ", baseType=" + baseType);
+			// Force error log for visibility
+			log.error("FORCED DEBUG: baseType check FAILED - key=" + key + ", baseType=" + baseType + ", contentId=" + content.getId());
+			return false;
+		}
 
 		// Admin always pass a permission check
 		UserItem u = contentService.getUserItemById(repositoryId, userName);
-		if (u != null && u.isAdmin()) return true;
+		if (u != null && u.isAdmin()) {
+			log.info("PermissionServiceImpl.checkPermissionInternal: user " + userName + " is admin, granting access");
+			// Force error log for visibility
+			log.error("FORCED DEBUG: Admin check SUCCESS - user=" + userName + " is admin, contentId=" + content.getId());
+			return true;
+		}
+		
+		// Force error log if admin check fails
+		log.error("FORCED DEBUG: Admin check FAILED - user=" + userName + ", userItem=" + (u != null ? "exists" : "null") + ", isAdmin=" + (u != null ? u.isAdmin() : "N/A") + ", contentId=" + content.getId());
 
 		//PWC doesn't accept any actions from a non-owner user
 		//TODO admin can manipulate PWC even when it is checked out ?
@@ -476,17 +492,35 @@ public class PermissionServiceImpl implements PermissionService {
 		String userName = callContext.getUsername();
 		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
 
+		log.info("PermissionServiceImpl.getFiltered: Processing " + contents.size() + " items for user " + userName + " with groups " + groups);
+		System.out.println("DEBUG PermissionServiceImpl.getFiltered: Processing " + contents.size() + " items for user " + userName + " with groups " + groups);
+		// Force error log for visibility
+		log.error("FORCED DEBUG: getFiltered START - Processing " + contents.size() + " items for user " + userName);
+
 		// Filtering
 		for (T _content : contents) {
 			Content content = (Content) _content;
 			Acl acl = contentService.calculateAcl(repositoryId, content);
 
+			log.info("PermissionServiceImpl.getFiltered: Checking permission for content " + content.getId() + " (name=" + content.getName() + ") with ACL " + (acl != null ? acl.getAllAces().size() + " ACEs" : "null"));
+			// Force error log for visibility
+			log.error("FORCED DEBUG: Checking content " + content.getId() + " (name=" + content.getName() + ") for user " + userName);
+
 			Boolean filtered = checkPermissionInternal(callContext,
 					repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT, acl, content.getType(), content, userName, groups);
+			
+			log.info("PermissionServiceImpl.getFiltered: Permission check result for " + content.getId() + ": " + filtered);
+			// Force error log for visibility
+			log.error("FORCED DEBUG: Permission result for " + content.getId() + ": " + filtered);
+			
 			if (filtered) {
 				result.add(_content);
 			}
 		}
+		
+		log.info("PermissionServiceImpl.getFiltered: Filtered " + contents.size() + " items down to " + result.size() + " items");
+		// Force error log for visibility
+		log.error("FORCED DEBUG: getFiltered END - Filtered " + contents.size() + " items down to " + result.size() + " items");
 		return result;
 	}
 

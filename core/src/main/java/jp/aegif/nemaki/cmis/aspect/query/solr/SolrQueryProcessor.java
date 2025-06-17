@@ -226,13 +226,19 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 		QueryResponse resp = null;
 		try {
+			logger.info("Executing Solr query: " + solrQuery.toString());
 			resp = solrServer.query(solrQuery);
+			logger.info("Solr query executed successfully, response: " + (resp != null ? "not null" : "null"));
 		} catch (SolrServerException e) {
+			logger.error("Solr query failed: " + e.getMessage());
 			e.printStackTrace();
 		}
 
 		long numFound =0;
 		// Output search results to ObjectList
+		logger.info("Solr response check: resp=" + (resp != null ? "not null" : "null") + 
+			    ", results=" + (resp != null && resp.getResults() != null ? "not null" : "null") +
+			    ", numFound=" + (resp != null && resp.getResults() != null ? resp.getResults().getNumFound() : "N/A"));
 		if (resp != null && resp.getResults() != null
 				&& resp.getResults().getNumFound() != 0) {
 			SolrDocumentList docs = resp.getResults();
@@ -274,6 +280,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 				// Build ObjectList
 				String orderBy = orderBy(queryObject);
+				// Build ObjectList with original includeAllowableActions parameter for final response
 				ObjectList result = compileService.compileObjectDataListForSearchResult(
 						callContext, repositoryId, permitted, filter,
 						includeAllowableActions, includeRelationships, renditionFilter, false,
