@@ -182,7 +182,7 @@
           <arg value="${db.couchdb.url}" />
           <arg value="canopy" />
           <arg value="canopy_closet" />
-          <arg value="$INSTALL_PATH/setup/couchdb/initial_import/bedroom_init.dump" />
+          <arg value="$INSTALL_PATH/setup/couchdb/initial_import/canopy_init.dump" />
           <arg value="$INSTALL_PATH/setup/couchdb/initial_import/archive_init.dump" />
         </args>
       </executable>
