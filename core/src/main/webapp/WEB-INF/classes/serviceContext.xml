@@ -675,6 +675,12 @@
         </property>
     </bean>
 
+    <bean id="solrRepositoryFixResource" class="jp.aegif.nemaki.rest.SolrRepositoryFixResource">
+    	<property name="solrUtil">
+       		<ref bean="solrUtil" />
+        </property>
+    </bean>
+
     <bean id="authtokenResource" class="jp.aegif.nemaki.rest.AuthTokenResource">
     	<property name="tokenService">
        		<ref bean="TokenService" />

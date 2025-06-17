@@ -400,8 +400,10 @@ public class Registration implements Runnable {
 	private void buildBaseParamMap(Map<String, Object> map, CmisObject object) {
 		logger.info("Build BaseParam: " + object.toString());
 		String repositoryId = cmisSession.getRepositoryInfo().getId();
-
 		String objectId = object.getId();
+		
+		logger.info("Assigning repository_id='{}' to object_id='{}'", repositoryId, objectId);
+		
 		map.put(Constant.FIELD_ID, buildUniqueId(repositoryId, objectId));
 		map.put(Constant.FIELD_REPOSITORY_ID, repositoryId);
 		map.put(Constant.FIELD_OBJECT_ID, objectId);
@@ -414,6 +416,10 @@ public class Registration implements Runnable {
 		map.put(Constant.FIELD_CREATOR, object.getCreatedBy());
 		map.put(Constant.FIELD_MODIFIED, getUTC(object.getLastModificationDate()));
 		map.put(Constant.FIELD_MODIFIER, object.getLastModifiedBy());
+		
+		if ("/".equals(object.getName()) && "cmis:folder".equals(object.getType().getQueryName())) {
+			logger.warn("Processing root folder with object_id='{}' for repository_id='{}'", objectId, repositoryId);
+		}
 	}
 
 	private String buildUniqueId(String repositoryId, String objectId) {
