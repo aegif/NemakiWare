@@ -385,7 +385,7 @@ repository.definition=repositories.yml
 ###Search engine
 solr.protocol=http
 solr.host=solr
-solr.port=8983
+solr.port=8080
 solr.context=solr
 solr.indexing.force=false
 solr.nemaki.userid=solr
