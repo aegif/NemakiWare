@@ -413,9 +413,9 @@ public class CompileServiceImpl implements CompileService {
 
 				// Get each ObjectData
 				ObjectDataImpl rawObjectData = getRawObjectData(callContext, repositoryId, content, filter,
-						includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
+						searchIncludeAllowableActions, includeRelationships, renditionFilter, includeAcl);
 				ObjectData filteredObjectData = filterObjectDataInList(callContext, repositoryId, rawObjectData, filter,
-						includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
+						searchIncludeAllowableActions, includeRelationships, renditionFilter, includeAcl);
 
 				if (filteredObjectData != null) {
 					objectDataList.add(filteredObjectData);
