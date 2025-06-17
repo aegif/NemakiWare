@@ -1,0 +1,228 @@
+[[1;34mINFO[m] Scanning for projects...
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m---------------------< [0;36mjp.aegif.nemaki.core:core[0;1m >----------------------[m
+[[1;34mINFO[m] [1mBuilding core 2.4.1[m
+[[1;34mINFO[m] [1m--------------------------------[ war ]---------------------------------[m
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mmaven-surefire-plugin:2.19.1:test[m [1m(default-cli)[m @ [36mcore[0;1m ---[m
+
+-------------------------------------------------------
+ T E S T S
+-------------------------------------------------------
+Running jp.aegif.nemaki.cmis.tck.ComprehensiveAllTest
+Tests run: 38, Failures: 24, Errors: 0, Skipped: 9, Time elapsed: 74.121 sec <<< FAILURE! - in jp.aegif.nemaki.cmis.tck.ComprehensiveAllTest
+aclSmokeTest(jp.aegif.nemaki.cmis.tck.tests.ControlTestGroup)  Time elapsed: 0.433 sec  <<< FAILURE!
+java.lang.AssertionError: 
+Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@49438269
+	at jp.aegif.nemaki.cmis.tck.tests.ControlTestGroup.aclSmokeTest(ControlTestGroup.java:12)
+
+createInvalidTypeTest(jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup)  Time elapsed: 0.487 sec  <<< FAILURE!
+java.lang.AssertionError: 
+Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@3bd82cf5
+	at jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup.createInvalidTypeTest(CrudTestGroup.java:55)
+
+updateSmokeTest(jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup)  Time elapsed: 0.463 sec  <<< FAILURE!
+java.lang.AssertionError: 
+Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@38afe297
+	at jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup.updateSmokeTest(CrudTestGroup.java:91)
+
+operationContextTest(jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup)  Time elapsed: 0.466 sec  <<< FAILURE!
+java.lang.AssertionError: 
+Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@69453e37
+	at jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup.operationContextTest(CrudTestGroup.java:138)
+
+deleteTreeTest(jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup)  Time elapsed: 0.471 sec  <<< FAILURE!
+java.lang.AssertionError: 
+Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@22fcf7ab
+	at jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup.deleteTreeTest(CrudTestGroup.java:132)
+
+contentRangesTest(jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup)  Time elapsed: 0.464 sec  <<< FAILURE!
+java.lang.AssertionError: 
+Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@609cd4d8
+	at jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup.contentRangesTest(CrudTestGroup.java:115)
+
+copyTest(jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup)  Time elapsed: 0.462 sec  <<< FAILURE!
+java.lang.AssertionError: 
+Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@1e66f1f5
+	at jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup.copyTest(CrudTestGroup.java:120)
+
+nameCharsetTest(jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup)  Time elapsed: 0.478 sec  <<< FAILURE!
+java.lang.AssertionError: 
+Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@65d09a04
+	at jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup.nameCharsetTest(CrudTestGroup.java:61)
+
+setAndDeleteContentTest(jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup)  Time elapsed: 0.478 sec  <<< FAILURE!
+java.lang.AssertionError: 
+Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@291caca8
+	at jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup.setAndDeleteContentTest(CrudTestGroup.java:103)
+
+changeTokenTest(jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup)  Time elapsed: 0.473 sec  <<< FAILURE!
+java.lang.AssertionError: 
+Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@1e178745
+	at jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup.changeTokenTest(CrudTestGroup.java:109)
+
+moveTest(jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup)  Time elapsed: 0.461 sec  <<< FAILURE!
+java.lang.AssertionError: 
+Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@49e5f737
+	at jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup.moveTest(CrudTestGroup.java:126)
+
+createAndDeleteFolderTest(jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup)  Time elapsed: 0.469 sec  <<< FAILURE!
+java.lang.AssertionError: 
+Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@4e3958e7
+	at jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup.createAndDeleteFolderTest(CrudTestGroup.java:31)
+
+createAndDeleteItemTest(jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup)  Time elapsed: 0.552 sec  <<< FAILURE!
+java.lang.AssertionError: 
+Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@68e5eea7
+	at jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup.createAndDeleteItemTest(CrudTestGroup.java:79)
+
+createAndDeleteDocumentTest(jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup)  Time elapsed: 0.462 sec  <<< FAILURE!
+java.lang.AssertionError: 
+Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@6db9f5a4
+	at jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup.createAndDeleteDocumentTest(CrudTestGroup.java:37)
+
+createBigDocument(jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup)  Time elapsed: 0.478 sec  <<< FAILURE!
+java.lang.AssertionError: 
+Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@683dbc2c
+	at jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup.createBigDocument(CrudTestGroup.java:43)
+
+propertyFilterTest(jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup)  Time elapsed: 0.465 sec  <<< FAILURE!
+java.lang.AssertionError: 
+Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@3098cf3b
+	at jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup.propertyFilterTest(CrudTestGroup.java:85)
+
+createAndDeleteRelationshipTest(jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup)  Time elapsed: 0.581 sec  <<< FAILURE!
+java.lang.AssertionError: 
+Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@68567e20
+	at jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup.createAndDeleteRelationshipTest(CrudTestGroup.java:73)
+
+bulkUpdatePropertiesTest(jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup)  Time elapsed: 0.461 sec  <<< FAILURE!
+java.lang.AssertionError: 
+Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@32910148
+	at jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup.bulkUpdatePropertiesTest(CrudTestGroup.java:97)
+
+whitespaceInNameTest(jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup)  Time elapsed: 0.457 sec  <<< FAILURE!
+java.lang.AssertionError: 
+Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@7c83dc97
+	at jp.aegif.nemaki.cmis.tck.tests.CrudTestGroup.whitespaceInNameTest(CrudTestGroup.java:67)
+
+secondaryTypesTest(jp.aegif.nemaki.cmis.tck.tests.TypesTestGroup)  Time elapsed: 0.57 sec  <<< FAILURE!
+java.lang.AssertionError: 
+Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@53aad5d5
+	at jp.aegif.nemaki.cmis.tck.tests.TypesTestGroup.secondaryTypesTest(TypesTestGroup.java:26)
+
+baseTypesTest(jp.aegif.nemaki.cmis.tck.tests.TypesTestGroup)  Time elapsed: 7.086 sec  <<< FAILURE!
+java.lang.AssertionError: 
+A getTypeChildren() call on the base types must retrun an empty list if skipCount is >= 6! The repository returned hasMoreItems == true.
+[Ljava.lang.StackTraceElement;@6c779568
+	at jp.aegif.nemaki.cmis.tck.tests.TypesTestGroup.baseTypesTest(TypesTestGroup.java:14)
+
+versionDeleteTest(jp.aegif.nemaki.cmis.tck.tests.VersioningTestGroup)  Time elapsed: 0.474 sec  <<< FAILURE!
+java.lang.AssertionError: 
+Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@1bb266b3
+	at jp.aegif.nemaki.cmis.tck.tests.VersioningTestGroup.versionDeleteTest(VersioningTestGroup.java:21)
+
+versioningStateCreateTest(jp.aegif.nemaki.cmis.tck.tests.VersioningTestGroup)  Time elapsed: 0.466 sec  <<< FAILURE!
+java.lang.AssertionError: 
+Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@2177849e
+	at jp.aegif.nemaki.cmis.tck.tests.VersioningTestGroup.versioningStateCreateTest(VersioningTestGroup.java:27)
+
+checkedOutTest(jp.aegif.nemaki.cmis.tck.tests.VersioningTestGroup)  Time elapsed: 0.464 sec  <<< FAILURE!
+java.lang.AssertionError: 
+Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@5fa07e12
+	at jp.aegif.nemaki.cmis.tck.tests.VersioningTestGroup.checkedOutTest(VersioningTestGroup.java:33)
+
+
+Results :
+
+Failed tests: 
+  ControlTestGroup.aclSmokeTest:12->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@49438269
+  CrudTestGroup.bulkUpdatePropertiesTest:97->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@32910148
+  CrudTestGroup.changeTokenTest:109->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@1e178745
+  CrudTestGroup.contentRangesTest:115->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@609cd4d8
+  CrudTestGroup.copyTest:120->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@1e66f1f5
+  CrudTestGroup.createAndDeleteDocumentTest:37->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@6db9f5a4
+  CrudTestGroup.createAndDeleteFolderTest:31->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@4e3958e7
+  CrudTestGroup.createAndDeleteItemTest:79->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@68e5eea7
+  CrudTestGroup.createAndDeleteRelationshipTest:73->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@68567e20
+  CrudTestGroup.createBigDocument:43->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@683dbc2c
+  CrudTestGroup.createInvalidTypeTest:55->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@3bd82cf5
+  CrudTestGroup.deleteTreeTest:132->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@22fcf7ab
+  CrudTestGroup.moveTest:126->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@49e5f737
+  CrudTestGroup.nameCharsetTest:61->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@65d09a04
+  CrudTestGroup.operationContextTest:138->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@69453e37
+  CrudTestGroup.propertyFilterTest:85->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@3098cf3b
+  CrudTestGroup.setAndDeleteContentTest:103->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@291caca8
+  CrudTestGroup.updateSmokeTest:91->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@38afe297
+  CrudTestGroup.whitespaceInNameTest:67->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@7c83dc97
+  TypesTestGroup.baseTypesTest:14->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 A getTypeChildren() call on the base types must retrun an empty list if skipCount is >= 6! The repository returned hasMoreItems == true.
+[Ljava.lang.StackTraceElement;@6c779568
+  TypesTestGroup.secondaryTypesTest:26->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@53aad5d5
+  VersioningTestGroup.checkedOutTest:33->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@5fa07e12
+  VersioningTestGroup.versionDeleteTest:21->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@1bb266b3
+  VersioningTestGroup.versioningStateCreateTest:27->TestGroupBase.run:69->TestGroupBase.run:80->TestGroupBase.checkForFailures:88 Folder could not be created! Exception: java.net.ConnectException: Connection refused (Connection refused)
+[Ljava.lang.StackTraceElement;@2177849e
+
+Tests run: 38, Failures: 24, Errors: 0, Skipped: 9
+
+[[1;34mINFO[m] [1m------------------------------------------------------------------------[m
+[[1;34mINFO[m] [1;31mBUILD FAILURE[m
+[[1;34mINFO[m] [1m------------------------------------------------------------------------[m
+[[1;34mINFO[m] Total time:  01:15 min
+[[1;34mINFO[m] Finished at: 2025-06-16T14:59:28Z
+[[1;34mINFO[m] [1m------------------------------------------------------------------------[m
+[[1;31mERROR[m] Failed to execute goal [32morg.apache.maven.plugins:maven-surefire-plugin:2.19.1:test[m [1m(default-cli)[m on project [36mcore[m: [1;31mThere are test failures.[m
+[[1;31mERROR[m] [1;31m[m
+[[1;31mERROR[m] [1;31mPlease refer to /home/ubuntu/repos/NemakiWare/core/target/surefire-reports for the individual test results.[m
+[[1;31mERROR[m] -> [1m[Help 1][m
+[[1;31mERROR[m] 
+[[1;31mERROR[m] To see the full stack trace of the errors, re-run Maven with the [1m-e[m switch.
+[[1;31mERROR[m] Re-run Maven using the [1m-X[m switch to enable full debug logging.
+[[1;31mERROR[m] 
+[[1;31mERROR[m] For more information about the errors and possible solutions, please read the following articles:
+[[1;31mERROR[m] [1m[Help 1][m http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException

@@ -46,17 +46,37 @@ public class CoreTrackerJob implements Job {
 
 	@Override
 	public void execute(JobExecutionContext jec) throws JobExecutionException {
+		logger.info("=== CoreTrackerJob.execute() STARTED ===");
+		
 		CoreTracker coreTracker = (CoreTracker) jec.getJobDetail()
 				.getJobDataMap().get("TRACKER");
+		
+		if (coreTracker == null) {
+			logger.error("CRITICAL: CoreTracker is null in job data map");
+			throw new JobExecutionException("CoreTracker not found in job context");
+		}
+		
+		logger.info("CoreTracker retrieved successfully from job context");
 
 		RepositorySettings settings = CmisSessionFactory.getRepositorySettings();
+		if (settings == null) {
+			logger.error("CRITICAL: RepositorySettings is null");
+			throw new JobExecutionException("RepositorySettings not available");
+		}
+		
+		logger.info("Found {} repositories to index", settings.getIds().size());
+		
 		for(String repositoryId : settings.getIds()){
+			logger.info("Starting indexing for repository: {}", repositoryId);
 			try{
 				coreTracker.index(Constant.MODE_DELTA, repositoryId);
+				logger.info("Successfully completed indexing for repository: {}", repositoryId);
 			}catch(Exception ex){
-				logger.error("(job)Indexing error repository={}",repositoryId, ex);
-				throw new JobExecutionException();
+				logger.error("(job)Indexing error repository={}", repositoryId, ex);
+				throw new JobExecutionException("Indexing failed for repository: " + repositoryId, ex);
 			}
 		}
+		
+		logger.info("=== CoreTrackerJob.execute() COMPLETED ===");
 	}
 }

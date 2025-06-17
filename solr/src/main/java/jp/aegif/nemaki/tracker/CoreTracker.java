@@ -157,12 +157,14 @@ public class CoreTracker extends CloseHook {
 	}
 
 	public void index(String trackingType, String repositoryId) {
+		logger.info("=== CoreTracker.index() CALLED === Type={} Repo={}", trackingType, repositoryId);
 		synchronized (LOCK) {
 			do {
-
+				logger.info("Starting getCmisChangeLog for repository: {}", repositoryId);
 				ChangeEvents changeEvents = getCmisChangeLog(trackingType, repositoryId);
 				
 				if (changeEvents == null) {
+					logger.error("CRITICAL: getCmisChangeLog returned null for repository: {}", repositoryId);
 					logger.info("change evensts is null");
 					return;
 				}
@@ -380,9 +382,10 @@ logger.info("extraction start");
 	 */
 	private ChangeEvents getCmisChangeLog(String trackingType, String repositoryId) {
 		PropertyManager propMgr = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
-		logger.info("Start getCmisChangeLog : Repo={} Type={}", repositoryId, trackingType);
+		logger.info("=== getCmisChangeLog START === Repo={} Type={}", repositoryId, trackingType);
 		String _latestToken = readSecondLatestChangeToken(repositoryId);
 		String latestToken = (StringUtils.isEmpty(_latestToken)) ? null : _latestToken;
+		logger.info("Retrieved latest token: {}", latestToken);
 
 		long _numItems = 0;
 		if (Constant.MODE_DELTA.equals(trackingType)) {
@@ -394,20 +397,28 @@ logger.info("extraction start");
 		long numItems = (-1 == _numItems) ? Long.MAX_VALUE : Long.valueOf(_numItems);
 		logger.info("Call CMIS LastChangeToken={} Items={}", latestToken,numItems);
 
+		logger.info("Attempting to create CMIS session for repository: {}", repositoryId);
 		Session cmisSession = CmisSessionFactory.getSession(repositoryId);
-logger.info("Session aquired");
 		if (cmisSession == null) {
-			logger.info("Cannot create cmis session to {}.", repositoryId);
+			logger.error("CRITICAL: Cannot create cmis session to repository: {}", repositoryId);
+			logger.error("This will cause indexing to fail completely");
 			return null;
 		}
+		logger.info("CMIS session successfully acquired for repository: {}", repositoryId);
 
 		try {
-			// No need for Sorting
-			// (Specification requires they are returned by ASCENDING)
-			return cmisSession.getContentChanges(latestToken, false, numItems);
+			logger.info("Calling cmisSession.getContentChanges with token={} numItems={}", latestToken, numItems);
+			ChangeEvents result = cmisSession.getContentChanges(latestToken, false, numItems);
+			logger.info("Successfully retrieved {} change events from CMIS", 
+				result != null ? result.getTotalNumItems() : "null");
+			return result;
 		} catch (CmisRuntimeException ex) {
+			logger.error("CMIS Runtime Exception during getContentChanges: {}", ex.getMessage(), ex);
 			// On error reset session.
 			CmisSessionFactory.clearSession(repositoryId);
+			throw ex;
+		} catch (Exception ex) {
+			logger.error("Unexpected exception during getContentChanges: {}", ex.getMessage(), ex);
 			throw ex;
 		}
 	}
