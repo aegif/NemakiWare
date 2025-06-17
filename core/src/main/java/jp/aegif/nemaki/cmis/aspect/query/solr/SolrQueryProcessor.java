@@ -136,6 +136,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 		logger.info("=== CMIS Query Processing Started ===");
 		logger.info("Repository ID: " + repositoryId);
 		logger.info("CMIS-SQL Statement: " + statement);
+		logger.info("includeAllowableActions parameter: " + includeAllowableActions);
+		logger.info("User: " + callContext.getUsername());
+		
+		Boolean queryIncludeAllowableActions = includeAllowableActions == null ? true : includeAllowableActions;
+		logger.info("Effective includeAllowableActions: " + queryIncludeAllowableActions);
 
 		SolrServer solrServer = solrUtil.getSolrServer();
 		// replacing backslashed for TIMESTAMP only
@@ -208,7 +213,12 @@ public class SolrQueryProcessor implements QueryProcessor {
 //				solrUtil.getPropertyNameInSolr(PropertyIds.OBJECT_TYPE_ID),
 //				StringUtils.join(tables, " "));
 //		fromQueryString += new TermQuery(t).toString();
-		fromQueryString += "("+ solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.OBJECT_TYPE_ID) +":"+ StringUtils.join(tables," " + solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.OBJECT_TYPE_ID) + ":") + ")";
+		String objectTypeProperty = solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.OBJECT_TYPE_ID);
+		String typeFilter = "("+ objectTypeProperty +":"+ StringUtils.join(tables," " + objectTypeProperty + ":") + ")";
+		fromQueryString += typeFilter;
+		logger.info("Type descendants found: " + tables.size());
+		logger.info("Object type property in Solr: " + objectTypeProperty);
+		logger.info("Final FROM query string: " + fromQueryString);
 
 		// Execute query
 		SolrQuery solrQuery = new SolrQuery();
@@ -286,7 +296,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 				String orderBy = orderBy(queryObject);
 				ObjectList result = compileService.compileObjectDataListForSearchResult(
 						callContext, repositoryId, permitted, filter,
-						includeAllowableActions, includeRelationships, renditionFilter, false,
+						queryIncludeAllowableActions, includeRelationships, renditionFilter, false,
 						maxItems, skipCount, false, orderBy,numFound);
 
 				return result;

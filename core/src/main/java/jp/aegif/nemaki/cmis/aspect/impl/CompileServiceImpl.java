@@ -252,7 +252,7 @@ public class CompileServiceImpl implements CompileService {
 		result.setProperties(filteredProperties);
 
 		// Filter Allowable actions
-		Boolean iaa = includeAllowableActions == null ? false : includeAllowableActions.booleanValue();
+		Boolean iaa = includeAllowableActions == null ? true : includeAllowableActions.booleanValue();
 		if (!iaa) {
 			result.setAllowableActions(null);
 		}
