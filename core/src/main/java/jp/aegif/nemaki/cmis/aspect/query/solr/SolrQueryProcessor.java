@@ -138,6 +138,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 		logger.info("CMIS-SQL Statement: " + statement);
 		logger.info("includeAllowableActions parameter: " + includeAllowableActions);
 		logger.info("User: " + callContext.getUsername());
+		logger.info("includeRelationships: " + includeRelationships);
+		logger.info("searchAllVersions: " + searchAllVersions);
+		logger.info("maxItems: " + maxItems);
+		logger.info("skipCount: " + skipCount);
 		
 		Boolean queryIncludeAllowableActions = includeAllowableActions == null ? true : includeAllowableActions;
 		logger.info("Effective includeAllowableActions: " + queryIncludeAllowableActions);
@@ -146,11 +150,13 @@ public class SolrQueryProcessor implements QueryProcessor {
 		// replacing backslashed for TIMESTAMP only
 		Pattern time_p = Pattern.compile("(TIMESTAMP\\s?'[\\-\\d]*T\\d{2})\\\\:(\\d{2})\\\\:([\\.\\d]*Z')", Pattern.CASE_INSENSITIVE);
 		logger.info("SolrServer instance created successfully");
+		
+		logger.info("=== TIMESTAMP Preprocessing Phase ===");
 
 		Matcher time_m = time_p.matcher(statement);
 		statement = time_m.replaceAll("$1:$2:$3");
 
-		// TODO walker is required?
+		logger.info("=== CMIS-SQL Parsing Phase ===");
 
 		QueryUtilStrict util = new QueryUtilStrict(statement, new CmisTypeManager(repositoryId, typeManager), null);
 		QueryObject queryObject = util.getQueryObject();
@@ -164,6 +170,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 			e.printStackTrace();
 		}
 
+		logger.info("=== WHERE Clause Translation Phase ===");
 		// Build solr statement of WHERE
 		String whereQueryString = "";
 		if (whereTree == null || whereTree.isNil()) {
@@ -182,6 +189,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 			}
 		}
 
+		logger.info("=== FROM Clause Translation Phase ===");
 		// Build solr query of FROM
 		String fromQueryString = "";
 		
@@ -191,6 +199,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 		TypeDefinition td = null;
 
 		td = queryObject.getMainFromName();
+		logger.info("Main FROM type: " + td.getId() + " (query name: " + td.getQueryName() + ")");
 
 		// includedInSupertypeQuery
 		List<TypeDefinitionContainer> typeDescendants = typeManager
