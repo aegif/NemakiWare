@@ -177,7 +177,12 @@ public class SolrUtil {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-//		log.info("Solr URL:" + url);
+		log.info("=== SolrUtil.getSolrUrl() Debug ===");
+		log.info("Protocol from properties: " + protocol);
+		log.info("Host from properties: " + host);
+		log.info("Port from properties: " + port);
+		log.info("Context from properties: " + context);
+		log.info("Final constructed Solr URL: " + url);
 		return url;
 	}
 
