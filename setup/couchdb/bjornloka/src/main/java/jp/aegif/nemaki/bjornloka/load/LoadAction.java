@@ -132,8 +132,45 @@ public abstract class LoadAction {
 		return true;
 	}
 
-	private static void processDocument(ObjectNode document) {
+	private void processDocument(ObjectNode document) {
 		document.remove("_rev");
 		document.remove("_attachments");
+		
+		if (document.has("_id")) {
+			String originalId = document.get("_id").textValue();
+			String repositorySpecificId = repositoryId + "_" + originalId;
+			document.put("_id", repositorySpecificId);
+			System.out.println("Transformed object ID: " + originalId + " -> " + repositorySpecificId);
+		}
+		
+		transformInternalReferences(document);
+	}
+	
+	private void transformInternalReferences(ObjectNode document) {
+		if (document.has("parentId") && !document.get("parentId").isNull()) {
+			String originalParentId = document.get("parentId").textValue();
+			String repositorySpecificParentId = repositoryId + "_" + originalParentId;
+			document.put("parentId", repositorySpecificParentId);
+		}
+		
+		Iterator<Entry<String, JsonNode>> fields = document.fields();
+		while (fields.hasNext()) {
+			Entry<String, JsonNode> field = fields.next();
+			String fieldName = field.getKey();
+			JsonNode fieldValue = field.getValue();
+			
+			if (fieldValue.isTextual() && isObjectIdReference(fieldName, fieldValue.textValue())) {
+				String originalRef = fieldValue.textValue();
+				String repositorySpecificRef = repositoryId + "_" + originalRef;
+				document.put(fieldName, repositorySpecificRef);
+			}
+		}
+	}
+	
+	private boolean isObjectIdReference(String fieldName, String value) {
+		return (fieldName.toLowerCase().contains("id") || 
+				fieldName.toLowerCase().contains("ref")) && 
+				value.length() == 32 && 
+				value.matches("[a-f0-9]+");
 	}
 }
