@@ -409,6 +409,8 @@ public class CompileServiceImpl implements CompileService {
 				if (folderOnly && !content.isFolder())
 					continue;
 
+				Boolean searchIncludeAllowableActions = includeAllowableActions == null ? true : includeAllowableActions;
+
 				// Get each ObjectData
 				ObjectDataImpl rawObjectData = getRawObjectData(callContext, repositoryId, content, filter,
 						includeAllowableActions, includeRelationships, renditionFilter, includeAcl);
