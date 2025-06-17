@@ -49,3 +49,5 @@ docker/core/META-INF/
 docker/core/core.war
 docker/solr/solr.war
 docker/ui/ui/target/
+docker/core.war
+docker/solr.war
