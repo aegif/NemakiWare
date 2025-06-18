@@ -161,7 +161,7 @@ public class PermissionServiceImpl implements PermissionService {
 		}
 		
 		// Force error log if admin check fails
-		log.error("FORCED DEBUG: Admin check FAILED - user=" + userName + ", userItem=" + (u != null ? "exists" : "null") + ", isAdmin=" + (u != null ? u.isAdmin() : "N/A") + ", contentId=" + content.getId());
+		log.error("FORCED DEBUG: Admin check FAILED - user=" + userName + ", userItem=" + (u != null ? "exists" : "null") + ", isAdmin=" + (u != null ? u.isAdmin() : "N/A") + ", contentId=" + content.getId() + ", aclNull=" + (acl == null));
 
 		//PWC doesn't accept any actions from a non-owner user
 		//TODO admin can manipulate PWC even when it is checked out ?
@@ -184,8 +184,14 @@ public class PermissionServiceImpl implements PermissionService {
 			return hasRelationshipPermission;
 		}
 
-		// Void Acl fails(but Admin can do an action)
-		if (acl == null)return false;
+		if (acl == null) {
+			log.warn("ACL is null for content: " + content.getId() + ", attempting to calculate ACL");
+			acl = contentService.calculateAcl(repositoryId, content);
+			if (acl == null) {
+				log.error("Failed to calculate ACL for content: " + content.getId() + ", denying access");
+				return false;
+			}
+		}
 
 		// Even if a user has multiple ACEs, the permissions is pushed into
 		// Set<String> and remain unique.
