@@ -80,9 +80,9 @@ docker exec $CORE_CONTAINER java -cp "/tmp/tck-tests.jar:/tmp/test-lib/*:/usr/lo
 
 echo "Copying TCK reports from container..."
 mkdir -p $SCRIPT_DIR/tck-reports
-# Reports are generated in /usr/local/tomcat/../docker/tck-reports inside container
-docker exec $CORE_CONTAINER test -d /usr/local/tomcat/../docker/tck-reports && \
-    docker cp $CORE_CONTAINER:/usr/local/tomcat/../docker/tck-reports/. $SCRIPT_DIR/tck-reports/ || \
+# Reports are generated in /usr/local/docker/tck-reports inside container
+docker exec $CORE_CONTAINER test -d /usr/local/docker/tck-reports && \
+    docker cp $CORE_CONTAINER:/usr/local/docker/tck-reports/. $SCRIPT_DIR/tck-reports/ || \
     echo "No reports found in container"
 
 echo "TCK test execution completed!"

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>NemakiWare TCK Test Results</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .header { background-color: #f0f0f0; padding: 20px; border-radius: 5px; }
+        .stats { display: flex; gap: 20px; margin: 20px 0; }
+        .stat-box { background-color: #e8f4f8; padding: 15px; border-radius: 5px; text-align: center; flex: 1; }
+        .passed { background-color: #d4edda; }
+        .failed { background-color: #f8d7da; }
+        .skipped { background-color: #fff3cd; }
+        .pass-rate { font-size: 24px; font-weight: bold; }
+        .details { margin-top: 30px; }
+        .test-group { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .timestamp { color: #666; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>NemakiWare CMIS TCK Test Results</h1>
+        <p class="timestamp">Generated on: Thu Jun 19 06:26:47 JST 2025</p>
+    </div>
+    
+    <div class="stats">
+        <div class="stat-box">
+            <h3>Total Tests</h3>
+            <div class="pass-rate">214</div>
+        </div>
+        <div class="stat-box passed">
+            <h3>Passed</h3>
+            <div class="pass-rate">70</div>
+        </div>
+        <div class="stat-box failed">
+            <h3>Failed</h3>
+            <div class="pass-rate">132</div>
+        </div>
+        <div class="stat-box skipped">
+            <h3>Skipped</h3>
+            <div class="pass-rate">6</div>
+        </div>
+        <div class="stat-box">
+            <h3>Pass Rate</h3>
+            <div class="pass-rate">32.71%</div>
+        </div>
+    </div>
+    
+    <div class="details">
+        <h2>Test Group Results</h2>
+        <div class="test-group">
+            <h3>Detailed Results</h3>
+            <p>For detailed test results, please refer to the following files:</p>
+            <ul>
+                <li><a href="tck-report.txt">Text Report (tck-report.txt)</a></li>
+                <li><a href="tck-report.xml">XML Report (tck-report.xml)</a></li>
+            </ul>
+        </div>
+    </div>
+    
+    <div class="details">
+        <h2>Quality Management Metrics</h2>
+        <div class="test-group">
+            <h3>Current Score: 32.71%</h3>
+            <p>This score represents the current CMIS compliance level of NemakiWare.</p>
+            <p><strong>Recommendations:</strong></p>
+            <ul>
+                <li>Focus on failed tests to improve compliance</li>
+                <li>Run TCK tests regularly during development</li>
+                <li>Track score improvements over time</li>
+                <li>Address critical CMIS functionality gaps</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>

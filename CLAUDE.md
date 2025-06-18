@@ -6,6 +6,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NemakiWare is an open source Enterprise Content Management system built as a CMIS (Content Management Interoperability Services) 1.1 compliant repository. It uses CouchDB as the NoSQL backend and provides a complete ECM solution with full-text search, versioning, and web UI.
 
+### Repository Architecture
+
+NemakiWare uses multiple CouchDB databases with distinct purposes:
+
+#### Document Storage Repositories (e.g., "bedroom")
+- **Purpose**: Store actual documents, folders, and content
+- **Contents**: CMIS documents, folders, relationships, policies, items
+- **Testing**: This is the primary repository tested by TCK (Test Compatibility Kit)
+- **Examples**: `bedroom`, `bedroom_closet` (archive)
+
+#### System Management Repository ("canopy")
+- **Purpose**: Manage multi-repository configuration and super-user authentication
+- **Contents**: System-wide configuration, super-user accounts, repository metadata
+- **Role**: Acts as a central management database for future multi-repository support
+- **Note**: Although initialized with the same dump file as bedroom, its purpose is fundamentally different
+
+#### Configuration Repository ("nemaki_conf")
+- **Purpose**: Store system-wide configuration settings
+- **Contents**: Configuration documents, system properties
+- **Initialization**: Created automatically by ConnectorPool during startup
+
+**Important**: When testing or working with NemakiWare:
+- Use `bedroom` repository for all document-related operations and tests
+- The `canopy` repository should not be used for document storage
+- TCK tests should always target the `bedroom` repository
+- User authentication for document operations uses `bedroom` users
+
 ## Build System and Commands
 
 ### Core Build Commands
@@ -65,6 +92,12 @@ cd setup/development/
 mvn test -Pproduct -f core/pom.xml
 
 # Test files are in core/src/test/java/jp/aegif/nemaki/cmis/tck/
+
+# Important TCK Configuration:
+# - Repository: bedroom (NOT canopy)
+# - User: admin/admin (from bedroom repository)
+# - URL: http://localhost:8080/core/atom/bedroom
+# - Config: core/src/test/resources/cmis-tck-parameters.properties
 ```
 
 **UI Tests:**
@@ -420,7 +453,64 @@ docker exec docker-ui3-war-1 ls -la /usr/local/tomcat/webapps/
 
 The following critical fixes have been identified and MUST be maintained in `docker/test-war.sh`:
 
-#### 1. Ektorp Thread Management Fix
+#### 1. Repository ID Duplication and Solr Indexing Fix (CRITICAL - RESOLVED)
+**Problem**: bedroom and canopy repositories used the same root folder ID, causing Solr indexing conflicts
+**Root Cause**: Both repositories initialized with bedroom_init.dump using identical object IDs
+**Discovery**: canopy repository would overwrite bedroom's root folder in Solr index during reindexing
+
+**Critical Repository ID Conflicts**:
+- **Original State**: Both bedroom and canopy used root folder ID `e02f784f8360a02cc14d1314c10038ff`
+- **Solr Impact**: During indexing, canopy would overwrite bedroom's root folder, making bedroom inaccessible in search
+- **CMIS Impact**: Repository isolation was compromised due to shared object IDs
+
+**Solution Applied**: Created separate initialization files with unique IDs for each repository type
+```bash
+# NEW: canopy_init.dump with unique root folder ID
+# canopy root: canopy00000000000000000000000000000
+# bedroom root: e02f784f8360a02cc14d1314c10038ff (preserved original)
+
+# Updated repositories.yml to specify unique root IDs per repository
+repositories:
+  - id: canopy
+    name: canopy
+    archive: canopy_closet
+    root: canopy00000000000000000000000000000
+  - id: bedroom
+    name: bedroom
+    archive: bedroom_closet  
+    root: e02f784f8360a02cc14d1314c10038ff
+```
+
+**Files Modified**:
+- `/setup/couchdb/initial_import/canopy_init.dump` - NEW: Created with unique IDs
+- `/docker/core/repositories.yml` - Updated to specify unique root IDs
+- `/docker/test-simple.sh` - Modified to use canopy_init.dump for canopy repository
+- `/docker/docker-compose-simple.yml` - Added canopy_init.dump volume mount
+
+**Verification**: 
+- bedroom root: `curl -u admin:password http://localhost:5984/bedroom/e02f784f8360a02cc14d1314c10038ff`
+- canopy root: `curl -u admin:password http://localhost:5984/canopy/canopy00000000000000000000000000000`
+
+#### 2. Docker Authentication Properties Fix (CRITICAL - RESOLVED)
+**Problem**: Spring context expected `db.couchdb.auth.*` properties but Docker passed `db.couchdb.*`
+**Root Cause**: Property name mismatch between Spring configuration and Docker environment variables
+**Discovery**: ConnectorPool successfully created but application context failed to start
+
+**Authentication Property Mismatch**:
+- **Spring Expected**: `${db.couchdb.auth.username}`, `${db.couchdb.auth.password}` (couchContext.xml:29-32)
+- **Docker Provided**: `-Ddb.couchdb.username`, `-Ddb.couchdb.password` 
+- **Impact**: Spring PropertyPlaceholder could not resolve authentication properties
+
+**Solution Applied**: Updated Docker compose to pass correct property names
+```yaml
+# Updated docker-compose-simple.yml CATALINA_OPTS:
+environment:
+  - CATALINA_OPTS=-Xms512m -Xmx1024m -XX:+DisableExplicitGC -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Ddb.couchdb.auth.enabled=true -Ddb.couchdb.auth.username=${COUCHDB_USER:-admin} -Ddb.couchdb.auth.password=${COUCHDB_PASSWORD:-password}
+```
+
+**Verification**: CouchDB connectors for both bedroom and canopy successfully created during startup
+
+#### 3. Ektorp Thread Management Fix
 **Problem**: Ektorp creates idle connection monitor threads that cause memory leaks and Spring startup failures
 **Solution**: Disable cleanupIdleConnections in BOTH ConnectorPool.java AND CouchConnector.java source code
 ```bash
@@ -856,6 +946,57 @@ Blocked mirror for repositories: [maven-restlet (http://maven.restlet.org, defau
 3. **Docker build process**:
    - Force rebuild without cache to ensure fresh builds
    - Proper WAR file transfer from build container to runtime
+
+#### 12. CouchDB Canopy Repository Design Document Missing (CRITICAL)
+**Problem**: Spring `TokenService` fails during initialization with `DocumentNotFoundException: nothing found on db path: /canopy/_design/_repo/_view/admin`
+**Root Cause**: The canopy_init.dump file was missing the required `_design/_repo` document with CouchDB views
+**Discovery**: Core application startup logs showed Spring context initialization failure due to missing admin view in canopy repository
+
+**Critical Symptoms**:
+```bash
+# Error in Core logs
+DocumentNotFoundException: nothing found on db path: /canopy/_design/_repo/_view/admin, Response body: {"error":"not_found","reason":"missing"}
+
+# Spring context failure
+Context [/core] startup failed due to previous errors
+One or more listeners failed to start.
+```
+
+**Solution**: Add complete `_design/_repo` document to canopy_init.dump
+```bash
+# Add design document with all required views including 'admin' view
+# The admin view maps: function(doc) { if (doc.type == 'user' && doc.admin) emit(doc._id, doc) }
+
+# Also fix admin user document property name
+# OLD: "isAdmin": true  
+# NEW: "admin": true     (matches view expectation)
+```
+
+**Verification**:
+```bash
+# Check design document exists
+curl -s -u admin:password http://localhost:5984/canopy/_design/_repo/_view/admin
+# Expected: Returns admin user with "admin":true property
+
+# Verify Core startup success
+docker logs docker-core-1 | grep "Server startup"
+# Expected: "Server startup in [3703] milliseconds" (no errors)
+
+# Test CMIS endpoints
+curl -s -u admin:admin -o /dev/null -w "%{http_code}" http://localhost:8080/core/atom/bedroom
+# Expected: HTTP 200
+```
+
+**Files Modified**:
+- `/setup/couchdb/initial_import/canopy_init.dump` - Added complete `_design/_repo` document with all CouchDB views
+- Fixed admin user property from `"isAdmin": true` to `"admin": true`
+
+**Post-Fix Results**:
+- ✅ Core application starts successfully without listener errors
+- ✅ Spring TokenService initializes properly 
+- ✅ CMIS AtomPub endpoints respond with HTTP 200
+- ✅ All repository database connectors created successfully
+- ✅ Patch applications work for both bedroom and canopy repositories
 
 **Current Status**: 
 - Solr container deploys successfully (no longer returns HTTP 404)

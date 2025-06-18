@@ -1,0 +1,238 @@
+[ {
+  "document" : {
+    "_id" : "a1b2c3d4e5f6789012345678901234ab",
+    "_rev" : "1-024e41d0dd6b3597be78fc5db866c76b",
+    "creator" : "system",
+    "created" : "2013-01-01T00:00:00.000+0000",
+    "queryName" : "nemaki:tag",
+    "propertyType" : "STRING",
+    "cardinality" : "MULTI",
+    "type" : "propertyDefinitionCore",
+    "propertyId" : "nemaki:tag"
+  },
+  "attachments" : { }
+}, {
+  "document" : {
+    "_id" : "b2c3d4e5f6789012345678901234abcd",
+    "_rev" : "2-9d283fab6194a3f78089a4aef461cfa7",
+    "type" : "cmis:folder",
+    "created" : "2017-05-30T01:19:50.468+0000",
+    "creator" : "system",
+    "modified" : "2017-05-30T01:19:50.468+0000",
+    "modifier" : "system",
+    "name" : ".system",
+    "parentId" : "canopy00000000000000000000000000000",
+    "acl" : {
+      "entries" : [ {
+        "principal" : "system",
+        "permissions" : [ "cmis:all" ]
+      }, {
+        "principal" : "GROUP_EVERYONE",
+        "permissions" : [ "cmis:none" ]
+      } ]
+    },
+    "aclInherited" : true,
+    "subTypeProperties" : [ ],
+    "aspects" : [ ],
+    "objectType" : "cmis:folder",
+    "changeToken" : "b2c3d4e5f6789012345678901234cdef",
+    "allowedChildTypeIds" : [ "cmis:folder", "cmis:document", "cmis:item" ],
+    "document" : false,
+    "content" : true,
+    "attachment" : false,
+    "folder" : true,
+    "relationship" : false,
+    "policy" : false
+  },
+  "attachments" : { }
+}, {
+  "document" : {
+    "_id" : "canopy00000000000000000000000000000",
+    "_rev" : "1-67d99ec6825e8b9d6eaac6c1b93ba11d",
+    "type" : "cmis:folder",
+    "created" : "2013-01-01T00:00:00.000+0000",
+    "creator" : "system",
+    "modified" : "2013-01-01T00:00:00.000+0000",
+    "modifier" : "system",
+    "name" : "Canopy Management Root",
+    "parentId" : null,
+    "acl" : {
+      "entries" : [ {
+        "principal" : "system",
+        "permissions" : [ "cmis:all" ]
+      }, {
+        "principal" : "admin",
+        "permissions" : [ "cmis:all" ]
+      }, {
+        "principal" : "GROUP_EVERYONE",
+        "permissions" : [ "cmis:read" ]
+      } ]
+    },
+    "aclInherited" : false,
+    "subTypeProperties" : [ ],
+    "aspects" : [ ],
+    "objectType" : "cmis:folder",
+    "changeToken" : "canopy00000000000000000000000000001",
+    "allowedChildTypeIds" : [ "cmis:folder", "cmis:document", "cmis:item" ],
+    "document" : false,
+    "content" : true,
+    "attachment" : false,
+    "folder" : true,
+    "relationship" : false,
+    "policy" : false
+  },
+  "attachments" : { }
+}, {
+  "document" : {
+    "_id" : "c3d4e5f6789012345678901234abcdef",
+    "_rev" : "1-e07dbee0edbd60a19dd29c3bb95fbf6a",
+    "type" : "user",
+    "created" : "2013-01-01T00:00:00.000+0000",
+    "creator" : "system",
+    "modified" : "2013-01-01T00:00:00.000+0000",
+    "modifier" : "system",
+    "userId" : "admin",
+    "userName" : "admin",
+    "firstName" : "Administrator",
+    "lastName" : "Canopy",
+    "email" : "admin@canopy.local",
+    "passwordHash" : "21232f297a57a5a743894a0e4a801fc3",
+    "admin" : true,
+    "objectType" : "user"
+  },
+  "attachments" : { }
+}, {
+  "document" : {
+    "_id" : "d4e5f6789012345678901234abcdef01",
+    "_rev" : "1-e07dbee0edbd60a19dd29c3bb95fbf6a",
+    "type" : "group",
+    "created" : "2013-01-01T00:00:00.000+0000",
+    "creator" : "system",
+    "modified" : "2013-01-01T00:00:00.000+0000",
+    "modifier" : "system",
+    "groupId" : "GROUP_EVERYONE",
+    "name" : "Everyone",
+    "users" : [ ],
+    "objectType" : "group"
+  },
+  "attachments" : { }
+}, {
+  "document" : {
+    "_id" : "_design/_repo",
+    "_rev" : "1-30634aa2b17c01bcd26481323da19cbf",
+    "views" : {
+      "attachments" : {
+        "map" : "function(doc) { if (doc.type == 'attachment')  emit(doc._id, doc) }"
+      },
+      "countByObjectType" : {
+        "map" : "function(doc) { if (['cmis:document', 'cmis:folder', 'cmis:relationship', 'cmis:policy', 'cmis:item','cmis:secondary'].indexOf(doc.type) >= 0)  emit(doc.objectType, doc) }",
+        "reduce" : "function(key,values){return values.length}"
+      },
+      "propertyDefinitionCoresByPropertyId" : {
+        "map" : "function(doc) { if (doc.type == 'propertyDefinitionCore')  emit(doc.propertyId, doc) }"
+      },
+      "children" : {
+        "map" : "function(doc) { if (doc.type == 'cmis:folder' || doc.type == 'cmis:document' && doc.latestVersion || doc.type == 'cmis:item') emit(doc.parentId, doc) }"
+      },
+      "relationships" : {
+        "map" : "function(doc) { if (doc.type == 'cmis:relationship')  emit(doc._id, doc) }"
+      },
+      "documents" : {
+        "map" : "function(doc) { if (doc.type == 'cmis:document')  emit(doc._id, doc) }"
+      },
+      "privateWorkingCopies" : {
+        "map" : "function(doc) { if (doc.type == 'cmis:document' && doc.privateWorkingCopy) emit(doc.parentId, doc) }"
+      },
+      "childByName" : {
+        "map" : "function(doc) { if (doc.type == 'cmis:folder' || doc.type == 'cmis:document' && doc.latestVersion) emit({parentId: doc.parentId, name:doc.name}, doc) }"
+      },
+      "propertyDefinitionCores" : {
+        "map" : "function(doc) { if (doc.type == 'propertyDefinitionCore')  emit(doc._id, doc) }"
+      },
+      "folders" : {
+        "map" : "function(doc) { if (doc.type == 'cmis:folder')  emit(doc._id, doc) }"
+      },
+      "propertyDefinitionDetailsByCoreNodeId" : {
+        "map" : "function(doc) { if (doc.type == 'propertyDefinitionDetail')  emit(doc.coreNodeId, doc) }"
+      },
+      "contentsById" : {
+        "map" : "function(doc) { if (['cmis:document', 'cmis:folder', 'cmis:relationship', 'cmis:policy', 'cmis:item','cmis:secondary'].indexOf(doc.type) >= 0)  emit(doc._id, doc) }"
+      },
+      "relationshipsByTarget" : {
+        "map" : "function(doc) { if (doc.type == 'cmis:relationship') emit(doc.targetId, doc) }"
+      },
+      "policiesByAppliedObject" : {
+        "map" : "function(doc) { if (doc.type == 'cmis:policy') for(i in doc.appliedIds){emit(i, doc)} }"
+      },
+      "documentsByVersionSeriesId" : {
+        "map" : "function(doc) { if (doc.type == 'cmis:document') emit(doc.versionSeriesId, doc) }"
+      },
+      "foldersByPath" : {
+        "map" : "function(doc) { if (doc.type == 'cmis:folder')  emit(doc.path, doc) }"
+      },
+      "versionSeries" : {
+        "map" : "function(doc) { if (doc.type == 'versionSeries')  emit(doc._id, doc) }"
+      },
+      "relationshipsBySource" : {
+        "map" : "function(doc) { if (doc.type == 'cmis:relationship') emit(doc.sourceId, doc) }"
+      },
+      "propertyDefinitionDetails" : {
+        "map" : "function(doc) { if (doc.type == 'propertyDefinitionDetail')  emit(doc._id, doc) }"
+      },
+      "admin" : {
+        "map" : "function(doc) { if (doc.type == 'user' && doc.admin)  emit(doc._id, doc) }"
+      },
+      "items" : {
+        "map" : "function(doc) { if (doc.type == 'cmis:item')  emit(doc._id, doc) }"
+      },
+      "latestMajorVersions" : {
+        "map" : "function(doc) { if (doc.type == 'cmis:document' && doc.latestMajorVersion)  emit(doc.versionSeriesId, doc) }"
+      },
+      "typeDefinitions" : {
+        "map" : "function(doc) { if (doc.type == 'typeDefinition')  emit(doc.typeId, doc) }"
+      },
+      "policies" : {
+        "map" : "function(doc) { if (doc.type == 'cmis:policy')  emit(doc._id, doc) }"
+      },
+      "renditions" : {
+        "map" : "function(doc) { if (doc.type == 'rendition')  emit(doc._id, doc) }"
+      },
+      "latestVersions" : {
+        "map" : "function(doc) { if (doc.type == 'cmis:document' && doc.latestVersion)  emit(doc.versionSeriesId, doc) }"
+      },
+      "changesByToken" : {
+        "map" : "function(doc) { if (doc.type == 'change')  emit(doc.token, doc) }"
+      },
+      "changes" : {
+        "map" : "function(doc) { if (doc.type == 'change')  emit(doc._id, doc) }"
+      },
+      "childrenNames" : {
+        "map" : "function(doc) {var result={}; result[doc.name]=doc._id; if (doc.type == 'cmis:document' && doc.latestVersion || doc.type == 'cmis:folder')   emit(doc.parentId, doc.name);}"
+      },
+      "patch" : {
+        "map" : "function(doc) { if (doc.type == 'patch')  emit(doc.name, doc) }"
+      },
+      "configuration" : {
+        "map" : "function(doc) { if (doc.type == 'configuration')  emit(doc._id, doc) }"
+      },
+      "userItemsById" : {
+        "map" : "function(doc) { if (doc.type == 'cmis:item' && doc.userId)  emit(doc.userId, doc) }"
+      },
+      "groupItemsById" : {
+        "map" : "function(doc) { if (doc.type == 'cmis:item' && doc.groupId)  emit(doc.groupId, doc) }"
+      },
+      "joinedDirectGroupsByUserId" : {
+        "map" : "function(doc) {if (doc.type == 'cmis:item' && doc.groupId) {if ( doc.subTypeProperties ) {for(var i in doc.subTypeProperties ) {if ( doc.subTypeProperties[i].key == 'nemaki:users' ) {for(var user in doc.subTypeProperties[i].value) {emit(doc.subTypeProperties[i].value[user], doc)}}}}}}"
+      },
+      "joinedDirectGroupsByGroupId" : {
+        "map" : "function(doc) {if (doc.type == 'cmis:item' && doc.groupId) {if ( doc.subTypeProperties ) {for(var i in doc.subTypeProperties ) {if ( doc.subTypeProperties[i].key == 'nemaki:groups' ) {for(var group in doc.subTypeProperties[i].value) {emit([0,doc.subTypeProperties[i].value[group]], doc);emit([1,doc.subTypeProperties[i].value[group]], doc);emit([2,doc.subTypeProperties[i].value[group]], doc);emit([3,doc.subTypeProperties[i].value[group]], doc);emit([4,doc.subTypeProperties[i].value[group]], doc);emit([5,doc.subTypeProperties[i].value[group]], doc);emit([6,doc.subTypeProperties[i].value[group]], doc);emit([7,doc.subTypeProperties[i].value[group]], doc);emit([8,doc.subTypeProperties[i].value[group]], doc);emit([9,doc.subTypeProperties[i].value[group]], doc);emit([10,doc.subTypeProperties[i].value[group]], doc);emit([11,doc.subTypeProperties[i].value[group]], doc);emit([12,doc.subTypeProperties[i].value[group]], doc);emit([13,doc.subTypeProperties[i].value[group]], doc);emit([14,doc.subTypeProperties[i].value[group]], doc);emit([15,doc.subTypeProperties[i].value[group]], doc);emit([16,doc.subTypeProperties[i].value[group]], doc);emit([17,doc.subTypeProperties[i].value[group]], doc);emit([18,doc.subTypeProperties[i].value[group]], doc);emit([19,doc.subTypeProperties[i].value[group]], doc);}}}}}}"
+      }
+    },
+    "lists" : { },
+    "shows" : { },
+    "language" : "javascript",
+    "filters" : { },
+    "updates" : { }
+  },
+  "attachments" : { }
+} ]

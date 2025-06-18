@@ -387,8 +387,8 @@ initialize_database() {
         dump_file="/app/archive_init.dump"
         echo "Using archive dump file for ${repo_id}"
     elif [[ "${repo_id}" == "canopy" ]]; then
-        dump_file="/app/bedroom_init.dump"
-        echo "Using bedroom dump file for canopy repository (no canopy-specific dump available)"
+        dump_file="/app/canopy_init.dump"
+        echo "Using canopy-specific dump file for canopy repository with unique IDs"
     else
         echo "Using bedroom dump file for ${repo_id}"
     fi
