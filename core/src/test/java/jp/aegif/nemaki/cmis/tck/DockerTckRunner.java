@@ -115,7 +115,7 @@ public class DockerTckRunner extends AbstractRunner {
         runner.run(monitor);
         
         // Generate reports
-        File reportsDir = new File("../docker/tck-reports");
+        File reportsDir = new File("/usr/local/docker/tck-reports");
         reportsDir.mkdirs();
         
         System.out.println("\nGenerating text report...");

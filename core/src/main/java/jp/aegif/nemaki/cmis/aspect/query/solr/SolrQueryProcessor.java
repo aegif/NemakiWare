@@ -264,9 +264,15 @@ public class SolrQueryProcessor implements QueryProcessor {
 			try{
 				threadLockService.bulkLock(locks);
 				
+				// Debug logging for permission filtering
+				System.out.println("DEBUG SolrQueryProcessor: Before permission filtering - includeAllowableActions=" + includeAllowableActions + ", contents.size=" + contents.size() + ", user=" + callContext.getUsername());
+				
 				// Filter out by permissions
 				List<Content> permitted = permissionService.getFiltered(
 						callContext, repositoryId, contents);
+				
+				// Debug logging after permission filtering
+				System.out.println("DEBUG SolrQueryProcessor: After permission filtering - permitted.size=" + permitted.size() + ", filtered out=" + (contents.size() - permitted.size()));
 
 				// Filter return value with SELECT clause
 				Map<String, String> requestedWithAliasKey = queryObject
