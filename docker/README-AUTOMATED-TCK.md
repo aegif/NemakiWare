@@ -12,13 +12,30 @@ The automated TCK test system addresses the CMIS query permission filtering and 
 - Executes comprehensive TCK tests
 - Reports detailed test results
 
+## Session Continuity
+
+This automation system is designed for seamless handoff between Devin sessions. For comprehensive environment setup, Java 8 requirements, and troubleshooting information, see the **[Devin Session Handoff Documentation](../DEVIN-SESSION-HANDOFF.md)**.
+
+### Quick Session Start
+```bash
+# Verify environment is ready
+java -version  # Should show Java 8
+cd ~/repos/NemakiWare/docker/
+./automated-tck-test.sh --help
+
+# Run automated tests
+./automated-tck-test.sh
+```
+
 ## Quick Start
 
 ### Prerequisites
 
-- Docker and Docker Compose installed
-- At least 4GB RAM available for containers
-- Ports 5984, 8080, 8983, 9000 available
+- **Java 8**: NemakiWare only works with Java 8 (verify with `java -version`)
+- **Docker and Docker Compose**: Both v1 (`docker-compose`) and v2 (`docker compose`) supported
+- **At least 4GB RAM**: Available for containers
+- **Available Ports**: 5984 (CouchDB), 8080 (Core), 8983 (Solr), 9000 (optional)
+- **Maven Dependencies**: nemakiware-common and nemakiware-action resolved (see handoff documentation)
 
 ### Basic Usage
 
@@ -198,22 +215,39 @@ docker/
     └── current-score.txt          # Current compliance score
 ```
 
+## Session Handoff Integration
+
+This automation system is designed for seamless continuity between Devin sessions:
+
+### For Current Session
+- All automation components are committed to PR #375
+- Expected results: 214 tests, 70 passed (32.71% pass rate)
+- System resolves CMIS query permission filtering and data sync issues
+
+### For Future Sessions
+- See **[DEVIN-SESSION-HANDOFF.md](../DEVIN-SESSION-HANDOFF.md)** for complete environment setup
+- Java 8 environment requirements and setup instructions
+- Maven dependency resolution for nemakiware-common and nemakiware-action
+- Comprehensive troubleshooting guide for common issues
+
 ## Contributing
 
 When modifying the automation system:
 
 1. Test changes with `--clean-start` to ensure reproducibility
 2. Verify that design documents are created correctly
-3. Confirm TCK results match expected pass rates
-4. Update documentation for any new configuration options
+3. Confirm TCK results match expected pass rates (214 tests, 70 passed)
+4. Update both this documentation and the session handoff documentation
+5. Ensure Java 8 compatibility is maintained
 
 ## Support
 
 For issues with the automated TCK system:
 
-1. Check the troubleshooting section above
-2. Review container logs for specific error messages
-3. Verify that all prerequisites are met
-4. Test with default configuration before using custom settings
+1. **First**: Check the **[Session Handoff Documentation](../DEVIN-SESSION-HANDOFF.md)** troubleshooting section
+2. **Environment**: Verify Java 8 and Maven dependencies are properly configured
+3. **Containers**: Review container logs for specific error messages
+4. **Prerequisites**: Verify that all prerequisites are met
+5. **Testing**: Test with default configuration before using custom settings
 
-The automation system is designed to provide consistent, reproducible TCK test results that demonstrate the resolution of CMIS query permission filtering and data synchronization issues.
+The automation system is designed to provide consistent, reproducible TCK test results that demonstrate the resolution of CMIS query permission filtering and data synchronization issues across different Devin sessions.
