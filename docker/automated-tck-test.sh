@@ -70,9 +70,20 @@ cleanup_environment() {
     
     cd "$SCRIPT_DIR"
     
-    if docker-compose -f docker-compose-simple.yml ps -q | grep -q .; then
+    local compose_cmd=""
+    if command -v docker-compose > /dev/null 2>&1; then
+        compose_cmd="docker-compose"
+    elif docker compose version > /dev/null 2>&1; then
+        compose_cmd="docker compose"
+    else
+        echo_warning "Neither 'docker-compose' nor 'docker compose' command is available"
+        echo_info "Skipping Docker container cleanup"
+        return 0
+    fi
+    
+    if $compose_cmd -f docker-compose-simple.yml ps -q | grep -q .; then
         echo_info "Stopping existing containers..."
-        docker-compose -f docker-compose-simple.yml down -v --remove-orphans
+        $compose_cmd -f docker-compose-simple.yml down -v --remove-orphans
         echo_success "Containers stopped and removed"
     else
         echo_info "No existing containers found"
@@ -90,7 +101,15 @@ start_environment() {
     cd "$SCRIPT_DIR"
     
     echo_info "Building Docker images..."
-    docker-compose -f docker-compose-simple.yml build --no-cache
+    if command -v docker-compose > /dev/null 2>&1; then
+        docker-compose -f docker-compose-simple.yml build --no-cache
+    elif docker compose version > /dev/null 2>&1; then
+        docker compose -f docker-compose-simple.yml build --no-cache
+    else
+        echo_error "Neither 'docker-compose' nor 'docker compose' command is available"
+        echo_error "Please install Docker Compose to use this automation script"
+        return 1
+    fi
     
     if [ $? -ne 0 ]; then
         echo_error "Docker build failed"
@@ -98,7 +117,14 @@ start_environment() {
     fi
     
     echo_info "Starting Docker services..."
-    docker-compose -f docker-compose-simple.yml up -d
+    if command -v docker-compose > /dev/null 2>&1; then
+        docker-compose -f docker-compose-simple.yml up -d
+    elif docker compose version > /dev/null 2>&1; then
+        docker compose -f docker-compose-simple.yml up -d
+    else
+        echo_error "Neither 'docker-compose' nor 'docker compose' command is available"
+        return 1
+    fi
     
     if [ $? -ne 0 ]; then
         echo_error "Failed to start Docker services"
