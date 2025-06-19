@@ -57,3 +57,16 @@ java -cp /app/bjornloka.jar jp.aegif.nemaki.bjornloka.Load \
     ${FORCE}
 
 echo "Initialization complete!"
+
+echo "Setting up comprehensive design documents for CMIS functionality..."
+if [ -f /app/setup-design-documents.sh ]; then
+    chmod +x /app/setup-design-documents.sh
+    /app/setup-design-documents.sh
+    if [ $? -eq 0 ]; then
+        echo "✓ Design documents setup completed successfully"
+    else
+        echo "✗ Design documents setup failed - this may cause CMIS query issues"
+    fi
+else
+    echo "⚠ Design document setup script not found - using basic initialization only"
+fi
