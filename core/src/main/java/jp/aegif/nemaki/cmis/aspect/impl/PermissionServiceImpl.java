@@ -492,7 +492,7 @@ public class PermissionServiceImpl implements PermissionService {
 		// Validation
 		// TODO refine the logic
 		if (CollectionUtils.isEmpty(contents)){
-			return null;
+			return new ArrayList<T>();
 		}
 
 		String userName = callContext.getUsername();
@@ -506,7 +506,10 @@ public class PermissionServiceImpl implements PermissionService {
 		// Filtering
 		for (T _content : contents) {
 			Content content = (Content) _content;
+			log.error("FORCED DEBUG: About to calculate ACL for content " + content.getId());
+			System.out.println("DEBUG: About to calculate ACL for content " + content.getId());
 			Acl acl = contentService.calculateAcl(repositoryId, content);
+			log.error("FORCED DEBUG: ACL calculation completed for content " + content.getId() + ", ACL is " + (acl != null ? "not null" : "null"));
 
 			log.info("PermissionServiceImpl.getFiltered: Checking permission for content " + content.getId() + " (name=" + content.getName() + ") with ACL " + (acl != null ? acl.getAllAces().size() + " ACEs" : "null"));
 			// Force error log for visibility

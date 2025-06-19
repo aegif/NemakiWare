@@ -272,7 +272,12 @@ public class SolrQueryProcessor implements QueryProcessor {
 						callContext, repositoryId, contents);
 				
 				// Debug logging after permission filtering
-				System.out.println("DEBUG SolrQueryProcessor: After permission filtering - permitted.size=" + permitted.size() + ", filtered out=" + (contents.size() - permitted.size()));
+				System.out.println("DEBUG SolrQueryProcessor: After permission filtering - permitted=" + (permitted != null ? "not null, size=" + permitted.size() : "null") + ", contents.size=" + contents.size());
+				
+				if (permitted == null) {
+					logger.warn("Permission filtering returned null, creating empty list");
+					permitted = new ArrayList<Content>();
+				}
 
 				// Filter return value with SELECT clause
 				Map<String, String> requestedWithAliasKey = queryObject
