@@ -23,6 +23,7 @@ package jp.aegif.nemaki.cmis.service.impl;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
@@ -146,17 +147,30 @@ public class AclServiceImpl implements AclService {
 			convertSystemPrinciaplId(repositoryId, nemakiAcl);
 			content.setAcl(nemakiAcl);
 			contentService.updateInternal(repositoryId, content);
-			contentService.writeChangeEvent(callContext, repositoryId, content, nemakiAcl, ChangeType.SECURITY );
+		contentService.writeChangeEvent(callContext, repositoryId, content, nemakiAcl, ChangeType.SECURITY );
 
-			nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
+		nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
 
-			clearCachesRecursively(Executors.newWorkStealingPool(), callContext, repositoryId, content, true);
+		ExecutorService executorService = Executors.newWorkStealingPool();
+		try {
+			clearCachesRecursively(executorService, callContext, repositoryId, content, true);
+		} finally {
+			executorService.shutdown();
+			try {
+				if (!executorService.awaitTermination(30, TimeUnit.SECONDS)) {
+					executorService.shutdownNow();
+				}
+			} catch (InterruptedException e) {
+				executorService.shutdownNow();
+				Thread.currentThread().interrupt();
+			}
+		}
 
-			// Temporary stopping write change evnets descendant
-			// TODO : depend on configuration
-			//writeChangeEventsRecursively(Executors.newWorkStealingPool(), callContext, repositoryId, content, true);
+		// Temporary stopping write change evnets descendant
+		// TODO : depend on configuration
+		//writeChangeEventsRecursively(Executors.newWorkStealingPool(), callContext, repositoryId, content, true);
 
-			return getAcl(callContext, repositoryId, objectId, false, null);
+		return getAcl(callContext, repositoryId, objectId, false, null);
 		}finally{
 			lock.unlock();
 		}

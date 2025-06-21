@@ -64,6 +64,10 @@ import java.math.BigInteger;
 import java.text.MessageFormat;
 import java.util.*;
 import java.util.Map.Entry;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 /**
  * Node Service implementation
@@ -1790,7 +1794,8 @@ public class ContentServiceImpl implements ContentService {
 			if (!isRoot(repositoryId, content) && iht) {
 
 				List<Ace> aces = new ArrayList<Ace>();
-				List<Ace> result = calculateAclInternal(repositoryId, aces, content);
+				Set<String> visitedIds = new HashSet<>();
+				List<Ace> result = calculateAclInternal(repositoryId, aces, content, visitedIds);
 
 				// Convert result to Acl
 				acl = new Acl();
@@ -1815,6 +1820,17 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	private List<Ace> calculateAclInternal(String repositoryId, List<Ace> result, Content content) {
+		Set<String> visitedIds = new HashSet<>();
+		return calculateAclInternal(repositoryId, result, content, visitedIds);
+	}
+
+	private List<Ace> calculateAclInternal(String repositoryId, List<Ace> result, Content content, Set<String> visitedIds) {
+		if (visitedIds.contains(content.getId())) {
+			log.warn("Circular reference detected in ACL calculation for content ID: " + content.getId());
+			return new ArrayList<Ace>();
+		}
+		visitedIds.add(content.getId());
+
 		Acl contentAcl = content.getAcl();
 		List<Ace> aces = null;
 		if (contentAcl == null) {
@@ -1844,7 +1860,7 @@ public class ContentServiceImpl implements ContentService {
 					return aces;
 				} else {
 					return mergeAcl(repositoryId, aces,
-							calculateAclInternal(repositoryId, new ArrayList<Ace>(), parent));
+							calculateAclInternal(repositoryId, new ArrayList<Ace>(), parent, visitedIds));
 				}
 			}
 		}
