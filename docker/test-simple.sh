@@ -124,8 +124,6 @@ echo "Creating .sbtopts for optimized SBT performance..."
 cat > .sbtopts << 'EOF_SBTOPTS'
 -Xmx2G
 -Xms1G
--XX:+UseConcMarkSweepGC
--XX:+CMSClassUnloadingEnabled
 -Dsbt.boot.directory=$HOME/.sbt/boot
 -Dsbt.global.base=$HOME/.sbt/global
 -Dsbt.ivy.home=$HOME/.ivy2
@@ -141,7 +139,7 @@ echo "Building UI WAR with SBT (this may take a few minutes)..."
 echo "Running: sbt clean compile war"
 
 # Set SBT options for better performance and to avoid timeout
-export SBT_OPTS="-Xmx2G -XX:+UseConcMarkSweepGC -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=512M -Dsbt.global.base=$HOME/.sbt/global"
+export SBT_OPTS="-Xmx2G -Dsbt.global.base=$HOME/.sbt/global"
 
 # Initialize SBT result variable
 SBT_RESULT=0
@@ -211,8 +209,8 @@ echo "Applying critical Core source code fixes..."
 # Remove @PostConstruct from PatchService to prevent Spring initialization conflicts
 if grep -q "@PostConstruct" $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/patch/PatchService.java; then
   echo "Removing @PostConstruct from PatchService to prevent initialization conflicts..."
-  sed -i '.bak' '/@PostConstruct/d' $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/patch/PatchService.java
-  sed -i '.bak2' '/import javax.annotation.PostConstruct;/d' $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/patch/PatchService.java
+  sed -i '/@PostConstruct/d' $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/patch/PatchService.java
+  sed -i '/import javax.annotation.PostConstruct;/d' $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/patch/PatchService.java
   echo "PatchService @PostConstruct removed"
 fi
 
@@ -222,14 +220,14 @@ echo "Fixing Ektorp IdleConnectionMonitor issue in ConnectorPool and CouchConnec
 # Fix ConnectorPool.java
 if grep -q "cleanupIdleConnections(true)" $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/ConnectorPool.java; then
   echo "Disabling cleanupIdleConnections in ConnectorPool..."
-  sed -i '.bak' 's/cleanupIdleConnections(true)/cleanupIdleConnections(false)/' $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/ConnectorPool.java
+  sed -i 's/cleanupIdleConnections(true)/cleanupIdleConnections(false)/' $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/ConnectorPool.java
   echo "ConnectorPool cleanupIdleConnections disabled"
 fi
 
 # Fix CouchConnector.java  
 if grep -q "cleanupIdleConnections(true)" $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/CouchConnector.java; then
   echo "Disabling cleanupIdleConnections in CouchConnector..."
-  sed -i '.bak' 's/cleanupIdleConnections(true)/cleanupIdleConnections(false)/' $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/CouchConnector.java
+  sed -i 's/cleanupIdleConnections(true)/cleanupIdleConnections(false)/' $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/CouchConnector.java
   echo "CouchConnector cleanupIdleConnections disabled"
 fi
 

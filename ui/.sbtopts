@@ -1,7 +1,5 @@
 -Xmx2G
 -Xms1G
--XX:+UseConcMarkSweepGC
--XX:+CMSClassUnloadingEnabled
 -Dsbt.boot.directory=$HOME/.sbt/boot
 -Dsbt.global.base=$HOME/.sbt/global
 -Dsbt.ivy.home=$HOME/.ivy2

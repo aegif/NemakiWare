@@ -22,16 +22,22 @@ fi
 
 echo "Parsing TCK test results..."
 
-PASSED_TESTS=$(grep -c "  OK:" "$REPORTS_DIR/tck-report.txt" || echo "0")
-FAILED_TESTS=$(grep -c "  FAILURE:" "$REPORTS_DIR/tck-report.txt" || echo "0")
-WARNING_TESTS=$(grep -c "  WARNING:" "$REPORTS_DIR/tck-report.txt" || echo "0")
-SKIPPED_TESTS=$(grep -c "  SKIPPED:" "$REPORTS_DIR/tck-report.txt" || echo "0")
+PASSED_TESTS=$(grep -c "  OK:" "$REPORTS_DIR/tck-report.txt" 2>/dev/null || echo "0")
+FAILED_TESTS=$(grep -c "  FAILURE:" "$REPORTS_DIR/tck-report.txt" 2>/dev/null || echo "0")
+WARNING_TESTS=$(grep -c "  WARNING:" "$REPORTS_DIR/tck-report.txt" 2>/dev/null || echo "0")
+SKIPPED_TESTS=$(grep -c "  SKIPPED:" "$REPORTS_DIR/tck-report.txt" 2>/dev/null || echo "0")
+
+PASSED_TESTS=${PASSED_TESTS:-0}
+FAILED_TESTS=${FAILED_TESTS:-0}
+WARNING_TESTS=${WARNING_TESTS:-0}
+SKIPPED_TESTS=${SKIPPED_TESTS:-0}
+
 TOTAL_TESTS=$((PASSED_TESTS + FAILED_TESTS + WARNING_TESTS + SKIPPED_TESTS))
 
 if [ "$TOTAL_TESTS" -gt 0 ]; then
-    PASS_RATE=$(echo "scale=2; $PASSED_TESTS * 100 / $TOTAL_TESTS" | bc -l 2>/dev/null || echo "0")
+    PASS_RATE=$(awk "BEGIN {printf \"%.2f\", $PASSED_TESTS * 100 / $TOTAL_TESTS}")
 else
-    PASS_RATE="0"
+    PASS_RATE="0.00"
 fi
 
 cat > "$REPORTS_DIR/tck-summary.html" << EOF
