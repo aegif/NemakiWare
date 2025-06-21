@@ -63,14 +63,22 @@ fi
 
 echo "Creating TCK test JAR for container execution..."
 # Package test classes and dependencies
-mvn dependency:copy-dependencies -DoutputDirectory=core/target/test-lib -DincludeScope=test -f core/pom.xml -q
+mvn dependency:copy-dependencies -DoutputDirectory=core/target/test-lib -DincludeScope=test -f core/pom.xml -DoverWriteReleases=true -DoverWriteSnapshots=true -q
 cd core/target
 jar cf tck-tests.jar -C test-classes .
 cd $NEMAKI_HOME
 
 echo "Copying TCK test files to container..."
 docker cp core/target/tck-tests.jar $CORE_CONTAINER:/tmp/
-docker cp core/target/test-lib $CORE_CONTAINER:/tmp/
+# Check if test-lib exists in the expected location, otherwise use the nested core location
+if [ -d "core/target/test-lib" ] && [ "$(ls -A core/target/test-lib)" ]; then
+    docker cp core/target/test-lib $CORE_CONTAINER:/tmp/
+elif [ -d "core/core/target/test-lib" ] && [ "$(ls -A core/core/target/test-lib)" ]; then
+    docker cp core/core/target/test-lib $CORE_CONTAINER:/tmp/
+else
+    echo "ERROR: Could not find test-lib directory with dependencies"
+    exit 1
+fi
 docker cp core/src/test/resources/cmis-tck-parameters-docker.properties $CORE_CONTAINER:/tmp/
 docker cp core/src/test/resources/cmis-tck-filters-docker.properties $CORE_CONTAINER:/tmp/
 
