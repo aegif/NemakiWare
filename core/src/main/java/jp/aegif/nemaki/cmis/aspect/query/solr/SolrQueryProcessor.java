@@ -28,6 +28,12 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.locks.Lock;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -227,10 +233,43 @@ public class SolrQueryProcessor implements QueryProcessor {
 		QueryResponse resp = null;
 		try {
 			logger.info("Executing Solr query: " + solrQuery.toString());
-			resp = solrServer.query(solrQuery);
+			final SolrServer finalSolrServer = solrServer;
+			final SolrQuery finalSolrQuery = solrQuery;
+			
+			ExecutorService executor = Executors.newSingleThreadExecutor();
+			try {
+				Future<QueryResponse> future = executor.submit(new Callable<QueryResponse>() {
+					@Override
+					public QueryResponse call() throws Exception {
+						return finalSolrServer.query(finalSolrQuery);
+					}
+				});
+				
+				resp = future.get(45, TimeUnit.SECONDS);
+			} catch (TimeoutException e) {
+				logger.error("Solr query timed out after 45 seconds");
+				throw new RuntimeException("Solr query timed out", e);
+			} catch (InterruptedException e) {
+				logger.error("Solr query was interrupted");
+				Thread.currentThread().interrupt();
+				throw new RuntimeException("Solr query was interrupted", e);
+			} catch (Exception e) {
+				logger.error("Unexpected error during Solr query execution: " + e.getMessage());
+				throw new RuntimeException("Solr query failed", e);
+			} finally {
+				executor.shutdown();
+				try {
+					if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+						executor.shutdownNow();
+					}
+				} catch (InterruptedException e) {
+					executor.shutdownNow();
+					Thread.currentThread().interrupt();
+				}
+			}
 			logger.info("Solr query executed successfully, response: " + (resp != null ? "not null" : "null"));
-		} catch (SolrServerException e) {
-			logger.error("Solr query failed: " + e.getMessage());
+		} catch (RuntimeException e) {
+			logger.error("Solr query execution failed: " + e.getMessage());
 			e.printStackTrace();
 		}
 

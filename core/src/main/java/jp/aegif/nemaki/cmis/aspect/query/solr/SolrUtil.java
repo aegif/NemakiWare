@@ -99,7 +99,10 @@ public class SolrUtil {
 	 */
 	public SolrServer getSolrServer() {
 		String url = getSolrUrl();
-		return new HttpSolrServer(url);
+		HttpSolrServer server = new HttpSolrServer(url);
+		server.setConnectionTimeout(10000);
+		server.setSoTimeout(30000);
+		return server;
 	}
 
 	/**
