@@ -86,34 +86,87 @@
   "document" : {
     "_id" : "ea9463aca5534b4b850dbc13be2ddd1f",
     "_rev" : "1-e07dbee0edbd60a19dd29c3bb95fbf6a",
-    "type" : "user",
+    "type" : "cmis:item",
     "created" : "2013-01-01T00:00:00.000+0000",
     "creator" : "system",
     "modified" : "2013-01-01T00:00:00.000+0000",
     "modifier" : "system",
+    "name" : "admin",
+    "parentId" : "58f3db1dc57940d79607d1802f8d3ca5",
+    "acl" : {
+      "entries" : [ {
+        "principal" : "admin",
+        "permissions" : [ "cmis:read", "cmis:write" ]
+      } ]
+    },
+    "subTypeProperties" : [ {
+      "key" : "nemaki:userId",
+      "value" : "admin",
+      "queryName" : null
+    }, {
+      "key" : "nemaki:firstName",
+      "value" : "Administrator",
+      "queryName" : null
+    }, {
+      "key" : "nemaki:lastName",
+      "value" : "Canopy",
+      "queryName" : null
+    }, {
+      "key" : "nemaki:email",
+      "value" : "admin@canopy.local",
+      "queryName" : null
+    } ],
+    "aspects" : [ ],
+    "secondaryIds" : [ ],
+    "objectType" : "nemaki:user",
+    "changeToken" : "ea9463aca5534b4b850dbc13be2ddd1f1",
     "userId" : "admin",
-    "userName" : "admin",
-    "firstName" : "Administrator",
-    "lastName" : "Canopy",
-    "email" : "admin@canopy.local",
-    "passwordHash" : "21232f297a57a5a743894a0e4a801fc3",
+    "password" : "$2a$10$0goveaxLj.2UJAlVN1Ru2OmGID6q04ugln/HAkVpzb5bwvZ.kvEne",
     "admin" : true,
-    "objectType" : "user"
+    "document" : false,
+    "content" : false,
+    "attachment" : false,
+    "folder" : false,
+    "relationship" : false,
+    "policy" : false
   },
   "attachments" : { }
 }, {
   "document" : {
     "_id" : "917c2317d6854e6f81b3a3ad422293f2",
     "_rev" : "1-e07dbee0edbd60a19dd29c3bb95fbf6a",
-    "type" : "group",
+    "type" : "cmis:item",
     "created" : "2013-01-01T00:00:00.000+0000",
     "creator" : "system",
     "modified" : "2013-01-01T00:00:00.000+0000",
     "modifier" : "system",
+    "name" : "GROUP_EVERYONE",
+    "parentId" : "58f3db1dc57940d79607d1802f8d3ca5",
+    "acl" : {
+      "entries" : [ ]
+    },
+    "aclInherited" : true,
+    "subTypeProperties" : [ {
+      "key" : "nemaki:groupId",
+      "value" : "GROUP_EVERYONE",
+      "queryName" : null
+    }, {
+      "key" : "nemaki:users",
+      "value" : [ ],
+      "queryName" : null
+    } ],
+    "aspects" : [ ],
+    "secondaryIds" : [ ],
+    "objectType" : "nemaki:group",
+    "changeToken" : "917c2317d6854e6f81b3a3ad4222931",
     "groupId" : "GROUP_EVERYONE",
-    "name" : "Everyone",
     "users" : [ ],
-    "objectType" : "group"
+    "document" : false,
+    "content" : false,
+    "attachment" : false,
+    "folder" : false,
+    "relationship" : false,
+    "policy" : false
   },
   "attachments" : { }
 }, {
@@ -180,7 +233,7 @@
         "map" : "function(doc) { if (doc.type == 'propertyDefinitionDetail')  emit(doc._id, doc) }"
       },
       "admin" : {
-        "map" : "function(doc) { if (doc.type == 'user' && doc.admin)  emit(doc._id, doc) }"
+        "map" : "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:user' && doc.admin == true)  emit(doc.userId, doc) }"
       },
       "items" : {
         "map" : "function(doc) { if (doc.type == 'cmis:item')  emit(doc._id, doc) }"

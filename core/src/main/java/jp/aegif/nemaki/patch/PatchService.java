@@ -25,6 +25,9 @@ public class PatchService {
 	private List<AbstractNemakiPatch> patchList;
 	
 	public PatchService() {
+		// NOTE: @PostConstruct was intentionally removed to prevent Spring initialization conflicts
+		// The patch application is now triggered explicitly by Spring configuration via init-method="applyPatchesOnStartup"
+		// This ensures compatibility and prevents circular dependency issues during Spring context initialization
 		System.out.println("=== PATCH DEBUG: PatchService constructor called ===");
 		log.info("=== PATCH DEBUG: PatchService constructor called ===");
 	}

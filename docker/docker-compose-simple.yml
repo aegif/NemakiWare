@@ -16,8 +16,8 @@ services:
       retries: 20
       start_period: 30s
 
-  # Database Initializer
-  initializer:
+  # Database Initializers - All 4 repositories required for proper operation
+  initializer-bedroom:
     build: ./initializer
     depends_on:
       couchdb:
@@ -26,9 +26,78 @@ services:
       - COUCHDB_URL=http://couchdb:5984
       - COUCHDB_USERNAME=${COUCHDB_USER:-admin}
       - COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-password}
-      - REPOSITORY_ID=${REPOSITORY_ID:-bedroom}
-      - DUMP_FILE=${DUMP_FILE:-/app/bedroom_init.dump}
-      - FORCE=${FORCE:-true}
+      - REPOSITORY_ID=bedroom
+      - DUMP_FILE=/app/bedroom_init.dump
+      - FORCE=true
+    volumes:
+      - ../setup/couchdb/initial_import/bedroom_init.dump:/app/bedroom_init.dump
+      - ../setup/couchdb/initial_import/archive_init.dump:/app/archive_init.dump
+      - ../setup/couchdb/initial_import/canopy_init.dump:/app/canopy_init.dump
+    restart: "no"
+    deploy:
+      restart_policy:
+        condition: none
+
+  initializer-bedroom-closet:
+    build: ./initializer
+    depends_on:
+      couchdb:
+        condition: service_healthy
+      initializer-bedroom:
+        condition: service_completed_successfully
+    environment:
+      - COUCHDB_URL=http://couchdb:5984
+      - COUCHDB_USERNAME=${COUCHDB_USER:-admin}
+      - COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-password}
+      - REPOSITORY_ID=bedroom_closet
+      - DUMP_FILE=/app/archive_init.dump
+      - FORCE=true
+    volumes:
+      - ../setup/couchdb/initial_import/bedroom_init.dump:/app/bedroom_init.dump
+      - ../setup/couchdb/initial_import/archive_init.dump:/app/archive_init.dump
+      - ../setup/couchdb/initial_import/canopy_init.dump:/app/canopy_init.dump
+    restart: "no"
+    deploy:
+      restart_policy:
+        condition: none
+
+  initializer-canopy:
+    build: ./initializer
+    depends_on:
+      couchdb:
+        condition: service_healthy
+      initializer-bedroom-closet:
+        condition: service_completed_successfully
+    environment:
+      - COUCHDB_URL=http://couchdb:5984
+      - COUCHDB_USERNAME=${COUCHDB_USER:-admin}
+      - COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-password}
+      - REPOSITORY_ID=canopy
+      - DUMP_FILE=/app/canopy_init.dump
+      - FORCE=true
+    volumes:
+      - ../setup/couchdb/initial_import/bedroom_init.dump:/app/bedroom_init.dump
+      - ../setup/couchdb/initial_import/archive_init.dump:/app/archive_init.dump
+      - ../setup/couchdb/initial_import/canopy_init.dump:/app/canopy_init.dump
+    restart: "no"
+    deploy:
+      restart_policy:
+        condition: none
+
+  initializer-canopy-closet:
+    build: ./initializer
+    depends_on:
+      couchdb:
+        condition: service_healthy
+      initializer-canopy:
+        condition: service_completed_successfully
+    environment:
+      - COUCHDB_URL=http://couchdb:5984
+      - COUCHDB_USERNAME=${COUCHDB_USER:-admin}
+      - COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-password}
+      - REPOSITORY_ID=canopy_closet
+      - DUMP_FILE=/app/archive_init.dump
+      - FORCE=true
     volumes:
       - ../setup/couchdb/initial_import/bedroom_init.dump:/app/bedroom_init.dump
       - ../setup/couchdb/initial_import/archive_init.dump:/app/archive_init.dump
@@ -60,7 +129,13 @@ services:
         condition: service_healthy
       solr:
         condition: service_started
-      initializer:
+      initializer-bedroom:
+        condition: service_completed_successfully
+      initializer-bedroom-closet:
+        condition: service_completed_successfully
+      initializer-canopy:
+        condition: service_completed_successfully
+      initializer-canopy-closet:
         condition: service_completed_successfully
     environment:
       - JAVA_OPTS=-Dorg.ektorp.support.AutoUpdateViewOnChange=false -Dorg.ektorp.http.IdleConnectionMonitor.enabled=false -Dorg.ektorp.support.DesignDocument.UPDATE_ON_DIFF=false -Dorg.ektorp.support.DesignDocument.ALLOW_AUTO_UPDATE=true -Dorg.apache.catalina.loader.WebappClassLoader.ENABLE_CLEAR_REFERENCES=true -Dorg.apache.tomcat.util.scan.StandardJarScanFilter.jarsToSkip=*.jar
