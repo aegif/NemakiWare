@@ -61,7 +61,7 @@ public class DockerTckRunner extends AbstractRunner {
         String[] groupClasses = {
             "org.apache.chemistry.opencmis.tck.tests.basics.BasicsTestGroup",
             "org.apache.chemistry.opencmis.tck.tests.control.ControlTestGroup", 
-            "org.apache.chemistry.opencmis.tck.tests.crud.CrudTestGroup",
+            "org.apache.chemistry.opencmis.tck.tests.crud.CRUDTestGroup",
             "org.apache.chemistry.opencmis.tck.tests.filing.FilingTestGroup",
             "org.apache.chemistry.opencmis.tck.tests.query.QueryTestGroup",
             "org.apache.chemistry.opencmis.tck.tests.types.TypesTestGroup",

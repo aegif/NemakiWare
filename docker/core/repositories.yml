@@ -2,7 +2,7 @@ repositories:
   - id: canopy
     name: canopy
     archive: canopy_closet
-    root: canopy00000000000000000000000000000
+    root: ddd70e3ed8b847c2a364be81117c57ae
   - id: bedroom
     name: bedroom
     archive: bedroom_closet

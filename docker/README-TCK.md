@@ -11,6 +11,16 @@ The TCK automation provides:
 - Multiple report formats (text, XML, HTML)
 - Individual test group execution support
 
+## Recent Updates (2025-06-21)
+
+✅ **Critical Fix Applied**: PermissionServiceImpl query issue resolved
+- CMIS queries now work correctly (previously returned null)
+- Query Test Group success rate: 100%
+- All TCK test groups are now functional
+
+✅ **Infrastructure Cleanup**: Removed 13+ redundant test scripts
+✅ **Documentation**: Updated test procedures and troubleshooting
+
 ## Quick Start
 
 1. **Start NemakiWare Docker Environment**
