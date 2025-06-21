@@ -108,7 +108,7 @@ public class QueryTckRunner extends AbstractRunner {
             System.exit(1);
         }
         
-        File reportsDir = new File("/usr/local/docker/tck-reports");
+        File reportsDir = new File(System.getProperty("user.home") + "/tck-reports");
         reportsDir.mkdirs();
         
         System.out.println("\nGenerating query test reports...");

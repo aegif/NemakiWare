@@ -102,7 +102,7 @@ public class AclTckRunner extends AbstractRunner {
         
         runner.run(monitor);
         
-        File reportsDir = new File("/usr/local/docker/tck-reports");
+        File reportsDir = new File(System.getProperty("user.home") + "/tck-reports");
         reportsDir.mkdirs();
         
         System.out.println("\nGenerating ACL test reports...");
