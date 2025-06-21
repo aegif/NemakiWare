@@ -486,7 +486,7 @@ public class PermissionServiceImpl implements PermissionService {
 		// Validation
 		// TODO refine the logic
 		if (CollectionUtils.isEmpty(contents)){
-			return null;
+			return new ArrayList<T>();
 		}
 
 		String userName = callContext.getUsername();

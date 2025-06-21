@@ -62,6 +62,27 @@ else
 	java -cp $SCRIPT_HOME/install-util/target/install-util.jar jp.aegif.nemaki.installer.ProcessTemplate $USER_INPUT_SPEC $PROPERTIES $PROPERTIES_CUSTOM
 fi
 
+#Apply critical fixes before building
+echo "Applying critical source code fixes..."
+
+# Remove @PostConstruct from PatchService to prevent Spring initialization conflicts
+if grep -q "@PostConstruct" $SOURCE_HOME/core/src/main/java/jp/aegif/nemaki/patch/PatchService.java; then
+  echo "Removing @PostConstruct from PatchService..."
+  sed -i.bak '/@PostConstruct/d' $SOURCE_HOME/core/src/main/java/jp/aegif/nemaki/patch/PatchService.java
+  sed -i.bak2 '/import javax.annotation.PostConstruct;/d' $SOURCE_HOME/core/src/main/java/jp/aegif/nemaki/patch/PatchService.java
+fi
+
+# Fix Ektorp IdleConnectionMonitor issue
+if grep -q "cleanupIdleConnections(true)" $SOURCE_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/ConnectorPool.java; then
+  echo "Disabling cleanupIdleConnections in ConnectorPool..."
+  sed -i.bak 's/cleanupIdleConnections(true)/cleanupIdleConnections(false)/' $SOURCE_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/ConnectorPool.java
+fi
+
+if grep -q "cleanupIdleConnections(true)" $SOURCE_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/CouchConnector.java; then
+  echo "Disabling cleanupIdleConnections in CouchConnector..."
+  sed -i.bak 's/cleanupIdleConnections(true)/cleanupIdleConnections(false)/' $SOURCE_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/CouchConnector.java
+fi
+
 #Prepare WAR
 mvn -f $SOURCE_HOME/ clean
 mvn -f $SOURCE_HOME/ install

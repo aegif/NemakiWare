@@ -1,51 +1,95 @@
+# Operating System files
 .DS_Store
+Thumbs.db
 *~
-nohup.out
-jetty.log
+
+# IDE and Editor files
 .classpath
 .project
-.settings
-!.gitkeep
+.settings/
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# Java compilation
+*.class
+**/*.class
+dependency-reduced-pom.xml
+
+# Maven/Build artifacts
+target/
+*/target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+
+# Logs and temporary files
+*.log
+logs/
+*/logs/
+nohup.out
+jetty.log
+temp/
+*/temp/
+*.tmp
+*.bak
+
+# Test artifacts and reports
+tck-reports/
+**/tck-reports/
+test-output/
+**/test-reports/
+**/surefire-reports/
+
+# Generated TCK test files (from cleanup)
+*TckRunner.java
+*QueryTest.java
+run-*-tck.sh
+generate-*-tck-report.sh
+test-crud-fix.sh
+
+# NemakiWare specific
 setup/installer/*/log
-target
-/logs
-action-sample/dependency-reduced-pom.xml
 setup/installer/NemakiInstaller*
 core/catalina.home_IS_UNDEFINED/
+/*/catalina.home_IS_UNDEFINED
 core/src/main/webapp/WEB-INF/classes/custom-nemakiware.properties
 core/src/main/webapp/WEB-INF/classes/custom-repositories.yml
-/*/catalina.home_IS_UNDEFINED
-action/nemakiware-action.iml
-common/nemakiware-common.iml
-core/core.iml
-solr/solr.iml
-.idea
 
-# Claude-related files (temporary and cache)
+# Docker build artifacts
+docker/core/core.war
+docker/core/WEB-INF/
+docker/core/META-INF/
+docker/solr/solr.war
+docker/ui-war/*.war
+docker/ui/ui/target/
+docker/temp/
+docker/test-output.log
+docker/tck-execution.log
+
+# Generated configuration copies (keep source versions)
+docker/cmis-tck-parameters-docker.properties
+docker/cmis-tck-filters-docker.properties
+
+# SBT/Scala (for UI module)
+ui/target/
+ui/project/target/
+ui/project/project/
+ui/.cache*
+ui/.history
+ui/.lib/
+ui/dist/*
+ui/.g8/
+
+# Claude AI artifacts
 .claude/
 # Note: CLAUDE.md is intentionally NOT ignored as it contains project documentation
 
-# Generated Docker artifacts
-docker/core/core.war
-# Note: bjornloka.jar and cloudant-init.jar are needed for initialization
-# docker/initializer/*.jar  # Commented out to keep initialization JARs
-docker/ui-war/*.war
-docker/solr/solr.war
-docker/temp/
-
-# Compiled class files (should never be committed)
-*.class
-**/*.class
-
-# Test or temporary directories
-core-check/
-temp/
-*/temp/
-WEB-INF/classes/
-
-# Build artifacts in docker directory
-docker/core/WEB-INF/
-docker/core/META-INF/
-docker/core/core.war
-docker/solr/solr.war
-docker/ui/ui/target/
+# Keep important files
+!.gitkeep
+!docker/initializer/*.jar
+!core/src/test/resources/cmis-tck-*.properties

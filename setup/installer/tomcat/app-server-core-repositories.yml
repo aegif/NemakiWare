@@ -2,8 +2,10 @@ repositories:
   - id: canopy
     name: canopy
     archive: canopy_closet
+    root: ddd70e3ed8b847c2a364be81117c57ae
     thinClientUri: http://localhost:8080/ui/repo/canopy/
   - id: $cmis.repository.main
     name: $cmis.repository.main
     archive: ${cmis.repository.main}_closet
+    root: e02f784f8360a02cc14d1314c10038ff
     thinClientUri: http://localhost:8080/ui/repo/$cmis.repository.main/

@@ -160,15 +160,19 @@
 
       <!-- Import configuration scripts -->
       <file src="setup/couchdb/bjornloka/target/bjornloka.jar" targetdir="$INSTALL_PATH/setup/couchdb" />
+      <file src="setup/installer/bjornloka-wrapper.sh" targetdir="$INSTALL_PATH/setup/installer" />
       <fileset dir="setup/couchdb" targetdir="$INSTALL_PATH/setup/couchdb">
         <include name="initial_import/*" />
       </fileset>
 
       <!-- Import initial data -->
-      <executable targetfile="$INSTALL_PATH/setup/couchdb/bjornloka.jar" stage="postinstall"
-        type="jar" keep="true">
+      <executable targetfile="$INSTALL_PATH/setup/installer/bjornloka-wrapper.sh" stage="postinstall"
+        keep="true">
         <args>
+          <arg value="$INSTALL_PATH/setup/couchdb/bjornloka.jar" />
           <arg value="${db.couchdb.url}" />
+          <arg value="${db.couchdb.username}" />
+          <arg value="${db.couchdb.password}" />
           <arg value="${cmis.repository.main}" />
           <arg value="${cmis.repository.main}_closet" />
           <arg value="$INSTALL_PATH/setup/couchdb/initial_import/bedroom_init.dump" />
@@ -176,13 +180,16 @@
         </args>
       </executable>
 
-      <executable targetfile="$INSTALL_PATH/setup/couchdb/bjornloka.jar" stage="postinstall"
-        type="jar" keep="true">
+      <executable targetfile="$INSTALL_PATH/setup/installer/bjornloka-wrapper.sh" stage="postinstall"
+        keep="true">
         <args>
+          <arg value="$INSTALL_PATH/setup/couchdb/bjornloka.jar" />
           <arg value="${db.couchdb.url}" />
+          <arg value="${db.couchdb.username}" />
+          <arg value="${db.couchdb.password}" />
           <arg value="canopy" />
           <arg value="canopy_closet" />
-          <arg value="$INSTALL_PATH/setup/couchdb/initial_import/bedroom_init.dump" />
+          <arg value="$INSTALL_PATH/setup/couchdb/initial_import/canopy_init.dump" />
           <arg value="$INSTALL_PATH/setup/couchdb/initial_import/archive_init.dump" />
         </args>
       </executable>
