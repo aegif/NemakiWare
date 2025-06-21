@@ -16,13 +16,30 @@ echo "Password: $COUCHDB_PASSWORD"
 
 echo "Stopping any running containers..."
 cd $SCRIPT_DIR
-docker compose -f docker-compose-simple.yml down --remove-orphans
+docker compose -f docker-compose-simple.yml down --remove-orphans --volumes
 
-echo "Building cloudant-init JAR..."
-cd $NEMAKI_HOME/setup/couchdb/cloudant-init
-mvn clean package -DskipTests
+echo "Cleaning all build artifacts and untracked files..."
+# Clean all Docker build artifacts (WAR files, generated directories, etc.)
+cd $NEMAKI_HOME
+git clean -fdx docker/ || echo "Warning: Some files could not be cleaned"
 
-echo "Preparing initializer..."
+# Clean Maven targets
+mvn clean -q || echo "Warning: Maven clean failed"
+
+# Clean UI target directory
+if [ -d "ui/target" ]; then
+  rm -rf ui/target
+fi
+
+# Clean SBT cache
+if [ -d "$HOME/.sbt" ]; then
+  echo "Cleaning SBT cache for fresh build..."
+  rm -rf "$HOME/.sbt/1.0/plugins"
+fi
+
+echo "Clean state achieved - all build artifacts removed"
+
+echo "Preparing initializer (will build JAR files automatically)..."
 cd $NEMAKI_HOME/docker
 ./prepare-initializer.sh
 
@@ -65,19 +82,8 @@ sbt.version=0.13.18
 EOF_BUILD
 fi
 
-# Clean any previous build artifacts
-echo "Cleaning previous UI build artifacts..."
-if [ -d "target" ]; then
-  rm -rf target
-fi
-if [ -d "project/target" ]; then
-  rm -rf project/target
-fi
-# Also clean SBT cache to ensure fresh build with updated configuration
-if [ -d "$HOME/.sbt" ]; then
-  echo "Cleaning SBT cache for fresh build..."
-  rm -rf "$HOME/.sbt/1.0/plugins"
-fi
+# Clean any previous build artifacts (already done above)
+echo "Verifying UI directory is clean..."
 
 # Fix HttpComponents dependency issue in build.sbt
 echo "Fixing HttpComponents dependency for ContentType class..."
@@ -193,9 +199,9 @@ fi
 
 echo "Building core.war with complete configuration..."
 
-# Always remove existing core.war to ensure fresh build
+# Verify core.war was cleaned (should not exist after git clean)
 if [ -f "$NEMAKI_HOME/docker/core/core.war" ]; then
-  echo "Removing existing core.war..."
+  echo "Warning: core.war still exists, removing..."
   rm -f "$NEMAKI_HOME/docker/core/core.war"
 fi
 
@@ -362,85 +368,27 @@ fi
 echo "Starting Docker containers..."
 cd $SCRIPT_DIR
 
-# Stop and remove all containers to ensure clean state
-docker compose -f docker-compose-simple.yml down --remove-orphans
+# Ensure containers are still down (already done in cleanup phase)
+echo "Ensuring all containers are stopped..."
+docker compose -f docker-compose-simple.yml down --remove-orphans --volumes 2>/dev/null || true
 
-# Clear any cached volumes
-echo "Clearing Docker volumes and cached data..."
-docker volume prune -f
+# Prune any remaining Docker resources
+echo "Pruning Docker system resources..."
+docker system prune -f 2>/dev/null || true
 
 echo "Building and starting containers..."
 docker compose -f docker-compose-simple.yml build
 docker compose -f docker-compose-simple.yml up -d --remove-orphans
 
-echo "Waiting for containers to start..."
-sleep 20
-
-echo "Running repository initializers..."
-
-initialize_database() {
-    local repo_id=$1
-    local container_name="couchdb"
-    
-    local dump_file="/app/bedroom_init.dump"
-    if [[ "${repo_id}" == *"_closet" ]]; then
-        dump_file="/app/archive_init.dump"
-        echo "Using archive dump file for ${repo_id}"
-    elif [[ "${repo_id}" == "canopy" ]]; then
-        dump_file="/app/canopy_init.dump"
-        echo "Using canopy-specific dump file for canopy repository with unique IDs"
-    else
-        echo "Using bedroom dump file for ${repo_id}"
-    fi
-    
-    echo "CouchDB initializer for ${repo_id}:"
-    
-    echo "Checking CouchDB database ${repo_id}..."
-    echo "DEBUG: Running: curl -s -u \"${COUCHDB_USER}:${COUCHDB_PASSWORD}\" http://localhost:5984/${repo_id}"
-    curl -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5984/${repo_id} | tee /tmp/couchdb_${repo_id}_check.json
-    if ! cat /tmp/couchdb_${repo_id}_check.json | grep -q "db_name"; then
-        echo "CouchDB database ${repo_id} does not exist"
-        echo "Creating CouchDB database ${repo_id}..."
-        echo "DEBUG: Running: curl -X PUT -s -u \"${COUCHDB_USER}:${COUCHDB_PASSWORD}\" http://localhost:5984/${repo_id}"
-        curl -X PUT -s -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5984/${repo_id} | tee /tmp/couchdb_${repo_id}_create.json
-    else
-        echo "CouchDB database ${repo_id} exists"
-    fi
-    
-    # Always use force=true to ensure proper repository initialization even if database exists
-    # This is necessary because database creation and data initialization are separate steps
-    local force_param="true"
-    
-    # Always use authentication (required for CouchDB 3.x compatibility)
-    couchdb_url="http://${COUCHDB_USER}:${COUCHDB_PASSWORD}@${container_name}:5984"
-    echo "Using authenticated CouchDB URL for bjornloka.jar"
-    echo "Executing: bjornloka.jar ${couchdb_url} ${repo_id} ${dump_file} ${force_param}"
-    
-    docker compose -f docker-compose-simple.yml run --rm --remove-orphans \
-      -e COUCHDB_URL=http://${container_name}:5984 \
-      -e COUCHDB_USERNAME=${COUCHDB_USER} \
-      -e COUCHDB_PASSWORD=${COUCHDB_PASSWORD} \
-      -e REPOSITORY_ID=${repo_id} \
-      -e DUMP_FILE=${dump_file} \
-      -e FORCE=${force_param} \
-      initializer
-}
-
-echo "=== STARTING REPOSITORY INITIALIZATION ==="
-
-echo "1/4: Initializing bedroom..."
-initialize_database "bedroom"
-
-echo "2/4: Initializing bedroom_closet..."
-initialize_database "bedroom_closet"
-
-echo "3/4: Initializing canopy..."
-initialize_database "canopy"
-
-echo "4/4: Initializing canopy_closet..."
-initialize_database "canopy_closet"
-
-echo "=== REPOSITORY INITIALIZATION COMPLETED ==="
+echo "Waiting for services to initialize..."
+echo "Docker Compose will automatically initialize all 4 repositories:"
+echo "- bedroom (with bedroom_init.dump)"
+echo "- bedroom_closet (with archive_init.dump)" 
+echo "- canopy (with canopy_init.dump - CMIS format)"
+echo "- canopy_closet (with archive_init.dump)"
+echo ""
+echo "This may take 2-3 minutes..."
+sleep 60
 
 echo "Waiting for Core to become healthy..."
 sleep 30

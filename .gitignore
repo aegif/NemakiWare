@@ -91,5 +91,7 @@ ui/.g8/
 
 # Keep important files
 !.gitkeep
-!docker/initializer/*.jar
 !core/src/test/resources/cmis-tck-*.properties
+
+# Docker initializer JARs should be built, not committed
+docker/initializer/*.jar

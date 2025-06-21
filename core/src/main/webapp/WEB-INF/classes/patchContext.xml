@@ -26,6 +26,7 @@
 				<ref bean="patch_20160815" />
 				<ref bean="patch_20170425" />
 				<ref bean="patch_20170602" />
+				<ref bean="patch_20250621" />
 			</list>
 		</property>
 	</bean>
