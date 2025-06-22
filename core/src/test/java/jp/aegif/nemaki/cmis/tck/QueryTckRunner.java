@@ -37,6 +37,10 @@ public class QueryTckRunner extends AbstractRunner {
             parameters.put(key, props.getProperty(key));
         }
         
+        parameters.put("org.apache.chemistry.opencmis.binding.connecttimeout", "30000");
+        parameters.put("org.apache.chemistry.opencmis.binding.readtimeout", "45000");
+        parameters.put("org.apache.chemistry.opencmis.binding.httpinvoker.classname", "org.apache.chemistry.opencmis.client.bindings.spi.http.DefaultHttpInvoker");
+        
         setParameters(parameters);
     }
     
