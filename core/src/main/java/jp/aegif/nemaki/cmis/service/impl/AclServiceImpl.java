@@ -187,22 +187,29 @@ public class AclServiceImpl implements AclService {
 		}
 		visitedIds.add(content.getId());
 
-		//Call threads for recursive applyAcl
-		if(content.isFolder()){
-			if(executeOnParent){
-				executorService.submit(new ClearCacheTask(repositoryId, content.getId()));
+		java.util.Queue<Content> queue = new java.util.LinkedList<>();
+		queue.offer(content);
+		
+		while (!queue.isEmpty()) {
+			Content current = queue.poll();
+			
+			if (visitedIds.contains(current.getId())) {
+				continue;
 			}
-			List<Content> children = contentService.getChildren(repositoryId, content.getId());
-			if(CollectionUtils.isEmpty(children)){
-				return;
-			}
-			for(Content child : children){
-				if(contentService.getAclInheritedWithDefault(repositoryId, child)){
-					executorService.submit(new ClearCachesRecursivelyTask(executorService, callContext, repositoryId, child, visitedIds));
+			visitedIds.add(current.getId());
+			
+			executorService.submit(new ClearCacheTask(repositoryId, current.getId()));
+			
+			if (current.isFolder()) {
+				List<Content> children = contentService.getChildren(repositoryId, current.getId());
+				if (!CollectionUtils.isEmpty(children)) {
+					for (Content child : children) {
+						if (contentService.getAclInheritedWithDefault(repositoryId, child) && !visitedIds.contains(child.getId())) {
+							queue.offer(child);
+						}
+					}
 				}
 			}
-		}else{
-			executorService.submit(new ClearCacheTask(repositoryId, content.getId()));
 		}
 	}
 
