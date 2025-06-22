@@ -30,6 +30,7 @@ import jp.aegif.nemaki.cmis.service.ObjectService;
 import jp.aegif.nemaki.cmis.service.ObjectServiceInternal;
 import jp.aegif.nemaki.cmis.service.RelationshipService;
 import jp.aegif.nemaki.model.*;
+import jp.aegif.nemaki.util.CmisOperationTimeout;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.DomainType;
@@ -348,9 +349,18 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		Folder folder = contentService.createFolder(callContext, repositoryId, properties, parentFolder, policies,
-				addAces, removeAces, null);
-		return folder.getId();
+		try {
+			Folder folder = CmisOperationTimeout.executeWithTimeout(() -> {
+				return contentService.createFolder(callContext, repositoryId, properties, parentFolder, policies,
+						addAces, removeAces, null);
+			}, 45);
+			return folder.getId();
+		} catch (Exception e) {
+			if (e instanceof RuntimeException) {
+				throw (RuntimeException) e;
+			}
+			throw new RuntimeException("Folder creation failed", e);
+		}
 	}
 
 	@Override
