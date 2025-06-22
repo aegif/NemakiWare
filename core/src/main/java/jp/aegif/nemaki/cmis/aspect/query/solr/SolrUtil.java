@@ -45,6 +45,9 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import org.glassfish.jersey.client.ClientProperties;
 
 /**
  * Common utility class for Solr query
@@ -142,24 +145,34 @@ public class SolrUtil {
 		if (!force)
 			return;
 
-		String url = getSolrUrl();
+		// Execute Solr indexing asynchronously to avoid blocking CMIS operations
+		CompletableFuture.runAsync(() -> {
+			try {
+				String url = getSolrUrl();
+				
+				Client client = ClientBuilder.newClient();
+				// Set timeout to prevent indefinite hanging
+				client.property(ClientProperties.CONNECT_TIMEOUT, 5000); // 5 seconds
+				client.property(ClientProperties.READ_TIMEOUT, 10000); // 10 seconds
+				
+				WebTarget webTarget = client.target(url
+						+ "admin/cores?core=nemaki&action=index&tracking=AUTO&repositoryId=" + repositoryId);
+				Invocation.Builder invocationBuilder = webTarget.request();
+				Response response = invocationBuilder.accept(MediaType.APPLICATION_XML_TYPE).get();
 
-		Client client = ClientBuilder.newClient();
-		WebTarget webTarget = client.target(url
-				+ "admin/cores?core=nemaki&action=index&tracking=AUTO&repositoryId=" + repositoryId);
-		Invocation.Builder invocationBuilder =  webTarget.request();
-		Response response = invocationBuilder.accept(MediaType.APPLICATION_XML_TYPE).get();
-
-
-
-//		Client client = Client.create();
-//		// TODO Regardless a slash on the last, build the correct URL
-//		WebResource webResource = client.resource(url
-//				+ "admin/cores?core=nemaki&action=index&tracking=AUTO&repositoryId=" + repositoryId);
-
-		String xml = response.readEntity(String.class);
-				//String xml = webResource.accept("application/xml").get(String.class);
-		// TODO log according to the response status
+				String xml = response.readEntity(String.class);
+				if (response.getStatus() == 200) {
+					log.debug("Solr indexing completed successfully for repository: " + repositoryId);
+				} else {
+					log.warn("Solr indexing returned non-200 status for repository: " + repositoryId + ", status: " + response.getStatus());
+				}
+				
+				client.close();
+			} catch (Exception e) {
+				// Log the error but don't propagate it to avoid affecting CMIS operations
+				log.warn("Solr indexing failed for repository: " + repositoryId + ", error: " + e.getMessage());
+			}
+		});
 	}
 
 	public String getSolrUrl(){
