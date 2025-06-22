@@ -178,6 +178,14 @@ public class AclServiceImpl implements AclService {
 	}
 
 	private void clearCachesRecursively(ExecutorService executorService, CallContext callContext, final String repositoryId, Content content, boolean executeOnParent){
+		clearCachesRecursively(executorService, callContext, repositoryId, content, executeOnParent, new java.util.HashSet<String>());
+	}
+
+	private void clearCachesRecursively(ExecutorService executorService, CallContext callContext, final String repositoryId, Content content, boolean executeOnParent, java.util.Set<String> visitedIds){
+		if (visitedIds.contains(content.getId())) {
+			return;
+		}
+		visitedIds.add(content.getId());
 
 		//Call threads for recursive applyAcl
 		if(content.isFolder()){
@@ -190,7 +198,7 @@ public class AclServiceImpl implements AclService {
 			}
 			for(Content child : children){
 				if(contentService.getAclInheritedWithDefault(repositoryId, child)){
-					executorService.submit(new ClearCachesRecursivelyTask(executorService, callContext, repositoryId, child));
+					executorService.submit(new ClearCachesRecursivelyTask(executorService, callContext, repositoryId, child, visitedIds));
 				}
 			}
 		}else{
@@ -220,18 +228,20 @@ public class AclServiceImpl implements AclService {
 		private CallContext callContext;
 		private String repositoryId;
 		private Content content;
+		private java.util.Set<String> visitedIds;
 
-		public ClearCachesRecursivelyTask(ExecutorService executorService, CallContext callContext, String repositoryId, Content content) {
+		public ClearCachesRecursivelyTask(ExecutorService executorService, CallContext callContext, String repositoryId, Content content, java.util.Set<String> visitedIds) {
 			super();
 			this.executorService = executorService;
 			this.callContext = callContext;
 			this.repositoryId = repositoryId;
 			this.content = content;
+			this.visitedIds = new java.util.HashSet<String>(visitedIds);
 		}
 
 		@Override
 		public void run() {
-			clearCachesRecursively(executorService, callContext, repositoryId, content, true);
+			clearCachesRecursively(executorService, callContext, repositoryId, content, true, visitedIds);
 		}
 	}
 
