@@ -1,4 +1,0 @@
-settings:
-  $cmis.repository.main: 
-    user: solr
-    password: solr

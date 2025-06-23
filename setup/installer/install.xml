@@ -39,21 +39,33 @@
   <variables>
     <variable name="TOMCAT" value="apache-tomcat-9.0.37" />
   </variables>
+  
+  <!-- Dynamic variables (will be set by UserInputPanel) -->
+  <dynamicvariables>
+    <variable name="tomcat.port" value="8080" />
+    <variable name="tomcat.shutdown.port" value="8005" />
+    <variable name="cmis.repository.main" value="bedroom" />
+    <variable name="db.couchdb.url" value="http://localhost:5984" />
+    <variable name="db.couchdb.username" value="admin" />
+    <variable name="db.couchdb.password" value="" />
+    <variable name="nemaki.core.uri.host" value="localhost" />
+    <variable name="nemaki.core.uri.port" value="8080" />
+  </dynamicvariables>
 
   <!-- Resource import -->
   <resources>
-    <res id="Installer.image" src="setup/installer/images/logo.jpg" />
-    <res id="LicencePanel.licence" src="legal/LICENSE.txt"/>
-    <res id="HTMLInfoPanel.infoCouchDB" src="setup/installer/resources/infoCouchDB.html"/>
-    <res id="HTMLInfoPanel.infoCouchDB_jpn" src="setup/installer/resources/infoCouchDB_jpn.html"/>
-    <res id="HTMLInfoPanel.infoCouchDB_fra" src="setup/installer/resources/infoCouchDB_fra.html"/>
-    <res id="userInputSpec.xml" src="setup/installer/user-input-spec-5.xml" type="xml" />
+    <res id="Installer.image" src="images/logo.jpg" />
+    <res id="LicencePanel.licence" src="../../legal/LICENSE.txt"/>
+    <res id="HTMLInfoPanel.infoCouchDB" src="resources/infoCouchDB.html"/>
+    <res id="HTMLInfoPanel.infoCouchDB_jpn" src="resources/infoCouchDB_jpn.html"/>
+    <res id="HTMLInfoPanel.infoCouchDB_fra" src="resources/infoCouchDB_fra.html"/>
+    <res id="userInputSpec.xml" src="user-input-spec-5.xml" type="xml" parse="yes" />
 
-    <res id="packsLang.xml_jpn" src="setup/installer/i18n/packsLang_jpn.xml"/>
-    <res id="packsLang.xml_fra" src="setup/installer/i18n/packsLang_fra.xml"/>
+    <res id="packsLang.xml_jpn" src="i18n/packsLang_jpn.xml"/>
+    <res id="packsLang.xml_fra" src="i18n/packsLang_fra.xml"/>
 
-    <res id="userInputLang.xml_jpn" src="setup/installer/i18n/userInputLang_jpn.xml"/>
-    <res id="userInputLang.xml_fra" src="setup/installer/i18n/userInputLang_fra.xml"/>
+    <res id="userInputLang.xml_jpn" src="i18n/userInputLang_jpn.xml"/>
+    <res id="userInputLang.xml_fra" src="i18n/userInputLang_fra.xml"/>
   </resources>
 
   <!-- Conditions -->
@@ -103,8 +115,8 @@
       <description></description>
 
        <!-- Import configuration scripts -->
-      <file src="setup/installer/install-util/target/install-util.jar" targetdir="$INSTALL_PATH/setup" />
-      <fileset dir="setup/installer/tomcat" targetdir="$INSTALL_PATH/setup/tomcat">
+      <file src="install-util/target/install-util.jar" targetdir="$INSTALL_PATH/setup" />
+      <fileset dir="tomcat" targetdir="$INSTALL_PATH/setup/tomcat">
         <exclude name="${TOMCAT}.zip" />
       </fileset>
     </pack>
@@ -114,14 +126,14 @@
       <description></description>
 
       <!-- Expand Tomcat -->
-      <file src="setup/installer/tomcat/${TOMCAT}.zip" targetdir="$INSTALL_PATH" unpack="true" />
+      <file src="tomcat/${TOMCAT}.zip" targetdir="$INSTALL_PATH" unpack="true" />
 
       <!-- Create setenv -->
-      <file src="setup/installer/tomcat/setenv.sh" targetdir="$INSTALL_PATH/${TOMCAT}/bin" />
-      <file src="setup/installer/tomcat/setenv.bat" targetdir="$INSTALL_PATH/${TOMCAT}/bin" />
+      <file src="tomcat/setenv.sh" targetdir="$INSTALL_PATH/${TOMCAT}/bin" />
+      <file src="tomcat/setenv.bat" targetdir="$INSTALL_PATH/${TOMCAT}/bin" />
 
       <!-- Create log folder-->
-      <file src="setup/installer/tomcat/logs/catalina.out" targetdir="$INSTALL_PATH/${TOMCAT}/logs" />
+      <file src="tomcat/logs/catalina.out" targetdir="$INSTALL_PATH/${TOMCAT}/logs" />
 
       <!-- Configure tomcat -->
       <executable targetfile="$INSTALL_PATH/setup/install-util.jar" stage="postinstall" type="jar" class="jp.aegif.nemaki.installer.Facade" keep="true">
@@ -142,13 +154,16 @@
       <depends packname="Tomcat" />
 
       <!-- Deploy WAR file -->
-      <file src="core/target/core.war" targetdir="$INSTALL_PATH/${TOMCAT}/webapps" />
+      <file src="../../core/target/core.war" targetdir="$INSTALL_PATH/${TOMCAT}/webapps" />
 
       <!-- Create general custom setting file -->
-      <file src="setup/installer/tomcat/app-server-core.properties" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" parsable="true" />
-      <file src="setup/installer/tomcat/app-server-core-repositories.yml" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" parsable="true" />
+      <file src="tomcat/app-server-core.properties" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
+      <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-core.properties" type="javaprop"/>
+      <file src="tomcat/app-server-core-repositories.yml" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
+      <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-core-repositories.yml"/>
 
-      <file src="setup/installer/tomcat/context.xml" targetdir="$INSTALL_PATH/${TOMCAT}/conf" override="true" parsable="true" />
+      <file src="tomcat/context.xml" targetdir="$INSTALL_PATH/${TOMCAT}/conf" override="true"/>
+      <parsable targetfile="$INSTALL_PATH/${TOMCAT}/conf/context.xml" type="xml"/>
     </pack>
 
     <!-- Pack: CouchDB configuration -->
@@ -156,9 +171,9 @@
       <description>DB initialization</description>
 
       <!-- Import configuration scripts -->
-      <file src="setup/couchdb/bjornloka/target/bjornloka.jar" targetdir="$INSTALL_PATH/setup/couchdb" />
-      <file src="setup/installer/bjornloka-wrapper.sh" targetdir="$INSTALL_PATH/setup/installer" />
-      <fileset dir="setup/couchdb" targetdir="$INSTALL_PATH/setup/couchdb">
+      <file src="../../setup/couchdb/bjornloka/target/bjornloka.jar" targetdir="$INSTALL_PATH/setup/couchdb" />
+      <file src="bjornloka-wrapper.sh" targetdir="$INSTALL_PATH/setup/installer" />
+      <fileset dir="../../setup/couchdb" targetdir="$INSTALL_PATH/setup/couchdb">
         <include name="initial_import/*" />
       </fileset>
 
@@ -192,7 +207,8 @@
       </executable>
 
       <!-- Create CouchDB setting file-->
-      <file src="setup/installer/tomcat/app-server-core.properties" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" parsable="true" />
+      <file src="tomcat/app-server-core.properties" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
+      <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-core.properties" type="javaprop"/>
     </pack>
 
 
@@ -202,21 +218,25 @@
       <depends packname="Tomcat" />
 
       <!-- Deploy WAR file -->
-      <file src="solr/target/solr.war" targetdir="$INSTALL_PATH/${TOMCAT}/webapps" />
+      <file src="../../solr/target/solr.war" targetdir="$INSTALL_PATH/${TOMCAT}/webapps" />
 
       <!-- Create Solr setting file -->
-      <file src="setup/installer/tomcat/app-server-solr.properties" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" parsable="true" />
+      <file src="tomcat/app-server-solr.properties" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
+      <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-solr.properties" type="javaprop"/>
 
       <!-- Deploy Solr home -->
-      <fileset dir="solr/solr" targetdir="$INSTALL_PATH/solr">
+      <fileset dir="../../solr/solr" targetdir="$INSTALL_PATH/solr">
         <include name="**"/>
         <exclude name="**/data/*/" />
       </fileset>
-      <file src="setup/installer/solr/app-server-solr-repositories.yml" targetdir="$INSTALL_PATH/solr" parsable="true" />
+      <file src="solr/app-server-solr-repositories.yml" targetdir="$INSTALL_PATH/solr" />
+      <parsable targetfile="$INSTALL_PATH/solr/app-server-solr-repositories.yml"/>
 
       <!-- Create Solr context fragment -->
-      <file src="setup/installer/tomcat/solr.xml" targetdir="$INSTALL_PATH/${TOMCAT}/conf/Catalina/localhost" parsable="true" />
-      <file src="setup/installer/tomcat/nemakisolr.properties" targetdir="$INSTALL_PATH/solr/conf" parsable="true" />
+      <file src="tomcat/solr.xml" targetdir="$INSTALL_PATH/${TOMCAT}/conf/Catalina/localhost" />
+      <parsable targetfile="$INSTALL_PATH/${TOMCAT}/conf/Catalina/localhost/solr.xml" type="xml"/>
+      <file src="tomcat/nemakisolr.properties" targetdir="$INSTALL_PATH/solr/conf" />
+      <parsable targetfile="$INSTALL_PATH/solr/conf/nemakisolr.properties" type="javaprop"/>
 
     </pack>
 
@@ -226,10 +246,18 @@
       <depends packname="Tomcat" />
 
       <!-- Deploy WAR file -->
-      <file src="ui/target/ui.war" targetdir="$INSTALL_PATH/${TOMCAT}/webapps" />
+      <file src="../../ui/target/ui.war" targetdir="$INSTALL_PATH/${TOMCAT}/webapps" />
 
       <!-- Create UI setting file -->
-      <file src="setup/installer/tomcat/app-server-ui.properties" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" parsable="true" />
+      <file src="tomcat/app-server-ui.properties" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
+      <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-ui.properties" type="javaprop"/>
+    </pack>
+
+    <!-- Pack: Test Variables -->
+    <pack id="pack.test.variables" name="Test Variables" required="no" hidden="true">
+      <description>Test pack for variable substitution</description>
+      <file src="test-simple.properties" targetdir="$INSTALL_PATH/test" />
+      <parsable targetfile="$INSTALL_PATH/test/test-simple.properties" type="javaprop"/>
     </pack>
 
     <!-- Pack: Delete tmp files -->

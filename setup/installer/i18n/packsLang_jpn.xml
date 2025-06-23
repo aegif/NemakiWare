@@ -1,8 +1,5 @@
-<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
-
-<!-- The Japanese langpack -->
-
-<langpack>
+<?xml version="1.0" encoding="utf-8"?>
+<izpack:langpack version="5.0" xmlns:izpack="http://izpack.org/schema/langpack" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://izpack.org/schema/langpack http://izpack.org/schema/5.0/izpack-langpack-5.0.xsd">
     <str id="pack.utility" txt="インストール用ユーティリティ" />
     <str id="pack.application.server" txt="Tomcat" />
     <str id="pack.core" txt="Core" />
@@ -14,4 +11,4 @@
     <str id="pack.ui" txt="UI" />
     <str id="pack.ui.description" txt="CMISクライアント" />
     <str id="pack.delete.tmp" txt="インストール用一時ファイルの削除" />
-</langpack>
+</izpack:langpack>
