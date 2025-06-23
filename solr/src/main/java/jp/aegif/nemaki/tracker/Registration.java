@@ -15,7 +15,7 @@ import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.solr.client.solrj.SolrQuery;
-import org.apache.solr.client.solrj.SolrServer;
+import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.request.AbstractUpdateRequest;
 import org.apache.solr.client.solrj.request.ContentStreamUpdateRequest;
 import org.apache.solr.client.solrj.request.UpdateRequest;
@@ -40,7 +40,7 @@ public class Registration implements Runnable {
 
 	Session cmisSession;
 	SolrCore core;
-	SolrServer repositoryServer;
+	SolrClient repositoryServer;
 	List<ChangeEvent> list;
 	boolean mimeTypeFilterEnabled;
 	List<String> allowedMimeTypeFilter;
@@ -49,7 +49,7 @@ public class Registration implements Runnable {
 
 	private static final Logger logger = LoggerFactory.getLogger(Registration.class);
 
-	public Registration(Session cmisSession, SolrCore core, SolrServer repositoryServer, List<ChangeEvent> list,
+	public Registration(Session cmisSession, SolrCore core, SolrClient repositoryServer, List<ChangeEvent> list,
 			boolean fulltextEnabled, boolean mimeTypeFilterEnabled, List<String> allowedMimeTypeFilter, NemakiCacheManager cache) {
 		this.cmisSession = cmisSession;
 		this.core = core;
