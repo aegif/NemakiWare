@@ -1,0 +1,27 @@
+# UI Module Dockerfile - Java 8 maintained for compatibility
+FROM openjdk:8-jdk-alpine
+
+# Install required packages
+RUN apk add --no-cache bash curl
+
+# Set working directory
+WORKDIR /app
+
+# Copy UI module files
+COPY ui/ ./ui/
+COPY action/ ./action/
+COPY action-sample/ ./action-sample/
+
+# Install SBT for Scala/Play Framework
+RUN curl -L https://github.com/sbt/sbt/releases/download/v1.8.2/sbt-1.8.2.tgz | tar -xz -C /opt/
+ENV PATH="/opt/sbt/bin:${PATH}"
+
+# Build UI module
+WORKDIR /app/ui
+RUN sbt compile
+
+# Expose Play Framework default port
+EXPOSE 9000
+
+# Start UI application
+CMD ["sbt", "run"]
