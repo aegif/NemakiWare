@@ -564,7 +564,7 @@ initialize_database() {
       -e REPOSITORY_ID=${repo_id} \
       -e DUMP_FILE=${dump_file} \
       -e FORCE=${force_param} \
-      initializer; then
+      initializer-${repo_id}; then
         echo "✓ bjornloka.jar execution completed for ${repo_id}"
     else
         echo "✗ bjornloka.jar execution failed for ${repo_id}"
