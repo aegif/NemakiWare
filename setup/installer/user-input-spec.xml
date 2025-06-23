@@ -65,4 +65,17 @@
 			<validator class="com.izforge.izpack.util.IsPortValidator" txt="Invalid port!" />
 		</field>
 	</panel>
+
+	<!-- UI configuration -->
+	<panel id="user.inputpanel.ui">
+		<field type="title" id="user.inputpanel.ui.title" txt="UI configuration" />
+		<field type="text" variable="nemaki.core.uri.host">
+			<spec id="nemaki.core.uri.host" size="25" set="localhost" txt="Core server host" />
+			<validator class="com.izforge.izpack.util.NotEmptyValidator" txt="Invalid host!" />
+		</field>
+		<field type="text" variable="nemaki.core.uri.port">
+			<spec id="nemaki.core.uri.port" size="6" set="${tomcat.port}" txt="Core server port" />
+			<validator class="com.izforge.izpack.util.IsPortValidator" txt="Invalid port!" />
+		</field>
+	</panel>
 </userInput>

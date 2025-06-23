@@ -60,6 +60,28 @@ core/catalina.home_IS_UNDEFINED/
 core/src/main/webapp/WEB-INF/classes/custom-nemakiware.properties
 core/src/main/webapp/WEB-INF/classes/custom-repositories.yml
 
+# IzPack installer artifacts
+setup/installer/*.jar
+setup/installer/*.tar.gz
+setup/installer/target/
+setup/installer/install-util/target/
+setup/installer/auto-install*.xml
+setup/installer/simple-*.xml
+setup/installer/test-*.xml
+setup/installer/test-*.properties
+setup/installer/izpack-*.xml
+setup/installer/izpack-*.pom.xml
+setup/installer/*.bak
+setup/installer/make.bat
+setup/installer/make.sh
+setup/installer/bjornloka-wrapper.sh
+setup/installer/[0-9]*/
+setup/installer/bedroom/
+setup/installer/IzPack*/
+setup/installer/META-INF/
+setup/installer/tomcat/logs/
+setup/installer/solr/
+
 # Docker build artifacts
 docker/core/core.war
 docker/core/WEB-INF/
