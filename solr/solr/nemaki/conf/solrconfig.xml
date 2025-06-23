@@ -70,7 +70,7 @@
        with their external dependencies.
     -->
   <lib dir="../../../contrib/extraction/lib" regex=".*\.jar" />
-  <lib dir="../../../dist/" regex="apache-solr-cell-\d.*\.jar" />
+
 
   <lib dir="../../../contrib/clustering/lib/" regex=".*\.jar" />
   <lib dir="../../../dist/" regex="apache-solr-clustering-\d.*\.jar" />

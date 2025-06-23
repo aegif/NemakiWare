@@ -706,7 +706,7 @@ public class SolrPredicateWalker{
 	 * @return
 	 */
 	private List<String> getDescendantFolderId(String folderId,
-			SolrServer solrServer) {
+			SolrClient solrClient) {
 		List<String> list = new ArrayList<String>();
 
 		list.add(folderId); // Add oneself to the list in advance
@@ -731,7 +731,7 @@ public class SolrPredicateWalker{
 					SolrDocument child = iterator.next();
 					String childId = (String) child.getFieldValue("id");
 					// Recursive call to this method
-					List<String> l = getDescendantFolderId(childId, solrServer);
+					List<String> l = getDescendantFolderId(childId, solrClient);
 					list.addAll(l);
 				}
 				return list;
