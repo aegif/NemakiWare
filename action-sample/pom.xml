@@ -11,7 +11,7 @@
 
 
 	<properties>
-		<org.springframework.version>4.1.1.RELEASE</org.springframework.version>
+		<org.springframework.version>5.3.39</org.springframework.version>
 		<org.apache.chemistry.opencmis.version>1.0.0</org.apache.chemistry.opencmis.version>
 		<org.apache.chemistry.opencmis.version.14>0.14.0</org.apache.chemistry.opencmis.version.14>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
