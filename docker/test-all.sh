@@ -557,6 +557,7 @@ initialize_database() {
     sleep 2
     
     # Run the initializer with proper error handling
+    local service_name="initializer-${repo_id//_/-}"
     if docker compose -f docker-compose-simple.yml run --rm --remove-orphans \
       -e COUCHDB_URL=http://${container_name}:5984 \
       -e COUCHDB_USERNAME=${COUCHDB_USER} \
@@ -564,7 +565,7 @@ initialize_database() {
       -e REPOSITORY_ID=${repo_id} \
       -e DUMP_FILE=${dump_file} \
       -e FORCE=${force_param} \
-      initializer-${repo_id}; then
+      ${service_name}; then
         echo "✓ bjornloka.jar execution completed for ${repo_id}"
     else
         echo "✗ bjornloka.jar execution failed for ${repo_id}"
