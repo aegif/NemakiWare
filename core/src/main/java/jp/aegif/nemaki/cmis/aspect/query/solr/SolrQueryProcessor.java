@@ -59,8 +59,8 @@ import org.apache.lucene.index.Term;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.TermQuery;
 import org.apache.solr.client.solrj.SolrQuery;
-import org.apache.solr.client.solrj.SolrServer;
-import org.apache.solr.client.solrj.SolrServerException;
+import org.apache.solr.client.solrj.SolrClient;
+import org.apache.solr.client.solrj.SolrClientException;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
@@ -133,7 +133,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
 			String renditionFilter, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
 
-		SolrServer solrServer = solrUtil.getSolrServer();
+		SolrClient solrClient = solrUtil.getSolrClient();
 		// replacing backslashed for TIMESTAMP only
 		Pattern time_p = Pattern.compile("(TIMESTAMP\\s?'[\\-\\d]*T\\d{2})\\\\:(\\d{2})\\\\:([\\.\\d]*Z')", Pattern.CASE_INSENSITIVE);
 		Matcher time_m = time_p.matcher(statement);
@@ -227,9 +227,9 @@ public class SolrQueryProcessor implements QueryProcessor {
 		QueryResponse resp = null;
 		try {
 			logger.info("Executing Solr query: " + solrQuery.toString());
-			resp = solrServer.query(solrQuery);
+			resp = solrClient.query(solrQuery);
 			logger.info("Solr query executed successfully, response: " + (resp != null ? "not null" : "null"));
-		} catch (SolrServerException e) {
+		} catch (SolrClientException e) {
 			logger.error("Solr query failed: " + e.getMessage());
 			e.printStackTrace();
 		}

@@ -50,8 +50,8 @@ import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TermRangeQuery;
 import org.apache.lucene.util.BytesRef;
 import org.apache.solr.client.solrj.SolrQuery;
-import org.apache.solr.client.solrj.SolrServer;
-import org.apache.solr.client.solrj.SolrServerException;
+import org.apache.solr.client.solrj.SolrClient;
+import org.apache.solr.client.solrj.SolrClientException;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.client.solrj.util.ClientUtils;
 import org.apache.solr.common.SolrDocument;
@@ -407,15 +407,15 @@ public class SolrPredicateWalker{
 		}
 
 		// Set Solr server
-		SolrServer solrServer = solrUtil.getSolrServer();
+		SolrClient solrClient = solrUtil.getSolrClient();
 
 		// Get all the descending folder objectIds(including direct children)
 		List<String> descendantIds = new ArrayList<String>();
 		SolrDocumentList children = null;
 		try {
-			QueryResponse resp = solrServer.query(new SolrQuery(query1.toString()));
+			QueryResponse resp = solrClient.query(new SolrQuery(query1.toString()));
 			children = resp.getResults();
-		} catch (SolrServerException e) {
+		} catch (SolrClientException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
@@ -718,7 +718,7 @@ public class SolrPredicateWalker{
 
 		// Connect to SolrServer and add subfolder ids to the list
 		try {
-			QueryResponse resp = solrServer.query(query);
+			QueryResponse resp = solrClient.query(query);
 			SolrDocumentList children = resp.getResults();
 			// END NODE case: Do nothing but return oneself
 			if (children.getNumFound() == 0) {
@@ -736,7 +736,7 @@ public class SolrPredicateWalker{
 				}
 				return list;
 			}
-		} catch (SolrServerException e) {
+		} catch (SolrClientException e) {
 			e.printStackTrace();
 			return null;
 		}

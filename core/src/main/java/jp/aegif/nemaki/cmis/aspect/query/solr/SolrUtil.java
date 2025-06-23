@@ -31,8 +31,8 @@ import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.solr.client.solrj.SolrServer;
-import org.apache.solr.client.solrj.impl.HttpSolrServer;
+import org.apache.solr.client.solrj.SolrClient;
+import org.apache.solr.client.solrj.impl.HttpSolrClient;
 
 import javax.ws.rs.client.Client;
 import javax.ws.rs.client.ClientBuilder;
@@ -100,9 +100,9 @@ public class SolrUtil {
 	 *
 	 * @return
 	 */
-	public SolrServer getSolrServer() {
+	public SolrClient getSolrClient() {
 		String url = getSolrUrl();
-		return new HttpSolrServer(url);
+		return new HttpSolrClient.Builder(url).build();
 	}
 
 	/**
