@@ -153,7 +153,7 @@ public class PropertyManagerImpl implements PropertyManager{
 
 		try {
 		    if ( url == null ) {
-			config.store(new FileOutputStream(new File(loader.locateSolrHome() + "/conf/" + propertiesFile)), null);
+			config.store(new FileOutputStream(new File(System.getProperty("solr.solr.home", ".") + "/conf/" + propertiesFile)), null);
 		    }
 		    else {
 			config.store(new FileOutputStream(new File(url.toURI())), null);
