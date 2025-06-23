@@ -31,7 +31,7 @@
                         </goals>
                         <configuration>
                             <baseDir>${project.basedir}</baseDir>
-                            <installFile>install.xml</installFile>
+                            <installFile>${project.basedir}/install.xml</installFile>
                         </configuration>
                     </execution>
                 </executions>
