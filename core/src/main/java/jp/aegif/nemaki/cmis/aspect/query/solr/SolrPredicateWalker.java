@@ -21,6 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.cmis.aspect.query.solr;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -51,7 +52,7 @@ import org.apache.lucene.search.TermRangeQuery;
 import org.apache.lucene.util.BytesRef;
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrClient;
-import org.apache.solr.client.solrj.SolrClientException;
+import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.client.solrj.util.ClientUtils;
 import org.apache.solr.common.SolrDocument;
@@ -148,23 +149,23 @@ public class SolrPredicateWalker{
 	// Definition of Boolean walks
 	// //////////////////////////////////////////////////////////////////////////////
 	private BooleanQuery walkNot(Tree node) {
-		BooleanQuery q = new BooleanQuery();
-		q.add(walkPredicate(node), Occur.MUST_NOT);
-		return q;
+		BooleanQuery.Builder builder = new BooleanQuery.Builder();
+			builder.add(walkPredicate(node), Occur.MUST_NOT);
+		return builder.build();
 	}
 
 	private BooleanQuery walkOr(Tree leftNode, Tree rightNode) {
-		BooleanQuery q = new BooleanQuery();
-		q.add(walkPredicate(leftNode), Occur.SHOULD);
-		q.add(walkPredicate(rightNode), Occur.SHOULD);
-		return q;
+		BooleanQuery.Builder builder = new BooleanQuery.Builder();
+			builder.add(walkPredicate(leftNode), Occur.SHOULD);
+			builder.add(walkPredicate(rightNode), Occur.SHOULD);
+		return builder.build();
 	}
 
 	private BooleanQuery walkAnd(Tree leftNode, Tree rightNode) {
-		BooleanQuery q = new BooleanQuery();
-		q.add(walkPredicate(leftNode), Occur.MUST);
-		q.add(walkPredicate(rightNode), Occur.MUST);
-		return q;
+		BooleanQuery.Builder builder = new BooleanQuery.Builder();
+			builder.add(walkPredicate(leftNode), Occur.MUST);
+			builder.add(walkPredicate(rightNode), Occur.MUST);
+		return builder.build();
 	}
 
 	// //////////////////////////////////////////////////////////////////////////////
@@ -178,9 +179,9 @@ public class SolrPredicateWalker{
 	}
 
 	private Query walkNotEquals(Tree leftNode, Tree rightNode) {
-		BooleanQuery q = new BooleanQuery();
-		q.add(walkEquals(leftNode, rightNode), Occur.MUST_NOT);
-		return q;
+		BooleanQuery.Builder builder = new BooleanQuery.Builder();
+			builder.add(walkEquals(leftNode, rightNode), Occur.MUST_NOT);
+		return builder.build();
 	}
 
 	private Query walkGreaterThan(Tree leftNode, Tree rightNode) {
@@ -266,9 +267,9 @@ public class SolrPredicateWalker{
 	}
 
 	private Query walkNotLike(Tree colNode, Tree stringNode) {
-		BooleanQuery q = new BooleanQuery();
-		q.add(walkLike(colNode, stringNode), Occur.MUST);
-		return q;
+		BooleanQuery.Builder builder = new BooleanQuery.Builder();
+			builder.add(walkLike(colNode, stringNode), Occur.MUST);
+		return builder.build();
 	}
 
 	// //////////////////////////////////////////////////////////////////////////////
@@ -280,21 +281,21 @@ public class SolrPredicateWalker{
 
 		// Build a statement
 		// Combine queries with "OR" because Solr doesn't have "IN" syntax
-		BooleanQuery q = new BooleanQuery();
+		BooleanQuery.Builder builder = new BooleanQuery.Builder();
 		String field = solrUtil.getPropertyNameInSolr(repositoryId, colRef.getPropertyQueryName().toString());
 		List<?> list = (List<?>) walkExpr(listNode);
 		for (Object elm : list) {
 			Term t = new Term(field, elm.toString());
 			TermQuery tq = new TermQuery(t);
-			q.add(tq, Occur.SHOULD);
+			builder.add(tq, Occur.SHOULD);
 		}
-		return q;
+		return builder.build();
 	}
 
 	private Query walkNotIn(Tree colNode, Tree listNode) {
-		BooleanQuery q = new BooleanQuery();
-		q.add(walkIn(colNode, listNode), Occur.MUST_NOT);
-		return q;
+		BooleanQuery.Builder builder = new BooleanQuery.Builder();
+			builder.add(walkIn(colNode, listNode), Occur.MUST_NOT);
+		return builder.build();
 	}
 
 	private Query walkInAny(Tree leftNode, Tree rightNode) {
@@ -320,10 +321,10 @@ public class SolrPredicateWalker{
 
 	private Query walkIsNull(Tree colNode) {
 		String field = walkExpr(colNode).toString();
-		BooleanQuery q = new BooleanQuery();
+		BooleanQuery.Builder builder = new BooleanQuery.Builder();
 		TermRangeQuery q1 = new TermRangeQuery(field, null, null, false, false);
-		q.add(q1, Occur.MUST_NOT);
-		return q;
+			builder.add(q1, Occur.MUST_NOT);
+		return builder.build();
 	}
 
 	private Query walkIsNotNull(Tree colNode) {
@@ -351,10 +352,10 @@ public class SolrPredicateWalker{
 			String qualifier = walkExpr(qualNode).toString();
 			Term tQual = new Term("type", buildQualField(qualifier));
 			Query qQual = new TermQuery(tQual);
-			BooleanQuery bq = new BooleanQuery();
-			bq.add(qQual, Occur.MUST);
-			bq.add(q, Occur.MUST);
-			return bq;
+			BooleanQuery.Builder bqBuilder = new BooleanQuery.Builder();
+			bqBuilder.add(qQual, Occur.MUST);
+			bqBuilder.add(q, Occur.MUST);
+			return bqBuilder.build();
 		}
 		return q;
 	}
@@ -373,17 +374,17 @@ public class SolrPredicateWalker{
 			String qualifier = walkExpr(qualNode).toString();
 			Term tQual = new Term("type", buildQualField(qualifier));
 			Query qQual = new TermQuery(tQual);
-			BooleanQuery bq = new BooleanQuery();
-			bq.add(qQual, Occur.MUST);
-			bq.add(q, Occur.MUST);
-			return bq;
+			BooleanQuery.Builder bqBuilder = new BooleanQuery.Builder();
+			bqBuilder.add(qQual, Occur.MUST);
+			bqBuilder.add(q, Occur.MUST);
+			return bqBuilder.build();
 		}
 		return q;
 	}
 
 	private Query walkInTreeInternal(Tree paramNode, String repositoryId) {
 		//Build first query for descendant folders
-		BooleanQuery query1 = new BooleanQuery();
+		BooleanQuery.Builder query1Builder = new BooleanQuery.Builder();
 
 		String s = paramNode.getText();
 		String folderId = s.substring(1, s.length() - 1);
@@ -395,15 +396,15 @@ public class SolrPredicateWalker{
 
 		if(contentService.isRoot(repositoryId, folder)){
 			Term t = new Term(solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.PATH), _folderPath + "*");
-			query1.add(new TermQuery(t), Occur.MUST);
+			query1Builder.add(new TermQuery(t), Occur.MUST);
 		}else{
 			String _folderId = folderId.replaceAll("\\/", "\\\\/"); //escape in Solr query
 			Term t1 = new Term(solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.OBJECT_ID), _folderId);
 			String path = folderPath + "/*";
 			String _path = path.replaceAll("\\/", "\\\\/"); //escape in Solr query
 			Term t2 = new Term(solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.PATH), _path);
-			query1.add(new TermQuery(t1), Occur.SHOULD);
-			query1.add(new TermQuery(t2), Occur.SHOULD);
+			query1Builder.add(new TermQuery(t1), Occur.SHOULD);
+			query1Builder.add(new TermQuery(t2), Occur.SHOULD);
 		}
 
 		// Set Solr server
@@ -413,9 +414,9 @@ public class SolrPredicateWalker{
 		List<String> descendantIds = new ArrayList<String>();
 		SolrDocumentList children = null;
 		try {
-			QueryResponse resp = solrClient.query(new SolrQuery(query1.toString()));
+			QueryResponse resp = solrClient.query(new SolrQuery(query1Builder.build().toString()));
 			children = resp.getResults();
-		} catch (SolrClientException e) {
+		} catch (SolrServerException | IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
@@ -431,16 +432,16 @@ public class SolrPredicateWalker{
 
 		// Build the second query for getting all the objects under descending folders
 		Iterator<String> iterator = descendantIds.iterator();
-		BooleanQuery query2 = new BooleanQuery();
+		BooleanQuery.Builder query2Builder = new BooleanQuery.Builder();
 		while (iterator.hasNext()) {
 			String descendantId = iterator.next();
 			String _descendantId = descendantId.replaceAll("\\/", "\\\\/");
 			Term t = new Term(solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.PARENT_ID), _descendantId);
 			TermQuery tq = new TermQuery(t);
-			query2.add(tq, Occur.SHOULD);
+			query2Builder.add(tq, Occur.SHOULD);
 		}
 
-		return query2;
+		return query2Builder.build();
 	}
 
 	// //////////////////////////////////////////////////////////////////////////////
@@ -454,11 +455,11 @@ public class SolrPredicateWalker{
 			//Term tQual = new Term("type", buildQualField(qualifier));
 			//Query qQual = new TermQuery(tQual);
 
-			BooleanQuery q = new BooleanQuery();
+			BooleanQuery.Builder builder = new BooleanQuery.Builder();
 			//q.add(qQual, Occur.MUST);
-			q.add(walkSearchExpr(queryNode), Occur.MUST);
+			builder.add(walkSearchExpr(queryNode), Occur.MUST);
 
-			return q;
+			return builder.build();
 		}
 		return walkSearchExpr(queryNode);
 	}
@@ -484,30 +485,30 @@ public class SolrPredicateWalker{
 	}
 
 	private Query walkTextAnd(Tree node) {
-		BooleanQuery q = new BooleanQuery();
+		BooleanQuery.Builder builder = new BooleanQuery.Builder();
 		for (int i = 0; i < node.getChildCount(); i++) {
 			Tree child = node.getChild(i);
-			q.add(walkSearchExpr(child), Occur.MUST);
+			builder.add(walkSearchExpr(child), Occur.MUST);
 		}
-		return q;
+		return builder.build();
 	}
 
 	private Query walkTextOr(Tree node) {
-		BooleanQuery q = new BooleanQuery();
+		BooleanQuery.Builder builder = new BooleanQuery.Builder();
 		for (int i = 0; i < node.getChildCount(); i++) {
 			Tree child = node.getChild(i);
-			q.add(walkSearchExpr(child), Occur.SHOULD);
+			builder.add(walkSearchExpr(child), Occur.SHOULD);
 		}
-		return q;
+		return builder.build();
 	}
 
 	private Query walkTextMinus(Tree node) {
-		BooleanQuery q = new BooleanQuery();
+		BooleanQuery.Builder builder = new BooleanQuery.Builder();
 		for (int i = 0; i < node.getChildCount(); i++) {
 			Tree child = node.getChild(i);
-			q.add(walkSearchExpr(child), Occur.MUST);
+			builder.add(walkSearchExpr(child), Occur.MUST);
 		}
-		return q;
+		return builder.build();
 	}
 
 	private Query walkTextWord(Tree node) {
@@ -736,7 +737,7 @@ public class SolrPredicateWalker{
 				}
 				return list;
 			}
-		} catch (SolrClientException e) {
+		} catch (SolrServerException | IOException e) {
 			e.printStackTrace();
 			return null;
 		}
