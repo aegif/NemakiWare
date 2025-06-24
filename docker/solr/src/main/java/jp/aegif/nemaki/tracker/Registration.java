@@ -33,8 +33,7 @@ import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
-import static org.apache.solr.handler.extraction.ExtractingParams.LITERALS_PREFIX;
-import static org.apache.solr.handler.extraction.ExtractingParams.UNKNOWN_FIELD_PREFIX;
+
 
 public class Registration implements Runnable {
 
@@ -268,7 +267,7 @@ public class Registration implements Runnable {
 		// for a field with capital letters
 		m.put("lowernames", new String[] { "false" });
 		// Ignored(for schema.xml, ignoring some SolrCell meta fields)
-		m.put(UNKNOWN_FIELD_PREFIX, new String[] { "ignored_" });
+		m.put("uprefix", new String[] { "ignored_" });
 
 		Set<String> keys = map.keySet();
 		Iterator<String> iterator = keys.iterator();
@@ -277,11 +276,11 @@ public class Registration implements Runnable {
 			// Multi value
 			Object val = map.get(key);
 			if (val instanceof List<?>) {
-				m.put(LITERALS_PREFIX + key, ((List<String>) val).toArray(new String[0]));
+				m.put("literal." + key, ((List<String>) val).toArray(new String[0]));
 				// Single value
 			} else if (val instanceof String) {
 				String[] _val = { (String) val };
-				m.put(LITERALS_PREFIX + key, _val);
+				m.put("literal." + key, _val);
 			}
 		}
 
@@ -311,7 +310,7 @@ public class Registration implements Runnable {
 		// Set UpdateRequest
 		up.add(sid);
 		// Ignored(for schema.xml, ignoring some SolrCell meta fields)
-		up.setParam(UNKNOWN_FIELD_PREFIX, "ignored_");
+		up.setParam("uprefix", "ignored_");
 
 		// Set Solr action parameter
 		up.setAction(AbstractUpdateRequest.ACTION.COMMIT, true, true);
