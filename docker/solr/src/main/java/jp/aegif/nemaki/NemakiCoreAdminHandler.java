@@ -44,7 +44,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.solr.client.solrj.SolrClient;
-import org.apache.solr.client.solrj.embedded.EmbeddedSolrClient;
+import org.apache.solr.client.solrj.embedded.EmbeddedSolrServer;
 import org.apache.solr.common.params.CoreAdminParams;
 import org.apache.solr.common.params.SolrParams;
 import org.apache.solr.core.CoreContainer;
@@ -87,8 +87,8 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 		String repositoryCorename = pm.readValue(PropertyKey.SOLR_CORE_MAIN);
 		String tokenCoreName = pm.readValue(PropertyKey.SOLR_CORE_TOKEN);
 
-		SolrClient repositoryServer = new EmbeddedSolrClient(coreContainer, repositoryCorename);
-		SolrClient tokenServer = new EmbeddedSolrClient(coreContainer, tokenCoreName);
+		SolrClient repositoryServer = new EmbeddedSolrServer(coreContainer, repositoryCorename);
+		SolrClient tokenServer = new EmbeddedSolrServer(coreContainer, tokenCoreName);
 
 		SolrCore core = getCoreContainer().getCore(repositoryCorename);
 		CoreTracker tracker = new CoreTracker(this, core, repositoryServer, tokenServer);
@@ -153,8 +153,8 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 		String indexCoreName = params.get(CoreAdminParams.CORE);
 		String tokenCoreName = "token";
 
-		SolrClient indexServer = new EmbeddedSolrClient(coreContainer, indexCoreName);
-		SolrClient tokenServer = new EmbeddedSolrClient(coreContainer, tokenCoreName);
+		SolrClient indexServer = new EmbeddedSolrServer(coreContainer, indexCoreName);
+		SolrClient tokenServer = new EmbeddedSolrServer(coreContainer, tokenCoreName);
 		SolrCore core = getCoreContainer().getCore(indexCoreName);
 		CoreTracker tracker = new CoreTracker(this, core, indexServer, tokenServer);
 
