@@ -123,8 +123,8 @@
     <factorypathentry kind="VARJAR" id="M2_REPO/com/zaxxer/HikariCP-java7/2.4.13/HikariCP-java7-2.4.13.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/slf4j/slf4j-api/1.7.21/slf4j-api-1.7.21.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/slf4j/jcl-over-slf4j/1.7.21/jcl-over-slf4j-1.7.21.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/ch/qos/logback/logback-core/1.1.7/logback-core-1.1.7.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/ch/qos/logback/logback-classic/1.1.7/logback-classic-1.1.7.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/ch/qos/logback/logback-core/1.2.12/logback-core-1.2.12.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/ch/qos/logback/logback-classic/1.2.12/logback-classic-1.2.12.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/ch/qos/logback/contrib/logback-json-core/0.1.5/logback-json-core-0.1.5.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/ch/qos/logback/contrib/logback-json-classic/0.1.5/logback-json-classic-0.1.5.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/ch/qos/logback/contrib/logback-jackson/0.1.5/logback-jackson-0.1.5.jar" enabled="true" runInBatchMode="false"/>
@@ -175,7 +175,4 @@
     <factorypathentry kind="VARJAR" id="M2_REPO/com/sun/jersey/jersey-client/1.19/jersey-client-1.19.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/com/sun/jersey/jersey-core/1.19/jersey-core-1.19.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/javax/ws/rs/jsr311-api/1.1.1/jsr311-api-1.1.1.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/org/restlet/jee/org.restlet/2.1.1/org.restlet-2.1.1.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/org/restlet/jee/org.restlet.ext.servlet/2.1.1/org.restlet.ext.servlet-2.1.1.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/org/restlet/jee/org.restlet.ext.jackson/2.1.1/org.restlet.ext.jackson-2.1.1.jar" enabled="true" runInBatchMode="false"/>
 </factorypath>
