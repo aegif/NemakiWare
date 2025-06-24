@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<solr persistent="true" sharedLib="lib">
-  <cores defaultCoreName="nemaki" adminHandler="jp.aegif.nemaki.NemakiCoreAdminHandler" adminPath="/admin/cores" zkClientTimeout="${zkClientTimeout:15000}" hostPort="8983" hostContext="solr">
-  </cores>
+<solr>
+  <solrcloud>
+    <str name="host">${host:}</str>
+    <int name="hostPort">${jetty.port:8983}</int>
+    <str name="hostContext">${hostContext:solr}</str>
+    <int name="zkClientTimeout">${zkClientTimeout:15000}</int>
+  </solrcloud>
+  
+  <shardHandlerFactory name="shardHandlerFactory"
+    class="HttpShardHandlerFactory">
+    <int name="socketTimeout">${socketTimeout:600000}</int>
+    <int name="connTimeout">${connTimeout:60000}</int>
+  </shardHandlerFactory>
 </solr>
