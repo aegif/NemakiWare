@@ -1,27 +1,23 @@
-FROM tomcat:9-jre11
+FROM solr:9.8.0-slim
 
-# Remove default Tomcat applications
-RUN rm -rf /usr/local/tomcat/webapps/*
-
-# Copy the Solr WAR file
-COPY solr.war /usr/local/tomcat/webapps/solr.war
+USER root
 
 # Copy Solr configuration
-COPY solr /usr/local/tomcat/solr
+COPY solr /var/solr/data
 
-# Fix Solr data directory permissions for container access
-RUN chmod -R 755 /usr/local/tomcat/solr && \
-    chown -R root:root /usr/local/tomcat/solr && \
-    mkdir -p /usr/local/tomcat/solr/nemaki/data && \
-    mkdir -p /usr/local/tomcat/solr/token/data && \
-    chmod -R 777 /usr/local/tomcat/solr/nemaki/data && \
-    chmod -R 777 /usr/local/tomcat/solr/token/data
+# Fix permissions for Solr data directories
+RUN chown -R solr:solr /var/solr/data && \
+    mkdir -p /var/solr/data/nemaki/data && \
+    mkdir -p /var/solr/data/token/data && \
+    chown -R solr:solr /var/solr/data/nemaki && \
+    chown -R solr:solr /var/solr/data/token
+
+USER solr
 
 # Set environment variables
-ENV CATALINA_OPTS="-Xms512m -Xmx1024m -Dsolr.solr.home=/usr/local/tomcat/solr"
+ENV SOLR_HOME=/var/solr/data
 
-# Expose the default Tomcat port
-EXPOSE 8080
+EXPOSE 8983
 
-# Start Tomcat
-CMD ["catalina.sh", "run"]
+# Use Solr's official standalone server
+CMD ["solr-foreground"]

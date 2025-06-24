@@ -111,11 +111,12 @@ services:
   solr:
     build: ./solr
     ports:
-      - "8983:8080"
+      - "8983:8983"
     environment:
-      - CATALINA_OPTS=-Xms512m -Xmx1024m -Dsolr.solr.home=/usr/local/tomcat/solr
+      - SOLR_HOME=/var/solr/data
+      - SOLR_HEAP=512m
     volumes:
-      - ./solr/solr:/usr/local/tomcat/solr
+      - ./solr/solr:/var/solr/data
 
   # Core CMIS Server
   core:
