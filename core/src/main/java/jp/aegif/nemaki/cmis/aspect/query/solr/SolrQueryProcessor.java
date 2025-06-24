@@ -21,6 +21,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.cmis.aspect.query.solr;
 
+import java.io.IOException;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -60,7 +61,7 @@ import org.apache.lucene.search.Query;
 import org.apache.lucene.search.TermQuery;
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrClient;
-import org.apache.solr.client.solrj.SolrClientException;
+import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
@@ -229,7 +230,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 			logger.info("Executing Solr query: " + solrQuery.toString());
 			resp = solrClient.query(solrQuery);
 			logger.info("Solr query executed successfully, response: " + (resp != null ? "not null" : "null"));
-		} catch (SolrClientException e) {
+		} catch (SolrServerException | IOException e) {
 			logger.error("Solr query failed: " + e.getMessage());
 			e.printStackTrace();
 		}

@@ -1,11 +1,11 @@
-FROM tomcat:9-jre8
+FROM tomcat:9-jre11
 
 # Set environment variables
 ENV CATALINA_HOME /usr/local/tomcat
 ENV CATALINA_BASE /usr/local/tomcat
 
 # Install OpenJDK for compilation and curl for CouchDB connectivity testing
-RUN apt-get update && apt-get install -y openjdk-8-jdk-headless curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y openjdk-11-jdk-headless curl && rm -rf /var/lib/apt/lists/*
 
 # Remove default Tomcat applications
 RUN rm -rf $CATALINA_HOME/webapps/*

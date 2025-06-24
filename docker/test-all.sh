@@ -332,7 +332,7 @@ fi
 
 # Build the UI WAR file
 echo "Building UI WAR with SBT (this may take a few minutes)..."
-export SBT_OPTS="-Xmx2G -XX:+UseConcMarkSweepGC -XX:+CMSClassUnloadingEnabled"
+export SBT_OPTS="-Xmx2G -XX:+UseG1GC"
 
 sbt clean compile war
 if [ $? -ne 0 ]; then

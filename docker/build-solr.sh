@@ -4,10 +4,10 @@ set -e
 SCRIPT_DIR=$(cd $(dirname $0); pwd)
 NEMAKI_HOME=$(cd $SCRIPT_DIR/..; pwd)
 
-echo "Building Solr WAR file using Docker with Java 8..."
+echo "Building Solr WAR file using Docker with Java 11..."
 
 cat > $NEMAKI_HOME/docker/Dockerfile.solr-build << EOF
-FROM maven:3.8-openjdk-8
+FROM maven:3.8-openjdk-11
 
 WORKDIR /app
 COPY solr /app/solr
