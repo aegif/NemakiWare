@@ -1,0 +1,339 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  Table, 
+  Button, 
+  Space, 
+  Upload, 
+  Modal, 
+  Form, 
+  Input, 
+  message, 
+  Popconfirm,
+  Tag,
+  Tooltip,
+  Row,
+  Col,
+  Card,
+  Breadcrumb
+} from 'antd';
+import { 
+  FileOutlined, 
+  FolderOutlined, 
+  UploadOutlined, 
+  PlusOutlined, 
+  DeleteOutlined, 
+  EditOutlined,
+  DownloadOutlined,
+  EyeOutlined,
+  LockOutlined,
+  UnlockOutlined,
+  HomeOutlined
+} from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
+import { CMISService } from '../../services/cmis';
+import { CMISObject } from '../../types/cmis';
+import { FolderTree } from '../FolderTree/FolderTree';
+
+interface DocumentListProps {
+  repositoryId: string;
+}
+
+export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
+  const [objects, setObjects] = useState<CMISObject[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [currentFolderId, setCurrentFolderId] = useState<string>('');
+  const [currentFolderPath, setCurrentFolderPath] = useState<string>('/');
+  const [uploadModalVisible, setUploadModalVisible] = useState(false);
+  const [folderModalVisible, setFolderModalVisible] = useState(false);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
+  
+  const [form] = Form.useForm();
+  const navigate = useNavigate();
+  const cmisService = new CMISService();
+
+  useEffect(() => {
+    if (currentFolderId) {
+      loadObjects();
+    }
+  }, [currentFolderId, repositoryId]);
+
+  const loadObjects = async () => {
+    if (!currentFolderId) return;
+    
+    setLoading(true);
+    try {
+      const children = await cmisService.getChildren(repositoryId, currentFolderId);
+      setObjects(children);
+    } catch (error) {
+      message.error('オブジェクトの読み込みに失敗しました');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFolderSelect = (folderId: string, folderPath: string) => {
+    setCurrentFolderId(folderId);
+    setCurrentFolderPath(folderPath);
+  };
+
+  const handleUpload = async (values: any) => {
+    const { file, name } = values;
+    try {
+      await cmisService.createDocument(repositoryId, currentFolderId, file.file, { name });
+      message.success('ファイルをアップロードしました');
+      setUploadModalVisible(false);
+      form.resetFields();
+      loadObjects();
+    } catch (error) {
+      message.error('ファイルのアップロードに失敗しました');
+    }
+  };
+
+  const handleCreateFolder = async (values: any) => {
+    try {
+      await cmisService.createFolder(repositoryId, currentFolderId, values.name);
+      message.success('フォルダを作成しました');
+      setFolderModalVisible(false);
+      form.resetFields();
+      loadObjects();
+    } catch (error) {
+      message.error('フォルダの作成に失敗しました');
+    }
+  };
+
+  const handleDelete = async (objectId: string) => {
+    try {
+      await cmisService.deleteObject(repositoryId, objectId);
+      message.success('削除しました');
+      loadObjects();
+    } catch (error) {
+      message.error('削除に失敗しました');
+    }
+  };
+
+  const handleDownload = (objectId: string) => {
+    const url = cmisService.getDownloadUrl(repositoryId, objectId);
+    window.open(url, '_blank');
+  };
+
+  const columns = [
+    {
+      title: 'タイプ',
+      dataIndex: 'baseType',
+      key: 'type',
+      width: 60,
+      render: (baseType: string) => (
+        baseType === 'cmis:folder' ? 
+          <FolderOutlined style={{ color: '#1890ff', fontSize: '16px' }} /> :
+          <FileOutlined style={{ color: '#52c41a', fontSize: '16px' }} />
+      ),
+    },
+    {
+      title: '名前',
+      dataIndex: 'name',
+      key: 'name',
+      render: (name: string, record: CMISObject) => (
+        <Button 
+          type="link" 
+          onClick={() => {
+            if (record.baseType === 'cmis:folder') {
+              setCurrentFolderId(record.id);
+            } else {
+              navigate(`/documents/${record.id}`);
+            }
+          }}
+        >
+          {name}
+        </Button>
+      ),
+    },
+    {
+      title: 'サイズ',
+      dataIndex: 'contentStreamLength',
+      key: 'size',
+      width: 100,
+      render: (size: number) => size ? `${Math.round(size / 1024)} KB` : '-',
+    },
+    {
+      title: '更新日時',
+      dataIndex: 'lastModificationDate',
+      key: 'modified',
+      width: 180,
+      render: (date: string) => date ? new Date(date).toLocaleString('ja-JP') : '-',
+    },
+    {
+      title: '更新者',
+      dataIndex: 'lastModifiedBy',
+      key: 'modifiedBy',
+      width: 120,
+    },
+    {
+      title: 'アクション',
+      key: 'actions',
+      width: 200,
+      render: (_, record: CMISObject) => (
+        <Space>
+          <Tooltip title="詳細表示">
+            <Button 
+              icon={<EyeOutlined />} 
+              size="small"
+              onClick={() => navigate(`/documents/${record.id}`)}
+            />
+          </Tooltip>
+          {record.baseType === 'cmis:document' && (
+            <Tooltip title="ダウンロード">
+              <Button 
+                icon={<DownloadOutlined />} 
+                size="small"
+                onClick={() => handleDownload(record.id)}
+              />
+            </Tooltip>
+          )}
+          <Tooltip title="権限管理">
+            <Button 
+              icon={<LockOutlined />} 
+              size="small"
+              onClick={() => navigate(`/permissions/${record.id}`)}
+            />
+          </Tooltip>
+          <Popconfirm
+            title="削除しますか？"
+            onConfirm={() => handleDelete(record.id)}
+            okText="はい"
+            cancelText="いいえ"
+          >
+            <Tooltip title="削除">
+              <Button 
+                icon={<DeleteOutlined />} 
+                size="small"
+                danger
+              />
+            </Tooltip>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  const breadcrumbItems = currentFolderPath.split('/').filter(Boolean).map((segment, index, array) => ({
+    title: index === 0 ? <HomeOutlined /> : segment,
+  }));
+
+  return (
+    <div>
+      <Row gutter={16}>
+        <Col span={6}>
+          <Card title="フォルダツリー" size="small">
+            <FolderTree
+              repositoryId={repositoryId}
+              onSelect={handleFolderSelect}
+              selectedFolderId={currentFolderId}
+            />
+          </Card>
+        </Col>
+        <Col span={18}>
+          <Card>
+            <Space direction="vertical" style={{ width: '100%' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Breadcrumb items={breadcrumbItems} />
+                <Space>
+                  <Button 
+                    type="primary" 
+                    icon={<UploadOutlined />}
+                    onClick={() => setUploadModalVisible(true)}
+                  >
+                    ファイルアップロード
+                  </Button>
+                  <Button 
+                    icon={<PlusOutlined />}
+                    onClick={() => setFolderModalVisible(true)}
+                  >
+                    フォルダ作成
+                  </Button>
+                </Space>
+              </div>
+              
+              <Table
+                columns={columns}
+                dataSource={objects}
+                rowKey="id"
+                loading={loading}
+                pagination={{ pageSize: 20 }}
+                size="small"
+              />
+            </Space>
+          </Card>
+        </Col>
+      </Row>
+
+      <Modal
+        title="ファイルアップロード"
+        open={uploadModalVisible}
+        onCancel={() => setUploadModalVisible(false)}
+        footer={null}
+      >
+        <Form form={form} onFinish={handleUpload} layout="vertical">
+          <Form.Item
+            name="file"
+            label="ファイル"
+            rules={[{ required: true, message: 'ファイルを選択してください' }]}
+          >
+            <Upload.Dragger
+              beforeUpload={() => false}
+              maxCount={1}
+            >
+              <p className="ant-upload-drag-icon">
+                <UploadOutlined />
+              </p>
+              <p className="ant-upload-text">ファイルをドラッグ&ドロップまたはクリックして選択</p>
+            </Upload.Dragger>
+          </Form.Item>
+          <Form.Item
+            name="name"
+            label="ファイル名"
+            rules={[{ required: true, message: 'ファイル名を入力してください' }]}
+          >
+            <Input placeholder="ファイル名を入力" />
+          </Form.Item>
+          <Form.Item>
+            <Space>
+              <Button type="primary" htmlType="submit">
+                アップロード
+              </Button>
+              <Button onClick={() => setUploadModalVisible(false)}>
+                キャンセル
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="フォルダ作成"
+        open={folderModalVisible}
+        onCancel={() => setFolderModalVisible(false)}
+        footer={null}
+      >
+        <Form form={form} onFinish={handleCreateFolder} layout="vertical">
+          <Form.Item
+            name="name"
+            label="フォルダ名"
+            rules={[{ required: true, message: 'フォルダ名を入力してください' }]}
+          >
+            <Input placeholder="フォルダ名を入力" />
+          </Form.Item>
+          <Form.Item>
+            <Space>
+              <Button type="primary" htmlType="submit">
+                作成
+              </Button>
+              <Button onClick={() => setFolderModalVisible(false)}>
+                キャンセル
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
+    </div>
+  );
+};
