@@ -415,6 +415,8 @@
 					<stopKey>foo</stopKey>
 					<webAppConfig>
 						<contextPath>/core</contextPath>
+						<webInfIncludeJarPattern>^$</webInfIncludeJarPattern>
+						<containerIncludeJarPattern>.*\.jar$|.*/classes/.*</containerIncludeJarPattern>
 					</webAppConfig>
 					<connectors>
 						<connector implementation="org.eclipse.jetty.server.nio.SelectChannelConnector">
