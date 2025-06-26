@@ -21,9 +21,18 @@ export class AuthService {
     if (authData) {
       try {
         this.currentAuth = JSON.parse(authData);
+        console.log('AuthService constructor loaded auth:', this.currentAuth);
       } catch (e) {
+        console.error('AuthService constructor failed to parse auth data:', e);
         localStorage.removeItem('nemakiware_auth');
       }
+    } else {
+      console.log('AuthService constructor: no auth data in localStorage');
+    }
+    
+    if (typeof window !== 'undefined') {
+      (window as any).authService = this;
+      console.log('AuthService constructor: exposed to window');
     }
   }
 
@@ -88,11 +97,9 @@ export class AuthService {
 
   getAuthHeaders(): Record<string, string> {
     const token = this.getAuthToken();
-    const auth = this.getCurrentAuth();
-    if (token && auth) {
+    if (token) {
       return { 
-        'AUTH_TOKEN': token,
-        'Authorization': `Basic ${btoa(`${auth.username}:${token}`)}`
+        'AUTH_TOKEN': token
       };
     }
     return {};

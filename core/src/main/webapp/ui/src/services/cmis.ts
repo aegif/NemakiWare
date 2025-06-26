@@ -1,8 +1,42 @@
+import axios from 'axios';
 import { AuthService } from './auth';
 import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, User, Group, ACL } from '../types/cmis';
 
 export class CMISService {
   private baseUrl = '/core/rest/repo';
+  private authService: AuthService;
+
+  constructor() {
+    this.authService = AuthService.getInstance();
+  }
+
+  private getAuthHeaders() {
+    try {
+      const headers = this.authService.getAuthHeaders();
+      console.log('CMISService getAuthHeaders from AuthService:', headers);
+      if (headers && Object.keys(headers).length > 0) {
+        return headers;
+      }
+    } catch (e) {
+      console.warn('CMISService: AuthService not available, falling back to localStorage');
+    }
+    
+    try {
+      const authData = localStorage.getItem('nemakiware_auth');
+      if (authData) {
+        const auth = JSON.parse(authData);
+        if (auth.token) {
+          console.log('CMISService getAuthHeaders from localStorage:', { AUTH_TOKEN: auth.token });
+          return { 'AUTH_TOKEN': auth.token };
+        }
+      }
+    } catch (e) {
+      console.error('CMISService: Failed to get auth from localStorage:', e);
+    }
+    
+    console.warn('CMISService: No authentication available');
+    return {};
+  }
 
   async getRepositories(): Promise<string[]> {
     try {
@@ -40,35 +74,99 @@ export class CMISService {
       return [];
     }
   }
-  private authService = AuthService.getInstance();
-
-  private getAuthHeaders() {
-    return this.authService.getAuthHeaders();
-  }
 
 
   async getRootFolder(repositoryId: string): Promise<CMISObject> {
-    const response = await axios.get(
-      `${this.baseUrl}/${repositoryId}/node/root`,
-      { headers: this.getAuthHeaders() }
-    );
-    return response.data.object;
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', `${this.baseUrl}/${repositoryId}/node/root`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response.object);
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send();
+    });
   }
 
   async getChildren(repositoryId: string, folderId: string): Promise<CMISObject[]> {
-    const response = await axios.get(
-      `${this.baseUrl}/${repositoryId}/node/${folderId}/children`,
-      { headers: this.getAuthHeaders() }
-    );
-    return response.data.children || [];
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', `${this.baseUrl}/${repositoryId}/node/${folderId}/children`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response.children || []);
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send();
+    });
   }
 
   async getObject(repositoryId: string, objectId: string): Promise<CMISObject> {
-    const response = await axios.get(
-      `${this.baseUrl}/${repositoryId}/node/${objectId}`,
-      { headers: this.getAuthHeaders() }
-    );
-    return response.data.object;
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', `${this.baseUrl}/${repositoryId}/node/${objectId}`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response.object);
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send();
+    });
   }
 
   async createDocument(repositoryId: string, parentId: string, file: File, properties: Record<string, any>): Promise<CMISObject> {
@@ -278,11 +376,34 @@ export class CMISService {
   }
 
   async getGroups(repositoryId: string): Promise<Group[]> {
-    const response = await axios.get(
-      `${this.baseUrl}/${repositoryId}/group/list`,
-      { headers: this.getAuthHeaders() }
-    );
-    return response.data.groups || [];
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', `${this.baseUrl}/${repositoryId}/group/list`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response.groups || []);
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send();
+    });
   }
 
   async createGroup(repositoryId: string, group: Partial<Group>): Promise<Group> {
@@ -312,11 +433,34 @@ export class CMISService {
   }
 
   async getTypes(repositoryId: string): Promise<TypeDefinition[]> {
-    const response = await axios.get(
-      `${this.baseUrl}/${repositoryId}/type/list`,
-      { headers: this.getAuthHeaders() }
-    );
-    return response.data.types || [];
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', `${this.baseUrl}/${repositoryId}/type/list`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response.types || []);
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send();
+    });
   }
 
   async getType(repositoryId: string, typeId: string): Promise<TypeDefinition> {
