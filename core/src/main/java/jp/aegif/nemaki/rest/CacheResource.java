@@ -9,7 +9,8 @@ import jp.aegif.nemaki.util.lock.ThreadLockService;
 import org.apache.commons.lang3.StringUtils;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
-import play.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.*;
@@ -21,6 +22,8 @@ import java.util.concurrent.locks.Lock;
 
 @Path("/repo/{repositoryId}/cache/")
 public class CacheResource extends ResourceBase{
+	
+	private static final Logger logger = LoggerFactory.getLogger(CacheResource.class);
 	private NemakiCachePool nemakiCachePool;
 	private ThreadLockService threadLockService;
 
@@ -50,13 +53,13 @@ public class CacheResource extends ResourceBase{
 				GregorianCalendar beforeDate = DataUtil.convertToCalender(strBeforeDate);
 				Content c = cache.getContentCache().get(objectId);
 				if (c == null) {
-					Logger.info("Target cache not found.");
+					logger.info("Target cache not found.");
 					result.put("deleted", false);
 				} else {
 					if (beforeDate.compareTo(c.getModified()) > 0) {
 						cache.removeCmisAndContentCache(objectId);
 						result.put("deleted", true);
-						Logger.info("Remove cmis object and content cache because updated by other.");
+						logger.info("Remove cmis object and content cache because updated by other.");
 					}else{
 						result.put("deleted", false);
 					}
@@ -66,7 +69,7 @@ public class CacheResource extends ResourceBase{
 				result.put("deleted", true);
 			}
 		} catch (ParseException e) {
-			Logger.error(e.getMessage());
+			logger.error(e.getMessage());
 			addErrMsg(errMsg, ITEM_ERROR, ErrorCode.ERR_READ);
 		} finally {
 			lock.unlock();
@@ -105,7 +108,7 @@ public class CacheResource extends ResourceBase{
 			cache.removeCmisAndTreeCache(parentId);
 			result.put("deleted", true);
 		} catch (Exception e) {
-			Logger.error(e.getMessage());
+			logger.error(e.getMessage());
 			addErrMsg(errMsg, ITEM_ERROR, ErrorCode.ERR_READ);
 		} finally {
 			lock.unlock();

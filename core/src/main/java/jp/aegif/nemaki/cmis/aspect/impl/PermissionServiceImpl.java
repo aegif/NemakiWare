@@ -58,7 +58,8 @@ import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.CmisPermission;
 import jp.aegif.nemaki.util.constant.PropertyKey;
-import play.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Permission Service implementation.
@@ -67,6 +68,7 @@ import play.Logger;
 public class PermissionServiceImpl implements PermissionService {
 
 	private static final Log log = LogFactory.getLog(PermissionServiceImpl.class);
+	private static final Logger logger = LoggerFactory.getLogger(PermissionServiceImpl.class);
 
 	private PrincipalService principalService;
 	private ContentService contentService;
@@ -216,7 +218,7 @@ public class PermissionServiceImpl implements PermissionService {
 	}
 	
 	private boolean calcAnyonePermission(String repositoryId, String key, Content content, List<Ace> aces){
-		Logger.info(MessageFormat.format("[{0}]CheckAnyonePermission BEGIN:{1}",content.getName(), key));
+		logger.info(MessageFormat.format("[{0}]CheckAnyonePermission BEGIN:{1}",content.getName(), key));
 		RepositoryInfo info = repositoryInfoMap.get(repositoryId);
 //log.info("key: " + key);
 //log.info("aces: " + aces.stream().flatMap(ace -> ace.getPermissions().stream()).toArray().toString());
@@ -225,13 +227,13 @@ public class PermissionServiceImpl implements PermissionService {
 				.flatMap(ace -> ace.getPermissions().stream())
 				.collect(Collectors.toSet());
 		boolean calcPermission =  checkCalculatedPermissions(repositoryId, key, anyonePermissions);
-		Logger.info(MessageFormat.format("[{0}]CheckAnyonePermission END:{1}",content.getName(),  calcPermission));
+		logger.info(MessageFormat.format("[{0}]CheckAnyonePermission END:{1}",content.getName(),  calcPermission));
 		return calcPermission;
 	}
 
 
 	private boolean calcGroupPermission(String repositoryId, String key, Content content, Set<String> groups, List<Ace> aces) {
-		Logger.info(MessageFormat.format("[{0}][{1}]CheckGroupPermission BEGIN:{2}",content.getName(), groups, key));
+		logger.info(MessageFormat.format("[{0}][{1}]CheckGroupPermission BEGIN:{2}",content.getName(), groups, key));
 		if( CollectionUtils.isEmpty(groups)) return false;
 		Set<String> groupPermissions = aces.stream()
 				.filter(ace -> groups.contains(ace.getPrincipalId()))
@@ -240,14 +242,14 @@ public class PermissionServiceImpl implements PermissionService {
 
 		// Check mapping between the group and the content
 		boolean calcPermission =  checkCalculatedPermissions(repositoryId, key, groupPermissions);
-		Logger.info(MessageFormat.format("[{0}][{1}]CheckGroupPermission END:{2}",content.getName(), groups, calcPermission));
+		logger.info(MessageFormat.format("[{0}][{1}]CheckGroupPermission END:{2}",content.getName(), groups, calcPermission));
 		return calcPermission;
 	}
 
 
 	private boolean calcUserPermission(String repositoryId, String key, Content content, String userName,
 			List<Ace> aces) {
-		Logger.info(MessageFormat.format("[{0}][{1}]CheckUserPermission BEGIN:{2}",content.getName(), userName, key));
+		logger.info(MessageFormat.format("[{0}][{1}]CheckUserPermission BEGIN:{2}",content.getName(), userName, key));
 		Set<String> userPermissions = aces.stream()
 			.filter(ace -> ace.getPrincipalId().equals(userName))
 			.flatMap(ace -> ace.getPermissions().stream())
@@ -255,7 +257,7 @@ public class PermissionServiceImpl implements PermissionService {
 
 		// Check mapping between the user and the content
 		boolean calcPermission =  checkCalculatedPermissions(repositoryId, key, userPermissions);
-		Logger.info(MessageFormat.format("[{0}][{1}]CheckUserPermission END:{2}",content.getName(), userName, calcPermission));
+		logger.info(MessageFormat.format("[{0}][{1}]CheckUserPermission END:{2}",content.getName(), userName, calcPermission));
 		return calcPermission;
 	}
 

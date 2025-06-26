@@ -10,6 +10,7 @@ import {
   Modal, 
   Upload, 
   Form,
+  Input,
   Tag,
   Popconfirm
 } from 'antd';
@@ -18,7 +19,6 @@ import {
   EditOutlined, 
   LockOutlined, 
   UnlockOutlined,
-  HistoryOutlined,
   UploadOutlined,
   ArrowLeftOutlined
 } from '@ant-design/icons';
@@ -26,6 +26,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
 import { CMISObject, VersionHistory, TypeDefinition, Relationship } from '../../types/cmis';
 import { PropertyEditor } from '../PropertyEditor/PropertyEditor';
+import { ActionButtons } from '../ActionButtons/ActionButtons';
 
 interface DocumentViewerProps {
   repositoryId: string;
@@ -182,7 +183,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     {
       title: 'アクション',
       key: 'actions',
-      render: (_, record: CMISObject) => (
+      render: (_: any, record: CMISObject) => (
         <Button 
           size="small"
           onClick={() => {
@@ -250,6 +251,18 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
           rowKey="id"
           size="small"
           pagination={false}
+        />
+      ),
+    },
+    {
+      key: 'actions',
+      label: 'アクション',
+      children: (
+        <ActionButtons
+          repositoryId={repositoryId}
+          objectId={object.id}
+          triggerType="UserButton"
+          onActionComplete={loadObject}
         />
       ),
     },

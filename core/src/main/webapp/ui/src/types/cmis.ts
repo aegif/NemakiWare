@@ -93,3 +93,33 @@ export interface Relationship {
   relationshipType: string;
   properties: Record<string, any>;
 }
+
+export interface ActionDefinition {
+  id: string;
+  title: string;
+  description: string;
+  triggerType: 'UserButton' | 'UserCreate';
+  canExecute: boolean;
+  fontAwesome?: string;
+}
+
+export interface ActionFormField {
+  name: string;
+  type: 'text' | 'select' | 'textarea' | 'number' | 'date';
+  label: string;
+  required: boolean;
+  options?: { value: string; label: string }[];
+  defaultValue?: any;
+}
+
+export interface ActionForm {
+  actionId: string;
+  title: string;
+  fields: ActionFormField[];
+}
+
+export interface ActionExecutionResult {
+  success: boolean;
+  message: string;
+  data?: any;
+}
