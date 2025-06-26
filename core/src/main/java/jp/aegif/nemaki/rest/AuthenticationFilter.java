@@ -66,9 +66,8 @@ public class AuthenticationFilter implements Filter {
 		
 		System.out.println("AUTH FILTER DEBUG: pathInfo='" + pathInfo + "', requestURI='" + requestURI + "'");
 		
-		// Bypass authentication for repositories endpoint
 		if((pathInfo != null && pathInfo.equals("/repositories")) || 
-		   (requestURI != null && requestURI.endsWith("/rest/repositories"))){
+		   (requestURI != null && requestURI.contains("/rest/repositories"))){
 			System.out.println("AUTH FILTER: Bypassing authentication for repositories endpoint");
 			chain.doFilter(req, res);
 			return;
