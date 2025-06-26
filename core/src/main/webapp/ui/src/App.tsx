@@ -28,6 +28,8 @@ function App() {
 
   React.useEffect(() => {
     const authService = AuthService.getInstance();
+    (window as any).authService = authService;
+    
     const authData = localStorage.getItem('nemakiware_auth');
     if (authData) {
       try {
@@ -38,7 +40,6 @@ function App() {
         localStorage.removeItem('nemakiware_auth');
       }
     }
-    (window as any).authService = authService;
   }, []);
 
   if (!isAuthenticated) {

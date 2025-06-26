@@ -16,6 +16,10 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
   const authService = AuthService.getInstance();
   const cmisService = new CMISService();
+  
+  React.useEffect(() => {
+    (window as any).authService = authService;
+  }, [authService]);
 
   React.useEffect(() => {
     loadRepositories();
