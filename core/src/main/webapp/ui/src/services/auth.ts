@@ -30,7 +30,7 @@ export class AuthService {
 
   async login(username: string, password: string, repositoryId: string): Promise<AuthToken> {
     const response = await axios.get(
-      `/rest/repo/${repositoryId}/authtoken/${username}/register`,
+      `/core/rest/repo/${repositoryId}/authtoken/${username}/register`,
       { 
         auth: { username, password },
         headers: { 'Accept': 'application/json' }
@@ -48,7 +48,7 @@ export class AuthService {
 
   logout(): void {
     if (this.currentAuth) {
-      axios.get(`/rest/repo/${this.currentAuth.repositoryId}/authtoken/${this.currentAuth.username}/unregister`, {
+      axios.get(`/core/rest/repo/${this.currentAuth.repositoryId}/authtoken/${this.currentAuth.username}/unregister`, {
         headers: this.getAuthHeaders()
       }).catch(() => {});
     }

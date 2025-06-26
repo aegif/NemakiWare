@@ -3,7 +3,7 @@ import { AuthService } from './auth';
 import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, User, Group, ACL } from '../types/cmis';
 
 export class CMISService {
-  private baseUrl = '/rest/repo';
+  private baseUrl = '/core/rest/repo';
   private authService = AuthService.getInstance();
 
   private getAuthHeaders() {
@@ -11,9 +11,7 @@ export class CMISService {
   }
 
   async getRepositories(): Promise<string[]> {
-    const response = await axios.get('/rest/repositories', {
-      headers: this.getAuthHeaders()
-    });
+    const response = await axios.get('/core/rest/repositories');
     return response.data.repositories || [];
   }
 
