@@ -18,29 +18,35 @@ export class AuthService {
   }
 
   constructor() {
-    const authData = localStorage.getItem('nemaki_auth');
+    const authData = localStorage.getItem('nemakiware_auth');
     if (authData) {
       try {
         this.currentAuth = JSON.parse(authData);
       } catch (e) {
-        localStorage.removeItem('nemaki_auth');
+        localStorage.removeItem('nemakiware_auth');
       }
     }
   }
 
   async login(username: string, password: string, repositoryId: string): Promise<AuthToken> {
-    const response = await axios.get(
-      `/core/rest/repo/${repositoryId}/authtoken/${username}/register`,
+    const formData = new URLSearchParams();
+    formData.append('password', password);
+    
+    const response = await axios.post(
+      `/core/rest/repo/${repositoryId}/authtoken/${username}/login`,
+      formData,
       { 
-        auth: { username, password },
-        headers: { 'Accept': 'application/json' }
+        headers: { 
+          'Accept': 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
       }
     );
     
     if (response.data.status === 'success') {
       const token = response.data.value.token;
       this.currentAuth = { token, repositoryId, username };
-      localStorage.setItem('nemaki_auth', JSON.stringify(this.currentAuth));
+      localStorage.setItem('nemakiware_auth', JSON.stringify(this.currentAuth));
       return this.currentAuth;
     }
     throw new Error('Authentication failed');
@@ -53,7 +59,7 @@ export class AuthService {
       }).catch(() => {});
     }
     this.currentAuth = null;
-    localStorage.removeItem('nemaki_auth');
+    localStorage.removeItem('nemakiware_auth');
   }
 
   getAuthToken(): string | null {
@@ -66,7 +72,14 @@ export class AuthService {
 
   getAuthHeaders(): Record<string, string> {
     const token = this.getAuthToken();
-    return token ? { 'Authorization': `Bearer ${token}` } : {};
+    const auth = this.getCurrentAuth();
+    if (token && auth) {
+      return { 
+        'AUTH_TOKEN': token,
+        'Authorization': `Basic ${btoa(`${auth.username}:${token}`)}`
+      };
+    }
+    return {};
   }
 
   isAuthenticated(): boolean {

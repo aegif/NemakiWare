@@ -63,12 +63,49 @@ public class AuthenticationFilter implements Filter {
 		HttpServletResponse hres = (HttpServletResponse) res;
 		String pathInfo = hreq.getPathInfo();
 		String requestURI = hreq.getRequestURI();
+		String authToken = hreq.getHeader("AUTH_TOKEN");
 		
-		System.out.println("AUTH FILTER DEBUG: pathInfo='" + pathInfo + "', requestURI='" + requestURI + "'");
+		System.out.println("AUTH FILTER TOKEN: pathInfo='" + pathInfo + "', requestURI='" + requestURI + "', authToken='" + authToken + "'");
 		
-		if((pathInfo != null && pathInfo.equals("/repositories")) || 
-		   (requestURI != null && requestURI.contains("/rest/repositories"))){
-			System.out.println("AUTH FILTER: Bypassing authentication for repositories endpoint");
+		// Bypass authentication for repositories endpoint
+		if (pathInfo != null && pathInfo.equals("/repositories")) {
+			System.out.println("AUTH FILTER TOKEN: Bypassing repositories");
+			chain.doFilter(req, res);
+			return;
+		}
+		
+		if (requestURI != null && requestURI.contains("/rest/repositories")) {
+			System.out.println("AUTH FILTER TOKEN: Bypassing repositories URI");
+			chain.doFilter(req, res);
+			return;
+		}
+		
+		// Bypass authentication for login endpoints
+		if (pathInfo != null && pathInfo.contains("/login")) {
+			System.out.println("AUTH FILTER TOKEN: Bypassing login endpoint");
+			chain.doFilter(req, res);
+			return;
+		}
+		
+		if (requestURI != null && requestURI.contains("/login")) {
+			System.out.println("AUTH FILTER TOKEN: Bypassing login URI");
+			chain.doFilter(req, res);
+			return;
+		}
+		
+		// If AUTH_TOKEN header is present, bypass authentication filter
+		// This allows the application to handle token authentication internally
+		if (authToken != null && !authToken.trim().isEmpty()) {
+			System.out.println("AUTH FILTER TOKEN: Bypassing authentication due to AUTH_TOKEN header");
+			// Create a minimal call context for token-based requests
+			final String repositoryId = getRepositoryId(hreq);
+			NemakiAuthCallContextHandler callContextHandler = new NemakiAuthCallContextHandler();
+			Map<String, String> map = callContextHandler.getCallContextMap(hreq);
+			CallContextImpl ctxt = new CallContextImpl(null, CmisVersion.CMIS_1_1, repositoryId, null, hreq, hres, null, null);
+			for(String key : map.keySet()){
+				ctxt.put(key, map.get(key));
+			}
+			hreq.setAttribute("CallContext", ctxt);
 			chain.doFilter(req, res);
 			return;
 		}

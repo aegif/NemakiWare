@@ -27,16 +27,18 @@ function App() {
   const [repositoryId, setRepositoryId] = React.useState<string>('');
 
   React.useEffect(() => {
-    const authData = localStorage.getItem('nemaki_auth');
+    const authService = AuthService.getInstance();
+    const authData = localStorage.getItem('nemakiware_auth');
     if (authData) {
       try {
         const auth = JSON.parse(authData);
         setIsAuthenticated(true);
         setRepositoryId(auth.repositoryId);
       } catch (e) {
-        localStorage.removeItem('nemaki_auth');
+        localStorage.removeItem('nemakiware_auth');
       }
     }
+    (window as any).authService = authService;
   }, []);
 
   if (!isAuthenticated) {
