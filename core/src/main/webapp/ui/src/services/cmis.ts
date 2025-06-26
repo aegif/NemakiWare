@@ -1,4 +1,3 @@
-import axios from 'axios';
 import { AuthService } from './auth';
 import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, User, Group, ACL } from '../types/cmis';
 
@@ -7,11 +6,35 @@ export class CMISService {
 
   async getRepositories(): Promise<string[]> {
     try {
-      const response = await axios.get('/core/rest/repositories');
-      if (response.data && response.data.repositories) {
-        return response.data.repositories;
-      }
-      return [];
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', '/core/rest/repositories', true);
+        xhr.setRequestHeader('Accept', 'application/json');
+        
+        xhr.onreadystatechange = () => {
+          if (xhr.readyState === 4) {
+            if (xhr.status === 200) {
+              try {
+                const response = JSON.parse(xhr.responseText);
+                resolve(response.repositories || []);
+              } catch (e) {
+                console.error('Failed to parse repositories response:', e);
+                resolve([]);
+              }
+            } else {
+              console.error('Failed to fetch repositories:', xhr.status);
+              resolve([]);
+            }
+          }
+        };
+        
+        xhr.onerror = () => {
+          console.error('Network error fetching repositories');
+          resolve([]);
+        };
+        
+        xhr.send();
+      });
     } catch (error) {
       console.error('Failed to fetch repositories:', error);
       return [];
@@ -70,16 +93,35 @@ export class CMISService {
   }
 
   async createFolder(repositoryId: string, parentId: string, name: string, properties: Record<string, any> = {}): Promise<CMISObject> {
-    const response = await axios.post(
-      `${this.baseUrl}/${repositoryId}/folder/create`,
-      {
-        parentId,
-        name,
-        ...properties
-      },
-      { headers: this.getAuthHeaders() }
-    );
-    return response.data.object;
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}/folder/create`, true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response.object);
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send(JSON.stringify({ parentId, name, ...properties }));
+    });
   }
 
   async updateProperties(repositoryId: string, objectId: string, properties: Record<string, any>): Promise<CMISObject> {
@@ -179,11 +221,34 @@ export class CMISService {
   }
 
   async getUsers(repositoryId: string): Promise<User[]> {
-    const response = await axios.get(
-      `${this.baseUrl}/${repositoryId}/user/list`,
-      { headers: this.getAuthHeaders() }
-    );
-    return response.data.users || [];
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', `${this.baseUrl}/${repositoryId}/user/list`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response.users || []);
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send();
+    });
   }
 
   async createUser(repositoryId: string, user: Partial<User>): Promise<User> {

@@ -1,4 +1,3 @@
-import axios from 'axios';
 
 export interface AuthToken {
   token: string;
@@ -32,31 +31,48 @@ export class AuthService {
     const formData = new URLSearchParams();
     formData.append('password', password);
     
-    const response = await axios.post(
-      `/core/rest/repo/${repositoryId}/authtoken/${username}/login`,
-      formData,
-      { 
-        headers: { 
-          'Accept': 'application/json',
-          'Content-Type': 'application/x-www-form-urlencoded'
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `/core/rest/repo/${repositoryId}/authtoken/${username}/login`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+      xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              if (response.status === 'success') {
+                const token = response.value.token;
+                this.currentAuth = { token, repositoryId, username };
+                localStorage.setItem('nemakiware_auth', JSON.stringify(this.currentAuth));
+                resolve(this.currentAuth);
+              } else {
+                reject(new Error('Authentication failed'));
+              }
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error('Authentication failed'));
+          }
         }
-      }
-    );
-    
-    if (response.data.status === 'success') {
-      const token = response.data.value.token;
-      this.currentAuth = { token, repositoryId, username };
-      localStorage.setItem('nemakiware_auth', JSON.stringify(this.currentAuth));
-      return this.currentAuth;
-    }
-    throw new Error('Authentication failed');
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send(formData.toString());
+    });
   }
 
   logout(): void {
     if (this.currentAuth) {
-      axios.get(`/core/rest/repo/${this.currentAuth.repositoryId}/authtoken/${this.currentAuth.username}/unregister`, {
-        headers: this.getAuthHeaders()
-      }).catch(() => {});
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', `/core/rest/repo/${this.currentAuth.repositoryId}/authtoken/${this.currentAuth.username}/unregister`, true);
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      xhr.send();
     }
     this.currentAuth = null;
     localStorage.removeItem('nemakiware_auth');
