@@ -61,6 +61,18 @@ public class AuthenticationFilter implements Filter {
 			FilterChain chain) throws IOException, ServletException {
 		HttpServletRequest hreq = (HttpServletRequest) req;
 		HttpServletResponse hres = (HttpServletResponse) res;
+		String pathInfo = hreq.getPathInfo();
+		String requestURI = hreq.getRequestURI();
+		
+		System.out.println("AUTH FILTER DEBUG: pathInfo='" + pathInfo + "', requestURI='" + requestURI + "'");
+		
+		// Bypass authentication for repositories endpoint
+		if((pathInfo != null && pathInfo.equals("/repositories")) || 
+		   (requestURI != null && requestURI.endsWith("/rest/repositories"))){
+			System.out.println("AUTH FILTER: Bypassing authentication for repositories endpoint");
+			chain.doFilter(req, res);
+			return;
+		}
 
 		boolean auth = login(hreq, hres);
 		if(auth){
