@@ -4,16 +4,25 @@ import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition,
 
 export class CMISService {
   private baseUrl = '/core/rest/repo';
+
+  async getRepositories(): Promise<string[]> {
+    try {
+      const response = await axios.get('/core/rest/repositories');
+      if (response.data && response.data.repositories) {
+        return response.data.repositories;
+      }
+      return [];
+    } catch (error) {
+      console.error('Failed to fetch repositories:', error);
+      return [];
+    }
+  }
   private authService = AuthService.getInstance();
 
   private getAuthHeaders() {
     return this.authService.getAuthHeaders();
   }
 
-  async getRepositories(): Promise<string[]> {
-    const response = await axios.get('/core/rest/repositories');
-    return response.data.repositories || [];
-  }
 
   async getRootFolder(repositoryId: string): Promise<CMISObject> {
     const response = await axios.get(
