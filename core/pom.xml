@@ -389,8 +389,14 @@
 				<artifactId>maven-war-plugin</artifactId>
 				<version>3.3.1</version>
 				<configuration>
-					 <packagingExcludes>**/custom-nemakiware.properties</packagingExcludes>
-					 <packagingExcludes>**/custom-repository.yml</packagingExcludes>
+					<packagingExcludes>**/custom-nemakiware.properties</packagingExcludes>
+					<packagingExcludes>**/custom-repository.yml</packagingExcludes>
+					<webResources>
+						<resource>
+							<directory>src/main/webapp/ui/dist</directory>
+							<targetPath>ui</targetPath>
+						</resource>
+					</webResources>
 				</configuration>
 			</plugin>
 			<plugin>

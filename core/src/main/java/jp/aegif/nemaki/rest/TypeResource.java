@@ -44,6 +44,40 @@ public class TypeResource extends ResourceBase {
 	private final HashMap<String, NemakiPropertyDefinitionDetail> detailMaps = new HashMap<String, NemakiPropertyDefinitionDetail>();
 	private final HashMap<String, List<String>> typeProperties = new HashMap<String, List<String>>();
 
+	@GET
+	@Path("/list")
+	@Produces(MediaType.APPLICATION_JSON)
+	public String list(@PathParam("repositoryId") String repositoryId) {
+		boolean status = true;
+		JSONObject result = new JSONObject();
+		JSONArray types = new JSONArray();
+		JSONArray errMsg = new JSONArray();
+
+		try {
+			List<NemakiTypeDefinition> typeDefinitions = typeService.getTypeDefinitions(repositoryId);
+			
+			for (NemakiTypeDefinition typeDef : typeDefinitions) {
+				JSONObject typeObj = new JSONObject();
+				typeObj.put("typeId", typeDef.getTypeId());
+				typeObj.put("displayName", typeDef.getDisplayName());
+				typeObj.put("description", typeDef.getDescription());
+				typeObj.put("baseId", typeDef.getBaseId().value());
+				typeObj.put("parentId", typeDef.getParentId());
+				types.add(typeObj);
+			}
+			
+			result.put("types", types);
+			status = true;
+		} catch (Exception e) {
+			log.warn("Failed to retrieve type list", e);
+			addErrMsg(errMsg, "types", "failsToRetrieve");
+			status = false;
+		}
+
+		result = makeResult(status, result, errMsg);
+		return result.toJSONString();
+	}
+
 	@POST
 	@Path("/register")
 	@Produces(MediaType.APPLICATION_JSON)
