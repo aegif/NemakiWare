@@ -26,13 +26,25 @@ import java.util.GregorianCalendar;
 import jp.aegif.nemaki.model.NodeBase;
 import jp.aegif.nemaki.util.constant.NodeType;
 
-import org.ektorp.support.CouchDbDocument;
-
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonAnySetter;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import java.util.Map;
+import java.util.HashMap;
 
 @JsonIgnoreProperties(ignoreUnknown=true)
-public class CouchNodeBase extends CouchDbDocument{
+@JsonDeserialize(as = CouchNodeBase.class)
+public class CouchNodeBase {
 	private static final long serialVersionUID = 8798101386986624403L;
+
+	// CouchDB document fields
+	@JsonProperty("_id")
+	protected String id;
+	
+	@JsonProperty("_rev")
+	protected String revision;
 
 	protected String type;
 	protected GregorianCalendar created;
@@ -40,19 +52,59 @@ public class CouchNodeBase extends CouchDbDocument{
 	protected GregorianCalendar modified;
 	protected String modifier;
 	
+	// Cloudant SDK Documentオブジェクトの動的プロパティを処理
+	protected Map<String, Object> additionalProperties = new HashMap<>();
+	
 	public CouchNodeBase(){
-		super();
+	}
+	
+	// Mapベースのコンストラクタを追加（Cloudant Document変換用）
+	@JsonCreator
+	public CouchNodeBase(Map<String, Object> properties) {
+		if (properties != null) {
+			// 基本フィールドのマッピング
+			if (properties.containsKey("_id")) {
+				this.id = (String) properties.get("_id");
+			}
+			if (properties.containsKey("_rev")) {
+				this.revision = (String) properties.get("_rev");
+			}
+			if (properties.containsKey("type")) {
+				this.type = (String) properties.get("type");
+			}
+			
+			// 日付フィールドの処理
+			// TODO: GregorianCalendar変換ロジックを追加
+			
+			if (properties.containsKey("creator")) {
+				this.creator = (String) properties.get("creator");
+			}
+			if (properties.containsKey("modifier")) {
+				this.modifier = (String) properties.get("modifier");
+			}
+			
+			// その他のプロパティを保存
+			this.additionalProperties.putAll(properties);
+		}
 	}
 	
 	public CouchNodeBase(NodeBase nb){
-		super();
-		//CouchDbDocument doesn't allow setId(null)
+		//Don't allow setId(null)
 		if(nb.getId() != null) setId(nb.getId());
 		setType(nb.getType());
 		setCreated(nb.getCreated());
 		setCreator(nb.getCreator());
 		setModified(nb.getModified());
 		setModifier(nb.getModifier());
+		
+		// COMPREHENSIVE REVISION MANAGEMENT: Preserve revision from NodeBase
+		setRevision(nb.getRevision());
+	}
+	
+	// 動的プロパティを処理するためのメソッド
+	@JsonAnySetter
+	public void setAdditionalProperty(String name, Object value) {
+		this.additionalProperties.put(name, value);
 	}
 	
 	public String getType() {
@@ -119,6 +171,23 @@ public class CouchNodeBase extends CouchDbDocument{
 		this.modifier = modifier;
 	}
 	
+	// CouchDB document methods (replacing CouchDbDocument functionality)
+	public String getId() {
+		return id;
+	}
+	
+	public void setId(String id) {
+		this.id = id;
+	}
+	
+	public String getRevision() {
+		return revision;
+	}
+	
+	public void setRevision(String revision) {
+		this.revision = revision;
+	}
+	
 	public NodeBase convert(){
 		NodeBase n = new NodeBase();
 		n.setId(getId());
@@ -127,6 +196,11 @@ public class CouchNodeBase extends CouchDbDocument{
 		n.setCreator(getCreator());
 		n.setModified(getModified());
 		n.setModifier(getModifier());
+		
+		// COMPREHENSIVE REVISION MANAGEMENT: Preserve revision during conversion
+		// This ensures Content objects maintain revision state from CouchDB layer
+		n.setRevision(getRevision());
+		
 		return n;
 	}
 }

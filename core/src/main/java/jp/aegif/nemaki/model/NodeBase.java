@@ -37,6 +37,10 @@ public class NodeBase{
 	protected GregorianCalendar modified;
 	protected String modifier;
 	
+	// COMPREHENSIVE REVISION MANAGEMENT: Add revision property to Content layer
+	// This enables Content objects to maintain revision state across operations
+	protected String revision;
+	
 	public String getId() {
 		return id;
 	}
@@ -83,6 +87,15 @@ public class NodeBase{
 
 	public void setModifier(String modifier) {
 		this.modifier = modifier;
+	}
+	
+	// COMPREHENSIVE REVISION MANAGEMENT: Getter and setter for revision property
+	public String getRevision() {
+		return revision;
+	}
+	
+	public void setRevision(String revision) {
+		this.revision = revision;
 	}
 	
 	public Boolean isFolder() {

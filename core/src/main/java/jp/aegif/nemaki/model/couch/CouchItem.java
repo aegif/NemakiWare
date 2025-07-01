@@ -21,14 +21,26 @@
  ******************************************************************************/
 package jp.aegif.nemaki.model.couch;
 
-import jp.aegif.nemaki.model.Item;
+import java.util.Map;
 
+import jp.aegif.nemaki.model.Item;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+
+@JsonDeserialize(as = CouchItem.class)
 public class CouchItem extends CouchContent{
 	
 	private static final long serialVersionUID = 5431775285043659123L;
 
 	public CouchItem(){
 		super();
+	}
+	
+	// Mapベースのコンストラクタを追加（Cloudant Document変換用）
+	@JsonCreator
+	public CouchItem(Map<String, Object> properties) {
+		super(properties); // 親クラスのMapコンストラクタを呼び出し
+		// CouchItemには固有フィールドがないため、親クラスの処理のみ
 	}
 	
 	public CouchItem(Item i){

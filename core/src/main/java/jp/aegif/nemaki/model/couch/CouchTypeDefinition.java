@@ -23,12 +23,17 @@
 package jp.aegif.nemaki.model.couch;
 
 import java.util.List;
+import java.util.Map;
 
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
 
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+
+@JsonDeserialize(as = CouchTypeDefinition.class)
 public class CouchTypeDefinition extends CouchNodeBase {
 
 	private static final long serialVersionUID = 8066284826946206320L;
@@ -64,6 +69,106 @@ public class CouchTypeDefinition extends CouchNodeBase {
 
 	public CouchTypeDefinition() {
 		super();
+	}
+	
+	// Mapベースのコンストラクタを追加（Cloudant Document変換用）
+	@JsonCreator
+	public CouchTypeDefinition(Map<String, Object> properties) {
+		super(properties); // 親クラスのMapコンストラクタを呼び出し
+		
+		if (properties != null) {
+			// 文字列フィールドの処理
+			this.typeId = (String) properties.get("typeId");
+			this.localName = (String) properties.get("localName");
+			this.localNameSpace = (String) properties.get("localNameSpace");
+			this.queryName = (String) properties.get("queryName");
+			this.displayName = (String) properties.get("displayName");
+			this.parentId = (String) properties.get("parentId");
+			this.description = (String) properties.get("description");
+			
+			// BaseTypeId列挙型の処理（CouchDB形式からCMIS形式に変換）
+			if (properties.containsKey("baseId")) {
+				String baseIdStr = (String) properties.get("baseId");
+				if (baseIdStr != null) {
+					try {
+						// CouchDB形式（CMIS_ITEM）からCMIS形式（cmis:item）に変換
+						String cmisFormat = convertToNormalizedBaseTypeId(baseIdStr);
+						this.baseId = BaseTypeId.fromValue(cmisFormat);
+					} catch (Exception e) {
+						// フォールバック：元の値を試す
+						try {
+							this.baseId = BaseTypeId.fromValue(baseIdStr);
+						} catch (Exception e2) {
+							// 無効な値の場合は無視（ログに記録すべき）
+							System.err.println("Warning: Invalid BaseTypeId value: " + baseIdStr);
+						}
+					}
+				}
+			}
+			
+			// Boolean型フィールドの処理
+			String[] booleanFields = {
+				"creatable", "filable", "queryable", "controllablePolicy", 
+				"controllableACL", "fulltextIndexed", "includedInSupertypeQuery",
+				"typeMutabilityCreate", "typeMutabilityUpdate", "typeMutabilityDelete",
+				"versionable"
+			};
+			
+			for (String field : booleanFields) {
+				if (properties.containsKey(field)) {
+					Object value = properties.get(field);
+					Boolean boolValue = value instanceof Boolean ? (Boolean) value : 
+						value != null ? Boolean.parseBoolean(String.valueOf(value)) : null;
+					
+					// リフレクションを使わず、フィールドごとに設定
+					switch (field) {
+						case "creatable": this.creatable = boolValue; break;
+						case "filable": this.filable = boolValue; break;
+						case "queryable": this.queryable = boolValue; break;
+						case "controllablePolicy": this.controllablePolicy = boolValue; break;
+						case "controllableACL": this.controllableACL = boolValue; break;
+						case "fulltextIndexed": this.fulltextIndexed = boolValue; break;
+						case "includedInSupertypeQuery": this.includedInSupertypeQuery = boolValue; break;
+						case "typeMutabilityCreate": this.typeMutabilityCreate = boolValue; break;
+						case "typeMutabilityUpdate": this.typeMutabilityUpdate = boolValue; break;
+						case "typeMutabilityDelete": this.typeMutabilityDelete = boolValue; break;
+						case "versionable": this.versionable = boolValue; break;
+					}
+				}
+			}
+			
+			// ContentStreamAllowed列挙型の処理
+			if (properties.containsKey("contentStreamAllowed")) {
+				String csaStr = (String) properties.get("contentStreamAllowed");
+				if (csaStr != null) {
+					try {
+						this.contentStreamAllowed = ContentStreamAllowed.fromValue(csaStr);
+					} catch (Exception e) {
+						// 無効な値の場合は無視
+					}
+				}
+			}
+			
+			// List型フィールドの処理
+			if (properties.containsKey("properties")) {
+				Object value = properties.get("properties");
+				if (value instanceof List) {
+					this.properties = (List<String>) value;
+				}
+			}
+			if (properties.containsKey("allowedSourceTypes")) {
+				Object value = properties.get("allowedSourceTypes");
+				if (value instanceof List) {
+					this.allowedSourceTypes = (List<String>) value;
+				}
+			}
+			if (properties.containsKey("allowedTargetTypes")) {
+				Object value = properties.get("allowedTargetTypes");
+				if (value instanceof List) {
+					this.allowedTargetTypes = (List<String>) value;
+				}
+			}
+		}
 	}
 
 	public CouchTypeDefinition(NemakiTypeDefinition t) {
@@ -314,5 +419,35 @@ public class CouchTypeDefinition extends CouchNodeBase {
 		t.setAllowedTargetTypes(getAllowedTargetTypes());
 
 		return t;
+	}
+	
+	/**
+	 * CouchDB形式のBaseTypeId（CMIS_ITEM）をCMIS形式（cmis:item）に変換
+	 */
+	private String convertToNormalizedBaseTypeId(String couchDbFormat) {
+		if (couchDbFormat == null) {
+			return null;
+		}
+		
+		// CouchDB形式からCMIS形式への変換マッピング
+		switch (couchDbFormat.toUpperCase()) {
+			case "CMIS_DOCUMENT":
+				return "cmis:document";
+			case "CMIS_FOLDER":
+				return "cmis:folder";
+			case "CMIS_ITEM":
+				return "cmis:item";
+			case "CMIS_RELATIONSHIP":
+				return "cmis:relationship";
+			case "CMIS_POLICY":
+				return "cmis:policy";
+			default:
+				// 既にCMIS形式の場合はそのまま返す
+				if (couchDbFormat.startsWith("cmis:")) {
+					return couchDbFormat;
+				}
+				// 不明な形式の場合は元の値を返す
+				return couchDbFormat;
+		}
 	}
 }

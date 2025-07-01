@@ -23,11 +23,15 @@ package jp.aegif.nemaki.model.couch;
 
 
 import java.util.List;
+import java.util.Map;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 
 import jp.aegif.nemaki.model.Document;
 
+@JsonDeserialize(as = CouchDocument.class)
 public class CouchDocument extends CouchContent {
 
 	private static final long serialVersionUID = 1993139506791735097L;
@@ -50,6 +54,50 @@ public class CouchDocument extends CouchContent {
 	
 	public CouchDocument(){
 		super();
+	}
+	
+	// Mapベースのコンストラクタを追加（Cloudant Document変換用）
+	@JsonCreator
+	public CouchDocument(Map<String, Object> properties) {
+		super(properties); // 親クラスのMapコンストラクタを呼び出し
+		
+		if (properties != null) {
+			// CouchDocument固有のフィールドマッピング
+			this.attachmentNodeId = (String) properties.get("attachmentNodeId");
+			this.versionSeriesId = (String) properties.get("versionSeriesId");
+			this.versionLabel = (String) properties.get("versionLabel");
+			this.checkinComment = (String) properties.get("checkinComment");
+			
+			// List型の処理
+			if (properties.containsKey("renditionIds")) {
+				Object renditionIdsValue = properties.get("renditionIds");
+				if (renditionIdsValue instanceof List) {
+					this.renditionIds = (List<String>) renditionIdsValue;
+				}
+			}
+			
+			// Boolean型の処理
+			if (properties.containsKey("latestVersion")) {
+				Object value = properties.get("latestVersion");
+				this.latestVersion = value instanceof Boolean ? (Boolean) value : Boolean.parseBoolean(String.valueOf(value));
+			}
+			if (properties.containsKey("latestMajorVersion")) {
+				Object value = properties.get("latestMajorVersion");
+				this.latestMajorVersion = value instanceof Boolean ? (Boolean) value : Boolean.parseBoolean(String.valueOf(value));
+			}
+			if (properties.containsKey("majorVersion")) {
+				Object value = properties.get("majorVersion");
+				this.majorVersion = value instanceof Boolean ? (Boolean) value : Boolean.parseBoolean(String.valueOf(value));
+			}
+			if (properties.containsKey("privateWorkingCopy")) {
+				Object value = properties.get("privateWorkingCopy");
+				this.privateWorkingCopy = value instanceof Boolean ? (Boolean) value : Boolean.parseBoolean(String.valueOf(value));
+			}
+			if (properties.containsKey("immutable")) {
+				Object value = properties.get("immutable");
+				this.immutable = value instanceof Boolean ? (Boolean) value : Boolean.parseBoolean(String.valueOf(value));
+			}
+		}
 	}
 	
 	public CouchDocument(Document d){

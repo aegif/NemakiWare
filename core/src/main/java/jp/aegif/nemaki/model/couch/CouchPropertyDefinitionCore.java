@@ -22,11 +22,17 @@
 
 package jp.aegif.nemaki.model.couch;
 
+import java.util.Map;
+
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
 
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+
+@JsonDeserialize(as = CouchPropertyDefinitionCore.class)
 public class CouchPropertyDefinitionCore extends CouchNodeBase{
 	
 	private static final long serialVersionUID = -213127366706433797L;
@@ -38,6 +44,42 @@ public class CouchPropertyDefinitionCore extends CouchNodeBase{
 	
 	public CouchPropertyDefinitionCore(){
 		super();	
+	}
+	
+	// Mapベースのコンストラクタを追加（Cloudant Document変換用）
+	@JsonCreator
+	public CouchPropertyDefinitionCore(Map<String, Object> properties) {
+		super(properties); // 親クラスのMapコンストラクタを呼び出し
+		
+		if (properties != null) {
+			// 文字列フィールドの処理
+			this.propertyId = (String) properties.get("propertyId");
+			this.queryName = (String) properties.get("queryName");
+			
+			// PropertyType列挙型の処理
+			if (properties.containsKey("propertyType")) {
+				String propTypeStr = (String) properties.get("propertyType");
+				if (propTypeStr != null) {
+					try {
+						this.propertyType = PropertyType.fromValue(propTypeStr);
+					} catch (Exception e) {
+						// 無効な値の場合は無視
+					}
+				}
+			}
+			
+			// Cardinality列挙型の処理
+			if (properties.containsKey("cardinality")) {
+				String cardinalityStr = (String) properties.get("cardinality");
+				if (cardinalityStr != null) {
+					try {
+						this.cardinality = Cardinality.fromValue(cardinalityStr);
+					} catch (Exception e) {
+						// 無効な値の場合は無視
+					}
+				}
+			}
+		}
 	}
 	
 	public CouchPropertyDefinitionCore(NemakiPropertyDefinitionCore np){

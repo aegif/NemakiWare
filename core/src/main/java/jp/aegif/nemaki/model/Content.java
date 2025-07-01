@@ -73,6 +73,9 @@ public class Content extends NodeBase {
 		setCreator(n.getCreator());
 		setModified(n.getModified());
 		setModifier(n.getModifier());
+		
+		// COMPREHENSIVE REVISION MANAGEMENT: Preserve revision from NodeBase
+		setRevision(n.getRevision());
 	}
 
 	/*
