@@ -43,7 +43,38 @@ echo "Preparing initializer (will build JAR files automatically)..."
 cd $NEMAKI_HOME/docker
 ./prepare-initializer.sh
 
-echo "Building UI WAR with SBT..."
+echo "Building Solr custom JAR..."
+cd $NEMAKI_HOME
+mvn clean package -f docker/solr/pom.xml -Pdevelopment -q
+if [ $? -eq 0 ]; then
+    echo "Solr custom JAR built successfully"
+    # Ensure lib directories exist and copy JAR files
+    mkdir -p docker/solr/solr/nemaki/lib
+    mkdir -p docker/solr/solr/token/lib
+    cp docker/solr/target/solr.jar docker/solr/solr/nemaki/lib/
+    cp docker/solr/target/solr.jar docker/solr/solr/token/lib/
+    # Copy required dependencies
+    cp docker/lib/*.jar docker/solr/solr/nemaki/lib/
+    cp docker/lib/*.jar docker/solr/solr/token/lib/
+    echo "Solr JAR and dependencies deployed to lib directories"
+else
+    echo "Warning: Solr custom JAR build failed"
+    exit 1
+fi
+
+echo "Skipping UI WAR build (Java 8 dependency prevents building in current environment)..."
+echo "Note: UI module requires Java 8 which conflicts with Core/Solr Java 11+ requirements"
+
+# Skip UI build and use existing WAR file if available
+if [ -f "$NEMAKI_HOME/docker/ui/ui.war" ]; then
+  echo "Using existing UI WAR file: $NEMAKI_HOME/docker/ui/ui.war"
+else
+  echo "No existing UI WAR file found. UI container will not be functional."
+  echo "This is expected during Core + CouchDB + Solr testing without UI module."
+fi
+
+# Comment out UI build section
+: << 'SKIP_UI_BUILD'
 cd $NEMAKI_HOME/ui
 
 # Ensure SBT configuration is properly set up for HTTPS repositories
@@ -195,6 +226,8 @@ else
     exit 1
   fi
 fi
+SKIP_UI_BUILD
+# End of skipped UI build section
 
 echo "Building core.war with complete configuration..."
 
@@ -215,22 +248,8 @@ if grep -q "@PostConstruct" $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/patc
   echo "PatchService @PostConstruct removed"
 fi
 
-# Fix Ektorp IdleConnectionMonitor issue by disabling cleanupIdleConnections in both files
-echo "Fixing Ektorp IdleConnectionMonitor issue in ConnectorPool and CouchConnector..."
-
-# Fix ConnectorPool.java
-if grep -q "cleanupIdleConnections(true)" $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/ConnectorPool.java; then
-  echo "Disabling cleanupIdleConnections in ConnectorPool..."
-  sed -i '.bak' 's/cleanupIdleConnections(true)/cleanupIdleConnections(false)/' $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/ConnectorPool.java
-  echo "ConnectorPool cleanupIdleConnections disabled"
-fi
-
-# Fix CouchConnector.java  
-if grep -q "cleanupIdleConnections(true)" $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/CouchConnector.java; then
-  echo "Disabling cleanupIdleConnections in CouchConnector..."
-  sed -i '.bak' 's/cleanupIdleConnections(true)/cleanupIdleConnections(false)/' $NEMAKI_HOME/core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/CouchConnector.java
-  echo "CouchConnector cleanupIdleConnections disabled"
-fi
+# Cloudant migration: Old Ektorp files no longer exist after migration to Cloudant SDK
+echo "Skipping Ektorp fixes - migrated to Cloudant SDK"
 
 # Update the source nemakiware.properties with complete configuration
 echo "Updating source nemakiware.properties with complete configuration..."
@@ -314,7 +333,7 @@ EOF_PROPERTIES
 # Build core.war with Maven
 echo "Building core.war with Maven..."
 cd $NEMAKI_HOME
-mvn clean package -f core/pom.xml -Pdevelopment -q
+docker run --rm -v $NEMAKI_HOME:/app -v ~/.m2:/root/.m2 -w /app maven:3.9.6-eclipse-temurin-11 mvn clean package -f core/pom.xml -Pdevelopment
 if [ $? -ne 0 ]; then
   echo "ERROR: Maven build failed for core.war"
   exit 1
@@ -330,9 +349,8 @@ fi
 
 echo "core.war built successfully with updated configuration"
 
-echo "Building Solr WAR file using Docker with Java 8..."
-cd $NEMAKI_HOME/docker
-./build-solr.sh
+echo "Skipping Solr custom build - using official Solr 9.x Docker image..."
+# Solr 9.x uses official Docker image instead of custom WAR/JAR build
 
 echo "Creating core/repositories.yml if it doesn't exist..."
 mkdir -p $NEMAKI_HOME/docker/core
@@ -349,15 +367,15 @@ repositories:
 EOF2
 fi
 
-# Create UI configuration
-echo "Creating UI configuration..."
-mkdir -p $NEMAKI_HOME/docker/ui-war
-cat > $NEMAKI_HOME/docker/ui-war/nemakiware_ui.properties << EOF_UI
-nemaki.core.uri=http://core:8080/core
-nemaki.core.uri.archive=http://core:8080/core
-nemaki.auth.superuser.id=admin
-nemaki.auth.superuser.password=admin
-EOF_UI
+# Create UI configuration - SKIPPED (UI disabled for Java 8/11 compatibility)
+echo "Skipping UI configuration (UI container disabled)..."
+# mkdir -p $NEMAKI_HOME/docker/ui-war
+# cat > $NEMAKI_HOME/docker/ui-war/nemakiware_ui.properties << EOF_UI
+# nemaki.core.uri=http://core:8080/core
+# nemaki.core.uri.archive=http://core:8080/core
+# nemaki.auth.superuser.id=admin
+# nemaki.auth.superuser.password=admin
+# EOF_UI
 
 echo "Creating log4j.properties if it doesn't exist..."
 if [ ! -f $NEMAKI_HOME/docker/core/log4j.properties ]; then
@@ -396,22 +414,8 @@ echo "Restarting Core container to ensure proper patch application..."
 docker compose -f docker-compose-simple.yml restart core
 sleep 20
 
-echo "Verifying and fixing UI runtime configuration..."
-# Check if UI container has incorrect core host settings and fix them
-if docker exec docker-ui-1 test -f /usr/local/tomcat/webapps/ui/WEB-INF/classes/application.conf 2>/dev/null; then
-  if docker exec docker-ui-1 grep -q 'nemaki.core.uri.host="core2"' /usr/local/tomcat/webapps/ui/WEB-INF/classes/application.conf 2>/dev/null; then
-    echo "Fixing UI runtime Core host configuration from core2 to core..."
-    docker exec docker-ui-1 sed -i 's/nemaki.core.uri.host="core2"/nemaki.core.uri.host="core"/' /usr/local/tomcat/webapps/ui/WEB-INF/classes/application.conf
-    echo "Restarting UI container to apply configuration changes..."
-    docker compose -f docker-compose-simple.yml restart ui
-    sleep 15
-    echo "UI configuration fixed and container restarted"
-  else
-    echo "UI Core host configuration is already correct"
-  fi
-else
-  echo "UI application.conf not found in expected location"
-fi
+echo "Skipping UI runtime configuration verification (UI container disabled)..."
+# UI verification skipped - container is not running due to Java 8/11 compatibility issues
 
 echo "=============================================="
 echo "SIMPLE ENVIRONMENT TEST"
@@ -469,14 +473,9 @@ echo "CMIS Web Services: HTTP $CMIS_SERVICES_STATUS"
 echo ""
 echo "4. UI TEST:"
 echo "-----------"
-# Test UI login page accessibility (note: actual usage will redirect to 0.0.0.0)
-echo "Testing UI login page accessibility..."
-UI_LOGIN_BEDROOM=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:9000/ui/repo/bedroom/login" || echo "connection_error")
-echo "UI login page (bedroom): HTTP $UI_LOGIN_BEDROOM"
-
-echo ""
-echo "NOTE: UI is accessible via localhost:9000 but login will redirect to 0.0.0.0:9000"
-echo "For actual usage, access http://0.0.0.0:9000/ui/repo/bedroom/login directly"
+echo "SKIPPED - UI container disabled due to Java 8/11 compatibility issues"
+echo "Note: UI module requires Java 8 which conflicts with Core Java 11+ requirements"
+UI_LOGIN_BEDROOM="skipped"
 
 echo ""
 echo "=============================================="
@@ -489,7 +488,7 @@ echo "- CouchDB: $([ "$COUCHDB_STATUS" = "200" ] && echo "✓ Running" || echo "
 echo "- Solr: $(if [ "$SOLR_STATUS" = "200" ]; then echo "✓ Running"; elif [ "$SOLR_STATUS" = "500" ]; then echo "⚠ Partial (HTTP $SOLR_STATUS)"; else echo "✗ Failed (HTTP $SOLR_STATUS)"; fi)"
 echo "- CMIS AtomPub: $([ "$CMIS_ATOM_STATUS" = "200" ] && echo "✓ Working" || echo "✗ Failed (HTTP $CMIS_ATOM_STATUS)")"
 echo "- CMIS Web Services: $([ "$CMIS_SERVICES_STATUS" = "200" ] && echo "✓ Working" || echo "✗ Failed (HTTP $CMIS_SERVICES_STATUS)")"
-echo "- UI Login Page: $([ "$UI_LOGIN_BEDROOM" = "200" ] && echo "✓ Accessible" || echo "✗ Failed (HTTP $UI_LOGIN_BEDROOM)")"
+echo "- UI Login Page: Skipped (Java 8/11 compatibility)"
 
 echo ""
 echo "Service Endpoints:"
@@ -498,9 +497,8 @@ echo "- Solr: http://localhost:8983/solr/ ($([ "$SOLR_STATUS" = "200" ] && echo 
 echo "- Core CMIS AtomPub: http://localhost:8080/core/atom/bedroom (HTTP $CMIS_ATOM_STATUS)"
 echo "- Core CMIS Services: http://localhost:8080/core/services (HTTP $CMIS_SERVICES_STATUS)"
 echo ""
-echo "UI Access (Note: Login redirects to 0.0.0.0):"
-echo "- Primary: http://0.0.0.0:9000/ui/repo/bedroom/login"
-echo "- Fallback: http://localhost:9000/ui/repo/bedroom/login (will redirect)"
+echo "UI Access: DISABLED (Java 8/11 compatibility issues)"
+echo "- Note: UI module requires separate environment with Java 8"
 echo ""
 echo "Authentication: Use admin:admin for all endpoints"
 
