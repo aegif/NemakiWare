@@ -1,14 +1,17 @@
 package jp.aegif.nemaki.util;
 
-import com.sun.jersey.api.client.Client;
-import com.sun.jersey.api.client.filter.HTTPBasicAuthFilter;
 import org.apache.commons.lang3.StringUtils;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.ws.rs.core.MediaType;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -28,18 +31,28 @@ public class NemakiTokenManager {
 		String apiResult = null;
 		String restUri = getRestUri(repositoryId);
 		try {
-			Client c = Client.create();
-			c.setConnectTimeout(3 * 1000);
-			c.setReadTimeout(5 * 1000);
-			c.setFollowRedirects(Boolean.TRUE);
-			c.addFilter(new HTTPBasicAuthFilter(userName, password));
+			HttpClient client = HttpClient.newBuilder()
+					.connectTimeout(Duration.ofSeconds(3))
+					.followRedirects(HttpClient.Redirect.NORMAL)
+					.build();
+			
+			String auth = userName + ":" + password;
+			String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes());
+			
+			String requestUri = restUri + userName + "/register?app=solr";
+			HttpRequest request = HttpRequest.newBuilder()
+					.uri(URI.create(requestUri))
+					.timeout(Duration.ofSeconds(5))
+					.header("Authorization", "Basic " + encodedAuth)
+					.header("Accept", "application/json")
+					.GET()
+					.build();
 
-			apiResult = c.resource(restUri).path(userName + "/register")
-					.queryParam("app", "solr")
-					.accept(MediaType.APPLICATION_JSON_TYPE).get(String.class);
+			HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+			apiResult = response.body();
 		} catch (Exception e) {
 			logger.error("Cannot connect to Core REST API : {}", restUri, e);
-			throw e;
+			throw new RuntimeException(e);
 		}
 
 		try {
