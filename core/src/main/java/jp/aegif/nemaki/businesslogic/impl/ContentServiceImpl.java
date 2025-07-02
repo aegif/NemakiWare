@@ -487,41 +487,11 @@ public class ContentServiceImpl implements ContentService {
 		setSignature(callContext, change);
 		change.setToken(generateChangeToken(change));
 
-		// Create a new change event
+		// Create change event record (no content modification needed)
 		Change created = contentDaoService.create(repositoryId, change);
-
-		// Update change token of the content
-		content.setChangeToken(created.getId());
-
-		// EKTORP-STYLE: For newly created objects, ensure fresh revision before update
-		// The DAO layer will fetch current revision, but we need to ensure this succeeds
-		log.error("COMPREHENSIVE DEBUG: writeChangeEvent received content ID=" + content.getId() + 
-			", revision=" + content.getRevision() + ", changeToken=" + content.getChangeToken());
 		
-		// CRITICAL DEBUG: Check if Content is instance of Folder and its revision
-		if (content instanceof Folder) {
-			Folder f = (Folder) content;
-			log.error("COMPREHENSIVE DEBUG: Content is Folder, revision=" + f.getRevision());
-		}
-		
-		// CRITICAL FIX: Ensure Content object has revision before update
-		// If Content doesn't have revision, fetch it from database to prevent revision conflicts
-		if (content.getRevision() == null || content.getRevision().isEmpty()) {
-			log.error("CRITICAL FIX: writeChangeEvent content has no revision, fetching from DB for ID=" + content.getId());
-			
-			// Fetch current object from database to get revision
-			Content freshContent = getContent(repositoryId, content.getId());
-			if (freshContent != null && freshContent.getRevision() != null) {
-				content.setRevision(freshContent.getRevision());
-				log.error("CRITICAL FIX: Set revision " + freshContent.getRevision() + " on content object");
-			} else {
-				log.error("CRITICAL FIX: Could not fetch fresh revision for content " + content.getId());
-			}
-		}
-		
-		// Update the object in database with the new change token
-		// DAO layer handles revision fetching for Content objects that can't maintain revision
-		updateInternal(repositoryId, content);
+		log.debug("Change event created successfully - ID=" + created.getId() + 
+			", token=" + created.getToken() + ", objectId=" + content.getId());
 
 		return change.getToken();
 
