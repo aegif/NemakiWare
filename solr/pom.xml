@@ -3,7 +3,7 @@
 
 	<modelVersion>4.0.0</modelVersion>
 	<artifactId>solr</artifactId>
-	<packaging>war</packaging>
+	<packaging>jar</packaging>
 	<version>2.4.1</version>
 	<name>solr</name>
 	<description>Solr customized for Nemakiware</description>
@@ -13,9 +13,9 @@
 	<groupId>jp.aegif.nemaki.solr</groupId>
 
 	<properties>
-		<java-version>11</java-version>
-        <maven.compiler.target>11</maven.compiler.target>
-        <maven.compiler.source>11</maven.compiler.source>
+		<java-version>17</java-version>
+        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.source>17</maven.compiler.source>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<org.apache.chemistry.opencmis.version>1.1.0</org.apache.chemistry.opencmis.version>
 		<org.apache.solr.version>9.8.0</org.apache.solr.version>
@@ -139,9 +139,9 @@
 
 
 		<dependency>
-			<groupId>org.ektorp</groupId>
-			<artifactId>org.ektorp</artifactId>
-			<version>1.5.0</version>
+			<groupId>com.ibm.cloud</groupId>
+			<artifactId>cloudant</artifactId>
+			<version>0.8.0</version>
 			<exclusions>
 				<exclusion>
 					<groupId>commons-logging</groupId>
@@ -221,44 +221,14 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
-				<version>3.6.0</version>
+				<version>3.11.0</version>
 				<configuration>
 					<encoding>UTF-8</encoding>
-					<source>11</source>
-					<target>11</target>
+					<source>17</source>
+					<target>17</target>
 				</configuration>
 			</plugin>
-			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-war-plugin</artifactId>
-				<version>3.3.1</version>
-				<configuration>
-					 <packagingExcludes>**/custom-nemakiware.properties</packagingExcludes>
-					 <packagingExcludes>**/custom-repository.yml</packagingExcludes>
-				</configuration>
-			</plugin>
-			<plugin>
-				  <groupId>org.eclipse.jetty</groupId>
-				  <artifactId>jetty-maven-plugin</artifactId>
-				  <version>11.0.15</version>
-				<configuration>
-					<scanIntervalSeconds>1</scanIntervalSeconds>
-					<stopPort>9968</stopPort>
-					<stopKey>foo</stopKey>
-					<webAppConfig>
-						<contextPath>/solr</contextPath>
-						<tempDirectory>./tmp</tempDirectory>
-					</webAppConfig>
-					<connectors>
-						<connector implementation="org.eclipse.jetty.server.nio.SelectChannelConnector">
-							<port>8983</port>
-						</connector>
-					</connectors>
-					<scanTargets>
-						<scanTarget>src/main/webapp</scanTarget>
-					</scanTargets>
-				</configuration>
-			</plugin>
+			<!-- JAR packaging - WAR and Jetty plugins removed as Solr 9.x uses standalone deployment -->
 		</plugins>
 	</build>
 

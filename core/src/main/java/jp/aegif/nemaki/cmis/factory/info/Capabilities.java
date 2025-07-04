@@ -25,7 +25,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-import javax.annotation.PostConstruct;
+import jakarta.annotation.PostConstruct;
 
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.SpringPropertyManager;

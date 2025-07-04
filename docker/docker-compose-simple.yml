@@ -1,7 +1,7 @@
 services:
-  # CouchDB 2.x - Production ready version
+  # CouchDB 3.x - Current version
   couchdb:
-    image: couchdb:2.3.1
+    image: couchdb:3.3.3
     ports:
       - "5984:5984"
     volumes:
@@ -33,6 +33,7 @@ services:
       - ../setup/couchdb/initial_import/bedroom_init.dump:/app/bedroom_init.dump
       - ../setup/couchdb/initial_import/archive_init.dump:/app/archive_init.dump
       - ../setup/couchdb/initial_import/canopy_init.dump:/app/canopy_init.dump
+      - ../setup/couchdb/initial_import/nemaki_conf_init.dump:/app/nemaki_conf_init.dump
     restart: "no"
     deploy:
       restart_policy:
@@ -56,6 +57,7 @@ services:
       - ../setup/couchdb/initial_import/bedroom_init.dump:/app/bedroom_init.dump
       - ../setup/couchdb/initial_import/archive_init.dump:/app/archive_init.dump
       - ../setup/couchdb/initial_import/canopy_init.dump:/app/canopy_init.dump
+      - ../setup/couchdb/initial_import/nemaki_conf_init.dump:/app/nemaki_conf_init.dump
     restart: "no"
     deploy:
       restart_policy:
@@ -79,6 +81,7 @@ services:
       - ../setup/couchdb/initial_import/bedroom_init.dump:/app/bedroom_init.dump
       - ../setup/couchdb/initial_import/archive_init.dump:/app/archive_init.dump
       - ../setup/couchdb/initial_import/canopy_init.dump:/app/canopy_init.dump
+      - ../setup/couchdb/initial_import/nemaki_conf_init.dump:/app/nemaki_conf_init.dump
     restart: "no"
     deploy:
       restart_policy:
@@ -102,6 +105,7 @@ services:
       - ../setup/couchdb/initial_import/bedroom_init.dump:/app/bedroom_init.dump
       - ../setup/couchdb/initial_import/archive_init.dump:/app/archive_init.dump
       - ../setup/couchdb/initial_import/canopy_init.dump:/app/canopy_init.dump
+      - ../setup/couchdb/initial_import/nemaki_conf_init.dump:/app/nemaki_conf_init.dump
     restart: "no"
     deploy:
       restart_policy:
@@ -149,18 +153,19 @@ services:
       retries: 5
       start_period: 120s
 
-  # UI Web Interface
-  ui:
-    build:
-      context: ./ui
-      dockerfile: Dockerfile.simple
-    ports:
-      - "9000:8080"
-    depends_on:
-      core:
-        condition: service_healthy
-    environment:
-      - CATALINA_OPTS=-Xms512m -Xmx1024m -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Dnemakiware_ui.properties=/usr/local/tomcat/conf/nemakiware_ui.properties
+  # UI Web Interface - DISABLED for Core + CouchDB + Solr testing
+  # Note: UI requires Java 8 which conflicts with Core Java 11+ requirements
+  # ui:
+  #   build:
+  #     context: ./ui
+  #     dockerfile: Dockerfile.simple
+  #   ports:
+  #     - "9000:8080"
+  #   depends_on:
+  #     core:
+  #       condition: service_healthy
+  #   environment:
+  #     - CATALINA_OPTS=-Xms512m -Xmx1024m -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Dnemakiware_ui.properties=/usr/local/tomcat/conf/nemakiware_ui.properties
 
 volumes:
   couchdb_data:

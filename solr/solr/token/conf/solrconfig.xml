@@ -1765,4 +1765,7 @@
     <defaultQuery>*:*</defaultQuery>
   </admin>
 
+  <!-- Use classic schema.xml instead of managed schema -->
+  <schemaFactory class="ClassicIndexSchemaFactory"/>
+
 </config>

@@ -3,21 +3,20 @@ package jp.aegif.nemaki.rest;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.ws.rs.GET;
-import javax.ws.rs.Path;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.MediaType;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.MediaType;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 
-import org.apache.http.HttpResponse;
-import org.apache.http.HttpStatus;
-import org.apache.http.client.HttpClient;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.impl.client.HttpClientBuilder;
-import org.apache.http.util.EntityUtils;
+import org.apache.hc.client5.http.classic.HttpClient;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.HttpClientBuilder;
+import org.apache.hc.core5.http.HttpStatus;
+import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.w3c.dom.Node;
@@ -72,13 +71,13 @@ public class SolrAllResource extends ResourceBase {
 		String url = solrUrl + "admin/cores?core=nemaki&action=init";
 		HttpGet httpGet = new HttpGet(url);
 		try {
-			HttpResponse response = httpClient.execute(httpGet);
-			int responseStatus = response.getStatusLine().getStatusCode();
-			if(HttpStatus.SC_OK != responseStatus){
-				throw new Exception("Solr server connection failed");
-			}
-			
-			String body = EntityUtils.toString(response.getEntity(), "UTF-8");
+			String body = httpClient.execute(httpGet, response -> {
+				int responseStatus = response.getCode();
+				if(HttpStatus.SC_OK != responseStatus){
+					throw new RuntimeException("Solr server connection failed");
+				}
+				return EntityUtils.toString(response.getEntity(), "UTF-8");
+			});
 			if(checkSuccess(body)){
 				status = true;
 			}else{
@@ -115,13 +114,13 @@ public class SolrAllResource extends ResourceBase {
 		String url = solrUrl + "admin/cores?core=nemaki&action=index&tracking=FULL";
 		HttpGet httpGet = new HttpGet(url);
 		try {
-			HttpResponse response = httpClient.execute(httpGet);
-			int responseStatus = response.getStatusLine().getStatusCode();
-			if(HttpStatus.SC_OK != responseStatus){
-				throw new Exception("Solr server connection failed");
-			}
-			
-			String body = EntityUtils.toString(response.getEntity(), "UTF-8");
+			String body = httpClient.execute(httpGet, response -> {
+				int responseStatus = response.getCode();
+				if(HttpStatus.SC_OK != responseStatus){
+					throw new RuntimeException("Solr server connection failed");
+				}
+				return EntityUtils.toString(response.getEntity(), "UTF-8");
+			});
 			if(checkSuccess(body)){
 				status = true;
 			}else{

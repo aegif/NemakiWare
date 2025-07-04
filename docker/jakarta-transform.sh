@@ -49,6 +49,7 @@ transform_jar() {
 
 # Copy JARs to transform
 LIB_DIR="/Users/ishiiakinori/NemakiWare/core/target/core/WEB-INF/lib"
+NEMAKI_DIR="/Users/ishiiakinori/NemakiWare"
 
 echo "Copying OpenCMIS and related JARs for transformation..."
 # Copy all OpenCMIS 1.1.0 JARs
@@ -58,6 +59,12 @@ cp "$LIB_DIR/chemistry-opencmis-commons-api-1.1.0.jar" "$INPUT_DIR/"
 cp "$LIB_DIR/chemistry-opencmis-client-bindings-1.1.0.jar" "$INPUT_DIR/"
 cp "$LIB_DIR/chemistry-opencmis-server-support-1.1.0.jar" "$INPUT_DIR/"
 cp "$LIB_DIR/jaxws-rt-4.0.2.jar" "$INPUT_DIR/"
+
+# Copy test-tck JAR if available
+if [ -f "$NEMAKI_DIR/chemistry-opencmis-test-tck-1.1.0.jar" ]; then
+    echo "Adding test-tck JAR for transformation..."
+    cp "$NEMAKI_DIR/chemistry-opencmis-test-tck-1.1.0.jar" "$INPUT_DIR/"
+fi
 
 # Transform each JAR
 echo "Starting transformation process..."
@@ -80,5 +87,17 @@ transform_jar "$INPUT_DIR/chemistry-opencmis-server-support-1.1.0.jar" \
 transform_jar "$INPUT_DIR/jaxws-rt-4.0.2.jar" \
               "$OUTPUT_DIR/jaxws-rt-4.0.2-jakarta.jar"
 
+# Transform test-tck JAR if it was copied
+if [ -f "$INPUT_DIR/chemistry-opencmis-test-tck-1.1.0.jar" ]; then
+    echo "Transforming test-tck JAR..."
+    transform_jar "$INPUT_DIR/chemistry-opencmis-test-tck-1.1.0.jar" \
+                  "$OUTPUT_DIR/chemistry-opencmis-test-tck-1.1.0-jakarta.jar"
+fi
+
 echo "Transformation completed. Output JARs are in: $OUTPUT_DIR"
 ls -la "$OUTPUT_DIR"
+
+# Copy output JARs to jakarta-converted directory
+JAKARTA_DIR="/Users/ishiiakinori/NemakiWare/lib/jakarta-converted"
+echo "Copying transformed JARs to $JAKARTA_DIR..."
+cp "$OUTPUT_DIR"/*.jar "$JAKARTA_DIR/"

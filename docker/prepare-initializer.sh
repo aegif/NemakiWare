@@ -11,11 +11,6 @@ echo "Building cloudant-init JAR..."
 cd $NEMAKI_HOME/setup/couchdb/cloudant-init
 mvn clean package
 
-# Build the bjornloka JAR (installer-style initializer)
-echo "Building bjornloka JAR (installer-style initializer)..."
-cd $NEMAKI_HOME/setup/couchdb/bjornloka
-mvn clean package
-
 # Create the initializer directory
 echo "Creating initializer directory..."
 mkdir -p $NEMAKI_HOME/docker/initializer
@@ -23,7 +18,6 @@ mkdir -p $NEMAKI_HOME/docker/initializer
 # Copy the JAR files
 echo "Copying JAR files..."
 cp $NEMAKI_HOME/setup/couchdb/cloudant-init/target/cloudant-init.jar $NEMAKI_HOME/docker/initializer/
-cp $NEMAKI_HOME/setup/couchdb/bjornloka/target/bjornloka.jar $NEMAKI_HOME/docker/initializer/
 
 # Copy the dump files
 echo "Copying dump files..."
@@ -40,7 +34,6 @@ RUN apk add --no-cache curl
 WORKDIR /app
 
 COPY cloudant-init.jar /app/
-COPY bjornloka.jar /app/
 COPY initial_import /app/initial_import
 
 # Also copy dump files to root for backward compatibility
@@ -104,17 +97,17 @@ curl -X POST ${COUCHDB_URL}/nemaki_conf \
 
 echo "nemaki_conf database created successfully!"
 
-# Initialize the main repository using bjornloka (same as installer) with proper arguments
+# Initialize the main repository using cloudant-init (modern HTTP Client 5.x)
 echo "Creating ${REPOSITORY_ID} repository..."
-# Build authenticated URL for bjornloka
-COUCHDB_AUTH_URL=$(echo ${COUCHDB_URL} | sed "s|http://|http://${COUCHDB_USERNAME}:${COUCHDB_PASSWORD}@|")
-java -cp /app/bjornloka.jar jp.aegif.nemaki.bjornloka.Load \
-    ${COUCHDB_AUTH_URL} \
-    ${REPOSITORY_ID} \
-    ${DUMP_FILE} \
-    ${FORCE}
+java -jar /app/cloudant-init.jar \
+    --url ${COUCHDB_URL} \
+    --username ${COUCHDB_USERNAME} \
+    --password ${COUCHDB_PASSWORD} \
+    --repository ${REPOSITORY_ID} \
+    --dump ${DUMP_FILE} \
+    --force ${FORCE}
 
 echo "Initialization complete!"
 EOL
 
-echo "cloudant-init.jar and Dockerfile prepared successfully!"
+echo "Modern cloudant-init.jar and Dockerfile prepared successfully!"

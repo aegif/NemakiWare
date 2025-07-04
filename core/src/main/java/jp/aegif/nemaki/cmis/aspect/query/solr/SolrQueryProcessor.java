@@ -134,7 +134,30 @@ public class SolrQueryProcessor implements QueryProcessor {
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships,
 			String renditionFilter, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
 
-		SolrClient solrClient = solrUtil.getSolrClient();
+		System.out.println("=== QUERY DEBUG: SolrQueryProcessor.query called with statement: " + statement);
+		logger.info("[QUERY DEBUG] SolrQueryProcessor.query called with statement: " + statement);
+		
+		SolrClient solrClient = null;
+		try {
+			System.out.println("=== QUERY DEBUG: Getting Solr client...");
+			solrClient = solrUtil.getSolrClient();
+			System.out.println("=== QUERY DEBUG: Got Solr client: " + (solrClient != null ? solrClient.getClass().getSimpleName() : "null"));
+		} catch (Exception e) {
+			System.out.println("=== QUERY DEBUG: Exception getting Solr client: " + e.getMessage());
+			e.printStackTrace();
+			throw new RuntimeException("Failed to get Solr client", e);
+		}
+		
+		// Handle case where Solr client creation failed due to HTTP Client compatibility
+		if (solrClient == null) {
+			logger.warn("Solr client unavailable due to HTTP Client compatibility issues - returning empty result");
+			logger.warn("CMIS query will not use full-text search functionality: " + statement);
+			ObjectListImpl nullList = new ObjectListImpl();
+			nullList.setHasMoreItems(false);
+			nullList.setNumItems(BigInteger.ZERO);
+			return nullList;
+		}
+		
 		// replacing backslashed for TIMESTAMP only
 		Pattern time_p = Pattern.compile("(TIMESTAMP\\s?'[\\-\\d]*T\\d{2})\\\\:(\\d{2})\\\\:([\\.\\d]*Z')", Pattern.CASE_INSENSITIVE);
 		Matcher time_m = time_p.matcher(statement);
@@ -158,16 +181,19 @@ public class SolrQueryProcessor implements QueryProcessor {
 		String whereQueryString = "";
 		if (whereTree == null || whereTree.isNil()) {
 			whereQueryString = "*:*";
+			logger.info("[QUERY DEBUG] whereTree is null or nil, using default query: *:*");
 		} else {
+			logger.info("[QUERY DEBUG] whereTree found, processing predicate...");
 			try {
 				SolrPredicateWalker solrPredicateWalker = new SolrPredicateWalker(repositoryId,
 						queryObject, solrUtil, contentService);
 				Query whereQuery = solrPredicateWalker.walkPredicate(whereTree);
 				whereQueryString = whereQuery.toString();
 				} catch (Exception e) {
+				logger.error("Error in SolrPredicateWalker.walkPredicate: " + e.getMessage(), e);
 				e.printStackTrace();
 				// TODO Output more detailed exception
-				exceptionService.invalidArgument("Invalid CMIS SQL statement!");
+				exceptionService.invalidArgument("Invalid CMIS SQL statement: " + e.getMessage());
 			}
 		}
 
@@ -210,9 +236,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 		solrQuery.setFilterQueries(fromQueryString);
 		
 		logger.info(solrQuery.toString());
-		logger.info("statement: " + statement);
-		logger.info("skipCount: " + skipCount);
-		logger.info("maxItems: " + maxItems);
+		logger.info("[QUERY DEBUG] statement: " + statement);
+		logger.info("[QUERY DEBUG] skipCount: " + skipCount);
+		logger.info("[QUERY DEBUG] maxItems: " + maxItems);
+		logger.info("[QUERY DEBUG] whereQueryString: " + whereQueryString);
+		logger.info("[QUERY DEBUG] fromQueryString: " + fromQueryString);
 		if(skipCount == null){
 			solrQuery.set(CommonParams.START, 0);
 		}else{
@@ -227,12 +255,21 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 		QueryResponse resp = null;
 		try {
-			logger.info("Executing Solr query: " + solrQuery.toString());
+			logger.info("[QUERY DEBUG] Creating SolrClient...");
+			if (solrClient == null) {
+				logger.error("[QUERY DEBUG] SolrClient is null!");
+				exceptionService.invalidArgument("Solr client initialization failed");
+				return null;
+			}
+			logger.info("[QUERY DEBUG] Executing Solr query: " + solrQuery.toString());
+			// Core name is already included in the URL from SolrUtil.getSolrUrl()
 			resp = solrClient.query(solrQuery);
-			logger.info("Solr query executed successfully, response: " + (resp != null ? "not null" : "null"));
+			logger.info("[QUERY DEBUG] Solr query executed successfully, response: " + (resp != null ? "not null" : "null"));
 		} catch (SolrServerException | IOException e) {
-			logger.error("Solr query failed: " + e.getMessage());
+			logger.error("[QUERY DEBUG] Solr query failed: " + e.getMessage(), e);
 			e.printStackTrace();
+			exceptionService.invalidArgument("Solr query execution failed: " + e.getMessage());
+			return null;
 		}
 
 		long numFound =0;

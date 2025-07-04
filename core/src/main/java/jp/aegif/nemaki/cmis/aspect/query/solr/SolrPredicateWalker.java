@@ -187,28 +187,28 @@ public class SolrPredicateWalker{
 	private Query walkGreaterThan(Tree leftNode, Tree rightNode) {
 		HashMap<String, String> map = walkCompareInternal(leftNode, rightNode);
 		TermRangeQuery t = new TermRangeQuery(map.get(FLD),
-				convertToBytesRef(map.get(CND)), null, false, false);
+				new BytesRef(map.get(CND)), null, false, false);
 		return t;
 	}
 
 	private Query walkGreaterOrEquals(Tree leftNode, Tree rightNode) {
 		HashMap<String, String> map = walkCompareInternal(leftNode, rightNode);
 		TermRangeQuery t = new TermRangeQuery(map.get(FLD),
-				convertToBytesRef(map.get(CND)), null, true, false);
+				new BytesRef(map.get(CND)), null, true, false);
 		return t;
 	}
 
 	private Query walkLessThan(Tree leftNode, Tree rightNode) {
 		HashMap<String, String> map = walkCompareInternal(leftNode, rightNode);
 		TermRangeQuery t = new TermRangeQuery(map.get(FLD), null,
-				convertToBytesRef(map.get(CND)), false, false);
+				new BytesRef(map.get(CND)), false, false);
 		return t;
 	}
 
 	private Query walkLessOrEquals(Tree leftNode, Tree rightNode) {
 		HashMap<String, String> map = walkCompareInternal(leftNode, rightNode);
 		TermRangeQuery t = new TermRangeQuery(map.get(FLD), null,
-				convertToBytesRef(map.get(CND)), false, true);
+				new BytesRef(map.get(CND)), false, true);
 		return t;
 	}
 
@@ -322,14 +322,16 @@ public class SolrPredicateWalker{
 	private Query walkIsNull(Tree colNode) {
 		String field = walkExpr(colNode).toString();
 		BooleanQuery.Builder builder = new BooleanQuery.Builder();
-		TermRangeQuery q1 = new TermRangeQuery(field, null, null, false, false);
+		// Lucene 9.x: Use TermRangeQuery.newStringRange() for wildcard range
+		TermRangeQuery q1 = TermRangeQuery.newStringRange(field, null, null, false, false);
 			builder.add(q1, Occur.MUST_NOT);
 		return builder.build();
 	}
 
 	private Query walkIsNotNull(Tree colNode) {
 		String field = walkExpr(colNode).toString();
-		TermRangeQuery q = new TermRangeQuery(field, null, null, false, false);
+		// Lucene 9.x: Use TermRangeQuery.newStringRange() for wildcard range
+		TermRangeQuery q = TermRangeQuery.newStringRange(field, null, null, false, false);
 		return q;
 	}
 
@@ -617,10 +619,12 @@ public class SolrPredicateWalker{
 
 	/**
 	 * Convert String to BytesRef for Lucene TermRangeQuery
+	 * @deprecated No longer needed in Lucene 9.x - TermRangeQuery.newStringRange() accepts String directly
 	 *
 	 * @param s
 	 * @return
 	 */
+	@Deprecated
 	private BytesRef convertToBytesRef(String s) {
 		byte[] bytes = s.getBytes();
 		BytesRef bytesRef = new BytesRef(bytes);

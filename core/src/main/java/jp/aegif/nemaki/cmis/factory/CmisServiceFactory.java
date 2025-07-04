@@ -4,8 +4,8 @@ import java.math.BigInteger;
 import java.util.HashMap;
 import java.util.Map;
 
-import javax.annotation.PostConstruct;
-import javax.servlet.http.HttpServletRequest;
+import jakarta.annotation.PostConstruct;
+import jakarta.servlet.http.HttpServletRequest;
 
 import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
 import jp.aegif.nemaki.cmis.factory.auth.CmisServiceWrapper;

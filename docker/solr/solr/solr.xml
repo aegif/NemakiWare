@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <solr>
-  <solrcloud>
-    <str name="host">${host:}</str>
-    <int name="hostPort">${jetty.port:8983}</int>
-    <str name="hostContext">${hostContext:solr}</str>
-    <int name="zkClientTimeout">${zkClientTimeout:15000}</int>
-  </solrcloud>
+  <str name="shareSchema">false</str>
+  <str name="allowPaths">/var/solr/data</str>
+  <int name="coreLoadThreads">1</int>
   
-  <shardHandlerFactory name="shardHandlerFactory"
-    class="HttpShardHandlerFactory">
-    <int name="socketTimeout">${socketTimeout:600000}</int>
-    <int name="connTimeout">${connTimeout:60000}</int>
+  <shardHandlerFactory name="shardHandlerFactory" class="HttpShardHandlerFactory">
+    <int name="socketTimeout">600000</int>
+    <int name="connTimeout">60000</int>
   </shardHandlerFactory>
+  
+  <backup>
+    <repository default="false" name="hdfs" class="org.apache.solr.core.backup.repository.HdfsBackupRepository"/>
+  </backup>
 </solr>

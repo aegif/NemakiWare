@@ -12,7 +12,7 @@ import java.util.UUID;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-import javax.annotation.PostConstruct;
+import jakarta.annotation.PostConstruct;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.Acl;
 import org.apache.chemistry.opencmis.commons.data.BulkUpdateObjectIdAndChangeToken;
@@ -20,7 +20,8 @@ import org.apache.chemistry.opencmis.commons.data.CmisExtensionElement;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.FailedToDeleteData;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
-import org.apache.chemistry.opencmis.commons.data.ObjectInFolderContainer;
+// ObjectInFolderContainer import commented out due to classloader issues
+// import org.apache.chemistry.opencmis.commons.data.ObjectInFolderContainer;
 import org.apache.chemistry.opencmis.commons.data.ObjectInFolderData;
 import org.apache.chemistry.opencmis.commons.data.ObjectInFolderList;
 import org.apache.chemistry.opencmis.commons.data.ObjectParentData;
@@ -602,8 +603,9 @@ public class JsonLogger {
 			return simple((ObjectInFolderData)value, valueConfig);
 		}else if(value instanceof ObjectInFolderList){
 			return simple((ObjectInFolderList)value, valueConfig);
-		}else if(value instanceof ObjectInFolderContainer){
-			return simple((ObjectInFolderContainer)value, valueConfig);
+		// ObjectInFolderContainer handling commented out due to classloader issues
+		// }else if(value instanceof ObjectInFolderContainer){
+		//	return simple((ObjectInFolderContainer)value, valueConfig);
 		}else if(value instanceof ObjectParentData){
 			return simple((ObjectParentData)value, valueConfig);
 		}else if(value instanceof Holder){
@@ -678,9 +680,7 @@ public class JsonLogger {
 		return simple(objectInFolderData.getObject(), valueConfig);
 	}
 	
-	private ObjectNode simple(ObjectInFolderContainer objectInFolderContainer, ValueConfig valueConfig){
-		return simple(objectInFolderContainer.getObject(), valueConfig);
-	}
+	// ObjectInFolderContainer method completely removed due to classloader issues
 	
 	private ObjectNode simple(ObjectParentData objectParentData, ValueConfig valueConfig){
 		return simple(objectParentData.getObject(), valueConfig);

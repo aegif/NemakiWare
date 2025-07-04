@@ -9,12 +9,12 @@ lazy val root = (project in file(".")).enablePlugins(PlayJava)
 
 scalaVersion := "2.11.12"
 
-javacOptions ++= Seq("-source", "11", "-target", "11", "-Xlint")
+javacOptions ++= Seq("-source", "8", "-target", "8", "-Xlint")
 
 initialize := {
   val _ = initialize.value
-  if (sys.props("java.specification.version") != "11")
-    sys.error("Java 11 is required for this project.")
+  if (sys.props("java.specification.version") != "1.8")
+    sys.error("Java 8 is required for this project.")
 }
 
 

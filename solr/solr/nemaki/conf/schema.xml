@@ -279,10 +279,10 @@
     <!--
       Default numeric field types. For faster range queries, consider the tint/tfloat/tlong/tdouble types.
     -->
-    <fieldType name="int" class="solr.TrieIntField" precisionStep="0" positionIncrementGap="0"/>
-    <fieldType name="float" class="solr.TrieFloatField" precisionStep="0" positionIncrementGap="0"/>
-    <fieldType name="long" class="solr.TrieLongField" precisionStep="0" positionIncrementGap="0"/>
-    <fieldType name="double" class="solr.TrieDoubleField" precisionStep="0" positionIncrementGap="0"/>
+    <fieldType name="int" class="solr.IntPointField" positionIncrementGap="0"/>
+    <fieldType name="float" class="solr.FloatPointField" positionIncrementGap="0"/>
+    <fieldType name="long" class="solr.LongPointField" positionIncrementGap="0"/>
+    <fieldType name="double" class="solr.DoublePointField" positionIncrementGap="0"/>
 
     <!--
      Numeric field types that index each value at various levels of precision
@@ -294,10 +294,10 @@
      indexed per value, slightly larger index size, and faster range queries.
      A precisionStep of 0 disables indexing at different precision levels.
     -->
-    <fieldType name="tint" class="solr.TrieIntField" precisionStep="8" positionIncrementGap="0"/>
-    <fieldType name="tfloat" class="solr.TrieFloatField" precisionStep="8" positionIncrementGap="0"/>
-    <fieldType name="tlong" class="solr.TrieLongField" precisionStep="8" positionIncrementGap="0"/>
-    <fieldType name="tdouble" class="solr.TrieDoubleField" precisionStep="8" positionIncrementGap="0"/>
+    <fieldType name="tint" class="solr.IntPointField" positionIncrementGap="0"/>
+    <fieldType name="tfloat" class="solr.FloatPointField" positionIncrementGap="0"/>
+    <fieldType name="tlong" class="solr.LongPointField" positionIncrementGap="0"/>
+    <fieldType name="tdouble" class="solr.DoublePointField" positionIncrementGap="0"/>
 
     <!-- The format for this date field is of the form 1995-12-31T23:59:59Z, and
          is a more restricted form of the canonical representation of dateTime
@@ -321,10 +321,10 @@
 
          Note: For faster range queries, consider the tdate type
       -->
-    <fieldType name="date" class="solr.TrieDateField" precisionStep="0" positionIncrementGap="0"/>
+    <fieldType name="date" class="solr.DatePointField" positionIncrementGap="0"/>
 
-    <!-- A Trie based date field for faster date range queries and date faceting. -->
-    <fieldType name="tdate" class="solr.TrieDateField" precisionStep="6" positionIncrementGap="0"/>
+    <!-- A Point based date field for faster date range queries and date faceting. -->
+    <fieldType name="tdate" class="solr.DatePointField" positionIncrementGap="0"/>
 
 
     <!--Binary data type. The data should be sent/retrieved in as Base64 encoded Strings -->
@@ -339,11 +339,11 @@
       value verbatim (and hence don't correctly support range queries, since the
       lexicographic ordering isn't equal to the numeric ordering)
     -->
-    <fieldType name="pint" class="solr.IntField"/>
-    <fieldType name="plong" class="solr.LongField"/>
-    <fieldType name="pfloat" class="solr.FloatField"/>
-    <fieldType name="pdouble" class="solr.DoubleField"/>
-    <fieldType name="pdate" class="solr.DateField" sortMissingLast="true"/>
+    <fieldType name="pint" class="solr.IntPointField"/>
+    <fieldType name="plong" class="solr.LongPointField"/>
+    <fieldType name="pfloat" class="solr.FloatPointField"/>
+    <fieldType name="pdouble" class="solr.DoublePointField"/>
+    <fieldType name="pdate" class="solr.DatePointField" sortMissingLast="true"/>
 
     <!-- The "RandomSortField" is not used to store or search any
          data.  You can declare fields of this type it in your schema

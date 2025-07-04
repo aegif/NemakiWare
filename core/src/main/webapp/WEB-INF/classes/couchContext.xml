@@ -5,8 +5,8 @@
 	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
 		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd">
 
-	<!-- multi repo test -->
-	<bean id="connectorPool" class="jp.aegif.nemaki.dao.impl.couch.connector.ConnectorPool" init-method="init">
+	<!-- Cloudant Java SDK connection pool -->
+	<bean id="connectorPool" class="jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool" init-method="initialize">
 		<property name="repositoryInfoMap">
 			<ref bean="repositoryInfoMap" />
 		</property>

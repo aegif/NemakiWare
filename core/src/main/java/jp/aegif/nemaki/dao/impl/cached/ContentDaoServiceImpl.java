@@ -258,6 +258,137 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public Content getContentFresh(String repositoryId, String objectId) {
+		// Bypass cache and get fresh content directly from database
+		// This is critical for revision-sensitive operations like writeChangeEvent
+		log.info("CACHE BYPASS: Getting fresh content from database for " + objectId);
+		
+		if (objectId == null) {
+			log.warn("DAO getContentFresh param ObjectId is null!");
+			return null;
+		}
+		
+		if (nonCachedContentDaoService == null) {
+			log.error("CRITICAL: nonCachedContentDaoService is NULL in cached ContentDaoService");
+			return null;
+		}
+		
+		try {
+			Content freshContent = nonCachedContentDaoService.getContent(repositoryId, objectId);
+			if (freshContent != null) {
+				log.info("CACHE BYPASS SUCCESS: Retrieved fresh content for " + objectId + 
+					", revision=" + freshContent.getRevision() + ", type=" + freshContent.getClass().getSimpleName());
+			} else {
+				log.warn("CACHE BYPASS: No content found for " + objectId);
+			}
+			return freshContent;
+		} catch (Exception e) {
+			log.error("Error in getContentFresh", e);
+			return null;
+		}
+	}
+
+	@Override
+	public Document getDocumentFresh(String repositoryId, String objectId) {
+		log.info("CACHE BYPASS: Getting fresh document from database for " + objectId);
+		if (nonCachedContentDaoService == null) {
+			log.error("CRITICAL: nonCachedContentDaoService is NULL in cached ContentDaoService");
+			return null;
+		}
+		try {
+			Document freshDocument = nonCachedContentDaoService.getDocument(repositoryId, objectId);
+			if (freshDocument != null) {
+				log.info("CACHE BYPASS SUCCESS: Retrieved fresh document for " + objectId + 
+					", revision=" + freshDocument.getRevision());
+			}
+			return freshDocument;
+		} catch (Exception e) {
+			log.error("Error in getDocumentFresh", e);
+			return null;
+		}
+	}
+
+	@Override
+	public Folder getFolderFresh(String repositoryId, String objectId) {
+		log.info("CACHE BYPASS: Getting fresh folder from database for " + objectId);
+		if (nonCachedContentDaoService == null) {
+			log.error("CRITICAL: nonCachedContentDaoService is NULL in cached ContentDaoService");
+			return null;
+		}
+		try {
+			Folder freshFolder = nonCachedContentDaoService.getFolder(repositoryId, objectId);
+			if (freshFolder != null) {
+				log.info("CACHE BYPASS SUCCESS: Retrieved fresh folder for " + objectId + 
+					", revision=" + freshFolder.getRevision());
+			}
+			return freshFolder;
+		} catch (Exception e) {
+			log.error("Error in getFolderFresh", e);
+			return null;
+		}
+	}
+
+	@Override
+	public Relationship getRelationshipFresh(String repositoryId, String objectId) {
+		log.info("CACHE BYPASS: Getting fresh relationship from database for " + objectId);
+		if (nonCachedContentDaoService == null) {
+			log.error("CRITICAL: nonCachedContentDaoService is NULL in cached ContentDaoService");
+			return null;
+		}
+		try {
+			Relationship freshRelationship = nonCachedContentDaoService.getRelationship(repositoryId, objectId);
+			if (freshRelationship != null) {
+				log.info("CACHE BYPASS SUCCESS: Retrieved fresh relationship for " + objectId + 
+					", revision=" + freshRelationship.getRevision());
+			}
+			return freshRelationship;
+		} catch (Exception e) {
+			log.error("Error in getRelationshipFresh", e);
+			return null;
+		}
+	}
+
+	@Override
+	public Policy getPolicyFresh(String repositoryId, String objectId) {
+		log.info("CACHE BYPASS: Getting fresh policy from database for " + objectId);
+		if (nonCachedContentDaoService == null) {
+			log.error("CRITICAL: nonCachedContentDaoService is NULL in cached ContentDaoService");
+			return null;
+		}
+		try {
+			Policy freshPolicy = nonCachedContentDaoService.getPolicy(repositoryId, objectId);
+			if (freshPolicy != null) {
+				log.info("CACHE BYPASS SUCCESS: Retrieved fresh policy for " + objectId + 
+					", revision=" + freshPolicy.getRevision());
+			}
+			return freshPolicy;
+		} catch (Exception e) {
+			log.error("Error in getPolicyFresh", e);
+			return null;
+		}
+	}
+
+	@Override
+	public Item getItemFresh(String repositoryId, String objectId) {
+		log.info("CACHE BYPASS: Getting fresh item from database for " + objectId);
+		if (nonCachedContentDaoService == null) {
+			log.error("CRITICAL: nonCachedContentDaoService is NULL in cached ContentDaoService");
+			return null;
+		}
+		try {
+			Item freshItem = nonCachedContentDaoService.getItem(repositoryId, objectId);
+			if (freshItem != null) {
+				log.info("CACHE BYPASS SUCCESS: Retrieved fresh item for " + objectId + 
+					", revision=" + freshItem.getRevision());
+			}
+			return freshItem;
+		} catch (Exception e) {
+			log.error("Error in getItemFresh", e);
+			return null;
+		}
+	}
+
+	@Override
 	public boolean existContent(String repositoryId, String objectTypeId) {
 		return nonCachedContentDaoService.existContent(repositoryId, objectTypeId);
 	}

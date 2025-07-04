@@ -12,6 +12,7 @@ import org.apache.chemistry.opencmis.client.runtime.SessionFactoryImpl;
 import org.apache.chemistry.opencmis.commons.SessionParameter;
 import org.apache.chemistry.opencmis.commons.enums.BindingType;
 import org.apache.solr.core.SolrResourceLoader;
+import java.nio.file.Paths;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -143,48 +144,48 @@ public class CmisSessionFactory {
 	}
 
 	private static RepositorySettings readRepositorySettings(String location) {
-		SolrResourceLoader loader = new SolrResourceLoader(null);
 		try {
-			InputStream in = loader.openResource(location);
-			YamlReader reader = new YamlReader(new InputStreamReader(in));
-			reader.getConfig().setPropertyElementType(RepositorySettings.class, "settings", RepositorySetting.class);
-			RepositorySettings settings = reader.read(RepositorySettings.class);
-
-			return settings;
-		} catch (FileNotFoundException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} finally {
+			String solrHome = System.getProperty("solr.solr.home", ".");
+			SolrResourceLoader loader = new SolrResourceLoader(Paths.get(solrHome));
+			
 			try {
+				InputStream in = loader.openResource(location);
+				YamlReader reader = new YamlReader(new InputStreamReader(in));
+				reader.getConfig().setPropertyElementType(RepositorySettings.class, "settings", RepositorySetting.class);
+				RepositorySettings settings = reader.read(RepositorySettings.class);
+
+				return settings;
+			} finally {
 				loader.close();
-			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
 			}
+		} catch (FileNotFoundException e) {
+			logger.error("Repository settings file not found: " + location, e);
+		} catch (IOException e) {
+			logger.error("Error reading repository settings: " + location, e);
+		} catch (Exception e) {
+			logger.error("Error creating SolrResourceLoader for repository settings", e);
 		}
 		return null;
 	}
 
 	public static void modifyRepositorySettings(RepositorySettings settings) {
 		String location = pm.readValue(PropertyKey.REPOSITORIES_SETTING_FILE);
-		SolrResourceLoader loader = new SolrResourceLoader(null);
 		try {
-			String configDir = loader.getConfigDir();
-			File file = new File(configDir + location);
-			YamlWriter writer = new YamlWriter(new FileWriter(file));
-			writer.write(settings);
-			writer.close();
+			String solrHome = System.getProperty("solr.solr.home", ".");
+			SolrResourceLoader loader = new SolrResourceLoader(Paths.get(solrHome));
+			
+			try {
+				// Use solr home directly since getConfigDir() is deprecated
+				String configDir = solrHome + "/conf/";
+				File file = new File(configDir + location);
+				YamlWriter writer = new YamlWriter(new FileWriter(file));
+				writer.write(settings);
+				writer.close();
+			} finally {
+				loader.close();
+			}
 		} catch (Exception ex) {
 			logger.error("Error occurred during writing repository settings", ex);
-		} finally {
-			try {
-				loader.close();
-			} catch (Exception ex) {
-				logger.error("Error occurred during closing SolrResourceLoader", ex);
-			}
 		}
 	}
 

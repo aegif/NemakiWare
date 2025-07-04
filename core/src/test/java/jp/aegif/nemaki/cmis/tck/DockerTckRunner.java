@@ -15,13 +15,14 @@ import org.apache.chemistry.opencmis.tck.CmisTestGroup;
 import org.apache.chemistry.opencmis.tck.CmisTestProgressMonitor;
 import org.apache.chemistry.opencmis.tck.CmisTestReport;
 import org.apache.chemistry.opencmis.tck.CmisTestResult;
+import org.apache.chemistry.opencmis.tck.CmisTestResultStatus;
 import org.apache.chemistry.opencmis.tck.report.TextReport;
 import org.apache.chemistry.opencmis.tck.report.XmlReport;
 import org.apache.chemistry.opencmis.tck.runner.AbstractRunner;
 
 public class DockerTckRunner extends AbstractRunner {
     
-    private static final String PARAMETERS_FILE = "cmis-tck-parameters-docker.properties";
+    private static final String PARAMETERS_FILE = "cmis-tck-parameters-proper.properties";
     
     public DockerTckRunner() throws Exception {
         // Load properties
@@ -114,8 +115,9 @@ public class DockerTckRunner extends AbstractRunner {
         // Run tests using AbstractRunner's run method
         runner.run(monitor);
         
-        // Generate reports
-        File reportsDir = new File("/usr/local/docker/tck-reports");
+        // Generate reports - use different path based on environment
+        String reportPath = System.getProperty("user.dir") + "/docker/tck-reports";
+        File reportsDir = new File(reportPath);
         reportsDir.mkdirs();
         
         System.out.println("\nGenerating text report...");
@@ -140,14 +142,11 @@ public class DockerTckRunner extends AbstractRunner {
             for (CmisTest test : group.getTests()) {
                 for (CmisTestResult result : test.getResults()) {
                     totalTests++;
-                    switch (result.getStatus()) {
-                        case FAILURE:
-                        case UNEXPECTED_EXCEPTION:
-                            totalFailures++;
-                            break;
-                        case WARNING:
-                            totalWarnings++;
-                            break;
+                    CmisTestResultStatus status = result.getStatus();
+                    if (status == CmisTestResultStatus.FAILURE || status == CmisTestResultStatus.UNEXPECTED_EXCEPTION) {
+                        totalFailures++;
+                    } else if (status == CmisTestResultStatus.WARNING) {
+                        totalWarnings++;
                     }
                 }
             }

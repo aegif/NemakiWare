@@ -58,6 +58,8 @@ import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentExcep
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyDefinition;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.DocumentTypeDefinitionImpl;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.FolderTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ItemTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PolicyTypeDefinitionImpl;
@@ -75,6 +77,8 @@ import org.apache.commons.collections4.MapUtils;
  */
 public class TypeManagerImpl implements TypeManager {
 
+	private static final Log log = LogFactory.getLog(TypeManagerImpl.class);
+	
 	private RepositoryInfoMap repositoryInfoMap;
 	private TypeService typeService;
 	private PropertyManager propertyManager;
@@ -850,12 +854,34 @@ public class TypeManagerImpl implements TypeManager {
 	}
 	
 	private void addSubTypes(String repositoryId) {
-		List<NemakiTypeDefinition> subtypes = getNemakiTypeDefinitions(repositoryId);
+		List<NemakiTypeDefinition> subtypes = null;
+		try {
+			subtypes = getNemakiTypeDefinitions(repositoryId);
+		} catch (Exception e) {
+			log.error("Failed to get type definitions for repository: " + repositoryId, e);
+			return;
+		}
+		
 		List<NemakiTypeDefinition> firstGeneration = new ArrayList<NemakiTypeDefinition>();
 		if(CollectionUtils.isNotEmpty(subtypes)){
 			for (NemakiTypeDefinition subtype : subtypes) {
-				if (subtype.getBaseId().value().equals(subtype.getParentId())) {
-					firstGeneration.add(subtype);
+				if (subtype == null) {
+					log.warn("Null subtype found in type definitions");
+					continue;
+				}
+				
+				// Skip subtypes with null BaseId (prevents NullPointerException)
+				if (subtype.getBaseId() != null && subtype.getParentId() != null) {
+					try {
+						if (subtype.getBaseId().value().equals(subtype.getParentId())) {
+							firstGeneration.add(subtype);
+						}
+					} catch (Exception e) {
+						log.warn("Error processing type definition " + subtype.getTypeId() + ": " + e.getMessage());
+					}
+				} else {
+					log.warn("Skipping type definition with null BaseId or ParentId: " + 
+						(subtype.getTypeId() != null ? subtype.getTypeId() : "unknown"));
 				}
 			}
 
@@ -1432,7 +1458,7 @@ public class TypeManagerImpl implements TypeManager {
 		if (includePropertyDefinitions) {
 			result.add(tdc);
 		} else {
-			result.add(removeProeprtyDefinition(tdc));
+			result.add(removePropertyDefinition(tdc));
 		}
 
 		List<TypeDefinitionContainer> children = tdc.getChildren();
@@ -1444,14 +1470,24 @@ public class TypeManagerImpl implements TypeManager {
 		}
 	}
 
-	private TypeDefinitionContainer removeProeprtyDefinition(
+	private TypeDefinitionContainer removePropertyDefinition(
 			TypeDefinitionContainer tdc) {
+		if (tdc == null) {
+			return null;
+		}
+		
 		// Remove from its own typeDefinition
 		TypeDefinition tdf = tdc.getTypeDefinition();
+		if (tdf == null) {
+			return tdc; // Return original if no type definition
+		}
+		
 		TypeDefinition copy = DataUtil.copyTypeDefinition(tdf);
 		Map<String, PropertyDefinition<?>> propDefs = copy
 				.getPropertyDefinitions();
 		if (MapUtils.isNotEmpty(propDefs)) {
+			// CRITICAL FIX: Don't clear all properties - this breaks type inheritance
+			// Clear the existing map instead of trying to set a new one
 			propDefs.clear();
 		}
 		TypeDefinitionContainerImpl result = new TypeDefinitionContainerImpl(
@@ -1462,7 +1498,10 @@ public class TypeManagerImpl implements TypeManager {
 		if (CollectionUtils.isNotEmpty(children)) {
 			List<TypeDefinitionContainer> l = new ArrayList<TypeDefinitionContainer>();
 			for (TypeDefinitionContainer child : children) {
-				l.add(removeProeprtyDefinition(child));
+				TypeDefinitionContainer processedChild = removePropertyDefinition(child);
+				if (processedChild != null) {
+					l.add(processedChild);
+				}
 			}
 			result.setChildren(l);
 		}

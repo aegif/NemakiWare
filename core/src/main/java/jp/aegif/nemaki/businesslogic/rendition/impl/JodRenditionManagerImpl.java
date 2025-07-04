@@ -16,7 +16,7 @@ import org.jodconverter.document.DocumentFormat;
 import org.jodconverter.office.OfficeException;
 import org.jodconverter.office.OfficeManager;
 
-import javax.annotation.PostConstruct;
+import jakarta.annotation.PostConstruct;
 import java.io.*;
 import java.math.BigInteger;
 import java.util.List;

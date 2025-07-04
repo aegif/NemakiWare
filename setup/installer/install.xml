@@ -171,17 +171,17 @@
       <description>DB initialization</description>
 
       <!-- Import configuration scripts -->
-      <file src="../../setup/couchdb/bjornloka/target/bjornloka.jar" targetdir="$INSTALL_PATH/setup/couchdb" />
-      <file src="bjornloka-wrapper.sh" targetdir="$INSTALL_PATH/setup/installer" />
+      <file src="../../setup/couchdb/cloudant-init/target/cloudant-init.jar" targetdir="$INSTALL_PATH/setup/couchdb" />
+      <file src="cloudant-init-wrapper.sh" targetdir="$INSTALL_PATH/setup/installer" />
       <fileset dir="../../setup/couchdb" targetdir="$INSTALL_PATH/setup/couchdb">
         <include name="initial_import/*" />
       </fileset>
 
       <!-- Import initial data -->
-      <executable targetfile="$INSTALL_PATH/setup/installer/bjornloka-wrapper.sh" stage="postinstall"
+      <executable targetfile="$INSTALL_PATH/setup/installer/cloudant-init-wrapper.sh" stage="postinstall"
         keep="true">
         <args>
-          <arg value="$INSTALL_PATH/setup/couchdb/bjornloka.jar" />
+          <arg value="$INSTALL_PATH/setup/couchdb/cloudant-init.jar" />
           <arg value="${db.couchdb.url}" />
           <arg value="${db.couchdb.username}" />
           <arg value="${db.couchdb.password}" />
@@ -192,10 +192,10 @@
         </args>
       </executable>
 
-      <executable targetfile="$INSTALL_PATH/setup/installer/bjornloka-wrapper.sh" stage="postinstall"
+      <executable targetfile="$INSTALL_PATH/setup/installer/cloudant-init-wrapper.sh" stage="postinstall"
         keep="true">
         <args>
-          <arg value="$INSTALL_PATH/setup/couchdb/bjornloka.jar" />
+          <arg value="$INSTALL_PATH/setup/couchdb/cloudant-init.jar" />
           <arg value="${db.couchdb.url}" />
           <arg value="${db.couchdb.username}" />
           <arg value="${db.couchdb.password}" />
@@ -212,33 +212,27 @@
     </pack>
 
 
-    <!-- Pack: Solr -->
+    <!-- Pack: Solr (TEMPORARILY DISABLED - solr.war not available) -->
+    <!--
     <pack id="pack.solr" name="Solr" required="no">
       <description>Search engine</description>
       <depends packname="Tomcat" />
 
-      <!-- Deploy WAR file -->
       <file src="../../solr/target/solr.war" targetdir="$INSTALL_PATH/${TOMCAT}/webapps" />
-
-      <!-- Create Solr setting file -->
       <file src="tomcat/app-server-solr.properties" targetdir="$INSTALL_PATH/${TOMCAT}/shared/classes" />
       <parsable targetfile="$INSTALL_PATH/${TOMCAT}/shared/classes/app-server-solr.properties" type="javaprop"/>
-
-      <!-- Deploy Solr home -->
       <fileset dir="../../solr/solr" targetdir="$INSTALL_PATH/solr">
         <include name="**"/>
         <exclude name="**/data/*/" />
       </fileset>
       <file src="solr/app-server-solr-repositories.yml" targetdir="$INSTALL_PATH/solr" />
       <parsable targetfile="$INSTALL_PATH/solr/app-server-solr-repositories.yml"/>
-
-      <!-- Create Solr context fragment -->
       <file src="tomcat/solr.xml" targetdir="$INSTALL_PATH/${TOMCAT}/conf/Catalina/localhost" />
       <parsable targetfile="$INSTALL_PATH/${TOMCAT}/conf/Catalina/localhost/solr.xml" type="xml"/>
       <file src="tomcat/nemakisolr.properties" targetdir="$INSTALL_PATH/solr/conf" />
       <parsable targetfile="$INSTALL_PATH/solr/conf/nemakisolr.properties" type="javaprop"/>
-
     </pack>
+    -->
 
      <!-- Pack: UI -->
     <pack id="pack.ui" name="UI" required="no" >

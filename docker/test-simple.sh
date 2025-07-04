@@ -1,18 +1,150 @@
 #!/bin/bash
+
+# NemakiWare Simple Test Environment Setup
+# Enhanced version supporting database initialization only
+
 set -e
 
-SCRIPT_DIR=$(cd $(dirname $0); pwd)
-NEMAKI_HOME=$(cd $SCRIPT_DIR/..; pwd)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NEMAKI_HOME="$(dirname "$SCRIPT_DIR")"
 
+# Default values
+INIT_ONLY=false
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        init-only)
+            INIT_ONLY=true
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [init-only]"
+            exit 1
+            ;;
+    esac
+done
+
+# Set environment variables
 export COUCHDB_USER=${COUCHDB_USER:-admin}
 export COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-password}
 
-echo "=========================================="
-echo "NemakiWare Simple Docker Test Environment"
-echo "=========================================="
-echo "Using CouchDB 2.x with authentication:"
-echo "Username: $COUCHDB_USER"
-echo "Password: $COUCHDB_PASSWORD"
+echo "=== NemakiWare Simple Test Environment ==="
+echo "Script directory: $SCRIPT_DIR"
+echo "NemakiWare home: $NEMAKI_HOME"
+echo "CouchDB credentials: $COUCHDB_USER/$COUCHDB_PASSWORD"
+
+if [[ "$INIT_ONLY" == "true" ]]; then
+    echo "Mode: Database initialization only"
+else
+    echo "Mode: Full environment setup"
+fi
+
+# Function to wait for CouchDB
+wait_for_couchdb() {
+    local container_name=$1
+    local max_attempts=30
+    local attempt=1
+    
+    echo "Waiting for CouchDB container '$container_name' to be ready..."
+    
+    while [[ $attempt -le $max_attempts ]]; do
+        if docker exec "$container_name" curl -s -f http://localhost:5984/_up >/dev/null 2>&1; then
+            echo "CouchDB is ready after $attempt attempts"
+            return 0
+        fi
+        
+        echo "Attempt $attempt/$max_attempts: CouchDB not ready yet..."
+        sleep 2
+        ((attempt++))
+    done
+    
+    echo "ERROR: CouchDB failed to become ready after $max_attempts attempts"
+    return 1
+}
+
+# Function to initialize database
+initialize_database() {
+    local container_name=$1
+    local repo_id=$2
+    local dump_file=$3
+    local force_param=$4
+    
+    echo "Initializing repository '$repo_id' using dump file '$dump_file'..."
+    
+    # Run cloudant-init.jar with proper authentication
+    docker compose -f docker-compose-simple.yml run --rm --remove-orphans \
+        -e COUCHDB_URL=http://${container_name}:5984 \
+        -e COUCHDB_USERNAME=${COUCHDB_USER} \
+        -e COUCHDB_PASSWORD=${COUCHDB_PASSWORD} \
+        -e REPOSITORY_ID=${repo_id} \
+        -e DUMP_FILE=${dump_file} \
+        -e FORCE=${force_param} \
+        initializer-${repo_id}
+    
+    echo "Repository '$repo_id' initialization completed"
+}
+
+if [[ "$INIT_ONLY" != "true" ]]; then
+    # Stop existing containers
+    echo ""
+    echo "Stopping existing containers..."
+    docker compose -f docker-compose-simple.yml down -v 2>/dev/null || true
+    
+    # Start services
+    echo ""
+    echo "Starting services..."
+    docker compose -f docker-compose-simple.yml up -d couchdb solr ui
+fi
+
+# Wait for CouchDB
+echo ""
+wait_for_couchdb "docker-couchdb-1"
+
+# Initialize all repositories
+echo ""
+echo "Initializing repositories..."
+
+# Repository configuration (compatible bash syntax)
+repositories_bedroom="/app/bedroom_init.dump"
+repositories_bedroom_closet="/app/archive_init.dump"
+repositories_canopy="/app/canopy_init.dump"
+repositories_canopy_closet="/app/archive_init.dump"
+
+# Initialize each repository
+for repo_id in bedroom bedroom_closet canopy canopy_closet; do
+    case $repo_id in
+        bedroom)
+            dump_file="$repositories_bedroom"
+            ;;
+        bedroom_closet)
+            dump_file="$repositories_bedroom_closet"
+            ;;
+        canopy)
+            dump_file="$repositories_canopy"
+            ;;
+        canopy_closet)
+            dump_file="$repositories_canopy_closet"
+            ;;
+    esac
+    
+    force_param="true"  # Always force to ensure proper initialization
+    initialize_database "couchdb" "$repo_id" "$dump_file" "$force_param"
+done
+
+if [[ "$INIT_ONLY" == "true" ]]; then
+    echo ""
+    echo "=== Database Initialization Completed ==="
+    echo "Repositories initialized:"
+    echo "  ✓ bedroom"
+    echo "  ✓ bedroom_closet"  
+    echo "  ✓ canopy"
+    echo "  ✓ canopy_closet"
+    echo ""
+    echo "CouchDB is ready for Core application connection"
+    exit 0
+fi
 
 echo "Stopping any running containers..."
 cd $SCRIPT_DIR
@@ -21,7 +153,8 @@ docker compose -f docker-compose-simple.yml down --remove-orphans --volumes
 echo "Cleaning all build artifacts and untracked files..."
 # Clean all Docker build artifacts (WAR files, generated directories, etc.)
 cd $NEMAKI_HOME
-git clean -fdx docker/ || echo "Warning: Some files could not be cleaned"
+# Preserve important assembly and source files while cleaning build artifacts
+git clean -fdx docker/ --exclude docker/solr/src/assembly/ || echo "Warning: Some files could not be cleaned"
 
 # Clean Maven targets
 mvn clean -q || echo "Warning: Maven clean failed"
@@ -39,24 +172,52 @@ fi
 
 echo "Clean state achieved - all build artifacts removed"
 
+# Set JAVA_HOME for Java 17 
+export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+export PATH=$JAVA_HOME/bin:$PATH
+
 echo "Preparing initializer (will build JAR files automatically)..."
 cd $NEMAKI_HOME/docker
 ./prepare-initializer.sh
 
 echo "Building Solr custom JAR..."
 cd $NEMAKI_HOME
+
+# Set JAVA_HOME for Java 17
+export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+export PATH=$JAVA_HOME/bin:$PATH
+
+# Verify Java version
+echo "Using Java version: $(java -version 2>&1 | head -1)"
+
 mvn clean package -f docker/solr/pom.xml -Pdevelopment -q
 if [ $? -eq 0 ]; then
     echo "Solr custom JAR built successfully"
-    # Ensure lib directories exist and copy JAR files
+    # Ensure lib directories exist
     mkdir -p docker/solr/solr/nemaki/lib
     mkdir -p docker/solr/solr/token/lib
+    
+    # Copy main JAR file
     cp docker/solr/target/solr.jar docker/solr/solr/nemaki/lib/
     cp docker/solr/target/solr.jar docker/solr/solr/token/lib/
-    # Copy required dependencies
-    cp docker/lib/*.jar docker/solr/solr/nemaki/lib/
-    cp docker/lib/*.jar docker/solr/solr/token/lib/
+    
+    # Copy dependencies from Maven dependency plugin output
+    if [ -d "docker/solr/target/lib" ]; then
+        echo "Copying Maven dependencies..."
+        cp docker/solr/target/lib/*.jar docker/solr/solr/nemaki/lib/ 2>/dev/null || echo "Note: No additional dependencies found in target/lib"
+        cp docker/solr/target/lib/*.jar docker/solr/solr/token/lib/ 2>/dev/null || echo "Note: No additional dependencies found in target/lib"
+    fi
+    
+    # Copy legacy dependencies if they exist
+    if [ -d "docker/lib" ] && [ "$(ls -A docker/lib/*.jar 2>/dev/null)" ]; then
+        echo "Copying legacy dependencies from docker/lib..."
+        cp docker/lib/*.jar docker/solr/solr/nemaki/lib/
+        cp docker/lib/*.jar docker/solr/solr/token/lib/
+    fi
+    
     echo "Solr JAR and dependencies deployed to lib directories"
+    echo "Dependencies in nemaki/lib: $(ls -1 docker/solr/solr/nemaki/lib/*.jar | wc -l) JAR files"
+    echo "Dependencies in token/lib: $(ls -1 docker/solr/solr/token/lib/*.jar | wc -l) JAR files"
 else
     echo "Warning: Solr custom JAR build failed"
     exit 1

@@ -16,6 +16,8 @@
 		<org.apache.chemistry.opencmis.version>1.0.0</org.apache.chemistry.opencmis.version>
 		<org.apache.chemistry.opencmis.version.14>0.14.0</org.apache.chemistry.opencmis.version.14>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<maven.compiler.source>17</maven.compiler.source>
+		<maven.compiler.target>17</maven.compiler.target>
 	</properties>
 
 	<repositories>
@@ -80,6 +82,30 @@
             <groupId>com.typesafe.play</groupId>
             <artifactId>play_2.11</artifactId>
             <version>2.4.0</version>
+            <exclusions>
+                <!-- Exclude all SLF4J related dependencies -->
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-api</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>jul-to-slf4j</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>jcl-over-slf4j</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.typesafe.akka</groupId>
+                    <artifactId>akka-slf4j_2.11</artifactId>
+                </exclusion>
+                <!-- Additional Akka exclusions to prevent version conflicts -->
+                <exclusion>
+                    <groupId>com.typesafe.akka</groupId>
+                    <artifactId>akka-actor_2.11</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
 		<!-- Google Guice -->
@@ -93,6 +119,23 @@
 		    <artifactId>guice-multibindings</artifactId>
 		    <version>4.0</version>
 		</dependency>
+		
+		<!-- SLF4J 2.0.x -->
+		<dependency>
+			<groupId>org.slf4j</groupId>
+			<artifactId>slf4j-api</artifactId>
+			<version>2.0.12</version>
+		</dependency>
+		<dependency>
+			<groupId>org.slf4j</groupId>
+			<artifactId>jul-to-slf4j</artifactId>
+			<version>2.0.12</version>
+		</dependency>
+		<dependency>
+			<groupId>org.slf4j</groupId>
+			<artifactId>jcl-over-slf4j</artifactId>
+			<version>2.0.12</version>
+		</dependency>
 	</dependencies>
 
 
@@ -101,11 +144,11 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
-				<version>3.6.0</version>
+				<version>3.11.0</version>
 				<configuration>
 					<encoding>UTF-8</encoding>
-					<source>1.8</source>
-					<target>1.8</target>
+					<source>11</source>
+					<target>11</target>
 				</configuration>
 			</plugin>
 		</plugins>

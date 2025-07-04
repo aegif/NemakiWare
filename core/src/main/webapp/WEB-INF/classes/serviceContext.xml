@@ -91,7 +91,7 @@
             <ref bean="typeManager" />
         </property>
     </bean>
-    <bean id="typeManager" class="jp.aegif.nemaki.cmis.aspect.type.impl.TypeManagerImpl" depends-on="typeService">
+    <bean id="typeManager" class="jp.aegif.nemaki.cmis.aspect.type.impl.TypeManagerImpl" init-method="init" depends-on="typeService">
 		<property name="repositoryInfoMap">
             <ref bean="repositoryInfoMap" />
         </property>
@@ -412,6 +412,9 @@
         class="jp.aegif.nemaki.cmis.factory.auth.impl.AuthenticationServiceImpl">
         <property name="contentService">
             <ref bean="ContentService" />
+        </property>
+        <property name="contentDaoService">
+            <ref bean="ContentDaoService" />
         </property>
         <property name="principalService">
             <ref bean="PrincipalService" />

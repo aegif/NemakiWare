@@ -22,7 +22,7 @@
 package jp.aegif.nemaki.tracker;
 
 
-import jp.aegif.nemaki.NemakiCoreAdminHandler;
+import jp.aegif.nemaki.NemakiIndexHandler;
 import jp.aegif.nemaki.util.*;
 import jp.aegif.nemaki.util.impl.PropertyManagerImpl;
 import jp.aegif.nemaki.util.yaml.RepositorySettings;
@@ -40,7 +40,7 @@ import org.apache.solr.client.solrj.request.UpdateRequest;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrInputDocument;
-import org.apache.solr.core.CloseHook;
+// import org.apache.solr.core.CloseHook; // Removed in Solr 9.x
 import org.apache.solr.core.SolrCore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,13 +57,13 @@ import java.util.*;
  * @author linzhixing
  *
  */
-public class CoreTracker implements CloseHook {
+public class CoreTracker /* implements CloseHook */ {
 
 	private static final Object LOCK = new Object();
 
 	private static final Logger logger = LoggerFactory.getLogger(CoreTracker.class);
 
-	NemakiCoreAdminHandler adminHandler;
+	NemakiIndexHandler adminHandler;
 	SolrCore core;
 	SolrClient indexServer;
 	SolrClient tokenServer;
@@ -75,7 +75,7 @@ public class CoreTracker implements CloseHook {
 	Set<String> latestIndexedChangeLogIds = new HashSet<String>();
 	
 
-	public CoreTracker(NemakiCoreAdminHandler adminHandler, SolrCore core, SolrClient indexServer,
+	public CoreTracker(NemakiIndexHandler adminHandler, SolrCore core, SolrClient indexServer,
 			SolrClient tokenServer) {
 		super();
 

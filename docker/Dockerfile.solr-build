@@ -7,7 +7,7 @@ COPY solr /app/solr
 RUN mkdir -p /root/.m2
 COPY maven-settings.xml /root/.m2/settings.xml
 
-# Build Solr WAR with proper dependencies and custom settings
+# Build Solr JAR with proper dependencies and custom settings
 RUN cd /app/solr && \
-    echo "Building Solr WAR with Maven..." && \
+    echo "Building Solr JAR with Maven..." && \
     mvn clean compile package -DskipTests -Pdevelopment -s /root/.m2/settings.xml

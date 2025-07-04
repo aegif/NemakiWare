@@ -3,7 +3,7 @@
 
 	<modelVersion>4.0.0</modelVersion>
 	<artifactId>solr</artifactId>
-	<packaging>war</packaging>
+	<packaging>jar</packaging>
 	<version>2.4.1</version>
 	<name>solr</name>
 	<description>Solr customized for Nemakiware</description>
@@ -13,10 +13,16 @@
 	<groupId>jp.aegif.nemaki.solr</groupId>
 
 	<properties>
-		<java-version>11</java-version>
-        <maven.compiler.target>11</maven.compiler.target>
-        <maven.compiler.source>11</maven.compiler.source>
+		<java.version>17</java.version>
+		<maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.release>17</maven.compiler.release>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+		<maven.compiler.version>3.13.0</maven.compiler.version>
+		<maven.surefire.version>3.2.5</maven.surefire.version>
+		<maven.dependency.version>3.6.1</maven.dependency.version>
+		<maven.assembly.version>3.7.1</maven.assembly.version>
 		<org.apache.chemistry.opencmis.version>1.1.0</org.apache.chemistry.opencmis.version>
 		<org.apache.solr.version>9.8.0</org.apache.solr.version>
 	</properties>
@@ -139,9 +145,9 @@
 
 
 		<dependency>
-			<groupId>org.ektorp</groupId>
-			<artifactId>org.ektorp</artifactId>
-			<version>1.5.0</version>
+			<groupId>com.ibm.cloud</groupId>
+			<artifactId>cloudant</artifactId>
+			<version>0.8.0</version>
 			<exclusions>
 				<exclusion>
 					<groupId>commons-logging</groupId>
@@ -221,43 +227,73 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
-				<version>3.6.0</version>
+				<version>${maven.compiler.version}</version>
 				<configuration>
-					<encoding>UTF-8</encoding>
-					<source>11</source>
-					<target>11</target>
+					<release>${maven.compiler.release}</release>
+					<encoding>${project.build.sourceEncoding}</encoding>
+					<parameters>true</parameters>
+					<compilerArgs>
+						<arg>-Xlint:unchecked</arg>
+						<arg>-Xlint:deprecation</arg>
+					</compilerArgs>
 				</configuration>
 			</plugin>
+			<!-- Surefire plugin for tests -->
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-war-plugin</artifactId>
-				<version>3.3.1</version>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<version>${maven.surefire.version}</version>
 				<configuration>
-					 <packagingExcludes>**/custom-nemakiware.properties</packagingExcludes>
-					 <packagingExcludes>**/custom-repository.yml</packagingExcludes>
+					<useSystemClassLoader>false</useSystemClassLoader>
+					<argLine>--add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED</argLine>
 				</configuration>
 			</plugin>
+			<!-- Copy dependencies to lib directory -->
 			<plugin>
-				  <groupId>org.eclipse.jetty</groupId>
-				  <artifactId>jetty-maven-plugin</artifactId>
-				  <version>11.0.15</version>
-				<configuration>
-					<scanIntervalSeconds>1</scanIntervalSeconds>
-					<stopPort>9968</stopPort>
-					<stopKey>foo</stopKey>
-					<webAppConfig>
-						<contextPath>/solr</contextPath>
-						<tempDirectory>./tmp</tempDirectory>
-					</webAppConfig>
-					<connectors>
-						<connector implementation="org.eclipse.jetty.server.nio.SelectChannelConnector">
-							<port>8983</port>
-						</connector>
-					</connectors>
-					<scanTargets>
-						<scanTarget>src/main/webapp</scanTarget>
-					</scanTargets>
-				</configuration>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-dependency-plugin</artifactId>
+				<version>${maven.dependency.version}</version>
+				<executions>
+					<execution>
+						<id>copy-dependencies</id>
+						<phase>package</phase>
+						<goals>
+							<goal>copy-dependencies</goal>
+						</goals>
+						<configuration>
+							<outputDirectory>${project.build.directory}/lib</outputDirectory>
+							<includeScope>runtime</includeScope>
+							<excludeScope>provided</excludeScope>
+							<excludeGroupIds>org.apache.solr</excludeGroupIds>
+							<excludeArtifactIds>slf4j-api</excludeArtifactIds>
+							<overWriteReleases>false</overWriteReleases>
+							<overWriteSnapshots>false</overWriteSnapshots>
+							<overWriteIfNewer>true</overWriteIfNewer>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<!-- Create distribution with dependencies -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-assembly-plugin</artifactId>
+				<version>${maven.assembly.version}</version>
+				<executions>
+					<execution>
+						<id>create-distribution</id>
+						<phase>package</phase>
+						<goals>
+							<goal>single</goal>
+						</goals>
+						<configuration>
+							<descriptors>
+								<descriptor>src/assembly/distribution.xml</descriptor>
+							</descriptors>
+							<finalName>solr-nemaki</finalName>
+							<appendAssemblyId>false</appendAssemblyId>
+						</configuration>
+					</execution>
+				</executions>
 			</plugin>
 		</plugins>
 	</build>

@@ -46,13 +46,16 @@ if [ ${#MISSING_TOOLS[@]} -ne 0 ]; then
 fi
 echo "✓ All required tools are available"
 
-# Check Java version
+# Set and check Java version
+export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+export PATH=$JAVA_HOME/bin:$PATH
+
 JAVA_VERSION=$(java -version 2>&1 | grep "version" | awk '{print $3}' | sed 's/"//g' | cut -d'.' -f1-2)
 echo "Java version: $JAVA_VERSION"
-if [[ "$JAVA_VERSION" < "1.8" ]] || [[ "$JAVA_VERSION" == "1.8"* ]]; then
-    echo "✓ Java 8 compatible version detected"
+if [[ "$JAVA_VERSION" == "17"* ]]; then
+    echo "✓ Java 17 compatible version detected (required for Solr 9.x)"
 else
-    echo "⚠ Warning: Java version may not be compatible (Java 8 recommended)"
+    echo "⚠ Warning: Java 17 is required for Solr 9.x compatibility"
 fi
 
 # Check Docker daemon
@@ -268,8 +271,31 @@ echo "Preparing initializer..."
 cd $NEMAKI_HOME/docker
 ./prepare-initializer.sh
 
-echo "Building UI WAR with SBT..."
-cd $NEMAKI_HOME/ui
+echo "Preparing to build UI WAR with SBT (requires Java 8)..."
+
+# Check if Java 8 is available
+if [ -d "/Library/Java/JavaVirtualMachines/jdk1.8.0_202.jdk" ]; then
+    echo "Java 8 found - switching to Java 8 for UI build..."
+    export JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk1.8.0_202.jdk/Contents/Home
+    export PATH=$JAVA_HOME/bin:$PATH
+    echo "Using Java version: $(java -version 2>&1 | head -1)"
+elif [ -d "/usr/lib/jvm/java-8-openjdk" ]; then
+    echo "Java 8 found - switching to Java 8 for UI build..."
+    export JAVA_HOME=/usr/lib/jvm/java-8-openjdk
+    export PATH=$JAVA_HOME/bin:$PATH
+    echo "Using Java version: $(java -version 2>&1 | head -1)"
+else
+    echo "WARNING: Java 8 not found. UI build will be skipped."
+    echo "Note: UI module requires Java 8 which conflicts with Core/Solr Java 17 requirements"
+    UI_BUILD_SKIP=true
+fi
+
+if [ "$UI_BUILD_SKIP" != "true" ]; then
+    echo "Building UI WAR with SBT..."
+    cd $NEMAKI_HOME/ui
+else
+    echo "Skipping UI build due to Java 8 unavailability"
+    cd $NEMAKI_HOME/ui
 
 # Ensure SBT configuration is properly set up for HTTPS repositories
 if ! grep -q "https://repo.typesafe.com" project/plugins.sbt; then
@@ -330,27 +356,47 @@ if grep -q 'nemaki.core.uri.host="core2"' conf/application.conf; then
   echo "Core URI host updated from core2 to core in application.conf"
 fi
 
-# Build the UI WAR file
-echo "Building UI WAR with SBT (this may take a few minutes)..."
-export SBT_OPTS="-Xmx2G -XX:+UseG1GC"
+if [ "$UI_BUILD_SKIP" != "true" ]; then
+    # Build the UI WAR file
+    echo "Building UI WAR with SBT (this may take a few minutes)..."
+    export SBT_OPTS="-Xmx2G -XX:+UseG1GC"
 
-sbt clean compile war
-if [ $? -ne 0 ]; then
-  echo "ERROR: SBT build failed for UI"
-  exit 1
-fi
+    sbt clean compile war
+    if [ $? -ne 0 ]; then
+      echo "ERROR: SBT build failed for UI"
+      exit 1
+    fi
 
-# Copy the built WAR files
-if [ -f "target/ui.war" ]; then
-  echo "Copying newly built UI WAR files..."
-  mkdir -p $NEMAKI_HOME/docker/ui-war
-  cp target/ui.war $NEMAKI_HOME/docker/ui-war/ui.war
-  cp target/ui.war $NEMAKI_HOME/docker/ui-war/ui##.war
-  echo "UI WAR files successfully created"
+    # Copy the built WAR files
+    if [ -f "target/ui.war" ]; then
+      echo "Copying newly built UI WAR files..."
+      mkdir -p $NEMAKI_HOME/docker/ui-war
+      cp target/ui.war $NEMAKI_HOME/docker/ui-war/ui.war
+      cp target/ui.war $NEMAKI_HOME/docker/ui-war/ui##.war
+      echo "UI WAR files successfully created"
+    else
+      echo "ERROR: No UI WAR file found"
+      exit 1
+    fi
 else
-  echo "ERROR: No UI WAR file found"
-  exit 1
+    # Use existing UI WAR file if available
+    if [ -f "$NEMAKI_HOME/docker/ui/ui.war" ]; then
+      echo "Using existing UI WAR file: $NEMAKI_HOME/docker/ui/ui.war"
+      mkdir -p $NEMAKI_HOME/docker/ui-war
+      cp $NEMAKI_HOME/docker/ui/ui.war $NEMAKI_HOME/docker/ui-war/ui.war
+      cp $NEMAKI_HOME/docker/ui/ui.war $NEMAKI_HOME/docker/ui-war/ui##.war
+      echo "Existing UI WAR files copied"
+    else
+      echo "No existing UI WAR file found. UI container will not be functional."
+      echo "This is expected during Core + CouchDB + Solr testing without UI module."
+    fi
 fi
+
+# Switch back to Java 17 for Core and Solr builds
+echo "Switching back to Java 17 for Core and Solr builds..."
+export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+export PATH=$JAVA_HOME/bin:$PATH
+echo "Using Java version: $(java -version 2>&1 | head -1)"
 
 echo "Building core.war with complete configuration..."
 
@@ -456,9 +502,43 @@ if [ ! -f "$NEMAKI_HOME/docker/core/core.war" ]; then
   exit 1
 fi
 
-echo "Building Solr WAR file using Docker with Java 8..."
-cd $NEMAKI_HOME/docker
-./build-solr.sh
+echo "Building Solr custom JAR with Java 17 and updated Maven configuration..."
+cd $NEMAKI_HOME
+
+# Use updated Maven build process for Solr 9.x
+mvn clean package -f docker/solr/pom.xml -Pdevelopment -q
+if [ $? -eq 0 ]; then
+    echo "✓ Solr custom JAR built successfully"
+    
+    # Ensure lib directories exist
+    mkdir -p docker/solr/solr/nemaki/lib
+    mkdir -p docker/solr/solr/token/lib
+    
+    # Copy main JAR file
+    cp docker/solr/target/solr.jar docker/solr/solr/nemaki/lib/
+    cp docker/solr/target/solr.jar docker/solr/solr/token/lib/
+    
+    # Copy dependencies from Maven dependency plugin output
+    if [ -d "docker/solr/target/lib" ]; then
+        echo "Copying Maven dependencies..."
+        cp docker/solr/target/lib/*.jar docker/solr/solr/nemaki/lib/ 2>/dev/null || echo "Note: No additional dependencies found in target/lib"
+        cp docker/solr/target/lib/*.jar docker/solr/solr/token/lib/ 2>/dev/null || echo "Note: No additional dependencies found in target/lib"
+    fi
+    
+    # Copy legacy dependencies if they exist
+    if [ -d "docker/lib" ] && [ "$(ls -A docker/lib/*.jar 2>/dev/null)" ]; then
+        echo "Copying legacy dependencies from docker/lib..."
+        cp docker/lib/*.jar docker/solr/solr/nemaki/lib/
+        cp docker/lib/*.jar docker/solr/solr/token/lib/
+    fi
+    
+    echo "Solr JAR and dependencies deployed to lib directories"
+    echo "Dependencies in nemaki/lib: $(ls -1 docker/solr/solr/nemaki/lib/*.jar | wc -l) JAR files"
+    echo "Dependencies in token/lib: $(ls -1 docker/solr/solr/token/lib/*.jar | wc -l) JAR files"
+else
+    echo "ERROR: Solr custom JAR build failed"
+    exit 1
+fi
 
 echo "Creating core/repositories.yml if it doesn't exist..."
 mkdir -p $NEMAKI_HOME/docker/core

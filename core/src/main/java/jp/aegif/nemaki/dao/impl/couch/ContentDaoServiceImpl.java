@@ -514,6 +514,43 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		}
 	}
 
+	@Override
+	public Content getContentFresh(String repositoryId, String objectId) {
+		// For non-cached implementation, getContentFresh is same as getContent
+		// This ensures consistent interface across cached and non-cached implementations
+		return getContent(repositoryId, objectId);
+	}
+
+	@Override
+	public Document getDocumentFresh(String repositoryId, String objectId) {
+		// For non-cached implementation, getDocumentFresh is same as getDocument
+		return getDocument(repositoryId, objectId);
+	}
+
+	@Override
+	public Folder getFolderFresh(String repositoryId, String objectId) {
+		// For non-cached implementation, getFolderFresh is same as getFolder
+		return getFolder(repositoryId, objectId);
+	}
+
+	@Override
+	public Relationship getRelationshipFresh(String repositoryId, String objectId) {
+		// For non-cached implementation, getRelationshipFresh is same as getRelationship
+		return getRelationship(repositoryId, objectId);
+	}
+
+	@Override
+	public Policy getPolicyFresh(String repositoryId, String objectId) {
+		// For non-cached implementation, getPolicyFresh is same as getPolicy
+		return getPolicy(repositoryId, objectId);
+	}
+
+	@Override
+	public Item getItemFresh(String repositoryId, String objectId) {
+		// For non-cached implementation, getItemFresh is same as getItem
+		return getItem(repositoryId, objectId);
+	}
+
 	private Content convertJsonToEachBaeType(ViewResult result) {
 		if (result.getRows().isEmpty()) {
 			return null;
@@ -1199,9 +1236,19 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public Folder create(String repositoryId, Folder folder) {
 		log.error("COMPREHENSIVE DEBUG: Creating folder for repositoryId: " + repositoryId);
 		CouchFolder cf = new CouchFolder(folder);
-		log.error("COMPREHENSIVE DEBUG: Before create - CouchFolder ID=" + cf.getId() + ", revision=" + cf.getRevision());
+		log.error("COMPREHENSIVE DEBUG: Before create - CouchFolder ID=" + cf.getId() + ", revision=" + cf.getRevision() + 
+			", objectType=" + cf.getObjectType() + ", name=" + cf.getName() + ", type=" + cf.getType());
 		
-		connectorPool.getClient(repositoryId).create(cf);
+		log.error("COMPREHENSIVE DEBUG: About to call client.create() method");
+		try {
+			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+			log.error("COMPREHENSIVE DEBUG: Got client of type: " + client.getClass().getName());
+			client.create(cf);
+			log.error("COMPREHENSIVE DEBUG: client.create() method completed");
+		} catch (Exception e) {
+			log.error("COMPREHENSIVE DEBUG: Exception in create() call", e);
+			throw e;
+		}
 		
 		log.error("COMPREHENSIVE DEBUG: After create - CouchFolder ID=" + cf.getId() + ", revision=" + cf.getRevision());
 		
@@ -1836,7 +1883,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		try {
 			// Query latestChange view to get the most recent change
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			List<CouchChange> couchChanges = client.queryView("_repo", "latestChange", null, CouchChange.class);
+			List<CouchChange> couchChanges = client.queryView("_repo", "changesByToken", null, CouchChange.class);
 			
 			if (!couchChanges.isEmpty()) {
 				// Return the first (most recent) change
@@ -1853,7 +1900,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Change> getLatestChanges(String repositoryId, String startToken, int maxItems) {
 		try {
-			// Query latestChanges view with pagination
+			// Query changesByToken view with pagination
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			Map<String, Object> queryParams = new HashMap<String, Object>();
 			if (maxItems > 0) {
@@ -1863,7 +1910,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				queryParams.put("startkey", startToken);
 			}
 			
-			ViewResult result = client.queryView("_repo", "latestChanges", queryParams);
+			ViewResult result = client.queryView("_repo", "changesByToken", queryParams);
 			List<Change> changes = new ArrayList<Change>();
 			
 			if (result.getRows() != null) {
@@ -1892,9 +1939,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Change> getObjectChanges(String repositoryId, String objectId) {
 		try {
-			// Query objectChanges view with objectId
+			// Query changesByObjectId view with objectId
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			List<CouchChange> couchChanges = client.queryView("_repo", "objectChanges", objectId, CouchChange.class);
+			List<CouchChange> couchChanges = client.queryView("_repo", "changesByObjectId", objectId, CouchChange.class);
 			
 			List<Change> changes = new ArrayList<Change>();
 			for (CouchChange couchChange : couchChanges) {

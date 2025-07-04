@@ -20,6 +20,7 @@
 		<welcome-file>index.html</welcome-file>
 	</welcome-file-list>
 
+	<!-- Re-enable Spring context with Jakarta EE converted OpenCMIS JARs -->
 	<context-param>
 		<param-name>contextConfigLocation</param-name>
 		<param-value>classpath:applicationContext.xml</param-value>
@@ -33,9 +34,14 @@
 		<listener-class>jp.aegif.nemaki.util.EHCacheShutdownListener</listener-class>
     </listener>
 
+	<!-- OpenCMIS servlets - re-enabled with Jakarta EE compatibility -->
 	<servlet>
 		<servlet-name>cmisws</servlet-name>
 		<servlet-class>org.apache.chemistry.opencmis.server.impl.webservices.CmisWebServicesServlet</servlet-class>
+		<init-param>
+			<param-name>callContextHandler</param-name>
+			<param-value>jp.aegif.nemaki.cmis.factory.auth.NemakiAuthCallContextHandler</param-value>
+		</init-param>
 		<init-param>
             <param-name>cmisVersion</param-name>
             <param-value>1.1</param-value>
@@ -62,8 +68,13 @@
 			<param-name>callContextHandler</param-name>
 			<param-value>jp.aegif.nemaki.cmis.factory.auth.NemakiAuthCallContextHandler</param-value>
 		</init-param>
+		<init-param>
+			<param-name>cmisVersion</param-name>
+			<param-value>1.1</param-value>
+		</init-param>
 		<load-on-startup>2</load-on-startup>
 	</servlet>
+	<!-- REST authentication filter - re-enabled -->
 	<filter>
 		<filter-name>restAuthenticationFilter</filter-name>
 		<filter-class>org.springframework.web.filter.DelegatingFilterProxy</filter-class>
@@ -95,6 +106,7 @@
         <load-on-startup>1</load-on-startup>
     </servlet> -->
 
+	<!-- OpenCMIS servlet mappings - re-enabled with Jakarta EE compatibility -->
 	<servlet-mapping>
 		<servlet-name>cmisws</servlet-name>
 		<url-pattern>/services/*</url-pattern>
@@ -113,16 +125,8 @@
   <servlet-name>jersey-app</servlet-name>
   <servlet-class>org.glassfish.jersey.servlet.ServletContainer</servlet-class>
   <init-param>
-    <param-name>jersey.config.server.provider.packages</param-name>
-    <param-value>jp.aegif.nemaki.rest</param-value>
-  </init-param>
-  <init-param>
-    <param-name>jersey.config.server.provider.scanning.recursive</param-name>
-    <param-value>true</param-value>
-  </init-param>
-  <init-param>
         <param-name>jersey.config.server.provider.classnames</param-name>
-        <param-value>org.glassfish.jersey.media.multipart.MultiPartFeature</param-value>
+        <param-value>jp.aegif.nemaki.rest.ConfigResource,jp.aegif.nemaki.rest.CacheResource,jp.aegif.nemaki.rest.UserItemResource,jp.aegif.nemaki.rest.LogResource,jp.aegif.nemaki.rest.ArchiveResource,jp.aegif.nemaki.rest.AuthTokenResource,jp.aegif.nemaki.rest.SolrAllResource,jp.aegif.nemaki.rest.SolrResource,jp.aegif.nemaki.rest.SimpleTestResource,org.glassfish.jersey.media.multipart.MultiPartFeature</param-value>
     </init-param>
  </servlet>
 

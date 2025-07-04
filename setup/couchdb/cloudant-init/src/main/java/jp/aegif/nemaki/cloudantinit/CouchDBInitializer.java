@@ -16,25 +16,22 @@ import org.apache.commons.cli.HelpFormatter;
 import org.apache.commons.cli.Option;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
-import org.apache.http.HttpEntity;
-import org.apache.http.HttpHost;
-import org.apache.http.HttpResponse;
-import org.apache.http.auth.AuthScope;
-import org.apache.http.auth.UsernamePasswordCredentials;
-import org.apache.http.client.AuthCache;
-import org.apache.http.client.CredentialsProvider;
-import org.apache.http.client.HttpClient;
-import org.apache.http.client.methods.HttpDelete;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.methods.HttpPut;
-import org.apache.http.client.protocol.HttpClientContext;
-import org.apache.http.entity.ContentType;
-import org.apache.http.entity.StringEntity;
-import org.apache.http.impl.auth.BasicScheme;
-import org.apache.http.impl.client.BasicAuthCache;
-import org.apache.http.impl.client.BasicCredentialsProvider;
-import org.apache.http.impl.client.HttpClientBuilder;
-import org.apache.http.util.EntityUtils;
+import org.apache.hc.client5.http.auth.AuthScope;
+import org.apache.hc.client5.http.auth.UsernamePasswordCredentials;
+import org.apache.hc.client5.http.classic.HttpClient;
+import org.apache.hc.client5.http.classic.methods.HttpDelete;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.classic.methods.HttpPut;
+import org.apache.hc.client5.http.impl.auth.BasicCredentialsProvider;
+import org.apache.hc.client5.http.impl.classic.HttpClientBuilder;
+import org.apache.hc.client5.http.protocol.HttpClientContext;
+import org.apache.hc.core5.http.Header;
+import org.apache.hc.core5.http.message.BasicHeader;
+import java.util.Base64;
+import org.apache.hc.core5.http.ContentType;
+import org.apache.hc.core5.http.HttpHost;
+import org.apache.hc.core5.http.io.entity.EntityUtils;
+import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -55,6 +52,7 @@ public class CouchDBInitializer {
     private HttpClient httpClient;
     private HttpHost targetHost;
     private HttpClientContext context;
+    private Header authorizationHeader;
 
     public CouchDBInitializer(String url, String username, String password, String repository, String dumpFile, boolean force) {
         this.url = url;
@@ -71,32 +69,33 @@ public class CouchDBInitializer {
             if (port == -1) {
                 port = parsedUrl.getProtocol().equals("https") ? 443 : 80;
             }
-            this.targetHost = new HttpHost(parsedUrl.getHost(), port, parsedUrl.getProtocol());
+            this.targetHost = new HttpHost(parsedUrl.getProtocol(), parsedUrl.getHost(), port);
         } catch (MalformedURLException e) {
             throw new IllegalArgumentException("Invalid URL: " + url, e);
         }
         
         // Create HTTP client with authentication if needed
         HttpClientBuilder builder = HttpClientBuilder.create();
-        CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
+        BasicCredentialsProvider credentialsProvider = new BasicCredentialsProvider();
         
         if (username != null && !username.isEmpty() && password != null) {
+            // Create explicit Authorization header for reliable authentication
+            String credentials = username + ":" + password;
+            String encodedCredentials = Base64.getEncoder().encodeToString(credentials.getBytes());
+            this.authorizationHeader = new BasicHeader("Authorization", "Basic " + encodedCredentials);
+            System.out.println("Authorization header configured for user: " + username);
+            
+            // Also configure credentials provider as backup
+            AuthScope authScope = new AuthScope(null, -1);
             credentialsProvider.setCredentials(
-                    new AuthScope(targetHost.getHostName(), targetHost.getPort()),
-                    new UsernamePasswordCredentials(username, password));
+                    authScope,
+                    new UsernamePasswordCredentials(username, password.toCharArray()));
             builder.setDefaultCredentialsProvider(credentialsProvider);
-            
-            // Setup preemptive authentication
-            AuthCache authCache = new BasicAuthCache();
-            BasicScheme basicAuth = new BasicScheme();
-            authCache.put(targetHost, basicAuth);
-            
-            this.context = HttpClientContext.create();
-            this.context.setAuthCache(authCache);
         } else {
-            this.context = HttpClientContext.create();
+            System.out.println("No authentication configured");
         }
         
+        this.context = HttpClientContext.create();
         this.httpClient = builder.build();
     }
 
@@ -130,30 +129,60 @@ public class CouchDBInitializer {
     
     private boolean checkDatabaseExists() throws IOException {
         HttpGet request = new HttpGet(url + "/" + repository);
-        HttpResponse response = httpClient.execute(targetHost, request, context);
-        int statusCode = response.getStatusLine().getStatusCode();
-        EntityUtils.consume(response.getEntity());
-        return statusCode == 200;
+        
+        // Add explicit Authorization header
+        if (authorizationHeader != null) {
+            request.setHeader(authorizationHeader);
+        }
+        
+        return httpClient.execute(request, context, response -> {
+            int statusCode = response.getCode();
+            EntityUtils.consume(response.getEntity());
+            return statusCode == 200;
+        });
     }
     
     private void deleteDatabase() throws IOException {
         HttpDelete request = new HttpDelete(url + "/" + repository);
-        HttpResponse response = httpClient.execute(targetHost, request, context);
-        int statusCode = response.getStatusLine().getStatusCode();
-        EntityUtils.consume(response.getEntity());
-        if (statusCode != 200 && statusCode != 202) {
-            throw new IOException("Failed to delete database: " + statusCode);
+        
+        // Add explicit Authorization header
+        if (authorizationHeader != null) {
+            request.setHeader(authorizationHeader);
         }
+        
+        httpClient.execute(request, context, response -> {
+            int statusCode = response.getCode();
+            EntityUtils.consume(response.getEntity());
+            if (statusCode != 200 && statusCode != 202) {
+                throw new RuntimeException("Failed to delete database: " + statusCode);
+            }
+            return null;
+        });
     }
     
     private void createDatabase() throws IOException {
-        HttpPut request = new HttpPut(url + "/" + repository);
-        HttpResponse response = httpClient.execute(targetHost, request, context);
-        int statusCode = response.getStatusLine().getStatusCode();
-        EntityUtils.consume(response.getEntity());
-        if (statusCode != 201) {
-            throw new IOException("Failed to create database: " + statusCode);
+        String dbUrl = url + "/" + repository;
+        System.out.println("Creating database at: " + dbUrl);
+        System.out.println("Using credentials: " + username + " / " + (password != null ? "***" : "null"));
+        
+        HttpPut request = new HttpPut(dbUrl);
+        
+        // Add explicit Authorization header
+        if (authorizationHeader != null) {
+            request.setHeader(authorizationHeader);
+            System.out.println("Authorization header added to request");
         }
+        
+        httpClient.execute(request, context, response -> {
+            int statusCode = response.getCode();
+            String responseBody = EntityUtils.toString(response.getEntity());
+            System.out.println("Create database response: " + statusCode + " - " + responseBody);
+            
+            if (statusCode != 201 && statusCode != 412) { // 412 = database already exists
+                throw new RuntimeException("Failed to create database: " + statusCode + " - " + responseBody);
+            }
+            return null;
+        });
     }
     
     private void importData() throws IOException {
@@ -192,20 +221,30 @@ public class CouchDBInitializer {
                     // Put document
                     HttpPut request = new HttpPut(url + "/" + repository + "/" + id);
                     request.setEntity(new StringEntity(docJson.toString(), ContentType.APPLICATION_JSON));
-                    HttpResponse response = httpClient.execute(targetHost, request, context);
-                    int statusCode = response.getStatusLine().getStatusCode();
                     
-                    if (statusCode == 201 || statusCode == 202) {
-                        EntityUtils.consume(response.getEntity());
-                        count++;
-                    } else if (statusCode == 409) {
-                        EntityUtils.consume(response.getEntity());
-                        // Document already exists, skip
-                        System.out.println("Document " + id + " already exists, skipping.");
-                    } else {
-                        String responseBody = EntityUtils.toString(response.getEntity());
-                        System.err.println("Failed to import document " + id + ": " + statusCode + " - " + responseBody);
+                    // Add explicit Authorization header for document creation
+                    if (authorizationHeader != null) {
+                        request.setHeader(authorizationHeader);
                     }
+                    
+                    Integer result = httpClient.execute(request, context, response -> {
+                        int statusCode = response.getCode();
+                        
+                        if (statusCode == 201 || statusCode == 202) {
+                            EntityUtils.consume(response.getEntity());
+                            return 1;  // count increment
+                        } else if (statusCode == 409) {
+                            EntityUtils.consume(response.getEntity());
+                            // Document already exists, skip
+                            System.out.println("Document " + id + " already exists, skipping.");
+                            return 0;
+                        } else {
+                            String responseBody = EntityUtils.toString(response.getEntity());
+                            System.err.println("Failed to import document " + id + ": " + statusCode + " - " + responseBody);
+                            return 0;
+                        }
+                    });
+                    count += result;
                 }
             }
         } else if (jsonStr.startsWith("{")) {
@@ -224,20 +263,30 @@ public class CouchDBInitializer {
                     // Put document
                     HttpPut request = new HttpPut(url + "/" + repository + "/" + id);
                     request.setEntity(new StringEntity(docJson.toString(), ContentType.APPLICATION_JSON));
-                    HttpResponse response = httpClient.execute(targetHost, request, context);
-                    int statusCode = response.getStatusLine().getStatusCode();
                     
-                    if (statusCode == 201 || statusCode == 202) {
-                        EntityUtils.consume(response.getEntity());
-                        count++;
-                    } else if (statusCode == 409) {
-                        EntityUtils.consume(response.getEntity());
-                        // Document already exists, skip
-                        System.out.println("Document " + id + " already exists, skipping.");
-                    } else {
-                        String responseBody = EntityUtils.toString(response.getEntity());
-                        System.err.println("Failed to import document " + id + ": " + statusCode + " - " + responseBody);
+                    // Add explicit Authorization header for document creation
+                    if (authorizationHeader != null) {
+                        request.setHeader(authorizationHeader);
                     }
+                    
+                    Integer result = httpClient.execute(request, context, response -> {
+                        int statusCode = response.getCode();
+                        
+                        if (statusCode == 201 || statusCode == 202) {
+                            EntityUtils.consume(response.getEntity());
+                            return 1;  // count increment
+                        } else if (statusCode == 409) {
+                            EntityUtils.consume(response.getEntity());
+                            // Document already exists, skip
+                            System.out.println("Document " + id + " already exists, skipping.");
+                            return 0;
+                        } else {
+                            String responseBody = EntityUtils.toString(response.getEntity());
+                            System.err.println("Failed to import document " + id + ": " + statusCode + " - " + responseBody);
+                            return 0;
+                        }
+                    });
+                    count += result;
                 }
             }
         } else {

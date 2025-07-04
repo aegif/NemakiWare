@@ -6,7 +6,6 @@ RUN apk add --no-cache curl
 WORKDIR /app
 
 COPY cloudant-init.jar /app/
-COPY bjornloka.jar /app/
 COPY initial_import /app/initial_import
 
 # Also copy dump files to root for backward compatibility

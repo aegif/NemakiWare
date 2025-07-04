@@ -46,14 +46,14 @@ curl -X POST ${COUCHDB_URL}/nemaki_conf \
 
 echo "nemaki_conf database created successfully!"
 
-# Initialize the main repository using bjornloka (same as installer) with proper arguments
+# Initialize the main repository using cloudant-init (modern HTTP Client 5.x)
 echo "Creating ${REPOSITORY_ID} repository..."
-# Build authenticated URL for bjornloka
-COUCHDB_AUTH_URL=$(echo ${COUCHDB_URL} | sed "s|http://|http://${COUCHDB_USERNAME}:${COUCHDB_PASSWORD}@|")
-java -cp /app/bjornloka.jar jp.aegif.nemaki.bjornloka.Load \
-    ${COUCHDB_AUTH_URL} \
-    ${REPOSITORY_ID} \
-    ${DUMP_FILE} \
-    ${FORCE}
+java -jar /app/cloudant-init.jar \
+    --url ${COUCHDB_URL} \
+    --username ${COUCHDB_USERNAME} \
+    --password ${COUCHDB_PASSWORD} \
+    --repository ${REPOSITORY_ID} \
+    --dump ${DUMP_FILE} \
+    --force ${FORCE}
 
 echo "Initialization complete!"

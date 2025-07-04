@@ -825,8 +825,37 @@ public class CompileServiceImpl implements CompileService {
 	 */
 	@Override
 	public PropertiesImpl compileProperties(CallContext callContext, String repositoryId, Content content) {
-		TypeDefinitionContainer tdfc = typeManager.getTypeById(repositoryId, content.getObjectType());
+		// CRITICAL: Add null safety checks for Cloudant migration
+		if (content == null) {
+			log.error("Content is null in compileProperties for repository: " + repositoryId);
+			return new PropertiesImpl();
+		}
+		
+		String objectType = content.getObjectType();
+		if (objectType == null) {
+			log.error("ObjectType is null for content " + content.getId() + " in repository: " + repositoryId);
+			// Try to determine type from content instance
+			if (content.isFolder()) {
+				objectType = "cmis:folder";
+			} else if (content.isDocument()) {
+				objectType = "cmis:document";
+			} else {
+				objectType = "cmis:item";
+			}
+			log.warn("Using fallback objectType: " + objectType + " for content: " + content.getId());
+		}
+		
+		TypeDefinitionContainer tdfc = typeManager.getTypeById(repositoryId, objectType);
+		if (tdfc == null) {
+			log.error("TypeDefinitionContainer is null for objectType: " + objectType + " in repository: " + repositoryId);
+			return new PropertiesImpl();
+		}
+		
 		TypeDefinition tdf = tdfc.getTypeDefinition();
+		if (tdf == null) {
+			log.error("TypeDefinition is null for objectType: " + objectType + " in repository: " + repositoryId);
+			return new PropertiesImpl();
+		}
 
 		PropertiesImpl properties = new PropertiesImpl();
 		if (content.isFolder()) {

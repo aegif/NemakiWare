@@ -1,290 +1,478 @@
-# NemakiWare Docker テスティングガイド
+# NemakiWare Docker Testing Guide
 
-このドキュメントは、NemakiWareのDocker環境でのテスト実行方法について説明します。
+## Overview
 
-## 概要
+This document outlines the testing strategy for NemakiWare Docker environment with **Jakarta EE 10 + Metro RI + Tomcat 10 + Java 17 + CouchDB 3.x** migration, focusing on **stable build process** and **CMIS functionality verification**.
 
-NemakiWareは以下の2つのDockerテスト環境を提供します：
+## ⚠️ CRITICAL: Jakarta EE 10 Migration Completed (2025-07-03)
 
-1. **Simple Environment** (`docker-compose-simple.yml`) - 基本的な統合テスト用
-2. **WAR Environment** (`docker-compose-war.yml`) - 本格的なテスト・デプロイメント用
+**ALWAYS use the Jakarta build process for all testing and development.**
 
-## 事前準備
-
-### 必要ソフトウェア
-- Docker Desktop または Docker Engine
-- Docker Compose v2+
-- Java 8 (ビルド用)
-- Maven 3.6+ (ビルド用)
-
-### システム要件
-- メモリ: 8GB以上推奨
-- ディスク容量: 10GB以上の空き容量
-
-## Simple Environment テスト
-
-### 1. 基本テストの実行
+### Mandatory Build Process
 
 ```bash
-# プロジェクトルートで実行
-cd /path/to/NemakiWare
+# 1. ALWAYS use Jakarta build process
+./docker/build-jakarta.sh
 
-# Simple環境でのテスト実行
-./docker/test-simple.sh
+# 2. ALWAYS deploy with Jakarta scripts  
+./docker/deploy-jakarta.sh
+
+# 3. Verify CMIS endpoints
+curl -u admin:admin http://localhost:8080/core/atom/bedroom
+# Expected: HTTP 200
 ```
 
-### 2. テスト内容
-- CouchDB 2.x環境での基本動作確認
-- Core CMIS API の動作確認
-- UI アプリケーションの動作確認
-- 基本的な認証機能の確認
+**JAR Conflict Prevention:**
+- ✅ Maven antrun plugin automatically manages JAR conflicts
+- ✅ Jakarta-converted OpenCMIS JARs (8 files)
+- ✅ Metro RI JAX-WS Runtime (2.7MB)
+- ❌ NEVER manually manage OpenCMIS JARs
+- ❌ NEVER use legacy build commands
 
-### 3. 期待される結果
-```
-✅ Simple Environment Test Results:
-- CouchDB: ✓ Running (HTTP 200)
-- Core CMIS AtomPub: ✓ Working (HTTP 200) 
-- Core CMIS Browser: ✓ Working (HTTP 200)
-- Core CMIS Web Services: ✓ Working (HTTP 200)
-- UI Login Page: ✓ Accessible (HTTP 200)
+### Key Modernization Components
 
-All simple environment tests passed successfully!
-```
+- **Jakarta EE**: Complete migration from javax.* to jakarta.* namespace
+- **Tomcat 10**: Jakarta EE compatible servlet container (simplified single-version setup)
+- **Java 17**: Core modules upgraded from Java 8 to Java 17
+- **CouchDB 3.x**: Enhanced security and performance with mandatory authentication
+- **Simplified Environment**: Standard container naming (nemaki-couchdb, nemaki-core)
 
-### 4. 接続確認
+## Testing Strategy
+
+### Core Component Testing (Simplified Environment)
+
+The testing approach prioritizes the CMIS core functionality in a simplified Docker environment:
+
+1. **Core Services** - CMIS AtomPub, Browser, WebServices endpoints with Jakarta EE + Tomcat 10
+2. **CouchDB 3.x** - Latest stable CouchDB version with mandatory authentication
+3. **Jakarta EE Migration** - Complete servlet modernization with OpenCMIS 1.1.0
+4. **Authentication System** - Restored user authentication with security upgrades
+5. **Simplified Container Architecture** - Standard naming without version complexity
+
+### Benefits of Simplified Environment
+
+- **Consistent naming** - Standard container names (nemaki-couchdb, nemaki-core)
+- **Single Tomcat version** - Tomcat 10 only for Jakarta EE compatibility
+- **Reduced complexity** - No multi-version testing confusion
+- **Better maintainability** - Clear container relationships and networking
+
+## Quick Start Commands
+
+### 1. Environment Setup (Simplified Tomcat 10 + CouchDB 3.x)
+
 ```bash
-# CouchDB確認
-curl -u admin:password http://localhost:5984/_all_dbs
+cd docker/
 
-# Core API確認
+# Clean previous environment
+docker compose down --remove-orphans
+
+# Start the simplified environment
+docker compose up -d
+
+# Wait for services to initialize
+sleep 30
+
+# Verify services are running
+curl -u admin:password http://localhost:5984/_up
+curl -u admin:admin http://localhost:8080/core/atom/bedroom
+```
+
+### Manual Step-by-Step Startup
+
+```bash
+cd docker/
+
+# Start CouchDB first (required for database initialization)
+docker compose up -d couchdb
+sleep 20
+
+# Initialize databases
+docker compose up -d initializer
+sleep 10
+
+# Start Core application with Jakarta EE + Tomcat 10
+docker compose up -d core
+sleep 30
+
+# Verify all services
+docker compose ps
+```
+
+### 2. Authentication Testing
+
+```bash
+# Test CouchDB connectivity
+curl -u admin:password http://localhost:5984/_up
+
+# Test CMIS authentication
 curl -u admin:admin http://localhost:8080/core/atom/bedroom
 
-# UI確認（ブラウザで）
-open http://localhost:9000/ui/login?repositoryId=bedroom
+# Test user authentication system
+curl -u admin:admin -X POST http://localhost:8080/core/browser/bedroom \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "cmisaction=getRepositoryInfo"
 ```
 
-## WAR Environment テスト
-
-### 1. 包括的テストの実行
+### 3. CMIS Functionality Testing
 
 ```bash
-# WAR環境での包括的テスト実行
-./docker/test-war.sh
-```
-
-### 2. テスト内容
-- CouchDB 2.x と 3.x 両環境での動作確認
-- Core、UI、Solr の完全統合テスト
-- リポジトリ初期化とデータ投入テスト
-- 変数置換とプロパティ設定の確認
-- クロスバージョン互換性テスト
-
-### 3. 期待される結果
-```
-✅ WAR Environment Test Results:
-Environment 2 (CouchDB 2.x):
-- CouchDB: ✓ Running (HTTP 200)
-- Core CMIS AtomPub: ✓ Working (HTTP 200)
-- Core CMIS Browser: ✓ Working (HTTP 200) 
-- Core CMIS Web Services: ✓ Working (HTTP 200)
-- UI Login Page: ✓ Accessible (HTTP 200)
-- Solr Search: ✓ Working (HTTP 200)
-
-Environment 3 (CouchDB 3.x):
-- CouchDB: ✓ Running (HTTP 200)
-- Core CMIS AtomPub: ✓ Working (HTTP 200)
-- Core CMIS Browser: ✓ Working (HTTP 200)
-- Core CMIS Web Services: ✓ Working (HTTP 200)  
-- UI Login Page: ✓ Accessible (HTTP 200)
-- Solr Search: ✓ Working (HTTP 200)
-
-All WAR environment tests passed successfully!
-```
-
-### 4. 高度な接続確認
-```bash
-# 環境2 (CouchDB 2.x)
-curl -u admin:password http://localhost:5984/_all_dbs
-curl -u admin:admin http://localhost:8080/core/atom/bedroom
-curl http://localhost:8983/solr/nemaki/admin/ping
-
-# 環境3 (CouchDB 3.x)  
-curl -u admin:password http://localhost:5985/_all_dbs
-curl -u admin:admin http://localhost:8081/core/atom/bedroom
-curl http://localhost:8984/solr/nemaki/admin/ping
-```
-
-## 個別コンポーネントテスト
-
-### CouchDBテスト
-```bash
-# データベース一覧確認
-curl -u admin:password http://localhost:5984/_all_dbs
-
-# 特定リポジトリ確認
-curl -u admin:password http://localhost:5984/bedroom
-curl -u admin:password http://localhost:5984/canopy
-
-# デザインドキュメント確認
-curl -u admin:password http://localhost:5984/bedroom/_design/_repo
-```
-
-### Core API テスト
-```bash
-# CMIS リポジトリ情報
+# Test repository information
 curl -u admin:admin http://localhost:8080/core/atom/bedroom
 
-# CMIS クエリテスト
-curl -u admin:admin "http://localhost:8080/core/atom/bedroom/query?q=SELECT%20*%20FROM%20cmis:document&maxItems=5"
+# Test CMIS queries via AtomPub binding (CORRECT FORMAT)
+# IMPORTANT: Use application/cmisquery+xml content type with proper XML structure
 
-# ルートフォルダ取得
-curl -u admin:admin http://localhost:8080/core/atom/bedroom/children
+# Test document query
+curl -u admin:admin -X POST \
+  -H "Content-Type: application/cmisquery+xml; charset=UTF-8" \
+  -d '<?xml version="1.0" encoding="UTF-8"?>
+<cmis:query xmlns:cmis="http://docs.oasis-open.org/ns/cmis/core/200908/">
+  <cmis:statement>SELECT * FROM cmis:document</cmis:statement>
+  <cmis:maxItems>5</cmis:maxItems>
+</cmis:query>' \
+  http://localhost:8080/core/atom/bedroom/query
+
+# Test folder query
+curl -u admin:admin -X POST \
+  -H "Content-Type: application/cmisquery+xml; charset=UTF-8" \
+  -d '<?xml version="1.0" encoding="UTF-8"?>
+<cmis:query xmlns:cmis="http://docs.oasis-open.org/ns/cmis/core/200908/">
+  <cmis:statement>SELECT * FROM cmis:folder</cmis:statement>
+  <cmis:maxItems>5</cmis:maxItems>
+</cmis:query>' \
+  http://localhost:8080/core/atom/bedroom/query
+
+# Test query with WHERE clause
+curl -u admin:admin -X POST \
+  -H "Content-Type: application/cmisquery+xml; charset=UTF-8" \
+  -d '<?xml version="1.0" encoding="UTF-8"?>
+<cmis:query xmlns:cmis="http://docs.oasis-open.org/ns/cmis/core/200908/">
+  <cmis:statement>SELECT cmis:objectId, cmis:name FROM cmis:folder WHERE cmis:name LIKE '\''%Root%'\''</cmis:statement>
+  <cmis:searchAllVersions>false</cmis:searchAllVersions>
+  <cmis:includeAllowableActions>true</cmis:includeAllowableActions>
+</cmis:query>' \
+  http://localhost:8080/core/atom/bedroom/query
+
+# Alternative: Browser binding query (simpler form-encoded format)
+curl -u admin:admin -X POST \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "cmisaction=query" \
+  -d "q=SELECT * FROM cmis:folder" \
+  -d "maxItems=5" \
+  http://localhost:8080/core/browser/bedroom
 ```
 
-### UI テスト
-```bash
-# ログインページ
-curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/ui/login?repositoryId=bedroom
+### CMIS AtomPub Query Format Reference
 
-# 認証後のアクセス（ブラウザで）
-open http://localhost:9000/ui/repo/bedroom/login
-```
+**Key Points for AtomPub Queries:**
+- Content-Type: `application/cmisquery+xml; charset=UTF-8`
+- Use XML structure with `cmis:query` root element
+- Query statement goes in `cmis:statement` element
+- Namespace: `http://docs.oasis-open.org/ns/cmis/core/200908/`
 
-## トラブルシューティング
+**Common Query Parameters:**
+- `cmis:statement` (required): The CMIS SQL query
+- `cmis:maxItems` (optional): Limit number of results
+- `cmis:skipCount` (optional): For pagination
+- `cmis:searchAllVersions` (optional): Include all versions
+- `cmis:includeAllowableActions` (optional): Include allowed operations
 
-### 一般的な問題
+**Response Format:**
+- Returns Atom feed (`application/atom+xml;type=feed`)
+- Results are in `atom:entry` elements
+- Metadata in `cmisra:numItems` for result count
 
-#### 1. コンテナ起動失敗
-```bash
-# ログ確認
-docker compose -f docker-compose-simple.yml logs
+## Service Configuration
 
-# 特定サービスのログ
-docker compose -f docker-compose-simple.yml logs core
+### Docker Compose Services (Simplified Environment)
 
-# 全コンテナ再起動
-docker compose -f docker-compose-simple.yml down
-docker compose -f docker-compose-simple.yml up -d
-```
-
-#### 2. CouchDB接続エラー
-```bash
-# CouchDB健全性確認
-curl -u admin:password http://localhost:5984/
-
-# データベース存在確認
-curl -u admin:password http://localhost:5984/_all_dbs
-
-# 認証情報確認
-echo "admin:password" | base64
-```
-
-#### 3. Core API エラー
-```bash
-# Core起動状態確認
-curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/core
-
-# Tomcatログ確認
-docker exec docker-core-1 cat /usr/local/tomcat/logs/catalina.out
-
-# 設定ファイル確認
-docker exec docker-core-1 cat /usr/local/tomcat/shared/classes/app-server-core.properties
-```
-
-#### 4. UI接続エラー
-```bash
-# UI起動確認
-curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/ui
-
-# UI設定確認
-docker exec docker-ui-1 grep "nemaki.core.uri" /usr/local/tomcat/webapps/ui/WEB-INF/classes/application.conf
-
-# PlayFrameworkログ確認
-docker logs docker-ui-1
-```
-
-### リセット手順
-```bash
-# 完全環境リセット
-docker compose -f docker-compose-simple.yml down -v
-docker compose -f docker-compose-war.yml down -v
-
-# イメージ再ビルド
-docker compose -f docker-compose-simple.yml build --no-cache
-
-# 再起動
-docker compose -f docker-compose-simple.yml up -d
-```
-
-## パフォーマンステスト
-
-### 基本的な負荷テスト
-```bash
-# CMIS API並行アクセステスト
-for i in {1..10}; do
-  curl -u admin:admin http://localhost:8080/core/atom/bedroom &
-done
-wait
-
-# UI同時アクセステスト
-for i in {1..5}; do
-  curl http://localhost:9000/ui/login?repositoryId=bedroom &
-done
-wait
-```
-
-### メモリ・CPU使用量確認
-```bash
-# コンテナリソース使用量
-docker stats
-
-# 特定コンテナの詳細
-docker stats docker-core-1 docker-ui-1 docker-couchdb-1
-```
-
-## ベンチマーク
-
-### 期待パフォーマンス
-- **Core API応答時間**: < 200ms (単一リクエスト)
-- **UI初回ロード**: < 3秒
-- **CouchDB クエリ**: < 100ms (基本クエリ)
-- **Solr検索**: < 500ms (基本検索)
-
-### 測定方法
-```bash
-# API応答時間測定
-time curl -u admin:admin http://localhost:8080/core/atom/bedroom
-
-# 詳細時間測定
-curl -u admin:admin -w "@curl-format.txt" -o /dev/null -s http://localhost:8080/core/atom/bedroom
-```
-
-## 継続的インテグレーション
-
-### CI/CD パイプラインでの使用
 ```yaml
-# GitHub Actions例
-- name: Run Docker Tests
-  run: |
-    ./docker/test-simple.sh
-    ./docker/test-war.sh
-
-- name: Check Test Results
-  run: |
-    # テスト結果の確認とレポート生成
-    docker compose -f docker-compose-simple.yml logs > test-logs.txt
+services:
+  couchdb:      # Document storage (CouchDB 3.x) - container: nemaki-couchdb
+  initializer:  # Database initialization - container: nemaki-initializer  
+  core:         # CMIS server (Jakarta EE + Tomcat 10) - container: nemaki-core
 ```
 
-## サポート
+### Service Dependencies
 
-問題が発生した場合は、以下の情報を含めてissueを作成してください：
+```
+core → depends_on → [initializer:completed]
+initializer → depends_on → [couchdb:healthy]
+couchdb → standalone (CouchDB 3.x with authentication)
+```
 
-1. 実行環境 (OS、Docker バージョン)
-2. 実行コマンド
-3. エラーメッセージ
-4. ログファイル (`docker compose logs`)
-5. `docker ps` の出力
+### Container Names and Hostnames
+
+- **CouchDB**: Container `nemaki-couchdb`, internal hostname `couchdb`, external port `5984`
+- **Core**: Container `nemaki-core`, internal hostname `core`, external port `8080`
+- **Initializer**: Container `nemaki-initializer`, runs once and exits
+
+### Environment Variables
+
+```yaml
+couchdb:
+  environment:
+    - COUCHDB_USER=admin
+    - COUCHDB_PASSWORD=password
+
+core:
+  environment:
+    - JAVA_OPTS=--add-opens java.base/java.lang=ALL-UNNAMED
+    - CATALINA_OPTS=-Xms512m -Xmx1024m -XX:+DisableExplicitGC
+```
+
+## Test Categories
+
+### 1. Core CMIS Functionality
+
+**Focus**: Jakarta EE compatibility and authentication
+
+- **Repository Services** - Basic repository operations
+- **Authentication System** - User login and security
+- **Document Operations** - Create, read, update, delete
+- **Folder Management** - Folder hierarchy operations
+- **CMIS Protocol Bindings** - AtomPub, Browser, WebServices
+
+### 2. Integration Points
+
+- **CouchDB 3.x** - Database connectivity and views
+- **Jakarta EE Migration** - Servlet compatibility
+- **Authentication Security** - MD5 to BCrypt upgrade
+- **Property Configuration** - Spring property loading
+
+### 3. Performance Metrics
+
+- **Startup Time** - < 60 seconds for all services
+- **Response Time** - < 200ms for basic operations
+- **Memory Usage** - < 1.5GB total for containers
+- **Authentication Response** - < 100ms for login operations
+
+## Known Issues and Solutions
+
+### 1. Fixed Issues (Jakarta EE + Tomcat 10 Migration)
+
+✅ **Jakarta EE Migration** - Complete transition from javax.* to jakarta.* namespace
+✅ **Tomcat 10 Compatibility** - Jakarta EE servlet container deployment
+✅ **OpenCMIS 1.1.0** - Jakarta EE compatible CMIS implementation
+✅ **Authentication System** - Complete restoration with security upgrades
+✅ **CouchDB Connection** - Hostname resolution and property configuration
+✅ **Docker Environment** - Simplified container naming and networking
+
+### 2. Current Status (Jakarta EE + Tomcat 10 Environment)
+
+- **Core Application**: ✅ Functional with Jakarta EE + Tomcat 10
+- **CouchDB 3.x Integration**: ✅ Cloudant SDK with mandatory authentication
+- **Authentication System**: ✅ MD5 to BCrypt security upgrade implemented
+- **CMIS Protocol**: ✅ AtomPub, Browser, WebServices endpoints working
+- **Property Configuration**: ✅ Spring property loading with external overrides
+- **Container Environment**: ✅ Simplified naming (nemaki-couchdb, nemaki-core)
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Core startup failures**
+   ```bash
+   # Check logs
+   docker logs nemaki-core --tail 50
+   
+   # Verify CouchDB connectivity
+   curl -u admin:password http://localhost:5984/_up
+   curl -u admin:password http://localhost:5984/_all_dbs
+   ```
+
+2. **Authentication issues**
+   ```bash
+   # Test CouchDB authentication
+   curl -u admin:password http://localhost:5984/bedroom
+   
+   # Test CMIS authentication
+   curl -u admin:admin http://localhost:8080/core/atom/bedroom
+   
+   # Check user data in CouchDB
+   curl -u admin:password "http://localhost:5984/bedroom/_design/_repo/_view/userItemsById?key=\"admin\""
+   ```
+
+3. **Container networking issues**
+   ```bash
+   # Verify container status
+   docker compose ps
+   
+   # Check container connectivity
+   docker exec nemaki-core curl http://couchdb:5984/_up
+   
+   # Test internal networking
+   docker network inspect nemaki-network
+   ```
+
+4. **Jakarta EE compatibility issues**
+   ```bash
+   # Verify Java version
+   docker exec nemaki-core java -version
+   
+   # Check servlet container logs
+   docker logs nemaki-core | grep -E "jakarta|servlet"
+   
+   # Verify OpenCMIS loading
+   docker logs nemaki-core | grep -i "chemistry"
+   ```
+
+5. **Property configuration issues**
+   ```bash
+   # Check property files
+   docker exec nemaki-core cat /usr/local/tomcat/conf/nemakiware.properties
+   
+   # Verify Spring context loading
+   docker logs nemaki-core | grep -E "PropertyPlaceholder|properties"
+   
+   # Check CouchDB URL configuration
+   docker logs nemaki-core | grep "couchdb.url"
+   ```
+
+### Performance Optimization
+
+1. **Database Initialization**
+   - Ensure all 4 repositories exist (bedroom, bedroom_closet, canopy, canopy_closet)
+   - Verify design documents are properly created
+   - Confirm admin user exists with correct authentication
+
+2. **Container Resource Limits**
+   ```yaml
+   deploy:
+     resources:
+       limits:
+         memory: 1G
+         cpus: '1.0'
+   ```
+
+3. **Java 17 Heap Settings**
+   ```bash
+   CATALINA_OPTS="-Xms512m -Xmx1024m -XX:+DisableExplicitGC --add-opens java.base/java.lang=ALL-UNNAMED"
+   ```
+
+## Expected Results
+
+### Core Functionality Status
+
+- **Repository Services**: ✅ Working (HTTP 200)
+- **Authentication**: ✅ Working (admin:admin)
+- **CMIS AtomPub**: ✅ Working (HTTP 200)
+- **CMIS Browser**: ✅ Working (HTTP 200)
+- **CMIS WebServices**: ✅ Working (HTTP 200)
+- **Document Operations**: ✅ Basic CRUD operations functional
+
+### Overall Target: **Complete CMIS 1.1 Compliance**
+
+## Automation Scripts
+
+### Quick Test Suite
+
+```bash
+#!/bin/bash
+# quick-test.sh - Fast core functionality test
+
+cd docker/
+
+echo "🚀 Starting simplified environment..."
+docker compose up -d
+
+echo "⏱️ Waiting for services..."
+sleep 30
+
+echo "🔍 Verifying core functionality..."
+curl -u admin:password http://localhost:5984/_up
+curl -u admin:admin http://localhost:8080/core/atom/bedroom
+
+echo "✅ Basic functionality verified"
+```
+
+### Environment Reset
+
+```bash
+#!/bin/bash
+# reset-environment.sh - Clean restart
+
+cd docker/
+
+echo "🧹 Cleaning environment..."
+docker compose down --remove-orphans
+
+echo "🚀 Starting fresh..."
+docker compose up -d
+
+echo "⏱️ Waiting for initialization..."
+sleep 30
+
+echo "🔍 Verifying services..."
+docker compose ps
+```
+
+## Maintenance
+
+### Regular Tasks
+
+1. **Weekly functionality tests** - Verify CMIS endpoints
+2. **Log rotation** - Manage container log sizes  
+3. **Database maintenance** - Monitor CouchDB performance
+4. **Authentication monitoring** - Track login success rates
+
+### Status Monitoring
+
+```bash
+# Check service health
+docker compose ps
+
+# Monitor logs
+docker logs nemaki-core --tail 20
+docker logs nemaki-couchdb --tail 20
+
+# Test endpoints
+curl -u admin:admin -o /dev/null -w "%{http_code}" http://localhost:8080/core/atom/bedroom
+```
+
+## Configuration Reference
+
+### Docker Compose Structure
+
+```yaml
+# Simplified docker-compose.yml
+services:
+  couchdb:
+    image: couchdb:3.3
+    container_name: nemaki-couchdb
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=password
+    ports:
+      - "5984:5984"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5984/_up"]
+
+  initializer:
+    image: openjdk:17-jdk-slim
+    container_name: nemaki-initializer
+    depends_on:
+      couchdb:
+        condition: service_healthy
+    # Database initialization commands
+
+  core:
+    build:
+      context: ./core
+      dockerfile: Dockerfile
+    container_name: nemaki-core
+    depends_on:
+      - initializer
+    ports:
+      - "8080:8080"
+    # Jakarta EE + Tomcat 10 deployment
+```
 
 ---
 
-更新日: 2024年6月23日
+**Last Updated**: 2025-07-03
+**Target Environment**: Docker Compose with Jakarta EE + Tomcat 10 + CouchDB 3.x
+**Architecture**: Simplified single-version environment
+**CouchDB Version**: 3.3 (Latest stable with mandatory authentication)
+**Java Version**: 17
+**Servlet Container**: Tomcat 10 (Jakarta EE compatible)

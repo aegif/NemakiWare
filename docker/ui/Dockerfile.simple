@@ -1,8 +1,8 @@
-FROM tomcat:9-jre11
+FROM tomcat:9-jre8
 
 # Install curl for health checks and JDK for jar command
 RUN apt-get update && \
-    apt-get install -y curl openjdk-11-jdk-headless && \
+    apt-get install -y curl openjdk-8-jdk-headless && \
     rm -rf /var/lib/apt/lists/*
 
 # Remove default webapps

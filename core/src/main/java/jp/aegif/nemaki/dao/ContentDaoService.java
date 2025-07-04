@@ -188,6 +188,66 @@ public interface ContentDaoService {
 	Content getContent(String repositoryId, String objectId);
 
 	/**
+	 * Get content by object ID, bypassing cache to get fresh database state
+	 * This method is specifically for revision-critical operations
+	 * 
+	 * @param repositoryId
+	 * @param objectId
+	 * @return fresh content from database, if nothing found, return null
+	 */
+	Content getContentFresh(String repositoryId, String objectId);
+
+	/**
+	 * Get document by object ID, bypassing cache to get fresh database state
+	 * This method is specifically for revision-critical operations
+	 * 
+	 * @param repositoryId
+	 * @param objectId
+	 * @return fresh document from database, if nothing found, return null
+	 */
+	Document getDocumentFresh(String repositoryId, String objectId);
+
+	/**
+	 * Get folder by object ID, bypassing cache to get fresh database state
+	 * This method is specifically for revision-critical operations
+	 * 
+	 * @param repositoryId
+	 * @param objectId
+	 * @return fresh folder from database, if nothing found, return null
+	 */
+	Folder getFolderFresh(String repositoryId, String objectId);
+
+	/**
+	 * Get relationship by object ID, bypassing cache to get fresh database state
+	 * This method is specifically for revision-critical operations
+	 * 
+	 * @param repositoryId
+	 * @param objectId
+	 * @return fresh relationship from database, if nothing found, return null
+	 */
+	Relationship getRelationshipFresh(String repositoryId, String objectId);
+
+	/**
+	 * Get policy by object ID, bypassing cache to get fresh database state
+	 * This method is specifically for revision-critical operations
+	 * 
+	 * @param repositoryId
+	 * @param objectId
+	 * @return fresh policy from database, if nothing found, return null
+	 */
+	Policy getPolicyFresh(String repositoryId, String objectId);
+
+	/**
+	 * Get item by object ID, bypassing cache to get fresh database state
+	 * This method is specifically for revision-critical operations
+	 * 
+	 * @param repositoryId
+	 * @param objectId
+	 * @return fresh item from database, if nothing found, return null
+	 */
+	Item getItemFresh(String repositoryId, String objectId);
+
+	/**
 	 * Check if there are any object of the specified object type
 	 * @param repositoryId TODO
 	 * @param objectTypeId

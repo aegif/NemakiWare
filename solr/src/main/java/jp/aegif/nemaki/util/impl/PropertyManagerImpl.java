@@ -32,6 +32,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.URL;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -56,27 +57,40 @@ public class PropertyManagerImpl implements PropertyManager{
 		this.setPropertiesFile(propertiesFile);
 
 		Properties config = new Properties();
-		SolrResourceLoader loader = new SolrResourceLoader(null);
 		try {
-			//Set key values
-			InputStream inputStream = loader.openResource(propertiesFile);
-			if(inputStream != null){
-				config.load(inputStream);
-				this.setConfig(config);
-			}
+			// Use current working directory for Solr 9.x compatibility
+			String solrHome = System.getProperty("solr.solr.home", ".");
+			SolrResourceLoader loader = new SolrResourceLoader(Paths.get(solrHome));
+			
+			try {
+				//Set key values
+				InputStream inputStream = loader.openResource(propertiesFile);
+				if(inputStream != null){
+					config.load(inputStream);
+					this.setConfig(config);
+				}
 
-			//Set override files
-			String _overrideFiles = config.getProperty(PropertyKey.OVERRIDE_FILES);
-			if(StringUtils.isNotBlank(_overrideFiles)){
-				overrideFiles = split(_overrideFiles);
+				//Set override files
+				String _overrideFiles = config.getProperty(PropertyKey.OVERRIDE_FILES);
+				if(StringUtils.isNotBlank(_overrideFiles)){
+					overrideFiles = split(_overrideFiles);
+				}
+			} finally {
+				loader.close();
 			}
 		}catch(Exception e) {
 			logger.error("Error occurred during setting of PropertyManager.", e);
-		}finally{
+			// Fallback: try to load from classpath
 			try {
-				loader.close();
-			} catch (Exception e) {
-				logger.error("Error occurred during closing SolrResourceLoader.", e);
+				ClassLoader cl = Thread.currentThread().getContextClassLoader();
+				InputStream is = cl.getResourceAsStream(propertiesFile);
+				if (is != null) {
+					config.load(is);
+					this.setConfig(config);
+					logger.info("Loaded properties from classpath as fallback: " + propertiesFile);
+				}
+			} catch (Exception fallbackEx) {
+				logger.error("Fallback loading also failed.", fallbackEx);
 			}
 		}
 	}
@@ -147,21 +161,26 @@ public class PropertyManagerImpl implements PropertyManager{
 	public void modifyValue(String key, String value) {
 		config.setProperty(key, value);
 
-		SolrResourceLoader loader = new SolrResourceLoader(null);
-		ClassLoader classLoader = loader.getClassLoader();
-		URL url = classLoader.getResource(propertiesFile);
-
 		try {
-		    if ( url == null ) {
-			config.store(new FileOutputStream(new File(System.getProperty("solr.solr.home", ".") + "/conf/" + propertiesFile)), null);
-		    }
-		    else {
-			config.store(new FileOutputStream(new File(url.toURI())), null);
-		    }
+			String solrHome = System.getProperty("solr.solr.home", ".");
+			SolrResourceLoader loader = new SolrResourceLoader(Paths.get(solrHome));
+			
+			try {
+				ClassLoader classLoader = loader.getClassLoader();
+				URL url = classLoader.getResource(propertiesFile);
+
+				if ( url == null ) {
+					config.store(new FileOutputStream(new File(solrHome + "/conf/" + propertiesFile)), null);
+				}
+				else {
+					config.store(new FileOutputStream(new File(url.toURI())), null);
+				}
+			} finally {
+				loader.close();
+			}
 		} catch (Exception e) {
 			logger.error("Error occurred during modification of porperty value.", e);
 		}
-
 	}
 
 	/**

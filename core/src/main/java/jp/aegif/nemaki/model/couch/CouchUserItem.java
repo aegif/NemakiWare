@@ -41,7 +41,11 @@ public class CouchUserItem extends CouchItem{
 	@JsonProperty("userId")
 	private String userId;
 	
-	@JsonProperty("password")
+	// 後方互換性のため、passwordHashとpasswordの両方をサポート
+	@JsonProperty("passwordHash")
+	private String passwordHash;
+	
+	@JsonProperty("password")  
 	private String password;
 	
 	@JsonProperty("admin")
@@ -62,6 +66,9 @@ public class CouchUserItem extends CouchItem{
 		if (properties != null) {
 			// 直接フィールドマッピング
 			this.userId = (String) properties.get("userId");
+			
+			// 後方互換性のため、passwordHashとpasswordの両方をチェック
+			this.passwordHash = (String) properties.get("passwordHash");
 			this.password = (String) properties.get("password");
 			// nameは親クラスCouchContentのsetterを使用
 			if (properties.containsKey("name")) {
@@ -131,12 +138,27 @@ public class CouchUserItem extends CouchItem{
 		this.userId = userId;
 	}
 
+	// 後方互換性を保つgetPasswordメソッド - passwordHashまたはpasswordフィールドを返す
 	public String getPassword() {
+		// passwordHashが存在する場合（既存データ）はそれを優先
+		if (passwordHash != null && !passwordHash.isEmpty()) {
+			return passwordHash;
+		}
+		// passwordHashがない場合は新しいpasswordフィールドを使用
 		return password;
 	}
 
 	public void setPassword(String password) {
 		this.password = password;
+	}
+	
+	// 新しいpasswordHashフィールドのアクセサ
+	public String getPasswordHash() {
+		return passwordHash;
+	}
+	
+	public void setPasswordHash(String passwordHash) {
+		this.passwordHash = passwordHash;
 	}
 	
 	public Boolean isAdmin() {
@@ -182,8 +204,19 @@ public class CouchUserItem extends CouchItem{
 			throw new RuntimeException("UserId is required but null in CouchUserItem conversion");
 		}
 		
-		userItem.setPassowrd(getPassword());
+		// デバッグログ: パスワード設定前の状況を確認
+		String retrievedPassword = getPassword();
+		System.out.println("CouchUserItem.convert() DEBUG:");
+		System.out.println("  - userId: " + getUserId());
+		System.out.println("  - passwordHash field: " + passwordHash);
+		System.out.println("  - password field: " + password);
+		System.out.println("  - getPassword() returns: " + retrievedPassword);
+		
+		userItem.setPassowrd(retrievedPassword);
 		userItem.setAdmin(isAdmin() != null ? isAdmin() : false);
+		
+		// デバッグログ: UserItemに設定された値を確認
+		System.out.println("  - UserItem.getPassowrd() after set: " + userItem.getPassowrd());
 		
 		return userItem;
 	}

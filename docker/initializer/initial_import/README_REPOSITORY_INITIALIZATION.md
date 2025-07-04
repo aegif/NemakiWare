@@ -30,7 +30,8 @@ The `canopy_init.dump` file has been updated to use CMIS-compatible user formats
 #### For installer-based deployments:
 - **CRITICAL**: Use `canopy_init.dump` for canopy repository initialization
 - **DO NOT** use `bedroom_init.dump` for canopy as it was done historically
-- This ensures proper CMIS authentication for both repositories
+- **UPDATED (2025-06-29)**: All initialization now uses `cloudant-init.jar` with modern HTTP Client 5.x
+- This ensures proper CMIS authentication for both repositories and eliminates Ektorp dependencies
 
 ### Historical Context
 Previous versions used `bedroom_init.dump` for both repositories, causing:
@@ -60,4 +61,13 @@ All commands should return HTTP 200 with valid data.
 ## Files Modified
 - `canopy_init.dump`: Updated to CMIS format (2025-06-21)
 - `docker-compose-simple.yml`: Added 4-repository initialization
+- `install.xml`: Migrated from bjornloka.jar to cloudant-init.jar (2025-06-28)
+- `cloudant-init-wrapper.sh`: Modern wrapper script with HTTP Client 5.x
 - Various Spring configuration fixes for startup reliability
+
+## Migration from Ektorp to Cloudant SDK
+As of version 2.4.1, NemakiWare has migrated from Ektorp to IBM Cloudant Java SDK:
+- **Installer**: Uses `cloudant-init.jar` and `cloudant-init-wrapper.sh`
+- **Docker**: Uses `cloudant-init.jar` in initialization containers  
+- **Core application**: Uses Cloudant SDK with HTTP Client 5.x
+- **Benefits**: Eliminates Ektorp threading issues, modernizes HTTP client stack

@@ -29,17 +29,20 @@ import org.antlr.runtime.tree.Tree;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.impl.HttpSolrClient;
+import org.apache.solr.client.solrj.impl.Http2SolrClient;
 
-import javax.ws.rs.client.Client;
-import javax.ws.rs.client.ClientBuilder;
-import javax.ws.rs.client.Invocation;
-import javax.ws.rs.client.WebTarget;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
+import org.apache.solr.client.solrj.SolrServerException;
+import org.apache.solr.client.solrj.request.UpdateRequest;
+import org.apache.solr.client.solrj.response.UpdateResponse;
+import org.apache.solr.common.SolrInputDocument;
+import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.model.Document;
+import jp.aegif.nemaki.model.Folder;
+import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
@@ -47,7 +50,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import org.glassfish.jersey.client.ClientProperties;
 
 /**
  * Common utility class for Solr query
@@ -56,7 +58,7 @@ import org.glassfish.jersey.client.ClientProperties;
  *
  */
 public class SolrUtil {
-	private static final Log log = LogFactory.getLog(SolrUtil.class);
+	private static final Logger log = LoggerFactory.getLogger(SolrUtil.class);
 
 	private final HashMap<String, String> map;
 
@@ -83,7 +85,7 @@ public class SolrUtil {
 		map.put(PropertyIds.IS_VERSION_SERIES_CHECKED_OUT, "is_checkedout");
 		map.put(PropertyIds.VERSION_SERIES_CHECKED_OUT_ID, "checkedout_id");
 		map.put(PropertyIds.VERSION_SERIES_CHECKED_OUT_BY, "checkedout_by");
-		map.put(PropertyIds.CHECKIN_COMMENT, "checkein_comment");
+		map.put(PropertyIds.CHECKIN_COMMENT, "checkin_comment");
 		map.put(PropertyIds.VERSION_LABEL, "version_label");
 		map.put(PropertyIds.VERSION_SERIES_ID, "version_series_id");
 		map.put(PropertyIds.CONTENT_STREAM_ID, "content_id");
@@ -102,7 +104,56 @@ public class SolrUtil {
 	 */
 	public SolrClient getSolrClient() {
 		String url = getSolrUrl();
-		return new HttpSolrClient.Builder(url).build();
+		log.info("Creating Solr client for URL: " + url);
+		
+		// Force debug output to verify this method is called
+		System.err.println("=== SOLR DEBUG: getSolrClient() called with URL: " + url);
+		
+		try {
+			java.io.FileWriter fw = new java.io.FileWriter("/tmp/solr-debug.log", true);
+			fw.write(java.time.LocalDateTime.now() + ": getSolrClient() called with URL: " + url + "\n");
+			fw.close();
+		} catch (Exception e) {
+			// Ignore file write errors
+		}
+		
+		// Use Http2SolrClient for Solr 9.x compatibility
+		try {
+			log.debug("Attempting Http2SolrClient for Solr 9.x compatibility");
+			System.err.println("=== SOLR DEBUG: Creating Http2SolrClient with URL: " + url);
+			Http2SolrClient client = new Http2SolrClient.Builder(url)
+				.connectionTimeout(30000)
+				.idleTimeout(30000)
+				.build();
+			System.err.println("=== SOLR DEBUG: Http2SolrClient created successfully");
+			return client;
+		} catch (Exception e) {
+			System.err.println("=== SOLR DEBUG: Http2SolrClient creation failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+			log.debug("Http2SolrClient failed, trying fallback to HttpSolrClient");
+		}
+		
+		// Fallback to HttpSolrClient for compatibility
+		try {
+			log.debug("Attempting HttpSolrClient fallback");
+			System.err.println("=== SOLR DEBUG: Creating HttpSolrClient fallback with URL: " + url);
+			@SuppressWarnings("deprecation")
+			HttpSolrClient client = new HttpSolrClient.Builder(url)
+				.withConnectionTimeout(30000)
+				.withSocketTimeout(30000)
+				.build();
+			System.err.println("=== SOLR DEBUG: HttpSolrClient fallback created successfully");
+			return client;
+		} catch (Exception e) {
+			System.err.println("=== SOLR DEBUG: HttpSolrClient fallback failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+			e.printStackTrace();
+			log.error("All Solr client implementations failed: " + e.getMessage(), e);
+		}
+		
+		// Final fallback: Return null for graceful degradation to database-only queries
+		log.error("All Solr client implementations failed - HttpSolrClient unavailable");
+		log.error("CMIS queries will use database fallback instead of full-text search");
+		log.error("This is expected when Solr server is unavailable or network connectivity issues exist");
+		return null;  // Return null to trigger database fallback
 	}
 
 	/**
@@ -137,7 +188,193 @@ public class SolrUtil {
 		return StringUtils.join(_string, ".");
 	}
 
-	public void callSolrIndexing(String repositoryId) {
+	/**
+	 * Index a single document in Solr using standard SolrJ API
+	 */
+	public void indexDocument(String repositoryId, Content content) {
+		System.out.println("=== SLF4J TEST: indexDocument called for " + content.getId());
+		log.info("SolrUtil.indexDocument called for document: " + content.getId() + " in repository: " + repositoryId);
+		
+		String _force = propertyManager
+				.readValue(PropertyKey.SOLR_INDEXING_FORCE);
+		boolean force = (Boolean.TRUE.toString().equals(_force)) ? true : false;
+
+		log.info("Solr indexing force setting: " + force);
+
+		if (!force) {
+			log.info("Solr indexing is disabled (force=false), skipping indexing");
+			return;
+		}
+
+		// Execute Solr indexing asynchronously to avoid blocking CMIS operations
+		CompletableFuture.runAsync(() -> {
+			try {
+				log.info("Starting async Solr indexing for document: " + content.getId());
+				SolrClient solrClient = getSolrClient();
+				
+				if (solrClient == null) {
+					log.warn("Solr client is null, skipping indexing for document: " + content.getId());
+					return;
+				}
+				
+				SolrInputDocument doc = createSolrDocument(repositoryId, content);
+				
+				log.info("Created SolrInputDocument with " + doc.size() + " fields for document: " + content.getId());
+				log.debug("Document fields: repository_id={}, object_id={}, basetype={}, name={}", 
+					doc.getFieldValue("repository_id"), doc.getFieldValue("object_id"), 
+					doc.getFieldValue("basetype"), doc.getFieldValue("name"));
+				
+				UpdateRequest updateRequest = new UpdateRequest();
+				updateRequest.add(doc);
+				updateRequest.setCommitWithin(1000); // Commit within 1 second
+				
+				UpdateResponse response = updateRequest.process(solrClient, "nemaki");
+				
+				log.info("Solr response status: " + response.getStatus() + " for document: " + content.getId());
+				
+				if (response.getStatus() == 0) {
+					log.info("Document indexed successfully in Solr: " + content.getId() + " for repository: " + repositoryId);
+				} else {
+					log.error("Document indexing failed with status: " + response.getStatus() + " for document: " + content.getId());
+				}
+				
+				solrClient.close();
+			} catch (SolrServerException e) {
+				log.error("Solr server error during indexing for document: " + content.getId() + " in repository: " + repositoryId + ", details: " + e.getMessage(), e);
+			} catch (IOException e) {
+				log.error("IO error during Solr indexing for document: " + content.getId() + " in repository: " + repositoryId + ", details: " + e.getMessage(), e);
+			} catch (Exception e) {
+				log.error("Unexpected error during Solr indexing for document: " + content.getId() + " in repository: " + repositoryId + ", details: " + e.getMessage(), e);
+			}
+		});
+	}
+
+	/**
+	 * Create SolrInputDocument from NemakiWare Content
+	 */
+	private SolrInputDocument createSolrDocument(String repositoryId, Content content) {
+		SolrInputDocument doc = new SolrInputDocument();
+		
+		log.debug("Creating Solr document for content ID: {} in repository: {}", content.getId(), repositoryId);
+		
+		// Core system fields
+		doc.addField("id", content.getId());
+		doc.addField("repository_id", repositoryId);
+		doc.addField("object_id", content.getId());
+		
+		// Fix basetype field - determine proper CMIS base type
+		String baseTypeId = determineBaseTypeId(content);
+		doc.addField("basetype", baseTypeId);
+		log.debug("Set basetype to: {} for content: {}", baseTypeId, content.getId());
+		
+		doc.addField("objecttype", content.getObjectType());
+		doc.addField("name", content.getName());
+		
+		// Timestamps
+		if (content.getCreated() != null) {
+			doc.addField("created", content.getCreated());
+		}
+		if (content.getModified() != null) {
+			doc.addField("modified", content.getModified());
+		}
+		
+		// Creator/Modifier
+		if (content.getCreator() != null) {
+			doc.addField("creator", content.getCreator());
+		}
+		if (content.getModifier() != null) {
+			doc.addField("modifier", content.getModifier());
+		}
+		
+		// Description
+		if (content.getDescription() != null) {
+			doc.addField("cmis_description", content.getDescription());
+		}
+		
+		// Type-specific fields
+		if (content instanceof Document) {
+			Document document = (Document) content;
+			
+			// Basic document fields available
+			if (document.getAttachmentNodeId() != null) {
+				doc.addField("content_id", document.getAttachmentNodeId());
+			}
+			
+			// Versioning fields
+			Boolean isLatest = document.isLatestVersion();
+			if (isLatest != null) {
+				doc.addField("is_latest_version", isLatest);
+			}
+			
+			Boolean isMajor = document.isMajorVersion();
+			if (isMajor != null) {
+				doc.addField("is_major_version", isMajor);
+			}
+			
+			Boolean isPwc = document.isPrivateWorkingCopy();
+			if (isPwc != null) {
+				doc.addField("is_pwc", isPwc);
+			}
+			
+			if (document.getVersionLabel() != null) {
+				doc.addField("version_label", document.getVersionLabel());
+			}
+			if (document.getVersionSeriesId() != null) {
+				doc.addField("version_series_id", document.getVersionSeriesId());
+			}
+			if (document.getCheckinComment() != null) {
+				doc.addField("checkin_comment", document.getCheckinComment());
+			}
+		}
+		
+		if (content instanceof Folder) {
+			Folder folder = (Folder) content;
+			// Folder specific fields
+			if (folder.getParentId() != null) {
+				doc.addField("parent_id", folder.getParentId());
+			}
+		}
+		
+		// Change token
+		if (content.getChangeToken() != null) {
+			doc.addField("change_token", content.getChangeToken());
+		}
+		
+		return doc;
+	}
+
+	/**
+	 * Determine the correct CMIS base type for content
+	 */
+	private String determineBaseTypeId(Content content) {
+		if (content instanceof Document) {
+			return "cmis:document";
+		} else if (content instanceof Folder) {
+			return "cmis:folder";
+		} else if (content.getType() != null) {
+			// Use content type if available
+			String type = content.getType();
+			if (type.equals("cmis:document") || type.equals("cmis:folder") || 
+				type.equals("cmis:relationship") || type.equals("cmis:policy") || 
+				type.equals("cmis:item") || type.equals("cmis:secondary")) {
+				return type;
+			}
+		}
+		
+		// Default fallback based on content class
+		if (content instanceof Document) {
+			return "cmis:document";
+		} else if (content instanceof Folder) {
+			return "cmis:folder";
+		} else {
+			return "cmis:item"; // Safe default for other content types
+		}
+	}
+
+	/**
+	 * Delete a document from Solr
+	 */
+	public void deleteDocument(String repositoryId, String documentId) {
 		String _force = propertyManager
 				.readValue(PropertyKey.SOLR_INDEXING_FORCE);
 		boolean force = (Boolean.TRUE.toString().equals(_force)) ? true : false;
@@ -145,32 +382,25 @@ public class SolrUtil {
 		if (!force)
 			return;
 
-		// Execute Solr indexing asynchronously to avoid blocking CMIS operations
 		CompletableFuture.runAsync(() -> {
 			try {
-				String url = getSolrUrl();
+				SolrClient solrClient = getSolrClient();
 				
-				Client client = ClientBuilder.newClient();
-				// Set timeout to prevent indefinite hanging
-				client.property(ClientProperties.CONNECT_TIMEOUT, 5000); // 5 seconds
-				client.property(ClientProperties.READ_TIMEOUT, 10000); // 10 seconds
+				UpdateRequest updateRequest = new UpdateRequest();
+				updateRequest.deleteById(documentId);
+				updateRequest.setCommitWithin(1000);
 				
-				WebTarget webTarget = client.target(url
-						+ "admin/cores?core=nemaki&action=index&tracking=AUTO&repositoryId=" + repositoryId);
-				Invocation.Builder invocationBuilder = webTarget.request();
-				Response response = invocationBuilder.accept(MediaType.APPLICATION_XML_TYPE).get();
-
-				String xml = response.readEntity(String.class);
-				if (response.getStatus() == 200) {
-					log.debug("Solr indexing completed successfully for repository: " + repositoryId);
+				UpdateResponse response = updateRequest.process(solrClient, "nemaki");
+				
+				if (response.getStatus() == 0) {
+					log.debug("Document deleted successfully from Solr: " + documentId + " for repository: " + repositoryId);
 				} else {
-					log.warn("Solr indexing returned non-200 status for repository: " + repositoryId + ", status: " + response.getStatus());
+					log.warn("Document deletion failed with status: " + response.getStatus() + " for document: " + documentId);
 				}
 				
-				client.close();
-			} catch (Exception e) {
-				// Log the error but don't propagate it to avoid affecting CMIS operations
-				log.warn("Solr indexing failed for repository: " + repositoryId + ", error: " + e.getMessage());
+				solrClient.close();
+			} catch (SolrServerException | IOException e) {
+				log.warn("Solr document deletion failed for document: " + documentId + " in repository: " + repositoryId + ", error: " + e.getMessage());
 			}
 		});
 	}
@@ -187,10 +417,11 @@ public class SolrUtil {
 		String url = null;
 		try {
 			URL _url = new URL(protocol, host, port, "");
-			url = _url.toString() + "/" + context + "/";
+			// Directly include nemaki core in URL for Solr 9.x compatibility
+			url = _url.toString() + "/" + context + "/nemaki";
 			System.out.println("DEBUG SolrUtil.getSolrUrl: final URL=" + url);
 		} catch (MalformedURLException e) {
-			// TODO Auto-generated catch block
+			System.out.println("DEBUG SolrUtil.getSolrUrl: MalformedURLException: " + e.getMessage());
 			e.printStackTrace();
 		}
 //		log.info("Solr URL:" + url);

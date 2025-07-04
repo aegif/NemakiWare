@@ -6,8 +6,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -24,7 +24,7 @@ public class CloudantClientWrapper {
 	private final Cloudant client;
 	private final String databaseName;
 
-	private static final Log log = LogFactory.getLog(CloudantClientWrapper.class);
+	private static final Logger log = LoggerFactory.getLogger(CloudantClientWrapper.class);
 
 	public CloudantClientWrapper(Cloudant client, String databaseName) {
 		this.client = client;
@@ -50,6 +50,15 @@ public class CloudantClientWrapper {
 	 */
 	public DocumentResult create(Map<String, Object> document) {
 		try {
+			// CORRECT APPROACH: Remove null _id and _rev from new document creation
+			// CouchDB should generate ID automatically when _id is not provided
+			if (document.get("_id") == null) {
+				document.remove("_id");
+			}
+			if (document.get("_rev") == null) {
+				document.remove("_rev");
+			}
+			
 			// Convert Map to Document using proper Cloudant approach
 			ObjectMapper mapper = new ObjectMapper();
 			String jsonString = mapper.writeValueAsString(document);
@@ -76,6 +85,15 @@ public class CloudantClientWrapper {
 	 */
 	public DocumentResult create(String id, Map<String, Object> document) {
 		try {
+			// CORRECT APPROACH: Remove null _id and _rev for consistency
+			// Even with provided ID, ensure no null values are sent
+			if (document.get("_id") == null) {
+				document.remove("_id");
+			}
+			if (document.get("_rev") == null) {
+				document.remove("_rev");
+			}
+			
 			// Add ID to document map before conversion
 			document.put("_id", id);
 			ObjectMapper mapper = new ObjectMapper();
@@ -110,26 +128,7 @@ public class CloudantClientWrapper {
 				.build();
 
 			com.ibm.cloud.cloudant.v1.model.Document result = client.getDocument(options).execute().getResult();
-			log.info("CloudantClientWrapper.get() Retrieved document with ID: " + id);
-			
-			// CLOUDANT DEBUG: Log the actual Document structure using both methods
-			log.info("CLOUDANT Document structure for ID " + id + ":");
-			log.info("  - getId(): " + result.getId());
-			log.info("  - getRev(): " + result.getRev());
-			
-			// Test direct Document.get() access (recommended method)
-			log.info("  - doc.get('type'): " + result.get("type"));
-			log.info("  - doc.get('objectType'): " + result.get("objectType"));
-			log.info("  - doc.get('name'): " + result.get("name"));
-			
-			// Test getProperties() access (alternative method)
-			log.info("  - getProperties() is null? " + (result.getProperties() == null));
-			if (result.getProperties() != null) {
-				log.info("  - getProperties() size: " + result.getProperties().size());
-				log.info("  - getProperties() keys: " + result.getProperties().keySet());
-				log.info("  - properties.type: " + result.getProperties().get("type"));
-				log.info("  - properties.objectType: " + result.getProperties().get("objectType"));
-			}
+			log.debug("Retrieved document with ID: " + id);
 			
 			return result;
 
@@ -482,39 +481,147 @@ public class CloudantClientWrapper {
 	 * Create document (compatible with Ektorp create method)
 	 */
 	public void create(Object document) {
+		log.error("CLOUDANT CREATE ENTRY: Starting create() method for: " + 
+			(document != null ? document.getClass().getSimpleName() : "null"));
 		try {
+			log.error("CLOUDANT CREATE DEBUG: Creating document of type: " + document.getClass().getSimpleName());
+			
+			// Add comprehensive debug logging for CouchFolder objects
+			if (document instanceof jp.aegif.nemaki.model.couch.CouchFolder) {
+				jp.aegif.nemaki.model.couch.CouchFolder folder = (jp.aegif.nemaki.model.couch.CouchFolder) document;
+				log.error("CLOUDANT CREATE: CouchFolder before mapping - DETAILED ANALYSIS");
+				log.error("  - ID: " + folder.getId());
+				log.error("  - Revision: " + folder.getRevision());
+				log.error("  - Name: " + folder.getName());
+				log.error("  - ObjectType: " + folder.getObjectType());
+				log.error("  - Type: " + folder.getType());
+				log.error("  - ParentId: " + folder.getParentId());
+				log.error("  - Description: " + folder.getDescription());
+				log.error("  - AclInherited: " + folder.isAclInherited());
+				
+				// Check class hierarchy
+				log.error("CLOUDANT CREATE: Class hierarchy analysis:");
+				Class<?> clazz = folder.getClass();
+				while (clazz != null) {
+					log.error("  - Class: " + clazz.getName());
+					clazz = clazz.getSuperclass();
+				}
+				
+				// Check available methods (getters)
+				log.error("CLOUDANT CREATE: Available getter methods:");
+				java.lang.reflect.Method[] methods = folder.getClass().getMethods();
+				for (java.lang.reflect.Method method : methods) {
+					if (method.getName().startsWith("get") && method.getParameterCount() == 0) {
+						try {
+							Object value = method.invoke(folder);
+							log.error("  - " + method.getName() + "(): " + value);
+						} catch (Exception e) {
+							log.error("  - " + method.getName() + "(): ERROR - " + e.getMessage());
+						}
+					}
+				}
+			}
+			
+			log.error("CLOUDANT CREATE: About to create ObjectMapper");
 			ObjectMapper mapper = new ObjectMapper();
 			// Configure Jackson to ignore unknown properties during Cloudant migration
 			mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 			
+			// Log ObjectMapper configuration
+			log.error("CLOUDANT CREATE: ObjectMapper configuration:");
+			log.error("  - Visibility Checker: " + mapper.getVisibilityChecker());
+			log.error("  - PropertyNamingStrategy: " + mapper.getPropertyNamingStrategy());
+			log.error("  - SerializationConfig: " + mapper.getSerializationConfig().toString());
+			
+			log.error("CLOUDANT CREATE: About to call mapper.convertValue");
 			@SuppressWarnings("unchecked")
 			Map<String, Object> documentMap = mapper.convertValue(document, Map.class);
 			
-			log.debug("CLOUDANT DEBUG: Document type: " + document.getClass().getSimpleName());
-			log.debug("CLOUDANT DEBUG: Document map keys: " + documentMap.keySet());
-			log.debug("CLOUDANT DEBUG: Properties type: " + (documentMap.get("properties") != null ? documentMap.get("properties").getClass().getSimpleName() : "null"));
+			log.error("CLOUDANT CREATE: After ObjectMapper.convertValue - DETAILED ANALYSIS");
+			log.error("  - Map size: " + documentMap.size());
+			log.error("  - Map is empty: " + documentMap.isEmpty());
+			
+			// Log all key-value pairs in the converted map
+			log.error("CLOUDANT CREATE: All key-value pairs in converted map:");
+			if (documentMap.isEmpty()) {
+				log.error("  - MAP IS EMPTY!");
+			} else {
+				for (Map.Entry<String, Object> entry : documentMap.entrySet()) {
+					Object value = entry.getValue();
+					String valueStr = (value != null) ? value.toString() : "null";
+					log.error("  - " + entry.getKey() + " = " + valueStr + " (type: " + 
+						(value != null ? value.getClass().getSimpleName() : "null") + ")");
+				}
+			}
+			
+			// Check specific expected properties
+			log.error("CLOUDANT CREATE: Checking specific expected properties:");
+			log.error("  - objectType: " + documentMap.get("objectType"));
+			log.error("  - name: " + documentMap.get("name"));
+			log.error("  - type: " + documentMap.get("type"));
+			log.error("  - id: " + documentMap.get("id"));
+			log.error("  - _id: " + documentMap.get("_id"));
+			log.error("  - revision: " + documentMap.get("revision"));
+			log.error("  - _rev: " + documentMap.get("_rev"));
 			
 			// Convert CMIS array structures to Cloudant Document model compatible maps
+			log.error("CLOUDANT CREATE: About to call convertPropertiesArrayToMap");
 			documentMap = convertPropertiesArrayToMap(documentMap);
+			log.error("CLOUDANT CREATE: After convertPropertiesArrayToMap - map size: " + documentMap.size());
+			
+			log.error("CLOUDANT CREATE: About to call convertTypeDefinitionPropertiesToMap");
 			documentMap = convertTypeDefinitionPropertiesToMap(documentMap);
+			log.error("CLOUDANT CREATE: After convertTypeDefinitionPropertiesToMap - map size: " + documentMap.size());
+			
+			// Log map contents after property conversion
+			log.error("CLOUDANT CREATE: After property conversion - DETAILED ANALYSIS");
+			if (documentMap.isEmpty()) {
+				log.error("  - MAP IS STILL EMPTY AFTER CONVERSION!");
+			} else {
+				log.error("  - Map size after conversion: " + documentMap.size());
+				for (Map.Entry<String, Object> entry : documentMap.entrySet()) {
+					Object value = entry.getValue();
+					String valueStr = (value != null) ? value.toString() : "null";
+					log.error("  - " + entry.getKey() + " = " + valueStr);
+				}
+			}
+			
+			// CORRECT APPROACH: Remove null _id and _rev from new document creation
+			// CouchDB should generate ID automatically when _id is not provided
+			if (documentMap.get("_id") == null) {
+				documentMap.remove("_id");
+				log.error("CLOUDANT CREATE: Removed null _id - CouchDB will auto-generate ID");
+			} else {
+				log.error("CLOUDANT CREATE: Using existing _id: " + documentMap.get("_id"));
+			}
+			
+			if (documentMap.get("_rev") == null) {
+				documentMap.remove("_rev");
+				log.error("CLOUDANT CREATE: Removed null _rev - new document doesn't need revision");
+			} else {
+				log.error("CLOUDANT CREATE: Using existing _rev: " + documentMap.get("_rev"));
+			}
 			
 			// Use PostDocumentOptions for auto-generated ID
+			log.error("CLOUDANT CREATE: About to serialize to JSON string");
 			String jsonString = mapper.writeValueAsString(documentMap);
-			log.debug("CLOUDANT DEBUG: JSON before Cloudant Document conversion: " + jsonString.substring(0, Math.min(500, jsonString.length())) + "...");
+			
+			log.error("CLOUDANT CREATE: JSON serialization results:");
+			log.error("  - JSON string length: " + jsonString.length());
+			log.error("  - JSON string content: " + jsonString);
+			
+			// Verify JSON is not empty
+			if (jsonString.equals("{}") || jsonString.equals("null")) {
+				log.error("CLOUDANT CREATE: WARNING - JSON string is empty or null!");
+			}
 			
 			// Create Cloudant Document using proper type conversion for all document types
 			com.ibm.cloud.cloudant.v1.model.Document doc;
 			try {
 				doc = mapper.readValue(jsonString, com.ibm.cloud.cloudant.v1.model.Document.class);
-				log.debug("CLOUDANT DEBUG: Document model conversion successful after CMIS array-to-map conversion");
 			} catch (com.fasterxml.jackson.databind.exc.MismatchedInputException e) {
-				log.error("Document model conversion failed even after CMIS structure conversion: " + e.getMessage());
-				log.error("Original document type: " + document.getClass().getSimpleName());
-				log.error("DocumentMap keys: " + documentMap.keySet());
-				if (documentMap.containsKey("properties")) {
-					log.error("Properties type after conversion: " + documentMap.get("properties").getClass().getSimpleName());
-				}
-				throw new RuntimeException("Failed to create document object with proper type conversion", e);
+				log.error("Document model conversion failed: " + e.getMessage());
+				throw new RuntimeException("Failed to create document object", e);
 			}
 
 			PostDocumentOptions options = new PostDocumentOptions.Builder()
@@ -523,15 +630,32 @@ public class CloudantClientWrapper {
 				.build();
 
 			DocumentResult result = client.postDocument(options).execute().getResult();
-			log.debug("Created document with ID: " + result.getId() + " using unified type-safe approach");
+			log.debug("Created document with ID: " + result.getId());
+			
+			// Set the generated ID and revision back to the original object
+			// This is CRITICAL for subsequent operations like writeChangeEvent -> updateInternal
+			if (document instanceof jp.aegif.nemaki.model.couch.CouchNodeBase) {
+				jp.aegif.nemaki.model.couch.CouchNodeBase nodeBase = (jp.aegif.nemaki.model.couch.CouchNodeBase) document;
+				nodeBase.setId(result.getId());
+				nodeBase.setRevision(result.getRev());
+				log.info("EKTORP-STYLE: Set ID " + result.getId() + " and revision " + result.getRev() + " back to " + 
+					document.getClass().getSimpleName() + " object for future Ektorp-style updates");
+			}
 		} catch (Exception e) {
-			log.error("Error creating document object", e);
+			log.error("CLOUDANT CREATE ERROR: Exception occurred during document creation", e);
+			log.error("CLOUDANT CREATE ERROR: Document type was: " + (document != null ? document.getClass().getSimpleName() : "null"));
+			if (document instanceof jp.aegif.nemaki.model.couch.CouchFolder) {
+				jp.aegif.nemaki.model.couch.CouchFolder folder = (jp.aegif.nemaki.model.couch.CouchFolder) document;
+				log.error("CLOUDANT CREATE ERROR: CouchFolder details - objectType=" + folder.getObjectType() + 
+					", name=" + folder.getName() + ", type=" + folder.getType());
+			}
 			throw new RuntimeException("Failed to create document object", e);
 		}
 	}
 
 	/**
 	 * Update document (compatible with Ektorp update method)
+	 * This method implements Ektorp-style object state management - trusts object revision completely
 	 */
 	public void update(Object document) {
 		try {
@@ -547,6 +671,16 @@ public class CloudantClientWrapper {
 				throw new IllegalArgumentException("Document must have '_id' field for update");
 			}
 			
+			// Ektorp-style behavior: ALWAYS trust the object's revision state
+			// If the object has a revision, use it; if not, it's a serious error
+			String currentRev = (String) documentMap.get("_rev");
+			if (currentRev == null || currentRev.isEmpty()) {
+				throw new IllegalArgumentException("Document " + id + " has no revision - cannot perform safe update. " +
+					"In Ektorp-style operation, objects must maintain their revision state.");
+			}
+			
+			log.debug("Ektorp-style update: using object revision " + currentRev + " for document " + id);
+			
 			// Convert CMIS array structures to Cloudant Document model compatible maps
 			documentMap = convertPropertiesArrayToMap(documentMap);
 			documentMap = convertTypeDefinitionPropertiesToMap(documentMap);
@@ -561,10 +695,23 @@ public class CloudantClientWrapper {
 				.build();
 
 			DocumentResult result = client.putDocument(options).execute().getResult();
-			log.debug("Updated document with ID: " + id);
+			log.debug("Ektorp-style update successful: " + id + " (from revision " + currentRev + " to " + result.getRev() + ")");
+			
+			// Update the revision in the original object to maintain Ektorp-style state consistency
+			if (document instanceof jp.aegif.nemaki.model.couch.CouchNodeBase) {
+				jp.aegif.nemaki.model.couch.CouchNodeBase nodeBase = (jp.aegif.nemaki.model.couch.CouchNodeBase) document;
+				nodeBase.setRevision(result.getRev());
+				log.debug("Maintained object state: updated revision to " + result.getRev());
+			}
+			
+		} catch (com.ibm.cloud.sdk.core.service.exception.ConflictException e) {
+			// Provide helpful error message for revision conflicts in Ektorp-style operations
+			log.error("Revision conflict in Ektorp-style update - object revision was stale or concurrent modification occurred");
+			throw new RuntimeException("Revision conflict: the object's revision is outdated. " +
+				"This indicates concurrent modification or stale object state.", e);
 		} catch (Exception e) {
-			log.error("Error updating document object", e);
-			throw new RuntimeException("Failed to update document object", e);
+			log.error("Error in Ektorp-style document update", e);
+			throw new RuntimeException("Failed to update document in Ektorp-style operation", e);
 		}
 	}
 
@@ -623,7 +770,6 @@ public class CloudantClientWrapper {
 	 */
 	private Map<String, Object> convertPropertiesArrayToMap(Map<String, Object> documentMap) {
 		if (documentMap.containsKey("properties") && documentMap.get("properties") instanceof List) {
-			log.debug("CLOUDANT DEBUG: Converting CMIS properties array to map for Document model compatibility");
 			
 			@SuppressWarnings("unchecked")
 			List<Object> propertiesList = (List<Object>) documentMap.get("properties");
@@ -646,7 +792,6 @@ public class CloudantClientWrapper {
 			
 			// Replace array with map in the document
 			documentMap.put("properties", propertiesMap);
-			log.debug("CLOUDANT DEBUG: Properties array converted to map with " + propertiesMap.size() + " entries");
 		}
 		
 		return documentMap;
@@ -662,7 +807,6 @@ public class CloudantClientWrapper {
 	private Map<String, Object> convertTypeDefinitionPropertiesToMap(Map<String, Object> documentMap) {
 		// Handle propertyDefinitions array (for TypeDefinitions)
 		if (documentMap.containsKey("propertyDefinitions") && documentMap.get("propertyDefinitions") instanceof List) {
-			log.debug("CLOUDANT DEBUG: Converting TypeDefinition propertyDefinitions array to map");
 			
 			@SuppressWarnings("unchecked")
 			List<Object> propDefsList = (List<Object>) documentMap.get("propertyDefinitions");
@@ -680,7 +824,6 @@ public class CloudantClientWrapper {
 			}
 			
 			documentMap.put("propertyDefinitions", propDefsMap);
-			log.debug("CLOUDANT DEBUG: PropertyDefinitions array converted to map with " + propDefsMap.size() + " entries");
 		}
 		
 		return documentMap;
