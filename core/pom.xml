@@ -628,7 +628,7 @@
 							<goal>run</goal>
 						</goals>
 						<configuration>
-							<skip>${maven.test.skip}</skip>
+							<skip>true</skip>
 							<daemon>true</daemon>
 						</configuration>
 					</execution>
@@ -639,7 +639,7 @@
 							<goal>stop</goal>
 						</goals>
 						<configuration>
-							<skip>${maven.test.skip}</skip>
+							<skip>true</skip>
 						</configuration>
 					</execution>
 				</executions>

@@ -22,16 +22,15 @@ import org.apache.chemistry.opencmis.tck.runner.AbstractRunner;
 
 public class DockerTckRunner extends AbstractRunner {
     
-    private static final String PARAMETERS_FILE = "cmis-tck-parameters-proper.properties";
+    private static final String PARAMETERS_FILE = "/tmp/cmis-tck-parameters-docker.properties";
     
     public DockerTckRunner() throws Exception {
-        // Load properties
+        // Load properties from file system (Docker environment)
         Properties props = new Properties();
-        try (InputStream is = getClass().getClassLoader().getResourceAsStream(PARAMETERS_FILE)) {
-            if (is == null) {
-                throw new RuntimeException("Cannot find " + PARAMETERS_FILE + " in classpath");
-            }
+        try (java.io.FileInputStream is = new java.io.FileInputStream(PARAMETERS_FILE)) {
             props.load(is);
+        } catch (Exception e) {
+            throw new RuntimeException("Cannot load " + PARAMETERS_FILE + ": " + e.getMessage(), e);
         }
         
         // Convert Properties to Map<String, String>
@@ -115,8 +114,8 @@ public class DockerTckRunner extends AbstractRunner {
         // Run tests using AbstractRunner's run method
         runner.run(monitor);
         
-        // Generate reports - use different path based on environment
-        String reportPath = System.getProperty("user.dir") + "/docker/tck-reports";
+        // Generate reports - use Docker-compatible path
+        String reportPath = "/usr/local/docker/tck-reports";
         File reportsDir = new File(reportPath);
         reportsDir.mkdirs();
         

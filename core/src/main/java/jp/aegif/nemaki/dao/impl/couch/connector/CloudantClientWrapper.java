@@ -1,6 +1,5 @@
 package jp.aegif.nemaki.dao.impl.couch.connector;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -11,6 +10,8 @@ import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.annotation.PropertyAccessor;
+import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
 import com.ibm.cloud.cloudant.v1.Cloudant;
 import com.ibm.cloud.cloudant.v1.model.*;
 import com.ibm.cloud.sdk.core.service.exception.NotFoundException;
@@ -59,10 +60,25 @@ public class CloudantClientWrapper {
 				document.remove("_rev");
 			}
 			
-			// Convert Map to Document using proper Cloudant approach
-			ObjectMapper mapper = new ObjectMapper();
-			String jsonString = mapper.writeValueAsString(document);
-			com.ibm.cloud.cloudant.v1.model.Document doc = mapper.readValue(jsonString, com.ibm.cloud.cloudant.v1.model.Document.class);
+			// Create a new Document instance and populate it with properties
+			// Use the setProperties method to handle custom fields
+			com.ibm.cloud.cloudant.v1.model.Document doc = new com.ibm.cloud.cloudant.v1.model.Document();
+			
+			// Set the ID and revision if they exist
+			if (document.containsKey("_id") && document.get("_id") != null) {
+				doc.setId((String) document.get("_id"));
+			}
+			if (document.containsKey("_rev") && document.get("_rev") != null) {
+				doc.setRev((String) document.get("_rev"));
+			}
+			
+			// Remove _id and _rev from the map before setting as properties
+			Map<String, Object> properties = new HashMap<>(document);
+			properties.remove("_id");
+			properties.remove("_rev");
+			
+			// Set all other fields as properties
+			doc.setProperties(properties);
 
 			PostDocumentOptions options = new PostDocumentOptions.Builder()
 				.db(databaseName)
@@ -94,11 +110,24 @@ public class CloudantClientWrapper {
 				document.remove("_rev");
 			}
 			
-			// Add ID to document map before conversion
-			document.put("_id", id);
-			ObjectMapper mapper = new ObjectMapper();
-			String jsonString = mapper.writeValueAsString(document);
-			com.ibm.cloud.cloudant.v1.model.Document doc = mapper.readValue(jsonString, com.ibm.cloud.cloudant.v1.model.Document.class);
+			// Create a new Document instance and populate it with properties
+			com.ibm.cloud.cloudant.v1.model.Document doc = new com.ibm.cloud.cloudant.v1.model.Document();
+			
+			// Set the ID
+			doc.setId(id);
+			
+			// Set the revision if it exists
+			if (document.containsKey("_rev") && document.get("_rev") != null) {
+				doc.setRev((String) document.get("_rev"));
+			}
+			
+			// Remove _id and _rev from the map before setting as properties
+			Map<String, Object> properties = new HashMap<>(document);
+			properties.remove("_id");
+			properties.remove("_rev");
+			
+			// Set all other fields as properties
+			doc.setProperties(properties);
 
 			PutDocumentOptions options = new PutDocumentOptions.Builder()
 				.db(databaseName)
@@ -122,15 +151,60 @@ public class CloudantClientWrapper {
 	 */
 	public com.ibm.cloud.cloudant.v1.model.Document get(String id) {
 		try {
-			GetDocumentOptions options = new GetDocumentOptions.Builder()
-				.db(databaseName)
-				.docId(id)
-				.build();
+			// CLOUDANT SDK FIX: Handle _design documents specially
+			// Cloudant SDK rejects document IDs starting with underscore
+			// Use GetDesignDocumentOptions for design documents
+			if (id != null && id.startsWith("_design/")) {
+				log.debug("Getting design document: " + id);
+				String designDocName = id.substring("_design/".length());
+				
+				GetDesignDocumentOptions designOptions = new GetDesignDocumentOptions.Builder()
+					.db(databaseName)
+					.ddoc(designDocName)
+					.build();
 
-			com.ibm.cloud.cloudant.v1.model.Document result = client.getDocument(options).execute().getResult();
-			log.debug("Retrieved document with ID: " + id);
-			
-			return result;
+				com.ibm.cloud.cloudant.v1.model.DesignDocument designDoc = client.getDesignDocument(designOptions).execute().getResult();
+				log.debug("Retrieved design document: " + id);
+				
+				// Convert DesignDocument to regular Document for compatibility
+				// Create a regular Document object with design document content
+				com.ibm.cloud.cloudant.v1.model.Document result = new com.ibm.cloud.cloudant.v1.model.Document();
+				result.setId(id);
+				result.setRev(designDoc.getRev());
+				
+				// Set design document properties
+				Map<String, Object> properties = new HashMap<>();
+				if (designDoc.getViews() != null) {
+					properties.put("views", designDoc.getViews());
+				}
+				if (designDoc.getLanguage() != null) {
+					properties.put("language", designDoc.getLanguage());
+				}
+				if (designDoc.getOptions() != null) {
+					properties.put("options", designDoc.getOptions());
+				}
+				if (designDoc.getFilters() != null) {
+					properties.put("filters", designDoc.getFilters());
+				}
+				// Note: getUpdates() method not available in this SDK version
+				if (designDoc.getValidateDocUpdate() != null) {
+					properties.put("validate_doc_update", designDoc.getValidateDocUpdate());
+				}
+				result.setProperties(properties);
+				
+				return result;
+			} else {
+				// Regular document retrieval
+				GetDocumentOptions options = new GetDocumentOptions.Builder()
+					.db(databaseName)
+					.docId(id)
+					.build();
+
+				com.ibm.cloud.cloudant.v1.model.Document result = client.getDocument(options).execute().getResult();
+				log.debug("Retrieved document with ID: " + id);
+				
+				return result;
+			}
 
 		} catch (NotFoundException e) {
 			log.debug("Document not found with ID: " + id);
@@ -526,6 +600,10 @@ public class CloudantClientWrapper {
 			ObjectMapper mapper = new ObjectMapper();
 			// Configure Jackson to ignore unknown properties during Cloudant migration
 			mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+			// CRITICAL FIX: Enable field visibility for protected/private fields
+			mapper.setVisibility(PropertyAccessor.FIELD, Visibility.ANY);
+			mapper.setVisibility(PropertyAccessor.GETTER, Visibility.PUBLIC_ONLY);
+			mapper.setVisibility(PropertyAccessor.SETTER, Visibility.PUBLIC_ONLY);
 			
 			// Log ObjectMapper configuration
 			log.error("CLOUDANT CREATE: ObjectMapper configuration:");
