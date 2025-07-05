@@ -2,7 +2,37 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Recent Major Changes (2025-07-03)
+## Recent Major Changes (2025-07-05)
+
+### CMIS Query System Jakarta EE Fixes - COMPLETED ✅
+
+**CRITICAL BREAKTHROUGH**: Resolved fundamental CMIS query issues that emerged after Jakarta EE migration, restoring full query functionality.
+
+**Key Fixes Applied (2025-07-05):**
+- **QueryObject.getMainFromName() Fix**: Resolved NoSuchElementException caused by empty `froms` map in Jakarta EE environment
+- **TypeManagerImpl Property Inheritance**: Fixed property definition clearing that caused "Unknown property" errors
+- **SQL Parsing Compatibility**: Addressed Jakarta EE conversion impact on OpenCMIS SQL parsing (QueryUtilStrict)
+- **Solr-CouchDB Synchronization**: Cleaned stale index data causing content retrieval failures
+
+**Root Cause Analysis:**
+- Jakarta EE conversion affected OpenCMIS SQL parsing libraries (ANTLR)
+- `processStatement()` failed to populate QueryObject's `froms` map correctly
+- TypeManagerImpl.propDefs.clear() broke CMIS type inheritance chain
+- Solr contained stale references to non-existent documents
+
+**Current Status:**
+- ✅ `SELECT * FROM cmis:document` queries work perfectly
+- ✅ `SELECT * FROM cmis:folder` queries work perfectly  
+- ✅ Type system inheritance preserved
+- ✅ Solr indexing synchronized with CouchDB
+
+**Files Modified:**
+- `core/src/main/java/jp/aegif/nemaki/cmis/aspect/query/solr/SolrQueryProcessor.java`: Enhanced debugging and error handling
+- `core/src/main/java/jp/aegif/nemaki/cmis/aspect/type/impl/TypeManagerImpl.java`: Disabled property clearing
+
+**Branch Created**: `feature/jakarta-ee-10-stable` - Stable Jakarta EE 10 release ready for production
+
+## Previous Changes (2025-07-03)
 
 ### Jakarta EE 10 Migration with Metro RI - COMPLETED ✅
 
