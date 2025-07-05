@@ -137,6 +137,21 @@ public class SolrQueryProcessor implements QueryProcessor {
 		System.out.println("=== QUERY DEBUG: SolrQueryProcessor.query called with statement: " + statement);
 		logger.info("[QUERY DEBUG] SolrQueryProcessor.query called with statement: " + statement);
 		
+		// Create CMIS Type Manager first and test basic functionality
+		System.out.println("=== QUERY DEBUG: Creating CmisTypeManager...");
+		CmisTypeManager cmisTypeManager = new CmisTypeManager(repositoryId, typeManager);
+		System.out.println("=== QUERY DEBUG: CmisTypeManager created: " + cmisTypeManager);
+		
+		// Test basic type lookup
+		try {
+			System.out.println("=== QUERY DEBUG: Testing type lookup for 'cmis:document'...");
+			TypeDefinition testType = cmisTypeManager.getTypeByQueryName("cmis:document");
+			System.out.println("=== QUERY DEBUG: Found cmis:document type: " + (testType != null ? testType.getId() : "null"));
+		} catch (Exception e) {
+			System.out.println("=== QUERY DEBUG: Exception during type lookup: " + e.getMessage());
+			e.printStackTrace();
+		}
+		
 		SolrClient solrClient = null;
 		try {
 			System.out.println("=== QUERY DEBUG: Getting Solr client...");
@@ -165,15 +180,67 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 		// TODO walker is required?
 
-		QueryUtilStrict util = new QueryUtilStrict(statement, new CmisTypeManager(repositoryId, typeManager), null);
+		System.out.println("=== QUERY DEBUG: Creating QueryUtilStrict with statement: " + statement);
+		QueryUtilStrict util = new QueryUtilStrict(statement, cmisTypeManager, null);
+		System.out.println("=== QUERY DEBUG: QueryUtilStrict created");
+		
+		// Get queryObject before processStatement
 		QueryObject queryObject = util.getQueryObject();
+		System.out.println("=== QUERY DEBUG: QueryObject created (before processStatement)");
+		
+		// Debug the QueryObject state before processStatement
+		try {
+			System.out.println("=== QUERY DEBUG: Checking QueryObject state before processStatement...");
+			// Use reflection to access the froms map
+			java.lang.reflect.Field fromsField = QueryObject.class.getDeclaredField("froms");
+			fromsField.setAccessible(true);
+			Map<String, String> froms = (Map<String, String>) fromsField.get(queryObject);
+			System.out.println("=== QUERY DEBUG: froms map size before processStatement: " + (froms != null ? froms.size() : "null"));
+			if (froms != null && !froms.isEmpty()) {
+				for (Map.Entry<String, String> entry : froms.entrySet()) {
+					System.out.println("=== QUERY DEBUG: FROM entry: " + entry.getKey() + " -> " + entry.getValue());
+				}
+			}
+		} catch (Exception e) {
+			System.out.println("=== QUERY DEBUG: Error accessing froms map: " + e.getMessage());
+		}
+		
 		// Get where caluse as Tree
 		Tree whereTree = null;
 		try {
+			System.out.println("=== QUERY DEBUG: About to call util.processStatement()");
 			util.processStatement();
+			System.out.println("=== QUERY DEBUG: processStatement() completed");
 			Tree tree = util.parseStatement();
+			System.out.println("=== QUERY DEBUG: parseStatement() completed");
 			whereTree = extractWhereTree(tree);
 		} catch (Exception e) {
+			System.out.println("=== QUERY DEBUG: Exception in processStatement: " + e.getMessage());
+			e.printStackTrace();
+		}
+		
+		// Check queryObject after processStatement
+		System.out.println("=== QUERY DEBUG: After processStatement, checking froms map state...");
+		try {
+			java.lang.reflect.Field fromsField = QueryObject.class.getDeclaredField("froms");
+			fromsField.setAccessible(true);
+			Map<String, String> froms = (Map<String, String>) fromsField.get(queryObject);
+			System.out.println("=== QUERY DEBUG: froms map size after processStatement: " + (froms != null ? froms.size() : "null"));
+			if (froms != null && !froms.isEmpty()) {
+				for (Map.Entry<String, String> entry : froms.entrySet()) {
+					System.out.println("=== QUERY DEBUG: FROM entry after processStatement: " + entry.getKey() + " -> " + entry.getValue());
+				}
+			}
+		} catch (Exception e) {
+			System.out.println("=== QUERY DEBUG: Error accessing froms map after processStatement: " + e.getMessage());
+		}
+		
+		// Now try getMainFromName() with detailed error handling
+		try {
+			TypeDefinition mainFromName = queryObject.getMainFromName();
+			System.out.println("=== QUERY DEBUG: getMainFromName() returned: " + (mainFromName != null ? mainFromName.getId() : "null"));
+		} catch (Exception e) {
+			System.out.println("=== QUERY DEBUG: Exception in getMainFromName(): " + e.getMessage());
 			e.printStackTrace();
 		}
 
@@ -205,7 +272,28 @@ public class SolrQueryProcessor implements QueryProcessor {
 		fromQueryString += repositoryQuery + " AND ";
 		TypeDefinition td = null;
 
-		td = queryObject.getMainFromName();
+		// Use the debug version that already handles exceptions
+		try {
+			td = queryObject.getMainFromName();
+			System.out.println("=== QUERY DEBUG: getMainFromName() in FROM query section returned: " + (td != null ? td.getId() : "null"));
+		} catch (Exception e) {
+			System.out.println("=== QUERY DEBUG: Exception in getMainFromName() during FROM query: " + e.getMessage());
+			e.printStackTrace();
+			// Return empty result instead of crashing
+			ObjectListImpl nullList = new ObjectListImpl();
+			nullList.setHasMoreItems(false);
+			nullList.setNumItems(BigInteger.ZERO);
+			return nullList;
+		}
+
+		// Check if td is null before proceeding
+		if (td == null) {
+			System.out.println("=== QUERY DEBUG: TypeDefinition is null, cannot proceed with query");
+			ObjectListImpl nullList = new ObjectListImpl();
+			nullList.setHasMoreItems(false);
+			nullList.setNumItems(BigInteger.ZERO);
+			return nullList;
+		}
 
 		// includedInSupertypeQuery
 		List<TypeDefinitionContainer> typeDescendants = typeManager

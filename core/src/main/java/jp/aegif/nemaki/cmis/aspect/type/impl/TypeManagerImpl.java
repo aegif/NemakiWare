@@ -1487,8 +1487,8 @@ public class TypeManagerImpl implements TypeManager {
 				.getPropertyDefinitions();
 		if (MapUtils.isNotEmpty(propDefs)) {
 			// CRITICAL FIX: Don't clear all properties - this breaks type inheritance
-			// Clear the existing map instead of trying to set a new one
-			propDefs.clear();
+			// Property definitions should be preserved for proper CMIS functionality
+			// propDefs.clear(); // REMOVED: This was breaking property inheritance
 		}
 		TypeDefinitionContainerImpl result = new TypeDefinitionContainerImpl(
 				copy);
