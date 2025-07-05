@@ -1,0 +1,179 @@
+version: '3.8'
+
+services:
+  # CouchDB 3.x - Database storage
+  couchdb:
+    image: couchdb:3.3.3
+    container_name: nemaki-couchdb
+    ports:
+      - "5984:5984"
+    volumes:
+      - couchdb_data:/opt/couchdb/data
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=password
+    networks:
+      - nemaki-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-u", "admin:password", "http://localhost:5984/_all_dbs"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+
+  # Database Initializers - All 4 repositories required for proper operation
+  initializer-bedroom:
+    build: ./initializer
+    container_name: nemaki-initializer-bedroom
+    depends_on:
+      couchdb:
+        condition: service_healthy
+    environment:
+      - COUCHDB_URL=http://couchdb:5984
+      - COUCHDB_USERNAME=admin
+      - COUCHDB_PASSWORD=password
+      - REPOSITORY_ID=bedroom
+      - DUMP_FILE=/app/bedroom_init.dump
+      - FORCE=true
+    volumes:
+      - ../setup/couchdb/initial_import/bedroom_init.dump:/app/bedroom_init.dump
+      - ../setup/couchdb/initial_import/archive_init.dump:/app/archive_init.dump
+      - ../setup/couchdb/initial_import/canopy_init.dump:/app/canopy_init.dump
+      - ../setup/couchdb/initial_import/nemaki_conf_init.dump:/app/nemaki_conf_init.dump
+    networks:
+      - nemaki-network
+    restart: "no"
+
+  initializer-bedroom-closet:
+    build: ./initializer
+    container_name: nemaki-initializer-bedroom-closet
+    depends_on:
+      couchdb:
+        condition: service_healthy
+      initializer-bedroom:
+        condition: service_completed_successfully
+    environment:
+      - COUCHDB_URL=http://couchdb:5984
+      - COUCHDB_USERNAME=admin
+      - COUCHDB_PASSWORD=password
+      - REPOSITORY_ID=bedroom_closet
+      - DUMP_FILE=/app/archive_init.dump
+      - FORCE=true
+    volumes:
+      - ../setup/couchdb/initial_import/bedroom_init.dump:/app/bedroom_init.dump
+      - ../setup/couchdb/initial_import/archive_init.dump:/app/archive_init.dump
+      - ../setup/couchdb/initial_import/canopy_init.dump:/app/canopy_init.dump
+      - ../setup/couchdb/initial_import/nemaki_conf_init.dump:/app/nemaki_conf_init.dump
+    networks:
+      - nemaki-network
+    restart: "no"
+
+  initializer-canopy:
+    build: ./initializer
+    container_name: nemaki-initializer-canopy
+    depends_on:
+      couchdb:
+        condition: service_healthy
+      initializer-bedroom-closet:
+        condition: service_completed_successfully
+    environment:
+      - COUCHDB_URL=http://couchdb:5984
+      - COUCHDB_USERNAME=admin
+      - COUCHDB_PASSWORD=password
+      - REPOSITORY_ID=canopy
+      - DUMP_FILE=/app/canopy_init.dump
+      - FORCE=true
+    volumes:
+      - ../setup/couchdb/initial_import/bedroom_init.dump:/app/bedroom_init.dump
+      - ../setup/couchdb/initial_import/archive_init.dump:/app/archive_init.dump
+      - ../setup/couchdb/initial_import/canopy_init.dump:/app/canopy_init.dump
+      - ../setup/couchdb/initial_import/nemaki_conf_init.dump:/app/nemaki_conf_init.dump
+    networks:
+      - nemaki-network
+    restart: "no"
+
+  initializer-canopy-closet:
+    build: ./initializer
+    container_name: nemaki-initializer-canopy-closet
+    depends_on:
+      couchdb:
+        condition: service_healthy
+      initializer-canopy:
+        condition: service_completed_successfully
+    environment:
+      - COUCHDB_URL=http://couchdb:5984
+      - COUCHDB_USERNAME=admin
+      - COUCHDB_PASSWORD=password
+      - REPOSITORY_ID=canopy_closet
+      - DUMP_FILE=/app/archive_init.dump
+      - FORCE=true
+    volumes:
+      - ../setup/couchdb/initial_import/bedroom_init.dump:/app/bedroom_init.dump
+      - ../setup/couchdb/initial_import/archive_init.dump:/app/archive_init.dump
+      - ../setup/couchdb/initial_import/canopy_init.dump:/app/canopy_init.dump
+      - ../setup/couchdb/initial_import/nemaki_conf_init.dump:/app/nemaki_conf_init.dump
+    networks:
+      - nemaki-network
+    restart: "no"
+
+  # Solr Search Engine (Custom build with NemakiWare plugins)
+  solr:
+    build: ./solr
+    container_name: nemaki-solr
+    ports:
+      - "8983:8983"
+    environment:
+      - SOLR_HOME=/var/solr/data
+      - SOLR_HEAP=512m
+    volumes:
+      - ./solr/solr:/var/solr/data
+    networks:
+      - nemaki-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8983/solr/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Core CMIS Server (Jakarta EE + Tomcat 10)
+  core:
+    build:
+      context: ./core
+      dockerfile: Dockerfile.jakarta
+    image: nemakiware-tomcat10
+    container_name: nemaki-core-tomcat10
+    ports:
+      - "8080:8080"
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=password
+      - COUCHDB_URL=http://couchdb:5984
+    networks:
+      - nemaki-network
+    depends_on:
+      couchdb:
+        condition: service_healthy
+      solr:
+        condition: service_healthy
+      initializer-bedroom:
+        condition: service_completed_successfully
+      initializer-bedroom-closet:
+        condition: service_completed_successfully
+      initializer-canopy:
+        condition: service_completed_successfully
+      initializer-canopy-closet:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/core"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+volumes:
+  couchdb_data:
+
+networks:
+  nemaki-network:
+    driver: bridge
