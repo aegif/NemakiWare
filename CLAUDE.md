@@ -32,6 +32,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Branch Created**: `feature/jakarta-ee-10-stable` - Stable Jakarta EE 10 release ready for production
 
+**Quick Start for New Sessions**: 
+```bash
+# 1. Switch to stable branch
+git checkout feature/jakarta-ee-10-stable
+
+# 2. Follow the complete setup guide
+cat JAKARTA-EE-QUICKSTART.md
+
+# 3. Start Jakarta EE environment (3-minute setup)
+cd docker && docker compose -f docker-compose-jakarta-complete.yml up -d
+
+# 4. Verify CMIS queries work
+curl -u admin:admin "http://localhost:8080/core/atom/bedroom/query?q=SELECT+*+FROM+cmis:document"
+```
+
+**Essential Files for Next Session**:
+- `JAKARTA-EE-QUICKSTART.md` - Complete setup and verification guide
+- `docker/docker-compose-jakarta-complete.yml` - Stable Docker environment
+- Branch: `feature/jakarta-ee-10-stable` - All fixes applied and tested
+
 ## Previous Changes (2025-07-03)
 
 ### Jakarta EE 10 Migration with Metro RI - COMPLETED ✅
