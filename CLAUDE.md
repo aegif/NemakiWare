@@ -390,6 +390,196 @@ cd ui/
 sbt test
 ```
 
+## CMIS API Reference for Document Operations
+
+### Critical Protocol Binding Guidelines
+
+**IMPORTANT**: Always use the correct CMIS protocol binding and endpoint format to avoid common errors.
+
+#### 1. AtomPub Binding (REST + XML)
+
+**Document Creation with Content:**
+```bash
+# Method 1: Two-step approach (RECOMMENDED)
+# Step 1: Create document metadata
+curl -u admin:admin -X POST \
+  -H "Content-Type: application/atom+xml" \
+  -d '<?xml version="1.0" encoding="UTF-8"?>
+<entry xmlns="http://www.w3.org/2005/Atom" 
+       xmlns:cmis="http://docs.oasis-open.org/ns/cmis/core/200908/" 
+       xmlns:cmisra="http://docs.oasis-open.org/ns/cmis/restatom/200908/">
+  <title>document.pdf</title>
+  <cmisra:object>
+    <cmis:properties>
+      <cmis:propertyString propertyDefinitionId="cmis:name">
+        <cmis:value>document.pdf</cmis:value>
+      </cmis:propertyString>
+      <cmis:propertyId propertyDefinitionId="cmis:objectTypeId">
+        <cmis:value>cmis:document</cmis:value>
+      </cmis:propertyId>
+      <cmis:propertyString propertyDefinitionId="cmis:description">
+        <cmis:value>PDF document for full-text search</cmis:value>
+      </cmis:propertyString>
+    </cmis:properties>
+  </cmisra:object>
+</entry>' \
+  "http://localhost:8080/core/atom/bedroom/children/FOLDER_ID"
+
+# Step 2: Upload content to created document
+curl -u admin:admin -X PUT \
+  -H "Content-Type: application/pdf" \
+  --data-binary @document.pdf \
+  "http://localhost:8080/core/atom/bedroom/content?id=DOCUMENT_ID"
+
+# Method 2: multipart/related (Advanced)
+curl -u admin:admin -X POST \
+  -H "Content-Type: multipart/related; boundary=----boundary123" \
+  --data-binary @multipart_file \
+  "http://localhost:8080/core/atom/bedroom/children/FOLDER_ID"
+```
+
+**Folder Creation:**
+```bash
+curl -u admin:admin -X POST \
+  -H "Content-Type: application/atom+xml" \
+  -d '<?xml version="1.0" encoding="UTF-8"?>
+<entry xmlns="http://www.w3.org/2005/Atom" 
+       xmlns:cmis="http://docs.oasis-open.org/ns/cmis/core/200908/" 
+       xmlns:cmisra="http://docs.oasis-open.org/ns/cmis/restatom/200908/">
+  <title>New Folder</title>
+  <cmisra:object>
+    <cmis:properties>
+      <cmis:propertyString propertyDefinitionId="cmis:name">
+        <cmis:value>New Folder</cmis:value>
+      </cmis:propertyString>
+      <cmis:propertyId propertyDefinitionId="cmis:objectTypeId">
+        <cmis:value>cmis:folder</cmis:value>
+      </cmis:propertyId>
+      <cmis:propertyString propertyDefinitionId="cmis:description">
+        <cmis:value>Folder description</cmis:value>
+      </cmis:propertyString>
+    </cmis:properties>
+  </cmisra:object>
+</entry>' \
+  "http://localhost:8080/core/atom/bedroom/children?id=PARENT_FOLDER_ID"
+```
+
+**Common AtomPub Endpoints:**
+- Children: `http://localhost:8080/core/atom/bedroom/children/FOLDER_ID`
+- Children (query): `http://localhost:8080/core/atom/bedroom/children?id=FOLDER_ID`
+- Content: `http://localhost:8080/core/atom/bedroom/content?id=DOCUMENT_ID`
+- Entry: `http://localhost:8080/core/atom/bedroom/entry?id=OBJECT_ID`
+
+#### 2. Browser Binding (JSON + Form Data) - RECOMMENDED for File Uploads
+
+**Document Creation with Content (EASIEST):**
+```bash
+curl -u admin:admin -X POST \
+  -F "cmisaction=createDocument" \
+  -F "folderId=FOLDER_ID" \
+  -F "propertyId[0]=cmis:objectTypeId" \
+  -F "propertyValue[0]=cmis:document" \
+  -F "propertyId[1]=cmis:name" \
+  -F "propertyValue[1]=document.pdf" \
+  -F "propertyId[2]=cmis:description" \
+  -F "propertyValue[2]=PDF document for testing" \
+  -F "content=@/path/to/document.pdf" \
+  "http://localhost:8080/core/browser/bedroom"
+```
+
+**Folder Creation:**
+```bash
+curl -u admin:admin -X POST \
+  -F "cmisaction=createFolder" \
+  -F "folderId=PARENT_FOLDER_ID" \
+  -F "propertyId[0]=cmis:objectTypeId" \
+  -F "propertyValue[0]=cmis:folder" \
+  -F "propertyId[1]=cmis:name" \
+  -F "propertyValue[1]=New Folder" \
+  -F "propertyId[2]=cmis:description" \
+  -F "propertyValue[2]=Folder description" \
+  "http://localhost:8080/core/browser/bedroom"
+```
+
+**Browser Binding Endpoints:**
+- All operations: `http://localhost:8080/core/browser/bedroom`
+- Query parameter: `?cmisaction=ACTION_NAME`
+
+#### 3. Web Services Binding (SOAP)
+
+**Service Endpoint:** `http://localhost:8080/core/services`
+
+#### 4. Query Operations
+
+**CMIS SQL Query (AtomPub):**
+```bash
+# Basic query
+curl -u admin:admin \
+  "http://localhost:8080/core/atom/bedroom/query?q=SELECT%20*%20FROM%20cmis:document&maxItems=10"
+
+# Full-text search query
+curl -u admin:admin \
+  "http://localhost:8080/core/atom/bedroom/query?q=SELECT%20*%20FROM%20cmis:document%20WHERE%20CONTAINS('keyword')&maxItems=10"
+
+# Folder-specific query
+curl -u admin:admin \
+  "http://localhost:8080/core/atom/bedroom/query?q=SELECT%20*%20FROM%20cmis:document%20WHERE%20IN_FOLDER('folder-id')&maxItems=10"
+```
+
+**Browser Binding Query:**
+```bash
+curl -u admin:admin -X POST \
+  -F "cmisaction=query" \
+  -F "q=SELECT * FROM cmis:document WHERE CONTAINS('keyword')" \
+  -F "maxItems=10" \
+  "http://localhost:8080/core/browser/bedroom"
+```
+
+#### 5. Common Object IDs
+
+**Standard Repository Structure:**
+- **Root Folder ID**: `e02f784f8360a02cc14d1314c10038ff`
+- **Repositories**: bedroom (main), canopy (system)
+- **Authentication**: admin/admin
+
+#### 6. Content Type Headers
+
+**File Upload Content Types:**
+- PDF: `application/pdf`
+- Text: `text/plain`
+- Word: `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+- Excel: `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
+- Images: `image/jpeg`, `image/png`, `image/gif`
+
+#### 7. Error Prevention Checklist
+
+**Before making CMIS API calls:**
+1. ✅ Use correct endpoint format (with or without query parameters)
+2. ✅ Include required CMIS namespaces in XML
+3. ✅ Set proper Content-Type headers
+4. ✅ Use correct property IDs (cmis:name, cmis:objectTypeId, etc.)
+5. ✅ Verify folder/document IDs exist
+6. ✅ Use proper authentication (admin:admin)
+7. ✅ For Browser binding: use form data, not JSON
+8. ✅ For AtomPub: use proper XML structure
+
+#### 8. Debugging Failed Requests
+
+**Common Error Messages and Solutions:**
+- `"folderId must be set"` → Check parameter format and endpoint URL
+- `"Invalid XML!"` → Validate XML structure and namespaces
+- `"Properties must be set!"` → Include required CMIS properties
+- `"Type does not allow no content stream"` → Use two-step creation or include content
+
+**Test Basic Connectivity:**
+```bash
+# Repository info
+curl -u admin:admin "http://localhost:8080/core/atom/bedroom"
+
+# Root folder contents  
+curl -u admin:admin "http://localhost:8080/core/atom/bedroom/children?id=e02f784f8360a02cc14d1314c10038ff"
+```
+
 ## Architecture Overview
 
 ### Multi-Module Structure
@@ -1099,6 +1289,40 @@ docker exec docker-ui3-war-1 ls -la /usr/local/tomcat/webapps/
 - Core3 configured with `cmis.thin.client.uri=http://localhost:9001/ui/`
 - UI3 configured with `nemaki.core.uri=http://core3:8080/core`
 - This ensures Core3 login redirects to UI3, not UI2
+
+## Critical Design Constraints
+
+### CouchDB Design Document Compatibility (CRITICAL)
+
+**ABSOLUTE RULE: Design documents MUST NOT be modified from the standard specification**
+
+The CouchDB design documents (`_design/_repo`) contain critical view definitions that must remain compatible with existing user environments. Any changes to view names or structures would break compatibility with production deployments.
+
+**Standard Design Document Views (DO NOT CHANGE):**
+- `changesByToken` - Maps change documents by token (NOT `latestChange`)
+- `changesByObjectId` - Maps change documents by object ID
+- All other views as specified in the standard design document
+
+**Common Mistake to Avoid:**
+- **WRONG**: Using `latestChange` as view name
+- **CORRECT**: Using `changesByToken` as specified in standard design document
+
+**If initialization data conflicts with code:**
+1. ✅ **CORRECT**: Fix initialization dump files to match standard design document
+2. ❌ **WRONG**: Change view names in code to match incorrect initialization data
+3. ❌ **WRONG**: Modify design document structure
+
+**Design Document Compatibility Issues:**
+- Current bedroom_init.dump has significant differences from standard design document
+- Missing standard CMIS views: `documents`, `folders`, `items`, `policies`, `contentsById`
+- Custom NemakiWare views for user/group management and path indexing
+- Admin view uses correct data structure: `doc.type == 'cmis:item' && doc.objectType == 'nemaki:user'`
+
+**Reasoning:**
+- Existing production environments depend on these exact view names
+- Design document compatibility is required for data migration and upgrades  
+- Customer environments cannot be forced to recreate their databases
+- Standard CMIS views are required for full CMIS compliance
 
 ## Known Issues and Solutions
 

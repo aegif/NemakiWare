@@ -34,6 +34,7 @@
 			<list>
 				<!-- Individual patches consolidated into initialization data -->
 				<!-- Future patches can be added here when needed -->
+				<ref bean="patch_InitialFolderSetup" />
 			</list>
 		</property>
 	</bean>
@@ -59,5 +60,11 @@
 		</property>
 	</bean>
 
+	<!-- Initial Folder Setup Patch Bean -->
+	<bean id="patch_InitialFolderSetup" class="jp.aegif.nemaki.patch.Patch_InitialFolderSetup">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
 
 </beans>
