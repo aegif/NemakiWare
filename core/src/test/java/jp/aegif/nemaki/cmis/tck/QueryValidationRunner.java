@@ -204,7 +204,7 @@ public class QueryValidationRunner {
         QueryValidationRunner validator = new QueryValidationRunner();
         
         // Create reports directory
-        String reportPath = "/usr/local/docker/tck-reports";
+        String reportPath = "/tmp/tck-reports";
         File reportsDir = new File(reportPath);
         reportsDir.mkdirs();
         

@@ -67,6 +67,21 @@ echo 'export MAVEN_OPTS="--add-opens=java.base/java.util=ALL-UNNAMED --add-opens
 # Navigate to core module
 cd core
 
+# Easy startup with automated configuration
+./start-jetty-dev.sh
+
+# Server will start on http://localhost:8081
+```
+
+### Manual Development Mode
+
+```bash
+# Navigate to core module
+cd core
+
+# Set Java 17 module system compatibility
+export MAVEN_OPTS="--add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/java.text=ALL-UNNAMED --add-opens=java.desktop/java.awt.font=ALL-UNNAMED"
+
 # Start Jetty development server
 mvn jetty:run -Pjakarta -Djetty.port=8081
 

@@ -1079,7 +1079,7 @@ public class CompileServiceImpl implements CompileService {
 		if (ContentStreamAllowed.REQUIRED == csa
 				|| ContentStreamAllowed.ALLOWED == csa && StringUtils.isNotBlank(document.getAttachmentNodeId())) {
 
-			AttachmentNode attachment = contentService.getAttachmentRef(repositoryId, document.getAttachmentNodeId());
+			AttachmentNode attachment = getAttachmentWithRetry(repositoryId, document.getAttachmentNodeId(), document.getId());
 
 			if (attachment == null) {
 				String attachmentId = (document.getAttachmentNodeId() == null) ? "" : document.getAttachmentNodeId();
@@ -1101,6 +1101,45 @@ public class CompileServiceImpl implements CompileService {
 		addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_MIME_TYPE, mimeType);
 		addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_FILE_NAME, fileName);
 		addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_ID, streamId);
+	}
+
+	/**
+	 * Retrieves AttachmentNode with retry mechanism to handle async race conditions
+	 * @param repositoryId Repository ID
+	 * @param attachmentId Attachment node ID
+	 * @param documentId Document ID for logging
+	 * @return AttachmentNode or null if not found after retries
+	 */
+	private AttachmentNode getAttachmentWithRetry(String repositoryId, String attachmentId, String documentId) {
+		if (StringUtils.isBlank(attachmentId)) {
+			return null;
+		}
+		
+		final int maxRetries = 3;
+		final long retryDelayMs = 50;
+		
+		for (int attempt = 1; attempt <= maxRetries; attempt++) {
+			AttachmentNode attachment = contentService.getAttachmentRef(repositoryId, attachmentId);
+			if (attachment != null) {
+				if (attempt > 1) {
+					log.debug("AttachmentNode retrieved on attempt " + attempt + " for document " + documentId + " (attachmentId=" + attachmentId + ")");
+				}
+				return attachment;
+			}
+			
+			if (attempt < maxRetries) {
+				try {
+					Thread.sleep(retryDelayMs);
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					log.warn("Interrupted while waiting for attachment retry: documentId=" + documentId + ", attachmentId=" + attachmentId);
+					break;
+				}
+			}
+		}
+		
+		log.warn("AttachmentNode not found after " + maxRetries + " attempts: documentId=" + documentId + ", attachmentId=" + attachmentId);
+		return null;
 	}
 
 	private void setCmisRelationshipProperties(PropertiesImpl properties, TypeDefinition typeId,

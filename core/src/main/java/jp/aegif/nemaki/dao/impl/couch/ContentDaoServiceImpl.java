@@ -37,6 +37,9 @@ import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.annotation.PropertyAccessor;
+import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
 
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.dao.ContentDaoService;
@@ -102,6 +105,23 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	public ContentDaoServiceImpl() {
 
+	}
+
+	/**
+	 * Creates a properly configured ObjectMapper for Cloudant/CouchDB serialization
+	 * This ensures all fields from the object hierarchy are properly serialized
+	 */
+	private ObjectMapper createConfiguredObjectMapper() {
+		ObjectMapper mapper = new ObjectMapper();
+		// Configure Jackson to ignore unknown properties during Cloudant migration
+		mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+		// CRITICAL FIX: Enable field visibility for protected/private fields
+		// Use NONE for all accessors first, then selectively enable what we need
+		mapper.setVisibility(PropertyAccessor.ALL, Visibility.NONE);
+		mapper.setVisibility(PropertyAccessor.FIELD, Visibility.ANY);
+		mapper.setVisibility(PropertyAccessor.GETTER, Visibility.ANY);
+		mapper.setVisibility(PropertyAccessor.IS_GETTER, Visibility.ANY);
+		return mapper;
 	}
 
 	// ///////////////////////////////////////
@@ -227,7 +247,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				for (ViewResultRow row : result.getRows()) {
 					if (row.getDoc() != null) {
 						try {
-							ObjectMapper mapper = new ObjectMapper();
+							ObjectMapper mapper = createConfiguredObjectMapper();
 							CouchPropertyDefinitionCore cpdc = mapper.convertValue(row.getDoc(), CouchPropertyDefinitionCore.class);
 							if (cpdc != null) {
 								cores.add(cpdc.convert());
@@ -316,7 +336,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				for (ViewResultRow row : result.getRows()) {
 					if (row.getDoc() != null) {
 						try {
-							ObjectMapper mapper = new ObjectMapper();
+							ObjectMapper mapper = createConfiguredObjectMapper();
 							CouchPropertyDefinitionDetail cpdd = mapper.convertValue(row.getDoc(), CouchPropertyDefinitionDetail.class);
 							if (cpdd != null) {
 								details.add(cpdd.convert());
@@ -475,7 +495,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			}
 			
 			// Create ObjectMapper for type conversion
-			ObjectMapper mapper = new ObjectMapper();
+			ObjectMapper mapper = createConfiguredObjectMapper();
 			
 			if ("folder".equals(actualType) || "cmis:folder".equals(actualType)) {
 				log.info("Converting to CouchFolder for type: " + actualType);
@@ -556,7 +576,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			return null;
 		} else {
 			for (ViewResultRow row : result.getRows()) {
-				ObjectMapper mapper = new ObjectMapper();
+				ObjectMapper mapper = createConfiguredObjectMapper();
 				JsonNode jn = mapper.valueToTree(row.getDoc());
 				String baseType = jn.path("type").textValue();
 
@@ -1063,7 +1083,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				ViewResultRow row = result.getRows().get(0);
 				if (row.getDoc() != null) {
 					try {
-						ObjectMapper mapper = new ObjectMapper();
+						ObjectMapper mapper = createConfiguredObjectMapper();
 						CouchGroupItem cgi = mapper.convertValue(row.getDoc(), CouchGroupItem.class);
 						if (cgi != null) {
 							return cgi.convert();
@@ -1094,7 +1114,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				for (ViewResultRow row : result.getRows()) {
 					if (row.getDoc() != null) {
 						try {
-							ObjectMapper mapper = new ObjectMapper();
+							ObjectMapper mapper = createConfiguredObjectMapper();
 							CouchGroupItem cgi = mapper.convertValue(row.getDoc(), CouchGroupItem.class);
 							if (cgi != null) {
 								groupItems.add(cgi.convert());
@@ -1174,7 +1194,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				ViewResultRow row = result.getRows().get(0);
 				if (row.getDoc() != null) {
 					try {
-						ObjectMapper mapper = new ObjectMapper();
+						ObjectMapper mapper = createConfiguredObjectMapper();
 						CouchPatchHistory cph = mapper.convertValue(row.getDoc(), CouchPatchHistory.class);
 						if (cph != null) {
 							return cph.convert();
@@ -1693,13 +1713,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			// Create document
 			if (attachment.getId() != null && !attachment.getId().isEmpty()) {
 				// Create with specific ID
-				ObjectMapper mapper = new ObjectMapper();
+				ObjectMapper mapper = createConfiguredObjectMapper();
 				@SuppressWarnings("unchecked")
 				Map<String, Object> documentMap = mapper.convertValue(can, Map.class);
 				result = client.create(attachment.getId(), documentMap);
 			} else {
 				// Create with auto-generated ID
-				ObjectMapper mapper = new ObjectMapper();
+				ObjectMapper mapper = createConfiguredObjectMapper();
 				@SuppressWarnings("unchecked")
 				Map<String, Object> documentMap = mapper.convertValue(can, Map.class);
 				result = client.create(documentMap);
@@ -1760,13 +1780,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			// Create document
 			if (rendition.getId() != null && !rendition.getId().isEmpty()) {
 				// Create with specific ID
-				ObjectMapper mapper = new ObjectMapper();
+				ObjectMapper mapper = createConfiguredObjectMapper();
 				@SuppressWarnings("unchecked")
 				Map<String, Object> documentMap = mapper.convertValue(cr, Map.class);
 				result = client.create(rendition.getId(), documentMap);
 			} else {
 				// Create with auto-generated ID
-				ObjectMapper mapper = new ObjectMapper();
+				ObjectMapper mapper = createConfiguredObjectMapper();
 				@SuppressWarnings("unchecked")
 				Map<String, Object> documentMap = mapper.convertValue(cr, Map.class);
 				result = client.create(documentMap);
@@ -1883,7 +1903,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		try {
 			// Query changesByToken view to get the most recent change
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			// User confirmed: changesByToken is defined in the design document
+			// IMPORTANT: Must use "changesByToken" as specified in standard design document
 			List<CouchChange> couchChanges = client.queryView("_repo", "changesByToken", null, CouchChange.class);
 			
 			if (!couchChanges.isEmpty()) {
@@ -1921,7 +1941,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				for (ViewResultRow row : result.getRows()) {
 					if (row.getDoc() != null) {
 						try {
-							ObjectMapper mapper = new ObjectMapper();
+							ObjectMapper mapper = createConfiguredObjectMapper();
 							CouchChange cc = mapper.convertValue(row.getDoc(), CouchChange.class);
 							if (cc != null) {
 								changes.add(cc.convert());
@@ -2096,7 +2116,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				for (ViewResultRow row : result.getRows()) {
 					if (row.getDoc() != null) {
 						try {
-							ObjectMapper mapper = new ObjectMapper();
+							ObjectMapper mapper = createConfiguredObjectMapper();
 							CouchArchive ca = mapper.convertValue(row.getDoc(), CouchArchive.class);
 							if (ca != null) {
 								archives.add(ca.convert());
@@ -2263,7 +2283,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			archivedAttachment.setRevision(null);
 			
 			// Create the restored attachment document in the main repository
-			ObjectMapper mapper = new ObjectMapper();
+			ObjectMapper mapper = createConfiguredObjectMapper();
 			@SuppressWarnings("unchecked")
 			Map<String, Object> documentMap = mapper.convertValue(archivedAttachment, Map.class);
 			client.create(originalId, documentMap);

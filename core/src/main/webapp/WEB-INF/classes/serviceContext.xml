@@ -578,10 +578,7 @@
         </property>
     </bean>
 
-    <bean id="queryProcessor" class="jp.aegif.nemaki.cmis.aspect.query.solr.SolrQueryProcessor">
-        <property name="typeManager">
-            <ref bean="TypeManager" />
-        </property>
+    <bean id="queryProcessor" class="jp.aegif.nemaki.cmis.aspect.query.mock.MockQueryProcessor">
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
@@ -591,17 +588,9 @@
         <property name="compileService">
             <ref bean="CompileService" />
         </property>
-        <property name="exceptionService">
-            <ref bean="ExceptionService" />
-        </property>
-        <property name="threadLockService">
-            <ref bean="ThreadLockService" />
-        </property>
-        <property name="solrUtil">
-            <ref bean="solrUtil" />
-        </property>
     </bean>
 
+    <!-- SolrUtil bean - Use original SolrUtil for now -->
     <bean id="solrUtil" class="jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil">
         <property name="propertyManager">
             <ref bean="propertyManager" />

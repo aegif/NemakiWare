@@ -56,6 +56,12 @@ NemakiWare supports modern Jakarta EE 10 development with Maven Jetty plugin for
 3. **Start Development Server**
    ```bash
    cd core
+   ./start-jetty-dev.sh
+   ```
+   
+   Or manually:
+   ```bash
+   export MAVEN_OPTS="--add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/java.text=ALL-UNNAMED --add-opens=java.desktop/java.awt.font=ALL-UNNAMED"
    mvn jetty:run -Pjakarta -Djetty.port=8081
    ```
 

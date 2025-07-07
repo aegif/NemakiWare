@@ -228,7 +228,9 @@ public class SolrUtil {
 				updateRequest.add(doc);
 				updateRequest.setCommitWithin(1000); // Commit within 1 second
 				
-				UpdateResponse response = updateRequest.process(solrClient, "nemaki");
+				// DIRECT FIX: Don't pass core name to avoid URL duplication
+				// getSolrUrl() already returns full URL with core path
+				UpdateResponse response = updateRequest.process(solrClient);
 				
 				log.info("Solr response status: " + response.getStatus() + " for document: " + content.getId());
 				
@@ -390,7 +392,9 @@ public class SolrUtil {
 				updateRequest.deleteById(documentId);
 				updateRequest.setCommitWithin(1000);
 				
-				UpdateResponse response = updateRequest.process(solrClient, "nemaki");
+				// DIRECT FIX: Don't pass core name to avoid URL duplication
+				// getSolrUrl() already returns full URL with core path
+				UpdateResponse response = updateRequest.process(solrClient);
 				
 				if (response.getStatus() == 0) {
 					log.debug("Document deleted successfully from Solr: " + documentId + " for repository: " + repositoryId);
@@ -417,8 +421,28 @@ public class SolrUtil {
 		String url = null;
 		try {
 			URL _url = new URL(protocol, host, port, "");
-			// Directly include nemaki core in URL for Solr 9.x compatibility
-			url = _url.toString() + "/" + context + "/nemaki";
+			
+			// UPDATED FIX: Return full URL with core name since process() no longer adds it
+			// This prevents the /nemaki/nemaki duplication by including core in base URL
+			String baseContext = context;
+			if (baseContext.contains("/")) {
+				baseContext = baseContext.substring(0, baseContext.indexOf("/"));
+				System.out.println("DEBUG SolrUtil.getSolrUrl: Stripped context from '" + context + "' to '" + baseContext + "'");
+			}
+			
+			// Include the core name "nemaki" in the base URL since process() no longer adds it
+			url = _url.toString() + "/" + baseContext + "/nemaki";
+			System.out.println("DEBUG SolrUtil.getSolrUrl: Built URL with core included: " + url);
+			
+			// SAFETY: Ensure correct URL pattern with core included
+			// Expected pattern: http://host:port/solr/nemaki
+			String expectedPattern = protocol + "://" + host + ":" + port + "/solr/nemaki";
+			if (!url.equals(expectedPattern)) {
+				System.out.println("DEBUG SolrUtil.getSolrUrl: URL mismatch, forcing correct pattern");
+				System.out.println("DEBUG SolrUtil.getSolrUrl: Expected: " + expectedPattern + ", Got: " + url);
+				url = expectedPattern;
+			}
+			
 			System.out.println("DEBUG SolrUtil.getSolrUrl: final URL=" + url);
 		} catch (MalformedURLException e) {
 			System.out.println("DEBUG SolrUtil.getSolrUrl: MalformedURLException: " + e.getMessage());

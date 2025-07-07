@@ -34,7 +34,8 @@
 			<list>
 				<!-- Individual patches consolidated into initialization data -->
 				<!-- Future patches can be added here when needed -->
-				<ref bean="patch_InitialFolderSetup" />
+				<!-- Temporarily disabled for development environment troubleshooting -->
+				<!-- <ref bean="patch_InitialFolderSetup" /> -->
 			</list>
 		</property>
 	</bean>

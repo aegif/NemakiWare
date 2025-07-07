@@ -33,6 +33,22 @@ public class CloudantClientWrapper {
 	}
 
 	/**
+	 * Creates a properly configured ObjectMapper for Cloudant/CouchDB serialization
+	 * This ensures all fields from the object hierarchy are properly serialized
+	 */
+	private ObjectMapper createConfiguredObjectMapper() {
+		ObjectMapper mapper = new ObjectMapper();
+		// Configure Jackson to ignore unknown properties during Cloudant migration
+		mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+		// CRITICAL FIX: Use default visibility settings with automatic property detection
+		// Jackson should auto-detect getters/setters and public fields by default
+		mapper.setVisibility(PropertyAccessor.ALL, Visibility.DEFAULT);
+		// Allow access to private fields only when necessary
+		mapper.setVisibility(PropertyAccessor.FIELD, Visibility.ANY);
+		return mapper;
+	}
+
+	/**
 	 * Get the underlying Cloudant client
 	 */
 	public Cloudant getClient() {
@@ -227,7 +243,7 @@ public class CloudantClientWrapper {
 				throw new IllegalArgumentException("Document must have '_id' field for update");
 			}
 			
-			ObjectMapper mapper = new ObjectMapper();
+			ObjectMapper mapper = createConfiguredObjectMapper();
 			String jsonString = mapper.writeValueAsString(document);
 			com.ibm.cloud.cloudant.v1.model.Document doc = mapper.readValue(jsonString, com.ibm.cloud.cloudant.v1.model.Document.class);
 
@@ -479,7 +495,7 @@ public class CloudantClientWrapper {
 			ViewResult result = client.postView(builder.build()).execute().getResult();
 			
 			List<T> objects = new ArrayList<T>();
-			ObjectMapper mapper = new ObjectMapper();
+			ObjectMapper mapper = createConfiguredObjectMapper();
 			
 			for (ViewResultRow row : result.getRows()) {
 				if (row.getDoc() != null) {
@@ -580,14 +596,37 @@ public class CloudantClientWrapper {
 					log.error("  - Class: " + clazz.getName());
 					clazz = clazz.getSuperclass();
 				}
+			}
+			
+			// Add debug logging for CouchChange objects - CRITICAL FIX
+			if (document instanceof jp.aegif.nemaki.model.couch.CouchChange) {
+				jp.aegif.nemaki.model.couch.CouchChange change = (jp.aegif.nemaki.model.couch.CouchChange) document;
+				log.error("CLOUDANT CREATE: CouchChange before mapping - DETAILED ANALYSIS");
+				log.error("  - ID: " + change.getId());
+				log.error("  - Revision: " + change.getRevision());
+				log.error("  - Type: " + change.getType());
+				log.error("  - Name: " + change.getName());
+				log.error("  - ObjectId: " + change.getObjectId());
+				log.error("  - Token: " + change.getToken());
+				log.error("  - ChangeType: " + change.getChangeType());
+				log.error("  - BaseType: " + change.getBaseType());
+				log.error("  - ObjectType: " + change.getObjectType());
+				log.error("  - Time: " + change.getTime());
+				
+				// Check if all required fields are set
+				log.error("CLOUDANT CREATE: CouchChange field validation:");
+				log.error("  - Has Type: " + (change.getType() != null));
+				log.error("  - Has ObjectId: " + (change.getObjectId() != null));
+				log.error("  - Has Token: " + (change.getToken() != null));
+				log.error("  - Has ChangeType: " + (change.getChangeType() != null));
 				
 				// Check available methods (getters)
 				log.error("CLOUDANT CREATE: Available getter methods:");
-				java.lang.reflect.Method[] methods = folder.getClass().getMethods();
+				java.lang.reflect.Method[] methods = change.getClass().getMethods();
 				for (java.lang.reflect.Method method : methods) {
 					if (method.getName().startsWith("get") && method.getParameterCount() == 0) {
 						try {
-							Object value = method.invoke(folder);
+							Object value = method.invoke(change);
 							log.error("  - " + method.getName() + "(): " + value);
 						} catch (Exception e) {
 							log.error("  - " + method.getName() + "(): ERROR - " + e.getMessage());
@@ -597,13 +636,7 @@ public class CloudantClientWrapper {
 			}
 			
 			log.error("CLOUDANT CREATE: About to create ObjectMapper");
-			ObjectMapper mapper = new ObjectMapper();
-			// Configure Jackson to ignore unknown properties during Cloudant migration
-			mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-			// CRITICAL FIX: Enable field visibility for protected/private fields
-			mapper.setVisibility(PropertyAccessor.FIELD, Visibility.ANY);
-			mapper.setVisibility(PropertyAccessor.GETTER, Visibility.PUBLIC_ONLY);
-			mapper.setVisibility(PropertyAccessor.SETTER, Visibility.PUBLIC_ONLY);
+			ObjectMapper mapper = createConfiguredObjectMapper();
 			
 			// Log ObjectMapper configuration
 			log.error("CLOUDANT CREATE: ObjectMapper configuration:");
@@ -611,9 +644,53 @@ public class CloudantClientWrapper {
 			log.error("  - PropertyNamingStrategy: " + mapper.getPropertyNamingStrategy());
 			log.error("  - SerializationConfig: " + mapper.getSerializationConfig().toString());
 			
-			log.error("CLOUDANT CREATE: About to call mapper.convertValue");
-			@SuppressWarnings("unchecked")
-			Map<String, Object> documentMap = mapper.convertValue(document, Map.class);
+			Map<String, Object> documentMap;
+			
+			// CRITICAL FIX: Handle CouchChange objects manually due to ObjectMapper issues
+			if (document instanceof jp.aegif.nemaki.model.couch.CouchChange) {
+				jp.aegif.nemaki.model.couch.CouchChange change = (jp.aegif.nemaki.model.couch.CouchChange) document;
+				log.error("CLOUDANT CREATE: Using manual mapping for CouchChange");
+				
+				documentMap = new java.util.HashMap<>();
+				// Required fields for change documents
+				documentMap.put("type", change.getType());
+				documentMap.put("created", change.getCreated() != null ? change.getCreated().getTimeInMillis() : null);
+				documentMap.put("creator", change.getCreator());
+				documentMap.put("modified", change.getModified() != null ? change.getModified().getTimeInMillis() : null);
+				documentMap.put("modifier", change.getModifier());
+				
+				// Change-specific fields
+				documentMap.put("objectId", change.getObjectId());
+				documentMap.put("token", change.getToken());
+				documentMap.put("changeType", change.getChangeType() != null ? change.getChangeType().toString() : null);
+				documentMap.put("time", change.getTime() != null ? change.getTime().getTimeInMillis() : null);
+				documentMap.put("name", change.getName());
+				documentMap.put("baseType", change.getBaseType());
+				documentMap.put("objectType", change.getObjectType());
+				documentMap.put("versionSeriesId", change.getVersionSeriesId());
+				documentMap.put("versionLabel", change.getVersionLabel());
+				documentMap.put("policyIds", change.getPolicyIds());
+				documentMap.put("acl", change.getAcl());
+				documentMap.put("paretnId", change.getParetnId());
+				
+				// Additional properties (empty map for now)
+				documentMap.put("additionalProperties", new java.util.HashMap<>());
+				
+				// Content type flags
+				documentMap.put("content", change.isContent());
+				documentMap.put("document", change.isDocument());
+				documentMap.put("folder", change.isFolder());
+				documentMap.put("attachment", change.isAttachment());
+				documentMap.put("relationship", change.isRelationship());
+				documentMap.put("policy", change.isPolicy());
+				
+				log.error("CLOUDANT CREATE: Manual mapping completed, map size: " + documentMap.size());
+			} else {
+				log.error("CLOUDANT CREATE: About to call mapper.convertValue for non-CouchChange object");
+				@SuppressWarnings("unchecked")
+				Map<String, Object> tempMap = mapper.convertValue(document, Map.class);
+				documentMap = tempMap;
+			}
 			
 			log.error("CLOUDANT CREATE: After ObjectMapper.convertValue - DETAILED ANALYSIS");
 			log.error("  - Map size: " + documentMap.size());
@@ -737,9 +814,7 @@ public class CloudantClientWrapper {
 	 */
 	public void update(Object document) {
 		try {
-			ObjectMapper mapper = new ObjectMapper();
-			// Configure Jackson to ignore unknown properties during Cloudant migration
-			mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+			ObjectMapper mapper = createConfiguredObjectMapper();
 			
 			@SuppressWarnings("unchecked")
 			Map<String, Object> documentMap = mapper.convertValue(document, Map.class);
@@ -800,7 +875,7 @@ public class CloudantClientWrapper {
 		try {
 			com.ibm.cloud.cloudant.v1.model.Document doc = get(id);
 			if (doc != null) {
-				ObjectMapper mapper = new ObjectMapper();
+				ObjectMapper mapper = createConfiguredObjectMapper();
 				// Convert immutable Document to mutable Map first, then to target class
 				@SuppressWarnings("unchecked")
 				Map<String, Object> docMap = mapper.convertValue(doc, Map.class);
@@ -818,7 +893,7 @@ public class CloudantClientWrapper {
 	 */
 	public void delete(Object document) {
 		try {
-			ObjectMapper mapper = new ObjectMapper();
+			ObjectMapper mapper = createConfiguredObjectMapper();
 			@SuppressWarnings("unchecked")
 			Map<String, Object> documentMap = mapper.convertValue(document, Map.class);
 			
@@ -1056,7 +1131,7 @@ public class CloudantClientWrapper {
 			com.ibm.cloud.cloudant.v1.model.Document doc = client.getDocument(builder.build()).execute().getResult();
 			
 			if (doc != null) {
-				ObjectMapper mapper = new ObjectMapper();
+				ObjectMapper mapper = createConfiguredObjectMapper();
 				// Convert immutable Document to mutable Map first, then to target class
 				@SuppressWarnings("unchecked")
 				Map<String, Object> docMap = mapper.convertValue(doc, Map.class);

@@ -1173,12 +1173,33 @@ public class ContentServiceImpl implements ContentService {
 
 	private void setBaseProperties(CallContext callContext, String repositoryId, Properties properties, Content content,
 			String parentFolderId) {
-		// Object Type
+		// DEBUG: Jakarta EE Properties analysis
+		System.out.println("=== PROPERTIES DEBUG ===");
+		System.out.println("Properties object: " + (properties == null ? "NULL" : properties.getClass().getName()));
+		if (properties != null && properties.getProperties() != null) {
+			System.out.println("Properties map size: " + properties.getProperties().size());
+			properties.getProperties().forEach((key, value) -> {
+				System.out.println("  Property: " + key + " = " + (value == null ? "NULL" : value.getClass().getName() + ":" + value.getFirstValue()));
+			});
+		}
+		System.out.println("parentFolderId passed: " + parentFolderId);
+		
+		// DEBUG: TypeDefinition verification
 		String objectTypeId = DataUtil.getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID);
+		System.out.println("objectTypeId extracted: " + objectTypeId);
+		
+		TypeDefinition typeDefinition = typeManager.getTypeDefinition(repositoryId, objectTypeId);
+		System.out.println("TypeDefinition retrieved: " + (typeDefinition == null ? "NULL" : typeDefinition.getId()));
+		if (typeDefinition != null && typeDefinition.getPropertyDefinitions() != null) {
+			System.out.println("TypeDefinition property count: " + typeDefinition.getPropertyDefinitions().size());
+			System.out.println("Contains cmis:name: " + typeDefinition.getPropertyDefinitions().containsKey("cmis:name"));
+		}
+		System.out.println("=== END PROPERTIES DEBUG ===");
+		
+		// Object Type
 		content.setObjectType(objectTypeId);
 
 		// Base Type
-		TypeDefinition typeDefinition = typeManager.getTypeDefinition(repositoryId, objectTypeId);
 		BaseTypeId baseTypeId = typeDefinition.getBaseTypeId();
 		content.setType(baseTypeId.value());
 
@@ -1723,8 +1744,32 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public AttachmentNode getAttachmentRef(String repositoryId, String attachmentId) {
-		AttachmentNode an = contentDaoService.getAttachment(repositoryId, attachmentId);
-		return an;
+		if (StringUtils.isBlank(attachmentId)) {
+			return null;
+		}
+		
+		// Try to get attachment with minimal retry for async scenarios
+		final int maxRetries = 2;
+		final long retryDelayMs = 25;
+		
+		for (int attempt = 1; attempt <= maxRetries; attempt++) {
+			AttachmentNode an = contentDaoService.getAttachment(repositoryId, attachmentId);
+			if (an != null) {
+				return an;
+			}
+			
+			if (attempt < maxRetries) {
+				try {
+					Thread.sleep(retryDelayMs);
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					log.warn("Interrupted while retrieving attachment: attachmentId=" + attachmentId);
+					break;
+				}
+			}
+		}
+		
+		return null;
 	}
 
 	private String createAttachment(CallContext callContext, String repositoryId, ContentStream contentStream) {

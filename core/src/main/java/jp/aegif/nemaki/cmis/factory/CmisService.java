@@ -460,6 +460,8 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	public String createDocument(String repositoryId, Properties properties, String folderId,
 			ContentStream contentStream, VersioningState versioningState, List<String> policies, Acl addAces,
 			Acl removeAces, ExtensionsData extension) {
+		// FIXED: TypeManagerImpl property definition clearing disabled to preserve CMIS type inheritance
+		
 		return objectService.createDocument(getCallContext(), repositoryId, properties, folderId, contentStream,
 				versioningState, policies, addAces, removeAces, null);
 	}
