@@ -164,11 +164,7 @@
 		<!-- Removed javax.servlet-api to comply with enforcer rules -->
 
 		<!-- OpenCMIS dependencies - excluded when Jakarta profile is active -->
-		<dependency>
-			<groupId>org.apache.chemistry.opencmis</groupId>
-			<artifactId>chemistry-opencmis-server-support</artifactId>
-			<version>${org.apache.chemistry.opencmis.version}</version>
-		</dependency>
+		<!-- server-support dependency moved down to avoid duplication -->
 
 		<!-- Jakarta-converted server-bindings included directly in WEB-INF/lib -->
 		<!-- systemPath dependency removed to ensure proper classpath loading -->
@@ -231,28 +227,12 @@
 		</dependency>
 
 		<!-- Metro JAX-WS RI 4.x Jakarta EE 10 compatible dependencies -->
-		<dependency>
-			<groupId>com.sun.xml.ws</groupId>
-			<artifactId>jaxws-rt</artifactId>
-			<version>4.0.2</version>
-		</dependency>
+		<!-- jaxws-rt dependency moved down to avoid duplication -->
 		<!-- jaxws-ri removed due to enforcer conflicts -->
 		<!-- Using jaxws-rt directly instead -->
-		<dependency>
-			<groupId>jakarta.xml.ws</groupId>
-			<artifactId>jakarta.xml.ws-api</artifactId>
-			<version>4.0.0</version>
-		</dependency>
-		<dependency>
-			<groupId>jakarta.xml.bind</groupId>
-			<artifactId>jakarta.xml.bind-api</artifactId>
-			<version>4.0.0</version>
-		</dependency>
-		<dependency>
-			<groupId>org.glassfish.jaxb</groupId>
-			<artifactId>jaxb-runtime</artifactId>
-			<version>4.0.2</version>
-		</dependency>
+		<!-- jakarta.xml.ws-api dependency moved down to avoid duplication -->
+		<!-- jakarta.xml.bind-api dependency moved down to avoid duplication -->
+		<!-- jaxb-runtime dependency moved down to avoid duplication -->
 
 		<!-- IBM Cloudant Java SDK - Modern CouchDB client -->
 		<dependency>
@@ -434,6 +414,20 @@
 					<groupId>org.apache.httpcomponents</groupId>
 					<artifactId>httpclient-cache</artifactId>
 				</exclusion>
+				<!-- Exclude Jetty 9 to prevent javax.servlet conflicts -->
+				<exclusion>
+					<groupId>org.eclipse.jetty</groupId>
+					<artifactId>jetty-server</artifactId>
+				</exclusion>
+				<exclusion>
+					<groupId>org.glassfish.jersey.containers</groupId>
+					<artifactId>jersey-container-jetty-http</artifactId>
+				</exclusion>
+				<!-- Exclude javax.servlet API -->
+				<exclusion>
+					<groupId>javax.servlet</groupId>
+					<artifactId>javax.servlet-api</artifactId>
+				</exclusion>
 			</exclusions>
 		</dependency>
 		
@@ -442,6 +436,22 @@
 			<groupId>jp.aegif.nemaki.solr</groupId>
 			<artifactId>solr</artifactId>
 			<version>2.4.1</version>
+			<exclusions>
+				<!-- Exclude Jetty 9 to prevent javax.servlet conflicts -->
+				<exclusion>
+					<groupId>org.eclipse.jetty</groupId>
+					<artifactId>jetty-server</artifactId>
+				</exclusion>
+				<exclusion>
+					<groupId>org.glassfish.jersey.containers</groupId>
+					<artifactId>jersey-container-jetty-http</artifactId>
+				</exclusion>
+				<!-- Exclude javax.servlet API -->
+				<exclusion>
+					<groupId>javax.servlet</groupId>
+					<artifactId>javax.servlet-api</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 		
 		<!-- Jetty HTTP Client for Http2SolrClient (Solr 9.x recommended) -->
@@ -617,19 +627,23 @@
 				<version>11.0.24</version>
 				<configuration>
 					<scan>1</scan>
-					<stopPort>9966</stopPort>
+					<stopPort>9967</stopPort>
 					<stopKey>foo</stopKey>
 					<webApp>
 						<contextPath>/core</contextPath>
+						<!-- Priority: Jakarta JARs FIRST to override standard OpenCMIS classes -->
+						<extraClasspath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-server-bindings-1.1.0-jakarta.jar,${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-commons-impl-1.1.0-jakarta.jar,${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-commons-api-1.1.0-jakarta.jar,${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-server-support-1.1.0-jakarta.jar,${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-client-bindings-1.1.0-jakarta.jar,${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-client-api-1.1.0-jakarta.jar,${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-client-impl-1.1.0-jakarta.jar,${project.basedir}/../lib/jakarta-converted/jaxws-rt-4.0.2-jakarta.jar</extraClasspath>
+						<!-- Use webapp-first classloading to prioritize Jakarta JARs -->
+						<parentLoaderPriority>false</parentLoaderPriority>
 					</webApp>
 					<httpConnector>
-						<port>8080</port>
+						<port>8081</port>
 					</httpConnector>
 					<!-- Development environment variables -->
 					<systemProperties>
 						<systemProperty>
 							<name>nemakiware.properties</name>
-							<value>file:${project.basedir}/src/main/webapp/WEB-INF/classes/nemakiware-dev.properties</value>
+							<value>file:${project.basedir}/src/main/webapp/WEB-INF/classes/nemakiware-jetty-nosolr.properties</value>
 						</systemProperty>
 						<systemProperty>
 							<name>repositories.yml</name>
@@ -637,7 +651,15 @@
 						</systemProperty>
 						<systemProperty>
 							<name>log4j.configuration</name>
-							<value>file:${project.basedir}/src/main/webapp/WEB-INF/classes/log4j.properties</value>
+							<value>file:${project.basedir}/src/main/webapp/WEB-INF/classes/log4j-jetty.properties</value>
+						</systemProperty>
+						<systemProperty>
+							<name>db.couchdb.url</name>
+							<value>http://localhost:5984</value>
+						</systemProperty>
+						<systemProperty>
+							<name>spring.profiles.active</name>
+							<value>development</value>
 						</systemProperty>
 						<systemProperty>
 							<name>org.ektorp.support.AutoUpdateViewOnChange</name>
@@ -656,6 +678,8 @@
 							<value>true</value>
 						</systemProperty>
 					</systemProperties>
+					<!-- Java 17 module system compatibility for Jakarta EE -->
+					<jvmArgs>--add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/java.text=ALL-UNNAMED --add-opens=java.desktop/java.awt.font=ALL-UNNAMED</jvmArgs>
 				</configuration>
 
 				<executions>
@@ -904,6 +928,18 @@
 						<scope>provided</scope>
 					</dependency>
 					<dependency>
+						<groupId>org.apache.chemistry.opencmis</groupId>
+						<artifactId>chemistry-opencmis-client-api</artifactId>
+						<version>${org.apache.chemistry.opencmis.version}</version>
+						<scope>provided</scope>
+					</dependency>
+					<dependency>
+						<groupId>org.apache.chemistry.opencmis</groupId>
+						<artifactId>chemistry-opencmis-client-impl</artifactId>
+						<version>${org.apache.chemistry.opencmis.version}</version>
+						<scope>provided</scope>
+					</dependency>
+					<dependency>
 						<groupId>com.sun.xml.ws</groupId>
 						<artifactId>jaxws-rt</artifactId>
 						<version>4.0.3</version>
@@ -947,6 +983,20 @@
 					<version>1.1.0-jakarta</version>
 					<scope>system</scope>
 					<systemPath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-server-support-1.1.0-jakarta.jar</systemPath>
+				</dependency>
+				<dependency>
+					<groupId>org.apache.chemistry.opencmis</groupId>
+					<artifactId>chemistry-opencmis-client-api</artifactId>
+					<version>1.1.0-jakarta</version>
+					<scope>system</scope>
+					<systemPath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-client-api-1.1.0-jakarta.jar</systemPath>
+				</dependency>
+				<dependency>
+					<groupId>org.apache.chemistry.opencmis</groupId>
+					<artifactId>chemistry-opencmis-client-impl</artifactId>
+					<version>1.1.0-jakarta</version>
+					<scope>system</scope>
+					<systemPath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-client-impl-1.1.0-jakarta.jar</systemPath>
 				</dependency>
 				<dependency>
 					<groupId>com.sun.xml.ws</groupId>
