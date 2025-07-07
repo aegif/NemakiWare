@@ -437,6 +437,13 @@
 			</exclusions>
 		</dependency>
 		
+		<!-- NemakiWare Custom Solr Module with Tracker and Quartz Scheduler -->
+		<dependency>
+			<groupId>jp.aegif.nemaki.solr</groupId>
+			<artifactId>solr</artifactId>
+			<version>2.4.1</version>
+		</dependency>
+		
 		<!-- Jetty HTTP Client for Http2SolrClient (Solr 9.x recommended) -->
 		<dependency>
 			<groupId>org.eclipse.jetty</groupId>
@@ -618,6 +625,37 @@
 					<httpConnector>
 						<port>8080</port>
 					</httpConnector>
+					<!-- Development environment variables -->
+					<systemProperties>
+						<systemProperty>
+							<name>nemakiware.properties</name>
+							<value>file:${project.basedir}/src/main/webapp/WEB-INF/classes/nemakiware-dev.properties</value>
+						</systemProperty>
+						<systemProperty>
+							<name>repositories.yml</name>
+							<value>file:${project.basedir}/src/main/webapp/WEB-INF/classes/repositories.yml</value>
+						</systemProperty>
+						<systemProperty>
+							<name>log4j.configuration</name>
+							<value>file:${project.basedir}/src/main/webapp/WEB-INF/classes/log4j.properties</value>
+						</systemProperty>
+						<systemProperty>
+							<name>org.ektorp.support.AutoUpdateViewOnChange</name>
+							<value>false</value>
+						</systemProperty>
+						<systemProperty>
+							<name>org.ektorp.http.IdleConnectionMonitor.enabled</name>
+							<value>false</value>
+						</systemProperty>
+						<systemProperty>
+							<name>org.ektorp.support.DesignDocument.UPDATE_ON_DIFF</name>
+							<value>false</value>
+						</systemProperty>
+						<systemProperty>
+							<name>org.ektorp.support.DesignDocument.ALLOW_AUTO_UPDATE</name>
+							<value>true</value>
+						</systemProperty>
+					</systemProperties>
 				</configuration>
 
 				<executions>
@@ -787,10 +825,10 @@
 											  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/chemistry-opencmis-server-support-1.1.0.jar" 
 											  overwrite="true"/>
 										<!-- Add client-api and client-impl JARs -->
-										<copy file="${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-client-api-1.2.0-SNAPSHOT-jakarta.jar"
+										<copy file="${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-client-api-1.1.0-jakarta.jar"
 											  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/chemistry-opencmis-client-api-1.1.0.jar" 
 											  overwrite="true"/>
-										<copy file="${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-client-impl-1.2.0-SNAPSHOT-jakarta.jar"
+										<copy file="${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-client-impl-1.1.0-jakarta.jar"
 											  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/chemistry-opencmis-client-impl-1.1.0.jar" 
 											  overwrite="true"/>
 										<copy file="${project.basedir}/../lib/jakarta-converted/jaxws-rt-4.0.2-jakarta.jar"

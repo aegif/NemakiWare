@@ -2,7 +2,37 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Recent Major Changes (2025-07-05)
+## Recent Major Changes (2025-07-07)
+
+### CMIS Browser Binding Jakarta EE Compatibility - COMPLETED ✅
+
+**CRITICAL RESOLUTION**: Resolved fundamental Browser Binding parameter parsing failures in Jakarta EE environment that were preventing CMIS document creation and property handling.
+
+**Key Fixes Applied (2025-07-07):**
+- **OpenCMIS Version Unification**: Eliminated 1.1.0/1.2.0-SNAPSHOT version mixing that caused parameter parsing failures
+- **Jakarta EE Runtime Environment**: Migrated from Tomcat 9 to Tomcat 10.1 + Java 17 for proper Jakarta Servlet API support
+- **Comprehensive JAR Management**: Established strict version control to prevent future regressions
+
+**Root Cause Analysis:**
+- **Version Inconsistency**: Mixed 1.1.0 and 1.2.0-SNAPSHOT OpenCMIS JARs created parameter parsing conflicts
+- **Servlet API Mismatch**: Tomcat 9 provided `javax.servlet.*` while Jakarta JARs expected `jakarta.servlet.*`
+- **Build Configuration Gaps**: Multiple files contained hardcoded SNAPSHOT references
+
+**Current Status:**
+- ✅ Browser Binding parameter parsing works perfectly (`propertyId[0]=cmis:name&propertyValue[0]=TestDocument`)
+- ✅ CMIS document creation via Browser Binding succeeds
+- ✅ All OpenCMIS JARs unified to version 1.1.0
+- ✅ Jakarta EE environment properly configured (Tomcat 10.1 + Java 17)
+
+**Files Modified for Version Unification:**
+- `core/pom.xml`: Lines 828-833 - Updated 1.2.0-SNAPSHOT → 1.1.0 Jakarta JAR references
+- `docker/Dockerfile.jakarta`: Lines 35-36 - Fixed hardcoded SNAPSHOT references
+- `action/pom.xml`: Line 16 - Updated OpenCMIS version 1.0.0 → 1.1.0
+- `docker/core/Dockerfile.simple`: Line 1 - Migrated Tomcat 9 → 10.1-jre17
+
+**Anti-Pattern Prevention System Established**: See OpenCMIS Version Management section below.
+
+## Previous Major Changes (2025-07-05)
 
 ### CMIS Query System Jakarta EE Fixes - COMPLETED ✅
 
@@ -80,6 +110,163 @@ The antrun plugin in `core/pom.xml` automatically manages JAR conflicts:
 4. **Prevents ClassLoader conflicts** that cause HTTP 404 errors
 
 **NEVER manually manage OpenCMIS JARs** - use the automated build process only.
+
+## OpenCMIS Version Management (CRITICAL - 2025-07-07)
+
+### ANTI-PATTERN PREVENTION: Mixed Version Control System
+
+**FUNDAMENTAL RULE**: ALL OpenCMIS JARs MUST use version 1.1.0 throughout the entire system.
+
+### Version Consistency Requirements
+
+**Mandatory Version Standards:**
+- **Core Maven Property**: `org.apache.chemistry.opencmis.version=1.1.0` in all pom.xml files
+- **Jakarta Converted JARs**: Only `*-1.1.0-jakarta.jar` files in `/lib/jakarta-converted/`
+- **Docker References**: All Dockerfile COPY commands must reference 1.1.0 versions
+- **Build Scripts**: No 1.2.0-SNAPSHOT references in any automation
+
+### Critical Files Requiring Version Alignment
+
+**1. Maven Configuration Files:**
+```bash
+# Core module (MANDATORY)
+core/pom.xml:20 - org.apache.chemistry.opencmis.version=1.1.0
+core/pom.xml:828-833 - Jakarta JAR copy commands (1.1.0 only)
+
+# Action module (MANDATORY) 
+action/pom.xml:16 - org.apache.chemistry.opencmis.version=1.1.0
+
+# Solr module (MANDATORY)
+solr/pom.xml:20 - org.apache.chemistry.opencmis.version=1.1.0
+```
+
+**2. Jakarta JAR Directory:**
+```bash
+# ONLY these 1.1.0 versions should exist:
+lib/jakarta-converted/chemistry-opencmis-client-api-1.1.0-jakarta.jar
+lib/jakarta-converted/chemistry-opencmis-client-impl-1.1.0-jakarta.jar
+lib/jakarta-converted/chemistry-opencmis-client-bindings-1.1.0-jakarta.jar
+lib/jakarta-converted/chemistry-opencmis-commons-api-1.1.0-jakarta.jar
+lib/jakarta-converted/chemistry-opencmis-commons-impl-1.1.0-jakarta.jar
+lib/jakarta-converted/chemistry-opencmis-server-bindings-1.1.0-jakarta.jar
+lib/jakarta-converted/chemistry-opencmis-server-support-1.1.0-jakarta.jar
+lib/jakarta-converted/chemistry-opencmis-test-tck-1.1.0-jakarta.jar
+lib/jakarta-converted/jaxws-rt-4.0.2-jakarta.jar
+```
+
+**3. Docker Configuration Files:**
+```bash
+# Jakarta Dockerfile (MANDATORY)
+docker/Dockerfile.jakarta:35-36 - Use 1.1.0-jakarta.jar references only
+docker/core/Dockerfile.simple:1 - FROM tomcat:10.1-jre17 (NOT tomcat:9)
+```
+
+### Pre-Build Verification Checklist
+
+Before any build or deployment, verify:
+
+```bash
+# 1. Check Maven properties for consistency
+grep -r "org.apache.chemistry.opencmis.version" */pom.xml
+# Expected: ALL files show "1.1.0"
+
+# 2. Verify no SNAPSHOT JARs exist
+find lib/jakarta-converted/ -name "*SNAPSHOT*"
+# Expected: No output (no SNAPSHOT files)
+
+# 3. Check Docker references
+grep -r "1.2.0-SNAPSHOT" docker/
+# Expected: No output (no SNAPSHOT references)
+
+# 4. Verify Tomcat version
+grep "FROM tomcat:" docker/core/Dockerfile.simple
+# Expected: "FROM tomcat:10.1-jre17"
+```
+
+### Version Violation Detection
+
+**Common Signs of Version Mixing:**
+- Browser Binding parameter parsing errors ("cmis:name is unknown!")
+- Jakarta Servlet API ClassNotFoundException 
+- OpenCMIS JAX-WS binding failures
+- Inconsistent CMIS behavior between AtomPub and Browser bindings
+
+**Emergency Response Protocol:**
+1. **STOP all builds immediately**
+2. **Run verification checklist above**
+3. **Remove ALL *-SNAPSHOT-jakarta.jar files**
+4. **Regenerate 1.1.0 Jakarta JARs**: `./docker/jakarta-transform.sh`
+5. **Update hardcoded references in affected files**
+6. **Clean rebuild**: `mvn clean package -Pjakarta -Pdevelopment`
+
+### Jakarta EE Runtime Requirements
+
+**Mandatory Runtime Environment:**
+- **Application Server**: Tomcat 10.1+ or Jetty 11+ (Jakarta EE 9+)
+- **Java Version**: Java 17 (mandatory for all operations)
+- **Servlet API**: jakarta.servlet.* namespace (NOT javax.servlet.*)
+- **JAX-WS Runtime**: Metro RI 4.0.2+ (jakarta.xml.ws.*)
+
+**Version Compatibility Matrix:**
+```
+✅ SUPPORTED: OpenCMIS 1.1.0 + Tomcat 10.1 + Java 17 + Jakarta EE 9+
+❌ UNSUPPORTED: OpenCMIS 1.2.0-SNAPSHOT + Any Tomcat version
+❌ UNSUPPORTED: Any OpenCMIS version + Tomcat 9 (javax.servlet.*)
+❌ UNSUPPORTED: Mixed 1.1.0/1.2.0 OpenCMIS JARs + Any environment
+```
+
+### Maintenance Commands
+
+**Weekly Version Audit:**
+```bash
+# Comprehensive version check script
+./docker/check-opencmis-versions.sh
+
+# Expected output: "ALL VERSIONS CONSISTENT: 1.1.0"
+```
+
+**Post-Development Cleanup:**
+```bash
+# Remove any accidentally created SNAPSHOT JARs
+find . -name "*-1.2.0-SNAPSHOT*" -delete
+
+# Regenerate clean Jakarta environment
+./docker/jakarta-transform.sh
+```
+
+**CRITICAL**: Any deviation from these standards will cause Browser Binding parameter parsing failures and Jakarta EE compatibility issues. This system prevents recurring critical issues discovered on 2025-07-07.
+
+### Quick Start: Version Check and Browser Binding Test
+
+**Daily Development Workflow:**
+```bash
+# 1. Verify version consistency
+./docker/check-opencmis-versions.sh
+# Expected: "✅ ALL VERSIONS CONSISTENT: 1.1.0"
+
+# 2. Start Jakarta EE environment
+docker compose -f docker-compose-simple.yml up -d
+
+# 3. Test Browser Binding functionality  
+curl -s -u admin:admin -X POST \
+  -F "propertyId[0]=cmis:name" \
+  -F "propertyValue[0]=TestDocument" \
+  -F "propertyId[1]=cmis:objectTypeId" \
+  -F "propertyValue[1]=cmis:document" \
+  -F "content=@/tmp/test.txt" \
+  "http://localhost:8080/core/browser/bedroom/root?cmisaction=createDocument"
+# Expected: JSON response with created document properties
+
+# 4. Verify CMIS AtomPub also works
+curl -s -u admin:admin "http://localhost:8080/core/atom/bedroom"
+# Expected: HTTP 200 with XML repository info
+```
+
+**Success Indicators:**
+- ✅ Browser Binding parameter parsing succeeds (no "cmis:name is unknown!" errors)
+- ✅ Document creation returns complete CMIS properties JSON
+- ✅ Both Browser Binding and AtomPub work consistently
+- ✅ No Jakarta Servlet API ClassNotFoundException errors
 
 ### Patch System Consolidation (2025-07-02)
 

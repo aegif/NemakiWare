@@ -1394,7 +1394,9 @@ public class TypeManagerImpl implements TypeManager {
 			for (TypeDefinition type : result.getList()) {
 				try {
 					if (type.getPropertyDefinitions() != null) {
-						type.getPropertyDefinitions().clear();
+						// CRITICAL FIX: DO NOT clear property definitions as this breaks CMIS type inheritance
+						// type.getPropertyDefinitions().clear(); // DISABLED: Causes "cmis:name is unknown" errors
+						// Property definitions must be preserved for CMIS compliance
 					}
 				} catch (Exception e) {
 					e.printStackTrace();
