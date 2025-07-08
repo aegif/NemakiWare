@@ -1,0 +1,130 @@
+=== DETAILED QUERY VALIDATION REPORT ===
+Generated: Sat Jul  5 22:52:03 JST 2025  
+Repository: bedroom
+
+CRITICAL FINDING: ROOT CAUSE OF 0 RESULTS IDENTIFIED
+
+1. All documents in repository
+   Query: SELECT * FROM cmis:document
+   ✓ EXECUTED successfully
+   ✓ RESULT COUNT: 0 items
+   ⚠ STATUS: SUCCESS but no results
+
+2. All folders in repository
+   Query: SELECT * FROM cmis:folder
+   ✓ EXECUTED successfully
+   ✓ RESULT COUNT: 0 items
+   ⚠ STATUS: SUCCESS but no results
+
+3. All items (users/groups) in repository
+   Query: SELECT * FROM cmis:item
+   ✓ EXECUTED successfully
+   ✓ RESULT COUNT: 0 items
+   ⚠ STATUS: SUCCESS but no results
+
+4. Document IDs and names only
+   Query: SELECT cmis:objectId, cmis:name FROM cmis:document
+   ✓ EXECUTED successfully
+   ✓ RESULT COUNT: 0 items
+   ⚠ STATUS: SUCCESS but no results
+
+5. Folder IDs and names only
+   Query: SELECT cmis:objectId, cmis:name FROM cmis:folder
+   ✓ EXECUTED successfully
+   ✓ RESULT COUNT: 0 items
+   ⚠ STATUS: SUCCESS but no results
+
+=== QUERY VALIDATION SUMMARY ===
+Total Queries Tested: 5
+Successfully Executed: 5 (100%)
+Queries with Results: 0 (0%)
+Queries with No Results: 5
+
+✅ OVERALL STATUS: ALL QUERIES EXECUTED SUCCESSFULLY
+❌ DATA STATUS: NO RESULTS RETURNED (CRITICAL ISSUE CONFIRMED)
+
+=== REPOSITORY CONTENT ANALYSIS ===
+Repository Content Summary:
+- Documents: 0 (via CMIS query)
+- Folders: 0 (via CMIS query)  
+- Items (users/groups): 0 (via CMIS query)
+- Total Objects: 0 (via CMIS query)
+
+CouchDB Database Analysis:
+- bedroom database: 14 documents (verified via curl)
+- Document types found: propertyDefinitionCore, cmis:item, cmis:folder
+- Database is properly populated with CMIS objects
+
+Solr Index Analysis:
+- nemaki core: 0 documents indexed (numFound: 0)
+- Search index is completely empty
+
+⚠️  CRITICAL ISSUE CONFIRMED: SOLR INDEXING FAILURE
+   The root cause of 0 query results has been identified:
+   - CouchDB contains 14 CMIS documents (data exists)
+   - Solr search index contains 0 documents (index empty)
+   - CMIS queries route through Solr for search functionality
+   - Empty Solr index = 0 query results regardless of CouchDB content
+
+=== ROOT CAUSE ANALYSIS ===
+
+Issue: User's concern "queries had returned 0 results even when hits were expected" CONFIRMED
+
+Technical Details:
+1. **Database Layer**: CouchDB properly initialized with 14 documents
+2. **Application Layer**: CMIS endpoints respond with HTTP 200 (functional)
+3. **Search Layer**: Solr index empty (critical failure point)
+4. **Query Flow**: CMIS SQL → Solr search → 0 results (broken at Solr)
+
+Core Application Logs Confirm:
+- "[QUERY DEBUG] Executing Solr query: q=*:*&fq=repository_id:bedroom+AND+(objecttype:cmis\\:item)&start=0&rows=200"
+- "Solr response check: resp=not null, results=not null, numFound=0"
+
+=== ATTEMPTED RESOLUTION ===
+
+1. **Force Reindex Executed**: 
+   - Token timestamps set to 1970-01-01 for both bedroom and canopy repositories
+   - Core container restarted to trigger reindexing
+   - Result: Solr index still empty after restart
+
+2. **Tracker Component Analysis**:
+   - No tracker-related log messages found in Core application
+   - Automatic indexing mechanism not functioning in Jakarta EE environment
+   - Manual trigger required
+
+=== JAKARTA EE ENVIRONMENT STATUS ===
+
+✅ **Fully Functional Components**:
+- CouchDB: All repositories initialized and accessible
+- Core Application: HTTP 302/200 responses, Spring context loaded
+- CMIS Protocol: AtomPub endpoints responding correctly  
+- Database Connectivity: CloudantClientWrapper functioning
+- Authentication: admin:admin credentials working
+
+❌ **Non-Functional Components**:
+- Solr Indexing: Tracker system not operational
+- Search Results: All queries return 0 due to empty index
+- Full-Text Search: Dependent on Solr indexing
+
+=== RECOMMENDATIONS ===
+
+1. **IMMEDIATE**: Investigate tracker component initialization in Jakarta EE
+2. **SHORT-TERM**: Implement manual indexing endpoint for testing
+3. **LONG-TERM**: Ensure automatic indexing works for document creation/updates
+
+=== CONCLUSION ===
+
+The Jakarta EE 10 migration successfully reproduced the exact issue described by the user:
+"queries had returned 0 results even when hits were expected"
+
+This is NOT a query parsing or CMIS compatibility issue. It is specifically a Solr indexing integration issue where the NemakiWare tracker component fails to populate the search index in the Jakarta EE environment.
+
+All core CMIS functionality is operational. The issue is isolated to the search subsystem.
+
+TCK Testing Impact:
+- Basic CMIS operations: ✅ Functional
+- Query operations: ❌ Return 0 results due to indexing issue
+- Authentication: ✅ Working
+- Repository access: ✅ Working
+
+PRIORITY: Resolve Solr indexing before proceeding with full TCK execution.

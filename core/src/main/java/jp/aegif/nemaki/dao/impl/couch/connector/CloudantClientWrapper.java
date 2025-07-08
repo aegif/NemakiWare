@@ -94,7 +94,19 @@ public class CloudantClientWrapper {
 			properties.remove("_rev");
 			
 			// Set all other fields as properties
+			log.error("CLOUDANT DEBUG: About to set properties on Document object");
+			log.error("CLOUDANT DEBUG: Properties map size: " + properties.size());
+			log.error("CLOUDANT DEBUG: Properties keys: " + properties.keySet());
+			
 			doc.setProperties(properties);
+			
+			// CRITICAL DEBUG: Check if properties were actually set
+			Map<String, Object> retrievedProperties = doc.getProperties();
+			log.error("CLOUDANT DEBUG: Retrieved properties after setProperties():");
+			log.error("CLOUDANT DEBUG: Retrieved properties size: " + (retrievedProperties != null ? retrievedProperties.size() : "null"));
+			if (retrievedProperties != null) {
+				log.error("CLOUDANT DEBUG: Retrieved properties keys: " + retrievedProperties.keySet());
+			}
 
 			PostDocumentOptions options = new PostDocumentOptions.Builder()
 				.db(databaseName)
@@ -102,7 +114,24 @@ public class CloudantClientWrapper {
 				.build();
 
 			DocumentResult result = client.postDocument(options).execute().getResult();
-			log.debug("Created document with ID: " + result.getId());
+			log.error("CLOUDANT DEBUG: Document created with ID: " + result.getId());
+			
+			// CRITICAL: Verify what was actually saved to CouchDB
+			log.error("CLOUDANT DEBUG: Attempting to retrieve saved document to verify content...");
+			try {
+				GetDocumentOptions getOptions = new GetDocumentOptions.Builder()
+					.db(databaseName)
+					.docId(result.getId())
+					.build();
+				com.ibm.cloud.cloudant.v1.model.Document savedDoc = client.getDocument(getOptions).execute().getResult();
+				Map<String, Object> savedProperties = savedDoc.getProperties();
+				log.error("CLOUDANT DEBUG: Saved document properties size: " + (savedProperties != null ? savedProperties.size() : "null"));
+				if (savedProperties != null) {
+					log.error("CLOUDANT DEBUG: Saved document properties keys: " + savedProperties.keySet());
+				}
+			} catch (Exception verifyEx) {
+				log.error("CLOUDANT DEBUG: Failed to retrieve saved document for verification", verifyEx);
+			}
 			
 			return result;
 
@@ -770,18 +799,14 @@ public class CloudantClientWrapper {
 				log.error("CLOUDANT CREATE: WARNING - JSON string is empty or null!");
 			}
 			
-			// Create Cloudant Document using proper type conversion for all document types
-			com.ibm.cloud.cloudant.v1.model.Document doc;
-			try {
-				doc = mapper.readValue(jsonString, com.ibm.cloud.cloudant.v1.model.Document.class);
-			} catch (com.fasterxml.jackson.databind.exc.MismatchedInputException e) {
-				log.error("Document model conversion failed: " + e.getMessage());
-				throw new RuntimeException("Failed to create document object", e);
-			}
-
+			// CRITICAL FIX: Avoid IBM SDK Document class which strips properties
+			// Send JSON directly as a raw string to preserve all content
+			log.error("CLOUDANT CREATE: Using raw JSON string approach to avoid SDK Document class issues");
+			
 			PostDocumentOptions options = new PostDocumentOptions.Builder()
 				.db(databaseName)
-				.document(doc)
+				.body(new java.io.ByteArrayInputStream(jsonString.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+				.contentType("application/json")
 				.build();
 
 			DocumentResult result = client.postDocument(options).execute().getResult();

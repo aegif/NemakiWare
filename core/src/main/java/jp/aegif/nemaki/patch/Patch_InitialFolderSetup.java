@@ -35,6 +35,11 @@ public class Patch_InitialFolderSetup extends AbstractNemakiPatch {
     
     private static final Log log = LogFactory.getLog(Patch_InitialFolderSetup.class);
     
+    public Patch_InitialFolderSetup() {
+        System.out.println("=== PATCH DEBUG: Patch_InitialFolderSetup constructor called ===");
+        log.info("=== PATCH DEBUG: Patch_InitialFolderSetup constructor called ===");
+    }
+    
     // Patch configuration
     private static final String PATCH_NAME = "initial-folder-setup-20250706";
     private static final String SITES_FOLDER_NAME = "Sites";

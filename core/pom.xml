@@ -167,47 +167,71 @@
 		<!-- server-support dependency moved down to avoid duplication -->
 
 		<!-- Jakarta-converted server-bindings included directly in WEB-INF/lib -->
-		<!-- systemPath dependency removed to ensure proper classpath loading -->
-
-		<dependency>
-			<groupId>org.apache.chemistry.opencmis</groupId>
-			<artifactId>chemistry-opencmis-client-bindings</artifactId>
-			<version>${org.apache.chemistry.opencmis.version}</version>
-		</dependency>
-
+		<!-- OpenCMIS Jakarta EE Converted Dependencies -->
+		<!-- All OpenCMIS dependencies use Jakarta converted versions for unified environment -->
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-commons-impl</artifactId>
-			<version>${org.apache.chemistry.opencmis.version}</version>
+			<version>1.1.0-jakarta</version>
+			<scope>system</scope>
+			<systemPath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-commons-impl-1.1.0-jakarta.jar</systemPath>
 		</dependency>
 
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-commons-api</artifactId>
-			<version>${org.apache.chemistry.opencmis.version}</version>
+			<version>1.1.0-jakarta</version>
+			<scope>system</scope>
+			<systemPath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-commons-api-1.1.0-jakarta.jar</systemPath>
 		</dependency>
 
-		<!-- Add server-support dependency - standard version -->
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-server-support</artifactId>
-			<version>${org.apache.chemistry.opencmis.version}</version>
+			<version>1.1.0-jakarta</version>
+			<scope>system</scope>
+			<systemPath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-server-support-1.1.0-jakarta.jar</systemPath>
 		</dependency>
 
-		<!-- Standard server-bindings removed due to Jakarta EE compatibility issues -->
+		<dependency>
+			<groupId>org.apache.chemistry.opencmis</groupId>
+			<artifactId>chemistry-opencmis-server-bindings</artifactId>
+			<version>1.1.0-jakarta</version>
+			<scope>system</scope>
+			<systemPath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-server-bindings-1.1.0-jakarta.jar</systemPath>
+		</dependency>
 
-		<!-- Add client-impl dependency - includes client-api transitively -->
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-client-impl</artifactId>
-			<version>${org.apache.chemistry.opencmis.version}</version>
-			<exclusions>
-				<!-- Exclude CXF dependencies that bring in javax JAX-WS -->
-				<exclusion>
-					<groupId>org.apache.cxf</groupId>
-					<artifactId>cxf-rt-frontend-jaxws</artifactId>
-				</exclusion>
-			</exclusions>
+			<version>1.1.0-jakarta</version>
+			<scope>system</scope>
+			<systemPath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-client-impl-1.1.0-jakarta.jar</systemPath>
+		</dependency>
+
+		<dependency>
+			<groupId>org.apache.chemistry.opencmis</groupId>
+			<artifactId>chemistry-opencmis-client-api</artifactId>
+			<version>1.1.0-jakarta</version>
+			<scope>system</scope>
+			<systemPath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-client-api-1.1.0-jakarta.jar</systemPath>
+		</dependency>
+
+		<dependency>
+			<groupId>org.apache.chemistry.opencmis</groupId>
+			<artifactId>chemistry-opencmis-client-bindings</artifactId>
+			<version>1.1.0-jakarta</version>
+			<scope>system</scope>
+			<systemPath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-client-bindings-1.1.0-jakarta.jar</systemPath>
+		</dependency>
+
+		<!-- Jakarta EE JAX-WS Runtime (Metro RI) -->
+		<dependency>
+			<groupId>com.sun.xml.ws</groupId>
+			<artifactId>jaxws-rt</artifactId>
+			<version>4.0.2-jakarta</version>
+			<scope>system</scope>
+			<systemPath>${project.basedir}/../lib/jakarta-converted/jaxws-rt-4.0.2-jakarta.jar</systemPath>
 		</dependency>
 
 		<!-- Updated to 1.1.0 Jakarta version - test-util removed as it's not directly used -->
@@ -380,11 +404,7 @@
 
 		<!-- JAX-WS dependencies for Java 11+ compatibility -->
 		<!-- Jakarta EE version - unified dependency management -->
-		<dependency>
-			<groupId>com.sun.xml.ws</groupId>
-			<artifactId>jaxws-rt</artifactId>
-			<version>4.0.2</version>
-		</dependency>
+		<!-- Using Jakarta converted version from system path -->
 		
 		<dependency>
 			<groupId>jakarta.xml.ws</groupId>
@@ -618,6 +638,14 @@
 					<includes>
 						<include>**/*TestGroup.java</include>
 					</includes>
+					<!-- Java 17 Module System Compatibility for TCK Tests -->
+					<argLine>
+						--add-opens=java.base/java.util=ALL-UNNAMED
+						--add-opens=java.base/java.lang=ALL-UNNAMED
+						--add-opens=java.base/java.io=ALL-UNNAMED
+						--add-opens=java.base/java.net=ALL-UNNAMED
+						--add-opens=java.base/java.time=ALL-UNNAMED
+					</argLine>
 				</configuration>
 			</plugin>
 
@@ -706,6 +734,61 @@
 					</execution>
 				</executions>
 			</plugin>
+
+			<!-- Exec Maven Plugin for TCK test execution -->
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>exec-maven-plugin</artifactId>
+				<version>3.5.1</version>
+				<configuration>
+					<includeProjectDependencies>true</includeProjectDependencies>
+					<includePluginDependencies>false</includePluginDependencies>
+					<classpathScope>test</classpathScope>
+				</configuration>
+				<executions>
+					<!-- Jetty TCK Test Runner (JUnit-based) -->
+					<execution>
+						<id>run-jetty-tck</id>
+						<goals>
+							<goal>java</goal>
+						</goals>
+						<configuration>
+							<mainClass>jp.aegif.nemaki.cmis.tck.JettyTckRunner</mainClass>
+						</configuration>
+					</execution>
+					
+					<!-- Jetty TCK Test Runner with Module System Fix -->
+					<execution>
+						<id>run-jetty-tck-fixed</id>
+						<goals>
+							<goal>exec</goal>
+						</goals>
+						<configuration>
+							<executable>java</executable>
+							<args>
+								<arg>--add-opens=java.base/java.util=ALL-UNNAMED</arg>
+								<arg>--add-opens=java.base/java.lang=ALL-UNNAMED</arg>
+								<arg>--add-opens=java.base/java.io=ALL-UNNAMED</arg>
+								<arg>--add-opens=java.base/java.net=ALL-UNNAMED</arg>
+								<arg>-cp</arg>
+								<arg>${exec.test.classpath}</arg>
+								<arg>jp.aegif.nemaki.cmis.tck.JettyTckRunner</arg>
+							</args>
+						</configuration>
+					</execution>
+					
+					<!-- Query Validation Runner -->
+					<execution>
+						<id>run-query-validation</id>
+						<goals>
+							<goal>java</goal>
+						</goals>
+						<configuration>
+							<mainClass>jp.aegif.nemaki.cmis.tck.QueryValidationRunner</mainClass>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
 		</plugins>
 	</build>
 
@@ -752,11 +835,12 @@
 				</resources>
 			</build>
 		</profile>
+		<!-- Jakarta profile is no longer needed - Jakarta dependencies are used by default -->
 		<profile>
-			<id>jakarta</id>
+			<id>jakarta-disabled</id>
 			<activation>
 				<property>
-					<name>jakarta</name>
+					<name>jakarta-disabled</name>
 				</property>
 			</activation>
 			<build>

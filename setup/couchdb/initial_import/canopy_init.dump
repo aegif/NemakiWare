@@ -34,7 +34,7 @@
         "groupsById": {
           "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group') emit(doc.groupId, doc) }"
         },
-        "latestChange": {
+        "changesByToken": {
           "map": "function(doc) { if (doc.type == 'change') emit(doc.token, doc) }"
         },
         "changesByObjectId": {

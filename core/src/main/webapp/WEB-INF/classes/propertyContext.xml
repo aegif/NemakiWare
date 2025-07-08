@@ -13,10 +13,15 @@
 				<value>classpath:nemakiware-capability.properties</value>
                 <value>classpath:nemakiware-basetype.properties</value>
                 <value>classpath:nemakiware-property.properties</value>
+				<!-- Docker profile override -->
+				<value>classpath*:nemakiware-docker.properties</value>
 				<value>classpath*:custom-nemakiware.properties</value>
 				<value>classpath*:app-server-core.properties</value>
 			</list>
 		</property>
+		<property name="ignoreResourceNotFound" value="true"/>
+		<property name="ignoreUnresolvablePlaceholders" value="false"/>
+		<property name="systemPropertiesModeName" value="SYSTEM_PROPERTIES_MODE_OVERRIDE"/>
 	</bean>
 	
 	<!-- Property Manager -->

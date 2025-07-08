@@ -85,6 +85,14 @@ public class TestGroupBase extends AbstractRunner {
 			for (CmisTest test : group.getTests()) {
 				for (CmisTestResult result : test.getResults()) {
 					if (result.getStatus().getLevel() >= CmisTestResultStatus.FAILURE.getLevel()) {
+						System.err.println("TCK Test Failure Details:");
+						System.err.println("  Test: " + test.getName());
+						System.err.println("  Status: " + result.getStatus());
+						System.err.println("  Message: " + result.getMessage());
+						if (result.getException() != null) {
+							System.err.println("  Exception: " + result.getException().getMessage());
+							result.getException().printStackTrace(System.err);
+						}
 						Assert.fail(result.getMessage() + "\n" + result.getStackTrace().toString());
 					}
 				}

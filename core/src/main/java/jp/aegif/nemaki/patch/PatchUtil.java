@@ -35,6 +35,11 @@ public class PatchUtil {
 	protected RepositoryInfoMap repositoryInfoMap;
 	protected RepositoryService repositoryService;
 
+	public PatchUtil() {
+		System.out.println("=== PATCH DEBUG: PatchUtil constructor called ===");
+		org.apache.commons.logging.LogFactory.getLog(PatchUtil.class).info("=== PATCH DEBUG: PatchUtil constructor called ===");
+	}
+
 	protected boolean isApplied(String repositoryId, String name){
 		// During Cloudant migration, assume all patches are not applied
 		// This allows patches to run during startup

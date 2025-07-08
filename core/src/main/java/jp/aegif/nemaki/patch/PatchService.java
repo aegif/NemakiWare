@@ -89,6 +89,13 @@ public class PatchService {
 
 	public void setPatchList(List<AbstractNemakiPatch> patchList) {
 		System.out.println("=== PATCH DEBUG: setPatchList called with " + (patchList != null ? "size=" + patchList.size() : "null"));
+		if (patchList != null) {
+			System.out.println("=== PATCH DEBUG: patchList contents:");
+			for (int i = 0; i < patchList.size(); i++) {
+				AbstractNemakiPatch patch = patchList.get(i);
+				System.out.println("=== PATCH DEBUG: [" + i + "] = " + (patch != null ? patch.getClass().getName() : "null"));
+			}
+		}
 		this.patchList = patchList;
 	}
 	

@@ -41,6 +41,8 @@ public abstract class AbstractNemakiPatch {
 	public abstract String getName();
 
 	public void setPatchUtil(PatchUtil patchUtil) {
+		System.out.println("=== PATCH DEBUG: setPatchUtil called with " + (patchUtil != null ? patchUtil.getClass().getName() : "null"));
+		log.info("=== PATCH DEBUG: setPatchUtil called with " + (patchUtil != null ? patchUtil.getClass().getName() : "null"));
 		this.patchUtil = patchUtil;
 	}
 

@@ -73,7 +73,7 @@ echo "Building TCK test package..."
 cd $NEMAKI_HOME
 
 echo "Compiling TCK test classes..."
-mvn test-compile -f core/pom.xml -Pdevelopment -q
+mvn test-compile -f core/pom.xml -Pjakarta
 
 if [ $? -ne 0 ]; then
     echo "ERROR: Failed to compile TCK test classes"
@@ -82,7 +82,8 @@ fi
 
 echo "Creating TCK test JAR for container execution..."
 # Package test classes and dependencies
-mvn dependency:copy-dependencies -DoutputDirectory=core/target/test-lib -DincludeScope=test -f core/pom.xml -q
+echo "Copying test dependencies..."
+mvn dependency:copy-dependencies -DoutputDirectory=core/target/test-lib -DincludeScope=test -f core/pom.xml -Pjakarta
 
 # Verify test-classes directory was populated by compilation
 if [ ! -d "core/target/test-classes" ] || [ -z "$(ls -A core/target/test-classes 2>/dev/null)" ]; then
@@ -105,6 +106,10 @@ docker cp core/target/tck-tests.jar $CORE_CONTAINER:/tmp/
 docker cp core/target/test-lib $CORE_CONTAINER:/tmp/
 docker cp core/src/test/resources/cmis-tck-parameters-docker.properties $CORE_CONTAINER:/tmp/
 docker cp core/src/test/resources/cmis-tck-filters-docker.properties $CORE_CONTAINER:/tmp/
+
+echo "Executing detailed query validation first..."
+docker exec $CORE_CONTAINER java -cp "/tmp/tck-tests.jar:/tmp/test-lib/*:/usr/local/tomcat/webapps/core/WEB-INF/lib/*" \
+    jp.aegif.nemaki.cmis.tck.QueryValidationRunner
 
 echo "Executing TCK tests inside container..."
 docker exec $CORE_CONTAINER java -cp "/tmp/tck-tests.jar:/tmp/test-lib/*:/usr/local/tomcat/webapps/core/WEB-INF/lib/*" \

@@ -50,7 +50,7 @@ public class CloudantClientPool {
 	private static final Log log = LogFactory.getLog(CloudantClientPool.class);
 
 	/**
-	 * Initialize the Cloudant client pool
+	 * Initialize the Cloudant client pool with retry logic
 	 */
 	public void initialize() {
 		synchronized (initLock) {
@@ -59,29 +59,126 @@ public class CloudantClientPool {
 			}
 
 			log.info("Initializing Cloudant client pool...");
+			
+			// Try to resolve hostname dynamically for different environments
+			String resolvedUrl = resolveUrl();
+			log.info("Resolved CouchDB URL: " + resolvedUrl);
 
-			try {
-				// Create Cloudant client with Basic Authentication
-				Cloudant cloudantClient = createCloudantClient();
+			int maxRetries = 3;
+			int retryDelay = 2000; // 2 seconds
+			
+			for (int attempt = 1; attempt <= maxRetries; attempt++) {
+				try {
+					// Create Cloudant client with Basic Authentication
+					Cloudant cloudantClient = createCloudantClient();
 
-				// Test connection
-				if (isConnected()) {
-					log.info("Successfully connected to CouchDB at: " + url);
+					// Test connection
+					if (isConnected()) {
+						log.info("Successfully connected to CouchDB at: " + resolvedUrl + " (attempt " + attempt + ")");
 
-					// Initialize repository connections
-					initializeRepositories(cloudantClient);
+						// Initialize repository connections
+						initializeRepositories(cloudantClient);
 
-					initialized = true;
-					log.info("Cloudant client pool initialization completed successfully");
-				} else {
-					log.error("Failed to connect to CouchDB at: " + url);
+						initialized = true;
+						log.info("Cloudant client pool initialization completed successfully");
+						return;
+					} else {
+						log.warn("Failed to connect to CouchDB at: " + resolvedUrl + " (attempt " + attempt + " of " + maxRetries + ")");
+						if (attempt < maxRetries) {
+							log.info("Retrying in " + (retryDelay/1000) + " seconds...");
+							Thread.sleep(retryDelay);
+						}
+					}
+
+				} catch (Exception e) {
+					log.error("Error initializing Cloudant client pool (attempt " + attempt + " of " + maxRetries + ")", e);
+					if (attempt < maxRetries) {
+						log.info("Retrying in " + (retryDelay/1000) + " seconds...");
+						try {
+							Thread.sleep(retryDelay);
+						} catch (InterruptedException ie) {
+							Thread.currentThread().interrupt();
+						}
+					} else {
+						// On final attempt, throw exception
+						throw new RuntimeException("Failed to initialize Cloudant client pool after " + maxRetries + " attempts", e);
+					}
 				}
-
-			} catch (Exception e) {
-				log.error("Error initializing Cloudant client pool", e);
-				throw new RuntimeException("Failed to initialize Cloudant client pool", e);
 			}
+			
+			// If all retries failed
+			throw new RuntimeException("Failed to connect to CouchDB at " + resolvedUrl + " after " + maxRetries + " attempts");
 		}
+	}
+
+	/**
+	 * Resolve CouchDB URL based on environment
+	 * Attempts to detect if running in Docker or local environment
+	 */
+	private String resolveUrl() {
+		// First, check if URL override is provided via system property
+		String overrideUrl = System.getProperty("db.couchdb.url.override");
+		if (overrideUrl != null && !overrideUrl.isEmpty()) {
+			log.info("Using CouchDB URL override from system property: " + overrideUrl);
+			this.url = overrideUrl;
+			return overrideUrl;
+		}
+		
+		// Check environment variable (useful for Docker)
+		String envUrl = System.getenv("COUCHDB_URL");
+		if (envUrl != null && !envUrl.isEmpty()) {
+			log.info("Using CouchDB URL from environment variable: " + envUrl);
+			this.url = envUrl;
+			return envUrl;
+		}
+		
+		// Try to detect if we're in a Docker environment
+		boolean inDocker = isRunningInDocker();
+		
+		if (inDocker && url.contains("localhost")) {
+			// Replace localhost with couchdb for Docker environment
+			String dockerUrl = url.replace("localhost", "couchdb");
+			log.info("Detected Docker environment, replacing localhost with couchdb: " + dockerUrl);
+			this.url = dockerUrl;
+			return dockerUrl;
+		}
+		
+		// Use configured URL as-is
+		return url;
+	}
+	
+	/**
+	 * Detect if running in Docker container
+	 */
+	private boolean isRunningInDocker() {
+		// Check for .dockerenv file
+		if (new java.io.File("/.dockerenv").exists()) {
+			return true;
+		}
+		
+		// Check for Docker in cgroup
+		try {
+			String cgroup = new String(java.nio.file.Files.readAllBytes(
+				java.nio.file.Paths.get("/proc/1/cgroup")));
+			if (cgroup.contains("docker") || cgroup.contains("kubepods")) {
+				return true;
+			}
+		} catch (Exception e) {
+			// Ignore - not in Docker or can't read cgroup
+		}
+		
+		// Check hostname pattern (Docker containers often have specific hostname patterns)
+		try {
+			String hostname = InetAddress.getLocalHost().getHostName();
+			// Docker container hostnames are often short hex strings
+			if (hostname.matches("[0-9a-f]{12}")) {
+				return true;
+			}
+		} catch (Exception e) {
+			// Ignore
+		}
+		
+		return false;
 	}
 
 	/**
@@ -89,6 +186,9 @@ public class CloudantClientPool {
 	 */
 	private Cloudant createCloudantClient() {
 		try {
+			// Use resolved URL
+			String resolvedUrl = resolveUrl();
+			
 			// Configure authentication if enabled
 			if (authEnabled && authUserName != null && authPassword != null) {
 				BasicAuthenticator authenticator = new BasicAuthenticator.Builder()
@@ -97,13 +197,13 @@ public class CloudantClientPool {
 					.build();
 				
 				Cloudant cloudant = new Cloudant("cloudant-service", authenticator);
-				cloudant.setServiceUrl(url);
+				cloudant.setServiceUrl(resolvedUrl);
 				log.info("Cloudant client configured with Basic Authentication for user: " + authUserName);
 				return cloudant;
 			} else {
 				// Use NoAuth authenticator for no authentication
 				Cloudant cloudant = new Cloudant("cloudant-service", null);
-				cloudant.setServiceUrl(url);
+				cloudant.setServiceUrl(resolvedUrl);
 				log.info("Cloudant client configured without authentication");
 				return cloudant;
 			}
@@ -189,7 +289,9 @@ public class CloudantClientPool {
 	 */
 	private boolean isConnected() {
 		try {
-			URL couchUrl = new URL(url);
+			// Use resolved URL for connection test
+			String resolvedUrl = resolveUrl();
+			URL couchUrl = new URL(resolvedUrl);
 			String host = couchUrl.getHost();
 			int port = couchUrl.getPort();
 			if (port == -1) {
@@ -198,15 +300,42 @@ public class CloudantClientPool {
 
 			log.debug("Testing connection to " + host + ":" + port);
 
-			InetAddress address = InetAddress.getByName(host);
-			Socket socket = new Socket();
-			socket.connect(new InetSocketAddress(address, port), connectionTimeout);
-			socket.close();
+			// First try direct socket connection
+			try {
+				InetAddress address = InetAddress.getByName(host);
+				Socket socket = new Socket();
+				socket.connect(new InetSocketAddress(address, port), connectionTimeout);
+				socket.close();
+				log.debug("Socket connection successful to " + host + ":" + port);
+				return true;
+			} catch (Exception socketEx) {
+				log.debug("Socket connection failed, trying HTTP connection: " + socketEx.getMessage());
+			}
 
-			return true;
+			// Fallback to HTTP connection test
+			HttpURLConnection connection = (HttpURLConnection) couchUrl.openConnection();
+			connection.setRequestMethod("GET");
+			connection.setConnectTimeout(connectionTimeout);
+			connection.setReadTimeout(socketTimeout);
+			
+			if (authEnabled && authUserName != null && authPassword != null) {
+				String auth = authUserName + ":" + authPassword;
+				String encodedAuth = java.util.Base64.getEncoder().encodeToString(auth.getBytes());
+				connection.setRequestProperty("Authorization", "Basic " + encodedAuth);
+			}
+			
+			int responseCode = connection.getResponseCode();
+			connection.disconnect();
+			
+			// CouchDB returns 200 for root URL or 401 if auth required
+			boolean connected = responseCode == 200 || responseCode == 401;
+			if (connected) {
+				log.debug("HTTP connection successful to " + resolvedUrl + " (response code: " + responseCode + ")");
+			}
+			return connected;
 
 		} catch (Exception e) {
-			log.error("Connection test failed", e);
+			log.error("Connection test failed for " + resolveUrl() + ": " + e.getMessage());
 			return false;
 		}
 	}

@@ -22,6 +22,9 @@
 package jp.aegif.nemaki.model.couch;
 
 import java.util.GregorianCalendar;
+import java.text.SimpleDateFormat;
+import java.text.ParseException;
+import java.util.TimeZone;
 
 import jp.aegif.nemaki.model.NodeBase;
 import jp.aegif.nemaki.util.constant.NodeType;
@@ -73,8 +76,13 @@ public class CouchNodeBase {
 				this.type = (String) properties.get("type");
 			}
 			
-			// 日付フィールドの処理
-			// TODO: GregorianCalendar変換ロジックを追加
+			// 日付フィールドの処理（CouchDBのISO 8601文字列をGregorianCalendarに変換）
+			if (properties.containsKey("created")) {
+				this.created = parseISODateTime((String) properties.get("created"));
+			}
+			if (properties.containsKey("modified")) {
+				this.modified = parseISODateTime((String) properties.get("modified"));
+			}
 			
 			if (properties.containsKey("creator")) {
 				this.creator = (String) properties.get("creator");
@@ -186,6 +194,31 @@ public class CouchNodeBase {
 	
 	public void setRevision(String revision) {
 		this.revision = revision;
+	}
+	
+	/**
+	 * CouchDBのISO 8601日時文字列をGregorianCalendarに変換します
+	 * 形式: "2013-01-01T00:00:00.000+0000"
+	 */
+	private GregorianCalendar parseISODateTime(String isoDateString) {
+		if (isoDateString == null || isoDateString.trim().isEmpty()) {
+			return null;
+		}
+		
+		try {
+			// ISO 8601形式のパターン
+			SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ");
+			sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
+			
+			GregorianCalendar calendar = new GregorianCalendar();
+			calendar.setTime(sdf.parse(isoDateString));
+			
+			return calendar;
+		} catch (ParseException e) {
+			// パースエラーの場合は現在時刻を返す
+			System.err.println("Failed to parse ISO date string: " + isoDateString + " - " + e.getMessage());
+			return new GregorianCalendar();
+		}
 	}
 	
 	public NodeBase convert(){

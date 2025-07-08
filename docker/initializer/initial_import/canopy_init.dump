@@ -40,6 +40,9 @@
         "changesByObjectId": {
           "map": "function(doc) { if (doc.type == 'change') emit(doc.objectId, doc) }"
         },
+        "changesByToken": {
+          "map": "function(doc) { if (doc.type == 'change') emit(doc.token, doc) }"
+        },
         "attachments": {
           "map": "function(doc) { if (doc.type == 'attachment')  emit(doc._id, doc) }"
         },
