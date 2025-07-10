@@ -2,48 +2,100 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Recent Major Changes (2025-07-07)
+## Recent Major Changes (2025-07-08)
 
-### Jakarta EE 10 Development Environment - COMPLETED ✅
+### Jakarta EE 10 Unified Environment and TCK Testing Status - IN PROGRESS ⚠️
 
-**MILESTONE ACHIEVEMENT**: Established a fully functional Jakarta EE 10 development environment using Maven Jetty plugin with streamlined debugging capabilities and simplified dependency management.
+**CURRENT STATUS**: Completed Jakarta EE 10 unified environment implementation with both Maven/Jetty and Docker/Tomcat environments using identical dependencies, but TCK testing initialization issues remain.
 
-**Key Achievements (2025-07-07):**
-- **✅ Complete Jakarta EE 10 Jetty Development Environment**: Maven + Jetty + CouchDB-only Docker setup
-- **✅ CMIS Full Functionality**: AtomPub service, folder operations, and authentication working (HTTP 200)
-- **✅ Jakarta Authentication Handler**: Custom implementation for Jakarta Servlet API compatibility
-- **✅ Java 17 Module System**: Complete compatibility with proper module opening configuration
-- **✅ Development Workflow**: Simplified debugging with automatic code reloading
+**Completed Achievements (2025-07-08):**
+- **✅ Unified Jakarta EE Environment**: Both Maven and Docker environments use identical Jakarta-converted OpenCMIS dependencies
+- **✅ CloudantClientPool Environment Detection**: Automatic URL resolution for localhost vs Docker networking
+- **✅ Spring 6 Jakarta EE Integration**: Complete javax.* to jakarta.* namespace migration
+- **✅ Patch System Execution**: Initial folder setup patches execute correctly in both environments
+- **✅ CouchDB Authentication**: Unified authentication across all environments
 
-**Technical Solutions Applied:**
-- **Custom Jakarta Authentication**: `NemakiAuthCallContextHandler` with manual Basic auth parsing
-- **Java 17 Module Opening**: `MAVEN_OPTS` configuration for reflection access
-- **MockSolrUtil Implementation**: Simplified development by disabling Solr functionality
-- **Jetty 11 Configuration**: Jakarta-converted OpenCMIS integration with webapp-first classloading
+**Technical Implementation:**
+- **OpenCMIS Jakarta Conversion**: All chemistry-opencmis-* dependencies replaced with Jakarta-converted versions
+- **Jakarta Servlet API 6.0.0**: Unified servlet container compatibility
+- **Environment Detection**: `CloudantClientPool` automatically detects Docker vs local environment
+- **Spring Configuration**: Patch system integrated with Spring context for reliable execution
 
-**Development Environment Specifications:**
-- **Runtime**: Jetty 11 with Jakarta EE 10 support
-- **Database**: CouchDB 3.x via Docker (localhost:5984)
-- **Server**: http://localhost:8081/core
-- **Authentication**: admin:admin via Basic auth
-- **Dependencies**: Jakarta-converted OpenCMIS + Spring 6
+**Environment Specifications:**
 
-**Startup Command:**
+#### Maven/Jetty Development Environment
 ```bash
+# Prerequisites
+export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+export PATH=$JAVA_HOME/bin:$PATH
 export MAVEN_OPTS="--add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED"
-mvn jetty:run -Pjakarta -Djetty.port=8081
+
+# Start CouchDB via Docker
+docker run -d --name couchdb -p 5984:5984 -e COUCHDB_USER=admin -e COUCHDB_PASSWORD=password couchdb:3.3.3
+
+# Initialize repositories
+docker exec couchdb curl -X PUT http://admin:password@localhost:5984/bedroom
+docker exec couchdb curl -X PUT http://admin:password@localhost:5984/canopy
+
+# Start Jetty server
+cd /Users/ishiiakinori/NemakiWare/core
+mvn jetty:run -Djetty.port=8081
+
+# Test endpoints
+curl -u admin:admin http://localhost:8081/core/atom/bedroom
 ```
 
-**Verified Endpoints:**
-- CMIS Service Document: `http://localhost:8081/core/atom/bedroom` ✅
-- Folder Operations: `http://localhost:8081/core/atom/bedroom/children?id=e02f784f8360a02cc14d1314c10038ff` ✅
-- Repository Info: Complete CMIS 1.1 compliance verified ✅
+#### Docker/Tomcat Production Environment
+```bash
+# Build and deploy
+cd /Users/ishiiakinori/NemakiWare
+mvn clean package -f core/pom.xml -Pdevelopment
+cp core/target/core.war docker/core/core.war
 
-**Documentation Created:**
-- **README.md**: Quick start section for Jakarta EE development
-- **JAKARTA-DEVELOPMENT.md**: Comprehensive setup and troubleshooting guide
+# Start environment
+cd docker
+docker compose -f docker-compose-simple.yml up -d
 
-This environment successfully eliminates packaging complexities while enabling full debugging capabilities, addressing all user requirements for Maven-based development with simplified Docker dependencies.
+# Test endpoints
+curl -u admin:admin http://localhost:8080/core/atom/bedroom
+```
+
+**Current Problems (2025-07-08):**
+
+#### 1. TCK Test Initial Data Visibility Issue
+- **Problem**: TCK tests fail to find patch-created folders (e.g., Sites folder)
+- **Error**: `CmisObjectNotFoundException: [object path:/Sites]The specified object is not found`
+- **Root Cause**: Patch system executes during Spring initialization, but TCK tests run in separate processes
+- **Status**: ⚠️ Under investigation
+
+#### 2. Jetty Startup Initialization Errors
+- **Problem**: Spring context initialization failures during Jetty startup
+- **Symptoms**: Long startup times, connection issues, patch execution timing problems
+- **Impact**: Affects development workflow and test reliability
+- **Status**: ⚠️ Requires investigation
+
+#### 3. Test Environment Isolation
+- **Problem**: TCK tests expect clean repository state but patches modify initial data
+- **Conflict**: Production needs initial folders vs. test needs clean state
+- **Options**: 
+  - Conditional patch execution based on environment
+  - Test-specific repository initialization
+  - Patch rollback mechanism
+- **Status**: ⚠️ Design decision needed
+
+**Files Modified:**
+- `core/pom.xml`: Unified Jakarta EE dependencies, removed duplicate dependencies
+- `core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/CloudantClientPool.java`: Environment detection
+- `core/src/main/webapp/WEB-INF/classes/patchContext.xml`: Patch system configuration
+- `core/src/main/java/jp/aegif/nemaki/patch/Patch_InitialFolderSetup.java`: Initial folder creation
+
+**Next Steps:**
+1. Investigate TCK test data visibility issues
+2. Resolve Jetty startup initialization problems
+3. Design test environment isolation strategy
+4. Implement conditional patch execution for test vs production
+
+**Branch**: `feature/jakarta-ee-10-stable` - Contains all unified environment changes
 
 ### CMIS Browser Binding Jakarta EE Compatibility - COMPLETED ✅
 
@@ -223,6 +275,19 @@ lib/jakarta-converted/chemistry-opencmis-test-tck-1.1.0-jakarta.jar
 lib/jakarta-converted/jaxws-rt-4.0.2-jakarta.jar
 ```
 
+**IMPORTANT: Maven systemPath Warnings (EXPECTED BEHAVIOR)**
+```
+WARNING: 'dependencies.dependency.systemPath' for org.apache.chemistry.opencmis:chemistry-opencmis-*:jar should not point at files within the project directory
+```
+
+**These warnings are INTENTIONAL and ACCEPTABLE** because:
+- Jakarta-converted JARs are custom-built binaries not available in public repositories
+- Project-internal JAR management ensures consistent Jakarta EE environment across all environments
+- Warnings do not affect functionality - all builds and deployments work correctly
+- This is the approved strategy for managing Jakarta EE converted dependencies
+
+**DO NOT ATTEMPT TO RESOLVE these systemPath warnings** - they are an expected part of the Jakarta EE conversion strategy.
+
 **3. Docker Configuration Files:**
 ```bash
 # Jakarta Dockerfile (MANDATORY)
@@ -395,20 +460,78 @@ NemakiWare uses multiple CouchDB databases with distinct purposes:
 
 ## Jakarta EE 10 Build System (CURRENT STABLE PROCESS)
 
-### CRITICAL: Use Only Jakarta Build Process
+### CRITICAL: Unified Jakarta EE Environment
 
-**ALWAYS use the Jakarta build process for all development work.**
+**UNIFIED APPROACH**: Both Maven/Jetty and Docker/Tomcat environments use identical Jakarta-converted dependencies for consistent behavior.
 
+#### Maven/Jetty Development Environment
+
+**Prerequisites Setup:**
 ```bash
-# 1. Build with Jakarta profile
-./docker/build-jakarta.sh
+# 1. Java 17 environment (REQUIRED)
+export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+export PATH=$JAVA_HOME/bin:$PATH
 
-# 2. Deploy to Docker environment  
-./docker/deploy-jakarta.sh
+# 2. Maven module opening for Jakarta EE compatibility
+export MAVEN_OPTS="--add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED"
 
-# 3. Verify CMIS endpoints
+# 3. Verify Java version
+java -version  # Must be 17.x.x
+```
+
+**CouchDB Setup:**
+```bash
+# Start CouchDB via Docker
+docker run -d --name couchdb -p 5984:5984 -e COUCHDB_USER=admin -e COUCHDB_PASSWORD=password couchdb:3.3.3
+
+# Wait for startup
+sleep 10
+
+# Initialize repositories (required for testing)
+docker exec couchdb curl -X PUT http://admin:password@localhost:5984/bedroom
+docker exec couchdb curl -X PUT http://admin:password@localhost:5984/canopy
+
+# Verify repositories
+curl -u admin:password http://localhost:5984/_all_dbs
+```
+
+**Development Server:**
+```bash
+# Build and start Jetty server
+cd /Users/ishiiakinori/NemakiWare/core
+mvn clean compile
+mvn jetty:run -Djetty.port=8081
+
+# Test endpoints
+curl -u admin:admin http://localhost:8081/core/atom/bedroom
+# Expected: HTTP 200 with CMIS service document
+```
+
+#### Docker/Tomcat Production Environment
+
+**Build Process:**
+```bash
+# 1. Build with unified dependencies
+cd /Users/ishiiakinori/NemakiWare
+mvn clean package -f core/pom.xml -Pdevelopment
+
+# 2. Deploy to Docker context
+cp core/target/core.war docker/core/core.war
+
+# 3. Start environment
+cd docker
+docker compose -f docker-compose-simple.yml up -d
+
+# 4. Verify CMIS endpoints
 curl -u admin:admin http://localhost:8080/core/atom/bedroom
 # Expected: HTTP 200
+```
+
+**Legacy Jakarta Build Scripts (DEPRECATED):**
+```bash
+# These scripts are no longer needed due to unified environment
+# ./docker/build-jakarta.sh  # DEPRECATED
+# ./docker/deploy-jakarta.sh  # DEPRECATED
 ```
 
 ### Jakarta Build Process Components
@@ -1554,10 +1677,16 @@ docker exec docker-ui3-war-1 ls -la /usr/local/tomcat/webapps/
 
 The CouchDB design documents (`_design/_repo`) contain critical view definitions that must remain compatible with existing user environments. Any changes to view names or structures would break compatibility with production deployments.
 
-**Standard Design Document Views (DO NOT CHANGE):**
+**Standard Design Document Location:**
+- **Reference File**: `/Users/ishiiakinori/NemakiWare/STANDARD_DESIGN_DOCUMENT.json`
+- **DO NOT MODIFY THIS FILE** - It is the authoritative reference for all CouchDB views
+
+**Key Views in Standard Design Document:**
 - `changesByToken` - Maps change documents by token (NOT `latestChange`)
 - `changesByObjectId` - Maps change documents by object ID
-- All other views as specified in the standard design document
+- `childByName` - Maps children by composite key `{parentId, name}` (OBJECT format, not array)
+- `children` - Maps children by parentId
+- All other views as specified in STANDARD_DESIGN_DOCUMENT.json
 
 **Common Mistake to Avoid:**
 - **WRONG**: Using `latestChange` as view name
@@ -2350,85 +2479,104 @@ curl -s -u admin:admin http://localhost:8080/core/atom/canopy | head -5
 
 ## TCK Testing Documentation
 
-### Recent TCK Fixes (2025-06-21)
+### Current TCK Testing Status (2025-07-08)
 
-#### Critical Fix: PermissionServiceImpl Query Issue
-**Problem**: CMIS queries were failing during TCK tests due to `PermissionServiceImpl.getPermissionMap()` returning null.
+#### Test Environment Issues
 
-**Root Cause**: When no permissions were found, the method returned null instead of an empty map, causing NullPointerException in query processing.
+**CRITICAL PROBLEM**: TCK tests are failing due to initial data visibility issues between Spring initialization and test execution.
 
-**Solution Applied**:
-```java
-// File: core/src/main/java/jp/aegif/nemaki/businesslogic/impl/PermissionServiceImpl.java
-// Method: getPermissionMap(CallContext callContext, String repositoryId, String key)
-
-// OLD (caused failures):
-if (permissionMap == null || permissionMap.isEmpty()) {
-    return null;  // This caused NPE in query processing
-}
-
-// NEW (fixed):
-if (permissionMap == null || permissionMap.isEmpty()) {
-    return new HashMap<String, Boolean>();  // Return empty map instead
-}
+**Failed Test Example:**
+```
+Test set: jp.aegif.nemaki.cmis.tck.tests.BasicsTestGroup
+Tests run: 3, Failures: 1, Errors: 0, Skipped: 0
+rootFolderTest(jp.aegif.nemaki.cmis.tck.tests.BasicsTestGroup) <<< FAILURE!
+java.lang.AssertionError: 
+Exception: org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException: [object path:/Sites]The specified object is not found
 ```
 
-**Impact**: This fix resolved all CMIS query test failures. TCK Query Test Group now passes with 100% success rate.
+**Root Cause Analysis:**
+1. **Patch System Timing**: `Patch_InitialFolderSetup` executes during Spring context initialization
+2. **Test Process Isolation**: TCK tests run in separate JVM processes with clean CMIS session
+3. **Data Visibility**: Patches create folders but they're not visible to separate test processes
+4. **Path Resolution**: Test expects `/Sites` (absolute path) but patch creates folder in root
 
-### TCK Test Execution Guide
+**Environment Configurations:**
 
-For detailed instructions on running TCK tests, see: **[TCK_TEST_GUIDE.md](TCK_TEST_GUIDE.md)**
-
-Key points:
-- Use Docker-based test scripts for consistency
-- Two main approaches: `test-simple.sh` (quick) and `test-all.sh` (comprehensive)
-- All CMIS query operations now verified working
-- TCK compliance level: High (95%+)
-
-### Simplified TCK Testing Workflow
-
+#### Maven/Jetty TCK Testing
 ```bash
-# 1. Quick TCK test (recommended for development)
-cd docker
-./test-simple.sh
+# Prerequisites
+export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+export PATH=$JAVA_HOME/bin:$PATH
+export MAVEN_OPTS="--add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED"
 
-# 2. Run focused TCK tests
-./execute-tck-tests.sh
+# Start CouchDB
+docker run -d --name couchdb -p 5984:5984 -e COUCHDB_USER=admin -e COUCHDB_PASSWORD=password couchdb:3.3.3
+docker exec couchdb curl -X PUT http://admin:password@localhost:5984/bedroom
+docker exec couchdb curl -X PUT http://admin:password@localhost:5984/canopy
 
-# 3. Verify query functionality
-curl -u admin:admin -X POST \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "q=SELECT * FROM cmis:folder" \
-  http://localhost:8080/core/atom/bedroom/query
+# Start Jetty server for testing
+cd /Users/ishiiakinori/NemakiWare/core
+mvn jetty:run -Djetty.port=8081
+
+# Run TCK tests (in separate terminal)
+cd /Users/ishiiakinori/NemakiWare/core
+mvn test -Dtest=jp.aegif.nemaki.cmis.tck.tests.BasicsTestGroup
 ```
 
-### TCK Infrastructure Cleanup
+**TCK Configuration:**
+- **Test URL**: `http://localhost:8081/core/atom/bedroom`
+- **Credentials**: admin:admin
+- **Repository**: bedroom
+- **Configuration File**: `core/src/test/resources/cmis-tck-parameters.properties`
 
-Recent cleanup removed 13+ redundant test scripts. Essential TCK functionality is preserved in:
-- `/docker/test-simple.sh` - Quick testing
-- `/docker/test-all.sh` - Comprehensive testing
-- `/docker/execute-tck-tests.sh` - TCK execution
-- `/core/src/test/java/jp/aegif/nemaki/cmis/tck/` - Core test classes
+#### Docker/Tomcat TCK Testing
+```bash
+# Build and deploy
+cd /Users/ishiiakinori/NemakiWare
+mvn clean package -f core/pom.xml -Pdevelopment
+cp core/target/core.war docker/core/core.war
 
-### Verified TCK Test Groups
+# Start environment
+cd docker
+docker compose -f docker-compose-simple.yml up -d
 
-All standard TCK test groups are now functional:
-- ✅ **Basics Test Group** - Repository info, security
-- ✅ **Control Test Group** - ACL and permissions
-- ✅ **CRUD Test Group** - Create, Read, Update, Delete
-- ✅ **Query Test Group** - CMIS SQL queries (fixed)
-- ✅ **Filing Test Group** - Folder operations
-- ✅ **Types Test Group** - Type system
-- ✅ **Versioning Test Group** - Document versioning
+# Run TCK tests against Docker environment
+# (Configuration needs update for port 8080)
+```
 
-### Known TCK Limitations
+**Current Problems:**
 
-1. **Timeout Issues**: Full TCK suite may timeout. Use focused tests for specific groups.
-2. **Asynchronous Tests**: Some async tests cause delays. These are excluded in quick tests.
-3. **Solr Integration**: Search tests limited when Solr has initialization issues.
+1. **Test Data Isolation**: TCK tests expect clean repository state
+2. **Patch Timing**: Patches execute during server startup, not test setup
+3. **Path Resolution**: Tests use absolute paths that may not match patch-created structure
+4. **Environment Synchronization**: Different initialization between Maven and Docker environments
 
-### References
+**Possible Solutions:**
 
-- [TCK Test Guide](TCK_TEST_GUIDE.md) - Complete testing instructions
-- [CMIS 1.1 Specification](https://docs.oasis-open.org/cmis/CMIS/v1.1/CMIS-v1.1.html)
-- [Apache Chemistry TCK](https://chemistry.apache.org/java/developing/dev-tck.html)
+1. **Conditional Patch Execution**: 
+   - Disable patches during test runs
+   - Use system property to control patch activation
+   
+2. **Test-Specific Setup**:
+   - Create test setup methods that prepare expected folder structure
+   - Use CMIS API to create test data instead of patches
+
+3. **Environment Detection**:
+   - Detect test environment and adjust patch behavior
+   - Use different initialization strategies for test vs production
+
+**Investigation Status**: ⚠️ Requires architectural decision on test data management
+
+### Legacy TCK Information
+
+**Note**: The following information is from previous successful TCK runs before Jakarta EE migration:
+
+- Previous TCK compliance level: High (95%+)
+- All standard test groups were functional
+- Query system was fixed and working
+- Docker-based testing infrastructure was established
+
+**Files:**
+- `/core/src/test/java/jp/aegif/nemaki/cmis/tck/` - TCK test classes
+- `/core/src/test/resources/cmis-tck-parameters.properties` - Test configuration
+- `/core/src/test/resources/cmis-tck-filters.properties` - Test filters
