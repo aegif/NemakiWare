@@ -1,4 +1,3 @@
-import axios from 'axios';
 import { AuthService } from './auth';
 import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, User, Group, ACL } from '../types/cmis';
 
@@ -40,7 +39,7 @@ export class CMISService {
 
   async getRepositories(): Promise<string[]> {
     try {
-      return new Promise((resolve, reject) => {
+      return new Promise((resolve) => {
         const xhr = new XMLHttpRequest();
         xhr.open('GET', '/core/rest/repositories', true);
         xhr.setRequestHeader('Accept', 'application/json');
@@ -170,24 +169,41 @@ export class CMISService {
   }
 
   async createDocument(repositoryId: string, parentId: string, file: File, properties: Record<string, any>): Promise<CMISObject> {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('parentId', parentId);
-    Object.entries(properties).forEach(([key, value]) => {
-      formData.append(key, value);
-    });
-
-    const response = await axios.post(
-      `${this.baseUrl}/${repositoryId}/node/create`,
-      formData,
-      { 
-        headers: { 
-          ...this.getAuthHeaders(),
-          'Content-Type': 'multipart/form-data'
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}/node/create`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('parentId', parentId);
+      Object.entries(properties).forEach(([key, value]) => {
+        formData.append(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response.object);
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
         }
-      }
-    );
-    return response.data.object;
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send(formData);
+    });
   }
 
   async createFolder(repositoryId: string, parentId: string, name: string, properties: Record<string, any> = {}): Promise<CMISObject> {
@@ -223,99 +239,285 @@ export class CMISService {
   }
 
   async updateProperties(repositoryId: string, objectId: string, properties: Record<string, any>): Promise<CMISObject> {
-    const response = await axios.post(
-      `${this.baseUrl}/${repositoryId}/node/${objectId}/update`,
-      properties,
-      { headers: this.getAuthHeaders() }
-    );
-    return response.data.object;
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}/node/${objectId}/update`, true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response.object);
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send(JSON.stringify(properties));
+    });
   }
 
   async deleteObject(repositoryId: string, objectId: string): Promise<void> {
-    await axios.delete(
-      `${this.baseUrl}/${repositoryId}/node/${objectId}`,
-      { headers: this.getAuthHeaders() }
-    );
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('DELETE', `${this.baseUrl}/${repositoryId}/node/${objectId}`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200 || xhr.status === 204) {
+            resolve();
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send();
+    });
   }
 
   async search(repositoryId: string, query: string): Promise<SearchResult> {
-    const response = await axios.get(
-      `${this.baseUrl}/${repositoryId}/search`,
-      { 
-        params: { query },
-        headers: this.getAuthHeaders()
-      }
-    );
-    return {
-      objects: response.data.results || [],
-      hasMoreItems: response.data.hasMoreItems || false,
-      numItems: response.data.numItems || 0
-    };
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', `${this.baseUrl}/${repositoryId}/search?query=${encodeURIComponent(query)}`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve({
+                objects: response.results || [],
+                hasMoreItems: response.hasMoreItems || false,
+                numItems: response.numItems || 0
+              });
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send();
+    });
   }
 
   async getVersionHistory(repositoryId: string, objectId: string): Promise<VersionHistory> {
-    const response = await axios.get(
-      `${this.baseUrl}/${repositoryId}/node/${objectId}/versions`,
-      { headers: this.getAuthHeaders() }
-    );
-    return response.data;
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', `${this.baseUrl}/${repositoryId}/node/${objectId}/versions`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response);
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send();
+    });
   }
 
   async checkOut(repositoryId: string, objectId: string): Promise<CMISObject> {
-    const response = await axios.post(
-      `${this.baseUrl}/${repositoryId}/node/${objectId}/checkout`,
-      {},
-      { headers: this.getAuthHeaders() }
-    );
-    return response.data.object;
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}/node/${objectId}/checkout`, true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response.object);
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send(JSON.stringify({}));
+    });
   }
 
   async checkIn(repositoryId: string, objectId: string, file?: File, properties?: Record<string, any>): Promise<CMISObject> {
-    const formData = new FormData();
-    if (file) {
-      formData.append('file', file);
-    }
-    if (properties) {
-      Object.entries(properties).forEach(([key, value]) => {
-        formData.append(key, value);
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}/node/${objectId}/checkin`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
       });
-    }
-
-    const response = await axios.post(
-      `${this.baseUrl}/${repositoryId}/node/${objectId}/checkin`,
-      formData,
-      { 
-        headers: { 
-          ...this.getAuthHeaders(),
-          'Content-Type': 'multipart/form-data'
-        }
+      
+      const formData = new FormData();
+      if (file) {
+        formData.append('file', file);
       }
-    );
-    return response.data.object;
+      if (properties) {
+        Object.entries(properties).forEach(([key, value]) => {
+          formData.append(key, value);
+        });
+      }
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response.object);
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send(formData);
+    });
   }
 
   async cancelCheckOut(repositoryId: string, objectId: string): Promise<void> {
-    await axios.post(
-      `${this.baseUrl}/${repositoryId}/node/${objectId}/cancelcheckout`,
-      {},
-      { headers: this.getAuthHeaders() }
-    );
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}/node/${objectId}/cancelcheckout`, true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200 || xhr.status === 204) {
+            resolve();
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send(JSON.stringify({}));
+    });
   }
 
   async getACL(repositoryId: string, objectId: string): Promise<ACL> {
-    const response = await axios.get(
-      `${this.baseUrl}/${repositoryId}/node/${objectId}/acl`,
-      { headers: this.getAuthHeaders() }
-    );
-    return response.data.acl;
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', `${this.baseUrl}/${repositoryId}/node/${objectId}/acl`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response.acl);
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send();
+    });
   }
 
   async setACL(repositoryId: string, objectId: string, acl: ACL): Promise<void> {
-    await axios.post(
-      `${this.baseUrl}/${repositoryId}/node/${objectId}/acl`,
-      acl,
-      { headers: this.getAuthHeaders() }
-    );
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}/node/${objectId}/acl`, true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200 || xhr.status === 204) {
+            resolve();
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send(JSON.stringify(acl));
+    });
   }
 
   async getUsers(repositoryId: string): Promise<User[]> {
@@ -350,29 +552,94 @@ export class CMISService {
   }
 
   async createUser(repositoryId: string, user: Partial<User>): Promise<User> {
-    const response = await axios.post(
-      `${this.baseUrl}/${repositoryId}/user/create/${user.id}`,
-      user,
-      { headers: this.getAuthHeaders() }
-    );
-    return response.data.user;
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}/user/create/${user.id}`, true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response.user);
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send(JSON.stringify(user));
+    });
   }
 
   async updateUser(repositoryId: string, userId: string, user: Partial<User>): Promise<User> {
-    const response = await axios.post(
-      `${this.baseUrl}/${repositoryId}/user/update/${userId}`,
-      user,
-      { headers: this.getAuthHeaders() }
-    );
-    return response.data.user;
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}/user/update/${userId}`, true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response.user);
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send(JSON.stringify(user));
+    });
   }
 
   async deleteUser(repositoryId: string, userId: string): Promise<void> {
-    await axios.post(
-      `${this.baseUrl}/${repositoryId}/user/delete/${userId}`,
-      {},
-      { headers: this.getAuthHeaders() }
-    );
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}/user/delete/${userId}`, true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200 || xhr.status === 204) {
+            resolve();
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send(JSON.stringify({}));
+    });
   }
 
   async getGroups(repositoryId: string): Promise<Group[]> {
@@ -407,29 +674,94 @@ export class CMISService {
   }
 
   async createGroup(repositoryId: string, group: Partial<Group>): Promise<Group> {
-    const response = await axios.post(
-      `${this.baseUrl}/${repositoryId}/group/create/${group.id}`,
-      group,
-      { headers: this.getAuthHeaders() }
-    );
-    return response.data.group;
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}/group/create/${group.id}`, true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response.group);
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send(JSON.stringify(group));
+    });
   }
 
   async updateGroup(repositoryId: string, groupId: string, group: Partial<Group>): Promise<Group> {
-    const response = await axios.post(
-      `${this.baseUrl}/${repositoryId}/group/update/${groupId}`,
-      group,
-      { headers: this.getAuthHeaders() }
-    );
-    return response.data.group;
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}/group/update/${groupId}`, true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response.group);
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send(JSON.stringify(group));
+    });
   }
 
   async deleteGroup(repositoryId: string, groupId: string): Promise<void> {
-    await axios.post(
-      `${this.baseUrl}/${repositoryId}/group/delete/${groupId}`,
-      {},
-      { headers: this.getAuthHeaders() }
-    );
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}/group/delete/${groupId}`, true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200 || xhr.status === 204) {
+            resolve();
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send(JSON.stringify({}));
+    });
   }
 
   async getTypes(repositoryId: string): Promise<TypeDefinition[]> {
@@ -464,98 +796,350 @@ export class CMISService {
   }
 
   async getType(repositoryId: string, typeId: string): Promise<TypeDefinition> {
-    const response = await axios.get(
-      `${this.baseUrl}/${repositoryId}/type/${typeId}`,
-      { headers: this.getAuthHeaders() }
-    );
-    return response.data.type;
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', `${this.baseUrl}/${repositoryId}/type/${typeId}`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response.type);
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send();
+    });
   }
 
   async createType(repositoryId: string, type: Partial<TypeDefinition>): Promise<TypeDefinition> {
-    const response = await axios.post(
-      `${this.baseUrl}/${repositoryId}/type/create`,
-      type,
-      { headers: this.getAuthHeaders() }
-    );
-    return response.data.type;
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}/type/create`, true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response.type);
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send(JSON.stringify(type));
+    });
   }
 
   async updateType(repositoryId: string, typeId: string, type: Partial<TypeDefinition>): Promise<TypeDefinition> {
-    const response = await axios.post(
-      `${this.baseUrl}/${repositoryId}/type/${typeId}/update`,
-      type,
-      { headers: this.getAuthHeaders() }
-    );
-    return response.data.type;
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}/type/${typeId}/update`, true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response.type);
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send(JSON.stringify(type));
+    });
   }
 
   async deleteType(repositoryId: string, typeId: string): Promise<void> {
-    await axios.delete(
-      `${this.baseUrl}/${repositoryId}/type/${typeId}`,
-      { headers: this.getAuthHeaders() }
-    );
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('DELETE', `${this.baseUrl}/${repositoryId}/type/${typeId}`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200 || xhr.status === 204) {
+            resolve();
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send();
+    });
   }
 
   async getRelationships(repositoryId: string, objectId: string): Promise<Relationship[]> {
-    const response = await axios.get(
-      `${this.baseUrl}/${repositoryId}/node/${objectId}/relationships`,
-      { headers: this.getAuthHeaders() }
-    );
-    return response.data.relationships || [];
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', `${this.baseUrl}/${repositoryId}/node/${objectId}/relationships`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response.relationships || []);
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send();
+    });
   }
 
   async createRelationship(repositoryId: string, relationship: Partial<Relationship>): Promise<Relationship> {
-    const response = await axios.post(
-      `${this.baseUrl}/${repositoryId}/relationship/create`,
-      relationship,
-      { headers: this.getAuthHeaders() }
-    );
-    return response.data.relationship;
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}/relationship/create`, true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response.relationship);
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send(JSON.stringify(relationship));
+    });
   }
 
   async deleteRelationship(repositoryId: string, relationshipId: string): Promise<void> {
-    await axios.delete(
-      `${this.baseUrl}/${repositoryId}/relationship/${relationshipId}`,
-      { headers: this.getAuthHeaders() }
-    );
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('DELETE', `${this.baseUrl}/${repositoryId}/relationship/${relationshipId}`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200 || xhr.status === 204) {
+            resolve();
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send();
+    });
   }
 
   async initSearchEngine(repositoryId: string): Promise<void> {
-    await axios.get(
-      `${this.baseUrl}/${repositoryId}/search-engine/init`,
-      { headers: this.getAuthHeaders() }
-    );
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', `${this.baseUrl}/${repositoryId}/search-engine/init`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200 || xhr.status === 204) {
+            resolve();
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send();
+    });
   }
 
   async reindexSearchEngine(repositoryId: string): Promise<void> {
-    await axios.get(
-      `${this.baseUrl}/${repositoryId}/search-engine/reindex`,
-      { headers: this.getAuthHeaders() }
-    );
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', `${this.baseUrl}/${repositoryId}/search-engine/reindex`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200 || xhr.status === 204) {
+            resolve();
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send();
+    });
   }
 
   async getArchives(repositoryId: string): Promise<CMISObject[]> {
-    const response = await axios.get(
-      `${this.baseUrl}/${repositoryId}/archive/list`,
-      { headers: this.getAuthHeaders() }
-    );
-    return response.data.archives || [];
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', `${this.baseUrl}/${repositoryId}/archive/list`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response.archives || []);
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send();
+    });
   }
 
   async archiveObject(repositoryId: string, objectId: string): Promise<void> {
-    await axios.post(
-      `${this.baseUrl}/${repositoryId}/archive/${objectId}`,
-      {},
-      { headers: this.getAuthHeaders() }
-    );
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}/archive/${objectId}`, true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200 || xhr.status === 204) {
+            resolve();
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send(JSON.stringify({}));
+    });
   }
 
   async restoreObject(repositoryId: string, objectId: string): Promise<void> {
-    await axios.post(
-      `${this.baseUrl}/${repositoryId}/archive/${objectId}/restore`,
-      {},
-      { headers: this.getAuthHeaders() }
-    );
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${this.baseUrl}/${repositoryId}/archive/${objectId}/restore`, true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200 || xhr.status === 204) {
+            resolve();
+          } else {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      };
+      
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send(JSON.stringify({}));
+    });
   }
 
   getDownloadUrl(repositoryId: string, objectId: string): string {
