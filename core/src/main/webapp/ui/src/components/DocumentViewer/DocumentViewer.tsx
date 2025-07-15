@@ -27,6 +27,8 @@ import { CMISService } from '../../services/cmis';
 import { CMISObject, VersionHistory, TypeDefinition, Relationship } from '../../types/cmis';
 import { PropertyEditor } from '../PropertyEditor/PropertyEditor';
 import { ActionButtons } from '../ActionButtons/ActionButtons';
+import { PreviewComponent } from '../PreviewComponent/PreviewComponent';
+import { canPreview } from '../../utils/previewUtils';
 
 interface DocumentViewerProps {
   repositoryId: string;
@@ -228,6 +230,16 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
         />
       ),
     },
+    ...(canPreview(object) ? [{
+      key: 'preview',
+      label: 'プレビュー',
+      children: (
+        <PreviewComponent
+          repositoryId={repositoryId}
+          object={object}
+        />
+      ),
+    }] : []),
     {
       key: 'versions',
       label: 'バージョン履歴',
