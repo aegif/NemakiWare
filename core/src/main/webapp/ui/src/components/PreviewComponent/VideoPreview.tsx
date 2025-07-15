@@ -10,12 +10,14 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ url, fileName }) => 
   return (
     <div style={{ maxWidth: '100%', textAlign: 'center' }}>
       <h4 style={{ marginBottom: '16px' }}>{fileName}</h4>
-      <ReactPlayer 
-        url={url} 
-        controls={true}
-        width="100%" 
-        height="400px"
-      />
+      <div style={{ width: '100%', height: '400px' }}>
+        <ReactPlayer 
+          url={url} 
+          controls={true}
+          width="100%" 
+          height="100%"
+        />
+      </div>
     </div>
   );
 };
