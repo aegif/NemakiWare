@@ -13,9 +13,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ url, fileName }) => 
       <div style={{ width: '100%', height: '400px' }}>
         <ReactPlayer 
           url={url} 
-          controls={true}
-          width={400}
-          height={300}
+          controls
         />
       </div>
     </div>
