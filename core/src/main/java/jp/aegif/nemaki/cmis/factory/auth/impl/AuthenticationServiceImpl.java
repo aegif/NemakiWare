@@ -193,8 +193,8 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		UserItem u = contentService.getUserItemById(repositoryId, userId);
 
 		// succeeded
-		if (u != null && StringUtils.isNotBlank(u.getPassowrd())) {
-			if (AuthenticationUtil.passwordMatches(password, u.getPassowrd())) {
+		if (u != null && StringUtils.isNotBlank(u.getPassword())) {
+			if (AuthenticationUtil.passwordMatches(password, u.getPassword())) {
 				log.debug(String.format( "[%s][%s]Get authenticated user successfully ! , Is admin?  : %s", repositoryId, userId , u.isAdmin()));
 				return u;
 			}

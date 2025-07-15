@@ -268,7 +268,7 @@ public class Patch_20160815 extends AbstractNemakiPatch{
 		userItem.setAcl(acl);
 
 		// password
-		userItem.setPassowrd(user.getPasswordHash());
+		userItem.setPassword(user.getPasswordHash());
 		// userId (INTENTIONALLY DUPLICATE of nemaki:userId for CouchDB view)
 		userItem.setUserId(user.getUserId());
 		// admin flag

@@ -28,7 +28,7 @@ public class CouchUserItem extends CouchItem{
 	private static final long serialVersionUID = 3294975060332894322L;
 
 	private String userId;
-	private String password;
+	private String passwordHash;
 	private Boolean admin = false;
 	
 	public CouchUserItem(){
@@ -38,7 +38,7 @@ public class CouchUserItem extends CouchItem{
 	public CouchUserItem(UserItem userItem){
 		super(userItem);
 		setUserId(userItem.getUserId());
-		setPassword(userItem.getPassowrd());
+		setPasswordHash(userItem.getPassword());
 		setAdmin(userItem.isAdmin());
 	}
 
@@ -50,12 +50,12 @@ public class CouchUserItem extends CouchItem{
 		this.userId = userId;
 	}
 
-	public String getPassword() {
-		return password;
+	public String getPasswordHash() {
+		return passwordHash;
 	}
 
-	public void setPassword(String password) {
-		this.password = password;
+	public void setPasswordHash(String passwordHash) {
+		this.passwordHash = passwordHash;
 	}
 	
 	public Boolean isAdmin() {
@@ -69,7 +69,7 @@ public class CouchUserItem extends CouchItem{
 	public UserItem convert(){
 		UserItem userItem = new UserItem(super.convert());
 		userItem.setUserId(getUserId());
-		userItem.setPassowrd(getPassword());
+		userItem.setPassword(getPasswordHash());
 		userItem.setAdmin(isAdmin());
 		
 		return userItem;

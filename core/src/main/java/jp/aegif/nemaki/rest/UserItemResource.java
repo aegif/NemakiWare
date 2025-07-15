@@ -263,9 +263,9 @@ public class UserItemResource extends ResourceBase {
 		//TODO checkAuthorityForUser
 
 		//password match
-		if(AuthenticationUtil.passwordMatches(oldPassword, userItem.getPassowrd())){
+		if(AuthenticationUtil.passwordMatches(oldPassword, userItem.getPassword())){
 			String hash = BCrypt.hashpw(newPassword, BCrypt.gensalt());
-			userItem.setPassowrd(hash);
+			userItem.setPassword(hash);
 			try{
 				contentService.update(new SystemCallContext(repositoryId), repositoryId, userItem);
 			}catch(Exception e){
@@ -410,7 +410,7 @@ public class UserItemResource extends ResourceBase {
 				if (status) {
 					// Edit the user info
 					String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
-					user.setPassowrd(passwordHash);
+					user.setPassword(passwordHash);
 					setModifiedSignature(httpRequest, user);
 
 					try {
@@ -585,7 +585,7 @@ public class UserItemResource extends ResourceBase {
 		boolean isAdmin = (user.isAdmin() == null) ? false : user.isAdmin();
 		if (isAdmin) {
 			// password check
-			boolean match = BCrypt.checkpw(password, user.getPassowrd());
+			boolean match = BCrypt.checkpw(password, user.getPassword());
 			if (match)
 				return true;
 		}

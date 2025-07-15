@@ -34,7 +34,8 @@
 		<listener-class>jp.aegif.nemaki.util.EHCacheShutdownListener</listener-class>
     </listener>
 
-	<servlet>
+	<!-- JAX-WS Web Services servlet disabled - not compatible with Java 11+ -->
+	<!-- <servlet>
 		<servlet-name>cmisws</servlet-name>
 		<servlet-class>org.apache.chemistry.opencmis.server.impl.webservices.CmisWebServicesServlet</servlet-class>
 		<init-param>
@@ -42,7 +43,7 @@
             <param-value>1.1</param-value>
         </init-param>
 		<load-on-startup>1</load-on-startup>
-	</servlet>
+	</servlet> -->
 	<servlet>
 		<servlet-name>cmisatom</servlet-name>
 		<servlet-class>org.apache.chemistry.opencmis.server.impl.atompub.CmisAtomPubServlet</servlet-class>
@@ -96,10 +97,11 @@
         <load-on-startup>1</load-on-startup>
     </servlet> -->
 
-	<servlet-mapping>
+	<!-- JAX-WS Web Services servlet mapping disabled -->
+	<!-- <servlet-mapping>
 		<servlet-name>cmisws</servlet-name>
 		<url-pattern>/services/*</url-pattern>
-	</servlet-mapping>
+	</servlet-mapping> -->
 	<servlet-mapping>
 		<servlet-name>cmisatom</servlet-name>
 		<url-pattern>/atom/*</url-pattern>
