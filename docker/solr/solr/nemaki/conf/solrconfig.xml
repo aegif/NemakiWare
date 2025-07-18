@@ -986,11 +986,14 @@
     <lst name="defaults">
       <str name="lowernames">true</str>
       <str name="uprefix">ignored_</str>
-
       <!-- capture link hrefs but ignore div attributes -->
       <str name="captureAttr">true</str>
       <str name="fmap.a">links</str>
       <str name="fmap.div">ignored_</str>
+      <!-- Map Tika's content to Solr's content field for full-text search -->
+      <str name="fmap.content">content</str>
+      <!-- Use custom Tika config to avoid external parsers -->
+      <str name="tika.config">tika-config.xml</str>
     </lst>
   </requestHandler>
 
@@ -1489,7 +1492,7 @@
   </requestHandler>
 
   <!-- NemakiWare Index Handler for automatic indexing -->
-  <requestHandler name="/admin/nemaki" class="jp.aegif.nemaki.NemakiIndexHandler" />
+  <requestHandler name="/nemaki" class="jp.aegif.nemaki.NemakiCoreAdminHandler" />
 
   <!-- Highlighting Component
 

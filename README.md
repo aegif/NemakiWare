@@ -15,6 +15,11 @@ NemakiWare is an open source Enterprise Content Management system.
 * **All-in-One package (server, full-text search engine and client)**
     * Ready to use in the real context.
     * All components are connected via CMIS interface.
+    * **Enhanced Full-Text Search**: Apache Solr with ExtractingRequestHandler (Solr Cell)
+        * PDF documents: Complete text extraction with metadata
+        * Microsoft Office: Word (.docx/.doc), Excel (.xlsx/.xls), PowerPoint (.pptx/.ppt)
+        * OpenDocument: Writer (.odt), Calc (.ods), Impress (.odp)
+        * Web formats: HTML, XML, RTF, plain text
 
 
 * **NoSQL CouchDB backend**
@@ -62,13 +67,13 @@ NemakiWare supports modern Jakarta EE 10 development with Maven Jetty plugin for
    Or manually:
    ```bash
    export MAVEN_OPTS="--add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/java.text=ALL-UNNAMED --add-opens=java.desktop/java.awt.font=ALL-UNNAMED"
-   mvn jetty:run -Pjakarta -Djetty.port=8081
+   mvn jetty:run -Pjakarta -Djetty.port=8080
    ```
 
 **Access Points:**
-- CMIS Service: `http://localhost:8081/core/atom/bedroom` (admin:admin)
-- Repository Info: `http://localhost:8081/core/atom/bedroom`
-- Folder Operations: `http://localhost:8081/core/atom/bedroom/children?id=e02f784f8360a02cc14d1314c10038ff`
+- CMIS Service: `http://localhost:8080/core/atom/bedroom` (admin:admin)
+- Repository Info: `http://localhost:8080/core/atom/bedroom`
+- Folder Operations: `http://localhost:8080/core/atom/bedroom/children?id=e02f784f8360a02cc14d1314c10038ff`
 
 ### Development Features
 
