@@ -20,6 +20,8 @@ NemakiWare is an open source Enterprise Content Management system.
         * Microsoft Office: Word (.docx/.doc), Excel (.xlsx/.xls), PowerPoint (.pptx/.ppt)
         * OpenDocument: Writer (.odt), Calc (.ods), Impress (.odp)
         * Web formats: HTML, XML, RTF, plain text
+        * **Quick Verification**: `./quick-verify-extracting.sh`
+        * **Full Verification**: `./verify-extracting-handler.sh`
 
 
 * **NoSQL CouchDB backend**
