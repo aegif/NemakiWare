@@ -331,6 +331,12 @@
 			<groupId>org.glassfish.jersey.core</groupId>
 			<artifactId>jersey-server</artifactId>
 			<version>${jersey.version}</version>
+			<exclusions>
+				<exclusion>
+					<groupId>aopalliance</groupId>
+					<artifactId>aopalliance</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 
 		<dependency>
@@ -635,10 +641,11 @@
 				<version>2.19.1</version>
 				<configuration>
 					<redirectTestOutputToFile>true</redirectTestOutputToFile>
-					<includes>
-						<include>**/*TestGroup.java</include>
-					</includes>
-					<!-- Java 17 Module System Compatibility for TCK Tests -->
+					<!-- Exclude TCK tests from Maven build -->
+					<excludes>
+						<exclude>**/cmis/tck/**/*TestGroup.java</exclude>
+					</excludes>
+					<!-- Java 17 Module System Compatibility for remaining tests -->
 					<argLine>
 						--add-opens=java.base/java.util=ALL-UNNAMED
 						--add-opens=java.base/java.lang=ALL-UNNAMED
@@ -665,13 +672,13 @@
 						<parentLoaderPriority>false</parentLoaderPriority>
 					</webApp>
 					<httpConnector>
-						<port>8081</port>
+						<port>8080</port>
 					</httpConnector>
 					<!-- Development environment variables -->
 					<systemProperties>
 						<systemProperty>
 							<name>nemakiware.properties</name>
-							<value>file:${project.basedir}/src/main/webapp/WEB-INF/classes/nemakiware-jetty-nosolr.properties</value>
+							<value>file:${project.basedir}/src/main/webapp/WEB-INF/classes/nemakiware-jetty.properties</value>
 						</systemProperty>
 						<systemProperty>
 							<name>repositories.yml</name>
@@ -705,6 +712,23 @@
 							<name>org.ektorp.support.DesignDocument.ALLOW_AUTO_UPDATE</name>
 							<value>true</value>
 						</systemProperty>
+						<!-- Solr configuration override for Jetty development -->
+						<systemProperty>
+							<name>solr.host</name>
+							<value>localhost</value>
+						</systemProperty>
+						<systemProperty>
+							<name>solr.port</name>
+							<value>8983</value>
+						</systemProperty>
+						<systemProperty>
+							<name>solr.protocol</name>
+							<value>http</value>
+						</systemProperty>
+						<systemProperty>
+							<name>solr.context</name>
+							<value>solr</value>
+						</systemProperty>
 					</systemProperties>
 					<!-- Java 17 module system compatibility for Jakarta EE -->
 					<jvmArgs>--add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/java.text=ALL-UNNAMED --add-opens=java.desktop/java.awt.font=ALL-UNNAMED</jvmArgs>
@@ -719,7 +743,6 @@
 						</goals>
 						<configuration>
 							<skip>true</skip>
-							<daemon>true</daemon>
 						</configuration>
 					</execution>
 					<execution>

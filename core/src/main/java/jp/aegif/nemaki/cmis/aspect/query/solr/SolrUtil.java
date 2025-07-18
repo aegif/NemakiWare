@@ -22,6 +22,7 @@
 package jp.aegif.nemaki.cmis.aspect.query.solr;
 
 import jp.aegif.nemaki.businesslogic.TypeService;
+import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
@@ -42,10 +43,13 @@ import org.apache.solr.common.SolrInputDocument;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.model.AttachmentNode;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -64,6 +68,7 @@ public class SolrUtil {
 
 	private PropertyManager propertyManager;
 	private TypeService typeService;
+	private ContentService contentService;
 
 	public SolrUtil() {
 		map = new HashMap<String, String>();
@@ -189,6 +194,25 @@ public class SolrUtil {
 	}
 
 	/**
+	 * Convert GregorianCalendar to ISO8601 string format for Solr
+	 */
+	private String formatDateForSolr(GregorianCalendar calendar) {
+		if (calendar == null) {
+			return null;
+		}
+		// Convert to ISO8601 format: 2025-07-14T12:58:02.056Z
+		return String.format("%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
+			calendar.get(Calendar.YEAR),
+			calendar.get(Calendar.MONTH) + 1, // Calendar.MONTH is 0-based
+			calendar.get(Calendar.DAY_OF_MONTH),
+			calendar.get(Calendar.HOUR_OF_DAY),
+			calendar.get(Calendar.MINUTE),
+			calendar.get(Calendar.SECOND),
+			calendar.get(Calendar.MILLISECOND)
+		);
+	}
+
+	/**
 	 * Index a single document in Solr using standard SolrJ API
 	 */
 	public void indexDocument(String repositoryId, Content content) {
@@ -272,12 +296,14 @@ public class SolrUtil {
 		doc.addField("objecttype", content.getObjectType());
 		doc.addField("name", content.getName());
 		
-		// Timestamps
+		// Timestamps - convert GregorianCalendar to ISO8601 string for Solr
 		if (content.getCreated() != null) {
-			doc.addField("created", content.getCreated());
+			String createdISO = formatDateForSolr(content.getCreated());
+			doc.addField("created", createdISO);
 		}
 		if (content.getModified() != null) {
-			doc.addField("modified", content.getModified());
+			String modifiedISO = formatDateForSolr(content.getModified());
+			doc.addField("modified", modifiedISO);
 		}
 		
 		// Creator/Modifier
@@ -293,6 +319,16 @@ public class SolrUtil {
 			doc.addField("cmis_description", content.getDescription());
 		}
 		
+		// Path field - critical for path resolution queries
+		try {
+			String path = contentService.calculatePath(repositoryId, content);
+			if (path != null) {
+				doc.addField("path", path);
+			}
+		} catch (Exception e) {
+			log.warn("Failed to calculate path for content " + content.getId() + ": " + e.getMessage());
+		}
+		
 		// Type-specific fields
 		if (content instanceof Document) {
 			Document document = (Document) content;
@@ -300,6 +336,17 @@ public class SolrUtil {
 			// Basic document fields available
 			if (document.getAttachmentNodeId() != null) {
 				doc.addField("content_id", document.getAttachmentNodeId());
+				
+				// Extract text content for full-text search
+				try {
+					String textContent = extractTextContent(repositoryId, document.getAttachmentNodeId());
+					if (textContent != null && !textContent.trim().isEmpty()) {
+						doc.addField("content", textContent);
+						log.debug("Added text content ({} chars) for document: {}", textContent.length(), content.getId());
+					}
+				} catch (Exception e) {
+					log.warn("Failed to extract text content for document {}: {}", content.getId(), e.getMessage());
+				}
 			}
 			
 			// Versioning fields
@@ -416,7 +463,13 @@ public class SolrUtil {
 				.readValue(PropertyKey.SOLR_PORT));
 		String context = propertyManager.readValue(PropertyKey.SOLR_CONTEXT);
 
+		System.out.println("=== SOLR HOST DEBUG START ===");
+		System.out.println("PropertyManager class: " + propertyManager.getClass().getName());
+		System.out.println("PropertyManager readValue(SOLR_HOST): " + host);
+		System.out.println("PropertyKey.SOLR_HOST constant: " + PropertyKey.SOLR_HOST);
+		System.out.println("All property keys: " + propertyManager.getKeys());
 		System.out.println("DEBUG SolrUtil.getSolrUrl: protocol=" + protocol + ", host=" + host + ", port=" + port + ", context=" + context);
+		System.out.println("=== SOLR HOST DEBUG END ===");
 
 		String url = null;
 		try {
@@ -457,5 +510,74 @@ public class SolrUtil {
 	}
 	public void setTypeService(TypeService typeService) {
 		this.typeService = typeService;
+	}
+	public void setContentService(ContentService contentService) {
+		this.contentService = contentService;
+	}
+	
+	/**
+	 * Extract text content from attachment for full-text search
+	 */
+	private String extractTextContent(String repositoryId, String attachmentId) {
+		try {
+			AttachmentNode attachment = contentService.getAttachment(repositoryId, attachmentId);
+			if (attachment == null) {
+				log.debug("No attachment found for ID: {}", attachmentId);
+				return null;
+			}
+			
+			// Get file name and mime type for content type detection
+			String fileName = attachment.getName();
+			String mimeType = attachment.getMimeType();
+			
+			log.debug("Extracting text from attachment: {} ({})", fileName, mimeType);
+			log.info("SOLR TEXT EXTRACTION: Attachment ID: {}, Name: {}, MimeType: {}, Length: {}", 
+				attachmentId, fileName, mimeType, attachment.getLength());
+			
+			// For now, only handle text files directly
+			if (mimeType != null && mimeType.startsWith("text/")) {
+				Object data = attachment.getInputStream();
+				log.info("SOLR TEXT EXTRACTION: getInputStream() returned: {}", 
+					data != null ? data.getClass().getName() : "null");
+				
+				if (data instanceof java.io.InputStream) {
+					java.io.InputStream inputStream = (java.io.InputStream) data;
+					String textContent = readTextFromInputStream(inputStream);
+					log.info("SOLR TEXT EXTRACTION: Successfully extracted {} characters from attachment {}", 
+						textContent != null ? textContent.length() : 0, attachmentId);
+					return textContent;
+				} else if (data instanceof byte[]) {
+					String textContent = new String((byte[]) data, "UTF-8");
+					log.info("SOLR TEXT EXTRACTION: Successfully extracted {} characters from byte array for attachment {}", 
+						textContent.length(), attachmentId);
+					return textContent;
+				} else {
+					log.warn("SOLR TEXT EXTRACTION: Unexpected data type from getInputStream(): {}", 
+						data != null ? data.getClass().getName() : "null");
+				}
+			}
+			
+			log.debug("Content type {} not supported for text extraction", mimeType);
+			return null;
+			
+		} catch (Exception e) {
+			log.error("Error extracting text content from attachment {}: {}", attachmentId, e.getMessage(), e);
+			return null;
+		}
+	}
+	
+	/**
+	 * Read text from InputStream
+	 */
+	private String readTextFromInputStream(java.io.InputStream inputStream) throws Exception {
+		try (java.io.BufferedReader reader = new java.io.BufferedReader(
+				new java.io.InputStreamReader(inputStream, "UTF-8"))) {
+			StringBuilder content = new StringBuilder();
+			String line;
+			while ((line = reader.readLine()) != null) {
+				content.append(line).append("\n");
+			}
+			return content.toString();
+		}
 	}
 }

@@ -372,7 +372,13 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 			List<Content> contents = new ArrayList<Content>();
 			for (SolrDocument doc : docs) {
-				String docId = (String) doc.getFieldValue("object_id");
+				// Type-safe field value extraction
+				String docId = extractStringFieldValue(doc, "object_id");
+				if (docId == null) {
+					logger.warn("Skipping document with null object_id");
+					continue;
+				}
+				
 				Content c = contentService.getContent(repositoryId, docId);
 
 				// When for some reason the content is missed, pass through
@@ -429,6 +435,30 @@ public class SolrQueryProcessor implements QueryProcessor {
 			nullList.setNumItems(BigInteger.ZERO);
 			return nullList;
 		}
+	}
+	
+	/**
+	 * Type-safe field value extraction from SolrDocument.
+	 * Handles both String and ArrayList<String> return types.
+	 */
+	private String extractStringFieldValue(SolrDocument doc, String fieldName) {
+		Object value = doc.getFieldValue(fieldName);
+		if (value == null) {
+			return null;
+		}
+		
+		if (value instanceof String) {
+			return (String) value;
+		} else if (value instanceof java.util.ArrayList) {
+			@SuppressWarnings("unchecked")
+			java.util.ArrayList<String> listValue = (java.util.ArrayList<String>) value;
+			if (!listValue.isEmpty()) {
+				return listValue.get(0);
+			}
+		}
+		
+		logger.warn("Unexpected field type for " + fieldName + ": " + value.getClass().getName());
+		return value.toString();
 	}
 	
 	private String orderBy(QueryObject queryObject){

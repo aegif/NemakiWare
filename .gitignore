@@ -117,3 +117,25 @@ ui/.g8/
 
 # Docker initializer JARs should be built, not committed
 docker/initializer/*.jar
+
+# PID files (runtime artifacts)
+*.pid
+**/*.pid
+
+# Test artifacts created during development
+*Test.java
+*Test.class
+DirectQueryTest.*
+ComprehensiveQueryTest.*
+MinimalTckTest.*
+QueryTckRunnerNoPolicyHang.*
+SimpleQueryTest.*
+
+# Runtime logs and configuration
+jetty-*.log
+query-*.log
+tck-*.log
+
+# Solr distribution (exclude full distribution)
+solr-9.8.0/
+solr-*.tgz

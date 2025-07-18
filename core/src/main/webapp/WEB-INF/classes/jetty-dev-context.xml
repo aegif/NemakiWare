@@ -5,26 +5,44 @@
         http://www.springframework.org/schema/beans/spring-beans.xsd">
 
     <!-- Development-specific configuration for Jetty environment -->
-    <!-- Override SolrUtil with MockSolrUtil when solr.enabled=false -->
+    <!-- Use real Solr integration for development with proper localhost configuration -->
     
-    <bean id="mockSolrUtil" class="jp.aegif.nemaki.cmis.aspect.query.mock.MockSolrUtil">
+    <!-- Override SolrUtil to use real Solr with localhost configuration -->
+    <bean id="solrUtil" class="jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil">
         <property name="propertyManager">
             <ref bean="propertyManager" />
         </property>
-        <property name="typeService">
-            <ref bean="typeService" />
-        </property>        
     </bean>
     
-    <!-- Conditional bean definition based on property -->
-    <!-- Use MockSolrUtil when Solr is disabled -->
-    <bean id="solrUtil" class="jp.aegif.nemaki.cmis.aspect.query.mock.MockSolrUtil">
-        <property name="propertyManager">
-            <ref bean="propertyManager" />
+    <!-- Override QueryProcessor to use real Solr with localhost configuration -->
+    <bean id="queryProcessor" class="jp.aegif.nemaki.cmis.aspect.query.solr.SolrQueryProcessor">
+        <property name="solrUtil">
+            <ref bean="solrUtil" />
+        </property>
+        <property name="contentService">
+            <ref bean="contentService" />
         </property>
         <property name="typeService">
             <ref bean="typeService" />
-        </property>        
+        </property>
+        <property name="propertyManager">
+            <ref bean="propertyManager" />
+        </property>
+        <property name="threadLockService">
+            <ref bean="ThreadLockService" />
+        </property>
+        <property name="permissionService">
+            <ref bean="PermissionService" />
+        </property>
+        <property name="compileService">
+            <ref bean="CompileService" />
+        </property>
+        <property name="exceptionService">
+            <ref bean="ExceptionService" />
+        </property>
+        <property name="typeManager">
+            <ref bean="TypeManager" />
+        </property>
     </bean>
 
 </beans>
