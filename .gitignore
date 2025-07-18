@@ -139,3 +139,16 @@ tck-*.log
 # Solr distribution (exclude full distribution)
 solr-9.8.0/
 solr-*.tgz
+
+# WAR files (build artifacts)
+*.war
+**/*.war
+core/core.war/
+docker/core/*.war
+docker/ui/*.war
+docker/**/*.war
+setup/installer/**/*.war
+
+# Large JAR files
+solr/solr/*/lib/
+docker/solr/solr/*/lib/
