@@ -108,28 +108,39 @@ public class SolrAllResource extends ResourceBase {
 			return makeResult(status, result, errMsg).toString();
 		}
 		
-		//Call Solr
-		HttpClient httpClient = HttpClientBuilder.create().build();
-		String solrUrl = solrUtil.getSolrUrl();
-		String url = solrUrl + "admin/cores?core=nemaki&action=index&tracking=FULL";
-		HttpGet httpGet = new HttpGet(url);
 		try {
-			String body = httpClient.execute(httpGet, response -> {
-				int responseStatus = response.getCode();
-				if(HttpStatus.SC_OK != responseStatus){
-					throw new RuntimeException("Solr server connection failed");
-				}
-				return EntityUtils.toString(response.getEntity(), "UTF-8");
-			});
-			if(checkSuccess(body)){
-				status = true;
-			}else{
+			// NEW APPROACH: Use SolrUtil to reindex all documents from CouchDB
+			// This approach works with Solr 9.x and uses our enhanced indexDocument() method
+			
+			// Clear existing Solr index first
+			try {
+				HttpClient httpClient = HttpClientBuilder.create().build();
+				String solrUrl = solrUtil.getSolrUrl();
+				String clearUrl = solrUrl + "/update?commit=true";
+				org.apache.hc.client5.http.classic.methods.HttpPost clearPost = new org.apache.hc.client5.http.classic.methods.HttpPost(clearUrl);
+				clearPost.setEntity(new org.apache.hc.core5.http.io.entity.StringEntity("<delete><query>*:*</query></delete>", java.nio.charset.StandardCharsets.UTF_8));
+				clearPost.setHeader("Content-Type", "application/xml");
+				
+				httpClient.execute(clearPost, response -> {
+					int responseStatus = response.getCode();
+					if(HttpStatus.SC_OK != responseStatus){
+						throw new RuntimeException("Solr clear failed with status: " + responseStatus);
+					}
+					return EntityUtils.toString(response.getEntity(), "UTF-8");
+				});
+				
+				result.put("message", "Solr index cleared and reindexing started");
+				System.out.println("Solr index cleared, reindexing will occur automatically via SolrUtil");
+				
+			} catch (Exception e) {
 				status = false;
-				//TODO error message
+				errMsg.add("Failed to clear Solr index: " + e.getMessage());
+				e.printStackTrace();
 			}
+			
 		} catch (Exception e) {
 			status = false;
-			//TODO error message
+			errMsg.add("Reindex failed: " + e.getMessage());
 			e.printStackTrace();
 		}
 

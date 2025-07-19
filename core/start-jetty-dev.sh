@@ -36,9 +36,9 @@ fi
 
 echo "Starting Jetty development server..."
 echo "Access Points:"
-echo "  - CMIS Service: http://localhost:8081/core/atom/bedroom (admin:admin)"
-echo "  - Repository Info: http://localhost:8081/core/atom/bedroom"
-echo "  - Folder Operations: http://localhost:8081/core/atom/bedroom/children?id=e02f784f8360a02cc14d1314c10038ff"
+echo "  - CMIS Service: http://localhost:8080/core/atom/bedroom (admin:admin)"
+echo "  - Repository Info: http://localhost:8080/core/atom/bedroom"
+echo "  - Folder Operations: http://localhost:8080/core/atom/bedroom/children?id=e02f784f8360a02cc14d1314c10038ff"
 echo ""
 echo "Development Features:"
 echo "  - Jakarta EE 10 Compatible"
@@ -50,5 +50,5 @@ echo "Press Ctrl+C to stop the server"
 echo "========================================"
 echo ""
 
-# Start Jetty with Jakarta profile
-mvn jetty:run -Pjakarta -Djetty.port=8081
+# Start Jetty with development profile (Jakarta dependencies already unified)
+mvn jetty:run -Pdevelopment -Djetty.port=8080

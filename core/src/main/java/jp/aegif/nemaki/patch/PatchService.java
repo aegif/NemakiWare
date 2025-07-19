@@ -45,6 +45,9 @@ public class PatchService {
 			// Note: All previous patches have been consolidated into initialization dump files
 			// This method is preserved for future patch requirements
 			
+			// Check and initialize databases first
+			checkAndInitializeDatabases();
+			
 			// Apply any future patches if they exist
 			if (patchList != null && !patchList.isEmpty()) {
 				log.info("Applying " + patchList.size() + " future patches");

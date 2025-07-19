@@ -323,6 +323,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 		solrQuery.setQuery(whereQueryString);
 		solrQuery.setFilterQueries(fromQueryString);
 		
+		// RANKING FIX: Add sort by modification date descending to prioritize recent documents
+		// This ensures that newly created documents appear at the top of search results
+		solrQuery.setSort("modified", SolrQuery.ORDER.desc);
+		System.out.println("=== QUERY DEBUG: Added sort by modified desc to prioritize recent documents");
+		
 		logger.info(solrQuery.toString());
 		logger.info("[QUERY DEBUG] statement: " + statement);
 		logger.info("[QUERY DEBUG] skipCount: " + skipCount);

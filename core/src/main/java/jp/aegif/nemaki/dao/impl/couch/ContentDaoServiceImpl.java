@@ -430,8 +430,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			String name = (String) doc.get("name");
 			String creator = (String) doc.get("creator");
 			String modifier = (String) doc.get("modifier");
-			String created = (String) doc.get("created");
-			String modified = (String) doc.get("modified");
+			String created = convertToString(doc.get("created"));
+			String modified = convertToString(doc.get("modified"));
 			String changeToken = (String) doc.get("changeToken");
 			
 			log.info("CLOUDANT FIX: Direct field access results:");
@@ -2340,5 +2340,19 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public void refreshCmisObjectData(String repositoryId, String objectId) {
 		// this method is for cached service
+	}
+	
+	/**
+	 * Convert any object to String safely, handling Gson's LazilyParsedNumber
+	 */
+	private String convertToString(Object obj) {
+		if (obj == null) {
+			return null;
+		}
+		if (obj instanceof String) {
+			return (String) obj;
+		}
+		// Handle Gson's LazilyParsedNumber and other numeric types
+		return obj.toString();
 	}
 }

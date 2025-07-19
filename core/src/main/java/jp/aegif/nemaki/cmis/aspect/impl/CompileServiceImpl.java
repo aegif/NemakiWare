@@ -1031,8 +1031,13 @@ public class CompileServiceImpl implements CompileService {
 			addProperty(properties, tdf, PropertyIds.CHECKIN_COMMENT, document.getCheckinComment());
 
 			VersionSeries vs = contentService.getVersionSeries(repositoryId, document);
-			addProperty(properties, tdf, PropertyIds.IS_VERSION_SERIES_CHECKED_OUT, vs.isVersionSeriesCheckedOut());
-			if (vs.isVersionSeriesCheckedOut()) {
+			if (vs != null) {
+				addProperty(properties, tdf, PropertyIds.IS_VERSION_SERIES_CHECKED_OUT, vs.isVersionSeriesCheckedOut());
+			} else {
+				// Handle null VersionSeries case - set default values
+				addProperty(properties, tdf, PropertyIds.IS_VERSION_SERIES_CHECKED_OUT, false);
+			}
+			if (vs != null && vs.isVersionSeriesCheckedOut()) {
 				String userId = callContext.getUsername();
 				String checkedOutBy = vs.getVersionSeriesCheckedOutBy();
 

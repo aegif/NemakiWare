@@ -578,7 +578,7 @@
         </property>
     </bean>
 
-    <bean id="queryProcessor" class="jp.aegif.nemaki.cmis.aspect.query.mock.MockQueryProcessor">
+    <bean id="queryProcessor" class="jp.aegif.nemaki.cmis.aspect.query.solr.SolrQueryProcessor">
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
@@ -587,6 +587,18 @@
         </property>
         <property name="compileService">
             <ref bean="CompileService" />
+        </property>
+        <property name="solrUtil">
+            <ref bean="solrUtil" />
+        </property>
+        <property name="typeManager">
+            <ref bean="TypeManager" />
+        </property>
+        <property name="exceptionService">
+            <ref bean="ExceptionService" />
+        </property>
+        <property name="threadLockService">
+            <ref bean="ThreadLockService" />
         </property>
     </bean>
 
@@ -597,7 +609,7 @@
         </property>
         <property name="typeService">
             <ref bean="typeService" />
-        </property>        
+        </property>      
     </bean>
 
     <!-- Extra Rest API implemented by Jersey -->
