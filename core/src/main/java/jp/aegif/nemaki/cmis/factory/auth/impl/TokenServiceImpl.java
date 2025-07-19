@@ -99,6 +99,30 @@ public class TokenServiceImpl implements TokenService{
 		return admins.get(repositoryId).contains(userId);
 	}
 	
+	@Override
+	public String getUserByToken(String app, String repositoryId, String tokenValue) {
+		Map<String, Map<String, Token>> appMap = tokenMap.map.get(app);
+		if (appMap == null) {
+			return null;
+		}
+		
+		Map<String, Token> repoMap = appMap.get(repositoryId);
+		if (repoMap == null) {
+			return null;
+		}
+		
+		for (Map.Entry<String, Token> entry : repoMap.entrySet()) {
+			Token token = entry.getValue();
+			if (token != null && tokenValue.equals(token.getToken())) {
+				if (System.currentTimeMillis() <= token.getExpiration()) {
+					return entry.getKey();
+				}
+			}
+		}
+		
+		return null;
+	}
+	
 	public void setPropertyManager(PropertyManager propertyManager) {
 		this.propertyManager = propertyManager;
 	}
