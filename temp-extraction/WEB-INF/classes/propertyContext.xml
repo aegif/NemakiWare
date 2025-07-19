@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:aop="http://www.springframework.org/schema/aop"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd">
+	
+	<!-- Property Configurer -->
+	<bean id="propertyConfigurer" class="jp.aegif.nemaki.util.spring.SpringPropertiesUtil">
+		<property name="locations">
+			<list>
+				<value>classpath:nemakiware.properties</value>
+				<value>classpath:nemakiware-capability.properties</value>
+                <value>classpath:nemakiware-basetype.properties</value>
+                <value>classpath:nemakiware-property.properties</value>
+				<value>classpath*:custom-nemakiware.properties</value>
+				<value>classpath*:app-server-core.properties</value>
+			</list>
+		</property>
+	</bean>
+	
+	<!-- Property Manager -->
+    <bean id="springPropertyManager" class="jp.aegif.nemaki.util.SpringPropertyManager">
+        <property name="propertyConfigurer" ref="propertyConfigurer" />
+    </bean>
+</beans>
