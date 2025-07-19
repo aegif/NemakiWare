@@ -1,0 +1,32 @@
+{
+    "name": "@types/react-image-gallery",
+    "version": "1.2.4",
+    "description": "TypeScript definitions for react-image-gallery",
+    "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react-image-gallery",
+    "license": "MIT",
+    "contributors": [
+        {
+            "name": "Adam Webb",
+            "githubUsername": "adamwpc",
+            "url": "https://github.com/adamwpc"
+        },
+        {
+            "name": "William Tio",
+            "githubUsername": "WToa",
+            "url": "https://github.com/WToa"
+        }
+    ],
+    "main": "",
+    "types": "index.d.ts",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git",
+        "directory": "types/react-image-gallery"
+    },
+    "scripts": {},
+    "dependencies": {
+        "@types/react": "*"
+    },
+    "typesPublisherContentHash": "765197567da362d29a0f7eaa8dd1216f5000c72870600a87f0773f8984500fc5",
+    "typeScriptVersion": "4.5"
+}

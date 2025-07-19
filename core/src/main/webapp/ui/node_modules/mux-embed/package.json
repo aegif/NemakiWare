@@ -1,0 +1,49 @@
+{
+  "name": "mux-embed",
+  "version": "5.9.0",
+  "author": "Mux, Inc",
+  "license": "MIT",
+  "description": "Mux Javascript SDK and HTML5 Video element monitor",
+  "main": "dist/mux.js",
+  "exports": {
+    "import": "./dist/mux.mjs",
+    "require": "./dist/mux.cjs.js",
+    "default": "./dist/mux.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "npm:audit": "npm audit --audit-level high",
+    "start": "builder run .",
+    "clean": "shx rm -rf ./dist/",
+    "build:esm": "node ./esbuilder.mjs lib/mux.ts --format=esm --outdir=dist --out-extension:.js=.mjs --define:__VERSION__=\"'$npm_package_version'\"",
+    "build:cjs": "node ./esbuilder.mjs lib/mux.ts  --format=cjs --outdir=dist --out-extension:.js=.cjs.js --define:__VERSION__=\"'$npm_package_version'\"",
+    "build:umd": "builder build .",
+    "build:types": "shx mkdir -p ./dist/types && shx cp mux-embed.d.ts ./dist/types/mux-embed.d.ts",
+    "validate": "es-check es5 --module ./dist/mux.mjs ./dist/mux.cjs.js ./dist/mux.js",
+    "build": "npm-run-all --parallel 'build:esm --minify' 'build:cjs --minify' build:umd build:types && yarn validate",
+    "package": "yarn build",
+    "prepublishOnly": "yarn package",
+    "deploy": "yarn package && cdn-deployer core"
+  },
+  "builder": {
+    "entry": "./lib/entry.ts",
+    "library": "mux"
+  },
+  "devDependencies": {
+    "@mux/cmd-cdn-deployer": "^0.5.0",
+    "@mux/mux-data-builder": "^0.7.0",
+    "@swc/cli": "^0.1.63",
+    "@swc/core": "^1.3.100",
+    "base-64": "^0.1.0",
+    "es-check": "^7.1.1",
+    "esbuild": "^0.18.17",
+    "esbuild-plugin-es5": "^2.1.0",
+    "global": "^4.3.0",
+    "json": "^11.0.0",
+    "npm-run-all": "^4.1.5",
+    "path": "^0.12.7",
+    "shx": "^0.3.4"
+  }
+}

@@ -1,0 +1,110 @@
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+var time_exports = {};
+__export(time_exports, {
+  emptyTimeRanges: () => emptyTimeRanges,
+  formatAsTimePhrase: () => formatAsTimePhrase,
+  formatTime: () => formatTime,
+  serializeTimeRanges: () => serializeTimeRanges
+});
+module.exports = __toCommonJS(time_exports);
+var import_utils = require("./utils.js");
+const UnitLabels = [
+  {
+    singular: "hour",
+    plural: "hours"
+  },
+  {
+    singular: "minute",
+    plural: "minutes"
+  },
+  {
+    singular: "second",
+    plural: "seconds"
+  }
+];
+const toTimeUnitPhrase = (timeUnitValue, unitIndex) => {
+  const unitLabel = timeUnitValue === 1 ? UnitLabels[unitIndex].singular : UnitLabels[unitIndex].plural;
+  return `${timeUnitValue} ${unitLabel}`;
+};
+const formatAsTimePhrase = (seconds) => {
+  if (!(0, import_utils.isValidNumber)(seconds))
+    return "";
+  const positiveSeconds = Math.abs(seconds);
+  const negative = positiveSeconds !== seconds;
+  const secondsDateTime = new Date(0, 0, 0, 0, 0, positiveSeconds, 0);
+  const timeParts = [
+    secondsDateTime.getHours(),
+    secondsDateTime.getMinutes(),
+    secondsDateTime.getSeconds()
+  ];
+  const timeString = timeParts.map(
+    (timeUnitValue, index) => timeUnitValue && toTimeUnitPhrase(timeUnitValue, index)
+  ).filter((x) => x).join(", ");
+  const negativeSuffix = negative ? " remaining" : "";
+  return `${timeString}${negativeSuffix}`;
+};
+function formatTime(seconds, guide) {
+  let negative = false;
+  if (seconds < 0) {
+    negative = true;
+    seconds = 0 - seconds;
+  }
+  seconds = seconds < 0 ? 0 : seconds;
+  let s = Math.floor(seconds % 60);
+  let m = Math.floor(seconds / 60 % 60);
+  let h = Math.floor(seconds / 3600);
+  const gm = Math.floor(guide / 60 % 60);
+  const gh = Math.floor(guide / 3600);
+  if (isNaN(seconds) || seconds === Infinity) {
+    h = m = s = "0";
+  }
+  h = h > 0 || gh > 0 ? h + ":" : "";
+  m = ((h || gm >= 10) && m < 10 ? "0" + m : m) + ":";
+  s = s < 10 ? "0" + s : s;
+  return (negative ? "-" : "") + h + m + s;
+}
+const emptyTimeRanges = Object.freeze({
+  length: 0,
+  start(index) {
+    const unsignedIdx = index >>> 0;
+    if (unsignedIdx >= this.length) {
+      throw new DOMException(
+        `Failed to execute 'start' on 'TimeRanges': The index provided (${unsignedIdx}) is greater than or equal to the maximum bound (${this.length}).`
+      );
+    }
+    return 0;
+  },
+  end(index) {
+    const unsignedIdx = index >>> 0;
+    if (unsignedIdx >= this.length) {
+      throw new DOMException(
+        `Failed to execute 'end' on 'TimeRanges': The index provided (${unsignedIdx}) is greater than or equal to the maximum bound (${this.length}).`
+      );
+    }
+    return 0;
+  }
+});
+function serializeTimeRanges(timeRanges = emptyTimeRanges) {
+  return Array.from(timeRanges).map(
+    (_, i) => [
+      Number(timeRanges.start(i).toFixed(3)),
+      Number(timeRanges.end(i).toFixed(3))
+    ].join(":")
+  ).join(" ");
+}

@@ -1,0 +1,1385 @@
+{
+  "version": 1.1,
+  "tags": [
+    {
+      "name": "media-airplay-button",
+      "description": "\n\n\n---\n\n\n\n\n### **Events:**\n - **mediaairplayrequest** - undefined\n\n### **Slots:**\n - **enter** - An element shown when the media is not in AirPlay mode and pressing the button will open the AirPlay menu.\n- **exit** - An element shown when the media is in AirPlay mode and pressing the button will open the AirPlay menu.\n- **icon** - The element shown for the AirPlay button’s display.\n\n### **CSS Properties:**\n - **--media-airplay-button-display** - `display` property of button. _(default: inline-flex)_\n- **--media-primary-color** - Default color of text and icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of button background. _(default: rgb(20 20 30 / .7))_\n- **--media-text-color** - `color` of button text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-icon-color** - `fill` color of button icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-display** - `display` property of control. _(default: undefined)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-hover-background** - `background` of control hover state. _(default: rgba(50 50 70 / .7))_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-height** - `line-height` of control. _(default: 24px)_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, bold) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: bold)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of button text. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-width** - `width` of button icon. _(default: undefined)_\n- **--media-button-icon-height** - `height` of button icon. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-transform** - `transform` of button icon. _(default: undefined)_\n- **--media-button-icon-transition** - `transition` of button icon. _(default: undefined)_",
+      "attributes": [
+        {
+          "name": "mediaairplayunavailable",
+          "description": "(read-only) Set if AirPlay is unavailable.",
+          "values": [{ "name": "(unavailable" }, { "name": "unsupported)" }]
+        },
+        {
+          "name": "mediaisairplaying",
+          "description": "(read-only) Present if the media is airplaying.",
+          "values": []
+        },
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        },
+        {
+          "name": "tooltipplacement",
+          "description": "The placement of the tooltip, defaults to \"top\"",
+          "values": [
+            { "name": "('top'" },
+            { "name": "right" },
+            { "name": "bottom" },
+            { "name": "left" },
+            { "name": "'none')" }
+          ]
+        },
+        {
+          "name": "notooltip",
+          "description": "Hides the tooltip if this attribute is present",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-captions-button",
+      "description": "\n\n\n---\n\n\n\n\n### **Events:**\n - **undefined** - undefined\n\n### **Slots:**\n - **on** - An element that will be shown while closed captions or subtitles are on.\n- **off** - An element that will be shown while closed captions or subtitles are off.\n- **icon** - An element for representing on and off states in a single icon\n\n### **CSS Properties:**\n - **--media-captions-button-display** - `display` property of button. _(default: inline-flex)_\n- **--media-primary-color** - Default color of text and icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of button background. _(default: rgb(20 20 30 / .7))_\n- **--media-text-color** - `color` of button text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-icon-color** - `fill` color of button icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-display** - `display` property of control. _(default: undefined)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-hover-background** - `background` of control hover state. _(default: rgba(50 50 70 / .7))_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-height** - `line-height` of control. _(default: 24px)_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, bold) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: bold)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of button text. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-width** - `width` of button icon. _(default: undefined)_\n- **--media-button-icon-height** - `height` of button icon. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-transform** - `transform` of button icon. _(default: undefined)_\n- **--media-button-icon-transition** - `transition` of button icon. _(default: undefined)_",
+      "attributes": [
+        {
+          "name": "mediasubtitleslist",
+          "description": "(read-only) A list of all subtitles and captions.",
+          "values": []
+        },
+        {
+          "name": "mediasubtitlesshowing",
+          "description": "(read-only) A list of the showing subtitles and captions.",
+          "values": []
+        },
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        },
+        {
+          "name": "tooltipplacement",
+          "description": "The placement of the tooltip, defaults to \"top\"",
+          "values": [
+            { "name": "('top'" },
+            { "name": "right" },
+            { "name": "bottom" },
+            { "name": "left" },
+            { "name": "'none')" }
+          ]
+        },
+        {
+          "name": "notooltip",
+          "description": "Hides the tooltip if this attribute is present",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-cast-button",
+      "description": "\n\n\n---\n\n\n\n\n### **Events:**\n - **eventName** - undefined\n\n### **Slots:**\n - **enter** - An element shown when the media is not in casting mode and pressing the button will open the Cast menu.\n- **exit** - An element shown when the media is in casting mode and pressing the button will open the Cast menu.\n- **icon** - An element for representing enter and exit states in a single icon\n\n### **CSS Properties:**\n - **--media-cast-button-display** - `display` property of button. _(default: inline-flex)_\n- **--media-primary-color** - Default color of text and icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of button background. _(default: rgb(20 20 30 / .7))_\n- **--media-text-color** - `color` of button text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-icon-color** - `fill` color of button icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-display** - `display` property of control. _(default: undefined)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-hover-background** - `background` of control hover state. _(default: rgba(50 50 70 / .7))_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-height** - `line-height` of control. _(default: 24px)_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, bold) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: bold)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of button text. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-width** - `width` of button icon. _(default: undefined)_\n- **--media-button-icon-height** - `height` of button icon. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-transform** - `transform` of button icon. _(default: undefined)_\n- **--media-button-icon-transition** - `transition` of button icon. _(default: undefined)_",
+      "attributes": [
+        {
+          "name": "mediacastunavailable",
+          "description": "(read-only) Set if casting is unavailable.",
+          "values": [{ "name": "(unavailable" }, { "name": "unsupported)" }]
+        },
+        {
+          "name": "mediaiscasting",
+          "description": "(read-only) Present if the media is casting.",
+          "values": []
+        },
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        },
+        {
+          "name": "tooltipplacement",
+          "description": "The placement of the tooltip, defaults to \"top\"",
+          "values": [
+            { "name": "('top'" },
+            { "name": "right" },
+            { "name": "bottom" },
+            { "name": "left" },
+            { "name": "'none')" }
+          ]
+        },
+        {
+          "name": "notooltip",
+          "description": "Hides the tooltip if this attribute is present",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-chrome-button",
+      "description": "\n\n\n---\n\n\n\n\n### **CSS Properties:**\n - **--media-primary-color** - Default color of text and icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of button background. _(default: rgb(20 20 30 / .7))_\n- **--media-text-color** - `color` of button text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-icon-color** - `fill` color of button icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-display** - `display` property of control. _(default: undefined)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-hover-background** - `background` of control hover state. _(default: rgba(50 50 70 / .7))_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-height** - `line-height` of control. _(default: 24px)_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, bold) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: bold)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of button text. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-width** - `width` of button icon. _(default: undefined)_\n- **--media-button-icon-height** - `height` of button icon. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-transform** - `transform` of button icon. _(default: undefined)_\n- **--media-button-icon-transition** - `transition` of button icon. _(default: undefined)_",
+      "attributes": [
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        },
+        {
+          "name": "tooltipplacement",
+          "description": "The placement of the tooltip, defaults to \"top\"",
+          "values": [
+            { "name": "('top'" },
+            { "name": "right" },
+            { "name": "bottom" },
+            { "name": "left" },
+            { "name": "'none')" }
+          ]
+        },
+        {
+          "name": "notooltip",
+          "description": "Hides the tooltip if this attribute is present",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-chrome-dialog",
+      "description": "\n\n\n---\n\n\n\n\n### **Events:**\n - **open** - Dispatched when the dialog is opened.\n- **close** - Dispatched when the dialog is closed.\n- **focus** - Dispatched when the dialog is focused.\n- **focusin** - Dispatched when the dialog is focused in.\n\n### **Slots:**\n - _default_ - Default slotted elements.\n\n### **CSS Properties:**\n - **--media-primary-color** - Default color of text / icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of background. _(default: undefined)_\n- **--media-text-color** - `color` of text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-dialog-display** - `display` of dialog. _(default: inline-flex)_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, normal) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: normal)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of text. _(default: var(--media-control-height, 24px))_",
+      "attributes": [
+        {
+          "name": "open",
+          "description": "The open state of the dialog.",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-chrome-range",
+      "description": "\n\n\n---\n\n\n\n\n### **Slots:**\n - **thumb** - The thumb element to use for the range.\n\n### **CSS Properties:**\n - **--media-primary-color** - Default color of range bar. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of range background. _(default: rgb(20 20 30 / .7))_\n- **--media-control-display** - `display` property of control. _(default: inline-block)_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-hover-background** - `background` of control hover state. _(default: rgb(50 50 70 / .7))_\n- **--media-control-height** - `height` of control. _(default: 24px)_\n- **--media-range-padding** - `padding` of range. _(default: var(--media-control-padding, 10px))_\n- **--media-range-padding-left** - `padding-left` of range. _(default: var(--_media-range-padding))_\n- **--media-range-padding-right** - `padding-right` of range. _(default: var(--_media-range-padding))_\n- **--media-range-thumb-width** - `width` of range thumb. _(default: 10px)_\n- **--media-range-thumb-height** - `height` of range thumb. _(default: 10px)_\n- **--media-range-thumb-border** - `border` of range thumb. _(default: none)_\n- **--media-range-thumb-border-radius** - `border-radius` of range thumb. _(default: 10px)_\n- **--media-range-thumb-background** - `background` of range thumb. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-range-thumb-box-shadow** - `box-shadow` of range thumb. _(default: 1px 1px 1px transparent)_\n- **--media-range-thumb-transition** - `transition` of range thumb. _(default: undefined)_\n- **--media-range-thumb-transform** - `transform` of range thumb. _(default: none)_\n- **--media-range-thumb-opacity** - `opacity` of range thumb. _(default: 1)_\n- **--media-range-bar-color** - `background` of range progress. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-range-track-background** - `background` of range track background. _(default: rgb(255 255 255 / .2))_\n- **--media-range-track-backdrop-filter** - `backdrop-filter` of range track. _(default: undefined)_\n- **--media-range-track-width** - `width` of range track. _(default: 100%)_\n- **--media-range-track-height** - `height` of range track. _(default: 4px)_\n- **--media-range-track-border** - `border` of range track. _(default: none)_\n- **--media-range-track-outline** - `outline` of range track. _(default: undefined)_\n- **--media-range-track-outline-offset** - `outline-offset` of range track. _(default: undefined)_\n- **--media-range-track-border-radius** - `border-radius` of range track. _(default: 1px)_\n- **--media-range-track-box-shadow** - `box-shadow` of range track. _(default: none)_\n- **--media-range-track-transition** - `transition` of range track. _(default: undefined)_\n- **--media-range-track-translate-x** - `translate` x-coordinate of range track. _(default: 0px)_\n- **--media-range-track-translate-y** - `translate` y-coordinate of range track. _(default: 0px)_\n- **--media-time-range-hover-display** - `display` of range hover zone. _(default: block)_\n- **--media-time-range-hover-bottom** - `bottom` of range hover zone. _(default: -5px)_\n- **--media-time-range-hover-height** - `height` of range hover zone. _(default: max(100% + 5px, 20px))_\n- **--media-range-track-pointer-background** - `background` of range track pointer. _(default: undefined)_\n- **--media-range-track-pointer-border-right** - `border-right` of range track pointer. _(default: undefined)_\n\n### **CSS Parts:**\n - **track** - The runnable track of the range.\n- **progress** - The progress part of the track.\n- **thumb** - The thumb of the range.",
+      "attributes": [
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        { "name": "aria-disabled", "values": [] },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-container",
+      "description": "\n\n\n---\n\n\n\n\n### **CSS Properties:**\n - **--media-background-color** - `background-color` of container. _(default: #000)_\n- **--media-slot-display** - `display` of the media slot (default none for [audio] usage). _(default: none)_\n- **--media-control-transition-out** - `transition` used to define the animation effect when hiding the container. _(default: opacity 1s)_\n- **--media-control-transition-in** - `transition` used to define the animation effect when showing the container. _(default: opacity 0.25s)_",
+      "attributes": [
+        { "name": "audio", "values": [] },
+        { "name": "autohide", "values": [] },
+        { "name": "autohideovercontrols", "values": [] },
+        { "name": "breakpoints", "values": [] },
+        { "name": "gesturesdisabled", "values": [] },
+        { "name": "keyboardcontrol", "values": [] },
+        { "name": "noautohide", "values": [] },
+        { "name": "userinactive", "values": [] }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-control-bar",
+      "description": "\n\n\n---\n\n\n\n\n### **CSS Properties:**\n - **--media-primary-color** - Default color of text and icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of button background. _(default: undefined)_\n- **--media-text-color** - `color` of button text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-bar-display** - `display` property of control bar. _(default: inline-flex)_\n- **--media-control-display** - `display` property of control. _(default: var(--media-control-bar-display, inline-flex))_",
+      "attributes": [
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-controller",
+      "description": "Media Controller should not mimic the HTMLMediaElement API.\n\n\n---\n\n\n\n\n### **Events:**\n - **eventName** - undefined\n- **undefined** - undefined\n\n### **CSS Properties:**\n - **--media-background-color** - `background-color` of container. _(default: #000)_\n- **--media-slot-display** - `display` of the media slot (default none for [audio] usage). _(default: none)_\n- **--media-control-transition-out** - `transition` used to define the animation effect when hiding the container. _(default: opacity 1s)_\n- **--media-control-transition-in** - `transition` used to define the animation effect when showing the container. _(default: opacity 0.25s)_",
+      "attributes": [
+        { "name": "defaultsubtitles", "values": [] },
+        { "name": "defaultstreamtype", "values": [] },
+        { "name": "defaultduration", "values": [] },
+        { "name": "fullscreenelement", "values": [] },
+        { "name": "nohotkeys", "values": [] },
+        { "name": "hotkeys", "values": [] },
+        { "name": "keysused", "values": [] },
+        { "name": "liveedgeoffset", "values": [] },
+        { "name": "seektoliveoffset", "values": [] },
+        { "name": "noautoseektolive", "values": [] },
+        { "name": "novolumepref", "values": [] },
+        { "name": "nosubtitleslangpref", "values": [] },
+        { "name": "nodefaultstore", "values": [] },
+        { "name": "lang", "values": [] },
+        { "name": "audio", "values": [] },
+        { "name": "autohide", "values": [] },
+        { "name": "autohideovercontrols", "values": [] },
+        { "name": "breakpoints", "values": [] },
+        { "name": "gesturesdisabled", "values": [] },
+        { "name": "keyboardcontrol", "values": [] },
+        { "name": "noautohide", "values": [] },
+        { "name": "userinactive", "values": [] }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-duration-display",
+      "description": "\n\n\n---\n\n\n\n\n### **Slots:**\n - _default_ - Default slotted elements.\n\n### **CSS Properties:**\n - **--media-duration-display-display** - `display` property of display. _(default: inline-flex)_\n- **--media-primary-color** - Default color of text. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of background. _(default: rgb(20 20 30 / .7))_\n- **--media-text-color** - `color` of text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-display** - `display` property of control. _(default: undefined)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-height** - `line-height` of control. _(default: 24px)_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, normal) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: normal)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of text. _(default: var(--media-control-height, 24px))_",
+      "attributes": [
+        {
+          "name": "mediaduration",
+          "description": "(read-only) Set to the media duration.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-error-dialog",
+      "description": "\n\n\n---\n\n\n\n\n### **Events:**\n - **open** - Dispatched when the dialog is opened.\n- **close** - Dispatched when the dialog is closed.\n- **focus** - Dispatched when the dialog is focused.\n- **focusin** - Dispatched when the dialog is focused in.\n\n### **Slots:**\n - _default_ - Default slotted elements.\n\n### **CSS Properties:**\n - **--media-control-background** - `background` of control. _(default: undefined)_\n- **--media-primary-color** - Default color of text / icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of background. _(default: undefined)_\n- **--media-text-color** - `color` of text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-dialog-display** - `display` of dialog. _(default: inline-flex)_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, normal) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: normal)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of text. _(default: var(--media-control-height, 24px))_",
+      "attributes": [
+        {
+          "name": "mediaerrorcode",
+          "description": "(read-only) The error code for the current media error.",
+          "values": []
+        },
+        {
+          "name": "mediaerrormessage",
+          "description": "(read-only) The error message for the current media error.",
+          "values": []
+        },
+        {
+          "name": "open",
+          "description": "The open state of the dialog.",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-fullscreen-button",
+      "description": "\n\n\n---\n\n\n\n\n### **Events:**\n - **eventName** - undefined\n\n### **Slots:**\n - **enter** - An element shown when the media is not in fullscreen and pressing the button will trigger entering fullscreen.\n- **exit** - An element shown when the media is in fullscreen and pressing the button will trigger exiting fullscreen.\n- **icon** - An element for representing enter and exit states in a single icon\n\n### **CSS Properties:**\n - **--media-fullscreen-button-display** - `display` property of button. _(default: inline-flex)_\n- **--media-primary-color** - Default color of text and icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of button background. _(default: rgb(20 20 30 / .7))_\n- **--media-text-color** - `color` of button text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-icon-color** - `fill` color of button icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-display** - `display` property of control. _(default: undefined)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-hover-background** - `background` of control hover state. _(default: rgba(50 50 70 / .7))_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-height** - `line-height` of control. _(default: 24px)_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, bold) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: bold)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of button text. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-width** - `width` of button icon. _(default: undefined)_\n- **--media-button-icon-height** - `height` of button icon. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-transform** - `transform` of button icon. _(default: undefined)_\n- **--media-button-icon-transition** - `transition` of button icon. _(default: undefined)_",
+      "attributes": [
+        {
+          "name": "mediafullscreenunavailable",
+          "description": "(read-only) Set if fullscreen is unavailable.",
+          "values": [{ "name": "(unavailable" }, { "name": "unsupported)" }]
+        },
+        {
+          "name": "mediaisfullscreen",
+          "description": "(read-only) Present if the media is fullscreen.",
+          "values": []
+        },
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        },
+        {
+          "name": "tooltipplacement",
+          "description": "The placement of the tooltip, defaults to \"top\"",
+          "values": [
+            { "name": "('top'" },
+            { "name": "right" },
+            { "name": "bottom" },
+            { "name": "left" },
+            { "name": "'none')" }
+          ]
+        },
+        {
+          "name": "notooltip",
+          "description": "Hides the tooltip if this attribute is present",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-gesture-receiver",
+      "description": "\n\n\n---\n\n\n\n\n### **Events:**\n - **eventName** - undefined\n\n### **CSS Properties:**\n - **--media-gesture-receiver-display** - `display` property of gesture receiver. _(default: inline-block)_\n- **--media-control-display** - `display` property of control. _(default: var(--media-gesture-receiver-display, inline-block))_",
+      "attributes": [
+        {
+          "name": "mediapaused",
+          "description": "(read-only) Present if the media is paused.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-live-button",
+      "description": "\n\n\n---\n\n\n\n\n### **Events:**\n - **MEDIA_SEEK_TO_LIVE_REQUEST** - undefined\n- **MEDIA_PLAY_REQUEST** - undefined\n\n### **Slots:**\n - **indicator** - The default is an SVG of a circle that changes to red when the video or audio is live. Can be replaced with your own SVG or font icon.\n- **spacer** - A simple text space (&nbsp;) between the indicator and the text.\n- **text** - The text content of the button, with a default of “LIVE”.\n\n### **CSS Properties:**\n - **--media-live-button-display** - `display` property of button. _(default: inline-flex)_\n- **--media-live-button-icon-color** - `fill` and `color` of not live button icon. _(default: rgb(140, 140, 140))_\n- **--media-live-button-indicator-color** - `fill` and `color` of live button icon. _(default: rgb(255, 0, 0))_\n- **--media-primary-color** - Default color of text and icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of button background. _(default: rgb(20 20 30 / .7))_\n- **--media-text-color** - `color` of button text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-icon-color** - `fill` color of button icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-display** - `display` property of control. _(default: undefined)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-hover-background** - `background` of control hover state. _(default: rgba(50 50 70 / .7))_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-height** - `line-height` of control. _(default: 24px)_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, bold) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: bold)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of button text. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-width** - `width` of button icon. _(default: undefined)_\n- **--media-button-icon-height** - `height` of button icon. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-transform** - `transform` of button icon. _(default: undefined)_\n- **--media-button-icon-transition** - `transition` of button icon. _(default: undefined)_",
+      "attributes": [
+        {
+          "name": "mediapaused",
+          "description": "(read-only) Present if the media is paused.",
+          "values": []
+        },
+        {
+          "name": "mediatimeislive",
+          "description": "(read-only) Present if the media playback is live.",
+          "values": []
+        },
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        },
+        {
+          "name": "tooltipplacement",
+          "description": "The placement of the tooltip, defaults to \"top\"",
+          "values": [
+            { "name": "('top'" },
+            { "name": "right" },
+            { "name": "bottom" },
+            { "name": "left" },
+            { "name": "'none')" }
+          ]
+        },
+        {
+          "name": "notooltip",
+          "description": "Hides the tooltip if this attribute is present",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-loading-indicator",
+      "description": "\n\n\n---\n\n\n\n\n### **Slots:**\n - **icon** - The element shown for when the media is in a buffering state.\n\n### **CSS Properties:**\n - **--media-primary-color** - Default color of text and icon. _(default: rgb(238 238 238))_\n- **--media-icon-color** - `fill` color of button icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-display** - `display` property of control. _(default: var(--media-loading-indicator-display, inline-block))_\n- **--media-loading-indicator-display** - `display` property of loading indicator. _(default: inline-block)_\n- **--media-loading-indicator-opacity** - `opacity` property of loading indicator. Set to 1 to force it to be visible. _(default: 0)_\n- **--media-loading-indicator-transition-delay** - `transition-delay` property of loading indicator. Make sure to include units. _(default: 500ms)_\n- **--media-loading-indicator-icon-width** - `width` of loading icon. _(default: undefined)_\n- **--media-loading-indicator-icon-height** - `height` of loading icon. _(default: 100px)_",
+      "attributes": [
+        {
+          "name": "loadingdelay",
+          "description": "Set the delay in ms before the loading animation is shown.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        },
+        {
+          "name": "mediapaused",
+          "description": "(read-only) Present if the media is paused.",
+          "values": []
+        },
+        {
+          "name": "medialoading",
+          "description": "(read-only) Present if the media is loading.",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-mute-button",
+      "description": "\n\n\n---\n\n\n\n\n### **Events:**\n - **eventName** - undefined\n\n### **Slots:**\n - **off** - An element shown when the media is muted or the media’s volume is 0.\n- **low** - An element shown when the media’s volume is “low” (less than 50% / 0.5).\n- **medium** - An element shown when the media’s volume is “medium” (between 50% / 0.5 and 75% / 0.75).\n- **high** - An element shown when the media’s volume is “high” (75% / 0.75 or greater).\n- **icon** - An element for representing all states in a single icon\n\n### **CSS Properties:**\n - **--media-mute-button-display** - `display` property of button. _(default: inline-flex)_\n- **--media-primary-color** - Default color of text and icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of button background. _(default: rgb(20 20 30 / .7))_\n- **--media-text-color** - `color` of button text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-icon-color** - `fill` color of button icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-display** - `display` property of control. _(default: undefined)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-hover-background** - `background` of control hover state. _(default: rgba(50 50 70 / .7))_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-height** - `line-height` of control. _(default: 24px)_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, bold) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: bold)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of button text. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-width** - `width` of button icon. _(default: undefined)_\n- **--media-button-icon-height** - `height` of button icon. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-transform** - `transform` of button icon. _(default: undefined)_\n- **--media-button-icon-transition** - `transition` of button icon. _(default: undefined)_",
+      "attributes": [
+        {
+          "name": "mediavolumelevel",
+          "description": "(read-only) Set to the media volume level.",
+          "values": []
+        },
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        },
+        {
+          "name": "tooltipplacement",
+          "description": "The placement of the tooltip, defaults to \"top\"",
+          "values": [
+            { "name": "('top'" },
+            { "name": "right" },
+            { "name": "bottom" },
+            { "name": "left" },
+            { "name": "'none')" }
+          ]
+        },
+        {
+          "name": "notooltip",
+          "description": "Hides the tooltip if this attribute is present",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-pip-button",
+      "description": "\n\n\n---\n\n\n\n\n### **Events:**\n - **eventName** - undefined\n\n### **Slots:**\n - **enter** - An element shown when the media is not in PIP mode and pressing the button will trigger entering PIP mode.\n- **exit** - An element shown when the media is in PIP and pressing the button will trigger exiting PIP mode.\n- **icon** - An element for representing enter and exit states in a single icon\n\n### **CSS Properties:**\n - **--media-pip-button-display** - `display` property of button. _(default: inline-flex)_\n- **--media-primary-color** - Default color of text and icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of button background. _(default: rgb(20 20 30 / .7))_\n- **--media-text-color** - `color` of button text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-icon-color** - `fill` color of button icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-display** - `display` property of control. _(default: undefined)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-hover-background** - `background` of control hover state. _(default: rgba(50 50 70 / .7))_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-height** - `line-height` of control. _(default: 24px)_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, bold) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: bold)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of button text. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-width** - `width` of button icon. _(default: undefined)_\n- **--media-button-icon-height** - `height` of button icon. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-transform** - `transform` of button icon. _(default: undefined)_\n- **--media-button-icon-transition** - `transition` of button icon. _(default: undefined)_",
+      "attributes": [
+        {
+          "name": "mediapipunavailable",
+          "description": "(read-only) Set if picture-in-picture is unavailable.",
+          "values": [{ "name": "(unavailable" }, { "name": "unsupported)" }]
+        },
+        {
+          "name": "mediaispip",
+          "description": "(read-only) Present if the media is playing in picture-in-picture.",
+          "values": []
+        },
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        },
+        {
+          "name": "tooltipplacement",
+          "description": "The placement of the tooltip, defaults to \"top\"",
+          "values": [
+            { "name": "('top'" },
+            { "name": "right" },
+            { "name": "bottom" },
+            { "name": "left" },
+            { "name": "'none')" }
+          ]
+        },
+        {
+          "name": "notooltip",
+          "description": "Hides the tooltip if this attribute is present",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-play-button",
+      "description": "\n\n\n---\n\n\n\n\n### **Events:**\n - **eventName** - undefined\n\n### **Slots:**\n - **play** - An element shown when the media is paused and pressing the button will start media playback.\n- **pause** - An element shown when the media is playing and pressing the button will pause media playback.\n- **icon** - An element for representing play and pause states in a single icon\n\n### **CSS Properties:**\n - **--media-play-button-display** - `display` property of button. _(default: inline-flex)_\n- **--media-primary-color** - Default color of text and icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of button background. _(default: rgb(20 20 30 / .7))_\n- **--media-text-color** - `color` of button text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-icon-color** - `fill` color of button icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-display** - `display` property of control. _(default: undefined)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-hover-background** - `background` of control hover state. _(default: rgba(50 50 70 / .7))_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-height** - `line-height` of control. _(default: 24px)_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, bold) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: bold)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of button text. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-width** - `width` of button icon. _(default: undefined)_\n- **--media-button-icon-height** - `height` of button icon. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-transform** - `transform` of button icon. _(default: undefined)_\n- **--media-button-icon-transition** - `transition` of button icon. _(default: undefined)_",
+      "attributes": [
+        {
+          "name": "mediapaused",
+          "description": "(read-only) Present if the media is paused.",
+          "values": []
+        },
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        },
+        {
+          "name": "tooltipplacement",
+          "description": "The placement of the tooltip, defaults to \"top\"",
+          "values": [
+            { "name": "('top'" },
+            { "name": "right" },
+            { "name": "bottom" },
+            { "name": "left" },
+            { "name": "'none')" }
+          ]
+        },
+        {
+          "name": "notooltip",
+          "description": "Hides the tooltip if this attribute is present",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-playback-rate-button",
+      "description": "\n\n\n---\n\n\n\n\n### **CSS Properties:**\n - **--media-playback-rate-button-display** - `display` property of button. _(default: inline-flex)_\n- **--media-primary-color** - Default color of text and icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of button background. _(default: rgb(20 20 30 / .7))_\n- **--media-text-color** - `color` of button text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-icon-color** - `fill` color of button icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-display** - `display` property of control. _(default: undefined)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-hover-background** - `background` of control hover state. _(default: rgba(50 50 70 / .7))_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-height** - `line-height` of control. _(default: 24px)_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, bold) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: bold)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of button text. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-width** - `width` of button icon. _(default: undefined)_\n- **--media-button-icon-height** - `height` of button icon. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-transform** - `transform` of button icon. _(default: undefined)_\n- **--media-button-icon-transition** - `transition` of button icon. _(default: undefined)_",
+      "attributes": [
+        {
+          "name": "rates",
+          "description": "Set custom playback rates for the user to choose from.",
+          "values": []
+        },
+        {
+          "name": "mediaplaybackrate",
+          "description": "(read-only) Set to the media playback rate.",
+          "values": []
+        },
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        },
+        {
+          "name": "tooltipplacement",
+          "description": "The placement of the tooltip, defaults to \"top\"",
+          "values": [
+            { "name": "('top'" },
+            { "name": "right" },
+            { "name": "bottom" },
+            { "name": "left" },
+            { "name": "'none')" }
+          ]
+        },
+        {
+          "name": "notooltip",
+          "description": "Hides the tooltip if this attribute is present",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-poster-image",
+      "description": "\n\n\n---\n\n\n\n\n### **CSS Properties:**\n - **--media-poster-image-display** - `display` property of poster image. _(default: inline-block)_\n- **--media-poster-image-background-position** - `background-position` of poster image. _(default: var(--media-object-position, center))_\n- **--media-poster-image-background-size** - `background-size` of poster image. _(default: var(--media-object-fit, contain))_\n- **--media-object-fit** - `object-fit` of poster image. _(default: contain)_\n- **--media-object-position** - `object-position` of poster image. _(default: center)_",
+      "attributes": [
+        {
+          "name": "placeholdersrc",
+          "description": "Placeholder image source URL, often a blurhash data URL.",
+          "values": []
+        },
+        {
+          "name": "src",
+          "description": "Poster image source URL.",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-preview-chapter-display",
+      "description": "\n\n\n---\n\n\n\n\n### **Slots:**\n - _default_ - Default slotted elements.\n\n### **CSS Properties:**\n - **--media-preview-chapter-display-display** - `display` property of display. _(default: inline-flex)_\n- **--media-primary-color** - Default color of text. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of background. _(default: rgb(20 20 30 / .7))_\n- **--media-text-color** - `color` of text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-display** - `display` property of control. _(default: undefined)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-height** - `line-height` of control. _(default: 24px)_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, normal) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: normal)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of text. _(default: var(--media-control-height, 24px))_",
+      "attributes": [
+        {
+          "name": "mediapreviewchapter",
+          "description": "(read-only) Set to the timeline preview chapter.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-preview-thumbnail",
+      "description": "\n\n\n---\n\n\n\n\n### **CSS Properties:**\n - **--media-preview-thumbnail-display** - `display` property of display. _(default: inline-block)_\n- **--media-control-display** - `display` property of control. _(default: inline-block)_",
+      "attributes": [
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        },
+        {
+          "name": "mediapreviewimage",
+          "description": "(read-only) Set to the timeline preview image URL.",
+          "values": []
+        },
+        {
+          "name": "mediapreviewcoords",
+          "description": "(read-only) Set to the active preview image coordinates.",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-preview-time-display",
+      "description": "\n\n\n---\n\n\n\n\n### **Slots:**\n - _default_ - Default slotted elements.\n\n### **CSS Properties:**\n - **--media-preview-time-display-display** - `display` property of display. _(default: inline-flex)_\n- **--media-primary-color** - Default color of text. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of background. _(default: rgb(20 20 30 / .7))_\n- **--media-text-color** - `color` of text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-display** - `display` property of control. _(default: undefined)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-height** - `line-height` of control. _(default: 24px)_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, normal) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: normal)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of text. _(default: var(--media-control-height, 24px))_",
+      "attributes": [
+        {
+          "name": "mediapreviewtime",
+          "description": "(read-only) Set to the timeline preview time.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-seek-backward-button",
+      "description": "\n\n\n---\n\n\n\n\n### **Slots:**\n - **icon** - The element shown for the seek backward button’s display.\n\n### **CSS Properties:**\n - **--media-seek-backward-button-display** - `display` property of button. _(default: inline-flex)_\n- **--media-primary-color** - Default color of text and icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of button background. _(default: rgb(20 20 30 / .7))_\n- **--media-text-color** - `color` of button text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-icon-color** - `fill` color of button icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-display** - `display` property of control. _(default: undefined)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-hover-background** - `background` of control hover state. _(default: rgba(50 50 70 / .7))_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-height** - `line-height` of control. _(default: 24px)_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, bold) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: bold)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of button text. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-width** - `width` of button icon. _(default: undefined)_\n- **--media-button-icon-height** - `height` of button icon. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-transform** - `transform` of button icon. _(default: undefined)_\n- **--media-button-icon-transition** - `transition` of button icon. _(default: undefined)_",
+      "attributes": [
+        {
+          "name": "seekoffset",
+          "description": "Adjusts how much time (in seconds) the playhead should seek backward.",
+          "values": []
+        },
+        {
+          "name": "mediacurrenttime",
+          "description": "(read-only) Set to the current media time.",
+          "values": []
+        },
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        },
+        {
+          "name": "tooltipplacement",
+          "description": "The placement of the tooltip, defaults to \"top\"",
+          "values": [
+            { "name": "('top'" },
+            { "name": "right" },
+            { "name": "bottom" },
+            { "name": "left" },
+            { "name": "'none')" }
+          ]
+        },
+        {
+          "name": "notooltip",
+          "description": "Hides the tooltip if this attribute is present",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-seek-forward-button",
+      "description": "\n\n\n---\n\n\n\n\n### **Slots:**\n - **icon** - The element shown for the seek forward button's display.\n\n### **CSS Properties:**\n - **--media-seek-forward-button-display** - `display` property of button. _(default: inline-flex)_\n- **--media-primary-color** - Default color of text and icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of button background. _(default: rgb(20 20 30 / .7))_\n- **--media-text-color** - `color` of button text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-icon-color** - `fill` color of button icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-display** - `display` property of control. _(default: undefined)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-hover-background** - `background` of control hover state. _(default: rgba(50 50 70 / .7))_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-height** - `line-height` of control. _(default: 24px)_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, bold) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: bold)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of button text. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-width** - `width` of button icon. _(default: undefined)_\n- **--media-button-icon-height** - `height` of button icon. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-transform** - `transform` of button icon. _(default: undefined)_\n- **--media-button-icon-transition** - `transition` of button icon. _(default: undefined)_",
+      "attributes": [
+        {
+          "name": "seekoffset",
+          "description": "Adjusts how much time (in seconds) the playhead should seek forward.",
+          "values": []
+        },
+        {
+          "name": "mediacurrenttime",
+          "description": "(read-only) Set to the current media time.",
+          "values": []
+        },
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        },
+        {
+          "name": "tooltipplacement",
+          "description": "The placement of the tooltip, defaults to \"top\"",
+          "values": [
+            { "name": "('top'" },
+            { "name": "right" },
+            { "name": "bottom" },
+            { "name": "left" },
+            { "name": "'none')" }
+          ]
+        },
+        {
+          "name": "notooltip",
+          "description": "Hides the tooltip if this attribute is present",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-text-display",
+      "description": "\n\n\n---\n\n\n\n\n### **Slots:**\n - _default_ - Default slotted elements.\n\n### **CSS Properties:**\n - **--media-primary-color** - Default color of text. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of background. _(default: rgb(20 20 30 / .7))_\n- **--media-text-color** - `color` of text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-display** - `display` property of control. _(default: undefined)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-height** - `line-height` of control. _(default: 24px)_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, normal) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: normal)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of text. _(default: var(--media-control-height, 24px))_",
+      "attributes": [
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-theme",
+      "description": "\n\n\n---\n\n\n",
+      "attributes": [
+        {
+          "name": "template",
+          "description": "The element `id` of the template to render.",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-time-display",
+      "description": "\n\n\n---\n\n\n\n\n### **Slots:**\n - _default_ - Default slotted elements.\n\n### **CSS Properties:**\n - **--media-time-display-display** - `display` property of display. _(default: inline-flex)_\n- **--media-control-hover-background** - `background` of control hover state. _(default: undefined)_\n- **--media-primary-color** - Default color of text. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of background. _(default: rgb(20 20 30 / .7))_\n- **--media-text-color** - `color` of text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-display** - `display` property of control. _(default: undefined)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-height** - `line-height` of control. _(default: 24px)_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, normal) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: normal)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of text. _(default: var(--media-control-height, 24px))_",
+      "attributes": [
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        {
+          "name": "remaining",
+          "description": "Toggle on to show the remaining time instead of elapsed time.",
+          "values": []
+        },
+        {
+          "name": "showduration",
+          "description": "Toggle on to show the duration.",
+          "values": []
+        },
+        {
+          "name": "notoggle",
+          "description": "Set this to disable click or tap behavior that toggles between remaining and current time.",
+          "values": []
+        },
+        {
+          "name": "mediacurrenttime",
+          "description": "(read-only) Set to the current media time.",
+          "values": []
+        },
+        {
+          "name": "mediaduration",
+          "description": "(read-only) Set to the media duration.",
+          "values": []
+        },
+        {
+          "name": "mediaseekable",
+          "description": "(read-only) Set to the seekable time ranges.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-time-range",
+      "description": "\n\n\n---\n\n\n\n\n### **Events:**\n - **undefined** - undefined\n\n### **Slots:**\n - **preview** - An element that slides along the timeline to the position of the pointer hovering.\n- **preview-arrow** - An arrow element that slides along the timeline to the position of the pointer hovering.\n- **current** - An element that slides along the timeline to the position of the current time.\n- **thumb** - The thumb element to use for the range.\n\n### **CSS Properties:**\n - **--media-time-range-display** - `display` property of range. _(default: inline-block)_\n- **--media-preview-transition-property** - `transition-property` of range hover preview. _(default: visibility, opacity)_\n- **--media-preview-transition-duration-out** - `transition-duration` out of range hover preview. _(default: .25s)_\n- **--media-preview-transition-delay-out** - `transition-delay` out of range hover preview. _(default: 0s)_\n- **--media-preview-transition-duration-in** - `transition-duration` in of range hover preview. _(default: .5s)_\n- **--media-preview-transition-delay-in** - `transition-delay` in of range hover preview. _(default: .25s)_\n- **--media-preview-thumbnail-background** - `background` of range preview thumbnail. _(default: var(--_preview-background))_\n- **--media-preview-thumbnail-box-shadow** - `box-shadow` of range preview thumbnail. _(default: 0 0 4px rgb(0 0 0 / .2))_\n- **--media-preview-thumbnail-max-width** - `max-width` of range preview thumbnail. _(default: 180px)_\n- **--media-preview-thumbnail-max-height** - `max-height` of range preview thumbnail. _(default: 160px)_\n- **--media-preview-thumbnail-min-width** - `min-width` of range preview thumbnail. _(default: 120px)_\n- **--media-preview-thumbnail-min-height** - `min-height` of range preview thumbnail. _(default: 80px)_\n- **--media-preview-thumbnail-border-radius** - `border-radius` of range preview thumbnail. _(default: var(--media-preview-border-radius) var(--media-preview-border-radius) 0 0)_\n- **--media-preview-thumbnail-border** - `border` of range preview thumbnail. _(default: undefined)_\n- **--media-preview-chapter-background** - `background` of range preview chapter display. _(default: var(--_preview-background))_\n- **--media-preview-chapter-border-radius** - `border-radius` of range preview chapter display. _(default: 0)_\n- **--media-preview-chapter-padding** - `padding` of range preview chapter display. _(default: 3.5px 9px 0)_\n- **--media-preview-chapter-margin** - `margin` of range preview chapter display. _(default: 0)_\n- **--media-preview-chapter-text-shadow** - `text-shadow` of range preview chapter display. _(default: 0 0 4px rgb(0 0 0 / .75))_\n- **--media-preview-time-background** - `background` of range preview time display. _(default: var(--_preview-background))_\n- **--media-preview-time-border-radius** - `border-radius` of range preview time display. _(default: 0 0 var(--media-preview-border-radius) var(--media-preview-border-radius))_\n- **--media-preview-time-padding** - `padding` of range preview time display. _(default: 3.5px 9px)_\n- **--media-preview-time-margin** - `margin` of range preview time display. _(default: 0)_\n- **--media-preview-time-text-shadow** - `text-shadow` of range preview time display. _(default: 0 0 4px rgb(0 0 0 / .75))_\n- **--media-box-display** - `display` of range box. _(default: flex)_\n- **--media-box-margin** - `margin` of range box. _(default: 0 0 5px)_\n- **--media-box-padding-left** - `padding-left` of range box. _(default: undefined)_\n- **--media-box-padding-right** - `padding-right` of range box. _(default: undefined)_\n- **--media-box-border-radius** - `border-radius` of range box. _(default: undefined)_\n- **--media-preview-box-display** - `display` of range preview box. _(default: var(--media-box-display, flex))_\n- **--media-preview-box-margin** - `margin` of range preview box. _(default: var(--media-box-margin, 0 0 5px))_\n- **--media-current-box-display** - `display` of range current box. _(default: var(--media-box-display, flex))_\n- **--media-current-box-margin** - `margin` of range current box. _(default: var(--media-box-margin, 0 0 5px))_\n- **--media-box-arrow-display** - `display` of range box arrow. _(default: inline-block)_\n- **--media-box-arrow-background** - `border-top-color` of range box arrow. _(default: var(--_control-background))_\n- **--media-box-arrow-border-width** - `border-width` of range box arrow. _(default: var(--media-box-arrow-height, 5px) var(--media-box-arrow-width, 6px) 0)_\n- **--media-box-arrow-height** - `height` of range box arrow. _(default: 5px)_\n- **--media-box-arrow-width** - `width` of range box arrow. _(default: 6px)_\n- **--media-box-arrow-offset** - `translateX` offset of range box arrow. _(default: undefined)_\n- **--media-primary-color** - Default color of range bar. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of range background. _(default: rgb(20 20 30 / .7))_\n- **--media-control-display** - `display` property of control. _(default: inline-block)_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-hover-background** - `background` of control hover state. _(default: rgb(50 50 70 / .7))_\n- **--media-control-height** - `height` of control. _(default: 24px)_\n- **--media-range-padding** - `padding` of range. _(default: var(--media-control-padding, 10px))_\n- **--media-range-padding-left** - `padding-left` of range. _(default: var(--_media-range-padding))_\n- **--media-range-padding-right** - `padding-right` of range. _(default: var(--_media-range-padding))_\n- **--media-range-thumb-width** - `width` of range thumb. _(default: 10px)_\n- **--media-range-thumb-height** - `height` of range thumb. _(default: 10px)_\n- **--media-range-thumb-border** - `border` of range thumb. _(default: none)_\n- **--media-range-thumb-border-radius** - `border-radius` of range thumb. _(default: 10px)_\n- **--media-range-thumb-background** - `background` of range thumb. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-range-thumb-box-shadow** - `box-shadow` of range thumb. _(default: 1px 1px 1px transparent)_\n- **--media-range-thumb-transition** - `transition` of range thumb. _(default: undefined)_\n- **--media-range-thumb-transform** - `transform` of range thumb. _(default: none)_\n- **--media-range-thumb-opacity** - `opacity` of range thumb. _(default: 1)_\n- **--media-range-bar-color** - `background` of range progress. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-range-track-background** - `background` of range track background. _(default: rgb(255 255 255 / .2))_\n- **--media-range-track-backdrop-filter** - `backdrop-filter` of range track. _(default: undefined)_\n- **--media-range-track-width** - `width` of range track. _(default: 100%)_\n- **--media-range-track-height** - `height` of range track. _(default: 4px)_\n- **--media-range-track-border** - `border` of range track. _(default: none)_\n- **--media-range-track-outline** - `outline` of range track. _(default: undefined)_\n- **--media-range-track-outline-offset** - `outline-offset` of range track. _(default: undefined)_\n- **--media-range-track-border-radius** - `border-radius` of range track. _(default: 1px)_\n- **--media-range-track-box-shadow** - `box-shadow` of range track. _(default: none)_\n- **--media-range-track-transition** - `transition` of range track. _(default: undefined)_\n- **--media-range-track-translate-x** - `translate` x-coordinate of range track. _(default: 0px)_\n- **--media-range-track-translate-y** - `translate` y-coordinate of range track. _(default: 0px)_\n- **--media-time-range-hover-display** - `display` of range hover zone. _(default: block)_\n- **--media-time-range-hover-bottom** - `bottom` of range hover zone. _(default: -5px)_\n- **--media-time-range-hover-height** - `height` of range hover zone. _(default: max(100% + 5px, 20px))_\n- **--media-range-track-pointer-background** - `background` of range track pointer. _(default: undefined)_\n- **--media-range-track-pointer-border-right** - `border-right` of range track pointer. _(default: undefined)_\n\n### **CSS Parts:**\n - **buffered** - A CSS part that selects the buffered bar element.\n- **box** - A CSS part that selects both the preview and current box elements.\n- **preview-box** - A CSS part that selects the preview box element.\n- **current-box** - A CSS part that selects the current box element.\n- **arrow** - A CSS part that selects the arrow element.\n- **track** - The runnable track of the range.\n- **progress** - The progress part of the track.\n- **thumb** - The thumb of the range.",
+      "attributes": [
+        {
+          "name": "mediabuffered",
+          "description": "(read-only) Set to the buffered time ranges.",
+          "values": []
+        },
+        {
+          "name": "mediaplaybackrate",
+          "description": "(read-only) Set to the media playback rate.",
+          "values": []
+        },
+        {
+          "name": "mediaduration",
+          "description": "(read-only) Set to the media duration.",
+          "values": []
+        },
+        {
+          "name": "mediaseekable",
+          "description": "(read-only) Set to the seekable time ranges.",
+          "values": []
+        },
+        {
+          "name": "mediapaused",
+          "description": "(read-only) Present if the media is paused.",
+          "values": []
+        },
+        {
+          "name": "medialoading",
+          "description": "(read-only) Present if the media is loading.",
+          "values": []
+        },
+        {
+          "name": "mediacurrenttime",
+          "description": "(read-only) Set to the current media time.",
+          "values": []
+        },
+        {
+          "name": "mediapreviewimage",
+          "description": "(read-only) Set to the timeline preview image URL.",
+          "values": []
+        },
+        {
+          "name": "mediapreviewtime",
+          "description": "(read-only) Set to the timeline preview time.",
+          "values": []
+        },
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        { "name": "aria-disabled", "values": [] },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-tooltip",
+      "description": "\n\n\n---\n\n\n\n\n### **CSS Properties:**\n - **--media-primary-color** - Default color of text. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of tooltip background. _(default: rgba(20, 20, 30, .7))_\n- **--media-text-color** - `color` of tooltip text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, 400) var(--media-font-size, 13px) / var(--media-text-content-height, var(--media-control-height, 18px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: 400)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 13px)_\n- **--media-text-content-height** - `line-height` of button text. _(default: var(--media-control-height, 18px))_\n- **--media-tooltip-border** - 'border' of tooltip _(default: none)_\n- **--media-tooltip-background-color** - Background color of tooltip and arrow, unless individually overidden _(default: var(--media-secondary-color, rgba(20, 20, 30, .7)))_\n- **--media-tooltip-background** - `background` of tooltip, ignoring the arrow _(default: var(--_tooltip-background-color))_\n- **--media-tooltip-display** - `display` of tooltip _(default: inline-flex)_\n- **--media-tooltip-z-index** - `z-index` of tooltip _(default: 1)_\n- **--media-tooltip-padding** - `padding` of tooltip _(default: .35em .7em)_\n- **--media-tooltip-border-radius** - `border-radius` of tooltip _(default: 5px)_\n- **--media-tooltip-filter** - `filter` property of tooltip, for drop-shadow _(default: drop-shadow(0 0 4px rgba(0, 0, 0, .2)))_\n- **--media-tooltip-white-space** - `white-space` property of tooltip _(default: nowrap)_\n- **--media-tooltip-arrow-display** - `display` property of tooltip arrow _(default: block)_\n- **--media-tooltip-arrow-width** - Arrow width _(default: 12px)_\n- **--media-tooltip-arrow-height** - Arrow height _(default: 5px)_\n- **--media-tooltip-arrow-color** - Arrow color _(default: var(--_tooltip-background-color))_",
+      "attributes": [
+        {
+          "name": "placement",
+          "description": "The placement of the tooltip, defaults to \"top\"",
+          "values": [
+            { "name": "('top'" },
+            { "name": "right" },
+            { "name": "bottom" },
+            { "name": "left" },
+            { "name": "'none')" }
+          ]
+        },
+        {
+          "name": "bounds",
+          "description": "ID for the containing element (one of it's parents) that should constrain the tooltips horizontal position.",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-volume-range",
+      "description": "\n\n\n---\n\n\n\n\n### **Slots:**\n - **thumb** - The thumb element to use for the range.\n\n### **CSS Properties:**\n - **--media-volume-range-display** - `display` property of range. _(default: inline-block)_\n- **--media-primary-color** - Default color of range bar. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of range background. _(default: rgb(20 20 30 / .7))_\n- **--media-control-display** - `display` property of control. _(default: inline-block)_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-hover-background** - `background` of control hover state. _(default: rgb(50 50 70 / .7))_\n- **--media-control-height** - `height` of control. _(default: 24px)_\n- **--media-range-padding** - `padding` of range. _(default: var(--media-control-padding, 10px))_\n- **--media-range-padding-left** - `padding-left` of range. _(default: var(--_media-range-padding))_\n- **--media-range-padding-right** - `padding-right` of range. _(default: var(--_media-range-padding))_\n- **--media-range-thumb-width** - `width` of range thumb. _(default: 10px)_\n- **--media-range-thumb-height** - `height` of range thumb. _(default: 10px)_\n- **--media-range-thumb-border** - `border` of range thumb. _(default: none)_\n- **--media-range-thumb-border-radius** - `border-radius` of range thumb. _(default: 10px)_\n- **--media-range-thumb-background** - `background` of range thumb. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-range-thumb-box-shadow** - `box-shadow` of range thumb. _(default: 1px 1px 1px transparent)_\n- **--media-range-thumb-transition** - `transition` of range thumb. _(default: undefined)_\n- **--media-range-thumb-transform** - `transform` of range thumb. _(default: none)_\n- **--media-range-thumb-opacity** - `opacity` of range thumb. _(default: 1)_\n- **--media-range-bar-color** - `background` of range progress. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-range-track-background** - `background` of range track background. _(default: rgb(255 255 255 / .2))_\n- **--media-range-track-backdrop-filter** - `backdrop-filter` of range track. _(default: undefined)_\n- **--media-range-track-width** - `width` of range track. _(default: 100%)_\n- **--media-range-track-height** - `height` of range track. _(default: 4px)_\n- **--media-range-track-border** - `border` of range track. _(default: none)_\n- **--media-range-track-outline** - `outline` of range track. _(default: undefined)_\n- **--media-range-track-outline-offset** - `outline-offset` of range track. _(default: undefined)_\n- **--media-range-track-border-radius** - `border-radius` of range track. _(default: 1px)_\n- **--media-range-track-box-shadow** - `box-shadow` of range track. _(default: none)_\n- **--media-range-track-transition** - `transition` of range track. _(default: undefined)_\n- **--media-range-track-translate-x** - `translate` x-coordinate of range track. _(default: 0px)_\n- **--media-range-track-translate-y** - `translate` y-coordinate of range track. _(default: 0px)_\n- **--media-time-range-hover-display** - `display` of range hover zone. _(default: block)_\n- **--media-time-range-hover-bottom** - `bottom` of range hover zone. _(default: -5px)_\n- **--media-time-range-hover-height** - `height` of range hover zone. _(default: max(100% + 5px, 20px))_\n- **--media-range-track-pointer-background** - `background` of range track pointer. _(default: undefined)_\n- **--media-range-track-pointer-border-right** - `border-right` of range track pointer. _(default: undefined)_\n\n### **CSS Parts:**\n - **track** - The runnable track of the range.\n- **progress** - The progress part of the track.\n- **thumb** - The thumb of the range.",
+      "attributes": [
+        {
+          "name": "mediavolume",
+          "description": "(read-only) Set to the media volume.",
+          "values": []
+        },
+        {
+          "name": "mediamuted",
+          "description": "(read-only) Set to the media muted state.",
+          "values": []
+        },
+        {
+          "name": "mediavolumeunavailable",
+          "description": "(read-only) Set if changing volume is unavailable.",
+          "values": []
+        },
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        { "name": "aria-disabled", "values": [] },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-audio-track-menu-button",
+      "description": "\n\n\n---\n\n\n\n\n### **CSS Properties:**\n - **--media-audio-track-menu-button-display** - `display` property of button. _(default: inline-flex)_\n- **--media-primary-color** - Default color of text and icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of button background. _(default: rgb(20 20 30 / .7))_\n- **--media-text-color** - `color` of button text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-icon-color** - `fill` color of button icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-display** - `display` property of control. _(default: undefined)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-hover-background** - `background` of control hover state. _(default: rgba(50 50 70 / .7))_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-height** - `line-height` of control. _(default: 24px)_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, bold) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: bold)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of button text. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-width** - `width` of button icon. _(default: undefined)_\n- **--media-button-icon-height** - `height` of button icon. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-transform** - `transform` of button icon. _(default: undefined)_\n- **--media-button-icon-transition** - `transition` of button icon. _(default: undefined)_",
+      "attributes": [
+        {
+          "name": "mediaaudiotrackenabled",
+          "description": "(read-only) Set to the selected audio track id.",
+          "values": []
+        },
+        {
+          "name": "mediaaudiotrackunavailable",
+          "description": "(read-only) Set if audio track selection is unavailable.",
+          "values": [{ "name": "(unavailable" }, { "name": "unsupported)" }]
+        },
+        {
+          "name": "invoketarget",
+          "description": "The id of the element to invoke when clicked.",
+          "values": []
+        },
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        },
+        {
+          "name": "tooltipplacement",
+          "description": "The placement of the tooltip, defaults to \"top\"",
+          "values": [
+            { "name": "('top'" },
+            { "name": "right" },
+            { "name": "bottom" },
+            { "name": "left" },
+            { "name": "'none')" }
+          ]
+        },
+        {
+          "name": "notooltip",
+          "description": "Hides the tooltip if this attribute is present",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-audio-track-menu",
+      "description": "\n\n\n---\n\n\n\n\n### **Events:**\n - **undefined** - undefined\n- **change** - undefined\n\n### **Slots:**\n - _default_ - Default slotted elements.node\n- **header** - An element shown at the top of the menu.\n- **checked-indicator** - An icon element indicating a checked menu-item.\n\n### **CSS Properties:**\n - **--media-primary-color** - Default color of text / icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of background. _(default: var(--_menu-bg))_\n- **--media-text-color** - `color` of text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, var(--_menu-bg)))_\n- **--media-menu-display** - `display` of menu. _(default: inline-flex)_\n- **--media-menu-layout** - Set to `row` for a horizontal menu design. _(default: undefined)_\n- **--media-menu-flex-direction** - `flex-direction` of menu. _(default: row)_\n- **--media-menu-gap** - `gap` between menu items. _(default: .25em)_\n- **--media-menu-background** - `background` of menu. _(default: var(--media-control-background, var(--media-secondary-color, var(--_menu-bg))))_\n- **--media-menu-border-radius** - `border-radius` of menu. _(default: undefined)_\n- **--media-menu-border** - `border` of menu. _(default: none)_\n- **--media-menu-transition-in** - `transition` of menu when showing. _(default: visibility 0s, opacity .2s ease-out, transform .15s ease-out, left .2s ease-in-out, min-width .2s ease-in-out, min-height .2s ease-in-out)_\n- **--media-menu-transition-out** - `transition` of menu when hiding. _(default: visibility .15s ease-in, opacity .15s ease-in, transform .15s ease-in)_\n- **--media-menu-visibility** - `visibility` of menu when showing. _(default: visible)_\n- **--media-menu-hidden-visibility** - `visibility` of menu when hiding. _(default: hidden)_\n- **--media-menu-max-height** - `max-height` of menu. _(default: var(--_menu-max-height, 300px))_\n- **--media-menu-hidden-max-height** - `max-height` of menu when hiding. _(default: var(--media-menu-max-height, var(--_menu-max-height, 300px)))_\n- **--media-menu-opacity** - `opacity` of menu when showing. _(default: 1)_\n- **--media-menu-hidden-opacity** - `opacity` of menu when hiding. _(default: 0)_\n- **--media-menu-transform-in** - `transform` of menu when showing. _(default: translateY(0) scale(1))_\n- **--media-menu-transform-out** - `transform` of menu when hiding. _(default: translateY(2px) scale(.99))_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, normal) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: normal)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of text. _(default: var(--media-control-height, 24px))_\n- **--media-icon-color** - `fill` color of icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-menu-icon-height** - `height` of icon. _(default: var(--media-control-height, 24px))_\n- **--media-menu-item-checked-indicator-display** - `display` of check indicator. _(default: none)_\n- **--media-menu-item-checked-background** - `background` of checked menu item. _(default: rgb(255 255 255 / .2))_\n- **--media-menu-item-max-width** - `max-width` of menu item text. _(default: undefined)_",
+      "attributes": [
+        {
+          "name": "mediaaudiotrackenabled",
+          "description": "(read-only) Set to the enabled audio track.",
+          "values": []
+        },
+        {
+          "name": "mediaaudiotracklist",
+          "description": "(read-only) Set to the audio track list.",
+          "values": []
+        },
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-captions-menu-button",
+      "description": "\n\n\n---\n\n\n\n\n### **Slots:**\n - **on** - An element that will be shown while closed captions or subtitles are on.\n- **off** - An element that will be shown while closed captions or subtitles are off.\n- **icon** - An element for representing on and off states in a single icon\n\n### **CSS Properties:**\n - **--media-captions-menu-button-display** - `display` property of button. _(default: inline-flex)_\n- **--media-primary-color** - Default color of text and icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of button background. _(default: rgb(20 20 30 / .7))_\n- **--media-text-color** - `color` of button text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-icon-color** - `fill` color of button icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-display** - `display` property of control. _(default: undefined)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-hover-background** - `background` of control hover state. _(default: rgba(50 50 70 / .7))_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-height** - `line-height` of control. _(default: 24px)_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, bold) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: bold)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of button text. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-width** - `width` of button icon. _(default: undefined)_\n- **--media-button-icon-height** - `height` of button icon. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-transform** - `transform` of button icon. _(default: undefined)_\n- **--media-button-icon-transition** - `transition` of button icon. _(default: undefined)_",
+      "attributes": [
+        {
+          "name": "mediasubtitleslist",
+          "description": "(read-only) A list of all subtitles and captions.",
+          "values": []
+        },
+        {
+          "name": "mediasubtitlesshowing",
+          "description": "(read-only) A list of the showing subtitles and captions.",
+          "values": []
+        },
+        {
+          "name": "invoketarget",
+          "description": "The id of the element to invoke when clicked.",
+          "values": []
+        },
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        },
+        {
+          "name": "tooltipplacement",
+          "description": "The placement of the tooltip, defaults to \"top\"",
+          "values": [
+            { "name": "('top'" },
+            { "name": "right" },
+            { "name": "bottom" },
+            { "name": "left" },
+            { "name": "'none')" }
+          ]
+        },
+        {
+          "name": "notooltip",
+          "description": "Hides the tooltip if this attribute is present",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-captions-menu",
+      "description": "\n\n\n---\n\n\n\n\n### **Events:**\n - **undefined** - undefined\n- **change** - undefined\n\n### **Slots:**\n - _default_ - Default slotted elements.\n- **header** - An element shown at the top of the menu.\n- **checked-indicator** - An icon element indicating a checked menu-item.\n- **captions-indicator** - An icon element indicating an item with closed captions.\n\n### **CSS Properties:**\n - **--media-primary-color** - Default color of text / icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of background. _(default: var(--_menu-bg))_\n- **--media-text-color** - `color` of text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, var(--_menu-bg)))_\n- **--media-menu-display** - `display` of menu. _(default: inline-flex)_\n- **--media-menu-layout** - Set to `row` for a horizontal menu design. _(default: undefined)_\n- **--media-menu-flex-direction** - `flex-direction` of menu. _(default: row)_\n- **--media-menu-gap** - `gap` between menu items. _(default: .25em)_\n- **--media-menu-background** - `background` of menu. _(default: var(--media-control-background, var(--media-secondary-color, var(--_menu-bg))))_\n- **--media-menu-border-radius** - `border-radius` of menu. _(default: undefined)_\n- **--media-menu-border** - `border` of menu. _(default: none)_\n- **--media-menu-transition-in** - `transition` of menu when showing. _(default: visibility 0s, opacity .2s ease-out, transform .15s ease-out, left .2s ease-in-out, min-width .2s ease-in-out, min-height .2s ease-in-out)_\n- **--media-menu-transition-out** - `transition` of menu when hiding. _(default: visibility .15s ease-in, opacity .15s ease-in, transform .15s ease-in)_\n- **--media-menu-visibility** - `visibility` of menu when showing. _(default: visible)_\n- **--media-menu-hidden-visibility** - `visibility` of menu when hiding. _(default: hidden)_\n- **--media-menu-max-height** - `max-height` of menu. _(default: var(--_menu-max-height, 300px))_\n- **--media-menu-hidden-max-height** - `max-height` of menu when hiding. _(default: var(--media-menu-max-height, var(--_menu-max-height, 300px)))_\n- **--media-menu-opacity** - `opacity` of menu when showing. _(default: 1)_\n- **--media-menu-hidden-opacity** - `opacity` of menu when hiding. _(default: 0)_\n- **--media-menu-transform-in** - `transform` of menu when showing. _(default: translateY(0) scale(1))_\n- **--media-menu-transform-out** - `transform` of menu when hiding. _(default: translateY(2px) scale(.99))_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, normal) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: normal)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of text. _(default: var(--media-control-height, 24px))_\n- **--media-icon-color** - `fill` color of icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-menu-icon-height** - `height` of icon. _(default: var(--media-control-height, 24px))_\n- **--media-menu-item-checked-indicator-display** - `display` of check indicator. _(default: none)_\n- **--media-menu-item-checked-background** - `background` of checked menu item. _(default: rgb(255 255 255 / .2))_\n- **--media-menu-item-max-width** - `max-width` of menu item text. _(default: undefined)_",
+      "attributes": [
+        {
+          "name": "mediasubtitleslist",
+          "description": "(read-only) A list of all subtitles and captions.",
+          "values": []
+        },
+        {
+          "name": "mediasubtitlesshowing",
+          "description": "(read-only) A list of the showing subtitles and captions.",
+          "values": []
+        },
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-chrome-menu-button",
+      "description": "\n\n\n---\n\n\n\n\n### **CSS Properties:**\n - **--media-primary-color** - Default color of text and icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of button background. _(default: rgb(20 20 30 / .7))_\n- **--media-text-color** - `color` of button text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-icon-color** - `fill` color of button icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-display** - `display` property of control. _(default: undefined)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-hover-background** - `background` of control hover state. _(default: rgba(50 50 70 / .7))_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-height** - `line-height` of control. _(default: 24px)_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, bold) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: bold)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of button text. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-width** - `width` of button icon. _(default: undefined)_\n- **--media-button-icon-height** - `height` of button icon. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-transform** - `transform` of button icon. _(default: undefined)_\n- **--media-button-icon-transition** - `transition` of button icon. _(default: undefined)_",
+      "attributes": [
+        {
+          "name": "invoketarget",
+          "description": "The id of the element to invoke when clicked.",
+          "values": []
+        },
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        },
+        {
+          "name": "tooltipplacement",
+          "description": "The placement of the tooltip, defaults to \"top\"",
+          "values": [
+            { "name": "('top'" },
+            { "name": "right" },
+            { "name": "bottom" },
+            { "name": "left" },
+            { "name": "'none')" }
+          ]
+        },
+        {
+          "name": "notooltip",
+          "description": "Hides the tooltip if this attribute is present",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-chrome-menu-item",
+      "description": "\n\n\n---\n\n\n\n\n### **Slots:**\n - _default_ - Default slotted elements.\n\n### **CSS Properties:**\n - **--media-menu-item-opacity** - `opacity` of menu-item content. _(default: 1)_\n- **--media-menu-item-transition** - `transition` of menu-item. _(default: background .15s linear, opacity .2s ease-in-out)_\n- **--media-menu-item-checked-background** - `background` of checked menu-item. _(default: undefined)_\n- **--media-menu-item-outline** - `outline` menu-item. _(default: 0)_\n- **--media-menu-item-outline-offset** - `outline-offset` of menu-item. _(default: -1px)_\n- **--media-menu-item-hover-background** - `background` of hovered menu-item. _(default: rgb(92 92 102 / .5))_\n- **--media-menu-item-hover-outline** - `outline` of hovered menu-item. _(default: undefined)_\n- **--media-menu-item-hover-outline-offset** - `outline-offset` of hovered menu-item. _(default: var(--media-menu-item-outline-offset, -1px))_\n- **--media-menu-item-focus-shadow** - `box-shadow` of the :focus-visible state. _(default: inset 0 0 0 2px rgb(27 127 204 / .9))_\n- **--media-menu-item-icon-height** - `height` of icon. _(default: var(--media-control-height, 24px))_\n- **--media-menu-item-description-max-width** - `max-width` of description. _(default: 100px)_\n- **--media-menu-item-checked-indicator-display** - `display` of checked indicator. _(default: inline-block)_\n- **--media-icon-color** - `fill` color of icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-menu-icon-height** - `height` of icon. _(default: undefined)_\n- **--media-menu-item-indicator-fill** - `fill` color of indicator icon. _(default: var(--media-icon-color, var(--media-primary-color, rgb(238 238 238))))_\n- **--media-menu-item-indicator-height** - `height` of menu-item indicator. _(default: 1.25em)_",
+      "attributes": [
+        {
+          "name": "type",
+          "description": "This attribute indicates the kind of command, and can be one of three values.",
+          "values": [
+            { "name": "(''" },
+            { "name": "radio" },
+            { "name": "'checkbox')" }
+          ]
+        },
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-chrome-menu",
+      "description": "\n\n\n---\n\n\n\n\n### **Events:**\n - **undefined** - undefined\n- **change** - undefined\n\n### **Slots:**\n - _default_ - Default slotted elements.\n- **header** - An element shown at the top of the menu.\n- **checked-indicator** - An icon element indicating a checked menu-item.\n\n### **CSS Properties:**\n - **--media-primary-color** - Default color of text / icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of background. _(default: var(--_menu-bg))_\n- **--media-text-color** - `color` of text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, var(--_menu-bg)))_\n- **--media-menu-display** - `display` of menu. _(default: inline-flex)_\n- **--media-menu-layout** - Set to `row` for a horizontal menu design. _(default: undefined)_\n- **--media-menu-flex-direction** - `flex-direction` of menu. _(default: row)_\n- **--media-menu-gap** - `gap` between menu items. _(default: .25em)_\n- **--media-menu-background** - `background` of menu. _(default: var(--media-control-background, var(--media-secondary-color, var(--_menu-bg))))_\n- **--media-menu-border-radius** - `border-radius` of menu. _(default: undefined)_\n- **--media-menu-border** - `border` of menu. _(default: none)_\n- **--media-menu-transition-in** - `transition` of menu when showing. _(default: visibility 0s, opacity .2s ease-out, transform .15s ease-out, left .2s ease-in-out, min-width .2s ease-in-out, min-height .2s ease-in-out)_\n- **--media-menu-transition-out** - `transition` of menu when hiding. _(default: visibility .15s ease-in, opacity .15s ease-in, transform .15s ease-in)_\n- **--media-menu-visibility** - `visibility` of menu when showing. _(default: visible)_\n- **--media-menu-hidden-visibility** - `visibility` of menu when hiding. _(default: hidden)_\n- **--media-menu-max-height** - `max-height` of menu. _(default: var(--_menu-max-height, 300px))_\n- **--media-menu-hidden-max-height** - `max-height` of menu when hiding. _(default: var(--media-menu-max-height, var(--_menu-max-height, 300px)))_\n- **--media-menu-opacity** - `opacity` of menu when showing. _(default: 1)_\n- **--media-menu-hidden-opacity** - `opacity` of menu when hiding. _(default: 0)_\n- **--media-menu-transform-in** - `transform` of menu when showing. _(default: translateY(0) scale(1))_\n- **--media-menu-transform-out** - `transform` of menu when hiding. _(default: translateY(2px) scale(.99))_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, normal) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: normal)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of text. _(default: var(--media-control-height, 24px))_\n- **--media-icon-color** - `fill` color of icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-menu-icon-height** - `height` of icon. _(default: var(--media-control-height, 24px))_\n- **--media-menu-item-checked-indicator-display** - `display` of check indicator. _(default: none)_\n- **--media-menu-item-checked-background** - `background` of checked menu item. _(default: rgb(255 255 255 / .2))_\n- **--media-menu-item-max-width** - `max-width` of menu item text. _(default: undefined)_",
+      "attributes": [
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-playback-rate-menu-button",
+      "description": "\n\n\n---\n\n\n\n\n### **CSS Properties:**\n - **--media-playback-rate-menu-button-display** - `display` property of button. _(default: inline-flex)_\n- **--media-primary-color** - Default color of text and icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of button background. _(default: rgb(20 20 30 / .7))_\n- **--media-text-color** - `color` of button text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-icon-color** - `fill` color of button icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-display** - `display` property of control. _(default: undefined)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-hover-background** - `background` of control hover state. _(default: rgba(50 50 70 / .7))_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-height** - `line-height` of control. _(default: 24px)_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, bold) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: bold)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of button text. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-width** - `width` of button icon. _(default: undefined)_\n- **--media-button-icon-height** - `height` of button icon. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-transform** - `transform` of button icon. _(default: undefined)_\n- **--media-button-icon-transition** - `transition` of button icon. _(default: undefined)_",
+      "attributes": [
+        {
+          "name": "mediaplaybackrate",
+          "description": "(read-only) Set to the media playback rate.",
+          "values": []
+        },
+        {
+          "name": "invoketarget",
+          "description": "The id of the element to invoke when clicked.",
+          "values": []
+        },
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        },
+        {
+          "name": "tooltipplacement",
+          "description": "The placement of the tooltip, defaults to \"top\"",
+          "values": [
+            { "name": "('top'" },
+            { "name": "right" },
+            { "name": "bottom" },
+            { "name": "left" },
+            { "name": "'none')" }
+          ]
+        },
+        {
+          "name": "notooltip",
+          "description": "Hides the tooltip if this attribute is present",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-playback-rate-menu",
+      "description": "\n\n\n---\n\n\n\n\n### **Events:**\n - **undefined** - undefined\n- **change** - undefined\n\n### **Slots:**\n - _default_ - Default slotted elements.\n- **header** - An element shown at the top of the menu.\n- **checked-indicator** - An icon element indicating a checked menu-item.\n\n### **CSS Properties:**\n - **--media-primary-color** - Default color of text / icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of background. _(default: var(--_menu-bg))_\n- **--media-text-color** - `color` of text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, var(--_menu-bg)))_\n- **--media-menu-display** - `display` of menu. _(default: inline-flex)_\n- **--media-menu-layout** - Set to `row` for a horizontal menu design. _(default: undefined)_\n- **--media-menu-flex-direction** - `flex-direction` of menu. _(default: row)_\n- **--media-menu-gap** - `gap` between menu items. _(default: .25em)_\n- **--media-menu-background** - `background` of menu. _(default: var(--media-control-background, var(--media-secondary-color, var(--_menu-bg))))_\n- **--media-menu-border-radius** - `border-radius` of menu. _(default: undefined)_\n- **--media-menu-border** - `border` of menu. _(default: none)_\n- **--media-menu-transition-in** - `transition` of menu when showing. _(default: visibility 0s, opacity .2s ease-out, transform .15s ease-out, left .2s ease-in-out, min-width .2s ease-in-out, min-height .2s ease-in-out)_\n- **--media-menu-transition-out** - `transition` of menu when hiding. _(default: visibility .15s ease-in, opacity .15s ease-in, transform .15s ease-in)_\n- **--media-menu-visibility** - `visibility` of menu when showing. _(default: visible)_\n- **--media-menu-hidden-visibility** - `visibility` of menu when hiding. _(default: hidden)_\n- **--media-menu-max-height** - `max-height` of menu. _(default: var(--_menu-max-height, 300px))_\n- **--media-menu-hidden-max-height** - `max-height` of menu when hiding. _(default: var(--media-menu-max-height, var(--_menu-max-height, 300px)))_\n- **--media-menu-opacity** - `opacity` of menu when showing. _(default: 1)_\n- **--media-menu-hidden-opacity** - `opacity` of menu when hiding. _(default: 0)_\n- **--media-menu-transform-in** - `transform` of menu when showing. _(default: translateY(0) scale(1))_\n- **--media-menu-transform-out** - `transform` of menu when hiding. _(default: translateY(2px) scale(.99))_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, normal) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: normal)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of text. _(default: var(--media-control-height, 24px))_\n- **--media-icon-color** - `fill` color of icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-menu-icon-height** - `height` of icon. _(default: var(--media-control-height, 24px))_\n- **--media-menu-item-checked-indicator-display** - `display` of check indicator. _(default: none)_\n- **--media-menu-item-checked-background** - `background` of checked menu item. _(default: rgb(255 255 255 / .2))_\n- **--media-menu-item-max-width** - `max-width` of menu item text. _(default: undefined)_",
+      "attributes": [
+        {
+          "name": "rates",
+          "description": "Set custom playback rates for the user to choose from.",
+          "values": []
+        },
+        {
+          "name": "mediaplaybackrate",
+          "description": "(read-only) Set to the media playback rate.",
+          "values": []
+        },
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-rendition-menu-button",
+      "description": "\n\n\n---\n\n\n\n\n### **CSS Properties:**\n - **--media-rendition-menu-button-display** - `display` property of button. _(default: inline-flex)_\n- **--media-primary-color** - Default color of text and icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of button background. _(default: rgb(20 20 30 / .7))_\n- **--media-text-color** - `color` of button text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-icon-color** - `fill` color of button icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-display** - `display` property of control. _(default: undefined)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-hover-background** - `background` of control hover state. _(default: rgba(50 50 70 / .7))_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-height** - `line-height` of control. _(default: 24px)_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, bold) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: bold)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of button text. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-width** - `width` of button icon. _(default: undefined)_\n- **--media-button-icon-height** - `height` of button icon. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-transform** - `transform` of button icon. _(default: undefined)_\n- **--media-button-icon-transition** - `transition` of button icon. _(default: undefined)_",
+      "attributes": [
+        {
+          "name": "mediarenditionselected",
+          "description": "(read-only) Set to the selected rendition id.",
+          "values": []
+        },
+        {
+          "name": "mediarenditionunavailable",
+          "description": "(read-only) Set if rendition selection is unavailable.",
+          "values": [{ "name": "(unavailable" }, { "name": "unsupported)" }]
+        },
+        {
+          "name": "invoketarget",
+          "description": "The id of the element to invoke when clicked.",
+          "values": []
+        },
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        },
+        {
+          "name": "tooltipplacement",
+          "description": "The placement of the tooltip, defaults to \"top\"",
+          "values": [
+            { "name": "('top'" },
+            { "name": "right" },
+            { "name": "bottom" },
+            { "name": "left" },
+            { "name": "'none')" }
+          ]
+        },
+        {
+          "name": "notooltip",
+          "description": "Hides the tooltip if this attribute is present",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-rendition-menu",
+      "description": "\n\n\n---\n\n\n\n\n### **Events:**\n - **undefined** - undefined\n- **change** - undefined\n\n### **Slots:**\n - _default_ - Default slotted elements.\n- **header** - An element shown at the top of the menu.\n- **checked-indicator** - An icon element indicating a checked menu-item.\n\n### **CSS Properties:**\n - **--media-primary-color** - Default color of text / icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of background. _(default: var(--_menu-bg))_\n- **--media-text-color** - `color` of text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, var(--_menu-bg)))_\n- **--media-menu-display** - `display` of menu. _(default: inline-flex)_\n- **--media-menu-layout** - Set to `row` for a horizontal menu design. _(default: undefined)_\n- **--media-menu-flex-direction** - `flex-direction` of menu. _(default: row)_\n- **--media-menu-gap** - `gap` between menu items. _(default: .25em)_\n- **--media-menu-background** - `background` of menu. _(default: var(--media-control-background, var(--media-secondary-color, var(--_menu-bg))))_\n- **--media-menu-border-radius** - `border-radius` of menu. _(default: undefined)_\n- **--media-menu-border** - `border` of menu. _(default: none)_\n- **--media-menu-transition-in** - `transition` of menu when showing. _(default: visibility 0s, opacity .2s ease-out, transform .15s ease-out, left .2s ease-in-out, min-width .2s ease-in-out, min-height .2s ease-in-out)_\n- **--media-menu-transition-out** - `transition` of menu when hiding. _(default: visibility .15s ease-in, opacity .15s ease-in, transform .15s ease-in)_\n- **--media-menu-visibility** - `visibility` of menu when showing. _(default: visible)_\n- **--media-menu-hidden-visibility** - `visibility` of menu when hiding. _(default: hidden)_\n- **--media-menu-max-height** - `max-height` of menu. _(default: var(--_menu-max-height, 300px))_\n- **--media-menu-hidden-max-height** - `max-height` of menu when hiding. _(default: var(--media-menu-max-height, var(--_menu-max-height, 300px)))_\n- **--media-menu-opacity** - `opacity` of menu when showing. _(default: 1)_\n- **--media-menu-hidden-opacity** - `opacity` of menu when hiding. _(default: 0)_\n- **--media-menu-transform-in** - `transform` of menu when showing. _(default: translateY(0) scale(1))_\n- **--media-menu-transform-out** - `transform` of menu when hiding. _(default: translateY(2px) scale(.99))_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, normal) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: normal)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of text. _(default: var(--media-control-height, 24px))_\n- **--media-icon-color** - `fill` color of icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-menu-icon-height** - `height` of icon. _(default: var(--media-control-height, 24px))_\n- **--media-menu-item-checked-indicator-display** - `display` of check indicator. _(default: none)_\n- **--media-menu-item-checked-background** - `background` of checked menu item. _(default: rgb(255 255 255 / .2))_\n- **--media-menu-item-max-width** - `max-width` of menu item text. _(default: undefined)_",
+      "attributes": [
+        {
+          "name": "mediarenditionselected",
+          "description": "(read-only) Set to the selected rendition id.",
+          "values": []
+        },
+        {
+          "name": "mediarenditionlist",
+          "description": "(read-only) Set to the rendition list.",
+          "values": []
+        },
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-settings-menu-button",
+      "description": "\n\n\n---\n\n\n\n\n### **CSS Properties:**\n - **--media-primary-color** - Default color of text and icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of button background. _(default: rgb(20 20 30 / .7))_\n- **--media-text-color** - `color` of button text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-icon-color** - `fill` color of button icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-display** - `display` property of control. _(default: undefined)_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, rgb(20 20 30 / .7)))_\n- **--media-control-hover-background** - `background` of control hover state. _(default: rgba(50 50 70 / .7))_\n- **--media-control-padding** - `padding` of control. _(default: 10px)_\n- **--media-control-height** - `line-height` of control. _(default: 24px)_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, bold) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: bold)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of button text. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-width** - `width` of button icon. _(default: undefined)_\n- **--media-button-icon-height** - `height` of button icon. _(default: var(--media-control-height, 24px))_\n- **--media-button-icon-transform** - `transform` of button icon. _(default: undefined)_\n- **--media-button-icon-transition** - `transition` of button icon. _(default: undefined)_",
+      "attributes": [
+        {
+          "name": "target",
+          "description": "CSS id selector for the element to be targeted by the button.",
+          "values": []
+        },
+        {
+          "name": "invoketarget",
+          "description": "The id of the element to invoke when clicked.",
+          "values": []
+        },
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        },
+        {
+          "name": "tooltipplacement",
+          "description": "The placement of the tooltip, defaults to \"top\"",
+          "values": [
+            { "name": "('top'" },
+            { "name": "right" },
+            { "name": "bottom" },
+            { "name": "left" },
+            { "name": "'none')" }
+          ]
+        },
+        {
+          "name": "notooltip",
+          "description": "Hides the tooltip if this attribute is present",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-settings-menu-item",
+      "description": "\n\n\n---\n\n\n\n\n### **Slots:**\n - _default_ - Default slotted elements.\n\n### **CSS Properties:**\n - **--media-menu-item-opacity** - `opacity` of menu-item content. _(default: 1)_\n- **--media-menu-item-transition** - `transition` of menu-item. _(default: background .15s linear, opacity .2s ease-in-out)_\n- **--media-menu-item-checked-background** - `background` of checked menu-item. _(default: undefined)_\n- **--media-menu-item-outline** - `outline` menu-item. _(default: 0)_\n- **--media-menu-item-outline-offset** - `outline-offset` of menu-item. _(default: -1px)_\n- **--media-menu-item-hover-background** - `background` of hovered menu-item. _(default: rgb(92 92 102 / .5))_\n- **--media-menu-item-hover-outline** - `outline` of hovered menu-item. _(default: undefined)_\n- **--media-menu-item-hover-outline-offset** - `outline-offset` of hovered menu-item. _(default: var(--media-menu-item-outline-offset, -1px))_\n- **--media-menu-item-focus-shadow** - `box-shadow` of the :focus-visible state. _(default: inset 0 0 0 2px rgb(27 127 204 / .9))_\n- **--media-menu-item-icon-height** - `height` of icon. _(default: var(--media-control-height, 24px))_\n- **--media-menu-item-description-max-width** - `max-width` of description. _(default: 100px)_\n- **--media-menu-item-checked-indicator-display** - `display` of checked indicator. _(default: inline-block)_\n- **--media-icon-color** - `fill` color of icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-menu-icon-height** - `height` of icon. _(default: undefined)_\n- **--media-menu-item-indicator-fill** - `fill` color of indicator icon. _(default: var(--media-icon-color, var(--media-primary-color, rgb(238 238 238))))_\n- **--media-menu-item-indicator-height** - `height` of menu-item indicator. _(default: 1.25em)_",
+      "attributes": [
+        {
+          "name": "type",
+          "description": "This attribute indicates the kind of command, and can be one of three values.",
+          "values": [
+            { "name": "(''" },
+            { "name": "radio" },
+            { "name": "'checkbox')" }
+          ]
+        },
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        }
+      ],
+      "references": []
+    },
+    {
+      "name": "media-settings-menu",
+      "description": "\n\n\n---\n\n\n\n\n### **Events:**\n - **undefined** - undefined\n- **change** - undefined\n\n### **Slots:**\n - _default_ - Default slotted elements.\n- **header** - An element shown at the top of the menu.\n- **checked-indicator** - An icon element indicating a checked menu-item.\n\n### **CSS Properties:**\n - **--media-settings-menu-justify-content** - `justify-content` of the menu. _(default: undefined)_\n- **--media-primary-color** - Default color of text / icon. _(default: rgb(238 238 238))_\n- **--media-secondary-color** - Default color of background. _(default: var(--_menu-bg))_\n- **--media-text-color** - `color` of text. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-control-background** - `background` of control. _(default: var(--media-secondary-color, var(--_menu-bg)))_\n- **--media-menu-display** - `display` of menu. _(default: inline-flex)_\n- **--media-menu-layout** - Set to `row` for a horizontal menu design. _(default: undefined)_\n- **--media-menu-flex-direction** - `flex-direction` of menu. _(default: row)_\n- **--media-menu-gap** - `gap` between menu items. _(default: .25em)_\n- **--media-menu-background** - `background` of menu. _(default: var(--media-control-background, var(--media-secondary-color, var(--_menu-bg))))_\n- **--media-menu-border-radius** - `border-radius` of menu. _(default: undefined)_\n- **--media-menu-border** - `border` of menu. _(default: none)_\n- **--media-menu-transition-in** - `transition` of menu when showing. _(default: visibility 0s, opacity .2s ease-out, transform .15s ease-out, left .2s ease-in-out, min-width .2s ease-in-out, min-height .2s ease-in-out)_\n- **--media-menu-transition-out** - `transition` of menu when hiding. _(default: visibility .15s ease-in, opacity .15s ease-in, transform .15s ease-in)_\n- **--media-menu-visibility** - `visibility` of menu when showing. _(default: visible)_\n- **--media-menu-hidden-visibility** - `visibility` of menu when hiding. _(default: hidden)_\n- **--media-menu-max-height** - `max-height` of menu. _(default: var(--_menu-max-height, 300px))_\n- **--media-menu-hidden-max-height** - `max-height` of menu when hiding. _(default: var(--media-menu-max-height, var(--_menu-max-height, 300px)))_\n- **--media-menu-opacity** - `opacity` of menu when showing. _(default: 1)_\n- **--media-menu-hidden-opacity** - `opacity` of menu when hiding. _(default: 0)_\n- **--media-menu-transform-in** - `transform` of menu when showing. _(default: translateY(0) scale(1))_\n- **--media-menu-transform-out** - `transform` of menu when hiding. _(default: translateY(2px) scale(.99))_\n- **--media-font** - `font` shorthand property. _(default: var(--media-font-weight, normal) var(--media-font-size, 14px) / var(--media-text-content-height, var(--media-control-height, 24px)) var(--media-font-family, helvetica neue, segoe ui, roboto, arial, sans-serif))_\n- **--media-font-weight** - `font-weight` property. _(default: normal)_\n- **--media-font-family** - `font-family` property. _(default: helvetica neue, segoe ui, roboto, arial, sans-serif)_\n- **--media-font-size** - `font-size` property. _(default: 14px)_\n- **--media-text-content-height** - `line-height` of text. _(default: var(--media-control-height, 24px))_\n- **--media-icon-color** - `fill` color of icon. _(default: var(--media-primary-color, rgb(238 238 238)))_\n- **--media-menu-icon-height** - `height` of icon. _(default: var(--media-control-height, 24px))_\n- **--media-menu-item-checked-indicator-display** - `display` of check indicator. _(default: none)_\n- **--media-menu-item-checked-background** - `background` of checked menu item. _(default: rgb(255 255 255 / .2))_\n- **--media-menu-item-max-width** - `max-width` of menu item text. _(default: undefined)_",
+      "attributes": [
+        {
+          "name": "disabled",
+          "description": "The Boolean disabled attribute makes the element not mutable or focusable.",
+          "values": []
+        },
+        {
+          "name": "mediacontroller",
+          "description": "The element `id` of the media controller to connect to (if not nested within).",
+          "values": []
+        }
+      ],
+      "references": []
+    }
+  ]
+}

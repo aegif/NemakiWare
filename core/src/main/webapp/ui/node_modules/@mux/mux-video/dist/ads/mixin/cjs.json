@@ -1,0 +1,121 @@
+{
+  "inputs": {
+    "src/ads/mixin/events.ts": {
+      "bytes": 996,
+      "imports": [],
+      "format": "esm"
+    },
+    "src/ads/mixin/google-ima-client-ad.ts": {
+      "bytes": 428,
+      "imports": [
+        {
+          "path": "<runtime>",
+          "kind": "import-statement",
+          "external": true
+        }
+      ],
+      "format": "esm"
+    },
+    "src/ads/mixin/google-ima-client-provider.ts": {
+      "bytes": 10846,
+      "imports": [
+        {
+          "path": "src/ads/mixin/events.ts",
+          "kind": "import-statement",
+          "original": "./events.js"
+        },
+        {
+          "path": "src/ads/mixin/google-ima-client-ad.ts",
+          "kind": "import-statement",
+          "original": "./google-ima-client-ad.js"
+        },
+        {
+          "path": "./types.js",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "<runtime>",
+          "kind": "import-statement",
+          "external": true
+        }
+      ],
+      "format": "esm"
+    },
+    "src/ads/mixin/types.ts": {
+      "bytes": 3040,
+      "imports": [
+        {
+          "path": "./events.js",
+          "kind": "import-statement",
+          "external": true
+        }
+      ],
+      "format": "esm"
+    },
+    "src/ads/mixin/index.ts": {
+      "bytes": 10338,
+      "imports": [
+        {
+          "path": "src/ads/mixin/google-ima-client-provider.ts",
+          "kind": "import-statement",
+          "original": "./google-ima-client-provider"
+        },
+        {
+          "path": "src/ads/mixin/events.ts",
+          "kind": "import-statement",
+          "original": "./events.js"
+        },
+        {
+          "path": "./types.js",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "src/ads/mixin/events.ts",
+          "kind": "import-statement",
+          "original": "./events.js"
+        },
+        {
+          "path": "src/ads/mixin/types.ts",
+          "kind": "import-statement",
+          "original": "./types.js"
+        },
+        {
+          "path": "<runtime>",
+          "kind": "import-statement",
+          "external": true
+        }
+      ],
+      "format": "esm"
+    }
+  },
+  "outputs": {
+    "dist/ads/mixin/index.cjs.js.map": {
+      "imports": [],
+      "exports": [],
+      "inputs": {},
+      "bytes": 40625
+    },
+    "dist/ads/mixin/index.cjs.js": {
+      "imports": [],
+      "exports": [],
+      "entryPoint": "src/ads/mixin/index.ts",
+      "inputs": {
+        "src/ads/mixin/index.ts": {
+          "bytesInOutput": 6182
+        },
+        "src/ads/mixin/events.ts": {
+          "bytesInOutput": 563
+        },
+        "src/ads/mixin/google-ima-client-ad.ts": {
+          "bytesInOutput": 209
+        },
+        "src/ads/mixin/google-ima-client-provider.ts": {
+          "bytesInOutput": 7077
+        }
+      },
+      "bytes": 14958
+    }
+  }
+}

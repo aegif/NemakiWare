@@ -1,0 +1,122 @@
+{
+  "inputs": {
+    "src/polyfills/index.ts": {
+      "bytes": 2124,
+      "imports": [
+        {
+          "path": "<runtime>",
+          "kind": "import-statement",
+          "external": true
+        }
+      ],
+      "format": "esm"
+    },
+    "src/ads/index.ts": {
+      "bytes": 4533,
+      "imports": [
+        {
+          "path": "@mux/mux-data-google-ima",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "@mux/playback-core",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "@mux/mux-video/base",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "castable-video/castable-mixin.js",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "media-tracks",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "src/polyfills/index.ts",
+          "kind": "import-statement",
+          "original": "../polyfills"
+        },
+        {
+          "path": "@mux/mux-video/ads/mixin",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "@mux/mux-video/base",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "<runtime>",
+          "kind": "import-statement",
+          "external": true
+        }
+      ],
+      "format": "esm"
+    }
+  },
+  "outputs": {
+    "dist/ads/index.mjs.map": {
+      "imports": [],
+      "exports": [],
+      "inputs": {},
+      "bytes": 10672
+    },
+    "dist/ads/index.mjs": {
+      "imports": [
+        {
+          "path": "@mux/mux-data-google-ima",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "@mux/mux-video/base",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "castable-video/castable-mixin.js",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "media-tracks",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "@mux/mux-video/ads/mixin",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "@mux/mux-video/base",
+          "kind": "import-statement",
+          "external": true
+        }
+      ],
+      "exports": [
+        "Attributes",
+        "default"
+      ],
+      "entryPoint": "src/ads/index.ts",
+      "inputs": {
+        "src/ads/index.ts": {
+          "bytesInOutput": 2006
+        },
+        "src/polyfills/index.ts": {
+          "bytesInOutput": 751
+        }
+      },
+      "bytes": 3207
+    }
+  }
+}

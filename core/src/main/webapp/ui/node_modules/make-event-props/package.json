@@ -1,0 +1,58 @@
+{
+  "name": "make-event-props",
+  "version": "2.0.0",
+  "description": "Returns an object with on-event callback props curried with provided args.",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "source": "./src/index.ts",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./*": "./*"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "clean": "rimraf dist",
+    "format": "biome format",
+    "lint": "biome lint",
+    "prepack": "yarn clean && yarn build",
+    "test": "yarn lint && yarn tsc && yarn format && yarn unit",
+    "tsc": "tsc",
+    "unit": "vitest --typecheck"
+  },
+  "keywords": [
+    "react",
+    "event",
+    "event props"
+  ],
+  "author": {
+    "name": "Wojciech Maj",
+    "email": "kontakt@wojtekmaj.pl"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@biomejs/biome": "1.9.0",
+    "@types/react": "*",
+    "husky": "^9.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "rimraf": "^6.0.0",
+    "typescript": "^5.5.2",
+    "vitest": "^3.0.5"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wojtekmaj/make-event-props.git"
+  },
+  "funding": "https://github.com/wojtekmaj/make-event-props?sponsor=1",
+  "packageManager": "yarn@4.3.1"
+}

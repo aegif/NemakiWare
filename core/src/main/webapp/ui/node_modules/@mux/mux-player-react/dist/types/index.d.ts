@@ -1,0 +1,11 @@
+import React from 'react';
+import { MaxResolution, MinResolution, RenditionOrder, generatePlayerInitTime } from '@mux/playback-core';
+import { MediaError } from '@mux/mux-player';
+import type MuxPlayerElement from '@mux/mux-player';
+import type { MuxPlayerProps } from './types';
+export { MediaError, MaxResolution, MinResolution, RenditionOrder, generatePlayerInitTime };
+export * from './types';
+export declare const playerSoftwareVersion: string;
+export declare const playerSoftwareName = "mux-player-react";
+declare const MuxPlayer: React.ForwardRefExoticComponent<Omit<MuxPlayerProps, "playerSoftwareName" | "playerSoftwareVersion"> & React.RefAttributes<MuxPlayerElement>>;
+export default MuxPlayer;

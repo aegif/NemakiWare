@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../src/themes/news.ts"],
+  "sourcesContent": ["'use client';\nimport '@mux/mux-player/themes/news';\nexport default 'news';\n"],
+  "mappings": "aACA,MAAO,8BACP,IAAOA,EAAQ",
+  "names": ["news_default"]
+}

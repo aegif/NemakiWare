@@ -1,0 +1,101 @@
+{
+  "inputs": {
+    "src/news/playlist-end-screen.css": {
+      "bytes": 3261,
+      "imports": []
+    },
+    "src/news/playlist-end-screen.tsx": {
+      "bytes": 3111,
+      "imports": [
+        {
+          "path": "react",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": ".",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "src/news/playlist-end-screen.css",
+          "kind": "import-statement",
+          "original": "./playlist-end-screen.css"
+        }
+      ],
+      "format": "esm"
+    },
+    "src/news/index.tsx": {
+      "bytes": 3077,
+      "imports": [
+        {
+          "path": "react",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "@mux/mux-player-react/ads",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "@mux/mux-player-react/themes/news",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "src/news/playlist-end-screen.tsx",
+          "kind": "import-statement",
+          "original": "./playlist-end-screen"
+        }
+      ],
+      "format": "esm"
+    }
+  },
+  "outputs": {
+    "dist/news/index.cjs.js.map": {
+      "imports": [],
+      "exports": [],
+      "inputs": {},
+      "bytes": 15298
+    },
+    "dist/news/index.cjs.js": {
+      "imports": [
+        {
+          "path": "react",
+          "kind": "require-call",
+          "external": true
+        },
+        {
+          "path": "@mux/mux-player-react/ads",
+          "kind": "require-call",
+          "external": true
+        },
+        {
+          "path": "@mux/mux-player-react/themes/news",
+          "kind": "require-call",
+          "external": true
+        },
+        {
+          "path": "react",
+          "kind": "require-call",
+          "external": true
+        }
+      ],
+      "exports": [],
+      "entryPoint": "src/news/index.tsx",
+      "inputs": {
+        "src/news/index.tsx": {
+          "bytesInOutput": 1234
+        },
+        "src/news/playlist-end-screen.tsx": {
+          "bytesInOutput": 2030
+        },
+        "src/news/playlist-end-screen.css": {
+          "bytesInOutput": 3270
+        }
+      },
+      "bytes": 7143
+    }
+  }
+}

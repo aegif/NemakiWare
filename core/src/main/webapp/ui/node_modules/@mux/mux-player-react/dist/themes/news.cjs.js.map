@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../src/themes/news.ts"],
+  "sourcesContent": ["'use client';\nimport '@mux/mux-player/themes/news';\nexport default 'news';\n"],
+  "mappings": "sbAAA,IAAAA,EAAA,GAAAC,EAAAD,EAAA,aAAAE,IAAA,eAAAC,EAAAH,GACA,IAAAI,EAAO,uCACAF,EAAQ",
+  "names": ["news_exports", "__export", "news_default", "__toCommonJS", "import_news"]
+}

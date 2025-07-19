@@ -1,0 +1,4284 @@
+{
+  "version": 1.1,
+  "properties": [
+    {
+      "name": "--media-airplay-button-display",
+      "description": "`display` property of button.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text and icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of button background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-hover-background",
+      "description": "`background` of control hover state.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`line-height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-width",
+      "description": "`width` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-height",
+      "description": "`height` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transform",
+      "description": "`transform` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transition",
+      "description": "`transition` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-captions-button-display",
+      "description": "`display` property of button.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text and icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of button background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-hover-background",
+      "description": "`background` of control hover state.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`line-height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-width",
+      "description": "`width` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-height",
+      "description": "`height` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transform",
+      "description": "`transform` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transition",
+      "description": "`transition` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-cast-button-display",
+      "description": "`display` property of button.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text and icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of button background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-hover-background",
+      "description": "`background` of control hover state.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`line-height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-width",
+      "description": "`width` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-height",
+      "description": "`height` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transform",
+      "description": "`transform` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transition",
+      "description": "`transition` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text and icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of button background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-hover-background",
+      "description": "`background` of control hover state.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`line-height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-width",
+      "description": "`width` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-height",
+      "description": "`height` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transform",
+      "description": "`transform` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transition",
+      "description": "`transition` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text / icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-dialog-display",
+      "description": "`display` of dialog.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of range bar.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of range background.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-hover-background",
+      "description": "`background` of control hover state.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-range-padding",
+      "description": "`padding` of range.",
+      "values": []
+    },
+    {
+      "name": "--media-range-padding-left",
+      "description": "`padding-left` of range.",
+      "values": []
+    },
+    {
+      "name": "--media-range-padding-right",
+      "description": "`padding-right` of range.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-width",
+      "description": "`width` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-height",
+      "description": "`height` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-border",
+      "description": "`border` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-border-radius",
+      "description": "`border-radius` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-background",
+      "description": "`background` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-box-shadow",
+      "description": "`box-shadow` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-transition",
+      "description": "`transition` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-transform",
+      "description": "`transform` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-opacity",
+      "description": "`opacity` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-bar-color",
+      "description": "`background` of range progress.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-background",
+      "description": "`background` of range track background.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-backdrop-filter",
+      "description": "`backdrop-filter` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-width",
+      "description": "`width` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-height",
+      "description": "`height` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-border",
+      "description": "`border` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-outline",
+      "description": "`outline` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-outline-offset",
+      "description": "`outline-offset` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-border-radius",
+      "description": "`border-radius` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-box-shadow",
+      "description": "`box-shadow` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-transition",
+      "description": "`transition` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-translate-x",
+      "description": "`translate` x-coordinate of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-translate-y",
+      "description": "`translate` y-coordinate of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-time-range-hover-display",
+      "description": "`display` of range hover zone.",
+      "values": []
+    },
+    {
+      "name": "--media-time-range-hover-bottom",
+      "description": "`bottom` of range hover zone.",
+      "values": []
+    },
+    {
+      "name": "--media-time-range-hover-height",
+      "description": "`height` of range hover zone.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-pointer-background",
+      "description": "`background` of range track pointer.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-pointer-border-right",
+      "description": "`border-right` of range track pointer.",
+      "values": []
+    },
+    {
+      "name": "--media-background-color",
+      "description": "`background-color` of container.",
+      "values": []
+    },
+    {
+      "name": "--media-slot-display",
+      "description": "`display` of the media slot (default none for [audio] usage).",
+      "values": []
+    },
+    {
+      "name": "--media-control-transition-out",
+      "description": "`transition` used to define the animation effect when hiding the container.",
+      "values": []
+    },
+    {
+      "name": "--media-control-transition-in",
+      "description": "`transition` used to define the animation effect when showing the container.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text and icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of button background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-control-bar-display",
+      "description": "`display` property of control bar.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-background-color",
+      "description": "`background-color` of container.",
+      "values": []
+    },
+    {
+      "name": "--media-slot-display",
+      "description": "`display` of the media slot (default none for [audio] usage).",
+      "values": []
+    },
+    {
+      "name": "--media-control-transition-out",
+      "description": "`transition` used to define the animation effect when hiding the container.",
+      "values": []
+    },
+    {
+      "name": "--media-control-transition-in",
+      "description": "`transition` used to define the animation effect when showing the container.",
+      "values": []
+    },
+    {
+      "name": "--media-duration-display-display",
+      "description": "`display` property of display.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`line-height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text / icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-dialog-display",
+      "description": "`display` of dialog.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-fullscreen-button-display",
+      "description": "`display` property of button.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text and icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of button background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-hover-background",
+      "description": "`background` of control hover state.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`line-height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-width",
+      "description": "`width` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-height",
+      "description": "`height` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transform",
+      "description": "`transform` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transition",
+      "description": "`transition` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-gesture-receiver-display",
+      "description": "`display` property of gesture receiver.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-live-button-display",
+      "description": "`display` property of button.",
+      "values": []
+    },
+    {
+      "name": "--media-live-button-icon-color",
+      "description": "`fill` and `color` of not live button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-live-button-indicator-color",
+      "description": "`fill` and `color` of live button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text and icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of button background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-hover-background",
+      "description": "`background` of control hover state.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`line-height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-width",
+      "description": "`width` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-height",
+      "description": "`height` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transform",
+      "description": "`transform` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transition",
+      "description": "`transition` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text and icon.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-loading-indicator-display",
+      "description": "`display` property of loading indicator.",
+      "values": []
+    },
+    {
+      "name": "--media-loading-indicator-opacity",
+      "description": "`opacity` property of loading indicator. Set to 1 to force it to be visible.",
+      "values": []
+    },
+    {
+      "name": "--media-loading-indicator-transition-delay",
+      "description": "`transition-delay` property of loading indicator. Make sure to include units.",
+      "values": []
+    },
+    {
+      "name": "--media-loading-indicator-icon-width",
+      "description": "`width` of loading icon.",
+      "values": []
+    },
+    {
+      "name": "--media-loading-indicator-icon-height",
+      "description": "`height` of loading icon.",
+      "values": []
+    },
+    {
+      "name": "--media-mute-button-display",
+      "description": "`display` property of button.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text and icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of button background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-hover-background",
+      "description": "`background` of control hover state.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`line-height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-width",
+      "description": "`width` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-height",
+      "description": "`height` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transform",
+      "description": "`transform` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transition",
+      "description": "`transition` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-pip-button-display",
+      "description": "`display` property of button.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text and icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of button background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-hover-background",
+      "description": "`background` of control hover state.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`line-height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-width",
+      "description": "`width` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-height",
+      "description": "`height` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transform",
+      "description": "`transform` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transition",
+      "description": "`transition` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-play-button-display",
+      "description": "`display` property of button.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text and icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of button background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-hover-background",
+      "description": "`background` of control hover state.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`line-height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-width",
+      "description": "`width` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-height",
+      "description": "`height` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transform",
+      "description": "`transform` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transition",
+      "description": "`transition` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-playback-rate-button-display",
+      "description": "`display` property of button.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text and icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of button background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-hover-background",
+      "description": "`background` of control hover state.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`line-height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-width",
+      "description": "`width` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-height",
+      "description": "`height` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transform",
+      "description": "`transform` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transition",
+      "description": "`transition` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-poster-image-display",
+      "description": "`display` property of poster image.",
+      "values": []
+    },
+    {
+      "name": "--media-poster-image-background-position",
+      "description": "`background-position` of poster image.",
+      "values": []
+    },
+    {
+      "name": "--media-poster-image-background-size",
+      "description": "`background-size` of poster image.",
+      "values": []
+    },
+    {
+      "name": "--media-object-fit",
+      "description": "`object-fit` of poster image.",
+      "values": []
+    },
+    {
+      "name": "--media-object-position",
+      "description": "`object-position` of poster image.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-chapter-display-display",
+      "description": "`display` property of display.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`line-height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-thumbnail-display",
+      "description": "`display` property of display.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-time-display-display",
+      "description": "`display` property of display.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`line-height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-seek-backward-button-display",
+      "description": "`display` property of button.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text and icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of button background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-hover-background",
+      "description": "`background` of control hover state.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`line-height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-width",
+      "description": "`width` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-height",
+      "description": "`height` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transform",
+      "description": "`transform` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transition",
+      "description": "`transition` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-seek-forward-button-display",
+      "description": "`display` property of button.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text and icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of button background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-hover-background",
+      "description": "`background` of control hover state.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`line-height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-width",
+      "description": "`width` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-height",
+      "description": "`height` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transform",
+      "description": "`transform` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transition",
+      "description": "`transition` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`line-height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-time-display-display",
+      "description": "`display` property of display.",
+      "values": []
+    },
+    {
+      "name": "--media-control-hover-background",
+      "description": "`background` of control hover state.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`line-height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-time-range-display",
+      "description": "`display` property of range.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-transition-property",
+      "description": "`transition-property` of range hover preview.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-transition-duration-out",
+      "description": "`transition-duration` out of range hover preview.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-transition-delay-out",
+      "description": "`transition-delay` out of range hover preview.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-transition-duration-in",
+      "description": "`transition-duration` in of range hover preview.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-transition-delay-in",
+      "description": "`transition-delay` in of range hover preview.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-thumbnail-background",
+      "description": "`background` of range preview thumbnail.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-thumbnail-box-shadow",
+      "description": "`box-shadow` of range preview thumbnail.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-thumbnail-max-width",
+      "description": "`max-width` of range preview thumbnail.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-thumbnail-max-height",
+      "description": "`max-height` of range preview thumbnail.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-thumbnail-min-width",
+      "description": "`min-width` of range preview thumbnail.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-thumbnail-min-height",
+      "description": "`min-height` of range preview thumbnail.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-thumbnail-border-radius",
+      "description": "`border-radius` of range preview thumbnail.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-thumbnail-border",
+      "description": "`border` of range preview thumbnail.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-chapter-background",
+      "description": "`background` of range preview chapter display.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-chapter-border-radius",
+      "description": "`border-radius` of range preview chapter display.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-chapter-padding",
+      "description": "`padding` of range preview chapter display.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-chapter-margin",
+      "description": "`margin` of range preview chapter display.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-chapter-text-shadow",
+      "description": "`text-shadow` of range preview chapter display.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-time-background",
+      "description": "`background` of range preview time display.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-time-border-radius",
+      "description": "`border-radius` of range preview time display.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-time-padding",
+      "description": "`padding` of range preview time display.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-time-margin",
+      "description": "`margin` of range preview time display.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-time-text-shadow",
+      "description": "`text-shadow` of range preview time display.",
+      "values": []
+    },
+    {
+      "name": "--media-box-display",
+      "description": "`display` of range box.",
+      "values": []
+    },
+    {
+      "name": "--media-box-margin",
+      "description": "`margin` of range box.",
+      "values": []
+    },
+    {
+      "name": "--media-box-padding-left",
+      "description": "`padding-left` of range box.",
+      "values": []
+    },
+    {
+      "name": "--media-box-padding-right",
+      "description": "`padding-right` of range box.",
+      "values": []
+    },
+    {
+      "name": "--media-box-border-radius",
+      "description": "`border-radius` of range box.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-box-display",
+      "description": "`display` of range preview box.",
+      "values": []
+    },
+    {
+      "name": "--media-preview-box-margin",
+      "description": "`margin` of range preview box.",
+      "values": []
+    },
+    {
+      "name": "--media-current-box-display",
+      "description": "`display` of range current box.",
+      "values": []
+    },
+    {
+      "name": "--media-current-box-margin",
+      "description": "`margin` of range current box.",
+      "values": []
+    },
+    {
+      "name": "--media-box-arrow-display",
+      "description": "`display` of range box arrow.",
+      "values": []
+    },
+    {
+      "name": "--media-box-arrow-background",
+      "description": "`border-top-color` of range box arrow.",
+      "values": []
+    },
+    {
+      "name": "--media-box-arrow-border-width",
+      "description": "`border-width` of range box arrow.",
+      "values": []
+    },
+    {
+      "name": "--media-box-arrow-height",
+      "description": "`height` of range box arrow.",
+      "values": []
+    },
+    {
+      "name": "--media-box-arrow-width",
+      "description": "`width` of range box arrow.",
+      "values": []
+    },
+    {
+      "name": "--media-box-arrow-offset",
+      "description": "`translateX` offset of range box arrow.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of range bar.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of range background.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-hover-background",
+      "description": "`background` of control hover state.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-range-padding",
+      "description": "`padding` of range.",
+      "values": []
+    },
+    {
+      "name": "--media-range-padding-left",
+      "description": "`padding-left` of range.",
+      "values": []
+    },
+    {
+      "name": "--media-range-padding-right",
+      "description": "`padding-right` of range.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-width",
+      "description": "`width` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-height",
+      "description": "`height` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-border",
+      "description": "`border` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-border-radius",
+      "description": "`border-radius` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-background",
+      "description": "`background` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-box-shadow",
+      "description": "`box-shadow` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-transition",
+      "description": "`transition` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-transform",
+      "description": "`transform` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-opacity",
+      "description": "`opacity` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-bar-color",
+      "description": "`background` of range progress.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-background",
+      "description": "`background` of range track background.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-backdrop-filter",
+      "description": "`backdrop-filter` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-width",
+      "description": "`width` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-height",
+      "description": "`height` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-border",
+      "description": "`border` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-outline",
+      "description": "`outline` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-outline-offset",
+      "description": "`outline-offset` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-border-radius",
+      "description": "`border-radius` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-box-shadow",
+      "description": "`box-shadow` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-transition",
+      "description": "`transition` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-translate-x",
+      "description": "`translate` x-coordinate of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-translate-y",
+      "description": "`translate` y-coordinate of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-time-range-hover-display",
+      "description": "`display` of range hover zone.",
+      "values": []
+    },
+    {
+      "name": "--media-time-range-hover-bottom",
+      "description": "`bottom` of range hover zone.",
+      "values": []
+    },
+    {
+      "name": "--media-time-range-hover-height",
+      "description": "`height` of range hover zone.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-pointer-background",
+      "description": "`background` of range track pointer.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-pointer-border-right",
+      "description": "`border-right` of range track pointer.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of tooltip background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of tooltip text.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-tooltip-border",
+      "description": "'border' of tooltip",
+      "values": []
+    },
+    {
+      "name": "--media-tooltip-background-color",
+      "description": "Background color of tooltip and arrow, unless individually overidden",
+      "values": []
+    },
+    {
+      "name": "--media-tooltip-background",
+      "description": "`background` of tooltip, ignoring the arrow",
+      "values": []
+    },
+    {
+      "name": "--media-tooltip-display",
+      "description": "`display` of tooltip",
+      "values": []
+    },
+    {
+      "name": "--media-tooltip-z-index",
+      "description": "`z-index` of tooltip",
+      "values": []
+    },
+    {
+      "name": "--media-tooltip-padding",
+      "description": "`padding` of tooltip",
+      "values": []
+    },
+    {
+      "name": "--media-tooltip-border-radius",
+      "description": "`border-radius` of tooltip",
+      "values": []
+    },
+    {
+      "name": "--media-tooltip-filter",
+      "description": "`filter` property of tooltip, for drop-shadow",
+      "values": []
+    },
+    {
+      "name": "--media-tooltip-white-space",
+      "description": "`white-space` property of tooltip",
+      "values": []
+    },
+    {
+      "name": "--media-tooltip-arrow-display",
+      "description": "`display` property of tooltip arrow",
+      "values": []
+    },
+    {
+      "name": "--media-tooltip-arrow-width",
+      "description": "Arrow width",
+      "values": []
+    },
+    {
+      "name": "--media-tooltip-arrow-height",
+      "description": "Arrow height",
+      "values": []
+    },
+    {
+      "name": "--media-tooltip-arrow-color",
+      "description": "Arrow color",
+      "values": []
+    },
+    {
+      "name": "--media-volume-range-display",
+      "description": "`display` property of range.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of range bar.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of range background.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-hover-background",
+      "description": "`background` of control hover state.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-range-padding",
+      "description": "`padding` of range.",
+      "values": []
+    },
+    {
+      "name": "--media-range-padding-left",
+      "description": "`padding-left` of range.",
+      "values": []
+    },
+    {
+      "name": "--media-range-padding-right",
+      "description": "`padding-right` of range.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-width",
+      "description": "`width` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-height",
+      "description": "`height` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-border",
+      "description": "`border` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-border-radius",
+      "description": "`border-radius` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-background",
+      "description": "`background` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-box-shadow",
+      "description": "`box-shadow` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-transition",
+      "description": "`transition` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-transform",
+      "description": "`transform` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-thumb-opacity",
+      "description": "`opacity` of range thumb.",
+      "values": []
+    },
+    {
+      "name": "--media-range-bar-color",
+      "description": "`background` of range progress.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-background",
+      "description": "`background` of range track background.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-backdrop-filter",
+      "description": "`backdrop-filter` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-width",
+      "description": "`width` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-height",
+      "description": "`height` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-border",
+      "description": "`border` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-outline",
+      "description": "`outline` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-outline-offset",
+      "description": "`outline-offset` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-border-radius",
+      "description": "`border-radius` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-box-shadow",
+      "description": "`box-shadow` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-transition",
+      "description": "`transition` of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-translate-x",
+      "description": "`translate` x-coordinate of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-translate-y",
+      "description": "`translate` y-coordinate of range track.",
+      "values": []
+    },
+    {
+      "name": "--media-time-range-hover-display",
+      "description": "`display` of range hover zone.",
+      "values": []
+    },
+    {
+      "name": "--media-time-range-hover-bottom",
+      "description": "`bottom` of range hover zone.",
+      "values": []
+    },
+    {
+      "name": "--media-time-range-hover-height",
+      "description": "`height` of range hover zone.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-pointer-background",
+      "description": "`background` of range track pointer.",
+      "values": []
+    },
+    {
+      "name": "--media-range-track-pointer-border-right",
+      "description": "`border-right` of range track pointer.",
+      "values": []
+    },
+    {
+      "name": "--media-audio-track-menu-button-display",
+      "description": "`display` property of button.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text and icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of button background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-hover-background",
+      "description": "`background` of control hover state.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`line-height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-width",
+      "description": "`width` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-height",
+      "description": "`height` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transform",
+      "description": "`transform` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transition",
+      "description": "`transition` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text / icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-display",
+      "description": "`display` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-layout",
+      "description": "Set to `row` for a horizontal menu design.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-flex-direction",
+      "description": "`flex-direction` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-gap",
+      "description": "`gap` between menu items.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-background",
+      "description": "`background` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-border-radius",
+      "description": "`border-radius` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-border",
+      "description": "`border` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-transition-in",
+      "description": "`transition` of menu when showing.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-transition-out",
+      "description": "`transition` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-visibility",
+      "description": "`visibility` of menu when showing.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-hidden-visibility",
+      "description": "`visibility` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-max-height",
+      "description": "`max-height` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-hidden-max-height",
+      "description": "`max-height` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-opacity",
+      "description": "`opacity` of menu when showing.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-hidden-opacity",
+      "description": "`opacity` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-transform-in",
+      "description": "`transform` of menu when showing.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-transform-out",
+      "description": "`transform` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of icon.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-icon-height",
+      "description": "`height` of icon.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-checked-indicator-display",
+      "description": "`display` of check indicator.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-checked-background",
+      "description": "`background` of checked menu item.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-max-width",
+      "description": "`max-width` of menu item text.",
+      "values": []
+    },
+    {
+      "name": "--media-captions-menu-button-display",
+      "description": "`display` property of button.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text and icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of button background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-hover-background",
+      "description": "`background` of control hover state.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`line-height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-width",
+      "description": "`width` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-height",
+      "description": "`height` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transform",
+      "description": "`transform` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transition",
+      "description": "`transition` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text / icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-display",
+      "description": "`display` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-layout",
+      "description": "Set to `row` for a horizontal menu design.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-flex-direction",
+      "description": "`flex-direction` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-gap",
+      "description": "`gap` between menu items.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-background",
+      "description": "`background` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-border-radius",
+      "description": "`border-radius` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-border",
+      "description": "`border` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-transition-in",
+      "description": "`transition` of menu when showing.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-transition-out",
+      "description": "`transition` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-visibility",
+      "description": "`visibility` of menu when showing.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-hidden-visibility",
+      "description": "`visibility` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-max-height",
+      "description": "`max-height` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-hidden-max-height",
+      "description": "`max-height` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-opacity",
+      "description": "`opacity` of menu when showing.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-hidden-opacity",
+      "description": "`opacity` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-transform-in",
+      "description": "`transform` of menu when showing.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-transform-out",
+      "description": "`transform` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of icon.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-icon-height",
+      "description": "`height` of icon.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-checked-indicator-display",
+      "description": "`display` of check indicator.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-checked-background",
+      "description": "`background` of checked menu item.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-max-width",
+      "description": "`max-width` of menu item text.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text and icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of button background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-hover-background",
+      "description": "`background` of control hover state.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`line-height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-width",
+      "description": "`width` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-height",
+      "description": "`height` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transform",
+      "description": "`transform` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transition",
+      "description": "`transition` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-opacity",
+      "description": "`opacity` of menu-item content.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-transition",
+      "description": "`transition` of menu-item.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-checked-background",
+      "description": "`background` of checked menu-item.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-outline",
+      "description": "`outline` menu-item.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-outline-offset",
+      "description": "`outline-offset` of menu-item.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-hover-background",
+      "description": "`background` of hovered menu-item.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-hover-outline",
+      "description": "`outline` of hovered menu-item.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-hover-outline-offset",
+      "description": "`outline-offset` of hovered menu-item.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-focus-shadow",
+      "description": "`box-shadow` of the :focus-visible state.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-icon-height",
+      "description": "`height` of icon.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-description-max-width",
+      "description": "`max-width` of description.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-checked-indicator-display",
+      "description": "`display` of checked indicator.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of icon.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-icon-height",
+      "description": "`height` of icon.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-indicator-fill",
+      "description": "`fill` color of indicator icon.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-indicator-height",
+      "description": "`height` of menu-item indicator.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text / icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-display",
+      "description": "`display` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-layout",
+      "description": "Set to `row` for a horizontal menu design.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-flex-direction",
+      "description": "`flex-direction` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-gap",
+      "description": "`gap` between menu items.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-background",
+      "description": "`background` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-border-radius",
+      "description": "`border-radius` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-border",
+      "description": "`border` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-transition-in",
+      "description": "`transition` of menu when showing.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-transition-out",
+      "description": "`transition` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-visibility",
+      "description": "`visibility` of menu when showing.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-hidden-visibility",
+      "description": "`visibility` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-max-height",
+      "description": "`max-height` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-hidden-max-height",
+      "description": "`max-height` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-opacity",
+      "description": "`opacity` of menu when showing.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-hidden-opacity",
+      "description": "`opacity` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-transform-in",
+      "description": "`transform` of menu when showing.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-transform-out",
+      "description": "`transform` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of icon.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-icon-height",
+      "description": "`height` of icon.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-checked-indicator-display",
+      "description": "`display` of check indicator.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-checked-background",
+      "description": "`background` of checked menu item.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-max-width",
+      "description": "`max-width` of menu item text.",
+      "values": []
+    },
+    {
+      "name": "--media-playback-rate-menu-button-display",
+      "description": "`display` property of button.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text and icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of button background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-hover-background",
+      "description": "`background` of control hover state.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`line-height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-width",
+      "description": "`width` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-height",
+      "description": "`height` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transform",
+      "description": "`transform` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transition",
+      "description": "`transition` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text / icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-display",
+      "description": "`display` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-layout",
+      "description": "Set to `row` for a horizontal menu design.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-flex-direction",
+      "description": "`flex-direction` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-gap",
+      "description": "`gap` between menu items.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-background",
+      "description": "`background` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-border-radius",
+      "description": "`border-radius` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-border",
+      "description": "`border` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-transition-in",
+      "description": "`transition` of menu when showing.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-transition-out",
+      "description": "`transition` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-visibility",
+      "description": "`visibility` of menu when showing.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-hidden-visibility",
+      "description": "`visibility` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-max-height",
+      "description": "`max-height` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-hidden-max-height",
+      "description": "`max-height` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-opacity",
+      "description": "`opacity` of menu when showing.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-hidden-opacity",
+      "description": "`opacity` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-transform-in",
+      "description": "`transform` of menu when showing.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-transform-out",
+      "description": "`transform` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of icon.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-icon-height",
+      "description": "`height` of icon.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-checked-indicator-display",
+      "description": "`display` of check indicator.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-checked-background",
+      "description": "`background` of checked menu item.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-max-width",
+      "description": "`max-width` of menu item text.",
+      "values": []
+    },
+    {
+      "name": "--media-rendition-menu-button-display",
+      "description": "`display` property of button.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text and icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of button background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-hover-background",
+      "description": "`background` of control hover state.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`line-height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-width",
+      "description": "`width` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-height",
+      "description": "`height` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transform",
+      "description": "`transform` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transition",
+      "description": "`transition` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text / icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-display",
+      "description": "`display` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-layout",
+      "description": "Set to `row` for a horizontal menu design.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-flex-direction",
+      "description": "`flex-direction` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-gap",
+      "description": "`gap` between menu items.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-background",
+      "description": "`background` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-border-radius",
+      "description": "`border-radius` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-border",
+      "description": "`border` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-transition-in",
+      "description": "`transition` of menu when showing.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-transition-out",
+      "description": "`transition` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-visibility",
+      "description": "`visibility` of menu when showing.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-hidden-visibility",
+      "description": "`visibility` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-max-height",
+      "description": "`max-height` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-hidden-max-height",
+      "description": "`max-height` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-opacity",
+      "description": "`opacity` of menu when showing.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-hidden-opacity",
+      "description": "`opacity` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-transform-in",
+      "description": "`transform` of menu when showing.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-transform-out",
+      "description": "`transform` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of icon.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-icon-height",
+      "description": "`height` of icon.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-checked-indicator-display",
+      "description": "`display` of check indicator.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-checked-background",
+      "description": "`background` of checked menu item.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-max-width",
+      "description": "`max-width` of menu item text.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text and icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of button background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-control-display",
+      "description": "`display` property of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-hover-background",
+      "description": "`background` of control hover state.",
+      "values": []
+    },
+    {
+      "name": "--media-control-padding",
+      "description": "`padding` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-control-height",
+      "description": "`line-height` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of button text.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-width",
+      "description": "`width` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-height",
+      "description": "`height` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transform",
+      "description": "`transform` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-button-icon-transition",
+      "description": "`transition` of button icon.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-opacity",
+      "description": "`opacity` of menu-item content.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-transition",
+      "description": "`transition` of menu-item.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-checked-background",
+      "description": "`background` of checked menu-item.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-outline",
+      "description": "`outline` menu-item.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-outline-offset",
+      "description": "`outline-offset` of menu-item.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-hover-background",
+      "description": "`background` of hovered menu-item.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-hover-outline",
+      "description": "`outline` of hovered menu-item.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-hover-outline-offset",
+      "description": "`outline-offset` of hovered menu-item.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-focus-shadow",
+      "description": "`box-shadow` of the :focus-visible state.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-icon-height",
+      "description": "`height` of icon.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-description-max-width",
+      "description": "`max-width` of description.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-checked-indicator-display",
+      "description": "`display` of checked indicator.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of icon.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-icon-height",
+      "description": "`height` of icon.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-indicator-fill",
+      "description": "`fill` color of indicator icon.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-indicator-height",
+      "description": "`height` of menu-item indicator.",
+      "values": []
+    },
+    {
+      "name": "--media-settings-menu-justify-content",
+      "description": "`justify-content` of the menu.",
+      "values": []
+    },
+    {
+      "name": "--media-primary-color",
+      "description": "Default color of text / icon.",
+      "values": []
+    },
+    {
+      "name": "--media-secondary-color",
+      "description": "Default color of background.",
+      "values": []
+    },
+    {
+      "name": "--media-text-color",
+      "description": "`color` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-control-background",
+      "description": "`background` of control.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-display",
+      "description": "`display` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-layout",
+      "description": "Set to `row` for a horizontal menu design.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-flex-direction",
+      "description": "`flex-direction` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-gap",
+      "description": "`gap` between menu items.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-background",
+      "description": "`background` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-border-radius",
+      "description": "`border-radius` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-border",
+      "description": "`border` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-transition-in",
+      "description": "`transition` of menu when showing.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-transition-out",
+      "description": "`transition` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-visibility",
+      "description": "`visibility` of menu when showing.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-hidden-visibility",
+      "description": "`visibility` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-max-height",
+      "description": "`max-height` of menu.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-hidden-max-height",
+      "description": "`max-height` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-opacity",
+      "description": "`opacity` of menu when showing.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-hidden-opacity",
+      "description": "`opacity` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-transform-in",
+      "description": "`transform` of menu when showing.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-transform-out",
+      "description": "`transform` of menu when hiding.",
+      "values": []
+    },
+    {
+      "name": "--media-font",
+      "description": "`font` shorthand property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-weight",
+      "description": "`font-weight` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-family",
+      "description": "`font-family` property.",
+      "values": []
+    },
+    {
+      "name": "--media-font-size",
+      "description": "`font-size` property.",
+      "values": []
+    },
+    {
+      "name": "--media-text-content-height",
+      "description": "`line-height` of text.",
+      "values": []
+    },
+    {
+      "name": "--media-icon-color",
+      "description": "`fill` color of icon.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-icon-height",
+      "description": "`height` of icon.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-checked-indicator-display",
+      "description": "`display` of check indicator.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-checked-background",
+      "description": "`background` of checked menu item.",
+      "values": []
+    },
+    {
+      "name": "--media-menu-item-max-width",
+      "description": "`max-width` of menu item text.",
+      "values": []
+    }
+  ],
+  "pseudoElements": [
+    {
+      "name": "::part(track)",
+      "description": "The runnable track of the range."
+    },
+    {
+      "name": "::part(progress)",
+      "description": "The progress part of the track."
+    },
+    { "name": "::part(thumb)", "description": "The thumb of the range." },
+    {
+      "name": "::part(buffered)",
+      "description": "A CSS part that selects the buffered bar element."
+    },
+    {
+      "name": "::part(box)",
+      "description": "A CSS part that selects both the preview and current box elements."
+    },
+    {
+      "name": "::part(preview-box)",
+      "description": "A CSS part that selects the preview box element."
+    },
+    {
+      "name": "::part(current-box)",
+      "description": "A CSS part that selects the current box element."
+    },
+    {
+      "name": "::part(arrow)",
+      "description": "A CSS part that selects the arrow element."
+    },
+    {
+      "name": "::part(track)",
+      "description": "The runnable track of the range."
+    },
+    {
+      "name": "::part(progress)",
+      "description": "The progress part of the track."
+    },
+    { "name": "::part(thumb)", "description": "The thumb of the range." },
+    {
+      "name": "::part(track)",
+      "description": "The runnable track of the range."
+    },
+    {
+      "name": "::part(progress)",
+      "description": "The progress part of the track."
+    },
+    { "name": "::part(thumb)", "description": "The thumb of the range." }
+  ]
+}

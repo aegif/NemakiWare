@@ -1,0 +1,59 @@
+{
+  "name": "@mux/mux-data-google-ima",
+  "version": "0.2.8",
+  "description": "Mux Data SDK extension for monitoring Google IMA Ads with mux-embed",
+  "main": "dist/google-ima-mux.js",
+  "exports": {
+    "import": "./dist/index.mjs",
+    "require": "./dist/index.cjs.js",
+    "default": "./dist/google-ima-mux.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "npm:audit": "npm audit --audit-level high",
+    "start": "builder run . --https",
+    "clean": "shx rm -rf ./dist/",
+    "build:esm": "node ./esbuilder.mjs src/index.ts --format=esm --outdir=dist --out-extension:.js=.mjs --define:__VERSION__=\"'$npm_package_version'\" --external:mux-embed",
+    "build:cjs": "node ./esbuilder.mjs src/index.ts  --format=cjs --outdir=dist --out-extension:.js=.cjs.js --define:__VERSION__=\"'$npm_package_version'\" --external:mux-embed",
+    "build:umd": "builder build .",
+    "build:types": "echo implement types building script",
+    "validate": "es-check es5 --module ./dist/index.mjs ./dist/index.cjs.js ./dist/google-ima-mux.js",
+    "build": "npm-run-all --parallel 'build:esm --minify' 'build:cjs --minify' build:umd build:types && yarn validate",
+    "package": "yarn build",
+    "prepublishOnly": "yarn package",
+    "deploy": "yarn package && cdn-deployer google-ima"
+  },
+  "builder": {
+    "entry": "./src/entry.ts",
+    "library": "mux"
+  },
+  "keywords": [
+    "google-ima",
+    "csai",
+    "video-analytics",
+    "mux"
+  ],
+  "author": "Mux, Inc",
+  "license": "MIT",
+  "dependencies": {
+    "mux-embed": "5.9.0"
+  },
+  "devDependencies": {
+    "@mux/cmd-cdn-deployer": "^0.5.0",
+    "@mux/mux-data-builder": "^0.7.0",
+    "@swc/cli": "^0.1.63",
+    "@swc/core": "^1.3.100",
+    "base-64": "^0.1.0",
+    "es-check": "^7.1.1",
+    "esbuild": "^0.18.17",
+    "esbuild-plugin-es5": "^2.1.0",
+    "global": "^4.3.0",
+    "json": "^11.0.0",
+    "npm-run-all": "^4.1.5",
+    "path": "^0.12.7",
+    "shx": "^0.3.4"
+  }
+}

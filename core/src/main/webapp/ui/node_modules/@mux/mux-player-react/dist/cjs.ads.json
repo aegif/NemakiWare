@@ -1,0 +1,108 @@
+{
+  "inputs": {
+    "src/useComposedRefs.ts": {
+      "bytes": 1822,
+      "imports": [
+        {
+          "path": "react",
+          "kind": "import-statement",
+          "external": true
+        }
+      ],
+      "format": "esm"
+    },
+    "src/useEventCallbackEffect.ts": {
+      "bytes": 950,
+      "imports": [
+        {
+          "path": "react",
+          "kind": "import-statement",
+          "external": true
+        }
+      ],
+      "format": "esm"
+    },
+    "src/ads.tsx": {
+      "bytes": 2980,
+      "imports": [
+        {
+          "path": "react",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "@mux/mux-player/ads",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "@mux/mux-player-react",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "src/useComposedRefs.ts",
+          "kind": "import-statement",
+          "original": "./useComposedRefs"
+        },
+        {
+          "path": "src/useEventCallbackEffect.ts",
+          "kind": "import-statement",
+          "original": "./useEventCallbackEffect"
+        }
+      ],
+      "format": "esm"
+    }
+  },
+  "outputs": {
+    "dist/ads.cjs.js.map": {
+      "imports": [],
+      "exports": [],
+      "inputs": {},
+      "bytes": 8061
+    },
+    "dist/ads.cjs.js": {
+      "imports": [
+        {
+          "path": "react",
+          "kind": "require-call",
+          "external": true
+        },
+        {
+          "path": "@mux/mux-player/ads",
+          "kind": "require-call",
+          "external": true
+        },
+        {
+          "path": "@mux/mux-player-react",
+          "kind": "require-call",
+          "external": true
+        },
+        {
+          "path": "react",
+          "kind": "require-call",
+          "external": true
+        },
+        {
+          "path": "react",
+          "kind": "require-call",
+          "external": true
+        }
+      ],
+      "exports": [],
+      "entryPoint": "src/ads.tsx",
+      "inputs": {
+        "src/ads.tsx": {
+          "bytesInOutput": 410
+        },
+        "src/useComposedRefs.ts": {
+          "bytesInOutput": 351
+        },
+        "src/useEventCallbackEffect.ts": {
+          "bytesInOutput": 212
+        }
+      },
+      "bytes": 1593
+    }
+  }
+}

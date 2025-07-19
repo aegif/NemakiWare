@@ -1,0 +1,2 @@
+"use strict";"use client";var n=Object.defineProperty;var p=Object.getOwnPropertyDescriptor;var r=Object.getOwnPropertyNames;var s=Object.prototype.hasOwnProperty;var u=(t,e)=>{for(var l in e)n(t,l,{get:e[l],enumerable:!0})},a=(t,e,l,o)=>{if(e&&typeof e=="object"||typeof e=="function")for(let i of r(e))!s.call(t,i)&&i!==l&&n(t,i,{get:()=>e[i],enumerable:!(o=p(e,i))||o.enumerable});return t};var c=t=>a(n({},"__esModule",{value:!0}),t);var f={};u(f,{default:()=>d});module.exports=c(f);var w=require("@mux/mux-player/themes/news"),d="news";
+//# sourceMappingURL=news.cjs.js.map

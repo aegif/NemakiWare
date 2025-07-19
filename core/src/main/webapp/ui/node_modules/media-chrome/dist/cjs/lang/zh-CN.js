@@ -1,0 +1,86 @@
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+var zh_CN_exports = {};
+__export(zh_CN_exports, {
+  ZhCn: () => ZhCn
+});
+module.exports = __toCommonJS(zh_CN_exports);
+var import_i18n = require("../utils/i18n.js");
+const ZhCn = {
+  "Start airplay": "\u5F00\u59CB AirPlay",
+  "Stop airplay": "\u505C\u6B62 AirPlay",
+  Audio: "\u97F3\u9891",
+  Captions: "\u5B57\u5E55",
+  "Enable captions": "\u5F00\u542F\u5B57\u5E55",
+  "Disable captions": "\u5173\u95ED\u5B57\u5E55",
+  "Start casting": "\u5F00\u59CB\u6295\u5C4F",
+  "Stop casting": "\u505C\u6B62\u6295\u5C4F",
+  "Enter fullscreen mode": "\u8FDB\u5165\u5168\u5C4F",
+  "Exit fullscreen mode": "\u9000\u51FA\u5168\u5C4F",
+  Mute: "\u9759\u97F3",
+  Unmute: "\u6062\u590D\u97F3\u91CF",
+  "Enter picture in picture mode": "\u5F00\u542F\u753B\u4E2D\u753B",
+  "Exit picture in picture mode": "\u5173\u95ED\u753B\u4E2D\u753B",
+  Play: "\u64AD\u653E",
+  Pause: "\u6682\u505C",
+  "Playback rate": "\u64AD\u653E\u901F\u5EA6",
+  "Playback rate {playbackRate}": "\u64AD\u653E\u901F\u5EA6\uFF1A{playbackRate}",
+  Quality: "\u6E05\u6670\u5EA6",
+  "Seek backward": "\u5FEB\u9000",
+  "Seek forward": "\u5FEB\u8FDB",
+  Settings: "\u8BBE\u7F6E",
+  Auto: "\u81EA\u52A8",
+  "audio player": "\u97F3\u9891\u64AD\u653E\u5668",
+  "video player": "\u89C6\u9891\u64AD\u653E\u5668",
+  volume: "\u97F3\u91CF",
+  seek: "\u8DF3\u8F6C",
+  "closed captions": "\u9690\u85CF\u5F0F\u8F85\u52A9\u5B57\u5E55",
+  "current playback rate": "\u5F53\u524D\u64AD\u653E\u901F\u5EA6",
+  "playback time": "\u64AD\u653E\u65F6\u95F4",
+  "media loading": "\u5A92\u4F53\u52A0\u8F7D\u4E2D...",
+  settings: "\u8BBE\u7F6E",
+  "audio tracks": "\u97F3\u8F68",
+  quality: "\u6E05\u6670\u5EA6",
+  play: "\u64AD\u653E",
+  pause: "\u6682\u505C",
+  mute: "\u9759\u97F3",
+  unmute: "\u6062\u590D\u97F3\u91CF",
+  live: "\u76F4\u64AD",
+  Off: "\u5173\u95ED",
+  "start airplay": "\u5F00\u59CB AirPlay",
+  "stop airplay": "\u505C\u6B62 AirPlay",
+  "start casting": "\u5F00\u59CB\u6295\u5C4F",
+  "stop casting": "\u505C\u6B62\u6295\u5C4F",
+  "enter fullscreen mode": "\u8FDB\u5165\u5168\u5C4F",
+  "exit fullscreen mode": "\u9000\u51FA\u5168\u5C4F",
+  "enter picture in picture mode": "\u5F00\u542F\u753B\u4E2D\u753B",
+  "exit picture in picture mode": "\u5173\u95ED\u753B\u4E2D\u753B",
+  "seek to live": "\u8DF3\u8F6C\u81F3\u76F4\u64AD\u8FDB\u5EA6",
+  "playing live": "\u6B63\u5728\u76F4\u64AD\u4E2D",
+  "seek back {seekOffset} seconds": "\u5FEB\u9000 {seekOffset} \u79D2",
+  "seek forward {seekOffset} seconds": "\u5FEB\u8FDB {seekOffset} \u79D2",
+  "Network Error": "\u7F51\u7EDC\u9519\u8BEF",
+  "Decode Error": "\u89E3\u7801\u5931\u8D25",
+  "Source Not Supported": "\u4E0D\u652F\u6301\u7684\u5A92\u4F53\u6765\u6E90",
+  "Encryption Error": "\u52A0\u5BC6\u9519\u8BEF",
+  "A network error caused the media download to fail.": "\u5A92\u4F53\u4E0B\u8F7D\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC\u8FDE\u63A5\u3002",
+  "A media error caused playback to be aborted. The media could be corrupt or your browser does not support this format.": "\u5A92\u4F53\u9519\u8BEF\u5BFC\u81F4\u64AD\u653E\u4E2D\u6B62\u3002\u53EF\u80FD\u662F\u6587\u4EF6\u635F\u574F\uFF0C\u6216\u6D4F\u89C8\u5668\u4E0D\u652F\u6301\u8BE5\u683C\u5F0F\u3002",
+  "An unsupported error occurred. The server or network failed, or your browser does not support this format.": "\u53D1\u751F\u672A\u652F\u6301\u7684\u9519\u8BEF\uFF0C\u53EF\u80FD\u662F\u670D\u52A1\u5668\u6216\u7F51\u7EDC\u6545\u969C\uFF0C\u6216\u6D4F\u89C8\u5668\u4E0D\u652F\u6301\u8BE5\u683C\u5F0F\u3002",
+  "The media is encrypted and there are no keys to decrypt it.": "\u5A92\u4F53\u5DF2\u52A0\u5BC6\uFF0C\u7F3A\u5C11\u89E3\u5BC6\u5BC6\u94A5\u3002"
+};
+(0, import_i18n.addTranslation)("zh-CN", ZhCn);
