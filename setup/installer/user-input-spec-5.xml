@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<izpack:userinput version="5.0" xmlns:izpack="http://izpack.org/schema/userinput" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://izpack.org/schema/userinput http://izpack.org/schema/5.0/izpack-userinput-5.0.xsd">
+    <!-- App server configuration -->
+    <panel id="user.inputpanel.appserver">
+        <field type="title" id="user.inputpanel.appserver.title" txt="Tomcat configuration" />
+        <field type="text" variable="tomcat.port">
+            <spec id="tomcat.port" size="6" set="8080" txt="Tomcat port" />
+            <validator class="com.izforge.izpack.panels.userinput.validator.PortValidator" txt="Invalid server port!" />
+        </field>
+        <field type="text" variable="tomcat.shutdown.port">
+            <spec id="tomcat.shutdown.port" size="6" set="8005" txt="Tomcat port (shutdown)"/>
+            <validator class="com.izforge.izpack.panels.userinput.validator.PortValidator" txt="Invalid server shutdown port!" />
+        </field>
+    </panel>
+    
+    <!-- Repository configuration -->
+    <panel id="user.inputpanel.repository">
+        <field type="title" id="user.inputpanel.repository.title" txt="Repository configuration" />
+        <field type="text" variable="cmis.repository.main">
+            <spec id="cmis.repository.main" size="25" set="bedroom" txt="Repository ID" />
+            <validator class="com.izforge.izpack.panels.userinput.validator.NotEmptyValidator" txt="Repository ID must be defined!" />
+        </field>
+    </panel>
+    
+    <!-- CouchDB configuration -->
+    <panel id="user.inputpanel.couchdb.configuration">
+        <field type="title" id="user.inputpanel.couchdb.configuration.title" txt="CouchDB configuration" />
+        <field type="text" variable="db.couchdb.url">
+            <spec id="db.couchdb.url" size="80" set="http://localhost:5984" txt="CouchDB URL" />
+            <validator class="com.izforge.izpack.panels.userinput.validator.NotEmptyValidator" txt="Invalid URL!" />
+        </field>
+        <field type="text" variable="db.couchdb.username">
+            <spec id="db.couchdb.username" size="25" set="admin" txt="CouchDB username" />
+            <validator class="com.izforge.izpack.panels.userinput.validator.NotEmptyValidator" txt="Invalid username!" />
+        </field>
+        <field type="password" variable="db.couchdb.password">
+            <spec id="db.couchdb.password" size="25" set="" txt="CouchDB password" />
+        </field>
+    </panel>
+    
+    <!-- UI configuration -->
+    <panel id="user.inputpanel.ui">
+        <field type="title" id="user.inputpanel.ui.title" txt="UI configuration" />
+        <field type="text" variable="nemaki.core.uri.host">
+            <spec id="nemaki.core.uri.host" size="25" set="localhost" txt="Core server host" />
+            <validator class="com.izforge.izpack.panels.userinput.validator.NotEmptyValidator" txt="Invalid host!" />
+        </field>
+        <field type="text" variable="nemaki.core.uri.port">
+            <spec id="nemaki.core.uri.port" size="6" set="${tomcat.port}" txt="Core server port" />
+            <validator class="com.izforge.izpack.panels.userinput.validator.PortValidator" txt="Invalid port!" />
+        </field>
+    </panel>
+</izpack:userinput>

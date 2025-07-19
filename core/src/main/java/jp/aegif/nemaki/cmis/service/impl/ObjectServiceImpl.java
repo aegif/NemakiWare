@@ -321,13 +321,22 @@ public class ObjectServiceImpl implements ObjectService {
 	@Override
 	public String createFolder(CallContext callContext, String repositoryId, Properties properties, String folderId,
 			List<String> policies, Acl addAces, Acl removeAces, ExtensionsData extension) {
+		
+		// DEBUG: Check that we reached this point
+		System.err.println("DEBUG ObjectServiceImpl.createFolder: ENTRY - repositoryId=" + repositoryId + ", folderId=" + folderId);
+		System.err.println("DEBUG ObjectServiceImpl.createFolder: properties=" + properties);
+		
 		FolderTypeDefinition td = (FolderTypeDefinition) typeManager.getTypeDefinition(repositoryId,
 				DataUtil.getObjectTypeId(properties));
+		System.err.println("DEBUG ObjectServiceImpl.createFolder: Got type definition");
+		
 		Folder parentFolder = contentService.getFolder(repositoryId, folderId);
+		System.err.println("DEBUG ObjectServiceImpl.createFolder: Got parent folder");
 
 		// //////////////////
 		// General Exception
 		// //////////////////
+		exceptionService.invalidArgumentRequired("properties", properties);
 		exceptionService.objectNotFoundParentFolder(repositoryId, folderId, parentFolder);
 		exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_CREATE_FOLDER_FOLDER,
 				parentFolder);
@@ -569,7 +578,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// Exception
 		// //////////////////
-		exceptionService.invalidArgumentRequiredCollection("properties", properties.getPropertyList());
+		exceptionService.invalidArgumentRequired("properties", properties);
 		String sourceId = DataUtil.getIdProperty(properties, PropertyIds.SOURCE_ID);
 		if (sourceId != null) {
 			Content source = contentService.getContent(repositoryId, sourceId);
@@ -613,7 +622,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// General Exception
 		// //////////////////
-		exceptionService.invalidArgumentRequiredCollection("properties", properties.getPropertyList());
+		exceptionService.invalidArgumentRequired("properties", properties);
 		// NOTE: folderId is ignored because policy is not filable in Nemaki
 		TypeDefinition td = typeManager.getTypeDefinition(repositoryId,
 				DataUtil.getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID));
@@ -647,7 +656,9 @@ public class ObjectServiceImpl implements ObjectService {
 		TypeDefinition td = typeManager.getTypeDefinition(repositoryId, DataUtil.getObjectTypeId(properties));
 		Folder parentFolder = contentService.getFolder(repositoryId, folderId);
 		exceptionService.objectNotFoundParentFolder(repositoryId, folderId, parentFolder);
-		exceptionService.invalidArgumentRequiredCollection("properties", properties.getPropertyList());
+		exceptionService.invalidArgumentRequired("properties", properties);
+		exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_CREATE_FOLDER_FOLDER,
+				parentFolder);
 
 		// //////////////////
 		// Specific Exception
@@ -699,7 +710,7 @@ public class ObjectServiceImpl implements ObjectService {
 		// General Exception
 		// //////////////////
 		
-		exceptionService.invalidArgumentRequiredCollection("properties", properties.getPropertyList());
+		exceptionService.invalidArgumentRequired("properties", properties);
 		Content content = contentService.getContent(repositoryId, objectId.getValue());
 		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId.getValue());
 		if (content.isDocument()) {
@@ -994,7 +1005,10 @@ public class ObjectServiceImpl implements ObjectService {
 				folder, allVersions);
 		deleteService.execute();
 
-		solrUtil.callSolrIndexing(repositoryId);
+		// Delete folder from Solr index
+		if (folder != null) {
+			solrUtil.deleteDocument(repositoryId, folder.getId());
+		}
 
 		// Check FailedToDeleteData
 		// FIXME Consider orphans that was failed to be deleted

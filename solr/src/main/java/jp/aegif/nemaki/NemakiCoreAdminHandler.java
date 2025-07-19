@@ -25,6 +25,7 @@ import static org.quartz.JobBuilder.newJob;
 import static org.quartz.TriggerBuilder.newTrigger;
 
 import java.util.Properties;
+import java.io.IOException;
 import java.util.concurrent.ConcurrentHashMap;
 
 import jp.aegif.nemaki.tracker.CoreTracker;
@@ -43,13 +44,15 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.solr.client.solrj.SolrServer;
+import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.embedded.EmbeddedSolrServer;
 import org.apache.solr.common.params.CoreAdminParams;
 import org.apache.solr.common.params.SolrParams;
 import org.apache.solr.core.CoreContainer;
 import org.apache.solr.core.SolrCore;
-import org.apache.solr.handler.admin.CoreAdminHandler;
+import org.apache.solr.handler.RequestHandlerBase;
+import org.apache.solr.security.AuthorizationContext;
+import org.apache.solr.security.PermissionNameProvider;
 import org.apache.solr.request.SolrQueryRequest;
 import org.apache.solr.response.SolrQueryResponse;
 import org.quartz.CronScheduleBuilder;
@@ -66,7 +69,7 @@ import org.quartz.impl.StdSchedulerFactory;
  * @author linzhixing
  *
  */
-public class NemakiCoreAdminHandler extends CoreAdminHandler {
+public class NemakiCoreAdminHandler extends RequestHandlerBase {
 
 	private static final Logger logger = LoggerFactory.getLogger(NemakiCoreAdminHandler.class);
 
@@ -78,84 +81,82 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 		super();
 	}
 
-	public NemakiCoreAdminHandler(CoreContainer coreContainer) {
-		super(coreContainer);
+	@Override
+	public void init(org.apache.solr.common.util.NamedList<?> args) {
+		super.init(args);
+		logger.info("NemakiCoreAdminHandler initialized");
+		
+		// Initialize scheduler if needed
+		initializeScheduler();
+	}
+	
+	private void initializeScheduler() {
+		try {
+			PropertyManager pm = new PropertyManagerImpl(StringPool.PROPERTIES_NAME);
+			String jobEnabled = pm.readValue(PropertyKey.SOLR_TRACKING_CRON_ENABLED);
+			
+			if("true".equals(jobEnabled)){
+				// Configure Job
+				JobDataMap jobDataMap = new JobDataMap();
+				jobDataMap.put("ADMIN_HANDLER", this);
+				JobDetail job = newJob(CoreTrackerJob.class)
+						.withIdentity("CoreTrackerJob", "Solr")
+						.usingJobData(jobDataMap).build();
 
-		PropertyManager pm = new PropertyManagerImpl(
-				StringPool.PROPERTIES_NAME);
+				// Configure Trigger
+				String cron = pm.readValue(PropertyKey.SOLR_TRACKING_CRON_EXPRESSION);
+				Trigger trigger = newTrigger().withIdentity("TrackTrigger", "Solr")
+						.withSchedule(CronScheduleBuilder.cronSchedule(cron)).build();
 
-		String repositoryCorename = pm.readValue(PropertyKey.SOLR_CORE_MAIN);
-		String tokenCoreName = pm.readValue(PropertyKey.SOLR_CORE_TOKEN);
+				// Configure Scheduler
+				StdSchedulerFactory factory = new StdSchedulerFactory();
+				Properties properties = new Properties();
+				properties.setProperty("org.quartz.scheduler.instanceName",
+						"NemakiSolrTrackerScheduler");
+				properties.setProperty("org.quartz.threadPool.class",
+						"org.quartz.simpl.SimpleThreadPool");
+				properties.setProperty("org.quartz.threadPool.threadCount", "1");
+				properties.setProperty("org.quartz.threadPool.makeThreadsDaemons",
+						"true");
+				properties.setProperty(
+						"org.quartz.scheduler.makeSchedulerThreadDaemon", "true");
+				properties.setProperty("org.quartz.jobStore.class",
+						"org.quartz.simpl.RAMJobStore");
 
-		SolrServer repositoryServer = new EmbeddedSolrServer(coreContainer, repositoryCorename);
-		SolrServer tokenServer = new EmbeddedSolrServer(coreContainer, tokenCoreName);
-
-		SolrCore core = getCoreContainer().getCore(repositoryCorename);
-		CoreTracker tracker = new CoreTracker(this, core, repositoryServer, tokenServer);
-		logger.info("NemakiCoreAdminHandler successfully instantiated");
-
-		String  jobEnabled = pm.readValue(PropertyKey.SOLR_TRACKING_CRON_ENABLED);
-		if("true".equals(jobEnabled)){
-			// Configure Job
-			JobDataMap jobDataMap = new JobDataMap();
-			jobDataMap.put("ADMIN_HANDLER", this);
-			jobDataMap.put("TRACKER", tracker);
-			JobDetail job = newJob(CoreTrackerJob.class)
-					.withIdentity("CoreTrackerJob", "Solr")
-					.usingJobData(jobDataMap).build();
-
-			// Configure Trigger
-			// Cron expression is set in a property file
-			String cron = pm.readValue(PropertyKey.SOLR_TRACKING_CRON_EXPRESSION);
-			Trigger trigger = newTrigger().withIdentity("TrackTrigger", "Solr")
-					.withSchedule(CronScheduleBuilder.cronSchedule(cron)).build();
-
-			// Configure Scheduler
-			StdSchedulerFactory factory = new StdSchedulerFactory();
-			Properties properties = new Properties();
-			properties.setProperty("org.quartz.scheduler.instanceName",
-					"NemakiSolrTrackerScheduler");
-			properties.setProperty("org.quartz.threadPool.class",
-					"org.quartz.simpl.SimpleThreadPool");
-			properties.setProperty("org.quartz.threadPool.threadCount", "1");
-			properties.setProperty("org.quartz.threadPool.makeThreadsDaemons",
-					"true");
-			properties.setProperty(
-					"org.quartz.scheduler.makeSchedulerThreadDaemon", "true");
-			properties.setProperty("org.quartz.jobStore.class",
-					"org.quartz.simpl.RAMJobStore");
-
-			// Start quartz scheduler
-			try {
+				// Start quartz scheduler
 				factory.initialize(properties);
 				scheduler = factory.getScheduler();
 				scheduler.start();
 				scheduler.scheduleJob(job, trigger);
-			} catch (SchedulerException e) {
-				logger.error("Start quartz scheduler error:", e);
+				logger.info("NemakiWare Quartz scheduler started successfully");
 			}
+		} catch (Exception e) {
+			logger.error("Failed to initialize NemakiWare scheduler:", e);
 		}
 	}
 
 	/**
-	 * Switch actions on REST API
-	 *
-	 * Boolean return value is used as "doPersist" parameter,
-	 * which relate to the persistence of action results to the core.
+	 * Main handler method required by RequestHandlerBase
 	 */
 	@Override
-	protected void handleCustomAction(SolrQueryRequest req,
-			SolrQueryResponse rsp) {
+	public void handleRequestBody(SolrQueryRequest req, SolrQueryResponse rsp) throws Exception {
 
 		SolrParams params = req.getParams();
 
+		// Get current core from request context
+		SolrCore currentCore = req.getCore();
+		CoreContainer coreContainer = currentCore.getCoreContainer();
+		
 		// Get Server & Tracker info
 		String indexCoreName = params.get(CoreAdminParams.CORE);
+		if (indexCoreName == null) {
+			indexCoreName = currentCore.getName(); // Use current core if not specified
+		}
 		String tokenCoreName = "token";
 
-		SolrServer indexServer = new EmbeddedSolrServer(coreContainer, indexCoreName);
-		SolrServer tokenServer = new EmbeddedSolrServer(coreContainer, tokenCoreName);
-		SolrCore core = getCoreContainer().getCore(indexCoreName);
+		SolrClient indexServer = new EmbeddedSolrServer(coreContainer, indexCoreName);
+		SolrClient tokenServer = new EmbeddedSolrServer(coreContainer, tokenCoreName);
+		SolrCore core = coreContainer.getCore(indexCoreName);
 		CoreTracker tracker = new CoreTracker(this, core, indexServer, tokenServer);
 
 		// Stop cron when executing action
@@ -273,6 +274,29 @@ public class NemakiCoreAdminHandler extends CoreAdminHandler {
 	 */
 	public ConcurrentHashMap<String, CoreTracker> getTrackers() {
 		return trackers;
+	}
+	
+	@Override
+	public String getDescription() {
+		return "NemakiWare Core Admin Handler for automatic indexing and CMIS content tracking";
+	}
+	
+	@Override
+	public PermissionNameProvider.Name getPermissionName(AuthorizationContext ctx) {
+		return PermissionNameProvider.Name.CORE_EDIT_PERM;
+	}
+	
+	@Override
+	public void close() throws IOException {
+		try {
+			if (scheduler != null && !scheduler.isShutdown()) {
+				scheduler.shutdown();
+				logger.info("NemakiWare Quartz scheduler shut down");
+			}
+		} catch (SchedulerException e) {
+			logger.error("Error shutting down scheduler:", e);
+		}
+		super.close();
 	}
 
 }

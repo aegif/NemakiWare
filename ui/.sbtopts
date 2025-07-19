@@ -1,0 +1,11 @@
+-Xmx2G
+-Xms1G
+-XX:+UseG1GC
+-Dsbt.boot.directory=$HOME/.sbt/boot
+-Dsbt.global.base=$HOME/.sbt/global
+-Dsbt.ivy.home=$HOME/.ivy2
+-Dsbt.coursier.home=$HOME/.coursier
+-Djline.terminal=jline.UnsupportedTerminal
+-Dsbt.log.noformat=true
+-Djdk.http.auth.tunneling.disabledSchemes=""
+-Djdk.http.auth.proxying.disabledSchemes=""

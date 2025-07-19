@@ -1,4 +1,8 @@
+# Solr repository configuration template
+# This file is processed by the IzPack installer during installation
+# The actual credentials will be configured during the installation process
+
 settings:
   $cmis.repository.main: 
-    user: solr
-    password: solr
+    user: TO_BE_CONFIGURED
+    password: TO_BE_CONFIGURED

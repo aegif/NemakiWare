@@ -1,0 +1,881 @@
+[
+  {
+    "document": {
+      "_id": "a1b2c3d4e5f6789012345678901234ab",
+      "_rev": "1-024e41d0dd6b3597be78fc5db866c76b",
+      "creator": "system",
+      "created": "2013-01-01T00:00:00.000+0000",
+      "queryName": "nemaki:tag",
+      "propertyType": "STRING",
+      "cardinality": "MULTI",
+      "type": "propertyDefinitionCore",
+      "propertyId": "nemaki:tag"
+    },
+    "attachments": {}
+  },
+  {
+    "document": {
+      "_id": "_design/_repo",
+      "_rev": "f4de72c4-463d-4323-92e4-431a9ad06274",
+      "language": "javascript",
+      "views": {
+        "admin": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:user' && doc.admin === true) emit(doc.userId, doc) }"
+        },
+        "users": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:user') emit(doc._id, doc) }"
+        },
+        "usersById": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:user') emit(doc.userId, doc) }"
+        },
+        "groups": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group') emit(doc._id, doc) }"
+        },
+        "groupsById": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group') emit(doc.groupId, doc) }"
+        },
+        "latestChange": {
+          "map": "function(doc) { if (doc.type == 'change') emit(doc.token, doc) }"
+        },
+        "changesByObjectId": {
+          "map": "function(doc) { if (doc.type == 'change') emit(doc.objectId, doc) }"
+        },
+        "changesByToken": {
+          "map": "function(doc) { if (doc.type == 'change') emit(doc.token, doc) }"
+        },
+        "attachments": {
+          "map": "function(doc) { if (doc.type == 'attachment')  emit(doc._id, doc) }"
+        },
+        "countByObjectType": {
+          "map": "function(doc) { if (['cmis:document', 'cmis:folder', 'cmis:relationship', 'cmis:policy', 'cmis:item','cmis:secondary'].indexOf(doc.type) >= 0)  emit(doc.objectType, doc) }",
+          "reduce": "function(key,values){return values.length}"
+        },
+        "propertyDefinitionCoresByPropertyId": {
+          "map": "function(doc) { if (doc.type == 'propertyDefinitionCore')  emit(doc.propertyId, doc) }"
+        },
+        "children": {
+          "map": "function(doc) { if (doc.type == 'cmis:folder' || doc.type == 'cmis:document' && doc.latestVersion || doc.type == 'cmis:item') emit(doc.parentId, doc) }"
+        },
+        "relationships": {
+          "map": "function(doc) { if (doc.type == 'cmis:relationship')  emit(doc._id, doc) }"
+        },
+        "userItemsById": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:user') emit(doc.userId, doc) }"
+        },
+        "groupItemsById": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group') emit(doc.groupId, doc) }"
+        },
+        "groupMemberships": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group' && doc.users) { for (var i = 0; i < doc.users.length; i++) { emit([doc.users[i], 0], doc.groupId); } } }"
+        },
+        "groupMemberships1": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group' && doc.groups) { for (var i = 0; i < doc.groups.length; i++) { emit([doc.groups[i], 1], doc.groupId); } } }"
+        },
+        "groupMemberships2": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group' && doc.groups) { for (var i = 0; i < doc.groups.length; i++) { emit([doc.groups[i], 2], doc.groupId); } } }"
+        },
+        "groupMemberships3": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group' && doc.groups) { for (var i = 0; i < doc.groups.length; i++) { emit([doc.groups[i], 3], doc.groupId); } } }"
+        },
+        "groupMemberships4": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group' && doc.groups) { for (var i = 0; i < doc.groups.length; i++) { emit([doc.groups[i], 4], doc.groupId); } } }"
+        },
+        "groupMemberships5": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group' && doc.groups) { for (var i = 0; i < doc.groups.length; i++) { emit([doc.groups[i], 5], doc.groupId); } } }"
+        },
+        "groupMemberships6": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group' && doc.groups) { for (var i = 0; i < doc.groups.length; i++) { emit([doc.groups[i], 6], doc.groupId); } } }"
+        },
+        "groupMemberships7": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group' && doc.groups) { for (var i = 0; i < doc.groups.length; i++) { emit([doc.groups[i], 7], doc.groupId); } } }"
+        },
+        "groupMemberships8": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group' && doc.groups) { for (var i = 0; i < doc.groups.length; i++) { emit([doc.groups[i], 8], doc.groupId); } } }"
+        },
+        "groupMemberships9": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group' && doc.groups) { for (var i = 0; i < doc.groups.length; i++) { emit([doc.groups[i], 9], doc.groupId); } } }"
+        },
+        "groupMemberships10": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group' && doc.groups) { for (var i = 0; i < doc.groups.length; i++) { emit([doc.groups[i], 10], doc.groupId); } } }"
+        },
+        "groupMemberships11": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group' && doc.groups) { for (var i = 0; i < doc.groups.length; i++) { emit([doc.groups[i], 11], doc.groupId); } } }"
+        },
+        "groupMemberships12": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group' && doc.groups) { for (var i = 0; i < doc.groups.length; i++) { emit([doc.groups[i], 12], doc.groupId); } } }"
+        },
+        "groupMemberships13": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group' && doc.groups) { for (var i = 0; i < doc.groups.length; i++) { emit([doc.groups[i], 13], doc.groupId); } } }"
+        },
+        "groupMemberships14": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group' && doc.groups) { for (var i = 0; i < doc.groups.length; i++) { emit([doc.groups[i], 14], doc.groupId); } } }"
+        },
+        "groupMemberships15": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group' && doc.groups) { for (var i = 0; i < doc.groups.length; i++) { emit([doc.groups[i], 15], doc.groupId); } } }"
+        },
+        "groupMemberships16": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group' && doc.groups) { for (var i = 0; i < doc.groups.length; i++) { emit([doc.groups[i], 16], doc.groupId); } } }"
+        },
+        "groupMemberships17": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group' && doc.groups) { for (var i = 0; i < doc.groups.length; i++) { emit([doc.groups[i], 17], doc.groupId); } } }"
+        },
+        "groupMemberships18": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group' && doc.groups) { for (var i = 0; i < doc.groups.length; i++) { emit([doc.groups[i], 18], doc.groupId); } } }"
+        },
+        "groupMemberships19": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group' && doc.groups) { for (var i = 0; i < doc.groups.length; i++) { emit([doc.groups[i], 19], doc.groupId); } } }"
+        },
+        "groupMemberships20": {
+          "map": "function(doc) { if (doc.type == 'cmis:item' && doc.objectType == 'nemaki:group' && doc.groups) { for (var i = 0; i < doc.groups.length; i++) { emit([doc.groups[i], 20], doc.groupId); } } }"
+        },
+        "typeDefinitions": {
+          "map": "function(doc) { if (doc.type == 'typeDefinition') { emit(doc.typeId, doc); } }"
+        },
+        "typeDefinitionsByBaseTypeId": {
+          "map": "function(doc) { if (doc.type == 'typeDefinition') { emit(doc.baseTypeId, doc); } }"
+        },
+        "typeDefinitionsByParentId": {
+          "map": "function(doc) { if (doc.type == 'typeDefinition') { emit(doc.parentTypeId, doc); } }"
+        },
+        "propertyDefinitionCores": {
+          "map": "function(doc) { if (doc.type == 'propertyDefinitionCore') { emit(doc._id, doc); } }"
+        },
+        "propertyDefinitionDetails": {
+          "map": "function(doc) { if (doc.type == 'propertyDefinitionDetail') { emit([doc.typeId, doc.propertyId], doc); } }"
+        },
+        "propertyDefinitionDetailsByTypeId": {
+          "map": "function(doc) { if (doc.type == 'propertyDefinitionDetail') { emit(doc.typeId, doc); } }"
+        },
+        "propertyDefinitionDetailsByPropertyId": {
+          "map": "function(doc) { if (doc.type == 'propertyDefinitionDetail') { emit(doc.propertyId, doc); } }"
+        },
+        "configs": {
+          "map": "function(doc) { if (doc.type == 'config') { emit(doc.key, doc); } }"
+        },
+        "archives": {
+          "map": "function(doc) { if (doc.type == 'archive') { emit(doc._id, doc); } }"
+        },
+        "archivesByObjectId": {
+          "map": "function(doc) { if (doc.type == 'archive') { emit(doc.originalId, doc); } }"
+        },
+        "archivesByParentId": {
+          "map": "function(doc) { if (doc.type == 'archive') { emit(doc.parentId, doc); } }"
+        },
+        "renderingsForVersionSeries": {
+          "map": "function(doc) { if (doc.type == 'rendition') { emit(doc.versionSeriesId, doc); } }"
+        },
+        "renderingsForContent": {
+          "map": "function(doc) { if (doc.type == 'rendition') { emit(doc.contentId, doc); } }"
+        },
+        "renditions": {
+          "map": "function(doc) { if (doc.type == 'rendition') { emit(doc._id, doc); } }"
+        },
+        "versionSeries": {
+          "map": "function(doc) { if (doc.type == 'cmis:document') { emit(doc.versionSeriesId, doc); } }"
+        },
+        "versionSeriesOfLatestVersion": {
+          "map": "function(doc) { if (doc.type == 'cmis:document' && doc.latestVersion) { emit(doc.versionSeriesId, doc); } }"
+        },
+        "versionSeriesOfLatestMajorVersion": {
+          "map": "function(doc) { if (doc.type == 'cmis:document' && doc.latestMajorVersion) { emit(doc.versionSeriesId, doc); } }"
+        },
+        "privateWorkingCopy": {
+          "map": "function(doc) { if (doc.type == 'cmis:document' && doc.privateWorkingCopy) { emit(doc.versionSeriesId, doc); } }"
+        },
+        "documentsByVersionSeriesId": {
+          "map": "function(doc) { if (doc.type == 'cmis:document') { emit(doc.versionSeriesId, doc); } }"
+        },
+        "checkedOutDocuments": {
+          "map": "function(doc) { if (doc.type == 'cmis:document' && doc.checkedOut) { emit(doc.versionSeriesId, doc); } }"
+        },
+        "allVersions": {
+          "map": "function(doc) { if (doc.type == 'cmis:document') { emit(doc.versionSeriesId, doc); } }"
+        },
+        "latestVersions": {
+          "map": "function(doc) { if (doc.type == 'cmis:document' && doc.latestVersion) { emit(doc.versionSeriesId, doc); } }"
+        },
+        "relationshipsByTargetId": {
+          "map": "function(doc) { if (doc.type == 'cmis:relationship') { emit(doc.targetId, doc); } }"
+        },
+        "relationshipsBySourceId": {
+          "map": "function(doc) { if (doc.type == 'cmis:relationship') { emit(doc.sourceId, doc); } }"
+        },
+        "relationshipsByRelationshipType": {
+          "map": "function(doc) { if (doc.type == 'cmis:relationship') { emit(doc.objectType, doc); } }"
+        },
+        "policiesByRelationshipType": {
+          "map": "function(doc) { if (doc.type == 'cmis:policy') { emit(doc.objectType, doc); } }"
+        },
+        "policyRelationshipsByTargetId": {
+          "map": "function(doc) { if (doc.type == 'cmis:relationship' && doc.objectType == 'nemaki:policyRelationship') { emit(doc.targetId, doc); } }"
+        },
+        "foldersByPath": {
+          "map": "function(doc) { if (doc.type == 'cmis:folder') { var paths = []; if (doc.path) { var segments = doc.path.split('/'); var currentPath = ''; for (var i = 0; i < segments.length; i++) { if (segments[i] !== '') { currentPath += '/' + segments[i]; paths.push(currentPath); } } } for (var j = 0; j < paths.length; j++) { emit(paths[j], doc); } } }"
+        },
+        "documentsByPath": {
+          "map": "function(doc) { if (doc.type == 'cmis:document' && doc.latestVersion) { var paths = []; if (doc.path) { var segments = doc.path.split('/'); var currentPath = ''; for (var i = 0; i < segments.length; i++) { if (segments[i] !== '') { currentPath += '/' + segments[i]; paths.push(currentPath); } } } for (var j = 0; j < paths.length; j++) { emit(paths[j], doc); } } }"
+        },
+        "itemsByPath": {
+          "map": "function(doc) { if (doc.type == 'cmis:item') { var paths = []; if (doc.path) { var segments = doc.path.split('/'); var currentPath = ''; for (var i = 0; i < segments.length; i++) { if (segments[i] !== '') { currentPath += '/' + segments[i]; paths.push(currentPath); } } } for (var j = 0; j < paths.length; j++) { emit(paths[j], doc); } } }"
+        },
+        "contentByPath": {
+          "map": "function(doc) { if ((doc.type == 'cmis:folder') || (doc.type == 'cmis:document' && doc.latestVersion) || (doc.type == 'cmis:item')) { var paths = []; if (doc.path) { var segments = doc.path.split('/'); var currentPath = ''; for (var i = 0; i < segments.length; i++) { if (segments[i] !== '') { currentPath += '/' + segments[i]; paths.push(currentPath); } } } for (var j = 0; j < paths.length; j++) { emit(paths[j], doc); } } }"
+        },
+        "contentInFolder": {
+          "map": "function(doc) { if ((doc.type == 'cmis:folder') || (doc.type == 'cmis:document' && doc.latestVersion) || (doc.type == 'cmis:item')) { emit(doc.parentId, doc); } }"
+        },
+        "descendantsByParentId": {
+          "map": "function(doc) { if ((doc.type == 'cmis:folder') || (doc.type == 'cmis:document' && doc.latestVersion) || (doc.type == 'cmis:item')) { if (doc.path) { var segments = doc.path.split('/'); var currentPath = ''; for (var i = 0; i < segments.length - 1; i++) { if (segments[i] !== '') { currentPath += '/' + segments[i]; emit(currentPath, doc); } } } } }"
+        },
+        "permissionsByName": {
+          "map": "function(doc) { if (doc.type == 'permission') { emit(doc.name, doc); } }"
+        },
+        "permissionMappingsByPermission": {
+          "map": "function(doc) { if (doc.type == 'permissionMapping') { emit(doc.permission, doc); } }"
+        },
+        "permissionMappingsByKey": {
+          "map": "function(doc) { if (doc.type == 'permissionMapping') { emit(doc.key, doc); } }"
+        }
+      }
+    },
+    "attachments": {}
+  },
+  {
+    "document": {
+      "_id": "ddd70e3ed8b847c2a364be81117c57ae",
+      "_rev": "1-67d99ec6825e8b9d6eaac6c1b93ba11d",
+      "type": "cmis:folder",
+      "created": "2013-01-01T00:00:00.000+0000",
+      "creator": "system",
+      "modified": "2013-01-01T00:00:00.000+0000",
+      "modifier": "system",
+      "name": "Canopy Management Root",
+      "parentId": null,
+      "acl": {
+        "entries": [
+          {
+            "principal": "system",
+            "permissions": [
+              "cmis:all"
+            ]
+          },
+          {
+            "principal": "admin",
+            "permissions": [
+              "cmis:all"
+            ]
+          },
+          {
+            "principal": "GROUP_EVERYONE",
+            "permissions": [
+              "cmis:read"
+            ]
+          }
+        ]
+      },
+      "aclInherited": false,
+      "subTypeProperties": [],
+      "aspects": [],
+      "objectType": "cmis:folder",
+      "changeToken": "cbd5bcc0-2eff-4afc-bf1a-2256c1d0ab59",
+      "allowedChildTypeIds": [
+        "cmis:folder",
+        "cmis:document",
+        "cmis:item"
+      ],
+      "document": false,
+      "content": true,
+      "attachment": false,
+      "folder": true,
+      "relationship": false,
+      "policy": false
+    },
+    "attachments": {}
+  },
+  {
+    "document": {
+      "_id": "7f5c7fcb-3b0c-489c-8a54-32d8b710de2d",
+      "_rev": "8d470b2d-639b-4eb3-9a7f-317552f96c7e",
+      "type": "cmis:folder",
+      "created": "2013-01-01T00:00:00.000+0000",
+      "creator": "system",
+      "modified": "2013-01-01T00:00:00.000+0000",
+      "modifier": "system",
+      "name": ".system",
+      "parentId": "ddd70e3ed8b847c2a364be81117c57ae",
+      "acl": {
+        "entries": [
+          {
+            "principal": "system",
+            "permissions": [
+              "cmis:all"
+            ]
+          },
+          {
+            "principal": "GROUP_EVERYONE",
+            "permissions": [
+              "cmis:none"
+            ]
+          }
+        ]
+      },
+      "aclInherited": false,
+      "subTypeProperties": [],
+      "aspects": [],
+      "objectType": "cmis:folder",
+      "changeToken": "d6dc2694-9437-4d51-b49d-8d0ed23308cb",
+      "allowedChildTypeIds": [
+        "cmis:folder",
+        "cmis:document",
+        "cmis:item"
+      ],
+      "document": false,
+      "content": true,
+      "attachment": false,
+      "folder": true,
+      "relationship": false,
+      "policy": false
+    },
+    "attachments": {}
+  },
+  {
+    "document": {
+      "_id": "134fd68f-45cc-42b8-a760-fa0bff0080c7",
+      "_rev": "9708964d-ef24-4e97-a64d-02f9165df556",
+      "type": "cmis:folder",
+      "created": "2013-01-01T00:00:00.000+0000",
+      "creator": "system",
+      "modified": "2013-01-01T00:00:00.000+0000",
+      "modifier": "system",
+      "name": "users",
+      "parentId": "7f5c7fcb-3b0c-489c-8a54-32d8b710de2d",
+      "acl": {
+        "entries": [
+          {
+            "principal": "system",
+            "permissions": [
+              "cmis:all"
+            ]
+          },
+          {
+            "principal": "GROUP_EVERYONE",
+            "permissions": [
+              "cmis:read"
+            ]
+          }
+        ]
+      },
+      "aclInherited": false,
+      "subTypeProperties": [],
+      "aspects": [],
+      "objectType": "cmis:folder",
+      "changeToken": "aa6ecfb4-bd9c-47c2-a2a1-d15ca0436a3e",
+      "allowedChildTypeIds": [
+        "cmis:item"
+      ],
+      "document": false,
+      "content": true,
+      "attachment": false,
+      "folder": true,
+      "relationship": false,
+      "policy": false
+    },
+    "attachments": {}
+  },
+  {
+    "document": {
+      "_id": "b9cd7412-a951-4046-9e39-5a9176f00274",
+      "_rev": "92706bd1-7c59-43bf-8d1b-797bb3726b1a",
+      "type": "cmis:folder",
+      "created": "2013-01-01T00:00:00.000+0000",
+      "creator": "system",
+      "modified": "2013-01-01T00:00:00.000+0000",
+      "modifier": "system",
+      "name": "groups",
+      "parentId": "7f5c7fcb-3b0c-489c-8a54-32d8b710de2d",
+      "acl": {
+        "entries": [
+          {
+            "principal": "system",
+            "permissions": [
+              "cmis:all"
+            ]
+          },
+          {
+            "principal": "GROUP_EVERYONE",
+            "permissions": [
+              "cmis:read"
+            ]
+          }
+        ]
+      },
+      "aclInherited": false,
+      "subTypeProperties": [],
+      "aspects": [],
+      "objectType": "cmis:folder",
+      "changeToken": "ef81ad51-3080-4873-a880-62c61d3b9531",
+      "allowedChildTypeIds": [
+        "cmis:item"
+      ],
+      "document": false,
+      "content": true,
+      "attachment": false,
+      "folder": true,
+      "relationship": false,
+      "policy": false
+    },
+    "attachments": {}
+  },
+  {
+    "document": {
+      "_id": "c3d4e5f6789012345678901234abcdef",
+      "_rev": "ded63f4c-dd86-408c-877a-86f74ea0f89c",
+      "type": "cmis:item",
+      "created": "2013-01-01T00:00:00.000+0000",
+      "creator": "system",
+      "modified": "2013-01-01T00:00:00.000+0000",
+      "modifier": "system",
+      "userId": "admin",
+      "userName": "admin",
+      "firstName": "Administrator",
+      "lastName": "Canopy",
+      "email": "admin@canopy.local",
+      "passwordHash": "21232f297a57a5a743894a0e4a801fc3",
+      "admin": true,
+      "objectType": "nemaki:user",
+      "parentId": "134fd68f-45cc-42b8-a760-fa0bff0080c7",
+      "acl": {
+        "entries": [
+          {
+            "principal": "admin",
+            "permissions": [
+              "cmis:all"
+            ]
+          },
+          {
+            "principal": "system",
+            "permissions": [
+              "cmis:all"
+            ]
+          }
+        ]
+      },
+      "aclInherited": false,
+      "subTypeProperties": [],
+      "aspects": [],
+      "changeToken": "c3d4e5f6789012345678901234abcdf0",
+      "document": false,
+      "content": false,
+      "attachment": false,
+      "folder": false,
+      "relationship": false,
+      "policy": false
+    },
+    "attachments": {}
+  },
+  {
+    "document": {
+      "_id": "d4e5f6789012345678901234abcdef01",
+      "_rev": "7af7564b-731b-4751-bdaa-e05ae0e610ab",
+      "type": "cmis:item",
+      "created": "2013-01-01T00:00:00.000+0000",
+      "creator": "system",
+      "modified": "2013-01-01T00:00:00.000+0000",
+      "modifier": "system",
+      "groupId": "GROUP_EVERYONE",
+      "name": "Everyone",
+      "users": [],
+      "groups": [],
+      "objectType": "nemaki:group",
+      "parentId": "b9cd7412-a951-4046-9e39-5a9176f00274",
+      "acl": {
+        "entries": [
+          {
+            "principal": "system",
+            "permissions": [
+              "cmis:all"
+            ]
+          },
+          {
+            "principal": "admin",
+            "permissions": [
+              "cmis:read"
+            ]
+          }
+        ]
+      },
+      "aclInherited": false,
+      "subTypeProperties": [],
+      "aspects": [],
+      "changeToken": "d4e5f6789012345678901234abcdef02",
+      "document": false,
+      "content": false,
+      "attachment": false,
+      "folder": false,
+      "relationship": false,
+      "policy": false
+    },
+    "attachments": {}
+  },
+  {
+    "document": {
+      "_id": "82fc38f9-422a-41d1-bf6d-7b0ac6b89d36",
+      "_rev": "31f84533-291c-4476-96ae-bd387897a423",
+      "type": "typeDefinition",
+      "created": "2013-01-01T00:00:00.000+0000",
+      "creator": "system",
+      "modified": "2013-01-01T00:00:00.000+0000",
+      "modifier": "system",
+      "queryName": "nemaki:user",
+      "localName": "user",
+      "localNamespace": "http://www.aegif.jp/NEMAKI",
+      "displayName": "User",
+      "parentId": "cmis:item",
+      "description": "User type for authentication",
+      "baseId": "cmis:item",
+      "creatable": true,
+      "fileable": true,
+      "queryable": true,
+      "fulltextIndexed": false,
+      "includedInSupertypeQuery": true,
+      "controllablePolicy": false,
+      "controllableACL": true,
+      "objectType": "typeDefinition",
+      "propertyDefinitions": {
+        "nemaki:userId": {
+          "_id": "0f4d2166-f752-4a75-8dda-cd976fdb0c19",
+          "_rev": "5bf1feb6-fce2-4ee9-a7ed-7bbfb26562da",
+          "type": "propertyDefinition",
+          "created": "2013-01-01T00:00:00.000+0000",
+          "creator": "system",
+          "modified": "2013-01-01T00:00:00.000+0000",
+          "modifier": "system",
+          "queryName": "nemaki:userId",
+          "localName": "userId",
+          "localNamespace": "http://www.aegif.jp/NEMAKI",
+          "displayName": "User ID",
+          "description": "User identifier",
+          "propertyType": "STRING",
+          "cardinality": "SINGLE",
+          "updatability": "READWRITE",
+          "inherited": false,
+          "required": true,
+          "queryable": true,
+          "orderable": true
+        },
+        "nemaki:userName": {
+          "_id": "472e2f57-eb7f-4f67-82c5-7e4355055933",
+          "_rev": "07a20233-9811-42de-9d79-028fcbc7997b",
+          "type": "propertyDefinition",
+          "created": "2013-01-01T00:00:00.000+0000",
+          "creator": "system",
+          "modified": "2013-01-01T00:00:00.000+0000",
+          "modifier": "system",
+          "queryName": "nemaki:userName",
+          "localName": "userName",
+          "localNamespace": "http://www.aegif.jp/NEMAKI",
+          "displayName": "User Name",
+          "description": "User display name",
+          "propertyType": "STRING",
+          "cardinality": "SINGLE",
+          "updatability": "READWRITE",
+          "inherited": false,
+          "required": true,
+          "queryable": true,
+          "orderable": true
+        },
+        "nemaki:firstName": {
+          "_id": "c046a367-05f5-431f-b1d6-152d55f0b9b1",
+          "_rev": "00c6d72d-0cfc-4cf1-b2c2-853c97e6ba95",
+          "type": "propertyDefinition",
+          "created": "2013-01-01T00:00:00.000+0000",
+          "creator": "system",
+          "modified": "2013-01-01T00:00:00.000+0000",
+          "modifier": "system",
+          "queryName": "nemaki:firstName",
+          "localName": "firstName",
+          "localNamespace": "http://www.aegif.jp/NEMAKI",
+          "displayName": "First Name",
+          "description": "User first name",
+          "propertyType": "STRING",
+          "cardinality": "SINGLE",
+          "updatability": "READWRITE",
+          "inherited": false,
+          "required": false,
+          "queryable": true,
+          "orderable": true
+        },
+        "nemaki:lastName": {
+          "_id": "1239bf24-6c62-4368-85ff-89959b9b2781",
+          "_rev": "b73b8adb-191b-422d-a222-c4fcb1120c5b",
+          "type": "propertyDefinition",
+          "created": "2013-01-01T00:00:00.000+0000",
+          "creator": "system",
+          "modified": "2013-01-01T00:00:00.000+0000",
+          "modifier": "system",
+          "queryName": "nemaki:lastName",
+          "localName": "lastName",
+          "localNamespace": "http://www.aegif.jp/NEMAKI",
+          "displayName": "Last Name",
+          "description": "User last name",
+          "propertyType": "STRING",
+          "cardinality": "SINGLE",
+          "updatability": "READWRITE",
+          "inherited": false,
+          "required": false,
+          "queryable": true,
+          "orderable": true
+        },
+        "nemaki:email": {
+          "_id": "bcd79573-185d-4d94-a084-1e6227bb4d53",
+          "_rev": "e9a5a784-d4ed-47e9-9cac-41e4641cf8e2",
+          "type": "propertyDefinition",
+          "created": "2013-01-01T00:00:00.000+0000",
+          "creator": "system",
+          "modified": "2013-01-01T00:00:00.000+0000",
+          "modifier": "system",
+          "queryName": "nemaki:email",
+          "localName": "email",
+          "localNamespace": "http://www.aegif.jp/NEMAKI",
+          "displayName": "Email",
+          "description": "User email address",
+          "propertyType": "STRING",
+          "cardinality": "SINGLE",
+          "updatability": "READWRITE",
+          "inherited": false,
+          "required": false,
+          "queryable": true,
+          "orderable": true
+        },
+        "nemaki:passwordHash": {
+          "_id": "46b64c30-de8e-4f9a-84b5-2662b2653e17",
+          "_rev": "87755006-6ee6-4d0c-b77f-3f8ae77bbe52",
+          "type": "propertyDefinition",
+          "created": "2013-01-01T00:00:00.000+0000",
+          "creator": "system",
+          "modified": "2013-01-01T00:00:00.000+0000",
+          "modifier": "system",
+          "queryName": "nemaki:passwordHash",
+          "localName": "passwordHash",
+          "localNamespace": "http://www.aegif.jp/NEMAKI",
+          "displayName": "Password Hash",
+          "description": "User password hash",
+          "propertyType": "STRING",
+          "cardinality": "SINGLE",
+          "updatability": "READWRITE",
+          "inherited": false,
+          "required": true,
+          "queryable": false,
+          "orderable": false
+        },
+        "nemaki:admin": {
+          "_id": "77513c87-e614-493d-91ff-ee8819c7e2d7",
+          "_rev": "0219e986-d26a-4ab4-81db-9a82b1eeeeaa",
+          "type": "propertyDefinition",
+          "created": "2013-01-01T00:00:00.000+0000",
+          "creator": "system",
+          "modified": "2013-01-01T00:00:00.000+0000",
+          "modifier": "system",
+          "queryName": "nemaki:admin",
+          "localName": "admin",
+          "localNamespace": "http://www.aegif.jp/NEMAKI",
+          "displayName": "Administrator",
+          "description": "Administrator flag",
+          "propertyType": "BOOLEAN",
+          "cardinality": "SINGLE",
+          "updatability": "READWRITE",
+          "inherited": false,
+          "required": false,
+          "queryable": true,
+          "orderable": true
+        }
+      }
+    },
+    "attachments": {}
+  },
+  {
+    "document": {
+      "_id": "b4d464ff-bbc9-4cf6-9659-d07651fba6fd",
+      "_rev": "d7f7887a-d52d-4060-8738-6fb8c7fd939f",
+      "type": "typeDefinition",
+      "created": "2013-01-01T00:00:00.000+0000",
+      "creator": "system",
+      "modified": "2013-01-01T00:00:00.000+0000",
+      "modifier": "system",
+      "queryName": "nemaki:group",
+      "localName": "group",
+      "localNamespace": "http://www.aegif.jp/NEMAKI",
+      "displayName": "Group",
+      "parentId": "cmis:item",
+      "description": "Group type for authentication",
+      "baseId": "cmis:item",
+      "creatable": true,
+      "fileable": true,
+      "queryable": true,
+      "fulltextIndexed": false,
+      "includedInSupertypeQuery": true,
+      "controllablePolicy": false,
+      "controllableACL": true,
+      "objectType": "typeDefinition",
+      "propertyDefinitions": {
+        "nemaki:groupId": {
+          "_id": "fc692831-7d68-4e0a-b38e-b19a4096f2de",
+          "_rev": "8dedccb4-34b3-4568-8eb5-10dd931ba17f",
+          "type": "propertyDefinition",
+          "created": "2013-01-01T00:00:00.000+0000",
+          "creator": "system",
+          "modified": "2013-01-01T00:00:00.000+0000",
+          "modifier": "system",
+          "queryName": "nemaki:groupId",
+          "localName": "groupId",
+          "localNamespace": "http://www.aegif.jp/NEMAKI",
+          "displayName": "Group ID",
+          "description": "Group identifier",
+          "propertyType": "STRING",
+          "cardinality": "SINGLE",
+          "updatability": "READWRITE",
+          "inherited": false,
+          "required": true,
+          "queryable": true,
+          "orderable": true
+        },
+        "nemaki:name": {
+          "_id": "cc1e943a-ed34-4dbc-a79f-3ff2ef18ecb1",
+          "_rev": "693a612b-9060-4fc1-9485-2322b37fb18b",
+          "type": "propertyDefinition",
+          "created": "2013-01-01T00:00:00.000+0000",
+          "creator": "system",
+          "modified": "2013-01-01T00:00:00.000+0000",
+          "modifier": "system",
+          "queryName": "nemaki:name",
+          "localName": "name",
+          "localNamespace": "http://www.aegif.jp/NEMAKI",
+          "displayName": "Group Name",
+          "description": "Group display name",
+          "propertyType": "STRING",
+          "cardinality": "SINGLE",
+          "updatability": "READWRITE",
+          "inherited": false,
+          "required": true,
+          "queryable": true,
+          "orderable": true
+        },
+        "nemaki:users": {
+          "_id": "f670371f-465e-43fa-bcc9-a94a6fd517aa",
+          "_rev": "c1b251a5-51d0-4cd9-9e44-8c6c5e43d782",
+          "type": "propertyDefinition",
+          "created": "2013-01-01T00:00:00.000+0000",
+          "creator": "system",
+          "modified": "2013-01-01T00:00:00.000+0000",
+          "modifier": "system",
+          "queryName": "nemaki:users",
+          "localName": "users",
+          "localNamespace": "http://www.aegif.jp/NEMAKI",
+          "displayName": "Users",
+          "description": "Group member users",
+          "propertyType": "STRING",
+          "cardinality": "MULTI",
+          "updatability": "READWRITE",
+          "inherited": false,
+          "required": false,
+          "queryable": true,
+          "orderable": false
+        },
+        "nemaki:groups": {
+          "_id": "00662782-1c49-4814-a49e-f46ea0c8a321",
+          "_rev": "fac7e5d8-c0d4-482a-be1e-f9eea2ccb6dd",
+          "type": "propertyDefinition",
+          "created": "2013-01-01T00:00:00.000+0000",
+          "creator": "system",
+          "modified": "2013-01-01T00:00:00.000+0000",
+          "modifier": "system",
+          "queryName": "nemaki:groups",
+          "localName": "groups",
+          "localNamespace": "http://www.aegif.jp/NEMAKI",
+          "displayName": "Groups",
+          "description": "Group member groups",
+          "propertyType": "STRING",
+          "cardinality": "MULTI",
+          "updatability": "READWRITE",
+          "inherited": false,
+          "required": false,
+          "queryable": true,
+          "orderable": false
+        }
+      }
+    },
+    "attachments": {}
+  },
+  {
+    "document": {
+      "_id": "2b01320c-f3bb-4765-9ef0-bb1938fed2e2",
+      "_rev": "e64e76be-b66d-4d42-be9b-6ce0ba3eeb47",
+      "type": "typeDefinition",
+      "created": "2013-01-01T00:00:00.000+0000",
+      "creator": "system",
+      "modified": "2013-01-01T00:00:00.000+0000",
+      "modifier": "system",
+      "queryName": "nemaki:parentChildRelationship",
+      "localName": "parentChildRelationship",
+      "localNamespace": "http://www.aegif.jp/NEMAKI",
+      "displayName": "Parent Child Relationship",
+      "parentId": "cmis:relationship",
+      "description": "Parent child relationship type",
+      "baseId": "cmis:relationship",
+      "creatable": true,
+      "fileable": false,
+      "queryable": true,
+      "fulltextIndexed": false,
+      "includedInSupertypeQuery": true,
+      "controllablePolicy": false,
+      "controllableACL": false,
+      "objectType": "typeDefinition",
+      "allowedSourceTypes": [
+        "cmis:folder"
+      ],
+      "allowedTargetTypes": [
+        "cmis:document",
+        "cmis:folder",
+        "cmis:item"
+      ]
+    },
+    "attachments": {}
+  },
+  {
+    "document": {
+      "_id": "76cfd6fa-2b36-4ace-9cd1-2c953f4be85a",
+      "_rev": "04723d46-e80e-49c6-8a58-25964e1888ec",
+      "type": "typeDefinition",
+      "created": "2013-01-01T00:00:00.000+0000",
+      "creator": "system",
+      "modified": "2013-01-01T00:00:00.000+0000",
+      "modifier": "system",
+      "queryName": "nemaki:bidirectionalRelationship",
+      "localName": "bidirectionalRelationship",
+      "localNamespace": "http://www.aegif.jp/NEMAKI",
+      "displayName": "Bidirectional Relationship",
+      "parentId": "cmis:relationship",
+      "description": "Bidirectional relationship type",
+      "baseId": "cmis:relationship",
+      "creatable": true,
+      "fileable": false,
+      "queryable": true,
+      "fulltextIndexed": false,
+      "includedInSupertypeQuery": true,
+      "controllablePolicy": false,
+      "controllableACL": false,
+      "objectType": "typeDefinition",
+      "allowedSourceTypes": [
+        "cmis:document",
+        "cmis:folder",
+        "cmis:item"
+      ],
+      "allowedTargetTypes": [
+        "cmis:document",
+        "cmis:folder",
+        "cmis:item"
+      ]
+    },
+    "attachments": {}
+  }
+]

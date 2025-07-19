@@ -16,7 +16,7 @@ import org.jodconverter.document.DocumentFormat;
 import org.jodconverter.office.OfficeException;
 import org.jodconverter.office.OfficeManager;
 
-import javax.annotation.PostConstruct;
+import jakarta.annotation.PostConstruct;
 import java.io.*;
 import java.math.BigInteger;
 import java.util.List;
@@ -44,7 +44,16 @@ public class JodRenditionManagerImpl implements RenditionManager {
 
 		// Parse definition file
 		YamlManager manager = new YamlManager(definitionFile);
-		List<Map<String, Object>> yml = (List<Map<String, Object>>) manager.loadYml();
+		Object yamlResult = manager.loadYml();
+		List<Map<String, Object>> yml = null;
+		
+		if (yamlResult instanceof List) {
+			yml = (List<Map<String, Object>>) yamlResult;
+		} else {
+			log.warn("YAML result is not a List, skipping rendition format initialization. Result type: " + 
+			        (yamlResult != null ? yamlResult.getClass().getName() : "null"));
+			return;
+		}
 
 		if (CollectionUtils.isNotEmpty(yml)) {
 			for (Map<String, Object> format : yml) {

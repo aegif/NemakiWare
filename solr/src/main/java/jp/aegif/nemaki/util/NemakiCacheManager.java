@@ -3,7 +3,7 @@ package jp.aegif.nemaki.util;
 import java.time.format.DateTimeFormatter;
 import java.util.GregorianCalendar;
 
-import javax.ws.rs.core.MediaType;
+// import jakarta.ws.rs.core.MediaType; // Removed due to Jersey 1.x compatibility
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,7 +46,7 @@ public class NemakiCacheManager {
 			apiResult = c.resource(restUri)
 							.path(objectId)
 							.queryParam("date", dtf.format(date.toZonedDateTime()))
-							.accept(MediaType.APPLICATION_JSON_TYPE)
+							.accept("application/json")
 							.delete(String.class);
 
 
@@ -72,7 +72,7 @@ public class NemakiCacheManager {
 
 			apiResult = c.resource(restUri)
 							.path(objectId)
-							.accept(MediaType.APPLICATION_JSON_TYPE)
+							.accept("application/json")
 							.delete(String.class);
 
 

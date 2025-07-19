@@ -32,6 +32,12 @@ public class PropertyManager{
 	 * @throws Exception
 	 */
 	public String readValue(String key){
+		// CRITICAL FIX: Check system properties first for Jetty environment override support
+		String systemPropertyValue = System.getProperty(key);
+		if(systemPropertyValue != null){
+			return systemPropertyValue;
+		}
+		
 		Object configVal = getDynamicValue(key);
 		if(configVal == null){
 			return propertyConfigurer.getValue(key);

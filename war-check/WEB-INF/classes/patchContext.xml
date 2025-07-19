@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- This context file needs in another file: ContentService/PrincipalService/TypeService
+	bean definition -->
+
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:aop="http://www.springframework.org/schema/aop"
+ xmlns:context="http://www.springframework.org/schema/context"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+    http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd
+    http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd
+    http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd">
+
+    <context:annotation-config />
+	<context:component-scan base-package="jp.aegif.nemaki.patch" />
+
+	<bean id="PatchService" class="jp.aegif.nemaki.patch.PatchService" init-method="applyPatchesOnStartup">
+		<property name="repositoryInfoMap">
+			<ref bean="repositoryInfoMap" />
+		</property>
+		<property name="connectorPool">
+			<ref bean="connectorPool" />
+		</property>
+		<property name="couchdbUrl">
+			<value>${db.couchdb.url}</value>
+		</property>
+		<property name="couchdbUsername">
+			<value>${db.couchdb.auth.username}</value>
+		</property>
+		<property name="couchdbPassword">
+			<value>${db.couchdb.auth.password}</value>
+		</property>
+		<property name="patchList">
+			<list>
+				<!-- Individual patches consolidated into initialization data -->
+				<!-- Future patches can be added here when needed -->
+			</list>
+		</property>
+	</bean>
+
+	<bean id="patchUtil" class="jp.aegif.nemaki.patch.PatchUtil">
+		<property name="propertyManager">
+			<ref bean="propertyManager" />
+		</property>
+		<property name="repositoryInfoMap">
+			<ref bean="repositoryInfoMap" />
+		</property>
+		<property name="contentDaoService">
+			<ref bean="ContentDaoService" />
+		</property>
+		<property name="contentService">
+			<ref bean="ContentService" />
+		</property>
+		<property name="connectorPool">
+			<ref bean="connectorPool" />
+		</property>
+		<property name="repositoryService">
+			<ref bean="RepositoryService" />
+		</property>
+	</bean>
+
+
+</beans>

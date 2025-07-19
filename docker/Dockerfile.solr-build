@@ -1,0 +1,13 @@
+FROM maven:3.8-openjdk-11
+
+WORKDIR /app
+COPY solr /app/solr
+
+# Create custom Maven settings to allow HTTP repositories for Restlet
+RUN mkdir -p /root/.m2
+COPY maven-settings.xml /root/.m2/settings.xml
+
+# Build Solr JAR with proper dependencies and custom settings
+RUN cd /app/solr && \
+    echo "Building Solr JAR with Maven..." && \
+    mvn clean compile package -DskipTests -Pdevelopment -s /root/.m2/settings.xml

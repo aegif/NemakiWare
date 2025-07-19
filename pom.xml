@@ -10,6 +10,8 @@
     <properties>
         <nemakiware.version>2.4.1</nemakiware.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
     </properties>
     <modules>
         <module>action</module>

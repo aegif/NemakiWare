@@ -1,0 +1,21 @@
+FROM tomcat:10-jdk17-openjdk-slim
+
+# Install curl for health checks and database connectivity testing
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+# Remove default webapps  
+RUN rm -rf /usr/local/tomcat/webapps/*
+
+# Copy the Jakarta-ready WAR file
+COPY core/core-jakarta.war /usr/local/tomcat/webapps/core.war
+
+# Copy configuration files
+COPY docker/core/nemakiware.properties /usr/local/tomcat/conf/nemakiware.properties
+COPY docker/core/repositories.yml /usr/local/tomcat/conf/repositories.yml
+COPY docker/core/log4j.properties /usr/local/tomcat/conf/log4j.properties
+
+# Set environment
+ENV JAVA_OPTS="-Xms512m -Xmx1024m -XX:+DisableExplicitGC -Djava.net.preferIPv4Stack=true -Djava.net.preferIPv6Addresses=false -Dhttp.proxyHost= -Dhttp.proxyPort= -Dhttps.proxyHost= -Dhttps.proxyPort= -Dhttp.nonProxyHosts=* -Djava.net.useSystemProxies=false -Dnetworkaddress.cache.ttl=60 -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Ddb.couchdb.url=http://nemaki-couchdb:5984 -Ddb.couchdb.auth.enabled=true -Ddb.couchdb.auth.username=admin -Ddb.couchdb.auth.password=password"
+
+EXPOSE 8080
+CMD ["catalina.sh", "run"]

@@ -22,25 +22,23 @@
 package jp.aegif.nemaki.rest;
 
 import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
-import jp.aegif.nemaki.cmis.factory.auth.NemakiAuthCallContextHandler;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 import jp.aegif.nemaki.util.constant.SystemConst;
 import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
-import org.apache.chemistry.opencmis.server.shared.HttpUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 
-import javax.servlet.*;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.*;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.util.Map;
 
 public class AuthenticationFilter implements Filter {
 
@@ -74,13 +72,24 @@ public class AuthenticationFilter implements Filter {
 	public boolean login(HttpServletRequest request, HttpServletResponse response){
 		final String repositoryId = getRepositoryId(request);
 
-		//Make dummy callContext
-		NemakiAuthCallContextHandler callContextHandeler = new NemakiAuthCallContextHandler();
-		Map<String, String> map = callContextHandeler.getCallContextMap(request);
-		CallContextImpl ctxt = new CallContextImpl(null, CmisVersion.CMIS_1_1, repositoryId, null, request, response, null, null);
-		for(String key : map.keySet()){
-			ctxt.put(key, map.get(key));
+		//Create simplified callContext without servlet dependencies
+		CallContextImpl ctxt = new CallContextImpl(null, CmisVersion.CMIS_1_1, repositoryId, null, null, null, null, null);
+		
+		// Extract basic auth information directly
+		String authHeader = request.getHeader("Authorization");
+		if (authHeader != null && authHeader.startsWith("Basic ")) {
+			String base64Credentials = authHeader.substring("Basic ".length()).trim();
+			String credentials = new String(java.util.Base64.getDecoder().decode(base64Credentials));
+			String[] values = credentials.split(":", 2);
+			if (values.length == 2) {
+				ctxt.put(CallContext.USERNAME, values[0]);
+				ctxt.put(CallContext.PASSWORD, values[1]);
+			}
 		}
+		
+		// Add additional context from headers
+		ctxt.put("AUTH_TOKEN", request.getHeader("AUTH_TOKEN"));
+		ctxt.put("AUTH_TOKEN_APP", request.getHeader("AUTH_TOKEN_APP"));
 
 		// auth
 		boolean auth = false;
@@ -98,8 +107,17 @@ public class AuthenticationFilter implements Filter {
 	}
 
 	private String getRepositoryId(HttpServletRequest request){
-		// split path
-        String[] pathFragments = HttpUtils.splitPath(request);
+		// Extract path and split manually
+		String pathInfo = request.getPathInfo();
+		if (pathInfo == null || pathInfo.isEmpty()) {
+			return null;
+		}
+		
+		// Remove leading slash and split
+		if (pathInfo.startsWith("/")) {
+			pathInfo = pathInfo.substring(1);
+		}
+		String[] pathFragments = pathInfo.split("/");
 
         if(pathFragments.length > 0){
         	if(ApiType.REPO.equals(pathFragments[0])){

@@ -209,29 +209,183 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Content getContent(String repositoryId, String objectId) {
 		log.info(MessageFormat.format("cache.ContentDaoService#getContent START: Repo={0}, Id={1}", repositoryId, objectId));
+		log.info("CRITICAL TRACE: Line 2 reached in cache.getContent");
 		if (objectId == null){
 			log.warn("DAO getContent param ObjcetId is null!");
 			return null;
 		}
+		log.info("CRITICAL TRACE: Line 5 reached in cache.getContent - objectId null check passed");
 
-		NemakiCache<Content> contentCache = nemakiCachePool.get(repositoryId).getContentCache();
-		Content v = contentCache.get(objectId);
-
-		if (v != null) {
-			return v;
-		}
-
-		Content content = nonCachedContentDaoService.getContent(repositoryId, objectId);
-
-		if (content == null) {
+		// Critical dependency checks for Cloudant migration debugging
+		if (nemakiCachePool == null) {
+			log.error("CRITICAL: nemakiCachePool is NULL in cached ContentDaoService");
 			return null;
-		} else {
-			contentCache.put(new Element(objectId, content));
+		}
+		if (nonCachedContentDaoService == null) {
+			log.error("CRITICAL: nonCachedContentDaoService is NULL in cached ContentDaoService");
+			return null;
 		}
 
-		log.info(MessageFormat.format("cache.ContentDaoService#getContent END: Repo={0}, Id={1}", repositoryId, objectId));
+		log.info("cache.getContent: Dependencies OK - nemakiCachePool and nonCachedContentDaoService are not null");
 
-		return content;
+		try {
+			NemakiCache<Content> contentCache = nemakiCachePool.get(repositoryId).getContentCache();
+			Content v = contentCache.get(objectId);
+
+			if (v != null) {
+				log.info("CACHE HIT: Found content in cache for " + objectId + ". Type: " + v.getClass().getSimpleName() + ", ObjectType: " + v.getObjectType() + ", isFolder: " + v.isFolder());
+				return v;
+			}
+
+			log.info("CACHE MISS: Calling nonCachedContentDaoService.getContent for " + objectId);
+			Content content = nonCachedContentDaoService.getContent(repositoryId, objectId);
+
+			if (content == null) {
+				log.warn("nonCachedContentDaoService returned NULL for " + objectId);
+				return null;
+			} else {
+				log.info("nonCachedContentDaoService returned: " + content.getClass().getSimpleName() + ", ObjectType: " + content.getObjectType() + ", isFolder: " + content.isFolder());
+				contentCache.put(new Element(objectId, content));
+			}
+
+			log.info(MessageFormat.format("cache.ContentDaoService#getContent END: Repo={0}, Id={1}, returning: {2}", repositoryId, objectId, (content != null ? content.getClass().getSimpleName() + "[objectType=" + content.getObjectType() + "]" : "NULL")));
+
+			return content;
+		} catch (Exception e) {
+			log.error("Exception in cache.getContent for " + objectId + ": " + e.getMessage(), e);
+			return null;
+		}
+	}
+
+	@Override
+	public Content getContentFresh(String repositoryId, String objectId) {
+		// Bypass cache and get fresh content directly from database
+		// This is critical for revision-sensitive operations like writeChangeEvent
+		log.info("CACHE BYPASS: Getting fresh content from database for " + objectId);
+		
+		if (objectId == null) {
+			log.warn("DAO getContentFresh param ObjectId is null!");
+			return null;
+		}
+		
+		if (nonCachedContentDaoService == null) {
+			log.error("CRITICAL: nonCachedContentDaoService is NULL in cached ContentDaoService");
+			return null;
+		}
+		
+		try {
+			Content freshContent = nonCachedContentDaoService.getContent(repositoryId, objectId);
+			if (freshContent != null) {
+				log.info("CACHE BYPASS SUCCESS: Retrieved fresh content for " + objectId + 
+					", revision=" + freshContent.getRevision() + ", type=" + freshContent.getClass().getSimpleName());
+			} else {
+				log.warn("CACHE BYPASS: No content found for " + objectId);
+			}
+			return freshContent;
+		} catch (Exception e) {
+			log.error("Error in getContentFresh", e);
+			return null;
+		}
+	}
+
+	@Override
+	public Document getDocumentFresh(String repositoryId, String objectId) {
+		log.info("CACHE BYPASS: Getting fresh document from database for " + objectId);
+		if (nonCachedContentDaoService == null) {
+			log.error("CRITICAL: nonCachedContentDaoService is NULL in cached ContentDaoService");
+			return null;
+		}
+		try {
+			Document freshDocument = nonCachedContentDaoService.getDocument(repositoryId, objectId);
+			if (freshDocument != null) {
+				log.info("CACHE BYPASS SUCCESS: Retrieved fresh document for " + objectId + 
+					", revision=" + freshDocument.getRevision());
+			}
+			return freshDocument;
+		} catch (Exception e) {
+			log.error("Error in getDocumentFresh", e);
+			return null;
+		}
+	}
+
+	@Override
+	public Folder getFolderFresh(String repositoryId, String objectId) {
+		log.info("CACHE BYPASS: Getting fresh folder from database for " + objectId);
+		if (nonCachedContentDaoService == null) {
+			log.error("CRITICAL: nonCachedContentDaoService is NULL in cached ContentDaoService");
+			return null;
+		}
+		try {
+			Folder freshFolder = nonCachedContentDaoService.getFolder(repositoryId, objectId);
+			if (freshFolder != null) {
+				log.info("CACHE BYPASS SUCCESS: Retrieved fresh folder for " + objectId + 
+					", revision=" + freshFolder.getRevision());
+			}
+			return freshFolder;
+		} catch (Exception e) {
+			log.error("Error in getFolderFresh", e);
+			return null;
+		}
+	}
+
+	@Override
+	public Relationship getRelationshipFresh(String repositoryId, String objectId) {
+		log.info("CACHE BYPASS: Getting fresh relationship from database for " + objectId);
+		if (nonCachedContentDaoService == null) {
+			log.error("CRITICAL: nonCachedContentDaoService is NULL in cached ContentDaoService");
+			return null;
+		}
+		try {
+			Relationship freshRelationship = nonCachedContentDaoService.getRelationship(repositoryId, objectId);
+			if (freshRelationship != null) {
+				log.info("CACHE BYPASS SUCCESS: Retrieved fresh relationship for " + objectId + 
+					", revision=" + freshRelationship.getRevision());
+			}
+			return freshRelationship;
+		} catch (Exception e) {
+			log.error("Error in getRelationshipFresh", e);
+			return null;
+		}
+	}
+
+	@Override
+	public Policy getPolicyFresh(String repositoryId, String objectId) {
+		log.info("CACHE BYPASS: Getting fresh policy from database for " + objectId);
+		if (nonCachedContentDaoService == null) {
+			log.error("CRITICAL: nonCachedContentDaoService is NULL in cached ContentDaoService");
+			return null;
+		}
+		try {
+			Policy freshPolicy = nonCachedContentDaoService.getPolicy(repositoryId, objectId);
+			if (freshPolicy != null) {
+				log.info("CACHE BYPASS SUCCESS: Retrieved fresh policy for " + objectId + 
+					", revision=" + freshPolicy.getRevision());
+			}
+			return freshPolicy;
+		} catch (Exception e) {
+			log.error("Error in getPolicyFresh", e);
+			return null;
+		}
+	}
+
+	@Override
+	public Item getItemFresh(String repositoryId, String objectId) {
+		log.info("CACHE BYPASS: Getting fresh item from database for " + objectId);
+		if (nonCachedContentDaoService == null) {
+			log.error("CRITICAL: nonCachedContentDaoService is NULL in cached ContentDaoService");
+			return null;
+		}
+		try {
+			Item freshItem = nonCachedContentDaoService.getItem(repositoryId, objectId);
+			if (freshItem != null) {
+				log.info("CACHE BYPASS SUCCESS: Retrieved fresh item for " + objectId + 
+					", revision=" + freshItem.getRevision());
+			}
+			return freshItem;
+		} catch (Exception e) {
+			log.error("Error in getItemFresh", e);
+			return null;
+		}
 	}
 
 	@Override
@@ -292,17 +446,70 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Folder getFolder(String repositoryId, String objectId) {
-		Folder folder = null;
-		Content c = this.getContent(repositoryId, objectId);
-		if (c != null) {
-			try {
-				folder = (Folder) c;
-			} catch (ClassCastException e) {
-				log.warn("Content type is not folder : " + c.getObjectType());
-				return null;
-			}
+		// CRITICAL: Enhanced implementation with type hierarchy support for Cloudant migration
+		log.info("cache.getFolder START: Repo=" + repositoryId + ", Id=" + objectId);
+		Content content = null;
+		try {
+			content = this.getContent(repositoryId, objectId);
+			log.info("cache.getFolder: getContent completed. Result is " + (content != null ? "NOT NULL" : "NULL"));
+		} catch (Exception e) {
+			log.error("cache.getFolder: Exception in getContent for " + objectId + ": " + e.getMessage(), e);
+			return null;
 		}
-		return folder;
+		
+		if (content == null) {
+			log.warn("cache.getFolder: getContent returned NULL for " + objectId);
+			return null;
+		}
+		
+		log.info("cache.getFolder: Got content of type: " + content.getClass().getSimpleName() + ", ObjectType: " + content.getObjectType() + ", isFolder: " + content.isFolder());
+		
+		// Check if content is already a Folder instance
+		if (content instanceof Folder) {
+			log.info("cache.getFolder: Content is already Folder instance");
+			return (Folder) content;
+		}
+		
+		// Check if content has a folder-type objectType (supporting type hierarchy)
+		String objectType = content.getObjectType();
+		if (objectType != null && isFolderType(repositoryId, objectType)) {
+			log.info("cache.getFolder: ObjectType " + objectType + " is folder type");
+			// Convert content to folder if it has folder-type but is not a Folder instance
+			if (content.isFolder()) {
+				log.info("cache.getFolder: Converting Content to Folder");
+				// Create a Folder instance from the content
+				Folder folder = new Folder(content);
+				return folder;
+			} else {
+				log.warn("cache.getFolder: ObjectType is folder type but content.isFolder() returned false");
+			}
+		} else {
+			log.warn("cache.getFolder: ObjectType " + objectType + " is NOT folder type");
+		}
+		
+		log.warn("Content " + objectId + " exists but is not a folder type. ObjectType: " + objectType);
+		return null;
+	}
+	
+	/**
+	 * Check if the given objectType is a folder type (cmis:folder or inherits from cmis:folder)
+	 */
+	private boolean isFolderType(String repositoryId, String objectType) {
+		if (objectType == null) return false;
+		
+		// Direct match for standard folder types
+		if ("cmis:folder".equals(objectType) || "folder".equals(objectType)) {
+			return true;
+		}
+		
+		// Check for custom folder types (nemaki:folder, etc.)
+		if (objectType.contains("folder")) {
+			return true;
+		}
+		
+		// TODO: Add proper type hierarchy checking using TypeManager
+		// For now, use simple pattern matching as a temporary solution
+		return false;
 	}
 
 	@Override
@@ -400,7 +607,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			return  v;
 		}
 
+		System.out.println("=== CACHED LAYER: getUserItemById for userId: " + userId + " in repository: " + repositoryId + " ===");
 		UserItem userItem = nonCachedContentDaoService.getUserItemById(repositoryId, userId);
+		System.out.println("=== CACHED LAYER: got userItem result: " + (userItem != null ? "NOT NULL" : "NULL") + " ===");
 
 		if (userItem == null) {
 			return null;
@@ -688,6 +897,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Document update(String repositoryId, Document document) {
+		// COMPREHENSIVE REVISION MANAGEMENT: Cache layer handles revision transparently
+		// The underlying DAO layer will fetch current revision as needed for Content objects
+		log.debug("CACHE LAYER: Updating document " + document.getId() + " (revision will be managed by DAO layer)");
+		
 		Document updated = nonCachedContentDaoService.update(repositoryId, document);
 		nemakiCachePool.get(repositoryId).getContentCache().put(new Element(updated.getId(), updated));
 		nemakiCachePool.get(repositoryId).getObjectDataCache().remove(updated.getId());
@@ -712,6 +925,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Folder update(String repositoryId, Folder folder) {
+		// COMPREHENSIVE REVISION MANAGEMENT: Cache layer handles revision transparently
+		// The underlying DAO layer will fetch current revision as needed for Content objects
+		log.debug("CACHE LAYER: Updating folder " + folder.getId() + " (revision will be managed by DAO layer)");
+		
 		Folder updated = nonCachedContentDaoService.update(repositoryId, folder);
 		nemakiCachePool.get(repositoryId).getContentCache().put(new Element(updated.getId(), updated));
 		nemakiCachePool.get(repositoryId).getObjectDataCache().remove(updated.getId());

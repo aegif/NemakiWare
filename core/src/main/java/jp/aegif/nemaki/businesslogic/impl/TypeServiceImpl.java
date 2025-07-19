@@ -15,9 +15,12 @@ import jp.aegif.nemaki.model.NemakiTypeDefinition;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 public class TypeServiceImpl implements TypeService{
 
+	private static final Log log = LogFactory.getLog(TypeServiceImpl.class);
 	private ContentDaoService contentDaoService;
 
 	public TypeServiceImpl() {
@@ -93,26 +96,57 @@ public class TypeServiceImpl implements TypeService{
 	@Override
 	public void deleteTypeDefinition(String repositoryId, String typeId) {
 		NemakiTypeDefinition ntd = getTypeDefinition(repositoryId, typeId);
+		
+		if (ntd == null) {
+			log.warn("Type definition not found for deletion: " + typeId);
+			return;
+		}
 
-		//Delete unnecessary property definitions
+		//Delete unnecessary property definitions with proper error handling
 		List<String> detailIds = ntd.getProperties();
-		for(String detailId : detailIds){
-			NemakiPropertyDefinitionDetail detail = getPropertyDefinitionDetail(repositoryId, detailId);
-			NemakiPropertyDefinitionCore core = getPropertyDefinitionCore(repositoryId, detail.getCoreNodeId());
-			//Delete a detail
-			contentDaoService.delete(repositoryId, detail.getId());
+		if (detailIds != null && !detailIds.isEmpty()) {
+			for(String detailId : detailIds){
+				try {
+					NemakiPropertyDefinitionDetail detail = getPropertyDefinitionDetail(repositoryId, detailId);
+					if (detail == null) {
+						log.warn("Property definition detail not found: " + detailId + ", skipping deletion");
+						continue;
+					}
+					
+					NemakiPropertyDefinitionCore core = getPropertyDefinitionCore(repositoryId, detail.getCoreNodeId());
+					if (core == null) {
+						log.warn("Property definition core not found: " + detail.getCoreNodeId() + ", skipping core deletion but deleting detail");
+						contentDaoService.delete(repositoryId, detail.getId());
+						continue;
+					}
+					
+					//Delete a detail
+					contentDaoService.delete(repositoryId, detail.getId());
 
-			//Delete a core only if no details exist
-			List<NemakiPropertyDefinitionDetail> l =
-					contentDaoService.getPropertyDefinitionDetailByCoreNodeId(repositoryId, core.getId());
-			if(CollectionUtils.isEmpty(l)){
-				contentDaoService.delete(repositoryId, core.getId());
+					//Delete a core only if no other details exist
+					List<NemakiPropertyDefinitionDetail> remainingDetails =
+							contentDaoService.getPropertyDefinitionDetailByCoreNodeId(repositoryId, core.getId());
+					if(CollectionUtils.isEmpty(remainingDetails)){
+						contentDaoService.delete(repositoryId, core.getId());
+						log.debug("Deleted property definition core: " + core.getId());
+					} else {
+						log.debug("Property definition core " + core.getId() + " retained, " + remainingDetails.size() + " details still reference it");
+					}
+				} catch (Exception e) {
+					log.error("Error deleting property definition detail " + detailId + " for type " + typeId, e);
+					// Continue with other deletions even if one fails
+				}
 			}
 		}
 
 		//Delete the type definition
-		contentDaoService.deleteTypeDefinition(repositoryId, ntd.getId());
-
+		try {
+			contentDaoService.deleteTypeDefinition(repositoryId, ntd.getId());
+			log.info("Successfully deleted type definition: " + typeId);
+		} catch (Exception e) {
+			log.error("Error deleting type definition: " + typeId, e);
+			throw e; // Re-throw since this is the main operation
+		}
 	}
 
 	@Override

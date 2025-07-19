@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<properties>
+  <service-loader initializableProblemHandler="ignore" loadErrorHandler="IGNORE"/>
+  
+  <parsers>
+    <parser class="org.apache.tika.parser.CompositeParser">
+      <!-- Basic parsers -->
+      <parser class="org.apache.tika.parser.pdf.PDFParser"/>
+      <parser class="org.apache.tika.parser.txt.TXTParser"/>
+      <parser class="org.apache.tika.parser.html.HtmlParser"/>
+      <parser class="org.apache.tika.parser.xml.XMLParser"/>
+      <parser class="org.apache.tika.parser.rtf.RTFParser"/>
+      <!-- Microsoft Office formats -->
+      <parser class="org.apache.tika.parser.microsoft.OfficeParser"/>
+      <parser class="org.apache.tika.parser.microsoft.ooxml.OOXMLParser"/>
+      <!-- OpenDocument formats -->
+      <parser class="org.apache.tika.parser.odf.OpenDocumentParser"/>
+    </parser>
+  </parsers>
+</properties>

@@ -3,7 +3,6 @@ package controllers;
 import java.util.List;
 
 import org.apache.commons.lang3.StringUtils;
-import org.apache.http.entity.ContentType;
 import org.pac4j.core.client.Client;
 import org.pac4j.core.client.Clients;
 import org.pac4j.core.config.Config;
@@ -107,7 +106,7 @@ public class Application extends Controller {
 			resolver.resolve();
 			String metadata = resolver.getMetadata();
 
-			response().setContentType(ContentType.APPLICATION_XML.getMimeType());
+			response().setContentType("application/xml");
 			return ok(metadata);
 		} else {
 			return notFound();

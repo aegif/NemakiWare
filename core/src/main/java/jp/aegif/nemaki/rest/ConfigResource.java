@@ -8,10 +8,10 @@ import jp.aegif.nemaki.util.lock.ThreadLockService;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.ws.rs.*;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.MediaType;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.MediaType;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.locks.Lock;

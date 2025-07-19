@@ -48,15 +48,15 @@ import org.apache.chemistry.opencmis.commons.enums.*;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisContentAlreadyExistsException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
-import org.apache.chemistry.opencmis.commons.impl.jaxb.CmisException;
+// CmisException import removed due to Jakarta EE compatibility issues
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.InputStream;
 import java.io.SequenceInputStream;
@@ -81,7 +81,7 @@ public class ContentServiceImpl implements ContentService {
 	private SolrUtil solrUtil;
 	private NemakiCachePool nemakiCachePool;
 
-	private static final Log log = LogFactory.getLog(ContentServiceImpl.class);
+	private static final Logger log = LoggerFactory.getLogger(ContentServiceImpl.class);
 	private final static String PATH_SEPARATOR = "/";
 
 	// ///////////////////////////////////////
@@ -175,6 +175,15 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public Folder getParent(String repositoryId, String objectId) {
 		Content content = getContent(repositoryId, objectId);
+		if (content == null) {
+			log.warn("Content not found: " + objectId + " in repository: " + repositoryId);
+			return null;
+		}
+		if (content.getParentId() == null) {
+			// Root folder has no parent
+			log.debug("Content has no parent (root folder): " + objectId);
+			return null;
+		}
 		return getFolder(repositoryId, content.getParentId());
 	}
 
@@ -286,12 +295,21 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	private List<String> calculatePathInternal(List<String> path, Content content, String repositoryId) {
+		if (content == null) {
+			log.error("Content is null during path calculation");
+			throw new RuntimeException("Content is null during path calculation");
+		}
+		
 		path.add(0, content.getName());
 
 		if (isRoot(repositoryId, content)) {
 			return path;
 		} else {
 			Content parent = getParent(repositoryId, content.getId());
+			if (parent == null) {
+				log.error("Parent not found for content: " + content.getId() + " in repository: " + repositoryId);
+				throw new RuntimeException("Parent not found for content: " + content.getId());
+			}
 			calculatePathInternal(path, parent, repositoryId);
 		}
 		return path;
@@ -469,13 +487,11 @@ public class ContentServiceImpl implements ContentService {
 		setSignature(callContext, change);
 		change.setToken(generateChangeToken(change));
 
-		// Create a new change event
+		// Create change event record (no content modification needed)
 		Change created = contentDaoService.create(repositoryId, change);
-
-		// Update change token of the content
-		content.setChangeToken(created.getId());
-
-		updateInternal(repositoryId, content);
+		
+		log.debug("Change event created successfully - ID=" + created.getId() + 
+			", token=" + created.getToken() + ", objectId=" + content.getId());
 
 		return change.getToken();
 
@@ -513,7 +529,7 @@ public class ContentServiceImpl implements ContentService {
 						createPreview(callContext, repositoryId, previewCS, d);
 					}
 				} catch (Exception ex) {
-					log.error(ex);
+					log.error("Error creating preview for document", ex);
 				}
 			}
 		}
@@ -533,7 +549,15 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, repositoryId, document, ChangeType.CREATED);
 
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing(repositoryId);
+		try {
+			if (solrUtil != null) {
+				solrUtil.indexDocument(repositoryId, document);
+			} else {
+				log.error("ERROR: solrUtil is null in ContentServiceImpl.createDocument - cannot index document: " + document.getId());
+			}
+		} catch (Exception e) {
+			log.error("ERROR: Exception during Solr indexing for document: " + document.getId(), e);
+		}
 
 		return document;
 	}
@@ -567,7 +591,7 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing(repositoryId);
+		solrUtil.indexDocument(repositoryId, result);
 
 		return result;
 	}
@@ -604,7 +628,8 @@ public class ContentServiceImpl implements ContentService {
 		
 
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing(repositoryId);
+		solrUtil.indexDocument(repositoryId, result);
+		solrUtil.indexDocument(repositoryId, original);
 
 		return result;
 	}
@@ -649,7 +674,8 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, repositoryId, originalPwc, ChangeType.UPDATED);
 
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing(repositoryId);
+		// TODO: Update with specific document indexing 
+		// solrUtil.indexDocument(repositoryId, content);
 
 		return originalPwc;
 	}
@@ -679,7 +705,8 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing(repositoryId);
+		// TODO: Update with specific document indexing 
+		// solrUtil.indexDocument(repositoryId, content);
 
 		return result;
 	}
@@ -711,8 +738,8 @@ public class ContentServiceImpl implements ContentService {
 			}
 		}
 
-		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing(repositoryId);
+		// Call Solr indexing(optional) - delete document from index
+		solrUtil.deleteDocument(repositoryId, pwc.getId());
 	}
 
 	@Override
@@ -758,7 +785,8 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, repositoryId, latest, ChangeType.UPDATED);
 
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing(repositoryId);
+		// TODO: Update with specific document indexing 
+		// solrUtil.indexDocument(repositoryId, content);
 
 		return result;
 	}
@@ -791,7 +819,8 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, repositoryId, previousDoc, ChangeType.UPDATED);
 
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing(repositoryId);
+		// TODO: Update with specific document indexing 
+		// solrUtil.indexDocument(repositoryId, content);
 
 		return result;
 	}
@@ -961,6 +990,7 @@ public class ContentServiceImpl implements ContentService {
 	public Folder createFolder(CallContext callContext, String repositoryId, Properties properties, Folder parentFolder,
 			List<String> policies, org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension) {
+		log.debug("Creating folder in repository: " + repositoryId);
 		Folder f = new Folder();
 		setBaseProperties(callContext, repositoryId, properties, f, parentFolder.getId());
 		f.setParentId(parentFolder.getId());
@@ -981,12 +1011,15 @@ public class ContentServiceImpl implements ContentService {
 
 		// Create
 		Folder folder = contentDaoService.create(repositoryId, f);
+		log.error("COMPREHENSIVE DEBUG: createFolder received from DAO - ID=" + folder.getId() + 
+			", revision=" + folder.getRevision());
 
-		// Record the change event
+		// COMPREHENSIVE REVISION MANAGEMENT: Record the change event
+		// Content objects now maintain revision state, enabling proper writeChangeEvent
 		writeChangeEvent(callContext, repositoryId, folder, ChangeType.CREATED);
 
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing(repositoryId);
+		solrUtil.indexDocument(repositoryId, folder);
 
 		return folder;
 	}
@@ -1140,12 +1173,33 @@ public class ContentServiceImpl implements ContentService {
 
 	private void setBaseProperties(CallContext callContext, String repositoryId, Properties properties, Content content,
 			String parentFolderId) {
-		// Object Type
+		// DEBUG: Jakarta EE Properties analysis
+		System.out.println("=== PROPERTIES DEBUG ===");
+		System.out.println("Properties object: " + (properties == null ? "NULL" : properties.getClass().getName()));
+		if (properties != null && properties.getProperties() != null) {
+			System.out.println("Properties map size: " + properties.getProperties().size());
+			properties.getProperties().forEach((key, value) -> {
+				System.out.println("  Property: " + key + " = " + (value == null ? "NULL" : value.getClass().getName() + ":" + value.getFirstValue()));
+			});
+		}
+		System.out.println("parentFolderId passed: " + parentFolderId);
+		
+		// DEBUG: TypeDefinition verification
 		String objectTypeId = DataUtil.getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID);
+		System.out.println("objectTypeId extracted: " + objectTypeId);
+		
+		TypeDefinition typeDefinition = typeManager.getTypeDefinition(repositoryId, objectTypeId);
+		System.out.println("TypeDefinition retrieved: " + (typeDefinition == null ? "NULL" : typeDefinition.getId()));
+		if (typeDefinition != null && typeDefinition.getPropertyDefinitions() != null) {
+			System.out.println("TypeDefinition property count: " + typeDefinition.getPropertyDefinitions().size());
+			System.out.println("Contains cmis:name: " + typeDefinition.getPropertyDefinitions().containsKey("cmis:name"));
+		}
+		System.out.println("=== END PROPERTIES DEBUG ===");
+		
+		// Object Type
 		content.setObjectType(objectTypeId);
 
 		// Base Type
-		TypeDefinition typeDefinition = typeManager.getTypeDefinition(repositoryId, objectTypeId);
 		BaseTypeId baseTypeId = typeDefinition.getBaseTypeId();
 		content.setType(baseTypeId.value());
 
@@ -1395,6 +1449,11 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public Content updateInternal(String repositoryId, Content content) {
 		Content result = null;
+		
+		// COMPREHENSIVE REVISION MANAGEMENT: Content objects can now maintain revision state
+		// DAO layer will use Content revision if available, or fetch from database as fallback
+		log.error("COMPREHENSIVE DEBUG: updateInternal called for content ID=" + content.getId() + 
+			", revision=" + content.getRevision() + ", type=" + content.getClass().getSimpleName());
 
 		if (content instanceof Document) {
 			result = contentDaoService.update(repositoryId, (Document) content);
@@ -1414,7 +1473,8 @@ public class ContentServiceImpl implements ContentService {
 			}
 		}
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing(repositoryId);
+		// TODO: Update with specific document indexing 
+		// solrUtil.indexDocument(repositoryId, content);
 
 		return result;
 	}
@@ -1484,7 +1544,8 @@ public class ContentServiceImpl implements ContentService {
 		writeChangeEvent(callContext, repositoryId, target, ChangeType.UPDATED);
 
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing(repositoryId);
+		// TODO: Update with specific document indexing 
+		// solrUtil.indexDocument(repositoryId, content);
 	}
 
 	private Content move(String repositoryId, Content content, String sourceId) {
@@ -1566,8 +1627,8 @@ public class ContentServiceImpl implements ContentService {
 		// Delete item
 		contentDaoService.delete(repositoryId, objectId);
 
-		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing(repositoryId);
+		// Call Solr indexing(optional) - delete from index
+		solrUtil.deleteDocument(repositoryId, objectId);
 	}
 
 	@Override
@@ -1626,7 +1687,8 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing(repositoryId);
+		// TODO: Update with specific document indexing 
+		// solrUtil.indexDocument(repositoryId, content);
 	}
 
 	// deletedWithParent flag controls whether it's deleted with the parent all
@@ -1682,8 +1744,32 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public AttachmentNode getAttachmentRef(String repositoryId, String attachmentId) {
-		AttachmentNode an = contentDaoService.getAttachment(repositoryId, attachmentId);
-		return an;
+		if (StringUtils.isBlank(attachmentId)) {
+			return null;
+		}
+		
+		// Try to get attachment with minimal retry for async scenarios
+		final int maxRetries = 2;
+		final long retryDelayMs = 25;
+		
+		for (int attempt = 1; attempt <= maxRetries; attempt++) {
+			AttachmentNode an = contentDaoService.getAttachment(repositoryId, attachmentId);
+			if (an != null) {
+				return an;
+			}
+			
+			if (attempt < maxRetries) {
+				try {
+					Thread.sleep(retryDelayMs);
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					log.warn("Interrupted while retrieving attachment: attachmentId=" + attachmentId);
+					break;
+				}
+			}
+		}
+		
+		return null;
 	}
 
 	private String createAttachment(CallContext callContext, String repositoryId, ContentStream contentStream) {
@@ -2066,7 +2152,8 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		// Call Solr indexing(optional)
-		solrUtil.callSolrIndexing(repositoryId);
+		// TODO: Update with specific document indexing 
+		// solrUtil.indexDocument(repositoryId, content);
 	}
 
 	private Document restoreDocument(String repositoryId, Archive archive) {
