@@ -74,6 +74,10 @@
 		<filter-name>restAuthenticationFilter</filter-name>
 		<url-pattern>/rest/*</url-pattern>
 	</filter-mapping>
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/browser/*</url-pattern>
+	</filter-mapping>
 
 
 	<!-- <servlet>

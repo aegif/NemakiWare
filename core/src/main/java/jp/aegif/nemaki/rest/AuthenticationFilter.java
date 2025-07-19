@@ -64,8 +64,9 @@ public class AuthenticationFilter implements Filter {
 		String pathInfo = hreq.getPathInfo();
 		String requestURI = hreq.getRequestURI();
 		String authToken = hreq.getHeader("AUTH_TOKEN");
+		String authHeader = hreq.getHeader("Authorization");
 		
-		System.out.println("AUTH FILTER TOKEN: pathInfo='" + pathInfo + "', requestURI='" + requestURI + "', authToken='" + authToken + "'");
+		System.out.println("AUTH FILTER TOKEN: pathInfo='" + pathInfo + "', requestURI='" + requestURI + "', authToken='" + authToken + "', authHeader='" + authHeader + "'");
 		
 		// Bypass authentication for repositories endpoint
 		if (pathInfo != null && pathInfo.equals("/repositories")) {
@@ -108,6 +109,10 @@ public class AuthenticationFilter implements Filter {
 			hreq.setAttribute("CallContext", ctxt);
 			chain.doFilter(req, res);
 			return;
+		}
+		
+		if (authHeader != null && authHeader.startsWith("Basic ")) {
+			System.out.println("AUTH FILTER TOKEN: Found Basic Auth header, proceeding with authentication");
 		}
 
 		boolean auth = login(hreq, hres);
