@@ -4,16 +4,64 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Recent Major Changes (2025-07-19)
 
-### CONTAINS and IN_FOLDER Query Environment Rebuild Resilience - COMPLETED ✅
+### Jakarta EE JAR Contamination Problem Resolution - COMPLETED ✅
 
-**CRITICAL SUCCESS**: Complete resolution of CONTAINS and IN_FOLDER CMIS query failures after clean environment rebuilds, establishing robust automatic initialization system.
+**CRITICAL SUCCESS**: Complete resolution of Jakarta EE JAR mixing issues that prevented Docker environment from working correctly, while Jetty environment worked fine.
 
 **Key Achievements (2025-07-19):**
-- **✅ extractTextContent Fix**: Modified SolrUtil to generate searchable text content instead of returning null
-- **✅ Automatic Solr Reindexing**: Added triggerSolrReindexing to Patch_InitialFolderSetup for post-patch synchronization
-- **✅ Environment Rebuild Resilience**: Ensured text fields are created consistently across all deployment scenarios
-- **✅ One-Shot Clean Rebuild**: Verified complete functionality from clean state without manual intervention
-- **✅ All Query Types Working**: Basic, CONTAINS, IN_FOLDER, IN_TREE, numeric range, ORDER BY, and REST authentication
+- **✅ Jakarta JAR Contamination Fixed**: Removed old chemistry-opencmis-test-util-0.14.0.jar from action/pom.xml that was pulling in non-Jakarta dependencies
+- **✅ Solr Host Configuration**: Added Java system properties (-Dsolr.host=solr -Dsolr.port=8983 -Dsolr.protocol=http) to fix connection issues
+- **✅ Patch System Working**: Sites folder creation now works correctly in Docker environment
+- **✅ Complete Docker Environment**: Core, CouchDB, Solr all working with clean Jakarta EE JARs
+- **✅ CMIS API Functional**: All endpoints responding correctly (HTTP 200 for AtomPub, HTTP 302 for Core redirect)
+
+**Root Cause Analysis:**
+- **Jetty vs Docker Difference**: Jetty used Maven direct execution with correct Jakarta JARs, Docker build pulled in contaminated JARs from action module
+- **action/pom.xml Contamination**: chemistry-opencmis-test-util dependency with old version (0.14.0) introduced non-Jakarta JARs into WAR file
+- **Spring Initialization Timing**: Mixed Jakarta/non-Jakarta JARs caused Spring Bean initialization issues, affecting patch system timing
+
+**Technical Implementation:**
+- **Removed Problematic Dependencies**: Completely removed chemistry-opencmis-test-util and chemistry-opencmis-test-tck dependencies from action/pom.xml
+- **Clean Jakarta JAR Management**: Maven antrun plugin correctly copies only Jakarta-converted JARs to WEB-INF/lib
+- **Solr Host System Properties**: Added to CATALINA_OPTS in docker-compose-simple.yml for proper service discovery
+- **Verified Clean Build**: Complete Docker image rebuild ensures no JAR contamination
+
+**Test Results:**
+```
+=== Docker Environment Success ===
+✅ Core Application: HTTP 302 (expected redirect)
+✅ CMIS AtomPub: HTTP 200 (functional)
+✅ Sites Folder: Successfully created by patch system
+✅ Solr Connection: Working with correct host configuration
+✅ Jakarta EE Migration: Complete, no JAR mixing issues
+```
+
+**Critical Environment Unification (2025-07-19):**
+- **Jetty vs Docker Parity**: Both environments now use identical Jakarta-converted dependencies
+- **Consistent Patch System**: Sites folder creation works in both Maven/Jetty and Docker/Tomcat environments
+- **Unified Java 17**: Both development and production use Java 17 exclusively
+- **Clean Build Process**: Complete Docker image rebuild eliminates any legacy contamination
+- **Host Configuration**: Solr service discovery working correctly in container orchestration
+
+**Development Workflow (UPDATED):**
+```bash
+# 1. Set Java 17 environment (mandatory)
+export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
+export PATH=$JAVA_HOME/bin:$PATH
+
+# 2. Clean build with Jakarta profile
+mvn clean package -f core/pom.xml -Pdevelopment
+
+# 3. Deploy to Docker (unified approach)
+cp core/target/core.war docker/core/core.war
+cd docker && docker compose -f docker-compose-simple.yml up -d --build
+
+# 4. Verify functionality
+curl -u admin:admin http://localhost:8080/core/atom/bedroom
+curl -s -u admin:admin "http://localhost:8080/core/atom/bedroom/children?id=e02f784f8360a02cc14d1314c10038ff" | grep Sites
+```
+
+### Previous: CONTAINS and IN_FOLDER Query Environment Rebuild Resilience - COMPLETED ✅
 
 **Root Cause Analysis:**
 - **extractTextContent Method**: Always returned null, preventing text field creation for CONTAINS queries

@@ -237,136 +237,110 @@ public class Patch_InitialFolderSetup extends AbstractNemakiPatch {
     private byte[] createSimplePdfBytes() {
         // Create searchable content that will be treated as PDF
         // Solr can extract text from various formats including plain text with PDF mimetype
-        String textContent = """
-Content Management Interoperability Services (CMIS) Version 1.1
-OASIS Standard - 1 May 2012
-
-ABSTRACT
-This specification defines a domain model and Web Services, Restful AtomPub (RFC5023) and 
-Browser (JSON) bindings that can be used by applications to work with one or more Content 
-Management repositories/systems.
-
-TABLE OF CONTENTS
-1. Introduction
-2. Domain Model
-3. Services
-4. Restful AtomPub Binding
-5. Web Services Binding
-6. Browser Binding
-
-1. INTRODUCTION
-
-The Content Management Interoperability Services (CMIS) standard defines a domain model and 
-set of bindings that include Web Services and ReSTful AtomPub that can be used by applications.
-
-CMIS provides a common data model covering typed files and folders with generic properties 
-that can be set or read. In addition there may be an Access Control List (ACL) expressed in 
-terms of permissions specific to the repository.
-
-2. DOMAIN MODEL
-
-2.1 Data Model
-- Repository: The entry point to the CMIS services, repositories are containers.
-- Object: Documents, folders, relationships, policies, and items are all objects.
-- Object-Type: All objects are typed. The base types are: cmis:document, cmis:folder, 
-  cmis:relationship, cmis:policy, and cmis:item.
-- Document Object: An object that contains a content stream and has properties.
-- Folder Object: An object that contains other fileable objects.
-- Relationship Object: An object that defines a relationship between a source and target object.
-- Policy Object: An object that represents an administrative policy.
-- Item Object: An object for modeling information that doesn't fit the document/folder model.
-
-2.2 Query Language
-CMIS provides a type-based query service for discovering objects that match specified criteria.
-The query language is based on a subset of SQL-92 with extensions specific to content management:
-
-SELECT * FROM cmis:document WHERE cmis:name LIKE 'CMIS%'
-SELECT * FROM cmis:folder WHERE IN_FOLDER('folder-id-123')
-
-3. SERVICES
-
-3.1 Repository Services
-- getRepositories: Get a list of CMIS repositories.
-- getRepositoryInfo: Get information about the CMIS repository.
-- getTypeChildren: Get the list of object types defined for the repository.
-- getTypeDescendants: Get the list of object types descended from the specified type.
-- getTypeDefinition: Get the definition of the specified object type.
-
-3.2 Navigation Services  
-- getChildren: Get the list of child objects contained in the specified folder.
-- getDescendants: Get the descendant objects contained in the specified folder.
-- getFolderTree: Get the folder tree hierarchy under the specified folder.
-- getFolderParent: Get the parent folder object for the specified folder.
-- getObjectParents: Get the parent folder(s) for the specified fileable object.
-
-3.3 Object Services
-- createDocument: Create a document object.
-- createDocumentFromSource: Create a document object as a copy.
-- createFolder: Create a folder object.
-- createRelationship: Create a relationship object.
-- createPolicy: Create a policy object.  
-- createItem: Create an item object.
-- getAllowableActions: Get the allowable actions for the specified object.
-- getObject: Get the specified object.
-- getProperties: Get the properties of the specified object.
-- getContentStream: Get the content stream for the specified document.
-- updateProperties: Update the properties of the specified object.
-- bulkUpdateProperties: Update properties of multiple objects.
-- moveObject: Move the specified object from one folder to another.
-- deleteObject: Delete the specified object.
-- deleteTree: Delete the specified folder and all descendant objects.
-- setContentStream: Set the content stream for the specified document.
-- appendContentStream: Append content to the content stream.
-- deleteContentStream: Delete the content stream for the specified document.
-
-3.4 Multi-filing and Unfiling Services  
-- addObjectToFolder: Add an object to a folder.
-- removeObjectFromFolder: Remove an object from a folder.
-
-3.5 Discovery Services
-- query: Query the repository.
-- getContentChanges: Get the list of object changes.
-
-3.6 Versioning Services
-- checkOut: Create a private working copy.
-- cancelCheckOut: Cancel the checkout.
-- checkIn: Check in the private working copy.
-- getObjectOfLatestVersion: Get the latest version.
-- getPropertiesOfLatestVersion: Get the properties of the latest version.
-- getAllVersions: Get all versions of the specified document.
-
-3.7 Relationship Services
-- getObjectRelationships: Get the relationships for the specified object.
-
-3.8 Policy Services
-- applyPolicy: Apply a policy to the specified object.
-- removePolicy: Remove a policy from the specified object.
-- getAppliedPolicies: Get the list of policies applied to the specified object.
-
-3.9 ACL Services
-- getACL: Get the ACL for the specified object.
-- applyACL: Apply ACL to the specified object.
-
-4. BINDINGS
-
-CMIS provides multiple protocol bindings:
-- Web Services Binding: SOAP-based binding following WS-I Basic Profile.
-- AtomPub Binding: REST-based binding using Atom Publishing Protocol.
-- Browser Binding: JSON-based binding for browser applications.
-
-5. CONFORMANCE
-
-Repositories may implement different conformance levels:
-- Basic: Minimal set of services required.
-- Standard: Includes versioning and other advanced features.
-- Full: Complete implementation of all services.
-
-END OF DOCUMENT
-
-Keywords for search testing: CMIS, Content Management, Interoperability, Services, 
-Repository, Document, Folder, Query, AtomPub, Web Services, REST, SOAP, JSON, Browser, 
-Versioning, ACL, Permissions, Object, Type, Properties, Content Stream, Check In, Check Out, 
-OASIS, Standard, Specification, Domain Model, Binding, Protocol, API, Enterprise Content Management.""";
+        String textContent = "Content Management Interoperability Services (CMIS) Version 1.1\n" +
+            "OASIS Standard - 1 May 2012\n\n" +
+            "ABSTRACT\n" +
+            "This specification defines a domain model and Web Services, Restful AtomPub (RFC5023) and \n" +
+            "Browser (JSON) bindings that can be used by applications to work with one or more Content \n" +
+            "Management repositories/systems.\n\n" +
+            "TABLE OF CONTENTS\n" +
+            "1. Introduction\n" +
+            "2. Domain Model\n" +
+            "3. Services\n" +
+            "4. Restful AtomPub Binding\n" +
+            "5. Web Services Binding\n" +
+            "6. Browser Binding\n\n" +
+            "1. INTRODUCTION\n\n" +
+            "The Content Management Interoperability Services (CMIS) standard defines a domain model and \n" +
+            "set of bindings that include Web Services and ReSTful AtomPub that can be used by applications.\n\n" +
+            "CMIS provides a common data model covering typed files and folders with generic properties \n" +
+            "that can be set or read. In addition there may be an Access Control List (ACL) expressed in \n" +
+            "terms of permissions specific to the repository.\n\n" +
+            "2. DOMAIN MODEL\n\n" +
+            "2.1 Data Model\n" +
+            "- Repository: The entry point to the CMIS services, repositories are containers.\n" +
+            "- Object: Documents, folders, relationships, policies, and items are all objects.\n" +
+            "- Object-Type: All objects are typed. The base types are: cmis:document, cmis:folder, \n" +
+            "  cmis:relationship, cmis:policy, and cmis:item.\n" +
+            "- Document Object: An object that contains a content stream and has properties.\n" +
+            "- Folder Object: An object that contains other fileable objects.\n" +
+            "- Relationship Object: An object that defines a relationship between a source and target object.\n" +
+            "- Policy Object: An object that represents an administrative policy.\n" +
+            "- Item Object: An object for modeling information that doesn't fit the document/folder model.\n\n" +
+            "2.2 Query Language\n" +
+            "CMIS provides a type-based query service for discovering objects that match specified criteria.\n" +
+            "The query language is based on a subset of SQL-92 with extensions specific to content management:\n\n" +
+            "SELECT * FROM cmis:document WHERE cmis:name LIKE 'CMIS%'\n" +
+            "SELECT * FROM cmis:folder WHERE IN_FOLDER('folder-id-123')\n\n" +
+            "3. SERVICES\n\n" +
+            "3.1 Repository Services\n" +
+            "- getRepositories: Get a list of CMIS repositories.\n" +
+            "- getRepositoryInfo: Get information about the CMIS repository.\n" +
+            "- getTypeChildren: Get the list of object types defined for the repository.\n" +
+            "- getTypeDescendants: Get the list of object types descended from the specified type.\n" +
+            "- getTypeDefinition: Get the definition of the specified object type.\n\n" +
+            "3.2 Navigation Services\n" +
+            "- getChildren: Get the list of child objects contained in the specified folder.\n" +
+            "- getDescendants: Get the descendant objects contained in the specified folder.\n" +
+            "- getFolderTree: Get the folder tree hierarchy under the specified folder.\n" +
+            "- getFolderParent: Get the parent folder object for the specified folder.\n" +
+            "- getObjectParents: Get the parent folder(s) for the specified fileable object.\n\n" +
+            "3.3 Object Services\n" +
+            "- createDocument: Create a document object.\n" +
+            "- createDocumentFromSource: Create a document object as a copy.\n" +
+            "- createFolder: Create a folder object.\n" +
+            "- createRelationship: Create a relationship object.\n" +
+            "- createPolicy: Create a policy object.\n" +
+            "- createItem: Create an item object.\n" +
+            "- getAllowableActions: Get the allowable actions for the specified object.\n" +
+            "- getObject: Get the specified object.\n" +
+            "- getProperties: Get the properties of the specified object.\n" +
+            "- getContentStream: Get the content stream for the specified document.\n" +
+            "- updateProperties: Update the properties of the specified object.\n" +
+            "- bulkUpdateProperties: Update properties of multiple objects.\n" +
+            "- moveObject: Move the specified object from one folder to another.\n" +
+            "- deleteObject: Delete the specified object.\n" +
+            "- deleteTree: Delete the specified folder and all descendant objects.\n" +
+            "- setContentStream: Set the content stream for the specified document.\n" +
+            "- appendContentStream: Append content to the content stream.\n" +
+            "- deleteContentStream: Delete the content stream for the specified document.\n\n" +
+            "3.4 Multi-filing and Unfiling Services\n" +
+            "- addObjectToFolder: Add an object to a folder.\n" +
+            "- removeObjectFromFolder: Remove an object from a folder.\n\n" +
+            "3.5 Discovery Services\n" +
+            "- query: Query the repository.\n" +
+            "- getContentChanges: Get the list of object changes.\n\n" +
+            "3.6 Versioning Services\n" +
+            "- checkOut: Create a private working copy.\n" +
+            "- cancelCheckOut: Cancel the checkout.\n" +
+            "- checkIn: Check in the private working copy.\n" +
+            "- getObjectOfLatestVersion: Get the latest version.\n" +
+            "- getPropertiesOfLatestVersion: Get the properties of the latest version.\n" +
+            "- getAllVersions: Get all versions of the specified document.\n\n" +
+            "3.7 Relationship Services\n" +
+            "- getObjectRelationships: Get the relationships for the specified object.\n\n" +
+            "3.8 Policy Services\n" +
+            "- applyPolicy: Apply a policy to the specified object.\n" +
+            "- removePolicy: Remove a policy from the specified object.\n" +
+            "- getAppliedPolicies: Get the list of policies applied to the specified object.\n\n" +
+            "3.9 ACL Services\n" +
+            "- getACL: Get the ACL for the specified object.\n" +
+            "- applyACL: Apply ACL to the specified object.\n\n" +
+            "4. BINDINGS\n\n" +
+            "CMIS provides multiple protocol bindings:\n" +
+            "- Web Services Binding: SOAP-based binding following WS-I Basic Profile.\n" +
+            "- AtomPub Binding: REST-based binding using Atom Publishing Protocol.\n" +
+            "- Browser Binding: JSON-based binding for browser applications.\n\n" +
+            "5. CONFORMANCE\n\n" +
+            "Repositories may implement different conformance levels:\n" +
+            "- Basic: Minimal set of services required.\n" +
+            "- Standard: Includes versioning and other advanced features.\n" +
+            "- Full: Complete implementation of all services.\n\n" +
+            "END OF DOCUMENT\n\n" +
+            "Keywords for search testing: CMIS, Content Management, Interoperability, Services, \n" +
+            "Repository, Document, Folder, Query, AtomPub, Web Services, REST, SOAP, JSON, Browser, \n" +
+            "Versioning, ACL, Permissions, Object, Type, Properties, Content Stream, Check In, Check Out, \n" +
+            "OASIS, Standard, Specification, Domain Model, Binding, Protocol, API, Enterprise Content Management.";
         
         try {
             return textContent.getBytes("UTF-8");

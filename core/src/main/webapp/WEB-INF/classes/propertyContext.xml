@@ -17,7 +17,7 @@
 				<value>classpath:nemakiware-dev.properties</value>
 				<!-- Profile-specific overrides (explicit file names) -->
 				<value>classpath:nemakiware-jetty.properties</value>
-				<value>classpath:nemakiware-docker.properties</value>
+				<!-- <value>classpath:nemakiware-docker.properties</value> -->
 				<value>classpath:custom-nemakiware.properties</value>
 				<value>classpath:app-server-core.properties</value>
 			</list>

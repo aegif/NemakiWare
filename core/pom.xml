@@ -818,6 +818,79 @@
 					</execution>
 				</executions>
 			</plugin>
+
+			<!-- Antrun plugin to copy Jakarta converted JARs -->
+			<plugin>
+				<artifactId>maven-antrun-plugin</artifactId>
+				<version>3.0.0</version>
+				<executions>
+					<execution>
+						<id>copy-jakarta-converted</id>
+						<phase>prepare-package</phase>
+						<goals>
+							<goal>run</goal>
+						</goals>
+						<configuration>
+							<target>
+								<!-- Remove ALL conflicting javax JAX-WS libraries using wildcards -->
+								<delete failonerror="false">
+									<fileset dir="${project.build.directory}/${project.build.finalName}/WEB-INF/lib">
+										<include name="jaxws-api-*.jar"/>
+										<include name="jaxws-eclipselink-plugin-*.jar"/>
+										<include name="jaxws-tools-*.jar"/>
+										<include name="jaxws-ri-*.jar"/>
+										<include name="javax.xml.ws-*.jar"/>
+										<include name="javax.xml.soap-api-*.jar"/>
+										<include name="javax.activation-api-*.jar"/>
+										<include name="javax.activation-*.jar"/>
+										<include name="activation-*.jar"/>
+									</fileset>
+								</delete>
+
+								<!-- Remove conflicting OpenCMIS versions -->
+								<delete failonerror="false">
+									<fileset dir="${project.build.directory}/${project.build.finalName}/WEB-INF/lib">
+										<!-- Old javax OpenCMIS versions -->
+										<include name="chemistry-opencmis-commons-impl-1.1.0.jar"/>
+										<include name="chemistry-opencmis-commons-api-1.1.0.jar"/>
+										<include name="chemistry-opencmis-server-bindings-1.1.0.jar"/>
+										<include name="chemistry-opencmis-server-support-1.1.0.jar"/>
+										<include name="chemistry-opencmis-client-bindings-1.1.0.jar"/>
+										<include name="chemistry-opencmis-client-api-1.1.0.jar"/>
+										<include name="chemistry-opencmis-client-impl-1.1.0.jar"/>
+										<!-- System-scoped Jakarta JARs with -jakarta suffix -->
+										<include name="chemistry-opencmis-server-bindings-1.1.0-jakarta.jar"/>
+										<include name="chemistry-opencmis-commons-impl-1.1.0-jakarta.jar"/>
+										<include name="chemistry-opencmis-commons-api-1.1.0-jakarta.jar"/>
+										<include name="chemistry-opencmis-client-bindings-1.1.0-jakarta.jar"/>
+										<include name="chemistry-opencmis-server-support-1.1.0-jakarta.jar"/>
+										<include name="chemistry-opencmis-client-api-1.2.0-SNAPSHOT-jakarta.jar"/>
+										<include name="chemistry-opencmis-client-impl-1.2.0-SNAPSHOT-jakarta.jar"/>
+									</fileset>
+								</delete>
+
+								<!-- Copy ALL Jakarta-converted JARs including proper naming -->
+								<copy file="${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-server-bindings-1.1.0-jakarta.jar"
+									  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/chemistry-opencmis-server-bindings-1.1.0-jakarta.jar"/>
+								<copy file="${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-commons-impl-1.1.0-jakarta.jar"
+									  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/chemistry-opencmis-commons-impl-1.1.0-jakarta.jar"/>
+								<copy file="${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-commons-api-1.1.0-jakarta.jar"
+									  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/chemistry-opencmis-commons-api-1.1.0-jakarta.jar"/>
+								<copy file="${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-client-bindings-1.1.0-jakarta.jar"
+									  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/chemistry-opencmis-client-bindings-1.1.0-jakarta.jar"/>
+								<copy file="${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-server-support-1.1.0-jakarta.jar"
+									  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/chemistry-opencmis-server-support-1.1.0-jakarta.jar"/>
+								<copy file="${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-client-api-1.1.0-jakarta.jar"
+									  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/chemistry-opencmis-client-api-1.1.0-jakarta.jar"/>
+								<copy file="${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-client-impl-1.1.0-jakarta.jar"
+									  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/chemistry-opencmis-client-impl-1.1.0-jakarta.jar"/>
+								<copy file="${project.basedir}/../lib/jakarta-converted/jaxws-rt-4.0.2-jakarta.jar"
+									  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/jaxws-rt-4.0.2-jakarta.jar"/>
+							</target>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
 		</plugins>
 	</build>
 

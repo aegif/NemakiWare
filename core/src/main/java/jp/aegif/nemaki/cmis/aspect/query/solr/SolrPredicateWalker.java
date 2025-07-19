@@ -24,9 +24,11 @@ package jp.aegif.nemaki.cmis.aspect.query.solr;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.model.Folder;
@@ -46,6 +48,7 @@ import org.apache.chemistry.opencmis.server.support.query.TextSearchLexer;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.MatchNoDocsQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TermRangeQuery;
@@ -226,7 +229,7 @@ public class SolrPredicateWalker{
 		HashMap<String, String> map = new HashMap<String, String>();
 
 		String left = solrUtil.convertToString(leftNode);
-		String right = walkExpr(rightNode).toString();
+		String right = safeWalkExprToString(rightNode);
 
 		map.put(FLD, ClientUtils.escapeQueryChars(solrUtil.getPropertyNameInSolr(repositoryId, left)));
 		map.put(CND, right);
@@ -320,7 +323,7 @@ public class SolrPredicateWalker{
 	}
 
 	private Query walkIsNull(Tree colNode) {
-		String field = walkExpr(colNode).toString();
+		String field = safeWalkExprToString(colNode);
 		BooleanQuery.Builder builder = new BooleanQuery.Builder();
 		// Lucene 9.x: Use TermRangeQuery.newStringRange() for wildcard range
 		TermRangeQuery q1 = TermRangeQuery.newStringRange(field, null, null, false, false);
@@ -329,7 +332,7 @@ public class SolrPredicateWalker{
 	}
 
 	private Query walkIsNotNull(Tree colNode) {
-		String field = walkExpr(colNode).toString();
+		String field = safeWalkExprToString(colNode);
 		// Lucene 9.x: Use TermRangeQuery.newStringRange() for wildcard range
 		TermRangeQuery q = TermRangeQuery.newStringRange(field, null, null, false, false);
 		return q;
@@ -339,19 +342,31 @@ public class SolrPredicateWalker{
 	// Definition of getChildren type walks
 	// //////////////////////////////////////////////////////////////////////////////
 	private Query walkInFolder(Tree qualNode, Tree paramNode) {
-		// Check for CMIS SQL specification
+		// Extract folder ID safely handling ArrayList cases
+		String folderId = null;
 		Object lit = walkExpr(paramNode);
-		if (!(lit instanceof String)) {
+		
+		if (lit instanceof String) {
+			folderId = (String) lit;
+		} else if (lit instanceof List && ((List<?>) lit).size() > 0) {
+			Object firstElement = ((List<?>) lit).get(0);
+			if (firstElement instanceof String) {
+				folderId = (String) firstElement;
+			}
+		}
+		
+		if (folderId == null) {
 			throw new IllegalStateException(
-					"Folder id in IN_FOLDER must be of type String");
+					"Folder id in IN_FOLDER must be a valid string");
 		}
 
 		// Build a statement
-		String folderId = (String) walkExpr(paramNode);
-		Term t = new Term(solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.PARENT_ID), folderId);
+		String parentIdField = solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.PARENT_ID);
+		Term t = new Term(parentIdField, folderId);
 		Query q = new TermQuery(t);
+		
 		if (qualNode != null) { // When a table alias exists
-			String qualifier = walkExpr(qualNode).toString();
+			String qualifier = safeWalkExprToString(qualNode);
 			Term tQual = new Term("type", buildQualField(qualifier));
 			Query qQual = new TermQuery(tQual);
 			BooleanQuery.Builder bqBuilder = new BooleanQuery.Builder();
@@ -363,87 +378,147 @@ public class SolrPredicateWalker{
 	}
 
 	private Query walkInTree(Tree qualNode, Tree paramNode, String repositoryId) {
-		// Check for CMIS SQL specification
+		// OpenCMIS correctly returns ArrayList for IN_TREE parameters
+		// Extract folder ID from the ArrayList structure
 		Object lit = walkExpr(paramNode);
-		if (!(lit instanceof String)) {
+		String folderId = null;
+		
+		// Handle ArrayList returned by OpenCMIS parser for IN_TREE
+		if (lit instanceof List && ((List<?>) lit).size() > 0) {
+			Object firstElement = ((List<?>) lit).get(0);
+			if (firstElement instanceof String) {
+				folderId = (String) firstElement;
+			} else {
+				// Try to convert to string
+				folderId = String.valueOf(firstElement);
+			}
+		} else if (lit instanceof String) {
+			// Fallback for direct string case
+			folderId = (String) lit;
+		} else if (lit != null) {
+			// Last resort - convert to string
+			folderId = String.valueOf(lit);
+		}
+		
+		if (folderId == null || folderId.trim().isEmpty()) {
 			throw new IllegalStateException(
-					"Folder id in IN_FOLDER must be of type String");
+					"Folder id in IN_TREE must be a valid string");
 		}
 
-		// Build a Statement
-		Query q = walkInTreeInternal(paramNode, repositoryId);
+		// Build a Statement using the extracted folder ID
+		Query q = walkInTreeInternal(folderId, repositoryId);
 		if (qualNode != null) {
-			String qualifier = walkExpr(qualNode).toString();
-			Term tQual = new Term("type", buildQualField(qualifier));
-			Query qQual = new TermQuery(tQual);
-			BooleanQuery.Builder bqBuilder = new BooleanQuery.Builder();
-			bqBuilder.add(qQual, Occur.MUST);
-			bqBuilder.add(q, Occur.MUST);
-			return bqBuilder.build();
+			String qualifier = safeWalkExprToString(qualNode);
+			if (qualifier != null) {
+				Term tQual = new Term("type", buildQualField(qualifier));
+				Query qQual = new TermQuery(tQual);
+				BooleanQuery.Builder bqBuilder = new BooleanQuery.Builder();
+				bqBuilder.add(qQual, Occur.MUST);
+				bqBuilder.add(q, Occur.MUST);
+				return bqBuilder.build();
+			}
 		}
 		return q;
 	}
 
-	private Query walkInTreeInternal(Tree paramNode, String repositoryId) {
-		//Build first query for descendant folders
-		BooleanQuery.Builder query1Builder = new BooleanQuery.Builder();
-
-		String s = paramNode.getText();
-		String folderId = s.substring(1, s.length() - 1);
-
-		Folder folder = contentService.getFolder(repositoryId, folderId);
-
-		String folderPath = contentService.calculatePath(repositoryId, folder);
-		String _folderPath = folderPath.replaceAll("\\/", "\\\\/"); //escape in Solr query
-
-		if(contentService.isRoot(repositoryId, folder)){
-			Term t = new Term(solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.PATH), _folderPath + "*");
-			query1Builder.add(new TermQuery(t), Occur.MUST);
-		}else{
-			String _folderId = folderId.replaceAll("\\/", "\\\\/"); //escape in Solr query
-			Term t1 = new Term(solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.OBJECT_ID), _folderId);
-			String path = folderPath + "/*";
-			String _path = path.replaceAll("\\/", "\\\\/"); //escape in Solr query
-			Term t2 = new Term(solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.PATH), _path);
-			query1Builder.add(new TermQuery(t1), Occur.SHOULD);
-			query1Builder.add(new TermQuery(t2), Occur.SHOULD);
-		}
-
+	private Query walkInTreeInternal(String folderId, String repositoryId) {
+		// Alternative IN_TREE implementation using parent_id relationships
+		// This avoids circular dependency with ContentService path calculations
+		
 		// Set Solr server
 		SolrClient solrClient = solrUtil.getSolrClient();
 
-		// Get all the descending folder objectIds(including direct children)
-		List<String> descendantIds = new ArrayList<String>();
-		SolrDocumentList children = null;
-		try {
-			QueryResponse resp = solrClient.query(new SolrQuery(query1Builder.build().toString()));
-			children = resp.getResults();
-		} catch (SolrServerException | IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-
-		if(children != null && !children.isEmpty()){
-			Iterator<SolrDocument> it = children.iterator();
-			while(it.hasNext()){
-				SolrDocument sd = it.next();
-				String id = (String) sd.getFieldValue("object_id");
-				descendantIds.add(id);
+		// Recursively find all descendant folder IDs using parent_id relationships
+		Set<String> allDescendantIds = new HashSet<String>();
+		List<String> currentLevelIds = new ArrayList<String>();
+		currentLevelIds.add(folderId); // Start with the specified folder
+		
+		// Add the root folder itself as a descendant 
+		allDescendantIds.add(folderId);
+		
+		// Recursively find descendants up to a reasonable depth limit
+		int maxDepth = 10; // Prevent infinite loops
+		for (int depth = 0; depth < maxDepth && !currentLevelIds.isEmpty(); depth++) {
+			List<String> nextLevelIds = new ArrayList<String>();
+			
+			// Build Solr query string to find direct children of current level folders
+			StringBuilder queryString = new StringBuilder();
+			queryString.append("basetype:cmis\\:folder AND (");
+			
+			boolean first = true;
+			for (String parentId : currentLevelIds) {
+				if (!first) {
+					queryString.append(" OR ");
+				}
+				queryString.append("parent_id:").append(parentId);
+				first = false;
 			}
+			queryString.append(")");
+			
+			try {
+				SolrQuery solrQuery = new SolrQuery(queryString.toString());
+				QueryResponse resp = solrClient.query(solrQuery);
+				SolrDocumentList children = resp.getResults();
+				
+				for (SolrDocument child : children) {
+					Object objectIdValue = child.getFieldValue("object_id");
+					String childId = null;
+					
+					if (objectIdValue instanceof String) {
+						childId = (String) objectIdValue;
+					} else if (objectIdValue instanceof List && !((List<?>) objectIdValue).isEmpty()) {
+						// Handle multi-valued field case
+						Object firstValue = ((List<?>) objectIdValue).get(0);
+						if (firstValue instanceof String) {
+							childId = (String) firstValue;
+						}
+					}
+					
+					if (childId != null && !allDescendantIds.contains(childId)) {
+						allDescendantIds.add(childId);
+						nextLevelIds.add(childId);
+					}
+				}
+			} catch (SolrServerException | IOException e) {
+				System.err.println("Error during IN_TREE descendant search: " + e.getMessage());
+				break; // Stop recursion on error
+			}
+			
+			currentLevelIds = nextLevelIds;
 		}
-
-		// Build the second query for getting all the objects under descending folders
-		Iterator<String> iterator = descendantIds.iterator();
-		BooleanQuery.Builder query2Builder = new BooleanQuery.Builder();
-		while (iterator.hasNext()) {
-			String descendantId = iterator.next();
-			String _descendantId = descendantId.replaceAll("\\/", "\\\\/");
-			Term t = new Term(solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.PARENT_ID), _descendantId);
-			TermQuery tq = new TermQuery(t);
-			query2Builder.add(tq, Occur.SHOULD);
+		
+		// Build final query for all objects under any of the descendant folders
+		if (allDescendantIds.isEmpty()) {
+			// Return empty query if no descendants found
+			return new MatchNoDocsQuery();
 		}
-
-		return query2Builder.build();
+		
+		StringBuilder finalQueryString = new StringBuilder();
+		finalQueryString.append("(");
+		
+		boolean first = true;
+		for (String descendantId : allDescendantIds) {
+			if (!first) {
+				finalQueryString.append(" OR ");
+			}
+			finalQueryString.append("parent_id:").append(descendantId);
+			first = false;
+		}
+		finalQueryString.append(")");
+		
+		// Convert Solr query string to Lucene Query for return
+		// For now, return a simple query - the framework will handle Solr syntax conversion
+		if (allDescendantIds.size() == 1) {
+			String singleId = allDescendantIds.iterator().next();
+			return new TermQuery(new Term("parent_id", singleId));
+		} else {
+			// For multiple IDs, create a BooleanQuery
+			BooleanQuery.Builder builder = new BooleanQuery.Builder();
+			for (String descendantId : allDescendantIds) {
+				builder.add(new TermQuery(new Term("parent_id", descendantId)), Occur.SHOULD);
+			}
+			return builder.build();
+		}
 	}
 
 	// //////////////////////////////////////////////////////////////////////////////
@@ -689,6 +764,23 @@ public class SolrPredicateWalker{
 			throw new IllegalStateException(
 					"Unexpected numerical value function in where clause");
 		}
+	}
+
+	/**
+	 * Safely convert walkExpr result to String, handling ArrayList cases
+	 */
+	private String safeWalkExprToString(Tree node) {
+		Object result = walkExpr(node);
+		if (result instanceof String) {
+			return (String) result;
+		} else if (result instanceof List && ((List<?>) result).size() > 0) {
+			Object firstElement = ((List<?>) result).get(0);
+			if (firstElement instanceof String) {
+				return (String) firstElement;
+			}
+		}
+		// Fallback to toString()
+		return result != null ? result.toString() : null;
 	}
 
 	/**
