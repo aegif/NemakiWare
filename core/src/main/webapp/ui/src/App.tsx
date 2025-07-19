@@ -67,6 +67,10 @@ function App() {
             <Route path="/types" element={<TypeManagement repositoryId={repositoryId} />} />
             <Route path="/permissions/:objectId" element={<PermissionManagement repositoryId={repositoryId} />} />
             <Route path="/archive" element={<ArchiveManagement repositoryId={repositoryId} />} />
+            <Route path="/oidc-callback" element={<Login onLogin={(auth) => {
+              setIsAuthenticated(true);
+              setRepositoryId(auth.repositoryId);
+            }} />} />
           </Routes>
         </Layout>
       </Router>

@@ -23,6 +23,7 @@ package jp.aegif.nemaki.rest;
 
 import jp.aegif.nemaki.cmis.factory.auth.AuthenticationService;
 import jp.aegif.nemaki.cmis.factory.auth.NemakiAuthCallContextHandler;
+import jp.aegif.nemaki.cmis.factory.auth.TokenService;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
@@ -47,6 +48,7 @@ public class AuthenticationFilter implements Filter {
 	@Autowired
 	private PropertyManager propertyManager;
 	private AuthenticationService authenticationService;
+	private TokenService tokenService;
 	private RepositoryInfoMap repositoryInfoMap;
 	private final String TOKEN_FALSE = "false";
 
@@ -65,8 +67,13 @@ public class AuthenticationFilter implements Filter {
 		String requestURI = hreq.getRequestURI();
 		String authToken = hreq.getHeader("AUTH_TOKEN");
 		String authHeader = hreq.getHeader("Authorization");
+		String oidcBearer = null;
 		
-		System.out.println("AUTH FILTER TOKEN: pathInfo='" + pathInfo + "', requestURI='" + requestURI + "', authToken='" + authToken + "', authHeader='" + authHeader + "'");
+		if (authHeader != null && authHeader.startsWith("Bearer ")) {
+			oidcBearer = authHeader.substring(7);
+		}
+		
+		System.out.println("AUTH FILTER TOKEN: pathInfo='" + pathInfo + "', requestURI='" + requestURI + "', authToken='" + authToken + "', authHeader='" + authHeader + "', oidcBearer='" + oidcBearer + "'");
 		
 		// Bypass authentication for repositories endpoint
 		if (pathInfo != null && pathInfo.equals("/repositories")) {
@@ -94,21 +101,33 @@ public class AuthenticationFilter implements Filter {
 			return;
 		}
 		
-		// If AUTH_TOKEN header is present, bypass authentication filter
-		// This allows the application to handle token authentication internally
+		// If AUTH_TOKEN header is present, resolve token to user and set context
 		if (authToken != null && !authToken.trim().isEmpty()) {
-			System.out.println("AUTH FILTER TOKEN: Bypassing authentication due to AUTH_TOKEN header");
-			// Create a minimal call context for token-based requests
+			System.out.println("AUTH FILTER TOKEN: Processing AUTH_TOKEN header: " + authToken);
 			final String repositoryId = getRepositoryId(hreq);
-			NemakiAuthCallContextHandler callContextHandler = new NemakiAuthCallContextHandler();
-			Map<String, String> map = callContextHandler.getCallContextMap(hreq);
-			CallContextImpl ctxt = new CallContextImpl(null, CmisVersion.CMIS_1_1, repositoryId, null, hreq, hres, null, null);
-			for(String key : map.keySet()){
-				ctxt.put(key, map.get(key));
+			
+			String userId = null;
+			if (tokenService != null && repositoryId != null) {
+				userId = tokenService.getUserByToken("nemakiware", repositoryId, authToken);
+				System.out.println("AUTH FILTER TOKEN: Token resolved to userId: " + userId);
 			}
-			hreq.setAttribute("CallContext", ctxt);
-			chain.doFilter(req, res);
-			return;
+			
+			if (userId != null) {
+				// Create call context with resolved user
+				NemakiAuthCallContextHandler callContextHandler = new NemakiAuthCallContextHandler();
+				Map<String, String> map = callContextHandler.getCallContextMap(hreq);
+				CallContextImpl ctxt = new CallContextImpl(null, CmisVersion.CMIS_1_1, repositoryId, null, hreq, hres, null, null);
+				ctxt.put(ctxt.USERNAME, userId);
+				for(String key : map.keySet()){
+					ctxt.put(key, map.get(key));
+				}
+				System.out.println("AUTH FILTER TOKEN: Created call context with userId: " + userId);
+				hreq.setAttribute("CallContext", ctxt);
+				chain.doFilter(req, res);
+				return;
+			} else {
+				System.out.println("AUTH FILTER TOKEN: Failed to resolve token, falling back to normal authentication");
+			}
 		}
 		
 		if (authHeader != null && authHeader.startsWith("Basic ")) {
@@ -215,5 +234,9 @@ public class AuthenticationFilter implements Filter {
 
 	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
 		this.repositoryInfoMap = repositoryInfoMap;
+	}
+	
+	public void setTokenService(TokenService tokenService) {
+		this.tokenService = tokenService;
 	}
 }

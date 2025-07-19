@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
-import { Form, Input, Button, Card, Alert, Select } from 'antd';
-import { UserOutlined, LockOutlined, DatabaseOutlined } from '@ant-design/icons';
+import React, { useState, useEffect } from 'react';
+import { Form, Input, Button, Card, Alert, Select, Divider } from 'antd';
+import { UserOutlined, LockOutlined, DatabaseOutlined, LoginOutlined } from '@ant-design/icons';
 import { AuthService, AuthToken } from '../../services/auth';
 import { CMISService } from '../../services/cmis';
+import { OIDCService } from '../../services/oidc';
+import { getOIDCConfig, isOIDCEnabled } from '../../config/oidc';
 
 interface LoginProps {
   onLogin: (auth: AuthToken) => void;
@@ -17,13 +19,26 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const authService = AuthService.getInstance();
   const cmisService = new CMISService();
   
-  React.useEffect(() => {
+  const [oidcService] = useState(() => {
+    if (isOIDCEnabled()) {
+      return new OIDCService(getOIDCConfig());
+    }
+    return null;
+  });
+  
+  useEffect(() => {
     (window as any).authService = authService;
   }, [authService]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     loadRepositories();
   }, []);
+
+  useEffect(() => {
+    if (window.location.pathname.includes('oidc-callback') && oidcService) {
+      handleOIDCLogin();
+    }
+  }, [oidcService]);
 
   const loadRepositories = async () => {
     try {
@@ -46,6 +61,29 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
       onLogin(auth);
     } catch (error) {
       setError('ログインに失敗しました。ユーザー名、パスワード、リポジトリIDを確認してください。');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOIDCLogin = async () => {
+    if (!oidcService) return;
+    
+    setLoading(true);
+    setError(null);
+
+    try {
+      if (window.location.pathname.includes('oidc-callback')) {
+        const oidcUser = await oidcService.signinRedirectCallback();
+        const repositoryId = repositories.length > 0 ? repositories[0] : 'bedroom';
+        const auth = await oidcService.convertOIDCToken(oidcUser, repositoryId);
+        onLogin(auth);
+      } else {
+        await oidcService.signinRedirect();
+      }
+    } catch (error) {
+      console.error('OIDC login error:', error);
+      setError('OIDC認証に失敗しました。');
     } finally {
       setLoading(false);
     }
@@ -130,6 +168,23 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
               ログイン
             </Button>
           </Form.Item>
+
+          {isOIDCEnabled() && (
+            <>
+              <Divider>または</Divider>
+              <Form.Item>
+                <Button
+                  type="default"
+                  icon={<LoginOutlined />}
+                  onClick={handleOIDCLogin}
+                  loading={loading}
+                  style={{ width: '100%', height: 40 }}
+                >
+                  OIDC認証でログイン
+                </Button>
+              </Form.Item>
+            </>
+          )}
         </Form>
       </Card>
     </div>
