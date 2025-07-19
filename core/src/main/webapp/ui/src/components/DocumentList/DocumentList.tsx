@@ -9,7 +9,6 @@ import {
   Input, 
   message, 
   Popconfirm,
-  Tag,
   Tooltip,
   Row,
   Col,
@@ -22,11 +21,9 @@ import {
   UploadOutlined, 
   PlusOutlined, 
   DeleteOutlined, 
-  EditOutlined,
   DownloadOutlined,
   EyeOutlined,
   LockOutlined,
-  UnlockOutlined,
   HomeOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
@@ -45,7 +42,6 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [currentFolderPath, setCurrentFolderPath] = useState<string>('/');
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
   const [folderModalVisible, setFolderModalVisible] = useState(false);
-  const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
   
   const [form] = Form.useForm();
   const navigate = useNavigate();
@@ -54,6 +50,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   useEffect(() => {
     if (currentFolderId) {
       loadObjects();
+    } else {
+      setCurrentFolderId('e02f784f8360a02cc14d1314c10038ff');
     }
   }, [currentFolderId, repositoryId]);
 
@@ -76,15 +74,34 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     setCurrentFolderPath(folderPath);
   };
 
+
   const handleUpload = async (values: any) => {
     const { file, name } = values;
+    console.log('UPLOAD DEBUG: handleUpload called with values:', values);
+    console.log('UPLOAD DEBUG: currentFolderId:', currentFolderId);
+    console.log('UPLOAD DEBUG: file structure:', file);
+    
     try {
-      await cmisService.createDocument(repositoryId, currentFolderId, file.file, { name });
+      const actualFile = file?.[0]?.originFileObj || file?.[0] || file?.fileList?.[0]?.originFileObj;
+      console.log('UPLOAD DEBUG: actualFile:', actualFile);
+      
+      if (!actualFile) {
+        message.error('ファイルが選択されていません');
+        return;
+      }
+      
+      if (!currentFolderId) {
+        message.error('アップロード先フォルダが選択されていません');
+        return;
+      }
+      
+      await cmisService.createDocument(repositoryId, currentFolderId, actualFile, { name });
       message.success('ファイルをアップロードしました');
       setUploadModalVisible(false);
       form.resetFields();
       loadObjects();
     } catch (error) {
+      console.error('UPLOAD DEBUG: Upload error:', error);
       message.error('ファイルのアップロードに失敗しました');
     }
   };
@@ -171,7 +188,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       title: 'アクション',
       key: 'actions',
       width: 200,
-      render: (_, record: CMISObject) => (
+      render: (_: any, record: CMISObject) => (
         <Space>
           <Tooltip title="詳細表示">
             <Button 
@@ -215,7 +232,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     },
   ];
 
-  const breadcrumbItems = currentFolderPath.split('/').filter(Boolean).map((segment, index, array) => ({
+  const breadcrumbItems = currentFolderPath.split('/').filter(Boolean).map((segment, index) => ({
     title: index === 0 ? <HomeOutlined /> : segment,
   }));
 
@@ -277,15 +294,29 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
             name="file"
             label="ファイル"
             rules={[{ required: true, message: 'ファイルを選択してください' }]}
+            valuePropName="fileList"
+            getValueFromEvent={(e) => {
+              console.log('UPLOAD DEBUG: getValueFromEvent called with:', e);
+              if (Array.isArray(e)) {
+                return e;
+              }
+              return e?.fileList;
+            }}
           >
             <Upload.Dragger
               beforeUpload={() => false}
               maxCount={1}
+              onChange={(info) => {
+                console.log('UPLOAD DEBUG: onChange called with info:', info);
+                if (info.fileList.length > 0 && info.fileList[0].name) {
+                  form.setFieldsValue({ name: info.fileList[0].name });
+                }
+              }}
             >
               <p className="ant-upload-drag-icon">
                 <UploadOutlined />
               </p>
-              <p className="ant-upload-text">ファイルをドラッグ&ドロップまたはクリックして選択</p>
+              <p className="ant-upload-text">ファイルをドラッグ&amp;ドロップまたはクリックして選択</p>
             </Upload.Dragger>
           </Form.Item>
           <Form.Item
@@ -300,7 +331,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               <Button type="primary" htmlType="submit">
                 アップロード
               </Button>
-              <Button onClick={() => setUploadModalVisible(false)}>
+              <Button onClick={() => {
+                setUploadModalVisible(false);
+                form.resetFields();
+              }}>
                 キャンセル
               </Button>
             </Space>
