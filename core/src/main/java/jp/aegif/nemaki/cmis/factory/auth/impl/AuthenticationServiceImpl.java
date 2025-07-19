@@ -190,13 +190,23 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	}
 
 	private UserItem getAuthenticatedUserItem(String repositoryId, String userId, String password) {
+		System.out.println("AUTH DEBUG: Attempting to get user: repositoryId=" + repositoryId + ", userId=" + userId);
 		UserItem u = contentService.getUserItemById(repositoryId, userId);
+		System.out.println("AUTH DEBUG: Retrieved user: " + (u != null ? "found" : "null"));
+		
+		if (u != null) {
+			System.out.println("AUTH DEBUG: User password field: " + (StringUtils.isNotBlank(u.getPassword()) ? "has password" : "no password"));
+		}
 
 		// succeeded
 		if (u != null && StringUtils.isNotBlank(u.getPassword())) {
+			System.out.println("AUTH DEBUG: Attempting password verification for user: " + userId);
 			if (AuthenticationUtil.passwordMatches(password, u.getPassword())) {
+				System.out.println("AUTH DEBUG: Password verification successful for user: " + userId);
 				log.debug(String.format( "[%s][%s]Get authenticated user successfully ! , Is admin?  : %s", repositoryId, userId , u.isAdmin()));
 				return u;
+			} else {
+				System.out.println("AUTH DEBUG: Password verification failed for user: " + userId);
 			}
 		}
 

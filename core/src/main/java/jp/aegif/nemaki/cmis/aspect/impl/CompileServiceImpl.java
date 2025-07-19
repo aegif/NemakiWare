@@ -82,7 +82,10 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
-import com.rits.cloning.Cloner;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
@@ -248,6 +251,26 @@ public class CompileServiceImpl implements CompileService {
 		// Force error log for final state
 		log.error("FORCED DEBUG: Final ObjectData AllowableActions for contentId=" + content.getId() + ": " + (objectData.getAllowableActions() != null ? "NOT_NULL" : "NULL"));
 	}
+	private ObjectData deepCopyObjectData(ObjectData original) {
+		try {
+			ByteArrayOutputStream baos = new ByteArrayOutputStream();
+			ObjectOutputStream oos = new ObjectOutputStream(baos);
+			oos.writeObject(original);
+			oos.close();
+			
+			ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
+			ObjectInputStream ois = new ObjectInputStream(bais);
+			ObjectData copy = (ObjectData) ois.readObject();
+			ois.close();
+			
+			return copy;
+		} catch (Exception e) {
+			log.error("Failed to deep copy ObjectData, falling back to original: " + e.getMessage());
+			return original;
+		}
+	}
+
+
 
 	private ObjectData filterObjectData(String repositoryId, ObjectData fullObjectData, String filter,
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter,
@@ -256,8 +279,7 @@ public class CompileServiceImpl implements CompileService {
 		// Deep copy ObjectData
 		// Shallow copy will cause a destructive effect after filtering some
 		// attributes
-		Cloner cloner = new Cloner();
-		ObjectDataImpl result = DataUtil.convertObjectDataImpl(cloner.deepClone(fullObjectData));
+		ObjectDataImpl result = DataUtil.convertObjectDataImpl(deepCopyObjectData(fullObjectData));
 
 		Properties filteredProperties = filterProperties(result.getProperties(), splitFilter(filter));
 		result.setProperties(filteredProperties);

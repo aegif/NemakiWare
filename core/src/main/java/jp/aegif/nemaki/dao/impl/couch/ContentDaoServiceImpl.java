@@ -588,8 +588,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public UserItem getUserItemById(String repositoryId, String userId) {
 		ViewQuery query = new ViewQuery().designDocId(DESIGN_DOCUMENT).viewName("userItemsById").key(userId);
 		List<CouchUserItem> cui = connectorPool.get(repositoryId).queryView(query, CouchUserItem.class);
+		System.out.println("DAO DEBUG: getUserItemById query returned " + (cui != null ? cui.size() : 0) + " results for userId: " + userId);
 		if (!CollectionUtils.isEmpty(cui)) {
-			return cui.get(0).convert();
+			CouchUserItem couchUser = cui.get(0);
+			System.out.println("DAO DEBUG: CouchUserItem ID: " + couchUser.getId());
+			System.out.println("DAO DEBUG: CouchUserItem passwordHash: '" + couchUser.getPasswordHash() + "'");
+			System.out.println("DAO DEBUG: CouchUserItem admin: " + couchUser.isAdmin());
+			UserItem converted = couchUser.convert();
+			System.out.println("DAO DEBUG: Converted UserItem password: '" + converted.getPassword() + "'");
+			return converted;
 		} else {
 			return null;
 		}

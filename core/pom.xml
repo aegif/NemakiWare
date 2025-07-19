@@ -124,6 +124,7 @@
 		    <version>1.4.01</version>
 		</dependency>
 
+
 		<dependency>
 			<groupId>javax.servlet</groupId>
 			<artifactId>javax.servlet-api</artifactId>
@@ -349,11 +350,6 @@
 			<version>4.0.0-RELEASE</version>
 		</dependency>
 
-		<dependency>
-			<groupId>uk.com.robust-it</groupId>
-			<artifactId>cloning</artifactId>
-			<version>1.9.1</version>
-		</dependency>
 
 		<dependency>
 			<groupId>com.google.guava</groupId>
@@ -419,6 +415,31 @@
 					<scanIntervalSeconds>1</scanIntervalSeconds>
 					<stopPort>9966</stopPort>
 					<stopKey>foo</stopKey>
+					<deployMode>FORK</deployMode>
+					<systemProperties>
+						<systemProperty>
+							<name>java.util.logging.config.file</name>
+							<value>logging.properties</value>
+						</systemProperty>
+					</systemProperties>
+					<jvmArgs>
+						<jvmArg>--add-opens</jvmArg>
+						<jvmArg>java.base/java.util=ALL-UNNAMED</jvmArg>
+						<jvmArg>--add-opens</jvmArg>
+						<jvmArg>java.base/java.lang=ALL-UNNAMED</jvmArg>
+						<jvmArg>--add-opens</jvmArg>
+						<jvmArg>java.base/java.lang.reflect=ALL-UNNAMED</jvmArg>
+						<jvmArg>--add-opens</jvmArg>
+						<jvmArg>java.base/java.text=ALL-UNNAMED</jvmArg>
+						<jvmArg>--add-opens</jvmArg>
+						<jvmArg>java.desktop/java.awt.font=ALL-UNNAMED</jvmArg>
+						<jvmArg>--add-opens</jvmArg>
+						<jvmArg>java.base/java.util.concurrent=ALL-UNNAMED</jvmArg>
+						<jvmArg>--add-opens</jvmArg>
+						<jvmArg>java.base/sun.nio.ch=ALL-UNNAMED</jvmArg>
+						<jvmArg>--add-exports</jvmArg>
+						<jvmArg>java.base/sun.nio.ch=ALL-UNNAMED</jvmArg>
+					</jvmArgs>
 					<webAppConfig>
 						<contextPath>/core</contextPath>
 						<webInfIncludeJarPattern>^$</webInfIncludeJarPattern>

@@ -10,7 +10,7 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/rest': {
+      '^/core/(?!ui).*': {
         target: 'http://localhost:8080',
         changeOrigin: true
       }

@@ -6,7 +6,7 @@ import org.apache.commons.beanutils.BeanUtils;
 
 public class UserItem extends Item{
 	private String userId;
-	private String passowrd;
+	private String password;
 	private Boolean admin = false;
 
 	public UserItem(){
@@ -20,7 +20,7 @@ public class UserItem extends Item{
 		setObjectType(objectType);
 		setUserId(userId);
 		setName(name);
-		setPassowrd(password);
+		setPassword(password);
 		setAdmin(admin);
 		setParentId(parentFolderId);
 	}
@@ -46,12 +46,12 @@ public class UserItem extends Item{
 		this.userId = userId;
 	}
 
-	public String getPassowrd() {
-		return passowrd;
+	public String getPassword() {
+		return password;
 	}
 
-	public void setPassowrd(String passowrd) {
-		this.passowrd = passowrd;
+	public void setPassword(String password) {
+		this.password = password;
 	}
 
 	public Boolean isAdmin() {

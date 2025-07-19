@@ -55,7 +55,7 @@ function App() {
 
   return (
     <ConfigProvider theme={customTheme}>
-      <Router>
+      <Router basename="/core/ui">
         <Layout repositoryId={repositoryId}>
           <Routes>
             <Route path="/" element={<Navigate to="/documents" replace />} />
