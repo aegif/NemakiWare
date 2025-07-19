@@ -106,6 +106,10 @@ public class Patch_InitialFolderSetup extends AbstractNemakiPatch {
                 log.info("Technical Documents folder already exists, skipping creation");
             }
             
+            // Force Solr reindexing to ensure all created content is searchable
+            log.info("Triggering Solr reindexing to ensure all content is searchable...");
+            triggerSolrReindexing(repositoryId);
+            
             log.info("Initial Folder Setup Patch completed successfully for repository: " + repositoryId);
             log.info("ChangeLog entries should be generated, enabling Tracker-based Solr indexing");
             
@@ -381,6 +385,49 @@ OASIS, Standard, Specification, Domain Model, Binding, Protocol, API, Enterprise
         } catch (UnsupportedEncodingException e) {
             log.error("Error creating fallback PDF content", e);
             return "CMIS 1.1".getBytes();
+        }
+    }
+    
+    /**
+     * Trigger Solr reindexing to ensure all content is searchable
+     */
+    private void triggerSolrReindexing(String repositoryId) {
+        try {
+            log.info("Starting Solr reindexing for repository: " + repositoryId);
+            
+            // Use HTTP client to call the reindex REST endpoint
+            org.apache.hc.client5.http.classic.HttpClient httpClient = 
+                org.apache.hc.client5.http.impl.classic.HttpClientBuilder.create().build();
+            
+            // Call reindex endpoint
+            String reindexUrl = "http://localhost:8080/core/rest/all/search-engine/reindex";
+            org.apache.hc.client5.http.classic.methods.HttpGet reindexRequest = 
+                new org.apache.hc.client5.http.classic.methods.HttpGet(reindexUrl);
+            
+            // Add basic authentication
+            String auth = java.util.Base64.getEncoder()
+                .encodeToString("admin:admin".getBytes("UTF-8"));
+            reindexRequest.setHeader("Authorization", "Basic " + auth);
+            
+            String response = httpClient.execute(reindexRequest, responseHandler -> {
+                int statusCode = responseHandler.getCode();
+                if (statusCode == 200) {
+                    return org.apache.hc.core5.http.io.entity.EntityUtils.toString(responseHandler.getEntity(), "UTF-8");
+                } else {
+                    log.warn("Solr reindex request returned status: " + statusCode);
+                    return null;
+                }
+            });
+            
+            if (response != null) {
+                log.info("Solr reindexing triggered successfully: " + response);
+            } else {
+                log.warn("Solr reindexing request failed or returned non-200 status");
+            }
+            
+        } catch (Exception e) {
+            log.warn("Failed to trigger Solr reindexing automatically: " + e.getMessage());
+            log.info("Manual Solr reindexing may be required: curl -u admin:admin http://localhost:8080/core/rest/all/search-engine/reindex");
         }
     }
 }
