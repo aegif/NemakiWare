@@ -5,6 +5,8 @@ import { AuthService, AuthToken } from '../../services/auth';
 import { CMISService } from '../../services/cmis';
 import { OIDCService } from '../../services/oidc';
 import { getOIDCConfig, isOIDCEnabled } from '../../config/oidc';
+import { SAMLService } from '../../services/saml';
+import { getSAMLConfig, isSAMLEnabled } from '../../config/saml';
 
 interface LoginProps {
   onLogin: (auth: AuthToken) => void;
@@ -25,6 +27,13 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     }
     return null;
   });
+
+  const [samlService] = useState(() => {
+    if (isSAMLEnabled()) {
+      return new SAMLService(getSAMLConfig());
+    }
+    return null;
+  });
   
   useEffect(() => {
     (window as any).authService = authService;
@@ -37,8 +46,10 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   useEffect(() => {
     if (window.location.pathname.includes('oidc-callback') && oidcService) {
       handleOIDCLogin();
+    } else if (window.location.pathname.includes('saml-callback') && samlService) {
+      handleSAMLCallback();
     }
-  }, [oidcService]);
+  }, [oidcService, samlService]);
 
   const loadRepositories = async () => {
     try {
@@ -84,6 +95,47 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     } catch (error) {
       console.error('OIDC login error:', error);
       setError('OIDC認証に失敗しました。');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSAMLLogin = async () => {
+    if (!samlService) return;
+    
+    setLoading(true);
+    setError(null);
+
+    try {
+      const repositoryId = repositories.length > 0 ? repositories[0] : 'bedroom';
+      samlService.initiateLogin(repositoryId);
+    } catch (error) {
+      console.error('SAML login error:', error);
+      setError('SAML認証に失敗しました。');
+      setLoading(false);
+    }
+  };
+
+  const handleSAMLCallback = async () => {
+    if (!samlService) return;
+    
+    setLoading(true);
+    setError(null);
+
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const samlResponse = urlParams.get('SAMLResponse');
+      const relayState = urlParams.get('RelayState');
+      
+      if (samlResponse) {
+        const auth = await samlService.handleSAMLResponse(samlResponse, relayState || undefined);
+        onLogin(auth);
+      } else {
+        setError('SAML認証レスポンスが見つかりません。');
+      }
+    } catch (error) {
+      console.error('SAML callback error:', error);
+      setError('SAML認証の処理に失敗しました。');
     } finally {
       setLoading(false);
     }
@@ -169,20 +221,35 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
             </Button>
           </Form.Item>
 
-          {isOIDCEnabled() && (
+          {(isOIDCEnabled() || isSAMLEnabled()) && (
             <>
               <Divider>または</Divider>
-              <Form.Item>
-                <Button
-                  type="default"
-                  icon={<LoginOutlined />}
-                  onClick={handleOIDCLogin}
-                  loading={loading}
-                  style={{ width: '100%', height: 40 }}
-                >
-                  OIDC認証でログイン
-                </Button>
-              </Form.Item>
+              {isOIDCEnabled() && (
+                <Form.Item>
+                  <Button
+                    type="default"
+                    icon={<LoginOutlined />}
+                    onClick={handleOIDCLogin}
+                    loading={loading}
+                    style={{ width: '100%', height: 40, marginBottom: 8 }}
+                  >
+                    OIDC認証でログイン
+                  </Button>
+                </Form.Item>
+              )}
+              {isSAMLEnabled() && (
+                <Form.Item>
+                  <Button
+                    type="default"
+                    icon={<LoginOutlined />}
+                    onClick={handleSAMLLogin}
+                    loading={loading}
+                    style={{ width: '100%', height: 40 }}
+                  >
+                    SAML認証でログイン
+                  </Button>
+                </Form.Item>
+              )}
             </>
           )}
         </Form>

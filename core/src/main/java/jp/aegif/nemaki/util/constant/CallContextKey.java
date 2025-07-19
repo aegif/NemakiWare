@@ -10,4 +10,7 @@ public interface CallContextKey {
 	
 	final String OIDC_TOKEN = "oidc_token";
 	final String OIDC_USER_INFO = "oidc_user_info";
+	
+	final String SAML_RESPONSE = "saml_response";
+	final String SAML_USER_ATTRIBUTES = "saml_user_attributes";
 }

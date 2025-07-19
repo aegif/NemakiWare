@@ -71,6 +71,10 @@ function App() {
               setIsAuthenticated(true);
               setRepositoryId(auth.repositoryId);
             }} />} />
+            <Route path="/saml-callback" element={<Login onLogin={(auth) => {
+              setIsAuthenticated(true);
+              setRepositoryId(auth.repositoryId);
+            }} />} />
           </Routes>
         </Layout>
       </Router>

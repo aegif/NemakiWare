@@ -67,13 +67,14 @@ public class AuthenticationFilter implements Filter {
 		String requestURI = hreq.getRequestURI();
 		String authToken = hreq.getHeader("AUTH_TOKEN");
 		String authHeader = hreq.getHeader("Authorization");
+		String samlAssertion = hreq.getHeader("X-SAML-Assertion");
 		String oidcBearer = null;
 		
 		if (authHeader != null && authHeader.startsWith("Bearer ")) {
 			oidcBearer = authHeader.substring(7);
 		}
 		
-		System.out.println("AUTH FILTER TOKEN: pathInfo='" + pathInfo + "', requestURI='" + requestURI + "', authToken='" + authToken + "', authHeader='" + authHeader + "', oidcBearer='" + oidcBearer + "'");
+		System.out.println("AUTH FILTER TOKEN: pathInfo='" + pathInfo + "', requestURI='" + requestURI + "', authToken='" + authToken + "', authHeader='" + authHeader + "', oidcBearer='" + oidcBearer + "', samlAssertion='" + samlAssertion + "'");
 		
 		// Bypass authentication for repositories endpoint
 		if (pathInfo != null && pathInfo.equals("/repositories")) {

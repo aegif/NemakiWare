@@ -187,6 +187,96 @@ public class AuthTokenResource extends ResourceBase{
 		return result.toString();
 	}
 	
+	@POST
+	@Path("/saml/convert")
+	@Produces(MediaType.APPLICATION_JSON)
+	@Consumes(MediaType.APPLICATION_JSON)
+	public String convertSAMLResponse(@PathParam("repositoryId") String repositoryId, String requestBody) {
+		boolean status = true;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		try {
+			JSONParser parser = new JSONParser();
+			JSONObject requestJson = (JSONObject) parser.parse(requestBody);
+			
+			String samlResponse = (String) requestJson.get("saml_response");
+			String relayState = (String) requestJson.get("relay_state");
+			JSONObject userAttributes = (JSONObject) requestJson.get("user_attributes");
+			
+			if (StringUtils.isBlank(samlResponse)) {
+				addErrMsg(errMsg, "saml_response", "isNull");
+				status = false;
+				return makeResult(status, result, errMsg).toString();
+			}
+			
+			if (StringUtils.isBlank(repositoryId)) {
+				addErrMsg(errMsg, "repositoryId", "isNull");
+				status = false;
+				return makeResult(status, result, errMsg).toString();
+			}
+			
+			String userName = extractUsernameFromSAML(userAttributes, samlResponse);
+			if (StringUtils.isBlank(userName)) {
+				addErrMsg(errMsg, "username", "cannotExtract");
+				status = false;
+				return makeResult(status, result, errMsg).toString();
+			}
+			
+			
+			Token token = tokenService.setToken("saml", repositoryId, userName);
+			
+			JSONObject obj = new JSONObject();
+			obj.put("app", "saml");
+			obj.put("repositoryId", repositoryId);
+			obj.put("userName", userName);
+			obj.put("token", token.getToken());
+			obj.put("expiration", token.getExpiration());
+			result.put("value", obj);
+			
+		} catch (Exception e) {
+			logger.error("Error converting SAML response", e);
+			addErrMsg(errMsg, "conversion", "failed");
+			status = false;
+		}
+		
+		result = makeResult(status, result, errMsg);
+		return result.toString();
+	}
+	
+	private String extractUsernameFromSAML(JSONObject userAttributes, String samlResponse) {
+		if (userAttributes != null) {
+			String[] usernameFields = {"ssoUserId", "NameID", "uid", "email", "username", "subject"};
+			for (String field : usernameFields) {
+				Object value = userAttributes.get(field);
+				if (value != null) {
+					if (value instanceof String && StringUtils.isNotBlank((String) value)) {
+						return (String) value;
+					} else if (value instanceof JSONArray) {
+						JSONArray array = (JSONArray) value;
+						if (!array.isEmpty() && array.get(0) instanceof String) {
+							String strValue = (String) array.get(0);
+							if (StringUtils.isNotBlank(strValue)) {
+								return strValue;
+							}
+						}
+					}
+				}
+			}
+		}
+		
+		if (StringUtils.isNotBlank(samlResponse)) {
+			try {
+				String decoded = new String(java.util.Base64.getDecoder().decode(samlResponse));
+				return "saml_user"; // Placeholder - should extract actual user ID
+			} catch (Exception e) {
+				logger.warn("Failed to extract username from SAML response", e);
+			}
+		}
+		
+		return null;
+	}
+
 	private String extractUsernameFromOIDC(JSONObject userInfo) {
 		if (userInfo == null) return null;
 		
