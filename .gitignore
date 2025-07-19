@@ -52,6 +52,32 @@ run-*-tck.sh
 generate-*-tck-report.sh
 test-crud-fix.sh
 
+# Large binary files that should not be tracked
+*.war
+*.tgz
+*.tar.gz
+*solr-with-dependencies*.jar
+
+# Docker build contexts and WAR files
+docker/core/core*.war
+docker/ui/ui*.war
+docker/docker/core/core*.war
+docker/*/core*.war
+core/core*.war
+ui/target/scala-*/ui*.war
+
+# Solr dependencies and large JARs  
+solr/solr/*/lib/solr-with-dependencies*.jar
+docker/solr/solr/*/lib/solr-with-dependencies*.jar
+lib/jakarta-converted/solr-with-dependencies*.jar
+
+# Exception: Keep Jakarta-converted OpenCMIS JARs (important project artifacts)
+!docker/jakarta-lib/*jakarta*.jar
+!lib/jakarta-converted/*jakarta*.jar
+
+# Build workspace artifacts
+build-workspace/
+
 # NemakiWare specific
 setup/installer/*/log
 setup/installer/NemakiInstaller*
