@@ -9,7 +9,7 @@ services:
     image: nemakiware-tomcat10
     container_name: nemaki-core-tomcat10
     ports:
-      - "8080:8080"
+      - "8081:8080"
     environment:
       - COUCHDB_USER=admin
       - COUCHDB_PASSWORD=password
@@ -19,6 +19,8 @@ services:
     depends_on:
       couchdb:
         condition: service_healthy
+      initializer:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/core"]
       interval: 30s
@@ -44,14 +46,14 @@ services:
       timeout: 5s
       retries: 5
 
-  # Database initializer
+  # Database initializer with cloudant-init.jar
   initializer:
     image: openjdk:17-jdk-slim
     container_name: nemaki-initializer
     volumes:
-      - ../setup/couchdb/cloudant-init/target/cloudant-init.jar:/app/cloudant-init.jar
-      - ../docker/initializer/bedroom_init_consolidated.dump:/app/bedroom_init.dump
-      - ../docker/initializer/canopy_init_consolidated.dump:/app/canopy_init.dump
+      - ./cloudant-init.jar:/app/cloudant-init.jar
+      - ./initializer/initial_import/bedroom_init.dump:/app/bedroom_init.dump
+      - ./initializer/initial_import/canopy_init.dump:/app/canopy_init.dump
     environment:
       - COUCHDB_URL=http://couchdb:5984
       - COUCHDB_USER=admin
