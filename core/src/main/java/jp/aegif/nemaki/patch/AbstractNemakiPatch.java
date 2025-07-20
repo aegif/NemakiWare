@@ -17,15 +17,21 @@ public abstract class AbstractNemakiPatch {
 
 
 	public void apply(){
+		System.out.println("=== PATCH DEBUG: AbstractNemakiPatch.apply() CALLED ===");
+		log.info("=== PATCH DEBUG: AbstractNemakiPatch.apply() CALLED ===");
 		applySystemPatch();
 
 		for(String repositoryId : patchUtil.getRepositoryInfoMap().keys()){
+			System.out.println("=== PATCH DEBUG: Processing repository: " + repositoryId + " ===");
+			log.info("=== PATCH DEBUG: Processing repository: " + repositoryId + " ===");
 			boolean isApplied = patchUtil.isApplied(repositoryId, getName());
 			if(isApplied){
 				log.info("[patch=" + getName() + ", repositoryId=" + repositoryId + "]" +  "already applied, skipped");
 				continue;
 			}else{
 				try{
+					System.out.println("=== PATCH DEBUG: Calling applyPerRepositoryPatch for: " + repositoryId + " ===");
+					log.info("=== PATCH DEBUG: Calling applyPerRepositoryPatch for: " + repositoryId + " ===");
 					applyPerRepositoryPatch(repositoryId);
 
 					patchUtil.createPathHistory(repositoryId, getName());

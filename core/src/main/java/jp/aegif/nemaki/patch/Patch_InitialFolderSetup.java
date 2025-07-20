@@ -59,10 +59,12 @@ public class Patch_InitialFolderSetup extends AbstractNemakiPatch {
     
     @Override
     protected void applyPerRepositoryPatch(String repositoryId) {
-        log.info("Starting Initial Folder Setup Patch for repository: " + repositoryId);
+        log.info("=== PATCH DEBUG: Starting Initial Folder Setup Patch for repository: " + repositoryId + " ===");
+        System.out.println("=== PATCH DEBUG: Starting Initial Folder Setup Patch for repository: " + repositoryId + " ===");
         
         if ("canopy".equals(repositoryId)) {
-            log.info("Skipping Initial Folder Setup for canopy - it's an information management area, not a CMIS repository");
+            log.info("=== PATCH DEBUG: Skipping Initial Folder Setup for canopy - it's an information management area, not a CMIS repository ===");
+            System.out.println("=== PATCH DEBUG: Skipping Initial Folder Setup for canopy - it's an information management area, not a CMIS repository ===");
             return;
         }
         
