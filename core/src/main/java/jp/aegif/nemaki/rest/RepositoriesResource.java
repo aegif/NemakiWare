@@ -1,0 +1,73 @@
+package jp.aegif.nemaki.rest;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import javax.ws.rs.GET;
+import javax.ws.rs.Path;
+import javax.ws.rs.Produces;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.springframework.stereotype.Component;
+
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
+import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
+
+/**
+ * REST Resource for repository management
+ * Provides filtered repository list excluding information management areas
+ */
+@Component
+@Path("/all/repositories")
+public class RepositoriesResource extends ResourceBase {
+    
+    private static final Log log = LogFactory.getLog(RepositoriesResource.class);
+    private RepositoryInfoMap repositoryInfoMap;
+    
+    /**
+     * Get filtered list of CMIS repositories
+     * Excludes "canopy" as it's an information management area, not a CMIS repository
+     * 
+     * @return JSON array of repository information
+     */
+    @GET
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getRepositories() {
+        try {
+            log.info("=== REST DEBUG: RepositoriesResource.getRepositories() called ===");
+            
+            List<RepositoryInfo> allRepositories = new ArrayList<>();
+            
+            for (String repositoryId : repositoryInfoMap.keys()) {
+                log.info("=== REST DEBUG: Processing repository: " + repositoryId + " ===");
+                
+                if ("canopy".equals(repositoryId)) {
+                    log.info("=== REST DEBUG: Excluding canopy from repository list (information management area) ===");
+                    continue;
+                }
+                
+                RepositoryInfo repoInfo = repositoryInfoMap.get(repositoryId);
+                if (repoInfo != null) {
+                    allRepositories.add(repoInfo);
+                    log.info("=== REST DEBUG: Added repository: " + repositoryId + " to filtered list ===");
+                }
+            }
+            
+            log.info("=== REST DEBUG: Returning " + allRepositories.size() + " filtered repositories ===");
+            return Response.ok(allRepositories).build();
+            
+        } catch (Exception e) {
+            log.error("Failed to get repositories", e);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity("{\"error\":\"Failed to retrieve repositories\"}")
+                    .build();
+        }
+    }
+    
+    public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
+        this.repositoryInfoMap = repositoryInfoMap;
+    }
+}

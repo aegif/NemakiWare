@@ -729,5 +729,11 @@
         </property>
     </bean>
 
+    <bean id="repositoriesResource" class="jp.aegif.nemaki.rest.RepositoriesResource">
+        <property name="repositoryInfoMap">
+            <ref bean="repositoryInfoMap" />
+        </property>
+    </bean>
+
 
 </beans>

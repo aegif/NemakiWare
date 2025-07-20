@@ -130,7 +130,7 @@
   <servlet-class>org.glassfish.jersey.servlet.ServletContainer</servlet-class>
   <init-param>
         <param-name>jersey.config.server.provider.classnames</param-name>
-        <param-value>jp.aegif.nemaki.rest.ConfigResource,jp.aegif.nemaki.rest.CacheResource,jp.aegif.nemaki.rest.UserItemResource,jp.aegif.nemaki.rest.LogResource,jp.aegif.nemaki.rest.ArchiveResource,jp.aegif.nemaki.rest.AuthTokenResource,jp.aegif.nemaki.rest.SolrAllResource,jp.aegif.nemaki.rest.SolrResource,jp.aegif.nemaki.rest.SimpleTestResource,org.glassfish.jersey.media.multipart.MultiPartFeature</param-value>
+        <param-value>jp.aegif.nemaki.rest.ConfigResource,jp.aegif.nemaki.rest.CacheResource,jp.aegif.nemaki.rest.UserItemResource,jp.aegif.nemaki.rest.LogResource,jp.aegif.nemaki.rest.ArchiveResource,jp.aegif.nemaki.rest.AuthTokenResource,jp.aegif.nemaki.rest.SolrAllResource,jp.aegif.nemaki.rest.SolrResource,jp.aegif.nemaki.rest.SimpleTestResource,jp.aegif.nemaki.rest.RepositoriesResource,jp.aegif.nemaki.rest.BulkCheckInResource,jp.aegif.nemaki.rest.TypeResource,org.glassfish.jersey.media.multipart.MultiPartFeature</param-value>
     </init-param>
  </servlet>
 
