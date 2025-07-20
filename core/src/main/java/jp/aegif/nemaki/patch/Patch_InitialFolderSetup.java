@@ -46,9 +46,6 @@ public class Patch_InitialFolderSetup extends AbstractNemakiPatch {
     private static final String TECH_DOCS_FOLDER_NAME = "Technical Documents";
     private static final String CMIS_SPEC_FILENAME = "CMIS-1.1-Specification.pdf";
     
-    // Standard NemakiWare root folder ID
-    private static final String ROOT_FOLDER_ID = "e02f784f8360a02cc14d1314c10038ff";
-    
     @Override
     public String getName() {
         return PATCH_NAME;
@@ -64,6 +61,11 @@ public class Patch_InitialFolderSetup extends AbstractNemakiPatch {
     protected void applyPerRepositoryPatch(String repositoryId) {
         log.info("Starting Initial Folder Setup Patch for repository: " + repositoryId);
         
+        if ("canopy".equals(repositoryId)) {
+            log.info("Skipping Initial Folder Setup for canopy - it's an information management area, not a CMIS repository");
+            return;
+        }
+        
         try {
             // Get ContentService from PatchUtil
             ContentService contentService = patchUtil.getContentService();
@@ -72,13 +74,16 @@ public class Patch_InitialFolderSetup extends AbstractNemakiPatch {
                 return;
             }
             
+            String rootFolderId = patchUtil.getRepositoryInfoMap().get(repositoryId).getRootFolderId();
+            log.info("Using root folder ID: " + rootFolderId + " for repository: " + repositoryId);
+            
             // Create system call context for operations
             SystemCallContext callContext = new SystemCallContext(repositoryId);
             
             // Check if Sites folder already exists
-            if (!folderExists(contentService, repositoryId, ROOT_FOLDER_ID, SITES_FOLDER_NAME)) {
+            if (!folderExists(contentService, repositoryId, rootFolderId, SITES_FOLDER_NAME)) {
                 log.info("Creating Sites folder via ContentService...");
-                String sitesFolderId = createFolder(contentService, callContext, repositoryId, ROOT_FOLDER_ID, 
+                String sitesFolderId = createFolder(contentService, callContext, repositoryId, rootFolderId, 
                     SITES_FOLDER_NAME, "Sites folder for collaborative workspaces");
                 log.info("Sites folder created with ID: " + sitesFolderId);
             } else {
@@ -86,9 +91,9 @@ public class Patch_InitialFolderSetup extends AbstractNemakiPatch {
             }
             
             // Check if Technical Documents folder already exists
-            if (!folderExists(contentService, repositoryId, ROOT_FOLDER_ID, TECH_DOCS_FOLDER_NAME)) {
+            if (!folderExists(contentService, repositoryId, rootFolderId, TECH_DOCS_FOLDER_NAME)) {
                 log.info("Creating Technical Documents folder via ContentService...");
-                String techDocsFolderId = createFolder(contentService, callContext, repositoryId, ROOT_FOLDER_ID,
+                String techDocsFolderId = createFolder(contentService, callContext, repositoryId, rootFolderId,
                     TECH_DOCS_FOLDER_NAME, "Technical documentation and specifications");
                 
                 if (techDocsFolderId != null) {

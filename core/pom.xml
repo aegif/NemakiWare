@@ -81,6 +81,11 @@
 			<artifactId>nemakiware-common</artifactId>
 			<version>3.0.0</version>
 		</dependency>
+		<dependency>
+			<groupId>jp.aegif.nemaki.cloudantinit</groupId>
+			<artifactId>cloudant-init</artifactId>
+			<version>1.0.0</version>
+		</dependency>
 
 		<dependency>
 			<groupId>junit</groupId>
