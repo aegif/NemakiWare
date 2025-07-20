@@ -11,14 +11,9 @@ RUN rm -rf /usr/local/tomcat/webapps/*
 # Create context directory
 RUN mkdir -p /usr/local/tomcat/conf/Catalina/localhost/
 
-# Copy pre-built UI WAR file
-COPY ui.war /usr/local/tomcat/webapps/ui.war
-
-# Extract WAR for easier configuration
-RUN cd /usr/local/tomcat/webapps && \
-    mkdir -p ui && \
-    cd ui && \
-    jar -xf ../ui.war
+# Legacy UI module removed - Play Framework UI replaced by React SPA in core module
+# React SPA is now served from core/src/main/webapp/ui/
+# No separate ui.war deployment needed
 
 # Expose port
 EXPOSE 8080

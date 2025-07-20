@@ -1,28 +1,29 @@
-NemakiWare
-======================
+# NemakiWare
 
-What is NemakiWare?
-------
+NemakiWare is an open source Enterprise Content Management system, compliant with CMIS ver1.1.
 
-NemakiWare is an open source Enterprise Content Management system.
+## Features
+- **All-in-one package** including server, full-text search engine, and modern React client
+- **Easy installation** with automated installer
+- **Jakarta EE compatible** with Java 17 support
+- **Modern React SPA client interface** (replaces legacy Play Framework UI)
+- **SAML and OIDC authentication** support
+- **Full CMIS 1.1 compliance**
+- **Docker containerization** support
 
+## Key Capabilities
 * **CMIS ver1.1 compliant and even CMIS-native server**
     * Easy Integration or replacement with other existing/future CMIS-compliant client.
     * Extended feature out of CMIS specification: user/group, archive etc.
     * Highly customizable in CMIS specification because of CMIS-native development.
 
-
-* **All-in-One package (server, full-text search engine and client)**
-    * Ready to use in the real context.
-    * All components are connected via CMIS interface.
-    * **Enhanced Full-Text Search**: Apache Solr with ExtractingRequestHandler (Solr Cell)
-        * PDF documents: Complete text extraction with metadata
-        * Microsoft Office: Word (.docx/.doc), Excel (.xlsx/.xls), PowerPoint (.pptx/.ppt)
-        * OpenDocument: Writer (.odt), Calc (.ods), Impress (.odp)
-        * Web formats: HTML, XML, RTF, plain text
-        * **Quick Verification**: `./quick-verify-extracting.sh`
-        * **Full Verification**: `./verify-extracting-handler.sh`
-
+* **Enhanced Full-Text Search**: Apache Solr with ExtractingRequestHandler (Solr Cell)
+    * PDF documents: Complete text extraction with metadata
+    * Microsoft Office: Word (.docx/.doc), Excel (.xlsx/.xls), PowerPoint (.pptx/.ppt)
+    * OpenDocument: Writer (.odt), Calc (.ods), Impress (.odp)
+    * Web formats: HTML, XML, RTF, plain text
+    * **Quick Verification**: `./quick-verify-extracting.sh`
+    * **Full Verification**: `./verify-extracting-handler.sh`
 
 * **NoSQL CouchDB backend**
     * Simple document-based NoSQL database.

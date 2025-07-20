@@ -3,9 +3,9 @@
   <!-- Application info -->
   <info>
     <appname>NemakiWare</appname>
-    <appversion>2.4.1</appversion>
+    <appversion>3.0.0</appversion>
     <url>https://www.nemakiware.com/</url>
-    <javaversion>1.8</javaversion>
+    <javaversion>17</javaversion>
     <!--
     If you a general user install on C:¥Program Files on Windows,
     some commands will fail. RUNAS command doesn't somehow work.
@@ -102,7 +102,7 @@
     <panel classname="com.izforge.izpack.panels.userinput.UserInputPanel" id="user.inputpanel.couchdb.configuration" condition="condition.pack.couchdb.configuration"/>
     <!--<panel classname="com.izforge.izpack.panels.userinput.UserInputPanel" id="user.inputpanel.solr" condition="condition.pack.solr"/>
     -->
-    <panel classname="com.izforge.izpack.panels.userinput.UserInputPanel" id="user.inputpanel.ui" condition="condition.pack.ui"/>
+    <!-- user.inputpanel.ui removed - Legacy Play Framework UI replaced by React SPA in core module -->
     <panel classname="com.izforge.izpack.panels.install.InstallPanel" />
     <panel classname="com.izforge.izpack.panels.finish.FinishPanel" />
   </panels>

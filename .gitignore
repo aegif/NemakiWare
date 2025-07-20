@@ -113,8 +113,6 @@ docker/core/core.war
 docker/core/WEB-INF/
 docker/core/META-INF/
 docker/solr/solr.war
-docker/ui-war/*.war
-docker/ui/ui/target/
 docker/temp/
 docker/test-output.log
 docker/tck-execution.log
@@ -123,15 +121,7 @@ docker/tck-execution.log
 docker/cmis-tck-parameters-docker.properties
 docker/cmis-tck-filters-docker.properties
 
-# SBT/Scala (for UI module)
-ui/target/
-ui/project/target/
-ui/project/project/
-ui/.cache*
-ui/.history
-ui/.lib/
-ui/dist/*
-ui/.g8/
+# Legacy UI module removed - React SPA now in core/src/main/webapp/ui/
 
 # Claude AI artifacts
 .claude/
@@ -171,7 +161,6 @@ solr-*.tgz
 **/*.war
 core/core.war/
 docker/core/*.war
-docker/ui/*.war
 docker/**/*.war
 setup/installer/**/*.war
 

@@ -8,7 +8,6 @@
     <str id="pack.couchdb.configuration.description" txt="CouchDB初期化" />
     <str id="pack.solr" txt="Solr" />
     <str id="pack.solr.description" txt="検索エンジン" />
-    <str id="pack.ui" txt="UI" />
-    <str id="pack.ui.description" txt="CMISクライアント" />
+    <!-- Legacy UI module removed - React SPA now integrated in core module -->
     <str id="pack.delete.tmp" txt="インストール用一時ファイルの削除" />
 </izpack:langpack>

@@ -316,7 +316,6 @@ addSbtPlugin("com.typesafe.sbt" % "sbt-rjs" % "1.0.1")
 addSbtPlugin("com.typesafe.sbt" % "sbt-digest" % "1.0.0")
 addSbtPlugin("com.typesafe.sbt" % "sbt-mocha" % "1.0.0")
 addSbtPlugin("com.typesafe.sbt" % "sbt-play-enhancer" % "1.1.0")
-addSbtPlugin("com.github.play2war" % "play2-war-plugin" % "1.4.0")
 addSbtPlugin("com.typesafe.sbteclipse" % "sbteclipse-plugin" % "4.0.0")
 EOF_PLUGINS
 fi
@@ -361,35 +360,12 @@ if [ "$UI_BUILD_SKIP" != "true" ]; then
     echo "Building UI WAR with SBT (this may take a few minutes)..."
     export SBT_OPTS="-Xmx2G -XX:+UseG1GC"
 
-    sbt clean compile war
-    if [ $? -ne 0 ]; then
-      echo "ERROR: SBT build failed for UI"
-      exit 1
-    fi
+    echo "UI module has been removed - using React SPA in core module instead"
 
-    # Copy the built WAR files
-    if [ -f "target/ui.war" ]; then
-      echo "Copying newly built UI WAR files..."
-      mkdir -p $NEMAKI_HOME/docker/ui-war
-      cp target/ui.war $NEMAKI_HOME/docker/ui-war/ui.war
-      cp target/ui.war $NEMAKI_HOME/docker/ui-war/ui##.war
-      echo "UI WAR files successfully created"
-    else
-      echo "ERROR: No UI WAR file found"
-      exit 1
-    fi
+    echo "UI WAR files no longer needed - React SPA integrated in core module"
 else
-    # Use existing UI WAR file if available
-    if [ -f "$NEMAKI_HOME/docker/ui/ui.war" ]; then
-      echo "Using existing UI WAR file: $NEMAKI_HOME/docker/ui/ui.war"
-      mkdir -p $NEMAKI_HOME/docker/ui-war
-      cp $NEMAKI_HOME/docker/ui/ui.war $NEMAKI_HOME/docker/ui-war/ui.war
-      cp $NEMAKI_HOME/docker/ui/ui.war $NEMAKI_HOME/docker/ui-war/ui##.war
-      echo "Existing UI WAR files copied"
-    else
-      echo "No existing UI WAR file found. UI container will not be functional."
-      echo "This is expected during Core + CouchDB + Solr testing without UI module."
-    fi
+    echo "UI WAR files no longer needed - React SPA integrated in core module"
+    echo "Access UI at: http://localhost:8080/core/ui/"
 fi
 
 # Switch back to Java 17 for Core and Solr builds

@@ -159,10 +159,6 @@ git clean -fdx docker/ --exclude docker/solr/src/assembly/ || echo "Warning: Som
 # Clean Maven targets
 mvn clean -q || echo "Warning: Maven clean failed"
 
-# Clean UI target directory
-if [ -d "ui/target" ]; then
-  rm -rf ui/target
-fi
 
 # Clean SBT cache
 if [ -d "$HOME/.sbt" ]; then
@@ -223,16 +219,8 @@ else
     exit 1
 fi
 
-echo "Skipping UI WAR build (Java 8 dependency prevents building in current environment)..."
-echo "Note: UI module requires Java 8 which conflicts with Core/Solr Java 11+ requirements"
-
-# Skip UI build and use existing WAR file if available
-if [ -f "$NEMAKI_HOME/docker/ui/ui.war" ]; then
-  echo "Using existing UI WAR file: $NEMAKI_HOME/docker/ui/ui.war"
-else
-  echo "No existing UI WAR file found. UI container will not be functional."
-  echo "This is expected during Core + CouchDB + Solr testing without UI module."
-fi
+echo "Legacy Play Framework UI module removed in NemakiWare 3.0.0"
+echo "React SPA UI is now integrated within the core module at core/src/main/webapp/ui/"
 
 # Comment out UI build section
 : << 'SKIP_UI_BUILD'
@@ -258,8 +246,6 @@ addSbtPlugin("com.typesafe.sbt" % "sbt-rjs" % "1.0.1")
 addSbtPlugin("com.typesafe.sbt" % "sbt-digest" % "1.0.0")
 addSbtPlugin("com.typesafe.sbt" % "sbt-mocha" % "1.0.0")
 addSbtPlugin("com.typesafe.sbt" % "sbt-play-enhancer" % "1.1.0")
-addSbtPlugin("com.github.play2war" % "play2-war-plugin" % "1.4.0")
-addSbtPlugin("com.typesafe.sbteclipse" % "sbteclipse-plugin" % "4.0.0")
 EOF_PLUGINS
 fi
 
@@ -327,9 +313,6 @@ cat > .sbtopts << 'EOF_SBTOPTS'
 -Djdk.http.auth.proxying.disabledSchemes=""
 EOF_SBTOPTS
 
-# Build the UI WAR file
-echo "Building UI WAR with SBT (this may take a few minutes)..."
-echo "Running: sbt clean compile war"
 
 # Set SBT options for better performance and to avoid timeout
 export SBT_OPTS="-Xmx2G -XX:+UseG1GC -XX:+UnlockExperimentalVMOptions -Dsbt.global.base=$HOME/.sbt/global"
@@ -350,43 +333,14 @@ fi
 # Run SBT build with timeout if available
 if [ -n "$TIMEOUT_CMD" ]; then
   echo "Using timeout command: $TIMEOUT_CMD"
-  $TIMEOUT_CMD sbt clean compile war || SBT_RESULT=$?
 else
   echo "No timeout command available, running SBT without timeout"
-  sbt clean compile war || SBT_RESULT=$?
 fi
 
 # Check build results
 if [ $SBT_RESULT -ne 0 ]; then
-  echo "SBT build failed or timed out. Checking for partial WAR files..."
-  if [ -f "target/ui.war" ]; then
-    echo "Found WAR file in target directory, proceeding..."
-  elif [ -f "target/universal/ui.war" ]; then
-    echo "Found WAR file in target/universal directory, copying..."
-    cp target/universal/ui.war target/ui.war
-  else
-    echo "No WAR file found. Using existing WAR files if available..."
-    if [ ! -f "$NEMAKI_HOME/docker/ui-war/ui.war" ]; then
-      echo "ERROR: No UI WAR file available. Please run 'cd ui && sbt war' manually to build UI."
-      exit 1
-    fi
-  fi
 fi
 
-# Copy the built WAR files
-if [ -f "target/ui.war" ]; then
-  echo "Copying newly built UI WAR files..."
-  mkdir -p $NEMAKI_HOME/docker/ui-war
-  cp target/ui.war $NEMAKI_HOME/docker/ui-war/ui.war
-  cp target/ui.war $NEMAKI_HOME/docker/ui-war/ui##.war
-  echo "UI WAR files successfully created"
-else
-  echo "Using existing UI WAR files..."
-  if [ ! -f "$NEMAKI_HOME/docker/ui-war/ui.war" ]; then
-    echo "ERROR: No UI WAR file available"
-    exit 1
-  fi
-fi
 SKIP_UI_BUILD
 # End of skipped UI build section
 
