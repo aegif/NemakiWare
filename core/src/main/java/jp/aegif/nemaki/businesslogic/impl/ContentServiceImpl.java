@@ -991,6 +991,12 @@ public class ContentServiceImpl implements ContentService {
 			List<String> policies, org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension) {
 		log.debug("Creating folder in repository: " + repositoryId);
+		
+		if (parentFolder == null) {
+			log.warn("Cannot create folder - parentFolder is null. Repository may not be fully initialized yet for repository: " + repositoryId);
+			return null;
+		}
+		
 		Folder f = new Folder();
 		setBaseProperties(callContext, repositoryId, properties, f, parentFolder.getId());
 		f.setParentId(parentFolder.getId());

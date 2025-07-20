@@ -76,8 +76,36 @@ public class Patch_InitialFolderSetup extends AbstractNemakiPatch {
                 return;
             }
             
+            if (patchUtil.getRepositoryInfoMap() == null) {
+                log.warn("RepositoryInfoMap not available yet. Skipping Initial Folder Setup Patch for repository: " + repositoryId);
+                return;
+            }
+            
+            if (patchUtil.getRepositoryInfoMap().get(repositoryId) == null) {
+                log.warn("Repository info not available for: " + repositoryId + ". Skipping Initial Folder Setup Patch.");
+                return;
+            }
+            
             String rootFolderId = patchUtil.getRepositoryInfoMap().get(repositoryId).getRootFolderId();
+            if (rootFolderId == null) {
+                log.warn("Root folder ID not available for repository: " + repositoryId + ". Skipping Initial Folder Setup Patch.");
+                return;
+            }
+            
             log.info("Using root folder ID: " + rootFolderId + " for repository: " + repositoryId);
+            
+            try {
+                Folder rootFolder = (Folder) contentService.getContent(repositoryId, rootFolderId);
+                if (rootFolder == null) {
+                    log.warn("Root folder not found for repository: " + repositoryId + ". Repository may not be fully initialized yet. Skipping Initial Folder Setup Patch.");
+                    return;
+                }
+                
+                log.info("Root folder verified for repository: " + repositoryId + ", proceeding with folder setup");
+            } catch (Exception e) {
+                log.warn("Cannot access root folder for repository: " + repositoryId + ". Repository may not be fully initialized yet. Skipping Initial Folder Setup Patch. Error: " + e.getMessage());
+                return;
+            }
             
             // Create system call context for operations
             SystemCallContext callContext = new SystemCallContext(repositoryId);
@@ -87,7 +115,11 @@ public class Patch_InitialFolderSetup extends AbstractNemakiPatch {
                 log.info("Creating Sites folder via ContentService...");
                 String sitesFolderId = createFolder(contentService, callContext, repositoryId, rootFolderId, 
                     SITES_FOLDER_NAME, "Sites folder for collaborative workspaces");
-                log.info("Sites folder created with ID: " + sitesFolderId);
+                if (sitesFolderId != null) {
+                    log.info("Sites folder created with ID: " + sitesFolderId);
+                } else {
+                    log.warn("Failed to create Sites folder, repository may not be ready");
+                }
             } else {
                 log.info("Sites folder already exists, skipping creation");
             }
@@ -108,6 +140,8 @@ public class Patch_InitialFolderSetup extends AbstractNemakiPatch {
                     } else {
                         log.info("CMIS specification already exists, skipping upload");
                     }
+                } else {
+                    log.warn("Failed to create Technical Documents folder, repository may not be ready");
                 }
             } else {
                 log.info("Technical Documents folder already exists, skipping creation");
@@ -173,8 +207,20 @@ public class Patch_InitialFolderSetup extends AbstractNemakiPatch {
             properties.addProperty(new PropertyStringImpl(PropertyIds.NAME, folderName));
             properties.addProperty(new PropertyStringImpl(PropertyIds.DESCRIPTION, description));
             
-            // Get parent folder object
-            Folder parentFolder = (Folder) contentService.getContent(repositoryId, parentId);
+            // Get parent folder object with comprehensive null check
+            Folder parentFolder = null;
+            try {
+                parentFolder = (Folder) contentService.getContent(repositoryId, parentId);
+                if (parentFolder == null) {
+                    log.warn("Parent folder not found for ID: " + parentId + " in repository: " + repositoryId + 
+                            ". Repository may not be fully initialized yet. Skipping folder creation: " + folderName);
+                    return null;
+                }
+            } catch (Exception e) {
+                log.warn("Error accessing parent folder ID: " + parentId + " in repository: " + repositoryId + 
+                        ". Repository may not be fully initialized yet. Skipping folder creation: " + folderName + ". Error: " + e.getMessage());
+                return null;
+            }
             
             // Create folder through ContentService which will generate ChangeLog
             Folder created = contentService.createFolder(callContext, repositoryId, properties, 

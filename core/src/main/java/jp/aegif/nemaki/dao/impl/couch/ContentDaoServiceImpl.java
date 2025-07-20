@@ -136,7 +136,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			
 			List<NemakiTypeDefinition> typeDefinitions = new ArrayList<NemakiTypeDefinition>();
 			
-			if (result.getRows() != null) {
+			// Handle null result gracefully (occurs during initial startup when design documents may not exist yet)
+			if (result != null && result.getRows() != null) {
 				for (ViewResultRow row : result.getRows()) {
 					if (row.getDoc() != null) {
 						// Convert document to CouchTypeDefinition, then to NemakiTypeDefinition
