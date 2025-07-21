@@ -79,12 +79,54 @@
 	<!-- REST authentication filter - re-enabled -->
 	<filter>
 		<filter-name>restAuthenticationFilter</filter-name>
-		<filter-class>org.springframework.web.filter.DelegatingFilterProxy</filter-class>
+		<filter-class>jp.aegif.nemaki.rest.AuthenticationFilter</filter-class>
 	</filter>
+	<!-- Apply authentication to all /rest/* except /rest/all/* -->
 	<filter-mapping>
 		<filter-name>restAuthenticationFilter</filter-name>
-		<url-pattern>/rest/*</url-pattern>
+		<url-pattern>/rest/repositories/*</url-pattern>
 	</filter-mapping>
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/search-engine/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/user/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/cache/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/config/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/archive/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/type/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/log/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/authtoken/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/checkin/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/solr/*</url-pattern>
+	</filter-mapping>
+	<!-- Note: /rest/all/* paths bypass authentication by not having filter mapping -->
 
 
 	<!-- <servlet>
@@ -129,15 +171,28 @@
   <servlet-name>jersey-app</servlet-name>
   <servlet-class>org.glassfish.jersey.servlet.ServletContainer</servlet-class>
   <init-param>
-        <param-name>jersey.config.server.provider.classnames</param-name>
-        <param-value>jp.aegif.nemaki.rest.ConfigResource,jp.aegif.nemaki.rest.CacheResource,jp.aegif.nemaki.rest.UserItemResource,jp.aegif.nemaki.rest.LogResource,jp.aegif.nemaki.rest.ArchiveResource,jp.aegif.nemaki.rest.AuthTokenResource,jp.aegif.nemaki.rest.SolrAllResource,jp.aegif.nemaki.rest.SolrResource,jp.aegif.nemaki.rest.SimpleTestResource,jp.aegif.nemaki.rest.RepositoriesResource,jp.aegif.nemaki.rest.BulkCheckInResource,jp.aegif.nemaki.rest.TypeResource,org.glassfish.jersey.media.multipart.MultiPartFeature</param-value>
+        <param-name>jakarta.ws.rs.Application</param-name>
+        <param-value>jp.aegif.nemaki.rest.NemakiRestApplication</param-value>
     </init-param>
+    <load-on-startup>10</load-on-startup>
  </servlet>
 
  <servlet-mapping>
   <servlet-name>jersey-app</servlet-name>
   <url-pattern>/rest/*</url-pattern>
  </servlet-mapping>
+
+ <!-- Simple servlet for /rest/all/repositories endpoint -->
+ <servlet>
+  <servlet-name>all-repositories</servlet-name>
+  <servlet-class>jp.aegif.nemaki.rest.AllRepositoriesServlet</servlet-class>
+ </servlet>
+
+ <servlet-mapping>
+  <servlet-name>all-repositories</servlet-name>
+  <url-pattern>/rest/all/repositories</url-pattern>
+ </servlet-mapping>
+
 
 
 

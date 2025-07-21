@@ -60,6 +60,33 @@ public class AuthenticationFilter implements Filter {
 		HttpServletRequest hreq = (HttpServletRequest) req;
 		HttpServletResponse hres = (HttpServletResponse) res;
 
+		// Check if this is an /all/ path that should bypass authentication
+		String requestURI = hreq.getRequestURI();
+		String servletPath = hreq.getServletPath();
+		String pathInfo = hreq.getPathInfo();
+		
+		log.info("=== AUTH DEBUG: requestURI=" + requestURI + ", servletPath=" + servletPath + ", pathInfo=" + pathInfo + " ===");
+		
+		// Check various URI patterns for /all/ paths
+		if (requestURI != null && requestURI.contains("/rest/all/")) {
+			log.info("Bypassing authentication for /rest/all/ URI: " + requestURI);
+			chain.doFilter(req, res);
+			return;
+		}
+		
+		// For servlet mappings, pathInfo might be null, so check servletPath
+		if (servletPath != null && servletPath.contains("/all/")) {
+			log.info("Bypassing authentication for /all/ servletPath: " + servletPath);
+			chain.doFilter(req, res);
+			return;
+		}
+		
+		if (pathInfo != null && pathInfo.startsWith("/all/")) {
+			log.info("Bypassing authentication for /all/ pathInfo: " + pathInfo);
+			chain.doFilter(req, res);
+			return;
+		}
+
 		boolean auth = login(hreq, hres);
 		if(auth){
 			chain.doFilter(req, res);

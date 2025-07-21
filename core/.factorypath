@@ -41,15 +41,15 @@
     <factorypathentry kind="VARJAR" id="M2_REPO/com/fasterxml/jackson/core/jackson-annotations/2.17.1/jackson-annotations-2.17.1.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/xml-apis/xml-apis/1.4.01/xml-apis-1.4.01.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/jakarta/servlet/jakarta.servlet-api/6.0.0/jakarta.servlet-api-6.0.0.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="EXTJAR" id="/home/ubuntu/repos/NemakiWare/core/../lib/jakarta-converted/chemistry-opencmis-commons-impl-1.1.0-jakarta.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="EXTJAR" id="/home/ubuntu/repos/NemakiWare/core/../lib/jakarta-converted/chemistry-opencmis-commons-api-1.1.0-jakarta.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="EXTJAR" id="/home/ubuntu/repos/NemakiWare/core/../lib/jakarta-converted/chemistry-opencmis-server-support-1.1.0-jakarta.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="EXTJAR" id="/home/ubuntu/repos/NemakiWare/core/../lib/jakarta-converted/chemistry-opencmis-server-bindings-1.1.0-jakarta.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="EXTJAR" id="/home/ubuntu/repos/NemakiWare/core/../lib/jakarta-converted/chemistry-opencmis-client-impl-1.1.0-jakarta.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="EXTJAR" id="/home/ubuntu/repos/NemakiWare/core/../lib/jakarta-converted/chemistry-opencmis-client-api-1.1.0-jakarta.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="EXTJAR" id="/home/ubuntu/repos/NemakiWare/core/../lib/jakarta-converted/chemistry-opencmis-client-bindings-1.1.0-jakarta.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="EXTJAR" id="/home/ubuntu/repos/NemakiWare/core/../lib/jakarta-converted/jaxws-rt-4.0.2-jakarta.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="EXTJAR" id="/home/ubuntu/repos/NemakiWare/core/../lib/jakarta-converted/chemistry-opencmis-test-tck-1.1.0-jakarta.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="EXTJAR" id="/Users/ishiiakinori/NemakiWare/core/../lib/jakarta-converted/chemistry-opencmis-commons-impl-1.1.0-jakarta.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="EXTJAR" id="/Users/ishiiakinori/NemakiWare/core/../lib/jakarta-converted/chemistry-opencmis-commons-api-1.1.0-jakarta.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="EXTJAR" id="/Users/ishiiakinori/NemakiWare/core/../lib/jakarta-converted/chemistry-opencmis-server-support-1.1.0-jakarta.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="EXTJAR" id="/Users/ishiiakinori/NemakiWare/core/../lib/jakarta-converted/chemistry-opencmis-server-bindings-1.1.0-jakarta.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="EXTJAR" id="/Users/ishiiakinori/NemakiWare/core/../lib/jakarta-converted/chemistry-opencmis-client-impl-1.1.0-jakarta.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="EXTJAR" id="/Users/ishiiakinori/NemakiWare/core/../lib/jakarta-converted/chemistry-opencmis-client-api-1.1.0-jakarta.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="EXTJAR" id="/Users/ishiiakinori/NemakiWare/core/../lib/jakarta-converted/chemistry-opencmis-client-bindings-1.1.0-jakarta.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="EXTJAR" id="/Users/ishiiakinori/NemakiWare/core/../lib/jakarta-converted/jaxws-rt-4.0.2-jakarta.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="EXTJAR" id="/Users/ishiiakinori/NemakiWare/core/../lib/jakarta-converted/chemistry-opencmis-test-tck-1.1.0-jakarta.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/org/antlr/antlr-runtime/3.5.2/antlr-runtime-3.5.2.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/com/ibm/cloud/cloudant/0.8.0/cloudant-0.8.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/com/ibm/cloud/cloudant-common/0.8.0/cloudant-common-0.8.0.jar" enabled="true" runInBatchMode="false"/>

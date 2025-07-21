@@ -413,6 +413,7 @@
   <field name="content_name" type="string" multiValued="false" indexed="true" stored="true"/>
   <field name="content_type" type="string" multiValued="true" indexed="true" stored="true"/>
   <field name="created" type="date" multiValued="false" indexed="true" stored="true"/>
+  <field name="creation_date" type="date" multiValued="false" indexed="true" stored="true"/>
   <field name="creator" type="string" multiValued="false" indexed="true" stored="true"/>
   <field name="description" type="text_general" indexed="true" stored="true"/>
   <field name="id" type="string" multiValued="false" indexed="true" required="true" stored="true"/>
@@ -425,6 +426,7 @@
   <field name="links" type="string" multiValued="true" indexed="true" stored="true"/>
   <field name="manu_exact" type="string" indexed="true" stored="false"/>
   <field name="modified" type="date" multiValued="false" indexed="true" stored="true"/>
+  <field name="modification_date" type="date" multiValued="false" indexed="true" stored="true"/>
   <field name="modifier" type="string" multiValued="false" indexed="true" stored="true"/>
   <field name="name" type="string" multiValued="false" indexed="true" stored="true"/>
   <field name="object_id" type="string" multiValued="false" indexed="true" required="true" stored="true"/>
