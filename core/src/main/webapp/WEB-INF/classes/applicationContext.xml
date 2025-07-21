@@ -7,6 +7,9 @@
     http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd
     http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd">
 
+	<!-- Enable component scanning for REST resources -->
+	<context:component-scan base-package="jp.aegif.nemaki.rest" />
+
 	<import resource="classpath:propertyContext.xml" />
 
 	<bean id="customSystemProperty"

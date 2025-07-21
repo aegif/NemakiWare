@@ -1006,7 +1006,16 @@ public class CompileServiceImpl implements CompileService {
 			if (!CollectionUtils.isEmpty(folder.getAllowedChildTypeIds())) {
 				values = folder.getAllowedChildTypeIds();
 			}
-			PropertyData<String> pd = new PropertyIdImpl(PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS, values);
+			
+			// FIX: Use PropertyDefinition constructor to ensure queryName is properly set for Browser binding
+			PropertyDefinition<?> propDef = tdf.getPropertyDefinitions().get(PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS);
+			PropertyData<String> pd;
+			if (propDef != null) {
+				pd = new PropertyIdImpl((PropertyDefinition<String>) propDef, values);
+			} else {
+				// Fallback to simple constructor if PropertyDefinition not found
+				pd = new PropertyIdImpl(PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS, values);
+			}
 			properties.addProperty(pd);
 		}
 	}

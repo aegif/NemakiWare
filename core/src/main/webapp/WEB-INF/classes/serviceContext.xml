@@ -729,11 +729,7 @@
         </property>
     </bean>
 
-    <bean id="repositoriesResource" class="jp.aegif.nemaki.rest.RepositoriesResource">
-        <property name="repositoryInfoMap">
-            <ref bean="repositoryInfoMap" />
-        </property>
-    </bean>
+    <!-- RepositoriesResource now managed via @Component annotation and Jersey-Spring integration -->
 
     <bean id="repositoriesLegacyResource" class="jp.aegif.nemaki.rest.RepositoriesLegacyResource">
         <property name="repositoryInfoMap">

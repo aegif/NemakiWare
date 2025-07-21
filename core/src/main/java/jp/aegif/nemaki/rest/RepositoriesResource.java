@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
+import jp.aegif.nemaki.util.spring.SpringContext;
 
 /**
  * REST Resource for repository management
@@ -22,11 +23,20 @@ import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
  */
 @Component
 @Path("/all/repositories")
-public class RepositoriesResource extends ResourceBase {
+public class RepositoriesResource {
     
     private static final Log log = LogFactory.getLog(RepositoriesResource.class);
-    private RepositoryInfoMap repositoryInfoMap;
     
+    /**
+     * Simple test endpoint to verify Jersey routing
+     */
+    @GET
+    @Path("/test")
+    @Produces(MediaType.TEXT_PLAIN)
+    public Response test() {
+        return Response.ok("RepositoriesResource is working!").build();
+    }
+
     /**
      * Get filtered list of CMIS repositories
      * Excludes "canopy" as it's an information management area, not a CMIS repository
@@ -38,6 +48,17 @@ public class RepositoriesResource extends ResourceBase {
     public Response getRepositories() {
         try {
             log.info("=== REST DEBUG: RepositoriesResource.getRepositories() called ===");
+            
+            // Get RepositoryInfoMap from Spring context
+            RepositoryInfoMap repositoryInfoMap = SpringContext.getApplicationContext()
+                .getBean("repositoryInfoMap", RepositoryInfoMap.class);
+            
+            if (repositoryInfoMap == null) {
+                log.error("RepositoryInfoMap not found in Spring context");
+                return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                        .entity("{\"error\":\"RepositoryInfoMap not available\"}")
+                        .build();
+            }
             
             List<RepositoryInfo> allRepositories = new ArrayList<>();
             
@@ -65,9 +86,5 @@ public class RepositoriesResource extends ResourceBase {
                     .entity("{\"error\":\"Failed to retrieve repositories\"}")
                     .build();
         }
-    }
-    
-    public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
-        this.repositoryInfoMap = repositoryInfoMap;
     }
 }
