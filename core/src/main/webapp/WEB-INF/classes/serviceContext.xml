@@ -735,5 +735,11 @@
         </property>
     </bean>
 
+    <bean id="repositoriesLegacyResource" class="jp.aegif.nemaki.rest.RepositoriesLegacyResource">
+        <property name="repositoryInfoMap">
+            <ref bean="repositoryInfoMap" />
+        </property>
+    </bean>
+
 
 </beans>
