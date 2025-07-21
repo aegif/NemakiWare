@@ -113,6 +113,7 @@
    <field name="basetype" type="string" indexed="true" stored="true" multiValued="false" />
    <field name="objecttype" type="string" indexed="true" stored="true" multiValued="false" />
    <field name="secondary_object_type_ids" type="string" indexed="true" stored="true" multiValued="true" />
+   <field name="allowed_child_object_type_ids" type="string" indexed="true" stored="true" multiValued="true" />
 
    <field name="is_latest_version" type="boolean" indexed="true" stored="true" multiValued="false" />
    <field name="is_major_version" type="boolean" indexed="true" stored="true" multiValued="false" />

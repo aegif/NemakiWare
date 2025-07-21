@@ -104,6 +104,7 @@ public class SolrUtil {
 
 		map.put(PropertyIds.PARENT_ID, "parent_id");
 		map.put(PropertyIds.PATH, "path");
+		map.put(PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS, "allowed_child_object_type_ids");
 	}
 
 	/**

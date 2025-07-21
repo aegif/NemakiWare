@@ -657,7 +657,7 @@ public class TypeManagerImpl implements TypeManager {
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS,
 				PropertyType.ID, Cardinality.MULTI, Updatability.READONLY,
-				!REQUIRED, !QUERYABLE, !ORDERABLE, defaults));
+				!REQUIRED, QUERYABLE, !ORDERABLE, defaults));
 	}
 
 	private void addDocumentPropertyDefinitions(String repositoryId, DocumentTypeDefinitionImpl type) {

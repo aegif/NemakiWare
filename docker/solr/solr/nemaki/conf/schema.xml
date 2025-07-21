@@ -437,6 +437,7 @@
   <field name="repository_id" type="string" multiValued="false" indexed="true" required="true" stored="true"/>
   <field name="resourcename" type="text_general" indexed="true" stored="true"/>
   <field name="secondary_object_type_ids" type="string" multiValued="true" indexed="true" stored="true"/>
+  <field name="allowed_child_object_type_ids" type="string" multiValued="true" indexed="true" stored="true"/>
   <field name="subject" type="text_general" indexed="true" stored="true"/>
   <field name="text" type="text_ja" multiValued="true" indexed="true" stored="false"/>
   <field name="text_rev" type="text_general_rev" multiValued="true" indexed="true" stored="false"/>
