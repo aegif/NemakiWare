@@ -18,6 +18,14 @@ Thumbs.db
 **/*.class
 dependency-reduced-pom.xml
 
+# Build artifacts - should be built in each environment
+**/cloudant-init.jar
+cloudant-init/target/
+core/target/
+solr/target/
+action/target/
+common/target/
+
 # Maven/Build artifacts
 target/
 */target/

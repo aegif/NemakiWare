@@ -10,6 +10,13 @@
 	<!-- Enable component scanning for REST resources -->
 	<context:component-scan base-package="jp.aegif.nemaki.rest" />
 
+	<!-- Explicit bean definition for AuthenticationFilter -->
+	<bean id="authenticationFilter" class="jp.aegif.nemaki.rest.AuthenticationFilter">
+		<property name="propertyManager" ref="PropertyManager" />
+		<property name="authenticationService" ref="AuthenticationService" />
+		<property name="repositoryInfoMap" ref="repositoryInfoMap" />
+	</bean>
+
 	<import resource="classpath:propertyContext.xml" />
 
 	<bean id="customSystemProperty"
