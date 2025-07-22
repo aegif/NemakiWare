@@ -33,8 +33,6 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -42,7 +40,6 @@ import java.io.IOException;
 
 public class AuthenticationFilter implements Filter {
 
-	@Autowired
 	private PropertyManager propertyManager;
 	private AuthenticationService authenticationService;
 	private RepositoryInfoMap repositoryInfoMap;

@@ -76,10 +76,14 @@
 		</init-param>
 		<load-on-startup>2</load-on-startup>
 	</servlet>
-	<!-- REST authentication filter - re-enabled -->
+	<!-- REST authentication filter - re-enabled with Spring integration -->
 	<filter>
 		<filter-name>restAuthenticationFilter</filter-name>
-		<filter-class>jp.aegif.nemaki.rest.AuthenticationFilter</filter-class>
+		<filter-class>org.springframework.web.filter.DelegatingFilterProxy</filter-class>
+		<init-param>
+			<param-name>targetBeanName</param-name>
+			<param-value>authenticationFilter</param-value>
+		</init-param>
 	</filter>
 	<!-- Apply authentication to all /rest/* except /rest/all/* -->
 	<filter-mapping>
