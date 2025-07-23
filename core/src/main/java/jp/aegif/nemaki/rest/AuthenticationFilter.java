@@ -26,6 +26,8 @@ import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 import jp.aegif.nemaki.util.constant.SystemConst;
+import jp.aegif.nemaki.util.constant.CallContextKey;
+import jp.aegif.nemaki.businesslogic.PrincipalService;
 import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
@@ -43,6 +45,7 @@ public class AuthenticationFilter implements Filter {
 	private PropertyManager propertyManager;
 	private AuthenticationService authenticationService;
 	private RepositoryInfoMap repositoryInfoMap;
+	private PrincipalService principalService;
 	private final String TOKEN_FALSE = "false";
 
 	private  Log log = LogFactory.getLog(AuthenticationFilter.class);
@@ -121,6 +124,26 @@ public class AuthenticationFilter implements Filter {
 			auth = authenticationService.loginForNemakiConfDb(ctxt);
 		}else{
 			auth = authenticationService.login(ctxt);
+		}
+
+		// If authentication successful, check if user is admin
+		if(auth && ctxt.getUsername() != null && principalService != null){
+			try {
+				// Check if user is admin by getting admin list
+				java.util.List<jp.aegif.nemaki.model.User> admins = principalService.getAdmins(repositoryId);
+				boolean isAdmin = false;
+				if(admins != null){
+					for(jp.aegif.nemaki.model.User admin : admins){
+						if(admin.getUserId() != null && admin.getUserId().equals(ctxt.getUsername())){
+							isAdmin = true;
+							break;
+						}
+					}
+				}
+				ctxt.put(CallContextKey.IS_ADMIN, isAdmin);
+			} catch (Exception e) {
+				log.error("Failed to check admin status for user: " + ctxt.getUsername(), e);
+			}
 		}
 
 		//Add attributes to Jersey @Context parameter
@@ -204,5 +227,9 @@ public class AuthenticationFilter implements Filter {
 
 	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
 		this.repositoryInfoMap = repositoryInfoMap;
+	}
+
+	public void setPrincipalService(PrincipalService principalService) {
+		this.principalService = principalService;
 	}
 }

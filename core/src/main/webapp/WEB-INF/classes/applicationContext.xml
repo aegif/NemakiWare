@@ -7,17 +7,16 @@
     http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd
     http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd">
 
-	<!-- Enable component scanning for REST resources -->
-	<context:component-scan base-package="jp.aegif.nemaki.rest" />
-
-	<!-- Explicit bean definition for AuthenticationFilter -->
-	<bean id="authenticationFilter" class="jp.aegif.nemaki.rest.AuthenticationFilter">
-		<property name="propertyManager" ref="PropertyManager" />
-		<property name="authenticationService" ref="AuthenticationService" />
-		<property name="repositoryInfoMap" ref="repositoryInfoMap" />
-	</bean>
-
+	<!-- Import property context first to ensure beans are available -->
 	<import resource="classpath:propertyContext.xml" />
+
+	<!-- Enable component scanning for REST resources after property context is loaded -->
+	<context:component-scan base-package="jp.aegif.nemaki.rest">
+		<!-- Exclude AuthenticationFilter from component scan to control initialization order -->
+		<context:exclude-filter type="regex" expression="jp.aegif.nemaki.rest.AuthenticationFilter"/>
+	</context:component-scan>
+
+	<!-- AuthenticationFilter will be defined in serviceContext.xml as restAuthenticationFilter -->
 
 	<bean id="customSystemProperty"
 		class="org.springframework.beans.factory.config.MethodInvokingFactoryBean">

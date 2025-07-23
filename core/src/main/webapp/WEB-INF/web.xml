@@ -82,7 +82,7 @@
 		<filter-class>org.springframework.web.filter.DelegatingFilterProxy</filter-class>
 		<init-param>
 			<param-name>targetBeanName</param-name>
-			<param-value>authenticationFilter</param-value>
+			<param-value>restAuthenticationFilter</param-value>
 		</init-param>
 	</filter>
 	<!-- Apply authentication to all /rest/* except /rest/all/* -->
@@ -92,7 +92,7 @@
 	</filter-mapping>
 	<filter-mapping>
 		<filter-name>restAuthenticationFilter</filter-name>
-		<url-pattern>/rest/search-engine/*</url-pattern>
+		<url-pattern>/rest/repo/*</url-pattern>
 	</filter-mapping>
 	<filter-mapping>
 		<filter-name>restAuthenticationFilter</filter-name>

@@ -93,6 +93,14 @@
 			<version>4.12</version>
 		</dependency>
 
+		<!-- JSON library for test classes -->
+		<dependency>
+			<groupId>org.json</groupId>
+			<artifactId>json</artifactId>
+			<version>20230227</version>
+			<scope>test</scope>
+		</dependency>
+
 		<dependency>
 			<groupId>org.slf4j</groupId>
 			<artifactId>slf4j-api</artifactId>
@@ -103,6 +111,8 @@
 			<artifactId>jcl-over-slf4j</artifactId>
 			<version>2.0.12</version>
 		</dependency>
+		<!-- Logback依存関係をコメントアウト - Log4j2-SLF4J実装を使用 -->
+		<!--
 		<dependency>
 			<groupId>ch.qos.logback</groupId>
 			<artifactId>logback-core</artifactId>
@@ -113,13 +123,11 @@
 			<artifactId>logback-classic</artifactId>
 			<version>1.4.14</version>
 		</dependency>
+		-->
 		
-		<!-- SLF4J実装バインディング追加 -->
-		<dependency>
-			<groupId>org.slf4j</groupId>
-			<artifactId>slf4j-simple</artifactId>
-			<version>2.0.12</version>
-		</dependency>
+		<!-- SLF4J実装バインディング - Log4j2-SLF4J実装のみ使用（Spring Bootから自動的に取得）-->
+		<!-- Logback関連依存関係をコメントアウト - SLF4J競合を解決 -->
+		<!--
 		<dependency>
 			<groupId>ch.qos.logback.contrib</groupId>
 			<artifactId>logback-json-core</artifactId>
@@ -140,6 +148,7 @@
 			<artifactId>logstash-logback-encoder</artifactId>
 			<version>7.4</version>
 		</dependency>
+		-->
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
 			<artifactId>jackson-core</artifactId>
@@ -184,56 +193,42 @@
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-commons-impl</artifactId>
 			<version>1.1.0-jakarta</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-commons-impl-1.1.0-jakarta.jar</systemPath>
 		</dependency>
 
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-commons-api</artifactId>
 			<version>1.1.0-jakarta</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-commons-api-1.1.0-jakarta.jar</systemPath>
 		</dependency>
 
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-server-support</artifactId>
 			<version>1.1.0-jakarta</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-server-support-1.1.0-jakarta.jar</systemPath>
 		</dependency>
 
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-server-bindings</artifactId>
 			<version>1.1.0-jakarta</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-server-bindings-1.1.0-jakarta.jar</systemPath>
 		</dependency>
 
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-client-impl</artifactId>
 			<version>1.1.0-jakarta</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-client-impl-1.1.0-jakarta.jar</systemPath>
 		</dependency>
 
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-client-api</artifactId>
 			<version>1.1.0-jakarta</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-client-api-1.1.0-jakarta.jar</systemPath>
 		</dependency>
 
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-client-bindings</artifactId>
 			<version>1.1.0-jakarta</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-client-bindings-1.1.0-jakarta.jar</systemPath>
 		</dependency>
 
 		<!-- Jakarta EE JAX-WS Runtime (Metro RI) -->
@@ -241,17 +236,13 @@
 			<groupId>com.sun.xml.ws</groupId>
 			<artifactId>jaxws-rt</artifactId>
 			<version>4.0.2-jakarta</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/../lib/jakarta-converted/jaxws-rt-4.0.2-jakarta.jar</systemPath>
 		</dependency>
 
 		<!-- Updated to 1.1.0 Jakarta version - test-util removed as it's not directly used -->
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-test-tck</artifactId>
-			<version>${org.apache.chemistry.opencmis.version}</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-test-tck-1.1.0-jakarta.jar</systemPath>
+			<version>1.1.0-jakarta</version>
 		</dependency>
 
 		<!-- ANTLR runtime dependency for OpenCMIS query parsing -->
@@ -652,11 +643,7 @@
 				<version>2.19.1</version>
 				<configuration>
 					<redirectTestOutputToFile>true</redirectTestOutputToFile>
-					<!-- Exclude TCK tests from Maven build -->
-					<excludes>
-						<exclude>**/cmis/tck/**/*TestGroup.java</exclude>
-					</excludes>
-					<!-- Java 17 Module System Compatibility for remaining tests -->
+					<!-- Java 17 Module System Compatibility -->
 					<argLine>
 						--add-opens=java.base/java.util=ALL-UNNAMED
 						--add-opens=java.base/java.lang=ALL-UNNAMED
@@ -664,6 +651,10 @@
 						--add-opens=java.base/java.net=ALL-UNNAMED
 						--add-opens=java.base/java.time=ALL-UNNAMED
 					</argLine>
+					<!-- Fork configuration for better test isolation -->
+					<forkCount>1</forkCount>
+					<reuseForks>false</reuseForks>
+					<forkedProcessTimeoutInSeconds>300</forkedProcessTimeoutInSeconds>
 				</configuration>
 			</plugin>
 
@@ -675,6 +666,8 @@
 					<scan>1</scan>
 					<stopPort>9967</stopPort>
 					<stopKey>foo</stopKey>
+					<!-- Skip Jetty during test phase to avoid port conflicts -->
+					<skip>true</skip>
 					<webApp>
 						<contextPath>/core</contextPath>
 						<!-- Priority: Jakarta JARs FIRST to override standard OpenCMIS classes -->
@@ -683,7 +676,7 @@
 						<parentLoaderPriority>false</parentLoaderPriority>
 					</webApp>
 					<httpConnector>
-						<port>8080</port>
+						<port>8081</port>
 					</httpConnector>
 					<!-- Development environment variables -->
 					<systemProperties>
@@ -906,7 +899,7 @@
 				<activeByDefault>true</activeByDefault>
 			</activation>
 			<properties>
-				<maven.test.skip>true</maven.test.skip>
+				<maven.test.skip>false</maven.test.skip>
 			</properties>
 		</profile>
 		<profile>
@@ -1144,57 +1137,41 @@
 					<groupId>org.apache.chemistry.opencmis</groupId>
 					<artifactId>chemistry-opencmis-server-bindings</artifactId>
 					<version>1.1.0-jakarta</version>
-					<scope>system</scope>
-					<systemPath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-server-bindings-1.1.0-jakarta.jar</systemPath>
 				</dependency>
 				<dependency>
 					<groupId>org.apache.chemistry.opencmis</groupId>
 					<artifactId>chemistry-opencmis-commons-impl</artifactId>
 					<version>1.1.0-jakarta</version>
-					<scope>system</scope>
-					<systemPath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-commons-impl-1.1.0-jakarta.jar</systemPath>
 				</dependency>
 				<dependency>
 					<groupId>org.apache.chemistry.opencmis</groupId>
 					<artifactId>chemistry-opencmis-commons-api</artifactId>
 					<version>1.1.0-jakarta</version>
-					<scope>system</scope>
-					<systemPath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-commons-api-1.1.0-jakarta.jar</systemPath>
 				</dependency>
 				<dependency>
 					<groupId>org.apache.chemistry.opencmis</groupId>
 					<artifactId>chemistry-opencmis-client-bindings</artifactId>
 					<version>1.1.0-jakarta</version>
-					<scope>system</scope>
-					<systemPath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-client-bindings-1.1.0-jakarta.jar</systemPath>
 				</dependency>
 				<dependency>
 					<groupId>org.apache.chemistry.opencmis</groupId>
 					<artifactId>chemistry-opencmis-server-support</artifactId>
 					<version>1.1.0-jakarta</version>
-					<scope>system</scope>
-					<systemPath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-server-support-1.1.0-jakarta.jar</systemPath>
 				</dependency>
 				<dependency>
 					<groupId>org.apache.chemistry.opencmis</groupId>
 					<artifactId>chemistry-opencmis-client-api</artifactId>
 					<version>1.1.0-jakarta</version>
-					<scope>system</scope>
-					<systemPath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-client-api-1.1.0-jakarta.jar</systemPath>
 				</dependency>
 				<dependency>
 					<groupId>org.apache.chemistry.opencmis</groupId>
 					<artifactId>chemistry-opencmis-client-impl</artifactId>
 					<version>1.1.0-jakarta</version>
-					<scope>system</scope>
-					<systemPath>${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-client-impl-1.1.0-jakarta.jar</systemPath>
 				</dependency>
 				<dependency>
 					<groupId>com.sun.xml.ws</groupId>
 					<artifactId>jaxws-rt</artifactId>
 					<version>4.0.2-jakarta</version>
-					<scope>system</scope>
-					<systemPath>${project.basedir}/../lib/jakarta-converted/jaxws-rt-4.0.2-jakarta.jar</systemPath>
 				</dependency>
 			</dependencies>
 		</profile>

@@ -613,17 +613,7 @@
     </bean>
 
     <!-- Extra Rest API implemented by Jersey -->
-    <bean id="restAuthenticationFilter" class="jp.aegif.nemaki.rest.AuthenticationFilter">
-    	<property name="propertyManager">
-            <ref bean="propertyManager" />
-        </property>
-        <property name="authenticationService">
-            <ref bean="AuthenticationService" />
-        </property>
-        <property name="repositoryInfoMap">
-            <ref bean="repositoryInfoMap" />
-        </property>
-    </bean>
+    <!-- restAuthenticationFilter is now auto-configured via @Component annotation -->
 
     <bean id="archiveResource" class="jp.aegif.nemaki.rest.ArchiveResource">
         <property name="ContentService">
@@ -730,6 +720,17 @@
     </bean>
 
     <!-- RepositoriesResource now managed via @Component annotation and Jersey-Spring integration -->
+    
+    <!-- SpringContext bean definition for utility access -->
+    <bean id="springContext" class="jp.aegif.nemaki.util.spring.SpringContext" />
+    
+    <!-- AuthenticationFilter bean definition with explicit dependencies -->
+    <bean id="restAuthenticationFilter" class="jp.aegif.nemaki.rest.AuthenticationFilter">
+        <property name="propertyManager" ref="propertyManager" />
+        <property name="authenticationService" ref="AuthenticationService" />
+        <property name="repositoryInfoMap" ref="repositoryInfoMap" />
+        <property name="principalService" ref="PrincipalService" />
+    </bean>
 
 
 </beans>
