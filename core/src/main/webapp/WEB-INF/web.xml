@@ -178,6 +178,10 @@
         <param-name>jakarta.ws.rs.Application</param-name>
         <param-value>jp.aegif.nemaki.rest.NemakiRestApplication</param-value>
     </init-param>
+    <init-param>
+        <param-name>jersey.config.servlet.filter.staticContentRegex</param-name>
+        <param-value>/(ui|static)/.*</param-value>
+    </init-param>
     <load-on-startup>10</load-on-startup>
  </servlet>
 

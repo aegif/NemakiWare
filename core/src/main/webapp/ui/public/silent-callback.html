@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Silent Callback</title>
+</head>
+<body>
+    <script>
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage(window.location.href, window.location.origin);
+        }
+    </script>
+</body>
+</html>

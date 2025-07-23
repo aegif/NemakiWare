@@ -176,6 +176,8 @@ public class AuthenticationFilter implements Filter {
         		}
         	}else if(ApiType.ALL.equals(pathFragments[0])){
         		return repositoryInfoMap.getSuperUsers().getId();
+        	}else if("repositories".equals(pathFragments[0])){
+        		return repositoryInfoMap.getSuperUsers().getId();
         	}
         }
 

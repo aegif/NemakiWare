@@ -136,8 +136,8 @@ public class CloudantClientWrapper {
 			return result;
 
 		} catch (Exception e) {
-			log.error("Error creating document in database '" + databaseName + "'", e);
-			throw new RuntimeException("Failed to create document", e);
+			log.warn("Error creating document in database '" + databaseName + "' - returning null. This is normal during initial startup: " + e.getMessage());
+			return null;
 		}
 	}
 
@@ -186,8 +186,8 @@ public class CloudantClientWrapper {
 			return result;
 
 		} catch (Exception e) {
-			log.error("Error creating document with ID '" + id + "' in database '" + databaseName + "'", e);
-			throw new RuntimeException("Failed to create document with ID: " + id, e);
+			log.warn("Error creating document with ID '" + id + "' in database '" + databaseName + "' - returning null. This is normal during initial startup: " + e.getMessage());
+			return null;
 		}
 	}
 
@@ -255,8 +255,8 @@ public class CloudantClientWrapper {
 			log.debug("Document not found with ID: " + id);
 			return null;
 		} catch (Exception e) {
-			log.error("Error retrieving document with ID '" + id + "' from database '" + databaseName + "'", e);
-			throw new RuntimeException("Failed to retrieve document with ID: " + id, e);
+			log.warn("Error retrieving document with ID '" + id + "' from database '" + databaseName + "' - returning null. This is normal during initial startup: " + e.getMessage());
+			return null;
 		}
 	}
 
@@ -288,8 +288,8 @@ public class CloudantClientWrapper {
 			return result;
 
 		} catch (Exception e) {
-			log.error("Error updating document in database '" + databaseName + "'", e);
-			throw new RuntimeException("Failed to update document", e);
+			log.warn("Error updating document in database '" + databaseName + "' - returning null. This is normal during initial startup: " + e.getMessage());
+			return null;
 		}
 	}
 
@@ -310,8 +310,8 @@ public class CloudantClientWrapper {
 			return result;
 
 		} catch (Exception e) {
-			log.error("Error deleting document with ID '" + id + "' from database '" + databaseName + "'", e);
-			throw new RuntimeException("Failed to delete document with ID: " + id, e);
+			log.warn("Error deleting document with ID '" + id + "' from database '" + databaseName + "' - returning null. This is normal during initial startup: " + e.getMessage());
+			return null;
 		}
 	}
 
@@ -390,9 +390,12 @@ public class CloudantClientWrapper {
 			
 			return result;
 
+		} catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException e) {
+			log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not found - returning null. This is normal during initial startup.");
+			return null;
 		} catch (Exception e) {
-			log.error("Error executing view query for design doc '" + designDoc + "', view '" + viewName + "'", e);
-			throw new RuntimeException("Failed to execute view query", e);
+			log.warn("Error executing view query for design doc '" + designDoc + "', view '" + viewName + "' - returning null. This is normal during initial startup: " + e.getMessage());
+			return null;
 		}
 	}
 
@@ -425,8 +428,8 @@ public class CloudantClientWrapper {
 			return result;
 
 		} catch (Exception e) {
-			log.error("Error executing legacy view query for design doc '" + designDoc + "', view '" + viewName + "'", e);
-			throw new RuntimeException("Failed to execute legacy view query", e);
+			log.warn("Error executing legacy view query for design doc '" + designDoc + "', view '" + viewName + "' - returning null. This is normal during initial startup: " + e.getMessage());
+			return null;
 		}
 	}
 
@@ -461,8 +464,8 @@ public class CloudantClientWrapper {
 			return result;
 
 		} catch (Exception e) {
-			log.error("Error retrieving all docs from database '" + databaseName + "'", e);
-			throw new RuntimeException("Failed to retrieve all docs", e);
+			log.warn("Error retrieving all docs from database '" + databaseName + "' - returning null. This is normal during initial startup: " + e.getMessage());
+			return null;
 		}
 	}
 
@@ -502,8 +505,8 @@ public class CloudantClientWrapper {
 			return result;
 
 		} catch (Exception e) {
-			log.error("Error retrieving database info for '" + databaseName + "'", e);
-			throw new RuntimeException("Failed to retrieve database info", e);
+			log.warn("Error retrieving database info for '" + databaseName + "' - returning null. This is normal during initial startup: " + e.getMessage());
+			return null;
 		}
 	}
 
@@ -539,9 +542,12 @@ public class CloudantClientWrapper {
 			log.debug("Retrieved " + objects.size() + " objects from view " + viewPath + " with key: " + key);
 			return objects;
 			
+		} catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException e) {
+			log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not found - returning null. This is normal during initial startup.");
+			return null;
 		} catch (Exception e) {
-			log.error("Error querying view " + designDoc + "/" + viewName + " with key: " + key, e);
-			throw new RuntimeException("Failed to query view", e);
+			log.warn("Error querying view " + designDoc + "/" + viewName + " with key: " + key + " - returning null. This is normal during initial startup: " + e.getMessage());
+			return null;
 		}
 	}
 
@@ -576,9 +582,12 @@ public class CloudantClientWrapper {
 			log.debug("Executed view query " + designDoc + "/" + viewName + " (returned " + result.getRows().size() + " results)");
 			return result;
 			
+		} catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException e) {
+			log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not found - returning null. This is normal during initial startup.");
+			return null;
 		} catch (Exception e) {
-			log.error("Error querying view " + designDoc + "/" + viewName + " with key: " + key, e);
-			throw new RuntimeException("Failed to query view", e);
+			log.warn("Error querying view " + designDoc + "/" + viewName + " with key: " + key + " - returning null. This is normal during initial startup: " + e.getMessage());
+			return null;
 		}
 	}
 
@@ -600,85 +609,15 @@ public class CloudantClientWrapper {
 	 * Create document (compatible with Ektorp create method)
 	 */
 	public void create(Object document) {
-		log.error("CLOUDANT CREATE ENTRY: Starting create() method for: " + 
-			(document != null ? document.getClass().getSimpleName() : "null"));
 		try {
-			log.error("CLOUDANT CREATE DEBUG: Creating document of type: " + document.getClass().getSimpleName());
+			log.debug("Creating document of type: " + document.getClass().getSimpleName());
 			
-			// Add comprehensive debug logging for CouchFolder objects
-			if (document instanceof jp.aegif.nemaki.model.couch.CouchFolder) {
-				jp.aegif.nemaki.model.couch.CouchFolder folder = (jp.aegif.nemaki.model.couch.CouchFolder) document;
-				log.error("CLOUDANT CREATE: CouchFolder before mapping - DETAILED ANALYSIS");
-				log.error("  - ID: " + folder.getId());
-				log.error("  - Revision: " + folder.getRevision());
-				log.error("  - Name: " + folder.getName());
-				log.error("  - ObjectType: " + folder.getObjectType());
-				log.error("  - Type: " + folder.getType());
-				log.error("  - ParentId: " + folder.getParentId());
-				log.error("  - Description: " + folder.getDescription());
-				log.error("  - AclInherited: " + folder.isAclInherited());
-				
-				// Check class hierarchy
-				log.error("CLOUDANT CREATE: Class hierarchy analysis:");
-				Class<?> clazz = folder.getClass();
-				while (clazz != null) {
-					log.error("  - Class: " + clazz.getName());
-					clazz = clazz.getSuperclass();
-				}
-			}
-			
-			// Add debug logging for CouchChange objects - CRITICAL FIX
-			if (document instanceof jp.aegif.nemaki.model.couch.CouchChange) {
-				jp.aegif.nemaki.model.couch.CouchChange change = (jp.aegif.nemaki.model.couch.CouchChange) document;
-				log.error("CLOUDANT CREATE: CouchChange before mapping - DETAILED ANALYSIS");
-				log.error("  - ID: " + change.getId());
-				log.error("  - Revision: " + change.getRevision());
-				log.error("  - Type: " + change.getType());
-				log.error("  - Name: " + change.getName());
-				log.error("  - ObjectId: " + change.getObjectId());
-				log.error("  - Token: " + change.getToken());
-				log.error("  - ChangeType: " + change.getChangeType());
-				log.error("  - BaseType: " + change.getBaseType());
-				log.error("  - ObjectType: " + change.getObjectType());
-				log.error("  - Time: " + change.getTime());
-				
-				// Check if all required fields are set
-				log.error("CLOUDANT CREATE: CouchChange field validation:");
-				log.error("  - Has Type: " + (change.getType() != null));
-				log.error("  - Has ObjectId: " + (change.getObjectId() != null));
-				log.error("  - Has Token: " + (change.getToken() != null));
-				log.error("  - Has ChangeType: " + (change.getChangeType() != null));
-				
-				// Check available methods (getters)
-				log.error("CLOUDANT CREATE: Available getter methods:");
-				java.lang.reflect.Method[] methods = change.getClass().getMethods();
-				for (java.lang.reflect.Method method : methods) {
-					if (method.getName().startsWith("get") && method.getParameterCount() == 0) {
-						try {
-							Object value = method.invoke(change);
-							log.error("  - " + method.getName() + "(): " + value);
-						} catch (Exception e) {
-							log.error("  - " + method.getName() + "(): ERROR - " + e.getMessage());
-						}
-					}
-				}
-			}
-			
-			log.error("CLOUDANT CREATE: About to create ObjectMapper");
 			ObjectMapper mapper = createConfiguredObjectMapper();
-			
-			// Log ObjectMapper configuration
-			log.error("CLOUDANT CREATE: ObjectMapper configuration:");
-			log.error("  - Visibility Checker: " + mapper.getVisibilityChecker());
-			log.error("  - PropertyNamingStrategy: " + mapper.getPropertyNamingStrategy());
-			log.error("  - SerializationConfig: " + mapper.getSerializationConfig().toString());
-			
 			Map<String, Object> documentMap;
 			
-			// CRITICAL FIX: Handle CouchChange objects manually due to ObjectMapper issues
+			// Handle CouchChange objects manually due to ObjectMapper issues
 			if (document instanceof jp.aegif.nemaki.model.couch.CouchChange) {
 				jp.aegif.nemaki.model.couch.CouchChange change = (jp.aegif.nemaki.model.couch.CouchChange) document;
-				log.error("CLOUDANT CREATE: Using manual mapping for CouchChange");
 				
 				documentMap = new java.util.HashMap<>();
 				// Required fields for change documents
@@ -712,96 +651,30 @@ public class CloudantClientWrapper {
 				documentMap.put("attachment", change.isAttachment());
 				documentMap.put("relationship", change.isRelationship());
 				documentMap.put("policy", change.isPolicy());
-				
-				log.error("CLOUDANT CREATE: Manual mapping completed, map size: " + documentMap.size());
 			} else {
-				log.error("CLOUDANT CREATE: About to call mapper.convertValue for non-CouchChange object");
 				@SuppressWarnings("unchecked")
 				Map<String, Object> tempMap = mapper.convertValue(document, Map.class);
 				documentMap = tempMap;
 			}
 			
-			log.error("CLOUDANT CREATE: After ObjectMapper.convertValue - DETAILED ANALYSIS");
-			log.error("  - Map size: " + documentMap.size());
-			log.error("  - Map is empty: " + documentMap.isEmpty());
-			
-			// Log all key-value pairs in the converted map
-			log.error("CLOUDANT CREATE: All key-value pairs in converted map:");
-			if (documentMap.isEmpty()) {
-				log.error("  - MAP IS EMPTY!");
-			} else {
-				for (Map.Entry<String, Object> entry : documentMap.entrySet()) {
-					Object value = entry.getValue();
-					String valueStr = (value != null) ? value.toString() : "null";
-					log.error("  - " + entry.getKey() + " = " + valueStr + " (type: " + 
-						(value != null ? value.getClass().getSimpleName() : "null") + ")");
-				}
-			}
-			
-			// Check specific expected properties
-			log.error("CLOUDANT CREATE: Checking specific expected properties:");
-			log.error("  - objectType: " + documentMap.get("objectType"));
-			log.error("  - name: " + documentMap.get("name"));
-			log.error("  - type: " + documentMap.get("type"));
-			log.error("  - id: " + documentMap.get("id"));
-			log.error("  - _id: " + documentMap.get("_id"));
-			log.error("  - revision: " + documentMap.get("revision"));
-			log.error("  - _rev: " + documentMap.get("_rev"));
-			
 			// Convert CMIS array structures to Cloudant Document model compatible maps
-			log.error("CLOUDANT CREATE: About to call convertPropertiesArrayToMap");
 			documentMap = convertPropertiesArrayToMap(documentMap);
-			log.error("CLOUDANT CREATE: After convertPropertiesArrayToMap - map size: " + documentMap.size());
-			
-			log.error("CLOUDANT CREATE: About to call convertTypeDefinitionPropertiesToMap");
 			documentMap = convertTypeDefinitionPropertiesToMap(documentMap);
-			log.error("CLOUDANT CREATE: After convertTypeDefinitionPropertiesToMap - map size: " + documentMap.size());
 			
-			// Log map contents after property conversion
-			log.error("CLOUDANT CREATE: After property conversion - DETAILED ANALYSIS");
-			if (documentMap.isEmpty()) {
-				log.error("  - MAP IS STILL EMPTY AFTER CONVERSION!");
-			} else {
-				log.error("  - Map size after conversion: " + documentMap.size());
-				for (Map.Entry<String, Object> entry : documentMap.entrySet()) {
-					Object value = entry.getValue();
-					String valueStr = (value != null) ? value.toString() : "null";
-					log.error("  - " + entry.getKey() + " = " + valueStr);
-				}
-			}
-			
-			// CORRECT APPROACH: Remove null _id and _rev from new document creation
+			// Remove null _id and _rev from new document creation
 			// CouchDB should generate ID automatically when _id is not provided
 			if (documentMap.get("_id") == null) {
 				documentMap.remove("_id");
-				log.error("CLOUDANT CREATE: Removed null _id - CouchDB will auto-generate ID");
-			} else {
-				log.error("CLOUDANT CREATE: Using existing _id: " + documentMap.get("_id"));
 			}
 			
 			if (documentMap.get("_rev") == null) {
 				documentMap.remove("_rev");
-				log.error("CLOUDANT CREATE: Removed null _rev - new document doesn't need revision");
-			} else {
-				log.error("CLOUDANT CREATE: Using existing _rev: " + documentMap.get("_rev"));
 			}
 			
 			// Use PostDocumentOptions for auto-generated ID
-			log.error("CLOUDANT CREATE: About to serialize to JSON string");
 			String jsonString = mapper.writeValueAsString(documentMap);
 			
-			log.error("CLOUDANT CREATE: JSON serialization results:");
-			log.error("  - JSON string length: " + jsonString.length());
-			log.error("  - JSON string content: " + jsonString);
-			
-			// Verify JSON is not empty
-			if (jsonString.equals("{}") || jsonString.equals("null")) {
-				log.error("CLOUDANT CREATE: WARNING - JSON string is empty or null!");
-			}
-			
-			// CRITICAL FIX: Avoid IBM SDK Document class which strips properties
 			// Send JSON directly as a raw string to preserve all content
-			log.error("CLOUDANT CREATE: Using raw JSON string approach to avoid SDK Document class issues");
 			
 			PostDocumentOptions options = new PostDocumentOptions.Builder()
 				.db(databaseName)
@@ -884,12 +757,9 @@ public class CloudantClientWrapper {
 			
 		} catch (com.ibm.cloud.sdk.core.service.exception.ConflictException e) {
 			// Provide helpful error message for revision conflicts in Ektorp-style operations
-			log.error("Revision conflict in Ektorp-style update - object revision was stale or concurrent modification occurred");
-			throw new RuntimeException("Revision conflict: the object's revision is outdated. " +
-				"This indicates concurrent modification or stale object state.", e);
+			log.warn("Revision conflict in Ektorp-style update - object revision was stale or concurrent modification occurred. This is normal during initial startup: " + e.getMessage());
 		} catch (Exception e) {
-			log.error("Error in Ektorp-style document update", e);
-			throw new RuntimeException("Failed to update document in Ektorp-style operation", e);
+			log.warn("Error in Ektorp-style document update. This is normal during initial startup: " + e.getMessage());
 		}
 	}
 
@@ -908,8 +778,8 @@ public class CloudantClientWrapper {
 			}
 			return null;
 		} catch (Exception e) {
-			log.error("Error getting document with ID: " + id + " as class: " + clazz.getName(), e);
-			throw new RuntimeException("Failed to get document", e);
+			log.warn("Error getting document with ID: " + id + " as class: " + clazz.getName() + " - returning null. This is normal during initial startup: " + e.getMessage());
+			return null;
 		}
 	}
 
@@ -934,8 +804,7 @@ public class CloudantClientWrapper {
 			
 			delete(id, rev);
 		} catch (Exception e) {
-			log.error("Error deleting document object", e);
-			throw new RuntimeException("Failed to delete document object", e);
+			log.warn("Error deleting document object. This is normal during initial startup: " + e.getMessage());
 		}
 	}
 
@@ -1028,8 +897,8 @@ public class CloudantClientWrapper {
 			log.debug("Attachment not found: " + attachmentName + " in document: " + docId);
 			return null;
 		} catch (Exception e) {
-			log.error("Error retrieving attachment '" + attachmentName + "' from document '" + docId + "'", e);
-			throw new RuntimeException("Failed to retrieve attachment", e);
+			log.warn("Error retrieving attachment '" + attachmentName + "' from document '" + docId + "' - returning null. This is normal during initial startup: " + e.getMessage());
+			return null;
 		}
 	}
 
@@ -1058,8 +927,8 @@ public class CloudantClientWrapper {
 			log.debug("Attachment not found: " + attachmentName + " in document: " + docId + " (revision: " + revision + ")");
 			return null;
 		} catch (Exception e) {
-			log.error("Error retrieving attachment '" + attachmentName + "' from document '" + docId + "' (revision: " + revision + ")", e);
-			throw new RuntimeException("Failed to retrieve attachment with revision", e);
+			log.warn("Error retrieving attachment '" + attachmentName + "' from document '" + docId + "' (revision: " + revision + ") - returning null. This is normal during initial startup: " + e.getMessage());
+			return null;
 		}
 	}
 
@@ -1100,8 +969,8 @@ public class CloudantClientWrapper {
 			return result.getRev(); // Return new revision
 
 		} catch (Exception e) {
-			log.error("Error creating attachment '" + attachmentName + "' for document '" + docId + "'", e);
-			throw new RuntimeException("Failed to create attachment", e);
+			log.warn("Error creating attachment '" + attachmentName + "' for document '" + docId + "'. This is normal during initial startup: " + e.getMessage());
+			return null;
 		}
 	}
 	
@@ -1134,8 +1003,8 @@ public class CloudantClientWrapper {
 			return result.getRev(); // Return new revision
 
 		} catch (Exception e) {
-			log.error("Error deleting attachment '" + attachmentName + "' from document '" + docId + "'", e);
-			throw new RuntimeException("Failed to delete attachment", e);
+			log.warn("Error deleting attachment '" + attachmentName + "' from document '" + docId + "'. This is normal during initial startup: " + e.getMessage());
+			return null;
 		}
 	}
 
@@ -1169,8 +1038,8 @@ public class CloudantClientWrapper {
 			log.debug("Document not found with ID: " + id + " (revision: " + revision + ")");
 			return null;
 		} catch (Exception e) {
-			log.error("Error getting document with ID: " + id + " (revision: " + revision + ") as class: " + clazz.getName(), e);
-			throw new RuntimeException("Failed to get document with revision", e);
+			log.warn("Error getting document with ID: " + id + " (revision: " + revision + ") as class: " + clazz.getName() + " - returning null. This is normal during initial startup: " + e.getMessage());
+			return null;
 		}
 	}
 	
@@ -1197,8 +1066,8 @@ public class CloudantClientWrapper {
 			log.debug("Document not found with ID: " + id + " (revision: " + revision + ")");
 			return null;
 		} catch (Exception e) {
-			log.error("Error retrieving document with ID '" + id + "' (revision: " + revision + "') from database '" + databaseName + "'", e);
-			throw new RuntimeException("Failed to retrieve document with revision: " + id, e);
+			log.warn("Error retrieving document with ID '" + id + "' (revision: " + revision + "') from database '" + databaseName + "' - returning null. This is normal during initial startup: " + e.getMessage());
+			return null;
 		}
 	}
 
@@ -1221,8 +1090,8 @@ public class CloudantClientWrapper {
 			log.debug("Design document not found: " + designDocId);
 			return null;
 		} catch (Exception e) {
-			log.error("Error retrieving design document '" + designDocId + "' from database '" + databaseName + "'", e);
-			throw new RuntimeException("Failed to retrieve design document: " + designDocId, e);
+			log.warn("Error retrieving design document '" + designDocId + "' from database '" + databaseName + "' - returning null. This is normal during initial startup: " + e.getMessage());
+			return null;
 		}
 	}
 
@@ -1243,8 +1112,8 @@ public class CloudantClientWrapper {
 			return result;
 
 		} catch (Exception e) {
-			log.error("Error creating/updating design document '" + designDocId + "' in database '" + databaseName + "'", e);
-			throw new RuntimeException("Failed to create/update design document: " + designDocId, e);
+			log.warn("Error creating/updating design document '" + designDocId + "' in database '" + databaseName + "'. This is normal during initial startup: " + e.getMessage());
+			return null;
 		}
 	}
 

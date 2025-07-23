@@ -8,4 +8,4 @@ default:
   product.name: NemakiWare
   product.version: 3.0.0
   namespace: http://www.aegif.jp/NemakiWare/
-super.users: canopy
+super.users: bedroom
