@@ -175,3 +175,4 @@ setup/installer/**/*.war
 # Large JAR files
 solr/solr/*/lib/
 docker/solr/solr/*/lib/
+build-workspace/chemistry-opencmis
