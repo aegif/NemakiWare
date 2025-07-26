@@ -11,7 +11,8 @@ import { PermissionManagement } from './components/PermissionManagement/Permissi
 import { SearchResults } from './components/SearchBar/SearchResults';
 import { ArchiveManagement } from './components/ArchiveManagement/ArchiveManagement';
 import { Login } from './components/Login/Login';
-import { AuthService } from './services/auth';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ProtectedRoute } from './components/ProtectedRoute/ProtectedRoute';
 
 const customTheme = {
   token: {
@@ -22,62 +23,76 @@ const customTheme = {
   },
 };
 
-function App() {
-  const [isAuthenticated, setIsAuthenticated] = React.useState(false);
-  const [repositoryId, setRepositoryId] = React.useState<string>('');
+function AppContent() {
+  const { isAuthenticated, authToken, login } = useAuth();
 
-  React.useEffect(() => {
-    const authService = AuthService.getInstance();
-    (window as any).authService = authService;
-    
-    const authData = localStorage.getItem('nemakiware_auth');
-    if (authData) {
-      try {
-        const auth = JSON.parse(authData);
-        setIsAuthenticated(true);
-        setRepositoryId(auth.repositoryId);
-      } catch (e) {
-        localStorage.removeItem('nemakiware_auth');
-      }
-    }
-  }, []);
-
-  if (!isAuthenticated) {
-    return (
-      <ConfigProvider theme={customTheme}>
-        <Login onLogin={(auth) => {
-          setIsAuthenticated(true);
-          setRepositoryId(auth.repositoryId);
-        }} />
-      </ConfigProvider>
-    );
+  if (!isAuthenticated || !authToken) {
+    return <Login onLogin={async (auth) => {
+      // AuthContext will handle the authentication state update
+      console.log('AppContent: Login successful with auth:', auth);
+      // The AuthContext's useEffect will detect the localStorage change and update state
+    }} />;
   }
 
   return (
+    <Router basename="/core/ui">
+      <Layout repositoryId={authToken.repositoryId}>
+        <Routes>
+          <Route path="/" element={<Navigate to="/documents" replace />} />
+          <Route path="/documents" element={
+            <ProtectedRoute>
+              <DocumentList repositoryId={authToken.repositoryId} />
+            </ProtectedRoute>
+          } />
+          <Route path="/documents/:objectId" element={
+            <ProtectedRoute>
+              <DocumentViewer repositoryId={authToken.repositoryId} />
+            </ProtectedRoute>
+          } />
+          <Route path="/search" element={
+            <ProtectedRoute>
+              <SearchResults repositoryId={authToken.repositoryId} />
+            </ProtectedRoute>
+          } />
+          <Route path="/users" element={
+            <ProtectedRoute>
+              <UserManagement repositoryId={authToken.repositoryId} />
+            </ProtectedRoute>
+          } />
+          <Route path="/groups" element={
+            <ProtectedRoute>
+              <GroupManagement repositoryId={authToken.repositoryId} />
+            </ProtectedRoute>
+          } />
+          <Route path="/types" element={
+            <ProtectedRoute>
+              <TypeManagement repositoryId={authToken.repositoryId} />
+            </ProtectedRoute>
+          } />
+          <Route path="/permissions/:objectId" element={
+            <ProtectedRoute>
+              <PermissionManagement repositoryId={authToken.repositoryId} />
+            </ProtectedRoute>
+          } />
+          <Route path="/archive" element={
+            <ProtectedRoute>
+              <ArchiveManagement repositoryId={authToken.repositoryId} />
+            </ProtectedRoute>
+          } />
+          <Route path="/oidc-callback" element={<Login onLogin={() => {}} />} />
+          <Route path="/saml-callback" element={<Login onLogin={() => {}} />} />
+        </Routes>
+      </Layout>
+    </Router>
+  );
+}
+
+function App() {
+  return (
     <ConfigProvider theme={customTheme}>
-      <Router basename="/core/ui">
-        <Layout repositoryId={repositoryId}>
-          <Routes>
-            <Route path="/" element={<Navigate to="/documents" replace />} />
-            <Route path="/documents" element={<DocumentList repositoryId={repositoryId} />} />
-            <Route path="/documents/:objectId" element={<DocumentViewer repositoryId={repositoryId} />} />
-            <Route path="/search" element={<SearchResults repositoryId={repositoryId} />} />
-            <Route path="/users" element={<UserManagement repositoryId={repositoryId} />} />
-            <Route path="/groups" element={<GroupManagement repositoryId={repositoryId} />} />
-            <Route path="/types" element={<TypeManagement repositoryId={repositoryId} />} />
-            <Route path="/permissions/:objectId" element={<PermissionManagement repositoryId={repositoryId} />} />
-            <Route path="/archive" element={<ArchiveManagement repositoryId={repositoryId} />} />
-            <Route path="/oidc-callback" element={<Login onLogin={(auth) => {
-              setIsAuthenticated(true);
-              setRepositoryId(auth.repositoryId);
-            }} />} />
-            <Route path="/saml-callback" element={<Login onLogin={(auth) => {
-              setIsAuthenticated(true);
-              setRepositoryId(auth.repositoryId);
-            }} />} />
-          </Routes>
-        </Layout>
-      </Router>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
     </ConfigProvider>
   );
 }

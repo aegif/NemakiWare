@@ -40,11 +40,13 @@ public class CloudantClientWrapper {
 		ObjectMapper mapper = new ObjectMapper();
 		// Configure Jackson to ignore unknown properties during Cloudant migration
 		mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-		// CRITICAL FIX: Use default visibility settings with automatic property detection
-		// Jackson should auto-detect getters/setters and public fields by default
-		mapper.setVisibility(PropertyAccessor.ALL, Visibility.DEFAULT);
-		// Allow access to private fields only when necessary
-		mapper.setVisibility(PropertyAccessor.FIELD, Visibility.ANY);
+		
+		// CRITICAL FIX: Properties field serialization issue resolution
+		// Use getters/setters instead of direct field access to respect @JsonProperty annotations
+		mapper.setVisibility(PropertyAccessor.GETTER, Visibility.PUBLIC_ONLY);
+		mapper.setVisibility(PropertyAccessor.SETTER, Visibility.PUBLIC_ONLY);
+		mapper.setVisibility(PropertyAccessor.FIELD, Visibility.NONE);
+		
 		return mapper;
 	}
 
@@ -652,9 +654,20 @@ public class CloudantClientWrapper {
 				documentMap.put("relationship", change.isRelationship());
 				documentMap.put("policy", change.isPolicy());
 			} else {
+				// Debug CouchTypeDefinition serialization specifically
+				if (document instanceof jp.aegif.nemaki.model.couch.CouchTypeDefinition) {
+					jp.aegif.nemaki.model.couch.CouchTypeDefinition typeDef = (jp.aegif.nemaki.model.couch.CouchTypeDefinition) document;
+					System.err.println("[OBJECTMAPPER] Before convertValue - CouchTypeDefinition properties: " + typeDef.getProperties());
+				}
+				
 				@SuppressWarnings("unchecked")
 				Map<String, Object> tempMap = mapper.convertValue(document, Map.class);
 				documentMap = tempMap;
+				
+				// Debug the converted Map for CouchTypeDefinition
+				if (document instanceof jp.aegif.nemaki.model.couch.CouchTypeDefinition) {
+					System.err.println("[OBJECTMAPPER] After convertValue - Map properties: " + documentMap.get("properties"));
+				}
 			}
 			
 			// Convert CMIS array structures to Cloudant Document model compatible maps

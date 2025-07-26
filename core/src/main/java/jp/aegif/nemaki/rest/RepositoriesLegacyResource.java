@@ -11,7 +11,6 @@ import jakarta.ws.rs.core.Response;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.springframework.stereotype.Component;
 
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
@@ -21,7 +20,6 @@ import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
  * Provides filtered repository list excluding information management areas
  * This endpoint maintains compatibility with existing React SPA UI
  */
-@Component
 @Path("/repositories")
 public class RepositoriesLegacyResource extends ResourceBase {
     

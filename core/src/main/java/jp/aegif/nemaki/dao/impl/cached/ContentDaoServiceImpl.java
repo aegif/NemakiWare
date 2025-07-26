@@ -622,7 +622,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public List<UserItem> getUserItems(String repositoryId) {
-		return nonCachedContentDaoService.getUserItems(repositoryId);
+		log.info("=== CACHED LAYER: getUserItems called for repository: " + repositoryId + " ===");
+		List<UserItem> result = nonCachedContentDaoService.getUserItems(repositoryId);
+		log.info("=== CACHED LAYER: getUserItems returned " + result.size() + " users ===");
+		return result;
 	}
 
 	@Override

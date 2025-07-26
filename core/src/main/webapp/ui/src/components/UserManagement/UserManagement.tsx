@@ -42,8 +42,33 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
     try {
       const userList = await cmisService.getUsers(repositoryId);
       setUsers(userList);
-    } catch (error) {
-      message.error('ユーザーの読み込みに失敗しました');
+    } catch (error: any) {
+      console.error('UserManagement: loadUsers error:', error);
+      
+      // エラーの詳細情報を構築
+      let errorMessage = 'ユーザーの読み込みに失敗しました';
+      
+      if (error.status === 500) {
+        // サーバー側でHTTP 500が返された場合（根本的な問題）
+        errorMessage = 'サーバー側でエラーが発生しています';
+        if (error.details) {
+          errorMessage += `\n詳細: ${error.details}`;
+        }
+        // 開発者向けに詳細情報をコンソールに出力
+        console.error('Server error details:', {
+          message: error.message,
+          details: error.details,
+          status: error.status
+        });
+      } else if (error.status === 401) {
+        errorMessage = '認証エラー: ログインし直してください';
+      } else if (error.status === 403) {
+        errorMessage = '権限エラー: ユーザー管理の権限がありません';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      message.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -63,8 +88,25 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       setEditingUser(null);
       form.resetFields();
       loadUsers();
-    } catch (error) {
-      message.error(editingUser ? 'ユーザーの更新に失敗しました' : 'ユーザーの作成に失敗しました');
+    } catch (error: any) {
+      console.error('UserManagement: handleSubmit error:', error);
+      
+      let errorMessage = editingUser ? 'ユーザーの更新に失敗しました' : 'ユーザーの作成に失敗しました';
+      
+      if (error.status === 500) {
+        errorMessage = 'サーバー側でエラーが発生しています';
+        if (error.details) {
+          errorMessage += `\n詳細: ${error.details}`;
+        }
+      } else if (error.status === 401) {
+        errorMessage = '認証エラー: ログインし直してください';
+      } else if (error.status === 403) {
+        errorMessage = '権限エラー: この操作の権限がありません';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      message.error(errorMessage);
     }
   };
 
@@ -79,8 +121,25 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       await cmisService.deleteUser(repositoryId, userId);
       message.success('ユーザーを削除しました');
       loadUsers();
-    } catch (error) {
-      message.error('ユーザーの削除に失敗しました');
+    } catch (error: any) {
+      console.error('UserManagement: handleDelete error:', error);
+      
+      let errorMessage = 'ユーザーの削除に失敗しました';
+      
+      if (error.status === 500) {
+        errorMessage = 'サーバー側でエラーが発生しています';
+        if (error.details) {
+          errorMessage += `\n詳細: ${error.details}`;
+        }
+      } else if (error.status === 401) {
+        errorMessage = '認証エラー: ログインし直してください';
+      } else if (error.status === 403) {
+        errorMessage = '権限エラー: ユーザー削除の権限がありません';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      message.error(errorMessage);
     }
   };
 

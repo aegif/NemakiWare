@@ -719,7 +719,6 @@
         </property>
     </bean>
 
-    <!-- RepositoriesResource now managed via @Component annotation and Jersey-Spring integration -->
     
     <!-- SpringContext bean definition for utility access -->
     <bean id="springContext" class="jp.aegif.nemaki.util.spring.SpringContext" />

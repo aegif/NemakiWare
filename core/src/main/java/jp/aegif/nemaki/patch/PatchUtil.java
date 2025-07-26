@@ -1,6 +1,8 @@
 package jp.aegif.nemaki.patch;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.businesslogic.TypeService;
+import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.cmis.service.RepositoryService;
@@ -34,6 +36,8 @@ public class PatchUtil {
 	protected ContentDaoService contentDaoService;
 	protected RepositoryInfoMap repositoryInfoMap;
 	protected RepositoryService repositoryService;
+	protected TypeService typeService;
+	protected TypeManager typeManager;
 
 	public PatchUtil() {
 		System.out.println("=== PATCH DEBUG: PatchUtil constructor called ===");
@@ -181,5 +185,21 @@ public class PatchUtil {
 
 	public void setRepositoryService(RepositoryService repositoryService) {
 		this.repositoryService = repositoryService;
+	}
+
+	public TypeService getTypeService() {
+		return typeService;
+	}
+
+	public void setTypeService(TypeService typeService) {
+		this.typeService = typeService;
+	}
+
+	public TypeManager getTypeManager() {
+		return typeManager;
+	}
+
+	public void setTypeManager(TypeManager typeManager) {
+		this.typeManager = typeManager;
 	}
 }

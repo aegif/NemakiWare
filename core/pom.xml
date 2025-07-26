@@ -232,17 +232,13 @@
 		</dependency>
 
 		<!-- Jakarta EE JAX-WS Runtime (Metro RI) -->
-		<dependency>
-			<groupId>com.sun.xml.ws</groupId>
-			<artifactId>jaxws-rt</artifactId>
-			<version>4.0.2-jakarta</version>
-		</dependency>
 
 		<!-- Updated to 1.1.0 Jakarta version - test-util removed as it's not directly used -->
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-test-tck</artifactId>
 			<version>1.1.0-jakarta</version>
+			<scope>test</scope>
 		</dependency>
 
 		<!-- ANTLR runtime dependency for OpenCMIS query parsing -->
@@ -614,6 +610,28 @@
 			<artifactId>jakarta.activation-api</artifactId>
 			<version>2.1.2</version>
 		</dependency>
+
+		<!-- Jakarta EE compatible CXF 4.x for CMIS Web Services SOAP support -->
+		<dependency>
+			<groupId>org.apache.cxf</groupId>
+			<artifactId>cxf-rt-frontend-jaxws</artifactId>
+			<version>4.0.4</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.cxf</groupId>
+			<artifactId>cxf-rt-transports-http</artifactId>
+			<version>4.0.4</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.cxf</groupId>
+			<artifactId>cxf-rt-frontend-simple</artifactId>
+			<version>4.0.4</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.cxf</groupId>
+			<artifactId>cxf-core</artifactId>
+			<version>4.0.4</version>
+		</dependency>
 	</dependencies>
 
 	<build>
@@ -633,8 +651,10 @@
 				<artifactId>maven-war-plugin</artifactId>
 				<version>3.3.1</version>
 				<configuration>
-					 <packagingExcludes>**/custom-nemakiware.properties</packagingExcludes>
-					 <packagingExcludes>**/custom-repository.yml</packagingExcludes>
+					<packagingExcludes>
+						**/custom-nemakiware.properties,
+						**/custom-repository.yml
+					</packagingExcludes>
 				</configuration>
 			</plugin>
 			<plugin>
@@ -824,7 +844,7 @@
 				<executions>
 					<execution>
 						<id>copy-jakarta-converted</id>
-						<phase>prepare-package</phase>
+						<phase>process-classes</phase>
 						<goals>
 							<goal>run</goal>
 						</goals>
@@ -842,6 +862,12 @@
 										<include name="javax.activation-api-*.jar"/>
 										<include name="javax.activation-*.jar"/>
 										<include name="activation-*.jar"/>
+										<!-- Remove old Java EE CXF libraries that conflict with Jakarta EE -->
+										<include name="cxf-rt-ws-policy-3.*.jar"/>
+										<include name="cxf-*-3.*.jar"/>
+										<include name="jaxb-impl-*.jar"/>
+										<include name="jaxb-core-*.jar"/>
+										<include name="stax-api-*.jar"/>
 									</fileset>
 								</delete>
 

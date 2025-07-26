@@ -14,7 +14,7 @@ import {
   MenuUnfoldOutlined
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { AuthService } from '../../services/auth';
+import { useAuth } from '../../contexts/AuthContext';
 
 const { Header, Sider, Content } = AntLayout;
 
@@ -27,8 +27,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const authService = AuthService.getInstance();
-  const currentAuth = authService.getCurrentAuth();
+  const { logout, authToken } = useAuth();
 
   const menuItems = [
     {
@@ -77,8 +76,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
   };
 
   const handleLogout = () => {
-    authService.logout();
-    window.location.reload();
+    console.log('Layout: handleLogout called - using AuthContext logout');
+    logout();
   };
 
   const userMenuItems = [
@@ -156,7 +155,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
             >
               <Space style={{ cursor: 'pointer' }}>
                 <Avatar icon={<UserOutlined />} />
-                <span>{currentAuth?.username}</span>
+                <span>{authToken?.username}</span>
               </Space>
             </Dropdown>
           </Space>

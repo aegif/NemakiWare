@@ -30,6 +30,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map.Entry;
+import jp.aegif.nemaki.util.spring.SpringContext;
 
 @Path("/repo/{repositoryId}/type")
 public class TypeResource extends ResourceBase {
@@ -44,44 +45,579 @@ public class TypeResource extends ResourceBase {
 	private final HashMap<String, NemakiPropertyDefinitionDetail> detailMaps = new HashMap<String, NemakiPropertyDefinitionDetail>();
 	private final HashMap<String, List<String>> typeProperties = new HashMap<String, List<String>>();
 
+	@GET
+	@Path("/test")
+	@Produces(MediaType.APPLICATION_JSON)
+	public String test(@PathParam("repositoryId") String repositoryId) {
+		System.err.println("[TYPERESOURCE] TEST METHOD CALLED - Repository ID: " + repositoryId);
+		log.error("[TYPERESOURCE] TEST METHOD CALLED - Repository ID: " + repositoryId);
+		
+		// Get Spring services using SpringContext
+		try {
+			typeService = (TypeService) jp.aegif.nemaki.util.spring.SpringContext.getBean("TypeService");
+			typeManager = (TypeManager) jp.aegif.nemaki.util.spring.SpringContext.getBean("TypeManager");
+		} catch (Exception e) {
+			log.error("Failed to get Spring beans: " + e.getMessage(), e);
+		}
+		
+		JSONObject result = new JSONObject();
+		result.put("status", "success");
+		result.put("message", "TypeResource test endpoint is working");
+		result.put("repositoryId", repositoryId);
+		result.put("typeServiceNull", (typeService == null));
+		result.put("typeManagerNull", (typeManager == null));
+		return result.toJSONString();
+	}
+
+	@POST
+	@Path("/register-json")
+	@Produces(MediaType.APPLICATION_JSON)
+	@Consumes(MediaType.APPLICATION_JSON)
+	public String registerJson(@PathParam("repositoryId") String repositoryId, String jsonData) {
+		System.err.println("[TYPERESOURCE] === REGISTER-JSON METHOD CALLED ===");
+		System.err.println("[TYPERESOURCE] Repository ID: " + repositoryId);
+		System.err.println("[TYPERESOURCE] JSON Data received: " + (jsonData != null ? jsonData.length() + " characters" : "null"));
+		
+		log.error("[TYPERESOURCE] registerJson method called for repository: " + repositoryId);
+		
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		try {
+			if (jsonData == null || jsonData.trim().isEmpty()) {
+				System.err.println("[TYPERESOURCE] ERROR: JSON data is null or empty");
+				log.error("[TYPERESOURCE] ERROR: JSON data is null or empty");
+				addErrMsg(errMsg, "types", "noDataReceived");
+				result = makeResult(false, result, errMsg);
+				return result.toJSONString();
+			}
+			
+			// Spring依存性注入が失敗した場合の緊急対応
+			if (typeService == null || typeManager == null) {
+				log.error("CRITICAL: TypeService or TypeManager is null - attempting manual Spring lookup");
+				try {
+					if (typeService == null) {
+						typeService = (jp.aegif.nemaki.businesslogic.TypeService) SpringContext.getBean("TypeService");
+						log.info("Successfully retrieved TypeService via SpringContext");
+					}
+					if (typeManager == null) {
+						typeManager = (jp.aegif.nemaki.cmis.aspect.type.TypeManager) SpringContext.getBean("TypeManager");
+						log.info("Successfully retrieved TypeManager via SpringContext");
+					}
+				} catch (Exception e) {
+					log.error("Failed to retrieve dependencies via SpringContext", e);
+					addErrMsg(errMsg, "types", "dependencyInjectionFailed");
+					result = makeResult(false, result, errMsg);
+					return result.toJSONString();
+				}
+			}
+
+			try {
+				System.err.println("[TYPERESOURCE] Starting JSON parsing...");
+				log.info("Starting JSON parsing...");
+				
+				// JSONをパースして NemakiTypeDefinition に変換
+				parseJson(repositoryId, jsonData);
+				log.info("JSON parsing completed successfully");
+				
+				System.err.println("[TYPERESOURCE] Starting type creation...");
+				log.info("Starting type creation...");
+				
+				System.err.println("[TYPERESOURCE] === ABOUT TO CALL CREATE METHOD ===");
+				try {
+					create(repositoryId);
+					System.err.println("[TYPERESOURCE] === CREATE METHOD COMPLETED ===");
+				} catch (Exception createException) {
+					System.err.println("[TYPERESOURCE] === CREATE METHOD EXCEPTION ===");
+					System.err.println("[TYPERESOURCE] Create exception: " + createException.getMessage());
+					createException.printStackTrace();
+					throw createException;
+				}
+				log.info("Type creation completed successfully");
+				
+				System.err.println("[TYPERESOURCE] Refreshing type manager...");
+				log.info("Refreshing type manager...");
+				typeManager.refreshTypes();
+				log.info("Type registration completed successfully");
+
+				System.err.println("[TYPERESOURCE] Type registration completed successfully");
+				result = makeResult(true, result, errMsg);
+				return result.toJSONString();
+			} catch (Exception e) {
+				System.err.println("[TYPERESOURCE] Exception during type registration: " + e.getMessage());
+				log.warn("Type registrations fails - TypeService null: " + (typeService == null) + ", TypeManager null: " + (typeManager == null), e);
+				addErrMsg(errMsg, "types", "failsToRegister");
+				result = makeResult(false, result, errMsg);
+				return result.toJSONString();
+			}
+		} catch (Exception globalException) {
+			System.err.println("[TYPERESOURCE] GLOBAL EXCEPTION in registerJson method: " + globalException.getMessage());
+			globalException.printStackTrace();
+			log.error("[TYPERESOURCE] Global exception in registerJson method", globalException);
+			addErrMsg(errMsg, "types", "globalException");
+			result = makeResult(false, result, errMsg);
+			return result.toJSONString();
+		}
+	}
+
+	@POST
+	@Path("/register-simple")
+	@Produces(MediaType.APPLICATION_JSON)
+	@Consumes(MediaType.APPLICATION_XML)
+	public String registerSimple(@PathParam("repositoryId") String repositoryId, String xmlData) {
+		System.err.println("[TYPERESOURCE] === REGISTER-SIMPLE METHOD CALLED ===");
+		System.err.println("[TYPERESOURCE] Repository ID: " + repositoryId);
+		System.err.println("[TYPERESOURCE] XML Data received: " + (xmlData != null ? xmlData.length() + " characters" : "null"));
+		
+		log.error("[TYPERESOURCE] registerSimple method called for repository: " + repositoryId);
+		
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		try {
+			if (xmlData == null || xmlData.trim().isEmpty()) {
+				System.err.println("[TYPERESOURCE] ERROR: XML data is null or empty");
+				log.error("[TYPERESOURCE] ERROR: XML data is null or empty");
+				addErrMsg(errMsg, "types", "noDataReceived");
+				result = makeResult(false, result, errMsg);
+				return result.toJSONString();
+			}
+			
+			// Spring依存性注入が失敗した場合の緊急対応
+			if (typeService == null || typeManager == null) {
+				log.error("CRITICAL: TypeService or TypeManager is null - attempting manual Spring lookup");
+				try {
+					if (typeService == null) {
+						typeService = (jp.aegif.nemaki.businesslogic.TypeService) SpringContext.getBean("TypeService");
+						log.info("Successfully retrieved TypeService via SpringContext");
+					}
+					if (typeManager == null) {
+						typeManager = (jp.aegif.nemaki.cmis.aspect.type.TypeManager) SpringContext.getBean("TypeManager");
+						log.info("Successfully retrieved TypeManager via SpringContext");
+					}
+				} catch (Exception e) {
+					log.error("Failed to retrieve dependencies via SpringContext", e);
+					addErrMsg(errMsg, "types", "dependencyInjectionFailed");
+					result = makeResult(false, result, errMsg);
+					return result.toJSONString();
+				}
+			}
+
+			try {
+				System.err.println("[TYPERESOURCE] Starting XML parsing...");
+				log.info("Starting XML parsing...");
+				
+				// XMLをInputStreamに変換
+				java.io.InputStream is = new java.io.ByteArrayInputStream(xmlData.getBytes("UTF-8"));
+				parse(repositoryId, is);
+				log.info("XML parsing completed successfully");
+				
+				System.err.println("[TYPERESOURCE] Starting type creation...");
+				log.info("Starting type creation...");
+				
+				System.err.println("[TYPERESOURCE] === ABOUT TO CALL CREATE METHOD ===");
+				try {
+					create(repositoryId);
+					System.err.println("[TYPERESOURCE] === CREATE METHOD COMPLETED ===");
+				} catch (Exception createException) {
+					System.err.println("[TYPERESOURCE] === CREATE METHOD EXCEPTION ===");
+					System.err.println("[TYPERESOURCE] Create exception: " + createException.getMessage());
+					createException.printStackTrace();
+					throw createException;
+				}
+				log.info("Type creation completed successfully");
+				
+				System.err.println("[TYPERESOURCE] Refreshing type manager...");
+				log.info("Refreshing type manager...");
+				typeManager.refreshTypes();
+				log.info("Type registration completed successfully");
+
+				System.err.println("[TYPERESOURCE] Type registration completed successfully");
+				result = makeResult(true, result, errMsg);
+				return result.toJSONString();
+			} catch (Exception e) {
+				System.err.println("[TYPERESOURCE] Exception during type registration: " + e.getMessage());
+				log.warn("Type registrations fails - TypeService null: " + (typeService == null) + ", TypeManager null: " + (typeManager == null), e);
+				addErrMsg(errMsg, "types", "failsToRegister");
+				result = makeResult(false, result, errMsg);
+				return result.toJSONString();
+			}
+		} catch (Exception globalException) {
+			System.err.println("[TYPERESOURCE] GLOBAL EXCEPTION in registerSimple method: " + globalException.getMessage());
+			globalException.printStackTrace();
+			log.error("[TYPERESOURCE] Global exception in registerSimple method", globalException);
+			addErrMsg(errMsg, "types", "globalException");
+			result = makeResult(false, result, errMsg);
+			return result.toJSONString();
+		}
+	}
+
 	@POST
 	@Path("/register")
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.MULTIPART_FORM_DATA)
 	public String register(@PathParam("repositoryId") String repositoryId, @FormDataParam("data") InputStream is) {
-		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
 		try {
-			parse(repositoryId, is);
-			create(repositoryId);
-			typeManager.refreshTypes();
+			// CRITICAL DEBUG: メソッド呼び出しの確認
+			System.err.println("[TYPERESOURCE] === METHOD ENTRY CONFIRMED - REGISTER CALLED ===");
+			System.err.println("[TYPERESOURCE] Repository ID: " + repositoryId);
+			System.err.println("[TYPERESOURCE] InputStream is null: " + (is == null));
+			System.err.println("[TYPERESOURCE] TypeService is null: " + (typeService == null));
+			System.err.println("[TYPERESOURCE] TypeManager is null: " + (typeManager == null));
+			
+			log.error("[TYPERESOURCE] Method entry confirmed - register called for repository: " + repositoryId);
+			log.error("[TYPERESOURCE] Dependencies status - TypeService null: " + (typeService == null) + ", TypeManager null: " + (typeManager == null));
 
-			status = true;
-		} catch (Exception e) {
-			log.warn("Type registrations fails", e);
-			addErrMsg(errMsg, "types", "failsToRegister");
+			if (is == null) {
+				System.err.println("[TYPERESOURCE] ERROR: InputStream is null - multipart data not received");
+				log.error("[TYPERESOURCE] ERROR: InputStream is null - multipart data not received");
+				addErrMsg(errMsg, "types", "noDataReceived");
+				result = makeResult(false, result, errMsg);
+				return result.toJSONString();
+			}
+		
+		// Spring依存性注入が失敗した場合の緊急対応
+		if (typeService == null || typeManager == null) {
+			log.error("CRITICAL: TypeService or TypeManager is null - attempting manual Spring lookup");
+			try {
+				if (typeService == null) {
+					typeService = (jp.aegif.nemaki.businesslogic.TypeService) SpringContext.getBean("TypeService");
+					log.info("Successfully retrieved TypeService via SpringContext");
+				}
+				if (typeManager == null) {
+					typeManager = (jp.aegif.nemaki.cmis.aspect.type.TypeManager) SpringContext.getBean("TypeManager");
+					log.info("Successfully retrieved TypeManager via SpringContext");
+				}
+			} catch (Exception e) {
+				log.error("Failed to retrieve dependencies via SpringContext", e);
+				addErrMsg(errMsg, "types", "dependencyInjectionFailed");
+				result = makeResult(false, result, errMsg);
+				return result.toJSONString();
+			}
 		}
 
-		result = makeResult(status, result, errMsg);
-		return result.toJSONString();
+			try {
+				System.err.println("[TYPERESOURCE] Starting XML parsing...");
+				log.info("Starting XML parsing...");
+				parse(repositoryId, is);
+				log.info("XML parsing completed successfully");
+				
+				System.err.println("[TYPERESOURCE] Starting type creation...");
+				log.info("Starting type creation...");
+				create(repositoryId);
+				log.info("Type creation completed successfully");
+				
+				System.err.println("[TYPERESOURCE] Refreshing type manager...");
+				log.info("Refreshing type manager...");
+				typeManager.refreshTypes();
+				log.info("Type registration completed successfully");
+
+				System.err.println("[TYPERESOURCE] Type registration completed successfully");
+				result = makeResult(true, result, errMsg);
+				return result.toJSONString();
+			} catch (Exception e) {
+				System.err.println("[TYPERESOURCE] Exception during type registration: " + e.getMessage());
+				log.warn("Type registrations fails - TypeService null: " + (typeService == null) + ", TypeManager null: " + (typeManager == null), e);
+				addErrMsg(errMsg, "types", "failsToRegister");
+				result = makeResult(false, result, errMsg);
+				return result.toJSONString();
+			}
+		} catch (Exception globalException) {
+			System.err.println("[TYPERESOURCE] GLOBAL EXCEPTION in register method: " + globalException.getMessage());
+			globalException.printStackTrace();
+			log.error("[TYPERESOURCE] Global exception in register method", globalException);
+			addErrMsg(errMsg, "types", "globalException");
+			result = makeResult(false, result, errMsg);
+			return result.toJSONString();
+		}
+	}
+
+	/**
+	 * Parse JSON type definition data (for restoring old functionality)
+	 */
+	private void parseJson(String repositoryId, String jsonData) throws Exception {
+		System.err.println("[TYPERESOURCE] === PARSE JSON METHOD CALLED ===");
+		System.err.println("[TYPERESOURCE] Repository ID: " + repositoryId);
+		System.err.println("[TYPERESOURCE] JSON Data: " + jsonData);
+		
+		try {
+			// Parse JSON using json-simple library (already available)
+			org.json.simple.parser.JSONParser parser = new org.json.simple.parser.JSONParser();
+			Object parsed = parser.parse(jsonData);
+			
+			if (parsed instanceof JSONObject) {
+				// Single type definition
+				JSONObject typeJson = (JSONObject) parsed;
+				System.err.println("[TYPERESOURCE] Parsing single type definition");
+				parseJsonTypeDefinition(repositoryId, typeJson);
+			} else if (parsed instanceof JSONArray) {
+				// Multiple type definitions
+				JSONArray typesArray = (JSONArray) parsed;
+				System.err.println("[TYPERESOURCE] Parsing multiple type definitions: " + typesArray.size());
+				for (Object typeObj : typesArray) {
+					if (typeObj instanceof JSONObject) {
+						parseJsonTypeDefinition(repositoryId, (JSONObject) typeObj);
+					}
+				}
+			} else {
+				throw new Exception("Invalid JSON format - expected object or array");
+			}
+			
+			System.err.println("[TYPERESOURCE] JSON parsing completed");
+			System.err.println("[TYPERESOURCE] typeMaps size after JSON parsing: " + typeMaps.size());
+			System.err.println("[TYPERESOURCE] coreMaps size after JSON parsing: " + coreMaps.size());
+			System.err.println("[TYPERESOURCE] detailMaps size after JSON parsing: " + detailMaps.size());
+			
+		} catch (Exception e) {
+			System.err.println("[TYPERESOURCE] JSON parsing error: " + e.getMessage());
+			e.printStackTrace();
+			throw new Exception("Failed to parse JSON type definition: " + e.getMessage(), e);
+		}
+		
+		System.err.println("[TYPERESOURCE] === PARSE JSON METHOD COMPLETED ===");
+	}
+	
+	/**
+	 * Parse individual JSON type definition and convert to internal format
+	 */
+	private void parseJsonTypeDefinition(String repositoryId, JSONObject typeJson) throws Exception {
+		System.err.println("[TYPERESOURCE] === PARSING JSON TYPE DEFINITION ===");
+		
+		// Extract basic type information
+		String typeId = (String) typeJson.get("id");
+		if (typeId == null) {
+			typeId = (String) typeJson.get("localName"); // fallback
+		}
+		
+		if (typeId == null || typeId.trim().isEmpty()) {
+			log.warn("Type ID not found in JSON, skipping type definition");
+			return;
+		}
+		
+		System.err.println("[TYPERESOURCE] Processing type: " + typeId);
+		
+		// Check if type already exists
+		if (existType(repositoryId, typeId)) {
+			log.warn("Type " + typeId + " already exists, skipping");
+			return;
+		}
+		
+		// Create NemakiTypeDefinition
+		NemakiTypeDefinition tdf = new NemakiTypeDefinition();
+		
+		// Basic properties
+		tdf.setTypeId(typeId);
+		tdf.setLocalName((String) typeJson.get("localName"));
+		tdf.setLocalNameSpace((String) typeJson.get("localNamespace"));
+		tdf.setDisplayName((String) typeJson.get("displayName"));
+		tdf.setDescription((String) typeJson.get("description"));
+		
+		// Parent and base type
+		String baseId = (String) typeJson.get("baseId");
+		String parentId = (String) typeJson.get("parentId");
+		
+		if ("cmis:document".equals(baseId)) {
+			tdf.setBaseId(BaseTypeId.CMIS_DOCUMENT);
+		} else if ("cmis:folder".equals(baseId)) {
+			tdf.setBaseId(BaseTypeId.CMIS_FOLDER);
+		} else if ("cmis:relationship".equals(baseId)) {
+			tdf.setBaseId(BaseTypeId.CMIS_RELATIONSHIP);
+		} else if ("cmis:policy".equals(baseId)) {
+			tdf.setBaseId(BaseTypeId.CMIS_POLICY);
+		} else if ("cmis:item".equals(baseId)) {
+			tdf.setBaseId(BaseTypeId.CMIS_ITEM);
+		} else if ("cmis:secondary".equals(baseId)) {
+			tdf.setBaseId(BaseTypeId.CMIS_SECONDARY);
+		}
+		
+		if (parentId != null) {
+			tdf.setParentId(parentId);
+		}
+		
+		// Boolean properties
+		if (typeJson.containsKey("creatable")) {
+			tdf.setCreatable((Boolean) typeJson.get("creatable"));
+		}
+		// fileable method doesn't exist in NemakiTypeDefinition
+		// if (typeJson.containsKey("fileable")) {
+		//	tdf.setFileable((Boolean) typeJson.get("fileable"));
+		// }
+		if (typeJson.containsKey("queryable")) {
+			tdf.setQueryable((Boolean) typeJson.get("queryable"));
+		}
+		if (typeJson.containsKey("fulltextIndexed")) {
+			tdf.setFulltextIndexed((Boolean) typeJson.get("fulltextIndexed"));
+		}
+		if (typeJson.containsKey("includedInSupertypeQuery")) {
+			tdf.setIncludedInSupertypeQuery((Boolean) typeJson.get("includedInSupertypeQuery"));
+		}
+		if (typeJson.containsKey("controllablePolicy")) {
+			tdf.setControllablePolicy((Boolean) typeJson.get("controllablePolicy"));
+		}
+		if (typeJson.containsKey("controllableACL")) {
+			tdf.setControllableACL((Boolean) typeJson.get("controllableACL"));
+		}
+		
+		// Type mutability (currently not implemented in NemakiTypeDefinition)
+		// JSONObject typeMutability = (JSONObject) typeJson.get("typeMutability");
+		
+		// Process property definitions
+		List<String> propertyIds = new ArrayList<String>();
+		JSONObject propertyDefinitions = (JSONObject) typeJson.get("propertyDefinitions");
+		if (propertyDefinitions != null && !propertyDefinitions.isEmpty()) {
+			System.err.println("[TYPERESOURCE] Processing " + propertyDefinitions.size() + " property definitions");
+			propertyIds = parseJsonPropertyDefinitions(repositoryId, typeId, propertyDefinitions);
+		} else {
+			System.err.println("[TYPERESOURCE] No property definitions found for type: " + typeId);
+		}
+		
+		// CRITICAL: Set properties list to NemakiTypeDefinition
+		System.err.println("[TYPERESOURCE] Property IDs for type " + typeId + ": " + propertyIds);
+		if (propertyIds != null && !propertyIds.isEmpty()) {
+			tdf.setProperties(propertyIds);
+			System.err.println("[TYPERESOURCE] Set " + propertyIds.size() + " properties to type: " + typeId);
+		} else {
+			System.err.println("[TYPERESOURCE] No properties found for type: " + typeId);
+		}
+		
+		// Add to type maps
+		typeMaps.put(typeId, tdf);
+		
+		System.err.println("[TYPERESOURCE] Successfully parsed JSON type: " + typeId);
+		System.err.println("[TYPERESOURCE] === JSON TYPE DEFINITION PARSING COMPLETED ===");
+	}
+	
+	/**
+	 * Parse JSON property definitions
+	 */
+	private List<String> parseJsonPropertyDefinitions(String repositoryId, String typeId, JSONObject propertyDefinitions) {
+		List<String> propertyIds = new ArrayList<String>();
+		
+		for (Object keyObj : propertyDefinitions.keySet()) {
+			String propertyId = (String) keyObj;
+			JSONObject propertyJson = (JSONObject) propertyDefinitions.get(propertyId);
+			
+			System.err.println("[TYPERESOURCE] Processing property: " + propertyId);
+			
+			// Check if property already exists
+			if (existProperty(repositoryId, propertyId)) {
+				log.warn("Property " + propertyId + " already exists, skipping");
+				continue;
+			}
+			
+			propertyIds.add(propertyId);
+			
+			// Create core and detail property definitions
+			NemakiPropertyDefinitionCore core = new NemakiPropertyDefinitionCore();
+			NemakiPropertyDefinitionDetail detail = new NemakiPropertyDefinitionDetail();
+			
+			// Core properties
+			core.setPropertyId(propertyId);
+			core.setQueryName(propertyId);
+			
+			// Property type conversion
+			String propertyType = (String) propertyJson.get("propertyType");
+			if ("string".equals(propertyType)) {
+				core.setPropertyType(PropertyType.STRING);
+			} else if ("integer".equals(propertyType)) {
+				core.setPropertyType(PropertyType.INTEGER);
+			} else if ("decimal".equals(propertyType)) {
+				core.setPropertyType(PropertyType.DECIMAL);
+			} else if ("datetime".equals(propertyType)) {
+				core.setPropertyType(PropertyType.DATETIME);
+			} else if ("boolean".equals(propertyType)) {
+				core.setPropertyType(PropertyType.BOOLEAN);
+			} else {
+				// Default to string
+				core.setPropertyType(PropertyType.STRING);
+			}
+			
+			// Cardinality
+			String cardinality = (String) propertyJson.get("cardinality");
+			if ("multi".equals(cardinality)) {
+				core.setCardinality(Cardinality.MULTI);
+			} else {
+				core.setCardinality(Cardinality.SINGLE);
+			}
+			
+			coreMaps.put(propertyId, core);
+			
+			// Detail properties
+			detail.setType(NodeType.PROPERTY_DEFINITION_DETAIL.value());
+			
+			// Updatability
+			String updatability = (String) propertyJson.get("updatability");
+			if ("readonly".equals(updatability)) {
+				detail.setUpdatability(Updatability.READONLY);
+			} else if ("oncreate".equals(updatability)) {
+				detail.setUpdatability(Updatability.ONCREATE);
+			} else {
+				detail.setUpdatability(Updatability.READWRITE);
+			}
+			
+			// Required
+			Boolean required = (Boolean) propertyJson.get("required");
+			detail.setRequired(required != null ? required : false);
+			
+			// Queryable
+			Boolean queryable = (Boolean) propertyJson.get("queryable");
+			detail.setQueryable(queryable != null ? queryable : false);
+			
+			// Open choice
+			Boolean openChoice = (Boolean) propertyJson.get("openChoice");
+			detail.setOpenChoice(openChoice != null ? openChoice : false);
+			
+			detailMaps.put(propertyId, detail);
+			
+			System.err.println("[TYPERESOURCE] Successfully parsed property: " + propertyId);
+		}
+		
+		typeProperties.put(typeId, propertyIds);
+		System.err.println("[TYPERESOURCE] Processed " + propertyIds.size() + " properties for type: " + typeId);
+		return propertyIds;
 	}
 
 	private void parse(String repositoryId, InputStream is) throws DocumentException {
+		System.err.println("[TYPERESOURCE] === PARSE METHOD CALLED ===");
+		System.err.println("[TYPERESOURCE] Repository ID: " + repositoryId);
+		
 		SAXReader saxReader = new SAXReader();
 		Document document = saxReader.read(is);
 		Element model = document.getRootElement();
+		
+		System.err.println("[TYPERESOURCE] Root element name: " + model.getName());
+		System.err.println("[TYPERESOURCE] Root element content: " + model.asXML());
 
 		// Types
 		Element _types = getElement(model, "types");
+		System.err.println("[TYPERESOURCE] Found _types element: " + (_types != null ? _types.getName() : "null"));
+		
 		List<Element> types = getElements(_types, "type");
+		System.err.println("[TYPERESOURCE] Found types count: " + (types != null ? types.size() : "null"));
+		
+		if (types != null && !types.isEmpty()) {
+			for (int i = 0; i < types.size(); i++) {
+				Element type = types.get(i);
+				System.err.println("[TYPERESOURCE] Type[" + i + "] name: " + type.getName());
+				System.err.println("[TYPERESOURCE] Type[" + i + "] XML: " + type.asXML());
+			}
+		}
+		
 		parseTypes(repositoryId, types);
 
 		// Aspects
 		Element _aspects = getElement(model, "aspects");
+		System.err.println("[TYPERESOURCE] Found _aspects element: " + (_aspects != null ? _aspects.getName() : "null"));
+		
 		List<Element> aspects = getElements(_aspects, "aspect");
+		System.err.println("[TYPERESOURCE] Found aspects count: " + (aspects != null ? aspects.size() : "null"));
+		
 		parseTypes(repositoryId, aspects);
+		
+		System.err.println("[TYPERESOURCE] === PARSE METHOD COMPLETED ===");
 	}
 
 	private void parseTypes(String repositoryId, List<Element> types) {
@@ -308,48 +844,131 @@ public class TypeResource extends ResourceBase {
 	}
 
 	private void create(String repositoryId) {
+		System.err.println("[TYPERESOURCE] === CREATE METHOD CALLED ===");
+		System.err.println("[TYPERESOURCE] Repository ID: " + repositoryId);
+		System.err.println("[TYPERESOURCE] coreMaps size: " + (coreMaps != null ? coreMaps.size() : "null"));
+		System.err.println("[TYPERESOURCE] detailMaps size: " + (detailMaps != null ? detailMaps.size() : "null"));
+		System.err.println("[TYPERESOURCE] typeMaps size: " + (typeMaps != null ? typeMaps.size() : "null"));
+		
 		// First, create properties
+		if (coreMaps == null || coreMaps.isEmpty()) {
+			System.err.println("[TYPERESOURCE] WARNING: No coreMaps found - skipping property creation");
+		}
+		
 		for (Entry<String, NemakiPropertyDefinitionCore> coreEntry : coreMaps.entrySet()) {
+			String originalPropertyId = coreEntry.getKey();
 			NemakiPropertyDefinition p = new NemakiPropertyDefinition(coreEntry.getValue(),
 					detailMaps.get(coreEntry.getKey()));
-			typeService.createPropertyDefinition(repositoryId, p);
+			
+			System.err.println("[TYPERESOURCE] Creating property: " + originalPropertyId);
+			
+			// プロパティ定義を作成
+			NemakiPropertyDefinitionDetail createdDetail = typeService.createPropertyDefinition(repositoryId, p);
+			
+			if (createdDetail == null) {
+				log.error("[TYPERESOURCE] createPropertyDefinition returned null for: " + originalPropertyId);
+				continue;
+			}
+			
+			System.err.println("[TYPERESOURCE] Created detail with ID: " + createdDetail.getId() + 
+				", coreNodeId: " + createdDetail.getCoreNodeId());
+			
+			// 元のコードのロジックに戻す - propertyIdで再度Coreを検索
+			// これは、createPropertyDefinition内でpropertyIdが変更される可能性があるため
 			NemakiPropertyDefinitionCore createdCore = typeService.getPropertyDefinitionCoreByPropertyId(repositoryId,
 					p.getPropertyId());
-
-			coreEntry.getValue().setId(createdCore.getId());
+					
+			if (createdCore != null) {
+				coreEntry.getValue().setId(createdCore.getId());
+				System.err.println("[TYPERESOURCE] Found core with ID: " + createdCore.getId() + 
+					" for property: " + p.getPropertyId());
+			} else {
+				// createdCoreがnullの場合、DetailのcoreNodeIdを使用
+				log.warn("[TYPERESOURCE] Could not find core by propertyId, using detail's coreNodeId");
+				coreEntry.getValue().setId(createdDetail.getCoreNodeId());
+			}
 		}
 
 		// Prepare types
+		System.err.println("[TYPERESOURCE] === PREPARING TYPES ===");
+		if (typeMaps == null || typeMaps.isEmpty()) {
+			System.err.println("[TYPERESOURCE] CRITICAL: No typeMaps found - no types to prepare!");
+			return;
+		}
+		
+		System.err.println("[TYPERESOURCE] Found " + typeMaps.size() + " types to prepare");
 		for (Entry<String, NemakiTypeDefinition> typeEntry : typeMaps.entrySet()) {
 			NemakiTypeDefinition t = typeEntry.getValue();
 
-			// TODO Set property detail ids
+			System.err.println("[TYPERESOURCE] Processing type: " + t.getTypeId());
+			
+			// Set property detail ids using the coreNodeId from creation
 			List<String> propertyNodeIds = new ArrayList<String>();
 			List<String> propertyIds = typeProperties.get(t.getTypeId());
+			
+			System.err.println("[TYPERESOURCE] Property IDs for type " + t.getTypeId() + ": " + propertyIds);
+			
 			if (CollectionUtils.isNotEmpty(propertyIds)) {
 				for (String propertyId : typeProperties.get(t.getTypeId())) {
-					NemakiPropertyDefinitionCore core = typeService.getPropertyDefinitionCoreByPropertyId(repositoryId,
-							propertyId);
-					// propertyNodeIds.add(core.getId());
-					List<NemakiPropertyDefinitionDetail> details = typeService
-							.getPropertyDefinitionDetailByCoreNodeId(repositoryId, core.getId());
-					if (CollectionUtils.isEmpty(details)) {
-						log.warn(buildMsg(t.getTypeId(), propertyId,
-								"Skipped to add this property because of incorrect data in DB."));
+					System.err.println("[TYPERESOURCE] Processing property: " + propertyId);
+					
+					// 元のpropertyIdでcoreMapsから取得（作成時にIDがセットされている）
+					NemakiPropertyDefinitionCore coreFromMap = coreMaps.get(propertyId);
+					
+					System.err.println("[TYPERESOURCE] Core from map for " + propertyId + ": " + 
+						(coreFromMap != null ? coreFromMap.getId() : "null"));
+					
+					if (coreFromMap != null && coreFromMap.getId() != null) {
+						String coreNodeId = coreFromMap.getId();
+						System.err.println("[TYPERESOURCE] Querying details for coreNodeId: " + coreNodeId);
+						
+						List<NemakiPropertyDefinitionDetail> details = typeService
+								.getPropertyDefinitionDetailByCoreNodeId(repositoryId, coreNodeId);
+								
+						System.err.println("[TYPERESOURCE] Found " + details.size() + " details for coreNodeId: " + coreNodeId);
+						
+						if (CollectionUtils.isEmpty(details)) {
+							log.warn(buildMsg(t.getTypeId(), propertyId,
+									"Skipped to add this property because of incorrect data in DB."));
+						} else {
+							// Presuppose there is no multiple detail for each core
+							NemakiPropertyDefinitionDetail detail = details.get(0);
+							String detailId = detail.getId();
+							
+							System.err.println("[TYPERESOURCE] Detail ID: " + detailId + " for property: " + propertyId);
+							
+							if (detailId != null) {
+								propertyNodeIds.add(detailId);
+								System.err.println("[TYPERESOURCE] Added property detail ID: " + detailId + 
+									" for property: " + propertyId);
+							} else {
+								System.err.println("[TYPERESOURCE] WARNING: Detail ID is null for property: " + propertyId);
+							}
+						}
 					} else {
-						// Presuppose there is no multiple detail for each core
-						NemakiPropertyDefinitionDetail detail = details.get(0);
-						propertyNodeIds.add(detail.getId());
+						log.warn(buildMsg(t.getTypeId(), propertyId,
+								"Property core not found in local map"));
 					}
 				}
+				
+				System.err.println("[TYPERESOURCE] Final propertyNodeIds for type " + t.getTypeId() + ": " + propertyNodeIds);
 				t.setProperties(propertyNodeIds);
+			} else {
+				System.err.println("[TYPERESOURCE] No properties found for type: " + t.getTypeId());
 			}
 
 			// Remove orphan types
+			System.err.println("[TYPERESOURCE] Checking parent type for " + t.getTypeId() + 
+				", parentId: " + t.getParentId() + ", isBaseType: " + isBaseType(t.getParentId()) + 
+				", parentInTypeMaps: " + (typeMaps.get(t.getParentId()) != null));
 			if (typeMaps.get(t.getParentId()) == null && !isBaseType(t.getParentId())) {
 				log.warn(buildMsg(t.getId(), null,
 						"Skipped to create this type because it has an unknown parent type."));
+				System.err.println("[TYPERESOURCE] SKIPPED type creation for " + t.getTypeId() + 
+					" due to unknown parent: " + t.getParentId());
 			} else {
+				System.err.println("[TYPERESOURCE] About to create type: " + t.getTypeId() + 
+					" with properties: " + t.getProperties());
 				typeService.createTypeDefinition(repositoryId, t);
 			}
 		}

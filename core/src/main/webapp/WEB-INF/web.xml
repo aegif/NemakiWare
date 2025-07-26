@@ -34,8 +34,7 @@
 		<listener-class>jp.aegif.nemaki.util.EHCacheShutdownListener</listener-class>
     </listener>
 
-	<!-- OpenCMIS servlets - AtomPub and Browser bindings only for Jetty development -->
-	<!-- TEMPORARILY DISABLED: WebServices servlet requires CXF JAX-WS integration
+	<!-- OpenCMIS servlets - All three bindings for CMIS 1.1 compliance -->
 	<servlet>
 		<servlet-name>cmisws</servlet-name>
 		<servlet-class>org.apache.chemistry.opencmis.server.impl.webservices.CmisWebServicesServlet</servlet-class>
@@ -49,7 +48,6 @@
         </init-param>
 		<load-on-startup>1</load-on-startup>
 	</servlet>
-	-->
 	<servlet>
 		<servlet-name>cmisatom</servlet-name>
 		<servlet-class>org.apache.chemistry.opencmis.server.impl.atompub.CmisAtomPubServlet</servlet-class>
@@ -154,13 +152,11 @@
         <load-on-startup>1</load-on-startup>
     </servlet> -->
 
-	<!-- OpenCMIS servlet mappings - AtomPub and Browser bindings only for Jetty development -->
-	<!-- TEMPORARILY DISABLED: WebServices servlet mapping
+	<!-- OpenCMIS servlet mappings - All three bindings for CMIS 1.1 compliance -->
 	<servlet-mapping>
 		<servlet-name>cmisws</servlet-name>
 		<url-pattern>/services/*</url-pattern>
 	</servlet-mapping>
-	-->
 	<servlet-mapping>
 		<servlet-name>cmisatom</servlet-name>
 		<url-pattern>/atom/*</url-pattern>
@@ -199,6 +195,18 @@
  <servlet-mapping>
   <servlet-name>all-repositories</servlet-name>
   <url-pattern>/rest/all/repositories</url-pattern>
+ </servlet-mapping>
+
+ <!-- Type registration servlet - bypasses Jersey routing issues -->
+ <servlet>
+  <servlet-name>type-registration</servlet-name>
+  <servlet-class>jp.aegif.nemaki.rest.TypeRegistrationServlet</servlet-class>
+  <load-on-startup>11</load-on-startup>
+ </servlet>
+
+ <servlet-mapping>
+  <servlet-name>type-registration</servlet-name>
+  <url-pattern>/rest/type-register/*</url-pattern>
  </servlet-mapping>
 
 

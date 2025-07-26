@@ -11,8 +11,6 @@ import jakarta.ws.rs.core.Response;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.springframework.stereotype.Component;
-
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.util.spring.SpringContext;
@@ -21,7 +19,6 @@ import jp.aegif.nemaki.util.spring.SpringContext;
  * REST Resource for repository management
  * Provides filtered repository list excluding information management areas
  */
-@Component
 @Path("/all/repositories")
 public class RepositoriesResource {
     

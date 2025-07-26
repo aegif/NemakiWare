@@ -4,9 +4,45 @@ import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition,
 export class CMISService {
   private baseUrl = '/core/browser';
   private authService: AuthService;
+  private onAuthError?: (error: any) => void;
 
-  constructor() {
+  constructor(onAuthError?: (error: any) => void) {
     this.authService = AuthService.getInstance();
+    this.onAuthError = onAuthError;
+  }
+
+  setAuthErrorHandler(handler: (error: any) => void) {
+    this.onAuthError = handler;
+  }
+
+  // Helper method to safely extract string values from CMIS properties
+  // CMIS properties can be either strings, arrays, or objects with 'value' property (Browser Binding format)
+  private getSafeStringProperty(props: Record<string, any>, key: string, defaultValue: string = ''): string {
+    const property = props[key];
+    
+    // Handle Browser Binding format: {id: "cmis:name", value: "actual_value"}
+    if (property && typeof property === 'object' && property.value !== undefined) {
+      const value = property.value;
+      if (typeof value === 'string') {
+        return value;
+      } else if (Array.isArray(value) && value.length > 0) {
+        return String(value[0]);
+      } else if (Array.isArray(value) && value.length === 0) {
+        return defaultValue;
+      }
+      return String(value);
+    }
+    
+    // Handle legacy format: direct string or array values
+    if (typeof property === 'string') {
+      return property;
+    } else if (Array.isArray(property) && property.length > 0) {
+      return String(property[0]); // Take first element if array
+    } else if (Array.isArray(property) && property.length === 0) {
+      return defaultValue; // Empty array returns default
+    }
+    
+    return defaultValue;
   }
 
   private getAuthHeaders() {
@@ -15,9 +51,13 @@ export class CMISService {
       if (authData) {
         const auth = JSON.parse(authData);
         if (auth.username && auth.token) {
-          const credentials = btoa(`${auth.username}:${auth.token}`);
-          console.log('CMISService getAuthHeaders: Using Basic auth for browser binding');
-          return { 'Authorization': `Basic ${credentials}` };
+          console.log('CMISService getAuthHeaders: Using token-based authentication with Basic auth header and nemaki_auth_token');
+          // Use Basic auth with username to provide username context
+          const credentials = btoa(`${auth.username}:dummy`);
+          return { 
+            'Authorization': `Basic ${credentials}`,
+            'nemaki_auth_token': auth.token 
+          };
         }
       }
     } catch (e) {
@@ -28,11 +68,35 @@ export class CMISService {
     return {};
   }
 
+  private handleHttpError(status: number, statusText: string, url: string) {
+    const error = {
+      status,
+      statusText,
+      url,
+      message: `HTTP ${status}: ${statusText}`
+    };
+
+    console.error('CMIS HTTP Error:', error);
+
+    // Handle authentication errors
+    if (status === 401) {
+      console.warn('Authentication error detected - token may be expired');
+      if (this.onAuthError) {
+        this.onAuthError(error);
+      }
+    }
+
+    return error;
+  }
+
   async getRepositories(): Promise<string[]> {
     try {
       return new Promise((resolve) => {
         const xhr = new XMLHttpRequest();
-        xhr.open('GET', '/core/rest/repositories', true);
+        
+        // Use unauthenticated endpoint for getting repository list
+        // This is needed for the login screen where user hasn't authenticated yet
+        xhr.open('GET', '/core/rest/all/repositories', true);
         xhr.setRequestHeader('Accept', 'application/json');
         
         xhr.onreadystatechange = () => {
@@ -40,13 +104,24 @@ export class CMISService {
             if (xhr.status === 200) {
               try {
                 const response = JSON.parse(xhr.responseText);
-                resolve(response.repositories || []);
+                // Extract repository IDs from the response
+                if (Array.isArray(response)) {
+                  const repositoryIds = response.map(repo => repo.id).filter(id => id);
+                  resolve(repositoryIds);
+                } else if (response.repositories) {
+                  resolve(response.repositories);
+                } else {
+                  resolve([]);
+                }
               } catch (e) {
                 console.error('Failed to parse repositories response:', e);
                 resolve([]);
               }
             } else {
               console.error('Failed to fetch repositories:', xhr.status);
+              if (xhr.status === 401) {
+                this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+              }
               resolve([]);
             }
           }
@@ -73,7 +148,11 @@ export class CMISService {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', `${this.baseUrl}/${repositoryId}/root`, true);
       xhr.setRequestHeader('Accept', 'application/json');
-      xhr.setRequestHeader('AUTH_TOKEN', '1f9b3416-b663-4e70-a97a-5836dcab330f');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
       
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
@@ -85,13 +164,13 @@ export class CMISService {
               
               const props = response.succinctProperties || response.properties || {};
               const rootFolder = {
-                id: props['cmis:objectId'] || 'e02f784f8360a02cc14d1314c10038ff',
-                name: props['cmis:name'] || 'Root Folder',
-                objectType: props['cmis:objectTypeId'] || 'cmis:folder',
+                id: this.getSafeStringProperty(props, 'cmis:objectId', 'e02f784f8360a02cc14d1314c10038ff'),
+                name: this.getSafeStringProperty(props, 'cmis:name', 'Root Folder'),
+                objectType: this.getSafeStringProperty(props, 'cmis:objectTypeId', 'cmis:folder'),
                 baseType: 'cmis:folder',
                 properties: props,
                 allowableActions: ['canGetChildren'],
-                path: props['cmis:path'] || '/'
+                path: this.getSafeStringProperty(props, 'cmis:path', '/')
               };
               
               console.log('CMIS DEBUG: Parsed root folder:', rootFolder);
@@ -111,6 +190,8 @@ export class CMISService {
             }
           } else {
             console.error('CMIS DEBUG: getRootFolder failed with status:', xhr.status);
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            // For now, still provide fallback but notify about auth error
             const fallbackFolder = {
               id: 'e02f784f8360a02cc14d1314c10038ff',
               name: 'Root Folder',
@@ -148,33 +229,88 @@ export class CMISService {
     
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('GET', `${this.baseUrl}/browser/${repositoryId}/children?objectId=${folderId}`, true);
-      xhr.setRequestHeader('Accept', 'application/json');
-      xhr.setRequestHeader('AUTH_TOKEN', '1f9b3416-b663-4e70-a97a-5836dcab330f');
+      
+      // Use Browser Binding for root folder, AtomPub for subfolders (as fallback until Browser Binding is fully working)
+      let url: string;
+      let useAtomPub = false;
+      
+      if (folderId === 'e02f784f8360a02cc14d1314c10038ff') {
+        // Root folder uses Browser Binding /root endpoint (known to work)
+        url = `${this.baseUrl}/${repositoryId}/root?selector=children`;
+        xhr.setRequestHeader('Accept', 'application/json');
+      } else {
+        // Use AtomPub for subfolders as fallback (known to work with correct data)
+        url = `/core/atom/${repositoryId}/children?id=${folderId}`;
+        useAtomPub = true;
+        xhr.setRequestHeader('Accept', 'application/atom+xml');
+      }
+      
+      xhr.open('GET', url, true);
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
       
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {
             try {
-              console.log('CMIS DEBUG: getChildren response:', xhr.responseText);
-              const response = JSON.parse(xhr.responseText);
-              console.log('CMIS DEBUG: getChildren parsed response:', response);
+              console.log('CMIS DEBUG: getChildren response:', xhr.responseText.substring(0, 500));
               
               const children: CMISObject[] = [];
-              if (response.objects && Array.isArray(response.objects)) {
-                response.objects.forEach((obj: any) => {
-                  const props = obj.object?.succinctProperties || obj.object?.properties || {};
-                  
-                  const cmisObject: CMISObject = {
-                    id: props['cmis:objectId'] || '',
-                    name: props['cmis:name'] || '',
-                    objectType: props['cmis:objectTypeId'] || 'cmis:document',
-                    baseType: props['cmis:objectTypeId']?.startsWith('cmis:folder') ? 'cmis:folder' : 'cmis:document',
-                    properties: props,
-                    allowableActions: []
-                  };
-                  children.push(cmisObject);
-                });
+              
+              if (useAtomPub) {
+                // Parse AtomPub XML response
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
+                const entries = xmlDoc.getElementsByTagName('entry');
+                
+                for (let i = 0; i < entries.length; i++) {
+                  const entry = entries[i];
+                  const properties = entry.getElementsByTagName('cmis:properties')[0];
+                  if (properties) {
+                    // Extract properties from XML
+                    const nameElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:name"] cmis\\:value, propertyString[propertyDefinitionId="cmis:name"] value');
+                    const idElement = properties.querySelector('cmis\\:propertyId[propertyDefinitionId="cmis:objectId"] cmis\\:value, propertyId[propertyDefinitionId="cmis:objectId"] value');
+                    const typeElement = properties.querySelector('cmis\\:propertyId[propertyDefinitionId="cmis:objectTypeId"] cmis\\:value, propertyId[propertyDefinitionId="cmis:objectTypeId"] value');
+                    
+                    const name = nameElement?.textContent || 'Unknown';
+                    const id = idElement?.textContent || '';
+                    const objectType = typeElement?.textContent || 'cmis:document';
+                    
+                    const cmisObject: CMISObject = {
+                      id: id,
+                      name: name,
+                      objectType: objectType,
+                      baseType: objectType.startsWith('cmis:folder') ? 'cmis:folder' : 'cmis:document',
+                      properties: { 'cmis:name': name, 'cmis:objectId': id, 'cmis:objectTypeId': objectType },
+                      allowableActions: []
+                    };
+                    children.push(cmisObject);
+                  }
+                }
+              } else {
+                // Parse Browser Binding JSON response
+                const response = JSON.parse(xhr.responseText);
+                console.log('CMIS DEBUG: getChildren parsed response:', response);
+                
+                if (response.objects && Array.isArray(response.objects)) {
+                  response.objects.forEach((obj: any) => {
+                    const props = obj.object?.succinctProperties || obj.object?.properties || {};
+                    
+                    const objectTypeId = this.getSafeStringProperty(props, 'cmis:objectTypeId', 'cmis:document');
+                    const cmisObject: CMISObject = {
+                      id: this.getSafeStringProperty(props, 'cmis:objectId'),
+                      name: this.getSafeStringProperty(props, 'cmis:name'),
+                      objectType: objectTypeId,
+                      baseType: objectTypeId.startsWith('cmis:folder') ? 'cmis:folder' : 'cmis:document',
+                      properties: props,
+                      allowableActions: []
+                    };
+                    children.push(cmisObject);
+                  });
+                }
               }
               
               console.log('CMIS DEBUG: Parsed children:', children);
@@ -185,7 +321,8 @@ export class CMISService {
             }
           } else {
             console.error('CMIS DEBUG: getChildren HTTP error:', xhr.status, xhr.statusText);
-            reject(new Error(`HTTP ${xhr.status}`));
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };
@@ -216,7 +353,11 @@ export class CMISService {
       
       xhr.open('GET', `${this.baseUrl}/${repositoryId}/entry?id=${decodedObjectId}`, true);
       xhr.setRequestHeader('Accept', 'application/atom+xml');
-      xhr.setRequestHeader('AUTH_TOKEN', '1f9b3416-b663-4e70-a97a-5836dcab330f');
+      
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
       
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
@@ -276,8 +417,11 @@ export class CMISService {
       
       const documentName = properties.name || file.name;
       
-      xhr.setRequestHeader('AUTH_TOKEN', '1f9b3416-b663-4e70-a97a-5836dcab330f');
-      console.log('CMIS DEBUG: createDocument set AUTH_TOKEN header');
+      const headers = this.getAuthHeaders();
+      Object.entries(headers).forEach(([key, value]) => {
+        xhr.setRequestHeader(key, value);
+      });
+      console.log('CMIS DEBUG: createDocument set auth headers');
       
       console.log('CMIS DEBUG: createDocument file:', file.name, file.size, file.type);
 
@@ -708,7 +852,8 @@ export class CMISService {
   async getUsers(repositoryId: string): Promise<User[]> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('GET', `${this.baseUrl}/${repositoryId}/user/list`, true);
+      // サーバー側修正に合わせて正しいRESTエンドポイントを使用
+      xhr.open('GET', `/core/rest/repo/${repositoryId}/user/list`, true);
       xhr.setRequestHeader('Accept', 'application/json');
       
       const headers = this.getAuthHeaders();
@@ -725,8 +870,33 @@ export class CMISService {
             } catch (e) {
               reject(new Error('Invalid response format'));
             }
+          } else if (xhr.status === 500) {
+            // サーバー側エラーの詳細情報を解析
+            let errorMessage = 'サーバーエラーが発生しました';
+            let errorDetails = '';
+            try {
+              const errorResponse = JSON.parse(xhr.responseText);
+              if (errorResponse.message) {
+                errorMessage = errorResponse.message;
+              }
+              if (errorResponse.error) {
+                errorDetails = errorResponse.error;
+              }
+              if (errorResponse.errorType) {
+                errorDetails += ` (${errorResponse.errorType})`;
+              }
+            } catch (e) {
+              // JSONパースできない場合はレスポンステキストをそのまま使用
+              errorDetails = xhr.responseText || 'Unknown server error';
+            }
+            
+            const error = new Error(errorMessage);
+            (error as any).details = errorDetails;
+            (error as any).status = xhr.status;
+            reject(error);
           } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };
@@ -830,7 +1000,8 @@ export class CMISService {
   async getGroups(repositoryId: string): Promise<Group[]> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('GET', `${this.baseUrl}/${repositoryId}/group/list`, true);
+      // サーバー側修正に合わせて正しいRESTエンドポイントを使用
+      xhr.open('GET', `/core/rest/repo/${repositoryId}/group/list`, true);
       xhr.setRequestHeader('Accept', 'application/json');
       
       const headers = this.getAuthHeaders();
@@ -847,8 +1018,33 @@ export class CMISService {
             } catch (e) {
               reject(new Error('Invalid response format'));
             }
+          } else if (xhr.status === 500) {
+            // サーバー側エラーの詳細情報を解析
+            let errorMessage = 'サーバーエラーが発生しました';
+            let errorDetails = '';
+            try {
+              const errorResponse = JSON.parse(xhr.responseText);
+              if (errorResponse.message) {
+                errorMessage = errorResponse.message;
+              }
+              if (errorResponse.error) {
+                errorDetails = errorResponse.error;
+              }
+              if (errorResponse.errorType) {
+                errorDetails += ` (${errorResponse.errorType})`;
+              }
+            } catch (e) {
+              // JSONパースできない場合はレスポンステキストをそのまま使用
+              errorDetails = xhr.responseText || 'Unknown server error';
+            }
+            
+            const error = new Error(errorMessage);
+            (error as any).details = errorDetails;
+            (error as any).status = xhr.status;
+            reject(error);
           } else {
-            reject(new Error(`HTTP ${xhr.status}`));
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };

@@ -41,6 +41,18 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- Standard CMIS Views Patch - adds missing CMIS 1.1 specification views -->
+				<bean class="jp.aegif.nemaki.patch.Patch_StandardCmisViews">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<!-- Relationship Types Setup Patch - registers standard relationship types -->
+				<bean class="jp.aegif.nemaki.patch.Patch_RelationshipTypesSetup">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 			</list>
 		</property>
 	</bean>
@@ -64,10 +76,30 @@
 		<property name="repositoryService">
 			<ref bean="RepositoryService" />
 		</property>
+		<property name="typeService">
+			<ref bean="TypeService" />
+		</property>
+		<property name="typeManager">
+			<ref bean="TypeManager" />
+		</property>
 	</bean>
 
 	<!-- Initial Folder Setup Patch Bean -->
 	<bean id="patch_InitialFolderSetup" class="jp.aegif.nemaki.patch.Patch_InitialFolderSetup">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<!-- Standard CMIS Views Patch Bean -->
+	<bean id="patch_StandardCmisViews" class="jp.aegif.nemaki.patch.Patch_StandardCmisViews">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<!-- Relationship Types Setup Patch Bean -->
+	<bean id="patch_RelationshipTypesSetup" class="jp.aegif.nemaki.patch.Patch_RelationshipTypesSetup">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>

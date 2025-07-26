@@ -1,4 +1,4 @@
-FROM openjdk:8-jre-alpine
+FROM amazoncorretto:17-alpine
 
 # Install curl for health checks
 RUN apk add --no-cache curl

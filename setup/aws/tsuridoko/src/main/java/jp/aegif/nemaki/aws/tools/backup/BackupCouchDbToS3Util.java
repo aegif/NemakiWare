@@ -1,5 +1,10 @@
 package jp.aegif.nemaki.aws.tools.backup;
 
+// DEPRECATED: This utility class depends on legacy bjornloka package which has been removed.
+// This class is kept for reference but is non-functional.
+// TODO: Migrate to use cloudant-init functionality for dump/restore operations.
+
+/*
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
@@ -9,7 +14,8 @@ import java.util.List;
 
 import org.apache.http.client.utils.URIUtils;
 
-import jp.aegif.nemaki.bjornloka.dump.*;
+// REMOVED: import jp.aegif.nemaki.bjornloka.dump.*;
+*/
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.AmazonServiceException;
 import com.amazonaws.auth.profile.ProfileCredentialsProvider;

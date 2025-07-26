@@ -30,6 +30,7 @@ import { useNavigate } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
 import { CMISObject } from '../../types/cmis';
 import { FolderTree } from '../FolderTree/FolderTree';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface DocumentListProps {
   repositoryId: string;
@@ -45,7 +46,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   
   const [form] = Form.useForm();
   const navigate = useNavigate();
-  const cmisService = new CMISService();
+  const { handleAuthError } = useAuth();
+  const cmisService = new CMISService(handleAuthError);
 
   useEffect(() => {
     if (currentFolderId) {

@@ -43,11 +43,14 @@
 		</plugins>
 	</build>
 	<dependencies>
+		<!-- Legacy bjornloka dependency removed - replaced by cloudant-init -->
+		<!-- 
 		<dependency>
 			<groupId>jp.aegif.nemaki.bjornloka</groupId>
 			<artifactId>bjornloka</artifactId>
 			<version>1.0.0</version>
 		</dependency>
+		-->
 		<dependency>
 			<groupId>com.amazonaws</groupId>
 			<artifactId>aws-java-sdk</artifactId>

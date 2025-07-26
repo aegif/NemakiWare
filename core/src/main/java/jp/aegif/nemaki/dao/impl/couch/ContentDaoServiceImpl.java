@@ -215,9 +215,30 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public NemakiTypeDefinition createTypeDefinition(String repositoryId, NemakiTypeDefinition typeDefinition) {
+		System.err.println("[DAO] === CREATE TYPE DEFINITION CALLED ===");
+		System.err.println("[DAO] Repository ID: " + repositoryId);
+		System.err.println("[DAO] Type ID: " + typeDefinition.getTypeId());
+		System.err.println("[DAO] Input NemakiTypeDefinition properties: " + typeDefinition.getProperties());
+		System.err.println("[DAO] Input NemakiTypeDefinition properties size: " + (typeDefinition.getProperties() != null ? typeDefinition.getProperties().size() : "null"));
+		
+		// Step 1: Create CouchTypeDefinition
+		System.err.println("[DAO] Creating CouchTypeDefinition...");
 		CouchTypeDefinition ct = new CouchTypeDefinition(typeDefinition);
+		System.err.println("[DAO] CouchTypeDefinition created - properties: " + ct.getProperties());
+		System.err.println("[DAO] CouchTypeDefinition properties size: " + (ct.getProperties() != null ? ct.getProperties().size() : "null"));
+		
+		// Step 2: Call CloudantClientWrapper create
+		System.err.println("[DAO] Calling CloudantClientWrapper.create()...");
 		connectorPool.getClient(repositoryId).create(ct);
-		return ct.convert();
+		System.err.println("[DAO] CloudantClientWrapper.create() completed");
+		System.err.println("[DAO] After CouchDB create, CouchTypeDefinition properties: " + ct.getProperties());
+		
+		// Step 3: Convert back to NemakiTypeDefinition
+		System.err.println("[DAO] Converting back to NemakiTypeDefinition...");
+		NemakiTypeDefinition result = ct.convert();
+		System.err.println("[DAO] Final result properties: " + result.getProperties());
+		System.err.println("[DAO] === CREATE TYPE DEFINITION COMPLETED ===");
+		return result;
 	}
 
 	@Override
@@ -326,30 +347,181 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetailByCoreNodeId(String repositoryId,
 			String coreNodeId) {
 		try {
-			// Use ViewQuery to get property definition details by core node ID
-			Map<String, Object> queryParams = new HashMap<String, Object>();
-			queryParams.put("key", coreNodeId);
-			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "propertyDefinitionDetailsByCoreNodeId", queryParams);
+			System.err.println("[PROPERTY_DETAIL_DEBUG] DAO METHOD CALLED - coreNodeId: " + coreNodeId + " in repository: " + repositoryId);
+			log.error("[PROPERTY_DETAIL_DEBUG] Starting search for coreNodeId: " + coreNodeId + " in repository: " + repositoryId);
 			
+			// Alternative approach: Direct document retrieval without ObjectMapper conversion
+			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+			Map<String, Object> queryParams = new HashMap<String, Object>();
+			queryParams.put("include_docs", true);
+			
+			ViewResult result = client.queryView("_repo", "propertyDefinitionDetails", queryParams);
 			List<NemakiPropertyDefinitionDetail> details = new ArrayList<NemakiPropertyDefinitionDetail>();
 			
-			if (result.getRows() != null) {
+			System.err.println("[PROPERTY_DETAIL_DEBUG] ViewResult: " + (result != null ? "found" : "null") + 
+			         ", Rows: " + (result != null && result.getRows() != null ? result.getRows().size() : 0));
+			log.error("[PROPERTY_DETAIL_DEBUG] ViewResult: " + (result != null ? "found" : "null") + 
+			         ", Rows: " + (result != null && result.getRows() != null ? result.getRows().size() : 0));
+			
+			if (result != null && result.getRows() != null) {
 				for (ViewResultRow row : result.getRows()) {
 					if (row.getDoc() != null) {
-						try {
-							ObjectMapper mapper = createConfiguredObjectMapper();
-							CouchPropertyDefinitionDetail cpdd = mapper.convertValue(row.getDoc(), CouchPropertyDefinitionDetail.class);
-							if (cpdd != null) {
-								details.add(cpdd.convert());
+						// Handle Cloudant SDK Document object properly
+						Object docObj = row.getDoc();
+						Map<String, Object> docMap = null;
+						
+						if (docObj instanceof Map) {
+							docMap = (Map<String, Object>) docObj;
+						} else if (docObj instanceof com.ibm.cloud.cloudant.v1.model.Document) {
+							// Convert Cloudant Document to Map using properties
+							com.ibm.cloud.cloudant.v1.model.Document cloudantDoc = (com.ibm.cloud.cloudant.v1.model.Document) docObj;
+							docMap = cloudantDoc.getProperties();
+							
+							// Ensure _id and _rev are included from the Cloudant Document
+							if (docMap != null) {
+								docMap.put("_id", cloudantDoc.getId());
+								docMap.put("_rev", cloudantDoc.getRev());
+								System.err.println("[PROPERTY_DETAIL_DEBUG] Added _id: " + cloudantDoc.getId() + ", _rev: " + cloudantDoc.getRev());
 							}
-						} catch (Exception e) {
-							log.warn("Failed to convert property definition detail document: " + e.getMessage());
+						} else {
+							System.err.println("[PROPERTY_DETAIL_DEBUG] Unknown document type: " + docObj.getClass().getName());
+							continue;
+						}
+						
+						if (docMap == null) {
+							System.err.println("[PROPERTY_DETAIL_DEBUG] Failed to extract document properties");
+							continue;
+						}
+						
+						Object docCoreNodeId = docMap.get("coreNodeId");
+						
+						System.err.println("[PROPERTY_DETAIL_DEBUG] Checking document ID: " + docMap.get("_id") + 
+						         ", coreNodeId: " + docCoreNodeId + ", type: " + docMap.get("type"));
+						
+						if (coreNodeId.equals(String.valueOf(docCoreNodeId))) {
+							System.err.println("[PROPERTY_DETAIL_DEBUG] Found matching document - attempting direct construction");
+							
+							// Direct construction instead of ObjectMapper conversion
+							try {
+								CouchPropertyDefinitionDetail cpdd = new CouchPropertyDefinitionDetail();
+								
+								// Set base properties
+								cpdd.setId((String) docMap.get("_id"));
+								cpdd.setRevision((String) docMap.get("_rev"));
+								cpdd.setType((String) docMap.get("type"));
+								
+								// Handle date fields - skip for now as they need proper conversion
+								cpdd.setCreator((String) docMap.get("creator"));
+								cpdd.setModifier((String) docMap.get("modifier"));
+								
+								// Set property definition specific properties
+								cpdd.setCoreNodeId((String) docMap.get("coreNodeId"));
+								cpdd.setPropertyId((String) docMap.get("propertyId"));
+								cpdd.setLocalName((String) docMap.get("localName"));
+								cpdd.setLocalNameSpace((String) docMap.get("localNameSpace"));
+								cpdd.setQueryName((String) docMap.get("queryName"));
+								cpdd.setDisplayName((String) docMap.get("displayName"));
+								cpdd.setDescription((String) docMap.get("description"));
+								
+								// Handle enum types safely
+								Object propertyTypeObj = docMap.get("propertyType");
+								if (propertyTypeObj != null) {
+									try {
+										cpdd.setPropertyType(org.apache.chemistry.opencmis.commons.enums.PropertyType.valueOf(propertyTypeObj.toString()));
+									} catch (Exception e) {
+										log.warn("Invalid propertyType: " + propertyTypeObj + ", using STRING as default");
+										cpdd.setPropertyType(org.apache.chemistry.opencmis.commons.enums.PropertyType.STRING);
+									}
+								}
+								
+								Object cardinalityObj = docMap.get("cardinality");
+								if (cardinalityObj != null) {
+									try {
+										cpdd.setCardinality(org.apache.chemistry.opencmis.commons.enums.Cardinality.valueOf(cardinalityObj.toString()));
+									} catch (Exception e) {
+										log.warn("Invalid cardinality: " + cardinalityObj + ", using SINGLE as default");
+										cpdd.setCardinality(org.apache.chemistry.opencmis.commons.enums.Cardinality.SINGLE);
+									}
+								}
+								
+								Object updatabilityObj = docMap.get("updatability");
+								if (updatabilityObj != null) {
+									try {
+										cpdd.setUpdatability(org.apache.chemistry.opencmis.commons.enums.Updatability.valueOf(updatabilityObj.toString()));
+									} catch (Exception e) {
+										log.warn("Invalid updatability: " + updatabilityObj + ", using READWRITE as default");
+										cpdd.setUpdatability(org.apache.chemistry.opencmis.commons.enums.Updatability.READWRITE);
+									}
+								}
+								
+								// Handle boolean fields safely
+								Object requiredObj = docMap.get("required");
+								cpdd.setRequired(requiredObj != null && Boolean.parseBoolean(requiredObj.toString()));
+								
+								Object queryableObj = docMap.get("queryable");
+								cpdd.setQueryable(queryableObj != null && Boolean.parseBoolean(queryableObj.toString()));
+								
+								Object orderableObj = docMap.get("orderable");
+								cpdd.setOrderable(orderableObj != null && Boolean.parseBoolean(orderableObj.toString()));
+								
+								Object openChoiceObj = docMap.get("openChoice");
+								cpdd.setOpenChoice(openChoiceObj != null && Boolean.parseBoolean(openChoiceObj.toString()));
+								
+								// Handle numeric fields safely
+								Object maxLengthObj = docMap.get("maxLength");
+								if (maxLengthObj != null) {
+									try {
+										cpdd.setMaxLength(Long.valueOf(maxLengthObj.toString()));
+									} catch (Exception e) {
+										log.debug("Non-numeric maxLength: " + maxLengthObj);
+									}
+								}
+								
+								Object minValueObj = docMap.get("minValue");
+								if (minValueObj != null) {
+									try {
+										cpdd.setMinValue(Long.valueOf(minValueObj.toString()));
+									} catch (Exception e) {
+										log.debug("Non-numeric minValue: " + minValueObj);
+									}
+								}
+								
+								Object maxValueObj = docMap.get("maxValue");
+								if (maxValueObj != null) {
+									try {
+										cpdd.setMaxValue(Long.valueOf(maxValueObj.toString()));
+									} catch (Exception e) {
+										log.debug("Non-numeric maxValue: " + maxValueObj);
+									}
+								}
+								
+								// Convert default values list if present
+								Object defaultValueObj = docMap.get("defaultValue");
+								if (defaultValueObj instanceof List) {
+									cpdd.setDefaultValue((List<Object>) defaultValueObj);
+								}
+								
+								// Convert choices list if present  
+								Object choicesObj = docMap.get("choices");
+								if (choicesObj instanceof List) {
+									// For now, set as null - choices conversion is complex
+									cpdd.setChoices(null);
+								}
+								
+								details.add(cpdd.convert());
+								System.err.println("[PROPERTY_DETAIL_DEBUG] Successfully constructed PropertyDefinitionDetail with coreNodeId: " + coreNodeId);
+								log.error("[PROPERTY_DETAIL_DEBUG] Successfully constructed PropertyDefinitionDetail with coreNodeId: " + coreNodeId);
+								
+							} catch (Exception constructionError) {
+								log.error("[PROPERTY_DETAIL_DEBUG] Failed to construct PropertyDefinitionDetail: " + constructionError.getMessage(), constructionError);
+							}
 						}
 					}
 				}
 			}
 			
-			log.debug("Retrieved " + details.size() + " property definition details for core node '" + coreNodeId + "' from repository: " + repositoryId);
+			System.err.println("[PROPERTY_DETAIL_DEBUG] Found " + details.size() + " details for coreNodeId: " + coreNodeId);
+			log.error("[PROPERTY_DETAIL_DEBUG] Found " + details.size() + " details for coreNodeId: " + coreNodeId);
 			return details;
 			
 		} catch (Exception e) {
@@ -1048,20 +1220,47 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public List<UserItem> getUserItems(String repositoryId){
+		log.info("=== getUserItems: Starting for repository: " + repositoryId + " ===");
 		try {
 			// Query userItemsById view to get all user items
+			log.info("getUserItems: Getting client for repository: " + repositoryId);
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+			log.info("getUserItems: Client obtained, querying userItemsById view");
+			
 			List<CouchUserItem> couchUsers = client.queryView("_repo", "userItemsById", null, CouchUserItem.class);
+			log.info("getUserItems: Retrieved " + couchUsers.size() + " raw users from CouchDB");
 			
 			List<UserItem> userItems = new ArrayList<UserItem>();
 			for (CouchUserItem couchUser : couchUsers) {
-				userItems.add(couchUser.convert());
+				log.debug("getUserItems: Converting CouchUserItem with userId: " + couchUser.getUserId());
+				try {
+					UserItem converted = couchUser.convert();
+					if (converted != null) {
+						userItems.add(converted);
+						log.debug("getUserItems: Successfully converted user: " + converted.getUserId());
+					} else {
+						log.warn("getUserItems: convert() returned null for CouchUserItem: " + couchUser.getId());
+					}
+				} catch (Exception convertException) {
+					log.error("getUserItems: Exception during convert() for CouchUserItem: " + couchUser.getId(), convertException);
+					// 変換に失敗したユーザーはスキップして続行
+				}
 			}
 			
+			log.info("getUserItems: Returning " + userItems.size() + " converted users");
 			return userItems;
 		} catch (Exception e) {
-			log.error("Error getting user items in repository: " + repositoryId, e);
-			return new ArrayList<UserItem>();
+			log.error("=== getUserItems: Exception occurred ===");
+			log.error("Exception type: " + e.getClass().getName());
+			log.error("Exception message: " + e.getMessage());
+			if (e.getCause() != null) {
+				log.error("Caused by: " + e.getCause().getClass().getName() + ": " + e.getCause().getMessage());
+			}
+			log.error("Full stack trace:", e);
+			log.error("=== End getUserItems Exception ===");
+			
+			// 例外を握りつぶすのではなく、適切にRuntimeExceptionとして伝播
+			throw new RuntimeException("Failed to retrieve user items from repository: " + repositoryId, e);
 		}
 	}
 

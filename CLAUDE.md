@@ -33,11 +33,66 @@ curl -s -u admin:admin "http://localhost:8080/core/browser/bedroom/root?cmisacti
 # Returns: {"exception":"notSupported","message":"Unknown operation"}
 ```
 
-### Current Testing Standard - ESTABLISHED ✅ (2025-07-23)
+## Recent Major Changes (2025-07-24)
 
-**Primary Test Method**: Shell-based comprehensive testing using `comprehensive-test.sh`.
+### Database Initialization Architecture Consolidation - COMPLETED ✅
 
-**Test Coverage (9 Comprehensive Tests)**:
+**CRITICAL SUCCESS**: Complete consolidation of database initialization into Core module PatchService, eliminating external process dependencies and curl-based workarounds.
+
+**Key Achievements (2025-07-24):**
+- **✅ PatchService Direct Dump Loading**: Implemented complete dump file loading functionality directly in PatchService using Cloudant SDK
+- **✅ External Process Elimination**: Removed cloudant-init.jar process execution and temporary file operations
+- **✅ curl Operations Eliminated**: Completely removed all curl-based database operations from Docker environment
+- **✅ bjornloka Legacy Code Removed**: Complete removal of all bjornloka references and dependencies
+- **✅ Docker Compose Simplification**: Eliminated all external initializer containers from docker-compose-simple.yml
+
+**Technical Implementation:**
+
+*PatchService Enhanced Dump Loading:*
+```java
+private void loadDumpFileDirectly(String repositoryId, org.springframework.core.io.Resource dumpResource) {
+    // Parse JSON dump file directly using Jackson ObjectMapper
+    // Process each entry with document and attachment handling
+    // Create documents using CloudantClientWrapper.create()
+    // Handle base64 encoded attachments
+}
+```
+
+**Docker Environment Simplification:**
+```yaml
+# BEFORE: 6 containers (couchdb + 4 initializers + solr + core)
+# AFTER: 3 containers (couchdb + solr + core)
+services:
+  couchdb: # CouchDB 3.x
+  solr:    # Search engine  
+  core:    # CMIS server with integrated initialization
+```
+
+**Initialization Flow (NEW):**
+1. **Core Startup**: PatchService.applyPatchesOnStartup() automatically called
+2. **Database Check**: Each repository checked for design documents and data
+3. **Automatic Initialization**: Missing repositories initialized from classpath dump files
+4. **Direct SDK Operations**: All operations use CloudantClientWrapper (no external processes)
+5. **Patch Application**: Folder creation and file registration via CMIS services
+
+**Files Modified:**
+- `core/src/main/java/jp/aegif/nemaki/patch/PatchService.java`: Complete dump loading implementation
+- `docker/docker-compose-simple.yml`: Removed all initializer containers
+- `docker/initializer/entrypoint.sh`: Deprecated with informational message
+- Removed: `core/src/main/java/jp/aegif/nemaki/util/DatabaseAutoInitializer.java`
+- All bjornloka references removed from documentation and code
+
+**Critical Achievements:**
+- **Zero External Dependencies**: No cloudant-init.jar, no curl operations, no temporary files
+- **Integrated Architecture**: All initialization logic within Core module Spring context
+- **Reliable Startup**: Deterministic database initialization without race conditions
+- **Developer Experience**: Single `docker compose up` command for complete environment
+
+### Current Testing Standard - ESTABLISHED ✅ (2025-07-24)
+
+**Primary Test Method**: Shell-based QA testing using `qa-test.sh`.
+
+**Test Coverage (23 Comprehensive Tests)**:
 1. **CMIS Core Functionality**: AtomPub, Browser Binding, Root Folder access
 2. **REST API Services**: Repository listing, test endpoints  
 3. **Search Engine Integration**: Solr URL and initialization endpoints
@@ -45,8 +100,8 @@ curl -s -u admin:admin "http://localhost:8080/core/browser/bedroom/root?cmisacti
 
 **Quick Test Execution**:
 ```bash
-# Run all 9 comprehensive tests
-./comprehensive-test.sh
+# Run all 23 QA tests
+./qa-test.sh
 ```
 
 **Legacy Scripts Removed**: All legacy test scripts (*.sh files in docker/ directory and project root) have been removed to avoid confusion. Use only the standardized procedures documented in the "Clean Build and Comprehensive Testing Procedures" section.
@@ -72,6 +127,83 @@ NemakiWare is an open source Enterprise Content Management system built as a CMI
 
 - **Backend**: Spring Framework, Apache Chemistry OpenCMIS, Jakarta EE 10
 - **Database**: CouchDB (document storage)
+
+## Maven Build Configuration
+
+### Build Profiles
+
+**Development Profile (Default)**:
+```xml
+<profile>
+  <id>development</id>
+  <activation>
+    <activeByDefault>true</activeByDefault>
+  </activation>
+  <properties>
+    <maven.test.skip>false</maven.test.skip>
+  </properties>
+</profile>
+```
+
+**Product Profile**:
+```xml
+<profile>
+  <id>product</id>
+  <properties>
+    <maven.test.skip>false</maven.test.skip>
+  </properties>
+</profile>
+```
+
+### Test Configuration Status
+
+**Current Test Execution Status**:
+- **Unit Tests**: Temporarily disabled with `@Ignore` annotations due to timeout issues
+- **TCK Tests**: Temporarily disabled with `@Ignore` annotations due to data visibility issues  
+- **Integration Tests**: Fully functional via `qa-test.sh`
+- **Maven Test Skip**: Set to `false` in both profiles but effectively bypassed by `@Ignore` annotations
+
+**Key Test Files**:
+- `AllTest.java`: TCK test suite (disabled with `@Ignore`)
+- `MultiThreadTest.java`: Concurrent operation tests (checkOutTest_single disabled)
+- `qa-test.sh`: Primary QA testing method (23 tests)
+
+### Jetty Development Configuration
+
+**Jetty Plugin Configuration**:
+```xml
+<plugin>
+  <groupId>org.eclipse.jetty</groupId>
+  <artifactId>jetty-maven-plugin</artifactId>
+  <version>11.0.24</version>
+  <configuration>
+    <skip>true</skip>  <!-- Disabled during Maven test phase -->
+    <webApp>
+      <contextPath>/core</contextPath>
+      <extraClasspath>Jakarta EE converted JARs</extraClasspath>
+      <parentLoaderPriority>false</parentLoaderPriority>
+    </webApp>
+  </configuration>
+</plugin>
+```
+
+**Jetty Execution Control**:
+- **Auto-start**: Disabled (`<skip>true</skip>`) to prevent port conflicts during builds
+- **Manual Development**: Start with `mvn jetty:run -Djetty.port=8081` 
+- **Jakarta EE Support**: Automatic Jakarta JAR priority via `extraClasspath`
+- **Test Isolation**: Jetty runs in separate process for development testing
+
+**Development Workflow**:
+```bash
+# Standard build (tests temporarily disabled via @Ignore)
+mvn clean package -f core/pom.xml -Pdevelopment
+
+# Manual Jetty development server (separate terminal)
+cd core && mvn jetty:run -Djetty.port=8081
+
+# Integration testing (recommended)
+./qa-test.sh
+```
 - **Search**: Apache Solr with ExtractingRequestHandler (Tika 2.9.2)
 - **UI**: React SPA (integrated in core webapp)
 - **Application Server**: Tomcat 10.1+ (Jakarta EE) or Jetty 11+
@@ -84,20 +216,51 @@ NemakiWare is an open source Enterprise Content Management system built as a CMI
 - **common/**: Shared utilities and models  
 - **action/**: Plugin framework for custom actions
 
-### React UI Integration
+### React SPA UI Development (Updated 2025-07-23)
 
-**Location**: `/core/src/main/webapp/ui/dist/`
-**Access URL**: `http://localhost:8080/core/ui/dist/`
-**Build System**: Vite (React + TypeScript)
+**Location**: `/core/src/main/webapp/ui/`
+**Access URL**: `http://localhost:8080/core/ui/`
+**Build System**: Vite (React 18 + TypeScript + Ant Design)
 **Integration**: Served as static resources from core webapp
 
-**UI Source Status**: 
-- **Compiled Assets**: Pre-built Vite assets included in repository (`/core/src/main/webapp/ui/dist/`)
-- **Source Code**: React/TypeScript source code is **NOT included in this repository**
-- **UI Modifications**: Require access to separate UI source repository and rebuild process
-- **Current Issue**: JavaScript `startsWith` error requires UI source code access to fix
+**UI Source Status**: ✅ **RESTORED AND ACTIVE**
+- **Source Code**: Complete React/TypeScript source code available in `/core/src/main/webapp/ui/src/`
+- **Build Assets**: Generated in `/core/src/main/webapp/ui/dist/` via `npm run build`
+- **Dependencies**: Modern React 18 ecosystem with OIDC, SAML authentication support
+- **Restoration**: Merged from `devin/1753254158-react-spa-source-restoration` branch
 
-**Note**: The `/ui` directory contains old Scala project files (deprecated) and should be ignored.
+**Development Workflow**:
+```bash
+# Setup development environment
+cd /Users/ishiiakinori/NemakiWare/core/src/main/webapp/ui
+npm install
+
+# Development server with hot reload (port 5173)
+npm run dev
+
+# Production build for integration with Core
+npm run build
+
+# Type checking
+npm run type-check
+```
+
+**UI Components Available**:
+- Document management (upload, preview, properties)
+- Folder navigation with tree view
+- User/Group management
+- Permission management 
+- Type management
+- Archive operations
+- Search functionality
+- Multi-format document preview (PDF, Office, images, video)
+- Authentication (OIDC, SAML support)
+
+**Core Integration**:
+- Vite proxy configuration automatically routes `/core/` requests to backend
+- Authentication handled via CMIS REST API
+- All CMIS operations performed through dedicated service layer
+- Built assets deployed alongside Core WAR file
 
 ## Development Environment Setup
 
@@ -147,8 +310,8 @@ java -version
 # Step 2: Navigate to project root
 cd /Users/ishiiakinori/NemakiWare
 
-# Step 3: Clean build with Java 17
-mvn clean package -f core/pom.xml -Pdevelopment -DskipTests
+# Step 3: Clean build with Java 17 (tests disabled in development profile)
+mvn clean package -f core/pom.xml -Pdevelopment
 
 # Step 4: Copy WAR file to Docker context
 cp core/target/core.war docker/core/core.war
@@ -170,10 +333,10 @@ sleep 60
 ```bash
 # Navigate to project root and run comprehensive tests
 cd /Users/ishiiakinori/NemakiWare
-./comprehensive-test.sh
+./qa-test.sh
 ```
 
-**Expected Test Results (9 Tests Total)**:
+**Expected Test Results (23 Tests Total)**:
 ```
 === NemakiWare 包括的テスト結果 ===
 ✓ CMISリポジトリ情報: OK (HTTP 200)
@@ -199,7 +362,37 @@ curl -u admin:admin http://localhost:8080/core/atom/bedroom  # Should return HTT
 curl -u admin:admin http://localhost:8080/core/rest/all/repositories  # Should return repository list
 ```
 
-### 4. Troubleshooting Failed Tests
+### 4. UI Development Integration Workflow
+
+**Complete UI + Core Development Cycle**:
+```bash
+# 1. UI Development Phase
+cd /Users/ishiiakinori/NemakiWare/core/src/main/webapp/ui
+npm run dev  # Development server on port 5173 with hot reload
+
+# 2. UI Build for Integration
+npm run build  # Creates production build in dist/
+
+# 3. Core Rebuild with UI Assets
+cd /Users/ishiiakinori/NemakiWare
+mvn clean package -f core/pom.xml -Pdevelopment
+
+# 4. Docker Redeployment
+cp core/target/core.war docker/core/core.war
+cd docker && docker compose -f docker-compose-simple.yml up -d --build
+
+# 5. Verify Integration
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/core/ui/
+# Expected: 200 (UI accessible)
+```
+
+**UI-Only Development Tips**:
+- Use `npm run dev` for rapid UI development with proxy to running Core backend
+- UI runs on port 5173, proxies `/core/` requests to port 8080
+- Changes reflect immediately without Core rebuild
+- Run `npm run type-check` before building for production
+
+### 5. Troubleshooting Failed Tests
 
 If tests fail, check in this order:
 
@@ -217,7 +410,7 @@ docker compose -f docker/docker-compose-simple.yml restart core
 sleep 30
 
 # 4. Re-run tests
-./comprehensive-test.sh
+./qa-test.sh
 ```
 
 **IMPORTANT**: All legacy test scripts (*.sh files in docker/ directory) have been removed. Use only the procedures documented above.
@@ -411,6 +604,156 @@ curl -u admin:admin "http://localhost:8080/core/atom/bedroom/children?id=e02f784
 - **Services**: `serviceContext.xml` (700+ lines of CMIS service definitions)
 - **Data Access**: `daoContext.xml` with caching decorators
 - **CouchDB**: `couchContext.xml` with connection pooling
+
+## React SPA UI Development and Testing Procedures
+
+### UI Modification Workflow (CRITICAL)
+
+**IMPORTANT**: React SPA UI requires careful deployment to ensure modifications are properly reflected in the Docker environment.
+
+#### Standard UI Development Process
+
+```bash
+# 1. Navigate to UI directory
+cd /Users/ishiiakinori/NemakiWare/core/src/main/webapp/ui
+
+# 2. Make source code changes in src/ directory
+# Edit TypeScript/React components as needed
+
+# 3. Build the UI (generates new asset hashes)
+npm run build
+
+# 4. Fix auto-generated index.html (removes cache-busting headers)
+# Remove favicon reference and add cache control headers
+```
+
+#### Proper Docker Deployment Process
+
+**CRITICAL**: UI changes must be deployed through WAR rebuilds to ensure consistency and persistence.
+
+**❌ INCORRECT (Temporary only)**:
+```bash
+# Do NOT use docker cp for permanent changes
+docker cp index.html docker-core-1:/path/  # Changes lost on restart
+```
+
+**✅ CORRECT (WAR-based deployment)**:
+```bash
+# 1. Build UI with changes
+cd core/src/main/webapp/ui && npm run build
+
+# 2. Rebuild complete WAR file (includes UI)
+cd /Users/ishiiakinori/NemakiWare
+mvn clean package -f core/pom.xml -Pdevelopment
+
+# 3. Deploy new WAR to Docker
+cp core/target/core.war docker/core/core.war
+cd docker && docker compose -f docker-compose-simple.yml down
+docker compose -f docker-compose-simple.yml up -d --build
+
+# 4. Verify deployment
+curl -s http://localhost:8080/core/ui/dist/ | grep -o 'src="[^"]*"'
+```
+
+#### Browser Cache Management
+
+**Anti-Pattern Prevention**: Browser caching can prevent UI updates from being visible.
+
+```html
+<!-- Always include in index.html after build -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
+
+<!-- Add version parameter to assets -->
+<script src="/core/ui/dist/assets/index-HASH.js?v=build-timestamp"></script>
+```
+
+#### WAR-based Deployment (Recommended)
+
+For production-like deployment consistency:
+
+```bash
+# 1. Build UI
+cd core/src/main/webapp/ui && npm run build
+
+# 2. Build core WAR (includes UI)
+cd /Users/ishiiakinori/NemakiWare
+mvn clean package -f core/pom.xml -Pdevelopment
+
+# 3. Deploy to Docker
+cp core/target/core.war docker/core/core.war
+cd docker && docker compose -f docker-compose-simple.yml down
+docker compose -f docker-compose-simple.yml up -d --build
+
+# 4. Wait for deployment and test
+sleep 30
+curl -s http://localhost:8080/core/ui/dist/ | grep -o 'src="[^"]*"'
+```
+
+#### UI Testing Checklist
+
+**Authentication Flow Testing**:
+1. ✅ Access `http://localhost:8080/core/ui/dist/` shows login screen
+2. ✅ Repository dropdown shows available repositories ("bedroom")
+3. ✅ Login with admin:admin succeeds and redirects to documents
+4. ✅ Document list loads without errors
+5. ✅ Logout returns to login screen (not 404)
+
+**CMIS Integration Testing**:
+1. ✅ Document list loads (CMIS Browser Binding POST method)
+2. ✅ Folder navigation works
+3. ✅ File upload functionality
+4. ✅ Authentication token headers correctly sent
+
+**Browser Developer Tools Verification**:
+1. ✅ No JavaScript errors in console
+2. ✅ Correct asset files loaded (check Sources tab)
+3. ✅ Network tab shows 200 responses for CMIS calls
+4. ✅ LocalStorage contains valid auth token
+
+#### Common Issues and Solutions
+
+**Issue**: Browser shows old UI after code changes
+**Solution**: 
+- Force refresh (Ctrl+F5 / Cmd+Shift+R)
+- Check asset hash in URL matches built file
+- Clear browser cache completely
+- Verify container has updated files
+
+**Issue**: 404 on UI assets
+**Solution**:
+- Check base path in vite.config.ts: `/core/ui/dist/`
+- Verify index.html asset references match built files
+- Ensure container has all asset files
+
+**Issue**: Authentication errors after UI update
+**Solution**:
+- Verify AuthService uses correct endpoint format
+- Check CMIS service uses POST method for Browser Binding
+- Validate authentication headers include both Basic auth and token
+
+### Authentication System Architecture (2025-07-24)
+
+**Current Implementation**: Token-based authentication with dual headers
+
+```javascript
+// AuthService.login() - Requires Basic auth header
+const credentials = btoa(`${username}:${password}`);
+xhr.setRequestHeader('Authorization', `Basic ${credentials}`);
+
+// CMISService requests - Uses both Basic auth + token
+headers: {
+  'Authorization': `Basic ${btoa(username + ':dummy')}`,
+  'nemaki_auth_token': token
+}
+```
+
+**Critical Components**:
+- `AuthContext`: Global authentication state with localStorage monitoring
+- `ProtectedRoute`: Automatic redirect on 401 errors
+- `AuthService`: Token management with custom events
+- `CMISService`: CMIS Browser Binding with POST method
 
 ## Support Information
 

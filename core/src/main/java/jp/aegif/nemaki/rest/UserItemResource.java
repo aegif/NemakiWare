@@ -42,6 +42,7 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
@@ -90,7 +91,8 @@ public class UserItemResource extends ResourceBase {
 	@GET
 	@Path("/list")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String list(@PathParam("repositoryId") String repositoryId) {
+	public Response list(@PathParam("repositoryId") String repositoryId) {
+		System.out.println("=== UserItemResource.list() called for repository: " + repositoryId + " ===");
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray listJSON = new JSONArray();
@@ -99,19 +101,35 @@ public class UserItemResource extends ResourceBase {
 		// Get all users list
 		List<UserItem> userList;
 		try {
+			System.out.println("=== UserItemResource: About to call contentService.getUserItems() ===");
 			userList = contentService.getUserItems(repositoryId);
+			System.out.println("=== UserItemResource: contentService.getUserItems() returned " + userList.size() + " users ===");
 			for (UserItem user : userList) {
+				System.out.println("=== UserItemResource: Processing user: " + user.getUserId() + " ===");
 				JSONObject userJSON = convertUserToJson(user);
 				listJSON.add(userJSON);
 			}
 			result.put("users", listJSON);
+			result.put("status", "success");
+			System.out.println("=== UserItemResource: Returning result with " + listJSON.size() + " users ===");
+			return Response.ok(result.toJSONString()).build();
 		} catch (Exception e) {
-			status = false;
+			System.out.println("=== UserItemResource: Exception occurred: " + e.getClass().getName() + ": " + e.getMessage() + " ===");
 			e.printStackTrace();
-			addErrMsg(errMsg, ITEM_ALLUSERS, ErrorCode.ERR_LIST);
+			
+			// エラー情報をJSONで返す
+			JSONObject errorResult = new JSONObject();
+			errorResult.put("status", "error");
+			errorResult.put("message", "Failed to retrieve user list");
+			errorResult.put("error", e.getMessage());
+			errorResult.put("errorType", e.getClass().getName());
+			
+			// HTTP 500 Internal Server Error を返す
+			return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+					.entity(errorResult.toJSONString())
+					.type(MediaType.APPLICATION_JSON)
+					.build();
 		}
-		result = makeResult(status, result, errMsg);
-		return result.toJSONString();
 	}
 
 	@SuppressWarnings("unchecked")

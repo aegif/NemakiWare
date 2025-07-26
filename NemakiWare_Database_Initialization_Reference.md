@@ -33,7 +33,6 @@ This document provides a comprehensive reference for NemakiWare's database initi
 
 **Key Files:**
 - `cloudant-init/` - Java initializer source code
-- `bjornloka/` - Legacy loader utilities
 - `initial_import/` - Dump files for initialization
 - `dump/init.json` - Repository definitions
 
@@ -448,7 +447,6 @@ Each content operation creates change tracking documents:
 
 ### Initialization Scripts
 - `/docker/initializer/entrypoint.sh` - Main Docker initialization
-- `/setup/couchdb/bjornloka/src/main/java/jp/aegif/nemaki/bjornloka/Setup.java` - Legacy setup
 - `/setup/couchdb/cloudant-init/src/main/java/jp/aegif/nemaki/cloudantinit/CouchDBInitializer.java` - Modern initializer
 
 ### Data Files

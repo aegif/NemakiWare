@@ -61,7 +61,7 @@ All commands should return HTTP 200 with valid data.
 ## Files Modified
 - `canopy_init.dump`: Updated to CMIS format (2025-06-21)
 - `docker-compose-simple.yml`: Added 4-repository initialization
-- `install.xml`: Migrated from bjornloka.jar to cloudant-init.jar (2025-06-28)
+- `install.xml`: Updated to use cloudant-init.jar (2025-06-28)
 - `cloudant-init-wrapper.sh`: Modern wrapper script with HTTP Client 5.x
 - Various Spring configuration fixes for startup reliability
 

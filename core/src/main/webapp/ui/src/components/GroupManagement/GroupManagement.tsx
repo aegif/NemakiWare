@@ -47,8 +47,30 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
     try {
       const groupList = await cmisService.getGroups(repositoryId);
       setGroups(groupList);
-    } catch (error) {
-      message.error('グループの読み込みに失敗しました');
+    } catch (error: any) {
+      console.error('GroupManagement: loadGroups error:', error);
+      
+      let errorMessage = 'グループの読み込みに失敗しました';
+      
+      if (error.status === 500) {
+        errorMessage = 'サーバー側でエラーが発生しています';
+        if (error.details) {
+          errorMessage += `\n詳細: ${error.details}`;
+        }
+        console.error('Server error details:', {
+          message: error.message,
+          details: error.details,
+          status: error.status
+        });
+      } else if (error.status === 401) {
+        errorMessage = '認証エラー: ログインし直してください';
+      } else if (error.status === 403) {
+        errorMessage = '権限エラー: グループ管理の権限がありません';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      message.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -58,8 +80,10 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
     try {
       const userList = await cmisService.getUsers(repositoryId);
       setUsers(userList);
-    } catch (error) {
-      console.error('ユーザーの読み込みに失敗しました');
+    } catch (error: any) {
+      console.error('GroupManagement: loadUsers error:', error);
+      // ユーザー読み込み失敗はグループ管理では警告レベル
+      console.warn('ユーザーの読み込みに失敗しました。メンバー選択が制限される可能性があります。');
     }
   };
 
@@ -77,8 +101,25 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
       setEditingGroup(null);
       form.resetFields();
       loadGroups();
-    } catch (error) {
-      message.error(editingGroup ? 'グループの更新に失敗しました' : 'グループの作成に失敗しました');
+    } catch (error: any) {
+      console.error('GroupManagement: handleSubmit error:', error);
+      
+      let errorMessage = editingGroup ? 'グループの更新に失敗しました' : 'グループの作成に失敗しました';
+      
+      if (error.status === 500) {
+        errorMessage = 'サーバー側でエラーが発生しています';
+        if (error.details) {
+          errorMessage += `\n詳細: ${error.details}`;
+        }
+      } else if (error.status === 401) {
+        errorMessage = '認証エラー: ログインし直してください';
+      } else if (error.status === 403) {
+        errorMessage = '権限エラー: この操作の権限がありません';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      message.error(errorMessage);
     }
   };
 
@@ -93,8 +134,25 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
       await cmisService.deleteGroup(repositoryId, groupId);
       message.success('グループを削除しました');
       loadGroups();
-    } catch (error) {
-      message.error('グループの削除に失敗しました');
+    } catch (error: any) {
+      console.error('GroupManagement: handleDelete error:', error);
+      
+      let errorMessage = 'グループの削除に失敗しました';
+      
+      if (error.status === 500) {
+        errorMessage = 'サーバー側でエラーが発生しています';
+        if (error.details) {
+          errorMessage += `\n詳細: ${error.details}`;
+        }
+      } else if (error.status === 401) {
+        errorMessage = '認証エラー: ログインし直してください';
+      } else if (error.status === 403) {
+        errorMessage = '権限エラー: グループ削除の権限がありません';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      message.error(errorMessage);
     }
   };
 

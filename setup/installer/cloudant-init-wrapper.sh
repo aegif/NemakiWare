@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Wrapper script for cloudant-init.jar to replace bjornloka for CouchDB initialization
+# Wrapper script for cloudant-init.jar for CouchDB initialization
 # Usage: cloudant-init-wrapper.sh <jar_path> <couchdb_url> <username> <password> <repo_id> <closet_id> <init_dump> <archive_dump>
 
 JAR_PATH=$1

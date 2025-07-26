@@ -46,6 +46,10 @@ export class AuthService {
       xhr.setRequestHeader('Accept', 'application/json');
       xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
       
+      // Add Basic authentication header required by NemakiWare auth endpoint
+      const credentials = btoa(`${username}:${password}`);
+      xhr.setRequestHeader('Authorization', `Basic ${credentials}`);
+      
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           if (xhr.status === 200) {
@@ -55,6 +59,10 @@ export class AuthService {
                 const token = response.value.token;
                 this.currentAuth = { token, repositoryId, username };
                 localStorage.setItem('nemakiware_auth', JSON.stringify(this.currentAuth));
+                
+                // Trigger custom event to notify AuthContext immediately
+                window.dispatchEvent(new CustomEvent('authStateChanged'));
+                
                 resolve(this.currentAuth);
               } else {
                 reject(new Error('Authentication failed'));

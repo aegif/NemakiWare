@@ -32,6 +32,7 @@ import jp.aegif.nemaki.util.constant.NodeType;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
+import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import java.util.Map;
@@ -110,9 +111,27 @@ public class CouchNodeBase {
 	}
 	
 	// 動的プロパティを処理するためのメソッド
+	// CouchTypeDefinitionの明示的なフィールドは除外する（Jackson王道パターン）
 	@JsonAnySetter
 	public void setAdditionalProperty(String name, Object value) {
-		this.additionalProperties.put(name, value);
+		// CouchTypeDefinitionで明示的に定義されているフィールドは除外
+		if (!isExplicitField(name)) {
+			this.additionalProperties.put(name, value);
+		}
+	}
+	
+	// 明示的に定義されているフィールドかどうかを判定
+	protected boolean isExplicitField(String fieldName) {
+		// CouchTypeDefinitionで明示的に@JsonPropertyが定義されているフィールド
+		return "properties".equals(fieldName) || 
+		       "allowedSourceTypes".equals(fieldName) || 
+		       "allowedTargetTypes".equals(fieldName);
+	}
+	
+	// Jackson王道パターン：@JsonAnyGetterでserialization制御
+	@JsonAnyGetter
+	public Map<String, Object> getAdditionalProperties() {
+		return additionalProperties;
 	}
 	
 	public String getType() {
