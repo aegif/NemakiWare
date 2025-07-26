@@ -225,7 +225,7 @@ public class CouchNodeBase {
 		}
 		
 		try {
-			// ISO 8601形式のパターン
+			// Create new SimpleDateFormat instance for thread safety (local to method)
 			SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ");
 			sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
 			

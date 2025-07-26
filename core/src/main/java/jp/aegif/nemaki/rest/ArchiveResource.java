@@ -22,6 +22,7 @@
 package jp.aegif.nemaki.rest;
 
 import jp.aegif.nemaki.common.ErrorCode;
+import jp.aegif.nemaki.util.DateUtil;
 import java.text.SimpleDateFormat;
 import java.util.List;
 
@@ -151,7 +152,7 @@ public class ArchiveResource extends ResourceBase {
 		archiveJson.put("parentId", archive.getParentId());
 		archiveJson.put("isDeletedWithParent", archive.isDeletedWithParent());
 		try{
-			String _created = new SimpleDateFormat(SystemConst.DATETIME_FORMAT).format(archive.getCreated().getTime());
+			String _created = DateUtil.formatSystemDateTime(archive.getCreated());
 			archiveJson.put("created", _created);
 		}catch(Exception e){
 			log.warn(String.format("Archive(%s) 'created' property is broken.", archive.getId()));

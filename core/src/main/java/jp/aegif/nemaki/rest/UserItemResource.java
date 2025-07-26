@@ -22,6 +22,7 @@
 package jp.aegif.nemaki.rest;
 
 import java.text.SimpleDateFormat;
+import jp.aegif.nemaki.util.DateUtil;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -526,11 +527,10 @@ public class UserItemResource extends ResourceBase {
 
 	@SuppressWarnings("unchecked")
 	private JSONObject convertUserToJson(UserItem user) {
-		SimpleDateFormat sdf = new SimpleDateFormat(SystemConst.DATETIME_FORMAT);
 		String created = new String();
 		try {
 			if (user.getCreated() != null) {
-				created = sdf.format(user.getCreated().getTime());
+				created = DateUtil.formatSystemDateTime(user.getCreated());
 			}
 		} catch (Exception ex) {
 			ex.printStackTrace();
@@ -538,7 +538,7 @@ public class UserItemResource extends ResourceBase {
 		String modified = new String();
 		try {
 			if (user.getModified() != null) {
-				modified = sdf.format(user.getModified().getTime());
+				modified = DateUtil.formatSystemDateTime(user.getModified());
 			}
 		} catch (Exception ex) {
 			ex.printStackTrace();

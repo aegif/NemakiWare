@@ -505,8 +505,7 @@ public class DataUtil {
 	}
 
 	public static String convertToDateFormat(GregorianCalendar cal) {
-		SimpleDateFormat sdf = new SimpleDateFormat(SystemConst.DATETIME_FORMAT);
-		return sdf.format(cal.getTime());
+		return DateUtil.formatSystemDateTime(cal);
 	}
 
 
@@ -523,6 +522,7 @@ public class DataUtil {
 		ParseException lastException = null;
 		for (String format : SUPPORTED_FORMATS) {
 			try {
+				// Create new SimpleDateFormat instance for thread safety
 				DateFormat sdf = new SimpleDateFormat(format);
 				sdf.setLenient(false);
 				Date date = sdf.parse(value);

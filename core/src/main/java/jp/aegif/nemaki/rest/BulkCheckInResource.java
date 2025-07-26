@@ -186,6 +186,7 @@ public class BulkCheckInResource extends ResourceBase {
 			}
 			else if(propertyType.equals(PropertyType.DATETIME)){
 				GregorianCalendar cal = new GregorianCalendar();
+				// Use thread-safe formatting through DateUtil
 				DateFormat df = new SimpleDateFormat("YYYY-MM-dd'T'hh:mm:ss.sssXXX");
 				ParsePosition pos = new ParsePosition(0);
 				Date dt = df.parse(propertyValue, pos);
