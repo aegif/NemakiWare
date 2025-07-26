@@ -37,10 +37,14 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import java.util.Map;
 import java.util.HashMap;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 @JsonIgnoreProperties(ignoreUnknown=true)
 @JsonDeserialize(as = CouchNodeBase.class)
 public class CouchNodeBase {
+	
+	private static final Log log = LogFactory.getLog(CouchNodeBase.class);
 	private static final long serialVersionUID = 8798101386986624403L;
 
 	// CouchDB document fields
@@ -235,7 +239,7 @@ public class CouchNodeBase {
 			return calendar;
 		} catch (ParseException e) {
 			// パースエラーの場合は現在時刻を返す
-			System.err.println("Failed to parse ISO date string: " + isoDateString + " - " + e.getMessage());
+			log.warn("Failed to parse ISO date string: " + isoDateString + " - " + e.getMessage());
 			return new GregorianCalendar();
 		}
 	}

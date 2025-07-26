@@ -48,6 +48,8 @@ import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.RelationshipDirection;
@@ -258,7 +260,7 @@ public class BulkCheckInResource extends ResourceBase {
 
 			Folder parentFolder = contentService.getFolder(repositoryId, parentFolderId);
 			if ( parentFolder == null) {
-				System.out.println("## folder not found:" + parentFolderId);
+				log.warn("folder not found:" + parentFolderId);
 				return "";
 			}
 
@@ -366,8 +368,7 @@ public class BulkCheckInResource extends ResourceBase {
 			return resultJson.toString();
 		}
 		catch(Throwable t) {
-			System.out.println("## catch some exception");
-			t.printStackTrace();
+			log.error("Exception occurred during bulk check-in", t);
 			return "";
 		}
 		finally {

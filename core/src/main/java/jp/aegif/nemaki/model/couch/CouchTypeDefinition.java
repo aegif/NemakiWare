@@ -195,10 +195,7 @@ public class CouchTypeDefinition extends CouchNodeBase {
 		setTypeMutabilityUpdate(t.isTypeMutabilityUpdate());
 		setTypeMutabilityDelete(t.isTypeMutabilityDelete());
 		
-		System.err.println("[COUCHTYPEDEF] Converting NemakiTypeDefinition to CouchTypeDefinition");
-		System.err.println("[COUCHTYPEDEF] Input properties: " + t.getProperties());
 		setProperties(t.getProperties());
-		System.err.println("[COUCHTYPEDEF] After setProperties, getProperties(): " + getProperties());
 		
 		setContentStreamAllowed(t.getContentStreamAllowed());
 		setVersionable(t.isVersionable());
@@ -353,15 +350,11 @@ public class CouchTypeDefinition extends CouchNodeBase {
 		this.typeMutabilityDelete = typeMutabilityDelete;
 	}
 
-	@JsonProperty("properties")
 	public List<String> getProperties() {
-		System.err.println("[COUCHTYPEDEF] getProperties() called, returning: " + properties);
 		return properties;
 	}
 
-	@JsonProperty("properties")
 	public void setProperties(List<String> properties) {
-		System.err.println("[COUCHTYPEDEF] setProperties() called with: " + properties);
 		this.properties = properties;
 	}
 	

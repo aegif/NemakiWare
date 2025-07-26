@@ -15,7 +15,10 @@ import java.util.Map;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.Cloudant;
 import com.ibm.cloud.cloudant.v1.model.GetDatabaseInformationOptions;
 import com.ibm.cloud.cloudant.v1.model.PutDatabaseOptions;
@@ -46,6 +49,10 @@ public class CloudantClientPool {
 	private Map<String, CloudantClientWrapper> pool = new HashMap<String, CloudantClientWrapper>();
 	private boolean initialized = false;
 	private final Object initLock = new Object();
+	
+	@Autowired
+	@Qualifier("couchdbObjectMapper")
+	private ObjectMapper couchdbObjectMapper;
 
 	private static final Log log = LogFactory.getLog(CloudantClientPool.class);
 
@@ -226,8 +233,8 @@ public class CloudantClientPool {
 				for (String repositoryId : repositoryIds) {
 					log.info("Initializing repository: " + repositoryId);
 					
-					// Create wrapper for this repository
-					CloudantClientWrapper wrapper = new CloudantClientWrapper(cloudantClient, repositoryId);
+					// Create wrapper for this repository with unified ObjectMapper
+					CloudantClientWrapper wrapper = new CloudantClientWrapper(cloudantClient, repositoryId, couchdbObjectMapper);
 					pool.put(repositoryId, wrapper);
 					
 					// Verify database exists

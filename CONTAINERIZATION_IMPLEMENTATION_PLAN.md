@@ -42,8 +42,9 @@ RUN apk add --no-cache bash curl
 
 WORKDIR /app/ui
 COPY ui/ .
-COPY action/ /app/action/
-COPY action-sample/ /app/action-sample/
+# Note: action and action-sample modules moved to suspended-modules/
+# COPY suspended-modules/action/ /app/action/
+# COPY suspended-modules/action-sample/ /app/action-sample/
 
 # SBT設定
 RUN curl -L -o sbt.tgz https://github.com/sbt/sbt/releases/download/v1.8.2/sbt-1.8.2.tgz && \

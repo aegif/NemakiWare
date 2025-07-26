@@ -36,6 +36,8 @@ import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.joda.time.DateTime;
 import org.joda.time.Duration;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,7 +60,10 @@ import net.logstash.logback.marker.Markers;
 public class JsonLogger {
 	private static Logger logger = LoggerFactory.getLogger(JsonLogger.class);
 	
-	private final ObjectMapper mapper = new ObjectMapper().setSerializationInclusion(Include.NON_NULL);;
+	@Autowired
+	@Qualifier("debugObjectMapper")
+	private ObjectMapper mapper;
+	
 	private JsonLogConfig config;
 	private String jsonConfigurationFile;
 	

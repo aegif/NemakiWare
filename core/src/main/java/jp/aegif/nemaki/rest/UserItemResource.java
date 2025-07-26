@@ -76,10 +76,14 @@ import org.mindrot.jbcrypt.BCrypt;
 import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.core.JsonParser;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 @Path("/repo/{repositoryId}/user/")
 public class UserItemResource extends ResourceBase {
 
+	private static final Log log = LogFactory.getLog(UserItemResource.class);
+	
 	private ContentService contentService;
 	private PropertyManager propertyManager;
 
@@ -89,11 +93,12 @@ public class UserItemResource extends ResourceBase {
 	}
 
 	@SuppressWarnings("unchecked")
+
 	@GET
 	@Path("/list")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response list(@PathParam("repositoryId") String repositoryId) {
-		System.out.println("=== UserItemResource.list() called for repository: " + repositoryId + " ===");
+		log.info("UserItemResource.list() called for repository: " + repositoryId);
 		boolean status = true;
 		JSONObject result = new JSONObject();
 		JSONArray listJSON = new JSONArray();
@@ -102,21 +107,20 @@ public class UserItemResource extends ResourceBase {
 		// Get all users list
 		List<UserItem> userList;
 		try {
-			System.out.println("=== UserItemResource: About to call contentService.getUserItems() ===");
+			log.debug("About to call contentService.getUserItems()");
 			userList = contentService.getUserItems(repositoryId);
-			System.out.println("=== UserItemResource: contentService.getUserItems() returned " + userList.size() + " users ===");
+			log.debug("contentService.getUserItems() returned " + userList.size() + " users");
 			for (UserItem user : userList) {
-				System.out.println("=== UserItemResource: Processing user: " + user.getUserId() + " ===");
+				log.debug("Processing user: " + user.getUserId());
 				JSONObject userJSON = convertUserToJson(user);
 				listJSON.add(userJSON);
 			}
 			result.put("users", listJSON);
 			result.put("status", "success");
-			System.out.println("=== UserItemResource: Returning result with " + listJSON.size() + " users ===");
+			log.info("Returning result with " + listJSON.size() + " users");
 			return Response.ok(result.toJSONString()).build();
 		} catch (Exception e) {
-			System.out.println("=== UserItemResource: Exception occurred: " + e.getClass().getName() + ": " + e.getMessage() + " ===");
-			e.printStackTrace();
+			log.error("Exception occurred: " + e.getClass().getName() + ": " + e.getMessage(), e);
 			
 			// エラー情報をJSONで返す
 			JSONObject errorResult = new JSONObject();

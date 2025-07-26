@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# Comprehensive Test Script (Skipping Unit Tests)
-# Tests the new integrated PatchService initialization system
+# NemakiWare Comprehensive Integration Test Script
+# Tests all major functionality including CMIS, database, search, and Jakarta EE compatibility
+# Supports multiple test modes: fast, core, qa (default), full
 
 set -e
 
@@ -11,8 +12,24 @@ cd "$(dirname "$0")"
 export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
 export PATH=$JAVA_HOME/bin:$PATH
 
-echo "=== COMPREHENSIVE INTEGRATION TEST (NO UNIT TESTS) ==="
-echo "Testing new PatchService-integrated initialization system"
+TEST_MODE=${1:-"qa"}
+
+echo "=== NEMAKIWARE COMPREHENSIVE INTEGRATION TEST ==="
+case $TEST_MODE in
+    "fast")
+        echo "⚡ FAST MODE: Essential tests only (5-10 seconds)"
+        ;;
+    "core")
+        echo "🎯 CORE MODE: CMIS and database tests (15-20 seconds)"
+        ;;
+    "full")
+        echo "🔍 FULL MODE: All tests including performance (30-40 seconds)"
+        ;;
+    "qa"|*)
+        echo "✅ QA MODE: Standard comprehensive testing"
+        TEST_MODE="qa"
+        ;;
+esac
 echo
 
 # Color codes for output
@@ -56,9 +73,9 @@ run_http_test() {
     total_tests=$((total_tests + 1))
     
     if [[ -n "$auth" ]]; then
-        status=$(curl -s -o /dev/null -w "%{http_code}" -u "$auth" "$url" 2>/dev/null)
+        status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -u "$auth" "$url" 2>/dev/null)
     else
-        status=$(curl -s -o /dev/null -w "%{http_code}" "$url" 2>/dev/null)
+        status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$url" 2>/dev/null)
     fi
     
     if [[ "$status" == "$expected_status" ]]; then
@@ -108,42 +125,98 @@ echo
 echo "=== 7. PATCH SYSTEM INTEGRATION TESTS ==="
 run_test "Sites Folder Created" "curl -s -u admin:admin 'http://localhost:8080/core/browser/bedroom/root?cmisselector=children' | jq -r '.objects[] | select(.object.properties.\"cmis:name\".value == \"Sites\") | .object.properties.\"cmis:objectTypeId\".value'" "cmis:folder"
 
-echo
-echo "=== 8. SOLR INTEGRATION TESTS ==="
-run_http_test "Solr Connectivity" "http://localhost:8983/solr/admin/cores?action=STATUS" "200"
-run_test "Solr Nemaki Core" "curl -s http://localhost:8983/solr/admin/cores?action=STATUS | jq -r '.status.nemaki.name'" "nemaki"
+if [[ "$TEST_MODE" != "fast" ]]; then
+    echo
+    echo "=== 8. SOLR INTEGRATION TESTS ==="
+    run_http_test "Solr Connectivity" "http://localhost:8983/solr/admin/cores?action=STATUS" "200"
+    run_test "Solr Nemaki Core" "curl -s http://localhost:8983/solr/admin/cores?action=STATUS | jq -r '.status.nemaki.name'" "nemaki"
+fi
 
 echo
 echo "=== 9. JAKARTA EE COMPATIBILITY TESTS ==="
 run_test "Jakarta Servlet API" "curl -s -u admin:admin http://localhost:8080/core/atom/bedroom | grep -o 'jakarta' || echo 'using-jakarta-ee'" "using-jakarta-ee"
 
 echo
-echo "=== 10. PERFORMANCE AND RELIABILITY TESTS ==="
-echo -n "Testing: Multiple Concurrent Requests ... "
+echo "=== 10. TYPE DEFINITION TESTS ==="
+run_test "Base Document Type" "curl -s -u admin:admin 'http://localhost:8080/core/atom/bedroom/type?id=cmis:document' | grep -c 'cmis:document'" ""
+run_test "Base Folder Type" "curl -s -u admin:admin 'http://localhost:8080/core/atom/bedroom/type?id=cmis:folder' | grep -c 'cmis:folder'" ""
+run_test "Type Children Query" "curl -s -u admin:admin 'http://localhost:8080/core/atom/bedroom/types?typeId=cmis:document' | grep -o '<cmisra:numItems>[0-9]*</cmisra:numItems>' | sed 's/<[^>]*>//g'" ""
+run_test "Type Descendants Query" "curl -s -u admin:admin 'http://localhost:8080/core/atom/bedroom/typedesc?typeId=cmis:document' | grep -c 'cmis:document'" ""
+
+# Test custom type registration (if TypeRegistrationServlet is available)
+echo -n "Testing: Custom Type Registration Support ... "
 total_tests=$((total_tests + 1))
-
-# Use temporary file to collect results from background processes
-temp_results=$(mktemp)
-for i in {1..5}; do
-    (
-        if curl -s -u admin:admin -o /dev/null -w "%{http_code}" "http://localhost:8080/core/atom/bedroom" | grep -q "200"; then
-            echo "success" >> "$temp_results"
-        else
-            echo "failure" >> "$temp_results"
-        fi
-    ) &
-done
-wait
-
-# Count successful requests
-concurrent_success=$(grep -c "success" "$temp_results" 2>/dev/null || echo "0")
-rm -f "$temp_results"
-
-if [[ $concurrent_success -eq 5 ]]; then
-    echo -e "${GREEN}PASSED${NC} (5/5 concurrent requests succeeded)"
-    success_count=$((success_count + 1))
+if curl -s -u admin:admin -o /dev/null -w "%{http_code}" "http://localhost:8080/core/rest/type-register/" | grep -q "200"; then
+    # Test JSON type definition structure
+    type_test_json='{
+        "id": "custom:testType",
+        "localName": "TestType",
+        "displayName": "Test Custom Type",
+        "description": "Test type for QA validation",
+        "baseId": "cmis:document",
+        "creatable": true,
+        "queryable": true,
+        "properties": {
+            "custom:testProperty": {
+                "id": "custom:testProperty",
+                "localName": "testProperty",
+                "displayName": "Test Property",
+                "description": "Test property for validation",
+                "propertyType": "string",
+                "cardinality": "single",
+                "required": false,
+                "queryable": true
+            }
+        }
+    }'
+    
+    # Test type registration endpoint availability
+    if curl -s -X POST -H "Content-Type: application/json" -u admin:admin \
+           -d "$type_test_json" \
+           "http://localhost:8080/core/rest/repo/bedroom/type/register-json" -o /dev/null -w "%{http_code}" | grep -q "200"; then
+        echo -e "${GREEN}PASSED${NC} (Type registration functional)"
+        success_count=$((success_count + 1))
+    else
+        echo -e "${RED}FAILED${NC} (Type registration not working)"
+    fi
 else
-    echo -e "${RED}FAILED${NC} ($concurrent_success/5 concurrent requests succeeded)"
+    echo -e "${RED}FAILED${NC} (Type registration endpoint not available)"
+fi
+
+if [[ "$TEST_MODE" == "full" ]] || [[ "$TEST_MODE" == "qa" ]]; then
+    echo
+    echo "=== 11. PERFORMANCE AND RELIABILITY TESTS ==="
+    echo -n "Testing: Multiple Concurrent Requests ... "
+    total_tests=$((total_tests + 1))
+
+    # Use temporary file to collect results from background processes
+    temp_results=$(mktemp)
+    concurrent_count=5
+    if [[ "$TEST_MODE" == "fast" ]]; then
+        concurrent_count=3
+    fi
+    
+    for i in $(seq 1 $concurrent_count); do
+        (
+            if curl -s -u admin:admin -o /dev/null -w "%{http_code}" "http://localhost:8080/core/atom/bedroom" | grep -q "200"; then
+                echo "success" >> "$temp_results"
+            else
+                echo "failure" >> "$temp_results"
+            fi
+        ) &
+    done
+    wait
+
+    # Count successful requests
+    concurrent_success=$(grep -c "success" "$temp_results" 2>/dev/null || echo "0")
+    rm -f "$temp_results"
+
+    if [[ $concurrent_success -eq $concurrent_count ]]; then
+        echo -e "${GREEN}PASSED${NC} ($concurrent_success/$concurrent_count concurrent requests succeeded)"
+        success_count=$((success_count + 1))
+    else
+        echo -e "${RED}FAILED${NC} ($concurrent_success/$concurrent_count concurrent requests succeeded)"
+    fi
 fi
 
 echo
@@ -162,9 +235,20 @@ if [[ $success_count -eq $total_tests ]]; then
     echo "✅ Database initialization: AUTOMATIC"
     echo "✅ CMIS endpoints: FUNCTIONAL"
     echo
+    echo "Usage Examples:"
+    echo "  ./qa-test.sh fast     # Essential tests only (5-10 seconds)"
+    echo "  ./qa-test.sh core     # Core CMIS tests (15-20 seconds)"
+    echo "  ./qa-test.sh qa       # Standard QA tests (default)"  
+    echo "  ./qa-test.sh full     # All tests including performance"
     exit 0
 else
     echo -e "${RED}SOME TESTS FAILED! ❌${NC}"
     echo "Please check the failed tests above."
+    echo
+    echo "Usage Examples:"
+    echo "  ./qa-test.sh fast     # Essential tests only (5-10 seconds)"
+    echo "  ./qa-test.sh core     # Core CMIS tests (15-20 seconds)"
+    echo "  ./qa-test.sh qa       # Standard QA tests (default)"  
+    echo "  ./qa-test.sh full     # All tests including performance"
     exit 1
 fi

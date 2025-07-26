@@ -28,6 +28,8 @@ import jp.aegif.nemaki.util.constant.PropertyKey;
 import jp.aegif.nemaki.util.constant.SystemConst;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.server.impl.CallContextImpl;
@@ -172,7 +174,7 @@ public class AuthenticationFilter implements Filter {
         			String repositoryId = pathFragments[1];
         			return repositoryId;
         		}else{
-        			System.err.println("repositoryId is not specified in URI.");
+        			log.warn("repositoryId is not specified in URI.");
         		}
         	}else if(ApiType.ALL.equals(pathFragments[0])){
         		return repositoryInfoMap.getSuperUsers().getId();

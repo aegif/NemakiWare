@@ -14,7 +14,6 @@
         <maven.compiler.target>17</maven.compiler.target>
     </properties>
     <modules>
-        <module>action</module>
         <module>common</module>
         <module>core</module>
         <module>solr</module>

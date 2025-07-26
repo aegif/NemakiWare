@@ -19,6 +19,8 @@ import org.apache.commons.logging.LogFactory;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.JSONValue;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.core.JsonParseException;
@@ -36,7 +38,11 @@ import net.logstash.logback.marker.Markers;
 public class LogResource extends ResourceBase{
 
 	private JsonLogger jsonLogger;
-	private ObjectMapper mapper = new ObjectMapper().setSerializationInclusion(Include.NON_NULL);;;
+	
+	@Autowired
+	@Qualifier("debugObjectMapper")
+	private ObjectMapper mapper;
+	
 	private static final Log log = LogFactory.getLog(LogResource.class);
 
 	@GET

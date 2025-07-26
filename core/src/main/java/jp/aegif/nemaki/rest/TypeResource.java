@@ -49,8 +49,7 @@ public class TypeResource extends ResourceBase {
 	@Path("/test")
 	@Produces(MediaType.APPLICATION_JSON)
 	public String test(@PathParam("repositoryId") String repositoryId) {
-		System.err.println("[TYPERESOURCE] TEST METHOD CALLED - Repository ID: " + repositoryId);
-		log.error("[TYPERESOURCE] TEST METHOD CALLED - Repository ID: " + repositoryId);
+		log.info("[TYPERESOURCE] TEST METHOD CALLED - Repository ID: " + repositoryId);
 		
 		// Get Spring services using SpringContext
 		try {
@@ -74,18 +73,14 @@ public class TypeResource extends ResourceBase {
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.APPLICATION_JSON)
 	public String registerJson(@PathParam("repositoryId") String repositoryId, String jsonData) {
-		System.err.println("[TYPERESOURCE] === REGISTER-JSON METHOD CALLED ===");
-		System.err.println("[TYPERESOURCE] Repository ID: " + repositoryId);
-		System.err.println("[TYPERESOURCE] JSON Data received: " + (jsonData != null ? jsonData.length() + " characters" : "null"));
-		
-		log.error("[TYPERESOURCE] registerJson method called for repository: " + repositoryId);
+		log.info("[TYPERESOURCE] registerJson method called for repository: " + repositoryId);
+		log.debug("[TYPERESOURCE] JSON Data received: " + (jsonData != null ? jsonData.length() + " characters" : "null"));
 		
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
 		try {
 			if (jsonData == null || jsonData.trim().isEmpty()) {
-				System.err.println("[TYPERESOURCE] ERROR: JSON data is null or empty");
 				log.error("[TYPERESOURCE] ERROR: JSON data is null or empty");
 				addErrMsg(errMsg, "types", "noDataReceived");
 				result = makeResult(false, result, errMsg);
@@ -113,47 +108,38 @@ public class TypeResource extends ResourceBase {
 			}
 
 			try {
-				System.err.println("[TYPERESOURCE] Starting JSON parsing...");
 				log.info("Starting JSON parsing...");
 				
 				// JSONをパースして NemakiTypeDefinition に変換
 				parseJson(repositoryId, jsonData);
 				log.info("JSON parsing completed successfully");
 				
-				System.err.println("[TYPERESOURCE] Starting type creation...");
 				log.info("Starting type creation...");
 				
-				System.err.println("[TYPERESOURCE] === ABOUT TO CALL CREATE METHOD ===");
+				log.debug("About to call create method");
 				try {
 					create(repositoryId);
-					System.err.println("[TYPERESOURCE] === CREATE METHOD COMPLETED ===");
+					log.debug("Create method completed");
 				} catch (Exception createException) {
-					System.err.println("[TYPERESOURCE] === CREATE METHOD EXCEPTION ===");
-					System.err.println("[TYPERESOURCE] Create exception: " + createException.getMessage());
-					createException.printStackTrace();
+					log.error("Create exception: " + createException.getMessage(), createException);
 					throw createException;
 				}
 				log.info("Type creation completed successfully");
 				
-				System.err.println("[TYPERESOURCE] Refreshing type manager...");
 				log.info("Refreshing type manager...");
 				typeManager.refreshTypes();
 				log.info("Type registration completed successfully");
 
-				System.err.println("[TYPERESOURCE] Type registration completed successfully");
 				result = makeResult(true, result, errMsg);
 				return result.toJSONString();
 			} catch (Exception e) {
-				System.err.println("[TYPERESOURCE] Exception during type registration: " + e.getMessage());
 				log.warn("Type registrations fails - TypeService null: " + (typeService == null) + ", TypeManager null: " + (typeManager == null), e);
 				addErrMsg(errMsg, "types", "failsToRegister");
 				result = makeResult(false, result, errMsg);
 				return result.toJSONString();
 			}
 		} catch (Exception globalException) {
-			System.err.println("[TYPERESOURCE] GLOBAL EXCEPTION in registerJson method: " + globalException.getMessage());
-			globalException.printStackTrace();
-			log.error("[TYPERESOURCE] Global exception in registerJson method", globalException);
+			log.error("Global exception in registerJson method", globalException);
 			addErrMsg(errMsg, "types", "globalException");
 			result = makeResult(false, result, errMsg);
 			return result.toJSONString();
@@ -165,9 +151,8 @@ public class TypeResource extends ResourceBase {
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.APPLICATION_XML)
 	public String registerSimple(@PathParam("repositoryId") String repositoryId, String xmlData) {
-		System.err.println("[TYPERESOURCE] === REGISTER-SIMPLE METHOD CALLED ===");
-		System.err.println("[TYPERESOURCE] Repository ID: " + repositoryId);
-		System.err.println("[TYPERESOURCE] XML Data received: " + (xmlData != null ? xmlData.length() + " characters" : "null"));
+		log.info("registerSimple method called for repository: " + repositoryId);
+		log.debug("XML Data received: " + (xmlData != null ? xmlData.length() + " characters" : "null"));
 		
 		log.error("[TYPERESOURCE] registerSimple method called for repository: " + repositoryId);
 		
@@ -176,8 +161,7 @@ public class TypeResource extends ResourceBase {
 
 		try {
 			if (xmlData == null || xmlData.trim().isEmpty()) {
-				System.err.println("[TYPERESOURCE] ERROR: XML data is null or empty");
-				log.error("[TYPERESOURCE] ERROR: XML data is null or empty");
+				log.error("ERROR: XML data is null or empty");
 				addErrMsg(errMsg, "types", "noDataReceived");
 				result = makeResult(false, result, errMsg);
 				return result.toJSONString();
@@ -204,7 +188,6 @@ public class TypeResource extends ResourceBase {
 			}
 
 			try {
-				System.err.println("[TYPERESOURCE] Starting XML parsing...");
 				log.info("Starting XML parsing...");
 				
 				// XMLをInputStreamに変換
@@ -212,40 +195,32 @@ public class TypeResource extends ResourceBase {
 				parse(repositoryId, is);
 				log.info("XML parsing completed successfully");
 				
-				System.err.println("[TYPERESOURCE] Starting type creation...");
 				log.info("Starting type creation...");
 				
-				System.err.println("[TYPERESOURCE] === ABOUT TO CALL CREATE METHOD ===");
+				log.debug("About to call create method");
 				try {
 					create(repositoryId);
-					System.err.println("[TYPERESOURCE] === CREATE METHOD COMPLETED ===");
+					log.debug("Create method completed");
 				} catch (Exception createException) {
-					System.err.println("[TYPERESOURCE] === CREATE METHOD EXCEPTION ===");
-					System.err.println("[TYPERESOURCE] Create exception: " + createException.getMessage());
-					createException.printStackTrace();
+					log.error("Create method exception: " + createException.getMessage(), createException);
 					throw createException;
 				}
 				log.info("Type creation completed successfully");
 				
-				System.err.println("[TYPERESOURCE] Refreshing type manager...");
 				log.info("Refreshing type manager...");
 				typeManager.refreshTypes();
 				log.info("Type registration completed successfully");
 
-				System.err.println("[TYPERESOURCE] Type registration completed successfully");
 				result = makeResult(true, result, errMsg);
 				return result.toJSONString();
 			} catch (Exception e) {
-				System.err.println("[TYPERESOURCE] Exception during type registration: " + e.getMessage());
 				log.warn("Type registrations fails - TypeService null: " + (typeService == null) + ", TypeManager null: " + (typeManager == null), e);
 				addErrMsg(errMsg, "types", "failsToRegister");
 				result = makeResult(false, result, errMsg);
 				return result.toJSONString();
 			}
 		} catch (Exception globalException) {
-			System.err.println("[TYPERESOURCE] GLOBAL EXCEPTION in registerSimple method: " + globalException.getMessage());
-			globalException.printStackTrace();
-			log.error("[TYPERESOURCE] Global exception in registerSimple method", globalException);
+			log.error("Global exception in registerSimple method", globalException);
 			addErrMsg(errMsg, "types", "globalException");
 			result = makeResult(false, result, errMsg);
 			return result.toJSONString();
@@ -262,11 +237,10 @@ public class TypeResource extends ResourceBase {
 
 		try {
 			// CRITICAL DEBUG: メソッド呼び出しの確認
-			System.err.println("[TYPERESOURCE] === METHOD ENTRY CONFIRMED - REGISTER CALLED ===");
-			System.err.println("[TYPERESOURCE] Repository ID: " + repositoryId);
-			System.err.println("[TYPERESOURCE] InputStream is null: " + (is == null));
-			System.err.println("[TYPERESOURCE] TypeService is null: " + (typeService == null));
-			System.err.println("[TYPERESOURCE] TypeManager is null: " + (typeManager == null));
+			log.debug("register method called for repository: " + repositoryId);
+			log.debug("Dependencies - InputStream is null: " + (is == null) + 
+					 ", TypeService is null: " + (typeService == null) + 
+					 ", TypeManager is null: " + (typeManager == null));
 			
 			log.error("[TYPERESOURCE] Method entry confirmed - register called for repository: " + repositoryId);
 			log.error("[TYPERESOURCE] Dependencies status - TypeService null: " + (typeService == null) + ", TypeManager null: " + (typeManager == null));
@@ -310,16 +284,13 @@ public class TypeResource extends ResourceBase {
 				create(repositoryId);
 				log.info("Type creation completed successfully");
 				
-				System.err.println("[TYPERESOURCE] Refreshing type manager...");
 				log.info("Refreshing type manager...");
 				typeManager.refreshTypes();
 				log.info("Type registration completed successfully");
 
-				System.err.println("[TYPERESOURCE] Type registration completed successfully");
 				result = makeResult(true, result, errMsg);
 				return result.toJSONString();
 			} catch (Exception e) {
-				System.err.println("[TYPERESOURCE] Exception during type registration: " + e.getMessage());
 				log.warn("Type registrations fails - TypeService null: " + (typeService == null) + ", TypeManager null: " + (typeManager == null), e);
 				addErrMsg(errMsg, "types", "failsToRegister");
 				result = makeResult(false, result, errMsg);
@@ -339,9 +310,8 @@ public class TypeResource extends ResourceBase {
 	 * Parse JSON type definition data (for restoring old functionality)
 	 */
 	private void parseJson(String repositoryId, String jsonData) throws Exception {
-		System.err.println("[TYPERESOURCE] === PARSE JSON METHOD CALLED ===");
-		System.err.println("[TYPERESOURCE] Repository ID: " + repositoryId);
-		System.err.println("[TYPERESOURCE] JSON Data: " + jsonData);
+		log.debug("parseJson method called for repository: " + repositoryId);
+		log.debug("JSON Data: " + jsonData);
 		
 		try {
 			// Parse JSON using json-simple library (already available)

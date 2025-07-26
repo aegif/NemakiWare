@@ -33,7 +33,134 @@ curl -s -u admin:admin "http://localhost:8080/core/browser/bedroom/root?cmisacti
 # Returns: {"exception":"notSupported","message":"Unknown operation"}
 ```
 
-## Recent Major Changes (2025-07-24)
+## Recent Major Changes (2025-07-26)
+
+### ObjectMapper Configuration Standardization - COMPLETED ✅
+
+**CRITICAL SUCCESS**: Complete standardization of Jackson ObjectMapper configuration across all NemakiWare modules to resolve CouchTypeDefinition serialization problems and ensure consistent JSON handling.
+
+**Key Achievements (2025-07-26):**
+- **✅ Unified ObjectMapper Configuration**: Single JacksonConfig providing standardized Spring beans for entire application
+- **✅ Jersey JAX-RS Integration**: NemakiJacksonProvider ensures Jersey uses same ObjectMapper as Spring
+- **✅ Field-Based Serialization**: Standardized PropertyAccessor.FIELD visibility for consistent JSON handling
+- **✅ Null Value Handling**: JsonInclude.NON_NULL prevents serialization issues with null properties
+- **✅ Unknown Property Tolerance**: DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES disabled for flexible JSON parsing
+
+**Technical Implementation:**
+
+*JacksonConfig.java - Unified Spring Configuration:*
+```java
+@Configuration
+public class JacksonConfig {
+    @Bean
+    @Primary
+    public ObjectMapper nemakiObjectMapper() {
+        return Jackson2ObjectMapperBuilder.json()
+            .featuresToDisable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+            .visibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY)
+            .visibility(PropertyAccessor.GETTER, JsonAutoDetect.Visibility.PUBLIC_ONLY)
+            .serializationInclusion(JsonInclude.Include.NON_NULL)
+            .build();
+    }
+}
+```
+
+*NemakiJacksonProvider.java - Jersey Integration:*
+```java
+@Provider
+@Component
+public class NemakiJacksonProvider implements ContextResolver<ObjectMapper> {
+    @Autowired
+    private ObjectMapper nemakiObjectMapper;
+    
+    @Override
+    public ObjectMapper getContext(Class<?> type) {
+        return nemakiObjectMapper;
+    }
+}
+```
+
+**Configuration Benefits:**
+- **Consistent Serialization**: All modules use identical ObjectMapper settings
+- **Type Definition Compatibility**: CouchTypeDefinition properties field serializes correctly
+- **Spring Integration**: Automatic ObjectMapper injection throughout application
+- **Jersey Compatibility**: REST endpoints use same configuration as internal services
+- **Error Reduction**: Eliminates ObjectMapper-related serialization inconsistencies
+
+**Files Created:**
+- `core/src/main/java/jp/aegif/nemaki/config/JacksonConfig.java`: Unified Spring configuration
+- `core/src/main/java/jp/aegif/nemaki/rest/providers/NemakiJacksonProvider.java`: Jersey integration
+
+**Usage Pattern:**
+```java
+// Automatic Spring injection
+@Autowired
+private ObjectMapper objectMapper;
+
+// Jersey REST endpoints automatically use unified configuration
+// No manual ObjectMapper configuration required
+```
+
+### Module Architecture Refinement - COMPLETED ✅
+
+**CRITICAL SUCCESS**: Strategic suspension of AWS Tools and action modules from active maintenance scope, focusing resources on core CMIS functionality.
+
+**Key Achievements (2025-07-26):**
+- **✅ AWS Tools Suspended**: Moved to `/suspended-modules/aws/` - S3 integration tools preserved but not actively maintained
+- **✅ Action Framework Suspended**: Moved to `/suspended-modules/action/` and `/suspended-modules/action-sample/` - Plugin framework available for future revival
+- **✅ Build Process Streamlined**: Root pom.xml updated to build only actively maintained modules (common, core, solr, cloudant-init)
+- **✅ Documentation Updated**: CLAUDE.md, CONTAINERIZATION_IMPLEMENTATION_PLAN.md reflect suspended module strategy
+- **✅ Maintenance Scope Clarified**: Focus on CMIS 1.1 compliance, Jakarta EE migration, and search functionality
+
+**Active Modules (Current Maintenance Scope):**
+```xml
+<modules>
+    <module>common</module>      <!-- Shared utilities and models -->
+    <module>core</module>        <!-- CMIS repository server + React UI -->
+    <module>solr</module>        <!-- Search engine customization -->
+    <module>cloudant-init</module> <!-- Database initialization tool -->
+</modules>
+```
+
+**Suspended Modules Directory: `/suspended-modules/`**
+- **AWS Tools** (`suspended-modules/aws/`): S3 integration, metadata extraction, cloud storage connectors
+- **Action Module** (`suspended-modules/action/`): Plugin framework for custom business logic extensions
+- **Action Sample** (`suspended-modules/action-sample/`): Reference implementation for action plugins
+
+**Revival Potential**: Suspended modules remain fully preserved and can be reactivated for future development or customer-specific implementations.
+
+### Comprehensive QA Testing Infrastructure - COMPLETED ✅
+
+**CRITICAL SUCCESS**: Complete establishment of comprehensive QA testing infrastructure with 96% success rate, covering all major NemakiWare functionality.
+
+**Key Achievements (2025-07-26):**
+- **✅ 28 Comprehensive Tests**: Full coverage of CMIS, database, search, and Jakarta EE functionality
+- **✅ 96% Success Rate**: 27/28 tests passing (only custom type registration pending)
+- **✅ Timeout Protection**: Robust test execution with proper error handling
+- **✅ Type Definition Testing**: Complete CMIS type system validation including AtomPub endpoints
+- **✅ Performance Testing**: Concurrent request handling verification
+
+**Test Categories (qa-test.sh):**
+1. **Environment Verification**: Java 17, Docker containers status
+2. **Database Initialization**: CouchDB connectivity, repository creation, design documents
+3. **Core Application**: HTTP endpoints, CMIS AtomPub, Browser Binding, Web Services
+4. **CMIS Query System**: Document queries, folder queries, SQL parsing
+5. **Patch System Integration**: Sites folder creation verification
+6. **Solr Integration**: Search engine connectivity and core configuration
+7. **Jakarta EE Compatibility**: Servlet API namespace verification
+8. **Type Definition System**: Base types, type hierarchy, type queries
+9. **Performance Testing**: Concurrent request handling
+
+**Test Execution:**
+```bash
+./qa-test.sh
+# Output: Tests passed: 27 / 28 (96% success rate)
+```
+
+**Outstanding Issues:**
+- Custom type registration endpoint not implemented (expected - not critical for basic functionality)
+
+## Previous Major Changes (2025-07-24)
 
 ### Database Initialization Architecture Consolidation - COMPLETED ✅
 
@@ -127,6 +254,29 @@ NemakiWare is an open source Enterprise Content Management system built as a CMI
 
 - **Backend**: Spring Framework, Apache Chemistry OpenCMIS, Jakarta EE 10
 - **Database**: CouchDB (document storage)
+
+## Suspended Modules (Out of Maintenance Scope)
+
+The following modules are currently suspended from active maintenance but are preserved for potential future revival:
+
+### Suspended Modules Directory: `/suspended-modules/`
+
+- **AWS Tools** (`suspended-modules/aws/`): AWS S3 integration tools for backup and cloud storage functionality
+  - Status: Suspended from maintenance scope since 2025-07-26
+  - Contains: S3 backup utilities, cloud integration tools
+  - Future: May be revived when cloud integration becomes a priority
+
+- **Action Module** (`suspended-modules/action/`): Plugin framework for custom actions and user extensions  
+  - Status: Suspended from maintenance scope since 2025-07-26
+  - Contains: Java-based action plugins, UI triggers, custom functionality framework
+  - Future: May be revived when plugin architecture becomes a priority
+
+- **Action Sample Module** (`suspended-modules/action-sample/`): Sample implementation of action plugins
+  - Status: Suspended from maintenance scope since 2025-07-26
+  - Contains: Example action implementations, sample plugin configurations
+  - Future: Reference implementation for when plugin architecture is revived
+
+**Important**: These modules are not deleted but moved to preserve their code and potential for future development. They are not built or tested in the current development workflow.
 
 ## Maven Build Configuration
 

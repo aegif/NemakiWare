@@ -28,7 +28,10 @@ public class NemakiRestApplication extends ResourceConfig {
         // Enable JSON processing features
         register(JsonProcessingFeature.class);
         register(JacksonFeature.class);
-        logger.info("=== JSON Features registered: JsonProcessingFeature, JacksonFeature ===");
+        
+        // Register unified Jackson provider for consistent ObjectMapper usage
+        register(jp.aegif.nemaki.rest.provider.NemakiJacksonProvider.class);
+        logger.info("=== JSON Features registered: JsonProcessingFeature, JacksonFeature, NemakiJacksonProvider ===");
         
         // Package scanning for REST resources
         packages("jp.aegif.nemaki.rest");

@@ -7,11 +7,10 @@ import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.annotation.PropertyAccessor;
-import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
 import com.ibm.cloud.cloudant.v1.Cloudant;
 import com.ibm.cloud.cloudant.v1.model.*;
 import com.ibm.cloud.sdk.core.service.exception.NotFoundException;
@@ -24,30 +23,33 @@ public class CloudantClientWrapper {
 
 	private final Cloudant client;
 	private final String databaseName;
+	private final ObjectMapper objectMapper;
 
 	private static final Logger log = LoggerFactory.getLogger(CloudantClientWrapper.class);
 
-	public CloudantClientWrapper(Cloudant client, String databaseName) {
+	/**
+	 * Constructor with Spring dependency injection for unified ObjectMapper
+	 * 
+	 * @param client Cloudant client instance
+	 * @param databaseName Database name
+	 * @param objectMapper Unified ObjectMapper from JacksonConfig (couchdbObjectMapper bean)
+	 */
+	public CloudantClientWrapper(Cloudant client, String databaseName, ObjectMapper objectMapper) {
 		this.client = client;
 		this.databaseName = databaseName;
+		this.objectMapper = objectMapper;
+		log.info("CloudantClientWrapper initialized with unified ObjectMapper for database: " + databaseName);
 	}
 
 	/**
-	 * Creates a properly configured ObjectMapper for Cloudant/CouchDB serialization
-	 * This ensures all fields from the object hierarchy are properly serialized
+	 * Get the unified ObjectMapper instance
+	 * This method provides access to the Spring-configured ObjectMapper
+	 * that supports both @JsonProperty annotations and field access patterns.
+	 * 
+	 * @return The unified ObjectMapper configured for CouchDB serialization
 	 */
-	private ObjectMapper createConfiguredObjectMapper() {
-		ObjectMapper mapper = new ObjectMapper();
-		// Configure Jackson to ignore unknown properties during Cloudant migration
-		mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-		
-		// CRITICAL FIX: Properties field serialization issue resolution
-		// Use getters/setters instead of direct field access to respect @JsonProperty annotations
-		mapper.setVisibility(PropertyAccessor.GETTER, Visibility.PUBLIC_ONLY);
-		mapper.setVisibility(PropertyAccessor.SETTER, Visibility.PUBLIC_ONLY);
-		mapper.setVisibility(PropertyAccessor.FIELD, Visibility.NONE);
-		
-		return mapper;
+	private ObjectMapper getObjectMapper() {
+		return this.objectMapper;
 	}
 
 	/**
@@ -274,7 +276,7 @@ public class CloudantClientWrapper {
 				throw new IllegalArgumentException("Document must have '_id' field for update");
 			}
 			
-			ObjectMapper mapper = createConfiguredObjectMapper();
+			ObjectMapper mapper = getObjectMapper();
 			String jsonString = mapper.writeValueAsString(document);
 			com.ibm.cloud.cloudant.v1.model.Document doc = mapper.readValue(jsonString, com.ibm.cloud.cloudant.v1.model.Document.class);
 
@@ -529,7 +531,7 @@ public class CloudantClientWrapper {
 			ViewResult result = client.postView(builder.build()).execute().getResult();
 			
 			List<T> objects = new ArrayList<T>();
-			ObjectMapper mapper = createConfiguredObjectMapper();
+			ObjectMapper mapper = getObjectMapper();
 			
 			for (ViewResultRow row : result.getRows()) {
 				if (row.getDoc() != null) {
@@ -614,7 +616,7 @@ public class CloudantClientWrapper {
 		try {
 			log.debug("Creating document of type: " + document.getClass().getSimpleName());
 			
-			ObjectMapper mapper = createConfiguredObjectMapper();
+			ObjectMapper mapper = getObjectMapper();
 			Map<String, Object> documentMap;
 			
 			// Handle CouchChange objects manually due to ObjectMapper issues
@@ -654,19 +656,25 @@ public class CloudantClientWrapper {
 				documentMap.put("relationship", change.isRelationship());
 				documentMap.put("policy", change.isPolicy());
 			} else {
-				// Debug CouchTypeDefinition serialization specifically
+				// Handle CouchTypeDefinition serialization with explicit properties handling
 				if (document instanceof jp.aegif.nemaki.model.couch.CouchTypeDefinition) {
 					jp.aegif.nemaki.model.couch.CouchTypeDefinition typeDef = (jp.aegif.nemaki.model.couch.CouchTypeDefinition) document;
-					System.err.println("[OBJECTMAPPER] Before convertValue - CouchTypeDefinition properties: " + typeDef.getProperties());
-				}
-				
-				@SuppressWarnings("unchecked")
-				Map<String, Object> tempMap = mapper.convertValue(document, Map.class);
-				documentMap = tempMap;
-				
-				// Debug the converted Map for CouchTypeDefinition
-				if (document instanceof jp.aegif.nemaki.model.couch.CouchTypeDefinition) {
-					System.err.println("[OBJECTMAPPER] After convertValue - Map properties: " + documentMap.get("properties"));
+					log.info("Processing CouchTypeDefinition with properties: " + typeDef.getProperties());
+					
+					// Use standard ObjectMapper conversion but verify properties field
+					@SuppressWarnings("unchecked")
+					Map<String, Object> tempMap = mapper.convertValue(document, Map.class);
+					documentMap = tempMap;
+					
+					// Ensure properties field is correctly preserved
+					if (typeDef.getProperties() != null && !typeDef.getProperties().isEmpty()) {
+						documentMap.put("properties", typeDef.getProperties());
+						log.info("Explicitly set properties field in document map: " + documentMap.get("properties"));
+					}
+				} else {
+					@SuppressWarnings("unchecked")
+					Map<String, Object> tempMap = mapper.convertValue(document, Map.class);
+					documentMap = tempMap;
 				}
 			}
 			
@@ -725,7 +733,7 @@ public class CloudantClientWrapper {
 	 */
 	public void update(Object document) {
 		try {
-			ObjectMapper mapper = createConfiguredObjectMapper();
+			ObjectMapper mapper = getObjectMapper();
 			
 			@SuppressWarnings("unchecked")
 			Map<String, Object> documentMap = mapper.convertValue(document, Map.class);
@@ -783,7 +791,7 @@ public class CloudantClientWrapper {
 		try {
 			com.ibm.cloud.cloudant.v1.model.Document doc = get(id);
 			if (doc != null) {
-				ObjectMapper mapper = createConfiguredObjectMapper();
+				ObjectMapper mapper = getObjectMapper();
 				// Convert immutable Document to mutable Map first, then to target class
 				@SuppressWarnings("unchecked")
 				Map<String, Object> docMap = mapper.convertValue(doc, Map.class);
@@ -801,7 +809,7 @@ public class CloudantClientWrapper {
 	 */
 	public void delete(Object document) {
 		try {
-			ObjectMapper mapper = createConfiguredObjectMapper();
+			ObjectMapper mapper = getObjectMapper();
 			@SuppressWarnings("unchecked")
 			Map<String, Object> documentMap = mapper.convertValue(document, Map.class);
 			
@@ -1038,7 +1046,7 @@ public class CloudantClientWrapper {
 			com.ibm.cloud.cloudant.v1.model.Document doc = client.getDocument(builder.build()).execute().getResult();
 			
 			if (doc != null) {
-				ObjectMapper mapper = createConfiguredObjectMapper();
+				ObjectMapper mapper = getObjectMapper();
 				// Convert immutable Document to mutable Map first, then to target class
 				@SuppressWarnings("unchecked")
 				Map<String, Object> docMap = mapper.convertValue(doc, Map.class);
