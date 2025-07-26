@@ -176,3 +176,4 @@ setup/installer/**/*.war
 solr/solr/*/lib/
 docker/solr/solr/*/lib/
 build-workspace/chemistry-opencmis
+core/src/main/webapp/ui/node_modules/
