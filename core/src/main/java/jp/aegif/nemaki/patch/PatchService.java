@@ -8,11 +8,18 @@ import org.apache.commons.logging.LogFactory;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
+import jp.aegif.nemaki.businesslogic.PrincipalService;
+import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.model.Group;
+import java.util.ArrayList;
+import java.util.Arrays;
+import org.mindrot.jbcrypt.BCrypt;
 
 public class PatchService {
 	private static final Log log = LogFactory.getLog(PatchService.class);
 	private RepositoryInfoMap repositoryInfoMap;
 	private CloudantClientPool connectorPool;
+	private PrincipalService principalService;
 	
 	// Configuration properties for database initialization
 	private String couchdbUrl = "http://localhost:5984";
@@ -36,8 +43,8 @@ public class PatchService {
 			// Note: All database initialization (Phase 1) is handled by DatabasePreInitializer
 			// This method focuses on CMIS-aware operations that require fully initialized services
 			
-			// TODO: Initialize test users for QA and development (requires principalService injection)
-			log.info("Test user initialization skipped - requires principalService dependency");
+			// Initialize test users for QA and development
+			initializeTestUsers();
 			
 			// Apply any future patches if they exist
 			if (patchList != null && !patchList.isEmpty()) {
@@ -55,12 +62,116 @@ public class PatchService {
 	}
 	
 	/**
-	 * TODO: Initialize test users and groups for QA and development purposes
-	 * Requires principalService injection to be implemented
-	 * Planned to create:
+	 * Initialize test users and groups for QA and development purposes
+	 * Creates:
 	 * - TestUsers group
 	 * - test user (password: test) as member of TestUsers
 	 */
+	private void initializeTestUsers() {
+		log.info("=== INITIALIZING TEST USERS FOR QA ===");
+		
+		try {
+			if (principalService == null) {
+				log.warn("PrincipalService not available - skipping test user initialization");
+				return;
+			}
+			
+			// Check if test user already exists across all repositories
+			boolean testUserExists = false;
+			if (repositoryInfoMap != null) {
+				for (String repositoryId : repositoryInfoMap.keys()) {
+					try {
+						// Check if test user exists
+						User existingUser = principalService.getUserById(repositoryId, "test");
+						if (existingUser != null) {
+							testUserExists = true;
+							log.info("Test user 'test' already exists in repository: " + repositoryId);
+							break;
+						}
+					} catch (Exception e) {
+						// User doesn't exist, continue
+					}
+				}
+			}
+			
+			if (!testUserExists) {
+				log.info("Creating test users and groups for QA purposes");
+				createTestUsersAndGroups();
+			} else {
+				log.info("Test users already exist, skipping test user initialization");
+			}
+			
+			log.info("=== TEST USER INITIALIZATION COMPLETED ===");
+			
+		} catch (Exception e) {
+			log.warn("Failed to initialize test users (non-critical for production)", e);
+		}
+	}
+	
+	/**
+	 * Create test users and groups across all repositories
+	 */
+	private void createTestUsersAndGroups() {
+		if (repositoryInfoMap == null || principalService == null) {
+			log.warn("Required services not available for test user creation");
+			return;
+		}
+		
+		for (String repositoryId : repositoryInfoMap.keys()) {
+			try {
+				log.info("Creating test users in repository: " + repositoryId);
+				
+				// Create TestUsers group
+				Group testGroup = new Group();
+				testGroup.setGroupId("TestUsers");
+				testGroup.setName("Test Users Group");
+				// Group doesn't have setDescription method in the model
+				
+				try {
+					Group existingGroup = principalService.getGroupById(repositoryId, "TestUsers");
+					if (existingGroup == null) {
+						principalService.createGroup(repositoryId, testGroup);
+						log.info("Created TestUsers group in repository: " + repositoryId);
+					}
+				} catch (Exception e) {
+					// Group might not exist, try to create it
+					principalService.createGroup(repositoryId, testGroup);
+					log.info("Created TestUsers group in repository: " + repositoryId);
+				}
+				
+				// Create test user
+				User testUser = new User();
+				testUser.setUserId("test");
+				testUser.setName("Test User");
+				testUser.setFirstName("Test");
+				testUser.setLastName("User");
+				testUser.setEmail("test@nemakiware.example.com");
+				// Set password hash using BCrypt
+				String passwordHash = BCrypt.hashpw("test", BCrypt.gensalt());
+				testUser.setPasswordHash(passwordHash);
+				
+				try {
+					User existingUser = principalService.getUserById(repositoryId, "test");
+					if (existingUser == null) {
+						principalService.createUser(repositoryId, testUser);
+						log.info("Created test user 'test' in repository: " + repositoryId);
+						
+						// Add test user to TestUsers group
+						testGroup.setUsers(Arrays.asList("test"));
+						principalService.updateGroup(repositoryId, testGroup);
+						log.info("Added test user to TestUsers group in repository: " + repositoryId);
+					}
+				} catch (Exception e) {
+					// User might not exist, try to create it
+					principalService.createUser(repositoryId, testUser);
+					log.info("Created test user 'test' in repository: " + repositoryId);
+				}
+				
+			} catch (Exception e) {
+				log.warn("Failed to create test users in repository " + repositoryId + ": " + e.getMessage());
+			}
+		}
+	}
 
 	public void apply(){
 		createPathView();
@@ -108,6 +219,11 @@ public class PatchService {
 	
 	public void setCouchdbPassword(String couchdbPassword) {
 		this.couchdbPassword = couchdbPassword;
+	}
+	
+	public void setPrincipalService(PrincipalService principalService) {
+		System.out.println("=== PATCH DEBUG: setPrincipalService called with " + (principalService != null ? principalService.getClass().getName() : "null"));
+		this.principalService = principalService;
 	}
 
 	/**
