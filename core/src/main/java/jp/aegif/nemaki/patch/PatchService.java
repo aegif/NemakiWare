@@ -36,6 +36,9 @@ public class PatchService {
 			// Note: All database initialization (Phase 1) is handled by DatabasePreInitializer
 			// This method focuses on CMIS-aware operations that require fully initialized services
 			
+			// TODO: Initialize test users for QA and development (requires principalService injection)
+			log.info("Test user initialization skipped - requires principalService dependency");
+			
 			// Apply any future patches if they exist
 			if (patchList != null && !patchList.isEmpty()) {
 				log.info("Applying " + patchList.size() + " CMIS patches");
@@ -50,6 +53,14 @@ public class PatchService {
 			// Continue with application startup even if patches fail
 		}
 	}
+	
+	/**
+	 * TODO: Initialize test users and groups for QA and development purposes
+	 * Requires principalService injection to be implemented
+	 * Planned to create:
+	 * - TestUsers group
+	 * - test user (password: test) as member of TestUsers
+	 */
 
 	public void apply(){
 		createPathView();

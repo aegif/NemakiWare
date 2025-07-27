@@ -7,9 +7,13 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.web.context.WebApplicationContext;
+import org.springframework.web.context.support.WebApplicationContextUtils;
 
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.ws.rs.core.Context;
 
 @Path("/repo/{repositoryId}/authtoken/")
 public class AuthTokenResource extends ResourceBase{
@@ -17,6 +21,9 @@ public class AuthTokenResource extends ResourceBase{
 	private static final Logger logger = LoggerFactory.getLogger(AuthTokenResource.class);
 
 	private TokenService tokenService;
+	
+	@Context 
+	private HttpServletRequest request;
 	
 	@GET
 	@Path("/{userName}")
@@ -28,6 +35,14 @@ public class AuthTokenResource extends ResourceBase{
 
 		if(StringUtils.isBlank(app)){
 			app = "";
+		}
+		
+		TokenService tokenService = getTokenService();
+		if (tokenService == null) {
+			status = false;
+			errMsg.add("TokenService not available");
+			result = makeResult(status, result, errMsg);
+			return result.toString();
 		}
 		
 		Token token = tokenService.getToken(app, repositoryId, userName);
@@ -71,6 +86,13 @@ public class AuthTokenResource extends ResourceBase{
 		}
 		
 		
+		TokenService tokenService = getTokenService();
+		if (tokenService == null) {
+			status = false;
+			addErrMsg(errMsg, "tokenService", "notAvailable");
+			return makeResult(false, result, errMsg).toString();
+		}
+		
 		Token token = tokenService.setToken(app, repositoryId, userName);
 
 
@@ -110,6 +132,14 @@ public class AuthTokenResource extends ResourceBase{
 		}
 		
 		try {
+			TokenService tokenService = getTokenService();
+			if (tokenService == null) {
+				status = false;
+				addErrMsg(errMsg, "tokenService", "notAvailable");
+				result = makeResult(false, result, errMsg);
+				return result.toString();
+			}
+			
 			// For React UI login, we'll generate a token similar to register endpoint
 			String app = ""; // Default app for React UI
 			Token token = tokenService.setToken(app, repositoryId, userName);
@@ -136,5 +166,31 @@ public class AuthTokenResource extends ResourceBase{
 
 	public void setTokenService(TokenService tokenService) {
 		this.tokenService = tokenService;
+	}
+	
+	/**
+	 * Get TokenService from Spring context if not injected via setter
+	 * This is a fallback mechanism for Jersey-Spring integration issues
+	 */
+	private TokenService getTokenService() {
+		if (tokenService != null) {
+			return tokenService;
+		}
+		
+		try {
+			// Fallback: Get TokenService from Spring WebApplicationContext
+			WebApplicationContext context = WebApplicationContextUtils.getWebApplicationContext(
+				request.getServletContext());
+			if (context != null) {
+				tokenService = context.getBean("TokenService", TokenService.class);
+				logger.info("TokenService retrieved from Spring context via fallback mechanism");
+				return tokenService;
+			}
+		} catch (Exception e) {
+			logger.error("Failed to retrieve TokenService from Spring context", e);
+		}
+		
+		logger.error("TokenService is not available - neither via injection nor Spring context lookup");
+		return null;
 	}
 }
