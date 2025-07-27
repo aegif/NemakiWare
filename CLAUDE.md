@@ -33,7 +33,47 @@ curl -s -u admin:admin "http://localhost:8080/core/browser/bedroom/root?cmisacti
 # Returns: {"exception":"notSupported","message":"Unknown operation"}
 ```
 
-## Recent Major Changes (2025-07-26)
+## Recent Major Changes (2025-07-27)
+
+### Database Initialization Architecture Redesign - IN PROGRESS ⚠️
+
+**CRITICAL ARCHITECTURAL PRINCIPLE**: Clear separation between database layer and application layer initialization.
+
+**Two-Phase Initialization Strategy**:
+
+**Phase 1 (Database Layer) - DatabasePreInitializer**:
+- **Pure database operations** using only HTTP clients
+- **No dependency** on CMIS services, Nemakiware application services, or complex Spring beans
+- **Executes early** in Spring context initialization using @PostConstruct
+- **Responsibilities**:
+  - Create CouchDB databases if they don't exist
+  - Load essential dump files (design documents, system data)
+  - Ensure database prerequisites for application services
+- **Technology**: Basic HTTP operations, @Component/@PostConstruct, @Value injection
+- **Location**: `jp.aegif.nemaki.init.DatabasePreInitializer`
+
+**Phase 2 (Application Layer) - PatchService**:
+- **CMIS-aware operations** that require fully initialized Spring services
+- **Depends on** CMIS services, repository connections, and application context
+- **Executes after** Spring context initialization is complete
+- **Responsibilities**:
+  - Create initial folders using CMIS services
+  - Apply type definitions and business logic patches
+  - Configure application-specific settings
+- **Technology**: CloudantClientWrapper, CMIS APIs, Spring service injection
+- **Location**: `jp.aegif.nemaki.patch.PatchService`
+
+**Implementation Guidelines**:
+1. **DatabasePreInitializer MUST NOT** use CMIS services or application-layer beans
+2. **PatchService MUST NOT** handle raw database initialization or dump file loading
+3. **Phase 1 failure** should not prevent Phase 2 execution (graceful degradation)
+4. **Phase 2** assumes Phase 1 completed successfully (databases and design documents exist)
+
+**Configuration**:
+- Phase 1: Component scanning `jp.aegif.nemaki.init` with @Order(1)
+- Phase 2: Spring bean configuration in `patchContext.xml` with init-method
+
+## Previous Major Changes (2025-07-26)
 
 ### ObjectMapper Configuration Standardization - COMPLETED ✅
 

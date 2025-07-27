@@ -13,7 +13,44 @@
 
     <context:annotation-config />
 	<context:component-scan base-package="jp.aegif.nemaki.patch" />
+	<context:component-scan base-package="jp.aegif.nemaki.init" />
 
+	<!-- 
+		Phase 2: CMIS Post-Initializer (New Architecture)
+		
+		Uses InitializingBean to execute CMIS operations after all Spring services
+		are fully initialized. This replaces the problematic init-method approach
+		and ensures proper dependency resolution.
+	-->
+	<bean id="cmisPostInitializer" class="jp.aegif.nemaki.init.CMISPostInitializer">
+		<property name="cmisPatchList">
+			<list>
+				<!-- CMIS-specific patches that require running services -->
+				<bean class="jp.aegif.nemaki.patch.Patch_InitialFolderSetup">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<bean class="jp.aegif.nemaki.patch.Patch_StandardCmisViews">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<bean class="jp.aegif.nemaki.patch.Patch_RelationshipTypesSetup">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+			</list>
+		</property>
+	</bean>
+
+	<!-- 
+		Legacy PatchService (Preserved for compatibility)
+		
+		NOTE: Database initialization (Phase 1) is now handled by DatabasePreInitializer
+		This service focuses only on CMIS operations that may be invoked manually.
+	-->
 	<bean id="PatchService" class="jp.aegif.nemaki.patch.PatchService" init-method="applyPatchesOnStartup">
 		<property name="repositoryInfoMap">
 			<ref bean="repositoryInfoMap" />

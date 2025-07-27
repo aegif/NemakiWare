@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 
+    Database Pre-Initialization Context for NemakiWare
+    
+    This context file defines Phase 1 database initialization using Spring's 
+    DataSourceInitializer mechanism. This ensures database setup occurs BEFORE
+    Spring context initialization, preventing circular dependency issues.
+-->
+<beans xmlns="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans 
+                        http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <!-- 
+        Phase 1: Database Pre-Initializer Bean Definition
+        
+        Defines DatabasePreInitializer as a regular Spring bean with init-method
+        to ensure database initialization happens early during Spring startup.
+        
+        This approach avoids @PostConstruct timing issues and provides explicit
+        control over initialization order.
+    -->
+    
+    <bean id="databasePreInitializer" 
+          class="jp.aegif.nemaki.init.DatabasePreInitializer"
+          init-method="initializeDatabase" 
+          lazy-init="false">
+        <!-- CouchDB connection properties -->
+        <property name="couchdbUrl" value="http://couchdb:5984" />
+        <property name="couchdbUsername" value="admin" />
+        <property name="couchdbPassword" value="password" />
+    </bean>
+
+</beans>

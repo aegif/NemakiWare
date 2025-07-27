@@ -7,6 +7,9 @@
     xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd">
 
 
+    <!-- Phase 1: Database Pre-Initialization -->
+    <!-- Bean definition moved to databaseInitContext.xml to avoid duplicates -->
+
     <!-- CMIS Repository Beans -->
     <bean id="CmisLifecycleBean" class="jp.aegif.nemaki.cmis.factory.CmisLifecycleBean">
         <property name="cmisServiceFactory" ref="CmisServiceFactory" />
