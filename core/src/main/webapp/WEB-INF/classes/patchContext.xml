@@ -67,9 +67,6 @@
 		<property name="couchdbPassword">
 			<value>${db.couchdb.auth.password}</value>
 		</property>
-		<property name="principalService">
-			<ref bean="PrincipalService" />
-		</property>
 		<property name="patchList">
 			<list>
 				<!-- Individual patches consolidated into initialization data -->

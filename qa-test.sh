@@ -190,6 +190,16 @@ if [[ "$TEST_MODE" != "fast" ]]; then
     echo "=== 9. SOLR INTEGRATION TESTS ==="
     run_http_test "Solr Connectivity" "http://localhost:8983/solr/admin/cores?action=STATUS" "200"
     run_test "Solr Nemaki Core" "curl -s http://localhost:8983/solr/admin/cores?action=STATUS | jq -r '.status.nemaki.name'" "nemaki"
+    
+    # Test Solr indexing configuration
+    run_test "Solr Indexing Configuration Enabled" "
+        # Check if Solr indexing is enabled in application logs
+        if docker logs docker-core-1 2>&1 | grep -q 'Solr indexing force setting: true\\|Starting async Solr indexing'; then
+            echo 'PASS'
+        else
+            echo 'FAIL'
+        fi
+    " "PASS"
 fi
 
 echo

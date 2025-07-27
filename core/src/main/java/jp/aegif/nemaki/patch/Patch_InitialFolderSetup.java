@@ -419,6 +419,17 @@ public class Patch_InitialFolderSetup extends AbstractNemakiPatch {
      * Trigger Solr reindexing to ensure all content is searchable
      */
     private void triggerSolrReindexing(String repositoryId) {
+        // CRITICAL FIX: Disable blocking HTTP call during Spring Context initialization
+        // This was causing infinite hang because the application is not yet ready to serve HTTP requests
+        log.warn("STARTUP OPTIMIZATION: Solr reindexing temporarily disabled during initialization");
+        log.warn("Solr reindexing will be handled by automatic indexing when documents are accessed");
+        log.info("Manual reindexing if needed: curl -u admin:admin http://localhost:8080/core/rest/all/search-engine/reindex");
+        
+        // TODO: Implement proper asynchronous reindexing after application startup completion
+        // Current implementation causes circular dependency: patch waits for app, app waits for patch
+        return;
+        
+        /* DISABLED TO FIX STARTUP HANG - ORIGINAL CODE:
         try {
             log.info("Starting Solr reindexing for repository: " + repositoryId);
             
@@ -456,5 +467,6 @@ public class Patch_InitialFolderSetup extends AbstractNemakiPatch {
             log.warn("Failed to trigger Solr reindexing automatically: " + e.getMessage());
             log.info("Manual Solr reindexing may be required: curl -u admin:admin http://localhost:8080/core/rest/all/search-engine/reindex");
         }
+        */
     }
 }
