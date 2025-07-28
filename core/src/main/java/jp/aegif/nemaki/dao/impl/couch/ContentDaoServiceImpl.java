@@ -1009,21 +1009,36 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Content getChildByName(String repositoryId, String parentId, String name) {
 		try {
-			// Query childByName view with composite key [parentId, name]
+			log.debug("DEBUG getChildByName: searching for child '" + name + "' under parent '" + parentId + "' in repository: " + repositoryId);
+			
+			// FIXED: Use existing 'children' view instead of missing 'childByName' view
+			// Query children view and filter by name since childByName view doesn't exist
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			
-			// Create composite key as JSON array
-			String compositeKey = "[\"" + parentId + "\",\"" + name + "\"]";
-			ViewResult result = client.queryView("_repo", "childByName", compositeKey);
+			// Create query parameters with include_docs=true
+			Map<String, Object> queryParams = new HashMap<String, Object>();
+			queryParams.put("key", parentId);
+			queryParams.put("include_docs", true);
+			ViewResult result = client.queryView("_repo", "children", queryParams);
 			
 			if (result.getRows() != null && !result.getRows().isEmpty()) {
-				ViewResultRow row = result.getRows().get(0);
-				if (row.getDoc() != null) {
-					// Convert document to appropriate Content type based on type field
-					Map<String, Object> doc = (Map<String, Object>) row.getDoc();
-					String objectId = (String) doc.get("_id");
-					return getContent(repositoryId, objectId);
+				log.debug("DEBUG getChildByName: found " + result.getRows().size() + " children for parent '" + parentId + "'");
+				for (ViewResultRow row : result.getRows()) {
+					if (row.getDoc() != null) {
+						Map<String, Object> doc = (Map<String, Object>) row.getDoc();
+						String childName = (String) doc.get("name");
+						log.debug("DEBUG getChildByName: checking child with name='" + childName + "'");
+						
+						if (name.equals(childName)) {
+							String objectId = (String) doc.get("_id");
+							log.debug("DEBUG getChildByName: FOUND matching child '" + name + "' with ID: " + objectId);
+							return getContent(repositoryId, objectId);
+						}
+					}
 				}
+				log.debug("DEBUG getChildByName: no child found with name '" + name + "' under parent '" + parentId + "'");
+			} else {
+				log.debug("DEBUG getChildByName: no children found for parent '" + parentId + "'");
 			}
 			
 			return null;
@@ -1853,8 +1868,33 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public void delete(String repositoryId, String objectId) {
-		CouchNodeBase cnb = connectorPool.getClient(repositoryId).get(CouchNodeBase.class, objectId);
-		connectorPool.getClient(repositoryId).delete(cnb);
+		try {
+			log.error("DELETION ATTEMPT DEBUG: Attempting to delete object: " + objectId + " from repository: " + repositoryId);
+			CouchNodeBase cnb = connectorPool.getClient(repositoryId).get(CouchNodeBase.class, objectId);
+			if (cnb == null) {
+				log.warn("Object " + objectId + " not found in repository " + repositoryId + ", already deleted or does not exist");
+				return;
+			}
+			
+			connectorPool.getClient(repositoryId).delete(cnb);
+			log.error("DELETION SUCCESS DEBUG: Successfully deleted object: " + objectId + " from repository: " + repositoryId);
+			
+			// Verify deletion was successful
+			try {
+				CouchNodeBase verification = connectorPool.getClient(repositoryId).get(CouchNodeBase.class, objectId);
+				if (verification != null) {
+					log.error("CRITICAL: Object " + objectId + " still exists after deletion attempt in repository " + repositoryId);
+					throw new RuntimeException("Object deletion failed - object still exists: " + objectId);
+				}
+			} catch (Exception verifyEx) {
+				// Expected behavior - object should not be found after deletion
+				log.debug("Verification confirmed: object " + objectId + " no longer exists in repository " + repositoryId);
+			}
+			
+		} catch (Exception e) {
+			log.error("Failed to delete object: " + objectId + " from repository: " + repositoryId, e);
+			throw new RuntimeException("Delete operation failed for object: " + objectId, e);
+		}
 	}
 
 	// ///////////////////////////////////////

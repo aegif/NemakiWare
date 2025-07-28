@@ -12,7 +12,6 @@ import jp.aegif.nemaki.cmis.tck.tests.TypesTestGroup;
 import jp.aegif.nemaki.cmis.tck.tests.VersioningTestGroup;
 
 @RunWith( Suite.class )
-@org.junit.Ignore("TCK tests causing timeout - temporarily disabled for patch implementation")
 @Suite.SuiteClasses( { 
     BasicsTestGroup.class,
     ControlTestGroup.class,

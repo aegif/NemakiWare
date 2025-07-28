@@ -95,7 +95,6 @@ public class MultiThreadTest extends TestBase{
 	}
 	
 	@Test
-	@org.junit.Ignore("AttachmentNode null issue - temporarily disabled")
 	public void checkOutTest_single(){
 		String folderId = createTestFolder();
 		String docId = createDocument(folderId, "test.txt", "This is test");

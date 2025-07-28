@@ -239,6 +239,15 @@ public class CloudantClientPool {
 					
 					// Verify database exists
 					verifyDatabase(wrapper, repositoryId);
+					
+					// Also initialize archive repository if it exists
+					String archiveId = repositoryInfoMap.getArchiveId(repositoryId);
+					if (archiveId != null && !archiveId.equals(repositoryId)) {
+						log.info("Initializing archive repository: " + archiveId);
+						CloudantClientWrapper archiveWrapper = new CloudantClientWrapper(cloudantClient, archiveId, couchdbObjectMapper);
+						pool.put(archiveId, archiveWrapper);
+						verifyDatabase(archiveWrapper, archiveId);
+					}
 				}
 			}
 		}

@@ -901,6 +901,8 @@ public class ContentServiceImpl implements ContentService {
 			d.setMajorVersion(false);
 			d.setLatestMajorVersion(false);
 			d.setPrivateWorkingCopy(true);
+			// CRITICAL CMIS 1.1 COMPLIANCE: Set isVersionSeriesCheckedOut=true for checked out documents
+			d.setVersionSeriesCheckedOut(true);
 			break;
 		case MAJOR:
 			d.setLatestVersion(true);
@@ -908,6 +910,8 @@ public class ContentServiceImpl implements ContentService {
 			d.setLatestMajorVersion(true);
 			d.setVersionLabel("1.0");
 			d.setPrivateWorkingCopy(false);
+			// CRITICAL CMIS 1.1 COMPLIANCE: Set isVersionSeriesCheckedOut=false for non-checked out documents
+			d.setVersionSeriesCheckedOut(false);
 			break;
 		case MINOR:
 			d.setLatestVersion(true);
@@ -915,6 +919,8 @@ public class ContentServiceImpl implements ContentService {
 			d.setLatestMajorVersion(false);
 			d.setVersionLabel("0.1");
 			d.setPrivateWorkingCopy(false);
+			// CRITICAL CMIS 1.1 COMPLIANCE: Set isVersionSeriesCheckedOut=false for non-checked out documents
+			d.setVersionSeriesCheckedOut(false);
 			break;
 		default:
 			break;
@@ -1017,10 +1023,8 @@ public class ContentServiceImpl implements ContentService {
 
 		// Create
 		Folder folder = contentDaoService.create(repositoryId, f);
-		log.error("COMPREHENSIVE DEBUG: createFolder received from DAO - ID=" + folder.getId() + 
-			", revision=" + folder.getRevision());
 
-		// COMPREHENSIVE REVISION MANAGEMENT: Record the change event
+		// Record the change event
 		// Content objects now maintain revision state, enabling proper writeChangeEvent
 		writeChangeEvent(callContext, repositoryId, folder, ChangeType.CREATED);
 
@@ -1179,30 +1183,9 @@ public class ContentServiceImpl implements ContentService {
 
 	private void setBaseProperties(CallContext callContext, String repositoryId, Properties properties, Content content,
 			String parentFolderId) {
-		// DEBUG: Jakarta EE Properties analysis
-		System.out.println("=== PROPERTIES DEBUG ===");
-		System.out.println("Properties object: " + (properties == null ? "NULL" : properties.getClass().getName()));
-		if (properties != null && properties.getProperties() != null) {
-			System.out.println("Properties map size: " + properties.getProperties().size());
-			properties.getProperties().forEach((key, value) -> {
-				System.out.println("  Property: " + key + " = " + (value == null ? "NULL" : value.getClass().getName() + ":" + value.getFirstValue()));
-			});
-		}
-		System.out.println("parentFolderId passed: " + parentFolderId);
-		
-		// DEBUG: TypeDefinition verification
-		String objectTypeId = DataUtil.getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID);
-		System.out.println("objectTypeId extracted: " + objectTypeId);
-		
-		TypeDefinition typeDefinition = typeManager.getTypeDefinition(repositoryId, objectTypeId);
-		System.out.println("TypeDefinition retrieved: " + (typeDefinition == null ? "NULL" : typeDefinition.getId()));
-		if (typeDefinition != null && typeDefinition.getPropertyDefinitions() != null) {
-			System.out.println("TypeDefinition property count: " + typeDefinition.getPropertyDefinitions().size());
-			System.out.println("Contains cmis:name: " + typeDefinition.getPropertyDefinitions().containsKey("cmis:name"));
-		}
-		System.out.println("=== END PROPERTIES DEBUG ===");
-		
 		// Object Type
+		String objectTypeId = DataUtil.getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID);
+		TypeDefinition typeDefinition = typeManager.getTypeDefinition(repositoryId, objectTypeId);
 		content.setObjectType(objectTypeId);
 
 		// Base Type
@@ -1456,10 +1439,6 @@ public class ContentServiceImpl implements ContentService {
 	public Content updateInternal(String repositoryId, Content content) {
 		Content result = null;
 		
-		// COMPREHENSIVE REVISION MANAGEMENT: Content objects can now maintain revision state
-		// DAO layer will use Content revision if available, or fetch from database as fallback
-		log.error("COMPREHENSIVE DEBUG: updateInternal called for content ID=" + content.getId() + 
-			", revision=" + content.getRevision() + ", type=" + content.getClass().getSimpleName());
 
 		if (content instanceof Document) {
 			result = contentDaoService.update(repositoryId, (Document) content);

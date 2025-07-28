@@ -309,14 +309,30 @@ public class CloudantClientWrapper {
 				.build();
 
 			DocumentResult result = client.deleteDocument(options).execute().getResult();
-			log.debug("Deleted document with ID: " + id);
+			log.debug("Deleted document with ID: " + id + " from database: " + databaseName);
 			
 			return result;
 
 		} catch (Exception e) {
-			log.warn("Error deleting document with ID '" + id + "' from database '" + databaseName + "' - returning null. This is normal during initial startup: " + e.getMessage());
-			return null;
+			// FIXED: Don't silently ignore delete failures during normal operations
+			// Only ignore during startup/initialization
+			if (isStartupPhase()) {
+				log.warn("Error deleting document with ID '" + id + "' from database '" + databaseName + "' during startup - returning null. This is normal during initial startup: " + e.getMessage());
+				return null;
+			} else {
+				log.error("Critical error deleting document with ID '" + id + "' from database '" + databaseName + "'", e);
+				throw new RuntimeException("Failed to delete document ID '" + id + "' from database '" + databaseName + "': " + e.getMessage(), e);
+			}
 		}
+	}
+	
+	/**
+	 * Check if we're in startup phase where delete errors should be ignored
+	 */
+	private boolean isStartupPhase() {
+		// Simple heuristic: if we're in a startup-related thread, allow failures
+		String threadName = Thread.currentThread().getName();
+		return threadName.contains("main") || threadName.contains("startup") || threadName.contains("init");
 	}
 
 	/**
@@ -823,9 +839,47 @@ public class CloudantClientWrapper {
 				throw new IllegalArgumentException("Document must have '_rev' field for delete");
 			}
 			
-			delete(id, rev);
+			log.error("CLOUDANT DELETION DEBUG: Attempting to delete document ID: " + id + " with revision: " + rev);
+			
+			// CRITICAL FIX: Fetch the latest revision before deleting to avoid stale revision conflicts
+			// This is the root cause of the deletion failures - using stale revisions
+			try {
+				GetDocumentOptions getOptions = new GetDocumentOptions.Builder()
+					.db(databaseName)
+					.docId(id)
+					.build();
+				Document currentDoc = client.getDocument(getOptions).execute().getResult();
+				String latestRev = currentDoc.getRev();
+				
+				if (!rev.equals(latestRev)) {
+					log.error("CLOUDANT DELETION DEBUG: Document revision is stale. Using latest revision: " + latestRev + " instead of: " + rev);
+					rev = latestRev;
+				} else {
+					log.debug("DELETION DEBUG: Document revision is current: " + rev);
+				}
+			} catch (Exception fetchEx) {
+				log.warn("DELETION DEBUG: Could not fetch latest revision for document " + id + ": " + fetchEx.getMessage() + ". Proceeding with provided revision: " + rev);
+			}
+			
+			DocumentResult result = delete(id, rev);
+			if (result == null) {
+				throw new RuntimeException("Delete operation failed for document ID: " + id + " - no result returned from CouchDB");
+			}
+			log.error("CLOUDANT DELETION SUCCESS: Successfully deleted document with ID: " + id + " using revision: " + rev);
+		} catch (IllegalArgumentException e) {
+			// Re-throw validation errors
+			throw e;
+		} catch (RuntimeException e) {
+			// Re-throw runtime errors (including our custom failure detection)
+			throw e;
 		} catch (Exception e) {
-			log.warn("Error deleting document object. This is normal during initial startup: " + e.getMessage());
+			// FIXED: Don't silently ignore delete failures - propagate them
+			ObjectMapper mapper = getObjectMapper();
+			@SuppressWarnings("unchecked")
+			Map<String, Object> documentMap = mapper.convertValue(document, Map.class);
+			String docId = (String) documentMap.get("_id");
+			log.error("Critical error deleting document object with ID: " + docId, e);
+			throw new RuntimeException("Failed to delete document: " + e.getMessage(), e);
 		}
 	}
 

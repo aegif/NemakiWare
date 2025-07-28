@@ -48,6 +48,9 @@ public class Document extends Content {
 		private String versionLabel;
 		//The following properties should be moved away to VersionSeries object
 		private Boolean privateWorkingCopy;
+		
+		// CRITICAL CMIS 1.1 COMPLIANCE: isVersionSeriesCheckedOut property is MANDATORY
+		private Boolean versionSeriesCheckedOut;
 
 		private Boolean immutable;
 
@@ -121,6 +124,14 @@ public class Document extends Content {
 
 	public void setPrivateWorkingCopy(Boolean privateWorkingCopy) {
 		this.privateWorkingCopy = privateWorkingCopy;
+	}
+
+	public Boolean isVersionSeriesCheckedOut() {
+		return (versionSeriesCheckedOut == null) ? false : versionSeriesCheckedOut;
+	}
+
+	public void setVersionSeriesCheckedOut(Boolean versionSeriesCheckedOut) {
+		this.versionSeriesCheckedOut = versionSeriesCheckedOut;
 	}
 
 	public String getVersionLabel() {

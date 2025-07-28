@@ -49,6 +49,9 @@ public class CouchDocument extends CouchContent {
 	private String versionLabel;
 	//The following properties should be moved away to VersionSeries object
 	private Boolean privateWorkingCopy;
+	
+	// CRITICAL CMIS 1.1 COMPLIANCE: isVersionSeriesCheckedOut property is MANDATORY
+	private Boolean versionSeriesCheckedOut;
 
 	private Boolean immutable;
 	
@@ -93,6 +96,10 @@ public class CouchDocument extends CouchContent {
 				Object value = properties.get("privateWorkingCopy");
 				this.privateWorkingCopy = value instanceof Boolean ? (Boolean) value : Boolean.parseBoolean(String.valueOf(value));
 			}
+			if (properties.containsKey("versionSeriesCheckedOut")) {
+				Object value = properties.get("versionSeriesCheckedOut");
+				this.versionSeriesCheckedOut = value instanceof Boolean ? (Boolean) value : Boolean.parseBoolean(String.valueOf(value));
+			}
 			if (properties.containsKey("immutable")) {
 				Object value = properties.get("immutable");
 				this.immutable = value instanceof Boolean ? (Boolean) value : Boolean.parseBoolean(String.valueOf(value));
@@ -111,6 +118,7 @@ public class CouchDocument extends CouchContent {
 		setLatestMajorVersion(d.isLatestMajorVersion());
 		setCheckinComment(d.getCheckinComment());
 		setPrivateWorkingCopy(d.isPrivateWorkingCopy());
+		setVersionSeriesCheckedOut(d.isVersionSeriesCheckedOut());
 		setImmutable(d.isImmutable());
 	}
 	
@@ -174,6 +182,14 @@ public class CouchDocument extends CouchContent {
 	public void setPrivateWorkingCopy(Boolean privateWorkingCopy) {
 		this.privateWorkingCopy = privateWorkingCopy;
 	}
+	
+	@JsonProperty("versionSeriesCheckedOut")
+	public Boolean isVersionSeriesCheckedOut() {
+		return (versionSeriesCheckedOut == null) ? false : versionSeriesCheckedOut;
+	}
+	public void setVersionSeriesCheckedOut(Boolean versionSeriesCheckedOut) {
+		this.versionSeriesCheckedOut = versionSeriesCheckedOut;
+	}
 
 	
 	public String getVersionLabel() {
@@ -210,6 +226,7 @@ public class CouchDocument extends CouchContent {
 		d.setVersionSeriesId(getVersionSeriesId());
 		d.setVersionLabel(getVersionLabel());
 		d.setPrivateWorkingCopy(isPrivateWorkingCopy());
+		d.setVersionSeriesCheckedOut(isVersionSeriesCheckedOut());
 		d.setCheckinComment(getCheckinComment());
 		d.setImmutable(isImmutable());
 
