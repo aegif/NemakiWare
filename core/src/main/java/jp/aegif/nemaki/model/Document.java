@@ -51,6 +51,10 @@ public class Document extends Content {
 		
 		// CRITICAL CMIS 1.1 COMPLIANCE: isVersionSeriesCheckedOut property is MANDATORY
 		private Boolean versionSeriesCheckedOut;
+		
+		// ADDITIONAL CMIS 1.1 VERSIONING PROPERTIES - required for complete TCK compliance
+		private String versionSeriesCheckedOutBy;
+		private String versionSeriesCheckedOutId;
 
 		private Boolean immutable;
 
@@ -132,6 +136,22 @@ public class Document extends Content {
 
 	public void setVersionSeriesCheckedOut(Boolean versionSeriesCheckedOut) {
 		this.versionSeriesCheckedOut = versionSeriesCheckedOut;
+	}
+
+	public String getVersionSeriesCheckedOutBy() {
+		return versionSeriesCheckedOutBy;
+	}
+
+	public void setVersionSeriesCheckedOutBy(String versionSeriesCheckedOutBy) {
+		this.versionSeriesCheckedOutBy = versionSeriesCheckedOutBy;
+	}
+
+	public String getVersionSeriesCheckedOutId() {
+		return versionSeriesCheckedOutId;
+	}
+
+	public void setVersionSeriesCheckedOutId(String versionSeriesCheckedOutId) {
+		this.versionSeriesCheckedOutId = versionSeriesCheckedOutId;
 	}
 
 	public String getVersionLabel() {

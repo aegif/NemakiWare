@@ -903,6 +903,9 @@ public class ContentServiceImpl implements ContentService {
 			d.setPrivateWorkingCopy(true);
 			// CRITICAL CMIS 1.1 COMPLIANCE: Set isVersionSeriesCheckedOut=true for checked out documents
 			d.setVersionSeriesCheckedOut(true);
+			// Set additional versioning properties for checked out documents
+			d.setVersionSeriesCheckedOutBy(callContext.getUsername());
+			d.setVersionSeriesCheckedOutId(d.getId());
 			break;
 		case MAJOR:
 			d.setLatestVersion(true);
@@ -912,6 +915,9 @@ public class ContentServiceImpl implements ContentService {
 			d.setPrivateWorkingCopy(false);
 			// CRITICAL CMIS 1.1 COMPLIANCE: Set isVersionSeriesCheckedOut=false for non-checked out documents
 			d.setVersionSeriesCheckedOut(false);
+			// Clear additional versioning properties for non-checked out documents
+			d.setVersionSeriesCheckedOutBy(null);
+			d.setVersionSeriesCheckedOutId(null);
 			break;
 		case MINOR:
 			d.setLatestVersion(true);
@@ -921,6 +927,9 @@ public class ContentServiceImpl implements ContentService {
 			d.setPrivateWorkingCopy(false);
 			// CRITICAL CMIS 1.1 COMPLIANCE: Set isVersionSeriesCheckedOut=false for non-checked out documents
 			d.setVersionSeriesCheckedOut(false);
+			// Clear additional versioning properties for non-checked out documents
+			d.setVersionSeriesCheckedOutBy(null);
+			d.setVersionSeriesCheckedOutId(null);
 			break;
 		default:
 			break;

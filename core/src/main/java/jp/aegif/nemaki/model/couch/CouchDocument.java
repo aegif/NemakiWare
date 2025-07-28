@@ -52,6 +52,10 @@ public class CouchDocument extends CouchContent {
 	
 	// CRITICAL CMIS 1.1 COMPLIANCE: isVersionSeriesCheckedOut property is MANDATORY
 	private Boolean versionSeriesCheckedOut;
+	
+	// ADDITIONAL CMIS 1.1 VERSIONING PROPERTIES - required for complete TCK compliance
+	private String versionSeriesCheckedOutBy;
+	private String versionSeriesCheckedOutId;
 
 	private Boolean immutable;
 	
@@ -100,6 +104,11 @@ public class CouchDocument extends CouchContent {
 				Object value = properties.get("versionSeriesCheckedOut");
 				this.versionSeriesCheckedOut = value instanceof Boolean ? (Boolean) value : Boolean.parseBoolean(String.valueOf(value));
 			}
+			
+			// Additional versioning properties for CMIS 1.1 compliance
+			this.versionSeriesCheckedOutBy = (String) properties.get("versionSeriesCheckedOutBy");
+			this.versionSeriesCheckedOutId = (String) properties.get("versionSeriesCheckedOutId");
+			
 			if (properties.containsKey("immutable")) {
 				Object value = properties.get("immutable");
 				this.immutable = value instanceof Boolean ? (Boolean) value : Boolean.parseBoolean(String.valueOf(value));
@@ -119,6 +128,8 @@ public class CouchDocument extends CouchContent {
 		setCheckinComment(d.getCheckinComment());
 		setPrivateWorkingCopy(d.isPrivateWorkingCopy());
 		setVersionSeriesCheckedOut(d.isVersionSeriesCheckedOut());
+		setVersionSeriesCheckedOutBy(d.getVersionSeriesCheckedOutBy());
+		setVersionSeriesCheckedOutId(d.getVersionSeriesCheckedOutId());
 		setImmutable(d.isImmutable());
 	}
 	
@@ -191,6 +202,22 @@ public class CouchDocument extends CouchContent {
 		this.versionSeriesCheckedOut = versionSeriesCheckedOut;
 	}
 
+	public String getVersionSeriesCheckedOutBy() {
+		return versionSeriesCheckedOutBy;
+	}
+
+	public void setVersionSeriesCheckedOutBy(String versionSeriesCheckedOutBy) {
+		this.versionSeriesCheckedOutBy = versionSeriesCheckedOutBy;
+	}
+
+	public String getVersionSeriesCheckedOutId() {
+		return versionSeriesCheckedOutId;
+	}
+
+	public void setVersionSeriesCheckedOutId(String versionSeriesCheckedOutId) {
+		this.versionSeriesCheckedOutId = versionSeriesCheckedOutId;
+	}
+
 	
 	public String getVersionLabel() {
 		return versionLabel;
@@ -227,6 +254,8 @@ public class CouchDocument extends CouchContent {
 		d.setVersionLabel(getVersionLabel());
 		d.setPrivateWorkingCopy(isPrivateWorkingCopy());
 		d.setVersionSeriesCheckedOut(isVersionSeriesCheckedOut());
+		d.setVersionSeriesCheckedOutBy(getVersionSeriesCheckedOutBy());
+		d.setVersionSeriesCheckedOutId(getVersionSeriesCheckedOutId());
 		d.setCheckinComment(getCheckinComment());
 		d.setImmutable(isImmutable());
 

@@ -1132,24 +1132,9 @@ public class CompileServiceImpl implements CompileService {
 			// CRITICAL CMIS 1.1 COMPLIANCE: Use Document's isVersionSeriesCheckedOut property directly
 			addProperty(properties, tdf, PropertyIds.IS_VERSION_SERIES_CHECKED_OUT, document.isVersionSeriesCheckedOut());
 			
-			VersionSeries vs = contentService.getVersionSeries(repositoryId, document);
-			if (vs != null && vs.isVersionSeriesCheckedOut()) {
-				String userId = callContext.getUsername();
-				String checkedOutBy = vs.getVersionSeriesCheckedOutBy();
-
-				if (userId.equals(checkedOutBy)) {
-					addProperty(properties, tdf, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID,
-							vs.getVersionSeriesCheckedOutId());
-					addProperty(properties, tdf, PropertyIds.VERSION_SERIES_CHECKED_OUT_BY, checkedOutBy);
-				} else {
-					addProperty(properties, tdf, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID, null);
-					addProperty(properties, tdf, PropertyIds.VERSION_SERIES_CHECKED_OUT_BY, checkedOutBy);
-				}
-
-			} else {
-				addProperty(properties, tdf, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID, null);
-				addProperty(properties, tdf, PropertyIds.VERSION_SERIES_CHECKED_OUT_BY, null);
-			}
+			// COMPLETE CMIS 1.1 VERSIONING COMPLIANCE: Use Document's properties for all versioning info
+			addProperty(properties, tdf, PropertyIds.VERSION_SERIES_CHECKED_OUT_BY, document.getVersionSeriesCheckedOutBy());
+			addProperty(properties, tdf, PropertyIds.VERSION_SERIES_CHECKED_OUT_ID, document.getVersionSeriesCheckedOutId());
 
 			// TODO comment
 		} else {
