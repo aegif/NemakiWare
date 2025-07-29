@@ -895,7 +895,17 @@ public class ContentServiceImpl implements ContentService {
 		vs = createVersionSeries(callContext, repositoryId, versioningState);
 		d.setVersionSeriesId(vs.getId());
 		switch (versioningState) {
-		// TODO NONE is not allowed
+		case NONE:
+			// CMIS 1.1 COMPLIANCE: Handle NONE state for non-versionable documents
+			d.setLatestVersion(true);
+			d.setMajorVersion(false);
+			d.setLatestMajorVersion(false);
+			d.setVersionLabel(null);
+			d.setPrivateWorkingCopy(false);
+			d.setVersionSeriesCheckedOut(false);
+			d.setVersionSeriesCheckedOutBy(null);
+			d.setVersionSeriesCheckedOutId(null);
+			break;
 		case CHECKEDOUT:
 			d.setLatestVersion(false);
 			d.setMajorVersion(false);

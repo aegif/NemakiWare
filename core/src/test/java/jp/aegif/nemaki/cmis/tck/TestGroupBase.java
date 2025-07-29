@@ -83,19 +83,40 @@ public class TestGroupBase extends AbstractRunner {
 	private static void checkForFailures(JUnitRunner runner) {
 		for (CmisTestGroup group : runner.getGroups()) {
 			for (CmisTest test : group.getTests()) {
-				for (CmisTestResult result : test.getResults()) {
-					if (result.getStatus().getLevel() >= CmisTestResultStatus.FAILURE.getLevel()) {
-						System.err.println("TCK Test Failure Details:");
-						System.err.println("  Test: " + test.getName());
-						System.err.println("  Status: " + result.getStatus());
-						System.err.println("  Message: " + result.getMessage());
-						if (result.getException() != null) {
-							System.err.println("  Exception: " + result.getException().getMessage());
-							result.getException().printStackTrace(System.err);
+				// CRITICAL DEBUG: Print ALL results, not just failures
+				System.err.println("=== TCK TEST RESULT ANALYSIS: " + test.getName() + " ===");
+				System.err.println("Total results count: " + test.getResults().size());
+				
+				for (int i = 0; i < test.getResults().size(); i++) {
+					CmisTestResult result = test.getResults().get(i);
+					System.err.println("\n--- Result #" + i + " ---");
+					System.err.println("  Status: " + result.getStatus() + " (level=" + result.getStatus().getLevel() + ")");
+					System.err.println("  Message: '" + result.getMessage() + "'");
+					System.err.println("  URL: " + result.getUrl());
+					System.err.println("  Request: " + result.getRequest());
+					System.err.println("  Response: " + result.getResponse());
+					System.err.println("  Children count: " + (result.getChildren() != null ? result.getChildren().size() : "null"));
+					
+					// Print child results if any
+					if (result.getChildren() != null && !result.getChildren().isEmpty()) {
+						for (int j = 0; j < result.getChildren().size(); j++) {
+							CmisTestResult child = result.getChildren().get(j);
+							System.err.println("    Child #" + j + ": " + child.getStatus() + " - " + child.getMessage());
 						}
-						Assert.fail(result.getMessage() + "\n" + result.getStackTrace().toString());
+					}
+					
+					if (result.getException() != null) {
+						System.err.println("  Exception: " + result.getException().getMessage());
+						result.getException().printStackTrace(System.err);
+					}
+					
+					// Check if this is a failure result
+					if (result.getStatus().getLevel() >= CmisTestResultStatus.FAILURE.getLevel()) {
+						System.err.println("*** FAILURE DETECTED ***");
+						Assert.fail("TCK FAILURE - " + result.getMessage());
 					}
 				}
+				System.err.println("=== END TCK TEST RESULT ANALYSIS ===\n");
 			}
 		}
 	}

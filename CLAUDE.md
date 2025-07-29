@@ -641,26 +641,51 @@ curl -u admin:admin http://localhost:8080/core/atom/bedroom
 
 ### Browser Binding (Recommended for file uploads)
 
-**IMPORTANT**: Browser Binding requires `cmisselector` parameter for GET requests and `cmisaction` for POST requests.
+**CRITICAL**: Browser Binding has specific parameter requirements. **Common mistakes cause "Unknown action" or "folderId must be set" errors.**
 
+#### **GET Requests - Use `cmisselector` parameter**
 ```bash
-# ✅ CORRECT: Get children (GET with cmisselector)
+# ✅ CORRECT: Get children
 curl -u admin:admin "http://localhost:8080/core/browser/bedroom/root?cmisselector=children"
 
 # ✅ CORRECT: Repository info
 curl -u admin:admin "http://localhost:8080/core/browser/bedroom?cmisselector=repositoryInfo"
 
-# ✅ CORRECT: Create document with content (POST with cmisaction)
+# ❌ WRONG: Using cmisaction for GET requests
+curl -u admin:admin "http://localhost:8080/core/browser/bedroom/root?cmisaction=getChildren"
+# Returns: {"exception":"notSupported","message":"Unknown operation"}
+```
+
+#### **POST Requests - Use `cmisaction` parameter with property arrays**
+```bash
+# ✅ CORRECT: Create document with content
 curl -u admin:admin -X POST \
   -F "cmisaction=createDocument" \
-  -F "folderId=FOLDER_ID" \
+  -F "folderId=e02f784f8360a02cc14d1314c10038ff" \
   -F "propertyId[0]=cmis:objectTypeId" \
   -F "propertyValue[0]=cmis:document" \
   -F "propertyId[1]=cmis:name" \
-  -F "propertyValue[1]=document.pdf" \
-  -F "content=@/path/to/document.pdf" \
+  -F "propertyValue[1]=test-document.txt" \
+  -F "content=@-" \
+  "http://localhost:8080/core/browser/bedroom" <<< "file content"
+
+# ❌ WRONG: Direct CMIS property names (common mistake)
+curl -u admin:admin -X POST \
+  -F "cmis:objectTypeId=cmis:document" \
+  -F "cmis:name=test.txt" \
+  -F "content=test content" \
   "http://localhost:8080/core/browser/bedroom"
+# Returns: {"exception":"invalidArgument","message":"folderId must be set"}
 ```
+
+#### **Standard Repository Folder IDs**
+- **Bedroom Root Folder**: `e02f784f8360a02cc14d1314c10038ff`
+- **Canopy Root Folder**: `ddd70e3ed8b847c2a364be81117c57ae`
+
+#### **Property Format Rules**
+- **MUST use**: `propertyId[N]` and `propertyValue[N]` pairs (N = 0, 1, 2, ...)
+- **NEVER use**: Direct CMIS property names like `cmis:objectTypeId`
+- **Required Properties**: folderId, cmis:objectTypeId, cmis:name at minimum
 
 ### AtomPub Binding
 
@@ -706,6 +731,28 @@ cd docker && ./test-all.sh
 - **Repository Definition**: `docker/core/repositories.yml`
 - **Docker Environment**: `docker/docker-compose-simple.yml`
 - **CouchDB Initialization**: `setup/couchdb/initial_import/bedroom_init.dump`
+
+## Critical Database Issues and Fixes
+
+### Missing changesByToken View - CRITICAL DATABASE ISSUE
+
+**Symptom**: Container startup hangs with "Design document '_repo' or view 'changesByToken' not found"
+**Root Cause**: The `changesByToken` view is missing from the `_repo` design document in CouchDB
+**Impact**: Prevents application startup and causes timeout issues
+
+**Immediate Fix**:
+```bash
+# Add missing changesByToken view to bedroom database
+curl -u admin:password -X GET "http://localhost:5984/bedroom/_design/_repo" > design_doc.json
+
+# Edit design_doc.json to add the missing view:
+# "changesByToken": {"map": "function(doc) { if (doc.type == 'change') emit(doc.token, doc) }"}
+
+# Update the design document
+curl -u admin:password -X PUT "http://localhost:5984/bedroom/_design/_repo" -d @design_doc.json -H "Content-Type: application/json"
+```
+
+**Status**: **REQUIRES IMMEDIATE ATTENTION** - This is blocking all container operations
 
 ## Known Issues and Workarounds
 

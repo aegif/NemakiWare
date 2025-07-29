@@ -1137,9 +1137,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			List<CouchPolicy> couchPolicies = client.queryView("_repo", "appliedPolicies", objectId, CouchPolicy.class);
 			
+			// CRITICAL FIX: Handle null result from queryView to prevent NullPointerException
+			if (couchPolicies == null) {
+				log.warn("queryView returned null for appliedPolicies - objectId: " + objectId + ", repository: " + repositoryId);
+				return new ArrayList<Policy>();
+			}
+			
 			List<Policy> policies = new ArrayList<Policy>();
 			for (CouchPolicy couchPolicy : couchPolicies) {
-				policies.add(couchPolicy.convert());
+				if (couchPolicy != null) {
+					policies.add(couchPolicy.convert());
+				}
 			}
 			
 			return policies;
