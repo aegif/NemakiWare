@@ -53,9 +53,19 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     if (currentFolderId) {
       loadObjects();
     } else {
-      setCurrentFolderId('e02f784f8360a02cc14d1314c10038ff');
+      loadRootFolder();
     }
   }, [currentFolderId, repositoryId]);
+
+  const loadRootFolder = async () => {
+    try {
+      const rootFolder = await cmisService.getRootFolder(repositoryId);
+      setCurrentFolderId(rootFolder.id);
+      setCurrentFolderPath(rootFolder.path || '/');
+    } catch (error) {
+      message.error('ルートフォルダの読み込みに失敗しました');
+    }
+  };
 
   const loadObjects = async () => {
     if (!currentFolderId) return;

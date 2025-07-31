@@ -2,7 +2,7 @@ import { AuthService } from './auth';
 import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, User, Group, ACL } from '../types/cmis';
 
 export class CMISService {
-  private baseUrl = '/core/browser';
+  private baseUrl = '/core/rest';
   private authService: AuthService;
   private onAuthError?: (error: any) => void;
 
@@ -146,7 +146,7 @@ export class CMISService {
     
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('GET', `${this.baseUrl}/${repositoryId}/root`, true);
+      xhr.open('GET', `${this.baseUrl}/repo/${repositoryId}/root`, true);
       xhr.setRequestHeader('Accept', 'application/json');
       
       const headers = this.getAuthHeaders();
@@ -162,62 +162,33 @@ export class CMISService {
               const response = JSON.parse(xhr.responseText);
               console.log('CMIS DEBUG: getRootFolder parsed response:', response);
               
-              const props = response.succinctProperties || response.properties || {};
               const rootFolder = {
-                id: this.getSafeStringProperty(props, 'cmis:objectId', 'e02f784f8360a02cc14d1314c10038ff'),
-                name: this.getSafeStringProperty(props, 'cmis:name', 'Root Folder'),
-                objectType: this.getSafeStringProperty(props, 'cmis:objectTypeId', 'cmis:folder'),
+                id: response.id || 'e02f784f8360a02cc14d1314c10038ff',
+                name: response.name || 'Root Folder',
+                objectType: response.objectType || 'cmis:folder',
                 baseType: 'cmis:folder',
-                properties: props,
-                allowableActions: ['canGetChildren'],
-                path: this.getSafeStringProperty(props, 'cmis:path', '/')
+                properties: response.properties || {},
+                allowableActions: response.allowableActions || ['canGetChildren'],
+                path: response.path || '/'
               };
               
               console.log('CMIS DEBUG: Parsed root folder:', rootFolder);
               resolve(rootFolder);
             } catch (error) {
               console.error('CMIS DEBUG: Error parsing getRootFolder response:', error);
-              const fallbackFolder = {
-                id: 'e02f784f8360a02cc14d1314c10038ff',
-                name: 'Root Folder',
-                objectType: 'cmis:folder',
-                baseType: 'cmis:folder',
-                properties: {},
-                allowableActions: ['canGetChildren'],
-                path: '/'
-              };
-              resolve(fallbackFolder);
+              reject(new Error('Failed to parse root folder response'));
             }
           } else {
             console.error('CMIS DEBUG: getRootFolder failed with status:', xhr.status);
             const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
-            // For now, still provide fallback but notify about auth error
-            const fallbackFolder = {
-              id: 'e02f784f8360a02cc14d1314c10038ff',
-              name: 'Root Folder',
-              objectType: 'cmis:folder',
-              baseType: 'cmis:folder',
-              properties: {},
-              allowableActions: ['canGetChildren'],
-              path: '/'
-            };
-            resolve(fallbackFolder);
+            reject(error);
           }
         }
       };
       
       xhr.onerror = () => {
         console.error('CMIS DEBUG: Network error in getRootFolder');
-        const fallbackFolder = {
-          id: 'e02f784f8360a02cc14d1314c10038ff',
-          name: 'Root Folder',
-          objectType: 'cmis:folder',
-          baseType: 'cmis:folder',
-          properties: {},
-          allowableActions: ['canGetChildren'],
-          path: '/'
-        };
-        resolve(fallbackFolder);
+        reject(new Error('Network error'));
       };
       
       xhr.send();
@@ -230,22 +201,9 @@ export class CMISService {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       
-      // Use Browser Binding for root folder, AtomPub for subfolders (as fallback until Browser Binding is fully working)
-      let url: string;
-      let useAtomPub = false;
-      
-      if (folderId === 'e02f784f8360a02cc14d1314c10038ff') {
-        // Root folder uses Browser Binding /root endpoint (known to work)
-        url = `${this.baseUrl}/${repositoryId}/root?selector=children`;
-        xhr.setRequestHeader('Accept', 'application/json');
-      } else {
-        // Use AtomPub for subfolders as fallback (known to work with correct data)
-        url = `/core/atom/${repositoryId}/children?id=${folderId}`;
-        useAtomPub = true;
-        xhr.setRequestHeader('Accept', 'application/atom+xml');
-      }
-      
+      const url = `${this.baseUrl}/repo/${repositoryId}/children?folderId=${folderId}`;
       xhr.open('GET', url, true);
+      xhr.setRequestHeader('Accept', 'application/json');
       
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
@@ -258,66 +216,33 @@ export class CMISService {
             try {
               console.log('CMIS DEBUG: getChildren response:', xhr.responseText.substring(0, 500));
               
+              const response = JSON.parse(xhr.responseText);
+              console.log('CMIS DEBUG: getChildren parsed response:', response);
+              
               const children: CMISObject[] = [];
               
-              if (useAtomPub) {
-                // Parse AtomPub XML response
-                const parser = new DOMParser();
-                const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
-                const entries = xmlDoc.getElementsByTagName('entry');
-                
-                for (let i = 0; i < entries.length; i++) {
-                  const entry = entries[i];
-                  const properties = entry.getElementsByTagName('cmis:properties')[0];
-                  if (properties) {
-                    // Extract properties from XML
-                    const nameElement = properties.querySelector('cmis\\:propertyString[propertyDefinitionId="cmis:name"] cmis\\:value, propertyString[propertyDefinitionId="cmis:name"] value');
-                    const idElement = properties.querySelector('cmis\\:propertyId[propertyDefinitionId="cmis:objectId"] cmis\\:value, propertyId[propertyDefinitionId="cmis:objectId"] value');
-                    const typeElement = properties.querySelector('cmis\\:propertyId[propertyDefinitionId="cmis:objectTypeId"] cmis\\:value, propertyId[propertyDefinitionId="cmis:objectTypeId"] value');
-                    
-                    const name = nameElement?.textContent || 'Unknown';
-                    const id = idElement?.textContent || '';
-                    const objectType = typeElement?.textContent || 'cmis:document';
-                    
-                    const cmisObject: CMISObject = {
-                      id: id,
-                      name: name,
-                      objectType: objectType,
-                      baseType: objectType.startsWith('cmis:folder') ? 'cmis:folder' : 'cmis:document',
-                      properties: { 'cmis:name': name, 'cmis:objectId': id, 'cmis:objectTypeId': objectType },
-                      allowableActions: []
-                    };
-                    children.push(cmisObject);
-                  }
-                }
-              } else {
-                // Parse Browser Binding JSON response
-                const response = JSON.parse(xhr.responseText);
-                console.log('CMIS DEBUG: getChildren parsed response:', response);
-                
-                if (response.objects && Array.isArray(response.objects)) {
-                  response.objects.forEach((obj: any) => {
-                    const props = obj.object?.succinctProperties || obj.object?.properties || {};
-                    
-                    const objectTypeId = this.getSafeStringProperty(props, 'cmis:objectTypeId', 'cmis:document');
-                    const cmisObject: CMISObject = {
-                      id: this.getSafeStringProperty(props, 'cmis:objectId'),
-                      name: this.getSafeStringProperty(props, 'cmis:name'),
-                      objectType: objectTypeId,
-                      baseType: objectTypeId.startsWith('cmis:folder') ? 'cmis:folder' : 'cmis:document',
-                      properties: props,
-                      allowableActions: []
-                    };
-                    children.push(cmisObject);
-                  });
-                }
+              if (response.objects && Array.isArray(response.objects)) {
+                response.objects.forEach((obj: any) => {
+                  const cmisObject: CMISObject = {
+                    id: obj.id,
+                    name: obj.name,
+                    objectType: obj.objectType,
+                    baseType: obj.baseType,
+                    properties: obj.properties || {},
+                    allowableActions: obj.allowableActions || [],
+                    contentStreamLength: obj.contentStreamLength,
+                    lastModificationDate: obj.lastModificationDate,
+                    lastModifiedBy: obj.lastModifiedBy
+                  };
+                  children.push(cmisObject);
+                });
               }
               
               console.log('CMIS DEBUG: Parsed children:', children);
               resolve(children);
             } catch (e) {
               console.error('CMIS DEBUG: getChildren parse error:', e);
-              reject(new Error('Failed to parse AtomPub response'));
+              reject(new Error('Failed to parse children response'));
             }
           } else {
             console.error('CMIS DEBUG: getChildren HTTP error:', xhr.status, xhr.statusText);
@@ -340,19 +265,8 @@ export class CMISService {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       
-      let decodedObjectId = objectId;
-      try {
-        const decoded = atob(objectId);
-        if (decoded && decoded.length > 0) {
-          decodedObjectId = decoded;
-          console.log('CMIS DEBUG: getObject decoded base64 objectId:', objectId, '->', decodedObjectId);
-        }
-      } catch (e) {
-        console.log('CMIS DEBUG: getObject using original objectId:', objectId);
-      }
-      
-      xhr.open('GET', `${this.baseUrl}/${repositoryId}/entry?id=${decodedObjectId}`, true);
-      xhr.setRequestHeader('Accept', 'application/atom+xml');
+      xhr.open('GET', `${this.baseUrl}/repo/${repositoryId}/object/${objectId}`, true);
+      xhr.setRequestHeader('Accept', 'application/json');
       
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
@@ -364,37 +278,28 @@ export class CMISService {
           if (xhr.status === 200) {
             try {
               console.log('CMIS DEBUG: getObject response:', xhr.responseText);
-              const parser = new DOMParser();
-              const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
-              const entry = xmlDoc.querySelector('entry');
-              
-              if (!entry) {
-                reject(new Error('No entry found in response'));
-                return;
-              }
-              
-              const id = entry.querySelector('id')?.textContent || '';
-              const title = entry.querySelector('title')?.textContent || '';
-              const objectType = entry.querySelector('cmis\\:objectTypeId, objectTypeId')?.textContent || 'cmis:document';
+              const response = JSON.parse(xhr.responseText);
               
               const cmisObject: CMISObject = {
-                id: id.split('/').pop() || id,
-                name: title,
-                objectType,
-                baseType: objectType.startsWith('cmis:folder') ? 'cmis:folder' : 'cmis:document',
-                properties: {},
-                allowableActions: []
+                id: response.id,
+                name: response.name,
+                objectType: response.objectType,
+                baseType: response.baseType,
+                properties: response.properties || {},
+                allowableActions: response.allowableActions || [],
+                path: response.path
               };
               
               console.log('CMIS DEBUG: getObject parsed object:', cmisObject);
               resolve(cmisObject);
             } catch (e) {
               console.error('CMIS DEBUG: getObject parse error:', e);
-              reject(new Error('Failed to parse AtomPub response'));
+              reject(new Error('Failed to parse object response'));
             }
           } else {
             console.error('CMIS DEBUG: getObject HTTP error:', xhr.status, xhr.statusText);
-            reject(new Error(`HTTP ${xhr.status}`));
+            const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+            reject(error);
           }
         }
       };
@@ -411,9 +316,9 @@ export class CMISService {
     return new Promise(async (resolve, reject) => {
       const xhr = new XMLHttpRequest();
       
-      const browserUrl = `/core/browser/${repositoryId}/root`;
-      console.log('CMIS DEBUG: createDocument using Browser binding URL:', browserUrl);
-      xhr.open('POST', browserUrl, true);
+      const url = `${this.baseUrl}/repo/${repositoryId}/document`;
+      console.log('CMIS DEBUG: createDocument using REST URL:', url);
+      xhr.open('POST', url, true);
       
       const documentName = properties.name || file.name;
       
@@ -427,115 +332,59 @@ export class CMISService {
 
       try {
         const formData = new FormData();
-        formData.append('cmisaction', 'createDocument');
-        formData.append('propertyId[0]', 'cmis:objectTypeId');
-        formData.append('propertyValue[0]', 'cmis:document');
-        formData.append('propertyId[1]', 'cmis:name');
-        formData.append('propertyValue[1]', documentName + '_' + Date.now());
-        formData.append('filename', file, documentName);
-        formData.append('_charset_', 'UTF-8');
+        formData.append('parentId', parentId);
+        formData.append('name', documentName);
+        formData.append('file', file, documentName);
         
-        console.log('CMIS DEBUG: createDocument using Browser binding with FormData');
+        console.log('CMIS DEBUG: createDocument using FormData');
         
         xhr.onreadystatechange = () => {
           console.log('CMIS DEBUG: createDocument readyState:', xhr.readyState, 'status:', xhr.status);
-          if (xhr.readyState === 1) {
-            console.log('CMIS DEBUG: XMLHttpRequest opened');
-          } else if (xhr.readyState === 2) {
-            console.log('CMIS DEBUG: XMLHttpRequest headers received');
-          } else if (xhr.readyState === 3) {
-            console.log('CMIS DEBUG: XMLHttpRequest loading');
-          }
           if (xhr.readyState === 4) {
             if (xhr.status === 200 || xhr.status === 201) {
               try {
                 console.log('CMIS DEBUG: createDocument success, response:', xhr.responseText);
                 
-                try {
-                  const jsonResponse = JSON.parse(xhr.responseText);
-                  console.log('CMIS DEBUG: Parsed JSON response:', jsonResponse);
-                  
-                  const objectId = jsonResponse.succinctProperties?.['cmis:objectId']?.value || 
-                                 jsonResponse.properties?.['cmis:objectId']?.value || '';
-                  const objectName = jsonResponse.succinctProperties?.['cmis:name']?.value || 
-                                   jsonResponse.properties?.['cmis:name']?.value || documentName;
-                  
-                  const createdObject: CMISObject = {
-                    id: objectId,
-                    name: objectName,
-                    objectType: 'cmis:document',
-                    baseType: 'cmis:document',
-                    properties: jsonResponse.properties || {},
-                    allowableActions: []
-                  };
-                  
-                  console.log('CMIS DEBUG: Created object from JSON:', createdObject);
-                  resolve(createdObject);
-                  return;
-                } catch (jsonError) {
-                  console.log('CMIS DEBUG: Not JSON, trying XML parsing...');
-                }
-                
-                const parser = new DOMParser();
-                const xmlDoc = parser.parseFromString(xhr.responseText, 'text/xml');
-                const entry = xmlDoc.querySelector('entry');
-                
-                if (!entry) {
-                  reject(new Error('No entry found in response and not valid JSON'));
-                  return;
-                }
-                
-                const id = entry.querySelector('id')?.textContent || '';
-                const title = entry.querySelector('title')?.textContent || '';
+                const response = JSON.parse(xhr.responseText);
+                console.log('CMIS DEBUG: Parsed JSON response:', response);
                 
                 const createdObject: CMISObject = {
-                  id: id.split('/').pop() || id,
-                  name: title || documentName,
+                  id: response.id,
+                  name: response.name || documentName,
                   objectType: 'cmis:document',
                   baseType: 'cmis:document',
-                  properties: {},
-                  allowableActions: []
+                  properties: response.properties || {},
+                  allowableActions: response.allowableActions || []
                 };
+                
+                console.log('CMIS DEBUG: Created object:', createdObject);
                 resolve(createdObject);
               } catch (e) {
                 console.error('CMIS DEBUG: createDocument parse error:', e);
-                reject(new Error('Invalid response format'));
+                reject(new Error('Failed to parse create document response'));
               }
             } else {
               console.error('CMIS DEBUG: createDocument HTTP error:', xhr.status, xhr.statusText);
-              console.error('CMIS DEBUG: createDocument response text:', xhr.responseText);
-              console.error('CMIS DEBUG: createDocument response headers:', xhr.getAllResponseHeaders());
-              reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText} - ${xhr.responseText}`));
+              const error = this.handleHttpError(xhr.status, xhr.statusText, xhr.responseURL);
+              reject(error);
             }
           }
         };
         
-        xhr.onerror = (event) => {
-          console.error('CMIS DEBUG: createDocument network error:', event);
-          console.error('CMIS DEBUG: createDocument xhr status:', xhr.status);
-          console.error('CMIS DEBUG: createDocument xhr statusText:', xhr.statusText);
+        xhr.onerror = () => {
+          console.error('CMIS DEBUG: createDocument network error');
           reject(new Error('Network error'));
         };
         
-        xhr.onload = () => {
-          console.log('CMIS DEBUG: createDocument onload triggered, status:', xhr.status);
-        };
-        
-        xhr.ontimeout = () => {
-          console.error('CMIS DEBUG: createDocument timeout');
-          reject(new Error('Request timeout'));
-        };
-        
-        console.log('CMIS DEBUG: About to send XMLHttpRequest');
         xhr.send(formData);
-      } catch (e) {
-        console.error('CMIS DEBUG: createDocument file processing error:', e);
-        reject(new Error('Failed to process file'));
+      } catch (error) {
+        console.error('CMIS DEBUG: createDocument error:', error);
+        reject(error);
       }
     });
   }
 
-  async createFolder(repositoryId: string, parentId: string, name: string, properties: Record<string, any> = {}): Promise<CMISObject> {
+  async createFolder(repositoryId: string, parentId: string, name: string): Promise<CMISObject> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `${this.baseUrl}/${repositoryId}/folder/create`, true);
@@ -563,7 +412,7 @@ export class CMISService {
       };
       
       xhr.onerror = () => reject(new Error('Network error'));
-      xhr.send(JSON.stringify({ parentId, name, ...properties }));
+      xhr.send(JSON.stringify({ parentId, name }));
     });
   }
 

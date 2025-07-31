@@ -1,4 +1,3 @@
-import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ConfigProvider } from 'antd';
 import { Layout } from './components/Layout/Layout';
@@ -24,7 +23,7 @@ const customTheme = {
 };
 
 function AppContent() {
-  const { isAuthenticated, authToken, login } = useAuth();
+  const { isAuthenticated, authToken } = useAuth();
 
   if (!isAuthenticated || !authToken) {
     return <Login onLogin={async (auth) => {
