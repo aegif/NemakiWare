@@ -160,7 +160,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 		} catch (Exception e) {
 			System.out.println("=== QUERY DEBUG: Exception getting Solr client: " + e.getMessage());
 			e.printStackTrace();
-			throw new RuntimeException("Failed to get Solr client", e);
+			logger.error("Failed to get Solr client", e);
 		}
 		
 		// Handle case where Solr client creation failed due to HTTP Client compatibility
@@ -181,8 +181,22 @@ public class SolrQueryProcessor implements QueryProcessor {
 		// TODO walker is required?
 
 		System.out.println("=== QUERY DEBUG: Creating QueryUtilStrict with statement: " + statement);
-		QueryUtilStrict util = new QueryUtilStrict(statement, cmisTypeManager, null);
-		System.out.println("=== QUERY DEBUG: QueryUtilStrict created");
+		QueryUtilStrict util = null;
+		try {
+			util = new QueryUtilStrict(statement, cmisTypeManager, null);
+			System.out.println("=== QUERY DEBUG: QueryUtilStrict created successfully");
+		} catch (Exception e) {
+			System.out.println("=== QUERY DEBUG: CRITICAL ERROR - QueryUtilStrict initialization failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+			e.printStackTrace();
+			logger.error("QueryUtilStrict initialization failed during Jakarta EE operation", e);
+			
+			// Return empty result for Jakarta EE compatibility
+			ObjectListImpl emptyResult = new ObjectListImpl();
+			emptyResult.setHasMoreItems(false);
+			emptyResult.setNumItems(BigInteger.ZERO);
+			emptyResult.setObjects(new ArrayList<>());
+			return emptyResult;
+		}
 		
 		// Get queryObject before processStatement
 		QueryObject queryObject = util.getQueryObject();

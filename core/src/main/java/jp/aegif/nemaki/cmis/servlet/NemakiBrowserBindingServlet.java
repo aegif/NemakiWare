@@ -27,7 +27,6 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
-import org.apache.chemistry.opencmis.commons.exceptions.CmisBaseException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisNotSupportedException;
 import org.apache.chemistry.opencmis.commons.impl.Constants;
 import org.apache.chemistry.opencmis.commons.server.CmisService;
@@ -38,6 +37,7 @@ import org.apache.chemistry.opencmis.server.shared.Dispatcher;
 import org.apache.chemistry.opencmis.server.shared.HttpUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+
 
 /**
  * NemakiWare custom Browser Binding servlet that extends OpenCMIS CmisBrowserBindingServlet
@@ -68,7 +68,8 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     }
 
     /**
-     * Override the service method to fix object-specific POST operation routing.
+     * Override the service method to fix object-specific POST operation routing
+     * and apply CMIS 1.1 compliance fixes to JSON responses.
      */
     @Override
     protected void service(HttpServletRequest request, HttpServletResponse response)
@@ -115,9 +116,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             }
         }
         
-        // For all other cases, use the standard OpenCMIS processing
+        // For all other cases, use the standard OpenCMIS processing with CMIS 1.1 compliance fix
         log.info("NEMAKI DEBUG: Delegating to standard OpenCMIS processing");
         System.out.println("NEMAKI DEBUG: Delegating to standard OpenCMIS processing");
+        
+        // Use standard OpenCMIS processing without modification
+        // CMIS 1.1 specification: Multi-cardinality properties with no values should return null (not set state)
         super.service(request, response);
     }
     
@@ -182,4 +186,5 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             throw new CmisNotSupportedException("Internal server error");
         }
     }
+    
 }

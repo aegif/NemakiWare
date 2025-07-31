@@ -23,7 +23,7 @@
 		<nemakiware.version>${project.version}</nemakiware.version>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<org.springframework.version>6.1.13</org.springframework.version>
-		<org.apache.chemistry.opencmis.version>1.1.0</org.apache.chemistry.opencmis.version>
+		<org.apache.chemistry.opencmis.version>1.2.0-SNAPSHOT</org.apache.chemistry.opencmis.version>
 		<jersey.version>3.1.10</jersey.version>
 		<org.apache.chemistry.opencmis.version.14>0.14.0</org.apache.chemistry.opencmis.version.14>
 	</properties>
@@ -192,43 +192,43 @@
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-commons-impl</artifactId>
-			<version>1.1.0-jakarta</version>
+			<version>1.2.0-SNAPSHOT</version>
 		</dependency>
 
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-commons-api</artifactId>
-			<version>1.1.0-jakarta</version>
+			<version>1.2.0-SNAPSHOT</version>
 		</dependency>
 
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-server-support</artifactId>
-			<version>1.1.0-jakarta</version>
+			<version>1.2.0-SNAPSHOT</version>
 		</dependency>
 
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-server-bindings</artifactId>
-			<version>1.1.0-jakarta</version>
+			<version>1.2.0-SNAPSHOT</version>
 		</dependency>
 
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-client-impl</artifactId>
-			<version>1.1.0-jakarta</version>
+			<version>1.2.0-SNAPSHOT</version>
 		</dependency>
 
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-client-api</artifactId>
-			<version>1.1.0-jakarta</version>
+			<version>1.2.0-SNAPSHOT</version>
 		</dependency>
 
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-client-bindings</artifactId>
-			<version>1.1.0-jakarta</version>
+			<version>1.2.0-SNAPSHOT</version>
 		</dependency>
 
 		<!-- Jakarta EE JAX-WS Runtime (Metro RI) -->
@@ -237,7 +237,7 @@
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-test-tck</artifactId>
-			<version>1.1.0-jakarta</version>
+			<version>1.2.0-SNAPSHOT</version>
 			<scope>test</scope>
 		</dependency>
 
@@ -455,6 +455,23 @@
 			</exclusions>
 		</dependency>
 		
+		<!-- Jakarta EE compatible HTTP Client for Solr -->
+		<dependency>
+			<groupId>org.apache.httpcomponents.client5</groupId>
+			<artifactId>httpclient5</artifactId>
+			<version>5.3.1</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.httpcomponents.core5</groupId>
+			<artifactId>httpcore5</artifactId>
+			<version>5.2.4</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.httpcomponents.core5</groupId>
+			<artifactId>httpcore5-h2</artifactId>
+			<version>5.2.4</version>
+		</dependency>
+		
 		<!-- NemakiWare Custom Solr Module with Tracker and Quartz Scheduler -->
 		<dependency>
 			<groupId>jp.aegif.nemaki.solr</groupId>
@@ -631,6 +648,23 @@
 			<groupId>org.apache.cxf</groupId>
 			<artifactId>cxf-core</artifactId>
 			<version>4.0.4</version>
+		</dependency>
+		
+		<!-- Jakarta EE Web Services Runtime Implementation -->
+		<dependency>
+			<groupId>jakarta.xml.ws</groupId>
+			<artifactId>jakarta.xml.ws-api</artifactId>
+			<version>4.0.0</version>
+		</dependency>
+		<dependency>
+			<groupId>org.glassfish.metro</groupId>
+			<artifactId>webservices-rt</artifactId>
+			<version>4.0.2</version>
+		</dependency>
+		<dependency>
+			<groupId>jakarta.jws</groupId>
+			<artifactId>jakarta.jws-api</artifactId>
+			<version>3.0.0</version>
 		</dependency>
 	</dependencies>
 
@@ -931,7 +965,7 @@
 				<activeByDefault>true</activeByDefault>
 			</activation>
 			<properties>
-				<maven.test.skip>true</maven.test.skip>
+				<maven.test.skip>false</maven.test.skip>
 			</properties>
 		</profile>
 		<profile>
@@ -1048,28 +1082,28 @@
 										</delete>
 										<echo message="Removed ALL OpenCMIS JARs (original and Jakarta) to prevent conflicts"/>
 										
-										<!-- Copy Jakarta-converted OpenCMIS JARs -->
-										<copy file="${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-server-bindings-1.1.0-jakarta.jar"
-											  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/chemistry-opencmis-server-bindings-1.1.0.jar" 
+										<!-- Copy Jakarta-converted OpenCMIS 1.2.0-SNAPSHOT JARs from Maven repo -->
+										<copy file="${user.home}/.m2/repository/org/apache/chemistry/opencmis/chemistry-opencmis-server-bindings/1.2.0-SNAPSHOT/chemistry-opencmis-server-bindings-1.2.0-SNAPSHOT.jar"
+											  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/chemistry-opencmis-server-bindings-1.2.0-SNAPSHOT.jar" 
 											  overwrite="true"/>
-										<copy file="${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-commons-impl-1.1.0-jakarta.jar"
-											  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/chemistry-opencmis-commons-impl-1.1.0.jar" 
+										<copy file="${user.home}/.m2/repository/org/apache/chemistry/opencmis/chemistry-opencmis-commons-impl/1.2.0-SNAPSHOT/chemistry-opencmis-commons-impl-1.2.0-SNAPSHOT.jar"
+											  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/chemistry-opencmis-commons-impl-1.2.0-SNAPSHOT.jar" 
 											  overwrite="true"/>
-										<copy file="${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-commons-api-1.1.0-jakarta.jar"
-											  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/chemistry-opencmis-commons-api-1.1.0.jar" 
+										<copy file="${user.home}/.m2/repository/org/apache/chemistry/opencmis/chemistry-opencmis-commons-api/1.2.0-SNAPSHOT/chemistry-opencmis-commons-api-1.2.0-SNAPSHOT.jar"
+											  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/chemistry-opencmis-commons-api-1.2.0-SNAPSHOT.jar" 
 											  overwrite="true"/>
-										<copy file="${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-client-bindings-1.1.0-jakarta.jar"
-											  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/chemistry-opencmis-client-bindings-1.1.0.jar" 
+										<copy file="${user.home}/.m2/repository/org/apache/chemistry/opencmis/chemistry-opencmis-client-bindings/1.2.0-SNAPSHOT/chemistry-opencmis-client-bindings-1.2.0-SNAPSHOT.jar"
+											  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/chemistry-opencmis-client-bindings-1.2.0-SNAPSHOT.jar" 
 											  overwrite="true"/>
-										<copy file="${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-server-support-1.1.0-jakarta.jar"
-											  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/chemistry-opencmis-server-support-1.1.0.jar" 
+										<copy file="${user.home}/.m2/repository/org/apache/chemistry/opencmis/chemistry-opencmis-server-support/1.2.0-SNAPSHOT/chemistry-opencmis-server-support-1.2.0-SNAPSHOT.jar"
+											  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/chemistry-opencmis-server-support-1.2.0-SNAPSHOT.jar" 
 											  overwrite="true"/>
 										<!-- Add client-api and client-impl JARs -->
-										<copy file="${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-client-api-1.1.0-jakarta.jar"
-											  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/chemistry-opencmis-client-api-1.1.0.jar" 
+										<copy file="${user.home}/.m2/repository/org/apache/chemistry/opencmis/chemistry-opencmis-client-api/1.2.0-SNAPSHOT/chemistry-opencmis-client-api-1.2.0-SNAPSHOT.jar"
+											  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/chemistry-opencmis-client-api-1.2.0-SNAPSHOT.jar" 
 											  overwrite="true"/>
-										<copy file="${project.basedir}/../lib/jakarta-converted/chemistry-opencmis-client-impl-1.1.0-jakarta.jar"
-											  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/chemistry-opencmis-client-impl-1.1.0.jar" 
+										<copy file="${user.home}/.m2/repository/org/apache/chemistry/opencmis/chemistry-opencmis-client-impl/1.2.0-SNAPSHOT/chemistry-opencmis-client-impl-1.2.0-SNAPSHOT.jar"
+											  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/chemistry-opencmis-client-impl-1.2.0-SNAPSHOT.jar" 
 											  overwrite="true"/>
 										<copy file="${project.basedir}/../lib/jakarta-converted/jaxws-rt-4.0.2-jakarta.jar"
 											  tofile="${project.build.directory}/${project.build.finalName}/WEB-INF/lib/jaxws-rt-4.0.2.jar" 
@@ -1168,37 +1202,37 @@
 				<dependency>
 					<groupId>org.apache.chemistry.opencmis</groupId>
 					<artifactId>chemistry-opencmis-server-bindings</artifactId>
-					<version>1.1.0-jakarta</version>
+					<version>1.2.0-SNAPSHOT</version>
 				</dependency>
 				<dependency>
 					<groupId>org.apache.chemistry.opencmis</groupId>
 					<artifactId>chemistry-opencmis-commons-impl</artifactId>
-					<version>1.1.0-jakarta</version>
+					<version>1.2.0-SNAPSHOT</version>
 				</dependency>
 				<dependency>
 					<groupId>org.apache.chemistry.opencmis</groupId>
 					<artifactId>chemistry-opencmis-commons-api</artifactId>
-					<version>1.1.0-jakarta</version>
+					<version>1.2.0-SNAPSHOT</version>
 				</dependency>
 				<dependency>
 					<groupId>org.apache.chemistry.opencmis</groupId>
 					<artifactId>chemistry-opencmis-client-bindings</artifactId>
-					<version>1.1.0-jakarta</version>
+					<version>1.2.0-SNAPSHOT</version>
 				</dependency>
 				<dependency>
 					<groupId>org.apache.chemistry.opencmis</groupId>
 					<artifactId>chemistry-opencmis-server-support</artifactId>
-					<version>1.1.0-jakarta</version>
+					<version>1.2.0-SNAPSHOT</version>
 				</dependency>
 				<dependency>
 					<groupId>org.apache.chemistry.opencmis</groupId>
 					<artifactId>chemistry-opencmis-client-api</artifactId>
-					<version>1.1.0-jakarta</version>
+					<version>1.2.0-SNAPSHOT</version>
 				</dependency>
 				<dependency>
 					<groupId>org.apache.chemistry.opencmis</groupId>
 					<artifactId>chemistry-opencmis-client-impl</artifactId>
-					<version>1.1.0-jakarta</version>
+					<version>1.2.0-SNAPSHOT</version>
 				</dependency>
 				<dependency>
 					<groupId>com.sun.xml.ws</groupId>

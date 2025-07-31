@@ -1014,6 +1014,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Content getChildByName(String repositoryId, String parentId, String name) {
 		try {
+			System.err.println("DEBUG getChildByName: searching for child '" + name + "' under parent '" + parentId + "' in repository: " + repositoryId);
 			log.debug("DEBUG getChildByName: searching for child '" + name + "' under parent '" + parentId + "' in repository: " + repositoryId);
 			
 			// FIXED: Use existing 'children' view instead of missing 'childByName' view
@@ -1024,25 +1025,86 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			Map<String, Object> queryParams = new HashMap<String, Object>();
 			queryParams.put("key", parentId);
 			queryParams.put("include_docs", true);
+			System.err.println("DEBUG getChildByName: Querying view _repo/children with key=" + parentId);
 			ViewResult result = client.queryView("_repo", "children", queryParams);
+			System.err.println("DEBUG getChildByName: View query completed, result rows count=" + (result.getRows() != null ? result.getRows().size() : "null"));
 			
 			if (result.getRows() != null && !result.getRows().isEmpty()) {
+				System.err.println("DEBUG getChildByName: found " + result.getRows().size() + " children for parent '" + parentId + "'");
 				log.debug("DEBUG getChildByName: found " + result.getRows().size() + " children for parent '" + parentId + "'");
 				for (ViewResultRow row : result.getRows()) {
 					if (row.getDoc() != null) {
-						Map<String, Object> doc = (Map<String, Object>) row.getDoc();
-						String childName = (String) doc.get("name");
+						// Handle Jakarta EE compatibility - row.getDoc() returns Document object, not Map
+						Object docObj = row.getDoc();
+						String childName = null;
+						String objectId = null;
+						
+						if (docObj instanceof Map) {
+							// Legacy behavior - cast to Map
+							Map<String, Object> doc = (Map<String, Object>) docObj;
+							childName = (String) doc.get("name");
+							objectId = (String) doc.get("_id");
+						} else if (docObj instanceof com.ibm.cloud.cloudant.v1.model.Document) {
+							// Jakarta EE compatible behavior - use Document methods
+							com.ibm.cloud.cloudant.v1.model.Document doc = (com.ibm.cloud.cloudant.v1.model.Document) docObj;
+							System.err.println("DEBUG getChildByName: Document object methods available");
+							
+							// Try multiple methods to extract data from Document
+							try {
+								// Method 1: Try direct document ID access first
+								try {
+									String docId = doc.getId();
+									System.err.println("DEBUG getChildByName: Document.getId()=" + docId);
+									if (docId != null) {
+										objectId = docId;
+									}
+								} catch (Exception idEx) {
+									System.err.println("DEBUG getChildByName: Document.getId() failed: " + idEx.getMessage());
+								}
+								
+								// Method 2: getProperties()
+								Map<String, Object> docProperties = doc.getProperties();
+								if (docProperties != null) {
+									System.err.println("DEBUG getChildByName: Properties map size=" + docProperties.size());
+									childName = (String) docProperties.get("name");
+									
+									// Try both _id and id fields
+									if (objectId == null) {
+										objectId = (String) docProperties.get("_id");
+										if (objectId == null) {
+											objectId = (String) docProperties.get("id");
+										}
+									}
+									System.err.println("DEBUG getChildByName: From properties - name=" + childName + ", id=" + objectId);
+								}
+								
+								// Method 3: Try accessing the document as a raw map using reflection/toString
+								if (objectId == null) {
+									System.err.println("DEBUG getChildByName: Document string representation: " + doc.toString());
+									// As a last resort, try to parse the ID from the string representation
+								}
+								
+							} catch (Exception e) {
+								System.err.println("DEBUG getChildByName: Exception accessing Document: " + e.getMessage());
+								e.printStackTrace();
+							}
+						} else {
+							log.warn("DEBUG getChildByName: unexpected document type: " + docObj.getClass().getName());
+							continue;
+						}
+						
 						log.debug("DEBUG getChildByName: checking child with name='" + childName + "'");
 						
-						if (name.equals(childName)) {
-							String objectId = (String) doc.get("_id");
+						if (name.equals(childName) && objectId != null) {
 							log.debug("DEBUG getChildByName: FOUND matching child '" + name + "' with ID: " + objectId);
 							return getContent(repositoryId, objectId);
 						}
 					}
 				}
+				System.err.println("DEBUG getChildByName: no child found with name '" + name + "' under parent '" + parentId + "'");
 				log.debug("DEBUG getChildByName: no child found with name '" + name + "' under parent '" + parentId + "'");
 			} else {
+				System.err.println("DEBUG getChildByName: no children found for parent '" + parentId + "'");
 				log.debug("DEBUG getChildByName: no children found for parent '" + parentId + "'");
 			}
 			

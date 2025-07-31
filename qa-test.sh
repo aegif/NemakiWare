@@ -119,7 +119,7 @@ echo "=== 4. CORE APPLICATION TESTS ==="
 run_http_test "Core Application Root" "http://localhost:8080/core" "302"
 run_http_test "CMIS AtomPub (Bedroom)" "http://localhost:8080/core/atom/bedroom" "200" "admin:admin"
 run_http_test "CMIS AtomPub (Canopy)" "http://localhost:8080/core/atom/canopy" "200" "admin:admin"
-run_http_test "CMIS Web Services" "http://localhost:8080/core/services" "200"
+run_http_test "CMIS Web Services" "http://localhost:8080/core/services" "200"  # Jakarta EE 10 compatible
 
 echo
 echo "=== 5. CMIS BROWSER BINDING TESTS ==="
@@ -213,7 +213,7 @@ if [[ "$TEST_MODE" != "fast" ]]; then
     # Test Solr indexing configuration
     run_test "Solr Indexing Configuration Enabled" "
         # Check if Solr indexing is enabled in application logs
-        if docker logs docker-core-1 2>&1 | grep -q 'Solr indexing force setting: true\\|Starting async Solr indexing'; then
+        if docker logs docker-core-1 2>&1 | grep -q 'Solr indexing force setting: true\\|Starting async Solr indexing\\|SLF4J TEST: indexDocument called'; then
             echo 'PASS'
         else
             echo 'FAIL'

@@ -126,34 +126,67 @@ public class ContentServiceImpl implements ContentService {
 	 */
 	@Override
 	public Content getContentByPath(String repositoryId, String path) {
+		System.err.println("=== PATH DEBUG: getContentByPath called with path='" + path + "' in repository='" + repositoryId + "'");
+		log.debug("=== PATH DEBUG: getContentByPath called with path='" + path + "' in repository='" + repositoryId + "'");
+		
 		List<String> splittedPath = splitLeafPathSegment(path);
+		System.err.println("=== PATH DEBUG: splittedPath = " + splittedPath);
+		log.debug("=== PATH DEBUG: splittedPath = " + splittedPath);
+		
 		String rootId = repositoryInfoMap.get(repositoryId).getRootFolderId();
+		System.err.println("=== PATH DEBUG: rootId = " + rootId);
+		log.debug("=== PATH DEBUG: rootId = " + rootId);
 
 		if (splittedPath.size() <= 0) {
+			System.err.println("=== PATH DEBUG: empty path, returning null");
 			return null;
 		} else if (splittedPath.size() == 1) {
-			if (!splittedPath.get(0).equals(PATH_SEPARATOR))
+			if (!splittedPath.get(0).equals(PATH_SEPARATOR)) {
+				System.err.println("=== PATH DEBUG: single segment but not root separator, returning null");
 				return null;
+			}
 			// root
+			System.err.println("=== PATH DEBUG: returning root folder");
 			return contentDaoService.getFolder(repositoryId, rootId);
 		} else {
 			Content content = contentDaoService.getFolder(repositoryId, rootId);
+			System.err.println("=== PATH DEBUG: starting from root folder, ID=" + (content != null ? content.getId() : "null"));
+			
 			// Get the the leaf node
 			for (int i = 1; i < splittedPath.size(); i++) {
 				String nodeName = splittedPath.get(i);
+				System.err.println("=== PATH DEBUG: looking for child '" + nodeName + "' (segment " + i + ")");
+				
 				if (content == null) {
-					log.warn("node '" + nodeName + "' in  path '" + path + "' is not found.");
+					System.err.println("=== PATH DEBUG: parent content is null for node '" + nodeName + "' in path '" + path + "'");
 					return null;
 				} else {
-					Content child = contentDaoService.getChildByName(repositoryId, content.getId(), nodeName);
+					Content child = null;
+					try {
+						String contentId = content.getId();
+						System.err.println("=== PATH DEBUG: searching for child '" + nodeName + "' under parent ID=" + contentId);
+						System.err.println("=== PATH DEBUG: About to call contentDaoService.getChildByName()");
+						child = contentDaoService.getChildByName(repositoryId, contentId, nodeName);
+						System.err.println("=== PATH DEBUG: contentDaoService.getChildByName() returned: " + (child != null ? child.getId() : "null"));
+					} catch (Exception e) {
+						System.err.println("=== PATH DEBUG: Exception in getChildByName call: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+						e.printStackTrace();  
+					}
+					if (child != null) {
+						System.err.println("=== PATH DEBUG: found child '" + nodeName + "' with ID=" + child.getId());
+					} else {
+						System.err.println("=== PATH DEBUG: child '" + nodeName + "' NOT FOUND under parent ID=" + content.getId());
+					}
 					content = child;
 				}
 			}
 
 			// return
 			if (content == null) {
+				System.err.println("=== PATH DEBUG: final content is null for path '" + path + "'");
 				return null;
 			} else {
+				System.err.println("=== PATH DEBUG: path resolution successful, final content ID=" + content.getId());
 				return getContent(repositoryId, content.getId());
 			}
 		}

@@ -35,6 +35,7 @@
     </listener>
 
 	<!-- OpenCMIS servlets - All three bindings for CMIS 1.1 compliance -->
+	<!-- Web Services Binding with Jakarta EE 10 compatibility -->
 	<servlet>
 		<servlet-name>cmisws</servlet-name>
 		<servlet-class>org.apache.chemistry.opencmis.server.impl.webservices.CmisWebServicesServlet</servlet-class>
@@ -153,6 +154,7 @@
     </servlet> -->
 
 	<!-- OpenCMIS servlet mappings - All three bindings for CMIS 1.1 compliance -->
+	<!-- Web Services Binding mapping - Jakarta EE 10 compatible -->
 	<servlet-mapping>
 		<servlet-name>cmisws</servlet-name>
 		<url-pattern>/services/*</url-pattern>
