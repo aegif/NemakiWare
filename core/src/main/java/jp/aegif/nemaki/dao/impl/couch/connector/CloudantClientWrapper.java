@@ -15,6 +15,8 @@ import com.ibm.cloud.cloudant.v1.Cloudant;
 import com.ibm.cloud.cloudant.v1.model.*;
 import com.ibm.cloud.sdk.core.service.exception.NotFoundException;
 
+import jp.aegif.nemaki.model.couch.CouchNodeBase;
+
 /**
  * Wrapper for Cloudant client that provides CouchDB operations
  * Replaces Ektorp's CouchDbConnector functionality
@@ -39,6 +41,183 @@ public class CloudantClientWrapper {
 		this.databaseName = databaseName;
 		this.objectMapper = objectMapper;
 		log.info("CloudantClientWrapper initialized with unified ObjectMapper for database: " + databaseName);
+	}
+
+	/**
+	 * CRITICAL: Optimized deletion approach for related documents
+	 * This prevents overwhelming CouchDB with rapid individual delete requests
+	 * @param documentIds List of document IDs to delete
+	 */
+	/**
+	 * ENHANCED: True bulk delete using _bulk_docs endpoint for optimal performance
+	 * This is the preferred method for deleting multiple documents efficiently
+	 * 
+	 * @param documentIds List of document IDs to delete
+	 */
+	public void deleteDocumentsBatch(List<String> documentIds) {
+		if (documentIds == null || documentIds.isEmpty()) {
+			return;
+		}
+		
+		try {
+			log.error("=== BULK DELETE TRACE START ===");
+			log.error("BULK DELETE: Starting true bulk deletion of " + documentIds.size() + " documents in database: " + databaseName);
+			
+			// CLOUDANT BEST PRACTICE: Use _bulk_docs for efficient batch operations
+			// Batch size recommendation: Start with 1000 documents per batch
+			final int OPTIMAL_BATCH_SIZE = 1000;
+			
+			if (documentIds.size() <= OPTIMAL_BATCH_SIZE) {
+				performBulkDelete(documentIds);
+			} else {
+				// Split large batches to prevent server overload
+				log.info("BULK DELETE: Splitting " + documentIds.size() + " documents into batches of " + OPTIMAL_BATCH_SIZE);
+				for (int i = 0; i < documentIds.size(); i += OPTIMAL_BATCH_SIZE) {
+					int endIndex = Math.min(i + OPTIMAL_BATCH_SIZE, documentIds.size());
+					List<String> batch = documentIds.subList(i, endIndex);
+					log.debug("BULK DELETE: Processing batch " + (i/OPTIMAL_BATCH_SIZE + 1) + " with " + batch.size() + " documents");
+					performBulkDelete(batch);
+				}
+			}
+			
+			log.error("BULK DELETE: Successfully completed bulk deletion operation");
+		} catch (Exception e) {
+			log.error("BULK DELETE: Critical error during bulk deletion", e);
+			throw new RuntimeException("Bulk delete operation failed: " + e.getMessage(), e);
+		}
+	}
+	
+	/**
+	 * Performs actual bulk delete using Cloudant _bulk_docs endpoint
+	 * This method implements the recommended pattern for bulk document deletion
+	 * 
+	 * @param documentIds List of document IDs to delete in this batch
+	 */
+	private void performBulkDelete(List<String> documentIds) {
+		try {
+			// STEP 1: Fetch all documents to get their current revisions
+			log.debug("BULK DELETE: Fetching current revisions for " + documentIds.size() + " documents");
+			List<Document> documentsToDelete = new ArrayList<>();
+			
+			for (String docId : documentIds) {
+				try {
+					GetDocumentOptions getOptions = new GetDocumentOptions.Builder()
+						.db(databaseName)
+						.docId(docId)
+						.build();
+					Document doc = client.getDocument(getOptions).execute().getResult();
+					documentsToDelete.add(doc);
+				} catch (NotFoundException e) {
+					log.warn("BULK DELETE: Document " + docId + " not found, skipping");
+				} catch (Exception e) {
+					log.error("BULK DELETE: Error fetching document " + docId + ": " + e.getMessage());
+					// Continue with other documents
+				}
+			}
+			
+			if (documentsToDelete.isEmpty()) {
+				log.warn("BULK DELETE: No documents found to delete");
+				return;
+			}
+			
+			// STEP 2: Create bulk delete request using _bulk_docs
+			List<Document> bulkDeleteDocs = new ArrayList<>();
+			for (Document doc : documentsToDelete) {
+				// Create delete document by setting _deleted flag
+				Document deleteDoc = new Document();
+				deleteDoc.setId(doc.getId());
+				deleteDoc.setRev(doc.getRev());
+				deleteDoc.put("_deleted", true);  // This is the key for bulk deletion
+				bulkDeleteDocs.add(deleteDoc);
+			}
+			
+			// STEP 3: Execute bulk delete using _bulk_docs endpoint
+			log.debug("BULK DELETE: Executing bulk delete for " + bulkDeleteDocs.size() + " documents");
+			PostBulkDocsOptions bulkOptions = new PostBulkDocsOptions.Builder()
+				.db(databaseName)
+				.bulkDocs(new BulkDocs.Builder()
+					.docs(bulkDeleteDocs)
+					.build())
+				.build();
+			
+			List<DocumentResult> results = client.postBulkDocs(bulkOptions).execute().getResult();
+			
+			// STEP 4: Process results and handle any errors
+			int successCount = 0;
+			int errorCount = 0;
+			
+			for (int i = 0; i < results.size(); i++) {
+				DocumentResult result = results.get(i);
+				String docId = documentIds.get(Math.min(i, documentIds.size() - 1));
+				
+				if (result.isOk()) {
+					successCount++;
+					log.debug("BULK DELETE: Successfully deleted document: " + docId);
+				} else {
+					errorCount++;
+					log.error("BULK DELETE: Failed to delete document " + docId + ": " + result.getError() + " - " + result.getReason());
+				}
+			}
+			
+			log.info("BULK DELETE: Batch complete - Success: " + successCount + ", Errors: " + errorCount);
+			
+			if (errorCount > 0 && successCount == 0) {
+				throw new RuntimeException("All documents failed to delete in batch");
+			}
+			
+		} catch (Exception e) {
+			log.error("BULK DELETE: Error in performBulkDelete", e);
+			throw new RuntimeException("Bulk delete batch failed: " + e.getMessage(), e);
+		}
+	}
+	
+	/**
+	 * FALLBACK: Individual delete method for backward compatibility
+	 * Only use this when bulk operations are not suitable
+	 */
+	public void deleteDocumentsBatchIndividual(List<String> documentIds) {
+		if (documentIds == null || documentIds.isEmpty()) {
+			return;
+		}
+		
+		log.warn("FALLBACK DELETE: Using individual delete method (less efficient)");
+		int successCount = 0;
+		int errorCount = 0;
+		
+		// Delete documents individually with proper pacing to prevent CouchDB overload
+		for (String docId : documentIds) {
+			try {
+				// Get current document for revision
+				GetDocumentOptions getOptions = new GetDocumentOptions.Builder()
+					.db(databaseName)
+					.docId(docId)
+					.build();
+				
+				Document doc = client.getDocument(getOptions).execute().getResult();
+				
+				// Delete document
+				DeleteDocumentOptions deleteOptions = new DeleteDocumentOptions.Builder()
+					.db(databaseName)
+					.docId(docId)
+					.rev(doc.getRev())
+					.build();
+				
+				client.deleteDocument(deleteOptions).execute();
+				successCount++;
+				
+				// Brief pause to prevent overwhelming CouchDB
+				Thread.sleep(10);
+				
+			} catch (NotFoundException nfe) {
+				log.debug("BATCH DELETE: Document " + docId + " not found, already deleted");
+				successCount++; // Consider this a success
+			} catch (Exception e) {
+				log.warn("BATCH DELETE: Failed to delete document " + docId + ": " + e.getMessage());
+				errorCount++;
+			}
+		}
+		
+		log.info("BATCH DELETE: Completed - Success: " + successCount + ", Errors: " + errorCount);
 	}
 
 	/**
@@ -534,27 +713,69 @@ public class CloudantClientWrapper {
 	 * Bridge method to replace Ektorp's ViewQuery - query view and deserialize to specific class
 	 */
 	public <T> List<T> queryView(String designDoc, String viewName, String key, Class<T> clazz) {
+		log.debug("CLOUDANT ENTRY: queryView called with designDoc=" + designDoc + ", viewName=" + viewName + ", key=" + key + ", class=" + clazz.getSimpleName());
 		try {
 			// Build view path
 			String viewPath = "_design/" + designDoc.replace("_design/", "") + "/_view/" + viewName;
+			log.debug("CLOUDANT DEBUG: Querying view " + viewPath + " with key: " + key + " in database: " + databaseName);
 			
 			PostViewOptions.Builder builder = new PostViewOptions.Builder()
 				.db(databaseName)
 				.ddoc(designDoc.replace("_design/", ""))
-				.view(viewName);
-				// Remove includeDocs for now to test basic functionality
+				.view(viewName)
+				.includeDocs(true); // Include documents for conversion
+			
+			// CRITICAL FIX: Add key to the server-side query instead of client-side filtering
+			if (key != null) {
+				builder.key(key);
+				log.error("CLOUDANT DEBUG: Added key to query: " + key);
+			}
 			
 			ViewResult result = client.postView(builder.build()).execute().getResult();
+			log.debug("CLOUDANT DEBUG: ViewResult received, rows count: " + (result.getRows() != null ? result.getRows().size() : "null"));
 			
 			List<T> objects = new ArrayList<T>();
 			ObjectMapper mapper = getObjectMapper();
 			
 			for (ViewResultRow row : result.getRows()) {
 				if (row.getDoc() != null) {
-					// Filter by key if specified
-					if (key == null || (row.getKey() != null && key.equals(row.getKey().toString().replace("\"", "")))) {
-						T obj = mapper.convertValue(row.getDoc(), clazz);
+					// CRITICAL FIX: Manually handle _id and _rev mapping since convertValue doesn't use @JsonCreator
+					com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
+					Map<String, Object> docMap = doc.getProperties();
+					
+					if (docMap != null) {
+						// Ensure _id and _rev are properly mapped
+						if (!docMap.containsKey("_id") && doc.getId() != null) {
+							docMap.put("_id", doc.getId());
+						}
+						if (!docMap.containsKey("_rev") && doc.getRev() != null) {
+							docMap.put("_rev", doc.getRev());
+						}
+						
+						log.debug("DEBUG: Document properties keys: " + docMap.keySet());
+						log.debug("DEBUG: _id field value: " + docMap.get("_id"));
+						
+						// Use convertValue but ensure proper field mapping by pre-processing the map
+						T obj = mapper.convertValue(docMap, clazz);
+						
+						// CRITICAL FIX: If ID is still null after conversion, manually set it
+						if (obj instanceof jp.aegif.nemaki.model.couch.CouchNodeBase) {
+							jp.aegif.nemaki.model.couch.CouchNodeBase nodeBase = (jp.aegif.nemaki.model.couch.CouchNodeBase) obj;
+							log.debug("DEBUG: ConvertValue initial result - ID: " + nodeBase.getId() + ", Rev: " + nodeBase.getRevision());
+							
+							if (nodeBase.getId() == null && docMap.get("_id") != null) {
+								nodeBase.setId((String) docMap.get("_id"));
+								log.error("DEBUG: Manually set ID: " + nodeBase.getId());
+							}
+							if (nodeBase.getRevision() == null && docMap.get("_rev") != null) {
+								nodeBase.setRevision((String) docMap.get("_rev"));
+								log.error("DEBUG: Manually set revision: " + nodeBase.getRevision());
+							}
+						}
+						
 						objects.add(obj);
+					} else {
+						log.warn("Document properties are null, skipping object creation");
 					}
 				}
 			}
@@ -566,7 +787,7 @@ public class CloudantClientWrapper {
 			log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not found - returning null. This is normal during initial startup.");
 			return null;
 		} catch (Exception e) {
-			log.warn("Error querying view " + designDoc + "/" + viewName + " with key: " + key + " - returning null. This is normal during initial startup: " + e.getMessage());
+			log.error("CRITICAL: Error querying view " + designDoc + "/" + viewName + " with key: " + key + " - returning null. Exception: " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
 			return null;
 		}
 	}
@@ -606,7 +827,7 @@ public class CloudantClientWrapper {
 			log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not found - returning null. This is normal during initial startup.");
 			return null;
 		} catch (Exception e) {
-			log.warn("Error querying view " + designDoc + "/" + viewName + " with key: " + key + " - returning null. This is normal during initial startup: " + e.getMessage());
+			log.error("CRITICAL: Error querying view " + designDoc + "/" + viewName + " with key: " + key + " - returning null. Exception: " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
 			return null;
 		}
 	}
@@ -808,9 +1029,78 @@ public class CloudantClientWrapper {
 			com.ibm.cloud.cloudant.v1.model.Document doc = get(id);
 			if (doc != null) {
 				ObjectMapper mapper = getObjectMapper();
+				
+				// CRITICAL FIX: For CouchAttachmentNode, use Document.getProperties() to get actual CouchDB fields
+				if (clazz.getSimpleName().equals("CouchAttachmentNode")) {
+					log.error("=== ENHANCED ATTACHMENT DESERIALIZATION ===");
+					log.error("Document ID: " + id);
+					
+					// Get the properties Map which contains the actual CouchDB document fields
+					Map<String, Object> properties = doc.getProperties();
+					if (properties != null) {
+						log.error("Properties map keys: " + properties.keySet());
+						log.error("Properties 'name': " + properties.get("name"));
+						log.error("Properties 'length': " + properties.get("length"));
+						log.error("Properties 'mimeType': " + properties.get("mimeType"));
+						log.error("Properties '_attachments': " + (properties.get("_attachments") != null ? "PRESENT" : "NULL"));
+						
+						// Create complete map with both document metadata and properties
+						Map<String, Object> completeMap = new HashMap<>();
+						
+						// Add standard document fields
+						completeMap.put("_id", doc.getId());
+						completeMap.put("_rev", doc.getRev());
+						
+						// Add all properties from CouchDB document with timestamp conversion
+						for (Map.Entry<String, Object> entry : properties.entrySet()) {
+							String key = entry.getKey();
+							Object value = entry.getValue();
+							
+							// CRITICAL FIX: Convert timestamp fields from floating-point to GregorianCalendar
+							if (("created".equals(key) || "modified".equals(key)) && value instanceof Number) {
+								long timestamp = ((Number) value).longValue();
+								java.util.GregorianCalendar calendar = new java.util.GregorianCalendar();
+								calendar.setTimeInMillis(timestamp);
+								completeMap.put(key, calendar);
+								
+								log.error("Converted timestamp field '" + key + "': " + value + " -> " + calendar.getTime());
+							} else {
+								completeMap.put(key, value);
+							}
+						}
+						
+						log.error("Complete map keys: " + completeMap.keySet());
+						
+						try {
+							T result = mapper.convertValue(completeMap, clazz);
+							log.error("ENHANCED deserialization SUCCESS for attachment: " + id);
+							return result;
+						} catch (Exception deserEx) {
+							log.error("ENHANCED deserialization FAILED for attachment: " + id);
+							log.error("Error details: " + deserEx.getMessage());
+							throw deserEx;
+						}
+					} else {
+						log.error("Document properties is NULL for attachment: " + id);
+					}
+				}
+				
 				// Convert immutable Document to mutable Map first, then to target class
 				@SuppressWarnings("unchecked")
 				Map<String, Object> docMap = mapper.convertValue(doc, Map.class);
+				
+				// CRITICAL FIX: Ensure _id and _rev fields are always present in the map
+				// This is essential for Cloudant SDK deletion operations
+				if (doc.getId() != null) {
+					docMap.put("_id", doc.getId());
+				}
+				if (doc.getRev() != null) {
+					docMap.put("_rev", doc.getRev());
+					log.debug("CloudantClientWrapper.get(): Ensured _rev field is present: " + doc.getRev() + " for document: " + doc.getId());
+				} else {
+					log.warn("CloudantClientWrapper.get(): Document " + doc.getId() + " has no _rev field - this may cause deletion issues");
+				}
+				
 				return mapper.convertValue(docMap, clazz);
 			}
 			return null;
@@ -821,16 +1111,47 @@ public class CloudantClientWrapper {
 	}
 
 	/**
-	 * Delete document by object (compatible with Ektorp delete method)
+	 * ENHANCED: Robust single document deletion with comprehensive error handling
+	 * Implements Cloudant SDK best practices for individual document deletion
+	 * Compatible with Ektorp delete method signature
+	 * 
+	 * @param document The document object to delete
 	 */
 	public void delete(Object document) {
 		try {
+			log.error("=== SINGLE DELETE TRACE START ===");
+			log.error("DELETE: Starting deletion for document: " + document.getClass().getName());
+			
 			ObjectMapper mapper = getObjectMapper();
 			@SuppressWarnings("unchecked")
 			Map<String, Object> documentMap = mapper.convertValue(document, Map.class);
 			
+			// DEBUG: Log the document map to understand what fields are present
+			log.error("DEBUG: Document class: " + document.getClass().getName());
+			log.error("DEBUG: DocumentMap keys: " + documentMap.keySet());
+			log.error("DEBUG: DocumentMap contents: " + documentMap);
+			
+			// Try both "_id" and "id" fields
 			String id = (String) documentMap.get("_id");
+			if (id == null) {
+				id = (String) documentMap.get("id");
+			}
+			
+			// Try both "_rev" and "revision" fields
 			String rev = (String) documentMap.get("_rev");
+			if (rev == null) {
+				rev = (String) documentMap.get("revision");
+			}
+			
+			if (id == null) {
+				// If still null, try to get ID directly from CouchNodeBase
+				if (document instanceof CouchNodeBase) {
+					CouchNodeBase cnb = (CouchNodeBase) document;
+					id = cnb.getId();
+					rev = cnb.getRevision();
+					log.error("DEBUG: Got ID from CouchNodeBase getter: id=" + id + ", rev=" + rev);
+				}
+			}
 			
 			if (id == null) {
 				throw new IllegalArgumentException("Document must have '_id' field for delete");
@@ -841,9 +1162,10 @@ public class CloudantClientWrapper {
 			
 			log.error("CLOUDANT DELETION DEBUG: Attempting to delete document ID: " + id + " with revision: " + rev);
 			
-			// CRITICAL FIX: Fetch the latest revision before deleting to avoid stale revision conflicts
-			// This is the root cause of the deletion failures - using stale revisions
+			// CRITICAL FIX: Always fetch the absolute latest revision to prevent conflicts
+			// This is the most important part for reliable deletion
 			try {
+				log.debug("DELETE: Fetching latest revision for document: " + id);
 				GetDocumentOptions getOptions = new GetDocumentOptions.Builder()
 					.db(databaseName)
 					.docId(id)
@@ -857,28 +1179,45 @@ public class CloudantClientWrapper {
 				} else {
 					log.debug("DELETION DEBUG: Document revision is current: " + rev);
 				}
+			} catch (NotFoundException nfe) {
+				log.warn("DELETE: Document " + id + " not found during revision fetch - may already be deleted");
+				return; // Document doesn't exist, consider deletion successful
 			} catch (Exception fetchEx) {
 				log.warn("DELETION DEBUG: Could not fetch latest revision for document " + id + ": " + fetchEx.getMessage() + ". Proceeding with provided revision: " + rev);
+				// Continue with original revision
 			}
 			
+			// Perform the actual deletion
+			log.error("DELETE: Executing delete operation for ID: " + id + " rev: " + rev);
 			DocumentResult result = delete(id, rev);
+			
 			if (result == null) {
 				throw new RuntimeException("Delete operation failed for document ID: " + id + " - no result returned from CouchDB");
 			}
+			
+			// Verify deletion succeeded
+			if (!result.isOk()) {
+				throw new RuntimeException("Delete operation failed for document ID: " + id + " - error: " + result.getError() + ", reason: " + result.getReason());
+			}
+			
 			log.error("CLOUDANT DELETION SUCCESS: Successfully deleted document with ID: " + id + " using revision: " + rev);
+			log.error("=== SINGLE DELETE TRACE END ===");
+			
 		} catch (IllegalArgumentException e) {
 			// Re-throw validation errors
+			log.error("DELETE: Validation error", e);
 			throw e;
 		} catch (RuntimeException e) {
 			// Re-throw runtime errors (including our custom failure detection)
+			log.error("DELETE: Runtime error", e);
 			throw e;
 		} catch (Exception e) {
-			// FIXED: Don't silently ignore delete failures - propagate them
+			// CRITICAL: Don't silently ignore delete failures - propagate them with full context
 			ObjectMapper mapper = getObjectMapper();
 			@SuppressWarnings("unchecked")
 			Map<String, Object> documentMap = mapper.convertValue(document, Map.class);
 			String docId = (String) documentMap.get("_id");
-			log.error("Critical error deleting document object with ID: " + docId, e);
+			log.error("DELETE: Critical error deleting document object with ID: " + docId, e);
 			throw new RuntimeException("Failed to delete document: " + e.getMessage(), e);
 		}
 	}
@@ -1008,10 +1347,12 @@ public class CloudantClientWrapper {
 	}
 
 	/**
-	 * Create attachment using Cloudant SDK
+	 * Create attachment using Cloudant SDK with optimized revision conflict handling
 	 */
 	public String createAttachment(String docId, String revision, String attachmentName, Object attachmentInputStream, String contentType) {
 		try {
+			log.debug("ATTACHMENT CREATE: Starting attachment creation for document: " + docId + " (revision: " + revision + ")");
+			
 			// Convert attachment input to InputStream if needed
 			java.io.InputStream inputStream;
 			if (attachmentInputStream instanceof java.io.InputStream) {
@@ -1022,30 +1363,53 @@ public class CloudantClientWrapper {
 				throw new IllegalArgumentException("Unsupported attachment input type: " + attachmentInputStream.getClass());
 			}
 
+			// Validate required parameters
+			if (docId == null || docId.isEmpty()) {
+				throw new IllegalArgumentException("Document ID cannot be null or empty");
+			}
+			if (attachmentName == null || attachmentName.isEmpty()) {
+				throw new IllegalArgumentException("Attachment name cannot be null or empty");
+			}
+
 			PutAttachmentOptions.Builder builder = new PutAttachmentOptions.Builder()
 				.db(databaseName)
 				.docId(docId)
 				.attachmentName(attachmentName)
 				.attachment(inputStream);
 			
-			// Add revision if specified
+			// Add revision if specified (critical for conflict prevention)
 			if (revision != null && !revision.isEmpty()) {
 				builder.rev(revision);
+				log.debug("ATTACHMENT CREATE: Using revision: " + revision);
+			} else {
+				log.warn("ATTACHMENT CREATE: No revision specified - potential conflict risk");
 			}
 			
 			// Add content type if specified
 			if (contentType != null && !contentType.isEmpty()) {
 				builder.contentType(contentType);
+			} else {
+				builder.contentType("application/octet-stream"); // Default content type
 			}
 
 			DocumentResult result = client.putAttachment(builder.build()).execute().getResult();
-			log.debug("Created attachment: " + attachmentName + " for document: " + docId);
+			String newRevision = result.getRev();
 			
-			return result.getRev(); // Return new revision
+			log.debug("ATTACHMENT CREATE SUCCESS: Created attachment '" + attachmentName + "' for document: " + docId + " (revision: " + revision + " -> " + newRevision + ")");
+			
+			return newRevision; // Return new revision
 
+		} catch (com.ibm.cloud.sdk.core.service.exception.ConflictException e) {
+			// Specific handling for revision conflicts
+			log.error("ATTACHMENT CREATE CONFLICT: Revision conflict for document " + docId + " (revision: " + revision + ") - " + e.getMessage());
+			throw e; // Re-throw to allow retry logic in calling method
+		} catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException e) {
+			// Document doesn't exist
+			log.error("ATTACHMENT CREATE NOT FOUND: Document " + docId + " not found - " + e.getMessage());
+			throw new RuntimeException("Cannot create attachment for non-existent document: " + docId, e);
 		} catch (Exception e) {
-			log.warn("Error creating attachment '" + attachmentName + "' for document '" + docId + "'. This is normal during initial startup: " + e.getMessage());
-			return null;
+			log.error("ATTACHMENT CREATE ERROR: Failed to create attachment '" + attachmentName + "' for document '" + docId + "' - " + e.getClass().getSimpleName() + ": " + e.getMessage());
+			throw new RuntimeException("Failed to create attachment", e);
 		}
 	}
 	

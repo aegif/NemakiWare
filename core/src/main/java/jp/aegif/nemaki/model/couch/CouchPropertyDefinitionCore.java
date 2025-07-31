@@ -30,9 +30,7 @@ import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 
-@JsonDeserialize(as = CouchPropertyDefinitionCore.class)
 public class CouchPropertyDefinitionCore extends CouchNodeBase{
 	
 	private static final long serialVersionUID = -213127366706433797L;

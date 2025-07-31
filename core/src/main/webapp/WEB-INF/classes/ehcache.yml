@@ -61,3 +61,7 @@ aclCache:
 
 joinedGroupCache:
   statisticsEnabled: false
+
+propertyDefinitionCache:
+  maxElementsInMemory: 1000
+  statisticsEnabled: false

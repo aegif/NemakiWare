@@ -26,9 +26,7 @@ import java.util.Map;
 
 import jp.aegif.nemaki.model.Folder;
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 
-@JsonDeserialize(as = CouchFolder.class)
 public class CouchFolder extends CouchContent{
 	
 	private static final long serialVersionUID = 358898003870344923L;

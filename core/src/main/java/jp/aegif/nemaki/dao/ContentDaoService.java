@@ -766,4 +766,12 @@ public interface ContentDaoService {
 	void restoreAttachment(String repositoryId, Archive archive);
 
 	void restoreDocumentWithArchive(String repositoryId, Archive archive);
+
+	/**
+	 * Get the actual attachment size from CouchDB _attachments metadata
+	 * @param repositoryId Repository ID
+	 * @param attachmentId Attachment node ID
+	 * @return Actual size in bytes from CouchDB attachment metadata, or null if not available
+	 */
+	Long getAttachmentActualSize(String repositoryId, String attachmentId);
 }

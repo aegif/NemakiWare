@@ -63,7 +63,7 @@
 	</servlet>
 	<servlet>
 		<servlet-name>cmisbrowser</servlet-name>
-		<servlet-class>org.apache.chemistry.opencmis.server.impl.browser.CmisBrowserBindingServlet</servlet-class>
+		<servlet-class>jp.aegif.nemaki.cmis.servlet.NemakiBrowserBindingServlet</servlet-class>
 		<init-param>
 			<param-name>callContextHandler</param-name>
 			<param-value>jp.aegif.nemaki.cmis.factory.auth.NemakiAuthCallContextHandler</param-value>

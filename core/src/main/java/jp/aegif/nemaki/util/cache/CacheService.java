@@ -44,6 +44,7 @@ public class CacheService {
 	
 	private final String ACL_CACHE = "aclCache";
 	private final String JOINED_GROUP_CACHE = "joinedGroupCache";
+	private final String PROPERTY_DEFINITION_CACHE = "propertyDefinitionCache";
 
 	private final String repositoryId;
 
@@ -185,6 +186,14 @@ public class CacheService {
 	public NemakiCache<List<String>> getJoinedGroupCache(){
 		String name = repositoryId + "_" + JOINED_GROUP_CACHE;
 		return new NemakiCache<List<String>>(enabled.get(name), cacheManager.getCache(name));
+	}
+	
+	/**
+	 * Property Definition Cache
+	 */
+	public NemakiCache getPropertyDefinitionCache() {
+		String name = repositoryId + "_" + PROPERTY_DEFINITION_CACHE;
+		return new NemakiCache(enabled.get(name), cacheManager.getCache(name));
 	}
 
 

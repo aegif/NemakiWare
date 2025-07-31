@@ -1077,12 +1077,25 @@ public class ExceptionServiceImpl implements ExceptionService,
 				.getTypeDefinition(repositoryId, document);
 		ContentStreamAllowed csa = documentTypeDefinition
 				.getContentStreamAllowed();
+		
+		// Enhanced debugging for TCK failures
+		System.err.println("=== CONTENT STREAM DOWNLOAD CONSTRAINT DEBUG ===");
+		System.err.println("Document ID: " + document.getId());
+		System.err.println("Document Name: " + document.getName());
+		System.err.println("ContentStreamAllowed: " + csa);  
+		System.err.println("AttachmentNodeId: " + document.getAttachmentNodeId());
+		System.err.println("AttachmentNodeId isBlank: " + StringUtils.isBlank(document.getAttachmentNodeId()));
+		
 		if (ContentStreamAllowed.NOTALLOWED == csa
 				|| ContentStreamAllowed.ALLOWED == csa
 				&& StringUtils.isBlank(document.getAttachmentNodeId())) {
+			System.err.println("CONSTRAINT TRIGGERED: Content stream download not allowed");
 			constraint(document.getId(),
 					"This document has no ContentStream. getContentStream is not supported.");
+		} else {
+			System.err.println("CONSTRAINT PASSED: Content stream download allowed");
 		}
+		System.err.println("=== END CONTENT STREAM DOWNLOAD CONSTRAINT DEBUG ===");
 	}
 
 	@Override

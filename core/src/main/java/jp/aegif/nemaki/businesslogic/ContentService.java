@@ -730,4 +730,12 @@ public interface ContentService {
 	public Document updateWithoutCheckInOut(CallContext callContext, String repositoryId,
 			Boolean major, Properties properties,
 			ContentStream contentStream, String checkinComment, Document previousDoc, VersionSeries versionSeries);
+
+	/**
+	 * Get the actual attachment size from CouchDB metadata
+	 * @param repositoryId Repository ID
+	 * @param attachmentId Attachment node ID
+	 * @return Actual size in bytes from CouchDB attachment metadata, or null if not available
+	 */
+	Long getAttachmentActualSize(String repositoryId, String attachmentId);
 }

@@ -25,9 +25,7 @@ import java.util.Map;
 
 import jp.aegif.nemaki.model.Item;
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 
-@JsonDeserialize(as = CouchItem.class)
 public class CouchItem extends CouchContent{
 	
 	private static final long serialVersionUID = 5431775285043659123L;

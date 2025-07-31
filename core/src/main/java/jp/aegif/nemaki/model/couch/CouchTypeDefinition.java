@@ -32,9 +32,7 @@ import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 
-@JsonDeserialize(as = CouchTypeDefinition.class)
 public class CouchTypeDefinition extends CouchNodeBase {
 
 	private static final long serialVersionUID = 8066284826946206320L;

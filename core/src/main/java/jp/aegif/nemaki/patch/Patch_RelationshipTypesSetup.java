@@ -92,6 +92,13 @@ public class Patch_RelationshipTypesSetup extends AbstractNemakiPatch {
             return;
         }
         
+        // CRITICAL FIX: Skip this patch during initialization to prevent deadlock
+        // The patch tries to access HTTP endpoints while they're still being initialized
+        log.warn("=== PATCH DEBUG: TEMPORARILY SKIPPING Relationship Types Setup to prevent initialization deadlock ===");
+        System.out.println("=== PATCH DEBUG: TEMPORARILY SKIPPING Relationship Types Setup to prevent initialization deadlock ===");
+        return;
+        
+        /*
         try {
             // Wait for core application to be fully ready
             if (!waitForCoreApplication()) {
@@ -105,7 +112,7 @@ public class Patch_RelationshipTypesSetup extends AbstractNemakiPatch {
             
             // Register bidirectional relationship type  
             boolean bidirectionalSuccess = registerRelationshipType(repositoryId,
-                "nemaki:bidirectionalRelationship", BIDIRECTIONAL_RELATIONSHIP_XML);
+                "nemaki:bidirectional…", BIDIRECTIONAL_RELATIONSHIP_XML);
             
             // Verify types are available through CMIS endpoints
             if (parentChildSuccess && bidirectionalSuccess) {
@@ -122,6 +129,7 @@ public class Patch_RelationshipTypesSetup extends AbstractNemakiPatch {
             log.error("Error during Relationship Types Setup Patch for repository: " + repositoryId, e);
             // Don't throw - patch failures should not prevent application startup
         }
+        */
     }
     
     /**

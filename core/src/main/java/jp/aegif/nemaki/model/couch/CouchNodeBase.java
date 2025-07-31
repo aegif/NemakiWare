@@ -34,14 +34,12 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import java.util.Map;
 import java.util.HashMap;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 @JsonIgnoreProperties(ignoreUnknown=true)
-@JsonDeserialize(as = CouchNodeBase.class)
 public class CouchNodeBase {
 	
 	private static final Log log = LogFactory.getLog(CouchNodeBase.class);
@@ -81,12 +79,12 @@ public class CouchNodeBase {
 				this.type = (String) properties.get("type");
 			}
 			
-			// 日付フィールドの処理（CouchDBのISO 8601文字列をGregorianCalendarに変換）
+			// 日付フィールドの処理（CouchDBの複数形式をGregorianCalendarに変換）
 			if (properties.containsKey("created")) {
-				this.created = parseISODateTime((String) properties.get("created"));
+				this.created = parseDateTime(properties.get("created"));
 			}
 			if (properties.containsKey("modified")) {
-				this.modified = parseISODateTime((String) properties.get("modified"));
+				this.modified = parseDateTime(properties.get("modified"));
 			}
 			
 			if (properties.containsKey("creator")) {
@@ -217,6 +215,40 @@ public class CouchNodeBase {
 	
 	public void setRevision(String revision) {
 		this.revision = revision;
+	}
+	
+	/**
+	 * CouchDBの日時値をGregorianCalendarに変換します
+	 * 対応形式:
+	 * 1. ISO 8601文字列: "2013-01-01T00:00:00.000+0000"
+	 * 2. タイムスタンプ数値: 1388534400000 (Long/Double)
+	 */
+	protected GregorianCalendar parseDateTime(Object dateValue) {
+		if (dateValue == null) {
+			return null;
+		}
+		
+		try {
+			// 数値タイムスタンプの場合（Long, Double, Integer）
+			if (dateValue instanceof Number) {
+				long timestamp = ((Number) dateValue).longValue();
+				GregorianCalendar calendar = new GregorianCalendar();
+				calendar.setTimeInMillis(timestamp);
+				return calendar;
+			}
+			
+			// 文字列の場合はISO 8601として処理
+			if (dateValue instanceof String) {
+				return parseISODateTime((String) dateValue);
+			}
+			
+			// その他の型の場合は現在時刻を返す
+			log.warn("Unexpected date value type: " + dateValue.getClass().getName() + ", value: " + dateValue);
+			return new GregorianCalendar();
+		} catch (Exception e) {
+			log.warn("Failed to parse date value: " + dateValue + " - " + e.getMessage());
+			return new GregorianCalendar();
+		}
 	}
 	
 	/**

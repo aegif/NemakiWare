@@ -33,10 +33,8 @@ import jp.aegif.nemaki.model.Property;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import java.util.Map;
 
-@JsonDeserialize(as = CouchContent.class)
 public class CouchContent extends CouchNodeBase{
 
 	private static final long serialVersionUID = -4795093916552322103L;

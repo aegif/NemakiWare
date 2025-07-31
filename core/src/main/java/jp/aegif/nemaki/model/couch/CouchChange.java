@@ -30,6 +30,8 @@ import jp.aegif.nemaki.model.Change;
 import org.apache.chemistry.opencmis.commons.enums.ChangeType;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import java.util.Map;
 
 public class CouchChange extends CouchNodeBase implements Comparable<CouchChange>{
 	/**
@@ -58,6 +60,61 @@ public class CouchChange extends CouchNodeBase implements Comparable<CouchChange
 	public CouchChange(){
 		super();
 	}
+	
+	// Map-based constructor for Cloudant Document conversion
+	@JsonCreator
+	public CouchChange(Map<String, Object> properties) {
+		super(properties);
+		if (properties != null) {
+			// Handle CouchChange-specific fields
+			if (properties.containsKey("name")) {
+				this.name = (String) properties.get("name");
+			}
+			if (properties.containsKey("baseType")) {
+				this.baseType = (String) properties.get("baseType");
+			}
+			if (properties.containsKey("objectType")) {
+				this.objectType = (String) properties.get("objectType");
+			}
+			if (properties.containsKey("versionSeriesId")) {
+				this.versionSeriesId = (String) properties.get("versionSeriesId");
+			}
+			if (properties.containsKey("versionLabel")) {
+				this.versionLabel = (String) properties.get("versionLabel");
+			}
+			if (properties.containsKey("objectId")) {
+				this.objectId = (String) properties.get("objectId");
+			}
+			if (properties.containsKey("token")) {
+				Object tokenValue = properties.get("token");
+				if (tokenValue instanceof Number) {
+					this.token = ((Number) tokenValue).longValue();
+				} else if (tokenValue instanceof String) {
+					try {
+						this.token = Long.valueOf((String) tokenValue);
+					} catch (NumberFormatException e) {
+						log.warn("Failed to parse token value: " + tokenValue);
+						this.token = null;
+					}
+				}
+			}
+			if (properties.containsKey("changeType")) {
+				Object changeTypeValue = properties.get("changeType");
+				if (changeTypeValue instanceof String) {
+					try {
+						this.changeType = ChangeType.valueOf((String) changeTypeValue);
+					} catch (IllegalArgumentException e) {
+						log.warn("Unknown change type: " + changeTypeValue + ", defaulting to UPDATED");
+						this.changeType = ChangeType.UPDATED;
+					}
+				}
+			}
+			if (properties.containsKey("time")) {
+				// Use the same date parsing logic as parent class
+				this.time = parseDateTime(properties.get("time"));
+			}
+		}
+	}
 
 	public CouchChange(Change c){
 		super(c);
@@ -65,11 +122,43 @@ public class CouchChange extends CouchNodeBase implements Comparable<CouchChange
 		setObjectId(c.getObjectId());
 		Long token = convertChangeToken(c.getToken());
 		setToken(token);
-		setChangeType(c.getChangeType());
+		// CRITICAL FIX: Ensure ChangeType is not null to prevent NullPointerException
+		org.apache.chemistry.opencmis.commons.enums.ChangeType sourceChangeType = c.getChangeType();
+		if (sourceChangeType == null) {
+			// Default to UPDATED if not specified
+			sourceChangeType = org.apache.chemistry.opencmis.commons.enums.ChangeType.UPDATED;
+			log.warn("CouchChange constructor: ChangeType was null, defaulting to UPDATED for object: " + c.getObjectId());
+		}
+		setChangeType(sourceChangeType);
 		setTime(time != null ? time : c.getCreated());
 		setType(c.getType());
 		setName(c.getName());
-		setBaseType(c.getBaseType());
+		// CRITICAL FIX: Ensure baseType is set properly from source Change object
+		String sourceBaseType = c.getBaseType();
+		if (sourceBaseType == null || sourceBaseType.isEmpty()) {
+			// Try to infer from objectType if baseType is null
+			String sourceObjectType = c.getObjectType();
+			if (sourceObjectType != null) {
+				if (sourceObjectType.startsWith("cmis:document") || sourceObjectType.equals("cmis:document")) {
+					sourceBaseType = "cmis:document";
+				} else if (sourceObjectType.startsWith("cmis:folder") || sourceObjectType.equals("cmis:folder")) {
+					sourceBaseType = "cmis:folder";
+				} else if (sourceObjectType.startsWith("cmis:relationship") || sourceObjectType.equals("cmis:relationship")) {
+					sourceBaseType = "cmis:relationship";
+				} else if (sourceObjectType.startsWith("cmis:policy") || sourceObjectType.equals("cmis:policy")) {
+					sourceBaseType = "cmis:policy";
+				} else if (sourceObjectType.startsWith("cmis:item") || sourceObjectType.equals("cmis:item")) {
+					sourceBaseType = "cmis:item";
+				} else {
+					sourceBaseType = "cmis:document"; // Default
+				}
+				log.warn("CouchChange constructor: BaseType was null, inferred '" + sourceBaseType + "' from objectType '" + sourceObjectType + "'");
+			} else {
+				sourceBaseType = "cmis:document"; // Final fallback
+				log.error("CouchChange constructor: Both baseType and objectType were null, defaulting to 'cmis:document'");
+			}
+		}
+		setBaseType(sourceBaseType);
 		setObjectType(c.getObjectType());
 		setVersionSeriesId(c.getVersionSeriesId());
 		setVersionLabel(c.getVersionLabel());
@@ -194,14 +283,46 @@ public class CouchChange extends CouchNodeBase implements Comparable<CouchChange
 	@Override
 	public Change convert(){
 		Change change = new Change(super.convert());
-		change.setChangeType(getChangeType());
+		// CRITICAL FIX: Ensure ChangeType is not null during conversion
+		org.apache.chemistry.opencmis.commons.enums.ChangeType changeType = getChangeType();
+		if (changeType == null) {
+			changeType = org.apache.chemistry.opencmis.commons.enums.ChangeType.UPDATED;
+			log.warn("CouchChange.convert(): ChangeType was null, defaulting to UPDATED for object: " + getObjectId());
+		}
+		change.setChangeType(changeType);
 		change.setTime(getTime());
 		change.setObjectId(getObjectId());
 		change.setToken(String.valueOf(getToken()));
 		change.setType(getType());
 
 		change.setName(getName());
-		change.setBaseType(getBaseType());
+		// CRITICAL FIX: Ensure baseType is not null to prevent NullPointerException in query operations
+		String baseType = getBaseType();
+		if (baseType == null || baseType.isEmpty()) {
+			// Set default baseType based on object type if not set
+			String objectType = getObjectType();
+			if (objectType != null) {
+				if (objectType.startsWith("cmis:document") || objectType.equals("cmis:document")) {
+					baseType = "cmis:document";
+				} else if (objectType.startsWith("cmis:folder") || objectType.equals("cmis:folder")) {
+					baseType = "cmis:folder";
+				} else if (objectType.startsWith("cmis:relationship") || objectType.equals("cmis:relationship")) {
+					baseType = "cmis:relationship";
+				} else if (objectType.startsWith("cmis:policy") || objectType.equals("cmis:policy")) {
+					baseType = "cmis:policy";
+				} else if (objectType.startsWith("cmis:item") || objectType.equals("cmis:item")) {
+					baseType = "cmis:item";
+				} else {
+					// Default to document for unknown types
+					baseType = "cmis:document";
+				}
+				log.warn("BaseType was null, inferred '" + baseType + "' from objectType '" + objectType + "' for change event");
+			} else {
+				baseType = "cmis:document"; // Final fallback
+				log.warn("Both baseType and objectType were null, defaulting to 'cmis:document' for change event");
+			}
+		}
+		change.setBaseType(baseType);
 		change.setObjectType(getObjectType());
 		change.setVersionSeriesId(getVersionSeriesId());
 		change.setVersionLabel(getVersionLabel());

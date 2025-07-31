@@ -28,12 +28,10 @@ import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.annotation.Nulls;
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import java.util.Map;
 import java.util.HashMap;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(as = CouchUserItem.class)
 public class CouchUserItem extends CouchItem{
 	
 	private static final long serialVersionUID = 3294975060332894322L;

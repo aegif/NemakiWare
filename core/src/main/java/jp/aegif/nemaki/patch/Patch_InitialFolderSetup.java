@@ -2,6 +2,7 @@ package jp.aegif.nemaki.patch;
 
 import java.io.ByteArrayInputStream;
 import java.io.UnsupportedEncodingException;
+import java.math.BigInteger;
 import java.util.List;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
@@ -253,10 +254,10 @@ public class Patch_InitialFolderSetup extends AbstractNemakiPatch {
             // Get parent folder object
             Folder parentFolder = (Folder) contentService.getContent(repositoryId, parentId);
             
-            // Create content stream
+            // Create content stream with correct length
             ContentStream contentStream = new ContentStreamImpl(
                 CMIS_SPEC_FILENAME,
-                null, // BigInteger length  
+                BigInteger.valueOf(pdfBytes.length), // CRITICAL FIX: Provide actual byte length
                 "application/pdf",
                 new ByteArrayInputStream(pdfBytes)
             );

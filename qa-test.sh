@@ -312,16 +312,17 @@ echo
 echo "=== 12. DOCUMENT CRUD OPERATIONS ==="
 # Test document creation with content
 run_test "Create Document with Content" "
-    # Create test content file
+    # Create test content file with timestamp-based unique name
+    timestamp=\$(date +%s)
     echo 'Test content for QA document creation' > /tmp/qa-test-content.txt
     
-    # Use React UI proven Browser Binding pattern: /root endpoint
+    # Use React UI proven Browser Binding pattern: /root endpoint with timestamp-based unique name
     response=\$(curl -s -u admin:admin -X POST \\
         -F 'cmisaction=createDocument' \\
         -F 'propertyId[0]=cmis:objectTypeId' \\
         -F 'propertyValue[0]=cmis:document' \\
         -F 'propertyId[1]=cmis:name' \\
-        -F 'propertyValue[1]=test-qa-document.txt' \\
+        -F \"propertyValue[1]=test-qa-document-\$timestamp.txt\" \\
         -F 'filename=@/tmp/qa-test-content.txt;filename=test-qa-document.txt' \\
         -F '_charset_=UTF-8' \\
         \"$BASE_URL/browser/bedroom/root\")
@@ -373,24 +374,27 @@ echo
 echo "=== 13. FOLDER CRUD OPERATIONS ==="
 # Test folder creation
 run_test "Create Folder" "
-    # Use AtomPub binding due to Browser Binding parameter parsing issues
+    # Use AtomPub binding with microsecond-based unique name to avoid conflicts
+    timestamp=\$(date +%s%N | cut -b1-13)
+    random_suffix=\$(head -c 4 /dev/urandom | xxd -p)
+    unique_name=\"test-folder-\${timestamp}-\${random_suffix}\"
     response=\$(curl -s -u admin:admin -X POST \\
         -H 'Content-Type: application/atom+xml;type=entry' \\
         -H 'CMIS-repositoryId: bedroom' \\
-        -d '<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-<atom:entry xmlns:atom=\"http://www.w3.org/2005/Atom\" xmlns:cmis=\"http://docs.oasis-open.org/ns/cmis/core/200908/\" xmlns:cmisra=\"http://docs.oasis-open.org/ns/cmis/restatom/200908/\">
-  <atom:title>Test Folder QA</atom:title>
+        -d \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>
+<atom:entry xmlns:atom=\\\"http://www.w3.org/2005/Atom\\\" xmlns:cmis=\\\"http://docs.oasis-open.org/ns/cmis/core/200908/\\\" xmlns:cmisra=\\\"http://docs.oasis-open.org/ns/cmis/restatom/200908/\\\">
+  <atom:title>\$unique_name</atom:title>
   <cmisra:object>
     <cmis:properties>
-      <cmis:propertyId propertyDefinitionId=\"cmis:objectTypeId\">
+      <cmis:propertyId propertyDefinitionId=\\\"cmis:objectTypeId\\\">
         <cmis:value>cmis:folder</cmis:value>
       </cmis:propertyId>
-      <cmis:propertyString propertyDefinitionId=\"cmis:name\">
-        <cmis:value>test-folder</cmis:value>
+      <cmis:propertyString propertyDefinitionId=\\\"cmis:name\\\">
+        <cmis:value>\$unique_name</cmis:value>
       </cmis:propertyString>
     </cmis:properties>
   </cmisra:object>
-</atom:entry>' \\
+</atom:entry>\" \\
         \"$BASE_URL/atom/bedroom/children?id=$BEDROOM_ROOT_ID\")
     if echo \"\$response\" | grep -q 'atom:entry\\|cmis:objectId'; then echo 'PASS'; else echo 'FAIL'; fi
 " "PASS"

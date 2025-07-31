@@ -199,7 +199,21 @@ public class ObjectServiceImpl implements ObjectService {
 					"getContentStream cannnot be invoked to other than document type.");
 		}
 		Document document = (Document) content;
-		exceptionService.constraintContentStreamDownload(repositoryId, document);
+		
+		// Enhanced debugging for TCK failures
+		System.err.println("=== GET CONTENT STREAM INTERNAL DEBUG ===");
+		System.err.println("Document ID: " + document.getId());
+		System.err.println("Document Name: " + document.getName());
+		System.err.println("AttachmentNodeId: " + document.getAttachmentNodeId());
+		System.err.println("Repository ID: " + repositoryId);
+		
+		try {
+			exceptionService.constraintContentStreamDownload(repositoryId, document);
+			System.err.println("CONSTRAINT CHECK PASSED");
+		} catch (Exception e) {
+			System.err.println("CONSTRAINT CHECK FAILED: " + e.getMessage());
+			throw e;
+		}
 		AttachmentNode attachment = contentService.getAttachment(repositoryId, document.getAttachmentNodeId());
 		attachment.setRangeOffset(rangeOffset);
 		attachment.setRangeLength(rangeLength);
