@@ -106,15 +106,27 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
           alignItems: 'center', 
           justifyContent: 'center',
           borderBottom: '1px solid #f0f0f0',
-          background: '#cccccc'
+          background: '#f0f8ff',
+          padding: '8px'
         }}>
           {!collapsed && (
-            <h3 style={{ color: '#c72439', margin: 0, fontWeight: 'bold' }}>
-              NemakiWare
-            </h3>
+            <img 
+              src="/core/ui/dist/logo2.png?v=20250802" 
+              alt="NemakiWare" 
+              style={{ 
+                height: '45px', 
+                width: 'auto',
+                objectFit: 'contain'
+              }} 
+            />
           )}
           {collapsed && (
-            <div style={{ color: '#c72439', fontSize: '18px', fontWeight: 'bold' }}>
+            <div style={{ 
+              color: '#1890ff', 
+              fontSize: '20px', 
+              fontWeight: 'bold',
+              fontFamily: 'serif'
+            }}>
               N
             </div>
           )}

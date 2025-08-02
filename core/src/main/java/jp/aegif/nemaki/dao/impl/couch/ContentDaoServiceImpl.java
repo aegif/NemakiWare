@@ -1278,6 +1278,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					Map<String, Object> docMap = (Map<String, Object>) rawDoc;
 					log.info("Document contains userId: " + docMap.get("userId") + ", admin: " + docMap.get("admin"));
 					
+					// SECURITY FIX: Validate that returned user actually matches requested userId
+					String returnedUserId = (String) docMap.get("userId");
+					if (!userId.equals(returnedUserId)) {
+						log.warn("SECURITY WARNING: Requested userId '" + userId + "' but got userId '" + returnedUserId + "' - returning null");
+						return null;
+					}
+					
 					// Use the Map-based constructor we created
 					CouchUserItem cui = new CouchUserItem(docMap);
 					
@@ -1403,9 +1410,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<GroupItem> getGroupItems(String repositoryId) {
 		try {
-			// Use ViewQuery to get all group items
+			// Use ViewQuery to get all group items from groupItemsById view
 			Map<String, Object> queryParams = new HashMap<String, Object>();
-			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "groupItems", queryParams);
+			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "groupItemsById", queryParams);
 			
 			List<GroupItem> groupItems = new ArrayList<GroupItem>();
 			

@@ -816,8 +816,20 @@ public class CloudantClientWrapper {
 					}
 				}
 				
-				log.debug("Executed view query " + designDoc + "/" + viewName + " with key: " + key + " (filtered " + filteredRows.size() + " from " + result.getRows().size() + " results)");
-				return result;
+				// CRITICAL FIX: Return null if no matching key found (proper CouchDB behavior)
+				log.debug("SECURITY FIX: Executed view query " + designDoc + "/" + viewName + " with key: " + key + " (filtered " + filteredRows.size() + " from " + result.getRows().size() + " results)");
+				
+				if (filteredRows.isEmpty()) {
+					// No matching key found - return null to indicate no results
+					log.debug("SECURITY FIX: No matching key found for: " + key + " - returning null");
+					return null;
+				} else {
+					// Create a ViewResult with only the matching rows
+					// Since we cannot create new ViewResult, we modify the existing one
+					result.getRows().clear();
+					result.getRows().addAll(filteredRows);
+					return result;
+				}
 			}
 			
 			log.debug("Executed view query " + designDoc + "/" + viewName + " (returned " + result.getRows().size() + " results)");
