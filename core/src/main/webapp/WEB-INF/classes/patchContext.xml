@@ -25,6 +25,12 @@
 	<bean id="cmisPostInitializer" class="jp.aegif.nemaki.init.CMISPostInitializer">
 		<property name="cmisPatchList">
 			<list>
+				<!-- CRITICAL: System folder must be created first for other patches to work -->
+				<bean class="jp.aegif.nemaki.patch.Patch_SystemFolderSetup">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 				<!-- CMIS-specific patches that require running services -->
 				<bean class="jp.aegif.nemaki.patch.Patch_InitialFolderSetup">
 					<property name="patchUtil">
@@ -41,6 +47,11 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<bean class="jp.aegif.nemaki.patch.Patch_TestUserInitialization">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 			</list>
 		</property>
 	</bean>
@@ -51,7 +62,7 @@
 		NOTE: Database initialization (Phase 1) is now handled by DatabasePreInitializer
 		This service focuses only on CMIS operations that may be invoked manually.
 	-->
-	<bean id="PatchService" class="jp.aegif.nemaki.patch.PatchService" init-method="applyPatchesOnStartup">
+	<bean id="PatchService" class="jp.aegif.nemaki.patch.PatchService">
 		<property name="repositoryInfoMap">
 			<ref bean="repositoryInfoMap" />
 		</property>
@@ -69,27 +80,10 @@
 		</property>
 		<property name="patchList">
 			<list>
-				<!-- Individual patches consolidated into initialization data -->
-				<!-- Future patches can be added here when needed -->
-				<!-- Re-enabled for proper initial data creation -->
-				<!-- DEBUG: Using inline bean definition instead of ref to avoid bean resolution issues -->
-				<bean class="jp.aegif.nemaki.patch.Patch_InitialFolderSetup">
-					<property name="patchUtil">
-						<ref bean="patchUtil" />
-					</property>
-				</bean>
-				<!-- Standard CMIS Views Patch - adds missing CMIS 1.1 specification views -->
-				<bean class="jp.aegif.nemaki.patch.Patch_StandardCmisViews">
-					<property name="patchUtil">
-						<ref bean="patchUtil" />
-					</property>
-				</bean>
-				<!-- Relationship Types Setup Patch - registers standard relationship types -->
-				<bean class="jp.aegif.nemaki.patch.Patch_RelationshipTypesSetup">
-					<property name="patchUtil">
-						<ref bean="patchUtil" />
-					</property>
-				</bean>
+				<!-- CRITICAL FIX: Removed duplicate patch execution to prevent folder duplication -->
+				<!-- All CMIS patches are now exclusively handled by CMISPostInitializer to prevent double execution -->
+				<!-- This PatchService is kept for manual patch operations only -->
+				<!-- Future patches can be added here if they need manual execution -->
 			</list>
 		</property>
 	</bean>

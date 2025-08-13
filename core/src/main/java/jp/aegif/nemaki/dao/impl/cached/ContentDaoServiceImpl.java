@@ -84,18 +84,27 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	// ///////////////////////////////////////
 	@Override
 	public List<NemakiTypeDefinition> getTypeDefinitions(String repositoryId) {
+		System.err.println("=== CACHED CONTENT DAO GET TYPE DEFINITIONS ===");
+		System.err.println("Repository ID: " + repositoryId);
+		
 		NemakiCache<List<NemakiTypeDefinition>> typeCache = nemakiCachePool.get(repositoryId).getTypeCache();
 		List<NemakiTypeDefinition> v = typeCache.get("typedefs");
 
 		if (v != null) {
-			return v;
+			System.err.println("Found cached typedefs: " + v.size() + " types");
+			// TEMPORARILY FORCE CACHE MISS TO TEST COUCH DAO DIRECTLY
+			System.err.println("DEBUG: FORCING CACHE MISS TO TEST COUCH DAO DIRECTLY");
+			// return v;
 		}
 
+		System.err.println("No cached typedefs, calling nonCachedContentDaoService...");
 		List<NemakiTypeDefinition> result = nonCachedContentDaoService.getTypeDefinitions(repositoryId);
+		System.err.println("Result from nonCachedContentDaoService: " + (result != null ? result.size() + " types" : "null"));
 
 		if (CollectionUtils.isEmpty(result)) {
 			return null;
 		} else {
+			System.err.println("Caching " + result.size() + " types for repository: " + repositoryId);
 			typeCache.put(new Element("typedefs", result));
 			return result;
 		}
@@ -124,12 +133,34 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public NemakiTypeDefinition createTypeDefinition(String repositoryId, NemakiTypeDefinition typeDefinition) {
+		System.err.println("=== CACHED DAO: createTypeDefinition called for repositoryId: " + repositoryId + " ===");
+		
 		NemakiTypeDefinition nt = nonCachedContentDaoService.createTypeDefinition(repositoryId, typeDefinition);
+		
 		// Invalidate both type and property definition caches
 		NemakiCache<List<NemakiTypeDefinition>> typeCache = nemakiCachePool.get(repositoryId).getTypeCache();
 		typeCache.remove("typedefs");
 		// Clear property definition cache since type changes affect property definitions
 		nemakiCachePool.get(repositoryId).getPropertyDefinitionCache().removeAll();
+		
+		// CRITICAL FIX: Refresh TypeManager cache to handle TCK tests that bypass RepositoryService
+		// TCK tests directly call DAO layer, so we must ensure TypeManager cache is refreshed here
+		try {
+			jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager = 
+				(jp.aegif.nemaki.cmis.aspect.type.TypeManager) jp.aegif.nemaki.util.spring.SpringContext.getBean("typeManager");
+			
+			if (typeManager != null) {
+				System.err.println("=== CACHED DAO: Refreshing TypeManager cache after type creation ===");
+				typeManager.refreshTypes();
+				System.err.println("=== CACHED DAO: TypeManager cache refresh completed ===");
+			} else {
+				System.err.println("=== CACHED DAO ERROR: TypeManager not found in SpringContext ===");
+			}
+		} catch (Exception e) {
+			System.err.println("=== CACHED DAO ERROR: Failed to refresh TypeManager cache: " + e.getMessage() + " ===");
+			e.printStackTrace();
+		}
+		
 		return nt;
 	}
 

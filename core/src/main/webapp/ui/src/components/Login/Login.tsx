@@ -64,13 +64,16 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   };
 
   const handleSubmit = async (values: { username: string; password: string; repositoryId: string }) => {
+    console.log('LOGIN DEBUG: Starting login with:', { username: values.username, repositoryId: values.repositoryId });
     setLoading(true);
     setError(null);
 
     try {
       const auth = await authService.login(values.username, values.password, values.repositoryId);
+      console.log('LOGIN DEBUG: Login successful:', auth);
       onLogin(auth);
     } catch (error) {
+      console.log('LOGIN DEBUG: Login failed:', error);
       setError('ログインに失敗しました。ユーザー名、パスワード、リポジトリIDを確認してください。');
     } finally {
       setLoading(false);
@@ -152,7 +155,16 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
       <Card 
         title={
           <div style={{ textAlign: 'center' }}>
-            <h2 style={{ color: '#c72439', margin: 0 }}>NemakiWare</h2>
+            <img 
+              src="/core/ui/dist/logo1.png" 
+              alt="NemakiWare" 
+              style={{ 
+                height: '80px', 
+                width: 'auto',
+                objectFit: 'contain',
+                margin: '8px 0'
+              }} 
+            />
             <p style={{ color: '#666', margin: '8px 0 0 0' }}>CMIS Document Management System</p>
           </div>
         }

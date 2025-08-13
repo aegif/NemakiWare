@@ -75,6 +75,7 @@ import org.springframework.context.ApplicationContextAware;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
+import jp.aegif.nemaki.businesslogic.TypeService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
@@ -84,6 +85,7 @@ import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Change;
 import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.model.NemakiTypeDefinition;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.UserItem;
@@ -97,6 +99,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 		ApplicationContextAware {
 	private TypeManager typeManager;
 	private ContentService contentService;
+	private TypeService typeService;
 	private PermissionService permissionService;
 	private RepositoryInfoMap repositoryInfoMap;
 	private PrincipalService principalService;
@@ -270,13 +273,68 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void invalidArgumentDoesNotExistType(String repositoryId, String typeId) {
+		System.err.println("=== EXCEPTION SERVICE TYPE EXISTENCE CHECK ===");
+		System.err.println("Repository ID: " + repositoryId);
+		System.err.println("Type ID: " + typeId);
+		System.err.println("Timestamp: " + new java.util.Date());
+		
+		// Add detailed stack trace to understand who called this method
+		System.err.println("=== CALLER STACK TRACE ===");
+		StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
+		for (int i = 0; i < Math.min(10, stackTrace.length); i++) {
+			System.err.println("  " + i + ": " + stackTrace[i]);
+		}
+		System.err.println("=== END STACK TRACE ===");
+		
 		String msg = "";
 
 		TypeDefinition type = typeManager.getTypeDefinition(repositoryId, typeId);
+		System.err.println("TypeManager result: " + (type != null ? "FOUND (ID=" + type.getId() + ")" : "NOT FOUND"));
+		
 		if (type == null) {
+			// Let's also check if the type exists in the database directly
+			System.err.println("TypeManager cache miss - checking database directly...");
+			try {
+				NemakiTypeDefinition dbType = typeService.getTypeDefinition(repositoryId, typeId);
+				System.err.println("Database direct check: " + (dbType != null ? "FOUND (ID=" + dbType.getTypeId() + ")" : "NOT FOUND"));
+				
+				if (dbType != null) {
+					System.err.println("CRITICAL: Type exists in database but NOT in TypeManager cache!");
+					System.err.println("This indicates a cache refresh problem.");
+					System.err.println("DB Type details - typeId: " + dbType.getTypeId() + ", parentType: " + dbType.getParentId());
+					
+					// Try to force TypeManager refresh and check again
+					System.err.println("=== ATTEMPTING TYPEMANAGER REFRESH ===");
+					try {
+						// First, let's see what types are currently in the cache
+						System.err.println("Current TypeManager cache state (before refresh):");
+						// We can't directly access TYPES map, but we can try getting some known types
+						TypeDefinition cmisDoc = typeManager.getTypeDefinition(repositoryId, "cmis:document");
+						TypeDefinition cmisFolder = typeManager.getTypeDefinition(repositoryId, "cmis:folder");
+						System.err.println("  cmis:document: " + (cmisDoc != null ? "FOUND" : "NOT FOUND"));
+						System.err.println("  cmis:folder: " + (cmisFolder != null ? "FOUND" : "NOT FOUND"));
+						
+						// Now try to force refresh by calling a method that should refresh cache
+						// Let's see if we can access refreshTypes() method
+						System.err.println("NOTE: TypeManager cache state issue detected - type exists in DB but not in cache");
+						
+					} catch (Exception refreshException) {
+						System.err.println("Exception during TypeManager cache analysis: " + refreshException.getMessage());
+						refreshException.printStackTrace();
+					}
+					System.err.println("=== END TYPEMANAGER REFRESH ATTEMPT ===");
+				}
+			} catch (Exception e) {
+				System.err.println("Database direct check failed: " + e.getMessage());
+				e.printStackTrace();
+			}
+			
+			System.err.println("=== FINAL DECISION: THROWING 'Specified type does not exist' ERROR ===");
 			msg = "Specified type does not exist";
 			msg = msg + " [objectTypeId = " + typeId + "]";
 			invalidArgument(msg);
+		} else {
+			System.err.println("=== SUCCESS: Type found in TypeManager cache ===");
 		}
 	}
 
@@ -359,21 +417,58 @@ public class ExceptionServiceImpl implements ExceptionService,
 	public void permissionDenied(CallContext context, String repositoryId,
 			String key, Content content) {
 
+		// CRITICAL DEBUG: Method entry point
+		try {
+			java.io.FileWriter debugWriter = new java.io.FileWriter("/tmp/nemaki-auth-debug.log", true);
+			debugWriter.write("=== EXCEPTION SERVICE PERMISSION DENIED ENTRY ===\n");
+			debugWriter.write("Timestamp: " + new java.util.Date() + "\n");
+			debugWriter.write("User: " + context.getUsername() + "\n");
+			debugWriter.write("Key: " + key + "\n");
+			debugWriter.write("Content: " + content.getId() + "\n");
+			debugWriter.close();
+		} catch (Exception e) {}
+
 		// Admin user always pass a permission check(skip calculateAcl)
 		String userId = context.getUsername();
+		log.error("PERMISSION DEBUG: ExceptionServiceImpl.permissionDenied called for user=" + userId + ", key=" + key + ", content=" + content.getId());
+		System.out.println("PERMISSION DEBUG: ExceptionServiceImpl.permissionDenied called for user=" + userId + ", key=" + key + ", content=" + content.getId());
+		
 		UserItem u = contentService.getUserItemById(repositoryId, userId);
-		if (u != null && u.isAdmin()) return;
+		if (u != null && u.isAdmin()) {
+			log.info("ExceptionServiceImpl.permissionDenied: user " + userId + " is admin, granting access");
+			return;
+		}
 
 		String baseTypeId = content.getType();
 		Acl acl = contentService.calculateAcl(repositoryId, content);
+		log.info("ExceptionServiceImpl.permissionDenied: Calculated ACL for content " + content.getId() + ", ACL has " + (acl != null ? acl.getAllAces().size() : 0) + " ACEs");
+		
 		permissionDeniedInternal(context, repositoryId, key, acl, baseTypeId, content);
 		permissionTopLevelFolder(context, repositoryId, key, content);
 	}
 
 	private void permissionDeniedInternal(CallContext callContext, String repositoryId,
-			String key, Acl acl, String baseTypeId, Content content) {
-
-		if (!permissionService.checkPermission(callContext, repositoryId, key, acl, baseTypeId, content)) {
+			String key, Acl acl, String baseTypeId, Content content) {		// CRITICAL DEBUG: About to check permission in permissionDeniedInternal
+		try {
+			java.io.FileWriter debugWriter = new java.io.FileWriter("/tmp/nemaki-auth-debug.log", true);
+			debugWriter.write("=== PERMISSION DENIED INTERNAL DEBUG ===\n");
+			debugWriter.write("Timestamp: " + new java.util.Date() + "\n");
+			debugWriter.write("User: " + callContext.getUsername() + "\n");
+			debugWriter.write("Key: " + key + "\n");
+			debugWriter.write("Content: " + content.getId() + " (" + content.getName() + ")\n");
+			debugWriter.write("About to call permissionService.checkPermission()\n");
+			debugWriter.close();
+		} catch (Exception e) {}
+		
+		boolean permissionResult = permissionService.checkPermission(callContext, repositoryId, key, acl, baseTypeId, content);
+		
+		try {
+			java.io.FileWriter debugWriter = new java.io.FileWriter("/tmp/nemaki-auth-debug.log", true);
+			debugWriter.write("Permission check result: " + permissionResult + "\n");
+			debugWriter.close();
+		} catch (Exception e) {}
+		
+		if (!permissionResult) {
 			String msg = String.format( "Permission Denied! repositoryId=%s key=%s acl=%s  content={id:%s, name:%s} ", repositoryId, key, acl, content.getId(), content.getName()) ;
 			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
 		}
@@ -1227,14 +1322,38 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void updateConflict(Content content, Holder<String> changeToken) {
-		if ((changeToken == null || changeToken.getValue() == null)) {
+		// CHANGE TOKEN FIX: Handle null change tokens properly for NemakiWare
+		// NemakiWare often sets change token to null, which becomes "null" string in properties
+		String contentChangeToken = content.getChangeToken();
+		String requestChangeToken = (changeToken != null) ? changeToken.getValue() : null;
+		
+		// If both are null or "null", allow the update (no conflict)
+		if (isNullOrNullString(contentChangeToken) && isNullOrNullString(requestChangeToken)) {
+			// No change token enforcement when both are null - allow update
+			return;
+		}
+		
+		// If request has no change token but content has one, require it
+		if (isNullOrNullString(requestChangeToken) && !isNullOrNullString(contentChangeToken)) {
 			throw new CmisUpdateConflictException(
 					"Change token is required to update", HTTP_STATUS_CODE_409);
-		} else if (!changeToken.getValue().equals(content.getChangeToken())) {
+		}
+		
+		// If change tokens don't match, conflict detected
+		if (!java.util.Objects.equals(requestChangeToken, contentChangeToken) && 
+			!java.util.Objects.equals(requestChangeToken, "null") && 
+			!java.util.Objects.equals(contentChangeToken, "null")) {
 			throw new CmisUpdateConflictException(
 					"Cannot update because the changeToken conflicts",
 					HTTP_STATUS_CODE_409);
 		}
+	}
+
+	/**
+	 * Helper method to check if a change token is null or "null" string
+	 */
+	private boolean isNullOrNullString(String token) {
+		return token == null || "null".equals(token);
 	}
 
 	private String buildMsgWithId(String msg, String objectId) {
@@ -1281,5 +1400,9 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	public void setPropertyManager(PropertyManager propertyManager) {
 		this.propertyManager = propertyManager;
+	}
+
+	public void setTypeService(TypeService typeService) {
+		this.typeService = typeService;
 	}
 }

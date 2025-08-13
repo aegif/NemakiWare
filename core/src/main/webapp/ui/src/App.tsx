@@ -16,7 +16,7 @@ import { ProtectedRoute } from './components/ProtectedRoute/ProtectedRoute';
 
 const customTheme = {
   token: {
-    colorPrimary: '#c72439',
+    colorPrimary: '#1890ff',
     colorBgContainer: '#ffffff',
     colorBgLayout: '#f5f5f5',
     colorBorder: '#cccccc',

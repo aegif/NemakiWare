@@ -105,6 +105,20 @@ public class NemakiAuthCallContextHandler extends org.apache.chemistry.opencmis.
 		ctxMap.put(CallContextKey.AUTH_TOKEN_APP, request.getHeader(CallContextKey.AUTH_TOKEN_APP));
 		
 		log.info("Call context map created with " + ctxMap.size() + " entries");
+		
+		// CRITICAL DEBUG: User authentication flow debugging
+		String username = ctxMap.get(CallContext.USERNAME);
+		if (username != null) {
+			try {
+				java.io.FileWriter debugWriter = new java.io.FileWriter("/tmp/nemaki-auth-debug.log", true);
+				debugWriter.write("=== CALL CONTEXT MAP CREATED ===\n");
+				debugWriter.write("Timestamp: " + new java.util.Date() + "\n");
+				debugWriter.write("Username extracted: " + username + "\n");
+				debugWriter.write("Context map size: " + ctxMap.size() + "\n");
+				debugWriter.close();
+			} catch (Exception e) {}
+		}
+		
 		return ctxMap;
 	}
 }

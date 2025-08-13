@@ -45,17 +45,50 @@ public class PatchUtil {
 	}
 
 	protected boolean isApplied(String repositoryId, String name){
-		// During Cloudant migration, assume all patches are not applied
-		// This allows patches to run during startup
-		// TODO: Implement proper patch history tracking with Cloudant SDK
-		System.out.println("isApplied for patch '" + name + "' in repository '" + repositoryId + "' - returning false (patches will always run during Cloudant migration)");
-		return false;
+		try {
+			System.out.println("Checking if patch '" + name + "' is applied in repository '" + repositoryId + "'");
+			
+			// Use ContentDaoService to query patch history by name
+			PatchHistory patchHistory = contentDaoService.getPatchHistoryByName(repositoryId, name);
+			
+			if (patchHistory == null) {
+				System.out.println("No patch history found for '" + name + "' - patch not applied");
+				return false;
+			}
+			
+			boolean applied = patchHistory.isApplied();
+			System.out.println("Patch '" + name + "' status: " + (applied ? "APPLIED" : "NOT APPLIED"));
+			return applied;
+			
+		} catch (Exception e) {
+			System.err.println("Error checking patch history for '" + name + "': " + e.getMessage());
+			e.printStackTrace();
+			// In case of error, assume patch is not applied to allow re-execution
+			return false;
+		}
 	}
 
 	protected void createPathHistory(String repositoryId, String name){
-		// During Cloudant migration, skip patch history creation
-		// TODO: Implement proper patch history tracking with Cloudant SDK
-		System.out.println("createPathHistory for patch '" + name + "' in repository '" + repositoryId + "' - skipping during Cloudant migration");
+		try {
+			System.out.println("Creating patch history for '" + name + "' in repository '" + repositoryId + "'");
+			
+			// Check if patch history already exists
+			PatchHistory existingHistory = contentDaoService.getPatchHistoryByName(repositoryId, name);
+			if (existingHistory != null) {
+				System.out.println("Patch history for '" + name + "' already exists - updating status to applied");
+				existingHistory.setIsApplied(true);
+				contentDaoService.update(repositoryId, existingHistory);
+			} else {
+				System.out.println("Creating new patch history for '" + name + "'");
+				PatchHistory patchHistory = new PatchHistory(name, true);
+				contentDaoService.create(repositoryId, patchHistory);
+			}
+			
+			System.out.println("Patch history for '" + name + "' successfully created/updated");
+		} catch (Exception e) {
+			System.err.println("Error creating patch history for '" + name + "': " + e.getMessage());
+			e.printStackTrace();
+		}
 	}
 
 	protected void addDb(String dbName){

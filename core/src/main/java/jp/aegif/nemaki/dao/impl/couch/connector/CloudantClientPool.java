@@ -65,7 +65,8 @@ public class CloudantClientPool {
 				return;
 			}
 
-			log.info("Initializing Cloudant client pool...");
+			System.out.println("=== CLOUDANT CLIENT POOL: Initializing Cloudant client pool... ===");
+		log.info("Initializing Cloudant client pool...");
 			
 			// Try to resolve hostname dynamically for different environments
 			String resolvedUrl = resolveUrl();
@@ -225,6 +226,15 @@ public class CloudantClientPool {
 	 * Initialize repository connections
 	 */
 	private void initializeRepositories(Cloudant cloudantClient) {
+		// CRITICAL FIX: Initialize nemaki_conf system database first
+		// This database is used by PropertyManager but is not in repositoryInfoMap
+		System.out.println("=== CLOUDANT CLIENT POOL: Initializing system configuration database: nemaki_conf ===");
+		log.info("Initializing system configuration database: nemaki_conf");
+		CloudantClientWrapper nemakiConfWrapper = new CloudantClientWrapper(cloudantClient, "nemaki_conf", couchdbObjectMapper);
+		pool.put("nemaki_conf", nemakiConfWrapper);
+		verifyDatabase(nemakiConfWrapper, "nemaki_conf");
+		
+		// Initialize CMIS repositories from repositoryInfoMap
 		if (repositoryInfoMap != null) {
 			java.util.Set<String> repositoryIdSet = repositoryInfoMap.keys();
 			List<String> repositoryIds = new ArrayList<String>(repositoryIdSet);

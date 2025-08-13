@@ -138,30 +138,32 @@ public class PermissionServiceImpl implements PermissionService {
 	}
 	
 	private Boolean checkPermissionInternal(CallContext callContext, String repositoryId, String key,
-			Acl acl, String baseType, Content content, String userName, Set<String> groups) {
-
-		log.info("PermissionServiceImpl.checkPermissionInternal: user=" + userName + ", key=" + key + ", content=" + content.getId() + ", groups=" + groups);
-		System.out.println("DEBUG PermissionServiceImpl.checkPermissionInternal: user=" + userName + ", key=" + key + ", content=" + content.getId() + ", groups=" + groups);
+		Acl acl, String baseType, Content content, String userName, Set<String> groups) {
+	// DEBUG LOGGING for non-admin users permission issues
+	UserItem u = contentService.getUserItemById(repositoryId, userName);
+	boolean isAdmin = (u != null && u.isAdmin());
+	
+	if (!isAdmin) {
+		// CRITICAL DEBUG: Use ERROR level to ensure visibility in logs
+		log.error("PERMISSION DEBUG: checkPermissionInternal called for non-admin user=" + userName + ", key=" + key + ", content=" + content.getId() + ", groups=" + groups);
+		System.out.println("PERMISSION DEBUG: checkPermissionInternal called for non-admin user=" + userName + ", key=" + key + ", content=" + content.getId() + ", groups=" + groups);
+	}
 
 		//All permission checks must go through baseType check
 		if(!isAllowableBaseType(key, baseType, content, repositoryId)) {
-			log.info("PermissionServiceImpl.checkPermissionInternal: baseType check failed for key=" + key + ", baseType=" + baseType);
-			// Force error log for visibility
-			log.debug("baseType check FAILED - key=" + key + ", baseType=" + baseType + ", contentId=" + content.getId());
+			if (!isAdmin) {
+				log.debug("baseType check FAILED for user=" + userName + ", key=" + key + ", baseType=" + baseType);
+			}
 			return false;
 		}
 
 		// Admin always pass a permission check
-		UserItem u = contentService.getUserItemById(repositoryId, userName);
-		if (u != null && u.isAdmin()) {
-			log.info("PermissionServiceImpl.checkPermissionInternal: user " + userName + " is admin, granting access");
-			// Force error log for visibility
-			log.debug("Admin check SUCCESS - user=" + userName + " is admin, contentId=" + content.getId());
+		if (isAdmin) {
+			log.debug("Admin access granted for user=" + userName + ", content=" + content.getId());
 			return true;
 		}
 		
-		// Force error log if admin check fails
-		log.debug("Admin check FAILED - user=" + userName + ", userItem=" + (u != null ? "exists" : "null") + ", isAdmin=" + (u != null ? u.isAdmin() : "N/A") + ", contentId=" + content.getId());
+		log.debug("Non-admin user " + userName + " proceeding with permission checks, userItem=" + (u != null ? "exists" : "null"));
 
 		//PWC doesn't accept any actions from a non-owner user
 		//TODO admin can manipulate PWC even when it is checked out ?
@@ -197,15 +199,26 @@ public class PermissionServiceImpl implements PermissionService {
 				.collect(Collectors.toList());
 		
 		// principalAnyone
-		if(calcAnyonePermission(repositoryId, key, content, aces)) return true;
+		log.info("Checking Anyone permissions for user=" + userName + ", content=" + content.getId());
+		if(calcAnyonePermission(repositoryId, key, content, aces)) {
+			log.info("Anyone permission check PASSED for user=" + userName + ", content=" + content.getId());
+			return true;
+		}
 
 		//User permission
-		if(calcUserPermission(repositoryId, key, content, userName, aces)) return true;
+		log.info("Anyone permission check FAILED, checking user permissions for user=" + userName + ", content=" + content.getId());
+		if(calcUserPermission(repositoryId, key, content, userName, aces)) {
+			log.info("User permission check PASSED for user=" + userName + ", content=" + content.getId());
+			return true;
+		}
 		
 		groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
 
 		//Group permission
-		return calcGroupPermission(repositoryId, key, content, groups, aces);
+		log.info("User permission check FAILED, checking group permissions for user=" + userName + ", content=" + content.getId() + ", groups=" + groups);
+		boolean groupResult = calcGroupPermission(repositoryId, key, content, groups, aces);
+		log.info("Group permission check result: " + groupResult + " for user=" + userName + ", content=" + content.getId());
+		return groupResult;
 	}
 	
 	@Override
@@ -218,13 +231,27 @@ public class PermissionServiceImpl implements PermissionService {
 	private boolean calcAnyonePermission(String repositoryId, String key, Content content, List<Ace> aces){
 		Logger.info(MessageFormat.format("[{0}]CheckAnyonePermission BEGIN:{1}",content.getName(), key));
 		RepositoryInfo info = repositoryInfoMap.get(repositoryId);
-//log.info("key: " + key);
-//log.info("aces: " + aces.stream().flatMap(ace -> ace.getPermissions().stream()).toArray().toString());
+		
+		// DETAILED DEBUG LOGGING for troubleshooting
+		log.info("calcAnyonePermission: repositoryId=" + repositoryId + ", principalIdAnyone=" + info.getPrincipalIdAnyone());
+		log.info("calcAnyonePermission: Available ACEs for content " + content.getId() + ":");
+		for (Ace ace : aces) {
+			log.info("  ACE: principalId=" + ace.getPrincipalId() + ", permissions=" + ace.getPermissions());
+		}
+		
+		// CRITICAL FIX: GROUP_EVERYONE should apply to all authenticated users as virtual principal
+		// In CMIS, "Anyone" means any authenticated user automatically has these permissions
 		Set<String> anyonePermissions = aces.stream()
 				.filter(ace -> ace.getPrincipalId().equals(info.getPrincipalIdAnyone()))
 				.flatMap(ace -> ace.getPermissions().stream())
 				.collect(Collectors.toSet());
+		
+		log.info("calcAnyonePermission: Filtered Anyone permissions (" + info.getPrincipalIdAnyone() + "): " + anyonePermissions);
+		
 		boolean calcPermission =  checkCalculatedPermissions(repositoryId, key, anyonePermissions);
+		
+		log.info("calcAnyonePermission: checkCalculatedPermissions result for key '" + key + "': " + calcPermission);
+		
 		Logger.info(MessageFormat.format("[{0}]CheckAnyonePermission END:{1}",content.getName(),  calcPermission));
 		return calcPermission;
 	}

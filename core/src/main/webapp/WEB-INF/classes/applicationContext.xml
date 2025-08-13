@@ -23,7 +23,11 @@
 	<!-- Enable component scanning for REST resources after property context is loaded -->
 	<context:component-scan base-package="jp.aegif.nemaki.rest">
 		<!-- Exclude AuthenticationFilter from component scan to control initialization order -->
-		<context:exclude-filter type="regex" expression="jp.aegif.nemaki.rest.AuthenticationFilter"/>
+		<context:exclude-filter type="regex" expression="jp\.aegif\.nemaki\.rest\.AuthenticationFilter"/>
+		<!-- Exclude Spring @RestController classes that need ContentService bean -->
+		<context:exclude-filter type="regex" expression="jp\.aegif\.nemaki\.rest\.controller\..*"/>
+		<!-- Exclude provider classes that need ObjectMapper bean -->
+		<context:exclude-filter type="regex" expression="jp\.aegif\.nemaki\.rest\.provider\..*"/>
 	</context:component-scan>
 
 	<!-- AuthenticationFilter will be defined in serviceContext.xml as restAuthenticationFilter -->

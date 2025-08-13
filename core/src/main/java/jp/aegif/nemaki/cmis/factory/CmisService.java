@@ -877,12 +877,39 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 
 	@Override
 	public TypeDefinition createType(String repositoryId, TypeDefinition type, ExtensionsData extension) {
-		return repositoryService.createType(getCallContext(), repositoryId, type, extension);
+		System.err.println("=== CMIS SERVICE CREATE TYPE CALLED ===");
+		System.err.println("Repository ID: " + repositoryId);
+		System.err.println("Type ID: " + (type != null ? type.getId() : "null"));
+		System.err.println("CallContext: " + (getCallContext() != null ? getCallContext().getUsername() : "null"));
+		
+		try {
+			TypeDefinition result = repositoryService.createType(getCallContext(), repositoryId, type, extension);
+			System.err.println("CmisService.createType completed successfully");
+			return result;
+		} catch (Exception e) {
+			System.err.println("EXCEPTION in CmisService.createType: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+			e.printStackTrace();
+			throw e;
+		}
 	}
 
 	@Override
 	public void deleteType(String repositoryId, String typeId, ExtensionsData extension) {
-		repositoryService.deleteType(getCallContext(), repositoryId, typeId, extension);
+		System.err.println("=== CMIS SERVICE DELETE TYPE CALLED ===");
+		System.err.println("Repository ID: " + repositoryId);
+		System.err.println("Type ID: " + typeId);
+		System.err.println("CallContext: " + (getCallContext() != null ? getCallContext().getUsername() : "null"));
+		System.err.println("RepositoryService: " + (repositoryService != null ? repositoryService.getClass().getName() : "NULL"));
+		
+		try {
+			System.err.println("=== CALLING repositoryService.deleteType ===");
+			repositoryService.deleteType(getCallContext(), repositoryId, typeId, extension);
+			System.err.println("=== CmisService.deleteType completed successfully ===");
+		} catch (Exception e) {
+			System.err.println("EXCEPTION in CmisService.deleteType: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+			e.printStackTrace();
+			throw e;
+		}
 	}
 
 	@Override

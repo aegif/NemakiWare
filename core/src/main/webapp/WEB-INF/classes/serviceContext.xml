@@ -554,6 +554,9 @@
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
+        <property name="typeService">
+            <ref bean="TypeService" />
+        </property>
         <property name="permissionService">
             <ref bean="PermissionService" />
         </property>
@@ -624,11 +627,12 @@
         </property>
     </bean>
 
-	<bean id="groupItemResource" class="jp.aegif.nemaki.rest.GroupItemResource">
+	<!-- Commented out - REST resources will handle Spring context lookup manually -->
+	<!-- <bean id="groupItemResource" class="jp.aegif.nemaki.rest.GroupItemResource">
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
-    </bean>
+    </bean> -->
 
     <bean id="typeResource" class="jp.aegif.nemaki.rest.TypeResource">
         <property name="typeService">
@@ -645,14 +649,15 @@
         </property>
     </bean>
 
-    <bean id="userItemResource" class="jp.aegif.nemaki.rest.UserItemResource">
+    <!-- Commented out - REST resources will handle Spring context lookup manually -->
+    <!-- <bean id="userItemResource" class="jp.aegif.nemaki.rest.UserItemResource">
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
          <property name="propertyManager">
             <ref bean="propertyManager" />
         </property>
-    </bean>
+    </bean> -->
 
     <bean id="configResource" class="jp.aegif.nemaki.rest.ConfigResource">
         <property name="contentDaoService">
@@ -740,5 +745,19 @@
         </property>
     </bean>
 
+    <!-- REST API Resource Beans with explicit Spring DI -->
+    <bean id="userItemResource" class="jp.aegif.nemaki.rest.UserItemResource">
+        <property name="contentService" ref="ContentService" />
+        <property name="propertyManager" ref="propertyManager" />
+    </bean>
+
+    <bean id="groupItemResource" class="jp.aegif.nemaki.rest.GroupItemResource">
+        <property name="contentService" ref="ContentService" />
+    </bean>
+
+    <bean id="permissionResource" class="jp.aegif.nemaki.rest.PermissionResource">
+        <property name="contentService" ref="ContentService" />
+        <property name="aclService" ref="AclService" />
+    </bean>
 
 </beans>

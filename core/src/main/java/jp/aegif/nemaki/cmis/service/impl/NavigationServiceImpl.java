@@ -80,6 +80,17 @@ public class NavigationServiceImpl implements NavigationService {
 			// //////////////////
 			Folder folder = contentService.getFolder(repositoryId, folderId);
 			exceptionService.invalidArgumentFolderId(folder, folderId);
+			// CRITICAL DEBUG: About to call permissionDenied for getChildren
+			try {
+				java.io.FileWriter debugWriter = new java.io.FileWriter("/tmp/nemaki-auth-debug.log", true);
+				debugWriter.write("=== NAVIGATION SERVICE DEBUG ===\n");
+				debugWriter.write("Timestamp: " + new java.util.Date() + "\n");
+				debugWriter.write("User: " + callContext.getUsername() + "\n");
+				debugWriter.write("About to call exceptionService.permissionDenied for CAN_GET_CHILDREN_FOLDER\n");
+				debugWriter.write("Folder ID: " + folderId + "\n");
+				debugWriter.close();
+			} catch (Exception e) {}
+			
 			exceptionService.permissionDenied(callContext,
 					repositoryId, PermissionMapping.CAN_GET_CHILDREN_FOLDER, folder);
 

@@ -198,7 +198,33 @@ public class CouchAttachmentNode extends CouchNodeBase{
 		a.setLength(getActualLength());
 		// CRITICAL FIX: Use actual MIME type from CouchDB _attachments instead of stored field
 		a.setMimeType(getActualMimeType());
-	
+		
+		// CRITICAL FIX FOR JAVA 17 MIGRATION: Set InputStream from CouchDB attachment
+		// This was broken during Java 17/Jakarta EE migration - InputStream was never retrieved
+		try {
+			// Get CloudantClientWrapper from Spring context
+			jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper client = 
+				jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
+					.getBean("CloudantClientWrapper", jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper.class);
+			
+			if (client != null && getId() != null) {
+				// Get the actual binary attachment from CouchDB
+				Object attachmentData = client.getAttachment(getId(), "content");
+				
+				if (attachmentData instanceof java.io.InputStream) {
+					a.setInputStream((java.io.InputStream) attachmentData);
+				} else {
+					// Log warning but don't fail the conversion
+					System.err.println("WARNING: CouchDB attachment for " + getId() + " is not InputStream: " + 
+						(attachmentData != null ? attachmentData.getClass().getSimpleName() : "NULL"));
+				}
+			}
+		} catch (Exception e) {
+			// Log error but don't fail the conversion - allows system to continue working
+			System.err.println("ERROR: Failed to retrieve InputStream for attachment " + getId() + ": " + e.getMessage());
+			e.printStackTrace();
+		}
+
 		return a;
 	}
 	

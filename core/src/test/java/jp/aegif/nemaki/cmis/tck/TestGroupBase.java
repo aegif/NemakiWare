@@ -86,40 +86,79 @@ public class TestGroupBase extends AbstractRunner {
 	private static void checkForFailures(JUnitRunner runner) {
 		for (CmisTestGroup group : runner.getGroups()) {
 			for (CmisTest test : group.getTests()) {
-				// CRITICAL DEBUG: Print ALL results, not just failures
-				System.err.println("=== TCK TEST RESULT ANALYSIS: " + test.getName() + " ===");
-				System.err.println("Total results count: " + test.getResults().size());
+				// CRITICAL DEBUG: Print ALL results, not just failures - ALWAYS SHOW ANALYSIS
+				System.out.println("=== TCK TEST RESULT ANALYSIS: " + test.getName() + " ===");
+				System.out.println("Total results count: " + test.getResults().size());
+				System.out.println("Test class: " + test.getClass().getName());
 				
+				// Also write to file for debugging
+				try (java.io.PrintWriter fileOut = new java.io.PrintWriter(new java.io.FileWriter("/tmp/tck-debug.log", true))) {
+					fileOut.println("=== TCK TEST RESULT ANALYSIS: " + test.getName() + " ===");
+					fileOut.println("Total results count: " + test.getResults().size());
+					fileOut.println("Test class: " + test.getClass().getName());
+				} catch (Exception e) {
+					System.err.println("Failed to write debug log: " + e.getMessage());
+				}
+				
+				boolean hasFailures = false;
 				for (int i = 0; i < test.getResults().size(); i++) {
 					CmisTestResult result = test.getResults().get(i);
-					System.err.println("\n--- Result #" + i + " ---");
-					System.err.println("  Status: " + result.getStatus() + " (level=" + result.getStatus().getLevel() + ")");
-					System.err.println("  Message: '" + result.getMessage() + "'");
-					System.err.println("  URL: " + result.getUrl());
-					System.err.println("  Request: " + result.getRequest());
-					System.err.println("  Response: " + result.getResponse());
-					System.err.println("  Children count: " + (result.getChildren() != null ? result.getChildren().size() : "null"));
+					System.out.println("\n--- Result #" + i + " ---");
+					System.out.println("  Status: " + result.getStatus() + " (level=" + result.getStatus().getLevel() + ")");
+					System.out.println("  Message: '" + result.getMessage() + "'");
+					System.out.println("  URL: " + result.getUrl());
+					System.out.println("  Request: " + result.getRequest());
+					System.out.println("  Response: " + result.getResponse());
+					System.out.println("  Children count: " + (result.getChildren() != null ? result.getChildren().size() : "null"));
+					
+					// Write to debug file
+					try (java.io.PrintWriter fileOut = new java.io.PrintWriter(new java.io.FileWriter("/tmp/tck-debug.log", true))) {
+						fileOut.println("\n--- Result #" + i + " ---");
+						fileOut.println("  Status: " + result.getStatus() + " (level=" + result.getStatus().getLevel() + ")");
+						fileOut.println("  Message: '" + result.getMessage() + "'");
+						fileOut.println("  Children count: " + (result.getChildren() != null ? result.getChildren().size() : "null"));
+					} catch (Exception e) {}
 					
 					// Print child results if any
 					if (result.getChildren() != null && !result.getChildren().isEmpty()) {
+						System.out.println("  === CHILD RESULTS ===");
+						try (java.io.PrintWriter fileOut = new java.io.PrintWriter(new java.io.FileWriter("/tmp/tck-debug.log", true))) {
+							fileOut.println("  === CHILD RESULTS ===");
+						} catch (Exception e) {}
+						
 						for (int j = 0; j < result.getChildren().size(); j++) {
 							CmisTestResult child = result.getChildren().get(j);
-							System.err.println("    Child #" + j + ": " + child.getStatus() + " - " + child.getMessage());
+							System.out.println("    Child #" + j + ": " + child.getStatus() + " - " + child.getMessage());
+							try (java.io.PrintWriter fileOut = new java.io.PrintWriter(new java.io.FileWriter("/tmp/tck-debug.log", true))) {
+								fileOut.println("    Child #" + j + ": " + child.getStatus() + " - " + child.getMessage());
+							} catch (Exception e) {}
+							
+							if (child.getStatus().getLevel() >= CmisTestResultStatus.WARNING.getLevel()) {
+								System.out.println("      *** CHILD WARNING/FAILURE ***");
+								try (java.io.PrintWriter fileOut = new java.io.PrintWriter(new java.io.FileWriter("/tmp/tck-debug.log", true))) {
+									fileOut.println("      *** CHILD WARNING/FAILURE ***");
+								} catch (Exception e) {}
+							}
 						}
 					}
 					
 					if (result.getException() != null) {
-						System.err.println("  Exception: " + result.getException().getMessage());
-						result.getException().printStackTrace(System.err);
+						System.out.println("  Exception: " + result.getException().getMessage());
+						result.getException().printStackTrace();
 					}
 					
 					// Check if this is a failure result
 					if (result.getStatus().getLevel() >= CmisTestResultStatus.FAILURE.getLevel()) {
-						System.err.println("*** FAILURE DETECTED ***");
-						Assert.fail("TCK FAILURE - " + result.getMessage());
+						System.out.println("*** ROOT LEVEL FAILURE DETECTED ***");
+						hasFailures = true;
 					}
 				}
-				System.err.println("=== END TCK TEST RESULT ANALYSIS ===\n");
+				System.out.println("=== END TCK TEST RESULT ANALYSIS ===\n");
+				
+				// Only fail the test if we found actual failures
+				if (hasFailures) {
+					Assert.fail("TCK FAILURE detected in test: " + test.getName());
+				}
 			}
 		}
 	}

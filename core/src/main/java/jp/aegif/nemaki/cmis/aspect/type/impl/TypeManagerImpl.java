@@ -71,6 +71,7 @@ import org.apache.chemistry.opencmis.commons.impl.dataobjects.TypeMutabilityImpl
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
 
 /**
  * Type Manager class
@@ -180,6 +181,10 @@ public class TypeManagerImpl implements TypeManager {
 	@Override
 	public void refreshTypes() {
 		synchronized (initLock) {
+			// CRITICAL DEBUG: Add extensive logging for cache refresh
+			log.info("NEMAKI TYPE DEBUG: refreshTypes() called - clearing and rebuilding cache");
+			System.out.println("NEMAKI TYPE DEBUG: refreshTypes() called - clearing and rebuilding cache");
+			
 			// Reset initialization flag to force re-initialization
 			initialized = false;
 			
@@ -194,7 +199,23 @@ public class TypeManagerImpl implements TypeManager {
 			propertyDefinitionCoresForQueryName.clear();
 			propertyDefinitionCoresForQueryName = new HashMap<String, PropertyDefinition<?>>();
 
+			log.info("NEMAKI TYPE DEBUG: Starting cache regeneration...");
+			System.out.println("NEMAKI TYPE DEBUG: Starting cache regeneration...");
+			
 			generate();
+			
+			log.info("NEMAKI TYPE DEBUG: Cache regeneration complete");
+			System.out.println("NEMAKI TYPE DEBUG: Cache regeneration complete");
+			
+			// Log final cache state
+			for (String repositoryId : TYPES.keySet()) {
+				Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
+				log.info("NEMAKI TYPE DEBUG: Repository " + repositoryId + " now has " + types.size() + " types in cache");
+				System.out.println("NEMAKI TYPE DEBUG: Repository " + repositoryId + " now has " + types.size() + " types in cache");
+				log.info("NEMAKI TYPE DEBUG: Type IDs after refresh: " + types.keySet());
+				System.out.println("NEMAKI TYPE DEBUG: Type IDs after refresh: " + types.keySet());
+			}
+			
 			initialized = true;
 		}
 	}
@@ -841,7 +862,29 @@ public class TypeManagerImpl implements TypeManager {
 	// Subtype
 	// /////////////////////////////////////////////////
 	private List<NemakiTypeDefinition> getNemakiTypeDefinitions(String repositoryId) {
-		return typeService.getTypeDefinitions(repositoryId);
+		System.err.println("=== GETNEMAKIRYPEDEFINITIONS CALLED ===");
+		System.err.println("Repository ID: " + repositoryId);
+		System.err.println("TypeService: " + (typeService != null ? "NOT NULL" : "NULL"));
+		
+		if (typeService != null) {
+			System.err.println("TypeService class: " + typeService.getClass().getName());
+		}
+		
+		System.err.println("About to call typeService.getTypeDefinitions()...");
+		List<NemakiTypeDefinition> result = typeService.getTypeDefinitions(repositoryId);
+		System.err.println("Result from typeService.getTypeDefinitions(): " + (result != null ? result.size() + " types" : "null"));
+		
+		if (result != null && !result.isEmpty()) {
+			System.err.println("First few types from getNemakiTypeDefinitions:");
+			for (int i = 0; i < Math.min(5, result.size()); i++) {
+				NemakiTypeDefinition type = result.get(i);
+				if (type != null) {
+					System.err.println("  " + (i+1) + ". " + type.getTypeId() + " (BaseId: " + type.getBaseId() + ")");
+				}
+			}
+		}
+		
+		return result;
 	}
 
 	
@@ -856,9 +899,26 @@ public class TypeManagerImpl implements TypeManager {
 	private void addSubTypes(String repositoryId) {
 		List<NemakiTypeDefinition> subtypes = null;
 		try {
+			// CRITICAL DEBUG: Add debugging to see what types are retrieved from database
+			System.err.println("=== ADDSUBTYPES DEBUG: Starting for repository " + repositoryId + " ===");
 			subtypes = getNemakiTypeDefinitions(repositoryId);
+			System.err.println("=== DATABASE RETRIEVAL: Retrieved " + (subtypes != null ? subtypes.size() : "null") + " types from database ===");
+			
+			if (subtypes != null && !subtypes.isEmpty()) {
+				System.err.println("=== TYPE IDS FROM DATABASE: ===");
+				for (NemakiTypeDefinition type : subtypes) {
+					if (type != null) {
+						System.err.println("  - " + type.getTypeId() + " (BaseId: " + type.getBaseId() + ", ParentId: " + type.getParentId() + ")");
+					} else {
+						System.err.println("  - NULL TYPE DEFINITION");
+					}
+				}
+			} else {
+				System.err.println("=== NO TYPES RETRIEVED FROM DATABASE ===");
+			}
 		} catch (Exception e) {
 			log.error("Failed to get type definitions for repository: " + repositoryId, e);
+			System.err.println("=== EXCEPTION IN ADDSUBTYPES: " + e.getMessage() + " ===");
 			return;
 		}
 		
@@ -1021,14 +1081,37 @@ public class TypeManagerImpl implements TypeManager {
 				.getPropertyDefinitions();
 		List<PropertyDefinition<?>> specificProperties = new ArrayList<PropertyDefinition<?>>();
 		if (!CollectionUtils.isEmpty(nemakiType.getProperties())) {
+			System.err.println("=== CRITICAL DEBUG: buildTypeDefinitionBaseFromDB ===");
+			System.err.println("Processing " + nemakiType.getProperties().size() + " properties for type " + nemakiType.getTypeId());
 			for (String propertyId : nemakiType.getProperties()) {
+				System.out.println("DEBUG: Processing propertyId: " + propertyId);
 				NemakiPropertyDefinitionDetail detail = typeService
 						.getPropertyDefinitionDetail(repositoryId, propertyId);
+				if (detail == null) {
+					log.error("CRITICAL: PropertyDefinitionDetail is null for propertyId: " + propertyId);
+					continue;
+				}
+				
+				String coreNodeId = detail.getCoreNodeId();
+				if (coreNodeId == null) {
+					log.error("CRITICAL: CoreNodeId is null for PropertyDefinitionDetail ID: " + detail.getId() + ", propertyId: " + propertyId);
+					continue;
+				}
+				
 				NemakiPropertyDefinitionCore core = typeService
-						.getPropertyDefinitionCore(repositoryId, detail.getCoreNodeId());
+						.getPropertyDefinitionCore(repositoryId, coreNodeId);
+				if (core == null) {
+					log.error("CRITICAL: PropertyDefinitionCore is null for coreNodeId: " + coreNodeId + ", propertyId: " + propertyId);
+					continue;
+				}
 
-				NemakiPropertyDefinition p = new NemakiPropertyDefinition(core,
-						detail);
+				// CRITICAL DEBUG: Check for NPE before creating NemakiPropertyDefinition
+				System.err.println("=== BEFORE NEMAKI PROPERTY DEFINITION CONSTRUCTOR ===");
+				System.err.println("propertyId: " + propertyId + ", coreNodeId: " + coreNodeId);
+				System.err.println("core: " + (core != null ? "NOT NULL (ID=" + core.getId() + ")" : "NULL"));
+				System.err.println("detail: " + (detail != null ? "NOT NULL (ID=" + detail.getId() + ")" : "NULL"));
+				
+				NemakiPropertyDefinition p = new NemakiPropertyDefinition(core, detail);
 
 				PropertyDefinition<?> property = DataUtil.createPropDef(
 						p.getPropertyId(), p.getLocalName(),
@@ -1311,11 +1394,64 @@ public class TypeManagerImpl implements TypeManager {
 	@Override
 	public TypeDefinition getTypeDefinition(String repositoryId, String typeId) {
 		ensureInitialized();
+		
+		// CRITICAL DEBUG: Add extensive logging for type cache lookup during deletion
+		log.info("NEMAKI TYPE DEBUG: TypeManager.getTypeDefinition called - repositoryId=" + repositoryId + ", typeId=" + typeId);
+		System.out.println("NEMAKI TYPE DEBUG: TypeManager.getTypeDefinition called - repositoryId=" + repositoryId + ", typeId=" + typeId);
+		
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
-		TypeDefinitionContainer tc = types.get(typeId);
-		if (tc == null) {
+		if (types == null) {
+			log.error("NEMAKI TYPE ERROR: No type cache found for repository: " + repositoryId);
+			System.err.println("NEMAKI TYPE ERROR: No type cache found for repository: " + repositoryId);
 			return null;
 		}
+		
+		log.info("NEMAKI TYPE DEBUG: Total types in cache for repository " + repositoryId + ": " + types.size());
+		System.out.println("NEMAKI TYPE DEBUG: Total types in cache for repository " + repositoryId + ": " + types.size());
+		
+		// List all type IDs in cache for debugging
+		log.info("NEMAKI TYPE DEBUG: Available type IDs in cache: " + types.keySet());
+		System.out.println("NEMAKI TYPE DEBUG: Available type IDs in cache: " + types.keySet());
+		
+		TypeDefinitionContainer tc = types.get(typeId);
+		if (tc == null) {
+			log.error("NEMAKI TYPE ERROR: Type '" + typeId + "' not found in TypeManager cache");
+			System.err.println("NEMAKI TYPE ERROR: Type '" + typeId + "' not found in TypeManager cache");
+			
+			// Additional debug: Check if this is a timing issue - force refresh and try again
+			log.warn("NEMAKI TYPE DEBUG: Attempting forced cache refresh to find missing type");
+			System.err.println("NEMAKI TYPE DEBUG: Attempting forced cache refresh to find missing type");
+			
+			try {
+				refreshTypes();
+				Map<String, TypeDefinitionContainer> refreshedTypes = TYPES.get(repositoryId);
+				if (refreshedTypes != null) {
+					log.info("NEMAKI TYPE DEBUG: After refresh, total types: " + refreshedTypes.size());
+					System.out.println("NEMAKI TYPE DEBUG: After refresh, total types: " + refreshedTypes.size());
+					log.info("NEMAKI TYPE DEBUG: After refresh, available type IDs: " + refreshedTypes.keySet());
+					System.out.println("NEMAKI TYPE DEBUG: After refresh, available type IDs: " + refreshedTypes.keySet());
+					
+					TypeDefinitionContainer refreshedTc = refreshedTypes.get(typeId);
+					if (refreshedTc != null) {
+						log.info("NEMAKI TYPE FIX: Found type '" + typeId + "' after forced refresh!");
+						System.out.println("NEMAKI TYPE FIX: Found type '" + typeId + "' after forced refresh!");
+						return refreshedTc.getTypeDefinition();
+					} else {
+						log.error("NEMAKI TYPE ERROR: Type '" + typeId + "' still not found even after forced refresh");
+						System.err.println("NEMAKI TYPE ERROR: Type '" + typeId + "' still not found even after forced refresh");
+					}
+				}
+			} catch (Exception e) {
+				log.error("NEMAKI TYPE ERROR: Exception during forced refresh", e);
+				System.err.println("NEMAKI TYPE ERROR: Exception during forced refresh: " + e.getMessage());
+				e.printStackTrace();
+			}
+			
+			return null;
+		}
+		
+		log.info("NEMAKI TYPE DEBUG: Found type '" + typeId + "' in cache successfully");
+		System.out.println("NEMAKI TYPE DEBUG: Found type '" + typeId + "' in cache successfully");
 
 		return tc.getTypeDefinition();
 	}
@@ -1352,18 +1488,35 @@ public class TypeManagerImpl implements TypeManager {
 		}
 
 		if (typeId == null) {
-			int count = skip;
+			// CRITICAL FIX: Simplified and corrected base types paging logic
+			int currentIndex = 0;
+			int returnedCount = 0;
 			for (String key : basetypes.keySet()) {
-				count--;
-				if (count >= 0)
+				// Skip items before the skip count
+				if (currentIndex < skip) {
+					currentIndex++;
 					continue;
+				}
+				
+				// Stop if we've returned enough items
+				if (returnedCount >= max) {
+					break;
+				}
+				
 				TypeDefinitionContainer type = basetypes.get(key);
 				result.getList().add(
 						DataUtil.copyTypeDefinition(type.getTypeDefinition()));
+				returnedCount++;
+				currentIndex++;
 			}
 
-			result.setHasMoreItems((result.getList().size() + skip) < max);
-			result.setNumItems(BigInteger.valueOf(basetypes.size()));
+			// CRITICAL FIX: Correct hasMoreItems calculation for base types paging
+			// hasMoreItems should be true only if there are more items beyond what we've returned
+			int totalItems = basetypes.size();
+			int originalSkip = (skipCount == null ? 0 : skipCount.intValue());
+			boolean hasMore = (originalSkip + result.getList().size()) < totalItems;
+			result.setHasMoreItems(hasMore);
+			result.setNumItems(BigInteger.valueOf(totalItems));
 		} else {
 			TypeDefinitionContainer tc = types.get(typeId);
 			if ((tc == null) || (tc.getChildren() == null)) {
@@ -1559,8 +1712,62 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	public void deleteTypeDefinition(String repositoryId, String typeId) {
-		// TODO Auto-generated method stub
+		// IMPLEMENTED: Delete type definition with cache invalidation
+		log.info("deleteTypeDefinition: Deleting type definition for typeId=" + typeId + " in repository=" + repositoryId);
+		
+		try {
+			// 1. Call TypeService to handle property definition cleanup and database deletion
+			typeService.deleteTypeDefinition(repositoryId, typeId);
+			
+			// 2. Invalidate type definition cache to ensure consistency
+			invalidateTypeDefinitionCache(repositoryId);
+			
+			log.info("deleteTypeDefinition: Successfully deleted and invalidated cache for typeId=" + typeId);
+		} catch (Exception e) {
+			log.error("deleteTypeDefinition: Failed to delete typeId=" + typeId + " in repository=" + repositoryId, e);
+			throw new CmisObjectNotFoundException("Failed to delete type definition: " + typeId, e);
+		}
+	}
 
+	/**
+	 * Invalidates the type definition cache for a specific repository.
+	 * This method clears and rebuilds the type cache to ensure consistency after type modifications.
+	 * 
+	 * @param repositoryId The repository ID for which to invalidate the cache
+	 */
+	private void invalidateTypeDefinitionCache(String repositoryId) {
+		synchronized (initLock) {
+			log.debug("invalidateTypeDefinitionCache: Invalidating cache for repository=" + repositoryId);
+			
+			// Remove the specific repository's type cache
+			if (TYPES != null && TYPES.containsKey(repositoryId)) {
+				Map<String, TypeDefinitionContainer> repositoryTypes = TYPES.get(repositoryId);
+				int typesCount = repositoryTypes != null ? repositoryTypes.size() : 0;
+				
+				log.debug("invalidateTypeDefinitionCache: Removing " + typesCount + " cached types for repository=" + repositoryId);
+				TYPES.remove(repositoryId);
+			}
+			
+			// CRITICAL FIX: Immediately regenerate cache to ensure consistency
+			log.debug("invalidateTypeDefinitionCache: Immediately regenerating cache for repository=" + repositoryId);
+			
+			// Initialize the repository cache if needed
+			if (!TYPES.containsKey(repositoryId)) {
+				TYPES.put(repositoryId, new HashMap<String, TypeDefinitionContainer>());
+			}
+			
+			// Regenerate types for this specific repository
+			generate(repositoryId);
+			
+			// Verify regeneration
+			if (TYPES.containsKey(repositoryId)) {
+				Map<String, TypeDefinitionContainer> newTypes = TYPES.get(repositoryId);
+				log.debug("invalidateTypeDefinitionCache: Cache regenerated with " + newTypes.size() + " types for repository=" + repositoryId);
+				log.debug("invalidateTypeDefinitionCache: New type IDs: " + newTypes.keySet());
+			}
+			
+			log.debug("invalidateTypeDefinitionCache: Cache invalidation and regeneration complete for repository=" + repositoryId);
+		}
 	}
 
 	// //////////////////////////////////////////////////////////////////////////////

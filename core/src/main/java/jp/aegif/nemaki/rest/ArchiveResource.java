@@ -103,6 +103,37 @@ public class ArchiveResource extends ResourceBase {
 		return result.toJSONString();
 	}
 
+	@SuppressWarnings("unchecked")
+	@GET
+	@Path("/show/{id}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public String show(@PathParam("repositoryId") String repositoryId, @PathParam("id") String id) {
+		boolean status = true;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		try {
+			Archive archive = contentService.getArchive(repositoryId, id);
+			if (archive == null) {
+				status = false;
+				addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_NOTFOUND);
+			} else {
+				JSONObject archiveJson = buildArchiveJson(archive);
+				if (archive.isDocument()) {
+					archiveJson.put("mimeType", archive.getMimeType());
+				}
+				result.put("archive", archiveJson);
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+			status = false;
+			addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_GET_ARCHIVES);
+		}
+		
+		result = makeResult(status, result, errMsg);
+		return result.toJSONString();
+	}
+
 	@PUT
 	@Path("/restore/{id}")
 	@Produces(MediaType.APPLICATION_JSON)

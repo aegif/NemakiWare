@@ -52,9 +52,11 @@ export class AuthService {
       
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
+          console.log('AUTH DEBUG: Status:', xhr.status, 'Response:', xhr.responseText);
           if (xhr.status === 200) {
             try {
               const response = JSON.parse(xhr.responseText);
+              console.log('AUTH DEBUG: Parsed response:', response);
               if (response.status === 'success') {
                 const token = response.value.token;
                 this.currentAuth = { token, repositoryId, username };
@@ -63,14 +65,18 @@ export class AuthService {
                 // Trigger custom event to notify AuthContext immediately
                 window.dispatchEvent(new CustomEvent('authStateChanged'));
                 
+                console.log('AUTH DEBUG: Login successful, token:', token);
                 resolve(this.currentAuth);
               } else {
+                console.log('AUTH DEBUG: Login failed - invalid status:', response.status);
                 reject(new Error('Authentication failed'));
               }
             } catch (e) {
+              console.log('AUTH DEBUG: JSON parse error:', e);
               reject(new Error('Invalid response format'));
             }
           } else {
+            console.log('AUTH DEBUG: HTTP error:', xhr.status, xhr.statusText);
             reject(new Error('Authentication failed'));
           }
         }

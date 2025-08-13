@@ -34,9 +34,10 @@
 		<property name="contentDaoService">
 			<ref bean="ContentDaoService" />
 		</property>
-		<property name="typeManager">
+		<!-- TypeManager dependency removed to avoid circular dependency - obtained via SpringContext -->
+		<!-- <property name="typeManager">
 			<ref bean="TypeManager" />
-		</property>
+		</property> -->
 		<property name="renditionManager">
 			<ref bean="RenditionManager" />
 		</property>

@@ -87,6 +87,17 @@ public class NemakiPropertyDefinition extends NodeBase {
 	public NemakiPropertyDefinition(NemakiPropertyDefinitionCore core, NemakiPropertyDefinitionDetail detail){
 		//TODO Output error when core and detail don't match
 
+		// CRITICAL DEBUG: Use System.err to ensure visibility in container logs
+		System.err.println("=== NEMAKI PROPERTY DEFINITION CONSTRUCTOR ===");
+		System.err.println("CONSTRUCTOR core=" + (core != null ? "NOT NULL" : "NULL"));
+		System.err.println("CONSTRUCTOR detail=" + (detail != null ? "NOT NULL" : "NULL"));
+		if (core == null) {
+			System.err.println("CRITICAL ERROR: NemakiPropertyDefinitionCore is NULL in constructor");
+			System.err.println("Detail ID: " + (detail != null ? detail.getId() : "NULL"));
+			// Print stack trace to see who called this constructor with null core
+			Thread.dumpStack();
+		}
+
 		setId(detail.getId());
 		setType(NodeType.TYPE_DEFINITION.value());
 		setCreated(detail.getCreated());

@@ -74,6 +74,11 @@ public class NemakiPropertyDefinitionDetail extends NodeBase {
 		setCreator(n.getCreator());
 		setModified(n.getModified());
 		setModifier(n.getModifier());
+		
+		// CRITICAL FIX FOR CLOUDANT SDK MIGRATION: Preserve _rev field
+		// In Ektorp era, _rev was handled automatically by the library
+		// With Cloudant SDK, application must manually preserve _rev for subsequent updates
+		setRevision(n.getRevision());
 	}
 
 	public NemakiPropertyDefinitionDetail(NemakiPropertyDefinition p, String coreNodeId){

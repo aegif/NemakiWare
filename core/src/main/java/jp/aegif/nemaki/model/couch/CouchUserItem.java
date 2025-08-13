@@ -22,6 +22,7 @@
 package jp.aegif.nemaki.model.couch;
 
 import jp.aegif.nemaki.model.UserItem;
+import jp.aegif.nemaki.model.Property;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
@@ -30,6 +31,8 @@ import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.annotation.Nulls;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.List;
+import java.util.ArrayList;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class CouchUserItem extends CouchItem{
@@ -213,8 +216,30 @@ public class CouchUserItem extends CouchItem{
 		userItem.setPassowrd(retrievedPassword);
 		userItem.setAdmin(isAdmin() != null ? isAdmin() : false);
 		
+		// Add firstName, lastName, email from additionalProperties to subTypeProperties
+		if (additionalProperties != null) {
+			List<Property> subTypeProps = new ArrayList<>();
+			if (userItem.getSubTypeProperties() != null) {
+				subTypeProps.addAll(userItem.getSubTypeProperties());
+			}
+			
+			// Add user-specific properties
+			if (additionalProperties.containsKey("firstName")) {
+				subTypeProps.add(new Property("nemaki:firstName", (String) additionalProperties.get("firstName")));
+			}
+			if (additionalProperties.containsKey("lastName")) {
+				subTypeProps.add(new Property("nemaki:lastName", (String) additionalProperties.get("lastName")));
+			}
+			if (additionalProperties.containsKey("email")) {
+				subTypeProps.add(new Property("nemaki:email", (String) additionalProperties.get("email")));
+			}
+			
+			userItem.setSubTypeProperties(subTypeProps);
+		}
+		
 		// デバッグログ: UserItemに設定された値を確認
 		System.out.println("  - UserItem.getPassowrd() after set: " + userItem.getPassowrd());
+		System.out.println("  - SubTypeProperties count: " + (userItem.getSubTypeProperties() != null ? userItem.getSubTypeProperties().size() : 0));
 		
 		return userItem;
 	}

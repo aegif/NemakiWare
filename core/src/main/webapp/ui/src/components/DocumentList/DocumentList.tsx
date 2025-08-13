@@ -60,11 +60,14 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const loadObjects = async () => {
     if (!currentFolderId) return;
     
+    console.log('LOAD OBJECTS DEBUG: Loading children for folder:', currentFolderId);
     setLoading(true);
     try {
       const children = await cmisService.getChildren(repositoryId, currentFolderId);
+      console.log('LOAD OBJECTS DEBUG: Received children:', children);
       setObjects(children);
     } catch (error) {
+      console.error('LOAD OBJECTS DEBUG: Error loading children:', error);
       message.error('オブジェクトの読み込みに失敗しました');
     } finally {
       setLoading(false);
@@ -155,7 +158,14 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         <Button 
           type="link" 
           onClick={() => {
+            console.log('FOLDER CLICK DEBUG:', {
+              name: record.name,
+              id: record.id,
+              baseType: record.baseType,
+              objectType: record.objectType
+            });
             if (record.baseType === 'cmis:folder') {
+              console.log('Setting folder ID to:', record.id);
               setCurrentFolderId(record.id);
             } else {
               navigate(`/documents/${record.id}`);

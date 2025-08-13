@@ -864,6 +864,17 @@ public class CloudantClientWrapper {
 	public void create(Object document) {
 		try {
 			log.debug("Creating document of type: " + document.getClass().getSimpleName());
+			System.err.println("[CLOUDANT] === CREATE METHOD CALLED ===");
+			System.err.println("[CLOUDANT] Document type: " + document.getClass().getSimpleName());
+			
+			if (document instanceof jp.aegif.nemaki.model.couch.CouchTypeDefinition) {
+				jp.aegif.nemaki.model.couch.CouchTypeDefinition typeDef = (jp.aegif.nemaki.model.couch.CouchTypeDefinition) document;
+				System.err.println("[CLOUDANT] CouchTypeDefinition details:");
+				System.err.println("[CLOUDANT]   - ID: " + typeDef.getId());
+				System.err.println("[CLOUDANT]   - Type: " + typeDef.getType());
+				System.err.println("[CLOUDANT]   - QueryName: " + typeDef.getQueryName());
+				System.err.println("[CLOUDANT]   - Database: " + this.databaseName);
+			}
 			
 			ObjectMapper mapper = getObjectMapper();
 			Map<String, Object> documentMap;
@@ -945,6 +956,9 @@ public class CloudantClientWrapper {
 			String jsonString = mapper.writeValueAsString(documentMap);
 			
 			// Send JSON directly as a raw string to preserve all content
+			System.err.println("[CLOUDANT] About to send JSON to CouchDB:");
+			System.err.println("[CLOUDANT] JSON content: " + jsonString);
+			System.err.println("[CLOUDANT] JSON length: " + jsonString.length());
 			
 			PostDocumentOptions options = new PostDocumentOptions.Builder()
 				.db(databaseName)
@@ -952,7 +966,12 @@ public class CloudantClientWrapper {
 				.contentType("application/json")
 				.build();
 
+			System.err.println("[CLOUDANT] Executing postDocument() call...");
 			DocumentResult result = client.postDocument(options).execute().getResult();
+			System.err.println("[CLOUDANT] PostDocument completed successfully!");
+			System.err.println("[CLOUDANT] Result ID: " + result.getId());
+			System.err.println("[CLOUDANT] Result Rev: " + result.getRev());
+			System.err.println("[CLOUDANT] Result OK: " + result.isOk());
 			log.debug("Created document with ID: " + result.getId());
 			
 			// Set the generated ID and revision back to the original object
@@ -965,6 +984,11 @@ public class CloudantClientWrapper {
 					document.getClass().getSimpleName() + " object for future Ektorp-style updates");
 			}
 		} catch (Exception e) {
+			System.err.println("[CLOUDANT] === EXCEPTION DURING DOCUMENT CREATION ===");
+			System.err.println("[CLOUDANT] Exception type: " + e.getClass().getSimpleName());
+			System.err.println("[CLOUDANT] Exception message: " + e.getMessage());
+			System.err.println("[CLOUDANT] Document type: " + (document != null ? document.getClass().getSimpleName() : "null"));
+			e.printStackTrace();
 			log.error("CLOUDANT CREATE ERROR: Exception occurred during document creation", e);
 			log.error("CLOUDANT CREATE ERROR: Document type was: " + (document != null ? document.getClass().getSimpleName() : "null"));
 			if (document instanceof jp.aegif.nemaki.model.couch.CouchFolder) {

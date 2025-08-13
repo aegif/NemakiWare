@@ -62,12 +62,15 @@ public class CMISPostInitializer implements InitializingBean {
         log.info("=== CMIS POST-INITIALIZATION (Phase 2) STARTED ===");
         
         try {
-            // Apply CMIS-specific patches that require running services
+            // Phase 2: CMIS-specific patches that require running services
+            // These patches should ONLY contain operations that require CMIS API access
+            // Database-level operations should be handled by DatabasePreInitializer (Phase 1)
+            
             if (cmisPatchList != null && !cmisPatchList.isEmpty()) {
-                log.info("Applying " + cmisPatchList.size() + " CMIS patches");
+                log.info("Applying " + cmisPatchList.size() + " CMIS patches (Phase 2 only)");
                 applyCMISPatches();
             } else {
-                log.info("No CMIS patches to apply");
+                log.info("No CMIS patches to apply in Phase 2");
             }
             
             log.info("=== CMIS POST-INITIALIZATION (Phase 2) COMPLETED ===");

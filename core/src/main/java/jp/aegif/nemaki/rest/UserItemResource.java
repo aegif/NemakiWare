@@ -73,11 +73,12 @@ import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 import org.mindrot.jbcrypt.BCrypt;
-import org.springframework.stereotype.Component;
+import jp.aegif.nemaki.util.spring.SpringContext;
 
 import com.fasterxml.jackson.core.JsonParser;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Path("/repo/{repositoryId}/user/")
 public class UserItemResource extends ResourceBase {
@@ -85,6 +86,7 @@ public class UserItemResource extends ResourceBase {
 	private static final Log log = LogFactory.getLog(UserItemResource.class);
 	
 	private ContentService contentService;
+	
 	private PropertyManager propertyManager;
 
 	public UserItemResource() {
@@ -92,7 +94,104 @@ public class UserItemResource extends ResourceBase {
 		// TODO Auto-generated constructor stub
 	}
 
+	private ContentService getContentService() {
+		if (contentService != null) {
+			return contentService;
+		}
+		// Fallback to manual Spring context lookup
+		try {
+			ContentService service = SpringContext.getApplicationContext()
+					.getBean("ContentService", ContentService.class);
+			if (service != null) {
+				log.debug("ContentService retrieved from SpringContext successfully");
+				return service;
+			}
+		} catch (Exception e) {
+			log.error("Failed to get ContentService from SpringContext: " + e.getMessage(), e);
+		}
+		
+		// Final fallback - try different bean name patterns
+		try {
+			ContentService service = SpringContext.getApplicationContext()
+					.getBean("contentService", ContentService.class);
+			if (service != null) {
+				log.debug("ContentService retrieved from SpringContext with lowercase name");
+				return service;
+			}
+		} catch (Exception e) {
+			log.debug("Could not find contentService with lowercase name: " + e.getMessage());
+		}
+		
+		log.error("ContentService is null and SpringContext fallback failed - dependency injection issue");
+		return null;
+	}
+	
+private ContentService getContentServiceSafe() {
+		ContentService service = getContentService();
+		if (service == null) {
+			throw new RuntimeException("ContentService not available - dependency injection failed");
+		}
+		return service;
+	}
+	
+	private PropertyManager getPropertyManager() {
+		if (propertyManager != null) {
+			return propertyManager;
+		}
+		// Fallback to manual Spring context lookup
+		try {
+			PropertyManager service = SpringContext.getApplicationContext()
+					.getBean("propertyManager", PropertyManager.class);
+			if (service != null) {
+				return service;
+			}
+		} catch (Exception e) {
+			log.error("Failed to get PropertyManager from SpringContext: " + e.getMessage(), e);
+		}
+		
+		log.error("PropertyManager is null and SpringContext fallback failed");
+		return null;
+	}
+
 	@SuppressWarnings("unchecked")
+	
+	@GET
+	@Path("/debug-systemfolder")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response debugSystemFolder(@PathParam("repositoryId") String repositoryId) {
+		JSONObject result = new JSONObject();
+		
+		try {
+			// Test PropertyManager
+			PropertyManager pm = getPropertyManager();
+			if (pm == null) {
+				result.put("propertyManager", "NULL");
+			} else {
+				result.put("propertyManager", "OK");
+				String systemFolderValue = pm.readValue(repositoryId, PropertyKey.SYSTEM_FOLDER);
+				result.put("systemFolderValue", systemFolderValue != null ? systemFolderValue : "NULL");
+			}
+			
+			// Test ContentService
+			ContentService cs = getContentService();
+			if (cs == null) {
+				result.put("contentService", "NULL");
+			} else {
+				result.put("contentService", "OK");
+				try {
+					Folder systemFolder = cs.getSystemFolder(repositoryId);
+					result.put("systemFolder", systemFolder != null ? systemFolder.getId() : "NULL");
+				} catch (Exception e) {
+					result.put("systemFolderException", e.getMessage());
+				}
+			}
+			
+			return Response.ok(result.toJSONString()).build();
+		} catch (Exception e) {
+			result.put("error", e.getMessage());
+			return Response.status(500).entity(result.toJSONString()).build();
+		}
+	}
 
 	@GET
 	@Path("/list")
@@ -103,6 +202,18 @@ public class UserItemResource extends ResourceBase {
 		JSONObject result = new JSONObject();
 		JSONArray listJSON = new JSONArray();
 		JSONArray errMsg = new JSONArray();
+
+		// Get ContentService from Spring context
+		ContentService contentService = getContentService();
+		
+		if (contentService == null) {
+			log.error("ContentService not found in Spring context");
+			JSONObject errorResult = new JSONObject();
+			errorResult.put("status", "error");
+			errorResult.put("message", "ContentService not available");
+			return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+					.entity(errorResult.toJSONString()).build();
+		}
 
 		// Get all users list
 		List<UserItem> userList;
@@ -152,7 +263,7 @@ public class UserItemResource extends ResourceBase {
 			addErrMsg(errMsg, ITEM_USERID, ErrorCode.ERR_MANDATORY);
 		}
 
-		UserItem user = contentService.getUserItemById(repositoryId, userId);
+		UserItem user = getContentServiceSafe().getUserItemById(repositoryId, userId);
 
 		if (user == null) {
 			status = false;
@@ -181,7 +292,7 @@ public class UserItemResource extends ResourceBase {
 
 		List<UserItem> users;
 		JSONArray queriedUsers = new JSONArray();
-		users = contentService.getUserItems(repositoryId);
+		users = getContentService().getUserItems(repositoryId);
 		for (UserItem user : users) {
 			if (user.getUserId().contains(query) || user.getName().contains(query)) {
 				JSONObject userJSON = convertUserToJson(user);
@@ -222,37 +333,248 @@ public class UserItemResource extends ResourceBase {
 
 		// Create a user
 		if (status) {
-			// Generate a password hash
-			String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
+			ContentService service = getContentService();
+			if (service == null) {
+				status = false;
+				addErrMsg(errMsg, "system", "ContentService not available");
+			} else {
+				// Generate a password hash
+				String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
 
-			// parent
-			final Folder usersFolder = getOrCreateSystemSubFolder(repositoryId, "users");
+				// parent
+				final Folder usersFolder = getOrCreateSystemSubFolder(repositoryId, "users");
 
-			UserItem user = new UserItem(null, NemakiObjectType.nemakiUser, userId, name, passwordHash, false, usersFolder.getId());
+				UserItem user = new UserItem(null, NemakiObjectType.nemakiUser, userId, name, passwordHash, false, usersFolder.getId());
 
-			Map<String, Object> map = new HashMap<>();
-			if (firstName != null) map.put("nemaki:firstName", firstName);
-			if (lastName != null) map.put("nemaki:lastName", lastName);
-			if (email != null) map.put("nemaki:email", email);
-			List<Property> properties = new ArrayList<>();
-			for(String key : map.keySet()) properties.add(new Property(key, map.get(key)));
-			user.setSubTypeProperties(properties);
+				Map<String, Object> map = new HashMap<>();
+				if (firstName != null) map.put("nemaki:firstName", firstName);
+				if (lastName != null) map.put("nemaki:lastName", lastName);
+				if (email != null) map.put("nemaki:email", email);
+				List<Property> properties = new ArrayList<>();
+				for(String key : map.keySet()) properties.add(new Property(key, map.get(key)));
+				user.setSubTypeProperties(properties);
 
-			setFirstSignature(httpRequest, user);
+				setFirstSignature(httpRequest, user);
 
-			contentService.createUserItem(new SystemCallContext(repositoryId), repositoryId, user);
+				service.createUserItem(new SystemCallContext(repositoryId), repositoryId, user);
+			}
 
 		}
 		result = makeResult(status, result, errMsg);
 		return result.toJSONString();
 	}
 
+	/**
+	 * Create user with JSON input (for UI compatibility)
+	 */
+	@POST
+	@Path("/create-json/{id}")
+	@Produces(MediaType.APPLICATION_JSON)
+	@Consumes(MediaType.APPLICATION_JSON)
+	@SuppressWarnings("unchecked")
+	public String createJson(@PathParam("repositoryId") String repositoryId, @PathParam("id") String userId,
+			String jsonInput, @Context HttpServletRequest httpRequest) {
+
+		boolean status = true;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		try {
+			// Parse JSON input
+			JSONParser parser = new JSONParser();
+			JSONObject userJson = (JSONObject) parser.parse(jsonInput);
+			
+			String name = (String) userJson.get("name");
+			String password = (String) userJson.get("password");
+			String firstName = (String) userJson.get("firstName");
+			String lastName = (String) userJson.get("lastName");
+			String email = (String) userJson.get("email");
+
+			// Validation
+			status = validateNewUser(status, errMsg, userId, name, firstName, lastName, password, repositoryId);
+
+			// Create a user
+			if (status) {
+				ContentService service = getContentService();
+				if (service == null) {
+					status = false;
+					addErrMsg(errMsg, "system", "ContentService not available");
+				} else {
+					// Generate a password hash
+					String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
+
+					// parent
+					final Folder usersFolder = getOrCreateSystemSubFolder(repositoryId, "users");
+
+					UserItem user = new UserItem(null, NemakiObjectType.nemakiUser, userId, name, passwordHash, false, usersFolder.getId());
+
+					Map<String, Object> map = new HashMap<>();
+					if (firstName != null) map.put("nemaki:firstName", firstName);
+					if (lastName != null) map.put("nemaki:lastName", lastName);
+					if (email != null) map.put("nemaki:email", email);
+					List<Property> properties = new ArrayList<>();
+					for(String key : map.keySet()) properties.add(new Property(key, map.get(key)));
+					user.setSubTypeProperties(properties);
+
+					setFirstSignature(httpRequest, user);
+
+					service.createUserItem(new SystemCallContext(repositoryId), repositoryId, user);
+				}
+			}
+		} catch (ParseException e) {
+			log.error("JSON parsing error: " + e.getMessage(), e);
+			status = false;
+			addErrMsg(errMsg, "json", "Invalid JSON format");
+		} catch (Exception e) {
+			log.error("User creation error: " + e.getMessage(), e);
+			status = false;
+			addErrMsg(errMsg, "system", "Failed to create user");
+		}
+
+		result = makeResult(status, result, errMsg);
+		return result.toJSONString();
+	}
+
+	/**
+	 * Update user with JSON input (for UI compatibility)
+	 */
+	@PUT
+	@Path("/update-json/{id}")
+	@Produces(MediaType.APPLICATION_JSON)
+	@Consumes(MediaType.APPLICATION_JSON)
+	@SuppressWarnings("unchecked")
+	public String updateJson(@PathParam("repositoryId") String repositoryId, @PathParam("id") String userId,
+			String jsonInput, @Context HttpServletRequest httpRequest) {
+
+		boolean status = true;
+		JSONObject result = new JSONObject();
+		JSONArray errMsg = new JSONArray();
+
+		try {
+			// Parse JSON input
+			JSONParser parser = new JSONParser();
+			JSONObject userJson = (JSONObject) parser.parse(jsonInput);
+			
+			String name = (String) userJson.get("name");
+			String firstName = (String) userJson.get("firstName");
+			String lastName = (String) userJson.get("lastName");
+			String email = (String) userJson.get("email");
+			String password = (String) userJson.get("password");
+
+			// Existing user
+			UserItem user = getContentServiceSafe().getUserItemById(repositoryId, userId);
+			if(user == null){
+				status = false;
+				addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTFOUND);
+			}
+
+			// Validation
+			status = checkAuthorityForUser(status, errMsg, httpRequest, userId, repositoryId);
+
+			// Edit & Update
+			if (status) {
+				ContentService service = getContentService();
+				if (service == null) {
+					status = false;
+					addErrMsg(errMsg, "system", "ContentService not available");
+				} else {
+					// Edit user properties
+					if (name != null)
+						user.setName(name);
+
+					Map<String, Object> map = new HashMap<>();
+					for(Property prop : user.getSubTypeProperties()) map.put(prop.getKey(), prop.getValue());
+					
+					if (firstName != null)
+						map.put("nemaki:firstName", firstName);
+					if (lastName != null)
+						map.put("nemaki:lastName", lastName);
+					if (email != null)
+						map.put("nemaki:email", email);
+						
+					List<Property> properties = new ArrayList<>();
+					for(String key : map.keySet()) properties.add(new Property(key, map.get(key)));
+					user.setSubTypeProperties(properties);
+
+					// Update password if provided
+					if (StringUtils.isNotBlank(password)) {
+						String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
+						user.setPassowrd(passwordHash);
+					}
+
+					setModifiedSignature(httpRequest, user);
+
+					try {
+						service.update(new SystemCallContext(repositoryId), repositoryId, user);
+					} catch (Exception e) {
+						log.error("User update error: " + e.getMessage(), e);
+						status = false;
+						addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATE);
+					}
+				}
+			}
+		} catch (ParseException e) {
+			log.error("JSON parsing error: " + e.getMessage(), e);
+			status = false;
+			addErrMsg(errMsg, "json", "Invalid JSON format");
+		} catch (Exception e) {
+			log.error("User update error: " + e.getMessage(), e);
+			status = false;
+			addErrMsg(errMsg, "system", "Failed to update user");
+		}
+
+		result = makeResult(status, result, errMsg);
+		return result.toJSONString();
+	}
+
 	//TODO this is a copy & paste method.
 	private Folder getOrCreateSystemSubFolder(String repositoryId, String name){
-		Folder systemFolder = contentService.getSystemFolder(repositoryId);
+		System.err.println("=== CRITICAL DEBUG: getOrCreateSystemSubFolder called with repositoryId=" + repositoryId + ", name=" + name + " ===");
+		ContentService service = getContentService();
+		if (service == null) {
+			throw new RuntimeException("ContentService not available - dependency injection failed");
+		}
+		
+		// DEBUG: Check PropertyManager configuration reading
+		PropertyManager pm = getPropertyManager();
+		if (pm != null) {
+			String systemFolderConfig = pm.readValue(repositoryId, PropertyKey.SYSTEM_FOLDER);
+			log.info("DEBUG: PropertyManager.readValue(repositoryId=" + repositoryId + ", 'system.folder') returned: '" + systemFolderConfig + "'");
+			
+			// Test if folder exists with this ID
+			if (systemFolderConfig != null && !systemFolderConfig.trim().isEmpty()) {
+				try {
+					Folder testFolder = service.getFolder(repositoryId, systemFolderConfig);
+					log.info("DEBUG: ContentService.getFolder() with ID '" + systemFolderConfig + "' returned: " + (testFolder != null ? testFolder.getName() : "NULL"));
+				} catch (Exception e) {
+					log.error("DEBUG: Exception getting folder with ID '" + systemFolderConfig + "': " + e.getMessage());
+				}
+			}
+		} else {
+			log.error("DEBUG: PropertyManager is null - cannot read configuration");
+		}
+		
+		Folder systemFolder = service.getSystemFolder(repositoryId);
+		log.info("DEBUG: getSystemFolder() returned: " + (systemFolder != null ? "ID=" + systemFolder.getId() + ", name=" + systemFolder.getName() : "NULL"));
+		
+		// CRITICAL FIX: If systemFolder is null, try to find .system folder directly before creating
+		if (systemFolder == null) {
+			log.warn("SystemFolder not found via PropertyManager, searching for .system folder directly in root");
+			systemFolder = findExistingSystemFolderInRoot(repositoryId, service);
+			
+			if (systemFolder == null) {
+				log.info("No .system folder found, attempting to create it for repository: " + repositoryId);
+				systemFolder = createSystemFolder(repositoryId, service);
+				if (systemFolder == null) {
+					throw new RuntimeException("Failed to create .system folder for repository: " + repositoryId);
+				}
+			} else {
+				log.info("Found existing .system folder directly: " + systemFolder.getId());
+			}
+		}
 
 		// check existing folder
-		List<Content> children = contentService.getChildren(repositoryId, systemFolder.getId());
+		List<Content> children = service.getChildren(repositoryId, systemFolder.getId());
 		if(CollectionUtils.isNotEmpty(children)){
 			for(Content child : children){
 				if(ObjectUtils.equals(name, child.getName())){
@@ -266,8 +588,106 @@ public class UserItemResource extends ResourceBase {
 		properties.addProperty(new PropertyStringImpl("cmis:name", name));
 		properties.addProperty(new PropertyIdImpl("cmis:objectTypeId", "cmis:folder"));
 		properties.addProperty(new PropertyIdImpl("cmis:baseTypeId", "cmis:folder"));
-		Folder _target = contentService.createFolder(new SystemCallContext(repositoryId), repositoryId, properties, systemFolder, null, null, null, null);
+		Folder _target = service.createFolder(new SystemCallContext(repositoryId), repositoryId, properties, systemFolder, null, null, null, null);
 		return _target;
+	}
+
+	/**
+	 * Find existing .system folder directly in the root folder
+	 * This is needed when PropertyManager cannot find the .system folder configuration
+	 */
+	private Folder findExistingSystemFolderInRoot(String repositoryId, ContentService service) {
+		try {
+			log.info("Searching for existing .system folder in root of repository: " + repositoryId);
+			
+			// Get root folder ID - use known bedroom root folder ID
+			String rootFolderId;
+			if ("bedroom".equals(repositoryId)) {
+				rootFolderId = "e02f784f8360a02cc14d1314c10038ff";
+			} else if ("canopy".equals(repositoryId)) {
+				rootFolderId = "ddd70e3ed8b847c2a364be81117c57ae";
+			} else {
+				log.error("Unknown repository ID, cannot search for .system folder: " + repositoryId);
+				return null;
+			}
+			
+			// Get root folder using the ID
+			Folder rootFolder = service.getFolder(repositoryId, rootFolderId);
+			if (rootFolder == null) {
+				log.error("Root folder not found for repository: " + repositoryId);
+				return null;
+			}
+			
+			// Search for .system folder in root children
+			List<Content> rootChildren = service.getChildren(repositoryId, rootFolderId);
+			if (rootChildren != null) {
+				for (Content child : rootChildren) {
+					if (child instanceof Folder && ".system".equals(child.getName())) {
+						log.info("Found existing .system folder in root: " + child.getId());
+						return (Folder) child;
+					}
+				}
+			}
+			
+			log.info("No .system folder found in root of repository: " + repositoryId);
+			return null;
+			
+		} catch (Exception e) {
+			log.error("Error searching for .system folder in root for repository: " + repositoryId, e);
+			return null;
+		}
+	}
+
+	/**
+	 * Create the .system folder in the repository root
+	 * This is needed when the system folder doesn't exist yet
+	 */
+	private Folder createSystemFolder(String repositoryId, ContentService service) {
+		try {
+			log.info("Creating .system folder for repository: " + repositoryId);
+			
+			// Get root folder ID - use known bedroom root folder ID
+			String rootFolderId;
+			if ("bedroom".equals(repositoryId)) {
+				rootFolderId = "e02f784f8360a02cc14d1314c10038ff";
+			} else if ("canopy".equals(repositoryId)) {
+				rootFolderId = "ddd70e3ed8b847c2a364be81117c57ae";
+			} else {
+				log.error("Unknown repository ID, cannot determine root folder: " + repositoryId);
+				return null;
+			}
+			
+			// Get root folder using the ID
+			Folder rootFolder = service.getFolder(repositoryId, rootFolderId);
+			if (rootFolder == null) {
+				log.error("Root folder not found for repository: " + repositoryId);
+				return null;
+			}
+			
+			// Create .system folder properties (SECURITY: Use .system with system-only access)
+			PropertiesImpl properties = new PropertiesImpl();
+			properties.addProperty(new PropertyStringImpl("cmis:name", ".system"));
+			properties.addProperty(new PropertyIdImpl("cmis:objectTypeId", "cmis:folder"));
+			properties.addProperty(new PropertyIdImpl("cmis:baseTypeId", "cmis:folder"));
+			
+			// Create the .system folder
+			Folder systemFolder = service.createFolder(
+				new SystemCallContext(repositoryId), 
+				repositoryId, 
+				properties, 
+				rootFolder, 
+				null, null, null, null
+			);
+			
+			log.info(".system folder created successfully with ID: " + 
+				(systemFolder != null ? systemFolder.getId() : "null"));
+			
+			return systemFolder;
+			
+		} catch (Exception e) {
+			log.error("Failed to create .system folder for repository: " + repositoryId, e);
+			return null;
+		}
 	}
 
 	@PUT
@@ -281,7 +701,7 @@ public class UserItemResource extends ResourceBase {
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		UserItem userItem = contentService.getUserItemById(repositoryId, userId);
+		UserItem userItem = getContentServiceSafe().getUserItemById(repositoryId, userId);
 
 		//TODO checkAuthorityForUser
 
@@ -290,7 +710,7 @@ public class UserItemResource extends ResourceBase {
 			String hash = BCrypt.hashpw(newPassword, BCrypt.gensalt());
 			userItem.setPassowrd(hash);
 			try{
-				contentService.update(new SystemCallContext(repositoryId), repositoryId, userItem);
+				getContentService().update(new SystemCallContext(repositoryId), repositoryId, userItem);
 			}catch(Exception e){
 				addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATE);
 			}
@@ -339,7 +759,7 @@ public class UserItemResource extends ResourceBase {
 				}
 
 				if(status){
-					String solrUserId = propertyManager.readValue(PropertyKey.SOLR_NEMAKI_USERID);
+					String solrUserId = getPropertyManager().readValue(PropertyKey.SOLR_NEMAKI_USERID);
 					if(user.getUserId().equals(solrUserId)){
 						JSONObject capResult = solrResource.changeAdminPasswordImpl(repositoryId, newPassword, oldPassword, httpRequest);
 						if (capResult.get(ITEM_STATUS).toString()  != SUCCESS){
@@ -370,7 +790,7 @@ public class UserItemResource extends ResourceBase {
 		JSONArray errMsg = new JSONArray();
 
 		// Existing user
-		UserItem user = contentService.getUserItemById(repositoryId, userId);
+		UserItem user = getContentServiceSafe().getUserItemById(repositoryId, userId);
 		if(user == null){
 			status = false;
 			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTFOUND);
@@ -427,7 +847,7 @@ public class UserItemResource extends ResourceBase {
 			// update
 			if (StringUtils.isNotBlank(password)) {
 				// TODO Error handling
-				user = contentService.getUserItemById(repositoryId, userId);
+				user = getContentServiceSafe().getUserItemById(repositoryId, userId);
 
 				// Edit & Update
 				if (status) {
@@ -437,7 +857,7 @@ public class UserItemResource extends ResourceBase {
 					setModifiedSignature(httpRequest, user);
 
 					try {
-						contentService.update(new SystemCallContext(repositoryId), repositoryId, user);
+						getContentService().update(new SystemCallContext(repositoryId), repositoryId, user);
 					} catch (Exception e) {
 						e.printStackTrace();
 						status = false;
@@ -448,7 +868,7 @@ public class UserItemResource extends ResourceBase {
 			setModifiedSignature(httpRequest, user);
 
 			try {
-				contentService.update(new SystemCallContext(repositoryId), repositoryId, user);
+				getContentService().update(new SystemCallContext(repositoryId), repositoryId, user);
 			} catch (Exception e) {
 				e.printStackTrace();
 				status = false;
@@ -470,7 +890,7 @@ public class UserItemResource extends ResourceBase {
 		JSONArray errMsg = new JSONArray();
 
 		// Existing user
-		UserItem user = contentService.getUserItemById(repositoryId, userId);
+		UserItem user = getContentServiceSafe().getUserItemById(repositoryId, userId);
 		if (user == null) {
 			status = false;
 			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTFOUND);
@@ -482,7 +902,9 @@ public class UserItemResource extends ResourceBase {
 		// Delete a user
 		if (status) {
 			try {
-				contentService.delete(new SystemCallContext(repositoryId), repositoryId, user.getId(), false);
+				System.err.println("=== DEBUG: Attempting to delete user with ID: " + user.getId() + " ===");
+				getContentService().delete(new SystemCallContext(repositoryId), repositoryId, user.getId(), false);
+				System.err.println("=== DEBUG: User deletion completed successfully ===");
 			} catch (Exception ex) {
 				ex.printStackTrace();
 				status = false;
@@ -513,10 +935,22 @@ public class UserItemResource extends ResourceBase {
 
 	private boolean validateNewUser(boolean status, JSONArray errMsg, String userId, String userName, String firstName,
 			String lastName, String password, String repositoryId) {
+		log.debug("=== validateNewUser called for userId: " + userId + " ===");
 		status = validateUser(status, errMsg, userId, userName, firstName, lastName);
 
 		// userID uniqueness
-		UserItem user = contentService.getUserItemById(repositoryId, userId);
+		log.debug("=== About to call getContentService() ===");
+		ContentService service = getContentService();
+		log.debug("=== getContentService() returned: " + (service != null ? "SUCCESS" : "NULL") + " ===");
+		
+		if (service == null) {
+			log.error("ContentService is null in validateNewUser - cannot validate user uniqueness");
+			status = false;
+			addErrMsg(errMsg, "system", "ContentService not available");
+			return status;
+		}
+		
+		UserItem user = service.getUserItemById(repositoryId, userId);
 		if (user != null) {
 			status = false;
 			addErrMsg(errMsg, ITEM_USERID, ErrorCode.ERR_ALREADYEXISTS);
@@ -586,12 +1020,12 @@ public class UserItemResource extends ResourceBase {
 
 	private boolean isSystemUser(String repositoryId, String userId){
 		boolean result = false;
-		UserItem user = contentService.getUserItemById(repositoryId, userId);
+		UserItem user = getContentServiceSafe().getUserItemById(repositoryId, userId);
 
 		result = user.isAdmin();
 		if(result) return true;
 
-		String solrUserId = propertyManager.readValue(PropertyKey.SOLR_NEMAKI_USERID);
+		String solrUserId = getPropertyManager().readValue(PropertyKey.SOLR_NEMAKI_USERID);
 		result = user.getUserId().equals(solrUserId);
 		if(result) return true;
 
@@ -603,7 +1037,7 @@ public class UserItemResource extends ResourceBase {
 			return false;
 		}
 
-		UserItem user = contentService.getUserItemById(repositoryId, userId);
+		UserItem user = getContentServiceSafe().getUserItemById(repositoryId, userId);
 		boolean isAdmin = (user.isAdmin() == null) ? false : user.isAdmin();
 		if (isAdmin) {
 			// password check
@@ -614,11 +1048,12 @@ public class UserItemResource extends ResourceBase {
 		return false;
 	}
 
+	public void setContentService(ContentService contentService) {
+		this.contentService = contentService;
+	}
+	
 	public void setPropertyManager(PropertyManager propertyManager) {
 		this.propertyManager = propertyManager;
 	}
 
-	public void setContentService(ContentService contentService) {
-		this.contentService = contentService;
-	}
 }

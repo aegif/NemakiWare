@@ -57,6 +57,10 @@
 			<param-value>jp.aegif.nemaki.cmis.factory.auth.NemakiAuthCallContextHandler</param-value>
         </init-param>
 		<init-param>
+			<param-name>org.apache.chemistry.opencmis.serviceFactory</param-name>
+			<param-value>jp.aegif.nemaki.cmis.factory.CmisServiceFactory</param-value>
+		</init-param>
+		<init-param>
  			<param-name>cmisVersion</param-name>
  			<param-value>1.1</param-value>
  		</init-param>
@@ -70,11 +74,21 @@
 			<param-value>jp.aegif.nemaki.cmis.factory.auth.NemakiAuthCallContextHandler</param-value>
 		</init-param>
 		<init-param>
+			<param-name>org.apache.chemistry.opencmis.serviceFactory</param-name>
+			<param-value>jp.aegif.nemaki.cmis.factory.CmisServiceFactory</param-value>
+		</init-param>
+		<init-param>
 			<param-name>cmisVersion</param-name>
 			<param-value>1.1</param-value>
 		</init-param>
 		<load-on-startup>2</load-on-startup>
 	</servlet>
+	<!-- CORS filter - must be first to handle preflight requests -->
+	<filter>
+		<filter-name>corsFilter</filter-name>
+		<filter-class>jp.aegif.nemaki.rest.SimpleCorsFilter</filter-class>
+	</filter>
+	
 	<!-- REST authentication filter - re-enabled with Spring integration -->
 	<filter>
 		<filter-name>restAuthenticationFilter</filter-name>
@@ -84,6 +98,27 @@
 			<param-value>restAuthenticationFilter</param-value>
 		</init-param>
 	</filter>
+	
+	<!-- DeleteType Filter - intercepts deleteType requests before OpenCMIS -->
+	<filter>
+		<filter-name>deleteTypeFilter</filter-name>
+		<filter-class>jp.aegif.nemaki.cmis.servlet.DeleteTypeFilter</filter-class>
+	</filter>
+	
+	<!-- CORS filter mapping - must be first -->
+	<filter-mapping>
+		<filter-name>corsFilter</filter-name>
+		<url-pattern>/rest/*</url-pattern>
+	</filter-mapping>
+	
+	<!-- DeleteType filter mapping - intercept browser binding requests -->
+	<filter-mapping>
+		<filter-name>deleteTypeFilter</filter-name>
+		<url-pattern>/browser/*</url-pattern>
+		<dispatcher>REQUEST</dispatcher>
+		<dispatcher>FORWARD</dispatcher>
+	</filter-mapping>
+	
 	<!-- Apply authentication to all /rest/* except /rest/all/* -->
 	<filter-mapping>
 		<filter-name>restAuthenticationFilter</filter-name>
@@ -169,6 +204,23 @@
 	</servlet-mapping>
 
 
+	<!-- Spring Web MVC DispatcherServlet for @RestController -->
+	<servlet>
+		<servlet-name>spring-mvc</servlet-name>
+		<servlet-class>org.springframework.web.servlet.DispatcherServlet</servlet-class>
+		<init-param>
+			<param-name>contextConfigLocation</param-name>
+			<param-value>classpath:spring-mvc-context.xml</param-value>
+		</init-param>
+		<load-on-startup>5</load-on-startup>
+	</servlet>
+
+	<servlet-mapping>
+		<servlet-name>spring-mvc</servlet-name>
+		<url-pattern>/api/*</url-pattern>
+	</servlet-mapping>
+
+	<!-- Jersey application for legacy REST endpoints -->
 	<servlet>
   <servlet-name>jersey-app</servlet-name>
   <servlet-class>org.glassfish.jersey.servlet.ServletContainer</servlet-class>
@@ -179,6 +231,11 @@
     <init-param>
         <param-name>jersey.config.servlet.filter.staticContentRegex</param-name>
         <param-value>/(ui|static)/.*</param-value>
+    </init-param>
+    <!-- Enable Jersey-Spring integration -->
+    <init-param>
+        <param-name>jersey.config.server.provider.classnames</param-name>
+        <param-value>org.glassfish.jersey.server.spring.SpringLifecycleListener</param-value>
     </init-param>
     <load-on-startup>10</load-on-startup>
  </servlet>

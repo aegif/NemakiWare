@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:mvc="http://www.springframework.org/schema/mvc"
+	xsi:schemaLocation="
+		http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+		http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd
+		http://www.springframework.org/schema/mvc http://www.springframework.org/schema/mvc/spring-mvc.xsd">
+
+	<!-- Enable Spring MVC configuration -->
+	<mvc:annotation-driven>
+		<mvc:message-converters>
+			<!-- JSON message converter with unified ObjectMapper -->
+			<bean class="org.springframework.http.converter.json.MappingJackson2HttpMessageConverter">
+				<property name="objectMapper" ref="nemakiObjectMapper" />
+			</bean>
+		</mvc:message-converters>
+	</mvc:annotation-driven>
+
+	<!-- Enable CORS for API endpoints -->
+	<mvc:cors>
+		<mvc:mapping path="/api/**" 
+			allowed-origins="*" 
+			allowed-methods="GET,POST,PUT,DELETE,OPTIONS" 
+			allowed-headers="*" 
+			allow-credentials="false" 
+			max-age="3600" />
+	</mvc:cors>
+
+	<!-- Component scanning for REST controllers -->
+	<context:component-scan base-package="jp.aegif.nemaki.rest.controller" />
+
+	<!-- Exception handler for REST API -->
+	<bean class="jp.aegif.nemaki.rest.controller.GlobalExceptionHandler" />
+
+</beans>

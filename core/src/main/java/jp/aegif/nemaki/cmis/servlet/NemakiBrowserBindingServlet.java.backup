@@ -1,0 +1,920 @@
+/*******************************************************************************
+ * Copyright (c) 2013 aegif.
+ *
+ * This file is part of NemakiWare.
+ *
+ * NemakiWare is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * NemakiWare is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along with NemakiWare.
+ * If not, see <http://www.gnu.org/licenses/>.
+ *
+ * Contributors:
+ *     linzhixing(https://github.com/linzhixing) - initial API and implementation
+ ******************************************************************************/
+package jp.aegif.nemaki.cmis.servlet;
+
+import java.io.IOException;
+
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequestWrapper;
+import jakarta.servlet.http.HttpServletResponse;
+
+import org.apache.chemistry.opencmis.commons.exceptions.CmisNotSupportedException;
+import org.apache.chemistry.opencmis.commons.impl.Constants;
+import org.apache.chemistry.opencmis.commons.server.CmisService;
+import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
+import org.apache.chemistry.opencmis.server.impl.browser.AbstractBrowserServiceCall;
+import org.apache.chemistry.opencmis.server.impl.browser.BrowserCallContextImpl;
+import org.apache.chemistry.opencmis.server.impl.browser.CmisBrowserBindingServlet;
+import org.apache.chemistry.opencmis.server.shared.Dispatcher;
+import org.apache.chemistry.opencmis.server.shared.HttpUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
+
+/**
+ * NemakiWare custom Browser Binding servlet that extends OpenCMIS CmisBrowserBindingServlet
+ * to fix object-specific POST operation routing issues.
+ * 
+ * CRITICAL FIX: Handles object URLs like /browser/{repositoryId}/{objectId} for POST operations
+ * which were returning "Unknown operation" in the standard OpenCMIS implementation.
+ */
+public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
+
+    private static final long serialVersionUID = 1L;
+    private static final Log log = LogFactory.getLog(NemakiBrowserBindingServlet.class);
+    
+    // CRITICAL: Static block that ALWAYS executes when class is loaded
+    static {
+        System.err.println("=== STATIC INIT: NemakiBrowserBindingServlet class loaded at " + System.currentTimeMillis() + " ===");
+        System.err.println("CRITICAL: If you see this message, the custom NemakiBrowserBindingServlet is being loaded");
+        try {
+            System.err.println("CLASSLOADER: " + NemakiBrowserBindingServlet.class.getClassLoader());
+            System.err.println("CODEBASE: " + NemakiBrowserBindingServlet.class.getProtectionDomain().getCodeSource().getLocation());
+        } catch (Exception e) {
+            System.err.println("Error getting class info: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Constructor - add debug logging to confirm servlet is being instantiated
+     */
+    public NemakiBrowserBindingServlet() {
+        super();
+        log.info("NEMAKI SERVLET: NemakiBrowserBindingServlet constructor called");
+        System.out.println("NEMAKI SERVLET: NemakiBrowserBindingServlet constructor called");
+    }
+    
+    @Override
+    public void init() throws ServletException {
+        super.init();
+        log.info("NEMAKI SERVLET: NemakiBrowserBindingServlet initialized");
+        System.out.println("NEMAKI SERVLET: NemakiBrowserBindingServlet initialized");
+    }
+
+    /**
+     * Override the service method to fix object-specific POST operation routing
+     * and apply CMIS 1.1 compliance fixes to JSON responses.
+     */
+    @Override
+    protected void service(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        
+        // VERSION CHECK: This line should appear if the latest source code is compiled
+        System.err.println("!!! VERSION CHECK: LATEST SOURCE CODE EXECUTING - TIMESTAMP: " + System.currentTimeMillis() + " !!!");
+        
+        // CRITICAL: Simple debug message that MUST appear if this method is called
+        System.err.println("!!! NEMAKI SERVICE METHOD CALLED: " + request.getMethod() + " " + request.getRequestURI() + " !!!");
+        
+        // CRITICAL DEBUG: ALWAYS log every request that reaches this servlet
+        String method = request.getMethod();
+        String pathInfo = request.getPathInfo();
+        String queryString = request.getQueryString();
+        String requestURI = request.getRequestURI();
+        String contextPath = request.getContextPath();
+        String servletPath = request.getServletPath();
+        
+        System.err.println("=== NEMAKI SERVLET: EVERY REQUEST CAPTURE ===");
+        System.err.println("Method: " + method);
+        System.err.println("RequestURI: " + requestURI);
+        System.err.println("ContextPath: " + contextPath);
+        System.err.println("ServletPath: " + servletPath);
+        System.err.println("PathInfo: " + pathInfo);
+        System.err.println("QueryString: " + queryString);
+        System.err.println("RemoteAddr: " + request.getRemoteAddr());
+        System.err.println("RemoteHost: " + request.getRemoteHost());
+        System.err.println("Thread: " + Thread.currentThread().getName());
+        System.err.println("Timestamp: " + System.currentTimeMillis());
+        
+        // Log ALL parameters for every request
+        java.util.Map<String, String[]> allParams = request.getParameterMap();
+        System.err.println("=== ALL PARAMETERS ===");
+        for (String paramName : allParams.keySet()) {
+            System.err.println("  " + paramName + " = " + java.util.Arrays.toString(allParams.get(paramName)));
+        }
+        
+        // Log ALL headers for every request
+        System.err.println("=== ALL HEADERS ===");
+        java.util.Enumeration<String> headerNames = request.getHeaderNames();
+        while (headerNames.hasMoreElements()) {
+            String headerName = headerNames.nextElement();
+            System.err.println("  " + headerName + " = " + request.getHeader(headerName));
+        }
+        
+        // CRITICAL FIX: Handle multipart form-data parameter parsing
+        String cmisaction = null;
+        String contentType = request.getContentType();
+        
+        // For multipart requests, we need to manually parse parameters using OpenCMIS utilities
+        if (contentType != null && contentType.startsWith("multipart/form-data")) {
+            System.err.println("*** MULTIPART REQUEST DETECTED - PARSING PARAMETERS ***");
+            try {
+                // Use OpenCMIS HttpUtils to properly parse multipart parameters
+                cmisaction = org.apache.chemistry.opencmis.server.shared.HttpUtils.getStringParameter(request, "cmisaction");
+                if (cmisaction != null) {
+                    System.err.println("*** MULTIPART CMISACTION EXTRACTED: " + cmisaction + " ***");
+                } else {
+                    System.err.println("*** MULTIPART CMISACTION NOT FOUND ***");
+                    // Try alternative parsing methods if HttpUtils doesn't work
+                    if (request instanceof jakarta.servlet.http.HttpServletRequest) {
+                        try {
+                            // Force Tomcat to parse multipart parameters
+                            java.util.Collection<jakarta.servlet.http.Part> parts = request.getParts();
+                            for (jakarta.servlet.http.Part part : parts) {
+                                if ("cmisaction".equals(part.getName())) {
+                                    java.io.InputStream inputStream = part.getInputStream();
+                                    byte[] bytes = inputStream.readAllBytes();
+                                    cmisaction = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+                                    System.err.println("*** PART-BASED CMISACTION EXTRACTED: " + cmisaction + " ***");
+                                    break;
+                                }
+                            }
+                        } catch (Exception partException) {
+                            System.err.println("*** PART-BASED PARSING FAILED: " + partException.getMessage() + " ***");
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("*** MULTIPART PARSING ERROR: " + e.getMessage() + " ***");
+                e.printStackTrace();
+            }
+        } else {
+            // Normal parameter parsing for non-multipart requests
+            cmisaction = request.getParameter("cmisaction");
+            if (cmisaction != null) {
+                System.err.println("*** STANDARD CMISACTION DETECTED: " + cmisaction + " ***");
+            }
+        }
+        
+        if (cmisaction != null) {
+            System.err.println("*** CMISACTION DETECTED: " + cmisaction + " ***");
+            
+            // CRITICAL FIX: Handle deleteType directly since OpenCMIS 1.2.0-SNAPSHOT bypasses service factory
+            if ("deleteType".equals(cmisaction)) {
+                System.err.println("!!! DELETE TYPE REQUEST INTERCEPTED - IMPLEMENTING DIRECT DELETION !!!");
+                try {
+                    handleDeleteTypeDirectly(request, response, pathInfo);
+                    return; // Don't delegate to parent - we handled it completely
+                } catch (Exception e) {
+                    System.err.println("!!! CRITICAL ERROR IN DIRECT DELETE TYPE: " + e.getClass().getSimpleName() + ": " + e.getMessage() + " !!!");
+                    e.printStackTrace();
+                    try {
+                        writeErrorResponse(response, e);
+                    } catch (Exception writeException) {
+                        System.err.println("!!! FAILED TO WRITE ERROR RESPONSE: " + writeException.getMessage() + " !!!");
+                        // Set basic error response if writeErrorResponse fails
+                        response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+                        response.setContentType("application/json");
+                        try {
+                            response.getWriter().write("{\"exception\":\"runtime\",\"message\":\"Internal server error\"}");
+                        } catch (IOException ioException) {
+                            System.err.println("!!! COMPLETE FAILURE TO WRITE ANY RESPONSE: " + ioException.getMessage() + " !!!");
+                        }
+                    }
+                    return;
+                }
+            }
+            
+            if ("createType".equals(cmisaction)) {
+                System.err.println("!!! CREATE TYPE REQUEST INTERCEPTED !!!");
+                System.err.println("Request details for createType:");
+                System.err.println("  Full URL: " + request.getRequestURL());
+                System.err.println("  Method: " + method);
+                System.err.println("  Content-Type: " + request.getContentType());
+                System.err.println("  Content-Length: " + request.getContentLength());
+                
+                // Try to read request body if available
+                try {
+                    if (request.getContentLength() > 0) {
+                        System.err.println("  Request has body content - length: " + request.getContentLength());
+                    }
+                } catch (Exception e) {
+                    System.err.println("  Error reading request body info: " + e.getMessage());
+                }
+            }
+        } else {
+            System.err.println("*** NO CMISACTION DETECTED (contentType=" + contentType + ") ***");
+        }
+        
+        System.err.println("!!! CRITICAL DEBUG: LINE 152 EXECUTED [" + System.currentTimeMillis() + "] !!!");
+        System.err.println("!!! CRITICAL DEBUG: LINE 153 EXECUTED [" + System.currentTimeMillis() + "] !!!");
+        System.err.println("!!! DEBUG: RIGHT BEFORE DELEGATING MESSAGE [" + System.currentTimeMillis() + "] !!!");
+        System.err.println("=== DELEGATING TO PARENT SERVICE ===");
+        
+        // CRITICAL FIX: Handle OpenCMIS 1.2.0-SNAPSHOT strict selector validation for TCK compatibility
+        HttpServletRequest finalRequest = request;
+        
+        try {
+            System.err.println("!!! COMPATIBILITY FIX EXECUTION START [" + System.currentTimeMillis() + "] !!!");
+            
+            if ("GET".equals(method) && queryString == null && pathInfo != null) {
+                // Check if this is a repository URL without selector (e.g., /browser/bedroom without ?cmisselector=repositoryInfo)
+                String[] pathParts = pathInfo.split("/");
+                System.err.println("COMPATIBILITY FIX: pathParts.length=" + pathParts.length + " for pathInfo=" + pathInfo);
+                
+                if (pathParts.length == 2) { // ["", "bedroom"] for /bedroom
+                    System.err.println("COMPATIBILITY FIX: Adding default repositoryInfo selector for repository URL");
+                    
+                    // Create a wrapper request that adds the default selector
+                    finalRequest = new HttpServletRequestWrapper(request) {
+                        @Override
+                        public String getQueryString() {
+                            return "cmisselector=repositoryInfo";
+                        }
+                        
+                        @Override
+                        public String getParameter(String name) {
+                            if ("cmisselector".equals(name)) {
+                                return "repositoryInfo";
+                            }
+                            return super.getParameter(name);
+                        }
+                        
+                        @Override
+                        public java.util.Map<String, String[]> getParameterMap() {
+                            java.util.Map<String, String[]> paramMap = new java.util.HashMap<String, String[]>(super.getParameterMap());
+                            paramMap.put("cmisselector", new String[]{"repositoryInfo"});
+                            return paramMap;
+                        }
+                    };
+                    System.err.println("COMPATIBILITY FIX: Request wrapped successfully");
+                }
+            }
+            
+            System.err.println("!!! COMPATIBILITY FIX EXECUTION COMPLETE [" + System.currentTimeMillis() + "] !!!");
+            
+        } catch (Exception e) {
+            System.err.println("!!! EXCEPTION IN COMPATIBILITY FIX: " + e.getMessage());
+            e.printStackTrace();
+        }
+        
+        // Use standard OpenCMIS processing with potential request wrapping for compatibility
+        // CMIS 1.1 specification: Multi-cardinality properties with no values should return null (not set state)
+        try {
+            System.err.println("!!! CALLING SUPER.SERVICE() [" + System.currentTimeMillis() + "] !!!");
+            super.service(finalRequest, response);
+            System.err.println("!!! SUPER.SERVICE() COMPLETED SUCCESSFULLY [" + System.currentTimeMillis() + "] !!!");
+        } catch (Exception e) {
+            System.err.println("!!! EXCEPTION IN SUPER.SERVICE(): " + e.getClass().getSimpleName() + ": " + e.getMessage() + " !!!");
+            System.err.println("!!! EXCEPTION OCCURRED AT [" + System.currentTimeMillis() + "] !!!");
+            e.printStackTrace();
+            
+            // Re-throw the exception
+            throw e;
+        }
+        
+        System.err.println("=== RETURNED FROM SUPER.SERVICE() ===");
+        System.err.println("Parent servlet processing completed");
+        
+        // CRITICAL: Check if this was a deleteType request and log the final status
+        if ("deleteType".equals(cmisaction)) {
+            System.err.println("!!! DELETEYPE REQUEST COMPLETED - CHECKING RESPONSE STATUS !!!");
+            System.err.println("  Response status: " + response.getStatus());
+            System.err.println("  Response content type: " + response.getContentType());
+            System.err.println("!!! END OF DELETEYPE REQUEST PROCESSING !!!");
+        }
+    }
+    
+    /**
+     * Handle object-specific POST operations by delegating to the root dispatcher
+     * with the correct object ID context.
+     */
+    private void handleObjectSpecificPostOperation(HttpServletRequest request, HttpServletResponse response,
+            String[] pathFragments, String cmisaction) throws Exception {
+        
+        // Create context similar to how OpenCMIS does it
+        String repositoryId = pathFragments[0];
+        String objectId = pathFragments[1];
+        
+        // Use request wrapping approach for consistency with GET operations
+        HttpServletRequestWrapper wrappedRequest = new HttpServletRequestWrapper(request) {
+            @Override
+            public String getPathInfo() {
+                // Change from /repositoryId/objectId to /repositoryId/root
+                return "/" + repositoryId + "/" + AbstractBrowserServiceCall.ROOT_PATH_FRAGMENT;
+            }
+            
+            @Override
+            public String getParameter(String name) {
+                // Add the objectId as a parameter for the CMIS service
+                if (Constants.PARAM_OBJECT_ID.equals(name)) {
+                    return objectId;
+                }
+                return super.getParameter(name);
+            }
+            
+            @Override
+            public java.util.Map<String, String[]> getParameterMap() {
+                java.util.Map<String, String[]> paramMap = new java.util.HashMap<String, String[]>(super.getParameterMap());
+                // Add the objectId parameter
+                paramMap.put(Constants.PARAM_OBJECT_ID, new String[]{objectId});
+                return paramMap;
+            }
+        };
+        
+        // Delegate to the parent servlet with the wrapped request
+        // This will use the standard authentication and dispatcher mechanism
+        super.service(wrappedRequest, response);
+        
+        log.info("NEMAKI CMIS: Successfully handled object-specific POST operation via request wrapping");
+        System.out.println("NEMAKI CMIS: Successfully handled object-specific POST operation via request wrapping");
+    }
+    
+    /**
+     * Handle object-specific GET operations by delegating to standard OpenCMIS mechanism
+     * with proper parameter wrapping for object-specific operations.
+     */
+    private void handleObjectSpecificGetOperation(HttpServletRequest request, HttpServletResponse response,
+            String[] pathFragments, String cmisselector) throws Exception {
+        
+        String repositoryId = pathFragments[0];
+        String objectId = pathFragments[1];
+        
+        log.info("NEMAKI CMIS: Handling object-specific GET operation via standard OpenCMIS delegation");
+        System.out.println("NEMAKI CMIS: Handling object-specific GET operation via standard OpenCMIS delegation");
+        log.info("NEMAKI CMIS: repositoryId=" + repositoryId + ", objectId=" + objectId + ", cmisselector=" + cmisselector);
+        System.out.println("NEMAKI CMIS: repositoryId=" + repositoryId + ", objectId=" + objectId + ", cmisselector=" + cmisselector);
+        
+        try {
+            // FINAL APPROACH: Use standard OpenCMIS routing but with proper object ID parameter injection
+            // This leverages the existing authentication and context management completely
+            
+            HttpServletRequestWrapper wrappedRequest = new HttpServletRequestWrapper(request) {
+                @Override
+                public String getPathInfo() {
+                    // Change from /repositoryId/objectId to /repositoryId/root for standard routing
+                    return "/" + repositoryId + "/" + AbstractBrowserServiceCall.ROOT_PATH_FRAGMENT;
+                }
+                
+                @Override
+                public String getParameter(String name) {
+                    // Inject objectId parameter for CMIS service operations
+                    if (Constants.PARAM_OBJECT_ID.equals(name)) {
+                        return objectId;
+                    }
+                    // Keep original cmisselector
+                    if ("cmisselector".equals(name)) {
+                        return cmisselector;
+                    }
+                    return super.getParameter(name);
+                }
+                
+                @Override
+                public java.util.Map<String, String[]> getParameterMap() {
+                    java.util.Map<String, String[]> paramMap = new java.util.HashMap<String, String[]>(super.getParameterMap());
+                    
+                    // Inject objectId parameter - this is what the CMIS service expects
+                    paramMap.put(Constants.PARAM_OBJECT_ID, new String[]{objectId});
+                    
+                    // Ensure cmisselector is preserved
+                    paramMap.put("cmisselector", new String[]{cmisselector});
+                    
+                    return paramMap;
+                }
+                
+                @Override
+                public String getQueryString() {
+                    // Rebuild query string with injected parameters
+                    StringBuilder queryBuilder = new StringBuilder();
+                    queryBuilder.append("cmisselector=").append(cmisselector);
+                    queryBuilder.append("&").append(Constants.PARAM_OBJECT_ID).append("=").append(objectId);
+                    
+                    // Add original parameters
+                    String originalQuery = super.getQueryString();
+                    if (originalQuery != null && !originalQuery.isEmpty()) {
+                        // Remove cmisselector if it exists to avoid duplication
+                        String[] params = originalQuery.split("&");
+                        for (String param : params) {
+                            if (!param.startsWith("cmisselector=") && !param.startsWith(Constants.PARAM_OBJECT_ID + "=")) {
+                                queryBuilder.append("&").append(param);
+                            }
+                        }
+                    }
+                    
+                    return queryBuilder.toString();
+                }
+            };
+            
+            // Delegate to the parent servlet with the wrapped request
+            // This uses the standard OpenCMIS authentication and context management
+            super.service(wrappedRequest, response);
+            
+            log.info("NEMAKI CMIS: Successfully handled " + cmisselector + " operation via standard delegation");
+            System.out.println("NEMAKI CMIS: Successfully handled " + cmisselector + " operation via standard delegation");
+            
+        } catch (Exception e) {
+            log.error("Error in standard delegation CMIS service operation", e);
+            System.err.println("Error in standard delegation CMIS service operation: " + e.getMessage());
+            e.printStackTrace();
+            writeErrorResponse(response, e);
+        }
+        
+        /*
+        // Legacy direct CMIS service approach - commented out in favor of standard dispatcher
+        try {
+            // Get authenticated CMIS service using proper Browser Binding context
+            CmisService service = getServiceFactory().getService(callContext);
+            
+            // Handle different cmisselector operations
+            Object result = null;
+            
+            if ("children".equals(cmisselector)) {
+                result = handleChildrenOperation(service, repositoryId, objectId, request);
+            } else if ("descendants".equals(cmisselector)) {
+                result = handleDescendantsOperation(service, repositoryId, objectId, request);
+            } else if ("object".equals(cmisselector)) {
+                result = handleObjectOperation(service, repositoryId, objectId, request);
+            } else if ("properties".equals(cmisselector)) {
+                result = handlePropertiesOperation(service, repositoryId, objectId, request);
+            } else if ("allowableActions".equals(cmisselector)) {
+                result = handleAllowableActionsOperation(service, repositoryId, objectId, request);
+            } else if ("content".equals(cmisselector)) {
+                result = handleContentOperation(service, repositoryId, objectId, request, response);
+                return; // Content operation handles response directly
+            } else {
+                throw new CmisNotSupportedException("Unsupported cmisselector: " + cmisselector);
+            }
+            
+            // Convert result to JSON and write response
+            writeJsonResponse(response, result);
+            
+            log.info("NEMAKI CMIS: Successfully handled " + cmisselector + " operation");
+            System.out.println("NEMAKI CMIS: Successfully handled " + cmisselector + " operation");
+            
+        } catch (Exception e) {
+            log.error("Error in CMIS service operation", e);
+            writeErrorResponse(response, e);
+        }
+        */
+    }
+    
+    /**
+     * Handle children operation - equivalent to getChildren CMIS service call
+     */
+    private Object handleChildrenOperation(CmisService service, String repositoryId, String objectId, HttpServletRequest request) {
+        // Parse parameters
+        String filter = HttpUtils.getStringParameter(request, "filter");
+        String orderBy = HttpUtils.getStringParameter(request, "orderBy");
+        Boolean includeAllowableActions = getBooleanParameterSafe(request, "includeAllowableActions");
+        org.apache.chemistry.opencmis.commons.enums.IncludeRelationships includeRelationships = getIncludeRelationshipsParameter(request, "includeRelationships");
+        String renditionFilter = HttpUtils.getStringParameter(request, "renditionFilter");
+        Boolean includePathSegment = getBooleanParameterSafe(request, "includePathSegment");
+        java.math.BigInteger maxItems = getBigIntegerParameterSafe(request, "maxItems");
+        java.math.BigInteger skipCount = getBigIntegerParameterSafe(request, "skipCount");
+        
+        // Call CMIS service
+        org.apache.chemistry.opencmis.commons.data.ObjectInFolderList children = service.getChildren(
+            repositoryId, objectId, filter, orderBy,
+            includeAllowableActions, includeRelationships, renditionFilter,
+            includePathSegment, maxItems, skipCount, null
+        );
+        
+        return children;
+    }
+    
+    /**
+     * Handle descendants operation - equivalent to getFolderTree CMIS service call
+     */
+    private Object handleDescendantsOperation(CmisService service, String repositoryId, String objectId, HttpServletRequest request) {
+        // Parse parameters
+        java.math.BigInteger depth = getBigIntegerParameterSafe(request, "depth");
+        String filter = HttpUtils.getStringParameter(request, "filter");
+        Boolean includeAllowableActions = getBooleanParameterSafe(request, "includeAllowableActions");
+        org.apache.chemistry.opencmis.commons.enums.IncludeRelationships includeRelationships = getIncludeRelationshipsParameter(request, "includeRelationships");
+        String renditionFilter = HttpUtils.getStringParameter(request, "renditionFilter");
+        Boolean includePathSegment = getBooleanParameterSafe(request, "includePathSegment");
+        
+        // Call CMIS service
+        java.util.List<org.apache.chemistry.opencmis.commons.data.ObjectInFolderContainer> descendants = service.getFolderTree(
+            repositoryId, objectId, depth, filter,
+            includeAllowableActions, includeRelationships, renditionFilter,
+            includePathSegment, null
+        );
+        
+        return descendants;
+    }
+    
+    /**
+     * Handle object operation - equivalent to getObject CMIS service call
+     */
+    private Object handleObjectOperation(CmisService service, String repositoryId, String objectId, HttpServletRequest request) {
+        // Parse parameters
+        String filter = HttpUtils.getStringParameter(request, "filter");
+        Boolean includeAllowableActions = getBooleanParameterSafe(request, "includeAllowableActions");
+        org.apache.chemistry.opencmis.commons.enums.IncludeRelationships includeRelationships = getIncludeRelationshipsParameter(request, "includeRelationships");
+        String renditionFilter = HttpUtils.getStringParameter(request, "renditionFilter");
+        Boolean includePolicyIds = getBooleanParameterSafe(request, "includePolicyIds");
+        Boolean includeACL = getBooleanParameterSafe(request, "includeACL");
+        
+        // Call CMIS service
+        org.apache.chemistry.opencmis.commons.data.ObjectData object = service.getObject(
+            repositoryId, objectId, filter,
+            includeAllowableActions, includeRelationships, renditionFilter,
+            includePolicyIds, includeACL, null
+        );
+        
+        return object;
+    }
+    
+    /**
+     * Handle properties operation - equivalent to getProperties CMIS service call
+     */
+    private Object handlePropertiesOperation(CmisService service, String repositoryId, String objectId, HttpServletRequest request) {
+        // Parse parameters
+        String filter = HttpUtils.getStringParameter(request, "filter");
+        
+        // Call CMIS service
+        org.apache.chemistry.opencmis.commons.data.Properties properties = service.getProperties(
+            repositoryId, objectId, filter, null
+        );
+        
+        return properties;
+    }
+    
+    /**
+     * Handle allowableActions operation - equivalent to getAllowableActions CMIS service call
+     */
+    private Object handleAllowableActionsOperation(CmisService service, String repositoryId, String objectId, HttpServletRequest request) {
+        // Call CMIS service
+        org.apache.chemistry.opencmis.commons.data.AllowableActions allowableActions = service.getAllowableActions(
+            repositoryId, objectId, null
+        );
+        
+        return allowableActions;
+    }
+    
+    /**
+     * Handle content operation - equivalent to getContentStream CMIS service call
+     */
+    private Object handleContentOperation(CmisService service, String repositoryId, String objectId, 
+                                        HttpServletRequest request, HttpServletResponse response) throws Exception {
+        // Parse parameters
+        String streamId = HttpUtils.getStringParameter(request, "streamId");
+        java.math.BigInteger offset = getBigIntegerParameterSafe(request, "offset");
+        java.math.BigInteger length = getBigIntegerParameterSafe(request, "length");
+        
+        // Call CMIS service
+        org.apache.chemistry.opencmis.commons.data.ContentStream contentStream = service.getContentStream(
+            repositoryId, objectId, streamId, offset, length, null
+        );
+        
+        if (contentStream == null) {
+            response.sendError(HttpServletResponse.SC_NOT_FOUND, "No content stream available");
+            return null;
+        }
+        
+        // Set response headers
+        response.setContentType(contentStream.getMimeType());
+        long contentLength = contentStream.getLength();
+        if (contentLength > 0) {
+            response.setContentLengthLong(contentLength);
+        }
+        if (contentStream.getFileName() != null) {
+            response.setHeader("Content-Disposition", "attachment; filename=\"" + contentStream.getFileName() + "\"");
+        }
+        
+        // Stream content to response
+        try (java.io.InputStream inputStream = contentStream.getStream();
+             java.io.OutputStream outputStream = response.getOutputStream()) {
+            byte[] buffer = new byte[8192];
+            int bytesRead;
+            while ((bytesRead = inputStream.read(buffer)) != -1) {
+                outputStream.write(buffer, 0, bytesRead);
+            }
+        }
+        
+        return null; // Response handled directly
+    }
+    
+    /**
+     * Write JSON response using Browser Binding JSON format
+     */
+    private void writeJsonResponse(HttpServletResponse response, Object result) throws Exception {
+        response.setContentType("application/json");
+        response.setCharacterEncoding("UTF-8");
+        
+        try (java.io.PrintWriter writer = response.getWriter()) {
+            // Simple JSON conversion using Jackson ObjectMapper from Spring context
+            com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            String json = objectMapper.writeValueAsString(result);
+            writer.write(json);
+        }
+    }
+    
+    /**
+     * Write error response in Browser Binding JSON format
+     */
+    private void writeErrorResponse(HttpServletResponse response, Exception e) throws Exception {
+        response.setContentType("application/json");
+        response.setCharacterEncoding("UTF-8");
+        
+        if (e instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisBaseException) {
+            org.apache.chemistry.opencmis.commons.exceptions.CmisBaseException cmisException = 
+                (org.apache.chemistry.opencmis.commons.exceptions.CmisBaseException) e;
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            
+            try (java.io.PrintWriter writer = response.getWriter()) {
+                writer.write("{\"exception\":\"" + cmisException.getClass().getSimpleName().toLowerCase().replace("cmis", "") + 
+                           "\",\"message\":\"" + cmisException.getMessage() + "\"}");
+            }
+        } else {
+            response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            try (java.io.PrintWriter writer = response.getWriter()) {
+                writer.write("{\"exception\":\"runtime\",\"message\":\"" + e.getMessage() + "\"}");
+            }
+        }
+    }
+    
+    /**
+     * Safe Boolean parameter parsing
+     */
+    private Boolean getBooleanParameterSafe(HttpServletRequest request, String name) {
+        String value = request.getParameter(name);
+        if (value == null || value.isEmpty()) {
+            return null;
+        }
+        return Boolean.valueOf(value);
+    }
+    
+    /**
+     * Safe BigInteger parameter parsing
+     */
+    private java.math.BigInteger getBigIntegerParameterSafe(HttpServletRequest request, String name) {
+        String value = request.getParameter(name);
+        if (value == null || value.isEmpty()) {
+            return null;
+        }
+        try {
+            return new java.math.BigInteger(value);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+    
+    /**
+     * Parse IncludeRelationships parameter
+     */
+    private org.apache.chemistry.opencmis.commons.enums.IncludeRelationships getIncludeRelationshipsParameter(HttpServletRequest request, String name) {
+        String value = request.getParameter(name);
+        if (value == null || value.isEmpty()) {
+            return org.apache.chemistry.opencmis.commons.enums.IncludeRelationships.NONE;
+        }
+        
+        try {
+            return org.apache.chemistry.opencmis.commons.enums.IncludeRelationships.fromValue(value);
+        } catch (Exception e) {
+            return org.apache.chemistry.opencmis.commons.enums.IncludeRelationships.NONE;
+        }
+    }
+    
+    /**
+     * Handle repository-level requests without cmisselector parameter.
+     * This fixes OpenCMIS TCK Browser Binding issue where requests are made without required selector.
+     */
+    private void handleRepositoryLevelRequestWithoutSelector(HttpServletRequest request, HttpServletResponse response,
+            String repositoryId) throws Exception {
+        
+        log.info("NEMAKI FIX: Handling repository-level request without cmisselector for repository: " + repositoryId);
+        System.out.println("NEMAKI FIX: Handling repository-level request without cmisselector for repository: " + repositoryId);
+        
+        // For repository-level GET requests without cmisselector, the most common case is repositoryInfo
+        // However, for TCK type operations, we need to check if there are type-related parameters
+        
+        String typeId = HttpUtils.getStringParameter(request, "typeId");
+        String parentTypeId = HttpUtils.getStringParameter(request, "parentTypeId");
+        String includePropertyDefinitions = HttpUtils.getStringParameter(request, "includePropertyDefinitions");
+        String maxItems = HttpUtils.getStringParameter(request, "maxItems");
+        String skipCount = HttpUtils.getStringParameter(request, "skipCount");
+        String depth = HttpUtils.getStringParameter(request, "depth");
+        
+        final String inferredSelector;
+        
+        // Infer the appropriate cmisselector based on parameters
+        if (typeId != null && !typeId.isEmpty()) {
+            if (depth != null) {
+                inferredSelector = "typeDescendants";
+            } else {
+                inferredSelector = "typeDefinition";
+            }
+        } else if (parentTypeId != null || 
+                   includePropertyDefinitions != null || 
+                   (maxItems != null && skipCount != null)) {
+            // Likely typeChildren request
+            inferredSelector = "typeChildren";
+        } else {
+            // Default case
+            inferredSelector = "repositoryInfo";
+        }
+        
+        log.info("NEMAKI FIX: Inferred cmisselector: " + inferredSelector + " based on parameters");
+        System.out.println("NEMAKI FIX: Inferred cmisselector: " + inferredSelector + " based on parameters");
+        
+        // Create a wrapper that adds the cmisselector parameter
+        HttpServletRequestWrapper wrappedRequest = new HttpServletRequestWrapper(request) {
+            @Override
+            public String getParameter(String name) {
+                if ("cmisselector".equals(name)) {
+                    return inferredSelector;
+                }
+                return super.getParameter(name);
+            }
+            
+            @Override
+            public java.util.Map<String, String[]> getParameterMap() {
+                java.util.Map<String, String[]> paramMap = new java.util.HashMap<String, String[]>(super.getParameterMap());
+                paramMap.put("cmisselector", new String[]{inferredSelector});
+                return paramMap;
+            }
+            
+            @Override
+            public String getQueryString() {
+                String originalQuery = super.getQueryString();
+                String selectorParam = "cmisselector=" + inferredSelector;
+                
+                if (originalQuery == null || originalQuery.isEmpty()) {
+                    return selectorParam;
+                } else {
+                    return selectorParam + "&" + originalQuery;
+                }
+            }
+        };
+        
+        // Delegate to the parent servlet with the wrapped request that includes cmisselector
+        super.service(wrappedRequest, response);
+        
+        log.info("NEMAKI FIX: Successfully handled repository-level request with inferred selector: " + inferredSelector);
+        System.out.println("NEMAKI FIX: Successfully handled repository-level request with inferred selector: " + inferredSelector);
+    }
+    
+    /**
+     * Handle deleteType requests directly since OpenCMIS 1.2.0-SNAPSHOT bypasses the configured service factory.
+     * This is a critical workaround for the service factory routing issue.
+     */
+    private void handleDeleteTypeDirectly(HttpServletRequest request, HttpServletResponse response, String pathInfo) throws Exception {
+        System.err.println("=== DIRECT DELETE TYPE HANDLER START ===");
+        
+        // Extract repository ID from path
+        String[] pathParts = pathInfo != null ? pathInfo.split("/") : new String[0];
+        if (pathParts.length < 2) {
+            throw new IllegalArgumentException("Invalid path for deleteType operation: " + pathInfo);
+        }
+        String repositoryId = pathParts[1]; // pathParts[0] is empty, pathParts[1] is repository ID
+        
+        // Extract type ID from parameters (handle multipart parsing)
+        String typeId = null;
+        String contentType = request.getContentType();
+        
+        if (contentType != null && contentType.startsWith("multipart/form-data")) {
+            System.err.println("DIRECT DELETE TYPE: Parsing typeId from multipart data");
+            try {
+                // Use OpenCMIS HttpUtils to properly parse multipart parameters
+                typeId = org.apache.chemistry.opencmis.server.shared.HttpUtils.getStringParameter(request, "typeId");
+                if (typeId == null) {
+                    // Try alternative parsing methods if HttpUtils doesn't work
+                    java.util.Collection<jakarta.servlet.http.Part> parts = request.getParts();
+                    for (jakarta.servlet.http.Part part : parts) {
+                        if ("typeId".equals(part.getName())) {
+                            java.io.InputStream inputStream = part.getInputStream();
+                            byte[] bytes = inputStream.readAllBytes();
+                            typeId = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+                            System.err.println("DIRECT DELETE TYPE: Part-based typeId extracted: " + typeId);
+                            break;
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("DIRECT DELETE TYPE: Multipart parsing error: " + e.getMessage());
+                e.printStackTrace();
+            }
+        } else {
+            // Normal parameter parsing for non-multipart requests
+            typeId = request.getParameter("typeId");
+        }
+        
+        if (typeId == null || typeId.isEmpty()) {
+            throw new IllegalArgumentException("typeId parameter is required for deleteType operation");
+        }
+        
+        System.err.println("DIRECT DELETE TYPE: repositoryId=" + repositoryId + ", typeId=" + typeId);
+        
+        try {
+            // Get the TypeService from Spring context to perform the deletion
+            org.springframework.context.ApplicationContext applicationContext = 
+                jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext();
+            
+            if (applicationContext == null) {
+                throw new RuntimeException("Spring ApplicationContext is not available");
+            }
+            
+            // Get TypeService bean
+            jp.aegif.nemaki.businesslogic.TypeService typeService = 
+                jp.aegif.nemaki.util.spring.SpringUtil.getBeanByType(applicationContext, jp.aegif.nemaki.businesslogic.TypeService.class);
+            
+            if (typeService == null) {
+                throw new RuntimeException("TypeService bean is not available");
+            }
+            
+            System.err.println("DIRECT DELETE TYPE: Retrieved TypeService from Spring context");
+            
+            // Call the actual deletion method
+            typeService.deleteTypeDefinition(repositoryId, typeId);
+            
+
+            // CRITICAL FIX: Get TypeManager and refresh cache (matching REST implementation logic)
+            jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager = 
+                jp.aegif.nemaki.util.spring.SpringUtil.getBeanByType(applicationContext, jp.aegif.nemaki.cmis.aspect.type.TypeManager.class);
+
+            if (typeManager != null) {
+                System.err.println("DIRECT DELETE TYPE: Retrieved TypeManager from Spring context");
+                typeManager.refreshTypes();
+                System.err.println("DIRECT DELETE TYPE: TypeManager.refreshTypes() completed successfully");
+            } else {
+                System.err.println("DIRECT DELETE TYPE WARNING: TypeManager bean is not available - cache will not be refreshed");
+            }
+            System.err.println("DIRECT DELETE TYPE: TypeService.deleteTypeDefinition completed successfully");
+            
+
+
+            if (typeManager != null) {
+            // Return empty success response (HTTP 200 with empty body, matching OpenCMIS behavior)
+            response.setStatus(HttpServletResponse.SC_OK);
+            response.setContentType("application/json");
+            response.setCharacterEncoding("UTF-8");
+            
+            try (java.io.PrintWriter writer = response.getWriter()) {
+                // Empty JSON response - this matches what OpenCMIS returns for successful deleteType
+                writer.write("");
+            }
+            
+            System.err.println("DIRECT DELETE TYPE: Response sent successfully");
+            
+        } catch (Exception e) {
+            System.err.println("DIRECT DELETE TYPE ERROR: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+            e.printStackTrace();
+            throw e; // Re-throw to be handled by the calling method
+        }
+        
+        System.err.println("=== DIRECT DELETE TYPE HANDLER END ===");
+    }
+    
+    /**
+     * CRITICAL FIX: Override doPost to force interception of POST requests.
+     * OpenCMIS 1.2.0-SNAPSHOT has a routing bug that bypasses custom servlets for POST requests
+     * but not GET requests. This method forces all POST requests through our custom logic.
+     */
+    @Override
+    protected void doPost(HttpServletRequest request, HttpServletResponse response) 
+            throws ServletException, IOException {
+        
+        System.err.println("!!! DOPOST OVERRIDE: POST REQUEST INTERCEPTED !!!");
+        System.err.println("!!! DOPOST OVERRIDE: " + request.getMethod() + " " + request.getRequestURI() + " !!!");
+        
+        // Force routing through our custom service method
+        this.service(request, response);
+    }
+    
+    /**
+     * CRITICAL FIX: Override doGet to confirm which requests reach our servlet.
+     * This helps us understand OpenCMIS routing behavior.
+     */
+    @Override
+    protected void doGet(HttpServletRequest request, HttpServletResponse response) 
+            throws ServletException, IOException {
+        
+        System.err.println("!!! DOGET OVERRIDE: GET REQUEST INTERCEPTED !!!");
+        System.err.println("!!! DOGET OVERRIDE: " + request.getMethod() + " " + request.getRequestURI() + " !!!");
+        
+        // Force routing through our custom service method
+        this.service(request, response);
+    }
+    
+}

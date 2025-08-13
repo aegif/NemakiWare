@@ -26,7 +26,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
 import { CMISObject, VersionHistory, TypeDefinition, Relationship } from '../../types/cmis';
 import { PropertyEditor } from '../PropertyEditor/PropertyEditor';
-import { ActionButtons } from '../ActionButtons/ActionButtons';
 import { PreviewComponent } from '../PreviewComponent/PreviewComponent';
 import { canPreview } from '../../utils/previewUtils';
 
@@ -93,10 +92,24 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     }
   };
 
-  const handleDownload = () => {
-    if (object) {
-      const url = cmisService.getDownloadUrl(repositoryId, object.id);
-      window.open(url, '_blank');
+  const handleDownload = async () => {
+    if (object && object.baseType === 'cmis:document') {
+      try {
+        // Use authenticated content stream download instead of direct URL
+        const response = await cmisService.getContentStream(repositoryId, object.id);
+        const blob = new Blob([response]);
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = object.name || 'download';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      } catch (error) {
+        console.error('Download error:', error);
+        message.error('ダウンロードに失敗しました');
+      }
     }
   };
 
@@ -188,9 +201,21 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       render: (_: any, record: CMISObject) => (
         <Button 
           size="small"
-          onClick={() => {
-            const url = cmisService.getDownloadUrl(repositoryId, record.id);
-            window.open(url, '_blank');
+          onClick={async () => {
+            try {
+              const response = await cmisService.getContentStream(repositoryId, record.id);
+              const blob = new Blob([response]);
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = record.name || 'download';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              window.URL.revokeObjectURL(url);
+            } catch (error) {
+              message.error('ダウンロードに失敗しました');
+            }
           }}
         >
           ダウンロード
@@ -263,18 +288,6 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
           rowKey="id"
           size="small"
           pagination={false}
-        />
-      ),
-    },
-    {
-      key: 'actions',
-      label: 'アクション',
-      children: (
-        <ActionButtons
-          repositoryId={repositoryId}
-          objectId={object.id}
-          triggerType="UserButton"
-          onActionComplete={loadObject}
         />
       ),
     },

@@ -86,6 +86,8 @@ import jp.aegif.nemaki.model.couch.CouchRendition;
 import jp.aegif.nemaki.model.couch.CouchTypeDefinition;
 import jp.aegif.nemaki.model.couch.CouchUserItem;
 import jp.aegif.nemaki.model.couch.CouchVersionSeries;
+import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
+import jp.aegif.nemaki.util.spring.SpringContext;
 
 /**
  * Dao Service implementation for CouchDB.
@@ -131,24 +133,124 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public List<NemakiTypeDefinition> getTypeDefinitions(String repositoryId) {
 		try {
 			// Use ViewQuery to get type definitions from design document
+			System.err.println("=== CONTENT DAO GET TYPE DEFINITIONS DEBUG ===");
+			System.err.println("Repository ID: " + repositoryId);
+			
 			Map<String, Object> queryParams = new HashMap<String, Object>();
+			// CRITICAL FIX: Must include documents to get full type definition data
+			queryParams.put("include_docs", true);
 			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "typeDefinitions", queryParams);
+			
+			System.err.println("CouchDB View Result: " + (result != null ? "NOT NULL" : "NULL"));
+			if (result != null) {
+				System.err.println("Total rows in ViewResult: " + (result.getRows() != null ? result.getRows().size() : "null rows"));
+			}
 			
 			List<NemakiTypeDefinition> typeDefinitions = new ArrayList<NemakiTypeDefinition>();
 			
 			// Handle null result gracefully (occurs during initial startup when design documents may not exist yet)
 			if (result != null && result.getRows() != null) {
+				System.err.println("MODIFIED DEBUG: Processing " + result.getRows().size() + " rows from typeDefinitions view");
+				int processedCount = 0;
+				
 				for (ViewResultRow row : result.getRows()) {
+					processedCount++;
+					System.err.println("SIMPLE ROW DEBUG: Processing row number " + processedCount);
+					if (processedCount <= 3) {
+						Object doc = row.getDoc();
+						System.err.println("Processing row " + processedCount + " - doc is " + (doc != null ? "NOT NULL" : "NULL"));
+						System.err.println("Row " + processedCount + " doc class: " + (doc != null ? doc.getClass().getName() : "null"));
+						System.err.println("Row " + processedCount + " doc content: " + (doc != null ? doc.toString().substring(0, Math.min(100, doc.toString().length())) : "null"));
+					}
+					System.err.println("=== DETAILED ROW CHECK: row " + processedCount + " ===");
+					System.err.println("row.getDoc() != null: " + (row.getDoc() != null));
+					Object rowDoc = row.getDoc();
+					System.err.println("rowDoc is null: " + (rowDoc == null));
+					System.err.println("About to enter if condition...");
+					
 					if (row.getDoc() != null) {
+						System.err.println("=== ENTERED CONVERSION BLOCK for row " + processedCount + " ===");
 						// Convert document to CouchTypeDefinition, then to NemakiTypeDefinition
 						try {
-							// Use Map-based constructor to ensure proper BaseTypeId conversion
-							Map<String, Object> docMap = (Map<String, Object>) row.getDoc();
-							CouchTypeDefinition ctd = new CouchTypeDefinition(docMap);
-							if (ctd != null) {
-								typeDefinitions.add(ctd.convert());
+							// Handle both Document and Map types from Cloudant SDK
+							Map<String, Object> docMap = null;
+							Object docObj = row.getDoc();
+							
+							if (docObj instanceof Map) {
+								// Already a Map, use directly
+								docMap = (Map<String, Object>) docObj;
+								System.err.println("=== ROW PROCESSING: Using Map directly ===");
+							} else if (docObj instanceof com.ibm.cloud.cloudant.v1.model.Document) {
+								// Convert Document to Map using properties
+								com.ibm.cloud.cloudant.v1.model.Document doc = (com.ibm.cloud.cloudant.v1.model.Document) docObj;
+								docMap = doc.getProperties();
+								
+								// CRITICAL FIX: Add CouchDB metadata (_id, _rev) to properties map
+								// getProperties() only returns document content, not CouchDB metadata
+								// CouchNodeBase constructor needs _id and _rev fields for proper object initialization
+								if (doc.getId() != null) {
+									docMap.put("_id", doc.getId());
+									System.err.println("=== METADATA FIX: Added _id to docMap: " + doc.getId() + " ===");
+								}
+								if (doc.getRev() != null) {
+									docMap.put("_rev", doc.getRev());
+									System.err.println("=== METADATA FIX: Added _rev to docMap: " + doc.getRev() + " ===");
+								}
+								
+								System.err.println("=== ROW PROCESSING: Converted Document to Map with metadata ===");
+							} else {
+								System.err.println("=== ROW PROCESSING: Unknown document type: " + docObj.getClass().getName() + " ===");
+								continue;
 							}
+								System.err.println("=== ROW PROCESSING: row " + processedCount + " has doc, about to cast ===");
+								String typeId = (String) docMap.get("typeId");
+								System.err.println("=== ROW PROCESSING: docMap cast successful, typeId = " + typeId + " ===");
+								
+								if (processedCount <= 3) {
+									System.err.println("Row " + processedCount + " typeId: " + typeId);
+								}
+								
+								System.err.println("=== CONSTRUCTOR DEBUG: About to create CouchTypeDefinition ===");
+
+								
+								System.err.println("DocMap typeId: " + docMap.get("typeId"));
+
+								
+								System.err.println("DocMap queryName: " + docMap.get("queryName"));
+
+								
+								System.err.println("DocMap baseId: " + docMap.get("baseId"));
+
+								
+								System.err.println("DocMap objectType: " + docMap.get("objectType"));
+
+								
+								CouchTypeDefinition ctd = new CouchTypeDefinition(docMap);
+
+								
+								System.err.println("=== CONSTRUCTOR DEBUG: CouchTypeDefinition created successfully ===");
+								if (ctd != null) {
+									typeDefinitions.add(ctd.convert());
+									if (processedCount <= 3) {
+										System.err.println("Successfully converted typeId: " + typeId);
+									}
+								}
 						} catch (Exception e) {
+							String typeId = "unknown";
+							try {
+								Object docObj = row.getDoc();
+								if (docObj instanceof Map) {
+									typeId = (String) ((Map<String, Object>) docObj).get("typeId");
+								} else if (docObj instanceof com.ibm.cloud.cloudant.v1.model.Document) {
+									typeId = (String) ((com.ibm.cloud.cloudant.v1.model.Document) docObj).getProperties().get("typeId");
+								}
+							} catch (Exception ex) {
+								// Ignore, use default "unknown"
+							}
+							System.err.println("=== CONVERSION EXCEPTION for typeId " + typeId + " ===");
+							System.err.println("Exception: " + e.getClass().getName());
+							System.err.println("Message: " + e.getMessage());
+							e.printStackTrace();
 							log.warn("Failed to convert type definition document: " + e.getMessage());
 							if (log.isDebugEnabled()) {
 								e.printStackTrace();
@@ -158,8 +260,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				}
 			}
 			
+			System.err.println("Final typeDefinitions.size() = " + typeDefinitions.size());
+			
 			// If no types found via ViewQuery, return basic CMIS types as fallback
 			if (typeDefinitions.isEmpty()) {
+				System.err.println("=== FALLBACK TRIGGERED: No types found via ViewQuery ===");
 				log.warn("No type definitions found via ViewQuery, returning basic CMIS types as fallback");
 				
 				// Create basic folder type definition
@@ -229,14 +334,41 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		
 		// Step 2: Call CloudantClientWrapper create
 		System.err.println("[DAO] Calling CloudantClientWrapper.create()...");
-		connectorPool.getClient(repositoryId).create(ct);
-		System.err.println("[DAO] CloudantClientWrapper.create() completed");
+		System.err.println("[DAO] Document to be stored: " + ct.getId() + " with queryName: " + ct.getQueryName());
+		System.err.println("[DAO] Document type field: " + ct.getType());
+		
+		try {
+			connectorPool.getClient(repositoryId).create(ct);
+			System.err.println("[DAO] CloudantClientWrapper.create() completed successfully");
+		} catch (Exception e) {
+			System.err.println("[DAO] EXCEPTION in CloudantClientWrapper.create(): " + e.getMessage());
+			e.printStackTrace();
+			throw e;
+		}
 		System.err.println("[DAO] After CouchDB create, CouchTypeDefinition properties: " + ct.getProperties());
 		
 		// Step 3: Convert back to NemakiTypeDefinition
 		System.err.println("[DAO] Converting back to NemakiTypeDefinition...");
 		NemakiTypeDefinition result = ct.convert();
 		System.err.println("[DAO] Final result properties: " + result.getProperties());
+		
+		// Step 4: CRITICAL - Refresh TypeManager cache to include new type
+		System.err.println("[DAO] === REFRESHING TYPEMANAGER CACHE FOR NEW TYPE ===");
+		try {
+			// Get TypeManager from Spring context and refresh types cache
+			TypeManager typeManager = (TypeManager) SpringContext.getBean("typeManager");
+			if (typeManager != null) {
+				typeManager.refreshTypes();
+				System.err.println("[DAO] TypeManager.refreshTypes() completed successfully");
+			} else {
+				System.err.println("[DAO] ERROR: TypeManager bean not found");
+			}
+		} catch (Exception e) {
+			System.err.println("[DAO] ERROR during TypeManager refresh: " + e.getMessage());
+			e.printStackTrace();
+			// Don't throw - let type creation succeed even if cache refresh fails
+		}
+		
 		System.err.println("[DAO] === CREATE TYPE DEFINITION COMPLETED ===");
 		return result;
 	}
@@ -253,7 +385,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public void deleteTypeDefinition(String repositoryId, String nodeId) {
+		System.err.println("[DAO] === DELETE TYPE DEFINITION CALLED ===");
+		System.err.println("[DAO] Repository ID: " + repositoryId);
+		System.err.println("[DAO] Node ID to delete: " + nodeId);
+		
+		System.err.println("[DAO] About to call generic delete() method...");
 		delete(repositoryId, nodeId);
+		System.err.println("[DAO] === DELETE TYPE DEFINITION COMPLETED ===");
 	}
 
 	@Override
@@ -1958,6 +2096,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public void delete(String repositoryId, String objectId) {
+		System.err.println("[DAO] === DELETION FLOW TRACE START ===");
+		System.err.println("[DAO] DELETE METHOD CALLED FOR OBJECT: " + objectId + " in repository: " + repositoryId);
 		log.debug("=== DELETION FLOW TRACE START ===");
 		log.debug("DELETE METHOD CALLED FOR OBJECT: " + objectId + " in repository: " + repositoryId);
 		log.debug("Thread: " + Thread.currentThread().getName());
@@ -1985,13 +2125,18 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					log.warn("Object " + objectId + " has no revision - this may cause deletion failure");
 				}
 				
+				System.err.println("[DAO] Deleting object " + objectId + " with revision: " + currentRevision);
 				log.debug("Deleting object " + objectId + " with revision: " + currentRevision);
 				
 				// Perform the deletion
+				System.err.println("[DAO] About to call CloudantClientWrapper.delete(cnb)...");
 				connectorPool.getClient(repositoryId).delete(cnb);
+				System.err.println("[DAO] CloudantClientWrapper.delete(cnb) completed");
 				
 				// Verify deletion with proper exception handling
+				System.err.println("[DAO] Starting deletion verification...");
 				boolean deletionVerified = verifyDeletion(repositoryId, objectId, attempt);
+				System.err.println("[DAO] Deletion verification result: " + deletionVerified);
 				if (!deletionVerified && attempt < maxRetries) {
 					log.warn("Object " + objectId + " still exists after deletion attempt " + attempt + ", retrying...");
 					Thread.sleep(retryDelayMs);
@@ -2006,11 +2151,14 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					}
 				}
 				
+				System.err.println("[DAO] DELETION SUCCESS: Successfully deleted object: " + objectId + " from repository: " + repositoryId + " on attempt " + attempt);
 				log.debug("DELETION SUCCESS: Successfully deleted object: " + objectId + " from repository: " + repositoryId + " on attempt " + attempt);
 				return; // Success
 				
 			} catch (Exception e) {
+				System.err.println("[DAO] DELETION EXCEPTION on attempt " + attempt + " for object " + objectId + ": " + e.getClass().getSimpleName() + ": " + e.getMessage());
 				if (attempt < maxRetries) {
+					System.err.println("[DAO] Retrying deletion (attempt " + attempt + " of " + maxRetries + ")...");
 					log.warn("Deletion attempt " + attempt + " failed for object " + objectId + ", retrying: " + e.getMessage());
 					try {
 						Thread.sleep(retryDelayMs);

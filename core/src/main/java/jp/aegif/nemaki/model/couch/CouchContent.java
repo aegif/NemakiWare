@@ -74,8 +74,26 @@ public class CouchContent extends CouchNodeBase{
 				}
 			}
 			
+			// subTypePropertiesの変換
+			if (properties.containsKey("subTypeProperties")) {
+				Object subTypePropsValue = properties.get("subTypeProperties");
+				if (subTypePropsValue instanceof List) {
+					@SuppressWarnings("unchecked")
+					List<Map<String, Object>> subTypePropsList = (List<Map<String, Object>>) subTypePropsValue;
+					List<Property> subTypeProperties = new ArrayList<Property>();
+					for (Map<String, Object> propMap : subTypePropsList) {
+						String key = (String) propMap.get("key");
+						Object value = propMap.get("value");
+						if (key != null) {
+							subTypeProperties.add(new Property(key, value));
+						}
+					}
+					this.subTypeProperties = subTypeProperties;
+				}
+			}
+			
 			// 複雑なオブジェクトは後で処理
-			// TODO: acl, subTypeProperties, aspects, secondaryIds の変換
+			// TODO: acl, aspects, secondaryIds の変換
 		}
 	}
 

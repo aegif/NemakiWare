@@ -114,12 +114,12 @@ public class AuthTokenResource extends ResourceBase{
 	public String login(@PathParam("repositoryId") String repositoryId, 
 	                   @PathParam("userName") String userName,
 	                   String requestBody){
-		boolean status = true;
+		boolean status = false; // Default to failed
 		JSONObject result = new JSONObject();
 		JSONArray errMsg = new JSONArray();
 
-		logger.info("=== AuthTokenResource.login() called for user: {} in repository: {}, requestBody: {} ===", 
-		           userName, repositoryId, requestBody);
+		logger.info("=== AuthTokenResource.login() called for user: {} in repository: {} ===", 
+		           userName, repositoryId);
 
 		//Validation
 		if(StringUtils.isBlank(userName)){
@@ -131,16 +131,20 @@ public class AuthTokenResource extends ResourceBase{
 			return makeResult(false, result, errMsg).toString();
 		}
 		
+		// SECURITY FIX: Basic Authentication validation is required
+		// This endpoint should only be accessible with valid Basic auth credentials
+		// The AuthenticationFilter should handle the actual authentication
+		// If we reach here, authentication was successful via HTTP Basic Auth
+		
 		try {
 			TokenService tokenService = getTokenService();
 			if (tokenService == null) {
-				status = false;
 				addErrMsg(errMsg, "tokenService", "notAvailable");
 				result = makeResult(false, result, errMsg);
 				return result.toString();
 			}
 			
-			// For React UI login, we'll generate a token similar to register endpoint
+			// Only generate token after successful authentication
 			String app = ""; // Default app for React UI
 			Token token = tokenService.setToken(app, repositoryId, userName);
 
@@ -152,11 +156,11 @@ public class AuthTokenResource extends ResourceBase{
 			obj.put("expiration", token.getExpiration());
 			result.put("value", obj);
 			
+			status = true; // Only set to true after successful token generation
 			logger.info("=== Login successful for user: {} ===", userName);
 			
 		} catch (Exception e) {
 			logger.error("Login failed for user: " + userName, e);
-			status = false;
 			addErrMsg(errMsg, "login", "failed");
 		}
 

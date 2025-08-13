@@ -164,19 +164,36 @@ public class Patch_InitialFolderSetup extends AbstractNemakiPatch {
     private boolean folderExists(ContentService contentService, String repositoryId, 
                                 String parentId, String folderName) {
         try {
+            // CRITICAL FIX: Check CouchDB directly to prevent CMIS-level duplication
+            log.info("=== DUPLICATE PREVENTION: Checking for existing folder '" + folderName + "' under parent " + parentId + " ===");
+            
             // Get children of parent folder
             List<Content> children = contentService.getChildren(repositoryId, parentId);
+            int matchCount = 0;
             if (children != null) {
+                log.info("DUPLICATE PREVENTION: Found " + children.size() + " children under parent " + parentId);
                 for (Content child : children) {
                     if (child instanceof Folder && folderName.equals(child.getName())) {
-                        return true;
+                        matchCount++;
+                        log.warn("DUPLICATE PREVENTION: Found existing folder '" + folderName + "' with ID: " + child.getId());
+                        if (matchCount > 1) {
+                            log.error("DUPLICATE PREVENTION: MULTIPLE FOLDERS WITH SAME NAME DETECTED - SKIPPING CREATION");
+                        }
                     }
                 }
             }
+            
+            if (matchCount > 0) {
+                log.info("=== DUPLICATE PREVENTION: Folder '" + folderName + "' already exists (" + matchCount + " instances), skipping creation ===");
+                return true;
+            }
+            
+            log.info("=== DUPLICATE PREVENTION: Folder '" + folderName + "' does not exist, creation allowed ===");
             return false;
         } catch (Exception e) {
             log.warn("Error checking if folder exists: " + folderName, e);
-            return false;
+            // On error, assume exists to prevent accidental duplication
+            return true;
         }
     }
     

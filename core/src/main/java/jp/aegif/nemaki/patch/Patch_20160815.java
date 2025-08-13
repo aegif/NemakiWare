@@ -47,6 +47,11 @@ import jp.aegif.nemaki.util.constant.SystemConst;
 public class Patch_20160815 extends AbstractNemakiPatch{
 	private static final Log log = LogFactory.getLog(Patch_20160815.class);
 
+	public Patch_20160815() {
+		System.out.println("=== PATCH DEBUG: Patch_20160815 constructor called ===");
+		log.info("=== PATCH DEBUG: Patch_20160815 constructor called ===");
+	}
+
 	public String getName() {
     	return "patch_20160815";
 	}
@@ -58,6 +63,9 @@ public class Patch_20160815 extends AbstractNemakiPatch{
 
 	@Override
 	protected void applyPerRepositoryPatch(String repositoryId) {
+		log.info("=== PATCH DEBUG: Starting Patch_20160815 for repository: " + repositoryId + " ===");
+		System.out.println("=== PATCH DEBUG: Starting Patch_20160815 for repository: " + repositoryId + " ===");
+		
 		addConfigurationView(repositoryId);
 
 		createSystemFolder(repositoryId);

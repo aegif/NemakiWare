@@ -23,6 +23,7 @@ import org.json.simple.JSONObject;
 
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 import java.io.InputStream;
 import java.text.MessageFormat;
 import java.util.ArrayList;
@@ -66,6 +67,416 @@ public class TypeResource extends ResourceBase {
 		result.put("typeServiceNull", (typeService == null));
 		result.put("typeManagerNull", (typeManager == null));
 		return result.toJSONString();
+	}
+
+	// New CRUD endpoints for UI management
+
+	/**
+	 * Get all type definitions
+	 */
+	@GET
+	@Path("/list")
+	@Produces(MediaType.APPLICATION_JSON)
+	@SuppressWarnings("unchecked")
+	public Response list(@PathParam("repositoryId") String repositoryId) {
+		log.info("TypeResource.list() called for repository: " + repositoryId);
+		
+		try {
+			// Get Spring services using SpringContext fallback
+			if (typeService == null) {
+				typeService = (TypeService) SpringContext.getBean("TypeService");
+			}
+			
+			if (typeService == null) {
+				JSONObject errorResult = new JSONObject();
+				errorResult.put("status", "error");
+				errorResult.put("message", "TypeService not available");
+				return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+						.entity(errorResult.toJSONString()).build();
+			}
+
+			List<NemakiTypeDefinition> typeDefinitions = typeService.getTypeDefinitions(repositoryId);
+			JSONArray typesArray = new JSONArray();
+			
+			for (NemakiTypeDefinition nemakiType : typeDefinitions) {
+				JSONObject typeJson = convertTypeToJson(repositoryId, nemakiType);
+				typesArray.add(typeJson);
+			}
+			
+			JSONObject result = new JSONObject();
+			result.put("types", typesArray);
+			result.put("status", "success");
+			
+			return Response.status(Response.Status.OK)
+					.entity(result.toJSONString())
+					.type(MediaType.APPLICATION_JSON)
+					.build();
+			
+		} catch (Exception e) {
+			log.error("Exception occurred in list(): " + e.getMessage(), e);
+			
+			JSONObject errorResult = new JSONObject();
+			errorResult.put("status", "error");
+			errorResult.put("message", "Failed to retrieve type list");
+			errorResult.put("error", e.getMessage());
+			
+			return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+					.entity(errorResult.toJSONString())
+					.type(MediaType.APPLICATION_JSON)
+					.build();
+		}
+	}
+
+	/**
+	 * Get specific type definition
+	 */
+	@GET
+	@Path("/show/{typeId}")
+	@Produces(MediaType.APPLICATION_JSON)
+	@SuppressWarnings("unchecked")
+	public Response show(@PathParam("repositoryId") String repositoryId, @PathParam("typeId") String typeId) {
+		log.info("TypeResource.show() called for repository: " + repositoryId + ", typeId: " + typeId);
+		
+		try {
+			// Get Spring services using SpringContext fallback
+			if (typeService == null) {
+				typeService = (TypeService) SpringContext.getBean("TypeService");
+			}
+			
+			if (typeService == null) {
+				JSONObject errorResult = new JSONObject();
+				errorResult.put("status", "error");
+				errorResult.put("message", "TypeService not available");
+				return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+						.entity(errorResult.toJSONString()).build();
+			}
+
+			NemakiTypeDefinition nemakiType = typeService.getTypeDefinition(repositoryId, typeId);
+			if (nemakiType == null) {
+				JSONObject errorResult = new JSONObject();
+				errorResult.put("status", "error");
+				errorResult.put("message", "Type definition not found: " + typeId);
+				return Response.status(Response.Status.NOT_FOUND)
+						.entity(errorResult.toJSONString()).build();
+			}
+			
+			JSONObject result = new JSONObject();
+			result.put("type", convertTypeToJson(repositoryId, nemakiType));
+			result.put("status", "success");
+			
+			return Response.status(Response.Status.OK)
+					.entity(result.toJSONString())
+					.type(MediaType.APPLICATION_JSON)
+					.build();
+			
+		} catch (Exception e) {
+			log.error("Exception occurred in show(): " + e.getMessage(), e);
+			
+			JSONObject errorResult = new JSONObject();
+			errorResult.put("status", "error");
+			errorResult.put("message", "Failed to retrieve type definition");
+			errorResult.put("error", e.getMessage());
+			
+			return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+					.entity(errorResult.toJSONString())
+					.type(MediaType.APPLICATION_JSON)
+					.build();
+		}
+	}
+
+	/**
+	 * Create new type definition
+	 */
+	@POST
+	@Path("/create")
+	@Consumes(MediaType.APPLICATION_JSON)
+	@Produces(MediaType.APPLICATION_JSON)
+	@SuppressWarnings("unchecked")
+	public Response create(@PathParam("repositoryId") String repositoryId, String jsonInput) {
+		log.info("TypeResource.create() called for repository: " + repositoryId);
+		
+		try {
+			// Get Spring services using SpringContext fallback
+			if (typeService == null) {
+				typeService = (TypeService) SpringContext.getBean("TypeService");
+			}
+			if (typeManager == null) {
+				typeManager = (TypeManager) SpringContext.getBean("TypeManager");
+			}
+			
+			if (typeService == null) {
+				JSONObject errorResult = new JSONObject();
+				errorResult.put("status", "error");
+				errorResult.put("message", "TypeService not available");
+				return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+						.entity(errorResult.toJSONString()).build();
+			}
+
+			// Use existing JSON parsing logic
+			parseJson(repositoryId, jsonInput);
+			
+			// Check if type already exists  
+			for (String typeId : typeMaps.keySet()) {
+				if (existType(repositoryId, typeId)) {
+					JSONObject errorResult = new JSONObject();
+					errorResult.put("status", "error");
+					errorResult.put("message", "Type definition already exists: " + typeId);
+					return Response.status(Response.Status.CONFLICT)
+							.entity(errorResult.toJSONString()).build();
+				}
+			}
+			
+			// Create type definition
+			create(repositoryId);
+			
+			// Refresh type manager
+			if (typeManager != null) {
+				typeManager.refreshTypes();
+			}
+			
+			JSONObject result = new JSONObject();
+			result.put("status", "success");
+			result.put("message", "Type definition created successfully");
+			
+			return Response.status(Response.Status.OK)
+					.entity(result.toJSONString())
+					.type(MediaType.APPLICATION_JSON)
+					.build();
+			
+		} catch (Exception e) {
+			log.error("Exception occurred in create(): " + e.getMessage(), e);
+			
+			JSONObject errorResult = new JSONObject();
+			errorResult.put("status", "error");
+			errorResult.put("message", "Failed to create type definition");
+			errorResult.put("error", e.getMessage());
+			
+			return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+					.entity(errorResult.toJSONString())
+					.type(MediaType.APPLICATION_JSON)
+					.build();
+		}
+	}
+
+	/**
+	 * Update existing type definition
+	 */
+	@PUT
+	@Path("/update/{typeId}")
+	@Consumes(MediaType.APPLICATION_JSON)
+	@Produces(MediaType.APPLICATION_JSON)
+	@SuppressWarnings("unchecked")
+	public Response update(@PathParam("repositoryId") String repositoryId, @PathParam("typeId") String typeId, String jsonInput) {
+		log.info("TypeResource.update() called for repository: " + repositoryId + ", typeId: " + typeId);
+		
+		try {
+			// Get Spring services using SpringContext fallback
+			if (typeService == null) {
+				typeService = (TypeService) SpringContext.getBean("TypeService");
+			}
+			if (typeManager == null) {
+				typeManager = (TypeManager) SpringContext.getBean("TypeManager");
+			}
+			
+			if (typeService == null) {
+				JSONObject errorResult = new JSONObject();
+				errorResult.put("status", "error");
+				errorResult.put("message", "TypeService not available");
+				return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+						.entity(errorResult.toJSONString()).build();
+			}
+
+			// Check if type exists
+			if (!existType(repositoryId, typeId)) {
+				JSONObject errorResult = new JSONObject();
+				errorResult.put("status", "error");
+				errorResult.put("message", "Type definition not found: " + typeId);
+				return Response.status(Response.Status.NOT_FOUND)
+						.entity(errorResult.toJSONString()).build();
+			}
+			
+			// Clear maps before parsing new data
+			typeMaps.clear();
+			coreMaps.clear();
+			detailMaps.clear();
+			typeProperties.clear();
+			
+			// Parse JSON input
+			parseJson(repositoryId, jsonInput);
+			
+			// Update type definition
+			create(repositoryId);
+			
+			// Refresh type manager
+			if (typeManager != null) {
+				typeManager.refreshTypes();
+			}
+			
+			JSONObject result = new JSONObject();
+			result.put("status", "success");
+			result.put("message", "Type definition updated successfully");
+			result.put("typeId", typeId);
+			
+			return Response.status(Response.Status.OK)
+					.entity(result.toJSONString())
+					.type(MediaType.APPLICATION_JSON)
+					.build();
+			
+		} catch (Exception e) {
+			log.error("Exception occurred in update(): " + e.getMessage(), e);
+			
+			JSONObject errorResult = new JSONObject();
+			errorResult.put("status", "error");
+			errorResult.put("message", "Failed to update type definition");
+			errorResult.put("error", e.getMessage());
+			
+			return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+					.entity(errorResult.toJSONString())
+					.type(MediaType.APPLICATION_JSON)
+					.build();
+		}
+	}
+
+	/**
+	 * Delete type definition
+	 */
+	@DELETE
+	@Path("/delete/{typeId}")
+	@Produces(MediaType.APPLICATION_JSON)
+	@SuppressWarnings("unchecked")
+	public Response delete(@PathParam("repositoryId") String repositoryId, @PathParam("typeId") String typeId) {
+		log.info("TypeResource.delete() called for repository: " + repositoryId + ", typeId: " + typeId);
+		
+		try {
+			// Get Spring services using SpringContext fallback
+			if (typeService == null) {
+				typeService = (TypeService) SpringContext.getBean("TypeService");
+			}
+			if (typeManager == null) {
+				typeManager = (TypeManager) SpringContext.getBean("TypeManager");
+			}
+			
+			if (typeService == null) {
+				JSONObject errorResult = new JSONObject();
+				errorResult.put("status", "error");
+				errorResult.put("message", "TypeService not available");
+				return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+						.entity(errorResult.toJSONString()).build();
+			}
+
+			// Check if type exists
+			if (!existType(repositoryId, typeId)) {
+				JSONObject errorResult = new JSONObject();
+				errorResult.put("status", "error");
+				errorResult.put("message", "Type definition not found: " + typeId);
+				return Response.status(Response.Status.NOT_FOUND)
+						.entity(errorResult.toJSONString()).build();
+			}
+			
+			// Check if type is a base type (cannot be deleted)
+			if (isBaseType(typeId)) {
+				JSONObject errorResult = new JSONObject();
+				errorResult.put("status", "error");
+				errorResult.put("message", "Cannot delete base type: " + typeId);
+				return Response.status(Response.Status.BAD_REQUEST)
+						.entity(errorResult.toJSONString()).build();
+			}
+			
+			// Delete type definition
+			typeService.deleteTypeDefinition(repositoryId, typeId);
+			
+			// Refresh type manager
+			if (typeManager != null) {
+				typeManager.refreshTypes();
+			}
+			
+			JSONObject result = new JSONObject();
+			result.put("status", "success");
+			result.put("message", "Type definition deleted successfully");
+			result.put("typeId", typeId);
+			
+			return Response.status(Response.Status.OK)
+					.entity(result.toJSONString())
+					.type(MediaType.APPLICATION_JSON)
+					.build();
+			
+		} catch (Exception e) {
+			log.error("Exception occurred in delete(): " + e.getMessage(), e);
+			
+			JSONObject errorResult = new JSONObject();
+			errorResult.put("status", "error");
+			errorResult.put("message", "Failed to delete type definition");
+			errorResult.put("error", e.getMessage());
+			
+			return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+					.entity(errorResult.toJSONString())
+					.type(MediaType.APPLICATION_JSON)
+					.build();
+		}
+	}
+
+	// Helper methods for JSON conversion
+
+	@SuppressWarnings("unchecked")
+	private JSONObject convertTypeToJson(String repositoryId, NemakiTypeDefinition nemakiType) {
+		JSONObject typeJson = new JSONObject();
+		
+		typeJson.put("id", nemakiType.getTypeId());
+		typeJson.put("localName", nemakiType.getLocalName());
+		typeJson.put("displayName", nemakiType.getDisplayName());
+		typeJson.put("description", nemakiType.getDescription());
+		typeJson.put("baseTypeId", nemakiType.getBaseId() != null ? nemakiType.getBaseId().value() : null);
+		typeJson.put("parentTypeId", nemakiType.getParentId());
+		
+		typeJson.put("creatable", nemakiType.isCreatable());
+		typeJson.put("queryable", nemakiType.isQueryable());
+		typeJson.put("controllableAcl", nemakiType.isControllableACL());
+		typeJson.put("controllablePolicy", nemakiType.isControllablePolicy());
+		typeJson.put("fulltextIndexed", nemakiType.isFulltextIndexed());
+		typeJson.put("includedInSupertypeQuery", nemakiType.isIncludedInSupertypeQuery());
+		
+		// Property definitions
+		JSONArray propertiesArray = new JSONArray();
+		List<String> propertyIds = nemakiType.getProperties();
+		if (propertyIds != null && typeService != null) {
+			for (String propertyId : propertyIds) {
+				try {
+					NemakiPropertyDefinitionDetail detail = typeService.getPropertyDefinitionDetail(repositoryId, propertyId);
+					if (detail != null) {
+						NemakiPropertyDefinitionCore core = typeService.getPropertyDefinitionCore(repositoryId, detail.getCoreNodeId());
+						if (core != null) {
+							JSONObject propJson = convertPropertyToJson(core, detail);
+							propertiesArray.add(propJson);
+						}
+					}
+				} catch (Exception e) {
+					log.warn("Could not convert property " + propertyId + " to JSON: " + e.getMessage());
+				}
+			}
+		}
+		typeJson.put("propertyDefinitions", propertiesArray);
+		
+		return typeJson;
+	}
+
+	@SuppressWarnings("unchecked")
+	private JSONObject convertPropertyToJson(NemakiPropertyDefinitionCore core, NemakiPropertyDefinitionDetail detail) {
+		JSONObject propJson = new JSONObject();
+		
+		propJson.put("id", core.getPropertyId());
+		propJson.put("localName", core.getPropertyId());
+		propJson.put("displayName", core.getPropertyId());
+		propJson.put("description", "");
+		propJson.put("propertyType", core.getPropertyType() != null ? core.getPropertyType().value() : null);
+		propJson.put("cardinality", core.getCardinality() != null ? core.getCardinality().value() : null);
+		propJson.put("updatability", detail.getUpdatability() != null ? detail.getUpdatability().value() : null);
+		
+		propJson.put("required", detail.isRequired());
+		propJson.put("queryable", detail.isQueryable());
+		propJson.put("orderable", false); // Not available in detail
+		propJson.put("inherited", false);
+		
+		return propJson;
 	}
 
 	@POST

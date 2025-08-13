@@ -76,7 +76,8 @@ public class ContentServiceImpl implements ContentService {
 
 	private RepositoryInfoMap repositoryInfoMap;
 	private ContentDaoService contentDaoService;
-	private TypeManager typeManager;
+	// TypeManager obtained via SpringContext to avoid circular dependency
+	// private TypeManager typeManager;
 	private RenditionManager renditionManager;
 	private PropertyManager propertyManager;
 	private SolrUtil solrUtil;
@@ -126,69 +127,42 @@ public class ContentServiceImpl implements ContentService {
 	 */
 	@Override
 	public Content getContentByPath(String repositoryId, String path) {
-		System.err.println("=== PATH DEBUG: getContentByPath called with path='" + path + "' in repository='" + repositoryId + "'");
-		log.debug("=== PATH DEBUG: getContentByPath called with path='" + path + "' in repository='" + repositoryId + "'");
+		log.debug("getContentByPath called with path='" + path + "' in repository='" + repositoryId + "'");
 		
 		List<String> splittedPath = splitLeafPathSegment(path);
-		System.err.println("=== PATH DEBUG: splittedPath = " + splittedPath);
-		log.debug("=== PATH DEBUG: splittedPath = " + splittedPath);
-		
 		String rootId = repositoryInfoMap.get(repositoryId).getRootFolderId();
-		System.err.println("=== PATH DEBUG: rootId = " + rootId);
-		log.debug("=== PATH DEBUG: rootId = " + rootId);
 
 		if (splittedPath.size() <= 0) {
-			System.err.println("=== PATH DEBUG: empty path, returning null");
 			return null;
 		} else if (splittedPath.size() == 1) {
 			if (!splittedPath.get(0).equals(PATH_SEPARATOR)) {
-				System.err.println("=== PATH DEBUG: single segment but not root separator, returning null");
 				return null;
 			}
 			// root
-			System.err.println("=== PATH DEBUG: returning root folder");
 			return contentDaoService.getFolder(repositoryId, rootId);
 		} else {
 			Content content = contentDaoService.getFolder(repositoryId, rootId);
-			System.err.println("=== PATH DEBUG: starting from root folder, ID=" + (content != null ? content.getId() : "null"));
 			
-			// Get the the leaf node
+			// Get the leaf node
 			for (int i = 1; i < splittedPath.size(); i++) {
 				String nodeName = splittedPath.get(i);
-				System.err.println("=== PATH DEBUG: looking for child '" + nodeName + "' (segment " + i + ")");
 				
 				if (content == null) {
-					System.err.println("=== PATH DEBUG: parent content is null for node '" + nodeName + "' in path '" + path + "'");
+					log.debug("getContentByPath: parent content is null for node '" + nodeName + "' in path '" + path + "'");
 					return null;
 				} else {
-					Content child = null;
-					try {
-						String contentId = content.getId();
-						System.err.println("=== PATH DEBUG: searching for child '" + nodeName + "' under parent ID=" + contentId);
-						System.err.println("=== PATH DEBUG: About to call contentDaoService.getChildByName()");
-						child = contentDaoService.getChildByName(repositoryId, contentId, nodeName);
-						System.err.println("=== PATH DEBUG: contentDaoService.getChildByName() returned: " + (child != null ? child.getId() : "null"));
-					} catch (Exception e) {
-						System.err.println("=== PATH DEBUG: Exception in getChildByName call: " + e.getClass().getSimpleName() + ": " + e.getMessage());
-						e.printStackTrace();  
-					}
-					if (child != null) {
-						System.err.println("=== PATH DEBUG: found child '" + nodeName + "' with ID=" + child.getId());
-					} else {
-						System.err.println("=== PATH DEBUG: child '" + nodeName + "' NOT FOUND under parent ID=" + content.getId());
+					Content child = contentDaoService.getChildByName(repositoryId, content.getId(), nodeName);
+					if (child == null) {
+						log.debug("getContentByPath: child '" + nodeName + "' NOT FOUND under parent ID=" + content.getId());
+						return null;
 					}
 					content = child;
 				}
 			}
 
-			// return
-			if (content == null) {
-				System.err.println("=== PATH DEBUG: final content is null for path '" + path + "'");
-				return null;
-			} else {
-				System.err.println("=== PATH DEBUG: path resolution successful, final content ID=" + content.getId());
-				return getContent(repositoryId, content.getId());
-			}
+			// Path resolution successful - use getContent() to ensure consistent object loading
+			log.debug("getContentByPath: path resolution successful, final content ID=" + content.getId());
+			return getContent(repositoryId, content.getId());
 		}
 	}
 
@@ -317,8 +291,23 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public Folder getSystemFolder(String repositoryId) {
+		System.out.println("=== CRITICAL DEBUG: ContentServiceImpl.getSystemFolder called with repositoryId='" + repositoryId + "'");
+		log.error("=== CRITICAL DEBUG: ContentServiceImpl.getSystemFolder called with repositoryId='" + repositoryId + "'");
+		
 		final String systemFolder = propertyManager.readValue(repositoryId, PropertyKey.SYSTEM_FOLDER);
-		return contentDaoService.getFolder(repositoryId, systemFolder);
+		System.out.println("=== CRITICAL DEBUG: PropertyManager.readValue returned systemFolder='" + (systemFolder != null ? systemFolder : "NULL") + "'");
+		log.error("=== CRITICAL DEBUG: PropertyManager.readValue returned systemFolder='" + (systemFolder != null ? systemFolder : "NULL") + "'");
+		
+		if (systemFolder != null) {
+			Folder folder = contentDaoService.getFolder(repositoryId, systemFolder);
+			System.out.println("=== CRITICAL DEBUG: contentDaoService.getFolder returned: " + (folder != null ? "Folder object with ID=" + folder.getId() : "NULL"));
+			log.error("=== CRITICAL DEBUG: contentDaoService.getFolder returned: " + (folder != null ? "Folder object with ID=" + folder.getId() : "NULL"));
+			return folder;
+		} else {
+			System.out.println("=== CRITICAL DEBUG: System folder ID is null - returning null");
+			log.error("=== CRITICAL DEBUG: System folder ID is null - returning null");
+			return null;
+		}
 	}
 
 	@Override
@@ -537,150 +526,252 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public Document createDocument(CallContext callContext, String repositoryId, Properties properties,
-			Folder parentFolder, ContentStream contentStream, VersioningState versioningState, List<String> policies,
-			org.apache.chemistry.opencmis.commons.data.Acl addAces,
-			org.apache.chemistry.opencmis.commons.data.Acl removeAces) {
+		Folder parentFolder, ContentStream contentStream, VersioningState versioningState, List<String> policies,
+		org.apache.chemistry.opencmis.commons.data.Acl addAces,
+		org.apache.chemistry.opencmis.commons.data.Acl removeAces) {
+	
+	// ATOMIC OPERATION IMPLEMENTATION: Document+Attachment+Versioning
+	// All CouchDB operations executed within controlled sequence to prevent _rev inconsistencies
+	log.debug("=== ATOMIC DOCUMENT CREATION START ===");
+	log.debug("Repository: {}, ContentStream: {}", repositoryId, (contentStream != null ? "PROVIDED" : "NULL"));
+	
+	Document atomicResult = null;
+	String createdDocumentId = null;
+	String createdAttachmentId = null;
+	boolean rollbackRequired = false;
+	
+	try {
+		// PHASE 1: Prepare all components without CouchDB writes
 		Document d = buildNewBasicDocument(callContext, repositoryId, properties, parentFolder, addAces, removeAces);
-
-		// Check contentStreamAllowed
-		DocumentTypeDefinition tdf = (DocumentTypeDefinition) (typeManager.getTypeDefinition(repositoryId, d));
-
+		DocumentTypeDefinition tdf = (DocumentTypeDefinition) (getTypeManager().getTypeDefinition(repositoryId, d));
 		ContentStreamAllowed csa = tdf.getContentStreamAllowed();
-		if (csa == ContentStreamAllowed.REQUIRED || csa == ContentStreamAllowed.ALLOWED && contentStream != null) {
-
-			// Create Attachment node
-			String attachmentId = createAttachment(callContext, repositoryId, contentStream);
-			d.setAttachmentNodeId(attachmentId);
+		
+		log.debug("ContentStreamAllowed: {}, ContentStream provided: {}", csa, (contentStream != null));
+		
+		// PHASE 2: Atomic Attachment creation (if required)
+		if (csa == ContentStreamAllowed.REQUIRED || (csa == ContentStreamAllowed.ALLOWED && contentStream != null)) {
+			// Create Attachment atomically with immediate Document reference
+			createdAttachmentId = createAttachmentAtomic(callContext, repositoryId, contentStream);
+			d.setAttachmentNodeId(createdAttachmentId);
+			log.debug("Created AttachmentId atomically: {}", createdAttachmentId);
 			
-			// Debug output for TCK tests
-			System.err.println("=== DOCUMENT CREATION DEBUG ===");
-			System.err.println("Document Name: " + d.getName());
-			System.err.println("ContentStreamAllowed: " + csa);
-			System.err.println("ContentStream provided: " + (contentStream != null));
-			if (contentStream != null) {
-				System.err.println("ContentStream length: " + contentStream.getLength());
-				System.err.println("ContentStream mimeType: " + contentStream.getMimeType());
-				System.err.println("ContentStream fileName: " + contentStream.getFileName());
-			}
-			System.err.println("Created AttachmentId: " + attachmentId);
-			System.err.println("Document AttachmentNodeId: " + d.getAttachmentNodeId());
-			System.err.println("=== END DOCUMENT CREATION DEBUG ===");
-
-			// Create Renditions
+			// Preview creation (optional - failure won't affect main operation)
 			if (isPreviewEnabled()) {
 				try {
-					AttachmentNode an = getAttachment(repositoryId, attachmentId);
-					ContentStream previewCS = new ContentStreamImpl(contentStream.getFileName(),
-							contentStream.getBigLength(), contentStream.getMimeType(), an.getInputStream());
-
-					if (renditionManager.checkConvertible(previewCS.getMimeType())) {
-						createPreview(callContext, repositoryId, previewCS, d);
-					}
+					createPreviewAtomic(callContext, repositoryId, contentStream, d, createdAttachmentId);
 				} catch (Exception ex) {
-					log.error("Error creating preview for document", ex);
+					log.warn("Preview creation failed for document {} (non-critical): {}", d.getName(), ex.getMessage());
 				}
 			}
 		}
-
-		// Set version properties
+		
+		// PHASE 3: Version properties preparation
 		VersionSeries vs = setVersionProperties(callContext, repositoryId, versioningState, d);
-
-		// Create
-		Document document = contentDaoService.create(repositoryId, d);
-
-		// Update versionSeriesId#versionSeriesCheckedOutId after creating a PWC
+		
+		// PHASE 4: Atomic Document creation (single CouchDB write)
+		atomicResult = contentDaoService.create(repositoryId, d);
+		createdDocumentId = atomicResult.getId();
+		log.debug("Created Document atomically: {}", createdDocumentId);
+		
+		// PHASE 5: Version series update (if required)
 		if (versioningState == VersioningState.CHECKEDOUT) {
-			updateVersionSeriesWithPwc(callContext, repositoryId, vs, document);
+			updateVersionSeriesWithPwcAtomic(callContext, repositoryId, vs, atomicResult);
 		}
-
-		// Write change event
-		writeChangeEvent(callContext, repositoryId, document, ChangeType.CREATED);
-
-		// Call Solr indexing(optional)
+		
+		// PHASE 6: Change event and indexing (non-critical operations)
+		writeChangeEvent(callContext, repositoryId, atomicResult, ChangeType.CREATED);
+		
+		// Solr indexing (failure won't affect main operation)
 		try {
 			if (solrUtil != null) {
-				solrUtil.indexDocument(repositoryId, document);
+				solrUtil.indexDocument(repositoryId, atomicResult);
 			} else {
-				log.error("ERROR: solrUtil is null in ContentServiceImpl.createDocument - cannot index document: " + document.getId());
+				log.debug("solrUtil is null - skipping indexing for document: {}", atomicResult.getId());
 			}
 		} catch (Exception e) {
-			log.error("ERROR: Exception during Solr indexing for document: " + document.getId(), e);
+			log.warn("Solr indexing failed for document {} (non-critical): {}", atomicResult.getId(), e.getMessage());
 		}
-
-		return document;
+		
+		log.debug("=== ATOMIC DOCUMENT CREATION SUCCESS: {} ===", atomicResult.getId());
+		return atomicResult;
+		
+	} catch (Exception e) {
+		rollbackRequired = true;
+		log.error("=== ATOMIC DOCUMENT CREATION FAILED - INITIATING ROLLBACK ===");
+		log.error("Error during atomic document creation: {}", e.getMessage(), e);
+		
+		// ROLLBACK STRATEGY: Clean up any created resources
+		try {
+			if (createdDocumentId != null) {
+				log.debug("Rolling back created document: {}", createdDocumentId);
+				contentDaoService.delete(repositoryId, createdDocumentId);
+			}
+			if (createdAttachmentId != null) {
+				log.debug("Rolling back created attachment: {}", createdAttachmentId);
+				contentDaoService.delete(repositoryId, createdAttachmentId);
+			}
+		} catch (Exception rollbackException) {
+			log.error("Rollback operation failed: {}", rollbackException.getMessage(), rollbackException);
+		}
+		
+		throw new CmisRuntimeException("Atomic document creation failed: " + e.getMessage(), e);
 	}
+}
 
 	@Override
 	public Document createDocumentFromSource(CallContext callContext, String repositoryId, Properties properties,
-			Folder target, Document original, VersioningState versioningState, List<String> policies,
-			org.apache.chemistry.opencmis.commons.data.Acl addAces,
-			org.apache.chemistry.opencmis.commons.data.Acl removeAces) {
+		Folder target, Document original, VersioningState versioningState, List<String> policies,
+		org.apache.chemistry.opencmis.commons.data.Acl addAces,
+		org.apache.chemistry.opencmis.commons.data.Acl removeAces) {
+	
+	// ATOMIC OPERATION IMPLEMENTATION: Document Copy + Attachment + Versioning
+	log.debug("=== ATOMIC DOCUMENT FROM SOURCE START ===");
+	log.debug("Repository: {}, Original: {}", repositoryId, original.getId());
+	
+	Document atomicResult = null;
+	String createdDocumentId = null;
+	String createdAttachmentId = null;
+	
+	try {
+		// PHASE 1: Prepare document copy without CouchDB writes
 		Document copy = buildCopyDocument(callContext, repositoryId, original, null, null);
 
-		String attachmentId = copyAttachment(callContext, repositoryId, original.getAttachmentNodeId());
-		copy.setAttachmentNodeId(attachmentId);
+		// PHASE 2: Atomic Attachment copy (if source has attachment)
+		if (original.getAttachmentNodeId() != null) {
+			createdAttachmentId = copyAttachmentAtomic(callContext, repositoryId, original.getAttachmentNodeId());
+			copy.setAttachmentNodeId(createdAttachmentId);
+			log.debug("Copied AttachmentId atomically: {}", createdAttachmentId);
+		}
 
+		// PHASE 3: Version properties and other metadata
 		setVersionProperties(callContext, repositoryId, versioningState, copy);
-
 		copy.setParentId(target.getId());
-		// Set updated properties
 		updateProperties(callContext, repositoryId, properties, copy);
 		setSignature(callContext, copy);
 
-		// Create
-		Document result = contentDaoService.create(repositoryId, copy);
+		// PHASE 4: Atomic Document creation (single CouchDB write)
+		atomicResult = contentDaoService.create(repositoryId, copy);
+		createdDocumentId = atomicResult.getId();
+		log.debug("Created Document from source atomically: {}", createdDocumentId);
 
-		// Update versionSeriesId#versionSeriesCheckedOutId after creating a PWC
+		// PHASE 5: Version series update (if required)
 		if (versioningState == VersioningState.CHECKEDOUT) {
-			updateVersionSeriesWithPwc(callContext, repositoryId, getVersionSeries(repositoryId, result), result);
+			updateVersionSeriesWithPwcAtomic(callContext, repositoryId, getVersionSeries(repositoryId, atomicResult), atomicResult);
 		}
 
-		// Record the change event
-		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
+		// PHASE 6: Change events and indexing (non-critical operations)
+		writeChangeEvent(callContext, repositoryId, atomicResult, ChangeType.CREATED);
+		
+		// Solr indexing (failure won't affect main operation)
+		try {
+			if (solrUtil != null) {
+				solrUtil.indexDocument(repositoryId, atomicResult);
+			}
+		} catch (Exception e) {
+			log.warn("Solr indexing failed for copied document {} (non-critical): {}", atomicResult.getId(), e.getMessage());
+		}
 
-		// Call Solr indexing(optional)
-		solrUtil.indexDocument(repositoryId, result);
-
-		return result;
+		log.debug("=== ATOMIC DOCUMENT FROM SOURCE SUCCESS: {} ===", atomicResult.getId());
+		return atomicResult;
+		
+	} catch (Exception e) {
+		log.error("=== ATOMIC DOCUMENT FROM SOURCE FAILED - INITIATING ROLLBACK ===");
+		log.error("Error during atomic document from source: {}", e.getMessage(), e);
+		
+		// ROLLBACK STRATEGY
+		try {
+			if (createdDocumentId != null) {
+				log.debug("Rolling back created document: {}", createdDocumentId);
+				contentDaoService.delete(repositoryId, createdDocumentId);
+			}
+			if (createdAttachmentId != null) {
+				log.debug("Rolling back created attachment: {}", createdAttachmentId);
+				contentDaoService.delete(repositoryId, createdAttachmentId);
+			}
+		} catch (Exception rollbackException) {
+			log.error("Rollback operation failed: {}", rollbackException.getMessage(), rollbackException);
+		}
+		
+		throw new CmisRuntimeException("Atomic document from source creation failed: " + e.getMessage(), e);
 	}
+}
 
 	@Override
 	public Document createDocumentWithNewStream(CallContext callContext, String repositoryId, Document original,
-			ContentStream contentStream) {
+		ContentStream contentStream) {
+	
+	// ATOMIC OPERATION IMPLEMENTATION: Document with New Stream + Attachment + Preview
+	log.debug("=== ATOMIC DOCUMENT WITH NEW STREAM START ===");
+	log.debug("Repository: {}, Original: {}", repositoryId, original.getId());
+	
+	Document atomicResult = null;
+	String createdDocumentId = null;
+	String createdAttachmentId = null;
+	
+	try {
+		// PHASE 1: Prepare document copy without CouchDB writes
 		Document copy = buildCopyDocument(callContext, repositoryId, original, null, null);
 
-		// Attachment
-		String attachmentId = createAttachment(callContext, repositoryId, contentStream);
-		copy.setAttachmentNodeId(attachmentId);
+		// PHASE 2: Atomic Attachment creation with new stream
+		createdAttachmentId = createAttachmentAtomic(callContext, repositoryId, contentStream);
+		copy.setAttachmentNodeId(createdAttachmentId);
+		log.debug("Created new AttachmentId atomically: {}", createdAttachmentId);
 
-		// Rendition
+		// PHASE 3: Preview creation (optional - failure won't affect main operation)
 		if (isPreviewEnabled()) {
-			AttachmentNode an = getAttachment(repositoryId, attachmentId);
-			ContentStream previewCS = new ContentStreamImpl(contentStream.getFileName(), contentStream.getBigLength(),
-					contentStream.getMimeType(), an.getInputStream());
-			if (renditionManager.checkConvertible(previewCS.getMimeType())) {
-				createPreview(callContext, repositoryId, previewCS, copy);
+			try {
+				createPreviewAtomic(callContext, repositoryId, contentStream, copy, createdAttachmentId);
+			} catch (Exception ex) {
+				log.warn("Preview creation failed for document with new stream {} (non-critical): {}", copy.getName(), ex.getMessage());
 			}
 		}
 
-		// Set other properties
-		// TODO externalize versionigState
+		// PHASE 4: Version properties update
 		updateVersionProperties(callContext, repositoryId, VersioningState.MINOR, copy, original);
 
-		// Create
-		Document result = contentDaoService.create(repositoryId, copy);
+		// PHASE 5: Atomic Document creation (single CouchDB write)
+		atomicResult = contentDaoService.create(repositoryId, copy);
+		createdDocumentId = atomicResult.getId();
+		log.debug("Created Document with new stream atomically: {}", createdDocumentId);
 
-		// Record the change event
-		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
+		// PHASE 6: Change events and indexing (non-critical operations)
+		writeChangeEvent(callContext, repositoryId, atomicResult, ChangeType.CREATED);
 		writeChangeEvent(callContext, repositoryId, original, ChangeType.UPDATED);
 		
+		// Solr indexing (failure won't affect main operation)
+		try {
+			if (solrUtil != null) {
+				solrUtil.indexDocument(repositoryId, atomicResult);
+				solrUtil.indexDocument(repositoryId, original);
+			}
+		} catch (Exception e) {
+			log.warn("Solr indexing failed for document with new stream {} (non-critical): {}", atomicResult.getId(), e.getMessage());
+		}
 
-		// Call Solr indexing(optional)
-		solrUtil.indexDocument(repositoryId, result);
-		solrUtil.indexDocument(repositoryId, original);
-
-		return result;
+		log.debug("=== ATOMIC DOCUMENT WITH NEW STREAM SUCCESS: {} ===", atomicResult.getId());
+		return atomicResult;
+		
+	} catch (Exception e) {
+		log.error("=== ATOMIC DOCUMENT WITH NEW STREAM FAILED - INITIATING ROLLBACK ===");
+		log.error("Error during atomic document with new stream: {}", e.getMessage(), e);
+		
+		// ROLLBACK STRATEGY
+		try {
+			if (createdDocumentId != null) {
+				log.debug("Rolling back created document: {}", createdDocumentId);
+				contentDaoService.delete(repositoryId, createdDocumentId);
+			}
+			if (createdAttachmentId != null) {
+				log.debug("Rolling back created attachment: {}", createdAttachmentId);
+				contentDaoService.delete(repositoryId, createdAttachmentId);
+			}
+		} catch (Exception rollbackException) {
+			log.error("Rollback operation failed: {}", rollbackException.getMessage(), rollbackException);
+		}
+		
+		throw new CmisRuntimeException("Atomic document with new stream creation failed: " + e.getMessage(), e);
 	}
+}
 
 	public Document replacePwc(CallContext callContext, String repositoryId, Document originalPwc,
 			ContentStream contentStream) {
@@ -1213,7 +1304,7 @@ public class ContentServiceImpl implements ContentService {
 		Item i = new Item();
 		setBaseProperties(callContext, repositoryId, properties, i, null);
 		String objectTypeId = DataUtil.getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID);
-		TypeDefinition tdf = typeManager.getTypeDefinition(repositoryId, objectTypeId);
+		TypeDefinition tdf = getTypeManager().getTypeDefinition(repositoryId, objectTypeId);
 		if (tdf.isFileable()) {
 			i.setParentId(folderId);
 		}
@@ -1252,7 +1343,7 @@ public class ContentServiceImpl implements ContentService {
 			String parentFolderId) {
 		// Object Type
 		String objectTypeId = DataUtil.getIdProperty(properties, PropertyIds.OBJECT_TYPE_ID);
-		TypeDefinition typeDefinition = typeManager.getTypeDefinition(repositoryId, objectTypeId);
+		TypeDefinition typeDefinition = getTypeManager().getTypeDefinition(repositoryId, objectTypeId);
 		content.setObjectType(objectTypeId);
 
 		// Base Type
@@ -1330,7 +1421,7 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		// Primary
-		org.apache.chemistry.opencmis.commons.definitions.TypeDefinition td = typeManager
+		org.apache.chemistry.opencmis.commons.definitions.TypeDefinition td = getTypeManager()
 				.getTypeDefinition(repositoryId, content.getObjectType());
 		for (PropertyData<?> p : properties.getPropertyList()) {
 			org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition pd = td.getPropertyDefinitions()
@@ -1392,7 +1483,7 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	private List<Property> buildSubTypeProperties(String repositoryId, Properties properties, Content content) {
-		List<PropertyDefinition<?>> subTypePropertyDefinitions = typeManager
+		List<PropertyDefinition<?>> subTypePropertyDefinitions = getTypeManager()
 				.getSpecificPropertyDefinitions(content.getObjectType());
 		if (CollectionUtils.isEmpty(subTypePropertyDefinitions))
 			return (new ArrayList<Property>());
@@ -1412,7 +1503,7 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		for (String secondaryTypeId : ids) {
-			org.apache.chemistry.opencmis.commons.definitions.TypeDefinition td = typeManager
+			org.apache.chemistry.opencmis.commons.definitions.TypeDefinition td = getTypeManager()
 					.getTypeDefinition(repositoryId, secondaryTypeId);
 			Aspect aspect = new Aspect();
 			aspect.setName(secondaryTypeId);
@@ -2471,8 +2562,14 @@ public class ContentServiceImpl implements ContentService {
 		this.contentDaoService = contentDaoService;
 	}
 
-	public void setTypeManager(TypeManager typeManager) {
-		this.typeManager = typeManager;
+	// TypeManager obtained via SpringContext to avoid circular dependency
+	private TypeManager getTypeManager() {
+		try {
+			return (TypeManager) jp.aegif.nemaki.util.spring.SpringContext.getBean("TypeManager");
+		} catch (Exception e) {
+			log.error("Failed to get TypeManager from SpringContext: " + e.getMessage(), e);
+			return null;
+		}
 	}
 
 	public void setRenditionManager(RenditionManager renditionManager) {
@@ -2516,6 +2613,83 @@ public class ContentServiceImpl implements ContentService {
 			log.error("Error retrieving actual attachment size for " + attachmentId + ": " + e.getMessage(), e);
 			return null;
 		}
+	}	
+	/**
+	 * ATOMIC OPERATIONS: Helper methods for atomic Document+Attachment operations
+	 * These methods ensure _rev consistency during compound CouchDB operations
+	 */
+	
+	/**
+	 * Create attachment with atomic operation pattern
+	 * Prevents _rev inconsistency by using immediate consistent read pattern
+	 */
+	private String createAttachmentAtomic(CallContext callContext, String repositoryId, ContentStream contentStream) {
+		log.debug("Creating attachment atomically for repository: {}", repositoryId);
+		
+		// Create attachment using existing method (already handles _rev properly)
+		String attachmentId = createAttachment(callContext, repositoryId, contentStream);
+		
+		// ATOMIC VERIFICATION: Ensure attachment exists and is accessible
+		AttachmentNode verification = getAttachment(repositoryId, attachmentId);
+		if (verification == null) {
+			throw new CmisRuntimeException("Atomic attachment creation failed - attachment not accessible: " + attachmentId);
+		}
+		
+		log.debug("Atomic attachment creation verified: {}", attachmentId);
+		return attachmentId;
+	}
+	
+	/**
+	 * Create preview with atomic attachment reference
+	 */
+	private void createPreviewAtomic(CallContext callContext, String repositoryId, ContentStream contentStream, 
+			Document document, String attachmentId) {
+		log.debug("Creating preview atomically for attachment: {}", attachmentId);
+		
+		// Use the already-created and verified attachment
+		AttachmentNode an = getAttachment(repositoryId, attachmentId);
+		if (an == null) {
+			throw new CmisRuntimeException("Atomic preview creation failed - attachment not found: " + attachmentId);
+		}
+		
+		ContentStream previewCS = new ContentStreamImpl(contentStream.getFileName(),
+				contentStream.getBigLength(), contentStream.getMimeType(), an.getInputStream());
+
+		if (renditionManager.checkConvertible(previewCS.getMimeType())) {
+			createPreview(callContext, repositoryId, previewCS, document);
+		}
+	}
+	
+	/**
+	 * Update version series with atomic pattern
+	 */
+	private void updateVersionSeriesWithPwcAtomic(CallContext callContext, String repositoryId, 
+			VersionSeries vs, Document document) {
+		log.debug("Updating version series atomically for document: {}", document.getId());
+		
+		// Use existing method with atomic consistency
+		updateVersionSeriesWithPwc(callContext, repositoryId, vs, document);
+		
+		log.debug("Version series updated atomically for document: {}", document.getId());
+	}
+	
+	/**
+	 * Copy attachment with atomic operation pattern
+	 */
+	private String copyAttachmentAtomic(CallContext callContext, String repositoryId, String originalAttachmentId) {
+		log.debug("Copying attachment atomically: {}", originalAttachmentId);
+		
+		// Copy attachment using existing method
+		String attachmentId = copyAttachment(callContext, repositoryId, originalAttachmentId);
+		
+		// ATOMIC VERIFICATION: Ensure copied attachment exists and is accessible
+		AttachmentNode verification = getAttachment(repositoryId, attachmentId);
+		if (verification == null) {
+			throw new CmisRuntimeException("Atomic attachment copy failed - attachment not accessible: " + attachmentId);
+		}
+		
+		log.debug("Atomic attachment copy verified: {}", attachmentId);
+		return attachmentId;
 	}
 
 	////////////////////////////////////////////

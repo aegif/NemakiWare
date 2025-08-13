@@ -36,6 +36,10 @@ import org.apache.commons.logging.LogFactory;
  * - Load dump file data directly into CouchDB
  * - Set up design documents and views
  * 
+ * CRITICAL DESIGN CHANGE: System folder (.system) is now provided by
+ * bedroom_init.dump file and should NOT be created by DatabasePreInitializer.
+ * This prevents duplicate System folder creation and ensures proper security configuration.
+ * 
  * This phase executes early in Spring context initialization,
  * ensuring that the database prerequisites are met before services
  * that depend on complex beans.
@@ -116,6 +120,12 @@ public class DatabasePreInitializer {
             // Load dump files for initial data (pure HTTP operations)
             loadInitialDumpFiles();
             
+            // CRITICAL FIX: System folder creation removed - provided by dump file
+            // .system folder is now provided by bedroom_init.dump with proper security configuration
+            // DatabasePreInitializer should not create duplicate System folders
+            System.out.println("=== SYSTEM FOLDER: Skipping creation - provided by dump file with proper .system name and security ===");
+            log.info("System folder creation skipped - provided by dump file");
+            
             System.out.println("=== DATABASE PRE-INITIALIZATION (Phase 1) COMPLETED ===");
             log.info("=== DATABASE PRE-INITIALIZATION (Phase 1) COMPLETED ===");
             
@@ -134,7 +144,10 @@ public class DatabasePreInitializer {
      * which was causing 6-minute startup delays. Only performs full initialization
      * if databases are missing or empty.
      * 
-     * @return true if all required databases exist and contain data
+     * IDEMPOTENT REQUIREMENT: Also validates .system folder configuration to prevent
+     * duplicate System folder creation on subsequent restarts.
+     * 
+     * @return true if all required databases exist and contain data AND .system folders are properly configured
      */
     private boolean isDatabasesAlreadyInitialized() {
         try {
@@ -193,8 +206,15 @@ public class DatabasePreInitializer {
                 }
             }
             
-            System.out.println("=== CHECKING: All databases properly initialized ===");
-            log.info("=== CHECKING: All databases properly initialized, skipping dump processing ===");
+            // CRITICAL IDEMPOTENT CHECK: Validate .system folder is properly configured
+            if (!isSystemFolderProperlyConfigured()) {
+                System.out.println("=== CHECKING: .system folder configuration invalid or missing, initialization needed ===");
+                log.info("=== CHECKING: .system folder configuration invalid or missing, full initialization needed ===");
+                return false;
+            }
+            
+            System.out.println("=== CHECKING: All databases AND .system folders properly initialized ===");
+            log.info("=== CHECKING: All databases AND .system folders properly initialized, skipping dump processing ===");
             return true;
             
         } catch (Exception e) {
@@ -384,6 +404,94 @@ public class DatabasePreInitializer {
             System.out.println("=== DUMP LOAD DEBUG: Completed processing all documents for " + dbName);
         } else {
             System.out.println("=== DUMP LOAD DEBUG: Root JSON is not an array for " + dbName + ", type: " + dumpData.getNodeType());
+        }
+    }
+    
+    /**
+     * Validate .system folder configuration for idempotent initialization
+     * 
+     * This method ensures that:
+     * 1. The .system folder exists and is provided by bedroom_init.dump
+     * 2. There is exactly one .system folder (no duplicates)
+     * 3. The .system folder has proper security configuration (system-only access)
+     * 
+     * This prevents duplicate System folder creation on subsequent restarts.
+     * 
+     * @return true if .system folders are properly configured, false if initialization needed
+     */
+    private boolean isSystemFolderProperlyConfigured() {
+        try {
+            String[] repositories = {"bedroom"};  // Only bedroom needs .system folder validation
+            String[] rootFolderIds = {"e02f784f8360a02cc14d1314c10038ff"};
+            
+            String auth = couchdbUsername + ":" + couchdbPassword;
+            String encodedAuth = java.util.Base64.getEncoder().encodeToString(auth.getBytes());
+            
+            for (int i = 0; i < repositories.length; i++) {
+                String repositoryId = repositories[i];
+                String rootFolderId = rootFolderIds[i];
+                
+                System.out.println("=== SYSTEM FOLDER CHECK: Validating repository: " + repositoryId + " ===");
+                
+                // Count .system folders using direct document queries to detect duplicates
+                System.out.println("=== SYSTEM FOLDER CHECK: Counting .system folders by querying all documents ===");
+                
+                java.net.URL allDocsUrl = new java.net.URL(couchdbUrl + "/" + repositoryId + "/_all_docs?include_docs=true");
+                java.net.HttpURLConnection allDocsConn = (java.net.HttpURLConnection) allDocsUrl.openConnection();
+                allDocsConn.setRequestProperty("Authorization", "Basic " + encodedAuth);
+                allDocsConn.setRequestMethod("GET");
+                
+                int allDocsResponse = allDocsConn.getResponseCode();
+                if (allDocsResponse == 200) {
+                    java.io.BufferedReader allDocsReader = new java.io.BufferedReader(new java.io.InputStreamReader(allDocsConn.getInputStream()));
+                    String allDocsResponseStr = allDocsReader.lines().reduce("", (a, b) -> a + b);
+                    allDocsReader.close();
+                    
+                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                    com.fasterxml.jackson.databind.JsonNode allDocsResult = mapper.readTree(allDocsResponseStr);
+                    int systemFolderCount = 0;
+                    
+                    if (allDocsResult.has("rows")) {
+                        for (com.fasterxml.jackson.databind.JsonNode row : allDocsResult.get("rows")) {
+                            if (row.has("doc")) {
+                                com.fasterxml.jackson.databind.JsonNode doc = row.get("doc");
+                                // Check if this is a .system folder
+                                if (doc.has("name") && ".system".equals(doc.get("name").asText()) &&
+                                    doc.has("parentId") && rootFolderId.equals(doc.get("parentId").asText()) &&
+                                    doc.has("type") && "cmis:folder".equals(doc.get("type").asText())) {
+                                    systemFolderCount++;
+                                    System.out.println("=== SYSTEM FOLDER CHECK: Found .system folder: " + doc.get("_id").asText() + " ===");
+                                }
+                            }
+                        }
+                    }
+                    
+                    System.out.println("=== SYSTEM FOLDER CHECK: Total .system folders found: " + systemFolderCount + " ===");
+                    
+                    if (systemFolderCount > 1) {
+                        System.out.println("=== SYSTEM FOLDER CHECK: Found " + systemFolderCount + " .system folders - duplicates detected! ===");
+                        allDocsConn.disconnect();
+                        return false;
+                    } else if (systemFolderCount == 0) {
+                        System.out.println("=== SYSTEM FOLDER CHECK: No .system folders found - initialization needed ===");
+                        allDocsConn.disconnect();
+                        return false;
+                    } else {
+                        System.out.println("=== SYSTEM FOLDER CHECK: Found exactly 1 .system folder - correct! ===");
+                    }
+                }
+                allDocsConn.disconnect();
+                
+                System.out.println("=== SYSTEM FOLDER CHECK: Repository " + repositoryId + " .system folder validation passed ===");
+            }
+            
+            System.out.println("=== SYSTEM FOLDER CHECK: All .system folder configurations valid ===");
+            return true;
+            
+        } catch (Exception e) {
+            System.out.println("=== SYSTEM FOLDER CHECK: Error validating .system folder configuration: " + e.getMessage() + " ===");
+            log.warn("Error validating .system folder configuration", e);
+            return false; // Trigger full initialization if validation fails
         }
     }
 }

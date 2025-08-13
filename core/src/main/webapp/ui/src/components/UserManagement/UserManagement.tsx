@@ -267,6 +267,20 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
           </Form.Item>
 
           <Form.Item
+            name="firstName"
+            label="名"
+          >
+            <Input placeholder="名を入力" />
+          </Form.Item>
+
+          <Form.Item
+            name="lastName"
+            label="姓"
+          >
+            <Input placeholder="姓を入力" />
+          </Form.Item>
+
+          <Form.Item
             name="email"
             label="メールアドレス"
             rules={[
