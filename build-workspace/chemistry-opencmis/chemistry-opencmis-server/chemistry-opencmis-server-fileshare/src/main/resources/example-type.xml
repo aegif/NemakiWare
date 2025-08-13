@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License. 
+-->
+<cmisra:type xmlns:cmisra="http://docs.oasis-open.org/ns/cmis/restatom/200908/"
+	xmlns:cmis="http://docs.oasis-open.org/ns/cmis/core/200908/"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+	xsi:type="cmis:cmisTypeDocumentDefinitionType">
+	<cmis:id>myTestDocumentType</cmis:id>
+	<cmis:localName>myTestDocumentType</cmis:localName>
+	<cmis:localNamespace>http://chemistry.apache.org/opencmis/demo/</cmis:localNamespace>
+	<cmis:parentId>cmis:document</cmis:parentId>
+	<cmis:displayName>My Test Document Type</cmis:displayName>
+	<cmis:queryName>TESTDOCTYPE</cmis:queryName>
+	<cmis:description>My Test Document Type</cmis:description>
+	<cmis:baseId>cmis:document</cmis:baseId>
+	<cmis:creatable>true</cmis:creatable>
+	<cmis:fileable>true</cmis:fileable>
+	<cmis:queryable>false</cmis:queryable>
+	<cmis:fulltextIndexed>false</cmis:fulltextIndexed>
+	<cmis:includedInSupertypeQuery>true</cmis:includedInSupertypeQuery>
+	<cmis:controllablePolicy>false</cmis:controllablePolicy>
+	<cmis:controllableACL>false</cmis:controllableACL>
+	<cmis:versionable>false</cmis:versionable>
+	<cmis:contentStreamAllowed>required</cmis:contentStreamAllowed>
+	<cmis:propertyStringDefinition>
+		<cmis:id>testProperty</cmis:id>
+		<cmis:localName>testProperty</cmis:localName>
+		<cmis:displayName>A test property</cmis:displayName>
+		<cmis:queryName>testProperty</cmis:queryName>
+		<cmis:description>Just a string</cmis:description>
+		<cmis:propertyType>string</cmis:propertyType>
+		<cmis:cardinality>single</cmis:cardinality>
+		<cmis:updatability>readwrite</cmis:updatability>
+		<cmis:inherited>false</cmis:inherited>
+		<cmis:required>false</cmis:required>
+		<cmis:queryable>false</cmis:queryable>
+		<cmis:orderable>false</cmis:orderable>
+	</cmis:propertyStringDefinition>
+	<cmis:propertyStringDefinition>
+		<cmis:id>testProperty2</cmis:id>
+		<cmis:localName>testProperty2</cmis:localName>
+		<cmis:displayName>Another test property</cmis:displayName>
+		<cmis:queryName>testProperty2</cmis:queryName>
+		<cmis:description>Another string</cmis:description>
+		<cmis:propertyType>string</cmis:propertyType>
+		<cmis:cardinality>single</cmis:cardinality>
+		<cmis:updatability>readwrite</cmis:updatability>
+		<cmis:inherited>false</cmis:inherited>
+		<cmis:required>true</cmis:required>
+		<cmis:queryable>false</cmis:queryable>
+		<cmis:orderable>false</cmis:orderable>
+		<cmis:defaultValue>
+			<cmis:value>default value</cmis:value>
+		</cmis:defaultValue>
+	</cmis:propertyStringDefinition>			
+</cmisra:type>

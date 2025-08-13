@@ -1,0 +1,16 @@
+.chemistry-table {
+	border: 2px solid #000000;
+	padding: 4px;
+	border-collapse: collapse;
+}
+
+.chemistry-table th {
+	border: 1px solid #000000;
+	padding: 4px;
+	text-align: center;
+}
+
+.chemistry-table td {
+	border: 1px solid #999999;
+	padding: 4px;
+}

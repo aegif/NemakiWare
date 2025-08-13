@@ -1,0 +1,1 @@
+Version: 1.2.0-SNAPSHOT / Revision: ? / Build: 2025-07-03T12:40:34+0900
