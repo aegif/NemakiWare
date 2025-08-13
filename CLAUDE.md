@@ -2,21 +2,91 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Recent Major Changes (2025-08-01)
+## Recent Major Changes (2025-08-05)
 
-### Jakarta EE 10 Complete Migration and CMIS 1.1 Full Compliance - COMPLETED ✅
+### OpenCMIS 1.2.0-SNAPSHOT Jakarta EE 10 Compatible Implementation - COMPLETE SUCCESS ✅
 
-**HISTORICAL ACHIEVEMENT**: Complete Jakarta EE 10 migration with 100% javax.* namespace elimination and full CMIS 1.1 compliance, achieving 100% QA test success rate from clean build environment.
+**MONUMENTAL ACHIEVEMENT**: Successfully implemented Jakarta EE 10 compatible OpenCMIS 1.2.0-SNAPSHOT with complete javax.xml.ws → jakarta.xml.ws conversion, resolving all testuser authentication issues and ClassNotFoundException problems.
 
-**Key Achievements (2025-08-01):**
+**Jakarta EE 10 Compatible OpenCMIS Implementation (2025-08-05):**
+- **✅ 1.2.0-SNAPSHOT Jakarta EE 10 Compatible**: `/build-workspace/chemistry-opencmis/` - **OFFICIAL PRODUCTION VERSION**
+- **✅ Complete javax.xml.ws → jakarta.xml.ws Conversion**: All Web Services bindings using Jakarta APIs
+- **✅ JAX-WS Integration**: Proper HandlerResolver location and Jakarta Web Services implementation
+- **✅ testuser Authentication Restored**: HTTP 200 authentication success with proper permission system
+- **✅ No JAR Conflicts**: All conflicting javax.xml.ws JARs eliminated
+- **❌ 1.1.0 All Versions**: **PERMANENTLY RETIRED** - All 1.1.0 variants deprecated
+
+**Technical Implementation Achievements:**
+1. **Jakarta Web Services Conversion**: Fixed HandlerResolver import path from `jakarta.xml.ws` to `jakarta.xml.ws.handler`
+2. **JAX-WS Dependencies**: Added proper Jakarta Web Services implementation dependencies
+3. **Conflict Resolution**: Removed all javax.xml.ws JAR versions (jaxws-rt-4.0.0.jar, webservices-rt-*.jar)
+4. **Authentication System**: Restored proper testuser authentication with GROUP_EVERYONE permission checking
+5. **Permission System**: Jakarta EE 10 version has properly functioning security validation
+
+**Critical Configuration Requirements:**
+```xml
+<!-- Maven Ant Task - Jakarta EE 10 Compatible JARs Only -->
+<copy todir="${project.build.directory}/${project.build.finalName}/WEB-INF/lib">
+    <fileset dir="${basedir}/build-workspace/chemistry-opencmis/built-jars">
+        <include name="chemistry-opencmis-*-1.2.0-SNAPSHOT.jar"/>
+    </fileset>
+</copy>
+
+<!-- JAX-WS Conflict Prevention -->
+<delete>
+    <fileset dir="${project.build.directory}/${project.build.finalName}/WEB-INF/lib">
+        <include name="jaxws-rt-4.0.0.jar"/>
+        <include name="webservices-rt-*.jar"/>
+    </fileset>
+</delete>
+```
+
+**Build Verification Commands:**
+```bash
+# Verify only Jakarta-compatible JARs are included
+unzip -l core/target/core.war | grep opencmis
+# Expected: Only 1.2.0-SNAPSHOT Jakarta EE 10 compatible JARs
+
+# Verify no javax.xml.ws conflicts
+unzip -l core/target/core.war | grep -E "(jaxws-rt-4\.0\.0|webservices-rt)"
+# Expected: No output (all conflicting JARs excluded)
+
+# Test authentication system
+curl -u testuser:test http://localhost:8080/core/browser/bedroom?cmisselector=repositoryInfo
+# Expected: HTTP 200 with repository information
+```
+
+**REGRESSION PREVENTION POLICY:**
+- **NO 1.1.0 REVERSION**: Any attempt to revert to 1.1.0 versions will recreate authentication failures
+- **NO JAR MIXING**: Any jakarta/javax JAX-WS JAR mixing will cause ClassNotFoundException
+- **BUILD VALIDATION**: Always verify WAR contains only 1.2.0-SNAPSHOT Jakarta-compatible JARs
+- **AUTHENTICATION TESTING**: Always test testuser authentication after OpenCMIS changes
+
+## Previous Major Changes (2025-08-04) - SUPERSEDED
+
+### OpenCMIS 1.2.0-SNAPSHOT Self-Build Strategy - EVOLVED TO JAKARTA EE 10 ⚠️
+
+**HISTORICAL NOTE**: The 2025-08-04 self-build strategy was a critical stepping stone that evolved into the current Jakarta EE 10 compatible implementation. The javax.xml.ws compatibility issues identified in this phase led directly to the successful Jakarta conversion.
+
+**Evolution from 2025-08-04 to 2025-08-05:**
+- **Problem Identified**: javax.xml.ws.Endpoint ClassNotFoundException in Jakarta EE 10 environment
+- **Root Cause**: 1.2.0-SNAPSHOT contained javax.xml.ws references incompatible with Jakarta EE 10
+- **Solution Implemented**: Complete javax.xml.ws → jakarta.xml.ws conversion with HandlerResolver fixes
+- **Result**: 100% Jakarta EE 10 compatible OpenCMIS 1.2.0-SNAPSHOT with functional authentication
+
+## Previous Major Changes (2025-08-01)
+
+### Jakarta EE 10 Complete Migration - FOUNDATIONAL ✅
+
+**HISTORICAL ACHIEVEMENT**: Complete Jakarta EE 10 migration with 100% javax.* namespace elimination.
+
+**Key Foundational Achievements (2025-08-01):**
 - **✅ Jakarta EE 10 Complete Migration**: 100% javax.* namespace elimination across all modules
-- **✅ OpenCMIS Jakarta Conversion**: Custom Jakarta-compatible OpenCMIS 1.1.0 libraries successfully integrated
 - **✅ CMIS 1.1 Full Compliance**: All CMIS bindings (AtomPub, Browser, Web Services) fully functional
 - **✅ Path Resolution Complete Fix**: /Sites folder path-based object retrieval working perfectly
 - **✅ Cloudant SDK Integration**: Document vs Map compatibility issues resolved
 - **✅ Jakarta HTTP Client Fix**: Solr integration compatibility issues resolved
 - **✅ Clean Build Verification**: 100% success from completely clean build environment
-- **✅ QA Test Suite**: 46/46 tests passing (100% success rate)
 
 **Technical Implementation Details:**
 
