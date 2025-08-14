@@ -447,6 +447,20 @@
 			<version>4.0.1</version>
 		</dependency>
 		
+		<!-- Jakarta XML Web Services Implementation (Metro) for SOAP support -->
+		<dependency>
+			<groupId>com.sun.xml.ws</groupId>
+			<artifactId>jaxws-rt</artifactId>
+			<version>4.0.1</version>
+		</dependency>
+		
+		<!-- Jakarta SOAP API implementation -->
+		<dependency>
+			<groupId>com.sun.xml.messaging.saaj</groupId>
+			<artifactId>saaj-impl</artifactId>
+			<version>3.0.3</version>
+		</dependency>
+		
 		<!-- Legacy javax dependencies removed - using Jakarta EE versions only -->
 
 		<!-- Removed Jersey 1.x test framework - conflicts with Jersey 3.x -->
@@ -591,6 +605,18 @@
 		</dependency>
 
 		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-text</artifactId>
+			<version>1.6</version>
+		</dependency>
+		<!-- Override old commons-lang3 transitive dependency to support commons-text 1.6 -->
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-lang3</artifactId>
+			<version>3.12.0</version>
+		</dependency>
+
+		<dependency>
 			<groupId>org.jodconverter</groupId>
 			<artifactId>jodconverter-core</artifactId>
 			<version>4.0.0-RELEASE</version>
@@ -646,12 +672,12 @@
 		</dependency>
 
 		<!-- Jakarta EE compatible CXF 4.x for CMIS Web Services SOAP support -->
-		<!-- CXF JAX-WS frontend removed - Jakarta EE 10 uses built-in Web Services implementation -->
-		<!-- <dependency>
+		<!-- CXF JAX-WS frontend required for EndpointImpl and JaxWsServerFactoryBean in CmisWebServicesServlet -->
+		<dependency>
 			<groupId>org.apache.cxf</groupId>
 			<artifactId>cxf-rt-frontend-jaxws</artifactId>
 			<version>4.0.4</version>
-		</dependency> -->
+		</dependency>
 		<dependency>
 			<groupId>org.apache.cxf</groupId>
 			<artifactId>cxf-rt-transports-http</artifactId>

@@ -42,6 +42,7 @@ public class CouchAttachmentNode extends CouchNodeBase{
 	
 	public CouchAttachmentNode(){
 		super();
+		System.err.println("=== CouchAttachmentNode() DEFAULT CONSTRUCTOR CALLED ===");
 	}
 	
 	public CouchAttachmentNode(AttachmentNode a){
@@ -58,6 +59,7 @@ public class CouchAttachmentNode extends CouchNodeBase{
 	 */
 	public CouchAttachmentNode(Map<String, Object> properties) {
 		super(properties);
+		System.err.println("=== CouchAttachmentNode(Map) CONSTRUCTOR CALLED ===");
 		
 		// Extract attachment-specific properties from the map
 		if (properties.containsKey("name")) {
@@ -191,6 +193,8 @@ public class CouchAttachmentNode extends CouchNodeBase{
 	}
 	
 	public AttachmentNode convert(){
+		System.err.println("=== CouchAttachmentNode.convert() CALLED for ID: " + getId() + " ===");
+		System.err.println("DEBUG: convert() method executing - Spring context lookup about to start");
 		AttachmentNode a = new AttachmentNode(super.convert());
 		
 		a.setName(getName());
@@ -202,22 +206,53 @@ public class CouchAttachmentNode extends CouchNodeBase{
 		// CRITICAL FIX FOR JAVA 17 MIGRATION: Set InputStream from CouchDB attachment
 		// This was broken during Java 17/Jakarta EE migration - InputStream was never retrieved
 		try {
-			// Get CloudantClientWrapper from Spring context
-			jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper client = 
+			System.err.println("DEBUG: About to lookup connectorPool bean from SpringContext");
+			// Get CloudantClientPool from Spring context and then get client for repository
+			jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool connectorPool = 
 				jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
-					.getBean("CloudantClientWrapper", jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper.class);
+					.getBean("connectorPool", jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool.class);
+			System.err.println("DEBUG: connectorPool bean lookup successful: " + connectorPool);
 			
-			if (client != null && getId() != null) {
-				// Get the actual binary attachment from CouchDB
-				Object attachmentData = client.getAttachment(getId(), "content");
+			if (connectorPool != null && getId() != null) {
+				// Try common repository IDs to find the attachment
+				String[] repositoryIds = {"bedroom", "canopy", "nemaki_conf"};
+				boolean streamSet = false;
 				
-				if (attachmentData instanceof java.io.InputStream) {
-					a.setInputStream((java.io.InputStream) attachmentData);
-				} else {
-					// Log warning but don't fail the conversion
-					System.err.println("WARNING: CouchDB attachment for " + getId() + " is not InputStream: " + 
-						(attachmentData != null ? attachmentData.getClass().getSimpleName() : "NULL"));
+				for (String repositoryId : repositoryIds) {
+					try {
+						System.err.println("DEBUG: Trying repository: " + repositoryId + " for attachment ID: " + getId());
+						jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+						if (client != null) {
+							System.err.println("DEBUG: Got client for repository: " + repositoryId);
+							// Get the actual binary attachment from CouchDB
+							Object attachmentData = client.getAttachment(getId(), "content");
+							System.err.println("DEBUG: getAttachment() returned: " + (attachmentData != null ? attachmentData.getClass().getName() : "NULL"));
+							
+							if (attachmentData instanceof java.io.InputStream) {
+								a.setInputStream((java.io.InputStream) attachmentData);
+								System.err.println("SUCCESS: Set InputStream for attachment " + getId() + " from repository " + repositoryId);
+								streamSet = true;
+								break;
+							} else if (attachmentData != null) {
+								System.err.println("ERROR: getAttachment() returned unexpected type: " + attachmentData.getClass().getName());
+							} else {
+								System.err.println("ERROR: getAttachment() returned null for attachment " + getId() + " in repository " + repositoryId);
+							}
+						} else {
+							System.err.println("ERROR: Could not get client for repository: " + repositoryId);
+						}
+					} catch (Exception repoEx) {
+						System.err.println("ERROR: Exception trying repository " + repositoryId + ": " + repoEx.getMessage());
+						// Try next repository
+						continue;
+					}
 				}
+				
+				if (!streamSet) {
+					System.err.println("WARNING: Could not retrieve InputStream for attachment " + getId() + " from any repository");
+				}
+			} else {
+				System.err.println("ERROR: connectorPool is null or getId() is null - connectorPool: " + connectorPool + ", getId(): " + getId());
 			}
 		} catch (Exception e) {
 			// Log error but don't fail the conversion - allows system to continue working

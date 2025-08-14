@@ -133,6 +133,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         // CRITICAL FIX: Handle multipart form-data parameter parsing
         String cmisaction = null;
         String contentType = request.getContentType();
+        HttpServletRequest finalRequest = request; // Initialize with original request
         
         // For multipart requests, we need to manually parse parameters using OpenCMIS utilities
         if (contentType != null && contentType.startsWith("multipart/form-data")) {
@@ -140,6 +141,33 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             try {
                 // Use OpenCMIS HttpUtils to properly parse multipart parameters
                 cmisaction = org.apache.chemistry.opencmis.server.shared.HttpUtils.getStringParameter(request, "cmisaction");
+                
+                // CRITICAL FIX: Handle TCK Browser Binding folderId parameter mapping
+                // TCK tests use "folderId" parameter for document creation, but NemakiWare expects "objectId"
+                String folderId = org.apache.chemistry.opencmis.server.shared.HttpUtils.getStringParameter(request, "folderId");
+                if (folderId != null && !folderId.isEmpty()) {
+                    System.err.println("*** TCK COMPATIBILITY: folderId parameter detected: " + folderId + " - mapping to objectId ***");
+                    // Create a request wrapper to inject objectId parameter
+                    final String folderIdValue = folderId;
+                    finalRequest = new HttpServletRequestWrapper(request) {
+                        @Override
+                        public String getParameter(String name) {
+                            if ("objectId".equals(name)) {
+                                return folderIdValue;
+                            }
+                            return super.getParameter(name);
+                        }
+                        
+                        @Override
+                        public java.util.Map<String, String[]> getParameterMap() {
+                            java.util.Map<String, String[]> paramMap = new java.util.HashMap<String, String[]>(super.getParameterMap());
+                            paramMap.put("objectId", new String[]{folderIdValue});
+                            return paramMap;
+                        }
+                    };
+                    System.err.println("*** TCK COMPATIBILITY: Request wrapped with objectId mapping ***");
+                }
+                
                 if (cmisaction != null) {
                     System.err.println("*** MULTIPART CMISACTION EXTRACTED: " + cmisaction + " ***");
                 } else {
@@ -204,6 +232,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 }
             }
             
+            // QUERY HANDLING: Let parent CmisBrowserBindingServlet handle queries now that DeleteTypeFilter is bypassed
+            if ("query".equals(cmisaction)) {
+                System.err.println("*** QUERY REQUEST DETECTED - Delegating to parent CmisBrowserBindingServlet ***");
+                // No direct handling - let the parent class handle query processing completely
+            }
+            
             if ("createType".equals(cmisaction)) {
                 System.err.println("!!! CREATE TYPE REQUEST INTERCEPTED !!!");
                 System.err.println("Request details for createType:");
@@ -231,7 +265,6 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         System.err.println("=== DELEGATING TO PARENT SERVICE ===");
         
         // CRITICAL FIX: Handle OpenCMIS 1.2.0-SNAPSHOT strict selector validation for TCK compatibility
-        HttpServletRequest finalRequest = request;
         
         try {
             System.err.println("!!! COMPATIBILITY FIX EXECUTION START [" + System.currentTimeMillis() + "] !!!");
@@ -882,6 +915,13 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         
         System.err.println("=== DIRECT DELETE TYPE HANDLER END ===");
     }
+    
+    /**
+     * REMOVED: handleQueryDirectly method - queries now delegated to parent CmisBrowserBindingServlet
+     * since DeleteTypeFilter is bypassed and parent class can handle queries properly.
+     */
+    // REMOVED: handleQueryDirectly method - queries now delegated to parent CmisBrowserBindingServlet
+    // since DeleteTypeFilter is bypassed and parent class can handle queries properly.
     
     /**
      * CRITICAL FIX: Override doPost to force interception of POST requests.

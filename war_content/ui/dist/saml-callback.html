@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>SAML Callback</title>
+</head>
+<body>
+    <div style="text-align: center; padding: 50px;">
+        <h2>SAML認証処理中...</h2>
+        <p>認証が完了するまでお待ちください。</p>
+    </div>
+    <script>
+        // Extract SAML response from URL and redirect to React app
+        const urlParams = new URLSearchParams(window.location.search);
+        const samlResponse = urlParams.get('SAMLResponse');
+        const relayState = urlParams.get('RelayState');
+        
+        if (samlResponse) {
+            // Redirect to React app with SAML response
+            const reactAppUrl = '/core/ui/saml-callback?' + window.location.search;
+            window.location.href = reactAppUrl;
+        } else {
+            // No SAML response found, redirect to login
+            window.location.href = '/core/ui/';
+        }
+    </script>
+</body>
+</html>

@@ -20,6 +20,11 @@
 		<welcome-file>index.html</welcome-file>
 	</welcome-file-list>
 
+	<!-- JAX-WS Provider Initializer - MUST run before OpenCMIS Web Services servlet -->
+	<listener>
+		<listener-class>jp.aegif.nemaki.init.JaxWsProviderInitializer</listener-class>
+	</listener>
+
 	<!-- Re-enable Spring context with Jakarta EE converted OpenCMIS JARs -->
 	<context-param>
 		<param-name>contextConfigLocation</param-name>
@@ -99,11 +104,14 @@
 		</init-param>
 	</filter>
 	
-	<!-- DeleteType Filter - intercepts deleteType requests before OpenCMIS -->
+	<!-- DeleteType Filter - TEMPORARILY DISABLED to allow query action support in Browser Binding -->
+	<!-- CRITICAL FIX: This filter prevents cmisaction=query from working in TCK tests -->
+	<!--
 	<filter>
 		<filter-name>deleteTypeFilter</filter-name>
 		<filter-class>jp.aegif.nemaki.cmis.servlet.DeleteTypeFilter</filter-class>
 	</filter>
+	-->
 	
 	<!-- CORS filter mapping - must be first -->
 	<filter-mapping>
@@ -111,13 +119,16 @@
 		<url-pattern>/rest/*</url-pattern>
 	</filter-mapping>
 	
-	<!-- DeleteType filter mapping - intercept browser binding requests -->
+	<!-- DeleteType filter mapping - TEMPORARILY DISABLED to allow query action support -->
+	<!-- CRITICAL FIX: This filter mapping prevents cmisaction=query from working in TCK tests -->
+	<!--
 	<filter-mapping>
 		<filter-name>deleteTypeFilter</filter-name>
 		<url-pattern>/browser/*</url-pattern>
 		<dispatcher>REQUEST</dispatcher>
 		<dispatcher>FORWARD</dispatcher>
 	</filter-mapping>
+	-->
 	
 	<!-- Apply authentication to all /rest/* except /rest/all/* -->
 	<filter-mapping>

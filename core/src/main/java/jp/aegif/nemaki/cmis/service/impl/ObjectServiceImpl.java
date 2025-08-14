@@ -162,7 +162,13 @@ public class ObjectServiceImpl implements ObjectService {
 	@Override
 	public ContentStream getContentStream(CallContext callContext, String repositoryId, String objectId,
 			String streamId, BigInteger offset, BigInteger length) {
-
+		
+		// CRITICAL DEBUG: Public getContentStream method entry
+		System.err.println(">>> PUBLIC getContentStream() METHOD CALLED <<<");
+		System.err.println("Repository ID: " + repositoryId);
+		System.err.println("Object ID: " + objectId);
+		System.err.println("Stream ID: " + streamId);
+		
 		exceptionService.invalidArgumentRequired("objectId", objectId);
 
 		Lock lock = threadLockService.getReadLock(repositoryId, objectId);
@@ -194,6 +200,12 @@ public class ObjectServiceImpl implements ObjectService {
 	// obligatory.
 	private ContentStream getContentStreamInternal(String repositoryId, Content content, BigInteger rangeOffset,
 			BigInteger rangeLength) {
+		// CRITICAL DEBUG: Method entry point verification
+		System.err.println("!!! getContentStreamInternal() METHOD CALLED !!!");
+		System.err.println("Repository ID: " + repositoryId);
+		System.err.println("Content ID: " + (content != null ? content.getId() : "NULL"));
+		System.err.println("Content Type: " + (content != null ? content.getClass().getSimpleName() : "NULL"));
+		
 		if (!content.isDocument()) {
 			exceptionService.constraint(content.getId(),
 					"getContentStream cannnot be invoked to other than document type.");
@@ -238,9 +250,18 @@ public class ObjectServiceImpl implements ObjectService {
 		// This will throw constraint exception for documents with ContentStreamAllowed.ALLOWED 
 		// but no actual attachment (AttachmentNodeId is null)
 		exceptionService.constraintContentStreamDownload(repositoryId, document);
+		System.err.println("=== CONSTRAINT CHECK COMPLETED SUCCESSFULLY ===");
+		System.err.println("=== DEBUG: About to start attachment retrieval process ===");
 		
 		// After constraint check passes, get attachment
+		System.err.println("=== BEFORE CONTENTSERVICE.GETATTACHMENT() CALL ===");
+		System.err.println("contentService class: " + contentService.getClass().getName());
+		System.err.println("repositoryId: " + repositoryId);
+		System.err.println("attachmentNodeId: " + document.getAttachmentNodeId());
 		AttachmentNode attachment = contentService.getAttachment(repositoryId, document.getAttachmentNodeId());
+		System.err.println("=== AFTER CONTENTSERVICE.GETATTACHMENT() CALL ===");
+		System.err.println("attachment class: " + (attachment != null ? attachment.getClass().getName() : "NULL"));
+		System.err.println("attachment InputStream: " + (attachment != null && attachment.getInputStream() != null ? "SUCCESS" : "NULL"));
 		
 		attachment.setRangeOffset(rangeOffset);
 		attachment.setRangeLength(rangeLength);

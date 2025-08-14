@@ -1946,8 +1946,22 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public AttachmentNode getAttachment(String repositoryId, String attachmentId) {
+		System.err.println("=== ContentServiceImpl.getAttachment() CALLED ===");
+		System.err.println("Repository ID: " + repositoryId);
+		System.err.println("Attachment ID: " + attachmentId);
 		AttachmentNode an = contentDaoService.getAttachment(repositoryId, attachmentId);
-		contentDaoService.setStream(repositoryId, an);
+		System.err.println("contentDaoService.getAttachment() returned: " + (an != null ? an.getClass().getName() : "NULL"));
+		// CRITICAL FIX: Only call setStream if no InputStream exists
+		// setStream() consumes the InputStream, so we need to avoid calling it when retrieving for getContentStream
+		if (an != null && an.getInputStream() == null) {
+			System.err.println("WARNING: AttachmentNode has no InputStream, calling setStream to populate it");
+			contentDaoService.setStream(repositoryId, an);
+			System.err.println("contentDaoService.setStream() completed");
+		} else {
+			System.err.println("AttachmentNode already has InputStream, skipping setStream to avoid stream consumption");
+		}
+		System.err.println("Final InputStream: " + (an != null && an.getInputStream() != null ? "SUCCESS" : "NULL"));
+		System.err.println("=== ContentServiceImpl.getAttachment() END ===");
 		return an;
 	}
 

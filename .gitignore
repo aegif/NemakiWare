@@ -83,8 +83,18 @@ lib/jakarta-converted/solr-with-dependencies*.jar
 !docker/jakarta-lib/*jakarta*.jar
 !lib/jakarta-converted/*jakarta*.jar
 
-# Build workspace artifacts
-build-workspace/
+# Build workspace artifacts - exclude build outputs but keep OpenCMIS source code for debugging
+build-workspace/*
+# Exception: Keep OpenCMIS 1.2.0-SNAPSHOT source code for debugging and custom modifications  
+!build-workspace/chemistry-opencmis/
+build-workspace/chemistry-opencmis/**/target/
+build-workspace/chemistry-opencmis/**/*.class
+# Self-built JAR files should not be committed (we have source code)
+build-workspace/chemistry-opencmis/built-jars/
+# Keep specific source directories
+!build-workspace/chemistry-opencmis/chemistry-opencmis-client/
+!build-workspace/chemistry-opencmis/chemistry-opencmis-server/
+!build-workspace/chemistry-opencmis/chemistry-opencmis-commons/
 
 # NemakiWare specific
 setup/installer/*/log
@@ -175,5 +185,9 @@ setup/installer/**/*.war
 # Large JAR files
 solr/solr/*/lib/
 docker/solr/solr/*/lib/
-build-workspace/chemistry-opencmis
+# Commented out: build-workspace/chemistry-opencmis (source code should be tracked)
 core/src/main/webapp/ui/node_modules/
+.serena
+war_edit
+WEB-INF
+temp-extract

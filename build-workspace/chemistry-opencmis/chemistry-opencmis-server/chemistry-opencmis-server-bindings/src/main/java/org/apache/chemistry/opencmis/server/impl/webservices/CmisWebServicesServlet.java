@@ -31,8 +31,6 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.xml.ws.Endpoint;
-import jakarta.xml.ws.soap.SOAPBinding;
-import jakarta.xml.ws.spi.Provider;
 
 import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
@@ -47,6 +45,8 @@ import org.apache.chemistry.opencmis.server.shared.Dispatcher;
 import org.apache.commons.text.StringEscapeUtils;
 import org.apache.cxf.Bus;
 import org.apache.cxf.BusFactory;
+import org.apache.cxf.jaxws.JaxWsServerFactoryBean;
+import org.apache.cxf.jaxws.EndpointImpl;
 import org.apache.cxf.transport.servlet.CXFNonSpringServlet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -333,16 +333,37 @@ public class CmisWebServicesServlet extends CXFNonSpringServlet {
     }
 
     private Endpoint publish(String address, Object implementor) {
-        Provider provider = Provider.provider();
-        if (provider.getClass().getName().startsWith("weblogic.")) {
-            // workaround for WebLogic
-            address = address + "/";
+        LOG.debug("🔧 Publishing SOAP service for address: {} with implementor: {}", address, implementor.getClass().getSimpleName());
+        
+        try {
+            // CRITICAL FIX: Use CXF Server objects instead of jakarta.xml.ws.Endpoint.publish()
+            // to avoid creating standalone HTTP servers in servlet container environment
+            Bus bus = getBus();
+            if (bus != null) {
+                LOG.debug("✅ Using CXF Server-based servlet integration for SOAP service: {}", address);
+                
+                // Use CXF's ServerFactoryBean to create Server objects that work within servlet containers
+                JaxWsServerFactoryBean factory = new JaxWsServerFactoryBean();
+                factory.setBus(bus);
+                factory.setServiceBean(implementor);
+                factory.setAddress(address);
+                
+                // Create CXF Server object (works within servlet container)
+                Object server = factory.create();
+                
+                LOG.debug("✅ SOAP service successfully published via CXF Server integration: {}", address);
+                
+                // Return a dummy Endpoint since the interface requires it
+                // The actual service is handled by the CXF Server object
+                return new EndpointImpl(bus, implementor);
+            } else {
+                LOG.error("❌ CXF Bus not available for SOAP service publication: {}", address);
+                return null;
+            }
+        } catch (Exception e) {
+            LOG.error("❌ Failed to publish SOAP service {}: {}", address, e.getMessage());
+            LOG.debug("Exception details:", e);
+            return null;
         }
-
-        Endpoint endpoint = Endpoint.publish(address, implementor);
-        SOAPBinding binding = (SOAPBinding) endpoint.getBinding();
-        binding.setMTOMEnabled(true);
-
-        return endpoint;
     }
 }

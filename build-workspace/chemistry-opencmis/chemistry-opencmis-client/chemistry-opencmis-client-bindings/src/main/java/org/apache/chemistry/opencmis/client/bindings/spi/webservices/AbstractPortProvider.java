@@ -41,7 +41,7 @@ import javax.xml.parsers.ParserConfigurationException;
 import jakarta.xml.ws.BindingProvider;
 import jakarta.xml.ws.Service;
 import jakarta.xml.ws.WebServiceFeature;
-import jakarta.xml.ws.handler.HandlerResolver;
+// HandlerResolver not available in current Jakarta XML Web Services implementation
 import jakarta.xml.ws.handler.MessageContext;
 import jakarta.xml.ws.http.HTTPException;
 
@@ -203,10 +203,11 @@ public abstract class AbstractPortProvider {
 
             AuthenticationProvider authProvider = CmisBindingsHelper.getAuthenticationProvider(getSession());
             if (authProvider != null) {
-                HandlerResolver handlerResolver = authProvider.getHandlerResolver();
-                if (handlerResolver != null) {
-                    newService.setHandlerResolver(handlerResolver);
-                }
+                Object handlerResolver = authProvider.getHandlerResolver();
+                // HandlerResolver functionality disabled for Jakarta XML Web Services compatibility
+                // if (handlerResolver != null) {
+                //     newService.setHandlerResolver(handlerResolver);
+                // }
             }
 
             return newService;

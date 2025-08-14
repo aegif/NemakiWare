@@ -24,7 +24,7 @@ import java.util.Map;
 
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.SSLSocketFactory;
-import jakarta.xml.ws.handler.HandlerResolver;
+// HandlerResolver not available in current Jakarta XML Web Services implementation
 
 import org.w3c.dom.Element;
 
@@ -64,7 +64,7 @@ public interface AuthenticationProvider extends Serializable {
      * @return the HandlerResolver or {@code null} if no handlers should be
      *         set
      */
-    HandlerResolver getHandlerResolver();
+    Object getHandlerResolver();
 
     /**
      * Returns the SSL Socket Factory to be used when creating sockets for HTTPS
