@@ -49,6 +49,10 @@ jobs:
             fi
           done
 
+      - name: Install nemakiware-action plugin (local maven)
+        working-directory: suspended-modules/action
+        run: mvn -q -DskipTests install
+
       - name: Build NemakiWare modules (install to local maven)
         run: mvn -q -DskipTests install
 
