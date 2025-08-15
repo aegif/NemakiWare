@@ -26,9 +26,6 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Build NemakiWare modules (install to local maven)
-        run: mvn -q -DskipTests install
-
       - name: Install OpenCMIS 1.2.0-SNAPSHOT jars into local maven
         run: |
           set -e
@@ -51,6 +48,9 @@ jobs:
               echo "WARNING: Missing $FILE"
             fi
           done
+
+      - name: Build NemakiWare modules (install to local maven)
+        run: mvn -q -DskipTests install
 
       - name: Start CouchDB
         run: |

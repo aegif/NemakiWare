@@ -1,6 +1,6 @@
 import { AuthService } from './auth';
 import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, User, Group, ACL } from '../types/cmis';
-import { BROWSER_BASE, REST_BASE } from '../config';
+import { BROWSER_BASE, REST_BASE, ATOM_BASE } from '../config';
 
 export class CMISService {
   private baseUrl = BROWSER_BASE;
@@ -291,7 +291,7 @@ export class CMISService {
       } else {
         // Use AtomPub for subfolders as Browser Binding doesn't support object ID-based queries
         useAtomPub = true;
-        url = `/core/atom/${repositoryId}/children?id=${folderId}`;
+        url = `${ATOM_BASE}/${repositoryId}/children?id=${folderId}`;
       }
       
       xhr.open('GET', url, true);
@@ -496,7 +496,7 @@ export class CMISService {
       // Use AtomPub binding for getObject as Browser Binding doesn't have proper object endpoint
       console.log('CMIS DEBUG: getObject using AtomPub for objectId:', objectId);
       
-      xhr.open('GET', `/core/atom/${repositoryId}/id?id=${objectId}`, true);
+      xhr.open('GET', `${ATOM_BASE}/${repositoryId}/id?id=${objectId}`, true);
       xhr.setRequestHeader('Accept', 'application/atom+xml');
       
       const headers = this.getAuthHeaders();
@@ -584,7 +584,7 @@ export class CMISService {
     return new Promise(async (resolve, reject) => {
       const xhr = new XMLHttpRequest();
       
-      const browserUrl = `/core/browser/${repositoryId}/root`;
+      const browserUrl = `${BROWSER_BASE}/${repositoryId}/root`;
       console.log('CMIS DEBUG: createDocument using Browser binding URL:', browserUrl);
       xhr.open('POST', browserUrl, true);
       
@@ -866,7 +866,7 @@ export class CMISService {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       // Use CMIS AtomPub binding for version history (Browser Binding doesn't support versions endpoint)
-      xhr.open('GET', `/core/atom/${repositoryId}/versions?id=${objectId}`, true);
+      xhr.open('GET', `${ATOM_BASE}/${repositoryId}/versions?id=${objectId}`, true);
       xhr.setRequestHeader('Accept', 'application/atom+xml');
       
       const headers = this.getAuthHeaders();
@@ -1080,7 +1080,7 @@ export class CMISService {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       // サーバー側修正に合わせて正しいRESTエンドポイントを使用
-      xhr.open('GET', `/core/rest/repo/${repositoryId}/user/list`, true);
+      xhr.open('GET', `${REST_BASE}/repo/${repositoryId}/user/list`, true);
       xhr.setRequestHeader('Accept', 'application/json');
       
       const headers = this.getAuthHeaders();
@@ -1270,7 +1270,7 @@ export class CMISService {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       // サーバー側修正に合わせて正しいRESTエンドポイントを使用
-      xhr.open('GET', `/core/rest/repo/${repositoryId}/group/list`, true);
+      xhr.open('GET', `${REST_BASE}/repo/${repositoryId}/group/list`, true);
       xhr.setRequestHeader('Accept', 'application/json');
       
       const headers = this.getAuthHeaders();
@@ -1443,7 +1443,7 @@ export class CMISService {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       // Use AtomPub binding for type definitions
-      xhr.open('GET', `/core/atom/${repositoryId}/types`, true);
+      xhr.open('GET', `${ATOM_BASE}/${repositoryId}/types`, true);
       xhr.setRequestHeader('Accept', 'application/atom+xml');
       
       const headers = this.getAuthHeaders();
@@ -1658,7 +1658,7 @@ export class CMISService {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       // Use CMIS AtomPub binding for relationships (Browser Binding doesn't support relationships endpoint)
-      xhr.open('GET', `/core/atom/${repositoryId}/relationships?id=${objectId}`, true);
+      xhr.open('GET', `${ATOM_BASE}/${repositoryId}/relationships?id=${objectId}`, true);
       xhr.setRequestHeader('Accept', 'application/atom+xml');
       
       const headers = this.getAuthHeaders();
@@ -1819,7 +1819,7 @@ export class CMISService {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       // Use correct REST endpoint for archive index
-      xhr.open('GET', `/core/rest/repo/${repositoryId}/archive/index`, true);
+      xhr.open('GET', `${REST_BASE}/repo/${repositoryId}/archive/index`, true);
       xhr.setRequestHeader('Accept', 'application/json');
       
       const headers = this.getAuthHeaders();
@@ -1911,7 +1911,7 @@ export class CMISService {
       const xhr = new XMLHttpRequest();
       
       // Use AtomPub binding for content stream download
-      xhr.open('GET', `/core/atom/${repositoryId}/content?id=${objectId}`, true);
+      xhr.open('GET', `${ATOM_BASE}/${repositoryId}/content?id=${objectId}`, true);
       xhr.responseType = 'arraybuffer';
       xhr.setRequestHeader('Accept', 'application/octet-stream');
       
