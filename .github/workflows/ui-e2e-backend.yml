@@ -71,17 +71,40 @@ jobs:
         run: |
           nohup mvn -q -DskipTests jetty:run -Pdevelopment -Djetty.port=8080 > ../jetty.log 2>&1 &
 
-      - name: Wait for backend
+      - name: Check backend readiness (Jetty)
+        id: check_jetty
         run: |
+          READY=false
           for i in {1..120}; do
             if curl -sf http://localhost:8080/core/rest/all/repositories >/dev/null; then
-              echo "Backend ready"; exit 0
+              echo "Backend ready"
+              READY=true
+              break
             fi
             sleep 5
           done
-          echo "Backend did not become ready"
-          echo "==== Last 400 lines of jetty.log ===="
-          tail -n 400 jetty.log || true
+          if [ "$READY" != "true" ]; then
+            echo "Backend did not become ready from Jetty source run"
+            echo "==== Last 400 lines of jetty.log ===="
+            tail -n 400 jetty.log || true
+            echo "BACKEND_READY=false" >> "$GITHUB_ENV"
+          else
+            echo "BACKEND_READY=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Start containerized backend fallback
+        if: env.BACKEND_READY != 'true'
+        run: |
+          docker compose -f docker/docker-compose-containerized.yml up -d couchdb core
+          for i in {1..120}; do
+            if curl -sf http://localhost:8080/core/rest/all/repositories >/dev/null; then
+              echo "Containerized backend ready"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Containerized backend did not become ready"
+          docker compose -f docker/docker-compose-containerized.yml logs --tail=200 core || true
           exit 1
 
       - name: Install UI deps

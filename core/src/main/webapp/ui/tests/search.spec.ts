@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-const withBackend = process.env.E2E_WITH_BACKEND === 'true';
+const withBackend = (globalThis as any)?.process?.env?.E2E_WITH_BACKEND === 'true';
 
 test.describe('Search - backend', () => {
   test.skip(!withBackend, 'Requires backend running (E2E_WITH_BACKEND=true)');
