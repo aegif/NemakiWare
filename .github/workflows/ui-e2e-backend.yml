@@ -26,6 +26,32 @@ jobs:
         with:
           node-version: '18'
 
+      - name: Build NemakiWare modules (install to local maven)
+        run: mvn -q -DskipTests install
+
+      - name: Install OpenCMIS 1.2.0-SNAPSHOT jars into local maven
+        run: |
+          set -e
+          JARS_DIR="build-workspace/chemistry-opencmis/built-jars"
+          declare -a ARTIFACTS=(
+            "chemistry-opencmis-commons-api"
+            "chemistry-opencmis-commons-impl"
+            "chemistry-opencmis-server-support"
+            "chemistry-opencmis-server-bindings"
+            "chemistry-opencmis-client-impl"
+            "chemistry-opencmis-client-api"
+            "chemistry-opencmis-client-bindings"
+            "chemistry-opencmis-test-tck"
+          )
+          for A in "${ARTIFACTS[@]}"; do
+            FILE="$JARS_DIR/$A-1.2.0-SNAPSHOT.jar"
+            if [ -f "$FILE" ]; then
+              mvn -q install:install-file -Dfile="$FILE" -DgroupId=org.apache.chemistry.opencmis -DartifactId="$A" -Dversion=1.2.0-SNAPSHOT -Dpackaging=jar
+            else
+              echo "WARNING: Missing $FILE"
+            fi
+          done
+
       - name: Start CouchDB
         run: |
           docker run -d --name couchdb-dev -p 5984:5984 \
@@ -47,15 +73,15 @@ jobs:
 
       - name: Wait for backend
         run: |
-          for i in {1..60}; do
+          for i in {1..120}; do
             if curl -sf http://localhost:8080/core/rest/all/repositories >/dev/null; then
               echo "Backend ready"; exit 0
             fi
             sleep 5
           done
           echo "Backend did not become ready"
-          echo "==== Last 200 lines of jetty.log ===="
-          tail -n 200 jetty.log || true
+          echo "==== Last 400 lines of jetty.log ===="
+          tail -n 400 jetty.log || true
           exit 1
 
       - name: Install UI deps
