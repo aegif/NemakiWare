@@ -1,11 +1,12 @@
 import axios from 'axios';
 import { ActionDefinition, ActionForm, ActionExecutionResult } from '../types/cmis';
+import { REST_BASE } from '../config';
 
 export class ActionService {
   private baseUrl: string;
 
   constructor() {
-    this.baseUrl = '/core/rest';
+    this.baseUrl = REST_BASE;
   }
 
   async discoverActions(repositoryId: string, objectId: string): Promise<ActionDefinition[]> {

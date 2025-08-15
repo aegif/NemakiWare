@@ -1,4 +1,5 @@
 import { AuthToken } from './auth';
+import { REST_BASE } from '../config';
 
 export interface SAMLConfig {
   sso_url: string;
@@ -44,7 +45,7 @@ export class SAMLService {
   async handleSAMLResponse(samlResponse: string, relayState?: string): Promise<AuthToken> {
     const repositoryId = this.extractRepositoryIdFromRelayState(relayState) || 'bedroom';
     
-    const response = await fetch(`/core/rest/repo/${repositoryId}/authtoken/saml/convert`, {
+    const response = await fetch(`${REST_BASE}/repo/${repositoryId}/authtoken/saml/convert`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -75,7 +76,7 @@ export class SAMLService {
   }
 
   async convertSAMLResponse(samlResponseData: SAMLResponse, repositoryId: string): Promise<AuthToken> {
-    const response = await fetch(`/core/rest/repo/${repositoryId}/authtoken/saml/convert`, {
+    const response = await fetch(`${REST_BASE}/repo/${repositoryId}/authtoken/saml/convert`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'

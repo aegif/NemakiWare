@@ -1,0 +1,23 @@
+name: UI E2E (Playwright)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'core/src/main/webapp/ui/**'
+      - '.github/workflows/ui-e2e.yml'
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: core/src/main/webapp/ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - run: npm ci
+      - run: npx playwright install --with-deps
+      - run: npm run test:e2e

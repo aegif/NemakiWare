@@ -1,9 +1,10 @@
 import { AuthService } from './auth';
 import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, User, Group, ACL } from '../types/cmis';
+import { BROWSER_BASE, REST_BASE } from '../config';
 
 export class CMISService {
-  private baseUrl = '/core/browser';
-  private restBaseUrl = '/core/rest/repo';
+  private baseUrl = BROWSER_BASE;
+  private restBaseUrl = `${REST_BASE}/repo`;
   private authService: AuthService;
   private onAuthError?: (error: any) => void;
 
@@ -146,7 +147,7 @@ export class CMISService {
         
         // Use unauthenticated endpoint for getting repository list
         // This is needed for the login screen where user hasn't authenticated yet
-        xhr.open('GET', '/core/rest/all/repositories', true);
+        xhr.open('GET', `${REST_BASE}/all/repositories`, true);
         xhr.setRequestHeader('Accept', 'application/json');
         
         xhr.onreadystatechange = () => {

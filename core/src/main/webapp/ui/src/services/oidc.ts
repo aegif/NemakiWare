@@ -1,5 +1,6 @@
 import { UserManager, UserManagerSettings, User } from 'oidc-client-ts';
 import { AuthToken } from './auth';
+import { REST_BASE } from '../config';
 
 export interface OIDCConfig {
   authority: string;
@@ -41,7 +42,7 @@ export class OIDCService {
   }
 
   async convertOIDCToken(oidcUser: User, repositoryId: string): Promise<AuthToken> {
-    const response = await fetch(`/core/rest/repo/${repositoryId}/authtoken/oidc/convert`, {
+    const response = await fetch(`${REST_BASE}/repo/${repositoryId}/authtoken/oidc/convert`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

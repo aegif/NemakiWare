@@ -24,11 +24,15 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed"
   },
   "devDependencies": {
     "@types/react-image-gallery": "^1.2.4",
     "@vitejs/plugin-react": "^4.0.0",
-    "vite": "^5.0.0"
+    "vite": "^5.0.0",
+    "@playwright/test": "^1.48.0",
+    "playwright": "^1.48.0"
   }
 }

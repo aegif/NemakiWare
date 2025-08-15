@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+const proxyTarget = process.env.VITE_PROXY_TARGET ?? 'http://localhost:8080';
+
 export default defineConfig({
   plugins: [react()],
   base: '/core/ui/dist/',
@@ -11,7 +13,7 @@ export default defineConfig({
   server: {
     proxy: {
       '^/core/(?!ui).*': {
-        target: 'http://localhost:8080',
+        target: proxyTarget,
         changeOrigin: true
       }
     }
