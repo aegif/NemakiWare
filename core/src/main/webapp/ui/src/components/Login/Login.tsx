@@ -54,9 +54,13 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const loadRepositories = async () => {
     try {
       const repos = await cmisService.getRepositories();
-      setRepositories(repos);
-      if (repos.length === 1) {
-        form.setFieldsValue({ repositoryId: repos[0] });
+      if (repos.length === 0) {
+        setRepositories(['bedroom']);
+      } else {
+        setRepositories(repos);
+        if (repos.length === 1) {
+          form.setFieldsValue({ repositoryId: repos[0] });
+        }
       }
     } catch (error) {
       setRepositories(['bedroom']);

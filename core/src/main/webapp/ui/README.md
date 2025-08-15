@@ -48,5 +48,16 @@ npm run type-check
 
 ## E2E (Playwright)
 - Install browsers: npx playwright install
-- Run tests: npm run test:e2e
+- Run tests (no backend): npm run test:e2e
 - Headed: npm run test:e2e:headed
+
+### Backend-enabled E2E
+- Prereqs as above; start backend on :8080
+- Env:
+  - export VITE_PROXY_TARGET=http://localhost:8080
+  - export E2E_WITH_BACKEND=true
+- Run a subset:
+  - npx playwright test tests/login-success.spec.ts
+  - npx playwright test tests/documents.spec.ts
+  - npx playwright test tests/search.spec.ts
+  - npx playwright test tests/folder-crud.spec.ts
