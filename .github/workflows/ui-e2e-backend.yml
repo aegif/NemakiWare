@@ -2,9 +2,6 @@ name: UI E2E (with Backend)
 
 on:
   pull_request:
-    paths:
-      - 'core/**'
-      - '.github/workflows/ui-e2e-backend.yml'
   workflow_dispatch:
 
 jobs:
