@@ -26,7 +26,7 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Install OpenCMIS 1.2.0-SNAPSHOT jars into local maven
+      - name: Install OpenCMIS 1.2.0-SNAPSHOT jars and parent POM into local maven
         run: |
           set -e
           JARS_DIR="build-workspace/chemistry-opencmis/built-jars"
@@ -48,6 +48,25 @@ jobs:
               echo "WARNING: Missing $FILE"
             fi
           done
+          # Install the parent POM so Maven can resolve artifact descriptors
+          POM_FILE="$JARS_DIR/chemistry-opencmis-1.2.0-SNAPSHOT.pom"
+          if [ -f "$POM_FILE" ]; then
+            mvn -q install:install-file -Dfile="$POM_FILE" -DgroupId=org.apache.chemistry.opencmis -DartifactId=chemistry-opencmis -Dversion=1.2.0-SNAPSHOT -Dpackaging=pom
+          else
+            echo "Parent POM not found at $POM_FILE, generating a minimal POM for installation"
+            TMP_POM="$(mktemp)"
+            cat > "$TMP_POM" <<'EOF'
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>org.apache.chemistry.opencmis</groupId>
+  <artifactId>chemistry-opencmis</artifactId>
+  <version>1.2.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+  <name>chemistry-opencmis parent (local)</name>
+</project>
+EOF
+            mvn -q install:install-file -Dfile="$TMP_POM" -DgroupId=org.apache.chemistry.opencmis -DartifactId=chemistry-opencmis -Dversion=1.2.0-SNAPSHOT -Dpackaging=pom
+          fi
 
       - name: Install nemakiware-action plugin (local maven)
         working-directory: suspended-modules/action
