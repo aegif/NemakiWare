@@ -1,0 +1,74 @@
+name: UI E2E (with Backend)
+
+on:
+  pull_request:
+    paths:
+      - 'core/**'
+      - '.github/workflows/ui-e2e-backend.yml'
+  workflow_dispatch:
+
+jobs:
+  e2e-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Node 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Start CouchDB
+        run: |
+          docker run -d --name couchdb-dev -p 5984:5984 \
+            -e COUCHDB_USER=admin -e COUCHDB_PASSWORD=password couchdb:3
+          for i in {1..30}; do
+            if curl -sf http://localhost:5984/ >/dev/null; then
+              echo "CouchDB ready"; exit 0
+            fi
+            sleep 2
+          done
+          echo "CouchDB did not become ready" && exit 1
+
+      - name: Start Jetty (Core)
+        working-directory: core
+        env:
+          MAVEN_OPTS: "--add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/java.text=ALL-UNNAMED --add-opens=java.desktop/java.awt.font=ALL-UNNAMED"
+        run: |
+          nohup mvn -q -DskipTests jetty:run -Pdevelopment -Djetty.port=8080 > ../jetty.log 2>&1 &
+
+      - name: Wait for backend
+        run: |
+          for i in {1..60}; do
+            if curl -sf http://localhost:8080/core/rest/all/repositories >/dev/null; then
+              echo "Backend ready"; exit 0
+            fi
+            sleep 5
+          done
+          echo "Backend did not become ready"
+          echo "==== Last 200 lines of jetty.log ===="
+          tail -n 200 jetty.log || true
+          exit 1
+
+      - name: Install UI deps
+        working-directory: core/src/main/webapp/ui
+        run: npm ci || npm install
+
+      - name: Install Playwright browsers
+        working-directory: core/src/main/webapp/ui
+        run: npx playwright install --with-deps
+
+      - name: Run Playwright (backend)
+        working-directory: core/src/main/webapp/ui
+        env:
+          VITE_PROXY_TARGET: "http://localhost:8080"
+          E2E_WITH_BACKEND: "true"
+        run: npm run test:e2e

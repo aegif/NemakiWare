@@ -4,7 +4,7 @@ export default defineConfig({
   testDir: './tests',
   timeout: 30000,
   use: {
-    baseURL: 'http://localhost:5173/core/ui/',
+    baseURL: 'http://localhost:5173/core/ui/dist/',
     trace: 'on-first-retry'
   },
   webServer: {

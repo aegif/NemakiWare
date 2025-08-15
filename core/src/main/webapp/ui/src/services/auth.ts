@@ -1,4 +1,6 @@
 
+import { REST_BASE } from '../config';
+
 export interface AuthToken {
   token: string;
   repositoryId: string;
@@ -42,11 +44,10 @@ export class AuthService {
     
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `/core/rest/repo/${repositoryId}/authtoken/${username}/login`, true);
+      xhr.open('POST', `${REST_BASE}/repo/${repositoryId}/authtoken/${username}/login`, true);
       xhr.setRequestHeader('Accept', 'application/json');
       xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
       
-      // Add Basic authentication header required by NemakiWare auth endpoint
       const credentials = btoa(`${username}:${password}`);
       xhr.setRequestHeader('Authorization', `Basic ${credentials}`);
       
@@ -61,10 +62,7 @@ export class AuthService {
                 const token = response.value.token;
                 this.currentAuth = { token, repositoryId, username };
                 localStorage.setItem('nemakiware_auth', JSON.stringify(this.currentAuth));
-                
-                // Trigger custom event to notify AuthContext immediately
                 window.dispatchEvent(new CustomEvent('authStateChanged'));
-                
                 console.log('AUTH DEBUG: Login successful, token:', token);
                 resolve(this.currentAuth);
               } else {
@@ -90,7 +88,7 @@ export class AuthService {
   logout(): void {
     if (this.currentAuth) {
       const xhr = new XMLHttpRequest();
-      xhr.open('GET', `/core/rest/repo/${this.currentAuth.repositoryId}/authtoken/${this.currentAuth.username}/unregister`, true);
+      xhr.open('GET', `${REST_BASE}/repo/${this.currentAuth.repositoryId}/authtoken/${this.currentAuth.username}/unregister`, true);
       const headers = this.getAuthHeaders();
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
