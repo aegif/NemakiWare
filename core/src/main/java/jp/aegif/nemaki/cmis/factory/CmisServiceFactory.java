@@ -108,8 +108,8 @@ public class CmisServiceFactory extends AbstractServiceFactory implements
 		if (auth) {
 			System.err.println("=== AUTHENTICATION SUCCESS ===");
 			
-			// Create CmisService
-			CmisService calledCmisService = SpringUtil.getBeanByType(applicationContext, CmisService.class);
+			// Create CmisService - CRITICAL FIX: Use bean name to avoid TypeManager ambiguity
+			CmisService calledCmisService = (CmisService) applicationContext.getBean("cmisService");
 			if(calledCmisService == null){
 				System.err.println("CRITICAL ERROR: CmisService bean is NULL");
 				log.error("RepositoryId=" + repositoryId + " does not exist", new Throwable());

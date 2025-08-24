@@ -95,6 +95,16 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         // CRITICAL: Simple debug message that MUST appear if this method is called
         System.err.println("!!! NEMAKI SERVICE METHOD CALLED: " + request.getMethod() + " " + request.getRequestURI() + " !!!");
         
+        // CRITICAL DEBUG: Content-Type header for multipart debugging
+        String debugContentType = request.getContentType();
+        System.err.println("!!! CONTENT-TYPE HEADER: [" + debugContentType + "] !!!");
+        System.err.println("!!! CONTENT-TYPE NULL: " + (debugContentType == null) + " !!!");
+        if (debugContentType != null) {
+            System.err.println("!!! CONTENT-TYPE LENGTH: " + debugContentType.length() + " !!!");
+            System.err.println("!!! CONTAINS MULTIPART: " + debugContentType.contains("multipart") + " !!!");
+            System.err.println("!!! CONTAINS BOUNDARY: " + debugContentType.contains("boundary") + " !!!");
+        }
+        
         // CRITICAL DEBUG: ALWAYS log every request that reaches this servlet
         String method = request.getMethod();
         String pathInfo = request.getPathInfo();
@@ -130,17 +140,55 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             System.err.println("  " + headerName + " = " + request.getHeader(headerName));
         }
         
-        // CRITICAL FIX: Handle multipart form-data parameter parsing
-        String cmisaction = null;
-        String contentType = request.getContentType();
-        HttpServletRequest finalRequest = request; // Initialize with original request
+        // ===============================
+        // CRITICAL FIX: REMOVE PROBLEMATIC REQUEST WRAPPER 
+        // ===============================
+        // Root Cause: HttpServletRequestWrapper corrupts parameters by changing Content-Type 
+        // and setting Content-Length to 0, making parameters invisible to ObjectServiceImpl
         
-        // For multipart requests, we need to manually parse parameters using OpenCMIS utilities
+        String contentType = request.getContentType();
+        HttpServletRequest finalRequest = request; // Use original request directly - NO WRAPPER
+        boolean multipartAlreadyProcessed = false;
+        
+        // PARAMETER CORRUPTION FIX: Do NOT wrap request - let OpenCMIS handle multipart directly  
         if (contentType != null && contentType.startsWith("multipart/form-data")) {
+            System.err.println("*** PARAMETER CORRUPTION FIX: Preserving original multipart request for OpenCMIS ***");
+            
+            // Check if multipart parameters are available for logging
+            String cmisaction = request.getParameter("cmisaction");
+            java.util.Map<String, String[]> parameterMap = request.getParameterMap();
+            
+            System.err.println("*** PARAMETER FIX: cmisaction = " + cmisaction + " ***");
+            System.err.println("*** PARAMETER FIX: Total parameters = " + parameterMap.size() + " ***");
+            
+            if (cmisaction != null || parameterMap.size() > 0) {
+                multipartAlreadyProcessed = true;
+                System.err.println("*** PARAMETER CORRUPTION FIX: Parameters visible in servlet - letting OpenCMIS process original request ***");
+                
+                // CRITICAL: DO NOT CREATE WRAPPER - Use original request directly
+                // The wrapper was corrupting Content-Type and Content-Length, breaking parameter processing
+                finalRequest = request; // Keep original request intact
+                
+                System.err.println("*** PARAMETER CORRUPTION FIX: Using original request without wrapper ***");
+                System.err.println("*** PARAMETER FIX: Original Content-Type = " + request.getContentType() + " ***");
+                System.err.println("*** PARAMETER FIX: Original Content-Length = " + request.getContentLength() + " ***");
+                System.err.println("*** PARAMETER FIX: Parameters available = " + request.getParameterMap().size() + " ***");
+            } else {
+                System.err.println("*** PARAMETER CORRUPTION FIX: No parameters found - using original request ***");
+            }
+        }
+        
+        // CRITICAL FIX: Handle multipart form-data parameter parsing for legacy compatibility
+        String cmisaction = null;
+        
+        if (!multipartAlreadyProcessed && contentType != null && contentType.startsWith("multipart/form-data")) {
             System.err.println("*** MULTIPART REQUEST DETECTED - PARSING PARAMETERS ***");
+            System.err.println("*** MULTIPART DEBUG: Content-Type = " + contentType + " ***");
+            System.err.println("*** MULTIPART DEBUG: Content-Length = " + request.getContentLength() + " ***");
             try {
                 // Use OpenCMIS HttpUtils to properly parse multipart parameters
                 cmisaction = org.apache.chemistry.opencmis.server.shared.HttpUtils.getStringParameter(request, "cmisaction");
+                System.err.println("*** MULTIPART DEBUG: Extracted cmisaction = " + cmisaction + " ***");
                 
                 // CRITICAL FIX: Handle TCK Browser Binding folderId parameter mapping
                 // TCK tests use "folderId" parameter for document creation, but NemakiWare expects "objectId"
@@ -200,11 +248,101 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             cmisaction = request.getParameter("cmisaction");
             if (cmisaction != null) {
                 System.err.println("*** STANDARD CMISACTION DETECTED: " + cmisaction + " ***");
+                
+                // CRITICAL FIX: Handle createDocument with content parameter for form-encoded requests ONLY
+                if ("createDocument".equals(cmisaction)) {
+                    System.err.println("*** FORM-ENCODED CONTENT STREAM FIX: Detecting createDocument in request ***");
+                    
+                    // CRITICAL: Only process form-encoded requests, NOT multipart requests
+                    // Calling getParameter() on multipart requests consumes the InputStream!
+                    String requestContentType = request.getContentType();
+                    boolean isFormEncoded = requestContentType != null && requestContentType.toLowerCase().startsWith("application/x-www-form-urlencoded");
+                    boolean isMultipart = requestContentType != null && requestContentType.toLowerCase().startsWith("multipart/form-data");
+                    
+                    System.err.println("*** CONTENT TYPE CHECK: " + requestContentType + " ***");
+                    System.err.println("*** IS FORM ENCODED: " + isFormEncoded + " ***");
+                    System.err.println("*** IS MULTIPART: " + isMultipart + " ***");
+                    
+                    if (isFormEncoded) {
+                        System.err.println("*** FORM-ENCODED CONTENT STREAM FIX: Processing form-encoded request ***");
+                        // Safe to call getParameter() on form-encoded requests
+                        String contentParam = request.getParameter("content");
+                        if (contentParam != null && !contentParam.isEmpty()) {
+                        System.err.println("*** FORM-ENCODED CONTENT STREAM FIX: content parameter found with length: " + contentParam.length() + " ***");
+                        
+                        // Create ContentStream from form parameter
+                        org.apache.chemistry.opencmis.commons.data.ContentStream contentStream = 
+                            extractContentStreamFromFormParameters(request, cmisaction);
+                        
+                        if (contentStream != null) {
+                            System.err.println("*** FORM-ENCODED CONTENT STREAM FIX: ContentStream created successfully ***");
+                            
+                            // Wrap the request to provide the ContentStream via attribute
+                            final org.apache.chemistry.opencmis.commons.data.ContentStream finalContentStream = contentStream;
+                            finalRequest = new HttpServletRequestWrapper(finalRequest) {
+                                @Override
+                                public Object getAttribute(String name) {
+                                    if ("org.apache.chemistry.opencmis.content.stream".equals(name)) {
+                                        System.err.println("*** FORM-ENCODED CONTENT STREAM FIX: ContentStream requested via attribute - providing ***");
+                                        return finalContentStream;
+                                    }
+                                    return super.getAttribute(name);
+                                }
+                            };
+                            
+                            // Also set as attribute directly
+                            finalRequest.setAttribute("org.apache.chemistry.opencmis.content.stream", contentStream);
+                            System.err.println("*** FORM-ENCODED CONTENT STREAM FIX: ContentStream stored in request attribute ***");
+                        } else {
+                            System.err.println("*** FORM-ENCODED CONTENT STREAM FIX: Failed to create ContentStream ***");
+                        }
+                        } else {
+                            System.err.println("*** FORM-ENCODED CONTENT STREAM FIX: No content parameter found in form-encoded request ***");
+                        }
+                    } else if (isMultipart) {
+                        System.err.println("*** MULTIPART CONTENT STREAM FIX: Skipping multipart request - will be handled by POSTHttpServletRequestWrapper ***");
+                    } else {
+                        System.err.println("*** CONTENT STREAM FIX: Unknown content type, skipping ContentStream processing ***");
+                    }
+                }
             }
         }
         
         if (cmisaction != null) {
             System.err.println("*** CMISACTION DETECTED: " + cmisaction + " ***");
+            
+            // ENHANCED: Specific logging for createDocument operations
+            if ("createDocument".equals(cmisaction)) {
+                System.err.println("!!! ENHANCED LOGGING: createDocument operation detected for Secondary Types Test debugging !!!");
+                System.err.println("!!! SECONDARY TYPES DEBUG: Full request analysis for createDocument !!!");
+                System.err.println("  Full URL: " + request.getRequestURL());
+                System.err.println("  Method: " + method);
+                System.err.println("  Content-Type: " + request.getContentType());
+                System.err.println("  Content-Length: " + request.getContentLength());
+                System.err.println("  Multipart Already Processed: " + multipartAlreadyProcessed);
+                
+                // Extract all properties for createDocument debugging
+                try {
+                    java.util.Map<String, String[]> params = finalRequest.getParameterMap();
+                    System.err.println("!!! SECONDARY TYPES DEBUG: All parameters for createDocument: !!!");
+                    for (java.util.Map.Entry<String, String[]> entry : params.entrySet()) {
+                        System.err.println("  PARAM: " + entry.getKey() + " = " + java.util.Arrays.toString(entry.getValue()));
+                    }
+                    
+                    // Check for secondary type properties specifically
+                    for (String paramName : params.keySet()) {
+                        if (paramName.startsWith("propertyId") || paramName.startsWith("propertyValue")) {
+                            System.err.println("!!! SECONDARY TYPES DEBUG: Property parameter found: " + paramName + " = " + java.util.Arrays.toString(params.get(paramName)) + " !!!");
+                        }
+                        if (paramName.contains("secondaryObjectType") || paramName.contains("SecondaryType")) {
+                            System.err.println("!!! SECONDARY TYPES DEBUG: Secondary type parameter found: " + paramName + " = " + java.util.Arrays.toString(params.get(paramName)) + " !!!");
+                        }
+                    }
+                } catch (Exception paramException) {
+                    System.err.println("!!! SECONDARY TYPES DEBUG: Error analyzing createDocument parameters: " + paramException.getMessage() + " !!!");
+                    paramException.printStackTrace();
+                }
+            }
             
             // CRITICAL FIX: Handle deleteType directly since OpenCMIS 1.2.0-SNAPSHOT bypasses service factory
             if ("deleteType".equals(cmisaction)) {
@@ -256,7 +394,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 }
             }
         } else {
-            System.err.println("*** NO CMISACTION DETECTED (contentType=" + contentType + ") ***");
+            System.err.println("*** NO CMISACTION DETECTED (contentType=" + contentType + ", multipartProcessed=" + multipartAlreadyProcessed + ") ***");
         }
         
         System.err.println("!!! CRITICAL DEBUG: LINE 152 EXECUTED [" + System.currentTimeMillis() + "] !!!");
@@ -312,13 +450,138 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         
         // Use standard OpenCMIS processing with potential request wrapping for compatibility
         // CMIS 1.1 specification: Multi-cardinality properties with no values should return null (not set state)
+        
+        // CRITICAL: Add special debugging for createDocument operations
+        if ("createDocument".equals(cmisaction)) {
+            System.err.println("*** CREATEDOCUMENT DEBUG: Starting createDocument operation ***");
+            System.err.println("*** CREATEDOCUMENT DEBUG: Final request class = " + finalRequest.getClass().getName() + " ***");
+            System.err.println("*** CREATEDOCUMENT DEBUG: Content-Type = " + finalRequest.getContentType() + " ***");
+            System.err.println("*** CREATEDOCUMENT DEBUG: Content-Length = " + finalRequest.getContentLength() + " ***");
+            System.err.println("*** CREATEDOCUMENT DEBUG: Multipart Already Processed = " + multipartAlreadyProcessed + " ***");
+            
+            // Log all parameters that will be seen by OpenCMIS
+            System.err.println("*** CREATEDOCUMENT DEBUG: All parameters in finalRequest: ***");
+            java.util.Map<String, String[]> finalParams = finalRequest.getParameterMap();
+            for (java.util.Map.Entry<String, String[]> entry : finalParams.entrySet()) {
+                System.err.println("***   PARAM: " + entry.getKey() + " = " + java.util.Arrays.toString(entry.getValue()) + " ***");
+            }
+            
+            // Check if request input stream is readable
+            try {
+                java.io.InputStream is = finalRequest.getInputStream();
+                if (is != null) {
+                    int available = is.available();
+                    System.err.println("*** CREATEDOCUMENT DEBUG: InputStream available bytes = " + available + " ***");
+                } else {
+                    System.err.println("*** CREATEDOCUMENT DEBUG: InputStream is null ***");
+                }
+            } catch (Exception streamException) {
+                System.err.println("*** CREATEDOCUMENT DEBUG: Error accessing InputStream: " + streamException.getMessage() + " ***");
+            }
+        }
+        
+        // CRITICAL FIX: Enhanced multipart detection and wrapper creation
+        String requestContentType = request.getContentType();
+        boolean isMultipartRequest = isMultipartRequest(request, requestContentType);
+        
+        System.err.println("*** MULTIPART DETECTION DEBUG ***");
+        System.err.println("  Method: " + request.getMethod());
+        System.err.println("  Content-Type: '" + requestContentType + "'");
+        System.err.println("  Is Multipart: " + isMultipartRequest);
+        
+        if ("POST".equals(request.getMethod()) && isMultipartRequest) {
+            
+            System.err.println("*** MULTIPART REQUEST WRAPPER: Creating custom wrapper to prevent re-parsing ***");
+            System.err.println("*** Content-Type: " + requestContentType + " ***");
+            
+            // Create ContentStream from already-parsed parameters if needed
+            org.apache.chemistry.opencmis.commons.data.ContentStream contentStream = 
+                extractContentStreamFromMultipartParameters(finalRequest);
+            
+            finalRequest = new NemakiMultipartRequestWrapper(finalRequest, contentStream);
+            System.err.println("*** MULTIPART REQUEST WRAPPER: Custom wrapper created successfully ***");
+        }
+        
         try {
             System.err.println("!!! CALLING SUPER.SERVICE() [" + System.currentTimeMillis() + "] !!!");
             super.service(finalRequest, response);
             System.err.println("!!! SUPER.SERVICE() COMPLETED SUCCESSFULLY [" + System.currentTimeMillis() + "] !!!");
+        } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException objNotFoundException) {
+            // CRITICAL FIX: Specific handling for CmisObjectNotFoundException to apply proper HTTP 404 status code
+            System.err.println("!!! CRITICAL: CmisObjectNotFoundException CAUGHT - APPLYING CUSTOM HTTP STATUS CODE MAPPING !!!");
+            System.err.println("!!! EXCEPTION MESSAGE: " + objNotFoundException.getMessage() + " !!!");
+            System.err.println("!!! EXCEPTION OCCURRED AT [" + System.currentTimeMillis() + "] !!!");
+            System.err.println("!!! Request details when CmisObjectNotFoundException occurred: !!!");
+            System.err.println("!!!   Method: " + method + " !!!");
+            System.err.println("!!!   URI: " + requestURI + " !!!");
+            System.err.println("!!!   PathInfo: " + pathInfo + " !!!");
+            System.err.println("!!!   Content-Type: " + contentType + " !!!");
+            System.err.println("!!!   CmisAction: " + cmisaction + " !!!");
+            
+            try {
+                // Use custom writeErrorResponse with proper HTTP status code mapping
+                writeErrorResponse(response, objNotFoundException);
+                System.err.println("!!! SUCCESS: writeErrorResponse() applied HTTP 404 for CmisObjectNotFoundException !!!");
+                return; // Don't re-throw, we handled it with custom HTTP status code
+            } catch (Exception writeException) {
+                System.err.println("!!! FAILED TO WRITE ERROR RESPONSE: " + writeException.getMessage() + " !!!");
+                System.err.println("!!! Falling back to standard exception handling !!!");
+                throw objNotFoundException; // Fallback to standard handling
+            }
+        } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException cmisArgException) {
+            // ENHANCED: Specific logging for createDocument CmisInvalidArgumentException to understand Secondary Types Test failures
+            System.err.println("!!! CRITICAL: CmisInvalidArgumentException CAUGHT IN SUPER.SERVICE() !!!");
+            System.err.println("!!! EXCEPTION MESSAGE: " + cmisArgException.getMessage() + " !!!");
+            System.err.println("!!! EXCEPTION OCCURRED AT [" + System.currentTimeMillis() + "] !!!");
+            
+            // Check if this is a createDocument operation for Secondary Types Test
+            if ("createDocument".equals(cmisaction)) {
+                System.err.println("!!! SECONDARY TYPES TEST FAILURE: CmisInvalidArgumentException in createDocument operation !!!");
+                System.err.println("!!! This is the actual root cause of the 'Invalid multipart request!' error !!!");
+                System.err.println("!!! Request details for failed createDocument: !!!");
+                System.err.println("!!!   Method: " + method + " !!!");
+                System.err.println("!!!   URI: " + requestURI + " !!!");
+                System.err.println("!!!   PathInfo: " + pathInfo + " !!!");
+                System.err.println("!!!   Content-Type: " + contentType + " !!!");
+                System.err.println("!!!   CmisAction: " + cmisaction + " !!!");
+                System.err.println("!!!   Multipart Already Processed: " + multipartAlreadyProcessed + " !!!");
+                
+                // Enhanced parameter analysis for createDocument failures
+                try {
+                    java.util.Map<String, String[]> params = finalRequest.getParameterMap();
+                    System.err.println("!!! FAILED CREATEDOCUMENT PARAMETERS: !!!");
+                    for (java.util.Map.Entry<String, String[]> entry : params.entrySet()) {
+                        System.err.println("!!!   PARAM: " + entry.getKey() + " = " + java.util.Arrays.toString(entry.getValue()) + " !!!");
+                    }
+                } catch (Exception paramException) {
+                    System.err.println("!!! ERROR ANALYZING FAILED CREATEDOCUMENT PARAMETERS: " + paramException.getMessage() + " !!!");
+                }
+            }
+            
+            System.err.println("!!! STACK TRACE FOR CmisInvalidArgumentException: !!!");
+            
+            // Print detailed stack trace to identify exactly where it's thrown
+            StackTraceElement[] stackTrace = cmisArgException.getStackTrace();
+            for (int i = 0; i < Math.min(stackTrace.length, 25); i++) { // Increased to 25 frames for more detail
+                System.err.println("!!! STACK [" + i + "]: " + stackTrace[i].toString() + " !!!");
+            }
+            
+            // FIXED: Remove inappropriate workaround - maintain proper CMIS error handling
+            // Re-throw the exception to maintain normal error handling flow
+            throw cmisArgException;
         } catch (Exception e) {
             System.err.println("!!! EXCEPTION IN SUPER.SERVICE(): " + e.getClass().getSimpleName() + ": " + e.getMessage() + " !!!");
             System.err.println("!!! EXCEPTION OCCURRED AT [" + System.currentTimeMillis() + "] !!!");
+            
+            // Enhanced logging for Secondary Types Test debugging
+            if ("createDocument".equals(cmisaction)) {
+                System.err.println("!!! SECONDARY TYPES TEST: Exception during createDocument operation !!!");
+                System.err.println("!!! This may be the actual cause of Secondary Types Test failure !!!");
+                System.err.println("!!! Exception type: " + e.getClass().getName() + " !!!");
+                System.err.println("!!! Exception message: " + e.getMessage() + " !!!");
+                System.err.println("!!! Multipart Already Processed: " + multipartAlreadyProcessed + " !!!");
+            }
+            
             e.printStackTrace();
             
             // Re-throw the exception
@@ -334,6 +597,14 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             System.err.println("  Response status: " + response.getStatus());
             System.err.println("  Response content type: " + response.getContentType());
             System.err.println("!!! END OF DELETEYPE REQUEST PROCESSING !!!");
+        }
+        
+        // Enhanced success logging for createDocument operations
+        if ("createDocument".equals(cmisaction)) {
+            System.err.println("!!! SECONDARY TYPES DEBUG: createDocument operation completed successfully !!!");
+            System.err.println("  Response status: " + response.getStatus());
+            System.err.println("  Response content type: " + response.getContentType());
+            System.err.println("  Multipart Processing Method: " + (multipartAlreadyProcessed ? "Tomcat (prevented OpenCMIS re-parsing)" : "OpenCMIS (legacy)"));
         }
     }
     
@@ -656,15 +927,85 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         response.setCharacterEncoding("UTF-8");
         
         try (java.io.PrintWriter writer = response.getWriter()) {
-            // Simple JSON conversion using Jackson ObjectMapper from Spring context
-            com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            String json = objectMapper.writeValueAsString(result);
-            writer.write(json);
+            // CRITICAL FIX: Use OpenCMIS JSONConverter instead of plain Jackson ObjectMapper
+            // to ensure CMIS 1.1 compliant JSON field names (e.g., "id" instead of "propertyDefinitionId")
+            if (result instanceof org.apache.chemistry.opencmis.commons.data.ObjectData) {
+                // For ObjectData, use OpenCMIS JSONConverter to get proper CMIS 1.1 JSON format
+                org.apache.chemistry.opencmis.commons.data.ObjectData objectData = 
+                    (org.apache.chemistry.opencmis.commons.data.ObjectData) result;
+                    
+                // Use OpenCMIS JSONConverter.convert() method for proper CMIS JSON serialization
+                // Parameters: ObjectData, TypeCache, PropertyMode, succinct, DateTimeFormat
+                org.apache.chemistry.opencmis.commons.impl.json.JSONObject jsonObject = 
+                    org.apache.chemistry.opencmis.commons.impl.JSONConverter.convert(objectData, null, 
+                        org.apache.chemistry.opencmis.commons.impl.JSONConverter.PropertyMode.OBJECT, false, 
+                        org.apache.chemistry.opencmis.commons.enums.DateTimeFormat.SIMPLE);
+                    
+                writer.write(jsonObject.toJSONString());
+            } else if (result instanceof org.apache.chemistry.opencmis.commons.data.ObjectList) {
+                // For ObjectList, use OpenCMIS JSONConverter to get proper CMIS 1.1 JSON format
+                org.apache.chemistry.opencmis.commons.data.ObjectList objectList = 
+                    (org.apache.chemistry.opencmis.commons.data.ObjectList) result;
+                    
+                // Use OpenCMIS JSONConverter.convert() method for proper CMIS JSON serialization
+                // Parameters: ObjectList, TypeCache, PropertyMode, succinct, DateTimeFormat
+                org.apache.chemistry.opencmis.commons.impl.json.JSONObject jsonObject = 
+                    org.apache.chemistry.opencmis.commons.impl.JSONConverter.convert(objectList, null, 
+                        org.apache.chemistry.opencmis.commons.impl.JSONConverter.PropertyMode.OBJECT, false, 
+                        org.apache.chemistry.opencmis.commons.enums.DateTimeFormat.SIMPLE);
+                    
+                writer.write(jsonObject.toJSONString());
+            } else {
+                // For other types, use Jackson as fallback but this should be rare
+                // MOST Browser Binding responses should be ObjectData or ObjectList
+                com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                String json = objectMapper.writeValueAsString(result);
+                writer.write(json);
+            }
         }
     }
     
     /**
-     * Write error response in Browser Binding JSON format
+     * Get proper HTTP status code for CMIS exceptions according to OpenCMIS 1.1 standard
+     * This method implements the same mapping as CmisBrowserBindingServlet.getErrorCode()
+     */
+    private int getHttpStatusCode(Exception ex) {
+        if (ex instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException) {
+            return 400;
+        } else if (ex instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisContentAlreadyExistsException) {
+            return 409;
+        } else if (ex instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisFilterNotValidException) {
+            return 400;
+        } else if (ex instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException) {
+            return 400;
+        } else if (ex instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisNameConstraintViolationException) {
+            return 409;
+        } else if (ex instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisNotSupportedException) {
+            return 405;
+        } else if (ex instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException) {
+            return 404;  // CRITICAL FIX: CmisObjectNotFoundException should return HTTP 404, not 400
+        } else if (ex instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException) {
+            return 403;
+        } else if (ex instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisStorageException) {
+            return 500;
+        } else if (ex instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisStreamNotSupportedException) {
+            return 403;
+        } else if (ex instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisUpdateConflictException) {
+            return 409;
+        } else if (ex instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisVersioningException) {
+            return 409;
+        } else if (ex instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisTooManyRequestsException) {
+            return 429;
+        } else if (ex instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisServiceUnavailableException) {
+            return 503;
+        }
+        
+        // Default to 500 for unhandled CMIS exceptions
+        return 500;
+    }
+    
+    /**
+     * Write error response in Browser Binding JSON format with proper HTTP status codes
      */
     private void writeErrorResponse(HttpServletResponse response, Exception e) throws Exception {
         response.setContentType("application/json");
@@ -673,7 +1014,8 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         if (e instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisBaseException) {
             org.apache.chemistry.opencmis.commons.exceptions.CmisBaseException cmisException = 
                 (org.apache.chemistry.opencmis.commons.exceptions.CmisBaseException) e;
-            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            // CRITICAL FIX: Use proper HTTP status code mapping instead of always HTTP 400
+            response.setStatus(getHttpStatusCode(e));
             
             try (java.io.PrintWriter writer = response.getWriter()) {
                 writer.write("{\"exception\":\"" + cmisException.getClass().getSimpleName().toLowerCase().replace("cmis", "") + 
@@ -870,7 +1212,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             
             // Get TypeService bean
             jp.aegif.nemaki.businesslogic.TypeService typeService = 
-                jp.aegif.nemaki.util.spring.SpringUtil.getBeanByType(applicationContext, jp.aegif.nemaki.businesslogic.TypeService.class);
+                (jp.aegif.nemaki.businesslogic.TypeService) applicationContext.getBean("TypeService");
             
             if (typeService == null) {
                 throw new RuntimeException("TypeService bean is not available");
@@ -885,7 +1227,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             
             // CRITICAL FIX: Get TypeManager and refresh cache (matching REST implementation logic)
             jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager = 
-                jp.aegif.nemaki.util.spring.SpringUtil.getBeanByType(applicationContext, jp.aegif.nemaki.cmis.aspect.type.TypeManager.class);
+                (jp.aegif.nemaki.cmis.aspect.type.TypeManager) applicationContext.getBean("TypeManager");
             
             if (typeManager != null) {
                 System.err.println("DIRECT DELETE TYPE: Retrieved TypeManager from Spring context");
@@ -952,6 +1294,562 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         
         // Force routing through our custom service method
         this.service(request, response);
+    }
+    
+    /**
+     * CRITICAL FIX: Extract ContentStream from Tomcat-processed parameters
+     * When Tomcat processes multipart data before OpenCMIS, the "content" parameter
+     * contains the file content as a string, but OpenCMIS expects a ContentStream.
+     * This method creates the missing ContentStream from the processed parameters.
+     */
+    private org.apache.chemistry.opencmis.commons.data.ContentStream extractContentStreamFromTomcatParameters(
+            HttpServletRequest request, String cmisaction) {
+        
+        // Only handle createDocument operations with content parameter
+        if (!"createDocument".equals(cmisaction)) {
+            return null;
+        }
+        
+        String contentParam = request.getParameter("content");
+        if (contentParam == null || contentParam.isEmpty()) {
+            System.err.println("*** CONTENT EXTRACTION: No 'content' parameter found ***");
+            return null;
+        }
+        
+        System.err.println("*** CONTENT EXTRACTION: Found content parameter, length = " + contentParam.length() + " ***");
+        
+        try {
+            // Extract filename and mime type from other parameters
+            String tempFilename = "document.txt"; // Default filename
+            final String mimeType = "text/plain"; // Default mime type
+            
+            // Look for filename in cmis:name property
+            String[] propertyIds = request.getParameterValues("propertyId");
+            String[] propertyValues = request.getParameterValues("propertyValue");
+            
+            if (propertyIds != null && propertyValues != null) {
+                for (int i = 0; i < Math.min(propertyIds.length, propertyValues.length); i++) {
+                    if ("cmis:name".equals(propertyIds[i])) {
+                        tempFilename = propertyValues[i];
+                        System.err.println("*** CONTENT EXTRACTION: Using filename from cmis:name = " + tempFilename + " ***");
+                        break;
+                    }
+                }
+            }
+            
+            final String filename = tempFilename; // Make final for anonymous class
+            
+            // Create ContentStream from string content
+            final byte[] contentBytes = contentParam.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            
+            // Create ContentStream implementation
+            org.apache.chemistry.opencmis.commons.data.ContentStream result = new org.apache.chemistry.opencmis.commons.data.ContentStream() {
+                @Override
+                public String getFileName() {
+                    return filename;
+                }
+                
+                @Override
+                public long getLength() {
+                    return contentBytes.length;
+                }
+                
+                @Override
+                public java.math.BigInteger getBigLength() {
+                    return java.math.BigInteger.valueOf(contentBytes.length);
+                }
+                
+                @Override
+                public String getMimeType() {
+                    return mimeType;
+                }
+                
+                @Override
+                public java.io.InputStream getStream() {
+                    // Create new stream each time to avoid stream consumption issues
+                    return new java.io.ByteArrayInputStream(contentBytes);
+                }
+                
+                @Override
+                public java.util.List<org.apache.chemistry.opencmis.commons.data.CmisExtensionElement> getExtensions() {
+                    return null;
+                }
+                
+                @Override
+                public void setExtensions(java.util.List<org.apache.chemistry.opencmis.commons.data.CmisExtensionElement> extensions) {
+                    // No-op for ContentStream
+                }
+            };
+            
+            System.err.println("*** CONTENT EXTRACTION: Created ContentStream successfully ***");
+            System.err.println("***   Filename: " + filename + " ***");
+            System.err.println("***   MIME Type: " + mimeType + " ***");
+            System.err.println("***   Length: " + contentBytes.length + " ***");
+            
+            return result;
+            
+        } catch (Exception e) {
+            System.err.println("*** CONTENT EXTRACTION ERROR: " + e.getMessage() + " ***");
+            e.printStackTrace();
+            return null;
+        }
+    }
+    
+    /**
+     * Extract ContentStream from form-encoded POST request parameters.
+     * This handles form-encoded requests (application/x-www-form-urlencoded) that include content.
+     */
+    private org.apache.chemistry.opencmis.commons.data.ContentStream extractContentStreamFromFormParameters(
+            HttpServletRequest request, String cmisaction) {
+        
+        // Only handle createDocument operations with content parameter
+        if (!"createDocument".equals(cmisaction)) {
+            System.err.println("*** FORM CONTENT EXTRACTION: Not a createDocument operation ***");
+            return null;
+        }
+        
+        String contentParam = request.getParameter("content");
+        if (contentParam == null || contentParam.isEmpty()) {
+            System.err.println("*** FORM CONTENT EXTRACTION: No 'content' parameter found ***");
+            return null;
+        }
+        
+        System.err.println("*** FORM CONTENT EXTRACTION: Found content parameter, length = " + contentParam.length() + " ***");
+        System.err.println("*** FORM CONTENT EXTRACTION: Content preview: " + contentParam.substring(0, Math.min(50, contentParam.length())) + "... ***");
+        
+        try {
+            // Extract filename and mime type from other parameters
+            String tempFilename = "document.txt"; // Default filename
+            final String mimeType = "text/plain"; // Default mime type
+            
+            // Look for filename in cmis:name property for form-encoded requests
+            String[] propertyIds = request.getParameterValues("propertyId");
+            String[] propertyValues = request.getParameterValues("propertyValue");
+            
+            if (propertyIds != null && propertyValues != null) {
+                System.err.println("*** FORM CONTENT EXTRACTION: Found " + propertyIds.length + " property IDs ***");
+                for (int i = 0; i < Math.min(propertyIds.length, propertyValues.length); i++) {
+                    System.err.println("*** FORM CONTENT EXTRACTION: Property[" + i + "]: " + propertyIds[i] + " = " + propertyValues[i] + " ***");
+                    if ("cmis:name".equals(propertyIds[i])) {
+                        tempFilename = propertyValues[i];
+                        System.err.println("*** FORM CONTENT EXTRACTION: Using filename from cmis:name = " + tempFilename + " ***");
+                        break;
+                    }
+                }
+            }
+            
+            final String filename = tempFilename; // Make final for anonymous class
+            
+            // Create ContentStream from string content
+            final byte[] contentBytes = contentParam.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            
+            // Create ContentStream implementation
+            org.apache.chemistry.opencmis.commons.data.ContentStream result = new org.apache.chemistry.opencmis.commons.data.ContentStream() {
+                @Override
+                public String getFileName() {
+                    return filename;
+                }
+                
+                @Override
+                public long getLength() {
+                    return contentBytes.length;
+                }
+                
+                @Override
+                public java.math.BigInteger getBigLength() {
+                    return java.math.BigInteger.valueOf(contentBytes.length);
+                }
+                
+                @Override
+                public String getMimeType() {
+                    return mimeType;
+                }
+                
+                @Override
+                public java.io.InputStream getStream() {
+                    // Create new stream each time to avoid stream consumption issues
+                    return new java.io.ByteArrayInputStream(contentBytes);
+                }
+                
+                @Override
+                public java.util.List<org.apache.chemistry.opencmis.commons.data.CmisExtensionElement> getExtensions() {
+                    return null;
+                }
+                
+                @Override
+                public void setExtensions(java.util.List<org.apache.chemistry.opencmis.commons.data.CmisExtensionElement> extensions) {
+                    // No-op for ContentStream
+                }
+            };
+            
+            System.err.println("*** FORM CONTENT EXTRACTION: Created ContentStream successfully ***");
+            System.err.println("***   Filename: " + filename + " ***");
+            System.err.println("***   MIME Type: " + mimeType + " ***");
+            System.err.println("***   Length: " + contentBytes.length + " ***");
+            
+            return result;
+            
+        } catch (Exception e) {
+            System.err.println("*** FORM CONTENT EXTRACTION ERROR: " + e.getMessage() + " ***");
+            e.printStackTrace();
+            return null;
+        }
+    }
+    
+    /**
+     * Extract ContentStream from already-parsed multipart parameters.
+     * This handles multipart requests that have already been parsed by Tomcat.
+     */
+    private org.apache.chemistry.opencmis.commons.data.ContentStream extractContentStreamFromMultipartParameters(
+            HttpServletRequest request) {
+        
+        System.err.println("*** MULTIPART CONTENT EXTRACTION: Starting multipart ContentStream extraction ***");
+        
+        // CRITICAL FIX: For multipart/form-data requests with file uploads, content is sent as a Part, not a parameter
+        try {
+            // First try to get content as a file part (proper multipart file upload)
+            jakarta.servlet.http.Part contentPart = null;
+            try {
+                contentPart = request.getPart("content");
+                System.err.println("*** MULTIPART CONTENT EXTRACTION: Found 'content' part via request.getPart() ***");
+            } catch (Exception partException) {
+                System.err.println("*** MULTIPART CONTENT EXTRACTION: No 'content' part found, trying parameter approach ***");
+            }
+            
+            // CRITICAL: Handle both proper multipart parts AND legacy parameter-based approach
+            String filename = "document.txt"; // Default filename
+            String mimeType = "text/plain"; // Default mime type
+            byte[] contentBytes = null;
+            
+            if (contentPart != null) {
+                // PROPER MULTIPART: Extract content from Part
+                System.err.println("*** MULTIPART CONTENT EXTRACTION: Processing content from Part (proper multipart) ***");
+                System.err.println("*** MULTIPART CONTENT EXTRACTION: Part size = " + contentPart.getSize() + " ***");
+                System.err.println("*** MULTIPART CONTENT EXTRACTION: Part content type = " + contentPart.getContentType() + " ***");
+                System.err.println("*** MULTIPART CONTENT EXTRACTION: Part submitted filename = " + contentPart.getSubmittedFileName() + " ***");
+                
+                try (java.io.InputStream partInputStream = contentPart.getInputStream()) {
+                    contentBytes = partInputStream.readAllBytes();
+                }
+                
+                // Use part metadata if available
+                if (contentPart.getContentType() != null) {
+                    mimeType = contentPart.getContentType();
+                }
+                if (contentPart.getSubmittedFileName() != null) {
+                    filename = contentPart.getSubmittedFileName();
+                }
+                
+            } else {
+                // LEGACY: Try parameter-based approach (for backwards compatibility)
+                System.err.println("*** MULTIPART CONTENT EXTRACTION: No Part found, trying parameter-based approach ***");
+                String contentParam = request.getParameter("content");
+                if (contentParam == null || contentParam.isEmpty()) {
+                    System.err.println("*** MULTIPART CONTENT EXTRACTION: No 'content' parameter found in multipart data ***");
+                    return null;
+                }
+                
+                System.err.println("*** MULTIPART CONTENT EXTRACTION: Found content parameter, length = " + contentParam.length() + " ***");
+                System.err.println("*** MULTIPART CONTENT EXTRACTION: Content preview: " + contentParam.substring(0, Math.min(50, contentParam.length())) + "... ***");
+                
+                contentBytes = contentParam.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            }
+            
+            if (contentBytes == null || contentBytes.length == 0) {
+                System.err.println("*** MULTIPART CONTENT EXTRACTION: No content bytes found ***");
+                return null;
+            }
+            
+            // Extract filename from cmis:name property for both approaches
+            String[] propertyIds = request.getParameterValues("propertyId");
+            String[] propertyValues = request.getParameterValues("propertyValue");
+            
+            if (propertyIds != null && propertyValues != null) {
+                System.err.println("*** MULTIPART CONTENT EXTRACTION: Found " + propertyIds.length + " property IDs ***");
+                for (int i = 0; i < Math.min(propertyIds.length, propertyValues.length); i++) {
+                    System.err.println("*** MULTIPART CONTENT EXTRACTION: Property[" + i + "]: " + propertyIds[i] + " = " + propertyValues[i] + " ***");
+                    if ("cmis:name".equals(propertyIds[i])) {
+                        filename = propertyValues[i];
+                        System.err.println("*** MULTIPART CONTENT EXTRACTION: Using filename from cmis:name = " + filename + " ***");
+                        break;
+                    }
+                }
+            }
+            
+            // Create final variables for anonymous class
+            final String finalFilename = filename;
+            final String finalMimeType = mimeType;
+            final byte[] finalContentBytes = contentBytes;
+            
+            // Create ContentStream implementation
+            org.apache.chemistry.opencmis.commons.data.ContentStream result = new org.apache.chemistry.opencmis.commons.data.ContentStream() {
+                @Override
+                public String getFileName() {
+                    return finalFilename;
+                }
+                
+                @Override
+                public long getLength() {
+                    return finalContentBytes.length;
+                }
+                
+                @Override
+                public java.math.BigInteger getBigLength() {
+                    return java.math.BigInteger.valueOf(finalContentBytes.length);
+                }
+                
+                @Override
+                public String getMimeType() {
+                    return finalMimeType;
+                }
+                
+                @Override
+                public java.io.InputStream getStream() {
+                    // Create new stream each time to avoid stream consumption issues
+                    return new java.io.ByteArrayInputStream(finalContentBytes);
+                }
+                
+                @Override
+                public java.util.List<org.apache.chemistry.opencmis.commons.data.CmisExtensionElement> getExtensions() {
+                    return null;
+                }
+                
+                @Override
+                public void setExtensions(java.util.List<org.apache.chemistry.opencmis.commons.data.CmisExtensionElement> extensions) {
+                    // No-op for ContentStream
+                }
+            };
+            
+            System.err.println("*** MULTIPART CONTENT EXTRACTION: Created ContentStream successfully ***");
+            System.err.println("***   Filename: " + finalFilename + " ***");
+            System.err.println("***   MIME Type: " + finalMimeType + " ***");
+            System.err.println("***   Length: " + finalContentBytes.length + " ***");
+            
+            return result;
+            
+        } catch (Exception e) {
+            System.err.println("*** MULTIPART CONTENT EXTRACTION ERROR: " + e.getMessage() + " ***");
+            e.printStackTrace();
+            return null;
+        }
+    }
+    
+    /**
+     * Custom HttpServletRequestWrapper that prevents OpenCMIS from re-parsing multipart data
+     * by simulating the POSTHttpServletRequestWrapper interface without consuming InputStream
+     */
+    private static class NemakiMultipartRequestWrapper extends jakarta.servlet.http.HttpServletRequestWrapper {
+        private final org.apache.chemistry.opencmis.commons.data.ContentStream contentStream;
+        
+        public NemakiMultipartRequestWrapper(HttpServletRequest request, 
+                org.apache.chemistry.opencmis.commons.data.ContentStream contentStream) {
+            super(request);
+            this.contentStream = contentStream;
+            System.err.println("*** NEMAKI MULTIPART WRAPPER: Created with ContentStream = " + (contentStream != null) + " ***");
+        }
+        
+        @Override
+        public String getContentType() {
+            // Return form-encoded content type to prevent POSTHttpServletRequestWrapper creation
+            // This tricks OpenCMIS into using form parameter parsing instead of multipart parsing
+            System.err.println("*** NEMAKI MULTIPART WRAPPER: getContentType() called - returning form-encoded ***");
+            return "application/x-www-form-urlencoded";
+        }
+        
+        @Override
+        public Object getAttribute(String name) {
+            // Provide ContentStream via attribute for AbstractBrowserServiceCall
+            if ("org.apache.chemistry.opencmis.content.stream".equals(name)) {
+                System.err.println("*** NEMAKI MULTIPART WRAPPER: ContentStream requested via attribute - providing ***");
+                return contentStream;
+            }
+            return super.getAttribute(name);
+        }
+        
+        @Override
+        public jakarta.servlet.ServletInputStream getInputStream() throws java.io.IOException {
+            // Return empty ServletInputStream to prevent consumption
+            System.err.println("*** NEMAKI MULTIPART WRAPPER: getInputStream() called - returning empty ServletInputStream ***");
+            return new jakarta.servlet.ServletInputStream() {
+                private final java.io.ByteArrayInputStream emptyStream = new java.io.ByteArrayInputStream(new byte[0]);
+                
+                @Override
+                public boolean isFinished() {
+                    return true;
+                }
+                
+                @Override
+                public boolean isReady() {
+                    return true;
+                }
+                
+                @Override
+                public void setReadListener(jakarta.servlet.ReadListener readListener) {
+                    // Empty implementation for empty stream
+                }
+                
+                @Override
+                public int read() throws java.io.IOException {
+                    return emptyStream.read();
+                }
+            };
+        }
+        
+        @Override
+        public int getContentLength() {
+            // Return 0 to indicate no body data needs parsing
+            System.err.println("*** NEMAKI MULTIPART WRAPPER: getContentLength() called - returning 0 ***");
+            return 0;
+        }
+        
+        @Override
+        public long getContentLengthLong() {
+            // Return 0 to indicate no body data needs parsing
+            System.err.println("*** NEMAKI MULTIPART WRAPPER: getContentLengthLong() called - returning 0 ***");
+            return 0L;
+        }
+        
+        // CRITICAL FIX: Override parameter access methods to preserve form parameters
+        // while providing ContentStream via attributes
+        
+        @Override
+        public String getParameter(String name) {
+            // CRITICAL FIX: Map folderId → objectId for OpenCMIS Browser Binding compatibility
+            if ("objectId".equals(name)) {
+                // OpenCMIS is looking for 'objectId' but Browser Binding uses 'folderId'
+                String folderIdValue = super.getParameter("folderId");
+                if (folderIdValue != null) {
+                    System.err.println("*** NEMAKI MULTIPART WRAPPER: PARAMETER MAPPING: objectId ← folderId = '" + folderIdValue + "' ***");
+                    return folderIdValue;
+                }
+            }
+            
+            String value = super.getParameter(name);
+            System.err.println("*** NEMAKI MULTIPART WRAPPER: getParameter('" + name + "') = '" + value + "' ***");
+            return value;
+        }
+        
+        @Override
+        public String[] getParameterValues(String name) {
+            // CRITICAL FIX: Map folderId → objectId for OpenCMIS Browser Binding compatibility
+            if ("objectId".equals(name)) {
+                // OpenCMIS is looking for 'objectId' but Browser Binding uses 'folderId'
+                String[] folderIdValues = super.getParameterValues("folderId");
+                if (folderIdValues != null && folderIdValues.length > 0) {
+                    System.err.println("*** NEMAKI MULTIPART WRAPPER: PARAMETER MAPPING: objectId[] ← folderId[] = " + 
+                        java.util.Arrays.toString(folderIdValues) + " ***");
+                    return folderIdValues;
+                }
+            }
+            
+            String[] values = super.getParameterValues(name);
+            System.err.println("*** NEMAKI MULTIPART WRAPPER: getParameterValues('" + name + "') = " + 
+                (values != null ? java.util.Arrays.toString(values) : "null") + " ***");
+            return values;
+        }
+        
+        @Override
+        public java.util.Enumeration<String> getParameterNames() {
+            java.util.Enumeration<String> names = super.getParameterNames();
+            System.err.println("*** NEMAKI MULTIPART WRAPPER: getParameterNames() called ***");
+            return names;
+        }
+        
+        @Override
+        public java.util.Map<String, String[]> getParameterMap() {
+            java.util.Map<String, String[]> originalMap = super.getParameterMap();
+            
+            // CRITICAL FIX: Create enhanced parameter map with folderId → objectId mapping
+            java.util.Map<String, String[]> enhancedMap = new java.util.HashMap<>(originalMap);
+            
+            System.err.println("*** NEMAKI MULTIPART WRAPPER: getParameterMap() called, original size = " + 
+                (originalMap != null ? originalMap.size() : 0) + " ***");
+            
+            // Check if we have folderId and need to map it to objectId for OpenCMIS compatibility
+            if (originalMap != null && originalMap.containsKey("folderId") && !originalMap.containsKey("objectId")) {
+                String[] folderIdValues = originalMap.get("folderId");
+                if (folderIdValues != null && folderIdValues.length > 0) {
+                    enhancedMap.put("objectId", folderIdValues);
+                    System.err.println("*** NEMAKI MULTIPART WRAPPER: PARAMETER MAP MAPPING: Added objectId = " + 
+                        java.util.Arrays.toString(folderIdValues) + " from folderId ***");
+                }
+            }
+            
+            // Debug log all parameters in enhanced map
+            if (enhancedMap != null) {
+                System.err.println("*** NEMAKI MULTIPART WRAPPER: Enhanced parameter map contents: ***");
+                for (java.util.Map.Entry<String, String[]> entry : enhancedMap.entrySet()) {
+                    String key = entry.getKey();
+                    String[] values = entry.getValue();
+                    System.err.println("  - " + key + " = " + 
+                        (values != null && values.length > 0 ? java.util.Arrays.toString(values) : "null"));
+                }
+            }
+            
+            System.err.println("*** NEMAKI MULTIPART WRAPPER: getParameterMap() returning enhanced map, size = " + 
+                (enhancedMap != null ? enhancedMap.size() : 0) + " ***");
+            
+            return enhancedMap;
+        }
+    }
+    
+    /**
+     * Enhanced multipart request detection with robust Content-Type checking
+     * and fallback parameter-based detection
+     */
+    private boolean isMultipartRequest(HttpServletRequest request, String contentType) {
+        // Basic method and content type checks
+        if (!"POST".equals(request.getMethod()) || contentType == null) {
+            System.err.println("*** MULTIPART DETECTION: Not POST or no Content-Type ***");
+            return false;
+        }
+        
+        // Normalize content type for comparison (handle case and whitespace)
+        String normalizedContentType = contentType.toLowerCase().trim();
+        System.err.println("*** MULTIPART DETECTION: Normalized Content-Type = '" + normalizedContentType + "' ***");
+        
+        // Primary check: multipart/form-data content type
+        boolean isMultipart = normalizedContentType.startsWith("multipart/form-data");
+        System.err.println("*** MULTIPART DETECTION: Primary check result = " + isMultipart + " ***");
+        
+        // Secondary check: handle variations in content type format
+        if (!isMultipart && normalizedContentType.contains("multipart") && normalizedContentType.contains("form-data")) {
+            isMultipart = true;
+            System.err.println("*** MULTIPART DETECTION: Secondary check (contains) = " + isMultipart + " ***");
+        }
+        
+        // Tertiary check: parameter-based fallback detection
+        if (!isMultipart) {
+            try {
+                String cmisAction = request.getParameter("cmisaction");
+                boolean hasFileUploadParams = (cmisAction != null && 
+                    (cmisAction.equals("createDocument") || cmisAction.equals("setContentStream")));
+                
+                // Check if we have form fields that suggest multipart processing
+                boolean hasMultipartParams = false;
+                java.util.Enumeration<String> paramNames = request.getParameterNames();
+                if (paramNames != null) {
+                    while (paramNames.hasMoreElements()) {
+                        String paramName = paramNames.nextElement();
+                        if (paramName.startsWith("propertyId[") || paramName.startsWith("propertyValue[") || 
+                            paramName.equals("folderId") || paramName.equals("content")) {
+                            hasMultipartParams = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (hasFileUploadParams && hasMultipartParams) {
+                    isMultipart = true;
+                    System.err.println("*** MULTIPART DETECTION: Tertiary check (parameter-based) = " + isMultipart + " ***");
+                }
+            } catch (Exception e) {
+                System.err.println("*** MULTIPART DETECTION: Error in parameter check: " + e.getMessage() + " ***");
+            }
+        }
+        
+        System.err.println("*** MULTIPART DETECTION FINAL RESULT: " + isMultipart + " ***");
+        return isMultipart;
     }
     
 }

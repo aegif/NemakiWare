@@ -58,6 +58,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.SequenceInputStream;
@@ -535,6 +536,28 @@ public class ContentServiceImpl implements ContentService {
 	log.debug("=== ATOMIC DOCUMENT CREATION START ===");
 	log.debug("Repository: {}, ContentStream: {}", repositoryId, (contentStream != null ? "PROVIDED" : "NULL"));
 	
+	// SECONDARY TYPES TEST DEBUG - Critical tracking for attachmentNodeId
+	System.err.println("=== SECONDARY TYPES TEST DEBUG - DOCUMENT CREATION START ===");
+	if (properties != null) {
+		Object objectTypeId = properties.getProperties().get("cmis:objectTypeId");
+		Object name = properties.getProperties().get("cmis:name");
+		Object secondaryTypeIds = properties.getProperties().get("cmis:secondaryObjectTypeIds");
+		System.err.println("Document Name: " + (name != null ? name : "NULL"));
+		System.err.println("Object Type ID: " + (objectTypeId != null ? objectTypeId : "NULL"));
+		System.err.println("Secondary Type IDs: " + (secondaryTypeIds != null ? secondaryTypeIds : "NULL"));
+		if (contentStream != null) {
+			long length = contentStream.getLength();
+			BigInteger bigLength = contentStream.getBigLength();
+			System.err.println("ContentStream provided: YES");
+			System.err.println("  - ContentStream filename: " + contentStream.getFileName());
+			System.err.println("  - ContentStream getLength(): " + length);
+			System.err.println("  - ContentStream getBigLength(): " + bigLength);
+			System.err.println("  - ContentStream MimeType: " + contentStream.getMimeType());
+		} else {
+			System.err.println("ContentStream provided: NO");
+		}
+	}
+	
 	Document atomicResult = null;
 	String createdDocumentId = null;
 	String createdAttachmentId = null;
@@ -548,12 +571,47 @@ public class ContentServiceImpl implements ContentService {
 		
 		log.debug("ContentStreamAllowed: {}, ContentStream provided: {}", csa, (contentStream != null));
 		
-		// PHASE 2: Atomic Attachment creation (if required)
+		// CRITICAL DEBUG: TCK Attachment Creation Condition Analysis
+		System.err.println("=== TCK ATTACHMENT CREATION CONDITION DEBUG ===");
+		System.err.println("Document Type: " + d.getObjectType());
+		System.err.println("ContentStreamAllowed value: " + csa);
+		System.err.println("ContentStream is null: " + (contentStream == null));
+		if (contentStream != null) {
+			System.err.println("ContentStream length: " + contentStream.getLength());
+			System.err.println("ContentStream mimeType: " + contentStream.getMimeType());
+			System.err.println("ContentStream filename: " + contentStream.getFileName());
+		}
+		System.err.println("Type definition: " + tdf.getId() + " (displayName: " + tdf.getDisplayName() + ")");
+		System.err.println("Calling method context: " + Thread.currentThread().getStackTrace()[1].getMethodName());
+		
+		// CMIS 1.1 SPECIFICATION COMPLIANT: Evaluate attachment creation conditions correctly
+		boolean conditionA = (csa == ContentStreamAllowed.REQUIRED);
+		boolean conditionB = (csa == ContentStreamAllowed.ALLOWED && contentStream != null); // RESTORED: Correct CMIS 1.1 spec
+		boolean overallCondition = conditionA || conditionB;
+		
+		System.err.println("Condition A (csa == REQUIRED): " + conditionA);
+		System.err.println("Condition B (csa == ALLOWED && contentStream != null): " + conditionB + " [CMIS 1.1 SPEC COMPLIANT]");
+		System.err.println("Overall condition (A || B): " + overallCondition);
+		
+		if (overallCondition) {
+			System.err.println("✅ ATTACHMENT CREATION: Condition MET - will create attachment");
+		} else {
+			System.err.println("❌ ATTACHMENT CREATION: Condition NOT MET - will NOT create attachment");
+			System.err.println("ℹ️  This will result in document.attachmentNodeId = null (NORMAL for ALLOWED without ContentStream)");
+			System.err.println("ℹ️  CMIS 1.1 spec: ALLOWED documents can exist without ContentStream");
+		}
+		System.err.println("=== END TCK ATTACHMENT CREATION CONDITION DEBUG ===");
+		
+		// PHASE 2: Atomic Attachment creation (CMIS 1.1 SPECIFICATION COMPLIANT)
 		if (csa == ContentStreamAllowed.REQUIRED || (csa == ContentStreamAllowed.ALLOWED && contentStream != null)) {
 			// Create Attachment atomically with immediate Document reference
 			createdAttachmentId = createAttachmentAtomic(callContext, repositoryId, contentStream);
 			d.setAttachmentNodeId(createdAttachmentId);
 			log.debug("Created AttachmentId atomically: {}", createdAttachmentId);
+			
+			System.err.println("=== PHASE 2 DEBUG - ATTACHMENT CREATION ===");
+			System.err.println("Created AttachmentId: " + createdAttachmentId);
+			System.err.println("Set Document.attachmentNodeId to: " + d.getAttachmentNodeId());
 			
 			// Preview creation (optional - failure won't affect main operation)
 			if (isPreviewEnabled()) {
@@ -566,20 +624,40 @@ public class ContentServiceImpl implements ContentService {
 		}
 		
 		// PHASE 3: Version properties preparation
+		log.debug("PHASE 3: Setting version properties for versioningState: {}", versioningState);
 		VersionSeries vs = setVersionProperties(callContext, repositoryId, versioningState, d);
+		log.debug("VersionSeries created/configured: ID={}, revision={}", vs.getId(), vs.getRevision());
 		
 		// PHASE 4: Atomic Document creation (single CouchDB write)
+		log.debug("PHASE 4: Creating document atomically with versionSeriesId: {}", d.getVersionSeriesId());
+		System.err.println("=== PHASE 4 DEBUG - BEFORE DAO CREATE ===");
+		System.err.println("Document.attachmentNodeId before DAO: " + d.getAttachmentNodeId());
+		
 		atomicResult = contentDaoService.create(repositoryId, d);
 		createdDocumentId = atomicResult.getId();
-		log.debug("Created Document atomically: {}", createdDocumentId);
+		log.debug("Created Document atomically: {} with revision: {}", createdDocumentId, atomicResult.getRevision());
+		
+		System.err.println("=== PHASE 4 DEBUG - AFTER DAO CREATE ===");
+		System.err.println("Created Document ID: " + createdDocumentId);
+		System.err.println("atomicResult.attachmentNodeId: " + atomicResult.getAttachmentNodeId());
 		
 		// PHASE 5: Version series update (if required)
+		System.err.println("=== PHASE 5 DEBUG - VERSION SERIES UPDATE ===");
+		System.err.println("VersioningState: " + versioningState);
+		System.err.println("atomicResult.attachmentNodeId BEFORE version series update: " + atomicResult.getAttachmentNodeId());
+		
 		if (versioningState == VersioningState.CHECKEDOUT) {
 			updateVersionSeriesWithPwcAtomic(callContext, repositoryId, vs, atomicResult);
+			System.err.println("atomicResult.attachmentNodeId AFTER version series update: " + atomicResult.getAttachmentNodeId());
 		}
 		
 		// PHASE 6: Change event and indexing (non-critical operations)
+		System.err.println("=== PHASE 6 DEBUG - CHANGE EVENT ===");
+		System.err.println("atomicResult.attachmentNodeId BEFORE change event: " + atomicResult.getAttachmentNodeId());
+		
 		writeChangeEvent(callContext, repositoryId, atomicResult, ChangeType.CREATED);
+		
+		System.err.println("atomicResult.attachmentNodeId AFTER change event: " + atomicResult.getAttachmentNodeId());
 		
 		// Solr indexing (failure won't affect main operation)
 		try {
@@ -591,6 +669,19 @@ public class ContentServiceImpl implements ContentService {
 		} catch (Exception e) {
 			log.warn("Solr indexing failed for document {} (non-critical): {}", atomicResult.getId(), e.getMessage());
 		}
+		
+		// SECONDARY TYPES TEST DEBUG - Final verification before return
+		System.err.println("=== SECONDARY TYPES TEST DEBUG - FINAL RETURN ===");
+		System.err.println("Final atomicResult.id: " + atomicResult.getId());
+		System.err.println("Final atomicResult.attachmentNodeId: " + atomicResult.getAttachmentNodeId());
+		System.err.println("Final atomicResult.type: " + atomicResult.getType());
+		if (atomicResult.getAttachmentNodeId() == null) {
+			System.err.println("⚠️  WARNING: attachmentNodeId is NULL in final result - THIS WILL CAUSE Content stream is null!");
+			System.err.println("⚠️  Secondary Types Test will fail with CmisRuntimeException: Content stream is null!");
+		} else {
+			System.err.println("✅ SUCCESS: attachmentNodeId preserved in final result: " + atomicResult.getAttachmentNodeId());
+		}
+		System.err.println("=== END SECONDARY TYPES TEST DEBUG ===");
 		
 		log.debug("=== ATOMIC DOCUMENT CREATION SUCCESS: {} ===", atomicResult.getId());
 		return atomicResult;
@@ -1124,12 +1215,21 @@ public class ContentServiceImpl implements ContentService {
 
 	private VersionSeries createVersionSeries(CallContext callContext, String repositoryId,
 			VersioningState versioningState) {
+		log.debug("Creating new VersionSeries for versioningState: {}", versioningState);
+		
 		VersionSeries vs = new VersionSeries();
 		vs.setVersionSeriesCheckedOut(false);
 		setSignature(callContext, vs);
 
-		VersionSeries versionSeries = contentDaoService.create(repositoryId, vs);
-		return versionSeries;
+		try {
+			VersionSeries versionSeries = contentDaoService.create(repositoryId, vs);
+			log.debug("VersionSeries created successfully with ID: {} and revision: {}", 
+				versionSeries.getId(), versionSeries.getRevision());
+			return versionSeries;
+		} catch (Exception e) {
+			log.error("Failed to create VersionSeries: {}", e.getMessage(), e);
+			throw new RuntimeException("VersionSeries creation failed", e);
+		}
 	}
 
 	/**
@@ -1144,10 +1244,28 @@ public class ContentServiceImpl implements ContentService {
 	private void updateVersionSeriesWithPwc(CallContext callContext, String repositoryId, VersionSeries versionSeries,
 			Document pwc) {
 
-		versionSeries.setVersionSeriesCheckedOut(true);
-		versionSeries.setVersionSeriesCheckedOutId(pwc.getId());
-		versionSeries.setVersionSeriesCheckedOutBy(callContext.getUsername());
-		contentDaoService.update(repositoryId, versionSeries);
+		// CRITICAL FIX: Fetch latest VersionSeries from DB to ensure _rev synchronization
+		// This prevents Cloudant SDK revision conflicts during update operations
+		log.debug("Fetching latest VersionSeries from DB for revision synchronization: {}", versionSeries.getId());
+		VersionSeries latestVersionSeries = contentDaoService.getVersionSeries(repositoryId, versionSeries.getId());
+		
+		if (latestVersionSeries == null) {
+			log.error("VersionSeries not found in database: {}", versionSeries.getId());
+			throw new IllegalStateException("VersionSeries not found for update: " + versionSeries.getId());
+		}
+		
+		// Apply updates to the fresh object with current _rev
+		latestVersionSeries.setVersionSeriesCheckedOut(true);
+		latestVersionSeries.setVersionSeriesCheckedOutId(pwc.getId());
+		latestVersionSeries.setVersionSeriesCheckedOutBy(callContext.getUsername());
+		
+		log.debug("Updating VersionSeries with current revision: {} for PWC: {}", 
+			latestVersionSeries.getRevision(), pwc.getId());
+		
+		// Update with synchronized revision
+		contentDaoService.update(repositoryId, latestVersionSeries);
+		
+		log.debug("VersionSeries update completed successfully for PWC: {}", pwc.getId());
 	}
 
 	@Override
@@ -2652,6 +2770,7 @@ public class ContentServiceImpl implements ContentService {
 		log.debug("Atomic attachment creation verified: {}", attachmentId);
 		return attachmentId;
 	}
+	
 	
 	/**
 	 * Create preview with atomic attachment reference

@@ -81,7 +81,7 @@
 			<ref bean="typeService" />
 		</property>
 	</bean>
-	<bean id="typeService" class="jp.aegif.nemaki.businesslogic.impl.TypeServiceImpl">
+	<bean id="typeService" class="jp.aegif.nemaki.businesslogic.impl.TypeServiceImpl" autowire-candidate="false" abstract="false" lazy-init="true">
 		<constructor-arg>
 			<ref bean="contentDaoService" />
 		</constructor-arg>

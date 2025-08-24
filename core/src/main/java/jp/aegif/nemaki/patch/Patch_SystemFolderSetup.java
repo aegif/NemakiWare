@@ -149,33 +149,144 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
      */
     private Folder findExistingSystemFolder(ContentService contentService, String repositoryId, String rootFolderId) {
         try {
+            System.out.println("=== PATCH DEBUG: Checking for existing system folders in repository " + repositoryId + ", root folder " + rootFolderId);
             log.info("PATCH DEBUG: Checking for existing system folders in repository " + repositoryId + ", root folder " + rootFolderId);
-            List<Content> children = contentService.getChildren(repositoryId, rootFolderId);
-            log.info("PATCH DEBUG: Found " + (children != null ? children.size() : 0) + " children in root folder");
             
-            if (children != null) {
-                for (Content child : children) {
-                    if (child instanceof Folder) {
-                        log.info("PATCH DEBUG: Found folder: " + child.getName() + " (ID: " + child.getId() + ")");
-                        // Check for .system folder (provided by dump file - preferred)
-                        if (".system".equals(child.getName())) {
-                            log.info("Found existing .system folder from dump file: " + child.getId() + " - using this as system folder");
-                            return (Folder) child;
-                        }
-                        // Also check for legacy "System" folders for compatibility
-                        if ("System".equals(child.getName())) {
-                            log.info("Found existing legacy System folder: " + child.getId());
-                            return (Folder) child;
-                        }
-                    } else {
-                        log.info("PATCH DEBUG: Found non-folder: " + child.getName() + " (type: " + child.getClass().getSimpleName() + ")");
-                    }
+            // CRITICAL FIX: Use direct CouchDB query instead of ContentService/ContentDaoService
+            // Both service layers fail during initialization phase due to getContent() dependencies
+            try {
+                System.out.println("=== PATCH DEBUG: Using direct CouchDB view query approach");
+                log.info("PATCH DEBUG: Using direct CouchDB view query approach");
+                
+                // Get CloudantClientWrapper directly from patch util
+                jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper client = patchUtil.getConnectorPool().getClient(repositoryId);
+                if (client == null) {
+                    System.err.println("=== PATCH ERROR: Could not get Cloudant client for repository: " + repositoryId);
+                    return null;
                 }
+                
+                // Query children view with parent ID
+                java.util.Map<String, Object> queryParams = new java.util.HashMap<>();
+                queryParams.put("key", rootFolderId);
+                queryParams.put("include_docs", true);
+                
+                System.out.println("=== PATCH DEBUG: Executing direct CouchDB view query: _repo/children with key=" + rootFolderId);
+                
+                com.ibm.cloud.cloudant.v1.model.ViewResult result = client.queryView("_repo", "children", queryParams);
+                
+                if (result.getRows() != null && !result.getRows().isEmpty()) {
+                    System.out.println("=== PATCH DEBUG: Direct CouchDB query found " + result.getRows().size() + " raw rows");
+                    log.info("PATCH DEBUG: Direct CouchDB query found " + result.getRows().size() + " raw rows");
+                    
+                    for (com.ibm.cloud.cloudant.v1.model.ViewResultRow row : result.getRows()) {
+                        if (row.getDoc() != null) {
+                            try {
+                                // CRITICAL FIX: Extract document ID correctly from ViewResultRow
+                                // Primary method: Get document ID from row itself
+                                String objectId = row.getId();
+                                System.out.println("=== PATCH DEBUG: Row ID (primary method): " + objectId);
+                                
+                                // Extract document properties for additional information
+                                com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
+                                if (doc != null) {
+                                    // Fallback method: Try document properties if row ID is null
+                                    if (objectId == null) {
+                                        java.util.Map<String, Object> docProperties = doc.getProperties();
+                                        if (docProperties != null) {
+                                            objectId = (String) docProperties.get("_id");
+                                            System.out.println("=== PATCH DEBUG: Document properties _id (fallback method): " + objectId);
+                                        }
+                                    }
+                                    
+                                    // Additional fallback: Try document getId() method
+                                    if (objectId == null) {
+                                        objectId = doc.getId();
+                                        System.out.println("=== PATCH DEBUG: Document getId() (additional fallback): " + objectId);
+                                    }
+                                    
+                                    // Get other document properties for validation
+                                    java.util.Map<String, Object> docProperties = doc.getProperties();
+                                    if (docProperties != null) {
+                                        String name = (String) docProperties.get("name");
+                                        String type = (String) docProperties.get("type");
+                                        Boolean folder = (Boolean) docProperties.get("folder");
+                                    
+                                        System.out.println("=== PATCH DEBUG: Found object: name='" + name + "', id=" + objectId + ", type=" + type + ", folder=" + folder);
+                                        log.info("PATCH DEBUG: Found object: name='" + name + "', id=" + objectId + ", type=" + type + ", folder=" + folder);
+                                        
+                                        // Check if this is a folder with .system or System name
+                                        if ((folder != null && folder) || "cmis:folder".equals(type)) {
+                                            if (".system".equals(name)) {
+                                                System.out.println("=== PATCH SUCCESS: Found existing .system folder from dump file: " + objectId + " - using this as system folder");
+                                                log.info("Found existing .system folder from dump file: " + objectId + " - using this as system folder");
+                                                
+                                                // Validate that we have a non-null objectId before creating the folder object
+                                                if (objectId != null && !objectId.trim().isEmpty()) {
+                                                    // Create a minimal Folder object for return
+                                                    jp.aegif.nemaki.model.Folder systemFolder = new jp.aegif.nemaki.model.Folder();
+                                                    systemFolder.setId(objectId);
+                                                    systemFolder.setName(name);
+                                                    return systemFolder;
+                                                } else {
+                                                    System.err.println("=== PATCH ERROR: Found .system folder but objectId is null or empty");
+                                                    log.error("Found .system folder but objectId is null or empty - cannot use this folder");
+                                                }
+                                            }
+                                            if ("System".equals(name)) {
+                                                System.out.println("=== PATCH SUCCESS: Found existing legacy System folder: " + objectId);
+                                                log.info("Found existing legacy System folder: " + objectId);
+                                                
+                                                // Validate that we have a non-null objectId before creating the folder object
+                                                if (objectId != null && !objectId.trim().isEmpty()) {
+                                                    // Create a minimal Folder object for return  
+                                                    jp.aegif.nemaki.model.Folder systemFolder = new jp.aegif.nemaki.model.Folder();
+                                                    systemFolder.setId(objectId);
+                                                    systemFolder.setName(name);
+                                                    return systemFolder;
+                                                } else {
+                                                    System.err.println("=== PATCH ERROR: Found System folder but objectId is null or empty");
+                                                    log.error("Found System folder but objectId is null or empty - cannot use this folder");
+                                                }
+                                            }
+                                        } else {
+                                            System.out.println("=== PATCH DEBUG: Found non-folder: " + name + " (type: " + type + ", folder: " + folder + ")");
+                                            log.info("PATCH DEBUG: Found non-folder: " + name + " (type: " + type + ", folder: " + folder + ")");
+                                        }
+                                    } else {
+                                        System.out.println("=== PATCH DEBUG: Document has no properties");
+                                        log.info("PATCH DEBUG: Document has no properties");
+                                    }
+                                } else {
+                                    System.out.println("=== PATCH DEBUG: Document is null");
+                                    log.info("PATCH DEBUG: Document is null");
+                                }
+                            } catch (Exception docEx) {
+                                System.err.println("=== PATCH ERROR: Error processing document: " + docEx.getMessage());
+                                log.warn("Error processing document in system folder search", docEx);
+                                docEx.printStackTrace();
+                            }
+                        }
+                    }
+                } else {
+                    System.out.println("=== PATCH DEBUG: No children found in direct CouchDB view query");
+                    log.info("PATCH DEBUG: No children found in direct CouchDB view query");
+                }
+                
+                System.out.println("=== PATCH DEBUG: No existing system folders found via direct CouchDB query");
+                log.info("PATCH DEBUG: No existing system folders found via direct CouchDB query");
+                return null;
+                
+            } catch (Exception directEx) {
+                System.err.println("=== PATCH ERROR: Direct CouchDB query failed: " + directEx.getMessage());
+                log.error("Direct CouchDB query failed, system folder detection not possible during initialization", directEx);
+                directEx.printStackTrace();
+                return null;
             }
-            log.info("PATCH DEBUG: No existing system folders found, will create new one");
-            return null;
+            
         } catch (Exception e) {
+            System.err.println("=== PATCH ERROR: Error checking for existing System folder: " + e.getMessage());
             log.warn("Error checking for existing System folder", e);
+            e.printStackTrace();
             return null;
         }
     }

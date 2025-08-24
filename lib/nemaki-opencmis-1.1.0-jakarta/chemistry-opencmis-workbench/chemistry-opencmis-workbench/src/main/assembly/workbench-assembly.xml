@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements.  See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership.  The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied.  See the License for the
+    specific language governing permissions and limitations
+    under the License.
+-->
+
+<assembly
+    xmlns="http://maven.apache.org/plugins/maven-assembly-plugin/assembly/1.1.1"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/plugins/maven-assembly-plugin/assembly/1.1.1 http://maven.apache.org/xsd/assembly-1.1.1.xsd">
+    <!-- To build this, run "mvn package assembly:assembly" -->
+    <id>full</id>
+    <formats>
+        <format>zip</format>
+    </formats>
+    <includeBaseDirectory>false</includeBaseDirectory>
+    
+    <fileSets>
+        <!-- license, readme, etc. calculated at build time -->
+        <fileSet>
+            <directory>${project.build.directory}/maven-shared-archive-resources/META-INF</directory>
+            <outputDirectory>/</outputDirectory>
+            <excludes>
+                <exclude>LICENSE</exclude>
+                <exclude>NOTICE</exclude>
+            </excludes>
+        </fileSet>
+    </fileSets>
+    <files>
+        <file>
+            <source>src/main/assembly/workbench-assembly-license.txt</source>
+            <outputDirectory>/</outputDirectory>
+            <destName>LICENSE</destName>
+        </file>
+        <file>
+            <source>src/main/assembly/workbench-assembly-notice.txt</source>
+            <outputDirectory>/</outputDirectory>
+            <destName>NOTICE</destName>
+        </file>
+        <file>
+            <source>target/start/workbench.sh</source>
+            <outputDirectory></outputDirectory>
+            <lineEnding>unix</lineEnding>
+            <fileMode>0755</fileMode>
+        </file>
+        <file>
+            <source>target/start/workbench.command</source>
+            <outputDirectory></outputDirectory>
+            <lineEnding>unix</lineEnding>
+            <fileMode>0755</fileMode>
+        </file>
+        <file>
+            <source>target/start/create-shortcut.sh</source>
+            <outputDirectory></outputDirectory>
+            <lineEnding>unix</lineEnding>
+            <fileMode>0755</fileMode>
+        </file>
+        <file>
+            <source>target/start/workbench.bat</source>
+            <outputDirectory></outputDirectory>
+            <lineEnding>dos</lineEnding>
+        </file>
+        <file>
+            <source>target/start/create-shortcut.bat</source>
+            <outputDirectory></outputDirectory>
+            <lineEnding>dos</lineEnding>
+        </file>
+        <file>
+            <source>target/start/runscript.sh</source>
+            <outputDirectory></outputDirectory>
+            <lineEnding>unix</lineEnding>
+            <fileMode>0755</fileMode>
+        </file>
+        <file>
+            <source>target/start/runscript.bat</source>
+            <outputDirectory></outputDirectory>
+            <lineEnding>dos</lineEnding>
+        </file>
+        <file>
+            <source>src/main/resources/images/icon.ico</source>
+            <outputDirectory>/</outputDirectory>
+            <destName>cmis.ico</destName>
+        </file>
+        <file>
+            <source>src/main/resources/images/icon256.png</source>
+            <outputDirectory>/</outputDirectory>
+            <destName>cmis.png</destName>
+        </file>
+    </files>
+    <dependencySets>
+        <dependencySet>
+            <outputDirectory>/lib</outputDirectory>
+            <useProjectArtifact></useProjectArtifact>
+            <unpack>false</unpack>
+            <scope>runtime</scope>
+            <useTransitiveFiltering>true</useTransitiveFiltering>
+            <excludes>
+                <exclude>junit:junit</exclude>
+            </excludes>
+        </dependencySet>
+        <dependencySet>
+            <outputDirectory>/lib</outputDirectory>
+            <useProjectArtifact>false</useProjectArtifact>
+            <unpack>false</unpack>
+            <scope>provided</scope>
+            <useTransitiveFiltering>true</useTransitiveFiltering>
+            <excludes>
+                <exclude>org.codehaus.woodstox:wstx-asl:*</exclude>
+            </excludes>
+        </dependencySet>
+    </dependencySets>
+</assembly>

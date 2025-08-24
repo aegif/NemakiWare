@@ -79,6 +79,7 @@ public interface PropertyKey {
 	final String CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_CONTROLLABLE_POLICY = "capability.newTypeSettableAttributes.controllablePolicy";
 	final String CAPABILITY_NEW_TYPE_SETTABLE_ATTRIBUTES_CONTROLLABLE_ACL = "capability.newTypeSettableAttributes.controllableACL";
 	final String CAPABILITY_ACL = "capability.acl";
+	final String CAPABILITY_TYPE_MANAGEMENT = "capability.typeManagement";
 
 	//Base types
 	final String BASETYPE_DOCUMENT_LOCAL_NAME = "basetype.document.localName";

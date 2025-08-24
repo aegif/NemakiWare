@@ -110,6 +110,89 @@ public class DataUtil {
 		}
 	}
 
+	/**
+	 * CRITICAL FIX: Copy TypeDefinition without property definitions for CMIS compliance
+	 * Used when includePropertyDefinitions=false to comply with CMIS 1.1 specification
+	 */
+	public static TypeDefinition copyTypeDefinitionWithoutProperties(TypeDefinition source) {
+		if (source == null) return null;
+		
+		try {
+			// Create a new type definition instance of the same concrete type
+			if (source instanceof org.apache.chemistry.opencmis.commons.impl.dataobjects.DocumentTypeDefinitionImpl) {
+				org.apache.chemistry.opencmis.commons.impl.dataobjects.DocumentTypeDefinitionImpl target = 
+					new org.apache.chemistry.opencmis.commons.impl.dataobjects.DocumentTypeDefinitionImpl();
+				copyBaseTypeAttributes(source, target);
+				// Document-specific attributes
+				org.apache.chemistry.opencmis.commons.impl.dataobjects.DocumentTypeDefinitionImpl sourceDoc = 
+					(org.apache.chemistry.opencmis.commons.impl.dataobjects.DocumentTypeDefinitionImpl) source;
+				target.setIsVersionable(sourceDoc.isVersionable());
+				target.setContentStreamAllowed(sourceDoc.getContentStreamAllowed());
+				return target;
+			} else if (source instanceof org.apache.chemistry.opencmis.commons.impl.dataobjects.FolderTypeDefinitionImpl) {
+				org.apache.chemistry.opencmis.commons.impl.dataobjects.FolderTypeDefinitionImpl target = 
+					new org.apache.chemistry.opencmis.commons.impl.dataobjects.FolderTypeDefinitionImpl();
+				copyBaseTypeAttributes(source, target);
+				return target;
+			} else if (source instanceof org.apache.chemistry.opencmis.commons.impl.dataobjects.RelationshipTypeDefinitionImpl) {
+				org.apache.chemistry.opencmis.commons.impl.dataobjects.RelationshipTypeDefinitionImpl target = 
+					new org.apache.chemistry.opencmis.commons.impl.dataobjects.RelationshipTypeDefinitionImpl();
+				copyBaseTypeAttributes(source, target);
+				// Relationship-specific attributes
+				org.apache.chemistry.opencmis.commons.definitions.RelationshipTypeDefinition sourceRel = 
+					(org.apache.chemistry.opencmis.commons.definitions.RelationshipTypeDefinition) source;
+				target.setAllowedSourceTypes(sourceRel.getAllowedSourceTypeIds());
+				target.setAllowedTargetTypes(sourceRel.getAllowedTargetTypeIds());
+				return target;
+			} else if (source instanceof org.apache.chemistry.opencmis.commons.impl.dataobjects.PolicyTypeDefinitionImpl) {
+				org.apache.chemistry.opencmis.commons.impl.dataobjects.PolicyTypeDefinitionImpl target = 
+					new org.apache.chemistry.opencmis.commons.impl.dataobjects.PolicyTypeDefinitionImpl();
+				copyBaseTypeAttributes(source, target);
+				return target;
+			} else if (source instanceof org.apache.chemistry.opencmis.commons.impl.dataobjects.ItemTypeDefinitionImpl) {
+				org.apache.chemistry.opencmis.commons.impl.dataobjects.ItemTypeDefinitionImpl target = 
+					new org.apache.chemistry.opencmis.commons.impl.dataobjects.ItemTypeDefinitionImpl();
+				copyBaseTypeAttributes(source, target);
+				return target;
+			} else if (source instanceof org.apache.chemistry.opencmis.commons.impl.dataobjects.SecondaryTypeDefinitionImpl) {
+				org.apache.chemistry.opencmis.commons.impl.dataobjects.SecondaryTypeDefinitionImpl target = 
+					new org.apache.chemistry.opencmis.commons.impl.dataobjects.SecondaryTypeDefinitionImpl();
+				copyBaseTypeAttributes(source, target);
+				return target;
+			}
+			
+			// Fallback: return original if unknown type
+			return source;
+		} catch (Exception e) {
+			// Fallback: return original on error
+			return source;
+		}
+	}
+
+	/**
+	 * Copy base attributes from source to target TypeDefinition (excluding property definitions)
+	 */
+	private static void copyBaseTypeAttributes(TypeDefinition source, 
+			org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition target) {
+		target.setId(source.getId());
+		target.setLocalName(source.getLocalName());
+		target.setLocalNamespace(source.getLocalNamespace());
+		target.setDisplayName(source.getDisplayName());
+		target.setQueryName(source.getQueryName());
+		target.setDescription(source.getDescription());
+		target.setBaseTypeId(source.getBaseTypeId());
+		target.setParentTypeId(source.getParentTypeId());
+		target.setIsCreatable(source.isCreatable());
+		target.setIsFileable(source.isFileable());
+		target.setIsQueryable(source.isQueryable());
+		target.setIsFulltextIndexed(source.isFulltextIndexed());
+		target.setIsIncludedInSupertypeQuery(source.isIncludedInSupertypeQuery());
+		target.setIsControllablePolicy(source.isControllablePolicy());
+		target.setIsControllableAcl(source.isControllableAcl());
+		target.setTypeMutability(source.getTypeMutability());
+		// Note: NOT copying property definitions - that's the whole point
+	}
+
 	public static PropertyDefinition<?> createPropDef(String id,
 			String localName, String localNameSpace, String queryName,
 			String displayName, String description, PropertyType datatype,

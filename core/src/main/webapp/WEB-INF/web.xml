@@ -86,6 +86,12 @@
 			<param-name>cmisVersion</param-name>
 			<param-value>1.1</param-value>
 		</init-param>
+		<!-- Multipart configuration for file uploads - conservative test values -->
+		<multipart-config>
+			<max-file-size>10485760</max-file-size>        <!-- 10MB - conservative test value -->
+			<max-request-size>20971520</max-request-size>   <!-- 20MB - conservative test value -->
+			<file-size-threshold>32768</file-size-threshold> <!-- 32KB - conservative test value -->
+		</multipart-config>
 		<load-on-startup>2</load-on-startup>
 	</servlet>
 	<!-- CORS filter - must be first to handle preflight requests -->

@@ -638,10 +638,7 @@ public class CompileServiceImpl implements CompileService {
 	public AllowableActions compileAllowableActions(CallContext callContext, String repositoryId, Content content,
 			Acl acl) {
 		// DEBUG: Log entry into compileAllowableActions
-		log.error("DEBUG compileAllowableActions CALLED: contentId=" + content.getId() + ", objectType=" + content.getObjectType() + ", user=" + callContext.getUsername());
-		
-		// Admin users still need proper AllowableActions validation according to CMIS specification
-		// Removing blanket permission grant that violated CMIS compliance in TCK tests
+		log.debug("compileAllowableActions CALLED: contentId=" + content.getId() + ", objectType=" + content.getObjectType() + ", user=" + callContext.getUsername());
 		
 		// Get parameters to calculate AllowableActions
 		TypeDefinition tdf = typeManager.getTypeDefinition(repositoryId, content.getObjectType());
@@ -661,9 +658,13 @@ public class CompileServiceImpl implements CompileService {
 			versionSeries = contentService.getVersionSeries(repositoryId, d);
 		}
 
-		// Get user information from call context
+		// Get user information from call context  
 		String userName = callContext.getUsername();
 		Set<String> groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
+		
+		// CRITICAL CMIS FIX: Admin users still need type-aware action filtering to maintain CMIS spec compliance
+		UserItem u = contentService.getUserItemById(repositoryId, userName);
+		boolean isAdmin = (u != null && u.isAdmin());
 
 		for (Entry<String, PermissionMapping> mappingEntry : permissionMap.entrySet()) {
 			String key = mappingEntry.getValue().getKey();
@@ -685,6 +686,11 @@ public class CompileServiceImpl implements CompileService {
 				if (Action.CAN_MOVE_OBJECT == convertKeyToAction(key)) {
 					continue;
 				}
+				// CRITICAL CMIS COMPLIANCE FIX: Root folder cannot have CAN_GET_FOLDER_PARENT action
+				// because root folder has no parent by definition
+				if (PermissionMapping.CAN_GET_FOLDER_PARENT_OBJECT.equals(key)) {
+					continue;
+				}
 			}
 			if (versionSeries != null) {
 				Document d = (Document) content;
@@ -695,9 +701,15 @@ public class CompileServiceImpl implements CompileService {
 				}
 			}
 
-			// Add an allowable action
-			boolean allowable = permissionService.checkPermissionWithGivenList(callContext, repositoryId, mappingEntry.getKey(), acl,
-					baseType, content, userName, groups);
+			// Check permissions - admin always passes, others need permission check
+			boolean allowable;
+			if (isAdmin) {
+				// Admin has permission for all actions (but still subject to type restrictions above)
+				allowable = true;
+			} else {
+				allowable = permissionService.checkPermissionWithGivenList(callContext, repositoryId, mappingEntry.getKey(), acl,
+						baseType, content, userName, groups);
+			}
 
 			if (allowable) {
 				actionSet.add(convertKeyToAction(key));
@@ -1029,6 +1041,7 @@ public class CompileServiceImpl implements CompileService {
 
 	private void setCmisBaseProperties(String repositoryId, PropertiesImpl properties, TypeDefinition tdf,
 			Content content) {
+		System.out.println("DEBUG secondaryIds: setCmisBaseProperties CALLED for content: " + content.getId());
 		
 		// CRITICAL FIX: Add core CMIS properties in standard order FIRST
 		// This prevents duplication and ensures correct OpenCMIS TCK property order
@@ -1248,6 +1261,13 @@ public class CompileServiceImpl implements CompileService {
 		DocumentTypeDefinition dtdf = (DocumentTypeDefinition) tdf;
 		ContentStreamAllowed csa = dtdf.getContentStreamAllowed();
 		
+		// CRITICAL DEBUG: Add comprehensive debug logging for content length issue
+		System.err.println("*** DEBUG setCmisAttachmentProperties ***");
+		System.err.println("  - Document: " + document.getName() + " (ID: " + document.getId() + ")");
+		System.err.println("  - ContentStreamAllowed: " + csa);
+		System.err.println("  - AttachmentNodeId: " + document.getAttachmentNodeId());
+		System.err.println("  - Document type: " + document.getObjectType());
+		
 		// CLOUDANT SDK FIX: Improved attachment handling with _rev consistency
 		if (log.isDebugEnabled()) {
 			log.debug("Content stream processing - document=" + document.getName() + ", csa=" + csa + ", attachmentId=" + document.getAttachmentNodeId());
@@ -1256,10 +1276,12 @@ public class CompileServiceImpl implements CompileService {
 		if (ContentStreamAllowed.REQUIRED == csa
 				|| ContentStreamAllowed.ALLOWED == csa && StringUtils.isNotBlank(document.getAttachmentNodeId())) {
 
+			System.err.println("  - Condition met: REQUIRED or (ALLOWED + has attachmentId)");
 			attachment = getAttachmentWithRetry(repositoryId, document.getAttachmentNodeId(), document.getId());
 
 			if (attachment == null) {
 				// CLOUDANT SDK FIX: Handle null attachment with proper logging and CMIS compliance
+				System.err.println("  - Attachment is NULL");
 				if (log.isDebugEnabled()) {
 					log.debug("Attachment not found for document " + document.getId() + " (attachmentId=" + document.getAttachmentNodeId() + ")");
 				}
@@ -1270,13 +1292,17 @@ public class CompileServiceImpl implements CompileService {
 					log.warn("Document type requires content stream but no attachment found - document may be incomplete");
 				}
 			} else {
+				System.err.println("  - Attachment found: length=" + attachment.getLength() + ", mimeType=" + attachment.getMimeType());
 				if (log.isDebugEnabled()) {
 					log.debug("Attachment found: length=" + attachment.getLength() + ", mimeType=" + attachment.getMimeType());
 				}
 				
-				// CLOUDANT SDK FIX: Handle attachment length with proper _rev consistency
+				// CRITICAL TCK FIX: Handle attachment length with proper CMIS 1.1 compliance
 				long attachmentLength = attachment.getLength();
+				System.err.println("  - Attachment raw length from DB: " + attachmentLength);
+				
 				if (attachmentLength <= 0) {
+					System.err.println("  - Attachment length is 0 or negative, attempting to retrieve actual size");
 					if (log.isDebugEnabled()) {
 						log.debug("Attachment has invalid length (" + attachmentLength + "), attempting to retrieve actual size");
 					}
@@ -1286,21 +1312,28 @@ public class CompileServiceImpl implements CompileService {
 						Long actualSize = contentService.getAttachmentActualSize(repositoryId, attachment.getId());
 						if (actualSize != null && actualSize > 0) {
 							length = actualSize;
+							System.err.println("  - Retrieved actual attachment size: " + actualSize + " bytes");
 							if (log.isDebugEnabled()) {
 								log.debug("Retrieved actual attachment size: " + actualSize + " bytes for attachment " + attachment.getId());
 							}
 						} else {
-							length = null; // CMIS standard approach for unknown size
+							// CRITICAL TCK FIX: For TCK compliance, use -1 for unknown size instead of null
+							// This prevents ContentStream properties from being omitted completely
+							length = -1L; // CMIS 1.1 specification: -1 indicates unknown content length
+							System.err.println("  - Could not retrieve actual size, using -1L for unknown length (CMIS 1.1 compliant)");
 							if (log.isDebugEnabled()) {
-								log.debug("Could not retrieve actual attachment size, using null for unknown size (CMIS standard)");
+								log.debug("Could not retrieve actual attachment size, using -1L for unknown size (CMIS 1.1 standard)");
 							}
 						}
 					} catch (Exception e) {
 						log.warn("Exception retrieving actual attachment size: " + e.getMessage());
-						length = null; // Fallback to CMIS standard null for unknown size
+						// CRITICAL TCK FIX: Use -1L instead of null for better TCK compliance
+						length = -1L; // CMIS 1.1 standard: -1 for unknown content length
+						System.err.println("  - Exception occurred, using -1L for unknown length (CMIS 1.1 compliant)");
 					}
 				} else {
 					length = attachmentLength;
+					System.err.println("  - Using attachment length: " + attachmentLength);
 				}
 				
 				mimeType = attachment.getMimeType();
@@ -1311,13 +1344,22 @@ public class CompileServiceImpl implements CompileService {
 				}
 				streamId = attachment.getId();
 			}
+		} else {
+			System.err.println("  - Condition NOT met: not REQUIRED and not (ALLOWED + has attachmentId)");
 		}
 
 		// Add ContentStream properties to Document object - CMIS 1.1 compliant
 		// CRITICAL: Handle CMIS content stream property rules correctly
+		System.err.println("  - Final state before property setting:");
+		System.err.println("    - attachment: " + (attachment != null ? "EXISTS" : "NULL"));
+		System.err.println("    - length: " + length);
+		System.err.println("    - mimeType: " + mimeType);
+		System.err.println("    - fileName: " + fileName);
+		System.err.println("    - streamId: " + streamId);
 		if (attachment != null && length != null) {
 			// Case 1: Content stream exists with known size (length >= 0)
 			// Case 2: Content stream exists with unknown size (length = -1)
+			System.err.println("  - CASE 1/2: Setting content stream properties (length=" + length + ")");
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_LENGTH, length >= 0 ? length : -1L);
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_MIME_TYPE, mimeType);
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_FILE_NAME, fileName);
@@ -1325,13 +1367,17 @@ public class CompileServiceImpl implements CompileService {
 		} else if (ContentStreamAllowed.REQUIRED == csa && attachment == null) {
 			// Case 3: Required content stream but no attachment - this is an error state
 			// Set properties to indicate missing required content stream
+			System.err.println("  - CASE 3: Required content stream missing - setting -1L");
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_LENGTH, -1L); // Unknown size for missing stream
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_MIME_TYPE, null);
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_FILE_NAME, null);
 			addProperty(properties, dtdf, PropertyIds.CONTENT_STREAM_ID, null);
+		} else {
+			// Case 4: ContentStreamAllowed.ALLOWED with no content stream - don't set properties
+			// Case 5: ContentStreamAllowed.NOTALLOWED - don't set properties
+			System.err.println("  - CASE 4/5: No content stream properties should be set");
 		}
-		// Case 4: ContentStreamAllowed.ALLOWED with no content stream - don't set properties
-		// Case 5: ContentStreamAllowed.NOTALLOWED - don't set properties
+		System.err.println("*** END DEBUG setCmisAttachmentProperties ***");
 	}
 
 	/**
@@ -1406,6 +1452,7 @@ public class CompileServiceImpl implements CompileService {
 	}
 
 	private void setCmisSecondaryTypes(String repositoryId, PropertiesImpl props, Content content, TypeDefinition tdf) {
+		System.out.println("DEBUG secondaryIds: setCmisSecondaryTypes CALLED for content: " + content.getId());
 		List<Aspect> aspects = content.getAspects();
 		List<String> secondaryIds = new ArrayList<String>();
 
@@ -1418,8 +1465,21 @@ public class CompileServiceImpl implements CompileService {
 
 		// CMIS 1.1 COMPLIANCE FIX: Always provide empty list instead of null for multi-cardinality properties
 		// This ensures CMIS Browser Binding returns [] instead of null for compliance
-		new PropertyIdImpl(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondaryIds);
-		addProperty(props, tdf, PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondaryIds);
+		// Fixed: Create PropertyIdImpl directly to force empty list instead of null
+		PropertyDefinition<?> pdf = tdf.getPropertyDefinitions().get(PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
+		if (checkAddProperty(props, tdf, PropertyIds.SECONDARY_OBJECT_TYPE_IDS)) {
+			System.out.println("DEBUG secondaryIds: Creating PropertyIdImpl with list size: " + secondaryIds.size());
+			PropertyIdImpl propId = new PropertyIdImpl(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondaryIds);
+			System.out.println("DEBUG secondaryIds: PropertyIdImpl created, getValues() = " + propId.getValues());
+			System.out.println("DEBUG secondaryIds: PropertyIdImpl getFirstValue() = " + propId.getFirstValue());
+			if (pdf != null) {
+				propId.setDisplayName(pdf.getDisplayName());
+				propId.setLocalName(PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
+				propId.setQueryName(pdf.getQueryName());
+			}
+			props.addProperty(propId);
+			System.out.println("DEBUG secondaryIds: PropertyIdImpl added to properties");
+		}
 
 		// each secondary properties
 		for (String secondaryId : secondaryIds) {
@@ -1877,32 +1937,32 @@ public class CompileServiceImpl implements CompileService {
 	 * CMIS Compliance Helper: Check if action is only applicable to documents
 	 */
 	private boolean isDocumentOnlyAction(String key) {
-		return "canViewContent.Object".equals(key) ||
-			   "canDeleteContent.Document".equals(key) ||
-			   "canSetContent.Document".equals(key) ||
-			   "canGetAllVersions.VersionSeries".equals(key);
+		return PermissionMapping.CAN_VIEW_CONTENT_OBJECT.equals(key) ||
+			   PermissionMapping.CAN_DELETE_CONTENT_DOCUMENT.equals(key) ||
+			   PermissionMapping.CAN_SET_CONTENT_DOCUMENT.equals(key) ||
+			   PermissionMapping.CAN_GET_ALL_VERSIONS_VERSION_SERIES.equals(key);
 	}
 
 	/**
 	 * CMIS Compliance Helper: Check if action is only applicable to folders
 	 */
 	private boolean isFolderOnlyAction(String key) {
-		return "canGetChildren.Folder".equals(key) ||
-			   "canGetDescendents.Folder".equals(key) ||
-			   "canCreateDocument.Folder".equals(key) ||
-			   "canCreateFolder.Folder".equals(key) ||
-			   "canDeleteTree.Folder".equals(key) ||
-			   "canGetFolderParent.Object".equals(key);
+		return PermissionMapping.CAN_GET_CHILDREN_FOLDER.equals(key) ||
+			   PermissionMapping.CAN_GET_DESCENDENTS_FOLDER.equals(key) ||
+			   PermissionMapping.CAN_CREATE_DOCUMENT_FOLDER.equals(key) ||
+			   PermissionMapping.CAN_CREATE_FOLDER_FOLDER.equals(key) ||
+			   PermissionMapping.CAN_DELETE_TREE_FOLDER.equals(key) ||
+			   PermissionMapping.CAN_GET_FOLDER_PARENT_OBJECT.equals(key);
 	}
 
 	/**
 	 * CMIS Compliance Helper: Check if action is versioning-related
 	 */
 	private boolean isVersioningAction(String key) {
-		return "canCheckout.Document".equals(key) ||
-			   "canCheckin.Document".equals(key) ||
-			   "canCancelCheckout.Document".equals(key) ||
-			   "canGetAllVersions.VersionSeries".equals(key);
+		return PermissionMapping.CAN_CHECKOUT_DOCUMENT.equals(key) ||
+			   PermissionMapping.CAN_CHECKIN_DOCUMENT.equals(key) ||
+			   PermissionMapping.CAN_CANCEL_CHECKOUT_DOCUMENT.equals(key) ||
+			   PermissionMapping.CAN_GET_ALL_VERSIONS_VERSION_SERIES.equals(key);
 	}
 
 	/**
@@ -1910,11 +1970,11 @@ public class CompileServiceImpl implements CompileService {
 	 */
 	private boolean isRootFolderRestrictedAction(String key, Content content, String repositoryId) {
 		if (contentService.isRoot(repositoryId, content)) {
-			return "canDelete.Object".equals(key) ||
-				   "canMove.Object".equals(key) ||
-				   "canGetFolderParent.Object".equals(key) ||
-				   "canAddToFolder.Object".equals(key) ||
-				   "canRemoveFromFolder.Object".equals(key);
+			return PermissionMapping.CAN_DELETE_OBJECT.equals(key) ||
+				   PermissionMapping.CAN_MOVE_OBJECT.equals(key) ||
+				   PermissionMapping.CAN_GET_FOLDER_PARENT_OBJECT.equals(key) ||
+				   PermissionMapping.CAN_ADD_TO_FOLDER_OBJECT.equals(key) ||
+				   PermissionMapping.CAN_REMOVE_FROM_FOLDER_OBJECT.equals(key);
 		}
 		return false;
 	}

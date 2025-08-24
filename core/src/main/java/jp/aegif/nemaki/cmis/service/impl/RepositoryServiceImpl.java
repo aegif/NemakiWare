@@ -28,6 +28,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.TypeService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
@@ -57,6 +60,8 @@ import org.springframework.beans.factory.InitializingBean;
 
 public class RepositoryServiceImpl implements RepositoryService,
 		InitializingBean {
+
+	private static final Log log = LogFactory.getLog(RepositoryServiceImpl.class);
 
 	private RepositoryInfoMap repositoryInfoMap;
 	private TypeManager typeManager;
@@ -92,9 +97,19 @@ public class RepositoryServiceImpl implements RepositoryService,
 	public TypeDefinitionList getTypeChildren(CallContext callContext,
 			String repositoryId, String typeId,
 			Boolean includePropertyDefinitions, BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
+		
+		// CRITICAL CMIS COMPLIANCE DEBUG: Log the includePropertyDefinitions parameter
+		System.err.println("=== REPOSITORY SERVICE getTypeChildren CALLED ===");
+		System.err.println("repositoryId: " + repositoryId);
+		System.err.println("typeId: " + typeId);
+		System.err.println("includePropertyDefinitions (Boolean): " + includePropertyDefinitions);
+		
+		// Handle null Boolean conversion to primitive boolean (default to false per CMIS spec)
+		boolean includeProps = (includePropertyDefinitions == null) ? false : includePropertyDefinitions.booleanValue();
+		System.err.println("includePropertyDefinitions (converted to boolean): " + includeProps);
 
 		return typeManager.getTypesChildren(callContext, repositoryId,
-				typeId, includePropertyDefinitions, maxItems, skipCount);
+				typeId, includeProps, maxItems, skipCount);
 	}
 
 	@Override
@@ -148,31 +163,25 @@ public class RepositoryServiceImpl implements RepositoryService,
 	public TypeDefinition createType(CallContext callContext,
 			String repositoryId, TypeDefinition type, ExtensionsData extension) {
 		
-		System.err.println("=== CREATE TYPE METHOD CALLED ===");
-		System.err.println("Repository ID: " + repositoryId);
-		System.err.println("Type ID: " + (type != null ? type.getId() : "null"));
-		System.err.println("CallContext: " + (callContext != null ? callContext.getUsername() : "null"));
+		log.debug("createType called: repositoryId=" + repositoryId + ", typeId=" + (type != null ? type.getId() : "null") + ", user=" + (callContext != null ? callContext.getUsername() : "null"));
 		
 		// //////////////////
 		// General Exception
 		// //////////////////
-		System.err.println("=== PERMISSION AND VALIDATION CHECKS ===");
+		log.debug("Performing permission and validation checks for createType");
 		exceptionService.perimissionAdmin(callContext, repositoryId);
-		System.err.println("Permission check passed");
 		exceptionService.invalidArgumentRequired("typeDefinition", type);
-		System.err.println("Required argument check passed");
 		exceptionService.invalidArgumentCreatableType(repositoryId, type);
-		System.err.println("Creatable type check passed");
 		exceptionService.constraintDuplicatePropertyDefinition(repositoryId, type);
-		System.err.println("Duplicate property check passed");
+		log.debug("All validation checks passed for createType");
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
 		// Attributes
-		System.err.println("=== SETTING TYPE ATTRIBUTES ===");
+		log.debug("Setting type attributes for createType");
 		NemakiTypeDefinition ntd = setNemakiTypeDefinitionAttributes(repositoryId, type);
-		System.err.println("Type attributes set successfully");
+		log.debug("Type attributes set successfully");
 
 		// Property definitions
 		List<String> systemIds = typeManager.getSystemPropertyIds();
@@ -235,39 +244,33 @@ public class RepositoryServiceImpl implements RepositoryService,
 	public void deleteType(CallContext callContext, String repositoryId,
 			String typeId, ExtensionsData extension) {
 		
-		System.err.println("=== ENHANCED DELETE TYPE METHOD CALLED ===");
-		System.err.println("Repository ID: " + repositoryId);
-		System.err.println("Type ID: " + typeId);
-		System.err.println("CallContext: " + (callContext != null ? callContext.getUsername() : "null"));
+		log.debug("deleteType called: repositoryId=" + repositoryId + ", typeId=" + typeId + ", user=" + (callContext != null ? callContext.getUsername() : "null"));
 		
-		// CRITICAL FIX: Force direct TypeService call regardless of validation results
+		// Force direct TypeService call
 		try {
-			System.err.println("=== FORCE CALLING typeService.deleteTypeDefinition ===");
 			if (typeService == null) {
-				System.err.println("CRITICAL ERROR: typeService is null - attempting Spring context lookup");
+				log.warn("typeService is null - attempting Spring context lookup");
 				org.springframework.web.context.WebApplicationContext context = 
 					org.springframework.web.context.support.WebApplicationContextUtils.getWebApplicationContext(
 						((org.springframework.web.context.WebApplicationContext) org.springframework.web.context.ContextLoader.getCurrentWebApplicationContext()).getServletContext());
-				typeService = context.getBean(jp.aegif.nemaki.businesslogic.TypeService.class);
-				System.err.println("TypeService retrieved from Spring context: " + (typeService != null ? "SUCCESS" : "FAILED"));
+				typeService = (jp.aegif.nemaki.businesslogic.TypeService) context.getBean("TypeService");
+				log.debug("TypeService retrieved from Spring context: " + (typeService != null ? "SUCCESS" : "FAILED"));
 			}
 			
 			typeService.deleteTypeDefinition(repositoryId, typeId);
-			System.err.println("SUCCESS: FORCED typeService.deleteTypeDefinition completed successfully");
+			log.debug("typeService.deleteTypeDefinition completed successfully");
 			
-			System.err.println("=== CALLING typeManager.refreshTypes() ===");
 			if (typeManager != null) {
 				typeManager.refreshTypes();
-				System.err.println("SUCCESS: typeManager.refreshTypes() completed");
+				log.debug("typeManager.refreshTypes completed");
 			} else {
-				System.err.println("WARNING: typeManager is null - cache refresh skipped");
+				log.warn("typeManager is null - cache refresh skipped");
 			}
 			
-			System.err.println("=== ENHANCED DELETE TYPE COMPLETED SUCCESSFULLY ===");
+			log.debug("deleteType completed successfully");
 			return;
 		} catch (Exception e) {
-			System.err.println("CRITICAL ERROR in enhanced deleteType: " + e.getClass().getSimpleName() + ": " + e.getMessage());
-			e.printStackTrace();
+			log.error("Error in deleteType: " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
 			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException("Type deletion failed: " + e.getMessage(), e);
 		}
 	}

@@ -128,7 +128,7 @@ public class TypeServiceImpl implements TypeService{
 		// This avoids circular dependency since TypeManager depends on TypeService
 		try {
 			jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager = 
-				(jp.aegif.nemaki.cmis.aspect.type.TypeManager) jp.aegif.nemaki.util.spring.SpringContext.getBean("typeManager");
+				(jp.aegif.nemaki.cmis.aspect.type.TypeManager) jp.aegif.nemaki.util.spring.SpringContext.getBean("TypeManager");
 			
 			if (typeManager != null) {
 				System.err.println("=== TYPESERVICE: Successfully retrieved TypeManager via SpringContext ===");

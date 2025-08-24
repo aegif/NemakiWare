@@ -21,11 +21,14 @@
  ******************************************************************************/
 package jp.aegif.nemaki.dao.impl.couch;
 
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
@@ -1003,13 +1006,18 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			List<CouchDocument> couchDocs = client.queryView("_repo", "latestVersion", versionSeriesId, CouchDocument.class);
 			
 			if (!couchDocs.isEmpty()) {
+				log.debug("Found " + couchDocs.size() + " documents for versionSeriesId: " + 
+						versionSeriesId + " in repository: " + repositoryId);
 				// Return the first (and should be only) result
 				return couchDocs.get(0).convert();
 			}
 			
+			log.warn("No documents found for versionSeriesId: " + versionSeriesId + 
+					" in repository: " + repositoryId + " - latestVersion view returned empty results");
 			return null;
 		} catch (Exception e) {
-			log.error("Error getting latest version for series: " + versionSeriesId + " in repository: " + repositoryId, e);
+			log.error("Error getting latest version for series: " + versionSeriesId + 
+					" in repository: " + repositoryId + " - " + e.getMessage(), e);
 			return null;
 		}
 	}
@@ -1022,13 +1030,18 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			List<CouchDocument> couchDocs = client.queryView("_repo", "latestMajorVersion", versionSeriesId, CouchDocument.class);
 			
 			if (!couchDocs.isEmpty()) {
+				log.debug("Found " + couchDocs.size() + " major version documents for versionSeriesId: " + 
+						versionSeriesId + " in repository: " + repositoryId);
 				// Return the first (and should be only) result
 				return couchDocs.get(0).convert();
 			}
 			
+			log.warn("No major version documents found for versionSeriesId: " + versionSeriesId + 
+					" in repository: " + repositoryId + " - latestMajorVersion view returned empty results");
 			return null;
 		} catch (Exception e) {
-			log.error("Error getting latest major version for series: " + versionSeriesId + " in repository: " + repositoryId, e);
+			log.error("Error getting latest major version for series: " + versionSeriesId + 
+					" in repository: " + repositoryId + " - " + e.getMessage(), e);
 			return null;
 		}
 	}
@@ -1588,6 +1601,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			List<String> groupIdsToCheck = new ArrayList<String>();
 			List<String> resultGroupIds = new ArrayList<String>();
 			
+			// CRITICAL FIX: Add visited groups tracking to prevent infinite loops
+			Set<String> visitedGroups = new HashSet<String>();
+			
 			if (result.getRows() != null) {
 				for (ViewResultRow row : result.getRows()) {
 					if (row.getValue() != null) {
@@ -1598,6 +1614,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 							if (groupId != null) {
 								groupIdsToCheck.add(groupId);
 								resultGroupIds.add(groupId);
+								visitedGroups.add(groupId); // Track visited groups
 							}
 						} catch (Exception e) {
 							log.warn("Error parsing group document for user " + userId + ": " + e.getMessage());
@@ -1606,9 +1623,29 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				}
 			}
 
-			while(groupIdsToCheck.size() > 0) {
-				groupIdsToCheck = this.checkIndirectGroup(repositoryId, groupIdsToCheck);
-				resultGroupIds.addAll(groupIdsToCheck);
+			// CRITICAL FIX: Add maximum iteration limit and visited tracking
+			int maxIterations = 50; // Prevent runaway loops
+			int iterations = 0;
+			
+			while(groupIdsToCheck.size() > 0 && iterations < maxIterations) {
+				List<String> newGroupIds = this.checkIndirectGroup(repositoryId, groupIdsToCheck);
+				
+				// Filter out already visited groups to prevent cycles
+				groupIdsToCheck.clear();
+				for (String groupId : newGroupIds) {
+					if (!visitedGroups.contains(groupId)) {
+						groupIdsToCheck.add(groupId);
+						resultGroupIds.add(groupId);
+						visitedGroups.add(groupId);
+					}
+				}
+				
+				iterations++;
+				
+				// Log potential infinite loop detection
+				if (iterations >= maxIterations) {
+					log.warn("Group hierarchy traversal reached maximum iterations (" + maxIterations + ") for user " + userId + " - possible circular group references");
+				}
 			}
 
 			//unique result
@@ -2269,6 +2306,25 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				log.error("- Result Length: " + result.getLength());
 				log.error("- Result MimeType: " + result.getMimeType());
 				
+				// CRITICAL FIX: Set the actual binary stream from CouchDB attachment
+				// The AttachmentNode needs the actual InputStream to provide content
+				try {
+					// Get the binary attachment stream from CouchDB
+					// Standard attachment name used in createAttachment is "content"
+					Object attachmentObj = client.getAttachment(attachmentId, "content");
+					if (attachmentObj != null && attachmentObj instanceof InputStream) {
+						InputStream attachmentStream = (InputStream) attachmentObj;
+						log.error("Successfully retrieved binary attachment stream for: " + attachmentId);
+						result.setInputStream(attachmentStream);
+					} else {
+						log.error("WARNING: No binary attachment stream found for: " + attachmentId);
+						// Attachment might be metadata-only (no binary content)
+					}
+				} catch (Exception streamEx) {
+					log.error("Error retrieving binary attachment stream for: " + attachmentId, streamEx);
+					// Continue without stream - attachment might be metadata-only
+				}
+				
 				return result;
 			} else {
 				log.error("CRITICAL: CouchAttachmentNode is null - Jackson deserialization failed!");
@@ -2300,15 +2356,28 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			// STAGE 1: Create/update metadata document with retry logic
 			int retryCount = 0;
 			int maxRetries = 3;
+			String stage1RevisionAfterUpdate = null;
 			
 			while (retryCount < maxRetries) {
 				try {
 					if (attachmentNode.getId() != null && client.exists(attachmentNode.getId())) {
+						// Get latest revision before update
+						com.ibm.cloud.cloudant.v1.model.Document latestDoc = client.get(attachmentNode.getId());
+						if (latestDoc != null && latestDoc.getRev() != null) {
+							can.setRevision(latestDoc.getRev());
+							System.err.println("=== _REV MANAGEMENT: STAGE 1 update using latest revision: " + latestDoc.getRev() + " ===");
+						}
 						client.update(can);
-						log.debug("STAGE 1: Updated attachment metadata for: " + attachmentNode.getId());
+						// Get the updated document to obtain the new revision
+						com.ibm.cloud.cloudant.v1.model.Document updatedDoc = client.get(attachmentNode.getId());
+						stage1RevisionAfterUpdate = updatedDoc != null ? updatedDoc.getRev() : null;
+						log.debug("STAGE 1: Updated attachment metadata for: " + attachmentNode.getId() + " (new revision: " + stage1RevisionAfterUpdate + ")");
 					} else {
 						client.create(can);
-						log.debug("STAGE 1: Created attachment metadata for: " + attachmentNode.getId());
+						// Get the created document to obtain the new revision
+						com.ibm.cloud.cloudant.v1.model.Document createdDoc = client.get(attachmentNode.getId());
+						stage1RevisionAfterUpdate = createdDoc != null ? createdDoc.getRev() : null;
+						log.debug("STAGE 1: Created attachment metadata for: " + attachmentNode.getId() + " (new revision: " + stage1RevisionAfterUpdate + ")");
 					}
 					break; // Success, exit retry loop
 					
@@ -2335,12 +2404,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				
 				while (retryCount < maxRetries) {
 					try {
-						// Get current document revision
-						com.ibm.cloud.cloudant.v1.model.Document doc = client.get(attachmentNode.getId());
-						String revision = doc != null ? doc.getRev() : null;
+						// CRITICAL FIX: Use the revision from STAGE 1 completion, not a fresh GET
+						String revisionToUse = stage1RevisionAfterUpdate;
+						if (revisionToUse == null) {
+							// Fallback: get fresh revision only if STAGE 1 revision is somehow lost
+							com.ibm.cloud.cloudant.v1.model.Document doc = client.get(attachmentNode.getId());
+							revisionToUse = doc != null ? doc.getRev() : null;
+							System.err.println("=== _REV MANAGEMENT WARNING: Had to fallback to fresh GET in STAGE 2: " + revisionToUse + " ===");
+						}
 						
-						if (revision == null) {
-							log.warn("STAGE 2: Cannot get current revision for attachment: " + attachmentNode.getId());
+						if (revisionToUse == null) {
+							log.warn("STAGE 2: Cannot get revision for attachment: " + attachmentNode.getId());
 							break;
 						}
 						
@@ -2349,17 +2423,18 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 						String contentType = attachmentNode.getMimeType() != null ? 
 							attachmentNode.getMimeType() : "application/octet-stream";
 						
-						log.debug("STAGE 2: Adding binary content to attachment: " + attachmentNode.getId() + " (revision: " + revision + ")");
+						log.debug("STAGE 2: Adding binary content to attachment: " + attachmentNode.getId() + " (revision: " + revisionToUse + ")");
 						
 						String newRevision = client.createAttachment(
 							attachmentNode.getId(), 
-							revision, 
+							revisionToUse, 
 							attachmentName, 
 							attachmentNode.getInputStream(), 
 							contentType
 						);
 						
-						log.debug("STAGE 2 SUCCESS: Stored binary content for: " + attachmentNode.getId() + " (revision: " + revision + " -> " + newRevision + ")");
+						System.err.println("=== _REV MANAGEMENT SUCCESS: STAGE 2 binary attachment: " + attachmentNode.getId() + " (revision: " + revisionToUse + " -> " + newRevision + ") ===");
+						log.debug("STAGE 2 SUCCESS: Stored binary content for: " + attachmentNode.getId() + " (revision: " + revisionToUse + " -> " + newRevision + ")");
 						break; // Success, exit retry loop
 						
 					} catch (com.ibm.cloud.sdk.core.service.exception.ConflictException e) {
@@ -2496,19 +2571,25 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					
 					while (retryCount < maxRetries) {
 						try {
-							// Get current revision in case document was modified
-							com.ibm.cloud.cloudant.v1.model.Document currentDoc = client.get(documentId);
-							String currentRevision = currentDoc != null ? currentDoc.getRev() : documentRevision;
+							// CRITICAL FIX: Use the revision from STAGE 1 completion, not a fresh GET
+							String revisionToUse = documentRevision;
+							if (revisionToUse == null) {
+								// Fallback: get fresh revision only if STAGE 1 revision is somehow lost
+								com.ibm.cloud.cloudant.v1.model.Document currentDoc = client.get(documentId);
+								revisionToUse = currentDoc != null ? currentDoc.getRev() : null;
+								System.err.println("=== _REV MANAGEMENT WARNING: Had to fallback to fresh GET in createAttachment STAGE 2: " + revisionToUse + " ===");
+							}
 							
 							finalRevision = client.createAttachment(
 								documentId, 
-								currentRevision, 
+								revisionToUse, 
 								attachmentName, 
 								contentStream.getStream(), 
 								contentType
 							);
 							
-							log.debug("STAGE 2 SUCCESS: Added binary attachment: " + documentId + " (revision: " + currentRevision + " -> " + finalRevision + ")");
+							System.err.println("=== _REV MANAGEMENT SUCCESS: createAttachment STAGE 2: " + documentId + " (revision: " + revisionToUse + " -> " + finalRevision + ") ===");
+							log.debug("STAGE 2 SUCCESS: Added binary attachment: " + documentId + " (revision: " + revisionToUse + " -> " + finalRevision + ")");
 							break; // Success, exit retry loop
 							
 						} catch (com.ibm.cloud.sdk.core.service.exception.ConflictException e) {
@@ -2633,16 +2714,24 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				can.setName(contentStream.getFileName());
 			}
 			
-			// Update the document
+			// STAGE 1: Update the document metadata and get the new revision
 			client.update(can);
-			log.debug("Updated attachment metadata for: " + attachment.getId());
+			// Get the updated document to obtain the new revision
+			com.ibm.cloud.cloudant.v1.model.Document updatedDoc = client.get(attachment.getId());
+			String stage1RevisionAfterUpdate = updatedDoc != null ? updatedDoc.getRev() : null;
+			log.debug("Updated attachment metadata for: " + attachment.getId() + " (new revision: " + stage1RevisionAfterUpdate + ")");
 			
-			// If there's binary content, update it as a CouchDB attachment
+			// STAGE 2: If there's binary content, update it as a CouchDB attachment
 			if (contentStream != null && contentStream.getStream() != null) {
 				try {
-					// Get current document revision
-					com.ibm.cloud.cloudant.v1.model.Document doc = client.get(attachment.getId());
-					String revision = doc != null ? doc.getRev() : null;
+					// CRITICAL FIX: Use the revision from STAGE 1 completion, not a fresh GET
+					String revisionToUse = stage1RevisionAfterUpdate;
+					if (revisionToUse == null) {
+						// Fallback: get fresh revision only if STAGE 1 revision is somehow lost
+						com.ibm.cloud.cloudant.v1.model.Document doc = client.get(attachment.getId());
+						revisionToUse = doc != null ? doc.getRev() : null;
+						System.err.println("=== _REV MANAGEMENT WARNING: Had to fallback to fresh GET in updateAttachment STAGE 2: " + revisionToUse + " ===");
+					}
 					
 					// Update attachment with binary content
 					String attachmentName = "content"; // Standard attachment name for content
@@ -2651,12 +2740,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					
 					String newRevision = client.createAttachment(
 						attachment.getId(), 
-						revision, 
+						revisionToUse, 
 						attachmentName, 
 						contentStream.getStream(), 
 						contentType
 					);
 					
+					System.err.println("=== _REV MANAGEMENT SUCCESS: updateAttachment STAGE 2: " + attachment.getId() + " (revision: " + revisionToUse + " -> " + newRevision + ") ===");
 					log.debug("Updated binary content as attachment for: " + attachment.getId() + " (revision: " + newRevision + ")");
 					
 				} catch (Exception attachmentError) {

@@ -485,6 +485,26 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 	@Override
 	public String createFolder(String repositoryId, Properties properties, String folderId, List<String> policies,
 			Acl addAces, Acl removeAces, ExtensionsData extension) {
+		
+		System.err.println("!!! CMIS SERVICE CREATEFOLDER: CALLED !!!");
+		System.err.println("!!! REPOSITORY ID: " + repositoryId + " !!!");
+		System.err.println("!!! FOLDER ID: " + folderId + " !!!");
+		System.err.println("!!! OBJECT SERVICE: " + (objectService != null ? objectService.getClass().getName() : "NULL") + " !!!");
+		System.err.println("!!! OBJECT SERVICE HASH: " + (objectService != null ? objectService.hashCode() : "NULL") + " !!!");
+		
+		if (properties != null) {
+			String objectTypeId = properties.getProperties() != null && properties.getProperties().get("cmis:objectTypeId") != null 
+				? properties.getProperties().get("cmis:objectTypeId").getFirstValue().toString() : "NULL";
+			String name = properties.getProperties() != null && properties.getProperties().get("cmis:name") != null 
+				? properties.getProperties().get("cmis:name").getFirstValue().toString() : "NULL";
+			System.err.println("!!! OBJECT TYPE ID: " + objectTypeId + " !!!");
+			System.err.println("!!! FOLDER NAME: " + name + " !!!");
+		} else {
+			System.err.println("!!! PROPERTIES IS NULL !!!");
+		}
+		
+		System.err.println("!!! CALLING OBJECTSERVICE.CREATEFOLDER() !!!");
+		
 		return objectService.createFolder(getCallContext(), repositoryId, properties, folderId, policies, addAces,
 				removeAces, extension);
 	}

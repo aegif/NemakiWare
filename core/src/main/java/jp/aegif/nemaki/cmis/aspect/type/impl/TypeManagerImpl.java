@@ -1204,6 +1204,10 @@ public class TypeManagerImpl implements TypeManager {
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
+		// CRITICAL FIX: Add all base CMIS properties (same as in-memory creation)
+		addBasePropertyDefinitions(repositoryId, type);
+		addRelationshipPropertyDefinitions(repositoryId, type);
+
 		// Set specific attributes
 		type.setAllowedSourceTypes(nemakiType.getAllowedSourceTypes());
 		type.setAllowedTargetTypes(nemakiType.getAllowedTargetTypes());
@@ -1237,6 +1241,9 @@ public class TypeManagerImpl implements TypeManager {
 		// Set base attributes, and properties(with specific properties
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
+
+		// CRITICAL FIX: Add all base CMIS properties (same as in-memory creation)
+		addBasePropertyDefinitions(repositoryId, type);
 
 		return type;
 	}
@@ -1471,6 +1478,13 @@ public class TypeManagerImpl implements TypeManager {
 	public TypeDefinitionList getTypesChildren(CallContext context,
 			String repositoryId, String typeId,
 			boolean includePropertyDefinitions, BigInteger maxItems, BigInteger skipCount) {
+		
+		// CRITICAL CMIS COMPLIANCE DEBUG: Log the includePropertyDefinitions parameter
+		System.err.println("=== TYPE MANAGER getTypesChildren CALLED ===");
+		System.err.println("repositoryId: " + repositoryId);
+		System.err.println("typeId: " + typeId);
+		System.err.println("includePropertyDefinitions (boolean): " + includePropertyDefinitions);
+		
 		ensureInitialized();
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
 		
@@ -1504,8 +1518,21 @@ public class TypeManagerImpl implements TypeManager {
 				}
 				
 				TypeDefinitionContainer type = basetypes.get(key);
-				result.getList().add(
-						DataUtil.copyTypeDefinition(type.getTypeDefinition()));
+				TypeDefinition typeDef = type.getTypeDefinition();
+				
+				// CRITICAL CMIS COMPLIANCE FIX: Use copyTypeDefinitionWithoutProperties when includePropertyDefinitions=false
+				System.err.println("PROCESSING BASE TYPE: " + key + ", includePropertyDefinitions=" + includePropertyDefinitions);
+				if (!includePropertyDefinitions) {
+					System.err.println("USING copyTypeDefinitionWithoutProperties");
+					typeDef = jp.aegif.nemaki.util.DataUtil.copyTypeDefinitionWithoutProperties(typeDef);
+				} else {
+					System.err.println("USING copyTypeDefinition");
+					typeDef = jp.aegif.nemaki.util.DataUtil.copyTypeDefinition(typeDef);
+				}
+				System.err.println("TYPE property definitions count after processing: " + 
+					(typeDef.getPropertyDefinitions() != null ? typeDef.getPropertyDefinitions().size() : "null"));
+				
+				result.getList().add(typeDef);
 				returnedCount++;
 				currentIndex++;
 			}
@@ -1529,8 +1556,21 @@ public class TypeManagerImpl implements TypeManager {
 					continue;
 				}
 
-				result.getList().add(
-						DataUtil.copyTypeDefinition(child.getTypeDefinition()));
+				TypeDefinition typeDef = child.getTypeDefinition();
+				
+				// CRITICAL CMIS COMPLIANCE FIX: Use copyTypeDefinitionWithoutProperties when includePropertyDefinitions=false
+				System.err.println("PROCESSING CHILD TYPE, includePropertyDefinitions=" + includePropertyDefinitions);
+				if (!includePropertyDefinitions) {
+					System.err.println("USING copyTypeDefinitionWithoutProperties");
+					typeDef = jp.aegif.nemaki.util.DataUtil.copyTypeDefinitionWithoutProperties(typeDef);
+				} else {
+					System.err.println("USING copyTypeDefinition");
+					typeDef = jp.aegif.nemaki.util.DataUtil.copyTypeDefinition(typeDef);
+				}
+				System.err.println("TYPE property definitions count after processing: " + 
+					(typeDef.getPropertyDefinitions() != null ? typeDef.getPropertyDefinitions().size() : "null"));
+				
+				result.getList().add(typeDef);
 
 				max--;
 				if (max == 0) {
@@ -1543,20 +1583,7 @@ public class TypeManagerImpl implements TypeManager {
 			result.setNumItems(BigInteger.valueOf(tc.getChildren().size()));
 		}
 
-		if (!includePropertyDefinitions) {
-			for (TypeDefinition type : result.getList()) {
-				try {
-					if (type.getPropertyDefinitions() != null) {
-						// CRITICAL FIX: DO NOT clear property definitions as this breaks CMIS type inheritance
-						// type.getPropertyDefinitions().clear(); // DISABLED: Causes "cmis:name is unknown" errors
-						// Property definitions must be preserved for CMIS compliance
-					}
-				} catch (Exception e) {
-					e.printStackTrace();
-				}
-			}
-		}
-
+		// NOTE: includePropertyDefinitions is now properly handled above using copyTypeDefinitionWithoutProperties
 		return result;
 	}
 
@@ -1566,6 +1593,14 @@ public class TypeManagerImpl implements TypeManager {
 	@Override
 	public List<TypeDefinitionContainer> getTypesDescendants(String repositoryId,
 			String typeId, BigInteger depth, Boolean includePropertyDefinitions) {
+		
+		// CRITICAL CMIS COMPLIANCE DEBUG: Log the parameters
+		System.err.println("=== TYPE MANAGER getTypesDescendants CALLED ===");
+		System.err.println("repositoryId: " + repositoryId);
+		System.err.println("typeId: " + typeId);
+		System.err.println("depth: " + depth);
+		System.err.println("includePropertyDefinitions (Boolean): " + includePropertyDefinitions);
+		
 		ensureInitialized();
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
 		
@@ -1583,8 +1618,11 @@ public class TypeManagerImpl implements TypeManager {
 		// set property definition flag to default value if not set
 		boolean ipd = (includePropertyDefinitions == null ? false
 				: includePropertyDefinitions.booleanValue());
+		
+		System.err.println("includePropertyDefinitions (converted to boolean): " + ipd);
 
 		if (typeId == null) {
+			System.err.println("=== PROCESSING BASE TYPES for getTypesDescendants ===");
 			flattenTypeDefinitionContainer(types.get(BaseTypeId.CMIS_FOLDER.value()), result,
 					d, ipd);
 			flattenTypeDefinitionContainer(types.get(BaseTypeId.CMIS_DOCUMENT.value()), result,
@@ -1598,10 +1636,12 @@ public class TypeManagerImpl implements TypeManager {
 			flattenTypeDefinitionContainer(types.get(BaseTypeId.CMIS_SECONDARY.value()),
 					result, d, ipd);
 		} else {
+			System.err.println("=== PROCESSING SPECIFIC TYPE: " + typeId + " for getTypesDescendants ===");
 			TypeDefinitionContainer tdc = types.get(typeId);
 			flattenTypeDefinitionContainer(tdc, result, d, ipd);
 		}
 
+		System.err.println("=== getTypesDescendants RETURNING " + result.size() + " types ===");
 		return result;
 	}
 
@@ -1628,29 +1668,33 @@ public class TypeManagerImpl implements TypeManager {
 	private TypeDefinitionContainer removePropertyDefinition(
 			TypeDefinitionContainer tdc) {
 		if (tdc == null) {
+			System.err.println("removePropertyDefinition: tdc is null");
 			return null;
 		}
 		
 		// Remove from its own typeDefinition
 		TypeDefinition tdf = tdc.getTypeDefinition();
 		if (tdf == null) {
+			System.err.println("removePropertyDefinition: typeDefinition is null");
 			return tdc; // Return original if no type definition
 		}
 		
-		TypeDefinition copy = DataUtil.copyTypeDefinition(tdf);
-		Map<String, PropertyDefinition<?>> propDefs = copy
-				.getPropertyDefinitions();
-		if (MapUtils.isNotEmpty(propDefs)) {
-			// CRITICAL FIX: Don't clear all properties - this breaks type inheritance
-			// Property definitions should be preserved for proper CMIS functionality
-			// propDefs.clear(); // REMOVED: This was breaking property inheritance
-		}
+		System.err.println("removePropertyDefinition: Processing typeId=" + tdf.getId());
+		System.err.println("removePropertyDefinition: Original property definitions count=" + 
+			(tdf.getPropertyDefinitions() != null ? tdf.getPropertyDefinitions().size() : "null"));
+		
+		// CRITICAL CMIS COMPLIANCE FIX: Use copyTypeDefinitionWithoutProperties for proper property removal
+		TypeDefinition copy = jp.aegif.nemaki.util.DataUtil.copyTypeDefinitionWithoutProperties(tdf);
+		System.err.println("removePropertyDefinition: After copyTypeDefinitionWithoutProperties, property definitions count=" + 
+			(copy.getPropertyDefinitions() != null ? copy.getPropertyDefinitions().size() : "null"));
+		
 		TypeDefinitionContainerImpl result = new TypeDefinitionContainerImpl(
 				copy);
 
 		// Remove from children recursively
 		List<TypeDefinitionContainer> children = tdc.getChildren();
 		if (CollectionUtils.isNotEmpty(children)) {
+			System.err.println("removePropertyDefinition: Processing " + children.size() + " children");
 			List<TypeDefinitionContainer> l = new ArrayList<TypeDefinitionContainer>();
 			for (TypeDefinitionContainer child : children) {
 				TypeDefinitionContainer processedChild = removePropertyDefinition(child);
@@ -1659,6 +1703,8 @@ public class TypeManagerImpl implements TypeManager {
 				}
 			}
 			result.setChildren(l);
+		} else {
+			System.err.println("removePropertyDefinition: No children to process");
 		}
 
 		return result;

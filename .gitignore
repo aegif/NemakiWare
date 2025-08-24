@@ -149,6 +149,11 @@ docker/cmis-tck-filters-docker.properties
 !.gitkeep
 !core/src/test/resources/cmis-tck-*.properties
 
+# Important shell scripts for development and deployment
+!reliable-docker-deploy.sh
+!qa-test.sh
+!setup/installer/make.sh
+
 # Docker initializer JARs should be built, not committed
 docker/initializer/*.jar
 
@@ -191,3 +196,6 @@ core/src/main/webapp/ui/node_modules/
 war_edit
 WEB-INF
 temp-extract
+
+# OpenCMIS build artifacts (auto-generated)
+build-workspace/chemistry-opencmis/built-jars/*.jar

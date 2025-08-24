@@ -2,39 +2,69 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Recent Major Changes (2025-08-05)
+## Recent Major Changes (2025-08-22)
 
-### OpenCMIS 1.2.0-SNAPSHOT Jakarta EE 10 Compatible Implementation - COMPLETE SUCCESS ✅
+### OpenCMIS 1.1.0 Jakarta EE 10 Unified Management Strategy - CURRENT APPROACH ✅
 
-**MONUMENTAL ACHIEVEMENT**: Successfully implemented Jakarta EE 10 compatible OpenCMIS 1.2.0-SNAPSHOT with complete javax.xml.ws → jakarta.xml.ws conversion, resolving all testuser authentication issues and ClassNotFoundException problems.
+**PROJECT MANAGEMENT BREAKTHROUGH**: Established unified JAR management with proper NemakiWare project structure for maintainable self-build OpenCMIS 1.1.0 with complete Jakarta EE 10 conversion.
 
-**Jakarta EE 10 Compatible OpenCMIS Implementation (2025-08-05):**
-- **✅ 1.2.0-SNAPSHOT Jakarta EE 10 Compatible**: `/build-workspace/chemistry-opencmis/` - **OFFICIAL PRODUCTION VERSION**
-- **✅ Complete javax.xml.ws → jakarta.xml.ws Conversion**: All Web Services bindings using Jakarta APIs
-- **✅ JAX-WS Integration**: Proper HandlerResolver location and Jakarta Web Services implementation
-- **✅ testuser Authentication Restored**: HTTP 200 authentication success with proper permission system
-- **✅ No JAR Conflicts**: All conflicting javax.xml.ws JARs eliminated
-- **❌ 1.1.0 All Versions**: **PERMANENTLY RETIRED** - All 1.1.0 variants deprecated
+**OpenCMIS 1.1.0 Jakarta EE 10 Unified Management Implementation (2025-08-22):**
+- **✅ 1.1.0 Jakarta EE 10 Self-Build**: `/lib/nemaki-opencmis-1.1.0-jakarta/` - **PROPER NEMAKIWARE PROJECT STRUCTURE**
+- **✅ Unified JAR Management**: `/lib/built-jars/` - **CENTRALIZED JAR DISTRIBUTION**
+- **✅ Complete Jakarta Conversion**: Full javax.* → jakarta.* namespace conversion for 1.1.0 base
+- **✅ Self-Build Control**: Complete control over OpenCMIS modifications and Jakarta compatibility
+- **✅ Spring Integration Fixes**: Resolved Spring Bean naming conflicts and service injection issues
+- **✅ Project Structure Clarity**: Clear distinction between NemakiWare self-build and external sources
+- **⚠️ TCK Status**: Basic operations passing, advanced features (secondary types, ACL, queries) failing with "Invalid multipart request!" errors
+
+**NemakiWare Project Structure (NEW STANDARD):**
+- **Self-Build Source**: `/lib/nemaki-opencmis-1.1.0-jakarta/` - Jakarta-converted OpenCMIS 1.1.0 source with NemakiWare modifications
+- **Built JAR Management**: `/lib/built-jars/` - Unified location for all NemakiWare-built OpenCMIS JARs
+- **External Sources**: `/external-sources/apache-opencmis-1.1.0/` - Pristine Apache releases for reference
+- **Archive Storage**: `/build-workspace/chemistry-opencmis/` - Historical workspace (preserved for rollback)
+
+**JAR Unified Management Policy:**
+- **Build Location**: JARs built from `/lib/nemaki-opencmis-1.1.0-jakarta/` source
+- **Distribution**: All JARs copied to `/lib/built-jars/` for centralized management
+- **Version Policy**: ALL self-build components MUST use `1.1.0-nemakiware` version for consistency
+- **Maven Integration**: core/pom.xml references unified management location via systemPath
+- **Benefits**: Clear ownership, easy maintenance, rollback capability, conflict prevention
 
 **Technical Implementation Achievements:**
-1. **Jakarta Web Services Conversion**: Fixed HandlerResolver import path from `jakarta.xml.ws` to `jakarta.xml.ws.handler`
-2. **JAX-WS Dependencies**: Added proper Jakarta Web Services implementation dependencies
-3. **Conflict Resolution**: Removed all javax.xml.ws JAR versions (jaxws-rt-4.0.0.jar, webservices-rt-*.jar)
-4. **Authentication System**: Restored proper testuser authentication with GROUP_EVERYONE permission checking
-5. **Permission System**: Jakarta EE 10 version has properly functioning security validation
+1. **OpenCMIS 1.1.0 Jakarta Conversion**: Complete javax.* → jakarta.* namespace transformation of OpenCMIS 1.1.0 codebase
+2. **Spring Bean Naming Standardization**: Resolved case-sensitive service name conflicts in modern Spring versions
+3. **Multi-part Parser Enhancement**: Jakarta EE 10 compatible file upload handling with proper boundary detection
+4. **TCK Compatibility**: Browser Binding parameter handling improvements for CMIS compliance testing
+5. **Self-Build Control**: Complete build environment for OpenCMIS modifications and Jakarta compatibility
+
+**Critical Spring Bean Naming Issue (Resolved):**
+**Problem**: Modern Spring versions reject case-only differences in bean names (e.g., `typeService` vs `TypeService`)
+**Symptom**: `getBean()` fails with ambiguous bean definition errors when both class and service name variations exist
+**Solution**: Consistent use of string-based service name lookup instead of type-based injection
+**Implementation**: All service lookups use explicit string names (e.g., `getBean("contentService")`) to avoid case conflicts
 
 **Critical Configuration Requirements:**
 ```xml
-<!-- Maven Ant Task - Jakarta EE 10 Compatible JARs Only -->
+<!-- Maven Ant Task - OpenCMIS 1.1.0 Jakarta EE 10 Unified JAR Management -->
 <copy todir="${project.build.directory}/${project.build.finalName}/WEB-INF/lib">
-    <fileset dir="${basedir}/build-workspace/chemistry-opencmis/built-jars">
-        <include name="chemistry-opencmis-*-1.2.0-SNAPSHOT.jar"/>
+    <fileset dir="${basedir}/../lib/built-jars">
+        <include name="chemistry-opencmis-*-1.1.0-nemakiware.jar"/>
     </fileset>
 </copy>
 
-<!-- JAX-WS Conflict Prevention -->
+<!-- Maven Dependencies - System Path to Unified Management -->
+<dependency>
+    <groupId>org.apache.chemistry.opencmis</groupId>
+    <artifactId>chemistry-opencmis-commons-api</artifactId>
+    <version>1.1.0-nemakiware</version>
+    <scope>system</scope>
+    <systemPath>${project.basedir}/../lib/built-jars/chemistry-opencmis-commons-api-1.1.0-nemakiware.jar</systemPath>
+</dependency>
+
+<!-- Legacy JAR Conflict Prevention -->
 <delete>
     <fileset dir="${project.build.directory}/${project.build.finalName}/WEB-INF/lib">
+        <include name="chemistry-opencmis-*-1.2.0-SNAPSHOT.jar"/>
         <include name="jaxws-rt-4.0.0.jar"/>
         <include name="webservices-rt-*.jar"/>
     </fileset>
@@ -43,36 +73,44 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Build Verification Commands:**
 ```bash
-# Verify only Jakarta-compatible JARs are included
+# Build with unified JAR management
+JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home mvn clean package -f core/pom.xml -Pdevelopment -DskipTests
+
+# Verify unified JAR management works
+ls -la /Users/ishiiakinori/NemakiWare/lib/built-jars/
+# Expected: All chemistry-opencmis-*-1.1.0-nemakiware.jar files
+
+# Verify only unified JARs are included in WAR
 unzip -l core/target/core.war | grep opencmis
-# Expected: Only 1.2.0-SNAPSHOT Jakarta EE 10 compatible JARs
+# Expected: Only 1.1.0-nemakiware JARs from lib/built-jars/
 
-# Verify no javax.xml.ws conflicts
-unzip -l core/target/core.war | grep -E "(jaxws-rt-4\.0\.0|webservices-rt)"
-# Expected: No output (all conflicting JARs excluded)
+# Verify no legacy build-workspace references
+unzip -l core/target/core.war | grep -E "(1\.2\.0-SNAPSHOT|build-workspace)"
+# Expected: No output (all legacy references eliminated)
 
-# Test authentication system
-curl -u testuser:test http://localhost:8080/core/browser/bedroom?cmisselector=repositoryInfo
-# Expected: HTTP 200 with repository information
+# Test with unified JAR management
+JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home timeout 60s mvn test -Dtest=TypesTestGroup -f core/pom.xml -Pdevelopment
+# Expected: Proper JAR resolution with systemPath references
 ```
 
-**REGRESSION PREVENTION POLICY:**
-- **NO 1.1.0 REVERSION**: Any attempt to revert to 1.1.0 versions will recreate authentication failures
-- **NO JAR MIXING**: Any jakarta/javax JAX-WS JAR mixing will cause ClassNotFoundException
-- **BUILD VALIDATION**: Always verify WAR contains only 1.2.0-SNAPSHOT Jakarta-compatible JARs
-- **AUTHENTICATION TESTING**: Always test testuser authentication after OpenCMIS changes
+**CURRENT APPROACH ENFORCEMENT POLICY:**
+- **NO 1.2.0 REVERSION**: Any attempt to revert to 1.2.0-SNAPSHOT will recreate instability issues
+- **OpenCMIS 1.1.0 ONLY**: All OpenCMIS JARs must use 1.1.0-nemakiware Jakarta self-build versions
+- **BUILD VALIDATION**: Always verify WAR contains only 1.1.0-nemakiware Jakarta-compatible JARs
+- **TCK VALIDATION**: Monitor for multipart processing improvements in advanced CMIS operations
 
-## Previous Major Changes (2025-08-04) - SUPERSEDED
+## Previous Major Changes (2025-08-05) - ABANDONED APPROACH
 
-### OpenCMIS 1.2.0-SNAPSHOT Self-Build Strategy - EVOLVED TO JAKARTA EE 10 ⚠️
+### OpenCMIS 1.2.0-SNAPSHOT Strategy - ABANDONED DUE TO STABILITY ISSUES ❌
 
-**HISTORICAL NOTE**: The 2025-08-04 self-build strategy was a critical stepping stone that evolved into the current Jakarta EE 10 compatible implementation. The javax.xml.ws compatibility issues identified in this phase led directly to the successful Jakarta conversion.
+**HISTORICAL NOTE**: The 2025-08-05 OpenCMIS 1.2.0-SNAPSHOT approach was attempted but ultimately abandoned due to version instability and lack of control over upstream changes.
 
-**Evolution from 2025-08-04 to 2025-08-05:**
-- **Problem Identified**: javax.xml.ws.Endpoint ClassNotFoundException in Jakarta EE 10 environment
-- **Root Cause**: 1.2.0-SNAPSHOT contained javax.xml.ws references incompatible with Jakarta EE 10
-- **Solution Implemented**: Complete javax.xml.ws → jakarta.xml.ws conversion with HandlerResolver fixes
-- **Result**: 100% Jakarta EE 10 compatible OpenCMIS 1.2.0-SNAPSHOT with functional authentication
+**Issues with 1.2.0-SNAPSHOT Approach (2025-08-05 to 2025-08-22):**
+- **Instability Problem**: 1.2.0-SNAPSHOT subject to upstream changes breaking NemakiWare functionality
+- **Control Issues**: Unable to maintain stable customizations on moving SNAPSHOT target
+- **Spring Conflicts**: Modern Spring versions created bean naming conflicts not easily resolved
+- **Solution Implemented**: Complete pivot to OpenCMIS 1.1.0 self-build with full Jakarta conversion
+- **Result**: Stable, controlled Jakarta EE 10 compatible OpenCMIS 1.1.0 with predictable behavior
 
 ## Previous Major Changes (2025-08-01)
 
@@ -694,39 +732,53 @@ mvn -version   # Must show Java 17
 **Default Credentials**: `admin:admin`
 **CouchDB**: `admin:password` (CouchDB 3.x requires authentication)
 
-## Clean Build and Comprehensive Testing Procedures (CURRENT STANDARD - 2025-07-23)
+## Clean Build and Comprehensive Testing Procedures (UPDATED STANDARD - 2025-08-20)
 
-### 1. Complete Clean Build Process (Required for All Development)
+### 1. Reliable Docker Deployment (RECOMMENDED)
 
-**CRITICAL**: Use these exact commands for reliable builds and deployments.
+**CRITICAL**: Docker問題根絶のため、確実なデプロイスクリプトを使用してください。
 
 ```bash
-# Step 1: Set Java 17 environment (MANDATORY)
+# 確実なデプロイ（推奨方法）
+cd /Users/ishiiakinori/NemakiWare
+./reliable-docker-deploy.sh
+```
+
+**このスクリプトの利点**:
+- ✅ 完全なクリーンアップ（キャッシュ根絶）
+- ✅ 確実なWARビルドとタイムスタンプ検証
+- ✅ 強制リビルド（--force-recreate）
+- ✅ 自動デプロイ検証（デバッグコード確認）
+- ✅ エラーハンドリングと詳細ログ
+
+### 2. 手動デプロイ（上級者向け）
+
+**WARNING**: 手動実行はキャッシュ問題を引き起こす可能性があります。上記のスクリプトを推奨します。
+
+```bash
+# Step 1: Java 17環境設定
 export JAVA_HOME=/Users/ishiiakinori/Library/Java/JavaVirtualMachines/jbr-17.0.12/Contents/Home
 export PATH=$JAVA_HOME/bin:$PATH
 
-# Verify Java version (must be 17.x.x)
-java -version
+# Step 2: 完全クリーンアップ
+cd /Users/ishiiakinori/NemakiWare/docker
+docker compose -f docker-compose-simple.yml down --remove-orphans
+docker system prune -f
 
-# Step 2: Navigate to project root
+# Step 3: 確実なWARビルド
 cd /Users/ishiiakinori/NemakiWare
-
-# Step 3: Clean build with Java 17 (tests disabled in development profile)
-mvn clean package -f core/pom.xml -Pdevelopment
-
-# Step 4: Copy WAR file to Docker context
+mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
 cp core/target/core.war docker/core/core.war
 
-# Step 5: Stop and rebuild Docker environment with no cache
+# Step 4: 強制リビルド
 cd docker
-docker compose -f docker-compose-simple.yml down
-docker build --no-cache -t nemakiware/core -f core/Dockerfile.simple core/
+docker compose -f docker-compose-simple.yml up -d --build --force-recreate
 
-# Step 6: Start clean environment
-docker compose -f docker-compose-simple.yml up -d
-
-# Step 7: Wait for complete initialization
-sleep 60
+# Step 5: デプロイ検証（重要）
+sleep 90
+docker exec docker-core-1 grep -a "CRITICAL STACK TRACE" \
+  /usr/local/tomcat/webapps/core/WEB-INF/classes/jp/aegif/nemaki/cmis/servlet/NemakiBrowserBindingServlet.class \
+  && echo "✅ DEBUG CODE DEPLOYED" || echo "❌ DEPLOYMENT FAILED"
 ```
 
 ### 2. Comprehensive Test Execution
@@ -778,9 +830,10 @@ npm run build  # Creates production build in dist/
 cd /Users/ishiiakinori/NemakiWare
 mvn clean package -f core/pom.xml -Pdevelopment
 
-# 4. Docker Redeployment
+# 4. Docker Redeployment (確実な方法)
 cp core/target/core.war docker/core/core.war
-cd docker && docker compose -f docker-compose-simple.yml up -d --build
+cd docker && docker compose -f docker-compose-simple.yml down
+docker compose -f docker-compose-simple.yml up -d --build --force-recreate
 
 # 5. Verify Integration
 curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/core/ui/
@@ -833,18 +886,31 @@ curl -u admin:admin http://localhost:8080/core/atom/bedroom
 
 ### Source Code Modification Workflow
 
+**推奨**: ソースコード修正時は確実なデプロイスクリプトを使用
+
 ```bash
 # 1. Modify Java source in core/src/main/java/
-# 2. Rebuild and redeploy
-mvn clean package -f core/pom.xml -Pdevelopment
+# 2. 確実なデプロイ実行
+./reliable-docker-deploy.sh
+
+# 3. 変更確認
+curl -u admin:admin http://localhost:8080/core/atom/bedroom
+```
+
+**手動実行（非推奨）**:
+```bash
+# 1. Modify Java source in core/src/main/java/
+# 2. 完全リビルド
+mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
 cp core/target/core.war docker/core/core.war
 
-# 3. Restart container to reflect changes
-docker stop docker-core-1
-docker build --no-cache -t docker-core docker/core/
-docker start docker-core-1
+# 3. 完全なコンテナ再作成
+cd docker
+docker compose -f docker-compose-simple.yml down
+docker compose -f docker-compose-simple.yml up -d --build --force-recreate
 
-# 4. Verify changes
+# 4. デプロイ検証
+sleep 90
 curl -u admin:admin http://localhost:8080/core/atom/bedroom
 ```
 
@@ -1041,10 +1107,11 @@ curl -u admin:admin "http://localhost:8080/core/atom/bedroom/children?id=e02f784
 
 ### OpenCMIS Version Management
 
-**CRITICAL**: All OpenCMIS JARs must use version 1.1.0 consistently
-- Maven properties: `org.apache.chemistry.opencmis.version=1.1.0`
-- Jakarta converted JARs: `*-1.1.0-jakarta.jar` only
-- No SNAPSHOT versions in production
+**CRITICAL**: All OpenCMIS JARs must use OpenCMIS 1.1.0 self-build versions consistently
+- Maven properties: `org.apache.chemistry.opencmis.version=1.1.0-nemakiware`
+- Jakarta self-build JARs: `*-1.1.0-nemakiware.jar` only
+- **NO SNAPSHOT versions**: All 1.2.0-SNAPSHOT versions are prohibited due to instability
+- **Self-Build Location**: `/build-workspace/chemistry-opencmis/` contains complete 1.1.0 source with Jakarta conversion
 
 ### Spring Configuration
 

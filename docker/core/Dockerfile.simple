@@ -17,13 +17,19 @@ COPY ./core.war /tmp/core.war
 
 # Extract WAR directly to webapps directory instead of repackaging
 RUN cd /tmp && \
+    echo "=== DEBUGGING: WAR file info ===" && \
+    ls -la core.war && \
     mkdir -p war-content && \
     cd war-content && \
     jar -xf ../core.war && \
+    echo "=== DEBUGGING: Servlet class in extracted WAR ===" && \
+    ls -la WEB-INF/classes/jp/aegif/nemaki/cmis/servlet/NemakiBrowserBindingServlet.class && \
     cp /tmp/nemakiware-basetype.properties WEB-INF/classes/nemakiware-basetype.properties && \
     echo "=== WAR MODIFICATION DEBUG: Updated configuration ===" && \
     grep "typeMutability.canDelete" WEB-INF/classes/nemakiware-basetype.properties && \
     cp -r . /usr/local/tomcat/webapps/core/ && \
+    echo "=== DEBUGGING: Final deployed servlet class ===" && \
+    ls -la /usr/local/tomcat/webapps/core/WEB-INF/classes/jp/aegif/nemaki/cmis/servlet/NemakiBrowserBindingServlet.class && \
     echo "=== WAR content directly deployed to /usr/local/tomcat/webapps/core/ ==="
 
 # Copy configuration files to the extracted webapp
@@ -31,14 +37,21 @@ COPY ./nemakiware.properties /usr/local/tomcat/conf/nemakiware.properties
 COPY ./nemakiware.properties /usr/local/tomcat/webapps/core/WEB-INF/classes/nemakiware.properties
 COPY ./repositories.yml /usr/local/tomcat/conf/repositories.yml
 COPY ./log4j.properties /usr/local/tomcat/conf/log4j.properties
+COPY ./logging.properties /usr/local/tomcat/conf/logging.properties
+
+# CRITICAL FIX: Copy custom server.xml to fix chunked encoding issues that cause TCK test failures
+COPY ./server.xml /usr/local/tomcat/conf/server.xml
 
 # Configuration file is now embedded in the modified WAR file above
 
-# Set environment variables
-ENV CATALINA_OPTS="-Xms512m -Xmx1024m -XX:+DisableExplicitGC -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Djakarta.xml.ws.spi.Provider=com.sun.xml.ws.spi.ProviderImpl -Djakarta.xml.soap.SAAJMetaFactory=com.sun.xml.messaging.saaj.soap.SAAJMetaFactoryImpl"
+# Set environment variables with multipart debugging and critical HTTP fixes
+ENV CATALINA_OPTS="-Xms512m -Xmx1024m -XX:+DisableExplicitGC -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Djakarta.xml.ws.spi.Provider=com.sun.xml.ws.spi.ProviderImpl -Djakarta.xml.soap.SAAJMetaFactory=com.sun.xml.messaging.saaj.soap.SAAJMetaFactoryImpl -Dorg.apache.tomcat.util.http.parser.HttpParser.requestTargetAllow=|{} -Djava.util.logging.config.file=/usr/local/tomcat/conf/logging.properties -Dorg.apache.coyote.http11.Http11OutputBuffer.CHUNK_SIZE=-1 -Dorg.apache.coyote.http11.Http11Protocol.chunkedEncodingDisabled=true"
 
 # Expose the default Tomcat port
 EXPOSE 8080
+
+# FINAL FIX: Copy server.xml again at the very end to ensure it's not overwritten
+COPY ./server.xml /usr/local/tomcat/conf/server.xml
 
 # Start Tomcat
 CMD ["catalina.sh", "run"]

@@ -430,8 +430,7 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 		// Admin user always pass a permission check(skip calculateAcl)
 		String userId = context.getUsername();
-		log.error("PERMISSION DEBUG: ExceptionServiceImpl.permissionDenied called for user=" + userId + ", key=" + key + ", content=" + content.getId());
-		System.out.println("PERMISSION DEBUG: ExceptionServiceImpl.permissionDenied called for user=" + userId + ", key=" + key + ", content=" + content.getId());
+		log.debug("permissionDenied called for user=" + userId + ", key=" + key + ", content=" + content.getId());
 		
 		UserItem u = contentService.getUserItemById(repositoryId, userId);
 		if (u != null && u.isAdmin()) {
@@ -1181,12 +1180,18 @@ public class ExceptionServiceImpl implements ExceptionService,
 		System.err.println("AttachmentNodeId: " + document.getAttachmentNodeId());
 		System.err.println("AttachmentNodeId isBlank: " + StringUtils.isBlank(document.getAttachmentNodeId()));
 		
-		if (ContentStreamAllowed.NOTALLOWED == csa
-				|| ContentStreamAllowed.ALLOWED == csa
-				&& StringUtils.isBlank(document.getAttachmentNodeId())) {
-			System.err.println("CONSTRAINT TRIGGERED: Content stream download not allowed");
+		// CMIS Standard Compliance: Only reject if ContentStreamAllowed is NOTALLOWED
+		// For ALLOWED: ContentStream is optional - null content stream is valid  
+		// For REQUIRED: ContentStream must exist - null content stream is invalid
+		if (ContentStreamAllowed.NOTALLOWED == csa) {
+			System.err.println("CONSTRAINT TRIGGERED: Content stream not allowed for this document type");
 			constraint(document.getId(),
-					"This document has no ContentStream. getContentStream is not supported.");
+					"This document type does not allow ContentStream. getContentStream is not supported.");
+		} else if (ContentStreamAllowed.REQUIRED == csa
+				&& StringUtils.isBlank(document.getAttachmentNodeId())) {
+			System.err.println("CONSTRAINT TRIGGERED: Required content stream is missing");
+			constraint(document.getId(),
+					"This document type requires ContentStream but none exists. getContentStream is not supported.");
 		} else {
 			System.err.println("CONSTRAINT PASSED: Content stream download allowed");
 		}

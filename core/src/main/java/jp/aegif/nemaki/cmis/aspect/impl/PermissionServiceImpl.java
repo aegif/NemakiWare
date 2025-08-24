@@ -144,9 +144,8 @@ public class PermissionServiceImpl implements PermissionService {
 	boolean isAdmin = (u != null && u.isAdmin());
 	
 	if (!isAdmin) {
-		// CRITICAL DEBUG: Use ERROR level to ensure visibility in logs
-		log.error("PERMISSION DEBUG: checkPermissionInternal called for non-admin user=" + userName + ", key=" + key + ", content=" + content.getId() + ", groups=" + groups);
-		System.out.println("PERMISSION DEBUG: checkPermissionInternal called for non-admin user=" + userName + ", key=" + key + ", content=" + content.getId() + ", groups=" + groups);
+		// Debug logging for non-admin users (use debug level for performance)
+		log.debug("checkPermissionInternal called for non-admin user=" + userName + ", key=" + key + ", content=" + content.getId() + ", groups=" + groups);
 	}
 
 		//All permission checks must go through baseType check
@@ -199,25 +198,25 @@ public class PermissionServiceImpl implements PermissionService {
 				.collect(Collectors.toList());
 		
 		// principalAnyone
-		log.info("Checking Anyone permissions for user=" + userName + ", content=" + content.getId());
+		log.debug("Checking Anyone permissions for user=" + userName + ", content=" + content.getId());
 		if(calcAnyonePermission(repositoryId, key, content, aces)) {
-			log.info("Anyone permission check PASSED for user=" + userName + ", content=" + content.getId());
+			log.debug("Anyone permission check PASSED for user=" + userName + ", content=" + content.getId());
 			return true;
 		}
 
 		//User permission
-		log.info("Anyone permission check FAILED, checking user permissions for user=" + userName + ", content=" + content.getId());
+		log.debug("Anyone permission check FAILED, checking user permissions for user=" + userName + ", content=" + content.getId());
 		if(calcUserPermission(repositoryId, key, content, userName, aces)) {
-			log.info("User permission check PASSED for user=" + userName + ", content=" + content.getId());
+			log.debug("User permission check PASSED for user=" + userName + ", content=" + content.getId());
 			return true;
 		}
 		
 		groups = contentService.getGroupIdsContainingUser(repositoryId, userName);
 
 		//Group permission
-		log.info("User permission check FAILED, checking group permissions for user=" + userName + ", content=" + content.getId() + ", groups=" + groups);
+		log.debug("User permission check FAILED, checking group permissions for user=" + userName + ", content=" + content.getId() + ", groups=" + groups);
 		boolean groupResult = calcGroupPermission(repositoryId, key, content, groups, aces);
-		log.info("Group permission check result: " + groupResult + " for user=" + userName + ", content=" + content.getId());
+		log.debug("Group permission check result: " + groupResult + " for user=" + userName + ", content=" + content.getId());
 		return groupResult;
 	}
 	
@@ -232,11 +231,13 @@ public class PermissionServiceImpl implements PermissionService {
 		Logger.info(MessageFormat.format("[{0}]CheckAnyonePermission BEGIN:{1}",content.getName(), key));
 		RepositoryInfo info = repositoryInfoMap.get(repositoryId);
 		
-		// DETAILED DEBUG LOGGING for troubleshooting
-		log.info("calcAnyonePermission: repositoryId=" + repositoryId + ", principalIdAnyone=" + info.getPrincipalIdAnyone());
-		log.info("calcAnyonePermission: Available ACEs for content " + content.getId() + ":");
-		for (Ace ace : aces) {
-			log.info("  ACE: principalId=" + ace.getPrincipalId() + ", permissions=" + ace.getPermissions());
+		// Debug logging for troubleshooting
+		log.debug("calcAnyonePermission: repositoryId=" + repositoryId + ", principalIdAnyone=" + info.getPrincipalIdAnyone());
+		if (log.isDebugEnabled()) {
+			log.debug("calcAnyonePermission: Available ACEs for content " + content.getId() + ":");
+			for (Ace ace : aces) {
+				log.debug("  ACE: principalId=" + ace.getPrincipalId() + ", permissions=" + ace.getPermissions());
+			}
 		}
 		
 		// CRITICAL FIX: GROUP_EVERYONE should apply to all authenticated users as virtual principal

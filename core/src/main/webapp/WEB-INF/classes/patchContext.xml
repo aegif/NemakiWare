@@ -32,17 +32,7 @@
 					</property>
 				</bean>
 				<!-- CMIS-specific patches that require running services -->
-				<bean class="jp.aegif.nemaki.patch.Patch_InitialFolderSetup">
-					<property name="patchUtil">
-						<ref bean="patchUtil" />
-					</property>
-				</bean>
 				<bean class="jp.aegif.nemaki.patch.Patch_StandardCmisViews">
-					<property name="patchUtil">
-						<ref bean="patchUtil" />
-					</property>
-				</bean>
-				<bean class="jp.aegif.nemaki.patch.Patch_RelationshipTypesSetup">
 					<property name="patchUtil">
 						<ref bean="patchUtil" />
 					</property>
@@ -115,22 +105,8 @@
 		</property>
 	</bean>
 
-	<!-- Initial Folder Setup Patch Bean -->
-	<bean id="patch_InitialFolderSetup" class="jp.aegif.nemaki.patch.Patch_InitialFolderSetup">
-		<property name="patchUtil">
-			<ref bean="patchUtil" />
-		</property>
-	</bean>
-
 	<!-- Standard CMIS Views Patch Bean -->
 	<bean id="patch_StandardCmisViews" class="jp.aegif.nemaki.patch.Patch_StandardCmisViews">
-		<property name="patchUtil">
-			<ref bean="patchUtil" />
-		</property>
-	</bean>
-
-	<!-- Relationship Types Setup Patch Bean -->
-	<bean id="patch_RelationshipTypesSetup" class="jp.aegif.nemaki.patch.Patch_RelationshipTypesSetup">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>

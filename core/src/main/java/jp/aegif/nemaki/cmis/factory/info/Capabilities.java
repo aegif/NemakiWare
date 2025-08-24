@@ -102,6 +102,9 @@ public class Capabilities extends org.apache.chemistry.opencmis.commons.impl.dat
 		//////////////////////////////////////////////////////////////////
 		// Type Capabilities
 		//////////////////////////////////////////////////////////////////		
+		// Note: Type management capability is determined by the presence of
+		// creatable property types and new type settable attributes
+		
 		//capabilityCreatablPopertyTypes
 		CreatablePropertyTypesImpl creatablePropertyTypes = new CreatablePropertyTypesImpl();
 		
