@@ -84,7 +84,8 @@ public class DeleteTypeFilter implements Filter {
                 return parts[i + 1];
             }
         }
-        return "bedroom"; // fallback
+        log.error("Could not extract repository ID from URI: {}", uri);
+        throw new IllegalArgumentException("Invalid repository URI format: " + uri);
     }
     
     private boolean handleDeleteTypeDirectly(String repositoryId, String typeId, HttpServletResponse response) {

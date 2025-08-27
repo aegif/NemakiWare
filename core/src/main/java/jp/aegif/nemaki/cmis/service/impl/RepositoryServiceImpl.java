@@ -53,6 +53,7 @@ import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionList;
 import org.apache.chemistry.opencmis.commons.definitions.TypeMutability;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition;
+import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
@@ -163,24 +164,34 @@ public class RepositoryServiceImpl implements RepositoryService,
 	public TypeDefinition createType(CallContext callContext,
 			String repositoryId, TypeDefinition type, ExtensionsData extension) {
 		
+		System.err.println("*** CRITICAL CREATETYPE DEBUG: RepositoryServiceImpl.createType() CALLED ***");
+		System.err.println("*** REPOSITORY ID: " + repositoryId);
+		System.err.println("*** TYPE ID: " + (type != null ? type.getId() : "null"));
+		System.err.println("*** USER: " + (callContext != null ? callContext.getUsername() : "null"));
+		System.err.println("*** TYPE OBJECT: " + (type != null ? type.toString() : "null"));
+		
 		log.debug("createType called: repositoryId=" + repositoryId + ", typeId=" + (type != null ? type.getId() : "null") + ", user=" + (callContext != null ? callContext.getUsername() : "null"));
 		
 		// //////////////////
 		// General Exception
 		// //////////////////
+		System.err.println("*** PERFORMING PERMISSION AND VALIDATION CHECKS ***");
 		log.debug("Performing permission and validation checks for createType");
 		exceptionService.perimissionAdmin(callContext, repositoryId);
 		exceptionService.invalidArgumentRequired("typeDefinition", type);
 		exceptionService.invalidArgumentCreatableType(repositoryId, type);
 		exceptionService.constraintDuplicatePropertyDefinition(repositoryId, type);
+		System.err.println("*** ALL VALIDATION CHECKS PASSED ***");
 		log.debug("All validation checks passed for createType");
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
 		// Attributes
+		System.err.println("*** SETTING TYPE ATTRIBUTES ***");
 		log.debug("Setting type attributes for createType");
 		NemakiTypeDefinition ntd = setNemakiTypeDefinitionAttributes(repositoryId, type);
+		System.err.println("*** TYPE ATTRIBUTES SET SUCCESSFULLY ***");
 		log.debug("Type attributes set successfully");
 
 		// Property definitions
@@ -189,24 +200,109 @@ public class RepositoryServiceImpl implements RepositoryService,
 				.getPropertyDefinitions();
 
 		ntd.setProperties(new ArrayList<String>());
+		
+		// CRITICAL FIX: Inherit parent type property definitions
+		System.err.println("=== CREATETYPE: Starting parent type property inheritance ===");
+		String parentTypeId = type.getParentTypeId();
+		if (parentTypeId != null) {
+			System.err.println("Parent type ID: " + parentTypeId);
+			TypeDefinition parentType = typeManager.getTypeDefinition(repositoryId, parentTypeId);
+			if (parentType != null && parentType.getPropertyDefinitions() != null) {
+				System.err.println("Parent type has " + parentType.getPropertyDefinitions().size() + " property definitions");
+				
+				// Get parent type definition from database to find property IDs
+				NemakiTypeDefinition parentTypeDef = typeService.getTypeDefinition(repositoryId, parentTypeId);
+				if (parentTypeDef != null && parentTypeDef.getProperties() != null) {
+					System.err.println("Parent type has " + parentTypeDef.getProperties().size() + " property IDs in database");
+					
+					// Inherit all property IDs from parent type
+					for (String parentPropId : parentTypeDef.getProperties()) {
+						List<String> l = ntd.getProperties();
+						if (!l.contains(parentPropId)) {
+							l.add(parentPropId);
+							ntd.setProperties(l);
+							System.err.println("Inherited property ID: " + parentPropId);
+						}
+					}
+				} else {
+					System.err.println("WARNING: Parent type definition not found in database");
+				}
+			} else {
+				System.err.println("WARNING: Parent type " + parentTypeId + " not found or has no property definitions");
+			}
+		} else {
+			System.err.println("No parent type specified - this is a base type");
+		}
+		
+		// CRITICAL DEBUG: Track custom property creation contamination
+		System.err.println("=== CREATETYPE CUSTOM PROPERTY CREATION DEBUG ===");
+		System.err.println("Type being created: " + type.getId());
+		System.err.println("Custom properties to process: " + (propDefs != null ? propDefs.size() : 0));
+		
+		// Add custom property definitions (existing logic)
 		if (MapUtils.isNotEmpty(propDefs)) {
+			System.err.println("Processing " + propDefs.size() + " custom property definitions");
 			for (String key : propDefs.keySet()) {
 				PropertyDefinition<?> propDef = propDefs.get(key);
+				System.err.println("=== PROCESSING CUSTOM PROPERTY: " + key + " ===");
+				System.err.println("Original property ID: " + propDef.getId());
+				System.err.println("Original property type: " + propDef.getPropertyType());
+				System.err.println("Original cardinality: " + propDef.getCardinality());
+				System.err.println("System property check: " + systemIds.contains(key));
+				
 				if (!systemIds.contains(key)) {
 					//Check PropertyDefinition
 					exceptionService.constraintQueryName(propDef);
 					exceptionService.constraintPropertyDefinition(type, propDef);
 
-					NemakiPropertyDefinition create = new NemakiPropertyDefinition(
-							propDef);
+					System.err.println("=== BEFORE NemakiPropertyDefinition CONSTRUCTOR ===");
+					System.err.println("Creating NemakiPropertyDefinition with propertyId: " + propDef.getId());
+					System.err.println("Creating NemakiPropertyDefinition with propertyType: " + propDef.getPropertyType());
+					
+					NemakiPropertyDefinition create = new NemakiPropertyDefinition(propDef);
+					
+					System.err.println("=== AFTER NemakiPropertyDefinition CONSTRUCTOR ===");
+					System.err.println("NemakiPropertyDefinition propertyId: " + create.getPropertyId());
+					System.err.println("NemakiPropertyDefinition propertyType: " + create.getPropertyType());
+					
+					System.err.println("=== BEFORE typeService.createPropertyDefinition ===");
+					System.err.println("About to call createPropertyDefinition with propertyId: " + create.getPropertyId());
+					
 					NemakiPropertyDefinitionDetail created = typeService
 							.createPropertyDefinition(repositoryId, create);
+					
+					System.err.println("=== AFTER typeService.createPropertyDefinition ===");
+					System.err.println("Created PropertyDefinitionDetail ID: " + created.getId());
+					
+					// CRITICAL DEBUG: Get the created property definition and check for contamination
+					NemakiPropertyDefinition retrievedProp = typeService.getPropertyDefinition(repositoryId, created.getId());
+					if (retrievedProp != null) {
+						System.err.println("=== RETRIEVED PROPERTY DEFINITION CHECK ===");
+						System.err.println("Retrieved propertyId: " + retrievedProp.getPropertyId());
+						System.err.println("Retrieved propertyType: " + retrievedProp.getPropertyType());
+						System.err.println("Expected propertyId: " + propDef.getId());
+						System.err.println("Expected propertyType: " + propDef.getPropertyType());
+						
+						if (!propDef.getId().equals(retrievedProp.getPropertyId())) {
+							System.err.println("*** CONTAMINATION DETECTED IN CREATETYPE ***");
+							System.err.println("EXPECTED: " + propDef.getId() + " (type: " + propDef.getPropertyType() + ")");
+							System.err.println("ACTUAL: " + retrievedProp.getPropertyId() + " (type: " + retrievedProp.getPropertyType() + ")");
+							System.err.println("THIS IS THE ROOT CAUSE OF TCK TEST FAILURES!");
+						} else {
+							System.err.println("✅ Property ID matches expected value - no contamination detected");
+						}
+					} else {
+						System.err.println("WARNING: Could not retrieve created property definition for contamination check");
+					}
 
 					List<String> l = ntd.getProperties();
 					l.add(created.getId());
 					ntd.setProperties(l);
+					System.err.println("Added custom property: " + key + " (Database ID: " + created.getId() + ")");
 				}
 			}
+		} else {
+			System.err.println("No custom property definitions to add");
 		}
 
 		// Create
@@ -409,40 +505,81 @@ public class RepositoryServiceImpl implements RepositoryService,
 	private TypeDefinition sortPropertyDefinitions(
 			String repositoryId, NemakiTypeDefinition nemakiTypeDefinition, TypeDefinition criterion) {
 		
-		// CRITICAL DEBUG: Add logging to trace NPE in sortPropertyDefinitions
-		System.out.println("sortPropertyDefinitions: Starting with typeId=" + nemakiTypeDefinition.getTypeId());
-		System.out.println("sortPropertyDefinitions: Properties count=" + 
+		System.err.println("=== DEBUG sortPropertyDefinitions START for typeId: " + nemakiTypeDefinition.getTypeId() + " ===");
+		System.err.println("NemakiTypeDefinition properties count: " + 
 			(nemakiTypeDefinition.getProperties() != null ? nemakiTypeDefinition.getProperties().size() : "null"));
 		
+		// CRITICAL: This calls buildTypeDefinitionFromDB which should call addBasePropertyDefinitions
+		System.err.println("About to call typeManager.buildTypeDefinitionFromDB...");
 		AbstractTypeDefinition tdf = typeManager
 				.buildTypeDefinitionFromDB(repositoryId, nemakiTypeDefinition);
+		System.err.println("buildTypeDefinitionFromDB completed successfully");
+		
 		Map<String, PropertyDefinition<?>> propDefs = tdf
 				.getPropertyDefinitions();
+		System.err.println("Property definitions from buildTypeDefinitionFromDB count: " + 
+			(propDefs != null ? propDefs.size() : "null"));
+		
+		if (propDefs != null) {
+			System.err.println("Property keys from buildTypeDefinitionFromDB: " + String.join(", ", propDefs.keySet()));
+			if (propDefs.containsKey(PropertyIds.SECONDARY_OBJECT_TYPE_IDS)) {
+				System.err.println("✅ CONFIRMATION: cmis:secondaryObjectTypeIds IS PRESENT from buildTypeDefinitionFromDB");
+			} else {
+				System.err.println("❌ WARNING: cmis:secondaryObjectTypeIds IS MISSING from buildTypeDefinitionFromDB");
+			}
+		}
 
 		LinkedHashMap<String, PropertyDefinition<?>> map = new LinkedHashMap<String, PropertyDefinition<?>>();
 		LinkedHashMap<String, PropertyDefinition<?>> sorted = new LinkedHashMap<String, PropertyDefinition<?>>();
-		if (MapUtils.isNotEmpty(criterion.getPropertyDefinitions())) {
+		
+		Map<String, PropertyDefinition<?>> criterionProps = criterion.getPropertyDefinitions();
+		System.err.println("Criterion property definitions count: " + 
+			(criterionProps != null ? criterionProps.size() : "null"));
+		if (criterionProps != null) {
+			System.err.println("Criterion property keys: " + String.join(", ", criterionProps.keySet()));
+		}
+		
+		if (MapUtils.isNotEmpty(criterionProps)) {
+			System.err.println("Processing criterion properties (MapUtils.isNotEmpty returned true)");
+			
 			// Not updated property definitions
 			for (Entry<String, PropertyDefinition<?>> propDef : propDefs
 					.entrySet()) {
-				if (!criterion.getPropertyDefinitions().containsKey(
-						propDef.getKey())) {
+				if (!criterionProps.containsKey(propDef.getKey())) {
 					map.put(propDef.getKey(), propDef.getValue());
 				}
 			}
+			System.err.println("Added properties not in criterion to map, count: " + map.size());
 
 			// Sorted updated property definitions
-			for (Entry<String, PropertyDefinition<?>> entry : criterion
-					.getPropertyDefinitions().entrySet()) {
+			for (Entry<String, PropertyDefinition<?>> entry : criterionProps.entrySet()) {
 				sorted.put(entry.getKey(), entry.getValue());
 			}
+			System.err.println("Added criterion properties to sorted, count: " + sorted.size());
 
 			// Merge
 			for (Entry<String, PropertyDefinition<?>> entry : sorted.entrySet()) {
 				map.put(entry.getKey(), entry.getValue());
 			}
+			System.err.println("Merged sorted properties into map, final count: " + map.size());
 			tdf.setPropertyDefinitions(map);
+		} else {
+			System.err.println("Criterion properties empty, keeping original properties from buildTypeDefinitionFromDB");
 		}
+
+		// Final validation
+		Map<String, PropertyDefinition<?>> finalProps = tdf.getPropertyDefinitions();
+		System.err.println("Final type definition property count: " + 
+			(finalProps != null ? finalProps.size() : "null"));
+		if (finalProps != null) {
+			System.err.println("Final property keys: " + String.join(", ", finalProps.keySet()));
+			if (finalProps.containsKey(PropertyIds.SECONDARY_OBJECT_TYPE_IDS)) {
+				System.err.println("✅ FINAL CONFIRMATION: cmis:secondaryObjectTypeIds IS PRESENT in final TypeDefinition");
+			} else {
+				System.err.println("❌ FINAL WARNING: cmis:secondaryObjectTypeIds IS MISSING from final TypeDefinition");
+			}
+		}
+		System.err.println("=== DEBUG sortPropertyDefinitions END for typeId: " + nemakiTypeDefinition.getTypeId() + " ===");
 
 		return tdf;
 	}

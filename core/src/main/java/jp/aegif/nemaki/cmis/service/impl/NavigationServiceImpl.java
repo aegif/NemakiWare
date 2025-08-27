@@ -327,6 +327,10 @@ public class NavigationServiceImpl implements NavigationService {
 
 			//Get parent
 			Folder parent = contentService.getParent(repositoryId, objectId);
+			if (parent == null) {
+				// Root folder or orphaned object - no parent exists
+				return new ArrayList<ObjectParentData>();
+			}
 			Lock parentLock = threadLockService.getReadLock(repositoryId, parent.getId());
 
 			try{

@@ -249,10 +249,38 @@ public class ObjectServiceImpl implements ObjectService {
 		System.err.println("contentService class: " + contentService.getClass().getName());
 		System.err.println("repositoryId: " + repositoryId);
 		System.err.println("attachmentNodeId: " + document.getAttachmentNodeId());
-		AttachmentNode attachment = contentService.getAttachment(repositoryId, document.getAttachmentNodeId());
-		System.err.println("=== AFTER CONTENTSERVICE.GETATTACHMENT() CALL ===");
-		System.err.println("attachment class: " + (attachment != null ? attachment.getClass().getName() : "NULL"));
-		System.err.println("attachment InputStream: " + (attachment != null && attachment.getInputStream() != null ? "SUCCESS" : "NULL"));
+		
+		AttachmentNode attachment = null;
+		try {
+			attachment = contentService.getAttachment(repositoryId, document.getAttachmentNodeId());
+			System.err.println("=== AFTER CONTENTSERVICE.GETATTACHMENT() CALL ===");
+			System.err.println("attachment class: " + (attachment != null ? attachment.getClass().getName() : "NULL"));
+			System.err.println("attachment InputStream: " + (attachment != null && attachment.getInputStream() != null ? "SUCCESS" : "NULL"));
+		} catch (CmisObjectNotFoundException e) {
+			// CloudantClientWrapper now throws proper exception when attachment not found
+			System.err.println("=== ATTACHMENT NOT FOUND - RETURNING NULL CONTENT STREAM ===");
+			System.err.println("Document ID: " + document.getId());
+			System.err.println("AttachmentNodeId: " + document.getAttachmentNodeId());
+			System.err.println("Exception: " + e.getMessage());
+			System.err.println("Per CMIS 1.1: Document has no binary content stream - returning null");
+			return null;
+		} catch (Exception e) {
+			// Handle other CloudantClientWrapper exceptions
+			System.err.println("=== ATTACHMENT RETRIEVAL ERROR ===");
+			System.err.println("Document ID: " + document.getId());
+			System.err.println("AttachmentNodeId: " + document.getAttachmentNodeId());
+			System.err.println("Error: " + e.getMessage());
+			throw new RuntimeException("Failed to retrieve content stream: " + e.getMessage(), e);
+		}
+		
+		// CRITICAL FIX: Handle null attachment per CMIS 1.1 specification
+		if (attachment == null) {
+			System.err.println("=== ATTACHMENT NULL - RETURNING NULL CONTENT STREAM ===");
+			System.err.println("Document ID: " + document.getId());
+			System.err.println("AttachmentNodeId: " + document.getAttachmentNodeId());
+			System.err.println("Per CMIS 1.1: Document has no binary content stream - returning null");
+			return null;
+		}
 		
 		attachment.setRangeOffset(rangeOffset);
 		attachment.setRangeLength(rangeLength);
@@ -283,18 +311,19 @@ public class ObjectServiceImpl implements ObjectService {
 		
 		if (attachmentLength <= 0) {
 			System.err.println("🚨 CRITICAL LENGTH FIX: attachment length is " + attachmentLength + " (unknown/invalid)");
-			System.err.println("Calculating actual stream size for: " + name);
 			
-			// Calculate actual stream size using same logic as ContentServiceImpl
-			long actualSize = calculateActualStreamSize(is);
+			// Try to get actual size from CouchDB attachment metadata without consuming stream
+			System.err.println("Attempting to get actual size from CouchDB attachment metadata...");
+			Long actualSizeFromDB = contentService.getAttachmentActualSize(repositoryId, document.getAttachmentNodeId());
 			
-			if (actualSize >= 0) {
-				length = BigInteger.valueOf(actualSize);
-				System.err.println("✅ SUCCESS: Calculated actual stream size: " + actualSize + " bytes for: " + name);
+			if (actualSizeFromDB != null && actualSizeFromDB > 0) {
+				length = BigInteger.valueOf(actualSizeFromDB);
+				System.err.println("✅ SUCCESS: Retrieved actual size from CouchDB metadata: " + actualSizeFromDB + " bytes for: " + name);
 			} else {
-				// If calculation fails, use -1 per CMIS spec (unknown size)
+				// Use CMIS spec -1 for unknown size without consuming the stream
 				length = BigInteger.valueOf(-1);
-				System.err.println("⚠️ WARNING: Failed to calculate stream size, using CMIS standard -1 (unknown size) for: " + name);
+				System.err.println("✅ CMIS COMPLIANCE: Using CMIS standard -1 (unknown size) without consuming stream for: " + name);
+				System.err.println("✅ STREAM PRESERVATION: InputStream remains available for Browser Binding servlet");
 			}
 		} else {
 			// Known size - use the value from database

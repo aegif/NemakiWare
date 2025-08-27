@@ -600,14 +600,10 @@ private ContentService getContentServiceSafe() {
 		try {
 			log.info("Searching for existing .system folder in root of repository: " + repositoryId);
 			
-			// Get root folder ID - use known bedroom root folder ID
-			String rootFolderId;
-			if ("bedroom".equals(repositoryId)) {
-				rootFolderId = "e02f784f8360a02cc14d1314c10038ff";
-			} else if ("canopy".equals(repositoryId)) {
-				rootFolderId = "ddd70e3ed8b847c2a364be81117c57ae";
-			} else {
-				log.error("Unknown repository ID, cannot search for .system folder: " + repositoryId);
+			// Get root folder ID - repository-specific root folder lookup
+			String rootFolderId = getRootFolderIdForRepository(repositoryId);
+			if (rootFolderId == null) {
+				log.error("Cannot determine root folder ID for repository: " + repositoryId);
 				return null;
 			}
 			
@@ -646,14 +642,10 @@ private ContentService getContentServiceSafe() {
 		try {
 			log.info("Creating .system folder for repository: " + repositoryId);
 			
-			// Get root folder ID - use known bedroom root folder ID
-			String rootFolderId;
-			if ("bedroom".equals(repositoryId)) {
-				rootFolderId = "e02f784f8360a02cc14d1314c10038ff";
-			} else if ("canopy".equals(repositoryId)) {
-				rootFolderId = "ddd70e3ed8b847c2a364be81117c57ae";
-			} else {
-				log.error("Unknown repository ID, cannot determine root folder: " + repositoryId);
+			// Get root folder ID - repository-specific root folder lookup
+			String rootFolderId = getRootFolderIdForRepository(repositoryId);
+			if (rootFolderId == null) {
+				log.error("Cannot determine root folder ID for repository: " + repositoryId);
 				return null;
 			}
 			
@@ -687,6 +679,23 @@ private ContentService getContentServiceSafe() {
 		} catch (Exception e) {
 			log.error("Failed to create .system folder for repository: " + repositoryId, e);
 			return null;
+		}
+	}
+
+	/**
+	 * Get root folder ID for the specified repository
+	 * Centralizes repository-specific root folder ID mapping
+	 */
+	private String getRootFolderIdForRepository(String repositoryId) {
+		// Known root folder IDs for supported repositories
+		switch (repositoryId) {
+			case "bedroom":
+				return "e02f784f8360a02cc14d1314c10038ff";
+			case "canopy":
+				return "ddd70e3ed8b847c2a364be81117c57ae";
+			default:
+				log.warn("Unknown repository ID: " + repositoryId + ". Add mapping if this is a valid repository.");
+				return null;
 		}
 	}
 

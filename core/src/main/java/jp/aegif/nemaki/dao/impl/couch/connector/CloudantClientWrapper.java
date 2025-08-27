@@ -1345,10 +1345,14 @@ public class CloudantClientWrapper {
 
 		} catch (NotFoundException e) {
 			log.debug("Attachment not found: " + attachmentName + " in document: " + docId);
-			return null;
+			// Ektorp compatibility: throw exception instead of returning null
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException(
+				"Attachment '" + attachmentName + "' not found in document '" + docId + "'", e);
 		} catch (Exception e) {
-			log.warn("Error retrieving attachment '" + attachmentName + "' from document '" + docId + "' - returning null. This is normal during initial startup: " + e.getMessage());
-			return null;
+			log.warn("Error retrieving attachment '" + attachmentName + "' from document '" + docId + "': " + e.getMessage());
+			// Ektorp compatibility: throw exception instead of swallowing errors
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+				"Failed to retrieve attachment '" + attachmentName + "' from document '" + docId + "'", e);
 		}
 	}
 
@@ -1375,10 +1379,14 @@ public class CloudantClientWrapper {
 
 		} catch (NotFoundException e) {
 			log.debug("Attachment not found: " + attachmentName + " in document: " + docId + " (revision: " + revision + ")");
-			return null;
+			// Ektorp compatibility: throw exception instead of returning null
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException(
+				"Attachment '" + attachmentName + "' not found in document '" + docId + "' (revision: " + revision + ")", e);
 		} catch (Exception e) {
-			log.warn("Error retrieving attachment '" + attachmentName + "' from document '" + docId + "' (revision: " + revision + ") - returning null. This is normal during initial startup: " + e.getMessage());
-			return null;
+			log.warn("Error retrieving attachment '" + attachmentName + "' from document '" + docId + "' (revision: " + revision + "): " + e.getMessage());
+			// Ektorp compatibility: throw exception instead of swallowing errors
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+				"Failed to retrieve attachment '" + attachmentName + "' from document '" + docId + "' (revision: " + revision + ")", e);
 		}
 	}
 

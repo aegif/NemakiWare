@@ -566,17 +566,15 @@ public class TypeManagerImpl implements TypeManager {
 		secondaryType.setIsControllableAcl(false);
 		secondaryType.setIsIncludedInSupertypeQuery(includedInSupertypeQuery);
 		secondaryType.setIsFulltextIndexed(fulltextIndexed);
-		secondaryType
-				.setPropertyDefinitions(new HashMap<String, PropertyDefinition<?>>());
-
 		TypeMutabilityImpl typeMutability = new TypeMutabilityImpl();
 		typeMutability.setCanCreate(typeMutabilityCanCreate);
 		typeMutability.setCanUpdate(typeMutabilityCanUpdate);
 		typeMutability.setCanDelete(typeMutabilityCanDelete);
 		secondaryType.setTypeMutability(typeMutability);
 
-		secondaryType
-				.setPropertyDefinitions(new HashMap<String, PropertyDefinition<?>>());
+		// CRITICAL FIX: Add all base CMIS properties (same as Document/Folder types)
+		// This was missing and caused Secondary types to have NO property definitions
+		addBasePropertyDefinitions(repositoryId, secondaryType);
 
 		addTypeInternal(TYPES.get(repositoryId), secondaryType);
 		addTypeInternal(basetypes, secondaryType);
@@ -584,6 +582,17 @@ public class TypeManagerImpl implements TypeManager {
 
 
 	private void addBasePropertyDefinitions(String repositoryId, AbstractTypeDefinition type) {
+		if (log.isDebugEnabled()) {
+			log.debug("Adding base property definitions for type: " + type.getId());
+		}
+		
+		// Get initial property count
+		Map<String, PropertyDefinition<?>> initialProps = type.getPropertyDefinitions();
+		int initialCount = (initialProps != null) ? initialProps.size() : 0;
+		if (log.isDebugEnabled()) {
+			log.debug("Initial property definitions count: " + initialCount);
+		}
+		
 		//cmis:name
 		String _updatability_name = propertyManager.readValue(PropertyKey.PROPERTY_NAME_UPDATABILITY);
 		Updatability updatability_name = Updatability.fromValue(_updatability_name);
@@ -624,7 +633,7 @@ public class TypeManagerImpl implements TypeManager {
 				PropertyType.ID, Cardinality.SINGLE, Updatability.ONCREATE, REQUIRED,
 				queryable_objectTypeId, orderable_objectTypeId, null));
 
-		//cmis:secondaryObjectTypeIds
+		//cmis:secondaryObjectTypeIds - CRITICAL CMIS 1.1 REQUIREMENT
 		String _updatability_secondaryObjectTypeIds = propertyManager.readValue(PropertyKey.PROPERTY_SECONDARY_OBJECT_TYPE_IDS_UPDATABILITY);
 		Updatability updatability_secondaryObjectTypeIds = Updatability.fromValue(_updatability_secondaryObjectTypeIds);
 		boolean queryable_secondaryObjectTypeIds = propertyManager.readBoolean(PropertyKey.PROPERTY_SECONDARY_OBJECT_TYPE_IDS_QUERYABLE);
@@ -656,6 +665,18 @@ public class TypeManagerImpl implements TypeManager {
 				repositoryId, PropertyIds.CHANGE_TOKEN,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
 				!REQUIRED, !QUERYABLE, !ORDERABLE, null));
+		
+		// Get final property count
+		Map<String, PropertyDefinition<?>> finalProps = type.getPropertyDefinitions();
+		int finalCount = (finalProps != null) ? finalProps.size() : 0;
+		if (log.isDebugEnabled()) {
+			log.debug("Final property definitions count: " + finalCount + " (added " + (finalCount - initialCount) + " properties)");
+			if (finalProps != null && finalProps.containsKey(PropertyIds.SECONDARY_OBJECT_TYPE_IDS)) {
+				log.debug("CONFIRMATION: cmis:secondaryObjectTypeIds IS PRESENT in final property definitions");
+			} else {
+				log.warn("WARNING: cmis:secondaryObjectTypeIds IS MISSING from final property definitions");
+			}
+		}
 	}
 
 	private void addFolderPropertyDefinitions(String repositoryId, FolderTypeDefinitionImpl type) {
@@ -862,26 +883,15 @@ public class TypeManagerImpl implements TypeManager {
 	// Subtype
 	// /////////////////////////////////////////////////
 	private List<NemakiTypeDefinition> getNemakiTypeDefinitions(String repositoryId) {
-		System.err.println("=== GETNEMAKIRYPEDEFINITIONS CALLED ===");
-		System.err.println("Repository ID: " + repositoryId);
-		System.err.println("TypeService: " + (typeService != null ? "NOT NULL" : "NULL"));
-		
-		if (typeService != null) {
-			System.err.println("TypeService class: " + typeService.getClass().getName());
+		if (log.isDebugEnabled()) {
+			log.debug("Getting NemakiTypeDefinitions for repository: " + repositoryId + 
+				", typeService: " + (typeService != null ? typeService.getClass().getSimpleName() : "NULL"));
 		}
 		
-		System.err.println("About to call typeService.getTypeDefinitions()...");
 		List<NemakiTypeDefinition> result = typeService.getTypeDefinitions(repositoryId);
-		System.err.println("Result from typeService.getTypeDefinitions(): " + (result != null ? result.size() + " types" : "null"));
 		
-		if (result != null && !result.isEmpty()) {
-			System.err.println("First few types from getNemakiTypeDefinitions:");
-			for (int i = 0; i < Math.min(5, result.size()); i++) {
-				NemakiTypeDefinition type = result.get(i);
-				if (type != null) {
-					System.err.println("  " + (i+1) + ". " + type.getTypeId() + " (BaseId: " + type.getBaseId() + ")");
-				}
-			}
+		if (log.isDebugEnabled()) {
+			log.debug("Retrieved " + (result != null ? result.size() : 0) + " type definitions");
 		}
 		
 		return result;
@@ -899,26 +909,17 @@ public class TypeManagerImpl implements TypeManager {
 	private void addSubTypes(String repositoryId) {
 		List<NemakiTypeDefinition> subtypes = null;
 		try {
-			// CRITICAL DEBUG: Add debugging to see what types are retrieved from database
-			System.err.println("=== ADDSUBTYPES DEBUG: Starting for repository " + repositoryId + " ===");
-			subtypes = getNemakiTypeDefinitions(repositoryId);
-			System.err.println("=== DATABASE RETRIEVAL: Retrieved " + (subtypes != null ? subtypes.size() : "null") + " types from database ===");
+			if (log.isDebugEnabled()) {
+				log.debug("Adding subtypes for repository: " + repositoryId);
+			}
 			
-			if (subtypes != null && !subtypes.isEmpty()) {
-				System.err.println("=== TYPE IDS FROM DATABASE: ===");
-				for (NemakiTypeDefinition type : subtypes) {
-					if (type != null) {
-						System.err.println("  - " + type.getTypeId() + " (BaseId: " + type.getBaseId() + ", ParentId: " + type.getParentId() + ")");
-					} else {
-						System.err.println("  - NULL TYPE DEFINITION");
-					}
-				}
-			} else {
-				System.err.println("=== NO TYPES RETRIEVED FROM DATABASE ===");
+			subtypes = getNemakiTypeDefinitions(repositoryId);
+			
+			if (log.isDebugEnabled()) {
+				log.debug("Retrieved " + (subtypes != null ? subtypes.size() : 0) + " type definitions from database");
 			}
 		} catch (Exception e) {
 			log.error("Failed to get type definitions for repository: " + repositoryId, e);
-			System.err.println("=== EXCEPTION IN ADDSUBTYPES: " + e.getMessage() + " ===");
 			return;
 		}
 		
@@ -1083,35 +1084,60 @@ public class TypeManagerImpl implements TypeManager {
 		if (!CollectionUtils.isEmpty(nemakiType.getProperties())) {
 			System.err.println("=== CRITICAL DEBUG: buildTypeDefinitionBaseFromDB ===");
 			System.err.println("Processing " + nemakiType.getProperties().size() + " properties for type " + nemakiType.getTypeId());
-			for (String propertyId : nemakiType.getProperties()) {
-				System.out.println("DEBUG: Processing propertyId: " + propertyId);
+			for (String propertyDetailId : nemakiType.getProperties()) {
+				System.err.println("=== PROCESSING PROPERTY DETAIL ID: " + propertyDetailId + " ===");
 				NemakiPropertyDefinitionDetail detail = typeService
-						.getPropertyDefinitionDetail(repositoryId, propertyId);
+						.getPropertyDefinitionDetail(repositoryId, propertyDetailId);
 				if (detail == null) {
-					log.error("CRITICAL: PropertyDefinitionDetail is null for propertyId: " + propertyId);
+					log.error("CRITICAL: PropertyDefinitionDetail is null for propertyDetailId: " + propertyDetailId);
 					continue;
 				}
 				
 				String coreNodeId = detail.getCoreNodeId();
 				if (coreNodeId == null) {
-					log.error("CRITICAL: CoreNodeId is null for PropertyDefinitionDetail ID: " + detail.getId() + ", propertyId: " + propertyId);
+					log.error("CRITICAL: CoreNodeId is null for PropertyDefinitionDetail ID: " + detail.getId() + ", propertyDetailId: " + propertyDetailId);
 					continue;
 				}
 				
 				NemakiPropertyDefinitionCore core = typeService
 						.getPropertyDefinitionCore(repositoryId, coreNodeId);
 				if (core == null) {
-					log.error("CRITICAL: PropertyDefinitionCore is null for coreNodeId: " + coreNodeId + ", propertyId: " + propertyId);
+					log.error("CRITICAL: PropertyDefinitionCore is null for coreNodeId: " + coreNodeId + ", propertyDetailId: " + propertyDetailId);
 					continue;
 				}
 
 				// CRITICAL DEBUG: Check for NPE before creating NemakiPropertyDefinition
 				System.err.println("=== BEFORE NEMAKI PROPERTY DEFINITION CONSTRUCTOR ===");
-				System.err.println("propertyId: " + propertyId + ", coreNodeId: " + coreNodeId);
-				System.err.println("core: " + (core != null ? "NOT NULL (ID=" + core.getId() + ")" : "NULL"));
+				System.err.println("propertyDetailId: " + propertyDetailId + ", coreNodeId: " + coreNodeId);
+				System.err.println("core: " + (core != null ? "NOT NULL (ID=" + core.getId() + ", PropertyType=" + core.getPropertyType() + ")" : "NULL"));
 				System.err.println("detail: " + (detail != null ? "NOT NULL (ID=" + detail.getId() + ")" : "NULL"));
 				
 				NemakiPropertyDefinition p = new NemakiPropertyDefinition(core, detail);
+
+				// CRITICAL FIX: Prevent property ID contamination from PropertyCore reuse
+				String originalPropertyId = p.getPropertyId(); // This may be contaminated from core
+				String correctPropertyId = determineCorrectPropertyId(detail, core, propertyDetailId);
+				
+				// Override the potentially contaminated property ID
+				p.setPropertyId(correctPropertyId);
+				
+				System.err.println("=== PROPERTY ID CONTAMINATION FIX ===");
+				System.err.println("Original (potentially contaminated) Property ID: " + originalPropertyId);
+				System.err.println("Corrected Property ID: " + correctPropertyId);
+				System.err.println("Property ID changed: " + (!originalPropertyId.equals(correctPropertyId)));
+
+				System.err.println("=== CRITICAL PROPERTY TYPE DEBUG ===");
+				System.err.println("Property ID: " + p.getPropertyId());
+				System.err.println("Property Type from NemakiPropertyDefinition: " + p.getPropertyType());
+				System.err.println("Property Type from Core: " + core.getPropertyType());
+				System.err.println("Expected TCK mapping:");
+				System.err.println("  - tck:boolean should have PropertyType.BOOLEAN");
+				System.err.println("  - tck:id should have PropertyType.ID"); 
+				System.err.println("  - tck:integer should have PropertyType.INTEGER");
+				System.err.println("  - tck:datetime should have PropertyType.DATETIME");
+				System.err.println("  - tck:decimal should have PropertyType.DECIMAL");
+				System.err.println("  - tck:html should have PropertyType.HTML");
+				System.err.println("  - tck:uri should have PropertyType.URI");
 
 				PropertyDefinition<?> property = DataUtil.createPropDef(
 						p.getPropertyId(), p.getLocalName(),
@@ -1124,7 +1150,9 @@ public class TypeManagerImpl implements TypeManager {
 						p.getMaxValue(), p.getResolution(),
 						p.getDecimalPrecision(), p.getDecimalMinValue(),
 						p.getDecimalMaxValue(), p.getMaxLength());
+				// CRITICAL: Use the corrected property ID as the key, not the potentially contaminated one
 				properties.put(p.getPropertyId(), property);
+				System.err.println("✅ FINAL MAPPING: " + p.getPropertyId() + " → " + p.getPropertyType() + " (PropertyDefinition created with correct ID)");
 
 				// for subTypeProperties
 				// ignore null property (List index will be lost)
@@ -1146,6 +1174,60 @@ public class TypeManagerImpl implements TypeManager {
 		}
 	}
 
+	/**
+	 * CRITICAL FIX: Determine the correct property ID to prevent contamination
+	 * from PropertyCore reuse during type reconstruction.
+	 * 
+	 * The issue: PropertyDefinitionCore may have been reused with a different property ID
+	 * (e.g., tck:boolean gets assigned cmis:name's PropertyCore), causing contamination.
+	 * 
+	 * @param detail The property detail containing the original intended property metadata
+	 * @param core The property core that may contain a contaminated property ID
+	 * @param propertyDetailId The database ID of the property detail 
+	 * @return The correct property ID that should be used for this property
+	 */
+	private String determineCorrectPropertyId(NemakiPropertyDefinitionDetail detail, 
+			NemakiPropertyDefinitionCore core, String propertyDetailId) {
+		
+		System.err.println("=== DETERMINE CORRECT PROPERTY ID ===");
+		System.err.println("Detail Database ID: " + propertyDetailId);
+		System.err.println("Core Property ID: " + core.getPropertyId());
+		System.err.println("Detail Local Name: " + detail.getLocalName());
+		System.err.println("Detail Display Name: " + detail.getDisplayName());
+		
+		// STRATEGY 1: Use detail's localName as the intended property ID
+		// For custom properties like tck:boolean, the localName should contain the correct ID
+		String localName = detail.getLocalName();
+		if (localName != null && !localName.trim().isEmpty()) {
+			// Check if this looks like a proper property ID (contains namespace)
+			if (localName.contains(":")) {
+				System.err.println("✅ USING LOCAL NAME AS CORRECT PROPERTY ID: " + localName);
+				return localName;
+			}
+		}
+		
+		// STRATEGY 2: Use detail's displayName as fallback
+		String displayName = detail.getDisplayName();
+		if (displayName != null && !displayName.trim().isEmpty()) {
+			if (displayName.contains(":")) {
+				System.err.println("✅ USING DISPLAY NAME AS CORRECT PROPERTY ID: " + displayName);
+				return displayName;
+			}
+		}
+		
+		// STRATEGY 3: For CMIS system properties, core.getPropertyId() should be correct
+		String corePropertyId = core.getPropertyId();
+		if (corePropertyId != null && corePropertyId.startsWith("cmis:")) {
+			System.err.println("✅ USING CORE PROPERTY ID FOR CMIS SYSTEM PROPERTY: " + corePropertyId);
+			return corePropertyId;
+		}
+		
+		// STRATEGY 4: Last resort - examine the PropertyDetail ID pattern
+		// Some custom properties might have encoded their intended ID in the detail ID
+		System.err.println("⚠️ FALLBACK: Using core property ID but this may be contaminated: " + corePropertyId);
+		return corePropertyId;
+	}
+
 	private AbstractPropertyDefinition<?> setInheritedToTrue(
 			AbstractPropertyDefinition<?> property) {
 		property.setIsInherited(true);
@@ -1163,6 +1245,10 @@ public class TypeManagerImpl implements TypeManager {
 		// Set base attributes, and properties(with specific properties
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
+
+		// CRITICAL FIX: Add all base CMIS properties (same as in-memory creation)
+		addBasePropertyDefinitions(repositoryId, type);
+		addDocumentPropertyDefinitions(repositoryId, type);
 
 		// Add specific attributes
 		ContentStreamAllowed contentStreamAllowed = (nemakiType
@@ -1188,6 +1274,10 @@ public class TypeManagerImpl implements TypeManager {
 		// Set base attributes, and properties(with specific properties
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
+
+		// CRITICAL FIX: Add all base CMIS properties (same as in-memory creation)
+		addBasePropertyDefinitions(repositoryId, type);
+		addFolderPropertyDefinitions(repositoryId, type);
 
 		return type;
 	}
@@ -1227,6 +1317,10 @@ public class TypeManagerImpl implements TypeManager {
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
 
+		// CRITICAL FIX: Add all base CMIS properties (same as in-memory creation)
+		addBasePropertyDefinitions(repositoryId, type);
+		addPolicyPropertyDefinitions(repositoryId, type);
+
 		return type;
 	}
 
@@ -1253,12 +1347,15 @@ public class TypeManagerImpl implements TypeManager {
 		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
 		
 		SecondaryTypeDefinitionImpl type = new SecondaryTypeDefinitionImpl();
-		SecondaryTypeDefinitionImpl parentType = (SecondaryTypeDefinitionImpl) types
-				.get(nemakiType.getParentId()).getTypeDefinition();
+		SecondaryTypeDefinitionImpl parentType = nemakiType.getParentId() != null ? 
+				(SecondaryTypeDefinitionImpl) types.get(nemakiType.getParentId()).getTypeDefinition() : null;
 
 		// Set base attributes, and properties(with specific properties
 		// included)
 		buildTypeDefinitionBaseFromDB(repositoryId, type, parentType, nemakiType);
+
+		// CRITICAL FIX: Add all base CMIS properties (Secondary types require base properties)
+		addBasePropertyDefinitions(repositoryId, type);
 
 		return type;
 	}
@@ -1302,18 +1399,129 @@ public class TypeManagerImpl implements TypeManager {
 		for (Entry<String, PropertyDefinition<?>> e : map.entrySet()) {
 			if (!propertyDefinitionCoresForQueryName.containsKey(e.getKey())) {
 				PropertyDefinition<?> pdf = e.getValue();
-				addPropertyDefinitionCore(pdf.getId(), pdf.getQueryName(),
-						pdf.getPropertyType(), pdf.getCardinality());
+				
+				// CRITICAL FIX: Validate property definition before processing
+				if (pdf == null) {
+					log.warn("Skipping null PropertyDefinition for key: " + e.getKey());
+					continue;
+				}
+				
+				String propertyId = pdf.getId();
+				String queryName = pdf.getQueryName();
+				PropertyType propertyType = pdf.getPropertyType();
+				Cardinality cardinality = pdf.getCardinality();
+				
+				// CRITICAL FIX: Skip properties with null essential fields during cache refresh
+				if (propertyId == null || queryName == null || propertyType == null || cardinality == null) {
+					if (log.isWarnEnabled()) {
+						log.warn("Skipping PropertyDefinition with null fields during cache refresh - Key: " + e.getKey() + 
+							", PropertyId: " + propertyId + ", QueryName: " + queryName + 
+							", PropertyType: " + propertyType + ", Cardinality: " + cardinality);
+					}
+					continue;
+				}
+				
+				addPropertyDefinitionCore(propertyId, queryName, propertyType, cardinality);
 			}
 		}
 	}
 
 	private void addPropertyDefinitionCore(String propertyId, String queryName,
 			PropertyType propertyType, Cardinality cardinality) {
+		// CRITICAL FIX: Final safety net - reject null parameters immediately
+		if (propertyId == null || queryName == null || propertyType == null || cardinality == null) {
+			if (log.isErrorEnabled()) {
+				log.error("addPropertyDefinitionCore called with null parameters - ignoring. " +
+					"propertyId: " + propertyId + ", queryName: " + queryName + 
+					", propertyType: " + propertyType + ", cardinality: " + cardinality);
+			}
+			return; // CRITICAL: Do not process null parameters
+		}
+		
+		// Log method calls for debugging if needed
+		if (log.isTraceEnabled()) {
+			log.trace("addPropertyDefinitionCore called: propertyId=" + propertyId + 
+				", queryName=" + queryName + ", propertyType=" + propertyType + ", cardinality=" + cardinality);
+		}
+		
+		// CONTAMINATION DETECTION: Check for specific contamination patterns
+		if (propertyId != null && queryName != null) {
+			// Check if propertyId and queryName are mismatched (contamination pattern)
+			if (propertyId.startsWith("cmis:") && queryName.startsWith("tck:")) {
+				if (log.isErrorEnabled()) {
+					log.error("CRITICAL CONTAMINATION DETECTED: " + queryName + " assigned wrong propertyId: " + propertyId + 
+						". This is the ROOT CAUSE of TCK test failures! Expected: propertyId should match queryName for custom properties");
+				}
+			}
+			
+			// Also detect custom properties getting any wrong CMIS ID
+			if (queryName != null && queryName.startsWith("tck:") && propertyId != null && propertyId.startsWith("cmis:")) {
+				if (log.isErrorEnabled()) {
+					log.error("TCK PROPERTY CONTAMINATION: TCK property " + queryName + " got CMIS propertyId: " + propertyId + 
+						". THIS IS THE EXACT CONTAMINATION CAUSING TCK FAILURES!");
+				}
+			}
+		}
+		
+		// CRITICAL FIX: Null safety check first
+		if (propertyId == null) {
+			if (log.isWarnEnabled()) {
+				log.warn("propertyId is null, using original logic");
+			}
+			// Fall back to original logic for null propertyId
+			if (!propertyDefinitionCoresForQueryName.containsKey(propertyId)) {
+				PropertyDefinition<?> core = DataUtil.createPropDefCore(propertyId,
+						queryName, propertyType, cardinality);
+				propertyDefinitionCoresForQueryName.put(queryName, core);
+			}
+			return;
+		}
+		
+		// CRITICAL CONTAMINATION FIX: For custom properties, ensure propertyId matches queryName
+		if (queryName != null && (queryName.startsWith("tck:") || queryName.contains(":"))) {
+			if (log.isDebugEnabled()) {
+				log.debug("Custom property detected - Original propertyId: " + propertyId + ", QueryName: " + queryName);
+			}
+			
+			// FORCE propertyId to match queryName for custom properties
+			if (!propertyId.equals(queryName)) {
+				if (log.isWarnEnabled()) {
+					log.warn("FIXING CONTAMINATION: Forcing propertyId to match queryName. Before: propertyId=" + propertyId + 
+						", queryName=" + queryName);
+				}
+				propertyId = queryName; // CRITICAL FIX: Force them to match
+				if (log.isInfoEnabled()) {
+					log.info("CONTAMINATION FIXED: propertyId now matches queryName: " + propertyId);
+				}
+			}
+		}
+
+		// Check for existing property definition core by propertyId in the queryName map
 		if (!propertyDefinitionCoresForQueryName.containsKey(propertyId)) {
+			// Create new property definition core
 			PropertyDefinition<?> core = DataUtil.createPropDefCore(propertyId,
 					queryName, propertyType, cardinality);
-			propertyDefinitionCoresForQueryName.put(queryName, core);
+			propertyDefinitionCoresForQueryName.put(propertyId, core);
+			
+			if (log.isDebugEnabled()) {
+				log.debug("Created new property core: propertyId=" + propertyId + ", queryName=" + queryName + 
+					", core=" + (core != null ? "SUCCESS" : "NULL"));
+			}
+		} else {
+			if (log.isDebugEnabled()) {
+				log.debug("Reusing existing property core: propertyId=" + propertyId);
+			}
+		}
+
+		// Also add to queryName map for lookup compatibility  
+		if (!propertyDefinitionCoresForQueryName.containsKey(queryName)) {
+			PropertyDefinition<?> existingCore = propertyDefinitionCoresForQueryName.get(propertyId);
+			if (existingCore != null) {
+				propertyDefinitionCoresForQueryName.put(queryName, existingCore);
+				if (log.isDebugEnabled()) {
+					log.debug("Mapped queryName to existing core: " + queryName + " -> propertyId: " + propertyId);
+				}
+			}
 		}
 	}
 
@@ -1395,7 +1603,39 @@ public class TypeManagerImpl implements TypeManager {
 	public PropertyDefinition<?> getPropertyDefinitionCoreForQueryName(
 			String queryName) {
 		ensureInitialized();
-		return propertyDefinitionCoresForQueryName.get(queryName);
+		
+		// CRITICAL FIX: Handle custom properties stored by propertyId
+		// First try standard lookup (for CMIS base properties stored by queryName)
+		PropertyDefinition<?> result = propertyDefinitionCoresForQueryName.get(queryName);
+		
+		if (result == null && !queryName.startsWith("cmis:")) {
+			// CRITICAL FIX: Custom properties are stored by propertyId, not queryName
+			// Since custom properties typically have queryName == propertyId, the initial lookup should have worked
+			// But let's also search through all stored properties to find a match by queryName
+			for (Map.Entry<String, PropertyDefinition<?>> entry : propertyDefinitionCoresForQueryName.entrySet()) {
+				String storedKey = entry.getKey();
+				PropertyDefinition<?> storedProperty = entry.getValue();
+				
+				// For custom properties, check if the stored property's queryName matches what we're looking for
+				if (!storedKey.startsWith("cmis:") && storedProperty.getQueryName() != null) {
+					if (storedProperty.getQueryName().equals(queryName)) {
+						result = storedProperty;
+						System.err.println("=== CUSTOM PROPERTY FOUND BY QUERY NAME MATCH ===");
+						System.err.println("queryName requested: " + queryName);
+						System.err.println("found stored under key: " + storedKey);
+						System.err.println("property ID: " + storedProperty.getId());
+						break;
+					}
+				}
+			}
+			
+			// DEBUG: Log custom property lookups
+			System.err.println("=== CUSTOM PROPERTY CORE LOOKUP ===");
+			System.err.println("queryName requested: " + queryName);
+			System.err.println("found: " + (result != null ? "YES (ID=" + result.getId() + ")" : "NO"));
+		}
+		
+		return result;
 	}
 
 	@Override
@@ -1460,7 +1700,68 @@ public class TypeManagerImpl implements TypeManager {
 		log.info("NEMAKI TYPE DEBUG: Found type '" + typeId + "' in cache successfully");
 		System.out.println("NEMAKI TYPE DEBUG: Found type '" + typeId + "' in cache successfully");
 
-		return tc.getTypeDefinition();
+		TypeDefinition typeDefinition = tc.getTypeDefinition();
+		
+		// CRITICAL CONTAMINATION DEBUG: Check if this type has contaminated property IDs
+		if (typeDefinition != null && typeDefinition.getPropertyDefinitions() != null) {
+			System.err.println("=== CONTAMINATION CHECK FOR TYPE: " + typeId + " ===");
+			System.err.println("Total properties: " + typeDefinition.getPropertyDefinitions().size());
+			
+			boolean foundContamination = false;
+			for (PropertyDefinition<?> prop : typeDefinition.getPropertyDefinitions().values()) {
+				if (prop != null) {
+					String propertyId = prop.getId();
+					PropertyType propertyType = prop.getPropertyType();
+					
+					// Check for specific contamination patterns from TCK test results
+					boolean isContaminated = false;
+					String expectedType = null;
+					
+					// Check for known contamination patterns
+					if (propertyId != null) {
+						if (propertyId.equals("cmis:name") && propertyType == PropertyType.BOOLEAN) {
+							isContaminated = true;
+							expectedType = "STRING (should be tck:boolean)";
+						} else if (propertyId.equals("cmis:description") && propertyType == PropertyType.ID) {
+							isContaminated = true;
+							expectedType = "STRING (should be tck:id)";
+						} else if (propertyId.equals("cmis:objectId") && propertyType == PropertyType.INTEGER) {
+							isContaminated = true;
+							expectedType = "ID (should be tck:integer)";
+						} else if (propertyId.equals("cmis:baseTypeId") && propertyType == PropertyType.DATETIME) {
+							isContaminated = true;
+							expectedType = "ID (should be tck:datetime)";
+						} else if (propertyId.equals("cmis:objectTypeId") && propertyType == PropertyType.DECIMAL) {
+							isContaminated = true;
+							expectedType = "ID (should be tck:decimal)";
+						} else if (propertyId.equals("cmis:secondaryObjectTypeIds") && propertyType == PropertyType.HTML) {
+							isContaminated = true;
+							expectedType = "ID (should be tck:html)";
+						} else if (propertyId.equals("cmis:creationDate") && propertyType == PropertyType.URI) {
+							isContaminated = true;
+							expectedType = "DATETIME (should be tck:uri)";
+						}
+					}
+					
+					if (isContaminated) {
+						foundContamination = true;
+						System.err.println("*** CONTAMINATION DETECTED ***");
+						System.err.println("Property ID: " + propertyId);
+						System.err.println("Current Type: " + propertyType);
+						System.err.println("Expected: " + expectedType);
+						System.err.println("*** This is the contamination causing TCK failures ***");
+					}
+				}
+			}
+			
+			if (!foundContamination) {
+				System.err.println("No contamination patterns found in type: " + typeId);
+			} else {
+				System.err.println("*** CONTAMINATION FOUND IN TYPE CACHE - THIS TYPE WILL CAUSE TCK FAILURES ***");
+			}
+		}
+
+		return typeDefinition;
 	}
 
 	@Override

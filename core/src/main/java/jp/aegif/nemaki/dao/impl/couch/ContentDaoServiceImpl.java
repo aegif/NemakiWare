@@ -1868,31 +1868,21 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public Document update(String repositoryId, Document document) {
 		CouchDocument update = new CouchDocument(document);
 		
-		// COMPREHENSIVE REVISION MANAGEMENT:
-		// Check if document already has revision from Content layer (new capability)
-		if (document.getRevision() != null && !document.getRevision().isEmpty()) {
-			// Use revision from Content layer - full Ektorp-style state management
-			update.setRevision(document.getRevision());
-			log.debug("COMPREHENSIVE: Using revision from Content layer: " + document.getRevision());
-		} else {
-			// Fallback: fetch current revision from database
-			log.debug("COMPREHENSIVE: Content layer has no revision, fetching from database for document: " + document.getId());
-			CouchDocument cd = connectorPool.getClient(repositoryId).get(CouchDocument.class, document.getId());
-			if (cd != null) {
-				update.setRevision(cd.getRevision());
-				log.debug("COMPREHENSIVE: Fetched revision from database: " + cd.getRevision());
-			} else {
-				throw new IllegalArgumentException("Cannot update document " + document.getId() + ": not found in database");
-			}
+		// Ektorp-style: Object must maintain its own revision state
+		// CloudantClientWrapper expects objects to have valid revisions
+		if (update.getRevision() == null || update.getRevision().isEmpty()) {
+			throw new IllegalArgumentException("Document " + document.getId() + " has no revision - " +
+				"objects must maintain revision state per Ektorp patterns");
 		}
-
-		// Use Ektorp-style update - CloudantClientWrapper will trust this revision completely
+		
+		log.debug("Ektorp-style update: using object revision " + update.getRevision() + " for document " + document.getId());
+		
+		// CloudantClientWrapper will handle the actual revision management
 		connectorPool.getClient(repositoryId).update(update);
 		
-		// COMPREHENSIVE REVISION MANAGEMENT: Return updated object with new revision maintained by wrapper
-		// The CouchNodeBase.convert() will now preserve the updated revision information
+		// Return updated object with new revision maintained by CloudantClientWrapper
 		Document result = update.convert();
-		log.debug("COMPREHENSIVE: Update completed, new revision: " + result.getRevision());
+		log.debug("Update completed, new revision: " + result.getRevision());
 		return result;
 	}
 
@@ -1921,37 +1911,23 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Folder update(String repositoryId, Folder folder) {
-		log.error("COMPREHENSIVE DEBUG: DAO update(Folder) called for ID=" + folder.getId() + 
-			", revision=" + folder.getRevision());
-		
 		CouchFolder update = new CouchFolder(folder);
-		log.error("COMPREHENSIVE DEBUG: CouchFolder created, revision=" + update.getRevision());
 		
-		// COMPREHENSIVE REVISION MANAGEMENT:
-		// Check if folder already has revision from Content layer (new capability)
-		if (folder.getRevision() != null && !folder.getRevision().isEmpty()) {
-			// Use revision from Content layer - full Ektorp-style state management
-			update.setRevision(folder.getRevision());
-			log.error("COMPREHENSIVE DEBUG: Using revision from Content layer: " + folder.getRevision());
-		} else {
-			// Fallback: fetch current revision from database
-			log.error("COMPREHENSIVE DEBUG: Content layer has no revision, fetching from database for folder: " + folder.getId());
-			CouchFolder cf = connectorPool.getClient(repositoryId).get(CouchFolder.class, folder.getId());
-			if (cf != null) {
-				update.setRevision(cf.getRevision());
-				log.error("COMPREHENSIVE DEBUG: Fetched revision from database: " + cf.getRevision());
-			} else {
-				throw new IllegalArgumentException("Cannot update folder " + folder.getId() + ": not found in database");
-			}
+		// Ektorp-style: Object must maintain its own revision state
+		// CloudantClientWrapper expects objects to have valid revisions
+		if (update.getRevision() == null || update.getRevision().isEmpty()) {
+			throw new IllegalArgumentException("Folder " + folder.getId() + " has no revision - " +
+				"objects must maintain revision state per Ektorp patterns");
 		}
-
-		// Use Ektorp-style update - CloudantClientWrapper will trust this revision completely
+		
+		log.debug("Ektorp-style update: using object revision " + update.getRevision() + " for folder " + folder.getId());
+		
+		// CloudantClientWrapper will handle the actual revision management
 		connectorPool.getClient(repositoryId).update(update);
 		
-		// COMPREHENSIVE REVISION MANAGEMENT: Return updated object with new revision maintained by wrapper
-		// The CouchNodeBase.convert() will now preserve the updated revision information
+		// Return updated object with new revision maintained by CloudantClientWrapper
 		Folder result = update.convert();
-		log.debug("COMPREHENSIVE: Update completed, new revision: " + result.getRevision());
+		log.debug("Update completed, new revision: " + result.getRevision());
 		return result;
 	}
 
@@ -1964,31 +1940,21 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public Relationship update(String repositoryId, Relationship relationship) {
 		CouchRelationship update = new CouchRelationship(relationship);
 		
-		// COMPREHENSIVE REVISION MANAGEMENT:
-		// Check if relationship already has revision from Content layer (new capability)
-		if (relationship.getRevision() != null && !relationship.getRevision().isEmpty()) {
-			// Use revision from Content layer - full Ektorp-style state management
-			update.setRevision(relationship.getRevision());
-			log.debug("COMPREHENSIVE: Using revision from Content layer: " + relationship.getRevision());
-		} else {
-			// Fallback: fetch current revision from database
-			log.debug("COMPREHENSIVE: Content layer has no revision, fetching from database for relationship: " + relationship.getId());
-			CouchRelationship cr = connectorPool.getClient(repositoryId).get(CouchRelationship.class, relationship.getId());
-			if (cr != null) {
-				update.setRevision(cr.getRevision());
-				log.debug("COMPREHENSIVE: Fetched revision from database: " + cr.getRevision());
-			} else {
-				throw new IllegalArgumentException("Cannot update relationship " + relationship.getId() + ": not found in database");
-			}
+		// Ektorp-style: Object must maintain its own revision state
+		// CloudantClientWrapper expects objects to have valid revisions
+		if (update.getRevision() == null || update.getRevision().isEmpty()) {
+			throw new IllegalArgumentException("Relationship " + relationship.getId() + " has no revision - " +
+				"objects must maintain revision state per Ektorp patterns");
 		}
-
-		// Use Ektorp-style update - CloudantClientWrapper will trust this revision completely
+		
+		log.debug("Ektorp-style update: using object revision " + update.getRevision() + " for relationship " + relationship.getId());
+		
+		// CloudantClientWrapper will handle the actual revision management
 		connectorPool.getClient(repositoryId).update(update);
 		
-		// COMPREHENSIVE REVISION MANAGEMENT: Return updated object with new revision maintained by wrapper
-		// The CouchNodeBase.convert() will now preserve the updated revision information
+		// Return updated object with new revision maintained by CloudantClientWrapper
 		Relationship result = update.convert();
-		log.debug("COMPREHENSIVE: Update completed, new revision: " + result.getRevision());
+		log.debug("Update completed, new revision: " + result.getRevision());
 		return result;
 	}
 
@@ -1996,31 +1962,21 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public Policy update(String repositoryId, Policy policy) {
 		CouchPolicy update = new CouchPolicy(policy);
 		
-		// COMPREHENSIVE REVISION MANAGEMENT:
-		// Check if policy already has revision from Content layer (new capability)
-		if (policy.getRevision() != null && !policy.getRevision().isEmpty()) {
-			// Use revision from Content layer - full Ektorp-style state management
-			update.setRevision(policy.getRevision());
-			log.debug("COMPREHENSIVE: Using revision from Content layer: " + policy.getRevision());
-		} else {
-			// Fallback: fetch current revision from database
-			log.debug("COMPREHENSIVE: Content layer has no revision, fetching from database for policy: " + policy.getId());
-			CouchPolicy cp = connectorPool.getClient(repositoryId).get(CouchPolicy.class, policy.getId());
-			if (cp != null) {
-				update.setRevision(cp.getRevision());
-				log.debug("COMPREHENSIVE: Fetched revision from database: " + cp.getRevision());
-			} else {
-				throw new IllegalArgumentException("Cannot update policy " + policy.getId() + ": not found in database");
-			}
+		// Ektorp-style: Object must maintain its own revision state
+		// CloudantClientWrapper expects objects to have valid revisions
+		if (update.getRevision() == null || update.getRevision().isEmpty()) {
+			throw new IllegalArgumentException("Policy " + policy.getId() + " has no revision - " +
+				"objects must maintain revision state per Ektorp patterns");
 		}
-
-		// Use Ektorp-style update - CloudantClientWrapper will trust this revision completely
+		
+		log.debug("Ektorp-style update: using object revision " + update.getRevision() + " for policy " + policy.getId());
+		
+		// CloudantClientWrapper will handle the actual revision management
 		connectorPool.getClient(repositoryId).update(update);
 		
-		// COMPREHENSIVE REVISION MANAGEMENT: Return updated object with new revision maintained by wrapper
-		// The CouchNodeBase.convert() will now preserve the updated revision information
+		// Return updated object with new revision maintained by CloudantClientWrapper
 		Policy result = update.convert();
-		log.debug("COMPREHENSIVE: Update completed, new revision: " + result.getRevision());
+		log.debug("Update completed, new revision: " + result.getRevision());
 		return result;
 	}
 
@@ -2028,31 +1984,21 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public Item update(String repositoryId, Item item) {
 		CouchItem update = new CouchItem(item);
 		
-		// COMPREHENSIVE REVISION MANAGEMENT:
-		// Check if item already has revision from Content layer (new capability)
-		if (item.getRevision() != null && !item.getRevision().isEmpty()) {
-			// Use revision from Content layer - full Ektorp-style state management
-			update.setRevision(item.getRevision());
-			log.debug("COMPREHENSIVE: Using revision from Content layer: " + item.getRevision());
-		} else {
-			// Fallback: fetch current revision from database
-			log.debug("COMPREHENSIVE: Content layer has no revision, fetching from database for item: " + item.getId());
-			CouchItem ci = connectorPool.getClient(repositoryId).get(CouchItem.class, item.getId());
-			if (ci != null) {
-				update.setRevision(ci.getRevision());
-				log.debug("COMPREHENSIVE: Fetched revision from database: " + ci.getRevision());
-			} else {
-				throw new IllegalArgumentException("Cannot update item " + item.getId() + ": not found in database");
-			}
+		// Ektorp-style: Object must maintain its own revision state
+		// CloudantClientWrapper expects objects to have valid revisions
+		if (update.getRevision() == null || update.getRevision().isEmpty()) {
+			throw new IllegalArgumentException("Item " + item.getId() + " has no revision - " +
+				"objects must maintain revision state per Ektorp patterns");
 		}
-
-		// Use Ektorp-style update - CloudantClientWrapper will trust this revision completely
+		
+		log.debug("Ektorp-style update: using object revision " + update.getRevision() + " for item " + item.getId());
+		
+		// CloudantClientWrapper will handle the actual revision management
 		connectorPool.getClient(repositoryId).update(update);
 		
-		// COMPREHENSIVE REVISION MANAGEMENT: Return updated object with new revision maintained by wrapper
-		// The CouchNodeBase.convert() will now preserve the updated revision information
+		// Return updated object with new revision maintained by CloudantClientWrapper
 		Item result = update.convert();
-		log.debug("COMPREHENSIVE: Update completed, new revision: " + result.getRevision());
+		log.debug("Update completed, new revision: " + result.getRevision());
 		return result;
 	}
 
@@ -2060,34 +2006,44 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public UserItem update(String repositoryId, UserItem userItem) {
 		CouchUserItem update = new CouchUserItem(userItem);
 		
-		// Only fetch latest revision if object doesn't already have one
+		// Ektorp-style: Object must maintain its own revision state
+		// CloudantClientWrapper expects objects to have valid revisions
 		if (update.getRevision() == null || update.getRevision().isEmpty()) {
-			CouchUserItem ci = connectorPool.getClient(repositoryId).get(CouchUserItem.class, userItem.getId());
-			update.setRevision(ci.getRevision());
-			log.debug("Fetched latest revision for user item update: " + ci.getRevision());
-		} else {
-			log.debug("Using existing revision for user item update: " + update.getRevision());
+			throw new IllegalArgumentException("UserItem " + userItem.getId() + " has no revision - " +
+				"objects must maintain revision state per Ektorp patterns");
 		}
-
+		
+		log.debug("Ektorp-style update: using object revision " + update.getRevision() + " for user " + userItem.getId());
+		
+		// CloudantClientWrapper will handle the actual revision management
 		connectorPool.getClient(repositoryId).update(update);
-		return update.convert();
+		
+		// Return updated object with new revision maintained by CloudantClientWrapper
+		UserItem result = update.convert();
+		log.debug("Update completed, new revision: " + result.getRevision());
+		return result;
 	}
 
 	@Override
 	public GroupItem update(String repositoryId, GroupItem groupItem) {
 		CouchGroupItem update = new CouchGroupItem(groupItem);
 		
-		// Only fetch latest revision if object doesn't already have one
+		// Ektorp-style: Object must maintain its own revision state
+		// CloudantClientWrapper expects objects to have valid revisions
 		if (update.getRevision() == null || update.getRevision().isEmpty()) {
-			CouchGroupItem ci = connectorPool.getClient(repositoryId).get(CouchGroupItem.class, groupItem.getId());
-			update.setRevision(ci.getRevision());
-			log.debug("Fetched latest revision for group item update: " + ci.getRevision());
-		} else {
-			log.debug("Using existing revision for group item update: " + update.getRevision());
+			throw new IllegalArgumentException("GroupItem " + groupItem.getId() + " has no revision - " +
+				"objects must maintain revision state per Ektorp patterns");
 		}
-
+		
+		log.debug("Ektorp-style update: using object revision " + update.getRevision() + " for group " + groupItem.getId());
+		
+		// CloudantClientWrapper will handle the actual revision management
 		connectorPool.getClient(repositoryId).update(update);
-		return update.convert();
+		
+		// Return updated object with new revision maintained by CloudantClientWrapper
+		GroupItem result = update.convert();
+		log.debug("Update completed, new revision: " + result.getRevision());
+		return result;
 	}
 
 	@Override
@@ -2114,21 +2070,22 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public NodeBase update(String repositoryId, NodeBase nodeBase) {
 		CouchNodeBase update = new CouchNodeBase(nodeBase);
 		
-		// Ektorp-style: trust the object's revision state completely
+		// Ektorp-style: Object must maintain its own revision state
+		// CloudantClientWrapper expects objects to have valid revisions
 		if (update.getRevision() == null || update.getRevision().isEmpty()) {
-			log.warn("NodeBase update attempted without revision - fetching from DB (non-Ektorp behavior)");
-			CouchNodeBase cnb = connectorPool.getClient(repositoryId).get(CouchNodeBase.class, nodeBase.getId());
-			if (cnb != null) {
-				update.setRevision(cnb.getRevision());
-				log.debug("Fetched revision for nodebase update: " + cnb.getRevision());
-			} else {
-				throw new IllegalArgumentException("Cannot update nodebase " + nodeBase.getId() + ": not found in database");
-			}
+			throw new IllegalArgumentException("NodeBase " + nodeBase.getId() + " has no revision - " +
+				"objects must maintain revision state per Ektorp patterns");
 		}
-
-		// Use Ektorp-style update - CloudantClientWrapper will handle revision management
+		
+		log.debug("Ektorp-style update: using object revision " + update.getRevision() + " for nodebase " + nodeBase.getId());
+		
+		// CloudantClientWrapper will handle the actual revision management
 		connectorPool.getClient(repositoryId).update(update);
-		return update.convert();
+		
+		// Return updated object with new revision maintained by CloudantClientWrapper
+		NodeBase result = update.convert();
+		log.debug("Update completed, new revision: " + result.getRevision());
+		return result;
 	}
 
 	@Override
