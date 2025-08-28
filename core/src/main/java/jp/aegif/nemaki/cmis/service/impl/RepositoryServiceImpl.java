@@ -529,8 +529,8 @@ public class RepositoryServiceImpl implements RepositoryService,
 			}
 		}
 
-		LinkedHashMap<String, PropertyDefinition<?>> map = new LinkedHashMap<String, PropertyDefinition<?>>();
-		LinkedHashMap<String, PropertyDefinition<?>> sorted = new LinkedHashMap<String, PropertyDefinition<?>>();
+		// CRITICAL FIX: Proper property ID mapping without contamination
+		LinkedHashMap<String, PropertyDefinition<?>> finalMap = new LinkedHashMap<String, PropertyDefinition<?>>();
 		
 		Map<String, PropertyDefinition<?>> criterionProps = criterion.getPropertyDefinitions();
 		System.err.println("Criterion property definitions count: " + 
@@ -539,33 +539,70 @@ public class RepositoryServiceImpl implements RepositoryService,
 			System.err.println("Criterion property keys: " + String.join(", ", criterionProps.keySet()));
 		}
 		
+		// Step 1: Add ALL properties from database (includes CMIS base properties)
+		if (propDefs != null) {
+			for (Entry<String, PropertyDefinition<?>> entry : propDefs.entrySet()) {
+				finalMap.put(entry.getKey(), entry.getValue());
+				System.err.println("Added database property: " + entry.getKey() + " (type: " + entry.getValue().getPropertyType() + ")");
+			}
+		}
+		
+		// Step 2: CAREFULLY add criterion properties WITHOUT overwriting existing property IDs
 		if (MapUtils.isNotEmpty(criterionProps)) {
-			System.err.println("Processing criterion properties (MapUtils.isNotEmpty returned true)");
+			System.err.println("=== CRITICAL FIX: Processing criterion properties with contamination prevention ===");
 			
-			// Not updated property definitions
-			for (Entry<String, PropertyDefinition<?>> propDef : propDefs
-					.entrySet()) {
-				if (!criterionProps.containsKey(propDef.getKey())) {
-					map.put(propDef.getKey(), propDef.getValue());
+			for (Entry<String, PropertyDefinition<?>> criterionEntry : criterionProps.entrySet()) {
+				String criterionPropertyId = criterionEntry.getKey();
+				PropertyDefinition<?> criterionPropertyDef = criterionEntry.getValue();
+				
+				System.err.println("Processing criterion property: " + criterionPropertyId);
+				System.err.println("  - Criterion property type: " + criterionPropertyDef.getPropertyType());
+				System.err.println("  - Criterion property ID: " + criterionPropertyDef.getId());
+				
+				// CRITICAL: Check if this is a custom property (non-CMIS namespace)
+				if (!criterionPropertyId.startsWith("cmis:")) {
+					System.err.println("  - This is a CUSTOM property, searching for correct database match...");
+					
+					// Find the correct database property definition by property type match
+					PropertyDefinition<?> correctDbProperty = null;
+					for (Entry<String, PropertyDefinition<?>> dbEntry : propDefs.entrySet()) {
+						PropertyDefinition<?> dbProperty = dbEntry.getValue();
+						
+						// Match by property type and ID (the REAL property ID, not the map key)
+						if (dbProperty.getPropertyType() == criterionPropertyDef.getPropertyType() &&
+							criterionPropertyId.equals(dbProperty.getId())) {
+							correctDbProperty = dbProperty;
+							System.err.println("  - Found matching database property: " + dbEntry.getKey() + " with correct type " + dbProperty.getPropertyType());
+							break;
+						}
+					}
+					
+					if (correctDbProperty != null) {
+						// Use the criterion property ID (correct custom property name) with the database property definition
+						finalMap.put(criterionPropertyId, correctDbProperty);
+						System.err.println("  - ✅ FIXED: Added custom property " + criterionPropertyId + " with correct type " + correctDbProperty.getPropertyType());
+					} else {
+						// This should not happen if property creation worked correctly
+						System.err.println("  - ❌ WARNING: Could not find database match for custom property " + criterionPropertyId);
+						// Fall back to criterion property but log it
+						finalMap.put(criterionPropertyId, criterionPropertyDef);
+					}
+				} else {
+					// CMIS standard properties - keep as-is from database if already present
+					if (finalMap.containsKey(criterionPropertyId)) {
+						System.err.println("  - CMIS property " + criterionPropertyId + " already in final map, keeping database version");
+					} else {
+						finalMap.put(criterionPropertyId, criterionPropertyDef);
+						System.err.println("  - Added new CMIS property " + criterionPropertyId);
+					}
 				}
 			}
-			System.err.println("Added properties not in criterion to map, count: " + map.size());
-
-			// Sorted updated property definitions
-			for (Entry<String, PropertyDefinition<?>> entry : criterionProps.entrySet()) {
-				sorted.put(entry.getKey(), entry.getValue());
-			}
-			System.err.println("Added criterion properties to sorted, count: " + sorted.size());
-
-			// Merge
-			for (Entry<String, PropertyDefinition<?>> entry : sorted.entrySet()) {
-				map.put(entry.getKey(), entry.getValue());
-			}
-			System.err.println("Merged sorted properties into map, final count: " + map.size());
-			tdf.setPropertyDefinitions(map);
 		} else {
 			System.err.println("Criterion properties empty, keeping original properties from buildTypeDefinitionFromDB");
 		}
+
+		// Set the corrected property definitions
+		tdf.setPropertyDefinitions(finalMap);
 
 		// Final validation
 		Map<String, PropertyDefinition<?>> finalProps = tdf.getPropertyDefinitions();
@@ -573,6 +610,18 @@ public class RepositoryServiceImpl implements RepositoryService,
 			(finalProps != null ? finalProps.size() : "null"));
 		if (finalProps != null) {
 			System.err.println("Final property keys: " + String.join(", ", finalProps.keySet()));
+			
+			// ADDITIONAL VALIDATION: Check for type consistency
+			for (Entry<String, PropertyDefinition<?>> entry : finalProps.entrySet()) {
+				PropertyDefinition<?> prop = entry.getValue();
+				System.err.println("Final property: " + entry.getKey() + " -> ID: " + prop.getId() + ", Type: " + prop.getPropertyType());
+				
+				// Check for contamination indicators
+				if (!entry.getKey().equals(prop.getId())) {
+					System.err.println("  - ⚠️ POTENTIAL ISSUE: Map key (" + entry.getKey() + ") != property ID (" + prop.getId() + ")");
+				}
+			}
+			
 			if (finalProps.containsKey(PropertyIds.SECONDARY_OBJECT_TYPE_IDS)) {
 				System.err.println("✅ FINAL CONFIRMATION: cmis:secondaryObjectTypeIds IS PRESENT in final TypeDefinition");
 			} else {

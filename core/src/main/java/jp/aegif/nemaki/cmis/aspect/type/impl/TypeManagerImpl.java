@@ -1114,17 +1114,7 @@ public class TypeManagerImpl implements TypeManager {
 				
 				NemakiPropertyDefinition p = new NemakiPropertyDefinition(core, detail);
 
-				// CRITICAL FIX: Prevent property ID contamination from PropertyCore reuse
-				String originalPropertyId = p.getPropertyId(); // This may be contaminated from core
-				String correctPropertyId = determineCorrectPropertyId(detail, core, propertyDetailId);
-				
-				// Override the potentially contaminated property ID
-				p.setPropertyId(correctPropertyId);
-				
-				System.err.println("=== PROPERTY ID CONTAMINATION FIX ===");
-				System.err.println("Original (potentially contaminated) Property ID: " + originalPropertyId);
-				System.err.println("Corrected Property ID: " + correctPropertyId);
-				System.err.println("Property ID changed: " + (!originalPropertyId.equals(correctPropertyId)));
+				// Property ID contamination is now fixed in NemakiPropertyDefinition constructor
 
 				System.err.println("=== CRITICAL PROPERTY TYPE DEBUG ===");
 				System.err.println("Property ID: " + p.getPropertyId());
@@ -1174,59 +1164,6 @@ public class TypeManagerImpl implements TypeManager {
 		}
 	}
 
-	/**
-	 * CRITICAL FIX: Determine the correct property ID to prevent contamination
-	 * from PropertyCore reuse during type reconstruction.
-	 * 
-	 * The issue: PropertyDefinitionCore may have been reused with a different property ID
-	 * (e.g., tck:boolean gets assigned cmis:name's PropertyCore), causing contamination.
-	 * 
-	 * @param detail The property detail containing the original intended property metadata
-	 * @param core The property core that may contain a contaminated property ID
-	 * @param propertyDetailId The database ID of the property detail 
-	 * @return The correct property ID that should be used for this property
-	 */
-	private String determineCorrectPropertyId(NemakiPropertyDefinitionDetail detail, 
-			NemakiPropertyDefinitionCore core, String propertyDetailId) {
-		
-		System.err.println("=== DETERMINE CORRECT PROPERTY ID ===");
-		System.err.println("Detail Database ID: " + propertyDetailId);
-		System.err.println("Core Property ID: " + core.getPropertyId());
-		System.err.println("Detail Local Name: " + detail.getLocalName());
-		System.err.println("Detail Display Name: " + detail.getDisplayName());
-		
-		// STRATEGY 1: Use detail's localName as the intended property ID
-		// For custom properties like tck:boolean, the localName should contain the correct ID
-		String localName = detail.getLocalName();
-		if (localName != null && !localName.trim().isEmpty()) {
-			// Check if this looks like a proper property ID (contains namespace)
-			if (localName.contains(":")) {
-				System.err.println("✅ USING LOCAL NAME AS CORRECT PROPERTY ID: " + localName);
-				return localName;
-			}
-		}
-		
-		// STRATEGY 2: Use detail's displayName as fallback
-		String displayName = detail.getDisplayName();
-		if (displayName != null && !displayName.trim().isEmpty()) {
-			if (displayName.contains(":")) {
-				System.err.println("✅ USING DISPLAY NAME AS CORRECT PROPERTY ID: " + displayName);
-				return displayName;
-			}
-		}
-		
-		// STRATEGY 3: For CMIS system properties, core.getPropertyId() should be correct
-		String corePropertyId = core.getPropertyId();
-		if (corePropertyId != null && corePropertyId.startsWith("cmis:")) {
-			System.err.println("✅ USING CORE PROPERTY ID FOR CMIS SYSTEM PROPERTY: " + corePropertyId);
-			return corePropertyId;
-		}
-		
-		// STRATEGY 4: Last resort - examine the PropertyDetail ID pattern
-		// Some custom properties might have encoded their intended ID in the detail ID
-		System.err.println("⚠️ FALLBACK: Using core property ID but this may be contaminated: " + corePropertyId);
-		return corePropertyId;
-	}
 
 	private AbstractPropertyDefinition<?> setInheritedToTrue(
 			AbstractPropertyDefinition<?> property) {
@@ -1428,98 +1365,41 @@ public class TypeManagerImpl implements TypeManager {
 
 	private void addPropertyDefinitionCore(String propertyId, String queryName,
 			PropertyType propertyType, Cardinality cardinality) {
-		// CRITICAL FIX: Final safety net - reject null parameters immediately
+		// Null parameter validation
 		if (propertyId == null || queryName == null || propertyType == null || cardinality == null) {
-			if (log.isErrorEnabled()) {
-				log.error("addPropertyDefinitionCore called with null parameters - ignoring. " +
-					"propertyId: " + propertyId + ", queryName: " + queryName + 
-					", propertyType: " + propertyType + ", cardinality: " + cardinality);
-			}
-			return; // CRITICAL: Do not process null parameters
-		}
-		
-		// Log method calls for debugging if needed
-		if (log.isTraceEnabled()) {
-			log.trace("addPropertyDefinitionCore called: propertyId=" + propertyId + 
-				", queryName=" + queryName + ", propertyType=" + propertyType + ", cardinality=" + cardinality);
-		}
-		
-		// CONTAMINATION DETECTION: Check for specific contamination patterns
-		if (propertyId != null && queryName != null) {
-			// Check if propertyId and queryName are mismatched (contamination pattern)
-			if (propertyId.startsWith("cmis:") && queryName.startsWith("tck:")) {
-				if (log.isErrorEnabled()) {
-					log.error("CRITICAL CONTAMINATION DETECTED: " + queryName + " assigned wrong propertyId: " + propertyId + 
-						". This is the ROOT CAUSE of TCK test failures! Expected: propertyId should match queryName for custom properties");
-				}
-			}
-			
-			// Also detect custom properties getting any wrong CMIS ID
-			if (queryName != null && queryName.startsWith("tck:") && propertyId != null && propertyId.startsWith("cmis:")) {
-				if (log.isErrorEnabled()) {
-					log.error("TCK PROPERTY CONTAMINATION: TCK property " + queryName + " got CMIS propertyId: " + propertyId + 
-						". THIS IS THE EXACT CONTAMINATION CAUSING TCK FAILURES!");
-				}
-			}
-		}
-		
-		// CRITICAL FIX: Null safety check first
-		if (propertyId == null) {
 			if (log.isWarnEnabled()) {
-				log.warn("propertyId is null, using original logic");
-			}
-			// Fall back to original logic for null propertyId
-			if (!propertyDefinitionCoresForQueryName.containsKey(propertyId)) {
-				PropertyDefinition<?> core = DataUtil.createPropDefCore(propertyId,
-						queryName, propertyType, cardinality);
-				propertyDefinitionCoresForQueryName.put(queryName, core);
+				log.warn("Skipping property definition core with null parameters - propertyId: " + propertyId + 
+					", queryName: " + queryName + ", propertyType: " + propertyType + ", cardinality: " + cardinality);
 			}
 			return;
 		}
 		
-		// CRITICAL CONTAMINATION FIX: For custom properties, ensure propertyId matches queryName
-		if (queryName != null && (queryName.startsWith("tck:") || queryName.contains(":"))) {
-			if (log.isDebugEnabled()) {
-				log.debug("Custom property detected - Original propertyId: " + propertyId + ", QueryName: " + queryName);
-			}
-			
-			// FORCE propertyId to match queryName for custom properties
-			if (!propertyId.equals(queryName)) {
-				if (log.isWarnEnabled()) {
-					log.warn("FIXING CONTAMINATION: Forcing propertyId to match queryName. Before: propertyId=" + propertyId + 
-						", queryName=" + queryName);
-				}
-				propertyId = queryName; // CRITICAL FIX: Force them to match
-				if (log.isInfoEnabled()) {
-					log.info("CONTAMINATION FIXED: propertyId now matches queryName: " + propertyId);
-				}
-			}
+		if (log.isTraceEnabled()) {
+			log.trace("Adding property definition core: " + propertyId + " (queryName: " + queryName + ")");
 		}
 
-		// Check for existing property definition core by propertyId in the queryName map
+		// Check for existing property definition core by propertyId
 		if (!propertyDefinitionCoresForQueryName.containsKey(propertyId)) {
 			// Create new property definition core
-			PropertyDefinition<?> core = DataUtil.createPropDefCore(propertyId,
-					queryName, propertyType, cardinality);
+			PropertyDefinition<?> core = DataUtil.createPropDefCore(propertyId, queryName, propertyType, cardinality);
 			propertyDefinitionCoresForQueryName.put(propertyId, core);
 			
 			if (log.isDebugEnabled()) {
-				log.debug("Created new property core: propertyId=" + propertyId + ", queryName=" + queryName + 
-					", core=" + (core != null ? "SUCCESS" : "NULL"));
+				log.debug("Created new property core: " + propertyId + " -> " + queryName);
 			}
 		} else {
-			if (log.isDebugEnabled()) {
-				log.debug("Reusing existing property core: propertyId=" + propertyId);
+			if (log.isTraceEnabled()) {
+				log.trace("Property core already exists: " + propertyId);
 			}
 		}
 
-		// Also add to queryName map for lookup compatibility  
+		// Also add to queryName map for lookup compatibility if not already present
 		if (!propertyDefinitionCoresForQueryName.containsKey(queryName)) {
 			PropertyDefinition<?> existingCore = propertyDefinitionCoresForQueryName.get(propertyId);
 			if (existingCore != null) {
 				propertyDefinitionCoresForQueryName.put(queryName, existingCore);
-				if (log.isDebugEnabled()) {
-					log.debug("Mapped queryName to existing core: " + queryName + " -> propertyId: " + propertyId);
+				if (log.isTraceEnabled()) {
+					log.trace("Mapped queryName to existing core: " + queryName + " -> " + propertyId);
 				}
 			}
 		}

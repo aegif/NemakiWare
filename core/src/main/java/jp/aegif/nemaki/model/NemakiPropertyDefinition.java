@@ -107,7 +107,16 @@ public class NemakiPropertyDefinition extends NodeBase {
 
 		setDetailNodeId(detail.getId());
 
-		setPropertyId(core.getPropertyId());
+		// CRITICAL FIX: Use detail's localName as the correct property ID instead of contaminated core.propertyId
+		// The core object is being reused and contains contaminated property IDs from previous properties
+		String intendedPropertyId = determineCorrectPropertyId(detail, core);
+		setPropertyId(intendedPropertyId);
+		
+		System.err.println("=== PROPERTY ID CONTAMINATION FIX ===");
+		System.err.println("Core Property ID (potentially contaminated): " + (core != null ? core.getPropertyId() : "NULL"));
+		System.err.println("Detail Local Name: " + (detail != null ? detail.getLocalName() : "NULL"));
+		System.err.println("Corrected Property ID: " + intendedPropertyId);
+		System.err.println("Property ID corrected: " + !intendedPropertyId.equals(core != null ? core.getPropertyId() : ""));
 		setLocalName(detail.getLocalName());
 		setLocalNameSpace(detail.getLocalNameSpace());
 		setQueryName(core.getQueryName());
@@ -129,6 +138,61 @@ public class NemakiPropertyDefinition extends NodeBase {
 		setDecimalMinValue(detail.getDecimalMinValue());
 		setDecimalMaxValue(detail.getDecimalMaxValue());
 		setMaxLength(detail.getMaxLength());
+	}
+	
+	/**
+	 * CRITICAL FIX: Determine the correct property ID to prevent contamination
+	 * from PropertyCore reuse during type reconstruction.
+	 * 
+	 * The issue: PropertyDefinitionCore may have been reused with a different property ID
+	 * (e.g., tck:boolean gets assigned cmis:name's PropertyCore), causing contamination.
+	 * 
+	 * @param detail The property detail containing the original intended property metadata
+	 * @param core The property core that may contain a contaminated property ID
+	 * @return The correct property ID that should be used for this property
+	 */
+	private String determineCorrectPropertyId(NemakiPropertyDefinitionDetail detail, NemakiPropertyDefinitionCore core) {
+		
+		System.err.println("=== DETERMINE CORRECT PROPERTY ID ===");
+		System.err.println("Detail Local Name: " + (detail != null ? detail.getLocalName() : "NULL"));
+		System.err.println("Detail Display Name: " + (detail != null ? detail.getDisplayName() : "NULL"));
+		System.err.println("Core Property ID: " + (core != null ? core.getPropertyId() : "NULL"));
+		
+		// STRATEGY 1: Use detail's localName as the intended property ID
+		// For custom properties like tck:boolean, the localName should contain the correct ID
+		if (detail != null) {
+			String localName = detail.getLocalName();
+			if (localName != null && !localName.trim().isEmpty()) {
+				// Check if this looks like a proper property ID (contains namespace)
+				if (localName.contains(":")) {
+					System.err.println("✅ USING LOCAL NAME AS CORRECT PROPERTY ID: " + localName);
+					return localName;
+				}
+			}
+			
+			// STRATEGY 2: Use detail's displayName as fallback
+			String displayName = detail.getDisplayName();
+			if (displayName != null && !displayName.trim().isEmpty()) {
+				if (displayName.contains(":")) {
+					System.err.println("✅ USING DISPLAY NAME AS CORRECT PROPERTY ID: " + displayName);
+					return displayName;
+				}
+			}
+		}
+		
+		// STRATEGY 3: For CMIS system properties, core.getPropertyId() should be correct
+		if (core != null) {
+			String corePropertyId = core.getPropertyId();
+			if (corePropertyId != null && corePropertyId.startsWith("cmis:")) {
+				System.err.println("✅ USING CORE PROPERTY ID FOR CMIS SYSTEM PROPERTY: " + corePropertyId);
+				return corePropertyId;
+			}
+		}
+		
+		// STRATEGY 4: Last resort - examine the PropertyDetail ID pattern
+		// Some custom properties might have encoded their intended ID in the detail ID
+		System.err.println("⚠️ FALLBACK: Using core property ID but this may be contaminated: " + (core != null ? core.getPropertyId() : "NULL"));
+		return core != null ? core.getPropertyId() : "unknown:property";
 	}
 
 	public NemakiPropertyDefinition(PropertyDefinition<?> propertyDefinition) {

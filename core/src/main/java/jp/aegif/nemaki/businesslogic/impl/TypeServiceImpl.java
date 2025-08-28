@@ -232,111 +232,99 @@ public class TypeServiceImpl implements TypeService{
 	public NemakiPropertyDefinitionDetail createPropertyDefinition(
 			String repositoryId, NemakiPropertyDefinition propertyDefinition) {
 		
-		// CRITICAL FIX: Prevent upstream contamination from TypeResource
-		// PropertyDefinition might already be contaminated with wrong propertyId
+		// CRITICAL FIX: Preserve original property ID exactly as provided
 		String originalPropertyId = propertyDefinition.getPropertyId();
 		
-		System.err.println("=== UPSTREAM CONTAMINATION PREVENTION ===");
-		System.err.println("Original property ID from input: " + originalPropertyId);
-		System.err.println("Property type from input: " + propertyDefinition.getPropertyType());
+		// CRITICAL DEBUG: Add visible logging for TCK property creation
+		System.err.println("=== TYPESERVICE.createPropertyDefinition CALLED ===");
+		System.err.println("Repository: " + repositoryId);
+		System.err.println("Original Property ID: " + originalPropertyId);
+		System.err.println("Property Type: " + propertyDefinition.getPropertyType());
+		System.err.println("ThreadID: " + Thread.currentThread().getId());
+		System.err.println("Timestamp: " + System.currentTimeMillis());
 		
-		// CONTAMINATION DETECTION: Check if the propertyId is already wrong
-		// Common contamination: tck:boolean becomes cmis:name, etc.
-		if (originalPropertyId != null && originalPropertyId.startsWith("cmis:") 
-			&& !isValidCmisPropertyId(originalPropertyId, propertyDefinition.getPropertyType())) {
-			
-			System.err.println("*** UPSTREAM CONTAMINATION DETECTED ***");
-			System.err.println("CONTAMINATED ID: " + originalPropertyId + " (type: " + propertyDefinition.getPropertyType() + ")");
-			System.err.println("This contamination came from TypeResource.java or similar upstream source!");
-			
-			// REJECT contaminated property definition
-			throw new RuntimeException("CONTAMINATED PROPERTY DEFINITION REJECTED: " + 
-				originalPropertyId + " does not match property type " + propertyDefinition.getPropertyType());
+		if (log.isDebugEnabled()) {
+			log.debug("Creating property definition - ID: " + originalPropertyId + 
+				", Type: " + propertyDefinition.getPropertyType());
 		}
 		
 		NemakiPropertyDefinitionCore _core = new NemakiPropertyDefinitionCore(
 				propertyDefinition);
 
-		System.err.println("=== PROPERTY DEFINITION CREATION DEBUG ===");
-		System.err.println("Creating property: " + _core.getPropertyId());
-		System.err.println("Property type: " + _core.getPropertyType());
-
-		// CRITICAL FIX: COMPLETELY DISABLE PropertyCore reuse for custom properties
-		// This prevents any possibility of tck:boolean getting cmis:name, etc.
-		
-		boolean isCustomProperty = _core.getPropertyId().startsWith("tck:") 
-			|| (!_core.getPropertyId().startsWith("cmis:") && _core.getPropertyId().contains(":"));
+		// Determine if this is a custom property (non-CMIS namespace)
+		boolean isCustomProperty = originalPropertyId != null && 
+			(originalPropertyId.startsWith("tck:") || 
+			 (!originalPropertyId.startsWith("cmis:") && originalPropertyId.contains(":")));
 		
 		String coreNodeId = "";
 		
 		if (isCustomProperty) {
-			// CUSTOM PROPERTIES: Always create new cores - never reuse existing ones
-			System.err.println("=== CUSTOM PROPERTY DETECTED: " + _core.getPropertyId() + " ===");
-			System.err.println("POLICY: Creating dedicated new core (no reuse allowed)");
+			// CUSTOM PROPERTIES: Create dedicated cores with preserved original IDs
+			if (log.isInfoEnabled()) {
+				log.info("Creating custom property: " + originalPropertyId + " (preserving exact ID)");
+			}
 			
-			// Ensure absolutely unique property ID for custom properties
-			String uniquePropertyId = buildUniquePropertyId(repositoryId, _core.getPropertyId());
-			_core.setPropertyId(uniquePropertyId);
+			// CRITICAL: Preserve the exact property ID - no modification unless conflict
+			String preservedPropertyId = originalPropertyId;
+			if (!isUniquePropertyIdInRepository(repositoryId, preservedPropertyId)) {
+				// Only add timestamp for genuine same-property conflicts
+				List<NemakiPropertyDefinitionCore> cores = getPropertyDefinitionCores(repositoryId);
+				boolean exactConflict = false;
+				if (CollectionUtils.isNotEmpty(cores)) {
+					for (NemakiPropertyDefinitionCore core : cores) {
+						if (preservedPropertyId.equals(core.getPropertyId())) {
+							exactConflict = true;
+							break;
+						}
+					}
+				}
+				if (exactConflict) {
+					preservedPropertyId = originalPropertyId + "_" + System.currentTimeMillis();
+					if (log.isWarnEnabled()) {
+						log.warn("Property ID conflict resolved with timestamp: " + preservedPropertyId);
+					}
+				}
+			}
 			
-			System.err.println("=== CREATING DEDICATED CORE FOR CUSTOM PROPERTY ===");
-			System.err.println("Original property ID: " + propertyDefinition.getPropertyId());
-			System.err.println("Unique property ID: " + uniquePropertyId);
-			System.err.println("Property type: " + _core.getPropertyType());
-			System.err.println("Property cardinality: " + _core.getCardinality());
+			_core.setPropertyId(preservedPropertyId);
 			
-			// Create a new property core - guaranteed unique
+			// Create new dedicated property core
 			NemakiPropertyDefinitionCore core = contentDaoService
 					.createPropertyDefinitionCore(repositoryId, _core);
 			coreNodeId = core.getId();
 			
-			System.err.println("=== DEDICATED CORE CREATED: " + coreNodeId + " ===");
-			System.err.println("✅ CUSTOM PROPERTY ISOLATED FROM CMIS SYSTEM PROPERTIES");
+			if (log.isInfoEnabled()) {
+				log.info("Custom property core created: " + coreNodeId + " (ID: " + preservedPropertyId + ")");
+			}
 		} else {
-			// CMIS SYSTEM PROPERTIES: Allow reuse only for exact matches
-			System.err.println("=== CMIS SYSTEM PROPERTY DETECTED: " + _core.getPropertyId() + " ===");
+			// CMIS SYSTEM PROPERTIES: Standard reuse logic for CMIS properties
+			if (log.isDebugEnabled()) {
+				log.debug("Processing CMIS system property: " + originalPropertyId);
+			}
 			
 			List<NemakiPropertyDefinitionCore> cores = getPropertyDefinitionCores(repositoryId);
 			Map<String, NemakiPropertyDefinitionCore> corePropertyIds = new HashMap<String, NemakiPropertyDefinitionCore>();
-			for (NemakiPropertyDefinitionCore npdc : cores) {
-				corePropertyIds.put(npdc.getPropertyId(), npdc);
+			if (CollectionUtils.isNotEmpty(cores)) {
+				for (NemakiPropertyDefinitionCore core : cores) {
+					corePropertyIds.put(core.getPropertyId(), core);
+				}
 			}
-			
-			NemakiPropertyDefinitionCore existingCore = corePropertyIds.get(_core.getPropertyId());
-			
-			// CMIS system properties: strict exact matching required
-			boolean canReuseCore = false;
-			if (existingCore != null) {
-				// Only reuse if property ID, type, and cardinality are EXACTLY the same
-				boolean exactPropertyIdMatch = existingCore.getPropertyId().equals(_core.getPropertyId());
-				boolean typeMatches = existingCore.getPropertyType().equals(_core.getPropertyType());
-				boolean cardinalityMatches = existingCore.getCardinality().equals(_core.getCardinality());
-				
-				canReuseCore = exactPropertyIdMatch && typeMatches && cardinalityMatches;
-				
-				System.err.println("=== CMIS CORE REUSE ANALYSIS ===");
-				System.err.println("Existing core found: " + existingCore.getPropertyId());
-				System.err.println("Exact property ID match: " + exactPropertyIdMatch);
-				System.err.println("Type match: " + typeMatches + " (" + existingCore.getPropertyType() + " vs " + _core.getPropertyType() + ")");
-				System.err.println("Cardinality match: " + cardinalityMatches);
-				System.err.println("Can reuse CMIS core: " + canReuseCore);
-			}
-			
-			if (canReuseCore) {
-				// Reuse existing compatible core (CMIS properties only)
-				coreNodeId = existingCore.getId();
-				System.err.println("=== REUSING EXISTING CMIS CORE: " + coreNodeId + " ===");
+
+			if (corePropertyIds.containsKey(originalPropertyId)) {
+				// Reuse existing CMIS core
+				NemakiPropertyDefinitionCore core = corePropertyIds.get(originalPropertyId);
+				coreNodeId = core.getId();
+				if (log.isDebugEnabled()) {
+					log.debug("Reusing existing CMIS core: " + coreNodeId + " for " + originalPropertyId);
+				}
 			} else {
-				// Create new core for CMIS property
-				System.err.println("=== CREATING NEW CMIS CORE ===");
-				System.err.println("Property ID: " + _core.getPropertyId());
-				System.err.println("Property type: " + _core.getPropertyType());
-				System.err.println("Property cardinality: " + _core.getCardinality());
-				
+				// Create new CMIS core
 				NemakiPropertyDefinitionCore core = contentDaoService
 						.createPropertyDefinitionCore(repositoryId, _core);
 				coreNodeId = core.getId();
-				
-				System.err.println("=== NEW CMIS CORE CREATED: " + coreNodeId + " ===");
+				if (log.isDebugEnabled()) {
+					log.debug("Created new CMIS core: " + coreNodeId + " for " + originalPropertyId);
+				}
 			}
 		}
 
@@ -346,8 +334,11 @@ public class TypeServiceImpl implements TypeService{
 		NemakiPropertyDefinitionDetail detail = contentDaoService
 				.createPropertyDefinitionDetail(repositoryId, _detail);
 
-		System.err.println("=== PROPERTY DEFINITION DETAIL CREATED: " + detail.getId() + " ===");
-		System.err.println("✅ PROPERTY CREATION COMPLETE: " + _core.getPropertyId() + " (type: " + _core.getPropertyType() + ")");
+		if (log.isInfoEnabled()) {
+			log.info("Property definition created: " + originalPropertyId + 
+				" (Detail ID: " + detail.getId() + ")");
+		}
+		
 		return detail;
 	}
 
@@ -408,29 +399,5 @@ public class TypeServiceImpl implements TypeService{
 		this.contentDaoService = contentDaoService;
 	}
 
-	// CONTAMINATION VALIDATION: Check if CMIS property ID is valid for given type  
-	private boolean isValidCmisPropertyId(String propertyId, PropertyType propertyType) {
-		// Basic validation: cmis:name should be STRING, cmis:objectId should be ID, etc.
-		if ("cmis:name".equals(propertyId) && propertyType != PropertyType.STRING) {
-			return false;
-		}
-		if ("cmis:objectId".equals(propertyId) && propertyType != PropertyType.ID) {
-			return false;
-		}
-		if ("cmis:createdBy".equals(propertyId) && propertyType != PropertyType.STRING) {
-			return false;
-		}
-		if ("cmis:creationDate".equals(propertyId) && propertyType != PropertyType.DATETIME) {
-			return false;
-		}
-		if ("cmis:lastModifiedBy".equals(propertyId) && propertyType != PropertyType.STRING) {
-			return false;
-		}
-		if ("cmis:lastModificationDate".equals(propertyId) && propertyType != PropertyType.DATETIME) {
-			return false;
-		}
-		// Add more validations as needed
-		return true; // Default to valid
-	}
 
 }
