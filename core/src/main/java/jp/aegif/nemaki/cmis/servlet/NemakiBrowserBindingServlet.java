@@ -60,32 +60,19 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     private static final long serialVersionUID = 1L;
     private static final Log log = LogFactory.getLog(NemakiBrowserBindingServlet.class);
     
-    // CRITICAL: Static block that ALWAYS executes when class is loaded
-    static {
-        System.err.println("=== STATIC INIT: NemakiBrowserBindingServlet class loaded at " + System.currentTimeMillis() + " ===");
-        System.err.println("CRITICAL: If you see this message, the custom NemakiBrowserBindingServlet is being loaded");
-        try {
-            System.err.println("CLASSLOADER: " + NemakiBrowserBindingServlet.class.getClassLoader());
-            System.err.println("CODEBASE: " + NemakiBrowserBindingServlet.class.getProtectionDomain().getCodeSource().getLocation());
-        } catch (Exception e) {
-            System.err.println("Error getting class info: " + e.getMessage());
-        }
-    }
     
     /**
-     * Constructor - add debug logging to confirm servlet is being instantiated
+     * Constructor
      */
     public NemakiBrowserBindingServlet() {
         super();
         log.info("NEMAKI SERVLET: NemakiBrowserBindingServlet constructor called");
-        System.out.println("NEMAKI SERVLET: NemakiBrowserBindingServlet constructor called");
     }
     
     @Override
     public void init() throws ServletException {
         super.init();
         log.info("NEMAKI SERVLET: NemakiBrowserBindingServlet initialized");
-        System.out.println("NEMAKI SERVLET: NemakiBrowserBindingServlet initialized");
     }
 
     /**
@@ -96,49 +83,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     protected void service(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
         
-        // VERSION CHECK: This line should appear if the latest source code is compiled
-        System.err.println("!!! VERSION CHECK: LATEST SOURCE CODE EXECUTING - TIMESTAMP: " + System.currentTimeMillis() + " !!!");
         
-        // CRITICAL: Simple debug message that MUST appear if this method is called
-        System.err.println("!!! NEMAKI SERVICE METHOD CALLED: " + request.getMethod() + " " + request.getRequestURI() + " !!!");
-        
-        // CRITICAL DEBUG: Content-Type header for multipart debugging
-        String debugContentType = request.getContentType();
-        System.err.println("!!! CONTENT-TYPE HEADER: [" + debugContentType + "] !!!");
-        System.err.println("!!! CONTENT-TYPE NULL: " + (debugContentType == null) + " !!!");
-        if (debugContentType != null) {
-            System.err.println("!!! CONTENT-TYPE LENGTH: " + debugContentType.length() + " !!!");
-            System.err.println("!!! CONTAINS MULTIPART: " + debugContentType.contains("multipart") + " !!!");
-            System.err.println("!!! CONTAINS BOUNDARY: " + debugContentType.contains("boundary") + " !!!");
-        }
-        
-        // *** CRITICAL TCK DEBUG: DETECT ALL POST REQUESTS ***
-        if ("POST".equals(request.getMethod())) {
-            System.err.println("*** CRITICAL POST REQUEST DETECTED ***");
-            System.err.println("*** METHOD: " + request.getMethod());
-            System.err.println("*** URI: " + request.getRequestURI());
-            System.err.println("*** QUERY: " + request.getQueryString());
-            System.err.println("*** CONTENT-TYPE: " + request.getContentType());
-            
-            // Check for cmisaction parameter
-            String cmisaction = request.getParameter("cmisaction");
-            System.err.println("*** CMISACTION PARAMETER: " + cmisaction);
-            
-            if ("createType".equals(cmisaction)) {
-                System.err.println("*** CREATETYPE POST REQUEST DETECTED ***");
-                System.err.println("*** THIS IS THE CONTAMINATION SOURCE ***");
-            }
-            
-            // Log all parameters
-            System.err.println("*** ALL POST PARAMETERS ***");
-            try {
-                for (String paramName : Collections.list(request.getParameterNames())) {
-                    System.err.println("***   " + paramName + " = " + request.getParameter(paramName));
-                }
-            } catch (Exception e) {
-                System.err.println("*** ERROR READING POST PARAMETERS: " + e.getMessage());
-            }
-        }
         
         // CRITICAL DEBUG: ALWAYS log every request that reaches this servlet
         String method = request.getMethod();
@@ -155,7 +100,6 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 String expectedPrefix = contextPath + servletPath;
                 if (requestURI.startsWith(expectedPrefix) && requestURI.length() > expectedPrefix.length()) {
                     pathInfo = requestURI.substring(expectedPrefix.length());
-                    System.err.println("*** SPRING 6.X FIX: Constructed pathInfo from requestURI: [" + pathInfo + "] ***");
                 }
             }
         }
@@ -165,49 +109,15 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         String contextPath = request.getContextPath();
         String servletPath = request.getServletPath();
         
-        System.err.println("=== NEMAKI SERVLET: EVERY REQUEST CAPTURE ===");
-        System.err.println("Method: " + method);
-        System.err.println("RequestURI: " + requestURI);
-        System.err.println("ContextPath: " + contextPath);
-        System.err.println("ServletPath: " + servletPath);
-        System.err.println("PathInfo: " + pathInfo);
-        System.err.println("QueryString: " + queryString);
-        System.err.println("RemoteAddr: " + request.getRemoteAddr());
-        System.err.println("RemoteHost: " + request.getRemoteHost());
-        System.err.println("Thread: " + Thread.currentThread().getName());
-        System.err.println("Timestamp: " + System.currentTimeMillis());
-        
-        // Log ALL parameters for every request
-        java.util.Map<String, String[]> allParams = request.getParameterMap();
-        System.err.println("=== ALL PARAMETERS ===");
-        for (String paramName : allParams.keySet()) {
-            System.err.println("  " + paramName + " = " + java.util.Arrays.toString(allParams.get(paramName)));
-        }
-        
-        // Log ALL headers for every request
-        System.err.println("=== ALL HEADERS ===");
-        java.util.Enumeration<String> headerNames = request.getHeaderNames();
-        while (headerNames.hasMoreElements()) {
-            String headerName = headerNames.nextElement();
-            System.err.println("  " + headerName + " = " + request.getHeader(headerName));
-        }
-        
         // Get contentType early for debug code
         String contentType = request.getContentType();
         
         // ===============================
-        // CRITICAL TCK DEBUG: POST Request Routing and TCK Client Detection
+        // POST Request Routing and TCK Client Detection
         // ===============================
-        // Added to resolve "createDocument operation fell through to parent servlet" issue
-        // This debug logging MUST appear for ALL POST requests to determine routing issues
         
         if ("POST".equalsIgnoreCase(method)) {
-            System.err.println("=== POST REQUEST ROUTING DEBUG ===");
-            System.err.println("POST Debug: Request reached NemakiBrowserBindingServlet");
-            System.err.println("POST Debug: Thread ID = " + Thread.currentThread().getId());
-            System.err.println("POST Debug: Time = " + new java.util.Date());
-            
-            // TCK Client Detection via User-Agent header
+            // TCK Client Detection via User-Agent header for enhanced compatibility
             String userAgent = request.getHeader("User-Agent");
             boolean isTckClient = false;
             if (userAgent != null) {
@@ -217,60 +127,36 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                              userAgent.contains("OpenCMIS") ||
                              userAgent.contains("TCK") ||
                              userAgent.toLowerCase().contains("junit");
-                System.err.println("POST Debug: User-Agent = [" + userAgent + "]");
-                System.err.println("POST Debug: TCK Client Detected = " + isTckClient);
-            } else {
-                System.err.println("POST Debug: No User-Agent header");
             }
             
             // Enhanced parameter detection for POST requests
             String postCmisAction = request.getParameter("cmisaction");
-            System.err.println("POST Debug: Direct parameter cmisaction = [" + postCmisAction + "]");
             
             // Check if this is a createDocument request
             if ("createDocument".equals(postCmisAction)) {
-                System.err.println("*** CRITICAL: createDocument POST request detected ***");
-                System.err.println("*** This is the exact request failing in TCK tests ***");
-                
-                // Log all parameters for createDocument debugging
-                System.err.println("*** createDocument Parameters: ***");
-                java.util.Map<String, String[]> createDocParams = request.getParameterMap();
-                for (String paramName : createDocParams.keySet()) {
-                    String[] values = createDocParams.get(paramName);
-                    System.err.println("  " + paramName + " = " + java.util.Arrays.toString(values));
-                }
-                
                 // Check required parameters for createDocument
                 String folderId = request.getParameter("folderId");
                 String objectId = request.getParameter("objectId");
-                System.err.println("*** createDocument folderId = [" + folderId + "] ***");
-                System.err.println("*** createDocument objectId = [" + objectId + "] ***");
                 
                 if (folderId == null && objectId == null) {
-                    System.err.println("*** CRITICAL ERROR: Neither folderId nor objectId provided for createDocument ***");
-                    System.err.println("*** This will cause 'folderId must be set' error ***");
+                    log.warn("Neither folderId nor objectId provided for createDocument - will cause 'folderId must be set' error");
                 }
                 
-                // Log content information for document creation
-                long contentLength = request.getContentLength();
-                System.err.println("*** createDocument Content-Length = " + contentLength + " ***");
-                
+                // Handle multipart form data if present
                 if (contentType != null && contentType.startsWith("multipart/form-data")) {
-                    System.err.println("*** createDocument using multipart form data ***");
                     try {
                         // JAKARTA EE 10 MULTIPART PROCESSING FIX: Enhanced multipart handling for Jakarta EE 10 / Tomcat 10 compatibility
                         java.util.Collection<jakarta.servlet.http.Part> parts = null;
                         try {
                             parts = request.getParts();
                         } catch (jakarta.servlet.ServletException servletEx) {
-                            System.err.println("*** JAKARTA EE 10 FIX: ServletException in getParts() - " + servletEx.getMessage() + " ***");
                             // Try to handle Tomcat 10 specific multipart parsing issues
                             if (servletEx.getCause() instanceof java.io.IOException) {
-                                System.err.println("*** JAKARTA EE 10 FIX: IOException in multipart parsing, attempting fallback ***");
+                                log.warn("IOException in multipart parsing, attempting fallback");
                             }
                             throw servletEx; // Re-throw for outer catch
                         } catch (java.io.IOException ioEx) {
-                            System.err.println("*** JAKARTA EE 10 FIX: IOException in getParts() - " + ioEx.getMessage() + " ***");
+                            log.error("IOException in getParts(): " + ioEx.getMessage());
                             throw ioEx; // Re-throw for outer catch
                         }
                         
@@ -278,34 +164,21 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                             for (jakarta.servlet.http.Part part : parts) {
                                 try {
                                     String partName = part.getName();
-                                    long partSize = part.getSize();
                                     String fileName = part.getSubmittedFileName();
-                                    System.err.println("*** Part: " + partName + " (size: " + partSize + ") ***");
                                     if ("content".equals(partName) || fileName != null) {
-                                        System.err.println("*** Content part detected: " + fileName + " ***");
+                                        log.debug("Content part detected: " + fileName);
                                     }
                                 } catch (Exception partProcessEx) {
-                                    System.err.println("*** JAKARTA EE 10 FIX: Error processing individual part - " + partProcessEx.getMessage() + " ***");
+                                    log.warn("Error processing individual part: " + partProcessEx.getMessage());
                                     // Continue processing other parts
                                 }
                             }
-                        } else {
-                            System.err.println("*** JAKARTA EE 10 FIX: getParts() returned null ***");
                         }
                     } catch (Exception partEx) {
-                        System.err.println("*** JAKARTA EE 10 FIX: Error reading parts - " + partEx.getMessage() + " ***");
-                        partEx.printStackTrace(); // More detailed error info for debugging
+                        log.error("Error reading parts: " + partEx.getMessage());
                     }
-                } else {
-                    System.err.println("*** createDocument NOT using multipart - Content-Type: " + contentType + " ***");
                 }
             }
-            
-            // Log request path analysis for POST routing
-            System.err.println("POST Debug: Path analysis for routing:");
-            System.err.println("  ServletPath: [" + servletPath + "]");
-            System.err.println("  PathInfo: [" + pathInfo + "]");
-            System.err.println("  RequestURI: [" + requestURI + "]");
             
             // SPRING 6.X URL PARSING FIX: Enhanced path parsing with robust error handling
             if (pathInfo != null && !pathInfo.trim().isEmpty()) {
@@ -315,37 +188,20 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 
                 if (!cleanPathInfo.isEmpty()) {
                     String[] pathParts = cleanPathInfo.split("/");
-                    System.err.println("POST Debug: Path parts (Spring 6.x compatible): " + java.util.Arrays.toString(pathParts));
                     
                     if (pathParts.length >= 1 && !pathParts[0].trim().isEmpty()) {
                         String repositoryId = pathParts[0];
-                        System.err.println("POST Debug: Repository ID: [" + repositoryId + "]");
                         
                         if (pathParts.length >= 2 && !pathParts[1].trim().isEmpty()) {
                             String possibleObjectId = pathParts[1];
-                            System.err.println("POST Debug: Possible Object ID in path: [" + possibleObjectId + "]");
-                            System.err.println("POST Debug: This suggests object-specific POST operation");
+                            log.debug("Object-specific POST operation detected for repository: " + repositoryId + ", object: " + possibleObjectId);
                         } else {
-                            System.err.println("POST Debug: Repository-level POST operation");
+                            log.debug("Repository-level POST operation for repository: " + repositoryId);
                         }
-                    } else {
-                        System.err.println("*** SPRING 6.X FIX: Empty or invalid pathParts after parsing ***");
                     }
-                } else {
-                    System.err.println("*** SPRING 6.X FIX: pathInfo is empty after cleaning ***");
                 }
             }
-            
-            // Log if this POST request should be handled by our servlet
-            System.err.println("POST Debug: Should be handled by NemakiBrowserBindingServlet: TRUE");
-            System.err.println("POST Debug: If this request fails, the problem is in parameter processing or service routing");
-            
-            System.err.println("=== END POST REQUEST ROUTING DEBUG ===");
         }
-        
-        // ===============================
-        // END TCK DEBUG SECTION
-        // ===============================
         
         // ===============================
         // CRITICAL FIX: REMOVE PROBLEMATIC REQUEST WRAPPER 
@@ -358,29 +214,16 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         
         // PARAMETER CORRUPTION FIX: Do NOT wrap request - let OpenCMIS handle multipart directly  
         if (contentType != null && contentType.startsWith("multipart/form-data")) {
-            System.err.println("*** PARAMETER CORRUPTION FIX: Preserving original multipart request for OpenCMIS ***");
-            
-            // Check if multipart parameters are available for logging
+            // Check if multipart parameters are available
             String cmisaction = request.getParameter("cmisaction");
             java.util.Map<String, String[]> parameterMap = request.getParameterMap();
             
-            System.err.println("*** PARAMETER FIX: cmisaction = " + cmisaction + " ***");
-            System.err.println("*** PARAMETER FIX: Total parameters = " + parameterMap.size() + " ***");
-            
             if (cmisaction != null || parameterMap.size() > 0) {
                 multipartAlreadyProcessed = true;
-                System.err.println("*** PARAMETER CORRUPTION FIX: Parameters visible in servlet - letting OpenCMIS process original request ***");
                 
                 // CRITICAL: DO NOT CREATE WRAPPER - Use original request directly
                 // The wrapper was corrupting Content-Type and Content-Length, breaking parameter processing
                 finalRequest = request; // Keep original request intact
-                
-                System.err.println("*** PARAMETER CORRUPTION FIX: Using original request without wrapper ***");
-                System.err.println("*** PARAMETER FIX: Original Content-Type = " + request.getContentType() + " ***");
-                System.err.println("*** PARAMETER FIX: Original Content-Length = " + request.getContentLength() + " ***");
-                System.err.println("*** PARAMETER FIX: Parameters available = " + request.getParameterMap().size() + " ***");
-            } else {
-                System.err.println("*** PARAMETER CORRUPTION FIX: No parameters found - using original request ***");
             }
         }
         
@@ -388,19 +231,14 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         String cmisaction = null;
         
         if (!multipartAlreadyProcessed && contentType != null && contentType.startsWith("multipart/form-data")) {
-            System.err.println("*** MULTIPART REQUEST DETECTED - PARSING PARAMETERS ***");
-            System.err.println("*** MULTIPART DEBUG: Content-Type = " + contentType + " ***");
-            System.err.println("*** MULTIPART DEBUG: Content-Length = " + request.getContentLength() + " ***");
             try {
                 // Use OpenCMIS HttpUtils to properly parse multipart parameters
                 cmisaction = org.apache.chemistry.opencmis.server.shared.HttpUtils.getStringParameter(request, "cmisaction");
-                System.err.println("*** MULTIPART DEBUG: Extracted cmisaction = " + cmisaction + " ***");
                 
                 // CRITICAL FIX: Handle TCK Browser Binding folderId parameter mapping
                 // TCK tests use "folderId" parameter for document creation, but NemakiWare expects "objectId"
                 String folderId = org.apache.chemistry.opencmis.server.shared.HttpUtils.getStringParameter(request, "folderId");
                 if (folderId != null && !folderId.isEmpty()) {
-                    System.err.println("*** TCK COMPATIBILITY: folderId parameter detected: " + folderId + " - mapping to objectId ***");
                     // Create a request wrapper to inject objectId parameter
                     final String folderIdValue = folderId;
                     finalRequest = new HttpServletRequestWrapper(request) {
@@ -419,13 +257,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                             return paramMap;
                         }
                     };
-                    System.err.println("*** TCK COMPATIBILITY: Request wrapped with objectId mapping ***");
                 }
                 
-                if (cmisaction != null) {
-                    System.err.println("*** MULTIPART CMISACTION EXTRACTED: " + cmisaction + " ***");
-                } else {
-                    System.err.println("*** MULTIPART CMISACTION NOT FOUND ***");
+                if (cmisaction == null) {
                     // Try alternative parsing methods if HttpUtils doesn't work
                     if (request instanceof jakarta.servlet.http.HttpServletRequest) {
                         try {
@@ -434,10 +268,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                             try {
                                 parts = request.getParts();
                             } catch (jakarta.servlet.ServletException servletEx) {
-                                System.err.println("*** JAKARTA EE 10 FIX: ServletException in cmisaction getParts() - " + servletEx.getMessage() + " ***");
+                                log.warn("ServletException in cmisaction getParts(): " + servletEx.getMessage());
                                 throw servletEx;
                             } catch (java.io.IOException ioEx) {
-                                System.err.println("*** JAKARTA EE 10 FIX: IOException in cmisaction getParts() - " + ioEx.getMessage() + " ***");
+                                log.error("IOException in cmisaction getParts(): " + ioEx.getMessage());
                                 throw ioEx;
                             }
                             
@@ -449,144 +283,99 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                                             if (inputStream != null) {
                                                 byte[] bytes = inputStream.readAllBytes();
                                                 cmisaction = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
-                                                System.err.println("*** JAKARTA EE 10 FIX: PART-BASED CMISACTION EXTRACTED: " + cmisaction + " ***");
                                                 break;
-                                            } else {
-                                                System.err.println("*** JAKARTA EE 10 FIX: cmisaction part inputStream is null ***");
                                             }
                                         }
                                     } catch (java.io.IOException partIoEx) {
-                                        System.err.println("*** JAKARTA EE 10 FIX: IOException reading cmisaction part - " + partIoEx.getMessage() + " ***");
+                                        log.warn("IOException reading cmisaction part: " + partIoEx.getMessage());
                                         // Continue to next part
                                     }
                                 }
-                            } else {
-                                System.err.println("*** JAKARTA EE 10 FIX: cmisaction getParts() returned null ***");
                             }
                         } catch (Exception partException) {
-                            System.err.println("*** JAKARTA EE 10 FIX: PART-BASED CMISACTION PARSING FAILED: " + partException.getMessage() + " ***");
-                            partException.printStackTrace();
+                            log.error("PART-BASED CMISACTION PARSING FAILED: " + partException.getMessage());
                         }
                     }
                 }
             } catch (Exception e) {
-                System.err.println("*** MULTIPART PARSING ERROR: " + e.getMessage() + " ***");
-                e.printStackTrace();
+                log.error("MULTIPART PARSING ERROR: " + e.getMessage());
             }
         } else {
             // Normal parameter parsing for non-multipart requests
             cmisaction = request.getParameter("cmisaction");
             if (cmisaction != null) {
-                System.err.println("*** STANDARD CMISACTION DETECTED: " + cmisaction + " ***");
-                
                 // CRITICAL FIX: Handle createDocument with content parameter for form-encoded requests ONLY
                 if ("createDocument".equals(cmisaction)) {
-                    System.err.println("*** FORM-ENCODED CONTENT STREAM FIX: Detecting createDocument in request ***");
-                    
                     // CRITICAL: Only process form-encoded requests, NOT multipart requests
                     // Calling getParameter() on multipart requests consumes the InputStream!
                     String requestContentType = request.getContentType();
                     boolean isFormEncoded = requestContentType != null && requestContentType.toLowerCase().startsWith("application/x-www-form-urlencoded");
                     boolean isMultipart = requestContentType != null && requestContentType.toLowerCase().startsWith("multipart/form-data");
                     
-                    System.err.println("*** CONTENT TYPE CHECK: " + requestContentType + " ***");
-                    System.err.println("*** IS FORM ENCODED: " + isFormEncoded + " ***");
-                    System.err.println("*** IS MULTIPART: " + isMultipart + " ***");
-                    
                     if (isFormEncoded) {
-                        System.err.println("*** FORM-ENCODED CONTENT STREAM FIX: Processing form-encoded request ***");
                         // Safe to call getParameter() on form-encoded requests
                         String contentParam = request.getParameter("content");
                         if (contentParam != null && !contentParam.isEmpty()) {
-                        System.err.println("*** FORM-ENCODED CONTENT STREAM FIX: content parameter found with length: " + contentParam.length() + " ***");
-                        
-                        // Create ContentStream from form parameter
-                        org.apache.chemistry.opencmis.commons.data.ContentStream contentStream = 
-                            extractContentStreamFromFormParameters(request, cmisaction);
-                        
-                        if (contentStream != null) {
-                            System.err.println("*** FORM-ENCODED CONTENT STREAM FIX: ContentStream created successfully ***");
+                            // Create ContentStream from form parameter
+                            org.apache.chemistry.opencmis.commons.data.ContentStream contentStream = 
+                                extractContentStreamFromFormParameters(request, cmisaction);
                             
-                            // Wrap the request to provide the ContentStream via attribute
-                            final org.apache.chemistry.opencmis.commons.data.ContentStream finalContentStream = contentStream;
-                            finalRequest = new HttpServletRequestWrapper(finalRequest) {
-                                @Override
-                                public Object getAttribute(String name) {
-                                    if ("org.apache.chemistry.opencmis.content.stream".equals(name)) {
-                                        System.err.println("*** FORM-ENCODED CONTENT STREAM FIX: ContentStream requested via attribute - providing ***");
-                                        return finalContentStream;
+                            if (contentStream != null) {
+                                // Wrap the request to provide the ContentStream via attribute
+                                final org.apache.chemistry.opencmis.commons.data.ContentStream finalContentStream = contentStream;
+                                finalRequest = new HttpServletRequestWrapper(finalRequest) {
+                                    @Override
+                                    public Object getAttribute(String name) {
+                                        if ("org.apache.chemistry.opencmis.content.stream".equals(name)) {
+                                            return finalContentStream;
+                                        }
+                                        return super.getAttribute(name);
                                     }
-                                    return super.getAttribute(name);
-                                }
-                            };
-                            
-                            // Also set as attribute directly
-                            finalRequest.setAttribute("org.apache.chemistry.opencmis.content.stream", contentStream);
-                            System.err.println("*** FORM-ENCODED CONTENT STREAM FIX: ContentStream stored in request attribute ***");
-                        } else {
-                            System.err.println("*** FORM-ENCODED CONTENT STREAM FIX: Failed to create ContentStream ***");
+                                };
+                                
+                                // Also set as attribute directly
+                                finalRequest.setAttribute("org.apache.chemistry.opencmis.content.stream", contentStream);
+                            }
                         }
-                        } else {
-                            System.err.println("*** FORM-ENCODED CONTENT STREAM FIX: No content parameter found in form-encoded request ***");
-                        }
-                    } else if (isMultipart) {
-                        System.err.println("*** MULTIPART CONTENT STREAM FIX: Skipping multipart request - will be handled by POSTHttpServletRequestWrapper ***");
-                    } else {
-                        System.err.println("*** CONTENT STREAM FIX: Unknown content type, skipping ContentStream processing ***");
                     }
                 }
             }
         }
         
         if (cmisaction != null) {
-            System.err.println("*** CMISACTION DETECTED: " + cmisaction + " ***");
-            
-            // ENHANCED: Specific logging for createDocument operations
+            // Enhanced logging for createDocument operations (development debugging)
             if ("createDocument".equals(cmisaction)) {
-                System.err.println("!!! ENHANCED LOGGING: createDocument operation detected for Secondary Types Test debugging !!!");
-                System.err.println("!!! SECONDARY TYPES DEBUG: Full request analysis for createDocument !!!");
-                System.err.println("  Full URL: " + request.getRequestURL());
-                System.err.println("  Method: " + method);
-                System.err.println("  Content-Type: " + request.getContentType());
-                System.err.println("  Content-Length: " + request.getContentLength());
-                System.err.println("  Multipart Already Processed: " + multipartAlreadyProcessed);
+                log.debug("createDocument operation detected");
                 
-                // Extract all properties for createDocument debugging
+                // Extract parameters for debugging if needed
                 try {
                     java.util.Map<String, String[]> params = finalRequest.getParameterMap();
-                    System.err.println("!!! SECONDARY TYPES DEBUG: All parameters for createDocument: !!!");
-                    for (java.util.Map.Entry<String, String[]> entry : params.entrySet()) {
-                        System.err.println("  PARAM: " + entry.getKey() + " = " + java.util.Arrays.toString(entry.getValue()));
-                    }
                     
-                    // Check for secondary type properties specifically
+                    // Check for secondary type properties specifically for debugging
                     for (String paramName : params.keySet()) {
                         if (paramName.startsWith("propertyId") || paramName.startsWith("propertyValue")) {
-                            System.err.println("!!! SECONDARY TYPES DEBUG: Property parameter found: " + paramName + " = " + java.util.Arrays.toString(params.get(paramName)) + " !!!");
+                            log.debug("Property parameter: " + paramName + " = " + java.util.Arrays.toString(params.get(paramName)));
                         }
                         if (paramName.contains("secondaryObjectType") || paramName.contains("SecondaryType")) {
-                            System.err.println("!!! SECONDARY TYPES DEBUG: Secondary type parameter found: " + paramName + " = " + java.util.Arrays.toString(params.get(paramName)) + " !!!");
+                            log.debug("Secondary type parameter: " + paramName + " = " + java.util.Arrays.toString(params.get(paramName)));
                         }
                     }
                 } catch (Exception paramException) {
-                    System.err.println("!!! SECONDARY TYPES DEBUG: Error analyzing createDocument parameters: " + paramException.getMessage() + " !!!");
-                    paramException.printStackTrace();
+                    log.error("Error analyzing createDocument parameters: " + paramException.getMessage());
                 }
             }
             
             // CRITICAL FIX: Handle deleteType directly since OpenCMIS 1.2.0-SNAPSHOT bypasses service factory
             if ("deleteType".equals(cmisaction)) {
-                System.err.println("!!! DELETE TYPE REQUEST INTERCEPTED - IMPLEMENTING DIRECT DELETION !!!");
                 try {
                     handleDeleteTypeDirectly(request, response, pathInfo);
                     return; // Don't delegate to parent - we handled it completely
                 } catch (Exception e) {
-                    System.err.println("!!! CRITICAL ERROR IN DIRECT DELETE TYPE: " + e.getClass().getSimpleName() + ": " + e.getMessage() + " !!!");
-                    e.printStackTrace();
+                    log.error("CRITICAL ERROR IN DIRECT DELETE TYPE: " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
                     try {
                         writeErrorResponse(response, e);
                     } catch (Exception writeException) {
-                        System.err.println("!!! FAILED TO WRITE ERROR RESPONSE: " + writeException.getMessage() + " !!!");
+                        log.error("FAILED TO WRITE ERROR RESPONSE: " + writeException.getMessage());
                         // Set basic error response if writeErrorResponse fails
                         if (!response.isCommitted()) {
                             response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
@@ -596,7 +385,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                                 out.write(errorJson.getBytes("UTF-8"));
                                 out.flush();
                             } catch (IOException ioException) {
-                                System.err.println("!!! COMPLETE FAILURE TO WRITE ANY RESPONSE: " + ioException.getMessage() + " !!!");
+                                log.error("COMPLETE FAILURE TO WRITE ANY RESPONSE: " + ioException.getMessage());
                             }
                         }
                     }
@@ -606,56 +395,30 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             
             // QUERY HANDLING: Let parent CmisBrowserBindingServlet handle queries now that DeleteTypeFilter is bypassed
             if ("query".equals(cmisaction)) {
-                System.err.println("*** QUERY REQUEST DETECTED - Delegating to parent CmisBrowserBindingServlet ***");
                 // No direct handling - let the parent class handle query processing completely
             }
             
             if ("createType".equals(cmisaction)) {
-                System.err.println("!!! CREATE TYPE REQUEST INTERCEPTED !!!");
-                System.err.println("Request details for createType:");
-                System.err.println("  Full URL: " + request.getRequestURL());
-                System.err.println("  Method: " + method);
-                System.err.println("  Content-Type: " + request.getContentType());
-                System.err.println("  Content-Length: " + request.getContentLength());
-                
-                // Try to read request body if available
-                try {
-                    if (request.getContentLength() > 0) {
-                        System.err.println("  Request has body content - length: " + request.getContentLength());
-                    }
-                } catch (Exception e) {
-                    System.err.println("  Error reading request body info: " + e.getMessage());
-                }
+                log.debug("CREATE TYPE REQUEST INTERCEPTED");
+                log.debug("Request details for createType: URL=" + request.getRequestURL() + ", Method=" + method + 
+                         ", Content-Type=" + request.getContentType() + ", Content-Length=" + request.getContentLength());
             }
             
             // CMIS OPERATIONS ROUTER: Handle missing Browser Binding operations that cause "Unknown operation" errors
             if (routeCmisAction(cmisaction, request, response, pathInfo, method)) {
-                System.err.println("*** CMIS ROUTER: Action '" + cmisaction + "' handled successfully - bypassing parent service ***");
+                log.debug("CMIS ROUTER: Action '" + cmisaction + "' handled successfully - bypassing parent service");
                 return; // Don't delegate to parent - we handled it completely
             }
-            
-        } else {
-            System.err.println("*** NO CMISACTION DETECTED (contentType=" + contentType + ", multipartProcessed=" + multipartAlreadyProcessed + ") ***");
         }
-        
-        System.err.println("!!! CRITICAL DEBUG: LINE 152 EXECUTED [" + System.currentTimeMillis() + "] !!!");
-        System.err.println("!!! CRITICAL DEBUG: LINE 153 EXECUTED [" + System.currentTimeMillis() + "] !!!");
-        System.err.println("!!! DEBUG: RIGHT BEFORE DELEGATING MESSAGE [" + System.currentTimeMillis() + "] !!!");
-        System.err.println("=== DELEGATING TO PARENT SERVICE ===");
         
         // CRITICAL FIX: Handle OpenCMIS 1.2.0-SNAPSHOT strict selector validation for TCK compatibility
         
         try {
-            System.err.println("!!! COMPATIBILITY FIX EXECUTION START [" + System.currentTimeMillis() + "] !!!");
-            
             if ("GET".equals(method) && queryString == null && pathInfo != null) {
                 // Check if this is a repository URL without selector (e.g., /browser/bedroom without ?cmisselector=repositoryInfo)
                 String[] pathParts = pathInfo.split("/");
-                System.err.println("COMPATIBILITY FIX: pathParts.length=" + pathParts.length + " for pathInfo=" + pathInfo);
                 
                 if (pathParts.length == 2) { // ["", "bedroom"] for /bedroom
-                    System.err.println("COMPATIBILITY FIX: Adding default repositoryInfo selector for repository URL");
-                    
                     // Create a wrapper request that adds the default selector
                     finalRequest = new HttpServletRequestWrapper(request) {
                         @Override
@@ -678,46 +441,27 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                             return paramMap;
                         }
                     };
-                    System.err.println("COMPATIBILITY FIX: Request wrapped successfully");
                 }
             }
-            
-            System.err.println("!!! COMPATIBILITY FIX EXECUTION COMPLETE [" + System.currentTimeMillis() + "] !!!");
-            
         } catch (Exception e) {
-            System.err.println("!!! EXCEPTION IN COMPATIBILITY FIX: " + e.getMessage());
-            e.printStackTrace();
+            log.error("EXCEPTION IN COMPATIBILITY FIX: " + e.getMessage(), e);
         }
         
         // Use standard OpenCMIS processing with potential request wrapping for compatibility
         // CMIS 1.1 specification: Multi-cardinality properties with no values should return null (not set state)
         
-        // CRITICAL: Add special debugging for createDocument operations
+        // Special debugging for createDocument operations
         if ("createDocument".equals(cmisaction)) {
-            System.err.println("*** CREATEDOCUMENT DEBUG: Starting createDocument operation ***");
-            System.err.println("*** CREATEDOCUMENT DEBUG: Final request class = " + finalRequest.getClass().getName() + " ***");
-            System.err.println("*** CREATEDOCUMENT DEBUG: Content-Type = " + finalRequest.getContentType() + " ***");
-            System.err.println("*** CREATEDOCUMENT DEBUG: Content-Length = " + finalRequest.getContentLength() + " ***");
-            System.err.println("*** CREATEDOCUMENT DEBUG: Multipart Already Processed = " + multipartAlreadyProcessed + " ***");
+            log.debug("Starting createDocument operation - Final request class: " + finalRequest.getClass().getName() + 
+                     ", Content-Type: " + finalRequest.getContentType() + ", Content-Length: " + finalRequest.getContentLength() +
+                     ", Multipart Already Processed: " + multipartAlreadyProcessed);
             
-            // Log all parameters that will be seen by OpenCMIS
-            System.err.println("*** CREATEDOCUMENT DEBUG: All parameters in finalRequest: ***");
-            java.util.Map<String, String[]> finalParams = finalRequest.getParameterMap();
-            for (java.util.Map.Entry<String, String[]> entry : finalParams.entrySet()) {
-                System.err.println("***   PARAM: " + entry.getKey() + " = " + java.util.Arrays.toString(entry.getValue()) + " ***");
-            }
-            
-            // Check if request input stream is readable
-            try {
-                java.io.InputStream is = finalRequest.getInputStream();
-                if (is != null) {
-                    int available = is.available();
-                    System.err.println("*** CREATEDOCUMENT DEBUG: InputStream available bytes = " + available + " ***");
-                } else {
-                    System.err.println("*** CREATEDOCUMENT DEBUG: InputStream is null ***");
+            // Log parameters for debugging if needed
+            if (log.isDebugEnabled()) {
+                java.util.Map<String, String[]> finalParams = finalRequest.getParameterMap();
+                for (java.util.Map.Entry<String, String[]> entry : finalParams.entrySet()) {
+                    log.debug("PARAM: " + entry.getKey() + " = " + java.util.Arrays.toString(entry.getValue()));
                 }
-            } catch (Exception streamException) {
-                System.err.println("*** CREATEDOCUMENT DEBUG: Error accessing InputStream: " + streamException.getMessage() + " ***");
             }
         }
         
@@ -725,37 +469,19 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         String requestContentType = request.getContentType();
         boolean isMultipartRequest = isMultipartRequest(request, requestContentType);
         
-        System.err.println("*** MULTIPART DETECTION DEBUG ***");
-        System.err.println("  Method: " + request.getMethod());
-        System.err.println("  Content-Type: '" + requestContentType + "'");
-        System.err.println("  Is Multipart: " + isMultipartRequest);
-        
         if ("POST".equals(request.getMethod()) && isMultipartRequest) {
-            
-            System.err.println("*** MULTIPART REQUEST WRAPPER: Creating custom wrapper to prevent re-parsing ***");
-            System.err.println("*** Content-Type: " + requestContentType + " ***");
-            
             // Create ContentStream from already-parsed parameters if needed
             org.apache.chemistry.opencmis.commons.data.ContentStream contentStream = 
                 extractContentStreamFromMultipartParameters(finalRequest);
             
             finalRequest = new NemakiMultipartRequestWrapper(finalRequest, contentStream);
-            System.err.println("*** MULTIPART REQUEST WRAPPER: Custom wrapper created successfully ***");
         }
         
         // CRITICAL FIX: Intercept content selector requests to handle null ContentStream properly
         // Root cause: Parent OpenCMIS servlet converts null ContentStream to HTTP 500 instead of HTTP 404
         String cmisselector = finalRequest.getParameter("cmisselector");
-        System.err.println("!!! CONTENT SELECTOR DEBUG: method=" + method + ", cmisselector=[" + cmisselector + "] !!!");
         if ("GET".equals(method) && "content".equals(cmisselector)) {
-            System.err.println("!!! CONTENT SELECTOR INTERCEPTION: GET request with cmisselector=content detected !!!");
-            
             try {
-                // ENHANCED DEBUG: Show all path parsing details
-                System.err.println("!!! DEBUG PATH PARSING START !!!");
-                System.err.println("!!! requestURI: [" + requestURI + "] !!!");
-                System.err.println("!!! pathInfo: [" + pathInfo + "] !!!");
-                
                 // Extract repository ID and object ID from URL structure
                 // URL format: /core/browser/{repositoryId}/root/{objectId}?cmisselector=content
                 String repositoryId = null;
@@ -764,31 +490,21 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 // Method 1: Try to extract from pathInfo (/bedroom/root/objectId)
                 if (pathInfo != null && pathInfo.startsWith("/")) {
                     String[] pathParts = pathInfo.substring(1).split("/");
-                    System.err.println("!!! pathParts length: " + pathParts.length + " !!!");
-                    for (int i = 0; i < pathParts.length; i++) {
-                        System.err.println("!!! pathParts[" + i + "]: [" + pathParts[i] + "] !!!");
-                    }
                     
                     if (pathParts.length >= 1) {
                         repositoryId = pathParts[0]; // bedroom
-                        System.err.println("!!! Extracted repositoryId: [" + repositoryId + "] !!!");
                     }
                     if (pathParts.length >= 3) {
                         objectId = pathParts[2]; // objectId after /root/
-                        System.err.println("!!! Extracted objectId: [" + objectId + "] !!!");
                     }
                 }
                 
                 // Method 2: Fallback to parameter extraction if pathInfo method fails
                 if (objectId == null) {
                     objectId = finalRequest.getParameter(Constants.PARAM_OBJECT_ID);
-                    System.err.println("!!! Fallback objectId from parameter: [" + objectId + "] !!!");
                 }
                 
-                System.err.println("!!! FINAL EXTRACTION RESULTS: repositoryId=[" + repositoryId + "], objectId=[" + objectId + "] !!!");
-                
                 if (repositoryId == null) {
-                    System.err.println("!!! MISSING REPOSITORY ID: Repository=[" + repositoryId + "] !!!");
                     if (!response.isCommitted()) {
                         response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
                         response.setContentType("application/json");
@@ -797,28 +513,24 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                             out.write(errorJson.getBytes("UTF-8"));
                             out.flush();
                         } catch (Exception writeEx) {
-                            System.err.println("!!! ERROR: Failed to write repository ID error response: " + writeEx.getMessage() + " !!!");
+                            log.error("Failed to write repository ID error response: " + writeEx.getMessage());
                         }
                     }
                     return;
                 }
                 
-                System.err.println("!!! CREATING CALLCONTEXT: repositoryId=[" + repositoryId + "] (using standard OpenCMIS authentication) !!!");
                 // AUTHENTICATION FIX: Use standard OpenCMIS createContext() method instead of direct constructor
                 // This ensures CallContextHandler.getCallContextMap() extracts username/password from Authorization header
                 // Direct constructor call bypassed authentication, causing [UserName=null] failures
                 CallContext callContext = createContext(getServletContext(), finalRequest, response, null);
                 CmisService service = getServiceFactory().getService(callContext);
                 
-                System.err.println("!!! CONTENT INTERCEPTION SUCCESS: repositoryId=" + repositoryId + ", objectId=" + objectId + " !!!");
-                
                 // Call our custom handleContentOperation which has proper null handling
                 handleContentOperation(service, repositoryId, objectId, finalRequest, response);
                 return; // Content operation handles response directly
                 
             } catch (Exception e) {
-                System.err.println("!!! CONTENT INTERCEPTION ERROR: " + e.getMessage() + " !!!");
-                e.printStackTrace();
+                log.error("CONTENT INTERCEPTION ERROR: " + e.getMessage(), e);
                 
                 // CRITICAL FIX: Use OutputStream instead of Writer to avoid IllegalStateException
                 // getWriter() fails when OutputStream has already been accessed elsewhere
@@ -829,121 +541,80 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                         String errorJson = "{\"exception\":\"runtime\",\"message\":\"" + e.getMessage() + "\"}";
                         out.write(errorJson.getBytes("UTF-8"));
                         out.flush();
-                        System.err.println("!!! ERROR RESPONSE SENT VIA OUTPUTSTREAM !!!");
                     } catch (Exception writeEx) {
-                        System.err.println("!!! CRITICAL ERROR: Failed to write error response: " + writeEx.getMessage() + " !!!");
-                        writeEx.printStackTrace();
+                        log.error("Failed to write error response: " + writeEx.getMessage(), writeEx);
                     }
-                } else {
-                    System.err.println("!!! Response already committed - cannot send error response !!!");
                 }
                 return;
             }
         }
         
         try {
-            System.err.println("!!! CALLING SUPER.SERVICE() [" + System.currentTimeMillis() + "] !!!");
             super.service(finalRequest, response);
-            System.err.println("!!! SUPER.SERVICE() COMPLETED SUCCESSFULLY [" + System.currentTimeMillis() + "] !!!");
         } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException objNotFoundException) {
             // CRITICAL FIX: Specific handling for CmisObjectNotFoundException to apply proper HTTP 404 status code
-            System.err.println("!!! CRITICAL: CmisObjectNotFoundException CAUGHT - APPLYING CUSTOM HTTP STATUS CODE MAPPING !!!");
-            System.err.println("!!! EXCEPTION MESSAGE: " + objNotFoundException.getMessage() + " !!!");
-            System.err.println("!!! EXCEPTION OCCURRED AT [" + System.currentTimeMillis() + "] !!!");
-            System.err.println("!!! Request details when CmisObjectNotFoundException occurred: !!!");
-            System.err.println("!!!   Method: " + method + " !!!");
-            System.err.println("!!!   URI: " + requestURI + " !!!");
-            System.err.println("!!!   PathInfo: " + pathInfo + " !!!");
-            System.err.println("!!!   Content-Type: " + contentType + " !!!");
-            System.err.println("!!!   CmisAction: " + cmisaction + " !!!");
+            log.error("CmisObjectNotFoundException caught - applying custom HTTP status code mapping: " + objNotFoundException.getMessage());
+            log.debug("Request details: Method=" + method + ", URI=" + requestURI + ", PathInfo=" + pathInfo + 
+                     ", Content-Type=" + contentType + ", CmisAction=" + cmisaction);
             
             try {
                 // Use custom writeErrorResponse with proper HTTP status code mapping
                 writeErrorResponse(response, objNotFoundException);
-                System.err.println("!!! SUCCESS: writeErrorResponse() applied HTTP 404 for CmisObjectNotFoundException !!!");
                 return; // Don't re-throw, we handled it with custom HTTP status code
             } catch (Exception writeException) {
-                System.err.println("!!! FAILED TO WRITE ERROR RESPONSE: " + writeException.getMessage() + " !!!");
-                System.err.println("!!! Falling back to standard exception handling !!!");
+                log.error("Failed to write error response - falling back to standard exception handling: " + writeException.getMessage());
                 throw objNotFoundException; // Fallback to standard handling
             }
         } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException cmisArgException) {
-            // ENHANCED: Specific logging for createDocument CmisInvalidArgumentException to understand Secondary Types Test failures
-            System.err.println("!!! CRITICAL: CmisInvalidArgumentException CAUGHT IN SUPER.SERVICE() !!!");
-            System.err.println("!!! EXCEPTION MESSAGE: " + cmisArgException.getMessage() + " !!!");
-            System.err.println("!!! EXCEPTION OCCURRED AT [" + System.currentTimeMillis() + "] !!!");
+            // Specific logging for createDocument CmisInvalidArgumentException
+            log.error("CmisInvalidArgumentException caught in super.service(): " + cmisArgException.getMessage());
             
-            // Check if this is a createDocument operation for Secondary Types Test
+            // Check if this is a createDocument operation
             if ("createDocument".equals(cmisaction)) {
-                System.err.println("!!! SECONDARY TYPES TEST FAILURE: CmisInvalidArgumentException in createDocument operation !!!");
-                System.err.println("!!! This is the actual root cause of the 'Invalid multipart request!' error !!!");
-                System.err.println("!!! Request details for failed createDocument: !!!");
-                System.err.println("!!!   Method: " + method + " !!!");
-                System.err.println("!!!   URI: " + requestURI + " !!!");
-                System.err.println("!!!   PathInfo: " + pathInfo + " !!!");
-                System.err.println("!!!   Content-Type: " + contentType + " !!!");
-                System.err.println("!!!   CmisAction: " + cmisaction + " !!!");
-                System.err.println("!!!   Multipart Already Processed: " + multipartAlreadyProcessed + " !!!");
+                log.error("Secondary Types Test failure - CmisInvalidArgumentException in createDocument operation");
+                log.debug("Request details for failed createDocument: Method=" + method + ", URI=" + requestURI + 
+                         ", PathInfo=" + pathInfo + ", Content-Type=" + contentType + ", CmisAction=" + cmisaction + 
+                         ", Multipart Already Processed=" + multipartAlreadyProcessed);
                 
                 // Enhanced parameter analysis for createDocument failures
-                try {
-                    java.util.Map<String, String[]> params = finalRequest.getParameterMap();
-                    System.err.println("!!! FAILED CREATEDOCUMENT PARAMETERS: !!!");
-                    for (java.util.Map.Entry<String, String[]> entry : params.entrySet()) {
-                        System.err.println("!!!   PARAM: " + entry.getKey() + " = " + java.util.Arrays.toString(entry.getValue()) + " !!!");
+                if (log.isDebugEnabled()) {
+                    try {
+                        java.util.Map<String, String[]> params = finalRequest.getParameterMap();
+                        for (java.util.Map.Entry<String, String[]> entry : params.entrySet()) {
+                            log.debug("FAILED CREATEDOCUMENT PARAM: " + entry.getKey() + " = " + java.util.Arrays.toString(entry.getValue()));
+                        }
+                    } catch (Exception paramException) {
+                        log.error("Error analyzing failed createDocument parameters: " + paramException.getMessage());
                     }
-                } catch (Exception paramException) {
-                    System.err.println("!!! ERROR ANALYZING FAILED CREATEDOCUMENT PARAMETERS: " + paramException.getMessage() + " !!!");
                 }
             }
             
-            System.err.println("!!! STACK TRACE FOR CmisInvalidArgumentException: !!!");
-            
-            // Print detailed stack trace to identify exactly where it's thrown
-            StackTraceElement[] stackTrace = cmisArgException.getStackTrace();
-            for (int i = 0; i < Math.min(stackTrace.length, 25); i++) { // Increased to 25 frames for more detail
-                System.err.println("!!! STACK [" + i + "]: " + stackTrace[i].toString() + " !!!");
-            }
-            
-            // FIXED: Remove inappropriate workaround - maintain proper CMIS error handling
             // Re-throw the exception to maintain normal error handling flow
             throw cmisArgException;
         } catch (Exception e) {
-            System.err.println("!!! EXCEPTION IN SUPER.SERVICE(): " + e.getClass().getSimpleName() + ": " + e.getMessage() + " !!!");
-            System.err.println("!!! EXCEPTION OCCURRED AT [" + System.currentTimeMillis() + "] !!!");
+            log.error("Exception in super.service(): " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
             
             // Enhanced logging for Secondary Types Test debugging
             if ("createDocument".equals(cmisaction)) {
-                System.err.println("!!! SECONDARY TYPES TEST: Exception during createDocument operation !!!");
-                System.err.println("!!! This may be the actual cause of Secondary Types Test failure !!!");
-                System.err.println("!!! Exception type: " + e.getClass().getName() + " !!!");
-                System.err.println("!!! Exception message: " + e.getMessage() + " !!!");
-                System.err.println("!!! Multipart Already Processed: " + multipartAlreadyProcessed + " !!!");
+                log.error("Secondary Types Test: Exception during createDocument operation - " + e.getClass().getName() + ": " + e.getMessage());
+                log.debug("Multipart Already Processed: " + multipartAlreadyProcessed);
             }
-            
-            e.printStackTrace();
             
             // Re-throw the exception
             throw e;
         }
         
-        System.err.println("=== RETURNED FROM SUPER.SERVICE() ===");
-        System.err.println("Parent servlet processing completed");
-        
-        // CRITICAL: Check if this was a deleteType request and log the final status
+        // Check if this was a deleteType request and log the final status
         if ("deleteType".equals(cmisaction)) {
-            System.err.println("!!! DELETEYPE REQUEST COMPLETED - CHECKING RESPONSE STATUS !!!");
-            System.err.println("  Response status: " + response.getStatus());
-            System.err.println("  Response content type: " + response.getContentType());
-            System.err.println("!!! END OF DELETEYPE REQUEST PROCESSING !!!");
+            log.debug("DeleteType request completed - Response status: " + response.getStatus() + 
+                     ", Content type: " + response.getContentType());
         }
         
         // Enhanced success logging for createDocument operations
         if ("createDocument".equals(cmisaction)) {
-            System.err.println("!!! SECONDARY TYPES DEBUG: createDocument operation completed successfully !!!");
-            System.err.println("  Response status: " + response.getStatus());
-            System.err.println("  Response content type: " + response.getContentType());
-            System.err.println("  Multipart Processing Method: " + (multipartAlreadyProcessed ? "Tomcat (prevented OpenCMIS re-parsing)" : "OpenCMIS (legacy)"));
+            log.debug("createDocument operation completed successfully - Response status: " + response.getStatus() + 
+                     ", Content type: " + response.getContentType() + 
+                     ", Multipart Processing Method: " + (multipartAlreadyProcessed ? "Tomcat (prevented OpenCMIS re-parsing)" : "OpenCMIS (legacy)"));
         }
     }
     
@@ -956,8 +627,6 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         
         // SPRING 6.X URL PARSING FIX: Enhanced pathFragments validation
         if (pathFragments == null || pathFragments.length < 2) {
-            System.err.println("*** SPRING 6.X FIX: Invalid pathFragments for object-specific operation ***");
-            System.err.println("*** pathFragments: " + (pathFragments == null ? "null" : java.util.Arrays.toString(pathFragments)) + " ***");
             throw new IllegalArgumentException("Invalid path for object-specific operation");
         }
         
@@ -966,32 +635,25 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         String objectId = pathFragments[1];
         
         if (repositoryId == null || repositoryId.trim().isEmpty()) {
-            System.err.println("*** SPRING 6.X FIX: Empty or null repositoryId ***");
             throw new IllegalArgumentException("Repository ID cannot be empty");
         }
         
         if (objectId == null || objectId.trim().isEmpty()) {
-            System.err.println("*** SPRING 6.X FIX: Empty or null objectId ***");
             throw new IllegalArgumentException("Object ID cannot be empty");
         }
-        
-        System.err.println("*** SPRING 6.X FIX: Object-specific operation: repo=[" + repositoryId + "], obj=[" + objectId + "] ***");
         
         // SPRING 6.X COMPATIBILITY: Enhanced HttpServletRequestWrapper with robust parameter handling
         HttpServletRequestWrapper wrappedRequest = new HttpServletRequestWrapper(request) {
             @Override
             public String getPathInfo() {
                 // Change from /repositoryId/objectId to /repositoryId/root
-                String newPathInfo = "/" + repositoryId + "/" + AbstractBrowserServiceCall.ROOT_PATH_FRAGMENT;
-                System.err.println("*** SPRING 6.X FIX: Wrapper getPathInfo() returning: [" + newPathInfo + "] ***");
-                return newPathInfo;
+                return "/" + repositoryId + "/" + AbstractBrowserServiceCall.ROOT_PATH_FRAGMENT;
             }
             
             @Override
             public String getParameter(String name) {
                 // Add the objectId as a parameter for the CMIS service
                 if (Constants.PARAM_OBJECT_ID.equals(name)) {
-                    System.err.println("*** SPRING 6.X FIX: Wrapper providing objectId parameter: [" + objectId + "] ***");
                     return objectId;
                 }
                 return super.getParameter(name);
@@ -1002,7 +664,6 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 java.util.Map<String, String[]> paramMap = new java.util.HashMap<String, String[]>(super.getParameterMap());
                 // Add the objectId parameter
                 paramMap.put(Constants.PARAM_OBJECT_ID, new String[]{objectId});
-                System.err.println("*** SPRING 6.X FIX: Wrapper paramMap contains " + paramMap.size() + " parameters ***");
                 return paramMap;
             }
         };
@@ -1012,7 +673,6 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         super.service(wrappedRequest, response);
         
         log.info("NEMAKI CMIS: Successfully handled object-specific POST operation via request wrapping");
-        System.out.println("NEMAKI CMIS: Successfully handled object-specific POST operation via request wrapping");
     }
     
     /**
@@ -1024,8 +684,6 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         
         // SPRING 6.X URL PARSING FIX: Enhanced pathFragments validation for GET operations
         if (pathFragments == null || pathFragments.length < 2) {
-            System.err.println("*** SPRING 6.X FIX: Invalid pathFragments for object-specific GET operation ***");
-            System.err.println("*** pathFragments: " + (pathFragments == null ? "null" : java.util.Arrays.toString(pathFragments)) + " ***");
             throw new IllegalArgumentException("Invalid path for object-specific GET operation");
         }
         
@@ -1033,20 +691,15 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         String objectId = pathFragments[1];
         
         if (repositoryId == null || repositoryId.trim().isEmpty()) {
-            System.err.println("*** SPRING 6.X FIX: Empty or null repositoryId in GET operation ***");
             throw new IllegalArgumentException("Repository ID cannot be empty");
         }
         
         if (objectId == null || objectId.trim().isEmpty()) {
-            System.err.println("*** SPRING 6.X FIX: Empty or null objectId in GET operation ***");
             throw new IllegalArgumentException("Object ID cannot be empty");
         }
         
         log.info("NEMAKI CMIS: Handling object-specific GET operation via standard OpenCMIS delegation");
-        System.out.println("NEMAKI CMIS: Handling object-specific GET operation via standard OpenCMIS delegation");
         log.info("NEMAKI CMIS: repositoryId=" + repositoryId + ", objectId=" + objectId + ", cmisselector=" + cmisselector);
-        System.out.println("NEMAKI CMIS: repositoryId=" + repositoryId + ", objectId=" + objectId + ", cmisselector=" + cmisselector);
-        System.err.println("*** SPRING 6.X FIX: GET operation: repo=[" + repositoryId + "], obj=[" + objectId + "], selector=[" + cmisselector + "] ***");
         
         try {
             // SPRING 6.X COMPATIBILITY: Enhanced request wrapper with robust parameter handling
@@ -1055,9 +708,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 @Override
                 public String getPathInfo() {
                     // Change from /repositoryId/objectId to /repositoryId/root for standard routing
-                    String newPathInfo = "/" + repositoryId + "/" + AbstractBrowserServiceCall.ROOT_PATH_FRAGMENT;
-                    System.err.println("*** SPRING 6.X FIX: GET Wrapper getPathInfo() returning: [" + newPathInfo + "] ***");
-                    return newPathInfo;
+                    return "/" + repositoryId + "/" + AbstractBrowserServiceCall.ROOT_PATH_FRAGMENT;
                 }
                 
                 @Override
@@ -1145,7 +796,6 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             writeJsonResponse(response, result);
             
             log.info("NEMAKI CMIS: Successfully handled " + cmisselector + " operation");
-            System.out.println("NEMAKI CMIS: Successfully handled " + cmisselector + " operation");
             
         } catch (Exception e) {
             log.error("Error in CMIS service operation", e);
@@ -1272,42 +922,34 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         java.io.InputStream inputStream = null;
         
         if (contentStream == null) {
-            System.err.println("=== Content stream is null ===");
             hasValidContent = false;
         } else {
             // Use non-destructive validation - don't read from stream
             inputStream = contentStream.getStream();
             if (inputStream == null) {
-                System.err.println("=== Content stream InputStream is null ===");
                 hasValidContent = false;
             } else {
                 // Use only ContentStream metadata for validation - avoid touching InputStream
                 try {
                     long contentLength = contentStream.getLength();
                     
-                    System.err.println("Content stream length: " + contentLength);
-                    
                     if (contentLength > 0) {
                         hasValidContent = true;
-                        System.err.println("✅ Content stream has valid content (metadata-only validation)");
                     } else {
                         // Even if length is unknown, try to process the stream
                         // The actual stream test will happen during buffering
                         hasValidContent = true;
-                        System.err.println("⚠️  Content stream length unknown - will attempt processing");
                     }
                 } catch (Exception validateEx) {
-                    System.err.println("❌ Content stream metadata validation failed: " + validateEx.getMessage());
+                    log.error("Content stream metadata validation failed: " + validateEx.getMessage());
                     hasValidContent = false;
                 }
             }
         }
         
         if (!hasValidContent) {
-            System.err.println("=== CMIS 1.1 TCK COMPLIANCE FIX ===");
-            System.err.println("No valid content stream for document: " + objectId);
-            System.err.println("TCK expects HTTP 200 + null JSON response (not HTTP 409 constraint exception)");
-            System.err.println("Returning CMIS-compliant null response for TCK validation");
+            log.debug("CMIS 1.1 TCK COMPLIANCE FIX - No valid content stream for document: " + objectId + 
+                     " - returning CMIS-compliant null response for TCK validation");
             
             // Return HTTP 200 + null JSON response per CMIS 1.1 Browser Binding specification
             // This is what the TCK client expects for documents without content streams
@@ -1319,9 +961,8 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             try (java.io.OutputStream out = response.getOutputStream()) {
                 out.write("null".getBytes("UTF-8")); // CMIS-compliant null response
                 out.flush();
-                System.err.println("SUCCESS: HTTP 200 + null JSON sent to TCK client via OutputStream");
             } catch (Exception writeEx) {
-                System.err.println("ERROR: Failed to write null JSON response: " + writeEx.getMessage());
+                log.error("Failed to write null JSON response: " + writeEx.getMessage());
                 throw writeEx;
             }
             return null;
@@ -1329,7 +970,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         
         // CRITICAL FIX: Check response state before any operations
         if (response.isCommitted()) {
-            System.err.println("WARNING: Response already committed before content stream transfer");
+            log.warn("Response already committed before content stream transfer");
             return null;
         }
         
@@ -1343,10 +984,8 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             response.setHeader("Content-Disposition", "attachment; filename=\"" + contentStream.getFileName() + "\"");
         }
         
-        System.err.println("=== BROWSER BINDING CONTENT STREAM DEBUG ===");
-        System.err.println("Content stream filename: " + contentStream.getFileName());
-        System.err.println("Content stream length: " + contentStream.getLength());
-        System.err.println("Content stream mime type: " + contentStream.getMimeType());
+        log.debug("Browser binding content stream - filename: " + contentStream.getFileName() + 
+                 ", length: " + contentStream.getLength() + ", mime type: " + contentStream.getMimeType());
         
         // STREAM-SAFE: Buffer the InputStream without destructive testing
         java.io.OutputStream outputStream = null;
@@ -1354,7 +993,6 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         
         try {
             // NORMAL PATH: Buffer the InputStream directly (no prior testing)
-            System.err.println("Reading content stream into memory buffer (stream-safe approach)...");
             try (java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream()) {
                 byte[] readBuffer = new byte[8192];
                 int bytesRead;
@@ -1366,11 +1004,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 }
                 
                 contentBytes = buffer.toByteArray();
-                System.err.println("✅ Content stream buffered successfully: " + contentBytes.length + " bytes");
+                log.debug("Content stream buffered successfully: " + contentBytes.length + " bytes");
                 
             } catch (java.io.IOException readException) {
-                System.err.println("❌ BUFFERING FAILED: " + readException.getMessage() + " - falling back to direct service approach");
-                readException.printStackTrace();
+                log.error("Buffering failed - falling back to direct service approach: " + readException.getMessage(), readException);
                 contentBytes = null; // Will trigger fallback
             }
             
@@ -2465,6 +2102,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 case "createFolder":
                     return handleCreateFolderOperation(request, response, pathInfo);
                     
+                case "createType":
+                    return handleCreateTypeOperation(request, response, pathInfo);
+                    
                 case "updateProperties":
                 case "update":
                     return handleUpdatePropertiesOperation(request, response, pathInfo);
@@ -2628,6 +2268,194 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     }
     
     /**
+     * Handle CMIS createType operation via Browser Binding.
+     * Implements proper JSON type definition processing for Browser Binding.
+     */
+    private boolean handleCreateTypeOperation(HttpServletRequest request, HttpServletResponse response, String pathInfo) 
+            throws IOException, ServletException, Exception {
+        
+        System.err.println("*** CREATE TYPE HANDLER: Starting createType operation ***");
+        
+        try {
+            // Extract repository ID from path
+            String repositoryId = extractRepositoryIdFromPath(pathInfo);
+            if (repositoryId == null) {
+                throw new IllegalArgumentException("Could not determine repository ID from path: " + pathInfo);
+            }
+            
+            // Extract JSON type definition from CONTROL_TYPE parameter ("type")
+            String typeJson = request.getParameter(Constants.CONTROL_TYPE);
+            if (typeJson == null || typeJson.isEmpty()) {
+                System.err.println("*** CREATE TYPE HANDLER ERROR: CONTROL_TYPE parameter '" + Constants.CONTROL_TYPE + "' missing ***");
+                throw new IllegalArgumentException("Type definition missing! Browser Binding requires '" + Constants.CONTROL_TYPE + "' parameter with JSON type definition.");
+            }
+            
+            System.err.println("*** CREATE TYPE HANDLER: JSON type definition length: " + typeJson.length() + " ***");
+            System.err.println("*** CREATE TYPE HANDLER: JSON type definition preview: " + 
+                (typeJson.length() > 200 ? typeJson.substring(0, 200) + "..." : typeJson) + " ***");
+            
+            // Parse JSON type definition using OpenCMIS JSONConverter
+            org.apache.chemistry.opencmis.commons.impl.json.parser.JSONParser parser = 
+                new org.apache.chemistry.opencmis.commons.impl.json.parser.JSONParser();
+            Object typeJsonObject = parser.parse(typeJson);
+            
+            if (!(typeJsonObject instanceof Map)) {
+                throw new IllegalArgumentException("Invalid type definition! Expected JSON object, got: " + 
+                    (typeJsonObject != null ? typeJsonObject.getClass().getSimpleName() : "null"));
+            }
+            
+            @SuppressWarnings("unchecked")
+            Map<String, Object> typeMap = (Map<String, Object>) typeJsonObject;
+            
+            // Convert to OpenCMIS TypeDefinition using JSONConverter
+            org.apache.chemistry.opencmis.commons.definitions.TypeDefinition typeDefinition = 
+                org.apache.chemistry.opencmis.commons.impl.JSONConverter.convertTypeDefinition(typeMap);
+            
+            System.err.println("*** CREATE TYPE HANDLER: Type definition parsed - ID: " + typeDefinition.getId() + " ***");
+            System.err.println("*** CREATE TYPE HANDLER: Type definition base type: " + typeDefinition.getBaseTypeId() + " ***");
+            
+            // *** CRITICAL FIX: PROPERTY ID CONTAMINATION INTERCEPTION ***
+            // ROOT CAUSE: OpenCMIS JSONConverter.convertTypeDefinition() assigns wrong CMIS property IDs to custom properties
+            // SOLUTION: Inspect and correct contaminated property IDs after JSONConverter but before cmisService.createType()
+            System.err.println("*** CONTAMINATION FIX: Inspecting property definitions from OpenCMIS JSONConverter ***");
+            
+            if (typeDefinition.getPropertyDefinitions() != null) {
+                Map<String, org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?>> originalPropertyDefs = 
+                    typeDefinition.getPropertyDefinitions();
+                System.err.println("*** CONTAMINATION FIX: Found " + originalPropertyDefs.size() + " property definitions ***");
+                
+                // Track contamination instances
+                boolean contaminationDetected = false;
+                Map<String, String> contaminationMapping = new java.util.HashMap<>();
+                
+                for (Map.Entry<String, org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?>> entry : originalPropertyDefs.entrySet()) {
+                    String propertyId = entry.getKey();
+                    org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?> propDef = entry.getValue();
+                    
+                    System.err.println("*** CONTAMINATION CHECK: PropertyID=[" + propertyId + "], " +
+                        "PropDef.getId()=[" + propDef.getId() + "], " + 
+                        "PropDef.getLocalName()=[" + propDef.getLocalName() + "], " +
+                        "PropDef.getPropertyType()=[" + propDef.getPropertyType() + "] ***");
+                    
+                    // DETECT CONTAMINATION: Check if custom TCK property got assigned wrong CMIS property ID
+                    if (propDef.getLocalName() != null && propDef.getLocalName().startsWith("tck:") && 
+                        propDef.getId() != null && propDef.getId().startsWith("cmis:")) {
+                        
+                        System.err.println("*** CONTAMINATION DETECTED: Custom property '" + propDef.getLocalName() + 
+                            "' wrongly assigned CMIS property ID '" + propDef.getId() + "' ***");
+                        contaminationDetected = true;
+                        contaminationMapping.put(propDef.getId(), propDef.getLocalName());
+                    }
+                    
+                    // Also check for LocalName/Id mismatch (another contamination pattern)
+                    if (propDef.getLocalName() != null && propDef.getId() != null && 
+                        !propDef.getLocalName().equals(propDef.getId()) &&
+                        propDef.getLocalName().startsWith("tck:") && propDef.getId().startsWith("cmis:")) {
+                        
+                        System.err.println("*** CONTAMINATION DETECTED: LocalName/ID mismatch - LocalName='" + 
+                            propDef.getLocalName() + "', ID='" + propDef.getId() + "' ***");
+                        contaminationDetected = true;
+                        contaminationMapping.put(propDef.getId(), propDef.getLocalName());
+                    }
+                }
+                
+                if (contaminationDetected) {
+                    System.err.println("*** CONTAMINATION FIX: APPLYING PROPERTY ID CORRECTIONS ***");
+                    System.err.println("*** CONTAMINATION MAPPING: " + contaminationMapping + " ***");
+                    
+                    // CRITICAL: Create a corrected TypeDefinition with fixed property IDs
+                    // We need to create a new TypeDefinition with corrected property definitions
+                    try {
+                        // Create mutable copy of TypeDefinition (OpenCMIS TypeDefinitionImpl is mutable)
+                        if (typeDefinition instanceof org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition) {
+                            org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition mutableTypeDef = 
+                                (org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition) typeDefinition;
+                            
+                            // Create new property definitions map with corrected IDs
+                            Map<String, org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?>> correctedPropertyDefs = 
+                                new java.util.LinkedHashMap<>();
+                            
+                            for (Map.Entry<String, org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?>> entry : originalPropertyDefs.entrySet()) {
+                                org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?> propDef = entry.getValue();
+                                
+                                if (propDef.getLocalName() != null && propDef.getLocalName().startsWith("tck:") && 
+                                    propDef.getId() != null && propDef.getId().startsWith("cmis:")) {
+                                    
+                                    // CONTAMINATION FIX: Create corrected property definition with proper ID
+                                    String correctId = propDef.getLocalName(); // Use LocalName as correct ID
+                                    System.err.println("*** PROPERTY ID FIX: Correcting '" + propDef.getId() + "' → '" + correctId + "' ***");
+                                    
+                                    // Create new PropertyDefinition with corrected ID
+                                    org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?> correctedPropDef = 
+                                        createCorrectedPropertyDefinition(propDef, correctId);
+                                    
+                                    correctedPropertyDefs.put(correctId, correctedPropDef);
+                                    System.err.println("*** PROPERTY ID FIX: Added corrected property '" + correctId + "' ***");
+                                } else {
+                                    // Keep non-contaminated properties as-is
+                                    correctedPropertyDefs.put(entry.getKey(), propDef);
+                                }
+                            }
+                            
+                            // Replace property definitions in mutable TypeDefinition
+                            mutableTypeDef.setPropertyDefinitions(correctedPropertyDefs);
+                            
+                            System.err.println("*** CONTAMINATION FIX: Property definitions corrected successfully ***");
+                            System.err.println("*** CONTAMINATION FIX: Updated TypeDefinition with " + correctedPropertyDefs.size() + " properties ***");
+                            
+                        } else {
+                            System.err.println("*** CONTAMINATION FIX ERROR: TypeDefinition is not mutable (class: " + 
+                                typeDefinition.getClass().getName() + ") ***");
+                        }
+                        
+                    } catch (Exception fixException) {
+                        System.err.println("*** CONTAMINATION FIX ERROR: Failed to correct property IDs: " + 
+                            fixException.getMessage() + " ***");
+                        fixException.printStackTrace();
+                        // Continue with original TypeDefinition - don't fail the entire operation
+                    }
+                    
+                } else {
+                    System.err.println("*** CONTAMINATION FIX: No contamination detected - property IDs are correct ***");
+                }
+                
+            } else {
+                System.err.println("*** CONTAMINATION FIX: No property definitions found in TypeDefinition ***");
+            }
+            
+            // Get the CMIS service and create the type
+            CallContext callContext = createCallContext(request, repositoryId, response);
+            CmisService cmisService = getCmisService(callContext);
+            
+            // Create the type definition
+            org.apache.chemistry.opencmis.commons.definitions.TypeDefinition createdType = 
+                cmisService.createType(repositoryId, typeDefinition, null);
+            
+            System.err.println("*** CREATE TYPE HANDLER: Type created successfully with ID: " + createdType.getId() + " ***");
+            
+            // Return success response with type definition in JSON format
+            response.setStatus(HttpServletResponse.SC_CREATED);
+            response.setContentType("application/json");
+            response.setCharacterEncoding("UTF-8");
+            
+            // Convert created type back to JSON using OpenCMIS JSONConverter
+            org.apache.chemistry.opencmis.commons.impl.json.JSONObject jsonType = 
+                org.apache.chemistry.opencmis.commons.impl.JSONConverter.convert(createdType, null);
+            
+            try (java.io.PrintWriter writer = response.getWriter()) {
+                writer.write(jsonType.toJSONString());
+            }
+            
+            return true; // Successfully handled
+            
+        } catch (Exception e) {
+            System.err.println("*** CREATE TYPE HANDLER ERROR: " + e.getClass().getSimpleName() + ": " + e.getMessage() + " ***");
+            e.printStackTrace();
+            throw e;
+        }
+    }
+    
+    /**
      * Handle CMIS updateProperties operation via Browser Binding.
      * Implements the missing updateProperties functionality.
      */
@@ -2780,6 +2608,146 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     
     // Helper methods for CMIS router
     
+    /**
+     * Create a corrected PropertyDefinition with the given propertyId, preserving all other attributes.
+     * Used to fix property ID contamination from OpenCMIS JSONConverter.
+     * 
+     * @param originalPropDef The original PropertyDefinition with contaminated ID
+     * @param correctId The correct property ID to use
+     * @return A new PropertyDefinition with corrected ID
+     */
+    @SuppressWarnings("unchecked")
+    private org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?> createCorrectedPropertyDefinition(
+            org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?> originalPropDef, String correctId) {
+        
+        System.err.println("*** PROPERTY CORRECTION: Creating corrected PropertyDefinition for '" + correctId + "' ***");
+        
+        try {
+            // Handle different property types (String, Boolean, Integer, DateTime, etc.)
+            org.apache.chemistry.opencmis.commons.enums.PropertyType propertyType = originalPropDef.getPropertyType();
+            System.err.println("*** PROPERTY CORRECTION: Original property type = " + propertyType + " ***");
+            
+            switch (propertyType) {
+                case STRING:
+                    org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl stringProp = 
+                        new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl();
+                    copyCommonPropertyAttributes(stringProp, originalPropDef, correctId);
+                    
+                    // Copy String-specific attributes if original is StringPropertyDefinition
+                    if (originalPropDef instanceof org.apache.chemistry.opencmis.commons.definitions.PropertyStringDefinition) {
+                        org.apache.chemistry.opencmis.commons.definitions.PropertyStringDefinition originalStringProp = 
+                            (org.apache.chemistry.opencmis.commons.definitions.PropertyStringDefinition) originalPropDef;
+                        stringProp.setMaxLength(originalStringProp.getMaxLength());
+                        stringProp.setDefaultValue((java.util.List<String>) originalStringProp.getDefaultValue());
+                        stringProp.setChoices((java.util.List<org.apache.chemistry.opencmis.commons.definitions.Choice<String>>) originalStringProp.getChoices());
+                    }
+                    System.err.println("*** PROPERTY CORRECTION: Created String property '" + correctId + "' ***");
+                    return stringProp;
+                    
+                case BOOLEAN:
+                    org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyBooleanDefinitionImpl booleanProp = 
+                        new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyBooleanDefinitionImpl();
+                    copyCommonPropertyAttributes(booleanProp, originalPropDef, correctId);
+                    
+                    // Copy Boolean-specific attributes if original is BooleanPropertyDefinition
+                    if (originalPropDef instanceof org.apache.chemistry.opencmis.commons.definitions.PropertyBooleanDefinition) {
+                        org.apache.chemistry.opencmis.commons.definitions.PropertyBooleanDefinition originalBooleanProp = 
+                            (org.apache.chemistry.opencmis.commons.definitions.PropertyBooleanDefinition) originalPropDef;
+                        booleanProp.setDefaultValue((java.util.List<Boolean>) originalBooleanProp.getDefaultValue());
+                        booleanProp.setChoices((java.util.List<org.apache.chemistry.opencmis.commons.definitions.Choice<Boolean>>) originalBooleanProp.getChoices());
+                    }
+                    System.err.println("*** PROPERTY CORRECTION: Created Boolean property '" + correctId + "' ***");
+                    return booleanProp;
+                    
+                case INTEGER:
+                    org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerDefinitionImpl integerProp = 
+                        new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerDefinitionImpl();
+                    copyCommonPropertyAttributes(integerProp, originalPropDef, correctId);
+                    
+                    // Copy Integer-specific attributes if original is IntegerPropertyDefinition
+                    if (originalPropDef instanceof org.apache.chemistry.opencmis.commons.definitions.PropertyIntegerDefinition) {
+                        org.apache.chemistry.opencmis.commons.definitions.PropertyIntegerDefinition originalIntegerProp = 
+                            (org.apache.chemistry.opencmis.commons.definitions.PropertyIntegerDefinition) originalPropDef;
+                        integerProp.setMinValue(originalIntegerProp.getMinValue());
+                        integerProp.setMaxValue(originalIntegerProp.getMaxValue());
+                        integerProp.setDefaultValue((java.util.List<java.math.BigInteger>) originalIntegerProp.getDefaultValue());
+                        integerProp.setChoices((java.util.List<org.apache.chemistry.opencmis.commons.definitions.Choice<java.math.BigInteger>>) originalIntegerProp.getChoices());
+                    }
+                    System.err.println("*** PROPERTY CORRECTION: Created Integer property '" + correctId + "' ***");
+                    return integerProp;
+                    
+                case DATETIME:
+                    org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeDefinitionImpl datetimeProp = 
+                        new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeDefinitionImpl();
+                    copyCommonPropertyAttributes(datetimeProp, originalPropDef, correctId);
+                    
+                    // Copy DateTime-specific attributes if original is DateTimePropertyDefinition
+                    if (originalPropDef instanceof org.apache.chemistry.opencmis.commons.definitions.PropertyDateTimeDefinition) {
+                        org.apache.chemistry.opencmis.commons.definitions.PropertyDateTimeDefinition originalDatetimeProp = 
+                            (org.apache.chemistry.opencmis.commons.definitions.PropertyDateTimeDefinition) originalPropDef;
+                        datetimeProp.setDateTimeResolution(originalDatetimeProp.getDateTimeResolution());
+                        datetimeProp.setDefaultValue((java.util.List<java.util.GregorianCalendar>) originalDatetimeProp.getDefaultValue());
+                        datetimeProp.setChoices((java.util.List<org.apache.chemistry.opencmis.commons.definitions.Choice<java.util.GregorianCalendar>>) originalDatetimeProp.getChoices());
+                    }
+                    System.err.println("*** PROPERTY CORRECTION: Created DateTime property '" + correctId + "' ***");
+                    return datetimeProp;
+                    
+                default:
+                    System.err.println("*** PROPERTY CORRECTION WARNING: Unsupported property type " + propertyType + 
+                        " for property '" + correctId + "' - creating generic String property ***");
+                    
+                    // Fallback: create a generic String property
+                    org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl fallbackProp = 
+                        new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl();
+                    copyCommonPropertyAttributes(fallbackProp, originalPropDef, correctId);
+                    System.err.println("*** PROPERTY CORRECTION: Created fallback String property '" + correctId + "' ***");
+                    return fallbackProp;
+            }
+            
+        } catch (Exception e) {
+            System.err.println("*** PROPERTY CORRECTION ERROR: Failed to create corrected PropertyDefinition for '" + 
+                correctId + "': " + e.getMessage() + " ***");
+            e.printStackTrace();
+            throw new RuntimeException("Failed to create corrected PropertyDefinition for " + correctId, e);
+        }
+    }
+    
+    /**
+     * Copy common PropertyDefinition attributes from original to corrected property definition.
+     * 
+     * @param correctedProp The new PropertyDefinition to set attributes on
+     * @param originalProp The original PropertyDefinition to copy attributes from
+     * @param correctId The correct property ID to set
+     */
+    private void copyCommonPropertyAttributes(
+            org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyDefinition<?> correctedProp,
+            org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?> originalProp,
+            String correctId) {
+        
+        // CRITICAL: Set the corrected property ID
+        correctedProp.setId(correctId);
+        
+        // Copy common attributes from original property
+        correctedProp.setLocalName(originalProp.getLocalName() != null ? originalProp.getLocalName() : correctId);
+        correctedProp.setLocalNamespace(originalProp.getLocalNamespace());
+        correctedProp.setDisplayName(originalProp.getDisplayName());
+        correctedProp.setQueryName(originalProp.getQueryName() != null ? originalProp.getQueryName() : correctId);
+        correctedProp.setDescription(originalProp.getDescription());
+        correctedProp.setPropertyType(originalProp.getPropertyType());
+        correctedProp.setCardinality(originalProp.getCardinality());
+        correctedProp.setUpdatability(originalProp.getUpdatability());
+        correctedProp.setIsInherited(originalProp.isInherited());
+        correctedProp.setIsRequired(originalProp.isRequired());
+        correctedProp.setIsQueryable(originalProp.isQueryable());
+        correctedProp.setIsOrderable(originalProp.isOrderable());
+        correctedProp.setIsOpenChoice(originalProp.isOpenChoice());
+        
+        System.err.println("*** PROPERTY ATTRIBUTES COPIED: ID='" + correctId + "', " +
+            "LocalName='" + correctedProp.getLocalName() + "', " +
+            "Type=" + correctedProp.getPropertyType() + ", " +
+            "Cardinality=" + correctedProp.getCardinality() + " ***");
+    }
+
     /**
      * Extract repository ID from path info like "/bedroom" or "/bedroom/root/objectId".
      */

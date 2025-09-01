@@ -219,21 +219,45 @@ public class ExceptionServiceImpl implements ExceptionService,
 	public void invalidArgumentCreatableType(String repositoryId, TypeDefinition type) {
 		String msg = "";
 
-		String parentId = type.getParentTypeId();
-		if (typeManager.getTypeById(repositoryId, parentId) == null) {
-			msg = "Specified parent type does not exist";
-		} else {
-			TypeDefinition parent = typeManager.getTypeById(repositoryId, parentId)
-					.getTypeDefinition();
-			if (parent.getTypeMutability() == null) {
-				msg = "Specified parent type does not have TypeMutability";
+		try {
+			String parentId = type.getParentTypeId();
+			
+			String baseId = null;
+			try {
+				if (type.getBaseTypeId() != null) {
+					baseId = type.getBaseTypeId().value();
+				}
+			} catch (Exception e) {
+				// Error getting baseId - continue with null value
+			}
+			
+			String typeId = type.getId();
+			
+			// CRITICAL FIX: For new custom types, parentId should be null and baseId should be checked
+			String targetParentId = parentId;
+			if (parentId == null && baseId != null) {
+				// New custom type - use baseId as parent for validation
+				targetParentId = baseId;
+			}
+			
+			if (typeManager.getTypeById(repositoryId, targetParentId) == null) {
+				msg = "Specified parent type does not exist";
 			} else {
-				boolean canCreate = (parent.getTypeMutability() == null) ? false
-						: true;
-				if (!canCreate) {
-					msg = "Specified parent type has TypeMutability.canCreate = false";
+				TypeDefinition parent = typeManager.getTypeById(repositoryId, targetParentId)
+						.getTypeDefinition();
+				
+				if (parent.getTypeMutability() == null) {
+					msg = "Specified parent type does not have TypeMutability";
+				} else {
+					boolean canCreate = (parent.getTypeMutability() == null) ? false : true;
+					if (!canCreate) {
+						msg = "Specified parent type has TypeMutability.canCreate = false";
+					}
 				}
 			}
+			
+		} catch (Exception e) {
+			msg = "Internal error during type validation";
 		}
 
 		if (!StringUtils.isEmpty(msg)) {
@@ -273,68 +297,14 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 	@Override
 	public void invalidArgumentDoesNotExistType(String repositoryId, String typeId) {
-		System.err.println("=== EXCEPTION SERVICE TYPE EXISTENCE CHECK ===");
-		System.err.println("Repository ID: " + repositoryId);
-		System.err.println("Type ID: " + typeId);
-		System.err.println("Timestamp: " + new java.util.Date());
-		
-		// Add detailed stack trace to understand who called this method
-		System.err.println("=== CALLER STACK TRACE ===");
-		StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
-		for (int i = 0; i < Math.min(10, stackTrace.length); i++) {
-			System.err.println("  " + i + ": " + stackTrace[i]);
-		}
-		System.err.println("=== END STACK TRACE ===");
-		
 		String msg = "";
 
 		TypeDefinition type = typeManager.getTypeDefinition(repositoryId, typeId);
-		System.err.println("TypeManager result: " + (type != null ? "FOUND (ID=" + type.getId() + ")" : "NOT FOUND"));
 		
 		if (type == null) {
-			// Let's also check if the type exists in the database directly
-			System.err.println("TypeManager cache miss - checking database directly...");
-			try {
-				NemakiTypeDefinition dbType = typeService.getTypeDefinition(repositoryId, typeId);
-				System.err.println("Database direct check: " + (dbType != null ? "FOUND (ID=" + dbType.getTypeId() + ")" : "NOT FOUND"));
-				
-				if (dbType != null) {
-					System.err.println("CRITICAL: Type exists in database but NOT in TypeManager cache!");
-					System.err.println("This indicates a cache refresh problem.");
-					System.err.println("DB Type details - typeId: " + dbType.getTypeId() + ", parentType: " + dbType.getParentId());
-					
-					// Try to force TypeManager refresh and check again
-					System.err.println("=== ATTEMPTING TYPEMANAGER REFRESH ===");
-					try {
-						// First, let's see what types are currently in the cache
-						System.err.println("Current TypeManager cache state (before refresh):");
-						// We can't directly access TYPES map, but we can try getting some known types
-						TypeDefinition cmisDoc = typeManager.getTypeDefinition(repositoryId, "cmis:document");
-						TypeDefinition cmisFolder = typeManager.getTypeDefinition(repositoryId, "cmis:folder");
-						System.err.println("  cmis:document: " + (cmisDoc != null ? "FOUND" : "NOT FOUND"));
-						System.err.println("  cmis:folder: " + (cmisFolder != null ? "FOUND" : "NOT FOUND"));
-						
-						// Now try to force refresh by calling a method that should refresh cache
-						// Let's see if we can access refreshTypes() method
-						System.err.println("NOTE: TypeManager cache state issue detected - type exists in DB but not in cache");
-						
-					} catch (Exception refreshException) {
-						System.err.println("Exception during TypeManager cache analysis: " + refreshException.getMessage());
-						refreshException.printStackTrace();
-					}
-					System.err.println("=== END TYPEMANAGER REFRESH ATTEMPT ===");
-				}
-			} catch (Exception e) {
-				System.err.println("Database direct check failed: " + e.getMessage());
-				e.printStackTrace();
-			}
-			
-			System.err.println("=== FINAL DECISION: THROWING 'Specified type does not exist' ERROR ===");
 			msg = "Specified type does not exist";
 			msg = msg + " [objectTypeId = " + typeId + "]";
 			invalidArgument(msg);
-		} else {
-			System.err.println("=== SUCCESS: Type found in TypeManager cache ===");
 		}
 	}
 
@@ -924,18 +894,30 @@ public class ExceptionServiceImpl implements ExceptionService,
 				.getPropertyDefinitions();
 		if (MapUtils.isNotEmpty(props)) {
 			Set<String> keys = props.keySet();
-			TypeDefinition parent = typeManager
-					.getTypeDefinition(repositoryId, typeDefinition.getParentTypeId());
-			Map<String, PropertyDefinition<?>> parentProps = parent
-					.getPropertyDefinitions();
-			if (MapUtils.isNotEmpty(parentProps)) {
-				Set<String> parentKeys = parentProps.keySet();
-				for (String key : keys) {
-					if (parentKeys.contains(key)) {
-						String msg = "Duplicate property definition with parent type definition"
-								+ " [property id = " + key + "]";
-						throw new CmisConstraintException(msg,
-								HTTP_STATUS_CODE_409);
+			
+			// CRITICAL FIX: Use baseId fallback for new custom types (same as invalidArgumentCreatableType)
+			String parentTypeId = typeDefinition.getParentTypeId();
+			String baseId = typeDefinition.getBaseTypeId() != null ? typeDefinition.getBaseTypeId().value() : null;
+			String targetTypeId = (parentTypeId != null) ? parentTypeId : baseId;
+			
+			if (targetTypeId == null) {
+				return;
+			}
+			
+			TypeDefinition parent = typeManager.getTypeDefinition(repositoryId, targetTypeId);
+			
+			if (parent != null) {
+				Map<String, PropertyDefinition<?>> parentProps = parent.getPropertyDefinitions();
+				
+				if (MapUtils.isNotEmpty(parentProps)) {
+					Set<String> parentKeys = parentProps.keySet();
+					
+					for (String key : keys) {
+						if (parentKeys.contains(key)) {
+							String msg = "Duplicate property definition with parent type definition"
+									+ " [property id = " + key + "]";
+							throw new CmisConstraintException(msg, HTTP_STATUS_CODE_409);
+						}
 					}
 				}
 			}
@@ -1172,30 +1154,17 @@ public class ExceptionServiceImpl implements ExceptionService,
 		ContentStreamAllowed csa = documentTypeDefinition
 				.getContentStreamAllowed();
 		
-		// Enhanced debugging for TCK failures
-		System.err.println("=== CONTENT STREAM DOWNLOAD CONSTRAINT DEBUG ===");
-		System.err.println("Document ID: " + document.getId());
-		System.err.println("Document Name: " + document.getName());
-		System.err.println("ContentStreamAllowed: " + csa);  
-		System.err.println("AttachmentNodeId: " + document.getAttachmentNodeId());
-		System.err.println("AttachmentNodeId isBlank: " + StringUtils.isBlank(document.getAttachmentNodeId()));
-		
 		// CMIS Standard Compliance: Only reject if ContentStreamAllowed is NOTALLOWED
 		// For ALLOWED: ContentStream is optional - null content stream is valid  
 		// For REQUIRED: ContentStream must exist - null content stream is invalid
 		if (ContentStreamAllowed.NOTALLOWED == csa) {
-			System.err.println("CONSTRAINT TRIGGERED: Content stream not allowed for this document type");
 			constraint(document.getId(),
 					"This document type does not allow ContentStream. getContentStream is not supported.");
 		} else if (ContentStreamAllowed.REQUIRED == csa
 				&& StringUtils.isBlank(document.getAttachmentNodeId())) {
-			System.err.println("CONSTRAINT TRIGGERED: Required content stream is missing");
 			constraint(document.getId(),
 					"This document type requires ContentStream but none exists. getContentStream is not supported.");
-		} else {
-			System.err.println("CONSTRAINT PASSED: Content stream download allowed");
 		}
-		System.err.println("=== END CONTENT STREAM DOWNLOAD CONSTRAINT DEBUG ===");
 	}
 
 	@Override

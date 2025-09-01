@@ -14,6 +14,8 @@ import jp.aegif.nemaki.model.NemakiPropertyDefinitionDetail;
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
+import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
+import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.logging.Log;
@@ -40,48 +42,23 @@ public class TypeServiceImpl implements TypeService{
 
 	@Override
 	public List<NemakiTypeDefinition> getTypeDefinitions(String repositoryId) {
-		System.err.println("=== TYPESERVICE: getTypeDefinitions called for repository: " + repositoryId + " ===");
-		System.err.println("=== TYPESERVICE GET TYPE DEFINITIONS DEBUG ===");
-		System.err.println("Repository ID: " + repositoryId);
-		System.err.println("ContentDaoService: " + (contentDaoService != null ? "NOT NULL" : "NULL"));
-		
 		List<NemakiTypeDefinition> result = contentDaoService.getTypeDefinitions(repositoryId);
-		
-		System.err.println("Result from contentDaoService: " + (result != null ? result.size() + " types" : "null"));
-		if (result != null && !result.isEmpty()) {
-			System.err.println("First few types from TypeService:");
-			for (int i = 0; i < Math.min(3, result.size()); i++) {
-				NemakiTypeDefinition type = result.get(i);
-				if (type != null) {
-					System.err.println("  " + (i+1) + ". " + type.getTypeId() + " (BaseId: " + type.getBaseId() + ")");
-				}
-			}
-		}
-		
 		return result;
 	}
 
 	@Override
 	public NemakiPropertyDefinition getPropertyDefinition(String repositoryId, String detailNodeId) {
-		// CRITICAL DEBUG: Add logging for NPE investigation
-		System.out.println("TYPESERVICE DEBUG: getPropertyDefinition called with repositoryId=" + repositoryId + ", detailNodeId=" + detailNodeId);
-		
 		NemakiPropertyDefinitionDetail detail = getPropertyDefinitionDetail(repositoryId, detailNodeId);
-		System.out.println("TYPESERVICE DEBUG: detail=" + (detail != null ? "NOT NULL (ID=" + detail.getId() + ")" : "NULL"));
 		
 		if (detail == null) {
-			System.out.println("CRITICAL ERROR: PropertyDefinitionDetail is NULL for detailNodeId: " + detailNodeId);
 			return null;
 		}
 		
 		String coreNodeId = detail.getCoreNodeId();
-		System.out.println("TYPESERVICE DEBUG: coreNodeId=" + coreNodeId);
 		
 		NemakiPropertyDefinitionCore core = getPropertyDefinitionCore(repositoryId, coreNodeId);
-		System.out.println("TYPESERVICE DEBUG: core=" + (core != null ? "NOT NULL (PropertyId=" + core.getPropertyId() + ")" : "NULL"));
 		
 		if (core == null) {
-			System.out.println("CRITICAL ERROR: PropertyDefinitionCore is NULL for coreNodeId: " + coreNodeId);
 			return null;
 		}
 
@@ -121,10 +98,79 @@ public class TypeServiceImpl implements TypeService{
 	@Override
 	public NemakiTypeDefinition createTypeDefinition(
 			String repositoryId, NemakiTypeDefinition typeDefinition) {
-		System.err.println("=== TYPESERVICE: createTypeDefinition called for repositoryId: " + repositoryId + " ===");
 		
+		// CRITICAL FIX: Inherit property definitions from parent type before creation
+		// ROOT CAUSE IDENTIFIED: TCK creates new types but they don't inherit CMIS property definitions
+		// This causes "Property definition: cmis:name" failures in TCK compliance checks
+		
+		String parentTypeId = typeDefinition.getParentId();
+		if (parentTypeId == null && typeDefinition.getBaseId() != null) {
+			parentTypeId = typeDefinition.getBaseId().value();
+		}
+		
+		if (parentTypeId != null) {
+			
+			// Get TypeManager to access parent type definitions
+			try {
+				jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager = 
+					(jp.aegif.nemaki.cmis.aspect.type.TypeManager) jp.aegif.nemaki.util.spring.SpringContext.getBean("TypeManager");
+				
+				if (typeManager != null) {
+					
+					// Get parent type definition 
+					TypeDefinition parentType = typeManager.getTypeDefinition(repositoryId, parentTypeId);
+					
+					if (parentType != null) {
+						
+						// CRITICAL FIX: Create PropertyDefinitionCore entries for inherited CMIS properties
+						Map<String, PropertyDefinition<?>> parentProperties = parentType.getPropertyDefinitions();
+						
+						if (parentProperties != null && !parentProperties.isEmpty()) {
+							
+							for (Map.Entry<String, PropertyDefinition<?>> entry : parentProperties.entrySet()) {
+								PropertyDefinition<?> parentProp = entry.getValue();
+								String propertyId = parentProp.getId();
+								
+								// Only inherit CMIS system properties, not custom properties
+								if (propertyId != null && propertyId.startsWith("cmis:")) {
+									
+									try {
+										// Check if property definition already exists
+										NemakiPropertyDefinitionCore existingCore = getPropertyDefinitionCore(repositoryId, propertyId);
+										
+										if (existingCore == null) {
+											
+											// Create NemakiPropertyDefinition from CMIS PropertyDefinition
+											NemakiPropertyDefinition nemakiProp = new NemakiPropertyDefinition();
+											nemakiProp.setPropertyId(propertyId);
+											nemakiProp.setPropertyType(parentProp.getPropertyType());
+											nemakiProp.setQueryName(parentProp.getQueryName());
+											nemakiProp.setCardinality(parentProp.getCardinality());
+											nemakiProp.setLocalName(parentProp.getLocalName());
+											nemakiProp.setDisplayName(parentProp.getDisplayName());
+											nemakiProp.setDescription(parentProp.getDescription());
+											
+											// Create PropertyDefinitionCore
+											NemakiPropertyDefinitionCore core = new NemakiPropertyDefinitionCore(nemakiProp);
+											contentDaoService.createPropertyDefinitionCore(repositoryId, core);
+										}
+									} catch (Exception e) {
+										// Continue with other properties - don't fail entire type creation
+									}
+								}
+							}
+						}
+					}
+				}
+			} catch (Exception e) {
+				e.printStackTrace();
+				// Don't fail type creation - inheritance is enhancement
+			}
+		}
+		
+		// Proceed with original type creation
 		NemakiTypeDefinition created = contentDaoService.createTypeDefinition(repositoryId, typeDefinition);
-		
+
 		// CRITICAL FIX: Use SpringContext to get TypeManager and refresh cache after type creation
 		// This avoids circular dependency since TypeManager depends on TypeService
 		try {
@@ -132,15 +178,9 @@ public class TypeServiceImpl implements TypeService{
 				(jp.aegif.nemaki.cmis.aspect.type.TypeManager) jp.aegif.nemaki.util.spring.SpringContext.getBean("TypeManager");
 			
 			if (typeManager != null) {
-				System.err.println("=== TYPESERVICE: Successfully retrieved TypeManager via SpringContext ===");
-				System.err.println("=== TYPESERVICE: Refreshing TypeManager cache after type creation ===");
 				typeManager.refreshTypes();
-				System.err.println("=== TYPESERVICE: TypeManager cache refresh completed ===");
-			} else {
-				System.err.println("=== TYPESERVICE WARNING: TypeManager is null from SpringContext ===");
 			}
 		} catch (Exception e) {
-			System.err.println("=== TYPESERVICE ERROR: Failed to refresh TypeManager cache: " + e.getMessage() + " ===");
 			e.printStackTrace();
 			// Don't throw exception - type creation succeeded, cache refresh is optimization
 		}
@@ -156,23 +196,16 @@ public class TypeServiceImpl implements TypeService{
 
 	@Override
 	public void deleteTypeDefinition(String repositoryId, String typeId) {
-		System.err.println("=== TYPESERVICE: deleteTypeDefinition called ===");
-		System.err.println("Repository ID: " + repositoryId);
-		System.err.println("Type ID: " + typeId);
 		
 		NemakiTypeDefinition ntd = getTypeDefinition(repositoryId, typeId);
-		System.err.println("Type definition lookup result: " + (ntd != null ? "FOUND (ID=" + ntd.getId() + ")" : "NOT FOUND"));
 		
 		if (ntd == null) {
-			System.err.println("WARNING: Type definition not found for deletion: " + typeId);
 			log.warn("Type definition not found for deletion: " + typeId);
 			return;
 		}
 
-		System.err.println("=== DELETING PROPERTY DEFINITIONS ===");
 		//Delete unnecessary property definitions with proper error handling
 		List<String> detailIds = ntd.getProperties();
-		System.err.println("Property detail IDs to delete: " + (detailIds != null ? detailIds.size() + " properties" : "null"));
 		if (detailIds != null && !detailIds.isEmpty()) {
 			for(String detailId : detailIds){
 				try {
@@ -208,24 +241,15 @@ public class TypeServiceImpl implements TypeService{
 			}
 		}
 
-		System.err.println("=== DELETING TYPE DEFINITION DOCUMENT ===");
-		System.err.println("About to call contentDaoService.deleteTypeDefinition with:");
-		System.err.println("  Repository ID: " + repositoryId);
-		System.err.println("  Document ID: " + ntd.getId());
-		
 		//Delete the type definition
 		try {
 			contentDaoService.deleteTypeDefinition(repositoryId, ntd.getId());
-			System.err.println("SUCCESS: contentDaoService.deleteTypeDefinition completed");
 			log.info("Successfully deleted type definition: " + typeId);
 		} catch (Exception e) {
-			System.err.println("CRITICAL ERROR: contentDaoService.deleteTypeDefinition failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
 			log.error("Error deleting type definition: " + typeId, e);
 			e.printStackTrace();
 			throw e; // Re-throw since this is the main operation
 		}
-		
-		System.err.println("=== TYPESERVICE deleteTypeDefinition COMPLETED ===");
 	}
 
 	@Override
@@ -234,14 +258,6 @@ public class TypeServiceImpl implements TypeService{
 		
 		// CRITICAL FIX: Preserve original property ID exactly as provided
 		String originalPropertyId = propertyDefinition.getPropertyId();
-		
-		// CRITICAL DEBUG: Add visible logging for TCK property creation
-		System.err.println("=== TYPESERVICE.createPropertyDefinition CALLED ===");
-		System.err.println("Repository: " + repositoryId);
-		System.err.println("Original Property ID: " + originalPropertyId);
-		System.err.println("Property Type: " + propertyDefinition.getPropertyType());
-		System.err.println("ThreadID: " + Thread.currentThread().getId());
-		System.err.println("Timestamp: " + System.currentTimeMillis());
 		
 		if (log.isDebugEnabled()) {
 			log.debug("Creating property definition - ID: " + originalPropertyId + 

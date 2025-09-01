@@ -45,21 +45,22 @@ public class CouchPropertyDefinitionCore extends CouchNodeBase{
 	}
 	
 	// Mapベースのコンストラクタを追加（Cloudant Document変換用）
+	// CRITICAL FIX: 汚染防止システム統合 - setterメソッド経由で処理
 	@JsonCreator
 	public CouchPropertyDefinitionCore(Map<String, Object> properties) {
 		super(properties); // 親クラスのMapコンストラクタを呼び出し
 		
 		if (properties != null) {
-			// 文字列フィールドの処理
-			this.propertyId = (String) properties.get("propertyId");
-			this.queryName = (String) properties.get("queryName");
+			// ✅ 汚染防止システム通過: setterメソッド経由で処理
+			setPropertyId((String) properties.get("propertyId"));
+			setQueryName((String) properties.get("queryName"));
 			
 			// PropertyType列挙型の処理
 			if (properties.containsKey("propertyType")) {
 				String propTypeStr = (String) properties.get("propertyType");
 				if (propTypeStr != null) {
 					try {
-						this.propertyType = PropertyType.fromValue(propTypeStr);
+						setPropertyType(PropertyType.fromValue(propTypeStr));
 					} catch (Exception e) {
 						// 無効な値の場合は無視
 					}
@@ -71,7 +72,7 @@ public class CouchPropertyDefinitionCore extends CouchNodeBase{
 				String cardinalityStr = (String) properties.get("cardinality");
 				if (cardinalityStr != null) {
 					try {
-						this.cardinality = Cardinality.fromValue(cardinalityStr);
+						setCardinality(Cardinality.fromValue(cardinalityStr));
 					} catch (Exception e) {
 						// 無効な値の場合は無視
 					}
@@ -120,6 +121,8 @@ public class CouchPropertyDefinitionCore extends CouchNodeBase{
 		p.setQueryName(getQueryName());
 		p.setPropertyType(getPropertyType());
 		p.setCardinality(getCardinality());
+		
 		return p;
 	}
+	
 }

@@ -50,6 +50,12 @@ public class NemakiPropertyDefinitionCore extends NodeBase{
 		// In Ektorp era, _rev was handled automatically by the library
 		// With Cloudant SDK, application must manually preserve _rev for subsequent updates
 		setRevision(n.getRevision());
+		
+		// Initialize PropertyDefinition-specific fields to prevent contamination
+		this.propertyId = null;        
+		this.propertyType = null;      
+		this.queryName = null;         
+		this.cardinality = null;       
 	}
 
 	public NemakiPropertyDefinitionCore(NemakiPropertyDefinition p){

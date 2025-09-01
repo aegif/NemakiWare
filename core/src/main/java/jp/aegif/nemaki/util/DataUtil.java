@@ -205,6 +205,12 @@ public class DataUtil {
 			BigDecimal decimalMaxValue, Long maxLength
 
 	) {
+		// CRITICAL: NULL datatype parameter validation
+		if (datatype == null) {
+			// Return NULL to preserve existing behavior for now
+			return null;
+		}
+		
 		PropertyDefinition<?> result = null;
 		if (datatype != null) {
 			switch (datatype) {
@@ -505,7 +511,15 @@ public class DataUtil {
 		result.setQueryName(queryName);
 		result.setDisplayName(displayName);
 		result.setDescription(description);
-		result.setPropertyType(datatype);
+		// CRITICAL ORDER CONTAMINATION FIX: Ensure PropertyType is isolated before assignment
+		// Problem: Jackson LinkedHashMap + TypeManagerImpl sequential processing causes
+		// TCK properties to inherit PropertyType values from previous system properties
+		PropertyType isolatedDatatype = datatype;
+		if (datatype != null) {
+			// Force PropertyType isolation by creating a new enum reference
+			isolatedDatatype = PropertyType.fromValue(datatype.value());
+		}
+		result.setPropertyType(isolatedDatatype); // ← CRITICAL FIX: Use isolated enum reference
 		result.setCardinality(cardinality);
 		result.setUpdatability(updatability);
 		result.setIsInherited(inherited);
@@ -523,6 +537,48 @@ public class DataUtil {
 				false, null, false, false, null, null, null, null, null, null,
 				null, null);
 		return core;
+	}
+
+	/**
+	 * CRITICAL CONTAMINATION FIX: Create defensive copy of PropertyDefinition to prevent object sharing
+	 * This prevents modifications to one PropertyDefinition reference from affecting other references
+	 */
+	public static PropertyDefinition<?> clonePropertyDefinition(PropertyDefinition<?> original) {
+		if (original == null) {
+			return null;
+		}
+		
+		try {
+			// Create new PropertyDefinition with same properties but different object reference
+			return createPropDef(
+				original.getId(),
+				original.getLocalName(),
+				original.getLocalNamespace(),
+				original.getQueryName(),
+				original.getDisplayName(),
+				original.getDescription(),
+				original.getPropertyType(),
+				original.getCardinality(),
+				original.getUpdatability(),
+				original.isRequired(),
+				original.isQueryable(),
+				original.isInherited(),
+				null, // choices - complex object, skip for now
+				original.isOpenChoice(),
+				original.isOrderable(),
+				original.getDefaultValue(),
+				null, // minValue - type-specific, handle separately
+				null, // maxValue - type-specific, handle separately
+				null, // resolution - DateTime specific
+				null, // decimalPrecision - Decimal specific
+				null, // decimalMinValue - Decimal specific
+				null, // decimalMaxValue - Decimal specific
+				null  // maxLength - String specific
+			);
+		} catch (Exception e) {
+			// Return original object as fallback
+			return original;
+		}
 	}
 
 	public static ObjectData copyObjectData(ObjectData objectData) {

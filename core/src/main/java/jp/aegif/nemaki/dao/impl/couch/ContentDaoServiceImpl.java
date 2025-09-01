@@ -120,12 +120,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		ObjectMapper mapper = new ObjectMapper();
 		// Configure Jackson to ignore unknown properties during Cloudant migration
 		mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-		// CRITICAL FIX: Enable field visibility for protected/private fields
-		// Use NONE for all accessors first, then selectively enable what we need
+		
+		// CRITICAL FIX: PropertyDefinitionCore contamination prevention
+		// CHANGED: Use SETTER access instead of FIELD access to enforce validation
+		// This ensures @JsonCreator constructors and setter methods are called
+		// preventing contamination during deserialization
 		mapper.setVisibility(PropertyAccessor.ALL, Visibility.NONE);
-		mapper.setVisibility(PropertyAccessor.FIELD, Visibility.ANY);
+		mapper.setVisibility(PropertyAccessor.SETTER, Visibility.ANY);     // FIXED: Use SETTER instead of FIELD
+		mapper.setVisibility(PropertyAccessor.CREATOR, Visibility.ANY);    // FIXED: Enable @JsonCreator constructors
 		mapper.setVisibility(PropertyAccessor.GETTER, Visibility.ANY);
 		mapper.setVisibility(PropertyAccessor.IS_GETTER, Visibility.ANY);
+		
 		return mapper;
 	}
 
@@ -136,43 +141,22 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public List<NemakiTypeDefinition> getTypeDefinitions(String repositoryId) {
 		try {
 			// Use ViewQuery to get type definitions from design document
-			System.err.println("=== CONTENT DAO GET TYPE DEFINITIONS DEBUG ===");
-			System.err.println("Repository ID: " + repositoryId);
 			
 			Map<String, Object> queryParams = new HashMap<String, Object>();
 			// CRITICAL FIX: Must include documents to get full type definition data
 			queryParams.put("include_docs", true);
 			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "typeDefinitions", queryParams);
 			
-			System.err.println("CouchDB View Result: " + (result != null ? "NOT NULL" : "NULL"));
-			if (result != null) {
-				System.err.println("Total rows in ViewResult: " + (result.getRows() != null ? result.getRows().size() : "null rows"));
-			}
-			
 			List<NemakiTypeDefinition> typeDefinitions = new ArrayList<NemakiTypeDefinition>();
 			
 			// Handle null result gracefully (occurs during initial startup when design documents may not exist yet)
 			if (result != null && result.getRows() != null) {
-				System.err.println("MODIFIED DEBUG: Processing " + result.getRows().size() + " rows from typeDefinitions view");
 				int processedCount = 0;
 				
 				for (ViewResultRow row : result.getRows()) {
 					processedCount++;
-					System.err.println("SIMPLE ROW DEBUG: Processing row number " + processedCount);
-					if (processedCount <= 3) {
-						Object doc = row.getDoc();
-						System.err.println("Processing row " + processedCount + " - doc is " + (doc != null ? "NOT NULL" : "NULL"));
-						System.err.println("Row " + processedCount + " doc class: " + (doc != null ? doc.getClass().getName() : "null"));
-						System.err.println("Row " + processedCount + " doc content: " + (doc != null ? doc.toString().substring(0, Math.min(100, doc.toString().length())) : "null"));
-					}
-					System.err.println("=== DETAILED ROW CHECK: row " + processedCount + " ===");
-					System.err.println("row.getDoc() != null: " + (row.getDoc() != null));
-					Object rowDoc = row.getDoc();
-					System.err.println("rowDoc is null: " + (rowDoc == null));
-					System.err.println("About to enter if condition...");
 					
 					if (row.getDoc() != null) {
-						System.err.println("=== ENTERED CONVERSION BLOCK for row " + processedCount + " ===");
 						// Convert document to CouchTypeDefinition, then to NemakiTypeDefinition
 						try {
 							// Handle both Document and Map types from Cloudant SDK
@@ -182,8 +166,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 							if (docObj instanceof Map) {
 								// Already a Map, use directly
 								docMap = (Map<String, Object>) docObj;
-								System.err.println("=== ROW PROCESSING: Using Map directly ===");
-							} else if (docObj instanceof com.ibm.cloud.cloudant.v1.model.Document) {
+								} else if (docObj instanceof com.ibm.cloud.cloudant.v1.model.Document) {
 								// Convert Document to Map using properties
 								com.ibm.cloud.cloudant.v1.model.Document doc = (com.ibm.cloud.cloudant.v1.model.Document) docObj;
 								docMap = doc.getProperties();
@@ -193,50 +176,32 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 								// CouchNodeBase constructor needs _id and _rev fields for proper object initialization
 								if (doc.getId() != null) {
 									docMap.put("_id", doc.getId());
-									System.err.println("=== METADATA FIX: Added _id to docMap: " + doc.getId() + " ===");
-								}
+									}
 								if (doc.getRev() != null) {
 									docMap.put("_rev", doc.getRev());
-									System.err.println("=== METADATA FIX: Added _rev to docMap: " + doc.getRev() + " ===");
-								}
+									}
 								
-								System.err.println("=== ROW PROCESSING: Converted Document to Map with metadata ===");
-							} else {
-								System.err.println("=== ROW PROCESSING: Unknown document type: " + docObj.getClass().getName() + " ===");
-								continue;
+								} else {
+									continue;
 							}
-								System.err.println("=== ROW PROCESSING: row " + processedCount + " has doc, about to cast ===");
-								String typeId = (String) docMap.get("typeId");
-								System.err.println("=== ROW PROCESSING: docMap cast successful, typeId = " + typeId + " ===");
+									String typeId = (String) docMap.get("typeId");
+									
 								
-								if (processedCount <= 3) {
-									System.err.println("Row " + processedCount + " typeId: " + typeId);
-								}
+	
 								
-								System.err.println("=== CONSTRUCTOR DEBUG: About to create CouchTypeDefinition ===");
-
+	
 								
-								System.err.println("DocMap typeId: " + docMap.get("typeId"));
-
+	
 								
-								System.err.println("DocMap queryName: " + docMap.get("queryName"));
-
+	
 								
-								System.err.println("DocMap baseId: " + docMap.get("baseId"));
-
-								
-								System.err.println("DocMap objectType: " + docMap.get("objectType"));
-
+	
 								
 								CouchTypeDefinition ctd = new CouchTypeDefinition(docMap);
 
 								
-								System.err.println("=== CONSTRUCTOR DEBUG: CouchTypeDefinition created successfully ===");
-								if (ctd != null) {
+									if (ctd != null) {
 									typeDefinitions.add(ctd.convert());
-									if (processedCount <= 3) {
-										System.err.println("Successfully converted typeId: " + typeId);
-									}
 								}
 						} catch (Exception e) {
 							String typeId = "unknown";
@@ -250,10 +215,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 							} catch (Exception ex) {
 								// Ignore, use default "unknown"
 							}
-							System.err.println("=== CONVERSION EXCEPTION for typeId " + typeId + " ===");
-							System.err.println("Exception: " + e.getClass().getName());
-							System.err.println("Message: " + e.getMessage());
-							e.printStackTrace();
+								e.printStackTrace();
 							log.warn("Failed to convert type definition document: " + e.getMessage());
 							if (log.isDebugEnabled()) {
 								e.printStackTrace();
@@ -263,12 +225,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				}
 			}
 			
-			System.err.println("Final typeDefinitions.size() = " + typeDefinitions.size());
-			
+				
 			// If no types found via ViewQuery, return basic CMIS types as fallback
 			if (typeDefinitions.isEmpty()) {
-				System.err.println("=== FALLBACK TRIGGERED: No types found via ViewQuery ===");
-				log.warn("No type definitions found via ViewQuery, returning basic CMIS types as fallback");
+					log.warn("No type definitions found via ViewQuery, returning basic CMIS types as fallback");
 				
 				// Create basic folder type definition
 				NemakiTypeDefinition folderType = new NemakiTypeDefinition();
@@ -323,57 +283,36 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public NemakiTypeDefinition createTypeDefinition(String repositoryId, NemakiTypeDefinition typeDefinition) {
-		System.err.println("[DAO] === CREATE TYPE DEFINITION CALLED ===");
-		System.err.println("[DAO] Repository ID: " + repositoryId);
-		System.err.println("[DAO] Type ID: " + typeDefinition.getTypeId());
-		System.err.println("[DAO] Input NemakiTypeDefinition properties: " + typeDefinition.getProperties());
-		System.err.println("[DAO] Input NemakiTypeDefinition properties size: " + (typeDefinition.getProperties() != null ? typeDefinition.getProperties().size() : "null"));
-		
+				
 		// Step 1: Create CouchTypeDefinition
-		System.err.println("[DAO] Creating CouchTypeDefinition...");
-		CouchTypeDefinition ct = new CouchTypeDefinition(typeDefinition);
-		System.err.println("[DAO] CouchTypeDefinition created - properties: " + ct.getProperties());
-		System.err.println("[DAO] CouchTypeDefinition properties size: " + (ct.getProperties() != null ? ct.getProperties().size() : "null"));
-		
+			CouchTypeDefinition ct = new CouchTypeDefinition(typeDefinition);
+			
 		// Step 2: Call CloudantClientWrapper create
-		System.err.println("[DAO] Calling CloudantClientWrapper.create()...");
-		System.err.println("[DAO] Document to be stored: " + ct.getId() + " with queryName: " + ct.getQueryName());
-		System.err.println("[DAO] Document type field: " + ct.getType());
-		
+					
 		try {
 			connectorPool.getClient(repositoryId).create(ct);
-			System.err.println("[DAO] CloudantClientWrapper.create() completed successfully");
-		} catch (Exception e) {
-			System.err.println("[DAO] EXCEPTION in CloudantClientWrapper.create(): " + e.getMessage());
-			e.printStackTrace();
+			} catch (Exception e) {
+				e.printStackTrace();
 			throw e;
 		}
-		System.err.println("[DAO] After CouchDB create, CouchTypeDefinition properties: " + ct.getProperties());
-		
+			
 		// Step 3: Convert back to NemakiTypeDefinition
-		System.err.println("[DAO] Converting back to NemakiTypeDefinition...");
-		NemakiTypeDefinition result = ct.convert();
-		System.err.println("[DAO] Final result properties: " + result.getProperties());
-		
+			NemakiTypeDefinition result = ct.convert();
+			
 		// Step 4: CRITICAL - Refresh TypeManager cache to include new type
-		System.err.println("[DAO] === REFRESHING TYPEMANAGER CACHE FOR NEW TYPE ===");
-		try {
+			try {
 			// Get TypeManager from Spring context and refresh types cache
 			TypeManager typeManager = (TypeManager) SpringContext.getBean("typeManager");
 			if (typeManager != null) {
 				typeManager.refreshTypes();
-				System.err.println("[DAO] TypeManager.refreshTypes() completed successfully");
-			} else {
-				System.err.println("[DAO] ERROR: TypeManager bean not found");
-			}
+				} else {
+				}
 		} catch (Exception e) {
-			System.err.println("[DAO] ERROR during TypeManager refresh: " + e.getMessage());
-			e.printStackTrace();
+				e.printStackTrace();
 			// Don't throw - let type creation succeed even if cache refresh fails
 		}
 		
-		System.err.println("[DAO] === CREATE TYPE DEFINITION COMPLETED ===");
-		return result;
+			return result;
 	}
 
 	@Override
@@ -388,14 +327,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public void deleteTypeDefinition(String repositoryId, String nodeId) {
-		System.err.println("[DAO] === DELETE TYPE DEFINITION CALLED ===");
-		System.err.println("[DAO] Repository ID: " + repositoryId);
-		System.err.println("[DAO] Node ID to delete: " + nodeId);
-		
-		System.err.println("[DAO] About to call generic delete() method...");
-		delete(repositoryId, nodeId);
-		System.err.println("[DAO] === DELETE TYPE DEFINITION COMPLETED ===");
-	}
+				
+			delete(repositoryId, nodeId);
+		}
 
 	@Override
 	public List<NemakiPropertyDefinitionCore> getPropertyDefinitionCores(String repositoryId) {
@@ -410,9 +344,84 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				for (ViewResultRow row : result.getRows()) {
 					if (row.getDoc() != null) {
 						try {
+							
 							ObjectMapper mapper = createConfiguredObjectMapper();
-							CouchPropertyDefinitionCore cpdc = mapper.convertValue(row.getDoc(), CouchPropertyDefinitionCore.class);
+							
+							// CRITICAL FIX: Create order-isolated Map to prevent JSON sequence contamination
+							// Handle both Document and Map types from Cloudant SDK
+							Map<String, Object> originalDoc = null;
+							Object docObj = row.getDoc();
+							
+							if (docObj instanceof Map) {
+								// Already a Map, use directly
+								originalDoc = (Map<String, Object>) docObj;
+							} else if (docObj instanceof com.ibm.cloud.cloudant.v1.model.Document) {
+								// Convert Document to Map using properties
+								com.ibm.cloud.cloudant.v1.model.Document doc = (com.ibm.cloud.cloudant.v1.model.Document) docObj;
+								originalDoc = doc.getProperties();
+								
+								// Add CouchDB metadata (_id, _rev) to properties map
+								if (doc.getId() != null) {
+									originalDoc.put("_id", doc.getId());
+								}
+								if (doc.getRev() != null) {
+									originalDoc.put("_rev", doc.getRev());
+								}
+							} else {
+								continue;
+							}
+							
+							Map<String, Object> isolatedDoc = new java.util.LinkedHashMap<>();
+							
+							// CONTAMINATION DEFENSE: Add properties in controlled order to prevent sequence pollution
+							if (originalDoc.containsKey("_id")) isolatedDoc.put("_id", originalDoc.get("_id"));
+							if (originalDoc.containsKey("_rev")) isolatedDoc.put("_rev", originalDoc.get("_rev"));
+							if (originalDoc.containsKey("objectType")) isolatedDoc.put("objectType", originalDoc.get("objectType"));
+							if (originalDoc.containsKey("type")) isolatedDoc.put("type", originalDoc.get("type"));
+							
+							// CRITICAL: Process property fields in deterministic order
+							if (originalDoc.containsKey("propertyId")) isolatedDoc.put("propertyId", originalDoc.get("propertyId"));
+							if (originalDoc.containsKey("queryName")) isolatedDoc.put("queryName", originalDoc.get("queryName"));
+							if (originalDoc.containsKey("localName")) isolatedDoc.put("localName", originalDoc.get("localName"));
+							if (originalDoc.containsKey("localNamespace")) isolatedDoc.put("localNamespace", originalDoc.get("localNamespace"));
+							if (originalDoc.containsKey("displayName")) isolatedDoc.put("displayName", originalDoc.get("displayName"));
+							if (originalDoc.containsKey("description")) isolatedDoc.put("description", originalDoc.get("description"));
+							if (originalDoc.containsKey("propertyType")) isolatedDoc.put("propertyType", originalDoc.get("propertyType"));
+							if (originalDoc.containsKey("cardinality")) isolatedDoc.put("cardinality", originalDoc.get("cardinality"));
+							if (originalDoc.containsKey("updatability")) isolatedDoc.put("updatability", originalDoc.get("updatability"));
+							if (originalDoc.containsKey("inherited")) isolatedDoc.put("inherited", originalDoc.get("inherited"));
+							if (originalDoc.containsKey("required")) isolatedDoc.put("required", originalDoc.get("required"));
+							if (originalDoc.containsKey("queryable")) isolatedDoc.put("queryable", originalDoc.get("queryable"));
+							if (originalDoc.containsKey("orderable")) isolatedDoc.put("orderable", originalDoc.get("orderable"));
+							if (originalDoc.containsKey("openChoice")) isolatedDoc.put("openChoice", originalDoc.get("openChoice"));
+							if (originalDoc.containsKey("choices")) isolatedDoc.put("choices", originalDoc.get("choices"));
+							if (originalDoc.containsKey("defaultValue")) isolatedDoc.put("defaultValue", originalDoc.get("defaultValue"));
+							if (originalDoc.containsKey("resolution")) isolatedDoc.put("resolution", originalDoc.get("resolution"));
+							if (originalDoc.containsKey("precision")) isolatedDoc.put("precision", originalDoc.get("precision"));
+							if (originalDoc.containsKey("maxLength")) isolatedDoc.put("maxLength", originalDoc.get("maxLength"));
+							if (originalDoc.containsKey("minValue")) isolatedDoc.put("minValue", originalDoc.get("minValue"));
+							if (originalDoc.containsKey("maxValue")) isolatedDoc.put("maxValue", originalDoc.get("maxValue"));
+							
+							// Add any remaining fields (preserving original values while controlling order)
+							for (Map.Entry<String, Object> entry : originalDoc.entrySet()) {
+								if (!isolatedDoc.containsKey(entry.getKey())) {
+									isolatedDoc.put(entry.getKey(), entry.getValue());
+								}
+							}
+							
+							CouchPropertyDefinitionCore cpdc = mapper.convertValue(isolatedDoc, CouchPropertyDefinitionCore.class);
+							
+							// CRITICAL CONTAMINATION PREVENTION: Validate PropertyId before conversion
 							if (cpdc != null) {
+								if (cpdc.getPropertyId() == null) {
+									continue; // Skip NULL PropertyId entries to prevent contamination
+								}
+								
+								// ADDITIONAL VALIDATION: Check for empty PropertyId
+								if (cpdc.getPropertyId().trim().isEmpty()) {
+									continue; // Skip empty PropertyId entries
+								}
+								
 								cores.add(cpdc.convert());
 							}
 						} catch (Exception e) {
@@ -438,8 +447,20 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			CouchPropertyDefinitionCore cpdc = client.get(CouchPropertyDefinitionCore.class, nodeId);
 			
 			if (cpdc != null) {
-				return cpdc.convert();
+				// CRITICAL CONTAMINATION PREVENTION: Validate PropertyId before conversion
+				if (cpdc.getPropertyId() == null) {
+					return null; // Return null instead of processing contaminated data
+				}
+				
+				// ADDITIONAL VALIDATION: Check for empty PropertyId
+				if (cpdc.getPropertyId().trim().isEmpty()) {
+					return null; // Return null instead of processing contaminated data
+				}
+				
+				NemakiPropertyDefinitionCore result = cpdc.convert();
+				return result;
 			}
+			
 			return null;
 			
 		} catch (Exception e) {
@@ -456,8 +477,23 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			List<CouchPropertyDefinitionCore> couchCores = client.queryView("_repo", "propertyDefinitionCoresByPropertyId", propertyId, CouchPropertyDefinitionCore.class);
 			
 			if (!couchCores.isEmpty()) {
+				CouchPropertyDefinitionCore cpdc = couchCores.get(0);
+				
+				// CRITICAL CONTAMINATION PREVENTION: Validate PropertyId before conversion
+				if (cpdc == null) {
+					return null;
+				}
+				
+				if (cpdc.getPropertyId() == null) {
+					return null; // Return null instead of processing contaminated data
+				}
+				
+				// ADDITIONAL VALIDATION: Check for empty PropertyId
+				if (cpdc.getPropertyId().trim().isEmpty()) {
+					return null; // Return null instead of processing contaminated data
+				}
 				// Return the first (and should be only) result
-				return couchCores.get(0).convert();
+				return cpdc.convert();
 			}
 			
 			return null;
@@ -488,8 +524,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	public List<NemakiPropertyDefinitionDetail> getPropertyDefinitionDetailByCoreNodeId(String repositoryId,
 			String coreNodeId) {
 		try {
-			System.err.println("[PROPERTY_DETAIL_DEBUG] DAO METHOD CALLED - coreNodeId: " + coreNodeId + " in repository: " + repositoryId);
-			log.error("[PROPERTY_DETAIL_DEBUG] Starting search for coreNodeId: " + coreNodeId + " in repository: " + repositoryId);
 			
 			// Alternative approach: Direct document retrieval without ObjectMapper conversion
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
@@ -499,11 +533,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			ViewResult result = client.queryView("_repo", "propertyDefinitionDetails", queryParams);
 			List<NemakiPropertyDefinitionDetail> details = new ArrayList<NemakiPropertyDefinitionDetail>();
 			
-			System.err.println("[PROPERTY_DETAIL_DEBUG] ViewResult: " + (result != null ? "found" : "null") + 
-			         ", Rows: " + (result != null && result.getRows() != null ? result.getRows().size() : 0));
-			log.error("[PROPERTY_DETAIL_DEBUG] ViewResult: " + (result != null ? "found" : "null") + 
-			         ", Rows: " + (result != null && result.getRows() != null ? result.getRows().size() : 0));
-			
+	 
+		 
+				
 			if (result != null && result.getRows() != null) {
 				for (ViewResultRow row : result.getRows()) {
 					if (row.getDoc() != null) {
@@ -522,26 +554,21 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 							if (docMap != null) {
 								docMap.put("_id", cloudantDoc.getId());
 								docMap.put("_rev", cloudantDoc.getRev());
-								System.err.println("[PROPERTY_DETAIL_DEBUG] Added _id: " + cloudantDoc.getId() + ", _rev: " + cloudantDoc.getRev());
-							}
+												}
 						} else {
-							System.err.println("[PROPERTY_DETAIL_DEBUG] Unknown document type: " + docObj.getClass().getName());
-							continue;
+											continue;
 						}
 						
 						if (docMap == null) {
-							System.err.println("[PROPERTY_DETAIL_DEBUG] Failed to extract document properties");
-							continue;
+											continue;
 						}
 						
 						Object docCoreNodeId = docMap.get("coreNodeId");
 						
-						System.err.println("[PROPERTY_DETAIL_DEBUG] Checking document ID: " + docMap.get("_id") + 
-						         ", coreNodeId: " + docCoreNodeId + ", type: " + docMap.get("type"));
-						
-						if (coreNodeId.equals(String.valueOf(docCoreNodeId))) {
-							System.err.println("[PROPERTY_DETAIL_DEBUG] Found matching document - attempting direct construction");
+	 
 							
+						if (coreNodeId.equals(String.valueOf(docCoreNodeId))) {
+												
 							// Direct construction instead of ObjectMapper conversion
 							try {
 								CouchPropertyDefinitionDetail cpdd = new CouchPropertyDefinitionDetail();
@@ -650,20 +677,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 								}
 								
 								details.add(cpdd.convert());
-								System.err.println("[PROPERTY_DETAIL_DEBUG] Successfully constructed PropertyDefinitionDetail with coreNodeId: " + coreNodeId);
-								log.error("[PROPERTY_DETAIL_DEBUG] Successfully constructed PropertyDefinitionDetail with coreNodeId: " + coreNodeId);
-								
+									
 							} catch (Exception constructionError) {
-								log.error("[PROPERTY_DETAIL_DEBUG] Failed to construct PropertyDefinitionDetail: " + constructionError.getMessage(), constructionError);
-							}
+								}
 						}
 					}
 				}
 			}
 			
-			System.err.println("[PROPERTY_DETAIL_DEBUG] Found " + details.size() + " details for coreNodeId: " + coreNodeId);
-			log.error("[PROPERTY_DETAIL_DEBUG] Found " + details.size() + " details for coreNodeId: " + coreNodeId);
-			return details;
+					return details;
 			
 		} catch (Exception e) {
 			log.error("Error retrieving property definition details for core node '" + coreNodeId + "' from repository '" + repositoryId + "': " + e.getMessage(), e);
@@ -674,9 +696,27 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public NemakiPropertyDefinitionCore createPropertyDefinitionCore(String repositoryId,
 			NemakiPropertyDefinitionCore propertyDefinitionCore) {
+		
+		// CRITICAL DEBUG: Trace ID assignment during PropertyDefinitionCore creation
+					
 		CouchPropertyDefinitionCore cpc = new CouchPropertyDefinitionCore(propertyDefinitionCore);
+			
+		// The create() method should set the ID on the cpc object
 		connectorPool.getClient(repositoryId).create(cpc);
-		return cpc.convert();
+			
+		// CRITICAL CONTAMINATION PREVENTION: Validate PropertyId before conversion
+		if (cpc.getPropertyId() == null) {
+					throw new IllegalStateException("PropertyId cannot be null in createPropertyDefinitionCore - this indicates a creation failure");
+		}
+		
+		// ADDITIONAL VALIDATION: Check for empty PropertyId
+		if (cpc.getPropertyId().trim().isEmpty()) {
+				throw new IllegalStateException("PropertyId cannot be empty in createPropertyDefinitionCore - this indicates a creation failure");
+		}
+		
+			NemakiPropertyDefinitionCore result = cpc.convert();
+				
+		return result;
 	}
 
 	@Override
@@ -1165,8 +1205,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Content getChildByName(String repositoryId, String parentId, String name) {
 		try {
-			System.err.println("DEBUG getChildByName: searching for child '" + name + "' under parent '" + parentId + "' in repository: " + repositoryId);
-			log.debug("DEBUG getChildByName: searching for child '" + name + "' under parent '" + parentId + "' in repository: " + repositoryId);
+				log.debug("DEBUG getChildByName: searching for child '" + name + "' under parent '" + parentId + "' in repository: " + repositoryId);
 			
 			// FIXED: Use existing 'children' view instead of missing 'childByName' view
 			// Query children view and filter by name since childByName view doesn't exist
@@ -1176,13 +1215,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			Map<String, Object> queryParams = new HashMap<String, Object>();
 			queryParams.put("key", parentId);
 			queryParams.put("include_docs", true);
-			System.err.println("DEBUG getChildByName: Querying view _repo/children with key=" + parentId);
-			ViewResult result = client.queryView("_repo", "children", queryParams);
-			System.err.println("DEBUG getChildByName: View query completed, result rows count=" + (result.getRows() != null ? result.getRows().size() : "null"));
-			
+				ViewResult result = client.queryView("_repo", "children", queryParams);
+				
 			if (result.getRows() != null && !result.getRows().isEmpty()) {
-				System.err.println("DEBUG getChildByName: found " + result.getRows().size() + " children for parent '" + parentId + "'");
-				log.debug("DEBUG getChildByName: found " + result.getRows().size() + " children for parent '" + parentId + "'");
+					log.debug("DEBUG getChildByName: found " + result.getRows().size() + " children for parent '" + parentId + "'");
 				for (ViewResultRow row : result.getRows()) {
 					if (row.getDoc() != null) {
 						// Handle Jakarta EE compatibility - row.getDoc() returns Document object, not Map
@@ -1198,26 +1234,22 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 						} else if (docObj instanceof com.ibm.cloud.cloudant.v1.model.Document) {
 							// Jakarta EE compatible behavior - use Document methods
 							com.ibm.cloud.cloudant.v1.model.Document doc = (com.ibm.cloud.cloudant.v1.model.Document) docObj;
-							System.err.println("DEBUG getChildByName: Document object methods available");
-							
+										
 							// Try multiple methods to extract data from Document
 							try {
 								// Method 1: Try direct document ID access first
 								try {
 									String docId = doc.getId();
-									System.err.println("DEBUG getChildByName: Document.getId()=" + docId);
-									if (docId != null) {
+												if (docId != null) {
 										objectId = docId;
 									}
 								} catch (Exception idEx) {
-									System.err.println("DEBUG getChildByName: Document.getId() failed: " + idEx.getMessage());
-								}
+											}
 								
 								// Method 2: getProperties()
 								Map<String, Object> docProperties = doc.getProperties();
 								if (docProperties != null) {
-									System.err.println("DEBUG getChildByName: Properties map size=" + docProperties.size());
-									childName = (String) docProperties.get("name");
+													childName = (String) docProperties.get("name");
 									
 									// Try both _id and id fields
 									if (objectId == null) {
@@ -1226,18 +1258,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 											objectId = (String) docProperties.get("id");
 										}
 									}
-									System.err.println("DEBUG getChildByName: From properties - name=" + childName + ", id=" + objectId);
-								}
+											}
 								
 								// Method 3: Try accessing the document as a raw map using reflection/toString
 								if (objectId == null) {
-									System.err.println("DEBUG getChildByName: Document string representation: " + doc.toString());
-									// As a last resort, try to parse the ID from the string representation
+												// As a last resort, try to parse the ID from the string representation
 								}
 								
 							} catch (Exception e) {
-								System.err.println("DEBUG getChildByName: Exception accessing Document: " + e.getMessage());
-								e.printStackTrace();
+											e.printStackTrace();
 							}
 						} else {
 							log.warn("DEBUG getChildByName: unexpected document type: " + docObj.getClass().getName());
@@ -1252,11 +1281,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 						}
 					}
 				}
-				System.err.println("DEBUG getChildByName: no child found with name '" + name + "' under parent '" + parentId + "'");
-				log.debug("DEBUG getChildByName: no child found with name '" + name + "' under parent '" + parentId + "'");
+					log.debug("DEBUG getChildByName: no child found with name '" + name + "' under parent '" + parentId + "'");
 			} else {
-				System.err.println("DEBUG getChildByName: no children found for parent '" + parentId + "'");
-				log.debug("DEBUG getChildByName: no children found for parent '" + parentId + "'");
+					log.debug("DEBUG getChildByName: no children found for parent '" + parentId + "'");
 			}
 			
 			return null;
@@ -2090,9 +2117,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public void delete(String repositoryId, String objectId) {
-		System.err.println("[DAO] === DELETION FLOW TRACE START ===");
-		System.err.println("[DAO] DELETE METHOD CALLED FOR OBJECT: " + objectId + " in repository: " + repositoryId);
-		log.debug("=== DELETION FLOW TRACE START ===");
+				log.debug("=== DELETION FLOW TRACE START ===");
 		log.debug("DELETE METHOD CALLED FOR OBJECT: " + objectId + " in repository: " + repositoryId);
 		log.debug("Thread: " + Thread.currentThread().getName());
 		if (log.isTraceEnabled()) {
@@ -2119,19 +2144,14 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					log.warn("Object " + objectId + " has no revision - this may cause deletion failure");
 				}
 				
-				System.err.println("[DAO] Deleting object " + objectId + " with revision: " + currentRevision);
-				log.debug("Deleting object " + objectId + " with revision: " + currentRevision);
+					log.debug("Deleting object " + objectId + " with revision: " + currentRevision);
 				
 				// Perform the deletion
-				System.err.println("[DAO] About to call CloudantClientWrapper.delete(cnb)...");
-				connectorPool.getClient(repositoryId).delete(cnb);
-				System.err.println("[DAO] CloudantClientWrapper.delete(cnb) completed");
-				
+					connectorPool.getClient(repositoryId).delete(cnb);
+					
 				// Verify deletion with proper exception handling
-				System.err.println("[DAO] Starting deletion verification...");
-				boolean deletionVerified = verifyDeletion(repositoryId, objectId, attempt);
-				System.err.println("[DAO] Deletion verification result: " + deletionVerified);
-				if (!deletionVerified && attempt < maxRetries) {
+					boolean deletionVerified = verifyDeletion(repositoryId, objectId, attempt);
+					if (!deletionVerified && attempt < maxRetries) {
 					log.warn("Object " + objectId + " still exists after deletion attempt " + attempt + ", retrying...");
 					Thread.sleep(retryDelayMs);
 					continue; // Retry
@@ -2145,15 +2165,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					}
 				}
 				
-				System.err.println("[DAO] DELETION SUCCESS: Successfully deleted object: " + objectId + " from repository: " + repositoryId + " on attempt " + attempt);
-				log.debug("DELETION SUCCESS: Successfully deleted object: " + objectId + " from repository: " + repositoryId + " on attempt " + attempt);
+					log.debug("DELETION SUCCESS: Successfully deleted object: " + objectId + " from repository: " + repositoryId + " on attempt " + attempt);
 				return; // Success
 				
 			} catch (Exception e) {
-				System.err.println("[DAO] DELETION EXCEPTION on attempt " + attempt + " for object " + objectId + ": " + e.getClass().getSimpleName() + ": " + e.getMessage());
-				if (attempt < maxRetries) {
-					System.err.println("[DAO] Retrying deletion (attempt " + attempt + " of " + maxRetries + ")...");
-					log.warn("Deletion attempt " + attempt + " failed for object " + objectId + ", retrying: " + e.getMessage());
+					if (attempt < maxRetries) {
+						log.warn("Deletion attempt " + attempt + " failed for object " + objectId + ", retrying: " + e.getMessage());
 					try {
 						Thread.sleep(retryDelayMs);
 					} catch (InterruptedException ie) {
@@ -2322,8 +2339,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 						com.ibm.cloud.cloudant.v1.model.Document latestDoc = client.get(attachmentNode.getId());
 						if (latestDoc != null && latestDoc.getRev() != null) {
 							can.setRevision(latestDoc.getRev());
-							System.err.println("=== _REV MANAGEMENT: STAGE 1 update using latest revision: " + latestDoc.getRev() + " ===");
-						}
+									}
 						client.update(can);
 						// Get the updated document to obtain the new revision
 						com.ibm.cloud.cloudant.v1.model.Document updatedDoc = client.get(attachmentNode.getId());
@@ -2367,8 +2383,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 							// Fallback: get fresh revision only if STAGE 1 revision is somehow lost
 							com.ibm.cloud.cloudant.v1.model.Document doc = client.get(attachmentNode.getId());
 							revisionToUse = doc != null ? doc.getRev() : null;
-							System.err.println("=== _REV MANAGEMENT WARNING: Had to fallback to fresh GET in STAGE 2: " + revisionToUse + " ===");
-						}
+									}
 						
 						if (revisionToUse == null) {
 							log.warn("STAGE 2: Cannot get revision for attachment: " + attachmentNode.getId());
@@ -2390,8 +2405,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 							contentType
 						);
 						
-						System.err.println("=== _REV MANAGEMENT SUCCESS: STAGE 2 binary attachment: " + attachmentNode.getId() + " (revision: " + revisionToUse + " -> " + newRevision + ") ===");
-						log.debug("STAGE 2 SUCCESS: Stored binary content for: " + attachmentNode.getId() + " (revision: " + revisionToUse + " -> " + newRevision + ")");
+									log.debug("STAGE 2 SUCCESS: Stored binary content for: " + attachmentNode.getId() + " (revision: " + revisionToUse + " -> " + newRevision + ")");
 						break; // Success, exit retry loop
 						
 					} catch (com.ibm.cloud.sdk.core.service.exception.ConflictException e) {
@@ -2534,8 +2548,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 								// Fallback: get fresh revision only if STAGE 1 revision is somehow lost
 								com.ibm.cloud.cloudant.v1.model.Document currentDoc = client.get(documentId);
 								revisionToUse = currentDoc != null ? currentDoc.getRev() : null;
-								System.err.println("=== _REV MANAGEMENT WARNING: Had to fallback to fresh GET in createAttachment STAGE 2: " + revisionToUse + " ===");
-							}
+											}
 							
 							finalRevision = client.createAttachment(
 								documentId, 
@@ -2545,8 +2558,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 								contentType
 							);
 							
-							System.err.println("=== _REV MANAGEMENT SUCCESS: createAttachment STAGE 2: " + documentId + " (revision: " + revisionToUse + " -> " + finalRevision + ") ===");
-							log.debug("STAGE 2 SUCCESS: Added binary attachment: " + documentId + " (revision: " + revisionToUse + " -> " + finalRevision + ")");
+											log.debug("STAGE 2 SUCCESS: Added binary attachment: " + documentId + " (revision: " + revisionToUse + " -> " + finalRevision + ")");
 							break; // Success, exit retry loop
 							
 						} catch (com.ibm.cloud.sdk.core.service.exception.ConflictException e) {
@@ -2687,8 +2699,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 						// Fallback: get fresh revision only if STAGE 1 revision is somehow lost
 						com.ibm.cloud.cloudant.v1.model.Document doc = client.get(attachment.getId());
 						revisionToUse = doc != null ? doc.getRev() : null;
-						System.err.println("=== _REV MANAGEMENT WARNING: Had to fallback to fresh GET in updateAttachment STAGE 2: " + revisionToUse + " ===");
-					}
+								}
 					
 					// Update attachment with binary content
 					String attachmentName = "content"; // Standard attachment name for content
@@ -2703,8 +2714,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 						contentType
 					);
 					
-					System.err.println("=== _REV MANAGEMENT SUCCESS: updateAttachment STAGE 2: " + attachment.getId() + " (revision: " + revisionToUse + " -> " + newRevision + ") ===");
-					log.debug("Updated binary content as attachment for: " + attachment.getId() + " (revision: " + newRevision + ")");
+								log.debug("Updated binary content as attachment for: " + attachment.getId() + " (revision: " + newRevision + ")");
 					
 				} catch (Exception attachmentError) {
 					log.warn("Failed to update binary content as attachment for: " + attachment.getId() + ". Metadata updated only.", attachmentError);

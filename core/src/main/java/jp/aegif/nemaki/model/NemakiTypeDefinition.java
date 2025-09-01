@@ -130,7 +130,20 @@ public class NemakiTypeDefinition extends NodeBase {
 	}
 
 	public String getParentId() {
-		return parentId;
+		// CRITICAL FIX: Apply baseId fallback logic to prevent NullPointerException
+		// This matches the same pattern used in ExceptionServiceImpl and TypeManagerImpl
+		// When parentId is null (for new custom types), use baseId.value() as fallback
+		if (parentId != null) {
+			return parentId;
+		}
+		
+		// Fallback to baseId if parentId is null
+		if (baseId != null) {
+			return baseId.value();
+		}
+		
+		// Final fallback to prevent null returns (should not happen in normal operations)
+		return null;
 	}
 
 	public void setParentId(String parentId) {

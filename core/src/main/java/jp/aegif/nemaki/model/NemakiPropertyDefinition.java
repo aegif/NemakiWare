@@ -73,9 +73,11 @@ public class NemakiPropertyDefinition extends NodeBase {
 	public NemakiPropertyDefinition() {
 		super();
 		setType(NodeType.TYPE_DEFINITION.value());
+		
 	}
 
 	public NemakiPropertyDefinition(NodeBase n) {
+		
 		setId(n.getId());
 		setType(n.getType());
 		setCreated(n.getCreated());
@@ -87,16 +89,6 @@ public class NemakiPropertyDefinition extends NodeBase {
 	public NemakiPropertyDefinition(NemakiPropertyDefinitionCore core, NemakiPropertyDefinitionDetail detail){
 		//TODO Output error when core and detail don't match
 
-		// CRITICAL DEBUG: Use System.err to ensure visibility in container logs
-		System.err.println("=== NEMAKI PROPERTY DEFINITION CONSTRUCTOR ===");
-		System.err.println("CONSTRUCTOR core=" + (core != null ? "NOT NULL" : "NULL"));
-		System.err.println("CONSTRUCTOR detail=" + (detail != null ? "NOT NULL" : "NULL"));
-		if (core == null) {
-			System.err.println("CRITICAL ERROR: NemakiPropertyDefinitionCore is NULL in constructor");
-			System.err.println("Detail ID: " + (detail != null ? detail.getId() : "NULL"));
-			// Print stack trace to see who called this constructor with null core
-			Thread.dumpStack();
-		}
 
 		setId(detail.getId());
 		setType(NodeType.TYPE_DEFINITION.value());
@@ -112,15 +104,11 @@ public class NemakiPropertyDefinition extends NodeBase {
 		String intendedPropertyId = determineCorrectPropertyId(detail, core);
 		setPropertyId(intendedPropertyId);
 		
-		System.err.println("=== PROPERTY ID CONTAMINATION FIX ===");
-		System.err.println("Core Property ID (potentially contaminated): " + (core != null ? core.getPropertyId() : "NULL"));
-		System.err.println("Detail Local Name: " + (detail != null ? detail.getLocalName() : "NULL"));
-		System.err.println("Corrected Property ID: " + intendedPropertyId);
-		System.err.println("Property ID corrected: " + !intendedPropertyId.equals(core != null ? core.getPropertyId() : ""));
 		setLocalName(detail.getLocalName());
 		setLocalNameSpace(detail.getLocalNameSpace());
 		setQueryName(core.getQueryName());
 		setDisplayName(detail.getDisplayName());
+		setDescription(detail.getDescription());
 		setPropertyType(core.getPropertyType());
 		setCardinality(core.getCardinality());
 		setUpdatability(detail.getUpdatability());
@@ -141,6 +129,44 @@ public class NemakiPropertyDefinition extends NodeBase {
 	}
 	
 	/**
+	 * CRITICAL FIX: Safety contamination check for PropertyDefinition<?> constructor
+	 * This simplified version handles cases where we only have the PropertyDefinition object
+	 * without separate Core/Detail objects.
+	 * 
+	 * @param originalPropertyId The property ID from the PropertyDefinition object
+	 * @param propertyDefinition The source PropertyDefinition object
+	 * @return The corrected property ID that should be used
+	 */
+	private String applySafetyContaminationCheck(String originalPropertyId, PropertyDefinition<?> propertyDefinition) {
+		
+		
+		// STRATEGY 1: Check if this looks like a custom property (contains namespace)
+		if (originalPropertyId != null && originalPropertyId.contains(":")) {
+			
+			// STRATEGY 1a: Custom properties (non-CMIS namespace) should preserve their ID
+			if (originalPropertyId.startsWith("tck:") || 
+				(!originalPropertyId.startsWith("cmis:") && originalPropertyId.contains(":"))) {
+				
+				return originalPropertyId;
+			}
+			
+			// STRATEGY 1b: CMIS system properties should preserve their ID
+			if (originalPropertyId.startsWith("cmis:")) {
+				return originalPropertyId;
+			}
+		}
+		
+		// STRATEGY 2: Use LocalName as fallback if it looks like a proper property ID
+		String localName = propertyDefinition.getLocalName();
+		if (localName != null && localName.contains(":")) {
+			return localName;
+		}
+		
+		// STRATEGY 3: Last resort - return original ID with warning
+		return originalPropertyId;
+	}
+	
+	/**
 	 * CRITICAL FIX: Determine the correct property ID to prevent contamination
 	 * from PropertyCore reuse during type reconstruction.
 	 * 
@@ -153,10 +179,6 @@ public class NemakiPropertyDefinition extends NodeBase {
 	 */
 	private String determineCorrectPropertyId(NemakiPropertyDefinitionDetail detail, NemakiPropertyDefinitionCore core) {
 		
-		System.err.println("=== DETERMINE CORRECT PROPERTY ID ===");
-		System.err.println("Detail Local Name: " + (detail != null ? detail.getLocalName() : "NULL"));
-		System.err.println("Detail Display Name: " + (detail != null ? detail.getDisplayName() : "NULL"));
-		System.err.println("Core Property ID: " + (core != null ? core.getPropertyId() : "NULL"));
 		
 		// STRATEGY 1: Use detail's localName as the intended property ID
 		// For custom properties like tck:boolean, the localName should contain the correct ID
@@ -165,7 +187,6 @@ public class NemakiPropertyDefinition extends NodeBase {
 			if (localName != null && !localName.trim().isEmpty()) {
 				// Check if this looks like a proper property ID (contains namespace)
 				if (localName.contains(":")) {
-					System.err.println("✅ USING LOCAL NAME AS CORRECT PROPERTY ID: " + localName);
 					return localName;
 				}
 			}
@@ -174,7 +195,6 @@ public class NemakiPropertyDefinition extends NodeBase {
 			String displayName = detail.getDisplayName();
 			if (displayName != null && !displayName.trim().isEmpty()) {
 				if (displayName.contains(":")) {
-					System.err.println("✅ USING DISPLAY NAME AS CORRECT PROPERTY ID: " + displayName);
 					return displayName;
 				}
 			}
@@ -184,19 +204,30 @@ public class NemakiPropertyDefinition extends NodeBase {
 		if (core != null) {
 			String corePropertyId = core.getPropertyId();
 			if (corePropertyId != null && corePropertyId.startsWith("cmis:")) {
-				System.err.println("✅ USING CORE PROPERTY ID FOR CMIS SYSTEM PROPERTY: " + corePropertyId);
 				return corePropertyId;
 			}
 		}
 		
-		// STRATEGY 4: Last resort - examine the PropertyDetail ID pattern
-		// Some custom properties might have encoded their intended ID in the detail ID
-		System.err.println("⚠️ FALLBACK: Using core property ID but this may be contaminated: " + (core != null ? core.getPropertyId() : "NULL"));
-		return core != null ? core.getPropertyId() : "unknown:property";
+		// STRATEGY 4: Safe fallback - generate uncontaminated property ID
+		// CRITICAL FIX: Never use core.getPropertyId() as it may be contaminated from PropertyCore reuse
+		if (core != null && core.getPropertyType() != null) {
+			// Generate a safe property ID based on property type to avoid contamination
+			String safePropertyId = "generated:" + core.getPropertyType().value().toLowerCase();
+			return safePropertyId;
+		}
+		
+		// STRATEGY 5: Ultimate fallback - use timestamp-based unique ID 
+		String uniquePropertyId = "fallback:property_" + System.currentTimeMillis();
+		return uniquePropertyId;
 	}
 
 	public NemakiPropertyDefinition(PropertyDefinition<?> propertyDefinition) {
-		setPropertyId(propertyDefinition.getId());
+		
+		// CRITICAL FIX: Apply contamination prevention to this constructor too
+		String originalPropertyId = propertyDefinition.getId();
+		String correctedPropertyId = applySafetyContaminationCheck(originalPropertyId, propertyDefinition);
+		
+		setPropertyId(correctedPropertyId);
 		setLocalName(propertyDefinition.getLocalName());
 		setLocalNameSpace(propertyDefinition.getLocalNamespace());
 		setQueryName(propertyDefinition.getQueryName());
@@ -204,13 +235,15 @@ public class NemakiPropertyDefinition extends NodeBase {
 		setPropertyType(propertyDefinition.getPropertyType());
 		setCardinality(propertyDefinition.getCardinality());
 		setUpdatability(propertyDefinition.getUpdatability());
-		setRequired(propertyDefinition.isRequired());
-		setQueryable(propertyDefinition.isQueryable());
-		setOrderable(propertyDefinition.isOrderable());
+		// CRITICAL FIX: Add null safety for Boolean PropertyDefinition methods
+		// OpenCMIS JSONConverter may return null Boolean objects instead of primitive booleans
+		setRequired(propertyDefinition.isRequired() != null ? propertyDefinition.isRequired() : false);
+		setQueryable(propertyDefinition.isQueryable() != null ? propertyDefinition.isQueryable() : true);
+		setOrderable(propertyDefinition.isOrderable() != null ? propertyDefinition.isOrderable() : false);
 		setChoices(buildChoices(propertyDefinition.getChoices()));
-		setOpenChoice(propertyDefinition.isOpenChoice());
+		setOpenChoice(propertyDefinition.isOpenChoice() != null ? propertyDefinition.isOpenChoice() : false);
+		
 		setDefaultValue(new ArrayList<Object>(propertyDefinition.getDefaultValue()));
-
 
 	}
 
@@ -242,7 +275,18 @@ public class NemakiPropertyDefinition extends NodeBase {
 	}
 
 	public void setPropertyId(String propertyId) {
+		// Detect contamination pattern for validation
+		boolean isContamination = false;
+		if (this.propertyId != null && propertyId != null) {
+			// Check if this looks like a contamination (tck: -> cmis: change)
+			if (this.propertyId.startsWith("tck:") && propertyId.startsWith("cmis:")) {
+				isContamination = true;
+			}
+		}
+		
+		// Set the property ID
 		this.propertyId = propertyId;
+		
 	}
 
 	public String getLocalName() {

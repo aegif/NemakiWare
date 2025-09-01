@@ -864,16 +864,9 @@ public class CloudantClientWrapper {
 	public void create(Object document) {
 		try {
 			log.debug("Creating document of type: " + document.getClass().getSimpleName());
-			System.err.println("[CLOUDANT] === CREATE METHOD CALLED ===");
-			System.err.println("[CLOUDANT] Document type: " + document.getClass().getSimpleName());
 			
 			if (document instanceof jp.aegif.nemaki.model.couch.CouchTypeDefinition) {
 				jp.aegif.nemaki.model.couch.CouchTypeDefinition typeDef = (jp.aegif.nemaki.model.couch.CouchTypeDefinition) document;
-				System.err.println("[CLOUDANT] CouchTypeDefinition details:");
-				System.err.println("[CLOUDANT]   - ID: " + typeDef.getId());
-				System.err.println("[CLOUDANT]   - Type: " + typeDef.getType());
-				System.err.println("[CLOUDANT]   - QueryName: " + typeDef.getQueryName());
-				System.err.println("[CLOUDANT]   - Database: " + this.databaseName);
 			}
 			
 			ObjectMapper mapper = getObjectMapper();
@@ -956,9 +949,6 @@ public class CloudantClientWrapper {
 			String jsonString = mapper.writeValueAsString(documentMap);
 			
 			// Send JSON directly as a raw string to preserve all content
-			System.err.println("[CLOUDANT] About to send JSON to CouchDB:");
-			System.err.println("[CLOUDANT] JSON content: " + jsonString);
-			System.err.println("[CLOUDANT] JSON length: " + jsonString.length());
 			
 			PostDocumentOptions options = new PostDocumentOptions.Builder()
 				.db(databaseName)
@@ -966,12 +956,7 @@ public class CloudantClientWrapper {
 				.contentType("application/json")
 				.build();
 
-			System.err.println("[CLOUDANT] Executing postDocument() call...");
 			DocumentResult result = client.postDocument(options).execute().getResult();
-			System.err.println("[CLOUDANT] PostDocument completed successfully!");
-			System.err.println("[CLOUDANT] Result ID: " + result.getId());
-			System.err.println("[CLOUDANT] Result Rev: " + result.getRev());
-			System.err.println("[CLOUDANT] Result OK: " + result.isOk());
 			log.debug("Created document with ID: " + result.getId());
 			
 			// Set the generated ID and revision back to the original object
@@ -984,11 +969,6 @@ public class CloudantClientWrapper {
 					document.getClass().getSimpleName() + " object for future Ektorp-style updates");
 			}
 		} catch (Exception e) {
-			System.err.println("[CLOUDANT] === EXCEPTION DURING DOCUMENT CREATION ===");
-			System.err.println("[CLOUDANT] Exception type: " + e.getClass().getSimpleName());
-			System.err.println("[CLOUDANT] Exception message: " + e.getMessage());
-			System.err.println("[CLOUDANT] Document type: " + (document != null ? document.getClass().getSimpleName() : "null"));
-			e.printStackTrace();
 			log.error("CLOUDANT CREATE ERROR: Exception occurred during document creation", e);
 			log.error("CLOUDANT CREATE ERROR: Document type was: " + (document != null ? document.getClass().getSimpleName() : "null"));
 			if (document instanceof jp.aegif.nemaki.model.couch.CouchFolder) {
@@ -1065,6 +1045,48 @@ public class CloudantClientWrapper {
 			com.ibm.cloud.cloudant.v1.model.Document doc = get(id);
 			if (doc != null) {
 				ObjectMapper mapper = getObjectMapper();
+				
+				// CRITICAL FIX: For CouchPropertyDefinitionDetail, use Document.getProperties() to get actual CouchDB fields
+				// This ensures coreNodeId and other custom fields are properly deserialized
+				if (clazz.getSimpleName().equals("CouchPropertyDefinitionDetail")) {
+					
+					// Get the properties Map which contains the actual CouchDB document fields including coreNodeId
+					Map<String, Object> properties = doc.getProperties();
+					if (properties != null) {
+						
+						// Create complete map with both document metadata and properties
+						Map<String, Object> completeMap = new HashMap<>();
+						
+						// Add standard document fields
+						completeMap.put("_id", doc.getId());
+						completeMap.put("_rev", doc.getRev());
+						
+						// Add all properties from CouchDB document
+						for (Map.Entry<String, Object> entry : properties.entrySet()) {
+							String key = entry.getKey();
+							Object value = entry.getValue();
+							
+							// CRITICAL FIX: Convert timestamp fields from floating-point to GregorianCalendar
+							if (("created".equals(key) || "modified".equals(key)) && value instanceof Number) {
+								long timestamp = ((Number) value).longValue();
+								java.util.GregorianCalendar calendar = new java.util.GregorianCalendar();
+								calendar.setTimeInMillis(timestamp);
+								completeMap.put(key, calendar);
+							} else {
+								completeMap.put(key, value);
+							}
+						}
+						
+						try {
+							T result = mapper.convertValue(completeMap, clazz);
+							return result;
+						} catch (Exception deserEx) {
+							throw deserEx;
+						}
+					} else {
+						// Document properties is NULL for PropertyDefinitionDetail
+					}
+				}
 				
 				// CRITICAL FIX: For CouchAttachmentNode, use Document.getProperties() to get actual CouchDB fields
 				if (clazz.getSimpleName().equals("CouchAttachmentNode")) {

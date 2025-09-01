@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+日本語で対話してください。
+ファイルの読み込みは100行毎などではなく、常に一気にまとめて読み込むようにしてください。
+
+
 ## Recent Major Changes (2025-08-22)
 
 ### OpenCMIS 1.1.0 Jakarta EE 10 Unified Management Strategy - CURRENT APPROACH ✅
