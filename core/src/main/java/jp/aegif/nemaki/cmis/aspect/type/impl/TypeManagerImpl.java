@@ -586,7 +586,9 @@ public class TypeManagerImpl implements TypeManager {
 		secondaryType.setDisplayName(displayName);
 		secondaryType.setBaseTypeId(BaseTypeId.CMIS_SECONDARY);
 		secondaryType.setDescription(description);
-		secondaryType.setIsCreatable(false);
+		// CRITICAL FIX: Use configuration file value instead of hardcoded false
+		// This resolves baseTypesTest TCK failure - secondary type must be creatable per config
+		secondaryType.setIsCreatable(typeMutabilityCanCreate);
 		secondaryType.setIsFileable(false);
 		secondaryType.setIsQueryable(queryable);
 		secondaryType.setIsControllablePolicy(false);

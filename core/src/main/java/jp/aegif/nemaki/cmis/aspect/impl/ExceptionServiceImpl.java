@@ -249,7 +249,10 @@ public class ExceptionServiceImpl implements ExceptionService,
 				if (parent.getTypeMutability() == null) {
 					msg = "Specified parent type does not have TypeMutability";
 				} else {
-					boolean canCreate = (parent.getTypeMutability() == null) ? false : true;
+					// CRITICAL FIX: Correctly check TypeMutability.canCreate() value instead of just checking if TypeMutability exists
+					// This resolves createAndDeleteTypeTest TCK failure
+					boolean canCreate = (parent.getTypeMutability() != null && parent.getTypeMutability().canCreate() != null) 
+						? parent.getTypeMutability().canCreate() : false;
 					if (!canCreate) {
 						msg = "Specified parent type has TypeMutability.canCreate = false";
 					}
@@ -285,9 +288,13 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 		String msg = "";
 		TypeMutability typeMutability = type.getTypeMutability();
-		boolean canUpdate = (typeMutability.canDelete() == null) ? true
+		// CRITICAL FIX: 
+		// 1. Variable name should be canDelete, not canUpdate
+		// 2. Default should be false if null (restrictive), not true (permissive)
+		// This resolves createAndDeleteTypeTest TCK failure
+		boolean canDelete = (typeMutability.canDelete() == null) ? false
 				: typeMutability.canDelete();
-		if (!canUpdate) {
+		if (!canDelete) {
 			msg = "Specified type is not deletable";
 			msg = msg + " [objectTypeId = " + type.getId() + "]";
 			invalidArgument(msg);

@@ -100,12 +100,46 @@ public class DataUtil {
 	// Type
 	// ///////////////////////////////////////////////
 
+	/**
+	 * CRITICAL FIX: Perform deep copy of TypeDefinition including property definitions
+	 * to prevent contamination of original type definition during inheritance processing.
+	 * 
+	 * The previous implementation returned the original type, causing property contamination
+	 * when setInheritedToTrue() was called on parent properties.
+	 */
 	public static TypeDefinition copyTypeDefinition(TypeDefinition type) {
 		try {
-			// Direct copy implementation without WSConverter
 			if (type == null) return null;
-			return type; // Return original type - WSConverter removed for Jakarta EE compatibility
+			
+			// Create a proper copy using copyTypeDefinitionWithoutProperties as base
+			TypeDefinition copyWithoutProps = copyTypeDefinitionWithoutProperties(type);
+			if (copyWithoutProps == null) return null;
+			
+			// Deep copy the property definitions map to prevent contamination
+			Map<String, PropertyDefinition<?>> originalProps = type.getPropertyDefinitions();
+			if (originalProps != null && !originalProps.isEmpty()) {
+				Map<String, PropertyDefinition<?>> copiedProps = new HashMap<>();
+				
+				for (Map.Entry<String, PropertyDefinition<?>> entry : originalProps.entrySet()) {
+					PropertyDefinition<?> originalProp = entry.getValue();
+					
+					// Create a deep copy of the property definition
+					PropertyDefinition<?> copiedProp = createPropertyDefinitionCopy(originalProp);
+					if (copiedProp != null) {
+						copiedProps.put(entry.getKey(), copiedProp);
+					}
+				}
+				
+				// Set the copied properties to the copied type
+				if (copyWithoutProps instanceof org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition) {
+					((org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition) copyWithoutProps)
+							.setPropertyDefinitions(copiedProps);
+				}
+			}
+			
+			return copyWithoutProps;
 		} catch (Exception e) {
+			log.error("CRITICAL: Failed to copy TypeDefinition: " + (type != null ? type.getId() : "null"), e);
 			return null;
 		}
 	}
@@ -191,6 +225,78 @@ public class DataUtil {
 		target.setIsControllableAcl(source.isControllableAcl());
 		target.setTypeMutability(source.getTypeMutability());
 		// Note: NOT copying property definitions - that's the whole point
+	}
+
+	/**
+	 * CRITICAL FIX: Create a deep copy of PropertyDefinition to prevent contamination
+	 * during inheritance processing.
+	 */
+	private static PropertyDefinition<?> createPropertyDefinitionCopy(PropertyDefinition<?> original) {
+		if (original == null) return null;
+		
+		try {
+			// Create a new property definition with the same type and settings
+			// but as a completely separate object
+			return createPropDef(
+				original.getId(),
+				original.getLocalName(), 
+				original.getLocalNamespace(),
+				original.getQueryName(),
+				original.getDisplayName(),
+				original.getDescription(),
+				original.getPropertyType(),
+				original.getCardinality(),
+				original.getUpdatability(),
+				original.isRequired() != null ? original.isRequired() : false,
+				original.isQueryable() != null ? original.isQueryable() : true,
+				original.isInherited() != null ? original.isInherited() : false,
+				convertChoices(original.getChoices()),
+				original.isOpenChoice() != null ? original.isOpenChoice() : false,
+				original.isOrderable() != null ? original.isOrderable() : false,
+				original.getDefaultValue(),
+				null, // minValue - simplified for copy
+				null, // maxValue - simplified for copy  
+				null, // resolution - simplified for copy
+				null, // decimalPrecision - simplified for copy
+				null, // decimalMinValue - simplified for copy
+				null, // decimalMaxValue - simplified for copy
+				null  // maxLength - simplified for copy
+			);
+		} catch (Exception e) {
+			log.error("CRITICAL: Failed to copy PropertyDefinition: " + original.getId(), e);
+			return null;
+		}
+	}
+	
+	/**
+	 * Convert OpenCMIS Choice objects to NemakiWare Choice objects for property copy
+	 */
+	@SuppressWarnings("unchecked")
+	private static List<jp.aegif.nemaki.model.Choice> convertChoices(
+			List<? extends org.apache.chemistry.opencmis.commons.definitions.Choice<?>> choices) {
+		if (choices == null || choices.isEmpty()) {
+			return new ArrayList<>();
+		}
+		
+		List<jp.aegif.nemaki.model.Choice> result = new ArrayList<>();
+		for (org.apache.chemistry.opencmis.commons.definitions.Choice<?> choice : choices) {
+			if (choice != null) {
+				List<Object> values = new ArrayList<>();
+				if (choice.getValue() != null) {
+					values.addAll(choice.getValue());
+				}
+				// Safe cast for recursive call - nested choices have same structure
+				List<org.apache.chemistry.opencmis.commons.definitions.Choice<?>> nestedChoices = 
+					(List<org.apache.chemistry.opencmis.commons.definitions.Choice<?>>) choice.getChoice();
+				jp.aegif.nemaki.model.Choice nemakiChoice = new jp.aegif.nemaki.model.Choice(
+					choice.getDisplayName(),
+					values,
+					convertChoices(nestedChoices) // Recursive for nested choices
+				);
+				result.add(nemakiChoice);
+			}
+		}
+		return result;
 	}
 
 	public static PropertyDefinition<?> createPropDef(String id,
