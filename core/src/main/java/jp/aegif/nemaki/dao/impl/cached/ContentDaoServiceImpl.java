@@ -848,21 +848,21 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	private void addToTreeCache(String repositoryId, Content content){
-		log.error("DEBUG: addToTreeCache called for content: " + (content != null ? content.getClass().getSimpleName() : "null"));
+		log.debug("DEBUG: addToTreeCache called for content: " + (content != null ? content.getClass().getSimpleName() : "null"));
 		
 		if(!nemakiCachePool.get(repositoryId).getTreeCache().isCacheEnabled()){
 			//do nothing when cache disabled
-			log.error("DEBUG: Tree cache disabled, skipping");
+			log.debug("DEBUG: Tree cache disabled, skipping");
 			return;
 		}
 
 		// CRITICAL FIX: Check if content ID is null before proceeding
 		if (content == null || content.getId() == null) {
-			log.error("DEBUG: Cannot add content to tree cache: content or ID is null - content: " + (content != null ? "not null" : "null") + ", ID: " + (content != null ? content.getId() : "N/A"));
+			log.debug("DEBUG: Cannot add content to tree cache: content or ID is null - content: " + (content != null ? "not null" : "null") + ", ID: " + (content != null ? content.getId() : "N/A"));
 			return;
 		}
 
-		log.error("DEBUG: Content has valid ID: " + content.getId() + ", proceeding with tree cache");
+		log.debug("DEBUG: Content has valid ID: " + content.getId() + ", proceeding with tree cache");
 
 		Tree tree = getOrCreateTreeCache(repositoryId, content.getParentId());
 
@@ -874,28 +874,28 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			}else{
 				// CRITICAL FIX: Skip getAllVersions if doc.getId() is null to prevent NullPointerException
 				if (doc.getId() != null) {
-					log.error("DEBUG: Calling getAllVersions for versionSeriesId: " + doc.getVersionSeriesId());
+					log.debug("DEBUG: Calling getAllVersions for versionSeriesId: " + doc.getVersionSeriesId());
 					List<Document> versions = getAllVersions(repositoryId, doc.getVersionSeriesId());
-					log.error("DEBUG: getAllVersions returned: " + (versions != null ? versions.size() + " versions" : "null"));
+					log.debug("DEBUG: getAllVersions returned: " + (versions != null ? versions.size() + " versions" : "null"));
 					
 					if(versions != null){
 						Collections.sort(versions, new VersionComparator());
 						for(Document version : versions){
-							log.error("DEBUG: Processing version with ID: " + (version != null ? version.getId() : "null"));
+							log.debug("DEBUG: Processing version with ID: " + (version != null ? version.getId() : "null"));
 							// CRITICAL FIX: Check if version ID is null before comparison
 							if(version.getId() != null && version.getId().equals(doc.getId())){
 								tree.add(doc.getId());
-								log.error("DEBUG: Added doc ID to tree: " + doc.getId());
+								log.debug("DEBUG: Added doc ID to tree: " + doc.getId());
 							}else if(version.getId() != null){
 								tree.remove(version.getId());
-								log.error("DEBUG: Removed version ID from tree: " + version.getId());
+								log.debug("DEBUG: Removed version ID from tree: " + version.getId());
 							} else {
-								log.error("DEBUG: Version has null ID, skipping");
+								log.debug("DEBUG: Version has null ID, skipping");
 							}
 						}
 					}
 				} else {
-					log.error("DEBUG: Document ID is null, skipping tree cache update for version series: " + doc.getVersionSeriesId());
+					log.debug("DEBUG: Document ID is null, skipping tree cache update for version series: " + doc.getVersionSeriesId());
 				}
 			}
 		}else if(content instanceof Folder || content instanceof Item){

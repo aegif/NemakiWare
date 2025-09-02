@@ -1019,12 +1019,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		try {
 			// Query allVersions view with versionSeriesId
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			log.error("DEBUGGING: Querying documentsByVersionSeriesId with versionSeriesId: " + versionSeriesId);
-			log.error("DEBUGGING: About to call client.queryView, client is: " + (client != null ? client.getClass().getSimpleName() : "null"));
-			log.error("DEBUGGING: CouchDocument.class is: " + CouchDocument.class.getName());
+			log.debug("DEBUGGING: Querying documentsByVersionSeriesId with versionSeriesId: " + versionSeriesId);
+			log.debug("DEBUGGING: About to call client.queryView, client is: " + (client != null ? client.getClass().getSimpleName() : "null"));
+			log.debug("DEBUGGING: CouchDocument.class is: " + CouchDocument.class.getName());
 			// CRITICAL FIX: Use existing documentsByVersionSeriesId view instead of missing allVersions view
 			List<CouchDocument> couchDocs = client.queryView("_repo", "documentsByVersionSeriesId", versionSeriesId, CouchDocument.class);
-			log.error("DEBUGGING: Query returned " + (couchDocs != null ? couchDocs.size() : "null") + " documents");
+			log.debug("DEBUGGING: Query returned " + (couchDocs != null ? couchDocs.size() : "null") + " documents");
 			
 			List<Document> documents = new ArrayList<Document>();
 			for (CouchDocument couchDoc : couchDocs) {
@@ -1043,7 +1043,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		try {
 			// Query latestVersion view with versionSeriesId
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			List<CouchDocument> couchDocs = client.queryView("_repo", "latestVersion", versionSeriesId, CouchDocument.class);
+			List<CouchDocument> couchDocs = client.queryView("_repo", "latestVersions", versionSeriesId, CouchDocument.class);
 			
 			if (!couchDocs.isEmpty()) {
 				log.debug("Found " + couchDocs.size() + " documents for versionSeriesId: " + 
@@ -1053,7 +1053,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			}
 			
 			log.warn("No documents found for versionSeriesId: " + versionSeriesId + 
-					" in repository: " + repositoryId + " - latestVersion view returned empty results");
+					" in repository: " + repositoryId + " - latestVersions view returned empty results");
 			return null;
 		} catch (Exception e) {
 			log.error("Error getting latest version for series: " + versionSeriesId + 
@@ -1161,14 +1161,14 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			queryParams.put("key", parentId);
 			queryParams.put("include_docs", true);
 			
-			log.error("DEBUG getChildren: repositoryId=" + repositoryId + ", parentId=" + parentId);
+			log.debug("DEBUG getChildren: repositoryId=" + repositoryId + ", parentId=" + parentId);
 			
 			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "children", queryParams);
 			
 			List<Content> children = new ArrayList<Content>();
 			
 			if (result.getRows() != null) {
-				log.error("DEBUG getChildren: found " + result.getRows().size() + " raw rows");
+				log.debug("DEBUG getChildren: found " + result.getRows().size() + " raw rows");
 				for (ViewResultRow row : result.getRows()) {
 					if (row.getDoc() != null) {
 						try {
@@ -1177,14 +1177,14 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 							String type = (String) doc.get("type");
 							String objectId = (String) doc.get("_id");
 							
-							log.error("DEBUG getChildren: processing objectId=" + objectId + ", type=" + type);
+							log.debug("DEBUG getChildren: processing objectId=" + objectId + ", type=" + type);
 							
 							Content content = getContent(repositoryId, objectId);
 							if (content != null) {
-								log.error("DEBUG getChildren: successfully got content for objectId=" + objectId);
+								log.debug("DEBUG getChildren: successfully got content for objectId=" + objectId);
 								children.add(content);
 							} else {
-								log.error("DEBUG getChildren: getContent returned NULL for objectId=" + objectId);
+								log.debug("DEBUG getChildren: getContent returned NULL for objectId=" + objectId);
 							}
 						} catch (Exception e) {
 							log.warn("Failed to convert child document: " + e.getMessage());
@@ -1793,9 +1793,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		// COMPREHENSIVE REVISION MANAGEMENT: Ensure created document has ID and revision
 		// The CouchNodeBase.convert() will now preserve revision information
 		Document result = cd.convert();
-		log.error("CRITICAL DEBUG: Non-cached create result - ID: " + (result != null ? result.getId() : "null"));
-		log.error("CRITICAL DEBUG: Non-cached create result - type: " + (result != null ? result.getClass().getSimpleName() : "null"));
-		log.error("CRITICAL DEBUG: Non-cached create result - parentId: " + (result != null ? result.getParentId() : "null"));
+		log.debug("CRITICAL DEBUG: Non-cached create result - ID: " + (result != null ? result.getId() : "null"));
+		log.debug("CRITICAL DEBUG: Non-cached create result - type: " + (result != null ? result.getClass().getSimpleName() : "null"));
+		log.debug("CRITICAL DEBUG: Non-cached create result - parentId: " + (result != null ? result.getParentId() : "null"));
 		
 		return result;
 	}
@@ -1809,28 +1809,28 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public Folder create(String repositoryId, Folder folder) {
-		log.error("COMPREHENSIVE DEBUG: Creating folder for repositoryId: " + repositoryId);
+		log.debug("COMPREHENSIVE DEBUG: Creating folder for repositoryId: " + repositoryId);
 		CouchFolder cf = new CouchFolder(folder);
-		log.error("COMPREHENSIVE DEBUG: Before create - CouchFolder ID=" + cf.getId() + ", revision=" + cf.getRevision() + 
+		log.debug("COMPREHENSIVE DEBUG: Before create - CouchFolder ID=" + cf.getId() + ", revision=" + cf.getRevision() + 
 			", objectType=" + cf.getObjectType() + ", name=" + cf.getName() + ", type=" + cf.getType());
 		
-		log.error("COMPREHENSIVE DEBUG: About to call client.create() method");
+		log.debug("COMPREHENSIVE DEBUG: About to call client.create() method");
 		try {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			log.error("COMPREHENSIVE DEBUG: Got client of type: " + client.getClass().getName());
+			log.debug("COMPREHENSIVE DEBUG: Got client of type: " + client.getClass().getName());
 			client.create(cf);
-			log.error("COMPREHENSIVE DEBUG: client.create() method completed");
+			log.debug("COMPREHENSIVE DEBUG: client.create() method completed");
 		} catch (Exception e) {
-			log.error("COMPREHENSIVE DEBUG: Exception in create() call", e);
+			log.debug("COMPREHENSIVE DEBUG: Exception in create() call", e);
 			throw e;
 		}
 		
-		log.error("COMPREHENSIVE DEBUG: After create - CouchFolder ID=" + cf.getId() + ", revision=" + cf.getRevision());
+		log.debug("COMPREHENSIVE DEBUG: After create - CouchFolder ID=" + cf.getId() + ", revision=" + cf.getRevision());
 		
 		// COMPREHENSIVE REVISION MANAGEMENT: Ensure created folder has ID and revision
 		// The CouchNodeBase.convert() will now preserve revision information
 		Folder result = cf.convert();
-		log.error("COMPREHENSIVE DEBUG: After convert - Folder ID=" + result.getId() + ", revision=" + result.getRevision());
+		log.debug("COMPREHENSIVE DEBUG: After convert - Folder ID=" + result.getId() + ", revision=" + result.getRevision());
 		
 		return result;
 	}
@@ -2249,7 +2249,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			
 			// FORCE ERROR log for visibility
-			log.error("=== GET ATTACHMENT DEBUG ===");
+			log.debug("=== GET ATTACHMENT DEBUG ===");
 			log.error("Repository: " + repositoryId);
 			log.error("Attachment ID: " + attachmentId);
 			
@@ -3207,44 +3207,44 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Long getAttachmentActualSize(String repositoryId, String attachmentId) {
 		try {
-			log.error("DAO DEBUG: getAttachmentActualSize called with repositoryId=" + repositoryId + ", attachmentId=" + attachmentId);
+			log.debug("DAO DEBUG: getAttachmentActualSize called with repositoryId=" + repositoryId + ", attachmentId=" + attachmentId);
 			// Use the CloudantClientWrapper to get document with _attachments metadata
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			log.error("DAO DEBUG: Got CloudantClientWrapper client");
+			log.debug("DAO DEBUG: Got CloudantClientWrapper client");
 			com.ibm.cloud.cloudant.v1.model.Document doc = client.get(attachmentId);
-			log.error("DAO DEBUG: Retrieved document: " + (doc != null ? "SUCCESS" : "NULL"));
+			log.debug("DAO DEBUG: Retrieved document: " + (doc != null ? "SUCCESS" : "NULL"));
 			if (doc == null) {
-				log.error("DAO DEBUG: Attachment document not found: " + attachmentId);
+				log.debug("DAO DEBUG: Attachment document not found: " + attachmentId);
 				return null;
 			}
 			
 			// Get the properties Map which contains the actual CouchDB document fields
 			Map<String, Object> properties = doc.getProperties();
-			log.error("DAO DEBUG: Properties retrieved: " + (properties != null ? properties.size() + " keys" : "NULL"));
+			log.debug("DAO DEBUG: Properties retrieved: " + (properties != null ? properties.size() + " keys" : "NULL"));
 			if (properties == null) {
-				log.error("DAO DEBUG: No properties found in document: " + attachmentId);
+				log.debug("DAO DEBUG: No properties found in document: " + attachmentId);
 				return null;
 			}
 			
 			// Check if the document has _attachments metadata
 			Object attachmentsObj = properties.get("_attachments");
-			log.error("DAO DEBUG: _attachments found: " + (attachmentsObj != null ? "YES" : "NO"));
+			log.debug("DAO DEBUG: _attachments found: " + (attachmentsObj != null ? "YES" : "NO"));
 			if (attachmentsObj instanceof Map) {
 				@SuppressWarnings("unchecked")
 				Map<String, Object> attachments = (Map<String, Object>) attachmentsObj;
-				log.error("DAO DEBUG: _attachments keys: " + attachments.keySet());
+				log.debug("DAO DEBUG: _attachments keys: " + attachments.keySet());
 				
 				// Look for the "content" attachment (NemakiWare convention)
 				Object contentObj = attachments.get("content");
-				log.error("DAO DEBUG: 'content' attachment found: " + (contentObj != null ? "YES" : "NO"));
+				log.debug("DAO DEBUG: 'content' attachment found: " + (contentObj != null ? "YES" : "NO"));
 				if (contentObj instanceof Map) {
 					@SuppressWarnings("unchecked")
 					Map<String, Object> contentAttachment = (Map<String, Object>) contentObj;
-					log.error("DAO DEBUG: content attachment keys: " + contentAttachment.keySet());
+					log.debug("DAO DEBUG: content attachment keys: " + contentAttachment.keySet());
 					
 					// Get the length from CouchDB attachment metadata
 					Object lengthObj = contentAttachment.get("length");
-					log.error("DAO DEBUG: length value: " + lengthObj + " (type: " + (lengthObj != null ? lengthObj.getClass().getSimpleName() : "null") + ")");
+					log.debug("DAO DEBUG: length value: " + lengthObj + " (type: " + (lengthObj != null ? lengthObj.getClass().getSimpleName() : "null") + ")");
 					if (lengthObj instanceof Number) {
 						long actualSize = ((Number) lengthObj).longValue();
 						log.error("DAO SUCCESS: Found actual attachment size in CouchDB: " + actualSize + " bytes for attachment " + attachmentId);

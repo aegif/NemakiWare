@@ -784,7 +784,7 @@ public class CompileServiceImpl implements CompileService {
 
 	private boolean isAllowableByType(String key, Content content, TypeDefinition tdf, String repositoryId) {
 		// DEBUG: Log key and object type for troubleshooting AllowableActions
-		log.error("DEBUG isAllowableByType: checking key=" + key + " for objectType=" + content.getObjectType() + ", baseType=" + tdf.getBaseTypeId());
+		log.debug("DEBUG isAllowableByType: checking key=" + key + " for objectType=" + content.getObjectType() + ", baseType=" + tdf.getBaseTypeId());
 			
 		// ControllableACL
 		if (PermissionMapping.CAN_APPLY_ACL_OBJECT.equals(key)) {
@@ -923,7 +923,7 @@ public class CompileServiceImpl implements CompileService {
 		}
 		
 		// FORCE ERROR log for visibility
-		log.error("=== COMPILE PROPERTIES DEBUG ===");
+		log.debug("=== COMPILE PROPERTIES DEBUG ===");
 		log.error("Repository: " + repositoryId);
 		log.error("Content ID: " + content.getId());
 		log.error("Content Name: " + content.getName());

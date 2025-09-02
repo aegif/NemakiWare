@@ -36,7 +36,7 @@ public class PatchService {
 	public PatchService() {
 		// The patch application is now triggered explicitly by Spring configuration via init-method="applyPatchesOnStartup"
 		// This ensures compatibility and prevents circular dependency issues during Spring context initialization
-		System.out.println("=== PATCH DEBUG: PatchService constructor called ===");
+		// DEBUG: PatchService constructor called (logged by log.info below)
 		log.info("=== PATCH DEBUG: PatchService constructor called ===");
 	}
 
@@ -278,28 +278,28 @@ public class PatchService {
 	}
 
 	private void createPathView(){
-		System.out.println("=== PATCH DEBUG: createPathView() CALLED (temporarily disabled) ===");
+		// DEBUG: createPathView() temporarily disabled (logged by log.warn below)
 		log.warn("Patch view creation temporarily disabled during Cloudant migration");
 		// TODO: Implement view creation with Cloudant SDK when needed
 	}
 
 	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
-		System.out.println("=== PATCH DEBUG: setRepositoryInfoMap called with " + (repositoryInfoMap != null ? repositoryInfoMap.getClass().getName() : "null"));
+		log.debug("setRepositoryInfoMap called with " + (repositoryInfoMap != null ? repositoryInfoMap.getClass().getName() : "null"));
 		this.repositoryInfoMap = repositoryInfoMap;
 	}
 
 	public void setConnectorPool(CloudantClientPool connectorPool) {
-		System.out.println("=== PATCH DEBUG: setConnectorPool called with " + (connectorPool != null ? connectorPool.getClass().getName() : "null"));
+		log.debug("setConnectorPool called with " + (connectorPool != null ? connectorPool.getClass().getName() : "null"));
 		this.connectorPool = connectorPool;
 	}
 
 	public void setPatchList(List<AbstractNemakiPatch> patchList) {
-		System.out.println("=== PATCH DEBUG: setPatchList called with " + (patchList != null ? "size=" + patchList.size() : "null"));
+		log.debug("setPatchList called with " + (patchList != null ? "size=" + patchList.size() : "null"));
 		if (patchList != null) {
-			System.out.println("=== PATCH DEBUG: patchList contents:");
+			log.debug("patchList contents:");
 			for (int i = 0; i < patchList.size(); i++) {
 				AbstractNemakiPatch patch = patchList.get(i);
-				System.out.println("=== PATCH DEBUG: [" + i + "] = " + (patch != null ? patch.getClass().getName() : "null"));
+				log.debug("[" + i + "] = " + (patch != null ? patch.getClass().getName() : "null"));
 			}
 		}
 		this.patchList = patchList;
@@ -307,12 +307,12 @@ public class PatchService {
 	
 	// NEW: Setter methods for required dependencies
 	public void setTypeService(TypeService typeService) {
-		System.out.println("=== PATCH DEBUG: setTypeService called with " + (typeService != null ? typeService.getClass().getName() : "null"));
+		log.debug("setTypeService called with " + (typeService != null ? typeService.getClass().getName() : "null"));
 		this.typeService = typeService;
 	}
 	
 	public void setTypeManager(TypeManager typeManager) {
-		System.out.println("=== PATCH DEBUG: setTypeManager called with " + (typeManager != null ? typeManager.getClass().getName() : "null"));
+		log.debug("setTypeManager called with " + (typeManager != null ? typeManager.getClass().getName() : "null"));
 		this.typeManager = typeManager;
 	}
 	

@@ -293,20 +293,20 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public Folder getSystemFolder(String repositoryId) {
 		System.out.println("=== CRITICAL DEBUG: ContentServiceImpl.getSystemFolder called with repositoryId='" + repositoryId + "'");
-		log.error("=== CRITICAL DEBUG: ContentServiceImpl.getSystemFolder called with repositoryId='" + repositoryId + "'");
+		log.debug("=== CRITICAL DEBUG: ContentServiceImpl.getSystemFolder called with repositoryId='" + repositoryId + "'");
 		
 		final String systemFolder = propertyManager.readValue(repositoryId, PropertyKey.SYSTEM_FOLDER);
 		System.out.println("=== CRITICAL DEBUG: PropertyManager.readValue returned systemFolder='" + (systemFolder != null ? systemFolder : "NULL") + "'");
-		log.error("=== CRITICAL DEBUG: PropertyManager.readValue returned systemFolder='" + (systemFolder != null ? systemFolder : "NULL") + "'");
+		log.debug("=== CRITICAL DEBUG: PropertyManager.readValue returned systemFolder='" + (systemFolder != null ? systemFolder : "NULL") + "'");
 		
 		if (systemFolder != null) {
 			Folder folder = contentDaoService.getFolder(repositoryId, systemFolder);
 			System.out.println("=== CRITICAL DEBUG: contentDaoService.getFolder returned: " + (folder != null ? "Folder object with ID=" + folder.getId() : "NULL"));
-			log.error("=== CRITICAL DEBUG: contentDaoService.getFolder returned: " + (folder != null ? "Folder object with ID=" + folder.getId() : "NULL"));
+			log.debug("=== CRITICAL DEBUG: contentDaoService.getFolder returned: " + (folder != null ? "Folder object with ID=" + folder.getId() : "NULL"));
 			return folder;
 		} else {
 			System.out.println("=== CRITICAL DEBUG: System folder ID is null - returning null");
-			log.error("=== CRITICAL DEBUG: System folder ID is null - returning null");
+			log.debug("=== CRITICAL DEBUG: System folder ID is null - returning null");
 			return null;
 		}
 	}

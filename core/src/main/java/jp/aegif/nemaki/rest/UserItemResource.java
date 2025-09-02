@@ -547,11 +547,11 @@ private ContentService getContentServiceSafe() {
 					Folder testFolder = service.getFolder(repositoryId, systemFolderConfig);
 					log.info("DEBUG: ContentService.getFolder() with ID '" + systemFolderConfig + "' returned: " + (testFolder != null ? testFolder.getName() : "NULL"));
 				} catch (Exception e) {
-					log.error("DEBUG: Exception getting folder with ID '" + systemFolderConfig + "': " + e.getMessage());
+					log.debug("DEBUG: Exception getting folder with ID '" + systemFolderConfig + "': " + e.getMessage());
 				}
 			}
 		} else {
-			log.error("DEBUG: PropertyManager is null - cannot read configuration");
+			log.debug("DEBUG: PropertyManager is null - cannot read configuration");
 		}
 		
 		Folder systemFolder = service.getSystemFolder(repositoryId);

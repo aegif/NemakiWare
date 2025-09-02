@@ -205,15 +205,16 @@ public class DataUtil {
 			BigDecimal decimalMaxValue, Long maxLength
 
 	) {
-		// CRITICAL: NULL datatype parameter validation
+		// CRITICAL FIX: PropertyType should never be null due to determinePropertyTypeFromPropertyId() 
+		// providing fallback to STRING type. Remove dangerous null return logic.
 		if (datatype == null) {
-			// Return NULL to preserve existing behavior for now
-			return null;
+			log.error("CRITICAL BUG: createPropDef called with null datatype for property: " + id + 
+					". This should never happen due to PropertyType determination logic. Using STRING fallback.");
+			datatype = PropertyType.STRING; // Emergency fallback instead of returning null
 		}
 		
 		PropertyDefinition<?> result = null;
-		if (datatype != null) {
-			switch (datatype) {
+		switch (datatype) {
 			case BOOLEAN:
 				result = createPropBooleanDef(id, localName, localNameSpace,
 						queryName, displayName, description, datatype,
@@ -277,7 +278,6 @@ public class DataUtil {
 			default:
 				throw new RuntimeException("Unknown datatype! Spec change?");
 			}
-		}
 
 		return result;
 	}

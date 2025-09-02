@@ -197,4 +197,16 @@ public interface TypeManager{
      *            id of type to be deleted
      */
     void deleteTypeDefinition(String repositoryId, String typeId);
+    
+    /**
+     * Mark a type as being deleted to prevent infinite recursion during cache refresh
+     * @param typeId the type ID being deleted
+     */
+    void markTypeBeingDeleted(String typeId);
+    
+    /**
+     * Unmark a type as being deleted after deletion completes
+     * @param typeId the type ID that was deleted
+     */
+    void unmarkTypeBeingDeleted(String typeId);
 }

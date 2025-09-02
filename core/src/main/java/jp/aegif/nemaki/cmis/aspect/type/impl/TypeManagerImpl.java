@@ -27,8 +27,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.Map.Entry;
 
 import jp.aegif.nemaki.businesslogic.TypeService;
@@ -54,6 +56,7 @@ import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyDefinition;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition;
@@ -111,6 +114,9 @@ public class TypeManagerImpl implements TypeManager {
 	// Flag to track initialization
 	private volatile boolean initialized = false;
 	private final Object initLock = new Object();
+	
+	// CRITICAL FIX: Track types being deleted to prevent infinite recursion during cache refresh
+	private final Set<String> typesBeingDeleted = new HashSet<>();
 
 	// /////////////////////////////////////////////////
 	// Constructor
@@ -180,12 +186,33 @@ public class TypeManagerImpl implements TypeManager {
 	// /////////////////////////////////////////////////
 	// Refresh global variables from DB
 	// /////////////////////////////////////////////////
+	/**
+	 * Mark a type as being deleted to prevent infinite recursion during cache refresh
+	 */
+	@Override
+	public void markTypeBeingDeleted(String typeId) {
+		synchronized (initLock) {
+			typesBeingDeleted.add(typeId);
+			log.debug("Marked type as being deleted: " + typeId);
+		}
+	}
+	
+	/**
+	 * Unmark a type as being deleted after deletion completes
+	 */
+	@Override
+	public void unmarkTypeBeingDeleted(String typeId) {
+		synchronized (initLock) {
+			typesBeingDeleted.remove(typeId);
+			log.debug("Unmarked type being deleted: " + typeId);
+		}
+	}
+	
 	@Override
 	public void refreshTypes() {
 		synchronized (initLock) {
-			// CRITICAL DEBUG: Add extensive logging for cache refresh
-			log.info("NEMAKI TYPE DEBUG: refreshTypes() called - clearing and rebuilding cache");
-			System.out.println("NEMAKI TYPE DEBUG: refreshTypes() called - clearing and rebuilding cache");
+			// Cache refresh logging
+			log.info("refreshTypes() called - clearing and rebuilding cache");
 			
 			// Reset initialization flag to force re-initialization
 			initialized = false;
@@ -203,21 +230,17 @@ public class TypeManagerImpl implements TypeManager {
 			propertyDefinitionCoresByPropertyId = new HashMap<String, PropertyDefinition<?>>();
 			propertyDefinitionCoresByQueryName = new HashMap<String, PropertyDefinition<?>>();
 
-			log.info("NEMAKI TYPE DEBUG: Starting cache regeneration...");
-			System.out.println("NEMAKI TYPE DEBUG: Starting cache regeneration...");
+			log.info("Starting cache regeneration...");
 			
 			generate();
 			
-			log.info("NEMAKI TYPE DEBUG: Cache regeneration complete");
-			System.out.println("NEMAKI TYPE DEBUG: Cache regeneration complete");
+			log.info("Cache regeneration complete");
 			
 			// Log final cache state
 			for (String repositoryId : TYPES.keySet()) {
 				Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
-				log.info("NEMAKI TYPE DEBUG: Repository " + repositoryId + " now has " + types.size() + " types in cache");
-				System.out.println("NEMAKI TYPE DEBUG: Repository " + repositoryId + " now has " + types.size() + " types in cache");
-				log.info("NEMAKI TYPE DEBUG: Type IDs after refresh: " + types.keySet());
-				System.out.println("NEMAKI TYPE DEBUG: Type IDs after refresh: " + types.keySet());
+				log.debug("NEMAKI TYPE DEBUG: Repository " + repositoryId + " now has " + types.size() + " types in cache");
+				log.debug("NEMAKI TYPE DEBUG: Type IDs after refresh: " + types.keySet());
 			}
 			
 			initialized = true;
@@ -586,15 +609,14 @@ public class TypeManagerImpl implements TypeManager {
 
 
 	private void addBasePropertyDefinitions(String repositoryId, AbstractTypeDefinition type) {
-		if (log.isDebugEnabled()) {
-			log.debug("Adding base property definitions for type: " + type.getId());
-		}
+		log.info("=== ADD BASE PROPERTIES DEBUG: Starting for type: " + type.getId() + " ===");
 		
 		// Get initial property count
 		Map<String, PropertyDefinition<?>> initialProps = type.getPropertyDefinitions();
 		int initialCount = (initialProps != null) ? initialProps.size() : 0;
-		if (log.isDebugEnabled()) {
-			log.debug("Initial property definitions count: " + initialCount);
+		log.info("DEBUG: Initial property definitions count: " + initialCount);
+		if (initialProps != null) {
+			log.info("DEBUG: Initial property keys: " + initialProps.keySet());
 		}
 		
 		//cmis:name
@@ -605,6 +627,7 @@ public class TypeManagerImpl implements TypeManager {
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.NAME, PropertyType.STRING,
 				Cardinality.SINGLE, updatability_name, REQUIRED, queryable_name, orderable_name, null));
+		log.info("DEBUG: Added cmis:name property");
 
 		//cmis:description
 		String _updatability_description = propertyManager.readValue(PropertyKey.PROPERTY_DESCRIPTION_UPDATABILITY);
@@ -615,12 +638,14 @@ public class TypeManagerImpl implements TypeManager {
 				repositoryId, PropertyIds.DESCRIPTION,
 				PropertyType.STRING, Cardinality.SINGLE, updatability_description,
 				!REQUIRED, queryable_description, orderable_description, null));
+		log.info("DEBUG: Added cmis:description property");
 
 		//cmis:objectId
 		boolean orderable_objectId = propertyManager.readBoolean(PropertyKey.PROPERTY_OBJECT_ID_ORDERABLE);
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.OBJECT_ID, PropertyType.ID, Cardinality.SINGLE,
 				Updatability.READONLY, !REQUIRED, QUERYABLE, orderable_objectId, null));
+		log.info("DEBUG: Added cmis:objectId property");
 
 		//cmis:baseTypeId
 		boolean queryable_baseTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_BASE_TYPE_ID_QUERYABLE);
@@ -628,6 +653,7 @@ public class TypeManagerImpl implements TypeManager {
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.BASE_TYPE_ID, PropertyType.ID,
 				Cardinality.SINGLE, Updatability.READONLY, !REQUIRED, queryable_baseTypeId, orderable_baseTypeId, null));
+		log.info("DEBUG: Added cmis:baseTypeId property");
 
 		//cmis:objectTypeId
 		boolean queryable_objectTypeId = propertyManager.readBoolean(PropertyKey.PROPERTY_OBJECT_TYPE_ID_QUERYABLE);
@@ -636,6 +662,7 @@ public class TypeManagerImpl implements TypeManager {
 				repositoryId, PropertyIds.OBJECT_TYPE_ID,
 				PropertyType.ID, Cardinality.SINGLE, Updatability.ONCREATE, REQUIRED,
 				queryable_objectTypeId, orderable_objectTypeId, null));
+		log.info("DEBUG: Added cmis:objectTypeId property");
 
 		//cmis:secondaryObjectTypeIds - CRITICAL CMIS 1.1 REQUIREMENT
 		String _updatability_secondaryObjectTypeIds = propertyManager.readValue(PropertyKey.PROPERTY_SECONDARY_OBJECT_TYPE_IDS_UPDATABILITY);
@@ -645,42 +672,74 @@ public class TypeManagerImpl implements TypeManager {
 				repositoryId, PropertyIds.SECONDARY_OBJECT_TYPE_IDS,
 				PropertyType.ID, Cardinality.MULTI, updatability_secondaryObjectTypeIds,
 				!REQUIRED, queryable_secondaryObjectTypeIds, !ORDERABLE, null));
+		log.info("DEBUG: Added cmis:secondaryObjectTypeIds property");
 
 		type.addPropertyDefinition(createDefaultPropDef(repositoryId,
 				PropertyIds.CREATED_BY, PropertyType.STRING, Cardinality.SINGLE,
 				Updatability.READONLY, !REQUIRED, QUERYABLE, ORDERABLE, null));
+		log.info("DEBUG: Added cmis:createdBy property");
 
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.CREATION_DATE,
 				PropertyType.DATETIME, Cardinality.SINGLE, Updatability.READONLY,
 				!REQUIRED, QUERYABLE, ORDERABLE, null));
+		log.info("DEBUG: Added cmis:creationDate property");
 
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.LAST_MODIFIED_BY,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
 				!REQUIRED, QUERYABLE, ORDERABLE, null));
+		log.info("DEBUG: Added cmis:lastModifiedBy property");
 
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.LAST_MODIFICATION_DATE,
 				PropertyType.DATETIME, Cardinality.SINGLE, Updatability.READONLY,
 				!REQUIRED, QUERYABLE, ORDERABLE, null));
+		log.info("DEBUG: Added cmis:lastModificationDate property");
 
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.CHANGE_TOKEN,
 				PropertyType.STRING, Cardinality.SINGLE, Updatability.READONLY,
 				!REQUIRED, !QUERYABLE, !ORDERABLE, null));
+		log.info("DEBUG: Added cmis:changeToken property");
 		
-		// Get final property count
+		// Get final property count and detailed analysis
 		Map<String, PropertyDefinition<?>> finalProps = type.getPropertyDefinitions();
 		int finalCount = (finalProps != null) ? finalProps.size() : 0;
-		if (log.isDebugEnabled()) {
-			log.debug("Final property definitions count: " + finalCount + " (added " + (finalCount - initialCount) + " properties)");
-			if (finalProps != null && finalProps.containsKey(PropertyIds.SECONDARY_OBJECT_TYPE_IDS)) {
-				log.debug("CONFIRMATION: cmis:secondaryObjectTypeIds IS PRESENT in final property definitions");
-			} else {
-				log.warn("WARNING: cmis:secondaryObjectTypeIds IS MISSING from final property definitions");
+		int addedCount = finalCount - initialCount;
+		
+		log.info("=== ADD BASE PROPERTIES SUMMARY ===");
+		log.info("DEBUG: Initial properties: " + initialCount + " → Final properties: " + finalCount + " (Added: " + addedCount + ")");
+		
+		if (finalProps != null) {
+			log.info("DEBUG: Final property keys: " + finalProps.keySet());
+			
+			// Check critical CMIS properties individually
+			String[] criticalProps = {
+				PropertyIds.NAME, PropertyIds.OBJECT_ID, PropertyIds.BASE_TYPE_ID, 
+				PropertyIds.OBJECT_TYPE_ID, PropertyIds.SECONDARY_OBJECT_TYPE_IDS,
+				PropertyIds.CREATED_BY, PropertyIds.CREATION_DATE, PropertyIds.LAST_MODIFIED_BY,
+				PropertyIds.LAST_MODIFICATION_DATE, PropertyIds.CHANGE_TOKEN
+			};
+			
+			for (String propId : criticalProps) {
+				if (finalProps.containsKey(propId)) {
+					log.info("DEBUG: ✅ " + propId + " is present");
+				} else {
+					log.error("DEBUG: ❌ MISSING CRITICAL PROPERTY: " + propId);
+				}
 			}
+			
+			if (finalProps.containsKey(PropertyIds.SECONDARY_OBJECT_TYPE_IDS)) {
+				log.info("DEBUG: CONFIRMATION: cmis:secondaryObjectTypeIds IS PRESENT in final property definitions");
+			} else {
+				log.error("DEBUG: CRITICAL ERROR: cmis:secondaryObjectTypeIds IS MISSING from final property definitions");
+			}
+		} else {
+			log.error("DEBUG: CRITICAL ERROR: Final properties map is NULL");
 		}
+		
+		log.info("=== ADD BASE PROPERTIES DEBUG: Completed for type: " + type.getId() + " ===");
 	}
 
 	private void addFolderPropertyDefinitions(String repositoryId, FolderTypeDefinitionImpl type) {
@@ -960,42 +1019,104 @@ public class TypeManagerImpl implements TypeManager {
 
 	private void addSubTypesInternal(String repositoryId,
 			List<NemakiTypeDefinition> subtypes, NemakiTypeDefinition type) {
-		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
+		addSubTypesInternal(repositoryId, subtypes, type, new HashSet<String>());
+	}
+
+	/**
+	 * CRITICAL FIX: Add circular reference detection to prevent infinite recursion
+	 * Root cause: During type deletion, circular references in type hierarchy cause StackOverflowError
+	 * Solution: Track processing types and skip circular references
+	 */
+	private void addSubTypesInternal(String repositoryId,
+			List<NemakiTypeDefinition> subtypes, NemakiTypeDefinition type, Set<String> processingTypes) {
 		
-		TypeDefinitionContainerImpl container = new TypeDefinitionContainerImpl();
-		container.setTypeDefinition(buildTypeDefinitionFromDB(repositoryId, type));
-		container.setChildren(new ArrayList<TypeDefinitionContainer>());
-
-		if (types.get(type.getTypeId()) == null) {
-			types.put(type.getTypeId(), container);
-		} else {
-			// TODO logging: can't overwrite the type
+		// CRITICAL FIX: Circular reference detection
+		if (type == null || type.getTypeId() == null) {
+			log.warn("Null type or typeId detected, skipping processing");
+			return;
 		}
-
-		List<NemakiTypeDefinition> children = new ArrayList<NemakiTypeDefinition>();
-		for (NemakiTypeDefinition subtype : subtypes) {
-			// CRITICAL FIX: Add null safety check for subtype.getParentId()
-			String subtypeParentId = subtype.getParentId();
-			if (subtypeParentId != null && subtypeParentId.equals(type.getTypeId())) {
-				children.add(subtype);
+		
+		String typeId = type.getTypeId();
+		if (processingTypes.contains(typeId)) {
+			log.warn("CIRCULAR REFERENCE DETECTED: Type '" + typeId + "' is already being processed, skipping to prevent infinite recursion");
+			return;
+		}
+		
+		// Add current type to processing set
+		processingTypes.add(typeId);
+		
+		try {
+			Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
+			
+			TypeDefinitionContainerImpl container = new TypeDefinitionContainerImpl();
+			
+			// CRITICAL FIX: Add null safety for buildTypeDefinitionFromDB
+			try {
+				AbstractTypeDefinition typeDefinition = buildTypeDefinitionFromDB(repositoryId, type);
+				if (typeDefinition == null) {
+					log.warn("buildTypeDefinitionFromDB returned null for type: " + typeId);
+					return;
+				}
+				container.setTypeDefinition(typeDefinition);
+			} catch (Exception e) {
+				log.error("Failed to build type definition for type: " + typeId, e);
+				return;
 			}
-		}
+			
+			container.setChildren(new ArrayList<TypeDefinitionContainer>());
 
-		if (!CollectionUtils.isEmpty(children)) {
-			for (NemakiTypeDefinition child : children) {
-				addSubTypesInternal(repositoryId, subtypes, child);
+			if (types.get(typeId) == null) {
+				types.put(typeId, container);
+			} else {
+				log.debug("Type '" + typeId + "' already exists in container, skipping overwrite");
 			}
-		}
 
-		// CRITICAL FIX: Add null safety check for type.getParentId() and parentContainer
-		String typeParentId = type.getParentId();
-		if (typeParentId != null) {
-			TypeDefinitionContainer parentContainer = types.get(typeParentId);
-			if (parentContainer != null) {
-				parentContainer.getChildren().add(container);
+			// CRITICAL FIX: Null safety and circular reference prevention for children processing
+			List<NemakiTypeDefinition> children = new ArrayList<NemakiTypeDefinition>();
+			if (subtypes != null) {
+				for (NemakiTypeDefinition subtype : subtypes) {
+					if (subtype == null) {
+						log.warn("Null subtype detected, skipping");
+						continue;
+					}
+					
+					// CRITICAL FIX: Add null safety check for subtype.getParentId()
+					String subtypeParentId = subtype.getParentId();
+					if (subtypeParentId != null && subtypeParentId.equals(typeId)) {
+						// ADDITIONAL FIX: Ensure child is not the same as parent (self-reference detection)
+						String childTypeId = subtype.getTypeId();
+						if (childTypeId != null && !childTypeId.equals(typeId)) {
+							children.add(subtype);
+						} else {
+							log.warn("SELF-REFERENCE DETECTED: Type '" + typeId + "' references itself as child, skipping");
+						}
+					}
+				}
 			}
+
+			// CRITICAL FIX: Process children with circular reference protection
+			if (!CollectionUtils.isEmpty(children)) {
+				for (NemakiTypeDefinition child : children) {
+					if (child != null) {
+						// Pass the same processingTypes set to track all processing types in this call chain
+						addSubTypesInternal(repositoryId, subtypes, child, processingTypes);
+					}
+				}
+			}
+
+			// CRITICAL FIX: Add null safety check for type.getParentId() and parentContainer
+			String typeParentId = type.getParentId();
+			if (typeParentId != null) {
+				TypeDefinitionContainer parentContainer = types.get(typeParentId);
+				if (parentContainer != null) {
+					parentContainer.getChildren().add(container);
+				}
+			}
+			
+		} finally {
+			// CRITICAL FIX: Remove from processing set when done (backtrack)
+			processingTypes.remove(typeId);
 		}
-		return;
 	}
 
 	@Override
@@ -1153,8 +1274,9 @@ public class TypeManagerImpl implements TypeManager {
 
 														 
 										
-				// CRITICAL FIX: Determine correct inherited flag based on whether this property exists in parent type
-				boolean isInherited = properties.containsKey(p.getPropertyId());
+				// CRITICAL FIX: Properties specific to this type should have isInherited = FALSE
+				// Only properties copied from parent type (above) should have isInherited = TRUE
+				boolean isInherited = false;
 								
 				PropertyDefinition<?> property = DataUtil.createPropDef(
 						p.getPropertyId(), p.getLocalName(),
@@ -1342,7 +1464,7 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	private void buildPropertyDefinitionCores(String repositoryId) {
-		// CRITICAL STARTUP DEBUG: Track cache initialization to identify contamination point
+		// Initialize property definition cores
 		
 		Map<String, TypeDefinitionContainer>types = TYPES.get(repositoryId);
 		
@@ -1359,7 +1481,7 @@ public class TypeManagerImpl implements TypeManager {
 				.getTypeDefinition().getPropertyDefinitions();
 
 	 
-		// CRITICAL STARTUP DEBUG: Base type collections initialized successfully
+		// Base type collections initialized
 
 		copyToPropertyDefinitionCore(d);
 		copyToPropertyDefinitionCore(f);
@@ -1367,20 +1489,20 @@ public class TypeManagerImpl implements TypeManager {
 		copyToPropertyDefinitionCore(p);
 		copyToPropertyDefinitionCore(i);
 
-		// CRITICAL STARTUP DEBUG: PropertyDefinitionCore maps populated
+		// PropertyDefinitionCore maps populated
 
 		// Subtype property cores(consequently includes secondary property cores)
 			List<NemakiPropertyDefinitionCore> subTypeCores = typeService
 				.getPropertyDefinitionCores(repositoryId);
 		
-		// CRITICAL STARTUP DEBUG: Subtype property cores loaded
+		// Subtype property cores loaded
 		
 		if (CollectionUtils.isNotEmpty(subTypeCores)) {
 			int processedCount = 0;
 			int skippedCount = 0;
 			
 			for (NemakiPropertyDefinitionCore sc : subTypeCores) {
-				// CRITICAL DEBUG: Track each PropertyDefinitionCore being processed
+				// Process PropertyDefinitionCore
 					
 				// CRITICAL FIX: Skip corrupted PropertyDefinitionCore records with NULL values
 				// This prevents NULL property IDs from contaminating the system during initialization
@@ -1405,7 +1527,7 @@ public class TypeManagerImpl implements TypeManager {
 					continue;
 				}
 				
-				// CRITICAL DEBUG: Track what gets passed to addPropertyDefinitionCore
+				// Add property definition core
 									
 				// Only process valid PropertyDefinitionCore records
 				addPropertyDefinitionCore(sc.getPropertyId(),
@@ -1417,7 +1539,7 @@ public class TypeManagerImpl implements TypeManager {
 			
 					}
 		
-			// CRITICAL STARTUP DEBUG: PropertyDefinitionCore population completed
+			// PropertyDefinitionCore population completed
 		}
 
 	private void copyToPropertyDefinitionCore(
@@ -1454,9 +1576,7 @@ public class TypeManagerImpl implements TypeManager {
 
 	private void addPropertyDefinitionCore(String propertyId, String queryName,
 			PropertyType propertyType, Cardinality cardinality) {
-		// CRITICAL STARTUP DEBUG: Enhanced contamination investigation at cache addition point
-											
-		// CRITICAL DEBUG: Check for suspicious TCK property patterns
+		// Add property definition core with contamination prevention
 		boolean isTckProperty = propertyId != null && propertyId.startsWith("tck:");
 		if (isTckProperty) {
 			}
@@ -1471,14 +1591,14 @@ public class TypeManagerImpl implements TypeManager {
 				
 			PropertyDefinition<?> core = DataUtil.createPropDefCore(propertyId, queryName, propertyType, cardinality);
 			
-			// CRITICAL DEBUG: Verify core creation before cloning
+			// Create defensive copies to prevent contamination
 				
 			// CRITICAL FIX: Create defensive copies to prevent cross-contamination between maps
 			// Each map gets its own PropertyDefinition object to prevent shared state issues
 			PropertyDefinition<?> coreForPropertyIdMap = DataUtil.clonePropertyDefinition(core);
 			PropertyDefinition<?> coreForQueryNameMap = DataUtil.clonePropertyDefinition(core);
 			
-			// CRITICAL DEBUG: Verify clones before storing
+			// Store separate copies to prevent contamination
 							
 			// Store separate copies in each map - CONTAMINATION IMPOSSIBLE
 			propertyDefinitionCoresByPropertyId.put(propertyId, coreForPropertyIdMap);
@@ -1486,7 +1606,7 @@ public class TypeManagerImpl implements TypeManager {
 			
 			 
 				
-			// CRITICAL TCK DEBUG: Special tracking for TCK properties
+			// Handle TCK properties
 			if (isTckProperty) {
 							}
 			
@@ -1515,7 +1635,7 @@ public class TypeManagerImpl implements TypeManager {
 				}
 			}
 			
-			// CRITICAL TCK DEBUG: Track existing TCK properties 
+			// Track existing properties 
 			if (isTckProperty) {
 				PropertyDefinition<?> existingInPropertyIdMap = propertyDefinitionCoresByPropertyId.get(propertyId);
 				PropertyDefinition<?> existingInQueryNameMap = propertyDefinitionCoresByQueryName.get(queryName);
@@ -1612,9 +1732,8 @@ public class TypeManagerImpl implements TypeManager {
 	public TypeDefinition getTypeDefinition(String repositoryId, String typeId) {
 		ensureInitialized();
 		
-		// CRITICAL DEBUG: Add extensive logging for type cache lookup during deletion
-		log.info("NEMAKI TYPE DEBUG: TypeManager.getTypeDefinition called - repositoryId=" + repositoryId + ", typeId=" + typeId);
-		System.out.println("NEMAKI TYPE DEBUG: TypeManager.getTypeDefinition called - repositoryId=" + repositoryId + ", typeId=" + typeId);
+		// Type cache lookup for deletion
+		log.debug("NEMAKI TYPE DEBUG: TypeManager.getTypeDefinition called - repositoryId=" + repositoryId + ", typeId=" + typeId);
 		
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
 		if (types == null) {
@@ -1623,12 +1742,10 @@ public class TypeManagerImpl implements TypeManager {
 			return null;
 		}
 		
-		log.info("NEMAKI TYPE DEBUG: Total types in cache for repository " + repositoryId + ": " + types.size());
-		System.out.println("NEMAKI TYPE DEBUG: Total types in cache for repository " + repositoryId + ": " + types.size());
+		log.debug("NEMAKI TYPE DEBUG: Total types in cache for repository " + repositoryId + ": " + types.size());
 		
 		// List all type IDs in cache for debugging
-		log.info("NEMAKI TYPE DEBUG: Available type IDs in cache: " + types.keySet());
-		System.out.println("NEMAKI TYPE DEBUG: Available type IDs in cache: " + types.keySet());
+		log.debug("NEMAKI TYPE DEBUG: Available type IDs in cache: " + types.keySet());
 		
 		TypeDefinitionContainer tc = types.get(typeId);
 		if (tc == null) {
@@ -1639,19 +1756,22 @@ public class TypeManagerImpl implements TypeManager {
 			log.warn("NEMAKI TYPE DEBUG: Attempting forced cache refresh to find missing type");
 			log.debug("Attempting forced cache refresh to find missing type");
 			
+			// CRITICAL FIX: Check if type is being deleted before refreshing cache
+			if (typesBeingDeleted.contains(typeId)) {
+				log.debug("NEMAKI TYPE DELETION: Type '" + typeId + "' is being deleted - skipping cache refresh to prevent infinite recursion");
+				throw new CmisObjectNotFoundException("Type '" + typeId + "' is being deleted");
+			}
+			
 			try {
 				refreshTypes();
 				Map<String, TypeDefinitionContainer> refreshedTypes = TYPES.get(repositoryId);
 				if (refreshedTypes != null) {
-					log.info("NEMAKI TYPE DEBUG: After refresh, total types: " + refreshedTypes.size());
-					System.out.println("NEMAKI TYPE DEBUG: After refresh, total types: " + refreshedTypes.size());
-					log.info("NEMAKI TYPE DEBUG: After refresh, available type IDs: " + refreshedTypes.keySet());
-					System.out.println("NEMAKI TYPE DEBUG: After refresh, available type IDs: " + refreshedTypes.keySet());
+					log.debug("NEMAKI TYPE DEBUG: After refresh, total types: " + refreshedTypes.size());
+					log.debug("NEMAKI TYPE DEBUG: After refresh, available type IDs: " + refreshedTypes.keySet());
 					
 					TypeDefinitionContainer refreshedTc = refreshedTypes.get(typeId);
 					if (refreshedTc != null) {
-						log.info("NEMAKI TYPE FIX: Found type '" + typeId + "' after forced refresh!");
-						System.out.println("NEMAKI TYPE FIX: Found type '" + typeId + "' after forced refresh!");
+						log.debug("NEMAKI TYPE FIX: Found type '" + typeId + "' after forced refresh!");
 						return refreshedTc.getTypeDefinition();
 					} else {
 						log.error("NEMAKI TYPE ERROR: Type '" + typeId + "' still not found even after forced refresh");
@@ -1667,12 +1787,11 @@ public class TypeManagerImpl implements TypeManager {
 			return null;
 		}
 		
-		log.info("NEMAKI TYPE DEBUG: Found type '" + typeId + "' in cache successfully");
-		System.out.println("NEMAKI TYPE DEBUG: Found type '" + typeId + "' in cache successfully");
+		log.debug("NEMAKI TYPE DEBUG: Found type '" + typeId + "' in cache successfully");
 
 		TypeDefinition typeDefinition = tc.getTypeDefinition();
 		
-		// CRITICAL CONTAMINATION DEBUG: Check if this type has contaminated property IDs
+		// Check for property contamination patterns
 		if (typeDefinition != null && typeDefinition.getPropertyDefinitions() != null) {
 					
 			boolean foundContamination = false;
@@ -1713,7 +1832,9 @@ public class TypeManagerImpl implements TypeManager {
 					
 					if (isContaminated) {
 						foundContamination = true;
-										log.error("CONTAMINATION DETECTED - Property ID: " + propertyId + ", Current Type: " + propertyType + ", Expected: " + expectedType + ". This is the contamination causing TCK failures");
+						if (log.isDebugEnabled()) {
+							log.debug("Property contamination detected - ID: " + propertyId + ", Type: " + propertyType + ", Expected: " + expectedType);
+						}
 					}
 				}
 			}
@@ -1721,7 +1842,9 @@ public class TypeManagerImpl implements TypeManager {
 			if (!foundContamination) {
 				log.debug("No contamination patterns found in type: " + typeId);
 			} else {
-				log.error("CONTAMINATION FOUND IN TYPE CACHE - THIS TYPE WILL CAUSE TCK FAILURES");
+				if (log.isDebugEnabled()) {
+					log.debug("Property contamination patterns found in type: " + typeId);
+				}
 			}
 		}
 
@@ -1744,7 +1867,7 @@ public class TypeManagerImpl implements TypeManager {
 			String repositoryId, String typeId,
 			boolean includePropertyDefinitions, BigInteger maxItems, BigInteger skipCount) {
 		
-		// CRITICAL CMIS COMPLIANCE DEBUG: Log the includePropertyDefinitions parameter
+		// CMIS compliance: Log includePropertyDefinitions parameter
 						
 		ensureInitialized();
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
@@ -1849,7 +1972,7 @@ public class TypeManagerImpl implements TypeManager {
 	public List<TypeDefinitionContainer> getTypesDescendants(String repositoryId,
 			String typeId, BigInteger depth, Boolean includePropertyDefinitions) {
 		
-		// CRITICAL CMIS COMPLIANCE DEBUG: Log the parameters
+		// CMIS compliance: Log parameters
 							
 		ensureInitialized();
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
@@ -2004,17 +2127,38 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	public void deleteTypeDefinition(String repositoryId, String typeId) {
-		// IMPLEMENTED: Delete type definition with cache invalidation
+		// CRITICAL FIX: Enhanced type deletion with dependency checking
 		log.info("deleteTypeDefinition: Deleting type definition for typeId=" + typeId + " in repository=" + repositoryId);
 		
 		try {
-			// 1. Call TypeService to handle property definition cleanup and database deletion
+			// STEP 1: Validate input parameters
+			if (typeId == null || typeId.trim().isEmpty()) {
+				throw new CmisInvalidArgumentException("TypeId cannot be null or empty");
+			}
+			if (repositoryId == null || repositoryId.trim().isEmpty()) {
+				throw new CmisInvalidArgumentException("RepositoryId cannot be null or empty");
+			}
+			
+			// STEP 2: Perform comprehensive dependency checks before deletion
+			List<String> dependencyIssues = checkTypeDependencies(repositoryId, typeId);
+			if (!dependencyIssues.isEmpty()) {
+				String errorMessage = "Cannot delete type '" + typeId + "' due to dependencies: " + String.join(", ", dependencyIssues);
+				log.error("deleteTypeDefinition: " + errorMessage);
+				throw new CmisConstraintException(errorMessage);
+			}
+			
+			log.info("deleteTypeDefinition: Dependency checks passed for typeId=" + typeId);
+			
+			// STEP 3: Call TypeService to handle property definition cleanup and database deletion
 			typeService.deleteTypeDefinition(repositoryId, typeId);
 			
-			// 2. Invalidate type definition cache to ensure consistency
+			// STEP 4: Invalidate type definition cache to ensure consistency (with lazy regeneration)
 			invalidateTypeDefinitionCache(repositoryId);
 			
 			log.info("deleteTypeDefinition: Successfully deleted and invalidated cache for typeId=" + typeId);
+		} catch (CmisConstraintException | CmisInvalidArgumentException e) {
+			// Re-throw constraint and validation exceptions without wrapping
+			throw e;
 		} catch (Exception e) {
 			log.error("deleteTypeDefinition: Failed to delete typeId=" + typeId + " in repository=" + repositoryId, e);
 			throw new CmisObjectNotFoundException("Failed to delete type definition: " + typeId, e);
@@ -2022,10 +2166,103 @@ public class TypeManagerImpl implements TypeManager {
 	}
 
 	/**
+	 * CRITICAL FIX: Check type dependencies before deletion to prevent orphaned references
+	 * 
+	 * @param repositoryId The repository ID
+	 * @param typeId The type ID to check
+	 * @return List of dependency issues (empty if no dependencies found)
+	 */
+	private List<String> checkTypeDependencies(String repositoryId, String typeId) {
+		List<String> issues = new ArrayList<>();
+		
+		try {
+			log.debug("checkTypeDependencies: Checking dependencies for typeId=" + typeId + " in repository=" + repositoryId);
+			
+			// 1. Check if type is used as parent by other types
+			List<String> childTypes = findChildTypes(repositoryId, typeId);
+			if (!childTypes.isEmpty()) {
+				issues.add("Type is parent of: " + String.join(", ", childTypes));
+			}
+			
+			// 2. Check if type is a base type (cannot be deleted)
+			if (isBaseType(typeId)) {
+				issues.add("Cannot delete base type: " + typeId);
+			}
+			
+			// 3. Check if type has instances (documents/folders using this type)
+			boolean hasInstances = checkTypeHasInstances(repositoryId, typeId);
+			if (hasInstances) {
+				issues.add("Type has existing instances in the repository");
+			}
+			
+			log.debug("checkTypeDependencies: Found " + issues.size() + " dependency issues for typeId=" + typeId);
+			
+		} catch (Exception e) {
+			log.error("checkTypeDependencies: Error checking dependencies for typeId=" + typeId, e);
+			issues.add("Error checking dependencies: " + e.getMessage());
+		}
+		
+		return issues;
+	}
+
+	/**
+	 * Find child types that use the specified type as parent
+	 */
+	private List<String> findChildTypes(String repositoryId, String typeId) {
+		List<String> childTypes = new ArrayList<>();
+		
+		try {
+			List<NemakiTypeDefinition> allTypes = getNemakiTypeDefinitions(repositoryId);
+			if (allTypes != null) {
+				for (NemakiTypeDefinition type : allTypes) {
+					if (type != null && type.getParentId() != null && type.getParentId().equals(typeId)) {
+						childTypes.add(type.getTypeId());
+					}
+				}
+			}
+		} catch (Exception e) {
+			log.error("findChildTypes: Error finding child types for parentId=" + typeId, e);
+		}
+		
+		return childTypes;
+	}
+
+	/**
+	 * Check if the specified type is a base type (cannot be deleted)
+	 */
+	private boolean isBaseType(String typeId) {
+		// CMIS base types that cannot be deleted
+		return BaseTypeId.CMIS_DOCUMENT.value().equals(typeId) ||
+			   BaseTypeId.CMIS_FOLDER.value().equals(typeId) ||
+			   BaseTypeId.CMIS_RELATIONSHIP.value().equals(typeId) ||
+			   BaseTypeId.CMIS_POLICY.value().equals(typeId) ||
+			   BaseTypeId.CMIS_ITEM.value().equals(typeId) ||
+			   BaseTypeId.CMIS_SECONDARY.value().equals(typeId);
+	}
+
+	/**
+	 * Check if the type has existing instances in the repository
+	 * For now, return false as this requires complex content queries
+	 * TODO: Implement instance checking using ContentDaoService
+	 */
+	private boolean checkTypeHasInstances(String repositoryId, String typeId) {
+		// TODO: Implement instance checking
+		// This would require querying the content repository for documents/folders of this type
+		// For now, return false to allow deletion, but this should be implemented for production use
+		log.debug("checkTypeHasInstances: Instance checking not yet implemented for typeId=" + typeId);
+		return false;
+	}
+
+	/**
 	 * Invalidates the type definition cache for a specific repository.
 	 * This method clears and rebuilds the type cache to ensure consistency after type modifications.
 	 * 
 	 * @param repositoryId The repository ID for which to invalidate the cache
+	 */
+	/**
+	 * CRITICAL FIX: Invalidate type definition cache with lazy regeneration
+	 * Root cause: Immediate regeneration after type deletion causes circular reference
+	 * Solution: Use lazy initialization to regenerate cache only when accessed next time
 	 */
 	private void invalidateTypeDefinitionCache(String repositoryId) {
 		synchronized (initLock) {
@@ -2040,25 +2277,36 @@ public class TypeManagerImpl implements TypeManager {
 				TYPES.remove(repositoryId);
 			}
 			
-			// CRITICAL FIX: Immediately regenerate cache to ensure consistency
-			log.debug("invalidateTypeDefinitionCache: Immediately regenerating cache for repository=" + repositoryId);
+			// CRITICAL FIX: Use lazy regeneration instead of immediate regeneration
+			// Cache will be regenerated automatically on next access via ensureInitialized()
+			log.debug("invalidateTypeDefinitionCache: Cache cleared for repository=" + repositoryId + 
+					". Will be regenerated on next access (lazy initialization)");
 			
-			// Initialize the repository cache if needed
-			if (!TYPES.containsKey(repositoryId)) {
-				TYPES.put(repositoryId, new HashMap<String, TypeDefinitionContainer>());
+			// Clear related caches to maintain consistency
+			if (basetypes != null) {
+				// Only clear basetypes if it's related to this repository
+				// Since basetypes are shared across repositories, we need to be careful
+				log.debug("invalidateTypeDefinitionCache: Clearing base types cache");
+				basetypes.clear();
 			}
 			
-			// Regenerate types for this specific repository
-			generate(repositoryId);
-			
-			// Verify regeneration
-			if (TYPES.containsKey(repositoryId)) {
-				Map<String, TypeDefinitionContainer> newTypes = TYPES.get(repositoryId);
-				log.debug("invalidateTypeDefinitionCache: Cache regenerated with " + newTypes.size() + " types for repository=" + repositoryId);
-				log.debug("invalidateTypeDefinitionCache: New type IDs: " + newTypes.keySet());
+			// Clear property definition caches for this repository
+			if (subTypeProperties != null) {
+				// Remove entries that belong to this repository
+				subTypeProperties.entrySet().removeIf(entry -> entry.getKey().startsWith(repositoryId + ":"));
+				log.debug("invalidateTypeDefinitionCache: Cleared subtype properties for repository=" + repositoryId);
 			}
 			
-			log.debug("invalidateTypeDefinitionCache: Cache invalidation and regeneration complete for repository=" + repositoryId);
+			if (propertyDefinitionCoresByPropertyId != null && propertyDefinitionCoresByQueryName != null) {
+				// These are global caches, but we might need to clear repository-specific entries
+				// For now, clear all to ensure consistency (can be optimized later)
+				propertyDefinitionCoresByPropertyId.clear();
+				propertyDefinitionCoresByQueryName.clear();
+				log.debug("invalidateTypeDefinitionCache: Cleared property definition caches");
+			}
+			
+			log.debug("invalidateTypeDefinitionCache: Cache invalidation complete for repository=" + repositoryId + 
+					". Next access will trigger safe regeneration.");
 		}
 	}
 

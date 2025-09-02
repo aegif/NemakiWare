@@ -136,18 +136,11 @@ public class MultipartParser {
     private void extractBoundary() {
         String requestContentType = request.getContentType();
 
-        // DEBUG: Log Content-Type header analysis
-        System.out.println("DEBUG: MultipartParser.extractBoundary() - Content-Type: " + requestContentType);
-        
         // parse content type and extract boundary
         byte[] extractedBoundary = MimeHelper.getBoundaryFromMultiPart(requestContentType);
         
-        // DEBUG: Log boundary extraction result
         if (extractedBoundary == null) {
-            System.out.println("ERROR: MimeHelper.getBoundaryFromMultiPart() returned null for Content-Type: " + requestContentType);
             throw new CmisInvalidArgumentException("Invalid multipart request!");
-        } else {
-            System.out.println("DEBUG: Successfully extracted boundary length: " + extractedBoundary.length);
         }
 
         boundary = new byte[BOUNDARY_PREFIX.length + extractedBoundary.length];
@@ -457,7 +450,6 @@ public class MultipartParser {
 
     private void readBody() throws IOException {
         String contentDisposition = headers.get("content-disposition");
-        System.out.println("MULTIPART DEBUG: readBody() - Content-Disposition: " + contentDisposition);
 
         if (contentDisposition == null) {
             throw new CmisInvalidArgumentException("Invalid multipart request!");
@@ -466,19 +458,11 @@ public class MultipartParser {
         Map<String, String> params = new HashMap<String, String>();
         MimeHelper.decodeContentDisposition(contentDisposition, params);
         
-        System.out.println("MULTIPART DEBUG: readBody() - Decoded parameters: " + params);
-        
         // CRITICAL FIX: Recognize ContentStream by field name "content" even without filename parameter
         // This fixes Browser Binding document creation when filename is not provided in Content-Disposition header
         String fieldName = params.get(MimeHelper.DISPOSITION_NAME);
         boolean hasFilename = params.containsKey(MimeHelper.DISPOSITION_FILENAME);
         boolean isContent = hasFilename || "content".equals(fieldName);
-        
-        System.out.println("MULTIPART DEBUG: readBody() - Field analysis:");
-        System.out.println("  - Field name: '" + fieldName + "'");
-        System.out.println("  - Has filename: " + hasFilename);
-        System.out.println("  - Field equals 'content': " + "content".equals(fieldName));
-        System.out.println("  - Final isContent decision: " + isContent);
 
         if (isContent) {
             if (hasContent) {
@@ -509,15 +493,10 @@ public class MultipartParser {
                 contentType = Constants.MEDIATYPE_OCTETSTREAM;
             }
 
-            System.out.println("MULTIPART DEBUG: readBody() - Processing as CONTENT STREAM");
-            System.out.println("  - Content-Type: " + contentType);
-            System.out.println("  - Filename: " + filename);
             readBodyAsStream(contentType, filename);
         } else {
             String name = params.get(MimeHelper.DISPOSITION_NAME);
-            System.out.println("MULTIPART DEBUG: readBody() - Processing as FIELD PARAMETER: " + name);
             byte[] rawValue = readBodyBytes();
-            System.out.println("MULTIPART DEBUG: readBody() - Field data length: " + rawValue.length + " bytes");
 
             if (CHARSET_FIELD.equalsIgnoreCase(name)) {
                 charset = new String(rawValue, IOUtils.ISO_8859_1);
@@ -545,29 +524,21 @@ public class MultipartParser {
         // Force reading even if EOF flag is set prematurely
         int readAttempts = 0;
         while (bufferCount < boundary.length - 2 && readAttempts < 10) {
-            System.out.println("CHUNKED ENCODING FIX: Initial buffer too small (" + bufferCount + " bytes), boundary needs " + (boundary.length - 2) + " bytes. Reading more... (attempt " + (readAttempts + 1) + ")");
             int prevBufferCount = bufferCount;
             
             // CRITICAL: Force reading even if EOF flag is set - chunked encoding issue
-            if (eof) {
-                System.out.println("CHUNKED ENCODING WARNING: EOF flag set but still need more data, forcing read attempt");
-            }
             
             // Direct stream reading bypassing EOF check
             if (!eof || (eof && bufferCount == 0)) {
                 try {
                     int r = requestStream.read(buffer, bufferCount, buffer.length - bufferCount);
-                    System.out.println("CHUNKED ENCODING DEBUG: Direct read result = " + r + ", buffer space = " + (buffer.length - bufferCount));
                     if (r > 0) {
                         bufferCount += r;
                         eof = false; // Reset EOF if we got data
-                        System.out.println("CHUNKED ENCODING SUCCESS: Read " + r + " more bytes, bufferCount now = " + bufferCount);
                     } else if (r == -1) {
                         eof = true;
-                        System.out.println("CHUNKED ENCODING INFO: Stream read returned -1, confirming EOF");
                     }
                 } catch (IOException e) {
-                    System.out.println("CHUNKED ENCODING ERROR: Direct read failed: " + e.getMessage());
                     eof = true;
                 }
             } else {
@@ -578,14 +549,11 @@ public class MultipartParser {
             
             // If buffer didn't grow after multiple attempts, break
             if (bufferCount == prevBufferCount) {
-                System.out.println("CHUNKED ENCODING WARNING: Buffer size didn't change after attempt " + readAttempts + ", no more data available");
                 break;
             }
         }
         
         if (bufferCount < boundary.length - 2) {
-            System.out.println("CHUNKED ENCODING FINAL ERROR: After " + readAttempts + " attempts, only have " + bufferCount + " bytes, but need " + (boundary.length - 2) + " bytes for boundary check");
-            System.out.println("CHUNKED ENCODING DEBUG: EOF=" + eof + ", requestStream available=" + requestStream.available());
             throw new CmisInvalidArgumentException("Invalid multipart request!");
         }
 
@@ -634,28 +602,19 @@ public class MultipartParser {
 
     private boolean readNext() throws IOException {
         try {
-            System.out.println("MULTIPART DEBUG: readNext() - calling readHeaders()");
             readHeaders();
 
             // no headers -> end of request
             if (headers == null) {
-                System.out.println("MULTIPART DEBUG: readNext() - headers is null, ending request");
                 skipEpilogue();
                 return false;
             }
 
-            System.out.println("MULTIPART DEBUG: readNext() - headers read successfully, count: " + headers.size());
-            for (Map.Entry<String, String> header : headers.entrySet()) {
-                System.out.println("MULTIPART DEBUG: readNext() - header: '" + header.getKey() + "' = '" + header.getValue() + "'");
-            }
 
-            System.out.println("MULTIPART DEBUG: readNext() - calling readBody()");
             readBody();
-            System.out.println("MULTIPART DEBUG: readNext() - readBody() completed successfully");
 
             return true;
         } catch (IOException e) {
-            System.out.println("MULTIPART DEBUG: readNext() - IOException: " + e.getMessage());
             e.printStackTrace();
             
             IOUtils.closeQuietly(contentStream);
@@ -664,7 +623,6 @@ public class MultipartParser {
 
             throw e;
         } catch (Exception e) {
-            System.out.println("MULTIPART DEBUG: readNext() - Exception: " + e.getClass().getSimpleName() + ": " + e.getMessage());
             e.printStackTrace();
             
             IOUtils.closeQuietly(contentStream);
@@ -674,22 +632,17 @@ public class MultipartParser {
     }
 
     public void parse() throws IOException {
-        System.out.println("MULTIPART DEBUG: MultipartParser.parse() method started");
         
         try {
-            System.out.println("MULTIPART DEBUG: Starting readNext() loop");
             int partCount = 0;
             
             while (readNext()) {
                 partCount++;
-                System.out.println("MULTIPART DEBUG: Processed part #" + partCount);
                 // nothing to do here, just read
             }
             
-            System.out.println("MULTIPART DEBUG: readNext() loop completed, processed " + partCount + " parts");
 
             // apply charset
-            System.out.println("MULTIPART DEBUG: Applying charset '" + charset + "' to " + rawFields.size() + " raw fields");
             for (Map.Entry<String, byte[][]> e : rawFields.entrySet()) {
 
                 String[] otherValues = fields.get(e.getKey());
@@ -706,25 +659,9 @@ public class MultipartParser {
                 }
 
                 fields.put(e.getKey(), values);
-                System.out.println("MULTIPART DEBUG: Converted raw field '" + e.getKey() + "' to string field with " + values.length + " values");
             }
-            
-            System.out.println("MULTIPART DEBUG: Final field count: " + fields.size());
-            for (Map.Entry<String, String[]> field : fields.entrySet()) {
-                System.out.println("MULTIPART DEBUG: Final field '" + field.getKey() + "' has " + field.getValue().length + " values");
-                for (String value : field.getValue()) {
-                    System.out.println("MULTIPART DEBUG: Final field '" + field.getKey() + "' value: '" + value + "'");
-                }
-            }
-            
-            System.out.println("MULTIPART DEBUG: MultipartParser.parse() completed successfully");
             
         } catch (Exception e) {
-            System.out.println("MULTIPART DEBUG: EXCEPTION in MultipartParser.parse(): " + e.getClass().getSimpleName() + ": " + e.getMessage());
-            if (e.getCause() != null) {
-                System.out.println("MULTIPART DEBUG: EXCEPTION cause: " + e.getCause().getClass().getSimpleName() + ": " + e.getCause().getMessage());
-            }
-            e.printStackTrace();
             
             if (contentStream != null) {
                 IOUtils.closeQuietly(contentStream);

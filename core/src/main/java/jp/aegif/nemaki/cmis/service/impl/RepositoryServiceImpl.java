@@ -133,30 +133,42 @@ public class RepositoryServiceImpl implements RepositoryService,
 	public TypeDefinition createType(CallContext callContext,
 			String repositoryId, TypeDefinition type, ExtensionsData extension) {
 		
-		log.debug("createType called: repositoryId=" + repositoryId + ", typeId=" + (type != null ? type.getId() : "null") + ", user=" + (callContext != null ? callContext.getUsername() : "null"));
+		log.info("=== REPOSITORY SERVICE DEBUG: createType() called ===");
+	log.info("DEBUG: repositoryId=" + repositoryId);
+	log.info("DEBUG: typeId=" + (type != null ? type.getId() : "null"));
+	log.info("DEBUG: user=" + (callContext != null ? callContext.getUsername() : "null"));
+	log.info("DEBUG: type class=" + (type != null ? type.getClass().getName() : "null"));
+	log.info("DEBUG: parentTypeId=" + (type != null ? type.getParentTypeId() : "null"));
 		
 		// //////////////////
 		// General Exception
 		// //////////////////
-		log.debug("Performing permission and validation checks for createType");
+		log.info("DEBUG: Performing permission and validation checks for createType");
 		exceptionService.perimissionAdmin(callContext, repositoryId);
 		exceptionService.invalidArgumentRequired("typeDefinition", type);
 		exceptionService.invalidArgumentCreatableType(repositoryId, type);
 		exceptionService.constraintDuplicatePropertyDefinition(repositoryId, type);
-		log.debug("All validation checks passed for createType");
+		log.info("DEBUG: All validation checks passed for createType");
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
 		// Attributes
-		log.debug("Setting type attributes for createType");
+		log.info("DEBUG: Setting type attributes for createType");
 		NemakiTypeDefinition ntd = setNemakiTypeDefinitionAttributes(repositoryId, type);
-		log.debug("Type attributes set successfully");
+		log.info("DEBUG: Type attributes set successfully - NemakiTypeDefinition ID: " + ntd.getTypeId());
 
 		// Property definitions
 		List<String> systemIds = typeManager.getSystemPropertyIds();
 		Map<String, PropertyDefinition<?>> propDefs = type
 				.getPropertyDefinitions();
+
+		log.info("DEBUG: System property IDs count: " + (systemIds != null ? systemIds.size() : 0));
+		log.info("DEBUG: Type property definitions count: " + (propDefs != null ? propDefs.size() : 0));
+		
+		if (propDefs != null && !propDefs.isEmpty()) {
+			log.info("DEBUG: Type property definitions keys: " + propDefs.keySet());
+		}
 
 		ntd.setProperties(new ArrayList<String>());
 		
@@ -192,16 +204,45 @@ public class RepositoryServiceImpl implements RepositoryService,
 					exceptionService.constraintQueryName(propDef);
 					exceptionService.constraintPropertyDefinition(type, propDef);
 
+					// CRITICAL FIX: Preserve original property ID to prevent contamination
+					String originalPropertyId = propDef.getId();
+					log.info("DEBUG: Creating property definition for original ID: " + originalPropertyId);
+					
 					NemakiPropertyDefinition create = new NemakiPropertyDefinition(propDef);
+					
+					// CRITICAL DEBUG: Verify the NemakiPropertyDefinition preserves the correct property ID
+					if (!originalPropertyId.equals(create.getPropertyId())) {
+						log.error("ERROR: Property ID contamination during NemakiPropertyDefinition creation!");
+						log.error("ERROR: Original ID: " + originalPropertyId + " -> NemakiPropertyDefinition ID: " + create.getPropertyId());
+						
+						// CRITICAL FIX: Force correct property ID back into the object
+						create.setPropertyId(originalPropertyId);
+						log.info("DEBUG: Property ID forced back to correct value: " + originalPropertyId);
+					}
 					
 					NemakiPropertyDefinitionDetail created = typeService
 							.createPropertyDefinition(repositoryId, create);
 					
-					// CRITICAL DEBUG: Get the created property definition and check for contamination
+					// CRITICAL FIX: Enhanced contamination detection and handling
 					NemakiPropertyDefinition retrievedProp = typeService.getPropertyDefinition(repositoryId, created.getId());
 					if (retrievedProp != null) {
-						if (!propDef.getId().equals(retrievedProp.getPropertyId())) {
-							// Contamination detected - handle appropriately
+						if (!originalPropertyId.equals(retrievedProp.getPropertyId())) {
+							// CRITICAL FIX: Contamination detected - implement proper handling
+							log.error("CONTAMINATION DETECTED!");
+							log.error("  Original property ID: " + originalPropertyId);
+							log.error("  Retrieved property ID: " + retrievedProp.getPropertyId());
+							log.error("  This will cause TCK test failures!");
+							
+							// CRITICAL FIX: Force the correct property ID back into the retrieved property
+							retrievedProp.setPropertyId(originalPropertyId);
+							
+							// CRITICAL FIX: Update the property definition with the correct ID
+							NemakiPropertyDefinitionDetail updatedDetail = new NemakiPropertyDefinitionDetail(retrievedProp, created.getCoreNodeId());
+							updatedDetail.setId(created.getId());
+							updatedDetail.setLocalName(originalPropertyId);  // Ensure localName matches property ID
+							
+							typeService.updatePropertyDefinitionDetail(repositoryId, updatedDetail);
+							log.info("DEBUG: Property definition updated with correct property ID: " + originalPropertyId);
 						}
 					}
 
@@ -213,23 +254,41 @@ public class RepositoryServiceImpl implements RepositoryService,
 			}
 		}
 
+		// CRITICAL DEBUG: Show final property list before creation
+		log.info("DEBUG: Final NemakiTypeDefinition properties count: " + ntd.getProperties().size());
+		if (!ntd.getProperties().isEmpty()) {
+			log.info("DEBUG: Final property IDs: " + ntd.getProperties());
+		}
+
 		// Create
+		log.info("DEBUG: Calling typeService.createTypeDefinition()");
 		NemakiTypeDefinition created = typeService.createTypeDefinition(repositoryId, ntd);
+		log.info("DEBUG: typeService.createTypeDefinition() completed - Created type ID: " + created.getTypeId());
 		
 		// CRITICAL FIX: Instead of full refresh, force specific repository cache refresh
+		log.info("DEBUG: Refreshing TypeManager cache");
 		typeManager.refreshTypes();
+		log.info("DEBUG: TypeManager cache refresh completed");
 		
 		// ADDITIONAL CHECK: Verify the created type is now in cache
+		log.info("DEBUG: Verifying created type in cache");
 		TypeDefinition verifyType = typeManager.getTypeDefinition(repositoryId, created.getTypeId());
 		if (verifyType == null) {
-			// Type not found in cache after refresh - this will cause deletion to fail
+			log.error("ERROR: Type not found in cache after refresh - this will cause deletion to fail");
+		} else {
+			log.info("DEBUG: Created type verified in cache with " + 
+				(verifyType.getPropertyDefinitions() != null ? verifyType.getPropertyDefinitions().size() : 0) + " properties");
 		}
 
 		// Sort the order of properties
 		try {
+			log.info("DEBUG: Sorting property definitions");
 			TypeDefinition result = sortPropertyDefinitions(repositoryId, created, type);
+			log.info("DEBUG: Property definitions sorted successfully");
+			log.info("=== REPOSITORY SERVICE DEBUG: createType() completed successfully ===");
 			return result;
 		} catch (Exception e) {
+			log.error("ERROR: Exception during property sorting", e);
 			e.printStackTrace();
 			throw e;
 		}
@@ -240,6 +299,11 @@ public class RepositoryServiceImpl implements RepositoryService,
 			String typeId, ExtensionsData extension) {
 		
 		log.debug("deleteType called: repositoryId=" + repositoryId + ", typeId=" + typeId + ", user=" + (callContext != null ? callContext.getUsername() : "null"));
+		
+		// CRITICAL FIX: Mark type as being deleted to prevent infinite recursion
+		if (typeManager != null) {
+			typeManager.markTypeBeingDeleted(typeId);
+		}
 		
 		// Force direct TypeService call
 		try {
@@ -255,18 +319,23 @@ public class RepositoryServiceImpl implements RepositoryService,
 			typeService.deleteTypeDefinition(repositoryId, typeId);
 			log.debug("typeService.deleteTypeDefinition completed successfully");
 			
-			if (typeManager != null) {
-				typeManager.refreshTypes();
-				log.debug("typeManager.refreshTypes completed");
-			} else {
-				log.warn("typeManager is null - cache refresh skipped");
-			}
+			// CRITICAL FIX: Remove duplicate cache refresh - TypeService handles caching internally
+			// Problem: typeManager.refreshTypes() was causing infinite recursion during type deletion
+			// Root cause: TypeManagerImpl line 1698 calls refreshTypes() when types are missing,
+			// creating a loop when deleted types are still referenced during cache rebuild
+			// Solution: Let TypeService handle its own cache management instead of external refresh
+			log.debug("Type deletion cache refresh handled internally by TypeService");
 			
 			log.debug("deleteType completed successfully");
 			return;
 		} catch (Exception e) {
 			log.error("Error in deleteType: " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
 			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException("Type deletion failed: " + e.getMessage(), e);
+		} finally {
+			// CRITICAL FIX: Always unmark type being deleted to prevent memory leak
+			if (typeManager != null) {
+				typeManager.unmarkTypeBeingDeleted(typeId);
+			}
 		}
 	}
 

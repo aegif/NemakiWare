@@ -212,8 +212,13 @@ if [[ "$TEST_MODE" != "fast" ]]; then
     
     # Test Solr indexing configuration
     run_test "Solr Indexing Configuration Enabled" "
+        # First trigger some CMIS operations to generate Solr indexing logs if not already present
+        curl -s -u admin:admin 'http://localhost:8080/core/browser/bedroom/root?cmisselector=children' > /dev/null 2>&1
+        sleep 1  # Give time for async indexing to start
+        
         # Check if Solr indexing is enabled in application logs
-        if docker logs docker-core-1 2>&1 | grep -q 'Solr indexing force setting: true\\|Starting async Solr indexing\\|SLF4J TEST: indexDocument called'; then
+        # Using proper regex OR pattern without double escaping
+        if docker logs docker-core-1 2>&1 | grep -E 'Solr indexing force setting: true|Starting async Solr indexing|SLF4J TEST: indexDocument called' > /dev/null; then
             echo 'PASS'
         else
             echo 'FAIL'

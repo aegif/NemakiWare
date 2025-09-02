@@ -212,10 +212,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         HttpServletRequest finalRequest = request; // Use original request directly - NO WRAPPER
         boolean multipartAlreadyProcessed = false;
         
+        // CRITICAL FIX: Extract cmisaction once at global scope to avoid null-initialization bug
+        String cmisaction = request.getParameter("cmisaction");
+        
         // PARAMETER CORRUPTION FIX: Do NOT wrap request - let OpenCMIS handle multipart directly  
         if (contentType != null && contentType.startsWith("multipart/form-data")) {
             // Check if multipart parameters are available
-            String cmisaction = request.getParameter("cmisaction");
             java.util.Map<String, String[]> parameterMap = request.getParameterMap();
             
             if (cmisaction != null || parameterMap.size() > 0) {
@@ -228,7 +230,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         }
         
         // CRITICAL FIX: Handle multipart form-data parameter parsing for legacy compatibility
-        String cmisaction = null;
+        // BUG FIX: cmisaction already extracted at global scope (line 216) - no redeclaration needed
         
         if (!multipartAlreadyProcessed && contentType != null && contentType.startsWith("multipart/form-data")) {
             try {
@@ -1158,9 +1160,34 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                         org.apache.chemistry.opencmis.commons.enums.DateTimeFormat.SIMPLE);
                     
                 writer.write(jsonObject.toJSONString());
+            } else if (result instanceof org.apache.chemistry.opencmis.commons.data.ObjectInFolderList) {
+                // CRITICAL FIX: Handle ObjectInFolderList for CMIS 1.1 compliant children responses
+                // ROOT CAUSE: Missing ObjectInFolderList handling caused fallback to Jackson with custom format
+                // SOLUTION: Use OpenCMIS JSONConverter to generate CMIS 1.1 standard {"objects": [{"object": ...}]} format
+                org.apache.chemistry.opencmis.commons.data.ObjectInFolderList objectInFolderList = 
+                    (org.apache.chemistry.opencmis.commons.data.ObjectInFolderList) result;
+                    
+                // Use OpenCMIS JSONConverter.convert() method for proper CMIS JSON serialization
+                // This generates CMIS 1.1 compliant format: {"objects": [{"object": {"properties": {...}}}]}
+                org.apache.chemistry.opencmis.commons.impl.json.JSONObject jsonObject = 
+                    org.apache.chemistry.opencmis.commons.impl.JSONConverter.convert(objectInFolderList, null, false, 
+                        org.apache.chemistry.opencmis.commons.enums.DateTimeFormat.SIMPLE);
+                    
+                writer.write(jsonObject.toJSONString());
+            } else if (result instanceof org.apache.chemistry.opencmis.commons.data.RepositoryInfo) {
+                // CRITICAL FIX: Handle RepositoryInfo for CMIS 1.1 compliant repository info responses
+                org.apache.chemistry.opencmis.commons.data.RepositoryInfo repositoryInfo = 
+                    (org.apache.chemistry.opencmis.commons.data.RepositoryInfo) result;
+                    
+                // Use OpenCMIS JSONConverter.convert() method for proper CMIS JSON serialization
+                // Corrected method signature: (repositoryInfo, rootUrl, productName, extendedFeatures)
+                org.apache.chemistry.opencmis.commons.impl.json.JSONObject jsonObject = 
+                    org.apache.chemistry.opencmis.commons.impl.JSONConverter.convert(repositoryInfo, "", "NemakiWare", false);
+                    
+                writer.write(jsonObject.toJSONString());
             } else {
                 // For other types, use Jackson as fallback but this should be rare
-                // MOST Browser Binding responses should be ObjectData or ObjectList
+                // MOST Browser Binding responses should be ObjectData, ObjectInFolderList, ObjectList, or RepositoryInfo
                 com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
                 String json = objectMapper.writeValueAsString(result);
                 writer.write(json);
@@ -2311,18 +2338,14 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             org.apache.chemistry.opencmis.commons.definitions.TypeDefinition typeDefinition = 
                 org.apache.chemistry.opencmis.commons.impl.JSONConverter.convertTypeDefinition(typeMap);
             
-            System.err.println("*** CREATE TYPE HANDLER: Type definition parsed - ID: " + typeDefinition.getId() + " ***");
-            System.err.println("*** CREATE TYPE HANDLER: Type definition base type: " + typeDefinition.getBaseTypeId() + " ***");
             
             // *** CRITICAL FIX: PROPERTY ID CONTAMINATION INTERCEPTION ***
             // ROOT CAUSE: OpenCMIS JSONConverter.convertTypeDefinition() assigns wrong CMIS property IDs to custom properties
             // SOLUTION: Inspect and correct contaminated property IDs after JSONConverter but before cmisService.createType()
-            System.err.println("*** CONTAMINATION FIX: Inspecting property definitions from OpenCMIS JSONConverter ***");
             
             if (typeDefinition.getPropertyDefinitions() != null) {
                 Map<String, org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?>> originalPropertyDefs = 
                     typeDefinition.getPropertyDefinitions();
-                System.err.println("*** CONTAMINATION FIX: Found " + originalPropertyDefs.size() + " property definitions ***");
                 
                 // Track contamination instances
                 boolean contaminationDetected = false;
@@ -2332,17 +2355,11 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     String propertyId = entry.getKey();
                     org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?> propDef = entry.getValue();
                     
-                    System.err.println("*** CONTAMINATION CHECK: PropertyID=[" + propertyId + "], " +
-                        "PropDef.getId()=[" + propDef.getId() + "], " + 
-                        "PropDef.getLocalName()=[" + propDef.getLocalName() + "], " +
-                        "PropDef.getPropertyType()=[" + propDef.getPropertyType() + "] ***");
                     
                     // DETECT CONTAMINATION: Check if custom TCK property got assigned wrong CMIS property ID
                     if (propDef.getLocalName() != null && propDef.getLocalName().startsWith("tck:") && 
                         propDef.getId() != null && propDef.getId().startsWith("cmis:")) {
                         
-                        System.err.println("*** CONTAMINATION DETECTED: Custom property '" + propDef.getLocalName() + 
-                            "' wrongly assigned CMIS property ID '" + propDef.getId() + "' ***");
                         contaminationDetected = true;
                         contaminationMapping.put(propDef.getId(), propDef.getLocalName());
                     }
@@ -2352,16 +2369,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                         !propDef.getLocalName().equals(propDef.getId()) &&
                         propDef.getLocalName().startsWith("tck:") && propDef.getId().startsWith("cmis:")) {
                         
-                        System.err.println("*** CONTAMINATION DETECTED: LocalName/ID mismatch - LocalName='" + 
-                            propDef.getLocalName() + "', ID='" + propDef.getId() + "' ***");
                         contaminationDetected = true;
                         contaminationMapping.put(propDef.getId(), propDef.getLocalName());
                     }
                 }
                 
                 if (contaminationDetected) {
-                    System.err.println("*** CONTAMINATION FIX: APPLYING PROPERTY ID CORRECTIONS ***");
-                    System.err.println("*** CONTAMINATION MAPPING: " + contaminationMapping + " ***");
                     
                     // CRITICAL: Create a corrected TypeDefinition with fixed property IDs
                     // We need to create a new TypeDefinition with corrected property definitions
@@ -2383,14 +2396,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                                     
                                     // CONTAMINATION FIX: Create corrected property definition with proper ID
                                     String correctId = propDef.getLocalName(); // Use LocalName as correct ID
-                                    System.err.println("*** PROPERTY ID FIX: Correcting '" + propDef.getId() + "' → '" + correctId + "' ***");
                                     
                                     // Create new PropertyDefinition with corrected ID
                                     org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?> correctedPropDef = 
                                         createCorrectedPropertyDefinition(propDef, correctId);
                                     
                                     correctedPropertyDefs.put(correctId, correctedPropDef);
-                                    System.err.println("*** PROPERTY ID FIX: Added corrected property '" + correctId + "' ***");
                                 } else {
                                     // Keep non-contaminated properties as-is
                                     correctedPropertyDefs.put(entry.getKey(), propDef);
@@ -2400,27 +2411,19 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                             // Replace property definitions in mutable TypeDefinition
                             mutableTypeDef.setPropertyDefinitions(correctedPropertyDefs);
                             
-                            System.err.println("*** CONTAMINATION FIX: Property definitions corrected successfully ***");
-                            System.err.println("*** CONTAMINATION FIX: Updated TypeDefinition with " + correctedPropertyDefs.size() + " properties ***");
                             
                         } else {
-                            System.err.println("*** CONTAMINATION FIX ERROR: TypeDefinition is not mutable (class: " + 
-                                typeDefinition.getClass().getName() + ") ***");
                         }
                         
                     } catch (Exception fixException) {
-                        System.err.println("*** CONTAMINATION FIX ERROR: Failed to correct property IDs: " + 
-                            fixException.getMessage() + " ***");
                         fixException.printStackTrace();
                         // Continue with original TypeDefinition - don't fail the entire operation
                     }
                     
                 } else {
-                    System.err.println("*** CONTAMINATION FIX: No contamination detected - property IDs are correct ***");
                 }
                 
             } else {
-                System.err.println("*** CONTAMINATION FIX: No property definitions found in TypeDefinition ***");
             }
             
             // Get the CMIS service and create the type
@@ -2431,7 +2434,6 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             org.apache.chemistry.opencmis.commons.definitions.TypeDefinition createdType = 
                 cmisService.createType(repositoryId, typeDefinition, null);
             
-            System.err.println("*** CREATE TYPE HANDLER: Type created successfully with ID: " + createdType.getId() + " ***");
             
             // Return success response with type definition in JSON format
             response.setStatus(HttpServletResponse.SC_CREATED);
@@ -2449,7 +2451,6 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             return true; // Successfully handled
             
         } catch (Exception e) {
-            System.err.println("*** CREATE TYPE HANDLER ERROR: " + e.getClass().getSimpleName() + ": " + e.getMessage() + " ***");
             e.printStackTrace();
             throw e;
         }

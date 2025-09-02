@@ -277,18 +277,18 @@ public class CloudantClientWrapper {
 			properties.remove("_rev");
 			
 			// Set all other fields as properties
-			log.error("CLOUDANT DEBUG: About to set properties on Document object");
-			log.error("CLOUDANT DEBUG: Properties map size: " + properties.size());
-			log.error("CLOUDANT DEBUG: Properties keys: " + properties.keySet());
+			log.debug("CLOUDANT DEBUG: About to set properties on Document object");
+			log.debug("CLOUDANT DEBUG: Properties map size: " + properties.size());
+			log.debug("CLOUDANT DEBUG: Properties keys: " + properties.keySet());
 			
 			doc.setProperties(properties);
 			
 			// CRITICAL DEBUG: Check if properties were actually set
 			Map<String, Object> retrievedProperties = doc.getProperties();
-			log.error("CLOUDANT DEBUG: Retrieved properties after setProperties():");
-			log.error("CLOUDANT DEBUG: Retrieved properties size: " + (retrievedProperties != null ? retrievedProperties.size() : "null"));
+			log.debug("CLOUDANT DEBUG: Retrieved properties after setProperties():");
+			log.debug("CLOUDANT DEBUG: Retrieved properties size: " + (retrievedProperties != null ? retrievedProperties.size() : "null"));
 			if (retrievedProperties != null) {
-				log.error("CLOUDANT DEBUG: Retrieved properties keys: " + retrievedProperties.keySet());
+				log.debug("CLOUDANT DEBUG: Retrieved properties keys: " + retrievedProperties.keySet());
 			}
 
 			PostDocumentOptions options = new PostDocumentOptions.Builder()
@@ -297,10 +297,10 @@ public class CloudantClientWrapper {
 				.build();
 
 			DocumentResult result = client.postDocument(options).execute().getResult();
-			log.error("CLOUDANT DEBUG: Document created with ID: " + result.getId());
+			log.debug("CLOUDANT DEBUG: Document created with ID: " + result.getId());
 			
 			// CRITICAL: Verify what was actually saved to CouchDB
-			log.error("CLOUDANT DEBUG: Attempting to retrieve saved document to verify content...");
+			log.debug("CLOUDANT DEBUG: Attempting to retrieve saved document to verify content...");
 			try {
 				GetDocumentOptions getOptions = new GetDocumentOptions.Builder()
 					.db(databaseName)
@@ -308,12 +308,12 @@ public class CloudantClientWrapper {
 					.build();
 				com.ibm.cloud.cloudant.v1.model.Document savedDoc = client.getDocument(getOptions).execute().getResult();
 				Map<String, Object> savedProperties = savedDoc.getProperties();
-				log.error("CLOUDANT DEBUG: Saved document properties size: " + (savedProperties != null ? savedProperties.size() : "null"));
+				log.debug("CLOUDANT DEBUG: Saved document properties size: " + (savedProperties != null ? savedProperties.size() : "null"));
 				if (savedProperties != null) {
-					log.error("CLOUDANT DEBUG: Saved document properties keys: " + savedProperties.keySet());
+					log.debug("CLOUDANT DEBUG: Saved document properties keys: " + savedProperties.keySet());
 				}
 			} catch (Exception verifyEx) {
-				log.error("CLOUDANT DEBUG: Failed to retrieve saved document for verification", verifyEx);
+				log.debug("CLOUDANT DEBUG: Failed to retrieve saved document for verification", verifyEx);
 			}
 			
 			return result;
@@ -728,7 +728,7 @@ public class CloudantClientWrapper {
 			// CRITICAL FIX: Add key to the server-side query instead of client-side filtering
 			if (key != null) {
 				builder.key(key);
-				log.error("CLOUDANT DEBUG: Added key to query: " + key);
+				log.debug("CLOUDANT DEBUG: Added key to query: " + key);
 			}
 			
 			ViewResult result = client.postView(builder.build()).execute().getResult();
@@ -765,11 +765,11 @@ public class CloudantClientWrapper {
 							
 							if (nodeBase.getId() == null && docMap.get("_id") != null) {
 								nodeBase.setId((String) docMap.get("_id"));
-								log.error("DEBUG: Manually set ID: " + nodeBase.getId());
+								log.debug("DEBUG: Manually set ID: " + nodeBase.getId());
 							}
 							if (nodeBase.getRevision() == null && docMap.get("_rev") != null) {
 								nodeBase.setRevision((String) docMap.get("_rev"));
-								log.error("DEBUG: Manually set revision: " + nodeBase.getRevision());
+								log.debug("DEBUG: Manually set revision: " + nodeBase.getRevision());
 							}
 						}
 						
@@ -1185,9 +1185,9 @@ public class CloudantClientWrapper {
 			Map<String, Object> documentMap = mapper.convertValue(document, Map.class);
 			
 			// DEBUG: Log the document map to understand what fields are present
-			log.error("DEBUG: Document class: " + document.getClass().getName());
-			log.error("DEBUG: DocumentMap keys: " + documentMap.keySet());
-			log.error("DEBUG: DocumentMap contents: " + documentMap);
+			log.debug("DEBUG: Document class: " + document.getClass().getName());
+			log.debug("DEBUG: DocumentMap keys: " + documentMap.keySet());
+			log.debug("DEBUG: DocumentMap contents: " + documentMap);
 			
 			// Try both "_id" and "id" fields
 			String id = (String) documentMap.get("_id");
@@ -1207,7 +1207,7 @@ public class CloudantClientWrapper {
 					CouchNodeBase cnb = (CouchNodeBase) document;
 					id = cnb.getId();
 					rev = cnb.getRevision();
-					log.error("DEBUG: Got ID from CouchNodeBase getter: id=" + id + ", rev=" + rev);
+					log.debug("DEBUG: Got ID from CouchNodeBase getter: id=" + id + ", rev=" + rev);
 				}
 			}
 			
@@ -1218,7 +1218,7 @@ public class CloudantClientWrapper {
 				throw new IllegalArgumentException("Document must have '_rev' field for delete");
 			}
 			
-			log.error("CLOUDANT DELETION DEBUG: Attempting to delete document ID: " + id + " with revision: " + rev);
+			log.debug("CLOUDANT DELETION DEBUG: Attempting to delete document ID: " + id + " with revision: " + rev);
 			
 			// CRITICAL FIX: Always fetch the absolute latest revision to prevent conflicts
 			// This is the most important part for reliable deletion
@@ -1232,7 +1232,7 @@ public class CloudantClientWrapper {
 				String latestRev = currentDoc.getRev();
 				
 				if (!rev.equals(latestRev)) {
-					log.error("CLOUDANT DELETION DEBUG: Document revision is stale. Using latest revision: " + latestRev + " instead of: " + rev);
+					log.debug("CLOUDANT DELETION DEBUG: Document revision is stale. Using latest revision: " + latestRev + " instead of: " + rev);
 					rev = latestRev;
 				} else {
 					log.debug("DELETION DEBUG: Document revision is current: " + rev);
