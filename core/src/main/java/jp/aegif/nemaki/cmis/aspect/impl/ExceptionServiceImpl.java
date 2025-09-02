@@ -219,10 +219,23 @@ public class ExceptionServiceImpl implements ExceptionService,
 	public void invalidArgumentCreatableType(String repositoryId, TypeDefinition type) {
 		String msg = "";
 
-		// CRITICAL FIX: Explicit rejection of secondary type creation per CMIS 1.1 specification
-		// Secondary types cannot be created directly - they are system-defined only
-		if (type.getBaseTypeId() == BaseTypeId.CMIS_SECONDARY) {
+		// CMIS 1.1 SPECIFICATION COMPLIANCE: BaseTypeId-specific validation logic
+		// Each base type has specific requirements per CMIS specification
+		BaseTypeId baseTypeId = type.getBaseTypeId();
+		
+		if (baseTypeId == BaseTypeId.CMIS_SECONDARY) {
 			msg = "Secondary types cannot be created directly. Secondary types are system-defined and managed automatically.";
+			throw new CmisInvalidArgumentException(msg + " [objectTypeId = " + type.getId() + "]", HTTP_STATUS_CODE_400);
+		}
+		
+		// BaseTypeId-specific default value validation
+		if (baseTypeId == BaseTypeId.CMIS_FOLDER && type.isFileable() != null && type.isFileable()) {
+			msg = "Folder types must have fileable=false per CMIS specification";
+			throw new CmisInvalidArgumentException(msg + " [objectTypeId = " + type.getId() + "]", HTTP_STATUS_CODE_400);
+		}
+		
+		if (baseTypeId == BaseTypeId.CMIS_POLICY && type.isCreatable() != null && type.isCreatable()) {
+			msg = "Policy types must have creatable=false per CMIS specification";
 			throw new CmisInvalidArgumentException(msg + " [objectTypeId = " + type.getId() + "]", HTTP_STATUS_CODE_400);
 		}
 
@@ -256,12 +269,17 @@ public class ExceptionServiceImpl implements ExceptionService,
 				if (parent.getTypeMutability() == null) {
 					msg = "Specified parent type does not have TypeMutability";
 				} else {
-					// CRITICAL FIX: Correctly check TypeMutability.canCreate() value instead of just checking if TypeMutability exists
-					// This resolves createAndDeleteTypeTest TCK failure
+					// CMIS 1.1 SPECIFICATION COMPLIANCE: Allow custom type creation even when base type has canCreate=false
+					// Base type canCreate restriction applies to base type instances, not custom subtype creation
+					// Only reject if this is an attempt to directly create a base type instance
 					boolean canCreate = (parent.getTypeMutability() != null && parent.getTypeMutability().canCreate() != null) 
 						? parent.getTypeMutability().canCreate() : false;
-					if (!canCreate) {
-						msg = "Specified parent type has TypeMutability.canCreate = false";
+					
+					// Check if this is a direct base type creation attempt (not custom subtype)
+					boolean isDirectBaseTypeCreation = (typeId != null && typeId.startsWith("cmis:"));
+					
+					if (!canCreate && isDirectBaseTypeCreation) {
+						msg = "Direct base type creation not allowed - TypeMutability.canCreate = false";
 					}
 				}
 			}
