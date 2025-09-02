@@ -920,25 +920,46 @@ public class TypeManagerImpl implements TypeManager {
 			String id, PropertyType datatype,
 			Cardinality cardinality, Updatability updatability, boolean required,
 			boolean queryable, boolean orderable, List<?> defaultValue) {
-		PropertyDefinition<?> result = null;
+	
+	// CRITICAL FIX: Determine inherited based on property ID and CMIS specification
+	// Standard CMIS properties are inherited from base types
+	boolean inherited = isStandardCmisProperty(id);
+	
+	return createDefaultPropDef(repositoryId, id, datatype, cardinality, updatability, 
+		required, queryable, orderable, defaultValue, inherited);
+}
 
-		// Default values
-		String localName = id;
-		String localNameSpace = getNameSpace(repositoryId);
-		String queryName = id;
-		String displayName = id;
-		String description = id;
-		boolean inherited = false;
-		boolean openChoice = false;
+private PropertyDefinition<?> createDefaultPropDef(String repositoryId,
+		String id, PropertyType datatype,
+		Cardinality cardinality, Updatability updatability, boolean required,
+		boolean queryable, boolean orderable, List<?> defaultValue, boolean inherited) {
+	PropertyDefinition<?> result = null;
 
-		result = DataUtil.createPropDef(id, localName, localNameSpace,
-				queryName, displayName, description, datatype, cardinality,
-				updatability, required, queryable, inherited, null, openChoice,
-				orderable, defaultValue, null, null, null, null, null, null,
-				null);
+	// Default values
+	String localName = id;
+	String localNameSpace = getNameSpace(repositoryId);
+	String queryName = id;
+	String displayName = id;
+	String description = id;
+	boolean openChoice = false;
 
-		return result;
-	}
+	result = DataUtil.createPropDef(id, localName, localNameSpace,
+			queryName, displayName, description, datatype, cardinality,
+			updatability, required, queryable, inherited, null, openChoice,
+			orderable, defaultValue, null, null, null, null, null, null,
+			null);
+
+	return result;
+}
+
+/**
+ * Checks if a property ID represents a standard CMIS property that should be inherited.
+ * Standard CMIS properties are defined in PropertyIds class and are inherited by all types.
+ */
+private boolean isStandardCmisProperty(String propertyId) {
+	// All CMIS standard properties start with "cmis:" and are inherited
+	return propertyId != null && propertyId.startsWith("cmis:");
+}
 	
 	private String getNameSpace(String repositoryId){
 		return repositoryInfoMap.get(repositoryId).getNameSpace();
@@ -1148,6 +1169,126 @@ public class TypeManagerImpl implements TypeManager {
 		return null;
 	}
 
+	/**
+	 * Get BaseTypeId-specific default values per CMIS 1.1 specification
+	 * Based on nemakiware-basetype.properties configuration
+	 */
+	private Map<String, Object> getBaseTypeIdDefaults(BaseTypeId baseTypeId) {
+		Map<String, Object> defaults = new HashMap<>();
+		
+		if (baseTypeId == null) {
+			// Generic defaults if BaseTypeId is unknown
+			defaults.put("creatable", true);
+			defaults.put("fileable", true);
+			defaults.put("queryable", true);
+			defaults.put("controllablePolicy", false);
+			defaults.put("controllableAcl", true);
+			defaults.put("fulltextIndexed", true);
+			defaults.put("includedInSupertypeQuery", true);
+			defaults.put("typeMutabilityCreate", true);
+			defaults.put("typeMutabilityUpdate", false);
+			defaults.put("typeMutabilityDelete", true);
+			return defaults;
+		}
+		
+		switch (baseTypeId) {
+			case CMIS_DOCUMENT:
+				defaults.put("creatable", true);
+				defaults.put("fileable", true);
+				defaults.put("queryable", true);
+				defaults.put("controllablePolicy", false);
+				defaults.put("controllableAcl", true);
+				defaults.put("fulltextIndexed", true);
+				defaults.put("includedInSupertypeQuery", true);
+				defaults.put("typeMutabilityCreate", true);
+				defaults.put("typeMutabilityUpdate", false);
+				defaults.put("typeMutabilityDelete", true);
+				break;
+				
+			case CMIS_FOLDER:
+				defaults.put("creatable", true);
+				defaults.put("fileable", false); // Folders are not fileable in other folders
+				defaults.put("queryable", true);
+				defaults.put("controllablePolicy", false);
+				defaults.put("controllableAcl", true);
+				defaults.put("fulltextIndexed", false);
+				defaults.put("includedInSupertypeQuery", true);
+				defaults.put("typeMutabilityCreate", true);
+				defaults.put("typeMutabilityUpdate", false);
+				defaults.put("typeMutabilityDelete", true);
+				break;
+				
+			case CMIS_RELATIONSHIP:
+				defaults.put("creatable", true);
+				defaults.put("fileable", false);
+				defaults.put("queryable", true);
+				defaults.put("controllablePolicy", false);
+				defaults.put("controllableAcl", true);
+				defaults.put("fulltextIndexed", false);
+				defaults.put("includedInSupertypeQuery", true);
+				defaults.put("typeMutabilityCreate", true);
+				defaults.put("typeMutabilityUpdate", false);
+				defaults.put("typeMutabilityDelete", true);
+				break;
+				
+			case CMIS_POLICY:
+				defaults.put("creatable", false);
+				defaults.put("fileable", false);
+				defaults.put("queryable", false);
+				defaults.put("controllablePolicy", false);
+				defaults.put("controllableAcl", false);
+				defaults.put("fulltextIndexed", false);
+				defaults.put("includedInSupertypeQuery", true);
+				defaults.put("typeMutabilityCreate", false);
+				defaults.put("typeMutabilityUpdate", false);
+				defaults.put("typeMutabilityDelete", false);
+				break;
+				
+			case CMIS_ITEM:
+				defaults.put("creatable", true);
+				defaults.put("fileable", true);
+				defaults.put("queryable", false);
+				defaults.put("controllablePolicy", false);
+				defaults.put("controllableAcl", false);
+				defaults.put("fulltextIndexed", false);
+				defaults.put("includedInSupertypeQuery", true);
+				defaults.put("typeMutabilityCreate", true);
+				defaults.put("typeMutabilityUpdate", false);
+				defaults.put("typeMutabilityDelete", true);
+				break;
+				
+			case CMIS_SECONDARY:
+				// CRITICAL: Secondary types per CMIS 1.1 specification
+				defaults.put("creatable", false);
+				defaults.put("fileable", false);
+				defaults.put("queryable", true);
+				defaults.put("controllablePolicy", false);
+				defaults.put("controllableAcl", false);
+				defaults.put("fulltextIndexed", true);
+				defaults.put("includedInSupertypeQuery", true);
+				defaults.put("typeMutabilityCreate", false);
+				defaults.put("typeMutabilityUpdate", false);
+				defaults.put("typeMutabilityDelete", true);
+				break;
+				
+			default:
+				// Unknown base type - use conservative defaults
+				defaults.put("creatable", false);
+				defaults.put("fileable", false);
+				defaults.put("queryable", true);
+				defaults.put("controllablePolicy", false);
+				defaults.put("controllableAcl", false);
+				defaults.put("fulltextIndexed", false);
+				defaults.put("includedInSupertypeQuery", true);
+				defaults.put("typeMutabilityCreate", false);
+				defaults.put("typeMutabilityUpdate", false);
+				defaults.put("typeMutabilityDelete", false);
+				break;
+		}
+		
+		return defaults;
+	}
+
 	private void buildTypeDefinitionBaseFromDB(String repositoryId,
 			AbstractTypeDefinition type, AbstractTypeDefinition parentType, NemakiTypeDefinition nemakiType) {
 		type.setId(nemakiType.getTypeId());
@@ -1159,40 +1300,42 @@ public class TypeManagerImpl implements TypeManager {
 		type.setParentTypeId(nemakiType.getParentId());
 		type.setDescription(nemakiType.getDescription());
 
-		// CRITICAL FIX: Null safety for parentType (esp. secondary types)
+		// CRITICAL FIX: BaseTypeId-specific default values per CMIS 1.1 specification
+		Map<String, Object> baseDefaults = getBaseTypeIdDefaults(nemakiType.getBaseId());
+		
 		boolean creatable = (nemakiType.isCreatable() == null) ? 
-				(parentType != null ? parentType.isCreatable() : true) : nemakiType.isCreatable();
+				(parentType != null ? parentType.isCreatable() : (Boolean) baseDefaults.get("creatable")) : nemakiType.isCreatable();
 		type.setIsCreatable(creatable);
 		boolean filable = (nemakiType.isFilable() == null) ? 
-				(parentType != null ? parentType.isFileable() : false) : nemakiType.isFilable();
+				(parentType != null ? parentType.isFileable() : (Boolean) baseDefaults.get("fileable")) : nemakiType.isFilable();
 		type.setIsFileable(filable);
 		boolean queryable = (nemakiType.isQueryable() == null) ? 
-				(parentType != null ? parentType.isQueryable() : true) : nemakiType.isQueryable();
+				(parentType != null ? parentType.isQueryable() : (Boolean) baseDefaults.get("queryable")) : nemakiType.isQueryable();
 		type.setIsQueryable(queryable);
 		boolean controllablePolicy = (nemakiType.isControllablePolicy() == null) ? 
-				(parentType != null ? parentType.isControllablePolicy() : false) : nemakiType.isControllablePolicy();
+				(parentType != null ? parentType.isControllablePolicy() : (Boolean) baseDefaults.get("controllablePolicy")) : nemakiType.isControllablePolicy();
 		type.setIsControllablePolicy(controllablePolicy);
 		boolean controllableACL = (nemakiType.isControllableACL() == null) ? 
-				(parentType != null ? parentType.isControllableAcl() : false) : nemakiType.isControllableACL();
+				(parentType != null ? parentType.isControllableAcl() : (Boolean) baseDefaults.get("controllableAcl")) : nemakiType.isControllableACL();
 		type.setIsControllableAcl(controllableACL);
 		boolean fulltextIndexed = (nemakiType.isFulltextIndexed() == null) ? 
-				(parentType != null ? parentType.isFulltextIndexed() : true) : nemakiType.isFulltextIndexed();
+				(parentType != null ? parentType.isFulltextIndexed() : (Boolean) baseDefaults.get("fulltextIndexed")) : nemakiType.isFulltextIndexed();
 		type.setIsFulltextIndexed(fulltextIndexed);
 		boolean includedInSupertypeQuery = (nemakiType
 				.isIncludedInSupertypeQuery() == null) ? 
-				(parentType != null ? parentType.isIncludedInSupertypeQuery() : true) : nemakiType
+				(parentType != null ? parentType.isIncludedInSupertypeQuery() : (Boolean) baseDefaults.get("includedInSupertypeQuery")) : nemakiType
 				.isIncludedInSupertypeQuery();
 		type.setIsIncludedInSupertypeQuery(includedInSupertypeQuery);
 
-		// CRITICAL FIX: Type Mutability - Null safety for parentType (esp. secondary types)
+		// CRITICAL FIX: Type Mutability with BaseTypeId-specific defaults
 		boolean create = (nemakiType.isTypeMutabilityCreate() == null) ? 
-			(parentType != null ? parentType.getTypeMutability().canCreate() : true) : nemakiType
+			(parentType != null ? parentType.getTypeMutability().canCreate() : (Boolean) baseDefaults.get("typeMutabilityCreate")) : nemakiType
 			.isTypeMutabilityCreate();
 		boolean update = (nemakiType.isTypeMutabilityUpdate() == null) ? 
-			(parentType != null ? parentType.getTypeMutability().canUpdate() : false) : nemakiType
+			(parentType != null ? parentType.getTypeMutability().canUpdate() : (Boolean) baseDefaults.get("typeMutabilityUpdate")) : nemakiType
 			.isTypeMutabilityUpdate();
 		boolean delete = (nemakiType.isTypeMutabilityDelete() == null) ? 
-			(parentType != null ? parentType.getTypeMutability().canDelete() : true) : nemakiType
+			(parentType != null ? parentType.getTypeMutability().canDelete() : (Boolean) baseDefaults.get("typeMutabilityDelete")) : nemakiType
 			.isTypeMutabilityDelete();
 		TypeMutabilityImpl typeMutability = new TypeMutabilityImpl();
 		typeMutability.setCanCreate(create);

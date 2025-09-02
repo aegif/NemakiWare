@@ -219,6 +219,13 @@ public class ExceptionServiceImpl implements ExceptionService,
 	public void invalidArgumentCreatableType(String repositoryId, TypeDefinition type) {
 		String msg = "";
 
+		// CRITICAL FIX: Explicit rejection of secondary type creation per CMIS 1.1 specification
+		// Secondary types cannot be created directly - they are system-defined only
+		if (type.getBaseTypeId() == BaseTypeId.CMIS_SECONDARY) {
+			msg = "Secondary types cannot be created directly. Secondary types are system-defined and managed automatically.";
+			throw new CmisInvalidArgumentException(msg + " [objectTypeId = " + type.getId() + "]", HTTP_STATUS_CODE_400);
+		}
+
 		try {
 			String parentId = type.getParentTypeId();
 			
