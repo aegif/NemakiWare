@@ -54,6 +54,7 @@ public class NemakiPropertyDefinition extends NodeBase {
 	private List<Choice> choices;
 	private boolean openChoice;
 	private List<Object> defaultValue;
+	private boolean inherited = false;  // CMIS 1.1 inherited flag - true for properties inherited from parent types
 
 	// Attributes specific to Integer
 	private Long minValue;
@@ -126,6 +127,9 @@ public class NemakiPropertyDefinition extends NodeBase {
 		setDecimalMinValue(detail.getDecimalMinValue());
 		setDecimalMaxValue(detail.getDecimalMaxValue());
 		setMaxLength(detail.getMaxLength());
+		
+		// CRITICAL FIX: Set inherited flag from core
+		setInherited(core.isInherited());
 	}
 	
 	/**
@@ -253,6 +257,14 @@ public class NemakiPropertyDefinition extends NodeBase {
 		setOpenChoice(propertyDefinition.isOpenChoice() != null ? propertyDefinition.isOpenChoice() : false);
 		
 		setDefaultValue(new ArrayList<Object>(propertyDefinition.getDefaultValue()));
+		
+		// CRITICAL FIX: Set inherited flag based on property namespace
+		// CMIS standard properties (cmis:*) are inherited, custom properties are not
+		if (correctedPropertyId != null && correctedPropertyId.startsWith("cmis:")) {
+			setInherited(true);  // CMIS standard properties are inherited
+		} else {
+			setInherited(false); // Custom properties are not inherited
+		}
 
 	}
 
@@ -468,6 +480,14 @@ public class NemakiPropertyDefinition extends NodeBase {
 
 	public void setMaxLength(Long maxLength) {
 		this.maxLength = maxLength;
+	}
+
+	public boolean isInherited() {
+		return inherited;
+	}
+
+	public void setInherited(boolean inherited) {
+		this.inherited = inherited;
 	}
 
 }

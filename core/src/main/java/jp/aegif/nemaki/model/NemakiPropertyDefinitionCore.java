@@ -32,6 +32,7 @@ public class NemakiPropertyDefinitionCore extends NodeBase{
 	private PropertyType propertyType;
 	private String queryName;
 	private Cardinality cardinality;
+	private boolean inherited = false;  // CMIS 1.1 inherited flag - true for properties inherited from parent types
 
 	public NemakiPropertyDefinitionCore() {
 		super();
@@ -64,6 +65,42 @@ public class NemakiPropertyDefinitionCore extends NodeBase{
 		setPropertyType(p.getPropertyType());
 		setQueryName(p.getQueryName());
 		setCardinality(p.getCardinality());
+		
+		// CRITICAL FIX: Set inherited flag based on property namespace
+		// CMIS standard properties (cmis:*) are inherited, custom properties are not
+		String propertyId = p.getPropertyId();
+		if (propertyId != null && propertyId.startsWith("cmis:")) {
+			setInherited(true);  // CMIS standard properties are inherited
+		} else {
+			setInherited(false); // Custom properties are not inherited
+		}
+	}
+
+	/**
+	 * CRITICAL FIX: Constructor for PropertyDefinition<?> to prevent contamination
+	 * This constructor handles direct PropertyDefinition objects from OpenCMIS TCK
+	 * and ensures no property ID/type contamination from object reuse.
+	 */
+	public NemakiPropertyDefinitionCore(org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?> propertyDefinition) {
+		super();
+		setType(NodeType.PROPERTY_DEFINITION_CORE.value());
+		
+		// CRITICAL FIX: Directly extract properties from PropertyDefinition without contamination
+		String originalPropertyId = propertyDefinition.getId();
+		
+		// CRITICAL FIX: Preserve exact property ID and type from source PropertyDefinition
+		setPropertyId(originalPropertyId);
+		setPropertyType(propertyDefinition.getPropertyType());
+		setQueryName(propertyDefinition.getQueryName());
+		setCardinality(propertyDefinition.getCardinality());
+		
+		// CRITICAL FIX: Set inherited flag based on property namespace
+		// CMIS standard properties (cmis:*) are inherited, custom properties are not
+		if (originalPropertyId != null && originalPropertyId.startsWith("cmis:")) {
+			setInherited(true);  // CMIS standard properties are inherited
+		} else {
+			setInherited(false); // Custom properties are not inherited
+		}
 	}
 
 	public String getPropertyId() {
@@ -89,5 +126,13 @@ public class NemakiPropertyDefinitionCore extends NodeBase{
 	}
 	public void setCardinality(Cardinality cardinality) {
 		this.cardinality = cardinality;
+	}
+	
+	public boolean isInherited() {
+		return inherited;
+	}
+	
+	public void setInherited(boolean inherited) {
+		this.inherited = inherited;
 	}
 }

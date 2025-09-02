@@ -173,8 +173,14 @@ public class TypeServiceImpl implements TypeService{
 											nemakiProp.setDisplayName(parentProp.getDisplayName());
 											nemakiProp.setDescription(parentProp.getDescription());
 											
+											// CRITICAL FIX: Set inherited flag for properties inherited from parent types
+											nemakiProp.setInherited(true);
+											
 											// Create PropertyDefinitionCore
 											NemakiPropertyDefinitionCore core = new NemakiPropertyDefinitionCore(nemakiProp);
+											
+											// CRITICAL FIX: Set inherited flag on core as well for consistency
+											core.setInherited(true);
 											NemakiPropertyDefinitionCore createdCore = contentDaoService.createPropertyDefinitionCore(repositoryId, core);
 											log.info("DEBUG: PropertyDefinitionCore created successfully: " + propertyId + " -> " + createdCore.getId());
 											inheritedCount++;

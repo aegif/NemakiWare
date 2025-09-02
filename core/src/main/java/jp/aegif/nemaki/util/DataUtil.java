@@ -677,9 +677,15 @@ public class DataUtil {
 			}
 		}
 		
+		// CRITICAL FIX: CMIS 1.1 inherited flag - CMIS基本プロパティはinherited=true
+		boolean inherited = false;
+		if (id != null && id.startsWith("cmis:")) {
+			inherited = true;  // CMIS standard properties are inherited from base types
+		}
+		
 		PropertyDefinition<?> core = createPropDef(id, null, null, queryName,
 				null, null, propertyType, cardinality, null, false, false,
-				false, null, false, false, null, null, null, null, null, null,
+				inherited, null, false, false, null, null, null, null, null, null,
 				null, null);
 		return core;
 	}

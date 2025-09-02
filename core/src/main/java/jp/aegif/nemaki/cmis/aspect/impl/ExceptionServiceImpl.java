@@ -275,8 +275,12 @@ public class ExceptionServiceImpl implements ExceptionService,
 					boolean canCreate = (parent.getTypeMutability() != null && parent.getTypeMutability().canCreate() != null) 
 						? parent.getTypeMutability().canCreate() : false;
 					
-					// Check if this is a direct base type creation attempt (not custom subtype)
-					boolean isDirectBaseTypeCreation = (typeId != null && typeId.startsWith("cmis:"));
+					// CMIS 1.1 SPECIFICATION COMPLIANCE: Allow custom type creation, restrict only direct base type creation
+					// More precise direct base type detection: only restrict the 6 core CMIS base types
+					boolean isDirectBaseTypeCreation = (typeId != null && 
+						(typeId.equals("cmis:document") || typeId.equals("cmis:folder") || 
+						 typeId.equals("cmis:relationship") || typeId.equals("cmis:policy") || 
+						 typeId.equals("cmis:item") || typeId.equals("cmis:secondary")));
 					
 					if (!canCreate && isDirectBaseTypeCreation) {
 						msg = "Direct base type creation not allowed - TypeMutability.canCreate = false";

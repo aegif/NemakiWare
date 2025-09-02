@@ -922,8 +922,10 @@ public class TypeManagerImpl implements TypeManager {
 			boolean queryable, boolean orderable, List<?> defaultValue) {
 	
 	// CRITICAL FIX: Determine inherited based on property ID and CMIS specification
-	// Standard CMIS properties are inherited from base types
-	boolean inherited = isStandardCmisProperty(id);
+	// For base type property definitions, CMIS properties are not inherited (they define them)
+	// This method is used primarily for base type property creation
+	boolean isBaseTypeDefinition = true; // This method is primarily used for base type definitions
+	boolean inherited = isStandardCmisProperty(id, isBaseTypeDefinition);
 	
 	return createDefaultPropDef(repositoryId, id, datatype, cardinality, updatability, 
 		required, queryable, orderable, defaultValue, inherited);
@@ -953,15 +955,15 @@ private PropertyDefinition<?> createDefaultPropDef(String repositoryId,
 }
 
 /**
- * CRITICAL FIX: For base types, CMIS properties are NOT inherited 
- * Base types define these properties originally, only subtypes inherit them
- * This fixes systematic TCK property definition failures
+ * CRITICAL FIX: Determine if a CMIS property should be marked as inherited
+ * Based on CMIS 1.1 specification:
+ * - Base types define CMIS properties originally (inherited=false)
+ * - Subtypes inherit CMIS properties from parents (inherited=true)
  */
-private boolean isStandardCmisProperty(String propertyId) {
-	// For base types, CMIS properties should be inherited=false 
-	// because base types are the original definers of these properties
-	// Only subtypes inherit properties from their parents
-	return false;
+private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefinition) {
+	// For base types: CMIS properties are NOT inherited (they define them)
+	// For subtypes: CMIS properties ARE inherited (they inherit from parents)  
+	return propertyId != null && propertyId.startsWith("cmis:") && !isBaseTypeDefinition;
 }
 	
 	private String getNameSpace(String repositoryId){
@@ -1415,6 +1417,9 @@ private boolean isStandardCmisProperty(String propertyId) {
 				
 				freshCore.setPropertyType(trustedPropertyType);
 				freshCore.setCardinality(trustedCardinality);
+				
+				// CRITICAL FIX: Copy inherited flag from original core to prevent inheritance information loss
+				freshCore.setInherited(originalCore.isInherited());
 
 										
 				NemakiPropertyDefinition p = new NemakiPropertyDefinition(freshCore, detail);
