@@ -307,11 +307,11 @@ public class TypeServiceImpl implements TypeService{
 		String originalPropertyId = propertyDefinition.getPropertyId();
 		
 		// ENHANCED DEBUGGING: Track all property creation attempts
-		log.error("=== TCK PROPERTY CREATION DEBUG START ===");
-		log.error("Repository ID: " + repositoryId);
-		log.error("Original Property ID: " + originalPropertyId);
-		log.error("Property Type: " + propertyDefinition.getPropertyType());
-		log.error("Property LocalName: " + propertyDefinition.getLocalName());
+		log.debug("=== TCK PROPERTY CREATION DEBUG START ===");
+		log.debug("Repository ID: " + repositoryId);
+		log.debug("Original Property ID: " + originalPropertyId);
+		log.debug("Property Type: " + propertyDefinition.getPropertyType());
+		log.debug("Property LocalName: " + propertyDefinition.getLocalName());
 		
 		if (log.isDebugEnabled()) {
 			log.debug("Creating property definition - ID: " + originalPropertyId + 
@@ -326,26 +326,26 @@ public class TypeServiceImpl implements TypeService{
 			(originalPropertyId.startsWith("tck:") || 
 			 (!originalPropertyId.startsWith("cmis:") && originalPropertyId.contains(":")));
 		
-		log.error("CUSTOM PROPERTY DETECTION: " + isCustomProperty);
-		log.error("Property ID starts with tck:: " + (originalPropertyId != null && originalPropertyId.startsWith("tck:")));
-		log.error("Property ID contains :: " + (originalPropertyId != null && originalPropertyId.contains(":")));
-		log.error("Property ID starts with cmis:: " + (originalPropertyId != null && originalPropertyId.startsWith("cmis:")));
+		log.debug("CUSTOM PROPERTY DETECTION: " + isCustomProperty);
+		log.debug("Property ID starts with tck:: " + (originalPropertyId != null && originalPropertyId.startsWith("tck:")));
+		log.debug("Property ID contains :: " + (originalPropertyId != null && originalPropertyId.contains(":")));
+		log.debug("Property ID starts with cmis:: " + (originalPropertyId != null && originalPropertyId.startsWith("cmis:")));
 		
 		String coreNodeId = "";
 		
 		if (isCustomProperty) {
 			// CUSTOM PROPERTIES: Create dedicated cores with preserved original IDs
-			log.error("=== CUSTOM PROPERTY PATH ACTIVATED ===");
+			log.debug("=== CUSTOM PROPERTY PATH ACTIVATED ===");
 			if (log.isInfoEnabled()) {
 				log.info("Creating custom property: " + originalPropertyId + " (preserving exact ID)");
 			}
 			
 			// CRITICAL: Preserve the exact property ID - no modification unless conflict
 			String preservedPropertyId = originalPropertyId;
-			log.error("PRESERVED PROPERTY ID: " + preservedPropertyId);
+			log.debug("PRESERVED PROPERTY ID: " + preservedPropertyId);
 			
 			if (!isUniquePropertyIdInRepository(repositoryId, preservedPropertyId)) {
-				log.error("UNIQUENESS CHECK FAILED - checking for exact conflicts");
+				log.debug("UNIQUENESS CHECK FAILED - checking for exact conflicts");
 				// Only add timestamp for genuine same-property conflicts
 				List<NemakiPropertyDefinitionCore> cores = getPropertyDefinitionCores(repositoryId);
 				boolean exactConflict = false;
@@ -353,7 +353,7 @@ public class TypeServiceImpl implements TypeService{
 					for (NemakiPropertyDefinitionCore core : cores) {
 						if (preservedPropertyId.equals(core.getPropertyId())) {
 							exactConflict = true;
-							log.error("EXACT CONFLICT DETECTED with existing core: " + core.getId());
+							log.debug("EXACT CONFLICT DETECTED with existing core: " + core.getId());
 							break;
 						}
 					}
@@ -363,33 +363,33 @@ public class TypeServiceImpl implements TypeService{
 					if (log.isWarnEnabled()) {
 						log.warn("Property ID conflict resolved with timestamp: " + preservedPropertyId);
 					}
-					log.error("CONFLICT RESOLVED WITH TIMESTAMP: " + preservedPropertyId);
+					log.debug("CONFLICT RESOLVED WITH TIMESTAMP: " + preservedPropertyId);
 				}
 			} else {
-				log.error("UNIQUENESS CHECK PASSED - no conflicts");
+				log.debug("UNIQUENESS CHECK PASSED - no conflicts");
 			}
 			
-			log.error("FINAL PRESERVED PROPERTY ID: " + preservedPropertyId);
+			log.debug("FINAL PRESERVED PROPERTY ID: " + preservedPropertyId);
 			_core.setPropertyId(preservedPropertyId);
-			log.error("CORE PROPERTY ID SET TO: " + _core.getPropertyId());
+			log.debug("CORE PROPERTY ID SET TO: " + _core.getPropertyId());
 			
 			// Create new dedicated property core
-			log.error("CREATING NEW DEDICATED PROPERTY CORE");
+			log.debug("CREATING NEW DEDICATED PROPERTY CORE");
 			NemakiPropertyDefinitionCore core = contentDaoService
 					.createPropertyDefinitionCore(repositoryId, _core);
 			coreNodeId = core.getId();
 			
-			log.error("CUSTOM PROPERTY CORE CREATED:");
-			log.error("  Core Node ID: " + coreNodeId);
-			log.error("  Core Property ID: " + core.getPropertyId());
-			log.error("  Original Property ID: " + originalPropertyId);
+			log.debug("CUSTOM PROPERTY CORE CREATED:");
+			log.debug("  Core Node ID: " + coreNodeId);
+			log.debug("  Core Property ID: " + core.getPropertyId());
+			log.debug("  Original Property ID: " + originalPropertyId);
 			
 			if (log.isInfoEnabled()) {
 				log.info("Custom property core created: " + coreNodeId + " (ID: " + preservedPropertyId + ")");
 			}
 		} else {
 			// CMIS SYSTEM PROPERTIES: Standard reuse logic for CMIS properties
-			log.error("=== CMIS SYSTEM PROPERTY PATH ACTIVATED ===");
+			log.debug("=== CMIS SYSTEM PROPERTY PATH ACTIVATED ===");
 			if (log.isDebugEnabled()) {
 				log.debug("Processing CMIS system property: " + originalPropertyId);
 			}
@@ -406,39 +406,39 @@ public class TypeServiceImpl implements TypeService{
 				// Reuse existing CMIS core
 				NemakiPropertyDefinitionCore core = corePropertyIds.get(originalPropertyId);
 				coreNodeId = core.getId();
-				log.error("REUSING EXISTING CMIS CORE: " + coreNodeId + " for " + originalPropertyId);
+				log.debug("REUSING EXISTING CMIS CORE: " + coreNodeId + " for " + originalPropertyId);
 				if (log.isDebugEnabled()) {
 					log.debug("Reusing existing CMIS core: " + coreNodeId + " for " + originalPropertyId);
 				}
 			} else {
 				// Create new CMIS core
-				log.error("CREATING NEW CMIS CORE for " + originalPropertyId);
+				log.debug("CREATING NEW CMIS CORE for " + originalPropertyId);
 				NemakiPropertyDefinitionCore core = contentDaoService
 						.createPropertyDefinitionCore(repositoryId, _core);
 				coreNodeId = core.getId();
-				log.error("NEW CMIS CORE CREATED: " + coreNodeId + " with property ID: " + core.getPropertyId());
+				log.debug("NEW CMIS CORE CREATED: " + coreNodeId + " with property ID: " + core.getPropertyId());
 				if (log.isDebugEnabled()) {
 					log.debug("Created new CMIS core: " + coreNodeId + " for " + originalPropertyId);
 				}
 			}
 		}
 
-		log.error("PROCEEDING TO CREATE PROPERTY DETAIL with core: " + coreNodeId);
+		log.debug("PROCEEDING TO CREATE PROPERTY DETAIL with core: " + coreNodeId);
 		
 		// Create a detail
 		NemakiPropertyDefinitionDetail _detail = new NemakiPropertyDefinitionDetail(
 				propertyDefinition, coreNodeId);
-		log.error("DETAIL CREATED - LocalName: " + _detail.getLocalName());
+		log.debug("DETAIL CREATED - LocalName: " + _detail.getLocalName());
 		
 		NemakiPropertyDefinitionDetail detail = contentDaoService
 				.createPropertyDefinitionDetail(repositoryId, _detail);
 
-		log.error("FINAL PROPERTY DEFINITION CREATED:");
-		log.error("  Original Property ID: " + originalPropertyId);
-		log.error("  Detail ID: " + detail.getId()); 
-		log.error("  Detail LocalName: " + detail.getLocalName());
-		log.error("  Core Node ID: " + coreNodeId);
-		log.error("=== TCK PROPERTY CREATION DEBUG END ===");
+		log.debug("FINAL PROPERTY DEFINITION CREATED:");
+		log.debug("  Original Property ID: " + originalPropertyId);
+		log.debug("  Detail ID: " + detail.getId()); 
+		log.debug("  Detail LocalName: " + detail.getLocalName());
+		log.debug("  Core Node ID: " + coreNodeId);
+		log.debug("=== TCK PROPERTY CREATION DEBUG END ===");
 		
 		if (log.isInfoEnabled()) {
 			log.info("Property definition created: " + originalPropertyId + 

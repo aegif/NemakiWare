@@ -215,6 +215,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         // CRITICAL FIX: Extract cmisaction once at global scope to avoid null-initialization bug
         String cmisaction = request.getParameter("cmisaction");
         
+        // CRITICAL DEBUG: Track cmisaction parameter extraction
+        System.err.println("*** SERVICE DEBUG: cmisaction='" + cmisaction + "', method=" + method + ", pathInfo=" + pathInfo + " ***");
+        System.err.println("*** SERVICE DEBUG: contentType=" + contentType + ", queryString=" + queryString + " ***");
+        
         // PARAMETER CORRUPTION FIX: Do NOT wrap request - let OpenCMIS handle multipart directly  
         if (contentType != null && contentType.startsWith("multipart/form-data")) {
             // Check if multipart parameters are available
@@ -407,10 +411,13 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             }
             
             // CMIS OPERATIONS ROUTER: Handle missing Browser Binding operations that cause "Unknown operation" errors
+            System.err.println("*** SERVICE DEBUG FINAL: About to call routeCmisAction with cmisaction='" + cmisaction + "' ***");
             if (routeCmisAction(cmisaction, request, response, pathInfo, method)) {
+                System.err.println("*** SERVICE DEBUG FINAL: routeCmisAction returned TRUE - bypassing parent service ***");
                 log.debug("CMIS ROUTER: Action '" + cmisaction + "' handled successfully - bypassing parent service");
                 return; // Don't delegate to parent - we handled it completely
             }
+            System.err.println("*** SERVICE DEBUG FINAL: routeCmisAction returned FALSE - delegating to parent service ***");
         }
         
         // CRITICAL FIX: Handle OpenCMIS 1.2.0-SNAPSHOT strict selector validation for TCK compatibility

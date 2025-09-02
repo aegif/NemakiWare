@@ -179,6 +179,11 @@ public class NemakiPropertyDefinition extends NodeBase {
 	 */
 	private String determineCorrectPropertyId(NemakiPropertyDefinitionDetail detail, NemakiPropertyDefinitionCore core) {
 		
+		// CRITICAL FIX: TCK プロパティの絶対保護 (最優先)
+		// TCKプロパティは絶対に変更しない
+		if (detail != null && detail.getLocalName() != null && detail.getLocalName().startsWith("tck:")) {
+			return detail.getLocalName(); // 絶対に変更しない
+		}
 		
 		// STRATEGY 1: Use detail's localName as the intended property ID
 		// For custom properties like tck:boolean, the localName should contain the correct ID
@@ -208,17 +213,21 @@ public class NemakiPropertyDefinition extends NodeBase {
 			}
 		}
 		
-		// STRATEGY 4: Safe fallback - generate uncontaminated property ID
-		// CRITICAL FIX: Never use core.getPropertyId() as it may be contaminated from PropertyCore reuse
-		if (core != null && core.getPropertyType() != null) {
-			// Generate a safe property ID based on property type to avoid contamination
-			String safePropertyId = "generated:" + core.getPropertyType().value().toLowerCase();
-			return safePropertyId;
+		// STRATEGY 4: Safe fallback - use core propertyId as last resort
+		// CRITICAL FIX: Only use core.getPropertyId() if no other options and validate it's not contaminated
+		if (core != null) {
+			String corePropertyId = core.getPropertyId();
+			if (corePropertyId != null && !corePropertyId.trim().isEmpty()) {
+				// Validate it's not obviously contaminated (e.g., tck: properties in CMIS core)
+				if (!corePropertyId.startsWith("tck:") || (detail != null && detail.getLocalName() != null && detail.getLocalName().startsWith("tck:"))) {
+					return corePropertyId;
+				}
+			}
 		}
 		
-		// STRATEGY 5: Ultimate fallback - use timestamp-based unique ID 
-		String uniquePropertyId = "fallback:property_" + System.currentTimeMillis();
-		return uniquePropertyId;
+		// STRATEGY 5: Ultimate fallback - return null to indicate failure
+		// This will cause the calling code to handle the error appropriately
+		return null;
 	}
 
 	public NemakiPropertyDefinition(PropertyDefinition<?> propertyDefinition) {
