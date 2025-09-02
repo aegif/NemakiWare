@@ -1159,40 +1159,41 @@ public class TypeManagerImpl implements TypeManager {
 		type.setParentTypeId(nemakiType.getParentId());
 		type.setDescription(nemakiType.getDescription());
 
-		boolean creatable = (nemakiType.isCreatable() == null) ? parentType
-				.isCreatable() : nemakiType.isCreatable();
+		// CRITICAL FIX: Null safety for parentType (esp. secondary types)
+		boolean creatable = (nemakiType.isCreatable() == null) ? 
+				(parentType != null ? parentType.isCreatable() : true) : nemakiType.isCreatable();
 		type.setIsCreatable(creatable);
-		boolean filable = (nemakiType.isFilable() == null) ? parentType
-				.isFileable() : nemakiType.isFilable();
+		boolean filable = (nemakiType.isFilable() == null) ? 
+				(parentType != null ? parentType.isFileable() : false) : nemakiType.isFilable();
 		type.setIsFileable(filable);
-		boolean queryable = (nemakiType.isQueryable() == null) ? parentType
-				.isQueryable() : nemakiType.isQueryable();
+		boolean queryable = (nemakiType.isQueryable() == null) ? 
+				(parentType != null ? parentType.isQueryable() : true) : nemakiType.isQueryable();
 		type.setIsQueryable(queryable);
-		boolean controllablePolicy = (nemakiType.isControllablePolicy() == null) ? parentType
-				.isControllablePolicy() : nemakiType.isControllablePolicy();
+		boolean controllablePolicy = (nemakiType.isControllablePolicy() == null) ? 
+				(parentType != null ? parentType.isControllablePolicy() : false) : nemakiType.isControllablePolicy();
 		type.setIsControllablePolicy(controllablePolicy);
-		boolean controllableACL = (nemakiType.isControllableACL() == null) ? parentType
-				.isControllableAcl() : nemakiType.isControllableACL();
+		boolean controllableACL = (nemakiType.isControllableACL() == null) ? 
+				(parentType != null ? parentType.isControllableAcl() : false) : nemakiType.isControllableACL();
 		type.setIsControllableAcl(controllableACL);
-		boolean fulltextIndexed = (nemakiType.isFulltextIndexed() == null) ? parentType
-				.isFulltextIndexed() : nemakiType.isFulltextIndexed();
+		boolean fulltextIndexed = (nemakiType.isFulltextIndexed() == null) ? 
+				(parentType != null ? parentType.isFulltextIndexed() : true) : nemakiType.isFulltextIndexed();
 		type.setIsFulltextIndexed(fulltextIndexed);
 		boolean includedInSupertypeQuery = (nemakiType
-				.isIncludedInSupertypeQuery() == null) ? parentType
-				.isIncludedInSupertypeQuery() : nemakiType
+				.isIncludedInSupertypeQuery() == null) ? 
+				(parentType != null ? parentType.isIncludedInSupertypeQuery() : true) : nemakiType
 				.isIncludedInSupertypeQuery();
 		type.setIsIncludedInSupertypeQuery(includedInSupertypeQuery);
 
-		// Type Mutability
-		boolean create = (nemakiType.isTypeMutabilityCreate() == null) ? parentType
-				.getTypeMutability().canCreate() : nemakiType
-				.isTypeMutabilityCreate();
-		boolean update = (nemakiType.isTypeMutabilityUpdate() == null) ? parentType
-				.getTypeMutability().canUpdate() : nemakiType
-				.isTypeMutabilityUpdate();
-		boolean delete = (nemakiType.isTypeMutabilityDelete() == null) ? parentType
-				.getTypeMutability().canDelete() : nemakiType
-				.isTypeMutabilityDelete();
+		// CRITICAL FIX: Type Mutability - Null safety for parentType (esp. secondary types)
+		boolean create = (nemakiType.isTypeMutabilityCreate() == null) ? 
+			(parentType != null ? parentType.getTypeMutability().canCreate() : true) : nemakiType
+			.isTypeMutabilityCreate();
+		boolean update = (nemakiType.isTypeMutabilityUpdate() == null) ? 
+			(parentType != null ? parentType.getTypeMutability().canUpdate() : false) : nemakiType
+			.isTypeMutabilityUpdate();
+		boolean delete = (nemakiType.isTypeMutabilityDelete() == null) ? 
+			(parentType != null ? parentType.getTypeMutability().canDelete() : true) : nemakiType
+			.isTypeMutabilityDelete();
 		TypeMutabilityImpl typeMutability = new TypeMutabilityImpl();
 		typeMutability.setCanCreate(create);
 		typeMutability.setCanUpdate(update);

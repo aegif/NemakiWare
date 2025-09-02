@@ -111,6 +111,11 @@ public class DataUtil {
 		try {
 			if (type == null) return null;
 			
+			// CRITICAL DEBUG: Track method execution and deep copy operation
+			String typeId = type.getId();
+			int originalPropCount = (type.getPropertyDefinitions() != null) ? type.getPropertyDefinitions().size() : 0;
+			System.out.println("DEBUG copyTypeDefinition: Called for type=" + typeId + " with " + originalPropCount + " properties");
+			
 			// Create a proper copy using copyTypeDefinitionWithoutProperties as base
 			TypeDefinition copyWithoutProps = copyTypeDefinitionWithoutProperties(type);
 			if (copyWithoutProps == null) return null;
@@ -119,6 +124,7 @@ public class DataUtil {
 			Map<String, PropertyDefinition<?>> originalProps = type.getPropertyDefinitions();
 			if (originalProps != null && !originalProps.isEmpty()) {
 				Map<String, PropertyDefinition<?>> copiedProps = new HashMap<>();
+				int copiedCount = 0;
 				
 				for (Map.Entry<String, PropertyDefinition<?>> entry : originalProps.entrySet()) {
 					PropertyDefinition<?> originalProp = entry.getValue();
@@ -127,14 +133,23 @@ public class DataUtil {
 					PropertyDefinition<?> copiedProp = createPropertyDefinitionCopy(originalProp);
 					if (copiedProp != null) {
 						copiedProps.put(entry.getKey(), copiedProp);
+						copiedCount++;
+						// Track TCK property copying specifically
+						if (entry.getKey().startsWith("tck:")) {
+							System.out.println("DEBUG copyTypeDefinition: Deep copied TCK property " + entry.getKey() + " -> " + copiedProp.getId());
+						}
 					}
 				}
+				
+				System.out.println("DEBUG copyTypeDefinition: Successfully copied " + copiedCount + "/" + originalPropCount + " properties for " + typeId);
 				
 				// Set the copied properties to the copied type
 				if (copyWithoutProps instanceof org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition) {
 					((org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractTypeDefinition) copyWithoutProps)
 							.setPropertyDefinitions(copiedProps);
 				}
+			} else {
+				System.out.println("DEBUG copyTypeDefinition: No properties to copy for " + typeId);
 			}
 			
 			return copyWithoutProps;

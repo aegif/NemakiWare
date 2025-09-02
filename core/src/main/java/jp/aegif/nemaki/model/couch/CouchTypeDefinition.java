@@ -215,6 +215,12 @@ public class CouchTypeDefinition extends CouchNodeBase {
 
 	public CouchTypeDefinition(NemakiTypeDefinition t) {
 		super(t);
+		
+		// CRITICAL FIX: Explicitly set CouchDB _id field to typeId
+		// This prevents CouchDB from auto-generating timestamp-based IDs
+		// which were causing TCK tests to fail (e.g., "test:customType" → "test:customType_1756800184116")
+		setId(t.getTypeId());
+		
 		setTypeId(t.getTypeId());
 		setLocalName(t.getLocalName());
 		setLocalNameSpace(t.getLocalNameSpace());
